@@ -2063,15 +2063,28 @@ test("createDeterministicThemeFile does not derive C1 overrides below minimum sa
 test("createDeterministicThemeFile keeps deterministic ordering for C1-only component overrides", () => {
   const makeIconOnlyButton = ({ id, y }: { id: string; y: number }) => ({
     id,
-    name: `Icon Button ${id}`,
+    name: "MuiIconButton",
     nodeType: "FRAME",
     type: "button" as const,
     x: 0,
     y,
     width: 40,
     height: 40,
+    cornerRadius: 20,
     fillColor: "#f1f1f1",
-    children: [{ id: `${id}-icon`, name: "ic_bookmark_outline", nodeType: "INSTANCE", type: "container" as const, width: 24, height: 24 }]
+    children: [
+      {
+        id: `${id}-icon`,
+        name: "Icon",
+        nodeType: "VECTOR",
+        type: "icon" as const,
+        x: 10,
+        y: y + 10,
+        width: 20,
+        height: 20,
+        icon: "menu"
+      }
+    ]
   });
   const makeSemanticSelectInputNode = ({
     id,
@@ -2081,14 +2094,15 @@ test("createDeterministicThemeFile keeps deterministic ordering for C1-only comp
     y: number;
   }) => ({
     id,
-    name: "Styled(div)",
+    name: "MuiSelect Input Field Dropdown",
     nodeType: "FRAME",
     type: "input" as const,
     x: 0,
     y,
     width: 320,
-    height: 72,
-    fillColor: "#f5f5f5",
+    height: 56,
+    cornerRadius: 12,
+    fillColor: "#ffffff",
     children: [
       {
         id: `${id}-label`,
@@ -2096,7 +2110,7 @@ test("createDeterministicThemeFile keeps deterministic ordering for C1-only comp
         nodeType: "TEXT",
         type: "text" as const,
         text: "Kontotyp",
-        y
+        y: y + 6
       },
       {
         id: `${id}-value`,

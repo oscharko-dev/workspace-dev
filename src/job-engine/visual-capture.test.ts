@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import os from "node:os";
 import path from "node:path";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import { chromium } from "@playwright/test";
 import {
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_VIEWPORT,
@@ -153,7 +155,38 @@ const closeServer = (server: Server): Promise<void> => {
 
 const PNG_MAGIC_BYTES = [0x89, 0x50, 0x4e, 0x47];
 
-test("captureScreenshot captures a page served by a local HTTP server", async () => {
+let chromiumAvailabilityPromise:
+  | Promise<{ available: true } | { available: false; reason: string }>
+  | undefined;
+
+const getChromiumAvailability = async (): Promise<
+  { available: true } | { available: false; reason: string }
+> => {
+  chromiumAvailabilityPromise ??= (async () => {
+    const executablePath = chromium.executablePath();
+    try {
+      await access(executablePath, fsConstants.X_OK);
+      return { available: true } as const;
+    } catch {
+      return {
+        available: false,
+        reason: `Chromium executable is unavailable at '${executablePath}'.`,
+      } as const;
+    }
+  })();
+
+  return await chromiumAvailabilityPromise;
+};
+
+const skipIfChromiumUnavailable = async (context: TestContext): Promise<void> => {
+  const availability = await getChromiumAvailability();
+  if (!availability.available) {
+    context.skip(availability.reason);
+  }
+};
+
+test("captureScreenshot captures a page served by a local HTTP server", async (context) => {
+  await skipIfChromiumUnavailable(context);
   const { server, port } = await startTestServer(
     "<html><body><h1>Test</h1></body></html>",
   );
@@ -188,7 +221,8 @@ test("captureScreenshot captures a page served by a local HTTP server", async ()
   }
 });
 
-test("captureScreenshot respects viewport configuration", async () => {
+test("captureScreenshot respects viewport configuration", async (context) => {
+  await skipIfChromiumUnavailable(context);
   const { server, port } = await startTestServer(
     "<html><body><h1>Custom Viewport</h1></body></html>",
   );
@@ -268,7 +302,8 @@ const createTempProject = async (files: Record<string, string | Buffer>): Promis
   return projectDir;
 };
 
-test("captureFromProject serves query-string assets correctly", async () => {
+test("captureFromProject serves query-string assets correctly", async (context) => {
+  await skipIfChromiumUnavailable(context);
   const projectDir = await createTempProject({
     "index.html": `<!doctype html>
 <html>
@@ -298,7 +333,8 @@ test("captureFromProject serves query-string assets correctly", async () => {
   }
 });
 
-test("captureFromProject serves built asset MIME types correctly", async () => {
+test("captureFromProject serves built asset MIME types correctly", async (context) => {
+  await skipIfChromiumUnavailable(context);
   const projectDir = await createTempProject({
     "index.html": `<!doctype html>
 <html>
