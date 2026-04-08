@@ -25,6 +25,7 @@ import type {
 import type { FigmaLibraryResolutionArtifact } from "../figma-library-resolution.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { isDesignIRShape, validatedJsonParse } from "../pipeline/pipeline-schemas.js";
 
 export interface CodegenGenerateStageInput {
   figmaFileKey?: string;
@@ -235,7 +236,12 @@ export const createCodegenGenerateService = ({
 
       let ir: DesignIR;
       try {
-        ir = JSON.parse(await readFile(designIrPath, "utf8")) as DesignIR;
+        ir = validatedJsonParse({
+          raw: await readFile(designIrPath, "utf8"),
+          guard: isDesignIRShape,
+          schema: "DesignIR",
+          filePath: designIrPath
+        });
       } catch (error) {
         throw createPipelineError({
           code: "E_IR_EMPTY",

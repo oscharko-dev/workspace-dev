@@ -10,6 +10,7 @@ import type { FigmaFileResponse } from "../types.js";
 import type { FigmaMcpEnrichment } from "../../parity/types.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { isFigmaFileResponseShape, validatedJsonParse } from "../pipeline/pipeline-schemas.js";
 
 export type FigmaSourceStageInput = Pick<WorkspaceJobInput, "figmaFileKey" | "figmaAccessToken" | "figmaJsonPath">;
 
@@ -246,7 +247,12 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
                 figmaFileKey: fileKey,
                 figmaAccessToken: accessToken,
                 cleanedFile: figmaFetch.file,
-                rawFile: JSON.parse(await readFile(context.paths.figmaRawJsonFile, "utf8")) as FigmaFileResponse,
+                rawFile: validatedJsonParse({
+                  raw: await readFile(context.paths.figmaRawJsonFile, "utf8"),
+                  guard: isFigmaFileResponseShape,
+                  schema: "FigmaFileResponse",
+                  filePath: context.paths.figmaRawJsonFile
+                }),
                 jobDir: context.paths.jobDir,
                 fetchImpl: context.fetchWithCancellation
               });
@@ -288,7 +294,12 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
 
     const authoritativeSubtrees = hybridMcpEnrichment?.authoritativeSubtrees ?? [];
     if (authoritativeSubtrees.length > 0) {
-      const rawFile = JSON.parse(await readFile(context.paths.figmaRawJsonFile, "utf8")) as FigmaFileResponse;
+      const rawFile = validatedJsonParse({
+        raw: await readFile(context.paths.figmaRawJsonFile, "utf8"),
+        guard: isFigmaFileResponseShape,
+        schema: "FigmaFileResponse",
+        filePath: context.paths.figmaRawJsonFile
+      });
       const mergedSource = applyAuthoritativeFigmaSubtrees({
         file: rawFile,
         subtrees: authoritativeSubtrees
