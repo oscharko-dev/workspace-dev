@@ -15,6 +15,13 @@ export type {
   WorkspaceStartOptions,
   WorkspaceStatus,
   WorkspaceJobInput,
+  WorkspaceVisualAuditInput,
+  WorkspaceVisualCaptureConfig,
+  WorkspaceVisualDiffConfig,
+  WorkspaceVisualDiffRegion,
+  WorkspaceVisualAuditRegionResult,
+  WorkspaceVisualAuditStatus,
+  WorkspaceVisualAuditResult,
   WorkspaceJobResult,
   WorkspaceVersionInfo
 } from "./contracts/index.js";
@@ -41,3 +48,6 @@ export {
   unregisterIsolationProcessCleanup
 } from "./isolation.js";
 export type { ProjectInstance } from "./isolation.js";
+
+export * from "./job-engine/visual-capture.js";
+export * from "./job-engine/visual-diff.js";

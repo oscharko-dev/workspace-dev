@@ -1,5 +1,6 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import type { WorkspaceVisualAuditResult } from "../../contracts/index.js";
 import {
   prepareGenerationDiff,
   saveCurrentSnapshot,
@@ -37,6 +38,9 @@ import {
   parseStorybookThemesArtifact,
   parseStorybookTokensArtifact
 } from "../../storybook/artifact-validation.js";
+import { isWithinRoot } from "../preview.js";
+import { captureFromProject } from "../visual-capture.js";
+import { comparePngBuffers, writeDiffImage } from "../visual-diff.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -67,6 +71,8 @@ interface ValidateProjectServiceDeps {
   prepareGenerationDiffFn: typeof prepareGenerationDiff;
   writeGenerationDiffReportFn: typeof writeGenerationDiffReport;
   saveCurrentSnapshotFn: typeof saveCurrentSnapshot;
+  captureFromProjectFn: typeof captureFromProject;
+  comparePngBuffersFn: typeof comparePngBuffers;
   isLintAutofixEnabledFn: () => boolean;
   isPerfValidationEnabledFn: () => boolean;
 }
@@ -168,6 +174,7 @@ interface ValidationSummaryArtifact {
         status: "not_available";
       };
   uiA11y: ValidationUiA11ySummary;
+  visualAudit: WorkspaceVisualAuditResult;
   storybook:
     | {
         status: "ok" | "failed";
@@ -355,6 +362,18 @@ const buildStorybookCompositionCoverage = ({
 
 const toJsonFileContent = (value: unknown): string => {
   return `${JSON.stringify(value, null, 2)}\n`;
+};
+
+const cloneVisualAuditResult = (value: WorkspaceVisualAuditResult): WorkspaceVisualAuditResult => {
+  return {
+    ...value,
+    ...(value.regions
+      ? {
+          regions: value.regions.map((region) => ({ ...region }))
+        }
+      : {}),
+    ...(value.warnings ? { warnings: [...value.warnings] } : {})
+  };
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -640,6 +659,7 @@ const extractFailedCommandFromPipelineError = (error: unknown): string => {
 const resolveSummaryStatus = ({
   generatedApp,
   uiA11y,
+  visualAudit,
   storybook,
   mapping,
   style,
@@ -647,6 +667,7 @@ const resolveSummaryStatus = ({
 }: {
   generatedApp: ValidationSummaryArtifact["generatedApp"];
   uiA11y: ValidationSummaryArtifact["uiA11y"];
+  visualAudit: ValidationSummaryArtifact["visualAudit"];
   storybook: ValidationSummaryArtifact["storybook"];
   mapping: ValidationSummaryArtifact["mapping"];
   style: ValidationSummaryArtifact["style"];
@@ -655,6 +676,7 @@ const resolveSummaryStatus = ({
   const gateStatuses: ValidationGateStatus[] = [
     generatedApp.status,
     uiA11y.status,
+    visualAudit.status,
     storybook.status,
     mapping.status,
     style.status,
@@ -748,7 +770,8 @@ const buildValidationSummaryArtifact = async ({
   customerProfileComponentApiSummary,
   customerProfileStyleSummary,
   componentMatchReportArtifact,
-  storybookArtifactStatusOverrides
+  storybookArtifactStatusOverrides,
+  visualAuditResult
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -760,6 +783,7 @@ const buildValidationSummaryArtifact = async ({
   customerProfileStyleSummary?: CustomerProfileStyleValidationSummary;
   componentMatchReportArtifact?: ComponentMatchReportArtifact;
   storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
+  visualAuditResult?: WorkspaceVisualAuditResult;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -979,11 +1003,13 @@ const buildValidationSummaryArtifact = async ({
     context,
     ...(validationResult ? { validationResult } : {})
   });
+  const resolvedVisualAuditResult = cloneVisualAuditResult(visualAuditResult ?? context.job.visualAudit ?? { status: "not_requested" });
 
   return {
     status: resolveSummaryStatus({
       generatedApp: generatedAppSummary,
       uiA11y: uiA11ySummary,
+      visualAudit: resolvedVisualAuditResult,
       storybook: storybookSummary,
       mapping: mappingSummary,
       style: styleSummary,
@@ -992,6 +1018,7 @@ const buildValidationSummaryArtifact = async ({
     validatedAt,
     generatedApp: generatedAppSummary,
     uiA11y: uiA11ySummary,
+    visualAudit: resolvedVisualAuditResult,
     storybook: storybookSummary,
     mapping: mappingSummary,
     style: styleSummary,
@@ -1004,6 +1031,8 @@ export const createValidateProjectService = ({
   prepareGenerationDiffFn = prepareGenerationDiff,
   writeGenerationDiffReportFn = writeGenerationDiffReport,
   saveCurrentSnapshotFn = saveCurrentSnapshot,
+  captureFromProjectFn = captureFromProject,
+  comparePngBuffersFn = comparePngBuffers,
   isLintAutofixEnabledFn = isLintAutofixEnabled,
   isPerfValidationEnabledFn = isPerfValidationEnabled
 }: Partial<ValidateProjectServiceDeps> = {}): StageService<void> => {
@@ -1015,10 +1044,168 @@ export const createValidateProjectService = ({
 
       let customerProfileMatchSummary: CustomerProfileMatchValidationSummary | undefined;
       let customerProfileComponentApiSummary: CustomerProfileComponentApiValidationSummary | undefined;
+      let customerProfileStyleSummary: CustomerProfileStyleValidationSummary | undefined;
+      let customerProfileImportSummary:
+        | Awaited<ReturnType<typeof validateGeneratedProjectCustomerProfile>>
+        | undefined;
       let componentMatchReportArtifact: ComponentMatchReportArtifact | undefined;
       let storybookEvidenceArtifact: StorybookEvidenceArtifact | undefined;
       let storybookTokensArtifact: StorybookPublicTokensArtifact | undefined;
       let storybookThemesArtifact: StorybookPublicThemesArtifact | undefined;
+      let validationResult: ProjectValidationResult | undefined;
+
+      const visualAuditRequest = context.job.request.visualAudit;
+      let visualAuditResult: WorkspaceVisualAuditResult = visualAuditRequest
+        ? {
+            status: "failed",
+            baselineImagePath: visualAuditRequest.baselineImagePath,
+            warnings: ["Visual audit did not complete because validate.project exited before the audit step finished."]
+          }
+        : {
+            status: "not_requested"
+          };
+      if (!visualAuditRequest) {
+        context.job.visualAudit = { status: "not_requested" };
+      }
+      let visualAuditReferenceImagePath: string | undefined;
+      let visualAuditActualImagePath: string | undefined;
+      let visualAuditDiffImagePath: string | undefined;
+      let visualAuditReportPath: string | undefined;
+
+      const buildSummary = async ({
+        generatedAppFailure,
+        storybookArtifactStatusOverrides
+      }: {
+        generatedAppFailure?: { failedCommand: string };
+        storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
+      } = {}): Promise<ValidationSummaryArtifact> => {
+        context.job.visualAudit = cloneVisualAuditResult(visualAuditResult);
+        return buildValidationSummaryArtifact({
+          context,
+          validatedAt,
+          ...(validationResult ? { validationResult } : {}),
+          ...(generatedAppFailure ? { generatedAppFailure } : {}),
+          ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
+          ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
+          ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
+          ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
+          ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
+          ...(storybookArtifactStatusOverrides ? { storybookArtifactStatusOverrides } : {}),
+          visualAuditResult
+        });
+      };
+
+      const setVisualAuditJobArtifactPath = ({
+        key,
+        absolutePath
+      }: {
+        key:
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditReferenceImage
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditActualImage
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditDiffImage
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditReport;
+        absolutePath: string;
+      }): void => {
+        switch (key) {
+          case STAGE_ARTIFACT_KEYS.visualAuditReferenceImage:
+            visualAuditReferenceImagePath = absolutePath;
+            context.job.artifacts.visualAuditReferenceImageFile = absolutePath;
+            break;
+          case STAGE_ARTIFACT_KEYS.visualAuditActualImage:
+            visualAuditActualImagePath = absolutePath;
+            context.job.artifacts.visualAuditActualImageFile = absolutePath;
+            break;
+          case STAGE_ARTIFACT_KEYS.visualAuditDiffImage:
+            visualAuditDiffImagePath = absolutePath;
+            context.job.artifacts.visualAuditDiffImageFile = absolutePath;
+            break;
+          case STAGE_ARTIFACT_KEYS.visualAuditReport:
+            visualAuditReportPath = absolutePath;
+            context.job.artifacts.visualAuditReportFile = absolutePath;
+            break;
+        }
+      };
+
+      const persistVisualAuditArtifactPath = async ({
+        key,
+        absolutePath
+      }: {
+        key:
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditReferenceImage
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditActualImage
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditDiffImage
+          | typeof STAGE_ARTIFACT_KEYS.visualAuditReport;
+        absolutePath: string;
+      }): Promise<void> => {
+        setVisualAuditJobArtifactPath({ key, absolutePath });
+        await context.artifactStore.setPath({
+          key,
+          stage: "validate.project",
+          absolutePath
+        });
+      };
+
+      const persistVisualAuditResult = async (result: WorkspaceVisualAuditResult): Promise<WorkspaceVisualAuditResult> => {
+        const clonedResult = cloneVisualAuditResult(result);
+        visualAuditResult = clonedResult;
+        context.job.visualAudit = cloneVisualAuditResult(clonedResult);
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.visualAuditResult,
+          stage: "validate.project",
+          value: cloneVisualAuditResult(clonedResult)
+        });
+        return clonedResult;
+      };
+
+      const failVisualAudit = async ({
+        code,
+        message,
+        suggestion,
+        details,
+        cause
+      }: {
+        code: string;
+        message: string;
+        suggestion: string;
+        details?: Record<string, unknown>;
+        cause?: unknown;
+      }): Promise<never> => {
+        const warnings = [
+          message,
+          ...(visualAuditResult.warnings ?? []).filter((warning) => warning !== message)
+        ];
+        await persistVisualAuditResult({
+          status: "failed",
+          ...(visualAuditRequest ? { baselineImagePath: visualAuditRequest.baselineImagePath } : {}),
+          ...(visualAuditReferenceImagePath ? { referenceImagePath: visualAuditReferenceImagePath } : {}),
+          ...(visualAuditActualImagePath ? { actualImagePath: visualAuditActualImagePath } : {}),
+          ...(visualAuditDiffImagePath ? { diffImagePath: visualAuditDiffImagePath } : {}),
+          ...(visualAuditReportPath ? { reportPath: visualAuditReportPath } : {}),
+          warnings
+        });
+        const summary = await buildSummary();
+        await persistValidationSummaryArtifacts({
+          context,
+          summary
+        });
+        throw createPipelineError({
+          code,
+          stage: "validate.project",
+          message,
+          cause,
+          limits: context.runtime.pipelineDiagnosticLimits,
+          diagnostics: [
+            {
+              code,
+              message,
+              suggestion,
+              stage: "validate.project",
+              severity: "error",
+              ...(details ? { details } : {})
+            }
+          ]
+        });
+      };
 
       const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
       const storybookCatalogPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
@@ -1083,10 +1270,7 @@ export const createValidateProjectService = ({
           artifactKey: StorybookArtifactKey;
           cause: unknown;
         }): Promise<never> => {
-          const summary = await buildValidationSummaryArtifact({
-            context,
-            validatedAt,
-            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
+          const summary = await buildSummary({
             storybookArtifactStatusOverrides: {
               [artifactKey]: "invalid"
             }
@@ -1168,11 +1352,7 @@ export const createValidateProjectService = ({
           ({ key }) => !storybookArtifactPaths[key]
         );
         if (missingRequiredStorybookArtifacts.length > 0) {
-          const summary = await buildValidationSummaryArtifact({
-            context,
-            validatedAt,
-            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
-          });
+          const summary = await buildSummary();
           await persistValidationSummaryArtifacts({
             context,
             summary
@@ -1230,13 +1410,7 @@ export const createValidateProjectService = ({
             });
           }
           if (customerProfileMatchSummary.status === "failed") {
-            const summary = await buildValidationSummaryArtifact({
-              context,
-              validatedAt,
-              customerProfileMatchSummary,
-              customerProfileComponentApiSummary,
-              componentMatchReportArtifact
-            });
+            const summary = await buildSummary();
             await persistValidationSummaryArtifacts({
               context,
               summary
@@ -1266,13 +1440,7 @@ export const createValidateProjectService = ({
             });
           }
           if (customerProfileComponentApiSummary.status === "failed") {
-            const summary = await buildValidationSummaryArtifact({
-              context,
-              validatedAt,
-              customerProfileMatchSummary,
-              customerProfileComponentApiSummary,
-              componentMatchReportArtifact
-            });
+            const summary = await buildSummary();
             await persistValidationSummaryArtifacts({
               context,
               summary
@@ -1302,7 +1470,6 @@ export const createValidateProjectService = ({
           }
       }
 
-      let customerProfileStyleSummary: CustomerProfileStyleValidationSummary | undefined;
       if (context.resolvedCustomerProfile) {
         if (!storybookEvidenceArtifact) {
           try {
@@ -1379,14 +1546,7 @@ export const createValidateProjectService = ({
           });
         }
         if (customerProfileStyleSummary.status === "failed") {
-          const summary = await buildValidationSummaryArtifact({
-            context,
-            validatedAt,
-            ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
-            ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-            customerProfileStyleSummary,
-            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
-          });
+          const summary = await buildSummary();
           await persistValidationSummaryArtifacts({
             context,
             summary
@@ -1421,9 +1581,6 @@ export const createValidateProjectService = ({
         }
       }
 
-      let customerProfileImportSummary:
-        | Awaited<ReturnType<typeof validateGeneratedProjectCustomerProfile>>
-        | undefined;
       if (context.resolvedCustomerProfile) {
         customerProfileImportSummary = await validateGeneratedProjectCustomerProfile({
           generatedProjectDir,
@@ -1444,15 +1601,7 @@ export const createValidateProjectService = ({
           });
         }
         if (customerProfileImportSummary.status === "failed") {
-          const summary = await buildValidationSummaryArtifact({
-            context,
-            validatedAt,
-            customerProfileImportSummary,
-            ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
-            ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-            ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
-            ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
-          });
+          const summary = await buildSummary();
           await persistValidationSummaryArtifacts({
             context,
             summary
@@ -1482,7 +1631,6 @@ export const createValidateProjectService = ({
           Object.keys(context.resolvedCustomerProfile.template.devDependencies).length > 0
         : false;
 
-      let validationResult: ProjectValidationResult;
       try {
         validationResult = await runProjectValidationFn({
           generatedProjectDir,
@@ -1510,15 +1658,17 @@ export const createValidateProjectService = ({
         });
       } catch (error) {
         const failedCommand = extractFailedCommandFromPipelineError(error);
-        const failureSummary = await buildValidationSummaryArtifact({
-          context,
-          validatedAt,
-          generatedAppFailure: { failedCommand },
-          ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
-          ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
-          ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-          ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
-          ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
+        await persistVisualAuditResult({
+          status: visualAuditRequest ? "failed" : "not_requested",
+          ...(visualAuditRequest
+            ? {
+                baselineImagePath: visualAuditRequest.baselineImagePath,
+                warnings: ["Visual audit did not run because generated-project validation failed before the audit step."]
+              }
+            : {})
+        });
+        const failureSummary = await buildSummary({
+          generatedAppFailure: { failedCommand }
         });
         await persistValidationSummaryArtifacts({
           context,
@@ -1526,16 +1676,241 @@ export const createValidateProjectService = ({
         });
         throw error;
       }
-      const summary = await buildValidationSummaryArtifact({
-        context,
-        validatedAt,
-        validationResult,
-        ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
-        ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
-        ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-        ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
-        ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
-      });
+      if (!visualAuditRequest) {
+        await persistVisualAuditResult({
+          status: "not_requested"
+        });
+      } else {
+        const resolvedBaselineSourcePath = path.resolve(
+          context.resolvedWorkspaceRoot,
+          visualAuditRequest.baselineImagePath
+        );
+        if (!isWithinRoot({ candidatePath: resolvedBaselineSourcePath, rootPath: context.resolvedWorkspaceRoot })) {
+          await failVisualAudit({
+            code: "E_VISUAL_AUDIT_BASELINE_PATH_INVALID",
+            message:
+              `Visual audit baseline '${visualAuditRequest.baselineImagePath}' resolves outside the workspace root.`,
+            suggestion: "Provide a baseline image path that stays inside the workspace root.",
+            details: {
+              baselineImagePath: visualAuditRequest.baselineImagePath,
+              resolvedBaselinePath: resolvedBaselineSourcePath,
+              workspaceRoot: context.resolvedWorkspaceRoot
+            }
+          });
+        }
+
+        const referenceBuffer = await (async (): Promise<Buffer> => {
+          try {
+            return await readFile(resolvedBaselineSourcePath);
+          } catch (error) {
+            return failVisualAudit({
+              code: "E_VISUAL_AUDIT_BASELINE_MISSING",
+              message: `Visual audit baseline '${visualAuditRequest.baselineImagePath}' is missing or unreadable.`,
+              suggestion: "Add the baseline PNG inside the workspace root before running validate.project.",
+              details: {
+                baselineImagePath: visualAuditRequest.baselineImagePath,
+                resolvedBaselinePath: resolvedBaselineSourcePath
+              },
+              cause: error
+            });
+          }
+        })();
+
+        const visualAuditDir = path.join(context.paths.jobDir, "visual-audit");
+        try {
+          await mkdir(visualAuditDir, { recursive: true });
+        } catch (error) {
+          await failVisualAudit({
+            code: "E_VISUAL_AUDIT_ARTIFACT_DIR_FAILED",
+            message: "Visual audit artifact directory could not be created.",
+            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            details: {
+              visualAuditDir
+            },
+            cause: error
+          });
+        }
+
+        const referenceImagePath = path.join(visualAuditDir, "reference.png");
+        try {
+          await writeFile(referenceImagePath, referenceBuffer);
+          await persistVisualAuditArtifactPath({
+            key: STAGE_ARTIFACT_KEYS.visualAuditReferenceImage,
+            absolutePath: referenceImagePath
+          });
+        } catch (error) {
+          await failVisualAudit({
+            code: "E_VISUAL_AUDIT_REFERENCE_WRITE_FAILED",
+            message: "Visual audit reference image could not be written.",
+            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            details: {
+              referenceImagePath,
+              resolvedBaselinePath: resolvedBaselineSourcePath
+            },
+            cause: error
+          });
+        }
+
+        const distDir = path.join(generatedProjectDir, "dist");
+        const distIndexPath = path.join(distDir, "index.html");
+        try {
+          await access(distIndexPath);
+        } catch (error) {
+          await failVisualAudit({
+            code: "E_VISUAL_AUDIT_BUILD_OUTPUT_MISSING",
+            message: "Visual audit requires build output at 'dist/index.html', but that file is missing.",
+            suggestion: "Make sure the generated project build writes a static dist bundle before the visual audit runs.",
+            details: {
+              distDir,
+              distIndexPath,
+              generatedProjectDir
+            },
+            cause: error
+          });
+        }
+
+        const captureConfig = visualAuditRequest.capture as Parameters<typeof captureFromProjectFn>[0]["config"] | undefined;
+        const captureResult = await (async (): Promise<Awaited<ReturnType<typeof captureFromProjectFn>>> => {
+          try {
+            return await captureFromProjectFn({
+              projectDir: distDir,
+              ...(captureConfig ? { config: captureConfig } : {}),
+              onLog: (message) => {
+                context.log({
+                  level: "info",
+                  message: `Visual audit capture: ${message}`
+                });
+              }
+            });
+          } catch (error) {
+            return failVisualAudit({
+              code: "E_VISUAL_AUDIT_CAPTURE_FAILED",
+              message: "Visual audit could not capture the generated dist bundle.",
+              suggestion: "Inspect the built dist bundle and capture settings, then rerun validate.project.",
+              details: {
+                distDir,
+                distIndexPath
+              },
+              cause: error
+            });
+          }
+        })();
+
+        const actualImagePath = path.join(visualAuditDir, "actual.png");
+        try {
+          await writeFile(actualImagePath, captureResult.screenshotBuffer);
+          await persistVisualAuditArtifactPath({
+            key: STAGE_ARTIFACT_KEYS.visualAuditActualImage,
+            absolutePath: actualImagePath
+          });
+        } catch (error) {
+          await failVisualAudit({
+            code: "E_VISUAL_AUDIT_ACTUAL_WRITE_FAILED",
+            message: "Visual audit captured a screenshot but could not persist it.",
+            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            details: {
+              actualImagePath
+            },
+            cause: error
+          });
+        }
+
+        const compareConfig = visualAuditRequest.diff as Parameters<typeof comparePngBuffersFn>[0]["config"] | undefined;
+        const compareRegions = visualAuditRequest.regions as Parameters<typeof comparePngBuffersFn>[0]["regions"] | undefined;
+        const diffResult = await (async (): Promise<ReturnType<typeof comparePngBuffersFn>> => {
+          try {
+            return comparePngBuffersFn({
+              referenceBuffer,
+              testBuffer: captureResult.screenshotBuffer,
+              ...(compareConfig ? { config: compareConfig } : {}),
+              ...(compareRegions ? { regions: compareRegions } : {})
+            });
+          } catch (error) {
+            return failVisualAudit({
+              code: "E_VISUAL_AUDIT_COMPARE_FAILED",
+              message: "Visual audit could not compare the baseline and captured screenshots.",
+              suggestion: "Align the baseline image and capture configuration so both images are comparable.",
+              details: {
+                baselineImagePath: visualAuditRequest.baselineImagePath,
+                referenceImagePath,
+                actualImagePath
+              },
+              cause: error
+            });
+          }
+        })();
+
+        const diffImagePath = path.join(visualAuditDir, "diff.png");
+        try {
+          await writeDiffImage({
+            diffImageBuffer: diffResult.diffImageBuffer,
+            outputPath: diffImagePath
+          });
+          await persistVisualAuditArtifactPath({
+            key: STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
+            absolutePath: diffImagePath
+          });
+        } catch (error) {
+          await failVisualAudit({
+            code: "E_VISUAL_AUDIT_DIFF_WRITE_FAILED",
+            message: "Visual audit computed a diff image but could not persist it.",
+            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            details: {
+              diffImagePath
+            },
+            cause: error
+          });
+        }
+
+        const finalizedVisualAuditResult = cloneVisualAuditResult({
+          status: diffResult.diffPixelCount > 0 ? "warn" : "ok",
+          baselineImagePath: visualAuditRequest.baselineImagePath,
+          referenceImagePath,
+          actualImagePath,
+          diffImagePath,
+          similarityScore: diffResult.similarityScore,
+          diffPixelCount: diffResult.diffPixelCount,
+          totalPixels: diffResult.totalPixels,
+          regions: diffResult.regions.map((region) => ({ ...region })),
+          ...(diffResult.diffPixelCount > 0
+            ? {
+                warnings: [
+                  `Visual audit detected ${String(diffResult.diffPixelCount)} differing pixel(s) across ${String(diffResult.totalPixels)} total pixel(s).`
+                ]
+              }
+            : {})
+        });
+
+        const reportPath = path.join(visualAuditDir, "report.json");
+        try {
+          await writeFile(reportPath, toJsonFileContent(finalizedVisualAuditResult), "utf8");
+          await persistVisualAuditArtifactPath({
+            key: STAGE_ARTIFACT_KEYS.visualAuditReport,
+            absolutePath: reportPath
+          });
+        } catch (error) {
+          await failVisualAudit({
+            code: "E_VISUAL_AUDIT_REPORT_WRITE_FAILED",
+            message: "Visual audit completed but could not persist the JSON report.",
+            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            details: {
+              reportPath
+            },
+            cause: error
+          });
+        }
+
+        finalizedVisualAuditResult.reportPath = reportPath;
+        await persistVisualAuditResult(finalizedVisualAuditResult);
+        context.log({
+          level: finalizedVisualAuditResult.status === "warn" ? "warn" : "info",
+          message:
+            finalizedVisualAuditResult.status === "warn"
+              ? `Visual audit detected ${String(diffResult.diffPixelCount)} differing pixel(s).`
+              : "Visual audit completed without detected pixel differences."
+        });
+      }
+      const summary = await buildSummary();
       await persistValidationSummaryArtifacts({
         context,
         summary

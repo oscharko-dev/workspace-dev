@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.4.0
+ * Contract version: 3.5.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -184,6 +184,7 @@ export interface WorkspaceJobInput {
   customerProfilePath?: string;
   customerBrandId?: string;
   componentMappings?: WorkspaceComponentMappingRule[];
+  visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
   repoToken?: string;
   enableGitPr?: boolean;
@@ -204,6 +205,7 @@ export interface WorkspaceJobRequestMetadata {
   customerProfilePath?: string;
   customerBrandId?: string;
   componentMappings?: WorkspaceComponentMappingRule[];
+  visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
   enableGitPr: boolean;
   figmaSourceMode: WorkspaceFigmaSourceMode;
@@ -285,6 +287,10 @@ export interface WorkspaceJobArtifacts {
   validationSummaryFile?: string;
   stageTimingsFile?: string;
   generationDiffFile?: string;
+  visualAuditReferenceImageFile?: string;
+  visualAuditActualImageFile?: string;
+  visualAuditDiffImageFile?: string;
+  visualAuditReportFile?: string;
   reproDir?: string;
 }
 
@@ -306,6 +312,69 @@ export interface WorkspaceGenerationDiffReport {
   removed: string[];
   unchanged: string[];
   summary: string;
+}
+
+/** Configuration for the optional visual audit capture flow. */
+export interface WorkspaceVisualCaptureConfig {
+  viewport?: {
+    width?: number;
+    height?: number;
+    deviceScaleFactor?: number;
+  };
+  waitForNetworkIdle?: boolean;
+  waitForFonts?: boolean;
+  waitForAnimations?: boolean;
+  timeoutMs?: number;
+  fullPage?: boolean;
+}
+
+/** Configuration for the optional visual audit diff flow. */
+export interface WorkspaceVisualDiffConfig {
+  threshold?: number;
+  includeAntialiasing?: boolean;
+  alpha?: number;
+}
+
+/** Region definition used for visual diff breakdowns. */
+export interface WorkspaceVisualDiffRegion {
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Region result returned as part of a visual audit. */
+export interface WorkspaceVisualAuditRegionResult extends WorkspaceVisualDiffRegion {
+  diffPixelCount: number;
+  totalPixels: number;
+  deviationPercent: number;
+}
+
+/** Input payload for the optional visual audit flow. */
+export interface WorkspaceVisualAuditInput {
+  baselineImagePath: string;
+  capture?: WorkspaceVisualCaptureConfig;
+  diff?: WorkspaceVisualDiffConfig;
+  regions?: WorkspaceVisualDiffRegion[];
+}
+
+/** Runtime status for the optional visual audit flow. */
+export type WorkspaceVisualAuditStatus = "not_requested" | "ok" | "warn" | "failed";
+
+/** Computed output for the optional visual audit flow. */
+export interface WorkspaceVisualAuditResult {
+  status: WorkspaceVisualAuditStatus;
+  baselineImagePath?: string;
+  referenceImagePath?: string;
+  actualImagePath?: string;
+  diffImagePath?: string;
+  reportPath?: string;
+  similarityScore?: number;
+  diffPixelCount?: number;
+  totalPixels?: number;
+  regions?: WorkspaceVisualAuditRegionResult[];
+  warnings?: string[];
 }
 
 /** PR execution status attached to completed jobs when Git PR integration is enabled. */
@@ -363,6 +432,7 @@ export interface WorkspaceJobStatus {
   cancellation?: WorkspaceJobCancellation;
   lineage?: WorkspaceJobLineage;
   generationDiff?: WorkspaceGenerationDiffReport;
+  visualAudit?: WorkspaceVisualAuditResult;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -380,6 +450,7 @@ export interface WorkspaceJobResult {
   lineage?: WorkspaceJobLineage;
   cancellation?: WorkspaceJobCancellation;
   generationDiff?: WorkspaceGenerationDiffReport;
+  visualAudit?: WorkspaceVisualAuditResult;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -650,4 +721,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.4.0" as const;
+export const CONTRACT_VERSION = "3.5.0" as const;

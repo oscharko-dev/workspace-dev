@@ -1169,6 +1169,29 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     if (input.targetPath) {
       request.targetPath = input.targetPath;
     }
+    if (input.visualAudit) {
+      request.visualAudit = {
+        ...input.visualAudit,
+        ...(input.visualAudit.capture
+          ? {
+              capture: {
+                ...input.visualAudit.capture,
+                ...(input.visualAudit.capture.viewport
+                  ? {
+                      viewport: { ...input.visualAudit.capture.viewport }
+                    }
+                  : {})
+              }
+            }
+          : {}),
+        ...(input.visualAudit.diff ? { diff: { ...input.visualAudit.diff } } : {}),
+        ...(input.visualAudit.regions
+          ? {
+              regions: input.visualAudit.regions.map((region) => ({ ...region }))
+            }
+          : {})
+      };
+    }
 
     const job: JobRecord = {
       jobId,
@@ -1838,6 +1861,16 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
     if (job.generationDiff) {
       result.generationDiff = { ...job.generationDiff };
+    }
+    if (job.visualAudit) {
+      result.visualAudit = {
+        ...job.visualAudit,
+        ...(job.visualAudit.regions
+          ? {
+              regions: job.visualAudit.regions.map((region) => ({ ...region }))
+            }
+          : {})
+      };
     }
     if (job.gitPr) {
       result.gitPr = { ...job.gitPr };

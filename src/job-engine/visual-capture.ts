@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { readFile } from "node:fs/promises";
-import { join, extname } from "node:path";
+import path, { extname } from "node:path";
 
 export interface ViewportConfig {
   width: number;
@@ -40,6 +40,37 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   fullPage: true,
 };
 
+const isFiniteNumber = (value: unknown): value is number => {
+  return typeof value === "number" && Number.isFinite(value);
+};
+
+const assertPositiveNumber = ({
+  value,
+  fieldName,
+}: {
+  value: unknown;
+  fieldName: string;
+}): number => {
+  if (!isFiniteNumber(value) || value <= 0) {
+    throw new Error(`${fieldName} must be a finite number greater than 0.`);
+  }
+  return value;
+};
+
+const assertPositiveInteger = ({
+  value,
+  fieldName,
+}: {
+  value: unknown;
+  fieldName: string;
+}): number => {
+  const positiveNumber = assertPositiveNumber({ value, fieldName });
+  if (!Number.isInteger(positiveNumber)) {
+    throw new Error(`${fieldName} must be an integer greater than 0.`);
+  }
+  return positiveNumber;
+};
+
 export const resolveCaptureConfig = (
   partial?: Partial<CaptureConfig & { viewport?: Partial<ViewportConfig> }>,
 ): CaptureConfig => {
@@ -48,10 +79,18 @@ export const resolveCaptureConfig = (
   }
 
   const viewport: ViewportConfig = {
-    width: partial.viewport?.width ?? DEFAULT_VIEWPORT.width,
-    height: partial.viewport?.height ?? DEFAULT_VIEWPORT.height,
-    deviceScaleFactor:
-      partial.viewport?.deviceScaleFactor ?? DEFAULT_VIEWPORT.deviceScaleFactor,
+    width: assertPositiveInteger({
+      value: partial.viewport?.width ?? DEFAULT_VIEWPORT.width,
+      fieldName: "viewport.width",
+    }),
+    height: assertPositiveInteger({
+      value: partial.viewport?.height ?? DEFAULT_VIEWPORT.height,
+      fieldName: "viewport.height",
+    }),
+    deviceScaleFactor: assertPositiveNumber({
+      value: partial.viewport?.deviceScaleFactor ?? DEFAULT_VIEWPORT.deviceScaleFactor,
+      fieldName: "viewport.deviceScaleFactor",
+    }),
   };
 
   return {
@@ -62,7 +101,10 @@ export const resolveCaptureConfig = (
       partial.waitForFonts ?? DEFAULT_CAPTURE_CONFIG.waitForFonts,
     waitForAnimations:
       partial.waitForAnimations ?? DEFAULT_CAPTURE_CONFIG.waitForAnimations,
-    timeoutMs: partial.timeoutMs ?? DEFAULT_CAPTURE_CONFIG.timeoutMs,
+    timeoutMs: assertPositiveInteger({
+      value: partial.timeoutMs ?? DEFAULT_CAPTURE_CONFIG.timeoutMs,
+      fieldName: "timeoutMs",
+    }),
     fullPage: partial.fullPage ?? DEFAULT_CAPTURE_CONFIG.fullPage,
   };
 };
@@ -114,18 +156,128 @@ const getContentTypeForExtension = (filePath: string): string => {
     case ".css":
       return "text/css; charset=utf-8";
     case ".js":
+    case ".mjs":
+    case ".cjs":
       return "application/javascript; charset=utf-8";
     case ".json":
       return "application/json; charset=utf-8";
     case ".svg":
       return "image/svg+xml";
+    case ".ico":
+      return "image/x-icon";
     case ".png":
       return "image/png";
     case ".jpg":
     case ".jpeg":
       return "image/jpeg";
+    case ".webp":
+      return "image/webp";
+    case ".avif":
+      return "image/avif";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
+    case ".ttf":
+      return "font/ttf";
+    case ".otf":
+      return "font/otf";
+    case ".eot":
+      return "application/vnd.ms-fontobject";
+    case ".map":
+      return "application/json; charset=utf-8";
     default:
       return "application/octet-stream";
+  }
+};
+
+const isWithinProjectRoot = ({
+  candidatePath,
+  projectDir,
+}: {
+  candidatePath: string;
+  projectDir: string;
+}): boolean => {
+  const resolvedProjectDir = path.resolve(projectDir);
+  const resolvedCandidatePath = path.resolve(candidatePath);
+  return (
+    resolvedCandidatePath === resolvedProjectDir ||
+    resolvedCandidatePath.startsWith(`${resolvedProjectDir}${path.sep}`)
+  );
+};
+
+const resolveRequestFilePath = ({
+  projectDir,
+  requestUrl,
+  baseUrl,
+}: {
+  projectDir: string;
+  requestUrl: string | undefined;
+  baseUrl: string;
+}): string => {
+  const parsedUrl = new URL(requestUrl ?? "/", baseUrl);
+  let pathname: string;
+
+  try {
+    pathname = decodeURIComponent(parsedUrl.pathname);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "unknown error";
+    throw new Error(`Invalid request path '${parsedUrl.pathname}': ${message}`);
+  }
+
+  const rawSegments = pathname.split("/").filter((segment) => segment.length > 0);
+  if (rawSegments.some((segment) => segment === "." || segment === "..")) {
+    throw new Error(`Refusing to serve path traversal request '${pathname}'.`);
+  }
+
+  const normalizedPathname = path.posix.normalize(pathname);
+  const safePathname = normalizedPathname === "/" ? "/index.html" : normalizedPathname;
+  const relativePath = safePathname.startsWith("/") ? safePathname.slice(1) : safePathname;
+  const candidatePath = path.resolve(projectDir, relativePath);
+
+  if (!isWithinProjectRoot({ candidatePath, projectDir })) {
+    throw new Error(`Refusing to serve path outside project root: '${pathname}'.`);
+  }
+
+  return candidatePath;
+};
+
+export const waitWithTimeout = async <T>(input: {
+  promise: Promise<T>;
+  timeoutMs: number;
+}): Promise<{ status: "settled"; value: T } | { status: "timeout" }> => {
+  const { promise, timeoutMs } = input;
+  let timedOut = false;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<{ status: "timeout" }>((resolve) => {
+    timeoutHandle = setTimeout(() => {
+      timedOut = true;
+      resolve({ status: "timeout" });
+    }, timeoutMs);
+    if (typeof timeoutHandle === "object" && typeof timeoutHandle.unref === "function") {
+      timeoutHandle.unref();
+    }
+  });
+
+  const settledPromise = promise.then(
+    (value) => {
+      return { status: "settled" as const, value };
+    },
+    (error: unknown) => {
+      if (!timedOut) {
+        throw error;
+      }
+      return { status: "timeout" as const };
+    },
+  );
+
+  try {
+    return await Promise.race([settledPromise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle !== undefined) {
+      clearTimeout(timeoutHandle);
+    }
   }
 };
 
@@ -277,18 +429,22 @@ export const captureScreenshot = async (input: {
 
     if (config.waitForFonts) {
       log("Waiting for fonts to load");
-      await page.evaluate(WAIT_FOR_FONTS_EXPRESSION);
+      const fontsResult = await waitWithTimeout({
+        promise: page.evaluate(WAIT_FOR_FONTS_EXPRESSION),
+        timeoutMs: config.timeoutMs,
+      });
+      if (fontsResult.status === "timeout") {
+        log(`Font loading did not settle within ${config.timeoutMs}ms, proceeding with capture`);
+      }
     }
 
     if (config.waitForAnimations) {
       log("Waiting for CSS animations to finish");
-      const animationsDone = page.evaluate<undefined>(WAIT_FOR_ANIMATIONS_EXPRESSION)
-        .then((): "settled" => "settled");
-      const animationTimeout = new Promise<"timeout">((resolve) => {
-        setTimeout(() => { resolve("timeout"); }, config.timeoutMs);
+      const animationsResult = await waitWithTimeout({
+        promise: page.evaluate<undefined>(WAIT_FOR_ANIMATIONS_EXPRESSION),
+        timeoutMs: config.timeoutMs,
       });
-      const winner = await Promise.race([animationsDone, animationTimeout]);
-      if (winner === "timeout") {
+      if (animationsResult.status === "timeout") {
         log(`CSS animations did not settle within ${config.timeoutMs}ms, proceeding with capture`);
       }
     }
@@ -330,17 +486,19 @@ export const captureFromProject = async (input: {
   log(`Starting static file server on ${baseUrl}`);
 
   const server = createServer((req, res) => {
-    const urlPath = req.url ?? "/";
-    const safePath = urlPath === "/" ? "/index.html" : urlPath;
-
-    const segments = safePath.split("/").filter((s) => s.length > 0);
-    if (segments.some((s) => s === ".." || s === ".")) {
+    let filePath: string;
+    try {
+      filePath = resolveRequestFilePath({
+        projectDir: input.projectDir,
+        requestUrl: req.url,
+        baseUrl,
+      });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "unknown error";
       res.writeHead(403);
-      res.end("Forbidden");
+      res.end(message);
       return;
     }
-
-    const filePath = join(input.projectDir, ...segments);
 
     readFile(filePath)
       .then((content) => {

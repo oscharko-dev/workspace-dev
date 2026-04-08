@@ -1,4 +1,8 @@
-import type { WorkspaceGenerationDiffReport, WorkspaceGitPrStatus } from "../../contracts/index.js";
+import type {
+  WorkspaceGenerationDiffReport,
+  WorkspaceGitPrStatus,
+  WorkspaceVisualAuditResult
+} from "../../contracts/index.js";
 import type { JobRecord } from "../types.js";
 import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
 import type { StageArtifactStore } from "./artifact-store.js";
@@ -10,6 +14,10 @@ export const syncPublicJobProjection = async ({
   job: JobRecord;
   artifactStore: StageArtifactStore;
 }): Promise<void> => {
+  const jobWithVisualAudit = job as JobRecord & {
+    visualAudit?: WorkspaceVisualAuditResult;
+  };
+
   const syncOptionalArtifactPath = async ({
     key,
     assign,
@@ -125,6 +133,42 @@ export const syncPublicJobProjection = async ({
     }
   });
   await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditReferenceImage,
+    assign: (value) => {
+      job.artifacts.visualAuditReferenceImageFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.visualAuditReferenceImageFile;
+    }
+  });
+  await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditActualImage,
+    assign: (value) => {
+      job.artifacts.visualAuditActualImageFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.visualAuditActualImageFile;
+    }
+  });
+  await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
+    assign: (value) => {
+      job.artifacts.visualAuditDiffImageFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.visualAuditDiffImageFile;
+    }
+  });
+  await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditReport,
+    assign: (value) => {
+      job.artifacts.visualAuditReportFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.visualAuditReportFile;
+    }
+  });
+  await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.validationSummaryFile,
     assign: (value) => {
       job.artifacts.validationSummaryFile = value;
@@ -146,6 +190,15 @@ export const syncPublicJobProjection = async ({
     job.generationDiff = generationDiff;
   } else {
     delete job.generationDiff;
+  }
+
+  const visualAudit = await artifactStore.getValue<WorkspaceVisualAuditResult>(
+    STAGE_ARTIFACT_KEYS.visualAuditResult
+  );
+  if (visualAudit) {
+    jobWithVisualAudit.visualAudit = visualAudit;
+  } else {
+    delete jobWithVisualAudit.visualAudit;
   }
 
   const gitPrStatus = await artifactStore.getValue<WorkspaceGitPrStatus>(STAGE_ARTIFACT_KEYS.gitPrStatus);

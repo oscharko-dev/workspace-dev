@@ -31,6 +31,34 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.5.0] - 2026-04-08
+
+### Public visual audit surface
+
+Added:
+
+- `WorkspaceVisualCaptureConfig` for optional screenshot-capture overrides.
+- `WorkspaceVisualDiffConfig` for optional pixel-diff tuning.
+- `WorkspaceVisualDiffRegion` for named comparison regions.
+- `WorkspaceVisualAuditRegionResult` for region-level visual audit results.
+- `WorkspaceVisualAuditStatus` for the runtime state of the optional visual audit flow.
+- `WorkspaceVisualAuditInput` as the opt-in submit-time visual audit payload.
+- `WorkspaceVisualAuditResult` for the public visual audit outcome exposed on job status/result payloads.
+- `WorkspaceJobInput.visualAudit?: WorkspaceVisualAuditInput` for opt-in visual auditing at submit time.
+- `WorkspaceJobRequestMetadata.visualAudit?: WorkspaceVisualAuditInput` so public job metadata retains the submitted visual audit settings.
+- `WorkspaceJobArtifacts.visualAuditReferenceImageFile?: string` for the copied reference image artifact path.
+- `WorkspaceJobArtifacts.visualAuditActualImageFile?: string` for the captured screenshot artifact path.
+- `WorkspaceJobArtifacts.visualAuditDiffImageFile?: string` for the generated diff image artifact path.
+- `WorkspaceJobArtifacts.visualAuditReportFile?: string` for the structured visual audit report artifact path.
+- `WorkspaceJobStatus.visualAudit?: WorkspaceVisualAuditResult` for the public visual audit outcome on job polling payloads.
+- `WorkspaceJobResult.visualAudit?: WorkspaceVisualAuditResult` for the same outcome on terminal job result payloads.
+
+Changed:
+
+- `CONTRACT_VERSION` from `3.4.0` to `3.5.0`.
+
+---
+
 ## [3.4.0] - 2026-04-02
 
 ### Public component mapping override rules

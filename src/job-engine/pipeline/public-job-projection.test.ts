@@ -43,7 +43,11 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
         storybookComponentsFile: path.join(jobDir, "stale-storybook-components.json"),
         figmaLibraryResolutionFile: path.join(jobDir, "stale-figma-library-resolution.json"),
         componentMatchReportFile: path.join(jobDir, "stale-component-match-report.json"),
-        validationSummaryFile: path.join(jobDir, "stale-validation-summary.json")
+        validationSummaryFile: path.join(jobDir, "stale-validation-summary.json"),
+        visualAuditReferenceImageFile: path.join(jobDir, "stale-visual-reference.png"),
+        visualAuditActualImageFile: path.join(jobDir, "stale-visual-actual.png"),
+        visualAuditDiffImageFile: path.join(jobDir, "stale-visual-diff.png"),
+        visualAuditReportFile: path.join(jobDir, "stale-visual-report.json")
       },
       preview: { enabled: false },
       queue: {
@@ -54,6 +58,10 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
       },
       generationDiff: {
         summary: "stale diff"
+      },
+      visualAudit: {
+        status: "failed",
+        warnings: ["stale visual audit"]
       },
       gitPr: {
         status: "skipped",
@@ -78,6 +86,10 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   const figmaLibraryResolutionFile = path.join(jobDir, "storybook", "public", "figma-library-resolution.json");
   const componentMatchReportFile = path.join(jobDir, "storybook", "public", "component-match-report.json");
   const validationSummaryFile = path.join(jobDir, "validation-summary.json");
+  const visualAuditReferenceImageFile = path.join(jobDir, "visual-audit", "reference.png");
+  const visualAuditActualImageFile = path.join(jobDir, "visual-audit", "actual.png");
+  const visualAuditDiffImageFile = path.join(jobDir, "visual-audit", "diff.png");
+  const visualAuditReportFile = path.join(jobDir, "visual-audit", "report.json");
 
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.figmaCleaned,
@@ -134,11 +146,45 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     stage: "validate.project",
     absolutePath: validationSummaryFile
   });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditReferenceImage,
+    stage: "validate.project",
+    absolutePath: visualAuditReferenceImageFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditActualImage,
+    stage: "validate.project",
+    absolutePath: visualAuditActualImageFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
+    stage: "validate.project",
+    absolutePath: visualAuditDiffImageFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.visualAuditReport,
+    stage: "validate.project",
+    absolutePath: visualAuditReportFile
+  });
   await artifactStore.setValue({
     key: STAGE_ARTIFACT_KEYS.generationDiff,
     stage: "codegen.generate",
     value: {
       summary: "fresh diff"
+    }
+  });
+  await artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.visualAuditResult,
+    stage: "validate.project",
+    value: {
+      status: "warn",
+      baselineImagePath: "fixtures/visual-baseline.png",
+      actualImagePath: visualAuditActualImageFile,
+      diffImagePath: visualAuditDiffImageFile,
+      reportPath: visualAuditReportFile,
+      diffPixelCount: 3,
+      totalPixels: 16,
+      warnings: ["visual differences detected"]
     }
   });
   await artifactStore.setValue({
@@ -168,7 +214,21 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   assert.equal(job.artifacts.figmaLibraryResolutionFile, figmaLibraryResolutionFile);
   assert.equal(job.artifacts.componentMatchReportFile, componentMatchReportFile);
   assert.equal(job.artifacts.validationSummaryFile, validationSummaryFile);
+  assert.equal(job.artifacts.visualAuditReferenceImageFile, visualAuditReferenceImageFile);
+  assert.equal(job.artifacts.visualAuditActualImageFile, visualAuditActualImageFile);
+  assert.equal(job.artifacts.visualAuditDiffImageFile, visualAuditDiffImageFile);
+  assert.equal(job.artifacts.visualAuditReportFile, visualAuditReportFile);
   assert.deepEqual(job.generationDiff, { summary: "fresh diff" });
+  assert.deepEqual(job.visualAudit, {
+    status: "warn",
+    baselineImagePath: "fixtures/visual-baseline.png",
+    actualImagePath: visualAuditActualImageFile,
+    diffImagePath: visualAuditDiffImageFile,
+    reportPath: visualAuditReportFile,
+    diffPixelCount: 3,
+    totalPixels: 16,
+    warnings: ["visual differences detected"]
+  });
   assert.deepEqual(job.gitPr, {
     status: "executed",
     branchName: "feature/public-projection",

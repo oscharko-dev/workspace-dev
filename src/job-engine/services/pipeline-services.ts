@@ -180,7 +180,15 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.componentMatchReport
         ],
         writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
-        optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
+        optionalWrites: [
+          STAGE_ARTIFACT_KEYS.generationDiff,
+          STAGE_ARTIFACT_KEYS.generationDiffFile,
+          STAGE_ARTIFACT_KEYS.visualAuditReferenceImage,
+          STAGE_ARTIFACT_KEYS.visualAuditActualImage,
+          STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
+          STAGE_ARTIFACT_KEYS.visualAuditReport,
+          STAGE_ARTIFACT_KEYS.visualAuditResult
+        ]
       }
     },
     {
@@ -282,7 +290,15 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.componentMatchReport
         ],
         writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
-        optionalWrites: [STAGE_ARTIFACT_KEYS.generationDiff, STAGE_ARTIFACT_KEYS.generationDiffFile]
+        optionalWrites: [
+          STAGE_ARTIFACT_KEYS.generationDiff,
+          STAGE_ARTIFACT_KEYS.generationDiffFile,
+          STAGE_ARTIFACT_KEYS.visualAuditReferenceImage,
+          STAGE_ARTIFACT_KEYS.visualAuditActualImage,
+          STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
+          STAGE_ARTIFACT_KEYS.visualAuditReport,
+          STAGE_ARTIFACT_KEYS.visualAuditResult
+        ]
       }
     },
     {

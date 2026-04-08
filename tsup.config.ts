@@ -18,7 +18,7 @@ export default defineConfig({
   },
   platform: "node",
   target: "node22",
-  external: ["typescript"],
+  external: ["typescript", "@playwright/test", "playwright", "playwright-core", "chromium-bidi"],
   sourcemap: true,
   clean: true,
   splitting: true,

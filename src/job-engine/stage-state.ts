@@ -184,6 +184,16 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   if (job.generationDiff) {
     status.generationDiff = { ...job.generationDiff };
   }
+  if (job.visualAudit) {
+    status.visualAudit = {
+      ...job.visualAudit,
+      ...(job.visualAudit.regions
+        ? {
+            regions: job.visualAudit.regions.map((region) => ({ ...region }))
+          }
+        : {})
+    };
+  }
   if (job.gitPr) {
     status.gitPr = { ...job.gitPr };
   }

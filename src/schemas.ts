@@ -26,7 +26,8 @@ import type {
   WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
   WorkspaceRegenerationOverrideEntry,
-  WorkspaceStatus
+  WorkspaceStatus,
+  WorkspaceVisualAuditInput
 } from "./contracts/index.js";
 import { validateComponentMappingRule } from "./component-mapping-rules.js";
 import { normalizeGenerationLocale } from "./generation-locale.js";
@@ -333,6 +334,296 @@ function parseOptionalComponentMappingsField({
   return parsedRules;
 }
 
+function parseOptionalVisualAuditField({
+  input,
+  key,
+  issues
+}: {
+  input: Record<string, unknown>;
+  key: "visualAudit";
+  issues: ValidationIssue[];
+}): WorkspaceVisualAuditInput | undefined {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!isRecord(value)) {
+    pushIssue(issues, [key], "visualAudit must be an object when provided.");
+    return undefined;
+  }
+
+  const allowedKeys = new Set(["baselineImagePath", "capture", "diff", "regions"]);
+  for (const candidateKey of Object.keys(value)) {
+    if (!allowedKeys.has(candidateKey)) {
+      pushIssue(issues, [key, candidateKey], `Unexpected property '${candidateKey}'.`);
+    }
+  }
+
+  const baselineImagePath = (() => {
+    const raw = value.baselineImagePath;
+    if (typeof raw !== "string" || raw.trim().length === 0) {
+      pushIssue(issues, [key, "baselineImagePath"], "baselineImagePath must be a non-empty string.");
+      return undefined;
+    }
+    return raw.trim();
+  })();
+
+  const capture = (() => {
+    const raw = value.capture;
+    if (raw === undefined) {
+      return undefined;
+    }
+    if (!isRecord(raw)) {
+      pushIssue(issues, [key, "capture"], "visualAudit.capture must be an object when provided.");
+      return undefined;
+    }
+
+    const allowedCaptureKeys = new Set([
+      "viewport",
+      "waitForNetworkIdle",
+      "waitForFonts",
+      "waitForAnimations",
+      "timeoutMs",
+      "fullPage"
+    ]);
+    for (const captureKey of Object.keys(raw)) {
+      if (!allowedCaptureKeys.has(captureKey)) {
+        pushIssue(issues, [key, "capture", captureKey], `Unexpected property '${captureKey}'.`);
+      }
+    }
+
+    const parseOptionalBoolean = (field: string): boolean | undefined => {
+      const candidate = raw[field];
+      if (candidate === undefined) {
+        return undefined;
+      }
+      if (typeof candidate !== "boolean") {
+        pushIssue(issues, [key, "capture", field], `${field} must be a boolean when provided.`);
+        return undefined;
+      }
+      return candidate;
+    };
+
+    const parseOptionalPositiveNumber = ({
+      field,
+      integer = false
+    }: {
+      field: string;
+      integer?: boolean;
+    }): number | undefined => {
+      const candidate = raw[field];
+      if (candidate === undefined) {
+        return undefined;
+      }
+      if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate <= 0) {
+        pushIssue(
+          issues,
+          [key, "capture", field],
+          `${field} must be a finite number greater than 0 when provided.`
+        );
+        return undefined;
+      }
+      if (integer && !Number.isInteger(candidate)) {
+        pushIssue(issues, [key, "capture", field], `${field} must be an integer when provided.`);
+        return undefined;
+      }
+      return candidate;
+    };
+
+    const viewport = (() => {
+      const viewportRaw = raw.viewport;
+      if (viewportRaw === undefined) {
+        return undefined;
+      }
+      if (!isRecord(viewportRaw)) {
+        pushIssue(issues, [key, "capture", "viewport"], "viewport must be an object when provided.");
+        return undefined;
+      }
+      const allowedViewportKeys = new Set(["width", "height", "deviceScaleFactor"]);
+      for (const viewportKey of Object.keys(viewportRaw)) {
+        if (!allowedViewportKeys.has(viewportKey)) {
+          pushIssue(issues, [key, "capture", "viewport", viewportKey], `Unexpected property '${viewportKey}'.`);
+        }
+      }
+
+      const parseViewportNumber = ({
+        field,
+        integer = false
+      }: {
+        field: "width" | "height" | "deviceScaleFactor";
+        integer?: boolean;
+      }): number | undefined => {
+        const candidate = viewportRaw[field];
+        if (candidate === undefined) {
+          return undefined;
+        }
+        if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate <= 0) {
+          pushIssue(
+            issues,
+            [key, "capture", "viewport", field],
+            `${field} must be a finite number greater than 0 when provided.`
+          );
+          return undefined;
+        }
+        if (integer && !Number.isInteger(candidate)) {
+          pushIssue(issues, [key, "capture", "viewport", field], `${field} must be an integer when provided.`);
+          return undefined;
+        }
+        return candidate;
+      };
+
+      const width = parseViewportNumber({ field: "width", integer: true });
+      const height = parseViewportNumber({ field: "height", integer: true });
+      const deviceScaleFactor = parseViewportNumber({ field: "deviceScaleFactor" });
+
+      if (width === undefined && height === undefined && deviceScaleFactor === undefined) {
+        return undefined;
+      }
+
+      return {
+        ...(width !== undefined ? { width } : {}),
+        ...(height !== undefined ? { height } : {}),
+        ...(deviceScaleFactor !== undefined ? { deviceScaleFactor } : {})
+      };
+    })();
+
+    const timeoutMs = parseOptionalPositiveNumber({ field: "timeoutMs", integer: true });
+    const waitForNetworkIdle = parseOptionalBoolean("waitForNetworkIdle");
+    const waitForFonts = parseOptionalBoolean("waitForFonts");
+    const waitForAnimations = parseOptionalBoolean("waitForAnimations");
+    const fullPage = parseOptionalBoolean("fullPage");
+
+    return {
+      ...(viewport ? { viewport } : {}),
+      ...(waitForNetworkIdle !== undefined ? { waitForNetworkIdle } : {}),
+      ...(waitForFonts !== undefined ? { waitForFonts } : {}),
+      ...(waitForAnimations !== undefined ? { waitForAnimations } : {}),
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(fullPage !== undefined ? { fullPage } : {})
+    };
+  })();
+
+  const diff = (() => {
+    const raw = value.diff;
+    if (raw === undefined) {
+      return undefined;
+    }
+    if (!isRecord(raw)) {
+      pushIssue(issues, [key, "diff"], "visualAudit.diff must be an object when provided.");
+      return undefined;
+    }
+    const allowedDiffKeys = new Set(["threshold", "includeAntialiasing", "alpha"]);
+    for (const diffKey of Object.keys(raw)) {
+      if (!allowedDiffKeys.has(diffKey)) {
+        pushIssue(issues, [key, "diff", diffKey], `Unexpected property '${diffKey}'.`);
+      }
+    }
+
+    const parseOptionalRatio = (field: "threshold" | "alpha"): number | undefined => {
+      const candidate = raw[field];
+      if (candidate === undefined) {
+        return undefined;
+      }
+      if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate < 0 || candidate > 1) {
+        pushIssue(issues, [key, "diff", field], `${field} must be a number between 0 and 1 when provided.`);
+        return undefined;
+      }
+      return candidate;
+    };
+
+    const includeAntialiasing = (() => {
+      const candidate = raw.includeAntialiasing;
+      if (candidate === undefined) {
+        return undefined;
+      }
+      if (typeof candidate !== "boolean") {
+        pushIssue(issues, [key, "diff", "includeAntialiasing"], "includeAntialiasing must be a boolean when provided.");
+        return undefined;
+      }
+      return candidate;
+    })();
+
+    const threshold = parseOptionalRatio("threshold");
+    const alpha = parseOptionalRatio("alpha");
+
+    return {
+      ...(threshold !== undefined ? { threshold } : {}),
+      ...(includeAntialiasing !== undefined ? { includeAntialiasing } : {}),
+      ...(alpha !== undefined ? { alpha } : {})
+    };
+  })();
+
+  const regions = (() => {
+    const raw = value.regions;
+    if (raw === undefined) {
+      return undefined;
+    }
+    if (!Array.isArray(raw)) {
+      pushIssue(issues, [key, "regions"], "visualAudit.regions must be an array when provided.");
+      return undefined;
+    }
+
+    return raw.flatMap((entry, index) => {
+      const regionPath: PathSegment[] = [key, "regions", index];
+      if (!isRecord(entry)) {
+        pushIssue(issues, regionPath, "Each visualAudit region must be an object.");
+        return [];
+      }
+
+      const allowedRegionKeys = new Set(["name", "x", "y", "width", "height"]);
+      for (const regionKey of Object.keys(entry)) {
+        if (!allowedRegionKeys.has(regionKey)) {
+          pushIssue(issues, [...regionPath, regionKey], `Unexpected property '${regionKey}'.`);
+        }
+      }
+
+      const name = typeof entry.name === "string" && entry.name.trim().length > 0 ? entry.name.trim() : undefined;
+      if (!name) {
+        pushIssue(issues, [...regionPath, "name"], "name must be a non-empty string.");
+      }
+
+      const parseInteger = (field: "x" | "y" | "width" | "height"): number | undefined => {
+        const candidate = entry[field];
+        if (typeof candidate !== "number" || !Number.isFinite(candidate) || !Number.isInteger(candidate)) {
+          pushIssue(issues, [...regionPath, field], `${field} must be an integer.`);
+          return undefined;
+        }
+        if ((field === "width" || field === "height") && candidate <= 0) {
+          pushIssue(issues, [...regionPath, field], `${field} must be greater than 0.`);
+          return undefined;
+        }
+        if ((field === "x" || field === "y") && candidate < 0) {
+          pushIssue(issues, [...regionPath, field], `${field} must be greater than or equal to 0.`);
+          return undefined;
+        }
+        return candidate;
+      };
+
+      const x = parseInteger("x");
+      const y = parseInteger("y");
+      const width = parseInteger("width");
+      const height = parseInteger("height");
+
+      if (!name || x === undefined || y === undefined || width === undefined || height === undefined) {
+        return [];
+      }
+
+      return [{ name, x, y, width, height }];
+    });
+  })();
+
+  if (!baselineImagePath) {
+    return undefined;
+  }
+
+  return {
+    baselineImagePath,
+    ...(capture && Object.keys(capture).length > 0 ? { capture } : {}),
+    ...(diff && Object.keys(diff).length > 0 ? { diff } : {}),
+    ...(regions ? { regions } : {})
+  };
+}
+
 function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput> {
   const issues: ValidationIssue[] = [];
 
@@ -358,7 +649,8 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "targetPath",
     "brandTheme",
     "generationLocale",
-    "formHandlingMode"
+    "formHandlingMode",
+    "visualAudit"
   ]);
 
   for (const key of Object.keys(input)) {
@@ -406,6 +698,11 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   const componentMappings = parseOptionalComponentMappingsField({
     input,
     key: "componentMappings",
+    issues
+  });
+  const visualAudit = parseOptionalVisualAuditField({
+    input,
+    key: "visualAudit",
     issues
   });
   const repoUrl = parseStringField({
@@ -595,6 +892,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
   if (componentMappings !== undefined) {
     data.componentMappings = componentMappings;
+  }
+  if (visualAudit !== undefined) {
+    data.visualAudit = visualAudit;
   }
   if (repoUrl !== undefined) {
     data.repoUrl = repoUrl;
