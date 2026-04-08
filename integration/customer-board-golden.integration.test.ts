@@ -392,6 +392,62 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     "Generated test must include the accessibility violation test case."
   );
 
+  // #816 — form context validation-rule inference regression assertions.
+  // Verify that the generated form context matches the expected validation structure
+  // produced by the merged validation-rule inference pipeline (field.validationRules + classifyValidationEvidence).
+  const formContextFile = firstOutputs.get(getExpectedOutput(manifest, "src/context/SeitenContentFormContext.tsx"));
+  assert.ok(formContextFile, "Generated SeitenContentFormContext.tsx must exist in fixture outputs.");
+
+  // All 7 fields must be non-required (no variant evidence triggers required detection).
+  assert.equal(
+    (formContextFile?.match(/"required":\s*false/g) ?? []).length,
+    7,
+    "All 7 fieldSchemaSpecs entries must have required: false."
+  );
+  assert.equal(
+    formContextFile?.includes('"required": true'),
+    false,
+    "No fieldSchemaSpecs entry must be required: true — no error-frame evidence triggers required detection."
+  );
+
+  // No validationRules key in fieldSchemaSpecs (no evidence-inferred rules for this fixture).
+  assert.equal(
+    formContextFile?.includes('"validationRules":'),
+    false,
+    "fieldSchemaSpecs must not contain validationRules — the fixture has no error-frame evidence to infer rules."
+  );
+
+  // defaultValues must contain the expected pre-populated values.
+  assert.equal(formContextFile?.includes('"Person"'), true, "defaultValues must contain the Person select default.");
+  assert.equal(formContextFile?.includes('"EUR"'), true, "defaultValues must contain the EUR currency default.");
+  assert.equal(formContextFile?.includes('"10000"'), true, "defaultValues must contain the 10000 amount default.");
+
+  // selectOptions must be present for the 3 select fields.
+  assert.equal(
+    (formContextFile?.match(/"selectOptions":\s*\[/g) ?? []).length >= 3,
+    true,
+    "At least 3 fieldSchemaSpecs entries must have non-empty selectOptions arrays."
+  );
+
+  // formSchema must register all 7 fields via z.object.
+  assert.equal(
+    formContextFile?.includes("z.object("),
+    true,
+    "Generated form context must define a Zod formSchema using z.object."
+  );
+
+  // The createFieldSchema function must contain the rule-inference priority logic.
+  assert.equal(
+    formContextFile?.includes("spec.validationRules"),
+    true,
+    "createFieldSchema must reference spec.validationRules for rule-inference priority."
+  );
+  assert.equal(
+    formContextFile?.includes("spec.required"),
+    true,
+    "createFieldSchema must reference spec.required for the fallback required check."
+  );
+
   const issue783Families = new Map(
     (componentMatchReport.entries ?? [])
       .filter((entry) =>
