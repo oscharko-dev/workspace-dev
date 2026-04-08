@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { WorkspaceJobStageName } from "../../contracts/index.js";
 import type { StageArtifactKey } from "./artifact-keys.js";
+import { SchemaValidationError } from "./pipeline-schemas.js";
 
 export interface StageArtifactReference {
   key: StageArtifactKey;
@@ -131,13 +132,22 @@ export class StageArtifactStore {
     return resolved;
   }
 
-  async getValue<T>(key: StageArtifactKey): Promise<T | undefined> {
+  async getValue<T>(key: StageArtifactKey, validator?: (value: unknown) => value is T): Promise<T | undefined> {
     const reference = await this.getReference(key);
-    return reference?.kind === "value" ? (reference.value as T) : undefined;
+    if (reference?.kind !== "value") {
+      return undefined;
+    }
+    if (validator && !validator(reference.value)) {
+      throw new SchemaValidationError({
+        schema: key,
+        message: `Artifact value '${key}' failed schema validation: stored value does not match expected type.`
+      });
+    }
+    return reference.value as T;
   }
 
-  async requireValue<T>(key: StageArtifactKey): Promise<T> {
-    const resolved = await this.getValue<T>(key);
+  async requireValue<T>(key: StageArtifactKey, validator?: (value: unknown) => value is T): Promise<T> {
+    const resolved = await this.getValue<T>(key, validator);
     if (resolved === undefined) {
       throw new Error(`Required stage artifact value '${key}' is missing.`);
     }

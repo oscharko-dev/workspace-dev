@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { StageArtifactStore } from "./artifact-store.js";
+import { SchemaValidationError } from "./pipeline-schemas.js";
 
 test("StageArtifactStore persists references across instances", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-store-"));
@@ -78,4 +79,55 @@ test("StageArtifactStore sanitizes reference filenames against key traversal pat
   const files = await readdir(path.join(root, ".stage-store", "refs"));
   assert.equal(files.some((name) => name.includes("..")), false);
   assert.equal(files.length, 1);
+});
+
+test("StageArtifactStore getValue with passing validator returns value", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-store-validator-"));
+  const store = new StageArtifactStore({ jobDir: root });
+  await store.setValue({ key: "status", stage: "ir.derive", value: { ok: true } });
+  const validator = (v: unknown): v is { ok: boolean } =>
+    typeof v === "object" && v !== null && "ok" in v && typeof (v as Record<string, unknown>).ok === "boolean";
+  const result = await store.getValue<{ ok: boolean }>("status", validator);
+  assert.deepEqual(result, { ok: true });
+});
+
+test("StageArtifactStore getValue with failing validator throws SchemaValidationError", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-store-validator-fail-"));
+  const store = new StageArtifactStore({ jobDir: root });
+  await store.setValue({ key: "status", stage: "ir.derive", value: "not-an-object" });
+  const validator = (v: unknown): v is { ok: boolean } =>
+    typeof v === "object" && v !== null && "ok" in v;
+  await assert.rejects(
+    async () => store.getValue<{ ok: boolean }>("status", validator),
+    (error: unknown) => {
+      assert.ok(error instanceof SchemaValidationError);
+      assert.ok(error.message.includes("failed schema validation"));
+      return true;
+    }
+  );
+});
+
+test("StageArtifactStore requireValue with passing validator returns value", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-store-require-validator-"));
+  const store = new StageArtifactStore({ jobDir: root });
+  await store.setValue({ key: "meta", stage: "codegen.generate", value: { ok: true } });
+  const validator = (v: unknown): v is { ok: boolean } =>
+    typeof v === "object" && v !== null && "ok" in v && typeof (v as Record<string, unknown>).ok === "boolean";
+  const result = await store.requireValue<{ ok: boolean }>("meta", validator);
+  assert.deepEqual(result, { ok: true });
+});
+
+test("StageArtifactStore requireValue with failing validator throws SchemaValidationError", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-stage-store-require-validator-fail-"));
+  const store = new StageArtifactStore({ jobDir: root });
+  await store.setValue({ key: "meta", stage: "codegen.generate", value: 42 });
+  const validator = (v: unknown): v is { ok: boolean } =>
+    typeof v === "object" && v !== null && "ok" in v;
+  await assert.rejects(
+    async () => store.requireValue<{ ok: boolean }>("meta", validator),
+    (error: unknown) => {
+      assert.ok(error instanceof SchemaValidationError);
+      return true;
+    }
+  );
 });

@@ -17,6 +17,7 @@ import type { FigmaMcpEnrichment } from "../../parity/types.js";
 import type { StageRuntimeContext } from "../pipeline/context.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { isDesignIRShape, isFigmaFileResponseShape, validatedJsonParse } from "../pipeline/pipeline-schemas.js";
 import {
   SCREEN_REJECTION_REASON_MESSAGE,
   SCREEN_REJECTION_REASON_SUGGESTION,
@@ -367,7 +368,12 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
 
       let baseIr: DesignIR;
       try {
-        baseIr = JSON.parse(rawContent) as DesignIR;
+        baseIr = validatedJsonParse({
+          raw: rawContent,
+          guard: isDesignIRShape,
+          schema: "DesignIR",
+          filePath: sourceIrPath
+        });
       } catch {
         throw createPipelineError({
           code: "E_REGEN_SOURCE_IR_PARSE",
@@ -443,7 +449,12 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
 
     let cleanedFile: FigmaFileResponse;
     try {
-      cleanedFile = JSON.parse(await readFile(figmaCleanedPath, "utf8")) as FigmaFileResponse;
+      cleanedFile = validatedJsonParse({
+        raw: await readFile(figmaCleanedPath, "utf8"),
+        guard: isFigmaFileResponseShape,
+        schema: "FigmaFileResponse",
+        filePath: figmaCleanedPath
+      });
     } catch (error) {
       throw createPipelineError({
         code: "E_FIGMA_PARSE",
