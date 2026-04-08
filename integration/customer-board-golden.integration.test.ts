@@ -108,7 +108,7 @@ test("customer-board golden offline fixture reproduces committed derived artifac
       lint?: { attempt?: number; outputCaptureKey?: string; status?: string };
       build?: { attempt?: number; outputCaptureKey?: string; status?: string };
       typecheck?: { attempt?: number; outputCaptureKey?: string; status?: string };
-      test?: { args?: string[]; attempt?: number; outputCaptureKey?: string; status?: string };
+      test?: { args?: string[]; attempt?: number; command?: string; outputCaptureKey?: string; status?: string; timedOut?: boolean };
       status?: string;
     };
     storybook?: {
@@ -278,14 +278,18 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     "Expected uiA11y.a11yViolationCount to be a number"
   );
 
-  // #784 — generatedApp.test gate: the offline fixture runs with enableUnitTestValidation=false
-  // (running generated unit tests would require the generated project's full test bootstrap).
-  // Assert the gate is absent so any accidental activation or schema change is caught.
+  // #815 — generatedApp.test gate: the offline fixture runs with enableUnitTestValidation=true
+  // and unitTestIgnoreFailure=true. The generated project's tests are executed by the validation
+  // pipeline; results are recorded regardless of pass/fail to prove the test bootstrap ran.
+  assert.ok(validationSummary.generatedApp?.test, "validation-summary.generatedApp.test must be present");
   assert.equal(
-    validationSummary.generatedApp?.test,
-    undefined,
-    "validation-summary.generatedApp.test must be undefined when enableUnitTestValidation is false"
+    typeof validationSummary.generatedApp?.test?.status === "string",
+    true,
+    "generatedApp.test.status must be a string"
   );
+  assert.equal(validationSummary.generatedApp?.test?.command, "pnpm", "generatedApp.test.command must be 'pnpm'");
+  assert.deepEqual(validationSummary.generatedApp?.test?.args, ["run", "test"], "generatedApp.test.args must be ['run', 'test']");
+  assert.equal(validationSummary.generatedApp?.test?.timedOut, false, "generatedApp.test must not have timed out");
 
   const resolvedComponentNames = new Set(
     validationSummary.style?.diagnostics?.componentMatchReport?.validatedComponentNames ?? []

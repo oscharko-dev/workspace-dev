@@ -38,6 +38,10 @@ export interface ValidationCommandResult {
   outputCaptureKey?: string;
 }
 
+export interface ValidationTestResult extends Omit<ValidationCommandResult, "status"> {
+  status: "passed" | "failed";
+}
+
 export interface ValidationLintAutofixResult extends Omit<ValidationCommandResult, "status"> {
   status: "completed" | "failed_ignored";
   changedFiles: string[];
@@ -56,7 +60,7 @@ export interface ProjectValidationResult {
   lint: ValidationCommandResult;
   typecheck: ValidationCommandResult;
   build: ValidationCommandResult;
-  test?: ValidationCommandResult;
+  test?: ValidationTestResult;
   validateUi?: ValidationCommandResult;
   perfAssert?: ValidationCommandResult;
 }
@@ -465,6 +469,7 @@ export const runProjectValidationWithDeps = async ({
   enablePerfValidation = false,
   enableUiValidation = false,
   enableUnitTestValidation = false,
+  unitTestIgnoreFailure = false,
   commandTimeoutMs = 15 * 60_000,
   commandStdoutMaxBytes = 1_048_576,
   commandStderrMaxBytes = 1_048_576,
@@ -483,6 +488,7 @@ export const runProjectValidationWithDeps = async ({
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
+  unitTestIgnoreFailure?: boolean;
   commandTimeoutMs?: number;
   commandStdoutMaxBytes?: number;
   commandStderrMaxBytes?: number;
@@ -541,7 +547,7 @@ export const runProjectValidationWithDeps = async ({
   attemptCommands.push({ name: "typecheck", args: ["typecheck"], timeoutMs: commandTimeoutMs });
   attemptCommands.push({ name: "build", args: ["build"], timeoutMs: commandTimeoutMs });
   if (enableUnitTestValidation) {
-    attemptCommands.push({ name: "test", args: ["run", "test"], timeoutMs: commandTimeoutMs });
+    attemptCommands.push({ name: "test", args: ["run", "test"], timeoutMs: commandTimeoutMs, ...(unitTestIgnoreFailure ? { ignoreFailure: true } : {}) });
   }
 
   if (enableUiValidation) {
@@ -776,6 +782,17 @@ export const runProjectValidationWithDeps = async ({
           }
         }
 
+        if (!result.success && command.name === "test" && command.ignoreFailure) {
+          validationResult.test = {
+            status: "failed",
+            command: "pnpm",
+            args: command.args,
+            attempt,
+            timedOut: result.timedOut === true,
+            ...(jobDir ? { outputCaptureKey: `validate.project.attempt-${attempt}.${command.name}` } : {})
+          };
+        }
+
         if (result.success || command.ignoreFailure) {
           continue;
         }
@@ -868,6 +885,7 @@ export const runProjectValidation = async ({
   enablePerfValidation = false,
   enableUiValidation = false,
   enableUnitTestValidation = false,
+  unitTestIgnoreFailure = false,
   commandTimeoutMs = 15 * 60_000,
   commandStdoutMaxBytes = 1_048_576,
   commandStderrMaxBytes = 1_048_576,
@@ -885,6 +903,7 @@ export const runProjectValidation = async ({
   enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
+  unitTestIgnoreFailure?: boolean;
   commandTimeoutMs?: number;
   commandStdoutMaxBytes?: number;
   commandStderrMaxBytes?: number;
@@ -903,6 +922,7 @@ export const runProjectValidation = async ({
     enablePerfValidation,
     enableUiValidation,
     enableUnitTestValidation,
+    unitTestIgnoreFailure,
     commandTimeoutMs,
     commandStdoutMaxBytes,
     commandStderrMaxBytes,

@@ -1491,6 +1491,7 @@ export const createValidateProjectService = ({
           enablePerfValidation: isPerfValidationEnabledFn(),
           enableUiValidation: context.runtime.enableUiValidation,
           enableUnitTestValidation: context.runtime.enableUnitTestValidation,
+          unitTestIgnoreFailure: context.runtime.unitTestIgnoreFailure,
           commandTimeoutMs: context.runtime.commandTimeoutMs,
           commandStdoutMaxBytes: context.runtime.commandStdoutMaxBytes,
           commandStderrMaxBytes: context.runtime.commandStderrMaxBytes,
