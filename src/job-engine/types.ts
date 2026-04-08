@@ -140,6 +140,7 @@ export interface JobEngineRuntime {
   pipelineDiagnosticLimits: PipelineDiagnosticLimits;
   enableUiValidation: boolean;
   enableUnitTestValidation: boolean;
+  unitTestIgnoreFailure: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
   maxConcurrentJobs: number;

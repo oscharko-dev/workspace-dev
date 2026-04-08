@@ -136,6 +136,8 @@ export interface WorkspaceStartOptions {
   enableUiValidation?: boolean;
   /** Run generated-project unit tests in validate.project. Default: false */
   enableUnitTestValidation?: boolean;
+  /** Make generated-project unit test failures non-fatal. When true, test results are recorded but failures do not throw. Default: false */
+  unitTestIgnoreFailure?: boolean;
   /** Prefer offline package resolution during generated-project install. Default: true */
   installPreferOffline?: boolean;
   /** Skip package installation in validate.project; requires existing node_modules. Default: false */

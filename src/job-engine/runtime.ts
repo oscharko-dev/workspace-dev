@@ -136,6 +136,7 @@ export const resolveRuntimeSettings = ({
   pipelineDiagnosticDetailsMaxDepth,
   enableUiValidation,
   enableUnitTestValidation,
+  unitTestIgnoreFailure,
   installPreferOffline,
   skipInstall,
   maxConcurrentJobs,
@@ -180,6 +181,7 @@ export const resolveRuntimeSettings = ({
   pipelineDiagnosticDetailsMaxDepth?: number;
   enableUiValidation?: boolean;
   enableUnitTestValidation?: boolean;
+  unitTestIgnoreFailure?: boolean;
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   maxConcurrentJobs?: number;
@@ -336,6 +338,7 @@ export const resolveRuntimeSettings = ({
       typeof enableUnitTestValidation === "boolean"
         ? enableUnitTestValidation
         : DEFAULT_ENABLE_UNIT_TEST_VALIDATION,
+    unitTestIgnoreFailure: typeof unitTestIgnoreFailure === "boolean" ? unitTestIgnoreFailure : false,
     installPreferOffline:
       typeof installPreferOffline === "boolean" ? installPreferOffline : DEFAULT_INSTALL_PREFER_OFFLINE,
     skipInstall: typeof skipInstall === "boolean" ? skipInstall : DEFAULT_SKIP_INSTALL,

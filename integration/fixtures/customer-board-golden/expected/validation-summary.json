@@ -56,6 +56,17 @@
       "timedOut": false
     },
     "status": "ok",
+    "test": {
+      "args": [
+        "run",
+        "test"
+      ],
+      "attempt": 1,
+      "command": "pnpm",
+      "outputCaptureKey": "validate.project.attempt-1.test",
+      "status": "failed",
+      "timedOut": false
+    },
     "typecheck": {
       "args": [
         "typecheck"
