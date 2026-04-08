@@ -149,6 +149,16 @@ const toRehydratedJobRecord = ({
   if (snapshot.generationDiff) {
     job.generationDiff = { ...snapshot.generationDiff };
   }
+  if (snapshot.visualAudit) {
+    job.visualAudit = {
+      ...snapshot.visualAudit,
+      ...(snapshot.visualAudit.regions
+        ? {
+            regions: snapshot.visualAudit.regions.map((region) => ({ ...region }))
+          }
+        : {})
+    };
+  }
   if (snapshot.gitPr) {
     job.gitPr = { ...snapshot.gitPr };
   }

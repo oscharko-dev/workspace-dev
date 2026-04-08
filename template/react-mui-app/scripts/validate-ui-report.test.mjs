@@ -5,7 +5,11 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const SCRIPT_PATH = fileURLToPath(new URL("./validate-ui-report.mjs", import.meta.url));
+const MODULE_DIR =
+  typeof import.meta.dirname === "string"
+    ? import.meta.dirname
+    : path.dirname(fileURLToPath(import.meta.url));
+const SCRIPT_PATH = path.join(MODULE_DIR, "validate-ui-report.mjs");
 
 const createWorkspace = async (files) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "validate-ui-report-"));

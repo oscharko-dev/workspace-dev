@@ -13,7 +13,14 @@ const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\
 const EXPECTED_CONTRACT_RUNTIME_EXPORTS = ["CONTRACT_VERSION"].sort();
 
 const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
+  "DEFAULT_CAPTURE_CONFIG",
+  "DEFAULT_DIFF_CONFIG",
+  "DEFAULT_VIEWPORT",
   "CONTRACT_VERSION",
+  "captureFromProject",
+  "captureScreenshot",
+  "comparePngBuffers",
+  "comparePngFiles",
   "createProjectInstance",
   "createWorkspaceServer",
   "enforceModeLock",
@@ -21,10 +28,13 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "getWorkspaceDefaults",
   "listProjectInstances",
   "registerIsolationProcessCleanup",
+  "resolveCaptureConfig",
   "removeAllInstances",
   "removeProjectInstance",
   "unregisterIsolationProcessCleanup",
-  "validateModeLock"
+  "validateModeLock",
+  "waitWithTimeout",
+  "writeDiffImage"
 ].sort();
 
 test("contract surface: contracts runtime exports match snapshot", () => {

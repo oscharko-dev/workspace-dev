@@ -1087,5 +1087,8 @@
     "summary": "UI gate evaluated 26 source file(s): visual=0, a11y=0, interaction=0",
     "visualDiffCount": 0
   },
-  "validatedAt": "<timestamp>"
+  "validatedAt": "<timestamp>",
+  "visualAudit": {
+    "status": "not_requested"
+  }
 }

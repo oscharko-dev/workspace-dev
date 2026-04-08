@@ -27,7 +27,8 @@ import type {
   WorkspaceRemapSuggestInput,
   WorkspaceRemapSuggestResult,
   WorkspaceStaleDraftCheckResult,
-  WorkspaceSubmitAccepted
+  WorkspaceSubmitAccepted,
+  WorkspaceVisualAuditResult
 } from "../contracts/index.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
 import type { WorkspaceRuntimeLogger } from "../logging.js";
@@ -93,6 +94,7 @@ export interface JobRecord {
   lineage?: WorkspaceJobLineage;
   cancellation?: WorkspaceJobCancellation;
   generationDiff?: WorkspaceGenerationDiffReport;
+  visualAudit?: WorkspaceVisualAuditResult;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }

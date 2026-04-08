@@ -95,6 +95,38 @@ test("comparePngBuffers respects threshold configuration", () => {
   assert.ok(strictResult.diffPixelCount > 0);
 });
 
+test("comparePngBuffers rejects invalid diff config values", () => {
+  const red = createSolidPng(20, 20, 255, 0, 0);
+
+  assert.throws(
+    () =>
+      comparePngBuffers({
+        referenceBuffer: red,
+        testBuffer: red,
+        config: { threshold: -0.1 },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /threshold/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      comparePngBuffers({
+        referenceBuffer: red,
+        testBuffer: red,
+        config: { alpha: 1.1 },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /alpha/i);
+      return true;
+    },
+  );
+});
+
 test("comparePngBuffers throws for dimension mismatch", () => {
   const small = createSolidPng(100, 100, 255, 0, 0);
   const large = createSolidPng(200, 200, 255, 0, 0);
@@ -105,6 +137,38 @@ test("comparePngBuffers throws for dimension mismatch", () => {
       assert.ok(error instanceof Error);
       assert.ok(error.message.includes("100x100"));
       assert.ok(error.message.includes("200x200"));
+      return true;
+    },
+  );
+});
+
+test("comparePngBuffers validates regions before diffing", () => {
+  const red = createSolidPng(10, 10, 255, 0, 0);
+
+  assert.throws(
+    () =>
+      comparePngBuffers({
+        referenceBuffer: red,
+        testBuffer: red,
+        regions: [{ name: "zero", x: 0, y: 0, width: 0, height: 5 }],
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /zero/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      comparePngBuffers({
+        referenceBuffer: red,
+        testBuffer: red,
+        regions: [{ name: "oob", x: 9, y: 9, width: 2, height: 2 }],
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /out of bounds/i);
       return true;
     },
   );
@@ -136,6 +200,32 @@ test("comparePngBuffers calculates region deviations correctly", () => {
 
   assert.ok(rightRegion.deviationPercent > 90);
   assert.ok(rightRegion.diffPixelCount > 0);
+});
+
+test("comparePngBuffers emits deterministic default regions when omitted", () => {
+  const red = createSolidPng(90, 100, 255, 0, 0);
+  const result = comparePngBuffers({
+    referenceBuffer: red,
+    testBuffer: red,
+  });
+
+  assert.equal(result.regions.length, 5);
+  assert.deepEqual(
+    result.regions.map(({ name, x, y, width, height }) => ({
+      name,
+      x,
+      y,
+      width,
+      height,
+    })),
+    [
+      { name: "header", x: 0, y: 0, width: 90, height: 20 },
+      { name: "content-left", x: 0, y: 20, width: 30, height: 60 },
+      { name: "content-center", x: 30, y: 20, width: 30, height: 60 },
+      { name: "content-right", x: 60, y: 20, width: 30, height: 60 },
+      { name: "footer", x: 0, y: 80, width: 90, height: 20 },
+    ],
+  );
 });
 
 test("comparePngBuffers produces valid diff image buffer", () => {
@@ -171,7 +261,7 @@ test("comparePngFiles reads files from disk and compares", async () => {
   assert.equal(result.height, 40);
 });
 
-test("writeDiffImage writes PNG to disk", async () => {
+test("writeDiffImage creates parent directories and writes PNG to disk", async () => {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), "visual-diff-write-"));
   const red = createSolidPng(30, 30, 255, 0, 0);
   const blue = createSolidPng(30, 30, 0, 0, 255);
@@ -181,7 +271,7 @@ test("writeDiffImage writes PNG to disk", async () => {
     testBuffer: blue,
   });
 
-  const outputPath = path.join(tmpDir, "diff.png");
+  const outputPath = path.join(tmpDir, "nested", "diff.png");
   await writeDiffImage({ diffImageBuffer: result.diffImageBuffer, outputPath });
 
   const fileContents = await readFile(outputPath);

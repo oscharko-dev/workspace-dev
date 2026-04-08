@@ -67,9 +67,11 @@ export interface PipelineExecutionContext {
 export interface StageRuntimeContext {
   readonly mode: PipelineExecutionMode;
   readonly jobId: string;
+  readonly job: JobRecord;
   readonly runtime: Readonly<JobEngineRuntime>;
   readonly paths: Readonly<PipelineResolvedPaths>;
   readonly resolvedPaths: Readonly<JobEnginePaths>;
+  readonly resolvedWorkspaceRoot: string;
   readonly artifactStore: StageArtifactStore;
   readonly abortSignal: AbortSignal;
   readonly fetchWithCancellation: typeof fetch;
@@ -107,9 +109,11 @@ export const createStageRuntimeContext = ({
   return {
     mode: executionContext.mode,
     jobId: executionContext.job.jobId,
+    job: executionContext.job,
     runtime: executionContext.runtime,
     paths: executionContext.paths,
     resolvedPaths: executionContext.resolvedPaths,
+    resolvedWorkspaceRoot: executionContext.resolvedWorkspaceRoot,
     artifactStore: executionContext.artifactStore,
     abortSignal: executionContext.jobAbortController.signal,
     fetchWithCancellation: executionContext.fetchWithCancellation,

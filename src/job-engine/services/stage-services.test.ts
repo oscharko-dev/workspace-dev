@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { PNG } from "pngjs";
 import type {
   WorkspaceBrandTheme,
   WorkspaceFigmaSourceMode,
@@ -543,6 +544,25 @@ const createSuccessfulValidationResult = ({
         }
       : {})
   };
+};
+
+const createSolidPngBuffer = ({
+  width = 4,
+  height = 4,
+  rgba = [255, 255, 255, 255]
+}: {
+  width?: number;
+  height?: number;
+  rgba?: [number, number, number, number];
+} = {}): Buffer => {
+  const png = new PNG({ width, height });
+  for (let index = 0; index < png.data.length; index += 4) {
+    png.data[index] = rgba[0];
+    png.data[index + 1] = rgba[1];
+    png.data[index + 2] = rgba[2];
+    png.data[index + 3] = rgba[3];
+  }
+  return PNG.sync.write(png);
 };
 
 const createCustomerProfileForStageServices = () => {
@@ -4867,14 +4887,224 @@ test("ValidateProjectService reads generated.project and writes validation.summa
   const summary = await executionContext.artifactStore.getValue<{
     status: string;
     generatedApp?: { status?: string; lint?: { args?: string[] } };
+    visualAudit?: { status?: string };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
   assert.equal(summary?.generatedApp?.status, "ok");
+  assert.equal(summary?.visualAudit?.status, "not_requested");
   assert.deepEqual(summary?.generatedApp?.lint?.args, ["lint"]);
   assert.equal(
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
     path.join(executionContext.paths.jobDir, "validation-summary.json")
   );
+  assert.deepEqual(executionContext.job.visualAudit, { status: "not_requested" });
+});
+
+test("ValidateProjectService runs visual audit against the built dist bundle and persists visual artifacts", async () => {
+  const baselineRelativePath = path.join("fixtures", "visual-baseline.png");
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    requestOverrides: {
+      visualAudit: {
+        baselineImagePath: baselineRelativePath,
+        capture: {
+          viewport: {
+            width: 4,
+            height: 4,
+            deviceScaleFactor: 1
+          }
+        },
+        diff: {
+          threshold: 0.2
+        },
+        regions: [
+          {
+            name: "full",
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4
+          }
+        ]
+      }
+    }
+  });
+  const baselineAbsolutePath = path.join(executionContext.resolvedWorkspaceRoot, baselineRelativePath);
+  const baselineBuffer = createSolidPngBuffer({
+    rgba: [255, 255, 255, 255]
+  });
+  const actualBuffer = createSolidPngBuffer({
+    rgba: [240, 240, 240, 255]
+  });
+  const diffBuffer = createSolidPngBuffer({
+    rgba: [255, 0, 0, 255]
+  });
+  await mkdir(path.dirname(baselineAbsolutePath), { recursive: true });
+  await writeFile(baselineAbsolutePath, baselineBuffer);
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-visual-audit"
+    } satisfies GenerationDiffContext
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>visual</body></html>\n", "utf8");
+
+  let capturedProjectDir: string | undefined;
+  let comparedThreshold: number | undefined;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult(),
+    captureFromProjectFn: async (input) => {
+      capturedProjectDir = input.projectDir;
+      return {
+        screenshotBuffer: actualBuffer,
+        width: 4,
+        height: 4,
+        viewport: {
+          width: 4,
+          height: 4,
+          deviceScaleFactor: 1
+        }
+      };
+    },
+    comparePngBuffersFn: (input) => {
+      comparedThreshold = input.config?.threshold;
+      assert.deepEqual(input.referenceBuffer, baselineBuffer);
+      assert.deepEqual(input.testBuffer, actualBuffer);
+      assert.deepEqual(input.regions, [
+        {
+          name: "full",
+          x: 0,
+          y: 0,
+          width: 4,
+          height: 4
+        }
+      ]);
+      return {
+        diffImageBuffer: diffBuffer,
+        similarityScore: 87.5,
+        diffPixelCount: 2,
+        totalPixels: 16,
+        regions: [
+          {
+            name: "full",
+            x: 0,
+            y: 0,
+            width: 4,
+            height: 4,
+            diffPixelCount: 2,
+            totalPixels: 16,
+            deviationPercent: 12.5
+          }
+        ],
+        width: 4,
+        height: 4
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const referenceImagePath = path.join(executionContext.paths.jobDir, "visual-audit", "reference.png");
+  const actualImagePath = path.join(executionContext.paths.jobDir, "visual-audit", "actual.png");
+  const diffImagePath = path.join(executionContext.paths.jobDir, "visual-audit", "diff.png");
+  const reportPath = path.join(executionContext.paths.jobDir, "visual-audit", "report.json");
+  assert.equal(capturedProjectDir, distDir);
+  assert.equal(comparedThreshold, 0.2);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualAuditReferenceImage),
+    referenceImagePath
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualAuditActualImage),
+    actualImagePath
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualAuditDiffImage),
+    diffImagePath
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualAuditReport),
+    reportPath
+  );
+  const visualAudit = await executionContext.artifactStore.getValue<{
+    status?: string;
+    baselineImagePath?: string;
+    reportPath?: string;
+    diffPixelCount?: number;
+    warnings?: string[];
+  }>(STAGE_ARTIFACT_KEYS.visualAuditResult);
+  assert.equal(visualAudit?.status, "warn");
+  assert.equal(visualAudit?.baselineImagePath, baselineRelativePath);
+  assert.equal(visualAudit?.reportPath, reportPath);
+  assert.equal(visualAudit?.diffPixelCount, 2);
+  assert.match(visualAudit?.warnings?.[0] ?? "", /differing pixel/);
+  const summary = await executionContext.artifactStore.getValue<{
+    visualAudit?: { status?: string; reportPath?: string; actualImagePath?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.visualAudit?.status, "warn");
+  assert.equal(summary?.visualAudit?.reportPath, reportPath);
+  assert.equal(summary?.visualAudit?.actualImagePath, actualImagePath);
+  const report = JSON.parse(await readFile(reportPath, "utf8")) as {
+    status?: string;
+    diffPixelCount?: number;
+  };
+  assert.equal(report.status, "warn");
+  assert.equal(report.diffPixelCount, 2);
+  assert.equal(executionContext.job.artifacts.visualAuditReferenceImageFile, referenceImagePath);
+  assert.equal(executionContext.job.artifacts.visualAuditActualImageFile, actualImagePath);
+  assert.equal(executionContext.job.artifacts.visualAuditDiffImageFile, diffImagePath);
+  assert.equal(executionContext.job.artifacts.visualAuditReportFile, reportPath);
+  assert.equal(executionContext.job.visualAudit?.status, "warn");
+});
+
+test("ValidateProjectService fails with a structured error when the visual audit baseline is missing", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    requestOverrides: {
+      visualAudit: {
+        baselineImagePath: path.join("fixtures", "missing-visual-baseline.png")
+      }
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-missing-visual-baseline"
+    } satisfies GenerationDiffContext
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult()
+  });
+
+  await assert.rejects(async () => {
+    await service.execute(undefined, stageContextFor("validate.project"));
+  }, (error: unknown) => {
+    assert.equal((error as { code?: string }).code, "E_VISUAL_AUDIT_BASELINE_MISSING");
+    assert.match(String((error as { message?: string }).message), /baseline .*missing or unreadable/i);
+    return true;
+  });
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    visualAudit?: { status?: string; baselineImagePath?: string };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "failed");
+  assert.equal(summary?.visualAudit?.status, "failed");
+  assert.equal(summary?.visualAudit?.baselineImagePath, path.join("fixtures", "missing-visual-baseline.png"));
+  assert.equal(executionContext.job.visualAudit?.status, "failed");
 });
 
 test("ValidateProjectService persists failure summary with generatedApp.status='failed' when runProjectValidationFn throws for build failure", async () => {

@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
+import { constants as fsConstants } from "node:fs";
+import { access, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
-import test from "node:test";
+import os from "node:os";
+import path from "node:path";
+import test, { type TestContext } from "node:test";
+import { chromium } from "@playwright/test";
 import {
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_VIEWPORT,
   captureScreenshot,
+  captureFromProject,
   resolveCaptureConfig,
+  waitWithTimeout,
 } from "./visual-capture.js";
 
 test("resolveCaptureConfig returns defaults when no config provided", () => {
@@ -66,6 +73,40 @@ test("resolveCaptureConfig handles full override", () => {
   assert.equal(config.fullPage, false);
 });
 
+test("resolveCaptureConfig rejects invalid capture settings", () => {
+  assert.throws(
+    () =>
+      resolveCaptureConfig({
+        viewport: { width: 0, height: 1080, deviceScaleFactor: 1 },
+      }),
+    /viewport\.width/,
+  );
+
+  assert.throws(
+    () =>
+      resolveCaptureConfig({
+        viewport: { width: 1920, height: -1, deviceScaleFactor: 1 },
+      }),
+    /viewport\.height/,
+  );
+
+  assert.throws(
+    () =>
+      resolveCaptureConfig({
+        viewport: { width: 1920, height: 1080, deviceScaleFactor: 0 },
+      }),
+    /viewport\.deviceScaleFactor/,
+  );
+
+  assert.throws(
+    () =>
+      resolveCaptureConfig({
+        timeoutMs: 0,
+      }),
+    /timeoutMs/,
+  );
+});
+
 test("DEFAULT_VIEWPORT has expected values", () => {
   assert.equal(DEFAULT_VIEWPORT.width, 1280);
   assert.equal(DEFAULT_VIEWPORT.height, 720);
@@ -114,7 +155,38 @@ const closeServer = (server: Server): Promise<void> => {
 
 const PNG_MAGIC_BYTES = [0x89, 0x50, 0x4e, 0x47];
 
-test("captureScreenshot captures a page served by a local HTTP server", async () => {
+let chromiumAvailabilityPromise:
+  | Promise<{ available: true } | { available: false; reason: string }>
+  | undefined;
+
+const getChromiumAvailability = async (): Promise<
+  { available: true } | { available: false; reason: string }
+> => {
+  chromiumAvailabilityPromise ??= (async () => {
+    const executablePath = chromium.executablePath();
+    try {
+      await access(executablePath, fsConstants.X_OK);
+      return { available: true } as const;
+    } catch {
+      return {
+        available: false,
+        reason: `Chromium executable is unavailable at '${executablePath}'.`,
+      } as const;
+    }
+  })();
+
+  return await chromiumAvailabilityPromise;
+};
+
+const skipIfChromiumUnavailable = async (context: TestContext): Promise<void> => {
+  const availability = await getChromiumAvailability();
+  if (!availability.available) {
+    context.skip(availability.reason);
+  }
+};
+
+test("captureScreenshot captures a page served by a local HTTP server", async (context) => {
+  await skipIfChromiumUnavailable(context);
   const { server, port } = await startTestServer(
     "<html><body><h1>Test</h1></body></html>",
   );
@@ -149,7 +221,8 @@ test("captureScreenshot captures a page served by a local HTTP server", async ()
   }
 });
 
-test("captureScreenshot respects viewport configuration", async () => {
+test("captureScreenshot respects viewport configuration", async (context) => {
+  await skipIfChromiumUnavailable(context);
   const { server, port } = await startTestServer(
     "<html><body><h1>Custom Viewport</h1></body></html>",
   );
@@ -176,4 +249,150 @@ test("captureScreenshot respects viewport configuration", async () => {
   } finally {
     await closeServer(server);
   }
+});
+
+test("waitWithTimeout clears the timeout handle after the wrapped promise settles", async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  let clearTimeoutCalls = 0;
+  let unrefCalls = 0;
+
+  const timeoutHandle = {
+    unref: () => {
+      unrefCalls += 1;
+      return timeoutHandle;
+    },
+  } as unknown as ReturnType<typeof setTimeout>;
+
+  globalThis.setTimeout = ((handler: TimerHandler, timeout?: number) => {
+    void handler;
+    void timeout;
+    return timeoutHandle;
+  }) as typeof setTimeout;
+
+  globalThis.clearTimeout = ((handle: ReturnType<typeof setTimeout>) => {
+    void handle;
+    clearTimeoutCalls += 1;
+  }) as typeof clearTimeout;
+
+  try {
+    const result = await waitWithTimeout({
+      promise: Promise.resolve("done"),
+      timeoutMs: 50,
+    });
+
+    assert.deepEqual(result, { status: "settled", value: "done" });
+    assert.equal(unrefCalls, 1);
+    assert.equal(clearTimeoutCalls, 1);
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
+const createTempProject = async (files: Record<string, string | Buffer>): Promise<string> => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-capture-"));
+  await Promise.all(
+    Object.entries(files).map(async ([relativePath, content]) => {
+      const absolutePath = path.join(projectDir, relativePath);
+      await mkdir(path.dirname(absolutePath), { recursive: true });
+      await writeFile(absolutePath, content);
+    }),
+  );
+  return projectDir;
+};
+
+test("captureFromProject serves query-string assets correctly", async (context) => {
+  await skipIfChromiumUnavailable(context);
+  const projectDir = await createTempProject({
+    "index.html": `<!doctype html>
+<html>
+  <body style="margin: 0">
+    <script src="/main.js?v=123"></script>
+  </body>
+</html>
+`,
+    "main.js": `
+      const banner = document.createElement("div");
+      banner.textContent = "query-string asset loaded";
+      banner.style.height = "1600px";
+      banner.style.background = "rgb(31, 41, 55)";
+      banner.style.color = "white";
+      document.body.appendChild(banner);
+    `,
+  });
+
+  try {
+    const result = await captureFromProject({ projectDir });
+    assert.ok(
+      result.height > 1400,
+      `Expected query-string asset to load and expand the page, got height ${String(result.height)}`,
+    );
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("captureFromProject serves built asset MIME types correctly", async (context) => {
+  await skipIfChromiumUnavailable(context);
+  const projectDir = await createTempProject({
+    "index.html": `<!doctype html>
+<html>
+  <body style="margin: 0">
+    <script src="/main.js"></script>
+  </body>
+</html>
+`,
+    "main.js": `
+      (async () => {
+        const checks = [
+          ["/fonts/inter.woff2", "font/woff2"],
+          ["/images/hero.webp", "image/webp"],
+          ["/images/logo.avif", "image/avif"],
+          ["/assets/source.map", "application/json; charset=utf-8"]
+        ];
+
+        const results = await Promise.all(checks.map(async ([url, expected]) => {
+          const response = await fetch(url);
+          return response.headers.get("content-type") === expected;
+        }));
+
+        if (results.every(Boolean)) {
+          const banner = document.createElement("div");
+          banner.textContent = "mime assets loaded";
+          banner.style.height = "1600px";
+          banner.style.background = "rgb(15, 23, 42)";
+          banner.style.color = "white";
+          document.body.appendChild(banner);
+        }
+      })();
+    `,
+    "fonts/inter.woff2": Buffer.from("fake-font"),
+    "images/hero.webp": Buffer.from("fake-webp"),
+    "images/logo.avif": Buffer.from("fake-avif"),
+    "assets/source.map": Buffer.from("{}\n"),
+  });
+
+  try {
+    const result = await captureFromProject({ projectDir });
+    assert.ok(
+      result.height > 1400,
+      `Expected MIME-typed assets to load and expand the page, got height ${String(result.height)}`,
+    );
+  } finally {
+    await rm(projectDir, { recursive: true, force: true });
+  }
+});
+
+test("captureScreenshot fails fast on invalid capture configuration", async () => {
+  await assert.rejects(
+    () =>
+      captureScreenshot({
+        url: "http://127.0.0.1:1",
+        config: {
+          viewport: { width: 0, height: 720, deviceScaleFactor: 1 },
+        },
+      }),
+    /viewport\.width/,
+  );
 });
