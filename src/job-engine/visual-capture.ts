@@ -282,7 +282,15 @@ export const captureScreenshot = async (input: {
 
     if (config.waitForAnimations) {
       log("Waiting for CSS animations to finish");
-      await page.evaluate(WAIT_FOR_ANIMATIONS_EXPRESSION);
+      const animationsDone = page.evaluate<undefined>(WAIT_FOR_ANIMATIONS_EXPRESSION)
+        .then((): "settled" => "settled");
+      const animationTimeout = new Promise<"timeout">((resolve) => {
+        setTimeout(() => { resolve("timeout"); }, config.timeoutMs);
+      });
+      const winner = await Promise.race([animationsDone, animationTimeout]);
+      if (winner === "timeout") {
+        log(`CSS animations did not settle within ${config.timeoutMs}ms, proceeding with capture`);
+      }
     }
 
     log("Capturing screenshot");
