@@ -89,3 +89,7 @@ The committed fixture set contains exactly five benchmark views:
 `.github/workflows/visual-benchmark.yml` runs `pnpm benchmark:visual` on pushes to `dev` and pull requests targeting `dev`.
 
 The workflow installs Playwright Chromium and executes the same real benchmark runner used locally. It does not require `FIGMA_ACCESS_TOKEN` for the default benchmark path.
+
+## Further reading
+
+For comprehensive documentation on the visual quality assessment system including architecture, scoring dimensions, score interpretation, and CI integration details, see [Visual Quality Assessment](visual-quality-assessment.md).

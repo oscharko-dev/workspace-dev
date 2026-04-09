@@ -33,6 +33,50 @@ Mutation testing is intentionally limited to the current high-value modules and 
 
 Current baseline mutation score: `62%` (derived from the verified `62.86%` run across `src/mode-lock.ts`, `src/schemas.ts`, `src/server/request-security.ts`, `src/job-engine/pipeline/orchestrator.ts`, and `src/parity/ir.ts`).
 
+## Visual Benchmark Workflow
+
+The visual benchmark suite measures how closely generated output matches committed reference screenshots. Use it to evaluate the visual impact of generator changes.
+
+### Running benchmarks before/after changes
+
+```bash
+pnpm benchmark:visual
+```
+
+- Run `pnpm benchmark:visual` before and after making generator changes.
+- Compare the ASCII table output to see score deltas per fixture.
+- A delta > +1 indicates improvement; delta < -1 indicates degradation.
+- The +/-1 neutral band absorbs small rendering variance.
+
+### Expected workflow
+
+1. Run `pnpm benchmark:visual` to establish a pre-change baseline.
+2. Make generator changes.
+3. Run `pnpm benchmark:visual` again to compare.
+4. If scores degraded, investigate using the diff images in the job output.
+5. If changes are intentional (e.g., improved layout), update the baseline:
+
+```bash
+pnpm benchmark:visual:update-baseline
+```
+
+### Adding new benchmark views
+
+1. Create a new directory under `integration/fixtures/visual-benchmark/<fixture-id>/`.
+2. Add a frozen `figma.json` payload (use `pnpm benchmark:visual:update-fixtures` to fetch from Figma, requires `FIGMA_ACCESS_TOKEN`).
+3. Add `metadata.json` with source nodeId and viewport configuration.
+4. Generate a `reference.png` with `pnpm benchmark:visual:update-references`.
+5. Add a `manifest.json` pointing to the reference image and metadata.
+6. The benchmark runner will automatically discover the new fixture.
+
+### Updating references when Figma designs change
+
+- `pnpm benchmark:visual:update-fixtures` — fetches fresh `figma.json` from live Figma (requires `FIGMA_ACCESS_TOKEN`).
+- `pnpm benchmark:visual:update-references` — regenerates `reference.png` from current pipeline output (offline, no token needed).
+- `pnpm benchmark:visual:update-baseline` — updates `baseline.json` with current scores.
+
+See `docs/visual-quality-assessment.md` for detailed architecture and scoring documentation.
+
 ## Boundary Rules
 
 `workspace-dev` must not import from internal modules (`services/*`, `workspace/`, `infra/`, `scripts/`).
