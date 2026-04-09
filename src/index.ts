@@ -22,6 +22,11 @@ export type {
   WorkspaceVisualAuditRegionResult,
   WorkspaceVisualAuditStatus,
   WorkspaceVisualAuditResult,
+  WorkspaceVisualScoringWeights,
+  WorkspaceVisualDimensionScore,
+  WorkspaceVisualDeviationHotspot,
+  WorkspaceVisualComparisonMetadata,
+  WorkspaceVisualQualityReport,
   WorkspaceJobResult,
   WorkspaceVersionInfo
 } from "./contracts/index.js";
@@ -51,3 +56,4 @@ export type { ProjectInstance } from "./isolation.js";
 
 export * from "./job-engine/visual-capture.js";
 export * from "./job-engine/visual-diff.js";
+export * from "./job-engine/visual-scoring.js";

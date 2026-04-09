@@ -31,6 +31,31 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.6.0] - 2026-04-09
+
+### Visual quality scoring surface
+
+Added:
+
+- `WorkspaceVisualScoringWeights` for configurable scoring dimension weights.
+- `WorkspaceVisualDimensionScore` for per-dimension quality scores.
+- `WorkspaceVisualDeviationHotspot` for deviation hotspot detection results.
+- `WorkspaceVisualComparisonMetadata` for comparison run metadata.
+- `WorkspaceVisualQualityReport` for the full visual quality scoring report.
+
+Runtime:
+
+- `DEFAULT_SCORING_WEIGHTS` — default scoring weights (layout 30%, color 25%, typography 20%, component 15%, spacing 10%).
+- `DEFAULT_SCORING_CONFIG` — default scoring configuration with weights and hotspot count.
+- `computeVisualQualityReport` — produces a structured visual quality report from diff results.
+- `interpretScore` — maps a 0–100 score to a human-readable interpretation string.
+
+Changed:
+
+- `CONTRACT_VERSION` from `3.5.0` to `3.6.0`.
+
+---
+
 ## [3.5.0] - 2026-04-08
 
 ### Public visual audit surface
