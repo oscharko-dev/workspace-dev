@@ -5,10 +5,19 @@ on:
     branches: [dev]
   pull_request:
     branches: [dev]
+    paths:
+      - 'src/parity/**'
+      - 'src/job-engine/**'
+      - 'template/**'
+      - 'integration/visual-benchmark*'
+      - 'integration/visual-quality*'
+      - 'integration/fixtures/visual-benchmark/**'
+      - '.github/workflows/visual-benchmark.yml'
   workflow_dispatch:
 
 permissions:
   contents: read
+  checks: write
 
 jobs:
   benchmark:
@@ -38,4 +47,19 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Run real visual benchmark runner
-        run: pnpm benchmark:visual
+        run: pnpm benchmark:visual -- --ci
+        env:
+          FIGMA_ACCESS_TOKEN: ${{ secrets.FIGMA_ACCESS_TOKEN }}
+          FIGMA_FILE_KEY: ${{ secrets.FIGMA_FILE_KEY }}
+
+      - name: Summarize visual quality report
+        if: always()
+        run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json
+
+      - name: Upload visual benchmark artifacts
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}
+          path: artifacts/visual-benchmark
+          if-no-files-found: ignore
