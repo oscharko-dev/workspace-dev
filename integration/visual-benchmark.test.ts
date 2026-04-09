@@ -453,6 +453,7 @@ test("runVisualBenchmarkCli runs the benchmark runner in default mode", async ()
   const status = await runVisualBenchmarkCli([], {
     runBenchmark: async () => {
       calls += 1;
+      return { deltas: [], overallBaseline: null, overallCurrent: 0, overallDelta: null };
     }
   });
 
@@ -870,4 +871,102 @@ test("runVisualBenchmark applies screen-level thresholds using the fixture nodeN
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }
+});
+
+test("resolveVisualBenchmarkCliResolution accepts --ci flag", () => {
+  const resolution = resolveVisualBenchmarkCliResolution(["--ci"]);
+  assert.equal(resolution.action, "benchmark");
+  assert.equal(resolution.ci, true);
+  assert.deepEqual(resolution.forwardedArgs, []);
+});
+
+test("resolveVisualBenchmarkCliResolution accepts --ci with --quality-threshold", () => {
+  const resolution = resolveVisualBenchmarkCliResolution(["--ci", "--quality-threshold", "75"]);
+  assert.equal(resolution.action, "benchmark");
+  assert.equal(resolution.ci, true);
+  assert.equal(resolution.qualityThreshold, 75);
+});
+
+test("runVisualBenchmarkCli returns exit code 1 with --ci when any fixture fails threshold", async () => {
+  const status = await runVisualBenchmarkCli(["--ci"], {
+    runBenchmark: async () => ({
+      deltas: [
+        {
+          fixtureId: "simple-form",
+          baseline: 100,
+          current: 50,
+          delta: -50,
+          indicator: "degraded" as const,
+          thresholdResult: { score: 50, verdict: "fail" as const, thresholds: { warn: 80, fail: 60 } },
+        },
+      ],
+      overallBaseline: 100,
+      overallCurrent: 50,
+      overallDelta: -50,
+    }),
+  });
+  assert.equal(status, 1);
+});
+
+test("runVisualBenchmarkCli returns exit code 0 with --ci when fixtures only warn", async () => {
+  const status = await runVisualBenchmarkCli(["--ci"], {
+    runBenchmark: async () => ({
+      deltas: [
+        {
+          fixtureId: "simple-form",
+          baseline: 100,
+          current: 75,
+          delta: -25,
+          indicator: "degraded" as const,
+          thresholdResult: { score: 75, verdict: "warn" as const, thresholds: { warn: 80, fail: 60 } },
+        },
+      ],
+      overallBaseline: 100,
+      overallCurrent: 75,
+      overallDelta: -25,
+    }),
+  });
+  assert.equal(status, 0);
+});
+
+test("runVisualBenchmarkCli returns exit code 0 without --ci even when fixtures fail threshold", async () => {
+  const status = await runVisualBenchmarkCli([], {
+    runBenchmark: async () => ({
+      deltas: [
+        {
+          fixtureId: "simple-form",
+          baseline: 100,
+          current: 50,
+          delta: -50,
+          indicator: "degraded" as const,
+          thresholdResult: { score: 50, verdict: "fail" as const, thresholds: { warn: 80, fail: 60 } },
+        },
+      ],
+      overallBaseline: 100,
+      overallCurrent: 50,
+      overallDelta: -50,
+    }),
+  });
+  assert.equal(status, 0);
+});
+
+test("runVisualBenchmarkCli returns exit code 0 with --ci when all fixtures pass", async () => {
+  const status = await runVisualBenchmarkCli(["--ci"], {
+    runBenchmark: async () => ({
+      deltas: [
+        {
+          fixtureId: "simple-form",
+          baseline: 100,
+          current: 95,
+          delta: -5,
+          indicator: "neutral" as const,
+          thresholdResult: { score: 95, verdict: "pass" as const, thresholds: { warn: 80, fail: 60 } },
+        },
+      ],
+      overallBaseline: 100,
+      overallCurrent: 95,
+      overallDelta: -5,
+    }),
+  });
+  assert.equal(status, 0);
 });

@@ -1,0 +1,13 @@
+{
+  "thresholds": {
+    "warn": 80,
+    "fail": 60
+  },
+  "weights": {
+    "layoutAccuracy": 0.30,
+    "colorFidelity": 0.25,
+    "typography": 0.20,
+    "componentStructure": 0.15,
+    "spacingAlignment": 0.10
+  }
+}

@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runVisualBenchmarkMaintenance } from "./visual-benchmark.update.js";
-import { runVisualBenchmark } from "./visual-benchmark-runner.js";
+import { runVisualBenchmark, type VisualBenchmarkResult } from "./visual-benchmark-runner.js";
 import { loadVisualQualityConfig, type VisualQualityConfig } from "./visual-quality-config.js";
 
 export type VisualBenchmarkCliAction = "benchmark" | "maintenance";
@@ -10,6 +10,7 @@ export interface VisualBenchmarkCliResolution {
   action: VisualBenchmarkCliAction;
   forwardedArgs: string[];
   qualityThreshold?: number;
+  ci?: boolean;
 }
 
 const MODULE_FILE = fileURLToPath(import.meta.url);
@@ -17,10 +18,15 @@ const MODULE_FILE = fileURLToPath(import.meta.url);
 export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): VisualBenchmarkCliResolution => {
   const forwardedArgs = args[0] === "--" ? args.slice(1) : [...args];
 
-  // Extract --quality-threshold if present
+  // Extract --ci and --quality-threshold if present
+  let ci: boolean | undefined;
   let qualityThreshold: number | undefined;
   const filteredArgs: string[] = [];
   for (let i = 0; i < forwardedArgs.length; i++) {
+    if (forwardedArgs[i] === "--ci") {
+      ci = true;
+      continue;
+    }
     if (forwardedArgs[i] === "--quality-threshold") {
       if (i + 1 >= forwardedArgs.length) {
         throw new Error("--quality-threshold requires a numeric value (0-100).");
@@ -37,7 +43,7 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
   }
 
   if (filteredArgs.length === 0) {
-    return { action: "benchmark", forwardedArgs: filteredArgs, qualityThreshold };
+    return { action: "benchmark", forwardedArgs: filteredArgs, qualityThreshold, ci };
   }
 
   if (
@@ -47,18 +53,18 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
       filteredArgs[0] === "--live" ||
       filteredArgs[0] === "--update-baseline")
   ) {
-    return { action: "maintenance", forwardedArgs: filteredArgs, qualityThreshold };
+    return { action: "maintenance", forwardedArgs: filteredArgs, qualityThreshold, ci };
   }
 
   throw new Error(
-    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--quality-threshold <0-100>]"
+    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--quality-threshold <0-100>] [--ci]"
   );
 };
 
 export const runVisualBenchmarkCli = async (
   args: readonly string[],
   options?: {
-    runBenchmark?: (qualityThreshold?: number) => Promise<void>;
+    runBenchmark?: (qualityThreshold?: number) => Promise<VisualBenchmarkResult>;
   }
 ): Promise<number> => {
   const resolution = resolveVisualBenchmarkCliResolution(args);
@@ -73,9 +79,14 @@ export const runVisualBenchmarkCli = async (
     const effectiveConfig: VisualQualityConfig = threshold !== undefined
       ? { ...config, thresholds: { ...config.thresholds, warn: threshold } }
       : config;
-    await runVisualBenchmark({ qualityConfig: effectiveConfig });
+    return runVisualBenchmark({ qualityConfig: effectiveConfig });
   });
-  await runBenchmark(resolution.qualityThreshold);
+  const result = await runBenchmark(resolution.qualityThreshold);
+
+  if (resolution.ci && result.deltas.some((d) => d.thresholdResult?.verdict === "fail")) {
+    return 1;
+  }
+
   return 0;
 };
 
