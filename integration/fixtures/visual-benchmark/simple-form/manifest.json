@@ -1,0 +1,25 @@
+{
+  "fixtureId": "simple-form",
+  "inputs": {
+    "figma": "inputs/figma.json"
+  },
+  "references": [
+    {
+      "captureConfig": {
+        "fullPage": true,
+        "waitForAnimations": true,
+        "waitForFonts": true,
+        "waitForNetworkIdle": true
+      },
+      "capturedAt": "2026-04-09T00:00:00.000Z",
+      "name": "desktop",
+      "path": "references/desktop.png",
+      "viewport": {
+        "deviceScaleFactor": 1,
+        "height": 720,
+        "width": 1280
+      }
+    }
+  ],
+  "version": 1
+}
