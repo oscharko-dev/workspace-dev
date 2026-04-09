@@ -1,3 +1,5 @@
+import packageJson from "../../package.json" with { type: "json" };
+import { CONTRACT_VERSION } from "../contracts/index.js";
 import type { VisualDiffRegionResult, VisualDiffResult } from "./visual-diff.js";
 
 export interface VisualScoringWeights {
@@ -39,12 +41,22 @@ export interface VisualComparisonMetadata {
   totalPixels: number;
   diffPixelCount: number;
   configuredWeights: VisualScoringWeights;
+  viewport: {
+    width: number;
+    height: number;
+    deviceScaleFactor: number;
+  };
+  versions: {
+    packageVersion: string;
+    contractVersion: string;
+  };
 }
 
 export interface VisualQualityReport {
   overallScore: number;
   interpretation: string;
   dimensions: VisualDimensionScore[];
+  diffImagePath: string;
   hotspots: VisualDeviationHotspot[];
   metadata: VisualComparisonMetadata;
 }
@@ -65,6 +77,30 @@ export const DEFAULT_SCORING_CONFIG: VisualScoringConfig = {
 const roundToTwoDecimals = (value: number): number =>
   Math.round(value * 100) / 100;
 
+const assertFiniteUnitInterval = (value: number, name: keyof VisualScoringWeights): number => {
+  if (!Number.isFinite(value)) {
+    throw new Error(`Scoring weight '${name}' must be a finite number.`);
+  }
+  if (value < 0 || value > 1) {
+    throw new Error(`Scoring weight '${name}' must be between 0 and 1. Received ${String(value)}.`);
+  }
+  return value;
+};
+
+const resolveHotspotCount = (value: unknown): number => {
+  if (value === undefined) {
+    return DEFAULT_SCORING_CONFIG.hotspotCount;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value) || value < 0) {
+    const received =
+      typeof value === "number" || typeof value === "string" || typeof value === "boolean" || value == null
+        ? String(value)
+        : typeof value;
+    throw new Error(`hotspotCount must be a finite integer greater than or equal to 0. Received ${received}.`);
+  }
+  return value;
+};
+
 export const interpretScore = (score: number): string => {
   if (score >= 90) return "Excellent parity — minor sub-pixel or anti-aliasing differences";
   if (score >= 70) return "Good parity — small layout or color deviations";
@@ -76,7 +112,14 @@ const resolveScoringConfig = (partial?: Partial<VisualScoringConfig>): VisualSco
   if (!partial) {
     return { ...DEFAULT_SCORING_CONFIG, weights: { ...DEFAULT_SCORING_WEIGHTS } };
   }
-  const weights: VisualScoringWeights = { ...DEFAULT_SCORING_WEIGHTS, ...(partial.weights ?? {}) };
+  const unresolvedWeights: VisualScoringWeights = { ...DEFAULT_SCORING_WEIGHTS, ...(partial.weights ?? {}) };
+  const weights: VisualScoringWeights = {
+    layoutAccuracy: assertFiniteUnitInterval(unresolvedWeights.layoutAccuracy, "layoutAccuracy"),
+    colorFidelity: assertFiniteUnitInterval(unresolvedWeights.colorFidelity, "colorFidelity"),
+    typography: assertFiniteUnitInterval(unresolvedWeights.typography, "typography"),
+    componentStructure: assertFiniteUnitInterval(unresolvedWeights.componentStructure, "componentStructure"),
+    spacingAlignment: assertFiniteUnitInterval(unresolvedWeights.spacingAlignment, "spacingAlignment"),
+  };
   const sum =
     weights.layoutAccuracy +
     weights.colorFidelity +
@@ -88,7 +131,7 @@ const resolveScoringConfig = (partial?: Partial<VisualScoringConfig>): VisualSco
   }
   return {
     weights,
-    hotspotCount: partial.hotspotCount ?? DEFAULT_SCORING_CONFIG.hotspotCount,
+    hotspotCount: resolveHotspotCount(partial.hotspotCount),
   };
 };
 
@@ -190,11 +233,22 @@ export const computeVisualQualityReport = (input: {
   diffResult: VisualDiffResult;
   config?: Partial<VisualScoringConfig>;
   comparedAt?: string;
+  diffImagePath?: string;
+  viewport?: {
+    width: number;
+    height: number;
+    deviceScaleFactor: number;
+  };
 }): VisualQualityReport => {
   const config = resolveScoringConfig(input.config);
   const { diffResult } = input;
   const { regions, similarityScore } = diffResult;
   const fallback = similarityScore;
+  const viewport = input.viewport ?? {
+    width: diffResult.width,
+    height: diffResult.height,
+    deviceScaleFactor: 1,
+  };
 
   const layoutScore = computeLayoutAccuracy(regions, fallback);
   const colorScore = computeColorFidelity(similarityScore);
@@ -267,6 +321,7 @@ export const computeVisualQualityReport = (input: {
     overallScore,
     interpretation: interpretScore(overallScore),
     dimensions,
+    diffImagePath: input.diffImagePath ?? "",
     hotspots,
     metadata: {
       comparedAt: input.comparedAt ?? new Date().toISOString(),
@@ -275,6 +330,11 @@ export const computeVisualQualityReport = (input: {
       totalPixels: diffResult.totalPixels,
       diffPixelCount: diffResult.diffPixelCount,
       configuredWeights: { ...config.weights },
+      viewport: { ...viewport },
+      versions: {
+        packageVersion: packageJson.version,
+        contractVersion: CONTRACT_VERSION,
+      },
     },
   };
 };

@@ -41,6 +41,7 @@ import {
 import { isWithinRoot } from "../preview.js";
 import { captureFromProject } from "../visual-capture.js";
 import { comparePngBuffers, writeDiffImage } from "../visual-diff.js";
+import { computeVisualQualityReport } from "../visual-scoring.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -1882,8 +1883,30 @@ export const createValidateProjectService = ({
         });
 
         const reportPath = path.join(visualAuditDir, "report.json");
+        const visualQualityReport = (() => {
+          try {
+            return computeVisualQualityReport({
+              diffResult,
+              comparedAt: validatedAt,
+              diffImagePath,
+              viewport: captureResult.viewport
+            });
+          } catch (error) {
+            return failVisualAudit({
+              code: "E_VISUAL_AUDIT_REPORT_BUILD_FAILED",
+              message: "Visual audit completed, but the structured quality report could not be generated.",
+              suggestion: "Inspect the visual scoring configuration and report metadata inputs, then rerun validate.project.",
+              details: {
+                diffImagePath,
+                actualImagePath,
+                referenceImagePath
+              },
+              cause: error
+            });
+          }
+        })();
         try {
-          await writeFile(reportPath, toJsonFileContent(finalizedVisualAuditResult), "utf8");
+          await writeFile(reportPath, toJsonFileContent(await visualQualityReport), "utf8");
           await persistVisualAuditArtifactPath({
             key: STAGE_ARTIFACT_KEYS.visualAuditReport,
             absolutePath: reportPath

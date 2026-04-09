@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import packageJson from "../../../package.json" with { type: "json" };
 import { PNG } from "pngjs";
 import type {
   WorkspaceBrandTheme,
@@ -11,6 +12,7 @@ import type {
   WorkspaceJobInput,
   WorkspaceJobStageName
 } from "../../contracts/index.js";
+import { CONTRACT_VERSION } from "../../contracts/index.js";
 import { parseCustomerProfileConfig } from "../../customer-profile.js";
 import { applyCustomerProfileToTemplate } from "../../customer-profile-template.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
@@ -5052,11 +5054,36 @@ test("ValidateProjectService runs visual audit against the built dist bundle and
   assert.equal(summary?.visualAudit?.reportPath, reportPath);
   assert.equal(summary?.visualAudit?.actualImagePath, actualImagePath);
   const report = JSON.parse(await readFile(reportPath, "utf8")) as {
-    status?: string;
-    diffPixelCount?: number;
+    overallScore?: number;
+    diffImagePath?: string;
+    dimensions?: Array<{ name?: string; score?: number }>;
+    hotspots?: Array<{ region?: string; deviationPercent?: number }>;
+    metadata?: {
+      comparedAt?: string;
+      diffPixelCount?: number;
+      viewport?: { width?: number; height?: number; deviceScaleFactor?: number };
+      versions?: { packageVersion?: string; contractVersion?: string };
+    };
   };
-  assert.equal(report.status, "warn");
-  assert.equal(report.diffPixelCount, 2);
+  assert.equal(report.overallScore, 87.5);
+  assert.equal(report.diffImagePath, diffImagePath);
+  assert.equal(report.dimensions?.length, 5);
+  assert.equal(report.dimensions?.[0]?.name, "Layout Accuracy");
+  assert.equal(report.dimensions?.[0]?.score, 87.5);
+  assert.equal(report.hotspots?.length, 1);
+  assert.equal(report.hotspots?.[0]?.region, "full");
+  assert.equal(report.hotspots?.[0]?.deviationPercent, 12.5);
+  assert.match(report.metadata?.comparedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(report.metadata?.diffPixelCount, 2);
+  assert.deepEqual(report.metadata?.viewport, {
+    width: 4,
+    height: 4,
+    deviceScaleFactor: 1
+  });
+  assert.deepEqual(report.metadata?.versions, {
+    packageVersion: packageJson.version,
+    contractVersion: CONTRACT_VERSION
+  });
   assert.equal(executionContext.job.artifacts.visualAuditReferenceImageFile, referenceImagePath);
   assert.equal(executionContext.job.artifacts.visualAuditActualImageFile, actualImagePath);
   assert.equal(executionContext.job.artifacts.visualAuditDiffImageFile, diffImagePath);
