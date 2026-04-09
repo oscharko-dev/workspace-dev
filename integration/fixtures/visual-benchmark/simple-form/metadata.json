@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-04-09T06:43:25.469Z",
+  "export": {
+    "format": "png",
+    "scale": 2
+  },
+  "fixtureId": "simple-form",
+  "source": {
+    "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
+    "lastModified": "2026-03-30T20:59:16Z",
+    "nodeId": "1:65671",
+    "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
+  },
+  "version": 1,
+  "viewport": {
+    "height": 1578,
+    "width": 1336
+  }
+}
