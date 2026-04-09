@@ -194,6 +194,9 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
         : {})
     };
   }
+  if (job.visualQuality) {
+    status.visualQuality = { ...job.visualQuality };
+  }
   if (job.gitPr) {
     status.gitPr = { ...job.gitPr };
   }

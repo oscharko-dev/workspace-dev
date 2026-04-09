@@ -28,6 +28,7 @@ export const STAGE_ARTIFACT_KEYS = {
   visualAuditDiffImage: "visual.audit.diff_image",
   visualAuditReport: "visual.audit.report",
   visualAuditResult: "visual.audit.result",
+  visualQualityResult: "visual.quality.result",
   validationSummary: "validation.summary",
   validationSummaryFile: "validation.summary.file",
   reproPath: "repro.path",

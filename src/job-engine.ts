@@ -1872,6 +1872,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           : {})
       };
     }
+    if (job.visualQuality) {
+      result.visualQuality = { ...job.visualQuality };
+    }
     if (job.gitPr) {
       result.gitPr = { ...job.gitPr };
     }

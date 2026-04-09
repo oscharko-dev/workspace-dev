@@ -170,7 +170,8 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
     STAGE_ARTIFACT_KEYS.visualAuditActualImage,
     STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
     STAGE_ARTIFACT_KEYS.visualAuditReport,
-    STAGE_ARTIFACT_KEYS.visualAuditResult
+    STAGE_ARTIFACT_KEYS.visualAuditResult,
+    STAGE_ARTIFACT_KEYS.visualQualityResult
   ]);
   assert.deepEqual(gitPrEntry?.artifacts?.reads, [
     STAGE_ARTIFACT_KEYS.generatedProject,
@@ -281,7 +282,8 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     STAGE_ARTIFACT_KEYS.visualAuditActualImage,
     STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
     STAGE_ARTIFACT_KEYS.visualAuditReport,
-    STAGE_ARTIFACT_KEYS.visualAuditResult
+    STAGE_ARTIFACT_KEYS.visualAuditResult,
+    STAGE_ARTIFACT_KEYS.visualQualityResult
   ]);
   assert.equal(
     gitPrEntry?.shouldSkip?.(context),

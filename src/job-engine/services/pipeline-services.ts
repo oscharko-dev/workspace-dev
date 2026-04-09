@@ -187,7 +187,8 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.visualAuditActualImage,
           STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
           STAGE_ARTIFACT_KEYS.visualAuditReport,
-          STAGE_ARTIFACT_KEYS.visualAuditResult
+          STAGE_ARTIFACT_KEYS.visualAuditResult,
+          STAGE_ARTIFACT_KEYS.visualQualityResult
         ]
       }
     },
@@ -297,7 +298,8 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.visualAuditActualImage,
           STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
           STAGE_ARTIFACT_KEYS.visualAuditReport,
-          STAGE_ARTIFACT_KEYS.visualAuditResult
+          STAGE_ARTIFACT_KEYS.visualAuditResult,
+          STAGE_ARTIFACT_KEYS.visualQualityResult
         ]
       }
     },
