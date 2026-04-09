@@ -377,6 +377,55 @@ export interface WorkspaceVisualAuditResult {
   warnings?: string[];
 }
 
+/** Scoring weights for the visual quality composite score. */
+export interface WorkspaceVisualScoringWeights {
+  layoutAccuracy: number;
+  colorFidelity: number;
+  typography: number;
+  componentStructure: number;
+  spacingAlignment: number;
+}
+
+/** Per-dimension score in a visual quality report. */
+export interface WorkspaceVisualDimensionScore {
+  name: string;
+  weight: number;
+  score: number;
+  details: string;
+}
+
+/** Deviation hotspot identified in a visual quality comparison. */
+export interface WorkspaceVisualDeviationHotspot {
+  rank: number;
+  region: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  deviationPercent: number;
+  severity: "low" | "medium" | "high" | "critical";
+  category: "layout" | "color" | "typography" | "component" | "spacing";
+}
+
+/** Metadata about a visual quality comparison run. */
+export interface WorkspaceVisualComparisonMetadata {
+  comparedAt: string;
+  imageWidth: number;
+  imageHeight: number;
+  totalPixels: number;
+  diffPixelCount: number;
+  configuredWeights: WorkspaceVisualScoringWeights;
+}
+
+/** Full visual quality report produced by the scoring system. */
+export interface WorkspaceVisualQualityReport {
+  overallScore: number;
+  interpretation: string;
+  dimensions: WorkspaceVisualDimensionScore[];
+  hotspots: WorkspaceVisualDeviationHotspot[];
+  metadata: WorkspaceVisualComparisonMetadata;
+}
+
 /** PR execution status attached to completed jobs when Git PR integration is enabled. */
 export interface WorkspaceGitPrStatus {
   status: "executed" | "skipped";
@@ -721,4 +770,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.5.0" as const;
+export const CONTRACT_VERSION = "3.6.0" as const;
