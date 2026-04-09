@@ -89,8 +89,11 @@ test("E2E: generated App.tsx includes useColorScheme hook for theme mode toggle"
   const ir = await deriveIrOnce();
   const appContent = createDeterministicAppFile(ir.screens).content;
 
-  assert.ok(appContent.includes('import { useColorScheme } from "@mui/material/styles"'),
-    "App must import useColorScheme from @mui/material/styles");
+  assert.match(
+    appContent,
+    /import\s+\{[^}]*useColorScheme[^}]*\}\s+from "@mui\/material\/styles";/,
+    "App must import useColorScheme from @mui/material/styles"
+  );
   assert.ok(appContent.includes("useColorScheme()"),
     "App must use useColorScheme() hook");
   assert.ok(appContent.includes("setMode(nextMode)"),

@@ -68,6 +68,7 @@ export interface StageRuntimeContext {
   readonly mode: PipelineExecutionMode;
   readonly jobId: string;
   readonly job: JobRecord;
+  readonly input?: WorkspaceJobInput;
   readonly runtime: Readonly<JobEngineRuntime>;
   readonly paths: Readonly<PipelineResolvedPaths>;
   readonly resolvedPaths: Readonly<JobEnginePaths>;
@@ -110,6 +111,7 @@ export const createStageRuntimeContext = ({
     mode: executionContext.mode,
     jobId: executionContext.job.jobId,
     job: executionContext.job,
+    ...(executionContext.input ? { input: executionContext.input } : {}),
     runtime: executionContext.runtime,
     paths: executionContext.paths,
     resolvedPaths: executionContext.resolvedPaths,

@@ -22,6 +22,7 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
       status: "queued",
       submittedAt: nowIso(),
       request: {
+        enableVisualQualityValidation: false,
         enableGitPr: false,
         figmaSourceMode: "local_json",
         llmCodegenMode: "deterministic",
@@ -47,7 +48,8 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
         visualAuditReferenceImageFile: path.join(jobDir, "stale-visual-reference.png"),
         visualAuditActualImageFile: path.join(jobDir, "stale-visual-actual.png"),
         visualAuditDiffImageFile: path.join(jobDir, "stale-visual-diff.png"),
-        visualAuditReportFile: path.join(jobDir, "stale-visual-report.json")
+        visualAuditReportFile: path.join(jobDir, "stale-visual-report.json"),
+        visualQualityReportFile: path.join(jobDir, "stale-visual-quality-report.json")
       },
       preview: { enabled: false },
       queue: {
@@ -64,6 +66,9 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
         warnings: ["stale visual audit"]
       },
       visualQuality: {
+        status: "completed",
+        referenceSource: "frozen_fixture",
+        capturedAt: "2026-01-01T00:00:00.000Z",
         overallScore: 0,
         interpretation: "stale",
         dimensions: [],
@@ -107,6 +112,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   const visualAuditActualImageFile = path.join(jobDir, "visual-audit", "actual.png");
   const visualAuditDiffImageFile = path.join(jobDir, "visual-audit", "diff.png");
   const visualAuditReportFile = path.join(jobDir, "visual-audit", "report.json");
+  const visualQualityReportFile = path.join(jobDir, "visual-quality", "report.json");
 
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.figmaCleaned,
@@ -183,6 +189,11 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     stage: "validate.project",
     absolutePath: visualAuditReportFile
   });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.visualQualityReport,
+    stage: "validate.project",
+    absolutePath: visualQualityReportFile
+  });
   await artifactStore.setValue({
     key: STAGE_ARTIFACT_KEYS.generationDiff,
     stage: "codegen.generate",
@@ -208,6 +219,9 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     key: STAGE_ARTIFACT_KEYS.visualQualityResult,
     stage: "validate.project",
     value: {
+      status: "completed",
+      referenceSource: "frozen_fixture",
+      capturedAt: "2026-04-08T00:00:00.000Z",
       overallScore: 87.5,
       interpretation: "Good",
       dimensions: [],
@@ -256,6 +270,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   assert.equal(job.artifacts.visualAuditActualImageFile, visualAuditActualImageFile);
   assert.equal(job.artifacts.visualAuditDiffImageFile, visualAuditDiffImageFile);
   assert.equal(job.artifacts.visualAuditReportFile, visualAuditReportFile);
+  assert.equal(job.artifacts.visualQualityReportFile, visualQualityReportFile);
   assert.deepEqual(job.generationDiff, { summary: "fresh diff" });
   assert.deepEqual(job.visualAudit, {
     status: "warn",
@@ -267,6 +282,9 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     totalPixels: 16,
     warnings: ["visual differences detected"]
   });
+  assert.equal(job.visualQuality?.status, "completed");
+  assert.equal(job.visualQuality?.referenceSource, "frozen_fixture");
+  assert.equal(job.visualQuality?.capturedAt, "2026-04-08T00:00:00.000Z");
   assert.equal(job.visualQuality?.overallScore, 87.5);
   assert.equal(job.visualQuality?.interpretation, "Good");
   assert.equal(job.visualQuality?.diffImagePath, visualAuditDiffImageFile);

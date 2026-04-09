@@ -31,6 +31,29 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.9.0] - 2026-04-09
+
+### Visual quality validation contract
+
+Added:
+
+- `WorkspaceVisualQualityReferenceMode` for selecting `figma_api` or `frozen_fixture` visual references.
+- `WorkspaceJobInput.enableVisualQualityValidation?: boolean` for first-class visual quality opt-in.
+- `WorkspaceJobInput.visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode` for submit-time reference source selection.
+- `WorkspaceJobInput.visualQualityViewportWidth?: number` for submit-time viewport width overrides.
+- Matching `WorkspaceJobRequestMetadata` fields so public job metadata preserves the visual quality request contract.
+- `WorkspaceVisualReferenceFixtureMetadata` for persisted frozen visual reference metadata.
+- `WorkspaceVisualQualityReport.status`, `referenceSource`, and `capturedAt` for the issue-defined visual quality envelope.
+- `WorkspaceVisualQualityReport.message?: string` for non-blocking visual quality failure details.
+
+Changed:
+
+- `WorkspaceVisualQualityReport` now represents an envelope that can report `completed`, `failed`, or `not_requested`.
+- `WorkspaceJobInput.visualAudit` remains supported as a deprecated compatibility alias for legacy visual-audit callers.
+- `CONTRACT_VERSION` from `3.8.0` to `3.9.0`.
+
+---
+
 ## [3.8.0] - 2026-04-09
 
 ### Per-job visual quality report integration

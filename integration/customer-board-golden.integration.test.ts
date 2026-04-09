@@ -174,6 +174,14 @@ test("customer-board golden offline fixture reproduces committed derived artifac
       checks?: Array<{ name: string; status: string; count: number; details?: string }>;
       summary?: string;
     };
+    visualQuality?: {
+      status?: string;
+      referenceSource?: string;
+      capturedAt?: string;
+      overallScore?: number;
+      dimensions?: Array<{ name?: string; score?: number }>;
+      diffImagePath?: string;
+    };
   };
   const componentMatchReport = JSON.parse(committedBundle.files.get(manifest.derived.componentMatchReport)?.content ?? "null") as {
     entries?: Array<{
@@ -276,6 +284,37 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.ok(
     typeof validationSummary.uiA11y?.a11yViolationCount === "number",
     "Expected uiA11y.a11yViolationCount to be a number"
+  );
+  assert.ok(validationSummary.visualQuality, "validation-summary.visualQuality must be present");
+  assert.equal(
+    validationSummary.visualQuality?.status,
+    "completed",
+    "validation-summary.visualQuality.status must be 'completed'"
+  );
+  assert.equal(
+    validationSummary.visualQuality?.referenceSource,
+    "frozen_fixture",
+    "validation-summary.visualQuality.referenceSource must be 'frozen_fixture'"
+  );
+  assert.match(
+    validationSummary.visualQuality?.capturedAt ?? "",
+    /^\d{4}-\d{2}-\d{2}T/,
+    "validation-summary.visualQuality.capturedAt must be an ISO timestamp"
+  );
+  assert.equal(
+    typeof validationSummary.visualQuality?.overallScore,
+    "number",
+    "validation-summary.visualQuality.overallScore must be a number"
+  );
+  assert.equal(
+    (validationSummary.visualQuality?.dimensions?.length ?? 0) > 0,
+    true,
+    "validation-summary.visualQuality.dimensions must be populated"
+  );
+  assert.equal(
+    validationSummary.visualQuality?.diffImagePath,
+    "<job-dir>/visual-quality/diff.png",
+    "validation-summary.visualQuality.diffImagePath must reference the sanitized diff artifact path"
   );
 
   // #815 — generatedApp.test gate: the offline fixture runs with enableUnitTestValidation=true

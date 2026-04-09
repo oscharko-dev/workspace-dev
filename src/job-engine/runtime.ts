@@ -1,4 +1,8 @@
-import type { WorkspaceBrandTheme, WorkspaceRouterMode } from "../contracts/index.js";
+import type {
+  WorkspaceBrandTheme,
+  WorkspaceRouterMode,
+  WorkspaceVisualQualityReferenceMode
+} from "../contracts/index.js";
 import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
 import {
   createWorkspaceLogger,
@@ -41,6 +45,9 @@ const DEFAULT_COMMAND_TIMEOUT_MS = 15 * 60_000;
 const DEFAULT_COMMAND_STDOUT_MAX_BYTES = 1_048_576;
 const DEFAULT_COMMAND_STDERR_MAX_BYTES = 1_048_576;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
+const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
+const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode = "figma_api";
+const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
@@ -64,6 +71,27 @@ const clampInteger = ({
   return Math.max(min, Math.min(max, Math.trunc(value)));
 };
 
+const resolveIntegerInRange = ({
+  value,
+  min,
+  max,
+  fallback
+}: {
+  value: number | undefined;
+  min: number;
+  max: number;
+  fallback: number;
+}): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  const normalized = Math.trunc(value);
+  if (normalized < min) {
+    return fallback;
+  }
+  return Math.min(max, normalized);
+};
+
 const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | undefined => {
   if (!value) {
     return undefined;
@@ -81,6 +109,19 @@ const normalizeRouterMode = (value: string | undefined): WorkspaceRouterMode | u
   }
   const normalized = value.trim().toLowerCase();
   if (normalized === "browser" || normalized === "hash") {
+    return normalized;
+  }
+  return undefined;
+};
+
+const normalizeVisualQualityReferenceMode = (
+  value: string | undefined
+): WorkspaceVisualQualityReferenceMode | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "figma_api" || normalized === "frozen_fixture") {
     return normalized;
   }
   return undefined;
@@ -135,6 +176,9 @@ export const resolveRuntimeSettings = ({
   pipelineDiagnosticDetailsMaxItems,
   pipelineDiagnosticDetailsMaxDepth,
   enableUiValidation,
+  enableVisualQualityValidation,
+  visualQualityReferenceMode,
+  visualQualityViewportWidth,
   enableUnitTestValidation,
   unitTestIgnoreFailure,
   installPreferOffline,
@@ -180,6 +224,9 @@ export const resolveRuntimeSettings = ({
   pipelineDiagnosticDetailsMaxItems?: number;
   pipelineDiagnosticDetailsMaxDepth?: number;
   enableUiValidation?: boolean;
+  enableVisualQualityValidation?: boolean;
+  visualQualityReferenceMode?: string;
+  visualQualityViewportWidth?: number;
   enableUnitTestValidation?: boolean;
   unitTestIgnoreFailure?: boolean;
   installPreferOffline?: boolean;
@@ -334,6 +381,18 @@ export const resolveRuntimeSettings = ({
     pipelineDiagnosticLimits: resolvedPipelineDiagnosticLimits,
     enableUiValidation:
       typeof enableUiValidation === "boolean" ? enableUiValidation : DEFAULT_ENABLE_UI_VALIDATION,
+    enableVisualQualityValidation:
+      typeof enableVisualQualityValidation === "boolean"
+        ? enableVisualQualityValidation
+        : DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION,
+    visualQualityReferenceMode:
+      normalizeVisualQualityReferenceMode(visualQualityReferenceMode) ?? DEFAULT_VISUAL_QUALITY_REFERENCE_MODE,
+    visualQualityViewportWidth: resolveIntegerInRange({
+      value: visualQualityViewportWidth,
+      min: 320,
+      max: 4_096,
+      fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH
+    }),
     enableUnitTestValidation:
       typeof enableUnitTestValidation === "boolean"
         ? enableUnitTestValidation

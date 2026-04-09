@@ -1628,6 +1628,7 @@ const createJobRecord = ({
     status: "queued",
     submittedAt: nowIso(),
     request: {
+      enableVisualQualityValidation: false,
       enableGitPr: false,
       figmaSourceMode: "local_json",
       llmCodegenMode: "deterministic",
@@ -4890,10 +4891,12 @@ test("ValidateProjectService reads generated.project and writes validation.summa
     status: string;
     generatedApp?: { status?: string; lint?: { args?: string[] } };
     visualAudit?: { status?: string };
+    visualQuality?: { status?: string };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
   assert.equal(summary?.generatedApp?.status, "ok");
   assert.equal(summary?.visualAudit?.status, "not_requested");
+  assert.equal(summary?.visualQuality?.status, "not_requested");
   assert.deepEqual(summary?.generatedApp?.lint?.args, ["lint"]);
   assert.equal(
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
@@ -5144,6 +5147,520 @@ test("ValidateProjectService fails with a structured error when the visual audit
   assert.equal(summary?.visualAudit?.status, "failed");
   assert.equal(summary?.visualAudit?.baselineImagePath, path.join("fixtures", "missing-visual-baseline.png"));
   assert.equal(executionContext.job.visualAudit?.status, "failed");
+});
+
+test("ValidateProjectService runs standalone visual quality in frozen_fixture mode and honors the configured viewport width", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-frozen-"));
+  const fixtureRoot = path.join(root, "fixtures", "customer-board");
+  const customerProfilePath = path.join(fixtureRoot, "inputs", "customer-profile.json");
+  const referenceImagePath = path.join(fixtureRoot, "visual-quality", "reference.png");
+  const referenceMetadataPath = path.join(fixtureRoot, "visual-quality", "reference.metadata.json");
+  await mkdir(path.dirname(customerProfilePath), { recursive: true });
+  await mkdir(path.dirname(referenceImagePath), { recursive: true });
+  await writeFile(customerProfilePath, JSON.stringify({ brandId: "customer-board" }), "utf8");
+  await writeFile(
+    path.join(fixtureRoot, "manifest.json"),
+    JSON.stringify(
+      {
+        version: 3,
+        visualQuality: {
+          frozenReferenceImage: "visual-quality/reference.png",
+          frozenReferenceMetadata: "visual-quality/reference.metadata.json"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    referenceImagePath,
+    createSolidPngBuffer({
+      width: 8,
+      height: 6,
+      rgba: [255, 255, 255, 255]
+    })
+  );
+  await writeFile(
+    referenceMetadataPath,
+    JSON.stringify(
+      {
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "fixture-file",
+          nodeId: "1:2",
+          nodeName: "Fixture Screen",
+          lastModified: "2026-04-08T00:00:00.000Z"
+        },
+        viewport: {
+          width: 8,
+          height: 6
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    rootDir: root,
+    runtimeOverrides: {
+      enableUiValidation: true,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8
+    },
+    requestOverrides: {
+      customerProfilePath,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-visual-quality-frozen"
+    } satisfies GenerationDiffContext
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>visual quality</body></html>\n", "utf8");
+
+  const actualBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [248, 248, 248, 255]
+  });
+  const diffBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [255, 0, 0, 255]
+  });
+  let captureViewport:
+    | {
+        width?: number;
+        height?: number;
+        deviceScaleFactor?: number;
+      }
+    | undefined;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult({ includeUiValidation: true }),
+    captureFromProjectFn: async (input) => {
+      captureViewport = input.config?.viewport;
+      return {
+        screenshotBuffer: actualBuffer,
+        width: 8,
+        height: 6,
+        viewport: {
+          width: 8,
+          height: 6,
+          deviceScaleFactor: 1
+        }
+      };
+    },
+    comparePngBuffersFn: () => {
+      return {
+        diffImageBuffer: diffBuffer,
+        similarityScore: 91.25,
+        diffPixelCount: 4,
+        totalPixels: 48,
+        regions: [],
+        width: 8,
+        height: 6
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const visualQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    referenceSource?: string;
+    capturedAt?: string;
+    overallScore?: number;
+  }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    visualQuality?: {
+      status?: string;
+      referenceSource?: string;
+      capturedAt?: string;
+      overallScore?: number;
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+
+  assert.deepEqual(captureViewport, {
+    width: 8,
+    height: 6,
+    deviceScaleFactor: 1
+  });
+  assert.equal(visualQuality?.status, "completed");
+  assert.equal(visualQuality?.referenceSource, "frozen_fixture");
+  assert.equal(visualQuality?.capturedAt, "2026-04-09T00:00:00.000Z");
+  assert.equal(typeof visualQuality?.overallScore, "number");
+  assert.equal(summary?.status, "warn");
+  assert.equal(summary?.visualQuality?.status, "completed");
+  assert.equal(summary?.visualQuality?.referenceSource, "frozen_fixture");
+  assert.equal(summary?.visualQuality?.capturedAt, "2026-04-09T00:00:00.000Z");
+  assert.equal(typeof summary?.visualQuality?.overallScore, "number");
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualQualityReport),
+    path.join(executionContext.paths.jobDir, "visual-quality", "report.json")
+  );
+  assert.equal(executionContext.job.visualQuality?.status, "completed");
+  assert.equal(executionContext.job.visualQuality?.referenceSource, "frozen_fixture");
+});
+
+test("ValidateProjectService runs standalone visual quality in figma_api mode", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-figma-"));
+  const referenceBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [255, 255, 255, 255]
+  });
+  const actualBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [250, 250, 250, 255]
+  });
+  const diffBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [255, 0, 0, 255]
+  });
+  const fetchCalls: string[] = [];
+  const mockFetch: typeof fetch = async (input, init) => {
+    const url = input instanceof Request ? input.url : String(input);
+    fetchCalls.push(url);
+    if (url.includes("/v1/files/test-file/nodes?")) {
+      assert.deepEqual(init?.headers, {
+        "X-Figma-Token": "test-token"
+      });
+      return new Response(
+        JSON.stringify({
+          lastModified: "2026-04-08T00:00:00.000Z",
+          nodes: {
+            "1:2": {
+              document: {
+                id: "1:2",
+                name: "Screen 1",
+                absoluteBoundingBox: {
+                  width: 4,
+                  height: 3
+                }
+              }
+            }
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+    if (url.includes("/v1/images/test-file?")) {
+      const parsedUrl = new URL(url);
+      assert.equal(parsedUrl.searchParams.get("ids"), "1:2");
+      assert.equal(parsedUrl.searchParams.get("format"), "png");
+      assert.equal(parsedUrl.searchParams.get("scale"), "2");
+      assert.deepEqual(init?.headers, {
+        "X-Figma-Token": "test-token"
+      });
+      return new Response(
+        JSON.stringify({
+          images: {
+            "1:2": "https://example.test/reference.png"
+          }
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }
+      );
+    }
+    if (url === "https://example.test/reference.png") {
+      return new Response(referenceBuffer, {
+        status: 200,
+        headers: {
+          "content-type": "image/png"
+        }
+      });
+    }
+    throw new Error(`Unexpected fetch URL: ${url}`);
+  };
+
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    rootDir: root,
+    input: {
+      figmaAccessToken: "test-token"
+    },
+    runtimeOverrides: {
+      enableUiValidation: true,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "figma_api",
+      visualQualityViewportWidth: 8,
+      fetchImpl: mockFetch,
+      figmaMaxRetries: 0
+    },
+    requestOverrides: {
+      figmaFileKey: "test-file",
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "figma_api",
+      visualQualityViewportWidth: 8
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-visual-quality-figma"
+    } satisfies GenerationDiffContext
+  });
+  await writeFile(
+    executionContext.paths.figmaJsonFile,
+    JSON.stringify({
+      name: "Stage Service Board",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          {
+            id: "0:1",
+            type: "CANVAS",
+            children: [
+              {
+                id: "1:2",
+                type: "FRAME",
+                name: "Screen 1",
+                absoluteBoundingBox: {
+                  x: 0,
+                  y: 0,
+                  width: 4,
+                  height: 3
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }),
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaCleaned,
+    stage: "figma.source",
+    absolutePath: executionContext.paths.figmaJsonFile
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>figma visual quality</body></html>\n", "utf8");
+
+  let captureViewport:
+    | {
+        width?: number;
+        height?: number;
+        deviceScaleFactor?: number;
+      }
+    | undefined;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult({ includeUiValidation: true }),
+    captureFromProjectFn: async (input) => {
+      captureViewport = input.config?.viewport;
+      return {
+        screenshotBuffer: actualBuffer,
+        width: 8,
+        height: 6,
+        viewport: {
+          width: 8,
+          height: 6,
+          deviceScaleFactor: 1
+        }
+      };
+    },
+    comparePngBuffersFn: () => {
+      return {
+        diffImageBuffer: diffBuffer,
+        similarityScore: 95,
+        diffPixelCount: 1,
+        totalPixels: 48,
+        regions: [],
+        width: 8,
+        height: 6
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const visualQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    referenceSource?: string;
+    capturedAt?: string;
+    overallScore?: number;
+  }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
+  assert.equal(fetchCalls.length, 3);
+  assert.deepEqual(captureViewport, {
+    width: 8,
+    height: 6,
+    deviceScaleFactor: 1
+  });
+  assert.equal(visualQuality?.status, "completed");
+  assert.equal(visualQuality?.referenceSource, "figma_api");
+  assert.match(visualQuality?.capturedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(typeof visualQuality?.overallScore, "number");
+  assert.equal(executionContext.job.visualQuality?.referenceSource, "figma_api");
+});
+
+test("ValidateProjectService records standalone visual quality failures without failing validate.project", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-failure-"));
+  const fixtureRoot = path.join(root, "fixtures", "customer-board");
+  const customerProfilePath = path.join(fixtureRoot, "inputs", "customer-profile.json");
+  const referenceImagePath = path.join(fixtureRoot, "visual-quality", "reference.png");
+  const referenceMetadataPath = path.join(fixtureRoot, "visual-quality", "reference.metadata.json");
+  await mkdir(path.dirname(customerProfilePath), { recursive: true });
+  await mkdir(path.dirname(referenceImagePath), { recursive: true });
+  await writeFile(customerProfilePath, JSON.stringify({ brandId: "customer-board" }), "utf8");
+  await writeFile(
+    path.join(fixtureRoot, "manifest.json"),
+    JSON.stringify(
+      {
+        version: 3,
+        visualQuality: {
+          frozenReferenceImage: "visual-quality/reference.png",
+          frozenReferenceMetadata: "visual-quality/reference.metadata.json"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    referenceImagePath,
+    createSolidPngBuffer({
+      width: 6,
+      height: 6,
+      rgba: [255, 255, 255, 255]
+    })
+  );
+  await writeFile(
+    referenceMetadataPath,
+    JSON.stringify(
+      {
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "fixture-file",
+          nodeId: "1:2",
+          nodeName: "Fixture Screen",
+          lastModified: "2026-04-08T00:00:00.000Z"
+        },
+        viewport: {
+          width: 6,
+          height: 6
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    rootDir: root,
+    runtimeOverrides: {
+      enableUiValidation: true,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8
+    },
+    requestOverrides: {
+      customerProfilePath,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-visual-quality-failure"
+    } satisfies GenerationDiffContext
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>visual quality failure</body></html>\n", "utf8");
+
+  let captureCalled = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult({ includeUiValidation: true }),
+    captureFromProjectFn: async () => {
+      captureCalled = true;
+      return {
+        screenshotBuffer: createSolidPngBuffer({
+          width: 8,
+          height: 6,
+          rgba: [255, 255, 255, 255]
+        }),
+        width: 8,
+        height: 6,
+        viewport: {
+          width: 8,
+          height: 6,
+          deviceScaleFactor: 1
+        }
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    visualQuality?: {
+      status?: string;
+      referenceSource?: string;
+      message?: string;
+      warnings?: string[];
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  const visualQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    referenceSource?: string;
+    message?: string;
+    warnings?: string[];
+  }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
+
+  assert.equal(captureCalled, false);
+  assert.equal(summary?.status, "warn");
+  assert.equal(summary?.visualQuality?.status, "failed");
+  assert.equal(summary?.visualQuality?.referenceSource, "frozen_fixture");
+  assert.match(summary?.visualQuality?.message ?? "", /does not match requested viewport width/i);
+  assert.equal(visualQuality?.status, "failed");
+  assert.equal(visualQuality?.referenceSource, "frozen_fixture");
+  assert.match(visualQuality?.warnings?.[0] ?? "", /does not match requested viewport width/i);
 });
 
 test("ValidateProjectService persists failure summary with generatedApp.status='failed' when runProjectValidationFn throws for build failure", async () => {

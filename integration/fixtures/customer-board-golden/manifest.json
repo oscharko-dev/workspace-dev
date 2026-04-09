@@ -55,5 +55,9 @@
     "customerProfile": "inputs/customer-profile.json",
     "figma": "inputs/figma.json"
   },
-  "version": 2
+  "version": 3,
+  "visualQuality": {
+    "frozenReferenceImage": "visual-quality/reference.png",
+    "frozenReferenceMetadata": "visual-quality/reference.metadata.json"
+  }
 }

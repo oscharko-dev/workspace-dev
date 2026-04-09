@@ -6,7 +6,12 @@
  *   workspace-dev start [--port 1983] [--host 127.0.0.1]
  */
 
-import type { WorkspaceBrandTheme, WorkspaceLogFormat, WorkspaceRouterMode } from "./contracts/index.js";
+import type {
+  WorkspaceBrandTheme,
+  WorkspaceLogFormat,
+  WorkspaceRouterMode,
+  WorkspaceVisualQualityReferenceMode
+} from "./contracts/index.js";
 import {
   getDefaultDesignSystemConfigPath,
   inferDesignSystemConfigFromProject,
@@ -50,6 +55,9 @@ const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_KEYS = DEFAULT_PIPELINE_DIAGNOSTIC
 const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems;
 const DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
+const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
+const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode = "figma_api";
+const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
@@ -92,6 +100,9 @@ interface CliOptions {
   pipelineDiagnosticDetailsMaxItems: number;
   pipelineDiagnosticDetailsMaxDepth: number;
   enableUiValidation: boolean;
+  enableVisualQualityValidation: boolean;
+  visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
+  visualQualityViewportWidth: number;
   enableUnitTestValidation: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
@@ -172,6 +183,23 @@ const parseRouterMode = ({
   }
   const normalized = value.trim().toLowerCase();
   if (normalized === "browser" || normalized === "hash") {
+    return normalized;
+  }
+  return fallback;
+};
+
+const parseVisualQualityReferenceMode = ({
+  value,
+  fallback
+}: {
+  value: string | undefined;
+  fallback: WorkspaceVisualQualityReferenceMode;
+}): WorkspaceVisualQualityReferenceMode => {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "figma_api" || normalized === "frozen_fixture") {
     return normalized;
   }
   return fallback;
@@ -334,6 +362,20 @@ const parseArgs = (argv: string[]): CliOptions => {
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION,
     DEFAULT_ENABLE_UI_VALIDATION
   );
+  let enableVisualQualityValidation = parseBooleanLike(
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION,
+    DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION
+  );
+  let visualQualityReferenceMode = parseVisualQualityReferenceMode({
+    value: process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE,
+    fallback: DEFAULT_VISUAL_QUALITY_REFERENCE_MODE
+  });
+  let visualQualityViewportWidth = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH,
+    fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH,
+    min: 320,
+    max: 4096
+  });
   let enableUnitTestValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION,
     DEFAULT_ENABLE_UNIT_TEST_VALIDATION
@@ -691,6 +733,32 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--visual-quality-validation") {
+      enableVisualQualityValidation = parseBooleanLike(args[index + 1], enableVisualQualityValidation);
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-quality-reference-mode") {
+      visualQualityReferenceMode = parseVisualQualityReferenceMode({
+        value: args[index + 1],
+        fallback: visualQualityReferenceMode
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--visual-quality-viewport-width") {
+      visualQualityViewportWidth = parseIntInRange({
+        raw: args[index + 1],
+        fallback: visualQualityViewportWidth,
+        min: 320,
+        max: 4096
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--unit-test-validation") {
       enableUnitTestValidation = parseBooleanLike(args[index + 1], enableUnitTestValidation);
       index += 1;
@@ -837,6 +905,9 @@ const parseArgs = (argv: string[]): CliOptions => {
     pipelineDiagnosticDetailsMaxItems,
     pipelineDiagnosticDetailsMaxDepth,
     enableUiValidation,
+    enableVisualQualityValidation,
+    visualQualityReferenceMode,
+    visualQualityViewportWidth,
     enableUnitTestValidation,
     installPreferOffline,
     skipInstall,
@@ -919,6 +990,12 @@ Options:
                              Max detail nesting depth retained per structured diagnostic (default: ${DEFAULT_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH})
   --ui-validation <true|false>
                              Run validate:ui in validate.project (default: ${DEFAULT_ENABLE_UI_VALIDATION})
+  --visual-quality-validation <true|false>
+                             Run visual quality validation in validate.project (default: ${DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION})
+  --visual-quality-reference-mode <figma_api|frozen_fixture>
+                             Reference source for visual quality validation (default: ${DEFAULT_VISUAL_QUALITY_REFERENCE_MODE})
+  --visual-quality-viewport-width <px>
+                             Capture width for visual quality validation (default: ${DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH})
   --unit-test-validation <true|false>
                              Run generated-project unit tests in validate.project (default: ${DEFAULT_ENABLE_UNIT_TEST_VALIDATION})
   --install-prefer-offline <true|false>
@@ -974,6 +1051,9 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS
   FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH
   FIGMAPIPE_WORKSPACE_ENABLE_UI_VALIDATION
+  FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION
+  FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE
+  FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH
   FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
   FIGMAPIPE_WORKSPACE_SKIP_INSTALL
@@ -1056,6 +1136,9 @@ const main = async (): Promise<void> => {
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = options.enableLintAutofix ? "true" : "false";
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION = options.enableVisualQualityValidation ? "true" : "false";
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE = options.visualQualityReferenceMode;
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH = String(options.visualQualityViewportWidth);
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION = options.enableUnitTestValidation ? "true" : "false";
 
   try {
@@ -1094,6 +1177,9 @@ const main = async (): Promise<void> => {
       pipelineDiagnosticDetailsMaxItems: options.pipelineDiagnosticDetailsMaxItems,
       pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth,
       enableUiValidation: options.enableUiValidation,
+      enableVisualQualityValidation: options.enableVisualQualityValidation,
+      visualQualityReferenceMode: options.visualQualityReferenceMode,
+      visualQualityViewportWidth: options.visualQualityViewportWidth,
       enableUnitTestValidation: options.enableUnitTestValidation,
       installPreferOffline: options.installPreferOffline,
       skipInstall: options.skipInstall,
@@ -1122,6 +1208,9 @@ const main = async (): Promise<void> => {
     logger.log({ level: "info", message: `Preview enabled: ${options.enablePreview}` });
     logger.log({ level: "info", message: `Perf validation enabled: ${options.enablePerfValidation}` });
     logger.log({ level: "info", message: `UI validation enabled: ${options.enableUiValidation}` });
+    logger.log({ level: "info", message: `Visual quality validation enabled: ${options.enableVisualQualityValidation}` });
+    logger.log({ level: "info", message: `Visual quality reference mode: ${options.visualQualityReferenceMode}` });
+    logger.log({ level: "info", message: `Visual quality viewport width: ${options.visualQualityViewportWidth}` });
     logger.log({ level: "info", message: `Unit test validation enabled: ${options.enableUnitTestValidation}` });
     logger.log({ level: "info", message: `Install prefer-offline: ${options.installPreferOffline}` });
     logger.log({ level: "info", message: `Skip install: ${options.skipInstall}` });
