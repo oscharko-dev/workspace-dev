@@ -12,6 +12,7 @@ import {
 } from "./visual-benchmark.execution.js";
 
 const BASELINE_FILE_NAME = "baseline.json";
+const LAST_RUN_FILE_NAME = "last-run.json";
 const NEUTRAL_DELTA_TOLERANCE = 1;
 
 export interface VisualBenchmarkScoreEntry {
@@ -50,6 +51,11 @@ export interface VisualBenchmarkRunnerDependencies {
 const resolveBaselinePath = (options?: VisualBenchmarkFixtureOptions): string => {
   const root = options?.fixtureRoot ?? getVisualBenchmarkFixtureRoot();
   return path.join(root, BASELINE_FILE_NAME);
+};
+
+const resolveLastRunPath = (options?: VisualBenchmarkFixtureOptions): string => {
+  const root = options?.fixtureRoot ?? getVisualBenchmarkFixtureRoot();
+  return path.join(root, LAST_RUN_FILE_NAME);
 };
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> => {
@@ -103,6 +109,43 @@ const parseBaseline = (content: string): VisualBenchmarkBaseline => {
   };
 };
 
+const parseLastRun = (content: string): VisualBenchmarkLastRun => {
+  const parsed: unknown = JSON.parse(content);
+  if (!isPlainRecord(parsed)) {
+    throw new Error("Expected last-run to be an object.");
+  }
+  if (parsed.version !== 1) {
+    throw new Error("Last-run version must be 1.");
+  }
+  if (typeof parsed.ranAt !== "string" || parsed.ranAt.trim().length === 0) {
+    throw new Error("Last-run ranAt must be a non-empty string.");
+  }
+  if (!Array.isArray(parsed.scores)) {
+    throw new Error("Last-run scores must be an array.");
+  }
+  const scores: VisualBenchmarkScoreEntry[] = [];
+  for (const entry of parsed.scores) {
+    if (!isPlainRecord(entry)) {
+      throw new Error("Each last-run score entry must be an object.");
+    }
+    if (typeof entry.fixtureId !== "string" || entry.fixtureId.trim().length === 0) {
+      throw new Error("Last-run score entry fixtureId must be a non-empty string.");
+    }
+    if (typeof entry.score !== "number" || !Number.isFinite(entry.score)) {
+      throw new Error("Last-run score entry score must be a finite number.");
+    }
+    scores.push({
+      fixtureId: entry.fixtureId,
+      score: entry.score,
+    });
+  }
+  return {
+    version: 1,
+    ranAt: parsed.ranAt,
+    scores,
+  };
+};
+
 export const loadVisualBenchmarkBaseline = async (
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkBaseline | null> => {
@@ -132,6 +175,43 @@ export const saveVisualBenchmarkBaseline = async (
     })),
   };
   await writeFile(baselinePath, toStableJsonString(baseline), "utf8");
+};
+
+export interface VisualBenchmarkLastRun {
+  version: 1;
+  ranAt: string;
+  scores: VisualBenchmarkScoreEntry[];
+}
+
+export const saveVisualBenchmarkLastRun = async (
+  scores: VisualBenchmarkScoreEntry[],
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<void> => {
+  const lastRunPath = resolveLastRunPath(options);
+  const lastRun: VisualBenchmarkLastRun = {
+    version: 1,
+    ranAt: new Date().toISOString(),
+    scores: scores.map((entry) => ({
+      fixtureId: entry.fixtureId,
+      score: entry.score,
+    })),
+  };
+  await writeFile(lastRunPath, toStableJsonString(lastRun), "utf8");
+};
+
+export const loadVisualBenchmarkLastRun = async (
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<VisualBenchmarkLastRun | null> => {
+  const lastRunPath = resolveLastRunPath(options);
+  try {
+    const content = await readFile(lastRunPath, "utf8");
+    return parseLastRun(content);
+  } catch (error: unknown) {
+    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
 };
 
 export const computeVisualBenchmarkScores = async (
@@ -277,6 +357,7 @@ export const runVisualBenchmark = async (
   dependencies?: VisualBenchmarkRunnerDependencies,
 ): Promise<VisualBenchmarkResult> => {
   const scores = await computeVisualBenchmarkScores(options, dependencies);
+  await saveVisualBenchmarkLastRun(scores, options);
   const baseline = await loadVisualBenchmarkBaseline(options);
   const result = computeVisualBenchmarkDeltas(scores, baseline);
   const table = formatVisualBenchmarkTable(result);
