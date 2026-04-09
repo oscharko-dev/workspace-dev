@@ -333,14 +333,14 @@ test("resolveVisualBenchmarkMaintenanceMode accepts exactly one maintenance flag
 });
 
 test("resolveVisualBenchmarkCliResolution routes default mode to benchmark and flags to maintenance", () => {
-  assert.deepEqual(resolveVisualBenchmarkCliResolution([]), {
-    action: "benchmark",
-    forwardedArgs: []
-  });
-  assert.deepEqual(resolveVisualBenchmarkCliResolution(["--update-fixtures"]), {
-    action: "maintenance",
-    forwardedArgs: ["--update-fixtures"]
-  });
+  const defaultResult = resolveVisualBenchmarkCliResolution([]);
+  assert.equal(defaultResult.action, "benchmark");
+  assert.deepEqual(defaultResult.forwardedArgs, []);
+  assert.equal(defaultResult.qualityThreshold, undefined);
+
+  const maintenanceResult = resolveVisualBenchmarkCliResolution(["--update-fixtures"]);
+  assert.equal(maintenanceResult.action, "maintenance");
+  assert.deepEqual(maintenanceResult.forwardedArgs, ["--update-fixtures"]);
   assert.throws(
     () => resolveVisualBenchmarkCliResolution(["--invalid"]),
     /Usage: pnpm benchmark:visual/
@@ -622,10 +622,9 @@ test("loadVisualBenchmarkBaseline returns null when baseline file does not exist
 });
 
 test("resolveVisualBenchmarkCliResolution accepts --update-baseline", () => {
-  assert.deepEqual(resolveVisualBenchmarkCliResolution(["--update-baseline"]), {
-    action: "maintenance",
-    forwardedArgs: ["--update-baseline"]
-  });
+  const result = resolveVisualBenchmarkCliResolution(["--update-baseline"]);
+  assert.equal(result.action, "maintenance");
+  assert.deepEqual(result.forwardedArgs, ["--update-baseline"]);
 });
 
 test("resolveVisualBenchmarkMaintenanceMode accepts --update-baseline", () => {
