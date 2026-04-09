@@ -11,10 +11,13 @@ import {
   listVisualBenchmarkFixtureIds,
   loadVisualBenchmarkFixtureBundle,
   loadVisualBenchmarkFixtureInputs,
+  loadVisualBenchmarkFixtureManifest,
   loadVisualBenchmarkFixtureMetadata,
   loadVisualBenchmarkReference,
   toStableJsonString,
+  type VisualBenchmarkFixtureManifest,
   type VisualBenchmarkFixtureMetadata,
+  writeVisualBenchmarkFixtureManifest,
   writeVisualBenchmarkFixtureInputs,
   writeVisualBenchmarkFixtureMetadata,
   writeVisualBenchmarkReference
@@ -74,10 +77,20 @@ const simpleFormMetadata: VisualBenchmarkFixtureMetadata = {
   }
 };
 
+const simpleFormManifest: VisualBenchmarkFixtureManifest = {
+  version: 1,
+  fixtureId: "simple-form",
+  visualQuality: {
+    frozenReferenceImage: "reference.png",
+    frozenReferenceMetadata: "metadata.json"
+  }
+};
+
 const createFixtureRoot = async (): Promise<string> => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-benchmark-"));
   const fixtureDir = path.join(root, "simple-form");
   await mkdir(fixtureDir, { recursive: true });
+  await writeVisualBenchmarkFixtureManifest("simple-form", simpleFormManifest, { fixtureRoot: root });
   await writeVisualBenchmarkFixtureMetadata("simple-form", simpleFormMetadata, { fixtureRoot: root });
   await writeVisualBenchmarkFixtureInputs(
     "simple-form",
@@ -152,6 +165,14 @@ test("loadVisualBenchmarkFixtureMetadata validates the committed simple-form fix
   assert.ok(metadata.viewport.height > 0);
 });
 
+test("loadVisualBenchmarkFixtureManifest validates the committed simple-form fixture", async () => {
+  const manifest = await loadVisualBenchmarkFixtureManifest("simple-form");
+  assert.equal(manifest.version, 1);
+  assert.equal(manifest.fixtureId, "simple-form");
+  assert.equal(manifest.visualQuality.frozenReferenceImage, "reference.png");
+  assert.equal(manifest.visualQuality.frozenReferenceMetadata, "metadata.json");
+});
+
 test("loadVisualBenchmarkFixtureInputs reads figma.json for simple-form", async () => {
   const figmaInput = await loadVisualBenchmarkFixtureInputs("simple-form");
   assert.ok(typeof figmaInput === "object" && figmaInput !== null, "Expected figmaInput to be an object.");
@@ -169,6 +190,7 @@ test("loadVisualBenchmarkReference reads a valid PNG for the committed fixture",
 
 test("loadVisualBenchmarkFixtureBundle loads the flat fixture bundle", async () => {
   const bundle = await loadVisualBenchmarkFixtureBundle("simple-form");
+  assert.equal(bundle.manifest.fixtureId, "simple-form");
   assert.equal(bundle.metadata.fixtureId, "simple-form");
   assert.ok(typeof bundle.figmaInput === "object" && bundle.figmaInput !== null);
   assert.ok(bundle.referenceBuffer.length > 0);
@@ -310,9 +332,9 @@ test("resolveVisualBenchmarkMaintenanceMode accepts exactly one maintenance flag
   );
 });
 
-test("resolveVisualBenchmarkCliResolution routes default mode to tests and flags to maintenance", () => {
+test("resolveVisualBenchmarkCliResolution routes default mode to benchmark and flags to maintenance", () => {
   assert.deepEqual(resolveVisualBenchmarkCliResolution([]), {
-    action: "test",
+    action: "benchmark",
     forwardedArgs: []
   });
   assert.deepEqual(resolveVisualBenchmarkCliResolution(["--update-fixtures"]), {
@@ -325,26 +347,16 @@ test("resolveVisualBenchmarkCliResolution routes default mode to tests and flags
   );
 });
 
-test("runVisualBenchmarkCli spawns the benchmark test suite in default mode", async () => {
-  const calls: Array<{ command: string; args: string[] }> = [];
+test("runVisualBenchmarkCli runs the benchmark runner in default mode", async () => {
+  let calls = 0;
   const status = await runVisualBenchmarkCli([], {
-    spawnCommand: (command, args) => {
-      calls.push({ command, args });
-      return {
-        status: 0,
-        signal: null,
-        output: [],
-        pid: 0,
-        stdout: null,
-        stderr: null
-      } as never;
+    runBenchmark: async () => {
+      calls += 1;
     }
   });
 
   assert.equal(status, 0);
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0]?.command, "pnpm");
-  assert.deepEqual(calls[0]?.args, ["exec", "tsx", "--test", "integration/visual-benchmark.test.ts"]);
+  assert.equal(calls, 1);
 });
 
 test("helper store writes stable fixture JSON in sorted key order", async () => {
@@ -383,10 +395,14 @@ test("listVisualBenchmarkFixtureIds returns all 5 fixture IDs", async () => {
   assert.equal(ids.length, 5, "Expected exactly 5 fixture IDs.");
 });
 
-test("all 5 fixtures can be loaded (metadata, figma.json, reference.png)", async () => {
+test("all 5 fixtures can be loaded (manifest, metadata, figma.json, reference.png)", async () => {
   const ids = await listVisualBenchmarkFixtureIds();
   for (const id of ids) {
+    const manifest = await loadVisualBenchmarkFixtureManifest(id);
     const metadata = await loadVisualBenchmarkFixtureMetadata(id);
+    assert.equal(manifest.fixtureId, id);
+    assert.equal(manifest.visualQuality.frozenReferenceImage, "reference.png");
+    assert.equal(manifest.visualQuality.frozenReferenceMetadata, "metadata.json");
     assert.equal(metadata.version, 1);
     assert.equal(metadata.fixtureId, id);
     assert.equal(metadata.source.fileKey, "DUArQ8VuM3aPMjXFLaQSSH");
@@ -403,11 +419,16 @@ test("all 5 fixtures can be loaded (metadata, figma.json, reference.png)", async
 });
 
 test("computeVisualBenchmarkScores returns a score for each fixture", async () => {
-  const scores = await computeVisualBenchmarkScores();
+  const scores = await computeVisualBenchmarkScores(undefined, {
+    runFixtureBenchmark: async (fixtureId) => ({
+      fixtureId,
+      score: fixtureId === "simple-form" ? 91 : 90
+    })
+  });
   assert.equal(scores.length, 5, "Expected scores for all 5 fixtures.");
   for (const entry of scores) {
     assert.ok(typeof entry.fixtureId === "string" && entry.fixtureId.length > 0);
-    assert.equal(entry.score, 100, `Expected self-comparison score of 100 for '${entry.fixtureId}'.`);
+    assert.ok(entry.score >= 90, `Expected stubbed score for '${entry.fixtureId}'.`);
   }
 });
 
@@ -465,6 +486,27 @@ test("computeVisualBenchmarkDeltas with null baseline returns null deltas", () =
   assert.equal(result.overallCurrent, 88);
 });
 
+test("computeVisualBenchmarkDeltas treats +/-1 deltas as neutral tolerance", () => {
+  const current: VisualBenchmarkScoreEntry[] = [
+    { fixtureId: "fixture-a", score: 91 },
+    { fixtureId: "fixture-b", score: 89 }
+  ];
+  const baseline: VisualBenchmarkBaseline = {
+    version: 1,
+    updatedAt: "2026-04-01T00:00:00.000Z",
+    scores: [
+      { fixtureId: "fixture-a", score: 90 },
+      { fixtureId: "fixture-b", score: 90 }
+    ]
+  };
+
+  const result = computeVisualBenchmarkDeltas(current, baseline);
+  assert.equal(result.deltas[0]?.delta, 1);
+  assert.equal(result.deltas[0]?.indicator, "neutral");
+  assert.equal(result.deltas[1]?.delta, -1);
+  assert.equal(result.deltas[1]?.indicator, "neutral");
+});
+
 test("formatVisualBenchmarkTable produces a table with expected structure", () => {
   const result: VisualBenchmarkResult = {
     deltas: [
@@ -494,7 +536,8 @@ test("loadVisualBenchmarkBaseline loads the committed baseline file", async () =
   assert.equal(baseline.version, 1);
   assert.equal(baseline.scores.length, 5);
   for (const entry of baseline.scores) {
-    assert.equal(entry.score, 100, `Expected baseline score of 100 for '${entry.fixtureId}'.`);
+    assert.equal(typeof entry.score, "number", `Expected numeric baseline score for '${entry.fixtureId}'.`);
+    assert.ok(Number.isFinite(entry.score), `Expected finite baseline score for '${entry.fixtureId}'.`);
   }
 });
 

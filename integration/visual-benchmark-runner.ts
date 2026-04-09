@@ -1,17 +1,18 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { comparePngBuffers } from "../src/job-engine/visual-diff.js";
-import { computeVisualQualityReport } from "../src/job-engine/visual-scoring.js";
 import {
   getVisualBenchmarkFixtureRoot,
   listVisualBenchmarkFixtureIds,
-  loadVisualBenchmarkReference,
   toStableJsonString,
   type VisualBenchmarkFixtureOptions,
 } from "./visual-benchmark.helpers.js";
+import {
+  runVisualBenchmarkFixture,
+  type VisualBenchmarkExecutionOptions,
+} from "./visual-benchmark.execution.js";
 
 const BASELINE_FILE_NAME = "baseline.json";
+const NEUTRAL_DELTA_TOLERANCE = 1;
 
 export interface VisualBenchmarkScoreEntry {
   fixtureId: string;
@@ -37,6 +38,13 @@ export interface VisualBenchmarkResult {
   overallBaseline: number | null;
   overallCurrent: number;
   overallDelta: number | null;
+}
+
+export interface VisualBenchmarkRunnerDependencies {
+  runFixtureBenchmark?: (
+    fixtureId: string,
+    options?: VisualBenchmarkExecutionOptions,
+  ) => Promise<VisualBenchmarkScoreEntry>;
 }
 
 const resolveBaselinePath = (options?: VisualBenchmarkFixtureOptions): string => {
@@ -127,22 +135,18 @@ export const saveVisualBenchmarkBaseline = async (
 };
 
 export const computeVisualBenchmarkScores = async (
-  options?: VisualBenchmarkFixtureOptions,
+  options?: VisualBenchmarkExecutionOptions,
+  dependencies?: VisualBenchmarkRunnerDependencies,
 ): Promise<VisualBenchmarkScoreEntry[]> => {
   const fixtureIds = await listVisualBenchmarkFixtureIds(options);
   const scores: VisualBenchmarkScoreEntry[] = [];
+  const runFixtureBenchmark =
+    dependencies?.runFixtureBenchmark ??
+    (async (fixtureId: string, fixtureOptions?: VisualBenchmarkExecutionOptions) =>
+      runVisualBenchmarkFixture(fixtureId, fixtureOptions));
 
   for (const fixtureId of fixtureIds) {
-    const referenceBuffer = await loadVisualBenchmarkReference(fixtureId, options);
-    const diffResult = comparePngBuffers({
-      referenceBuffer,
-      testBuffer: referenceBuffer,
-    });
-    const report = computeVisualQualityReport({ diffResult });
-    scores.push({
-      fixtureId,
-      score: report.overallScore,
-    });
+    scores.push(await runFixtureBenchmark(fixtureId, options));
   }
 
   return scores;
@@ -163,7 +167,7 @@ export const computeVisualBenchmarkDeltas = (
     const baselineScore = baselineMap.get(entry.fixtureId) ?? null;
     const delta = baselineScore !== null ? roundToTwoDecimals(entry.score - baselineScore) : null;
     let indicator: "improved" | "degraded" | "neutral";
-    if (delta === null || delta === 0) {
+    if (delta === null || Math.abs(delta) <= NEUTRAL_DELTA_TOLERANCE) {
       indicator = "neutral";
     } else if (delta > 0) {
       indicator = "improved";
@@ -269,9 +273,10 @@ export const formatVisualBenchmarkTable = (result: VisualBenchmarkResult): strin
 };
 
 export const runVisualBenchmark = async (
-  options?: VisualBenchmarkFixtureOptions & { updateBaseline?: boolean },
+  options?: VisualBenchmarkExecutionOptions & { updateBaseline?: boolean },
+  dependencies?: VisualBenchmarkRunnerDependencies,
 ): Promise<VisualBenchmarkResult> => {
-  const scores = await computeVisualBenchmarkScores(options);
+  const scores = await computeVisualBenchmarkScores(options, dependencies);
   const baseline = await loadVisualBenchmarkBaseline(options);
   const result = computeVisualBenchmarkDeltas(scores, baseline);
   const table = formatVisualBenchmarkTable(result);
