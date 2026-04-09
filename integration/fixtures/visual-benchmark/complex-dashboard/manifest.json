@@ -1,0 +1,8 @@
+{
+  "fixtureId": "complex-dashboard",
+  "version": 1,
+  "visualQuality": {
+    "frozenReferenceImage": "reference.png",
+    "frozenReferenceMetadata": "metadata.json"
+  }
+}

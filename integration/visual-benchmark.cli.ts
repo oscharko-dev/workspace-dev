@@ -1,9 +1,9 @@
-import { spawnSync, type SpawnSyncReturns } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runVisualBenchmarkMaintenance } from "./visual-benchmark.update.js";
+import { runVisualBenchmark } from "./visual-benchmark-runner.js";
 
-export type VisualBenchmarkCliAction = "test" | "maintenance";
+export type VisualBenchmarkCliAction = "benchmark" | "maintenance";
 
 export interface VisualBenchmarkCliResolution {
   action: VisualBenchmarkCliAction;
@@ -11,25 +11,12 @@ export interface VisualBenchmarkCliResolution {
 }
 
 const MODULE_FILE = fileURLToPath(import.meta.url);
-const TEST_FILES = [
-  "integration/visual-benchmark.test.ts"
-] as const;
-
-type SpawnVisualBenchmarkCommand = (
-  command: string,
-  args: string[],
-  options: {
-    env: NodeJS.ProcessEnv;
-    shell: boolean;
-    stdio: "inherit";
-  }
-) => SpawnSyncReturns<Buffer>;
 
 export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): VisualBenchmarkCliResolution => {
   const forwardedArgs = args[0] === "--" ? args.slice(1) : [...args];
   if (forwardedArgs.length === 0) {
     return {
-      action: "test",
+      action: "benchmark",
       forwardedArgs
     };
   }
@@ -55,7 +42,7 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
 export const runVisualBenchmarkCli = async (
   args: readonly string[],
   options?: {
-    spawnCommand?: SpawnVisualBenchmarkCommand;
+    runBenchmark?: () => Promise<void>;
   }
 ): Promise<number> => {
   const resolution = resolveVisualBenchmarkCliResolution(args);
@@ -64,22 +51,11 @@ export const runVisualBenchmarkCli = async (
     return 0;
   }
 
-  const spawnCommand = options?.spawnCommand ?? spawnSync;
-  const result = spawnCommand(
-    "pnpm",
-    ["exec", "tsx", "--test", ...TEST_FILES],
-    {
-      env: process.env,
-      shell: process.platform === "win32",
-      stdio: "inherit"
-    }
-  );
-
-  if (result.error) {
-    throw result.error;
-  }
-
-  return result.status ?? 1;
+  const runBenchmark = options?.runBenchmark ?? (async () => {
+    await runVisualBenchmark();
+  });
+  await runBenchmark();
+  return 0;
 };
 
 const isDirectExecution = process.argv[1] !== undefined && path.resolve(process.argv[1]) === MODULE_FILE;

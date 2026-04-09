@@ -16,6 +16,7 @@ import {
   writeVisualBenchmarkFixtureMetadata,
   writeVisualBenchmarkReference
 } from "./visual-benchmark.helpers.js";
+import { executeVisualBenchmarkFixture } from "./visual-benchmark.execution.js";
 import { runVisualBenchmark } from "./visual-benchmark-runner.js";
 
 type FetchLike = typeof fetch;
@@ -250,7 +251,6 @@ export const updateVisualBenchmarkFixtures = async (
 export const updateVisualBenchmarkReferences = async (
   dependencies?: VisualBenchmarkUpdateDependencies
 ): Promise<void> => {
-  const accessToken = requireAccessToken();
   const log = dependencies?.log ?? defaultLog;
   const now = dependencies?.now ?? (() => new Date().toISOString());
   const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
@@ -258,14 +258,20 @@ export const updateVisualBenchmarkReferences = async (
   log(`Updating references for ${fixtureIds.length} fixture(s)...`);
   for (const fixtureId of fixtureIds) {
     const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, dependencies);
-    const snapshot = await fetchVisualBenchmarkNodeSnapshot(metadata, accessToken, dependencies);
-    const referenceBuffer = await fetchVisualBenchmarkReferenceImage(metadata, accessToken, dependencies);
-    const updatedMetadata = updateMetadataFromSnapshot(metadata, snapshot, {
-      capturedAt: now()
+    const renderedReference = await executeVisualBenchmarkFixture(fixtureId, {
+      ...dependencies,
+      allowIncompleteVisualQuality: true
     });
+    const updatedMetadata: VisualBenchmarkFixtureMetadata = {
+      ...metadata,
+      capturedAt: now(),
+      viewport: {
+        width: renderedReference.viewport.width,
+        height: renderedReference.viewport.height
+      }
+    };
 
-    await writeVisualBenchmarkFixtureInputs(fixtureId, snapshot.payload, dependencies);
-    await writeVisualBenchmarkReference(fixtureId, referenceBuffer, dependencies);
+    await writeVisualBenchmarkReference(fixtureId, renderedReference.screenshotBuffer, dependencies);
     await writeVisualBenchmarkFixtureMetadata(fixtureId, updatedMetadata, dependencies);
 
     const paths = resolveVisualBenchmarkFixturePaths(fixtureId, dependencies);

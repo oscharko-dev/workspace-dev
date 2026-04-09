@@ -1,6 +1,14 @@
 # Visual Benchmark
 
-The visual benchmark system provides a fixed test set of Figma design views and a comparative runner that measures visual quality scores across benchmark runs.
+The visual benchmark provides a fixed five-fixture test set for comparing generator output against committed reference screenshots.
+
+Default benchmark runs are offline:
+
+- they use frozen `figma.json` fixtures from `integration/fixtures/visual-benchmark`
+- they generate a fresh project for each fixture
+- they build the generated app
+- they capture the rendered output in headless Chromium
+- they compute a visual quality score against the committed reference image
 
 ## Running the benchmark
 
@@ -8,60 +16,76 @@ The visual benchmark system provides a fixed test set of Figma design views and 
 pnpm benchmark:visual
 ```
 
-This runs the benchmark test suite, which loads all fixture reference images, computes visual quality scores via self-comparison, and validates the benchmark infrastructure.
+This command runs the real benchmark runner, not the benchmark test suite.
 
-## Updating the baseline
+The output is a comparison table with one row per fixture plus an overall average:
+
+```text
+┌─────────────────────────┬──────────┬──────────┬────────┐
+│ View                    │ Baseline │ Current  │ Delta  │
+├─────────────────────────┼──────────┼──────────┼────────┤
+│ Simple Form             │ 85       │ 88       │ +3 ✅  │
+│ Complex Dashboard       │ 72       │ 71       │ -1 ➖  │
+├─────────────────────────┼──────────┼──────────┼────────┤
+│ Overall Average         │ 78.5     │ 79.5     │ +1     │
+└─────────────────────────┴──────────┴──────────┴────────┘
+```
+
+## Baseline management
+
+The committed baseline lives at `integration/fixtures/visual-benchmark/baseline.json`.
+
+Update it with:
 
 ```bash
 pnpm benchmark:visual:update-baseline
 ```
 
-This computes current scores for all fixtures, compares them against the stored baseline, prints a comparison table, and writes the current scores as the new baseline.
+This command:
 
-## Interpreting results
+1. runs the full benchmark
+2. prints the current comparison table
+3. overwrites `baseline.json` with the current real scores
 
-The comparison table shows one row per fixture view and an overall average row:
+## Interpreting deltas
 
-```
-┌─────────────────────────┬──────────┬──────────┬────────┐
-│ View                    │ Baseline │ Current  │ Delta  │
-├─────────────────────────┼──────────┼──────────┼────────┤
-│ Simple Form             │ 100      │ 100      │ 0 ➖   │
-│ Complex Dashboard       │ 100      │ 100      │ 0 ➖   │
-├─────────────────────────┼──────────┼──────────┼────────┤
-│ Overall Average         │ 100      │ 100      │ 0      │
-└─────────────────────────┴──────────┴──────────┴────────┘
-```
+- `improved`: delta greater than `+1`
+- `degraded`: delta less than `-1`
+- `neutral`: delta within `±1`
 
-| Column   | Description                                  |
-| -------- | -------------------------------------------- |
-| View     | Display name derived from the fixture ID     |
-| Baseline | Score from the last saved baseline            |
-| Current  | Score from the current run                    |
-| Delta    | Difference (current minus baseline)           |
+The `±1` neutral band is intentional. It absorbs small rendering variance so deterministic reruns do not oscillate between improved and degraded.
 
-Delta indicators:
+## Fixture layout
 
-- Positive delta with a checkmark means the score improved.
-- Negative delta with a warning icon means the score degraded.
-- Zero delta or no baseline uses a neutral indicator.
+Each benchmark fixture directory under `integration/fixtures/visual-benchmark/<fixture-id>/` contains:
 
-## Adding a new benchmark view
+- `figma.json`: frozen Figma input for the view
+- `metadata.json`: frozen reference metadata including capture size
+- `reference.png`: committed reference screenshot
+- `manifest.json`: fixture-local manifest used by `validate.project` to locate the frozen reference
 
-1. Create a directory under `integration/fixtures/visual-benchmark/` with a kebab-case name (e.g., `my-new-view/`).
-2. Add `metadata.json` following the existing fixture format (version 1, fixtureId matching the directory name, Figma source coordinates, viewport dimensions).
-3. Add `figma.json` with the Figma API node response for the view.
-4. Add `reference.png` with the reference screenshot (valid PNG).
-5. Run `pnpm benchmark:visual:update-baseline` to include the new fixture in the baseline.
+The committed fixture set contains exactly five benchmark views:
 
-## How it works in CI
+- `simple-form`
+- `complex-dashboard`
+- `data-table`
+- `navigation-sidebar`
+- `design-system-showcase`
 
-The `.github/workflows/visual-benchmark.yml` workflow runs on pushes to `dev` and pull requests targeting `dev`. It installs dependencies, sets up Playwright, and runs `pnpm benchmark:visual`. The test suite validates that all fixtures load correctly and that the benchmark scoring infrastructure works as expected.
+## Maintenance commands
 
-## Other maintenance commands
+`pnpm benchmark:visual:update-fixtures` and `pnpm benchmark:visual:live` refresh data from live Figma and require `FIGMA_ACCESS_TOKEN`.
 
-| Command                                       | Description                                              |
-| --------------------------------------------- | -------------------------------------------------------- |
-| `pnpm benchmark:visual:update-fixtures`       | Fetches latest Figma node data and updates figma.json    |
-| `pnpm benchmark:visual:update-references`     | Fetches latest Figma exports and updates reference.png   |
-| `pnpm benchmark:visual:live`                  | Runs a live audit comparing frozen fixtures against Figma |
+`pnpm benchmark:visual:update-references` is offline. It regenerates each committed `reference.png` from the current benchmark pipeline output.
+
+| Command                                   | Description |
+| ----------------------------------------- | ----------- |
+| `pnpm benchmark:visual:update-fixtures`   | Refreshes frozen `figma.json` payloads from Figma |
+| `pnpm benchmark:visual:update-references` | Regenerates committed `reference.png` files from the current benchmark output |
+| `pnpm benchmark:visual:live`              | Compares frozen fixture data against live Figma responses |
+
+## CI behavior
+
+`.github/workflows/visual-benchmark.yml` runs `pnpm benchmark:visual` on pushes to `dev` and pull requests targeting `dev`.
+
+The workflow installs Playwright Chromium and executes the same real benchmark runner used locally. It does not require `FIGMA_ACCESS_TOKEN` for the default benchmark path.

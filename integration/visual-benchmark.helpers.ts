@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = path.resolve(MODULE_DIR, "fixtures", "visual-benchmark");
 const FIGMA_JSON_FILE_NAME = "figma.json";
+const MANIFEST_JSON_FILE_NAME = "manifest.json";
 const METADATA_JSON_FILE_NAME = "metadata.json";
 const REFERENCE_PNG_FILE_NAME = "reference.png";
 
@@ -44,14 +45,25 @@ export interface VisualBenchmarkFixtureMetadata {
 }
 
 export interface VisualBenchmarkFixtureBundle {
+  manifest: VisualBenchmarkFixtureManifest;
   metadata: VisualBenchmarkFixtureMetadata;
   figmaInput: unknown;
   referenceBuffer: Buffer;
 }
 
+export interface VisualBenchmarkFixtureManifest {
+  version: 1;
+  fixtureId: string;
+  visualQuality: {
+    frozenReferenceImage: string;
+    frozenReferenceMetadata: string;
+  };
+}
+
 export interface VisualBenchmarkFixturePaths {
   fixtureDir: string;
   figmaJsonPath: string;
+  manifestJsonPath: string;
   metadataJsonPath: string;
   referencePngPath: string;
 }
@@ -145,6 +157,34 @@ const parseMetadata = (input: string): VisualBenchmarkFixtureMetadata => {
   };
 };
 
+const parseManifest = (input: string): VisualBenchmarkFixtureManifest => {
+  const parsed = JSON.parse(input) as unknown;
+  if (!isPlainRecord(parsed)) {
+    throw new Error("Expected visual-benchmark manifest to be an object.");
+  }
+  if (parsed.version !== 1) {
+    throw new Error("visual-benchmark manifest version must be 1.");
+  }
+  const visualQuality = parsed.visualQuality;
+  if (!isPlainRecord(visualQuality)) {
+    throw new Error("visual-benchmark manifest visualQuality section is required.");
+  }
+  return {
+    version: 1,
+    fixtureId: parseRequiredString(parsed.fixtureId, "visual-benchmark manifest fixtureId"),
+    visualQuality: {
+      frozenReferenceImage: parseRequiredString(
+        visualQuality.frozenReferenceImage,
+        "visual-benchmark manifest visualQuality.frozenReferenceImage"
+      ),
+      frozenReferenceMetadata: parseRequiredString(
+        visualQuality.frozenReferenceMetadata,
+        "visual-benchmark manifest visualQuality.frozenReferenceMetadata"
+      )
+    }
+  };
+};
+
 const resolveFixtureRoot = (options?: VisualBenchmarkFixtureOptions): string => {
   return options?.fixtureRoot ?? FIXTURE_ROOT;
 };
@@ -198,6 +238,7 @@ export const resolveVisualBenchmarkFixturePaths = (
   return {
     fixtureDir,
     figmaJsonPath: path.join(fixtureDir, FIGMA_JSON_FILE_NAME),
+    manifestJsonPath: path.join(fixtureDir, MANIFEST_JSON_FILE_NAME),
     metadataJsonPath: path.join(fixtureDir, METADATA_JSON_FILE_NAME),
     referencePngPath: path.join(fixtureDir, REFERENCE_PNG_FILE_NAME)
   };
@@ -226,6 +267,21 @@ export const loadVisualBenchmarkFixtureMetadata = async (
   return metadata;
 };
 
+export const loadVisualBenchmarkFixtureManifest = async (
+  fixtureId: string,
+  options?: VisualBenchmarkFixtureOptions
+): Promise<VisualBenchmarkFixtureManifest> => {
+  const { manifestJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const content = await readFile(manifestJsonPath, "utf8");
+  const manifest = parseManifest(content);
+  assert.equal(
+    manifest.fixtureId,
+    fixtureId,
+    `Manifest fixtureId '${manifest.fixtureId}' does not match directory name '${fixtureId}'.`
+  );
+  return manifest;
+};
+
 export const loadVisualBenchmarkFixtureInputs = async (
   fixtureId: string,
   options?: VisualBenchmarkFixtureOptions
@@ -251,15 +307,27 @@ export const loadVisualBenchmarkFixtureBundle = async (
   fixtureId: string,
   options?: VisualBenchmarkFixtureOptions
 ): Promise<VisualBenchmarkFixtureBundle> => {
+  const manifest = await loadVisualBenchmarkFixtureManifest(fixtureId, options);
   const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
   const figmaInput = await loadVisualBenchmarkFixtureInputs(fixtureId, options);
   const referenceBuffer = await loadVisualBenchmarkReference(fixtureId, options);
 
   return {
+    manifest,
     metadata,
     figmaInput,
     referenceBuffer
   };
+};
+
+export const writeVisualBenchmarkFixtureManifest = async (
+  fixtureId: string,
+  manifest: VisualBenchmarkFixtureManifest,
+  options?: VisualBenchmarkFixtureOptions
+): Promise<void> => {
+  const { manifestJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  await mkdir(path.dirname(manifestJsonPath), { recursive: true });
+  await writeFile(manifestJsonPath, toStableJsonString(manifest), "utf8");
 };
 
 export const writeVisualBenchmarkFixtureMetadata = async (
