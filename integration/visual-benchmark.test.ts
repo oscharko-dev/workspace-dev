@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
+import { DEFAULT_SCORING_WEIGHTS } from "../src/job-engine/visual-scoring.js";
 import {
   assertAllowedFixtureId,
   assertAllowedFixturePath,
@@ -37,6 +38,7 @@ import {
   computeVisualBenchmarkScores,
   formatVisualBenchmarkTable,
   loadVisualBenchmarkBaseline,
+  runVisualBenchmark,
   saveVisualBenchmarkBaseline,
   type VisualBenchmarkBaseline,
   type VisualBenchmarkResult,
@@ -118,6 +120,105 @@ const createFixtureRoot = async (): Promise<string> => {
   await writeVisualBenchmarkReference("simple-form", createTestPngBuffer(8, 8, [0, 100, 200, 255]), { fixtureRoot: root });
   return root;
 };
+
+const createBenchmarkFixtureEnvironment = async (
+  metadataOverrides?: Partial<VisualBenchmarkFixtureMetadata>,
+): Promise<{
+  fixtureRoot: string;
+  artifactRoot: string;
+  metadata: VisualBenchmarkFixtureMetadata;
+}> => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-benchmark-runner-"));
+  const fixtureRoot = path.join(root, "fixtures");
+  const artifactRoot = path.join(root, "artifacts");
+  const metadata: VisualBenchmarkFixtureMetadata = {
+    ...simpleFormMetadata,
+    ...metadataOverrides,
+    source: {
+      ...simpleFormMetadata.source,
+      ...(metadataOverrides?.source ?? {}),
+    },
+    viewport: {
+      ...simpleFormMetadata.viewport,
+      ...(metadataOverrides?.viewport ?? {}),
+    },
+    export: {
+      ...simpleFormMetadata.export,
+      ...(metadataOverrides?.export ?? {}),
+    },
+  };
+
+  await mkdir(path.join(fixtureRoot, metadata.fixtureId), { recursive: true });
+  await writeVisualBenchmarkFixtureManifest(metadata.fixtureId, {
+    ...simpleFormManifest,
+    fixtureId: metadata.fixtureId,
+  }, { fixtureRoot, artifactRoot });
+  await writeVisualBenchmarkFixtureMetadata(metadata.fixtureId, metadata, { fixtureRoot, artifactRoot });
+  await writeVisualBenchmarkFixtureInputs(
+    metadata.fixtureId,
+    {
+      name: "Simple-Test-Board",
+      lastModified: metadata.source.lastModified,
+      nodes: {
+        [metadata.source.nodeId]: {
+          document: {
+            id: metadata.source.nodeId,
+            name: metadata.source.nodeName,
+            type: "FRAME",
+            absoluteBoundingBox: {
+              x: 0,
+              y: 0,
+              width: metadata.viewport.width,
+              height: metadata.viewport.height,
+            },
+          },
+        },
+      },
+    },
+    { fixtureRoot, artifactRoot },
+  );
+  await writeVisualBenchmarkReference(
+    metadata.fixtureId,
+    createTestPngBuffer(8, 8, [0, 100, 200, 255]),
+    { fixtureRoot, artifactRoot },
+  );
+
+  return { fixtureRoot, artifactRoot, metadata };
+};
+
+const createCompletedVisualQualityReport = (overallScore = 87.5) => ({
+  status: "completed" as const,
+  referenceSource: "frozen_fixture" as const,
+  capturedAt: "2026-04-09T00:00:00.000Z",
+  overallScore,
+  interpretation: "Good parity — small layout or color deviations",
+  dimensions: [
+    { name: "Layout Accuracy", weight: 0.30, score: 95, details: "" },
+    { name: "Color Fidelity", weight: 0.25, score: 90, details: "" },
+    { name: "Typography", weight: 0.20, score: 85, details: "" },
+    { name: "Component Structure", weight: 0.15, score: 80, details: "" },
+    { name: "Spacing & Alignment", weight: 0.10, score: 75, details: "" },
+  ],
+  diffImagePath: "visual-quality/diff.png",
+  hotspots: [],
+  metadata: {
+    comparedAt: "2026-04-09T00:00:00.000Z",
+    imageWidth: 1280,
+    imageHeight: 720,
+    totalPixels: 921600,
+    diffPixelCount: 1024,
+    configuredWeights: { ...DEFAULT_SCORING_WEIGHTS },
+    viewport: {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 1,
+    },
+    versions: {
+      packageVersion: "1.0.0",
+      contractVersion: "1.0.0",
+    },
+  },
+});
 
 const liveSnapshotPayload = {
   name: "Simple-Test-Board",
@@ -629,4 +730,144 @@ test("resolveVisualBenchmarkCliResolution accepts --update-baseline", () => {
 
 test("resolveVisualBenchmarkMaintenanceMode accepts --update-baseline", () => {
   assert.equal(resolveVisualBenchmarkMaintenanceMode(["--update-baseline"]), "update-baseline");
+});
+
+test("runVisualBenchmark applies configured weights to execution results and persisted artifact reports", async () => {
+  const env = await createBenchmarkFixtureEnvironment();
+  const customWeights = {
+    layoutAccuracy: 0.10,
+    colorFidelity: 0.10,
+    typography: 0.10,
+    componentStructure: 0.10,
+    spacingAlignment: 0.60,
+  };
+
+  try {
+    const result = await runVisualBenchmark(
+      {
+        ...env,
+        qualityConfig: {
+          weights: customWeights,
+        },
+      },
+      {
+        executeFixture: async (fixtureId) => ({
+          fixtureId,
+          score: 87.5,
+          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+          report: createCompletedVisualQualityReport(),
+          viewport: { width: 1280, height: 720 },
+        }),
+      },
+    );
+
+    assert.equal(result.deltas[0]?.current, 80);
+
+    const persistedReport = JSON.parse(
+      await readFile(path.join(env.artifactRoot, "last-run", "simple-form", "report.json"), "utf8"),
+    ) as {
+      overallScore: number;
+      dimensions: Array<{ weight: number }>;
+      metadata: { configuredWeights: { spacingAlignment: number } };
+    };
+
+    assert.equal(persistedReport.overallScore, 80);
+    assert.equal(persistedReport.dimensions[4]?.weight, 0.60);
+    assert.equal(persistedReport.metadata.configuredWeights.spacingAlignment, 0.60);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark applies screen-level thresholds using the fixture nodeId", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:2222",
+      nodeName: "Fixture Screen",
+    },
+  });
+
+  try {
+    const result = await runVisualBenchmark(
+      {
+        ...env,
+        qualityConfig: {
+          thresholds: { warn: 90, fail: 80 },
+          fixtures: {
+            "simple-form": {
+              thresholds: { warn: 70, fail: 60 },
+              screens: {
+                "2:2222": {
+                  thresholds: { warn: 55, fail: 45 },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        executeFixture: async (fixtureId) => ({
+          fixtureId,
+          score: 50,
+          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+          report: null,
+          viewport: { width: 1280, height: 720 },
+        }),
+      },
+    );
+
+    assert.deepEqual(result.deltas[0]?.thresholdResult?.thresholds, { warn: 55, fail: 45 });
+    assert.equal(result.deltas[0]?.thresholdResult?.verdict, "warn");
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark applies screen-level thresholds using the fixture nodeName alias", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:3333",
+      nodeName: "Marketing Page",
+    },
+  });
+
+  try {
+    const result = await runVisualBenchmark(
+      {
+        ...env,
+        qualityConfig: {
+          thresholds: { warn: 90, fail: 80 },
+          fixtures: {
+            "simple-form": {
+              thresholds: { warn: 70, fail: 60 },
+              screens: {
+                "Marketing Page": {
+                  thresholds: { warn: 58, fail: 46 },
+                },
+              },
+            },
+          },
+        },
+      },
+      {
+        executeFixture: async (fixtureId) => ({
+          fixtureId,
+          score: 44,
+          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+          report: null,
+          viewport: { width: 1280, height: 720 },
+        }),
+      },
+    );
+
+    assert.deepEqual(result.deltas[0]?.thresholdResult?.thresholds, { warn: 58, fail: 46 });
+    assert.equal(result.deltas[0]?.thresholdResult?.verdict, "fail");
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
 });

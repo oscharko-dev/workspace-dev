@@ -22,10 +22,16 @@ import {
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureOptions,
 } from "./visual-benchmark.helpers.js";
+import {
+  applyVisualQualityConfigToReport,
+  type VisualQualityConfig,
+} from "./visual-quality-config.js";
+import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
 
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
 export interface VisualBenchmarkExecutionOptions extends VisualBenchmarkFixtureOptions {
   allowIncompleteVisualQuality?: boolean;
+  qualityConfig?: VisualQualityConfig;
   workspaceRoot?: string;
 }
 
@@ -50,6 +56,10 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const cloneJsonValue = <T>(value: T): T => {
   return JSON.parse(JSON.stringify(value)) as T;
+};
+
+const isWorkspaceVisualQualityReport = (value: unknown): value is WorkspaceVisualQualityReport => {
+  return typeof value === "object" && value !== null && "status" in value;
 };
 
 const mergeOptionalRecords = (...values: unknown[]): Record<string, unknown> | undefined => {
@@ -332,9 +342,18 @@ export const executeVisualBenchmarkFixture = async (
         throw error;
       }
     }
+    if (isWorkspaceVisualQualityReport(report)) {
+      report = applyVisualQualityConfigToReport(report, options?.qualityConfig);
+    }
+    const effectiveVisualQuality =
+      isWorkspaceVisualQualityReport(report)
+        ? report
+        : visualQuality !== undefined
+          ? applyVisualQualityConfigToReport(visualQuality, options?.qualityConfig)
+          : visualQuality;
     if (
-      visualQuality?.status !== "completed" ||
-      typeof visualQuality.overallScore !== "number"
+      effectiveVisualQuality?.status !== "completed" ||
+      typeof effectiveVisualQuality.overallScore !== "number"
     ) {
       if (options?.allowIncompleteVisualQuality !== true) {
         throw new Error(
@@ -343,7 +362,7 @@ export const executeVisualBenchmarkFixture = async (
       }
     }
 
-    const viewport = visualQuality?.metadata?.viewport ?? {
+    const viewport = effectiveVisualQuality?.metadata?.viewport ?? {
       width: metadata.viewport.width,
       height: metadata.viewport.height,
       deviceScaleFactor: 1,
@@ -351,7 +370,7 @@ export const executeVisualBenchmarkFixture = async (
 
     return {
       fixtureId,
-      score: typeof visualQuality?.overallScore === "number" ? visualQuality.overallScore : 100,
+      score: typeof effectiveVisualQuality?.overallScore === "number" ? effectiveVisualQuality.overallScore : 100,
       screenshotBuffer,
       diffBuffer,
       report,

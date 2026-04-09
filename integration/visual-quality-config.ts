@@ -3,9 +3,14 @@ import path from "node:path";
 import { z } from "zod";
 import {
   DEFAULT_SCORING_WEIGHTS,
+  interpretScore,
   type VisualDimensionScore,
   type VisualScoringWeights,
 } from "../src/job-engine/visual-scoring.js";
+import type {
+  WorkspaceVisualDimensionScore,
+  WorkspaceVisualQualityReport,
+} from "../src/contracts/index.js";
 import {
   getVisualBenchmarkFixtureRoot,
   type VisualBenchmarkFixtureOptions,
@@ -55,6 +60,11 @@ export interface VisualQualityThresholdResult {
   score: number;
   verdict: VisualQualityThresholdVerdict;
   thresholds: VisualQualityResolvedThresholds;
+}
+
+export interface VisualQualityScreenContext {
+  screenId?: string;
+  screenName?: string;
 }
 
 const CONFIG_FILE_NAME = "visual-quality.config.json";
@@ -157,14 +167,31 @@ export const resolveVisualQualityWeights = (config?: VisualQualityConfig): Visua
 export const resolveVisualQualityThresholds = (
   config?: VisualQualityConfig,
   fixtureId?: string,
-  screenId?: string,
+  screenContext?: VisualQualityScreenContext,
 ): VisualQualityResolvedThresholds => {
   const globalThresholds = config?.thresholds ?? {};
   const fixtureThresholds = fixtureId !== undefined ? config?.fixtures?.[fixtureId]?.thresholds ?? {} : {};
-  const screenThresholds =
-    fixtureId !== undefined && screenId !== undefined
-      ? config?.fixtures?.[fixtureId]?.screens?.[screenId]?.thresholds ?? {}
+  const screenConfigs = fixtureId !== undefined ? config?.fixtures?.[fixtureId]?.screens : undefined;
+  const normalizedScreenName =
+    typeof screenContext?.screenName === "string" && screenContext.screenName.trim().length > 0
+      ? screenContext.screenName.trim()
+      : undefined;
+  const normalizedScreenId =
+    typeof screenContext?.screenId === "string" && screenContext.screenId.trim().length > 0
+      ? screenContext.screenId.trim()
+      : undefined;
+  const screenNameThresholds =
+    normalizedScreenName !== undefined
+      ? screenConfigs?.[normalizedScreenName]?.thresholds ?? {}
       : {};
+  const screenIdThresholds =
+    normalizedScreenId !== undefined
+      ? screenConfigs?.[normalizedScreenId]?.thresholds ?? {}
+      : {};
+  const screenThresholds: VisualQualityThresholds = {
+    warn: screenIdThresholds.warn ?? screenNameThresholds.warn,
+    fail: screenIdThresholds.fail ?? screenNameThresholds.fail,
+  };
 
   return {
     warn: screenThresholds.warn ?? fixtureThresholds.warn ?? globalThresholds.warn ?? DEFAULT_THRESHOLDS.warn,
@@ -208,4 +235,37 @@ export const recomputeVisualQualityScore = (
     score += dim.score * weights[key];
   }
   return Math.round(score * 100) / 100;
+};
+
+export const applyVisualQualityConfigToReport = (
+  report: WorkspaceVisualQualityReport,
+  config?: VisualQualityConfig,
+): WorkspaceVisualQualityReport => {
+  if (report.status !== "completed" || report.dimensions === undefined || report.metadata === undefined) {
+    return report;
+  }
+
+  const weights = resolveVisualQualityWeights(config);
+  const patchedDimensions: WorkspaceVisualDimensionScore[] = report.dimensions.map((dimension) => {
+    const key = DIMENSION_KEY_MAP[dimension.name];
+    if (key === undefined) {
+      return { ...dimension };
+    }
+    return {
+      ...dimension,
+      weight: weights[key],
+    };
+  });
+  const overallScore = recomputeVisualQualityScore(patchedDimensions, weights);
+
+  return {
+    ...report,
+    overallScore,
+    interpretation: interpretScore(overallScore),
+    dimensions: patchedDimensions,
+    metadata: {
+      ...report.metadata,
+      configuredWeights: { ...weights },
+    },
+  };
 };
