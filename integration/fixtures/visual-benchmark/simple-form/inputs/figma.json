@@ -1,0 +1,55 @@
+{
+  "document": {
+    "children": [
+      {
+        "children": [
+          {
+            "children": [
+              {
+                "characters": "Simple Form",
+                "id": "1:2",
+                "name": "Title",
+                "style": {
+                  "fontFamily": "Roboto",
+                  "fontSize": 24,
+                  "fontWeight": 700
+                },
+                "type": "TEXT"
+              },
+              {
+                "children": [],
+                "id": "1:3",
+                "name": "Email Input",
+                "type": "RECTANGLE"
+              },
+              {
+                "characters": "Submit",
+                "id": "1:4",
+                "name": "Submit Button",
+                "style": {
+                  "fontFamily": "Roboto",
+                  "fontSize": 14,
+                  "fontWeight": 500
+                },
+                "type": "TEXT"
+              }
+            ],
+            "id": "1:1",
+            "name": "SimpleForm",
+            "type": "FRAME"
+          }
+        ],
+        "id": "0:1",
+        "name": "Page 1",
+        "type": "CANVAS"
+      }
+    ],
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT"
+  },
+  "lastModified": "2026-04-09T00:00:00.000Z",
+  "name": "Simple Form Fixture",
+  "schemaVersion": 14,
+  "version": "1"
+}
