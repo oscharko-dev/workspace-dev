@@ -33,19 +33,35 @@ The output is a comparison table with one row per fixture plus an overall averag
 
 ## Baseline management
 
-The committed baseline lives at `integration/fixtures/visual-benchmark/baseline.json`.
+The committed visual baseline consists of:
 
-Update it with:
+- `reference.png` in each fixture directory
+- `metadata.json` in each fixture directory
+- `integration/fixtures/visual-benchmark/baseline.json` for deterministic score tracking
+
+Use the dedicated baseline CLI for day-to-day maintenance:
+
+```bash
+pnpm visual:baseline update
+pnpm visual:baseline update --fixture simple-form
+pnpm visual:baseline approve --screen simple-form
+pnpm visual:baseline status
+pnpm visual:baseline diff
+```
+
+`pnpm visual:baseline update` runs the selected fixture benchmarks, saves the latest `actual.png`/`diff.png`/`report.json` artifacts under `artifacts/visual-benchmark/last-run/<fixture-id>/`, updates the committed `reference.png`, refreshes fixture `metadata.json`, and syncs the tracked score baseline.
+
+`pnpm visual:baseline approve --screen <fixture-id>` promotes the last persisted `actual.png` for that fixture to the committed `reference.png` without rerunning the full suite.
+
+`pnpm visual:baseline status` shows the current committed baseline state per fixture, including capture date and age in days.
+
+`pnpm visual:baseline diff` summarizes pending diffs from the persisted last-run artifacts without rerunning the benchmark.
+
+The legacy compatibility command below still exists and delegates to the same baseline update flow:
 
 ```bash
 pnpm benchmark:visual:update-baseline
 ```
-
-This command:
-
-1. runs the full benchmark
-2. prints the current comparison table
-3. overwrites `baseline.json` with the current real scores
 
 ## Interpreting deltas
 
@@ -80,8 +96,13 @@ The committed fixture set contains exactly five benchmark views:
 
 | Command                                   | Description |
 | ----------------------------------------- | ----------- |
+| `pnpm visual:baseline update`             | Run benchmark, persist last-run artifacts, update committed references, metadata, and score baseline |
+| `pnpm visual:baseline approve --screen`   | Promote a persisted last-run `actual.png` to the committed reference for one fixture |
+| `pnpm visual:baseline status`             | Show per-fixture baseline status including capture age and pending diffs |
+| `pnpm visual:baseline diff`               | Summarize pending diffs from persisted last-run artifacts |
 | `pnpm benchmark:visual:update-fixtures`   | Refreshes frozen `figma.json` payloads from Figma |
 | `pnpm benchmark:visual:update-references` | Regenerates committed `reference.png` files from the current benchmark output |
+| `pnpm benchmark:visual:update-baseline`   | Compatibility shim for `pnpm visual:baseline update` |
 | `pnpm benchmark:visual:live`              | Compares frozen fixture data against live Figma responses |
 
 ## CI behavior

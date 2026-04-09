@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -533,7 +533,7 @@ test("formatVisualBenchmarkTable produces a table with expected structure", () =
 test("loadVisualBenchmarkBaseline loads the committed baseline file", async () => {
   const baseline = await loadVisualBenchmarkBaseline();
   assert.ok(baseline !== null, "Expected baseline to exist.");
-  assert.equal(baseline.version, 1);
+  assert.equal(baseline.version, 2);
   assert.equal(baseline.scores.length, 5);
   for (const entry of baseline.scores) {
     assert.equal(typeof entry.score, "number", `Expected numeric baseline score for '${entry.fixtureId}'.`);
@@ -556,11 +556,56 @@ test("saveVisualBenchmarkBaseline and loadVisualBenchmarkBaseline round-trip", a
 
     const loaded = await loadVisualBenchmarkBaseline({ fixtureRoot });
     assert.ok(loaded !== null);
-    assert.equal(loaded.version, 1);
+    assert.equal(loaded.version, 2);
     assert.equal(loaded.scores.length, 1);
     assert.equal(loaded.scores[0]?.fixtureId, "test-fixture");
     assert.equal(loaded.scores[0]?.score, 92);
-    assert.ok(loaded.updatedAt.length > 0);
+    assert.equal(loaded.updatedAt, undefined);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadVisualBenchmarkBaseline accepts legacy v1 baseline and save normalizes to v2", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-benchmark-baseline-v1-"));
+  try {
+    const baselinePath = path.join(fixtureRoot, "baseline.json");
+    await mkdir(fixtureRoot, { recursive: true });
+    await writeFile(
+      baselinePath,
+      JSON.stringify({
+        version: 1,
+        updatedAt: "2026-04-01T00:00:00.000Z",
+        scores: [
+          { fixtureId: "legacy-fixture", score: 91 },
+        ],
+      }, null, 2),
+      "utf8",
+    );
+
+    const loaded = await loadVisualBenchmarkBaseline({ fixtureRoot });
+    assert.ok(loaded !== null);
+    assert.equal(loaded.version, 1);
+    assert.equal(loaded.updatedAt, "2026-04-01T00:00:00.000Z");
+    assert.deepEqual(loaded.scores, [{ fixtureId: "legacy-fixture", score: 91 }]);
+
+    await saveVisualBenchmarkBaseline(
+      {
+        deltas: [
+          { fixtureId: "legacy-fixture", baseline: 91, current: 94, delta: 3, indicator: "improved" },
+        ],
+        overallBaseline: 91,
+        overallCurrent: 94,
+        overallDelta: 3,
+      },
+      { fixtureRoot },
+    );
+
+    const normalized = await loadVisualBenchmarkBaseline({ fixtureRoot });
+    assert.ok(normalized !== null);
+    assert.equal(normalized.version, 2);
+    assert.equal(normalized.updatedAt, undefined);
+    assert.deepEqual(normalized.scores, [{ fixtureId: "legacy-fixture", score: 94 }]);
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
