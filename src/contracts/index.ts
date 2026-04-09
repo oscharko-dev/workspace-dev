@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.5.0
+ * Contract version: 3.7.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -415,6 +415,15 @@ export interface WorkspaceVisualComparisonMetadata {
   totalPixels: number;
   diffPixelCount: number;
   configuredWeights: WorkspaceVisualScoringWeights;
+  viewport: {
+    width: number;
+    height: number;
+    deviceScaleFactor: number;
+  };
+  versions: {
+    packageVersion: string;
+    contractVersion: string;
+  };
 }
 
 /** Full visual quality report produced by the scoring system. */
@@ -422,6 +431,7 @@ export interface WorkspaceVisualQualityReport {
   overallScore: number;
   interpretation: string;
   dimensions: WorkspaceVisualDimensionScore[];
+  diffImagePath: string;
   hotspots: WorkspaceVisualDeviationHotspot[];
   metadata: WorkspaceVisualComparisonMetadata;
 }
@@ -770,4 +780,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.6.0" as const;
+export const CONTRACT_VERSION = "3.7.0" as const;

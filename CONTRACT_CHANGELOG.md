@@ -31,6 +31,22 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.7.0] - 2026-04-09
+
+### Visual quality report hardening and metadata completion
+
+Added:
+
+- `WorkspaceVisualQualityReport.diffImagePath` for the persisted visual diff overlay path.
+- `WorkspaceVisualComparisonMetadata.viewport` for the capture viewport used during comparison.
+- `WorkspaceVisualComparisonMetadata.versions` for the package and contract versions that produced the report.
+
+Changed:
+
+- `CONTRACT_VERSION` from `3.6.0` to `3.7.0`.
+
+---
+
 ## [3.6.0] - 2026-04-09
 
 ### Visual quality scoring surface

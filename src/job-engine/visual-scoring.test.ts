@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import packageJson from "../../package.json" with { type: "json" };
+import { CONTRACT_VERSION } from "../contracts/index.js";
 import { PNG } from "pngjs";
 import { comparePngBuffers } from "./visual-diff.js";
 import {
@@ -72,11 +74,21 @@ test("computeVisualQualityReport returns score 100 for identical images", () => 
     assert.equal(dim.score, 100, `Dimension ${dim.name} should be 100`);
   }
   assert.equal(report.hotspots.length, 0);
+  assert.equal(report.diffImagePath, "");
   assert.equal(report.metadata.comparedAt, FIXED_TIMESTAMP);
   assert.equal(report.metadata.imageWidth, 90);
   assert.equal(report.metadata.imageHeight, 100);
   assert.equal(report.metadata.totalPixels, 9000);
   assert.equal(report.metadata.diffPixelCount, 0);
+  assert.deepEqual(report.metadata.viewport, {
+    width: 90,
+    height: 100,
+    deviceScaleFactor: 1,
+  });
+  assert.deepEqual(report.metadata.versions, {
+    packageVersion: packageJson.version,
+    contractVersion: CONTRACT_VERSION,
+  });
 });
 
 test("computeVisualQualityReport returns low score for totally different images", () => {
@@ -166,6 +178,37 @@ test("computeVisualQualityReport respects custom weights", () => {
 
   assert.notEqual(defaultReport.overallScore, customReport.overallScore);
   assert.deepEqual(customReport.metadata.configuredWeights, customWeights);
+});
+
+test("computeVisualQualityReport emits diff image path and explicit viewport metadata", () => {
+  const red = createSolidPng(20, 10, 255, 0, 0);
+  const blue = createSolidPng(20, 10, 0, 0, 255);
+  const diffResult = comparePngBuffers({
+    referenceBuffer: red,
+    testBuffer: blue,
+  });
+
+  const report = computeVisualQualityReport({
+    diffResult,
+    comparedAt: FIXED_TIMESTAMP,
+    diffImagePath: "/tmp/visual-audit/diff.png",
+    viewport: {
+      width: 1280,
+      height: 720,
+      deviceScaleFactor: 2,
+    },
+  });
+
+  assert.equal(report.diffImagePath, "/tmp/visual-audit/diff.png");
+  assert.deepEqual(report.metadata.viewport, {
+    width: 1280,
+    height: 720,
+    deviceScaleFactor: 2,
+  });
+  assert.deepEqual(report.metadata.versions, {
+    packageVersion: packageJson.version,
+    contractVersion: CONTRACT_VERSION,
+  });
 });
 
 test("interpretScore returns correct interpretation for each range", () => {
@@ -282,6 +325,84 @@ test("resolveScoringConfig rejects weights that do not sum to 1", () => {
       return true;
     },
   );
+});
+
+test("resolveScoringConfig rejects non-finite or out-of-range weights", () => {
+  const red = createSolidPng(10, 10, 255, 0, 0);
+  const diffResult = comparePngBuffers({
+    referenceBuffer: red,
+    testBuffer: red,
+  });
+
+  for (const [weights, expectedMessage] of [
+    [
+      {
+        layoutAccuracy: Number.NaN,
+        colorFidelity: 0.25,
+        typography: 0.2,
+        componentStructure: 0.15,
+        spacingAlignment: 0.1,
+      },
+      /layoutAccuracy.*finite/i,
+    ],
+    [
+      {
+        layoutAccuracy: 1.1,
+        colorFidelity: 0.25,
+        typography: 0.2,
+        componentStructure: 0.15,
+        spacingAlignment: 0.1,
+      },
+      /layoutAccuracy.*between 0 and 1/i,
+    ],
+    [
+      {
+        layoutAccuracy: 0.3,
+        colorFidelity: -0.25,
+        typography: 0.2,
+        componentStructure: 0.15,
+        spacingAlignment: 0.6,
+      },
+      /colorFidelity.*between 0 and 1/i,
+    ],
+  ] as const) {
+    assert.throws(
+      () =>
+        computeVisualQualityReport({
+          diffResult,
+          config: { weights },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, expectedMessage);
+        return true;
+      },
+    );
+  }
+});
+
+test("resolveScoringConfig rejects invalid hotspotCount values", () => {
+  const red = createSolidPng(10, 10, 255, 0, 0);
+  const blue = createSolidPng(10, 10, 0, 0, 255);
+  const diffResult = comparePngBuffers({
+    referenceBuffer: red,
+    testBuffer: blue,
+  });
+
+  for (const hotspotCount of [Number.NaN, -1, 1.5]) {
+    assert.throws(
+      () =>
+        computeVisualQualityReport({
+          diffResult,
+          config: { hotspotCount },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.match(error.message, /hotspotCount must be a finite integer greater than or equal to 0/i);
+        return true;
+      },
+    );
+  }
 });
 
 test("DEFAULT_SCORING_WEIGHTS and DEFAULT_SCORING_CONFIG have expected values", () => {
