@@ -1,0 +1,56 @@
+{
+  "editorType": "figma",
+  "lastModified": "2026-03-30T20:59:16Z",
+  "name": "Navigation-Sidebar-Board",
+  "nodes": {
+    "2:10003": {
+      "document": {
+        "absoluteBoundingBox": {
+          "height": 768,
+          "width": 1024,
+          "x": 0,
+          "y": 0
+        },
+        "children": [
+          {
+            "absoluteBoundingBox": {
+              "height": 768,
+              "width": 260,
+              "x": 0,
+              "y": 0
+            },
+            "id": "2:10030",
+            "name": "Sidebar Panel",
+            "type": "FRAME"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 20,
+              "width": 200,
+              "x": 30,
+              "y": 24
+            },
+            "characters": "Navigation",
+            "id": "2:10031",
+            "name": "Sidebar Title",
+            "type": "TEXT"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 768,
+              "width": 764,
+              "x": 260,
+              "y": 0
+            },
+            "id": "2:10032",
+            "name": "Content Area",
+            "type": "RECTANGLE"
+          }
+        ],
+        "id": "2:10003",
+        "name": "Navigation Sidebar — Menu Items, Nested Groups, Icons",
+        "type": "FRAME"
+      }
+    }
+  }
+}

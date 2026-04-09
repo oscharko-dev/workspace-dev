@@ -79,6 +79,7 @@
     "benchmark:visual:update-fixtures": "pnpm run benchmark:visual -- --update-fixtures",
     "benchmark:visual:update-references": "pnpm run benchmark:visual -- --update-references",
     "benchmark:visual:live": "pnpm run benchmark:visual -- --live",
+    "benchmark:visual:update-baseline": "pnpm run benchmark:visual -- --update-baseline",
     "template:install": "pnpm --dir template/react-mui-app install --frozen-lockfile",
     "template:test": "pnpm --dir template/react-mui-app run test",
     "template:audit": "pnpm --dir template/react-mui-app audit --audit-level high",

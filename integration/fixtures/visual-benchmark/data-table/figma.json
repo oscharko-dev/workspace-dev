@@ -1,0 +1,56 @@
+{
+  "editorType": "figma",
+  "lastModified": "2026-03-30T20:59:16Z",
+  "name": "Data-Table-Board",
+  "nodes": {
+    "2:10002": {
+      "document": {
+        "absoluteBoundingBox": {
+          "height": 960,
+          "width": 1280,
+          "x": 0,
+          "y": 0
+        },
+        "children": [
+          {
+            "absoluteBoundingBox": {
+              "height": 48,
+              "width": 1200,
+              "x": 40,
+              "y": 20
+            },
+            "id": "2:10020",
+            "name": "Table Header Row",
+            "type": "FRAME"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 24,
+              "width": 300,
+              "x": 40,
+              "y": 20
+            },
+            "characters": "Data Table",
+            "id": "2:10021",
+            "name": "Title",
+            "type": "TEXT"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 800,
+              "width": 1200,
+              "x": 40,
+              "y": 100
+            },
+            "id": "2:10022",
+            "name": "Table Body",
+            "type": "RECTANGLE"
+          }
+        ],
+        "id": "2:10002",
+        "name": "Data Table — Sortable Columns, Pagination, Filters",
+        "type": "FRAME"
+      }
+    }
+  }
+}

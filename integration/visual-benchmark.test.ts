@@ -29,6 +29,16 @@ import {
   resolveVisualBenchmarkCliResolution,
   runVisualBenchmarkCli
 } from "./visual-benchmark.cli.js";
+import {
+  computeVisualBenchmarkDeltas,
+  computeVisualBenchmarkScores,
+  formatVisualBenchmarkTable,
+  loadVisualBenchmarkBaseline,
+  saveVisualBenchmarkBaseline,
+  type VisualBenchmarkBaseline,
+  type VisualBenchmarkResult,
+  type VisualBenchmarkScoreEntry
+} from "./visual-benchmark-runner.js";
 
 const createTestPngBuffer = (width: number, height: number, rgba: readonly [number, number, number, number]): Buffer => {
   const png = new PNG({ width, height });
@@ -361,4 +371,175 @@ test("helper store writes stable fixture JSON in sorted key order", async () => 
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
+});
+
+test("listVisualBenchmarkFixtureIds returns all 5 fixture IDs", async () => {
+  const ids = await listVisualBenchmarkFixtureIds();
+  assert.ok(ids.includes("simple-form"), "Expected 'simple-form' fixture.");
+  assert.ok(ids.includes("complex-dashboard"), "Expected 'complex-dashboard' fixture.");
+  assert.ok(ids.includes("data-table"), "Expected 'data-table' fixture.");
+  assert.ok(ids.includes("navigation-sidebar"), "Expected 'navigation-sidebar' fixture.");
+  assert.ok(ids.includes("design-system-showcase"), "Expected 'design-system-showcase' fixture.");
+  assert.equal(ids.length, 5, "Expected exactly 5 fixture IDs.");
+});
+
+test("all 5 fixtures can be loaded (metadata, figma.json, reference.png)", async () => {
+  const ids = await listVisualBenchmarkFixtureIds();
+  for (const id of ids) {
+    const metadata = await loadVisualBenchmarkFixtureMetadata(id);
+    assert.equal(metadata.version, 1);
+    assert.equal(metadata.fixtureId, id);
+    assert.equal(metadata.source.fileKey, "DUArQ8VuM3aPMjXFLaQSSH");
+    assert.ok(metadata.viewport.width > 0);
+    assert.ok(metadata.viewport.height > 0);
+
+    const figmaInput = await loadVisualBenchmarkFixtureInputs(id);
+    assert.ok(typeof figmaInput === "object" && figmaInput !== null, `Expected figmaInput for '${id}' to be an object.`);
+
+    const reference = await loadVisualBenchmarkReference(id);
+    assert.ok(Buffer.isBuffer(reference));
+    assert.ok(isValidPngBuffer(reference), `Expected valid PNG for '${id}'.`);
+  }
+});
+
+test("computeVisualBenchmarkScores returns a score for each fixture", async () => {
+  const scores = await computeVisualBenchmarkScores();
+  assert.equal(scores.length, 5, "Expected scores for all 5 fixtures.");
+  for (const entry of scores) {
+    assert.ok(typeof entry.fixtureId === "string" && entry.fixtureId.length > 0);
+    assert.equal(entry.score, 100, `Expected self-comparison score of 100 for '${entry.fixtureId}'.`);
+  }
+});
+
+test("computeVisualBenchmarkDeltas with baseline computes correct deltas", () => {
+  const current: VisualBenchmarkScoreEntry[] = [
+    { fixtureId: "fixture-a", score: 95 },
+    { fixtureId: "fixture-b", score: 80 },
+    { fixtureId: "fixture-c", score: 100 }
+  ];
+  const baseline: VisualBenchmarkBaseline = {
+    version: 1,
+    updatedAt: "2026-04-01T00:00:00.000Z",
+    scores: [
+      { fixtureId: "fixture-a", score: 90 },
+      { fixtureId: "fixture-b", score: 85 },
+      { fixtureId: "fixture-c", score: 100 }
+    ]
+  };
+  const result = computeVisualBenchmarkDeltas(current, baseline);
+  assert.equal(result.deltas.length, 3);
+
+  const deltaA = result.deltas.find((d) => d.fixtureId === "fixture-a");
+  assert.ok(deltaA);
+  assert.equal(deltaA.baseline, 90);
+  assert.equal(deltaA.current, 95);
+  assert.equal(deltaA.delta, 5);
+  assert.equal(deltaA.indicator, "improved");
+
+  const deltaB = result.deltas.find((d) => d.fixtureId === "fixture-b");
+  assert.ok(deltaB);
+  assert.equal(deltaB.baseline, 85);
+  assert.equal(deltaB.current, 80);
+  assert.equal(deltaB.delta, -5);
+  assert.equal(deltaB.indicator, "degraded");
+
+  const deltaC = result.deltas.find((d) => d.fixtureId === "fixture-c");
+  assert.ok(deltaC);
+  assert.equal(deltaC.baseline, 100);
+  assert.equal(deltaC.current, 100);
+  assert.equal(deltaC.delta, 0);
+  assert.equal(deltaC.indicator, "neutral");
+});
+
+test("computeVisualBenchmarkDeltas with null baseline returns null deltas", () => {
+  const current: VisualBenchmarkScoreEntry[] = [
+    { fixtureId: "fixture-a", score: 88 }
+  ];
+  const result = computeVisualBenchmarkDeltas(current, null);
+  assert.equal(result.deltas.length, 1);
+  assert.equal(result.deltas[0]?.baseline, null);
+  assert.equal(result.deltas[0]?.delta, null);
+  assert.equal(result.deltas[0]?.indicator, "neutral");
+  assert.equal(result.overallBaseline, null);
+  assert.equal(result.overallDelta, null);
+  assert.equal(result.overallCurrent, 88);
+});
+
+test("formatVisualBenchmarkTable produces a table with expected structure", () => {
+  const result: VisualBenchmarkResult = {
+    deltas: [
+      { fixtureId: "simple-form", baseline: 85, current: 88, delta: 3, indicator: "improved" },
+      { fixtureId: "complex-dashboard", baseline: null, current: 100, delta: null, indicator: "neutral" }
+    ],
+    overallBaseline: 85,
+    overallCurrent: 94,
+    overallDelta: 9
+  };
+  const table = formatVisualBenchmarkTable(result);
+  assert.ok(table.includes("View"), "Table should contain 'View' header.");
+  assert.ok(table.includes("Baseline"), "Table should contain 'Baseline' header.");
+  assert.ok(table.includes("Current"), "Table should contain 'Current' header.");
+  assert.ok(table.includes("Delta"), "Table should contain 'Delta' header.");
+  assert.ok(table.includes("Simple Form"), "Table should contain fixture display name.");
+  assert.ok(table.includes("Complex Dashboard"), "Table should contain fixture display name.");
+  assert.ok(table.includes("Overall Average"), "Table should contain overall row.");
+  assert.ok(table.includes("88"), "Table should contain current score.");
+  assert.ok(table.includes("85"), "Table should contain baseline score.");
+  assert.ok(table.includes("\u2014"), "Table should contain em-dash for null baseline.");
+});
+
+test("loadVisualBenchmarkBaseline loads the committed baseline file", async () => {
+  const baseline = await loadVisualBenchmarkBaseline();
+  assert.ok(baseline !== null, "Expected baseline to exist.");
+  assert.equal(baseline.version, 1);
+  assert.equal(baseline.scores.length, 5);
+  for (const entry of baseline.scores) {
+    assert.equal(entry.score, 100, `Expected baseline score of 100 for '${entry.fixtureId}'.`);
+  }
+});
+
+test("saveVisualBenchmarkBaseline and loadVisualBenchmarkBaseline round-trip", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-benchmark-baseline-"));
+  try {
+    const result: VisualBenchmarkResult = {
+      deltas: [
+        { fixtureId: "test-fixture", baseline: null, current: 92, delta: null, indicator: "neutral" }
+      ],
+      overallBaseline: null,
+      overallCurrent: 92,
+      overallDelta: null
+    };
+    await saveVisualBenchmarkBaseline(result, { fixtureRoot });
+
+    const loaded = await loadVisualBenchmarkBaseline({ fixtureRoot });
+    assert.ok(loaded !== null);
+    assert.equal(loaded.version, 1);
+    assert.equal(loaded.scores.length, 1);
+    assert.equal(loaded.scores[0]?.fixtureId, "test-fixture");
+    assert.equal(loaded.scores[0]?.score, 92);
+    assert.ok(loaded.updatedAt.length > 0);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadVisualBenchmarkBaseline returns null when baseline file does not exist", async () => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-benchmark-nobaseline-"));
+  try {
+    const baseline = await loadVisualBenchmarkBaseline({ fixtureRoot });
+    assert.equal(baseline, null);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("resolveVisualBenchmarkCliResolution accepts --update-baseline", () => {
+  assert.deepEqual(resolveVisualBenchmarkCliResolution(["--update-baseline"]), {
+    action: "maintenance",
+    forwardedArgs: ["--update-baseline"]
+  });
+});
+
+test("resolveVisualBenchmarkMaintenanceMode accepts --update-baseline", () => {
+  assert.equal(resolveVisualBenchmarkMaintenanceMode(["--update-baseline"]), "update-baseline");
 });

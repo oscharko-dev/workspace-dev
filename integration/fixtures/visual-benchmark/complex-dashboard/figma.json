@@ -1,0 +1,56 @@
+{
+  "editorType": "figma",
+  "lastModified": "2026-03-30T20:59:16Z",
+  "name": "Complex-Dashboard-Board",
+  "nodes": {
+    "2:10001": {
+      "document": {
+        "absoluteBoundingBox": {
+          "height": 1080,
+          "width": 1920,
+          "x": 0,
+          "y": 0
+        },
+        "children": [
+          {
+            "absoluteBoundingBox": {
+              "height": 200,
+              "width": 1920,
+              "x": 0,
+              "y": 0
+            },
+            "id": "2:10010",
+            "name": "KPI Row",
+            "type": "FRAME"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 32,
+              "width": 400,
+              "x": 40,
+              "y": 20
+            },
+            "characters": "Dashboard Overview",
+            "id": "2:10011",
+            "name": "Title",
+            "type": "TEXT"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 600,
+              "width": 1840,
+              "x": 40,
+              "y": 240
+            },
+            "id": "2:10012",
+            "name": "Chart Area",
+            "type": "RECTANGLE"
+          }
+        ],
+        "id": "2:10001",
+        "name": "Dashboard — KPI Overview, Charts, Activity Feed",
+        "type": "FRAME"
+      }
+    }
+  }
+}

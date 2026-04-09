@@ -1,0 +1,26 @@
+{
+  "scores": [
+    {
+      "fixtureId": "complex-dashboard",
+      "score": 100
+    },
+    {
+      "fixtureId": "data-table",
+      "score": 100
+    },
+    {
+      "fixtureId": "design-system-showcase",
+      "score": 100
+    },
+    {
+      "fixtureId": "navigation-sidebar",
+      "score": 100
+    },
+    {
+      "fixtureId": "simple-form",
+      "score": 100
+    }
+  ],
+  "updatedAt": "2026-04-09T00:00:00.000Z",
+  "version": 1
+}

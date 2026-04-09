@@ -1,0 +1,56 @@
+{
+  "editorType": "figma",
+  "lastModified": "2026-03-30T20:59:16Z",
+  "name": "Design-System-Showcase-Board",
+  "nodes": {
+    "2:10004": {
+      "document": {
+        "absoluteBoundingBox": {
+          "height": 900,
+          "width": 1440,
+          "x": 0,
+          "y": 0
+        },
+        "children": [
+          {
+            "absoluteBoundingBox": {
+              "height": 400,
+              "width": 1360,
+              "x": 40,
+              "y": 80
+            },
+            "id": "2:10040",
+            "name": "Component Grid",
+            "type": "FRAME"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 28,
+              "width": 350,
+              "x": 40,
+              "y": 30
+            },
+            "characters": "Design System Showcase",
+            "id": "2:10041",
+            "name": "Page Title",
+            "type": "TEXT"
+          },
+          {
+            "absoluteBoundingBox": {
+              "height": 360,
+              "width": 1360,
+              "x": 40,
+              "y": 520
+            },
+            "id": "2:10042",
+            "name": "Typography Scale",
+            "type": "RECTANGLE"
+          }
+        ],
+        "id": "2:10004",
+        "name": "Design System — Buttons, Inputs, Cards, Typography Scale",
+        "type": "FRAME"
+      }
+    }
+  }
+}
