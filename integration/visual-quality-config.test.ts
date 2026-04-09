@@ -5,6 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { DEFAULT_SCORING_WEIGHTS } from "../src/job-engine/visual-scoring.js";
 import {
+  applyVisualQualityConfigToReport,
   checkVisualQualityThreshold,
   loadVisualQualityConfig,
   parseVisualQualityConfig,
@@ -239,10 +240,30 @@ test("resolveVisualQualityThresholds screen overrides fixture overrides global",
       },
     },
     "simple-form",
-    "main",
+    { screenName: "main" },
   );
   assert.equal(thresholds.warn, 60);
   assert.equal(thresholds.fail, 50);
+});
+
+test("resolveVisualQualityThresholds uses screen nodeId as the primary key", () => {
+  const thresholds = resolveVisualQualityThresholds(
+    {
+      thresholds: { warn: 90, fail: 70 },
+      fixtures: {
+        "simple-form": {
+          thresholds: { warn: 80, fail: 60 },
+          screens: {
+            "Fixture Screen": { thresholds: { warn: 65, fail: 50 } },
+            "1:65671": { thresholds: { warn: 55, fail: 45 } },
+          },
+        },
+      },
+    },
+    "simple-form",
+    { screenId: "1:65671", screenName: "Fixture Screen" },
+  );
+  assert.deepEqual(thresholds, { warn: 55, fail: 45 });
 });
 
 test("resolveVisualQualityThresholds ignores unmatched fixture", () => {
@@ -330,6 +351,49 @@ test("recomputeVisualQualityScore with custom weights changes score", () => {
   // 95*0.10 + 90*0.10 + 85*0.10 + 80*0.10 + 75*0.60
   // = 9.5 + 9 + 8.5 + 8 + 45 = 80
   assert.equal(score, 80);
+});
+
+test("applyVisualQualityConfigToReport rewrites completed report weights and aggregate score", () => {
+  const report = applyVisualQualityConfigToReport(
+    {
+      status: "completed",
+      overallScore: 87.5,
+      interpretation: "Good parity — small layout or color deviations",
+      dimensions: [
+        { name: "Layout Accuracy", weight: 0.30, score: 95, details: "" },
+        { name: "Color Fidelity", weight: 0.25, score: 90, details: "" },
+        { name: "Typography", weight: 0.20, score: 85, details: "" },
+        { name: "Component Structure", weight: 0.15, score: 80, details: "" },
+        { name: "Spacing & Alignment", weight: 0.10, score: 75, details: "" },
+      ],
+      diffImagePath: "visual-quality/diff.png",
+      hotspots: [],
+      metadata: {
+        comparedAt: "2026-04-09T00:00:00.000Z",
+        imageWidth: 1280,
+        imageHeight: 720,
+        totalPixels: 921600,
+        diffPixelCount: 1024,
+        configuredWeights: { ...DEFAULT_SCORING_WEIGHTS },
+        viewport: { width: 1280, height: 720, deviceScaleFactor: 1 },
+        versions: { packageVersion: "1.0.0", contractVersion: "1.0.0" },
+      },
+    },
+    {
+      weights: {
+        layoutAccuracy: 0.10,
+        colorFidelity: 0.10,
+        typography: 0.10,
+        componentStructure: 0.10,
+        spacingAlignment: 0.60,
+      },
+    },
+  );
+
+  assert.equal(report.overallScore, 80);
+  assert.equal(report.interpretation, "Good parity — small layout or color deviations");
+  assert.equal(report.dimensions?.[4]?.weight, 0.60);
+  assert.equal(report.metadata?.configuredWeights.spacingAlignment, 0.60);
 });
 
 // ---------------------------------------------------------------------------

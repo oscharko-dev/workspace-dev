@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
+  loadVisualBenchmarkFixtureMetadata,
   assertAllowedFixtureId,
   getVisualBenchmarkFixtureRoot,
   listVisualBenchmarkFixtureIds,
@@ -14,11 +15,14 @@ import {
   type VisualBenchmarkFixtureExecutionArtifacts,
 } from "./visual-benchmark.execution.js";
 import {
+  applyVisualQualityConfigToReport,
   resolveVisualQualityThresholds,
   checkVisualQualityThreshold,
+  type VisualQualityScreenContext,
   type VisualQualityConfig,
   type VisualQualityThresholdResult,
 } from "./visual-quality-config.js";
+import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
 
 const BASELINE_FILE_NAME = "baseline.json";
 const LAST_RUN_FILE_NAME = "last-run.json";
@@ -434,6 +438,21 @@ export const loadVisualBenchmarkLastRunArtifact = async (
   }
 };
 
+const isWorkspaceVisualQualityReport = (value: unknown): value is WorkspaceVisualQualityReport => {
+  return typeof value === "object" && value !== null && "status" in value;
+};
+
+const loadVisualQualityScreenContext = async (
+  fixtureId: string,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<VisualQualityScreenContext> => {
+  const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
+  return {
+    screenId: metadata.source.nodeId,
+    screenName: metadata.source.nodeName,
+  };
+};
+
 export const computeVisualBenchmarkScores = async (
   options?: VisualBenchmarkExecutionOptions,
   dependencies?: VisualBenchmarkRunnerDependencies,
@@ -574,6 +593,7 @@ export const runVisualBenchmark = async (
 ): Promise<VisualBenchmarkResult> => {
   const runAt = new Date().toISOString();
   let scores: VisualBenchmarkScoreEntry[];
+  const fixtureScreenContexts = new Map<string, VisualQualityScreenContext>();
 
   if (dependencies?.runFixtureBenchmark !== undefined && dependencies.executeFixture === undefined) {
     scores = await computeVisualBenchmarkScores(options, dependencies);
@@ -587,19 +607,32 @@ export const runVisualBenchmark = async (
     scores = [];
     for (const fixtureId of fixtureIds) {
       const result = await executeFixture(fixtureId, options);
+      const screenContext = options?.qualityConfig !== undefined
+        ? await loadVisualQualityScreenContext(result.fixtureId, options)
+        : undefined;
+      if (screenContext !== undefined) {
+        fixtureScreenContexts.set(result.fixtureId, screenContext);
+      }
+      const patchedReport = isWorkspaceVisualQualityReport(result.report)
+        ? applyVisualQualityConfigToReport(result.report, options?.qualityConfig)
+        : result.report;
+      const patchedScore =
+        isWorkspaceVisualQualityReport(patchedReport) && typeof patchedReport.overallScore === "number"
+          ? patchedReport.overallScore
+          : result.score;
       scores.push({
         fixtureId: result.fixtureId,
-        score: result.score,
+        score: patchedScore,
       });
       await saveVisualBenchmarkLastRunArtifact(
         {
           fixtureId: result.fixtureId,
-          score: result.score,
+          score: patchedScore,
           ranAt: runAt,
           viewport: result.viewport,
           actualImageBuffer: result.screenshotBuffer,
           diffImageBuffer: result.diffBuffer,
-          report: result.report,
+          report: patchedReport,
         },
         options,
       );
@@ -615,7 +648,12 @@ export const runVisualBenchmark = async (
   const qualityConfig = options?.qualityConfig;
   if (qualityConfig) {
     for (const delta of result.deltas) {
-      const thresholds = resolveVisualQualityThresholds(qualityConfig, delta.fixtureId);
+      let screenContext = fixtureScreenContexts.get(delta.fixtureId);
+      if (screenContext === undefined) {
+        screenContext = await loadVisualQualityScreenContext(delta.fixtureId, options);
+        fixtureScreenContexts.set(delta.fixtureId, screenContext);
+      }
+      const thresholds = resolveVisualQualityThresholds(qualityConfig, delta.fixtureId, screenContext);
       delta.thresholdResult = checkVisualQualityThreshold(delta.current, thresholds);
     }
   }
