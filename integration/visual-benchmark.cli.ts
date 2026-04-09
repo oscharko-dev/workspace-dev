@@ -36,7 +36,10 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
 
   if (
     forwardedArgs.length === 1 &&
-    (forwardedArgs[0] === "--update-fixtures" || forwardedArgs[0] === "--update-references" || forwardedArgs[0] === "--live")
+    (forwardedArgs[0] === "--update-fixtures" ||
+      forwardedArgs[0] === "--update-references" ||
+      forwardedArgs[0] === "--live" ||
+      forwardedArgs[0] === "--update-baseline")
   ) {
     return {
       action: "maintenance",
@@ -45,7 +48,7 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
   }
 
   throw new Error(
-    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live]"
+    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline]"
   );
 };
 

@@ -16,9 +16,10 @@ import {
   writeVisualBenchmarkFixtureMetadata,
   writeVisualBenchmarkReference
 } from "./visual-benchmark.helpers.js";
+import { runVisualBenchmark } from "./visual-benchmark-runner.js";
 
 type FetchLike = typeof fetch;
-type VisualBenchmarkMode = "update-fixtures" | "update-references" | "live";
+type VisualBenchmarkMode = "update-fixtures" | "update-references" | "live" | "update-baseline";
 
 export interface VisualBenchmarkUpdateDependencies extends VisualBenchmarkFixtureOptions {
   fetchImpl?: FetchLike;
@@ -309,11 +310,11 @@ export const runVisualBenchmarkLiveAudit = async (
 
 export const resolveVisualBenchmarkMaintenanceMode = (args: readonly string[]): VisualBenchmarkMode => {
   const modes = args.filter((arg): arg is `--${VisualBenchmarkMode}` => {
-    return arg === "--update-fixtures" || arg === "--update-references" || arg === "--live";
+    return arg === "--update-fixtures" || arg === "--update-references" || arg === "--live" || arg === "--update-baseline";
   });
 
-  if (modes.length !== 1 || modes.length !== args.length) {
-    throw new Error("Usage: visual-benchmark.update.ts --update-fixtures | --update-references | --live");
+  if (modes.length !== 1 || args.length !== 1) {
+    throw new Error("Usage: visual-benchmark.update.ts --update-fixtures | --update-references | --live | --update-baseline");
   }
 
   switch (modes[0]) {
@@ -323,6 +324,8 @@ export const resolveVisualBenchmarkMaintenanceMode = (args: readonly string[]): 
       return "update-references";
     case "--live":
       return "live";
+    case "--update-baseline":
+      return "update-baseline";
   }
 };
 
@@ -337,6 +340,10 @@ export const runVisualBenchmarkMaintenance = async (
   }
   if (mode === "update-references") {
     await updateVisualBenchmarkReferences(dependencies);
+    return;
+  }
+  if (mode === "update-baseline") {
+    await runVisualBenchmark({ fixtureRoot: dependencies?.fixtureRoot, updateBaseline: true });
     return;
   }
   await runVisualBenchmarkLiveAudit(dependencies);

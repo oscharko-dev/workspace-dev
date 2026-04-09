@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-04-09T00:00:00.000Z",
+  "export": {
+    "format": "png",
+    "scale": 2
+  },
+  "fixtureId": "complex-dashboard",
+  "source": {
+    "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
+    "lastModified": "2026-03-30T20:59:16Z",
+    "nodeId": "2:10001",
+    "nodeName": "Dashboard — KPI Overview, Charts, Activity Feed"
+  },
+  "version": 1,
+  "viewport": {
+    "height": 1080,
+    "width": 1920
+  }
+}
