@@ -41,7 +41,7 @@ import {
 import { isWithinRoot } from "../preview.js";
 import { captureFromProject } from "../visual-capture.js";
 import { comparePngBuffers, writeDiffImage } from "../visual-diff.js";
-import { computeVisualQualityReport } from "../visual-scoring.js";
+import { computeVisualQualityReport, type VisualQualityReport } from "../visual-scoring.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -176,6 +176,7 @@ interface ValidationSummaryArtifact {
       };
   uiA11y: ValidationUiA11ySummary;
   visualAudit: WorkspaceVisualAuditResult;
+  visualQuality?: VisualQualityReport;
   storybook:
     | {
         status: "ok" | "failed";
@@ -772,7 +773,8 @@ const buildValidationSummaryArtifact = async ({
   customerProfileStyleSummary,
   componentMatchReportArtifact,
   storybookArtifactStatusOverrides,
-  visualAuditResult
+  visualAuditResult,
+  visualQualityReport
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -785,6 +787,7 @@ const buildValidationSummaryArtifact = async ({
   componentMatchReportArtifact?: ComponentMatchReportArtifact;
   storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
   visualAuditResult?: WorkspaceVisualAuditResult;
+  visualQualityReport?: VisualQualityReport;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -1020,6 +1023,7 @@ const buildValidationSummaryArtifact = async ({
     generatedApp: generatedAppSummary,
     uiA11y: uiA11ySummary,
     visualAudit: resolvedVisualAuditResult,
+    ...(visualQualityReport ? { visualQuality: visualQualityReport } : {}),
     storybook: storybookSummary,
     mapping: mappingSummary,
     style: styleSummary,
@@ -1072,13 +1076,16 @@ export const createValidateProjectService = ({
       let visualAuditActualImagePath: string | undefined;
       let visualAuditDiffImagePath: string | undefined;
       let visualAuditReportPath: string | undefined;
+      let resolvedVisualQualityReport: VisualQualityReport | undefined;
 
       const buildSummary = async ({
         generatedAppFailure,
-        storybookArtifactStatusOverrides
+        storybookArtifactStatusOverrides,
+        visualQualityReport
       }: {
         generatedAppFailure?: { failedCommand: string };
         storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
+        visualQualityReport?: VisualQualityReport;
       } = {}): Promise<ValidationSummaryArtifact> => {
         context.job.visualAudit = cloneVisualAuditResult(visualAuditResult);
         return buildValidationSummaryArtifact({
@@ -1092,7 +1099,8 @@ export const createValidateProjectService = ({
           ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
           ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
           ...(storybookArtifactStatusOverrides ? { storybookArtifactStatusOverrides } : {}),
-          visualAuditResult
+          visualAuditResult,
+          ...(visualQualityReport ? { visualQualityReport } : {})
         });
       };
 
@@ -1925,6 +1933,13 @@ export const createValidateProjectService = ({
 
         finalizedVisualAuditResult.reportPath = reportPath;
         await persistVisualAuditResult(finalizedVisualAuditResult);
+        resolvedVisualQualityReport = visualQualityReport as VisualQualityReport;
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.visualQualityResult,
+          stage: "validate.project",
+          value: resolvedVisualQualityReport
+        });
+        context.job.visualQuality = resolvedVisualQualityReport;
         context.log({
           level: finalizedVisualAuditResult.status === "warn" ? "warn" : "info",
           message:
@@ -1933,7 +1948,7 @@ export const createValidateProjectService = ({
               : "Visual audit completed without detected pixel differences."
         });
       }
-      const summary = await buildSummary();
+      const summary = await buildSummary(resolvedVisualQualityReport ? { visualQualityReport: resolvedVisualQualityReport } : {});
       await persistValidationSummaryArtifacts({
         context,
         summary

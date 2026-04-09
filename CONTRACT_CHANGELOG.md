@@ -31,6 +31,22 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.8.0] - 2026-04-09
+
+### Per-job visual quality report integration
+
+Added:
+
+- `WorkspaceJobStatus.visualQuality?: WorkspaceVisualQualityReport` for inline visual quality scores on job polling payloads.
+- `WorkspaceJobResult.visualQuality?: WorkspaceVisualQualityReport` for the same on terminal job result payloads.
+- `WorkspaceJobArtifacts.visualQualityReportFile?: string` for the visual quality report artifact path.
+
+Changed:
+
+- `CONTRACT_VERSION` from `3.7.0` to `3.8.0`.
+
+---
+
 ## [3.7.0] - 2026-04-09
 
 ### Visual quality report hardening and metadata completion

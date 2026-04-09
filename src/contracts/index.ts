@@ -291,6 +291,7 @@ export interface WorkspaceJobArtifacts {
   visualAuditActualImageFile?: string;
   visualAuditDiffImageFile?: string;
   visualAuditReportFile?: string;
+  visualQualityReportFile?: string;
   reproDir?: string;
 }
 
@@ -492,6 +493,7 @@ export interface WorkspaceJobStatus {
   lineage?: WorkspaceJobLineage;
   generationDiff?: WorkspaceGenerationDiffReport;
   visualAudit?: WorkspaceVisualAuditResult;
+  visualQuality?: WorkspaceVisualQualityReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -510,6 +512,7 @@ export interface WorkspaceJobResult {
   cancellation?: WorkspaceJobCancellation;
   generationDiff?: WorkspaceGenerationDiffReport;
   visualAudit?: WorkspaceVisualAuditResult;
+  visualQuality?: WorkspaceVisualQualityReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -780,4 +783,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.7.0" as const;
+export const CONTRACT_VERSION = "3.8.0" as const;

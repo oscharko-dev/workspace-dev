@@ -1,7 +1,8 @@
 import type {
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
-  WorkspaceVisualAuditResult
+  WorkspaceVisualAuditResult,
+  WorkspaceVisualQualityReport
 } from "../../contracts/index.js";
 import type { JobRecord } from "../types.js";
 import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
@@ -199,6 +200,15 @@ export const syncPublicJobProjection = async ({
     jobWithVisualAudit.visualAudit = visualAudit;
   } else {
     delete jobWithVisualAudit.visualAudit;
+  }
+
+  const visualQuality = await artifactStore.getValue<WorkspaceVisualQualityReport>(
+    STAGE_ARTIFACT_KEYS.visualQualityResult
+  );
+  if (visualQuality !== undefined) {
+    job.visualQuality = visualQuality;
+  } else {
+    delete job.visualQuality;
   }
 
   const gitPrStatus = await artifactStore.getValue<WorkspaceGitPrStatus>(STAGE_ARTIFACT_KEYS.gitPrStatus);

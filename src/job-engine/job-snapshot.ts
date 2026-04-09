@@ -159,6 +159,9 @@ const toRehydratedJobRecord = ({
         : {})
     };
   }
+  if (snapshot.visualQuality) {
+    job.visualQuality = { ...snapshot.visualQuality };
+  }
   if (snapshot.gitPr) {
     job.gitPr = { ...snapshot.gitPr };
   }

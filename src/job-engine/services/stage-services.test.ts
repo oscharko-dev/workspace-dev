@@ -5049,6 +5049,7 @@ test("ValidateProjectService runs visual audit against the built dist bundle and
   assert.match(visualAudit?.warnings?.[0] ?? "", /differing pixel/);
   const summary = await executionContext.artifactStore.getValue<{
     visualAudit?: { status?: string; reportPath?: string; actualImagePath?: string };
+    visualQuality?: { overallScore?: number; interpretation?: string };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.visualAudit?.status, "warn");
   assert.equal(summary?.visualAudit?.reportPath, reportPath);
@@ -5089,6 +5090,17 @@ test("ValidateProjectService runs visual audit against the built dist bundle and
   assert.equal(executionContext.job.artifacts.visualAuditDiffImageFile, diffImagePath);
   assert.equal(executionContext.job.artifacts.visualAuditReportFile, reportPath);
   assert.equal(executionContext.job.visualAudit?.status, "warn");
+  const visualQualityArtifact = await executionContext.artifactStore.getValue<{
+    overallScore?: number;
+    interpretation?: string;
+    dimensions?: unknown[];
+  }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
+  assert.ok(visualQualityArtifact !== undefined, "Expected visualQualityResult artifact");
+  assert.equal(typeof visualQualityArtifact?.overallScore, "number");
+  assert.ok(summary?.visualQuality !== undefined, "Expected visualQuality in summary");
+  assert.equal(typeof summary?.visualQuality?.overallScore, "number");
+  assert.ok(executionContext.job.visualQuality !== undefined, "Expected visualQuality on job record");
+  assert.equal(typeof executionContext.job.visualQuality?.overallScore, "number");
 });
 
 test("ValidateProjectService fails with a structured error when the visual audit baseline is missing", async () => {

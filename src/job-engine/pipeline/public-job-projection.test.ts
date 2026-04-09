@@ -63,6 +63,23 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
         status: "failed",
         warnings: ["stale visual audit"]
       },
+      visualQuality: {
+        overallScore: 0,
+        interpretation: "stale",
+        dimensions: [],
+        diffImagePath: "stale-diff.png",
+        hotspots: [],
+        metadata: {
+          comparedAt: "2026-01-01T00:00:00.000Z",
+          imageWidth: 1,
+          imageHeight: 1,
+          totalPixels: 1,
+          diffPixelCount: 0,
+          configuredWeights: { layoutAccuracy: 0.3, colorFidelity: 0.25, typography: 0.2, componentStructure: 0.15, spacingAlignment: 0.1 },
+          viewport: { width: 1, height: 1, deviceScaleFactor: 1 },
+          versions: { packageVersion: "0.0.0", contractVersion: "0.0.0" }
+        }
+      },
       gitPr: {
         status: "skipped",
         reason: "stale"
@@ -188,6 +205,27 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     }
   });
   await artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.visualQualityResult,
+    stage: "validate.project",
+    value: {
+      overallScore: 87.5,
+      interpretation: "Good",
+      dimensions: [],
+      diffImagePath: visualAuditDiffImageFile,
+      hotspots: [],
+      metadata: {
+        comparedAt: "2026-04-08T00:00:00.000Z",
+        imageWidth: 4,
+        imageHeight: 4,
+        totalPixels: 16,
+        diffPixelCount: 2,
+        configuredWeights: { layoutAccuracy: 0.3, colorFidelity: 0.25, typography: 0.2, componentStructure: 0.15, spacingAlignment: 0.1 },
+        viewport: { width: 4, height: 4, deviceScaleFactor: 1 },
+        versions: { packageVersion: "1.0.0", contractVersion: "3.8.0" }
+      }
+    }
+  });
+  await artifactStore.setValue({
     key: STAGE_ARTIFACT_KEYS.gitPrStatus,
     stage: "git.pr",
     value: {
@@ -229,10 +267,21 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     totalPixels: 16,
     warnings: ["visual differences detected"]
   });
+  assert.equal(job.visualQuality?.overallScore, 87.5);
+  assert.equal(job.visualQuality?.interpretation, "Good");
+  assert.equal(job.visualQuality?.diffImagePath, visualAuditDiffImageFile);
   assert.deepEqual(job.gitPr, {
     status: "executed",
     branchName: "feature/public-projection",
     scopePath: "src",
     changedFiles: 3
   });
+});
+
+test("syncPublicJobProjection clears stale visualQuality when no artifact is stored", async () => {
+  const { job, artifactStore } = await createJob();
+
+  await syncPublicJobProjection({ job, artifactStore });
+
+  assert.equal(job.visualQuality, undefined);
 });
