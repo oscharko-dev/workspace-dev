@@ -38,15 +38,21 @@ See the [Score Interpretation](#score-interpretation) section below for detailed
 ### Updating Baselines After Intentional Changes
 
 ```bash
-pnpm benchmark:visual:update-baseline
+pnpm visual:baseline update
+pnpm visual:baseline update --fixture simple-form
+pnpm visual:baseline approve --screen simple-form
 ```
 
-This command runs the full benchmark and then overwrites `baseline.json` with the current scores. The baseline file lives at `integration/fixtures/visual-benchmark/baseline.json` and follows this schema:
+These commands manage the committed visual baseline end-to-end:
+
+- `update` reruns the selected fixtures, persists `actual.png` / `diff.png` / `report.json` under `artifacts/visual-benchmark/last-run/<fixture-id>/`, updates committed `reference.png`, refreshes fixture `metadata.json`, and syncs `baseline.json`.
+- `approve` promotes a persisted last-run `actual.png` for one fixture to the committed `reference.png` without rerunning the full suite.
+
+The tracked score baseline lives at `integration/fixtures/visual-benchmark/baseline.json` and now follows a deterministic schema:
 
 ```json
 {
-  "version": 1,
-  "updatedAt": "2026-04-09T12:00:00.000Z",
+  "version": 2,
   "scores": [
     { "fixtureId": "simple-form", "score": 88 }
   ]
@@ -59,6 +65,10 @@ Three maintenance commands handle fixture data:
 
 | Command | Description | Requires Token |
 |---------|-------------|----------------|
+| `pnpm visual:baseline update` | Refresh committed references, metadata, and deterministic score baseline | No |
+| `pnpm visual:baseline approve --screen <fixture-id>` | Promote one persisted last-run image to the committed reference | No |
+| `pnpm visual:baseline status` | Show per-fixture baseline state, capture age, and pending diffs | No |
+| `pnpm visual:baseline diff` | Summarize pending diffs from persisted last-run artifacts | No |
 | `pnpm benchmark:visual:update-references` | Regenerates `reference.png` files from the current pipeline (offline) | No |
 | `pnpm benchmark:visual:update-fixtures` | Fetches fresh `figma.json` payloads from live Figma | Yes (`FIGMA_ACCESS_TOKEN`) |
 | `pnpm benchmark:visual:live` | Audits drift between frozen fixtures and live Figma data | Yes (`FIGMA_ACCESS_TOKEN`) |
@@ -228,7 +238,11 @@ Each fixture directory contains:
 | Command | Description | Requires Token |
 |---------|-------------|----------------|
 | `pnpm benchmark:visual` | Run benchmark, compare to baseline, print table | No |
-| `pnpm benchmark:visual:update-baseline` | Run benchmark and overwrite `baseline.json` | No |
+| `pnpm visual:baseline update` | Refresh committed references, metadata, and `baseline.json` | No |
+| `pnpm visual:baseline approve --screen <fixture-id>` | Promote one persisted last-run image to the committed reference | No |
+| `pnpm visual:baseline status` | Show per-fixture baseline state and capture age | No |
+| `pnpm visual:baseline diff` | Summarize pending diffs from persisted last-run artifacts | No |
+| `pnpm benchmark:visual:update-baseline` | Compatibility shim for `pnpm visual:baseline update` | No |
 | `pnpm benchmark:visual:update-references` | Regenerate `reference.png` from current pipeline | No |
 | `pnpm benchmark:visual:update-fixtures` | Refresh `figma.json` from live Figma | Yes |
 | `pnpm benchmark:visual:live` | Audit drift vs. live Figma | Yes |
@@ -248,6 +262,7 @@ The visual benchmark runs in CI via `.github/workflows/visual-benchmark.yml`:
 ### Where to Find Reports
 
 - **Local**: the `<jobDir>/visual-quality/` directory contains `reference.png`, `actual.png`, `diff.png`, and `report.json`.
+- **Baseline maintenance cache**: `artifacts/visual-benchmark/last-run/<fixture-id>/` stores the most recent benchmark `actual.png`, `diff.png`, and `report.json` used by `visual:baseline diff` and `visual:baseline approve`.
 - **CI**: benchmark output is printed to the workflow log as an ASCII table.
 - **Benchmark baseline**: `integration/fixtures/visual-benchmark/baseline.json`.
 
@@ -256,4 +271,4 @@ The visual benchmark runs in CI via `.github/workflows/visual-benchmark.yml`:
 1. Run `pnpm benchmark:visual` on each branch.
 2. Compare the ASCII table output or the scores in `baseline.json`.
 3. A delta greater than +1 indicates improvement; a delta less than -1 indicates degradation.
-4. Use `pnpm benchmark:visual:update-baseline` on the branch with the desired scores to save the new baseline.
+4. Use `pnpm visual:baseline update` on the branch with the desired output to refresh the committed visual baseline.

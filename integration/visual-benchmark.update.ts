@@ -16,8 +16,8 @@ import {
   writeVisualBenchmarkFixtureMetadata,
   writeVisualBenchmarkReference
 } from "./visual-benchmark.helpers.js";
+import { updateVisualBaselines } from "./visual-baseline.js";
 import { executeVisualBenchmarkFixture } from "./visual-benchmark.execution.js";
-import { runVisualBenchmark } from "./visual-benchmark-runner.js";
 
 type FetchLike = typeof fetch;
 type VisualBenchmarkMode = "update-fixtures" | "update-references" | "live" | "update-baseline";
@@ -349,7 +349,11 @@ export const runVisualBenchmarkMaintenance = async (
     return;
   }
   if (mode === "update-baseline") {
-    await runVisualBenchmark({ fixtureRoot: dependencies?.fixtureRoot, updateBaseline: true });
+    await updateVisualBaselines({
+      fixtureRoot: dependencies?.fixtureRoot,
+      artifactRoot: dependencies?.artifactRoot,
+      log,
+    });
     return;
   }
   await runVisualBenchmarkLiveAudit(dependencies);

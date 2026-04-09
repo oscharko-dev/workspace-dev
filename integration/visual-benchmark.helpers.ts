@@ -70,6 +70,7 @@ export interface VisualBenchmarkFixturePaths {
 
 export interface VisualBenchmarkFixtureOptions {
   fixtureRoot?: string;
+  artifactRoot?: string;
 }
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> => {

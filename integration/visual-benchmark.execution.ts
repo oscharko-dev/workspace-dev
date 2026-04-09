@@ -36,6 +36,8 @@ export interface VisualBenchmarkFixtureExecutionResult {
 
 export interface VisualBenchmarkFixtureExecutionArtifacts extends VisualBenchmarkFixtureExecutionResult {
   screenshotBuffer: Buffer;
+  diffBuffer: Buffer | null;
+  report: unknown | null;
   viewport: {
     width: number;
     height: number;
@@ -318,6 +320,18 @@ export const executeVisualBenchmarkFixture = async (
 
     const visualQuality = executionContext.job.visualQuality;
     const screenshotBuffer = await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "actual.png"));
+    let diffBuffer: Buffer | null = null;
+    let report: unknown | null = null;
+    try {
+      diffBuffer = await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "diff.png"));
+      report = JSON.parse(
+        await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "report.json"), "utf8"),
+      ) as unknown;
+    } catch (error: unknown) {
+      if (options?.allowIncompleteVisualQuality !== true) {
+        throw error;
+      }
+    }
     if (
       visualQuality?.status !== "completed" ||
       typeof visualQuality.overallScore !== "number"
@@ -339,6 +353,8 @@ export const executeVisualBenchmarkFixture = async (
       fixtureId,
       score: typeof visualQuality?.overallScore === "number" ? visualQuality.overallScore : 100,
       screenshotBuffer,
+      diffBuffer,
+      report,
       viewport: {
         width: viewport.width,
         height: viewport.height,

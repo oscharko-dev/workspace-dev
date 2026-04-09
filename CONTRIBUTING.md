@@ -57,7 +57,7 @@ pnpm benchmark:visual
 5. If changes are intentional (e.g., improved layout), update the baseline:
 
 ```bash
-pnpm benchmark:visual:update-baseline
+pnpm visual:baseline update
 ```
 
 ### Adding new benchmark views
@@ -71,9 +71,13 @@ pnpm benchmark:visual:update-baseline
 
 ### Updating references when Figma designs change
 
+- `pnpm visual:baseline update` — reruns the selected fixtures, persists last-run visual artifacts, refreshes committed `reference.png`, updates fixture `metadata.json`, and syncs `baseline.json`.
+- `pnpm visual:baseline approve --screen <fixture-id>` — promotes one persisted last-run image to the committed reference without rerunning the full suite.
+- `pnpm visual:baseline status` — shows per-fixture baseline state, capture age, and pending diffs.
+- `pnpm visual:baseline diff` — summarizes pending diffs from persisted last-run artifacts.
 - `pnpm benchmark:visual:update-fixtures` — fetches fresh `figma.json` from live Figma (requires `FIGMA_ACCESS_TOKEN`).
 - `pnpm benchmark:visual:update-references` — regenerates `reference.png` from current pipeline output (offline, no token needed).
-- `pnpm benchmark:visual:update-baseline` — updates `baseline.json` with current scores.
+- `pnpm benchmark:visual:update-baseline` — compatibility shim for `pnpm visual:baseline update`.
 
 See `docs/visual-quality-assessment.md` for detailed architecture and scoring documentation.
 
