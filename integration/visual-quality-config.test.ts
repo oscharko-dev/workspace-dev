@@ -201,7 +201,7 @@ test("resolveVisualQualityWeights throws when merged weights don't sum to 1.0", 
 test("resolveVisualQualityThresholds returns defaults with no config", () => {
   const thresholds = resolveVisualQualityThresholds();
   assert.equal(thresholds.warn, 80);
-  assert.equal(thresholds.fail, 60);
+  assert.equal(thresholds.fail, undefined);
 });
 
 test("resolveVisualQualityThresholds uses global config", () => {
@@ -277,6 +277,14 @@ test("resolveVisualQualityThresholds ignores unmatched fixture", () => {
     "simple-form",
   );
   assert.equal(thresholds.warn, 90);
+  assert.equal(thresholds.fail, 70);
+});
+
+test("resolveVisualQualityThresholds keeps V1 warn-only defaults when fail is unset", () => {
+  const thresholds = resolveVisualQualityThresholds({
+    thresholds: { warn: 88 },
+  });
+  assert.deepEqual(thresholds, { warn: 88, fail: undefined });
 });
 
 // ---------------------------------------------------------------------------
@@ -311,6 +319,21 @@ test("checkVisualQualityThreshold handles edge cases", () => {
   assert.equal(
     checkVisualQualityThreshold(59.99, { warn: 80, fail: 60 }).verdict,
     "fail",
+  );
+});
+
+test("checkVisualQualityThreshold keeps warn-only semantics when fail is disabled", () => {
+  assert.equal(
+    checkVisualQualityThreshold(80, { warn: 80 }).verdict,
+    "pass",
+  );
+  assert.equal(
+    checkVisualQualityThreshold(79.99, { warn: 80 }).verdict,
+    "warn",
+  );
+  assert.equal(
+    checkVisualQualityThreshold(5, { warn: 80 }).verdict,
+    "warn",
   );
 });
 

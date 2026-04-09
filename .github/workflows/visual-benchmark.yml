@@ -16,17 +16,15 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
   checks: write
 
 jobs:
   benchmark:
+    name: benchmark
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        node-version: [22]
 
     steps:
       - uses: actions/checkout@v6
@@ -37,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 22
           cache: pnpm
 
       - name: Install dependencies
@@ -46,15 +44,59 @@ jobs:
       - name: Install Playwright browser (Chromium)
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run real visual benchmark runner
+      - name: Run frozen visual benchmark runner
         run: pnpm benchmark:visual -- --ci
-        env:
-          FIGMA_ACCESS_TOKEN: ${{ secrets.FIGMA_ACCESS_TOKEN }}
-          FIGMA_FILE_KEY: ${{ secrets.FIGMA_FILE_KEY }}
 
       - name: Summarize visual quality report
         if: always()
-        run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json
+        run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
+
+      - name: Update benchmark check output
+        if: always() && hashFiles('artifacts/visual-benchmark/check-output.json') != ''
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require("node:fs");
+
+            const outputPath = "artifacts/visual-benchmark/check-output.json";
+            const payload = JSON.parse(fs.readFileSync(outputPath, "utf8"));
+            const { owner, repo } = context.repo;
+            const runId = context.runId;
+            const attemptNumber = Number(process.env.GITHUB_RUN_ATTEMPT ?? "1");
+            const jobsResponse = await github.request(
+              "GET /repos/{owner}/{repo}/actions/runs/{run_id}/attempts/{attempt_number}/jobs",
+              {
+                owner,
+                repo,
+                run_id: runId,
+                attempt_number: attemptNumber,
+                per_page: 100,
+              },
+            );
+            const jobs = jobsResponse.data.jobs ?? [];
+            const job = jobs.find((candidate) => candidate.name === process.env.GITHUB_JOB);
+            if (!job || typeof job.check_run_url !== "string") {
+              core.setFailed(`Could not locate check_run_url for job '${process.env.GITHUB_JOB}'.`);
+              return;
+            }
+
+            const match = job.check_run_url.match(/\/check-runs\/(\d+)$/);
+            if (!match) {
+              core.setFailed(`Could not parse check run id from '${job.check_run_url}'.`);
+              return;
+            }
+
+            await github.rest.checks.update({
+              owner,
+              repo,
+              check_run_id: Number(match[1]),
+              output: {
+                title: String(payload.title).slice(0, 255),
+                summary: String(payload.summary).slice(0, 65535),
+                text: String(payload.text ?? "").slice(0, 65535),
+                annotations: Array.isArray(payload.annotations) ? payload.annotations.slice(0, 50) : [],
+              },
+            });
 
       - name: Upload visual benchmark artifacts
         uses: actions/upload-artifact@v7

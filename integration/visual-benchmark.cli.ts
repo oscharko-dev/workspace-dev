@@ -11,6 +11,7 @@ export interface VisualBenchmarkCliResolution {
   forwardedArgs: string[];
   qualityThreshold?: number;
   ci?: boolean;
+  enforceThresholds?: boolean;
 }
 
 const MODULE_FILE = fileURLToPath(import.meta.url);
@@ -20,11 +21,16 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
 
   // Extract --ci and --quality-threshold if present
   let ci: boolean | undefined;
+  let enforceThresholds: boolean | undefined;
   let qualityThreshold: number | undefined;
   const filteredArgs: string[] = [];
   for (let i = 0; i < forwardedArgs.length; i++) {
     if (forwardedArgs[i] === "--ci") {
       ci = true;
+      continue;
+    }
+    if (forwardedArgs[i] === "--enforce-thresholds") {
+      enforceThresholds = true;
       continue;
     }
     if (forwardedArgs[i] === "--quality-threshold") {
@@ -43,7 +49,7 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
   }
 
   if (filteredArgs.length === 0) {
-    return { action: "benchmark", forwardedArgs: filteredArgs, qualityThreshold, ci };
+    return { action: "benchmark", forwardedArgs: filteredArgs, qualityThreshold, ci, enforceThresholds };
   }
 
   if (
@@ -53,11 +59,11 @@ export const resolveVisualBenchmarkCliResolution = (args: readonly string[]): Vi
       filteredArgs[0] === "--live" ||
       filteredArgs[0] === "--update-baseline")
   ) {
-    return { action: "maintenance", forwardedArgs: filteredArgs, qualityThreshold, ci };
+    return { action: "maintenance", forwardedArgs: filteredArgs, qualityThreshold, ci, enforceThresholds };
   }
 
   throw new Error(
-    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--quality-threshold <0-100>] [--ci]"
+    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--quality-threshold <0-100>] [--ci] [--enforce-thresholds]"
   );
 };
 
@@ -83,7 +89,7 @@ export const runVisualBenchmarkCli = async (
   });
   const result = await runBenchmark(resolution.qualityThreshold);
 
-  if (resolution.ci && result.deltas.some((d) => d.thresholdResult?.verdict === "fail")) {
+  if (resolution.enforceThresholds && result.deltas.some((d) => d.thresholdResult?.verdict === "fail")) {
     return 1;
   }
 
