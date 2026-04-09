@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.7.0
+ * Contract version: 3.9.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -20,6 +20,9 @@ export type WorkspaceBrandTheme = "derived" | "sparkasse";
 
 /** Router mode for generated React application shells. */
 export type WorkspaceRouterMode = "browser" | "hash";
+
+/** Supported visual quality reference sources. */
+export type WorkspaceVisualQualityReferenceMode = "figma_api" | "frozen_fixture";
 
 /** Output format for operational runtime logs. */
 export type WorkspaceLogFormat = "text" | "json";
@@ -134,6 +137,12 @@ export interface WorkspaceStartOptions {
   pipelineDiagnosticDetailsMaxDepth?: number;
   /** Run static UI validation in validate.project. Default: false */
   enableUiValidation?: boolean;
+  /** Run visual quality validation in validate.project. Default: false */
+  enableVisualQualityValidation?: boolean;
+  /** Reference source for visual quality validation. Default: "figma_api" when enabled */
+  visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
+  /** Viewport width used when capturing generated output for visual quality validation. Default: 1280 */
+  visualQualityViewportWidth?: number;
   /** Run generated-project unit tests in validate.project. Default: false */
   enableUnitTestValidation?: boolean;
   /** Make generated-project unit test failures non-fatal. When true, test results are recorded but failures do not throw. Default: false */
@@ -184,6 +193,10 @@ export interface WorkspaceJobInput {
   customerProfilePath?: string;
   customerBrandId?: string;
   componentMappings?: WorkspaceComponentMappingRule[];
+  enableVisualQualityValidation?: boolean;
+  visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
+  visualQualityViewportWidth?: number;
+  /** @deprecated Use visual quality settings instead. */
   visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
   repoToken?: string;
@@ -205,6 +218,10 @@ export interface WorkspaceJobRequestMetadata {
   customerProfilePath?: string;
   customerBrandId?: string;
   componentMappings?: WorkspaceComponentMappingRule[];
+  enableVisualQualityValidation: boolean;
+  visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
+  visualQualityViewportWidth?: number;
+  /** @deprecated Compatibility alias for legacy callers. */
   visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
   enableGitPr: boolean;
@@ -378,6 +395,21 @@ export interface WorkspaceVisualAuditResult {
   warnings?: string[];
 }
 
+/** Frozen fixture metadata used for visual quality reference images. */
+export interface WorkspaceVisualReferenceFixtureMetadata {
+  capturedAt: string;
+  source: {
+    fileKey: string;
+    nodeId: string;
+    nodeName: string;
+    lastModified: string;
+  };
+  viewport: {
+    width: number;
+    height: number;
+  };
+}
+
 /** Scoring weights for the visual quality composite score. */
 export interface WorkspaceVisualScoringWeights {
   layoutAccuracy: number;
@@ -429,12 +461,17 @@ export interface WorkspaceVisualComparisonMetadata {
 
 /** Full visual quality report produced by the scoring system. */
 export interface WorkspaceVisualQualityReport {
-  overallScore: number;
-  interpretation: string;
-  dimensions: WorkspaceVisualDimensionScore[];
-  diffImagePath: string;
-  hotspots: WorkspaceVisualDeviationHotspot[];
-  metadata: WorkspaceVisualComparisonMetadata;
+  status: "completed" | "failed" | "not_requested";
+  referenceSource?: WorkspaceVisualQualityReferenceMode;
+  capturedAt?: string;
+  overallScore?: number;
+  interpretation?: string;
+  dimensions?: WorkspaceVisualDimensionScore[];
+  diffImagePath?: string;
+  hotspots?: WorkspaceVisualDeviationHotspot[];
+  metadata?: WorkspaceVisualComparisonMetadata;
+  warnings?: string[];
+  message?: string;
 }
 
 /** PR execution status attached to completed jobs when Git PR integration is enabled. */
@@ -783,4 +820,4 @@ export interface WorkspaceRemapDecisionEntry {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.8.0" as const;
+export const CONTRACT_VERSION = "3.9.0" as const;

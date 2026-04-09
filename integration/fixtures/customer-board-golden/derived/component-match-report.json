@@ -1080,25 +1080,25 @@
       "fallbackReasons": [
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:38908",
         "familyName": "<Divider>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Orientation=Horizontal, TextAlign=-",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Divider>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "6641:130"
+              "code": "E_LIBRARY_ASSET_HTTP",
+              "message": "Published component metadata for 'de7b4a8bdc076d5c8847ff120d5510a1802b2885' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+              "retriable": true,
+              "scope": "component"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
           "resolutionSource": "live",
-          "status": "resolved"
+          "status": "error"
         },
         "nodeCount": 4,
         "variantProperties": [
@@ -1129,8 +1129,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 81,
+        "confidence": "low",
+        "confidenceScore": 46,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -1256,11 +1256,6 @@
         },
         {
           "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -1406,29 +1401,31 @@
     },
     {
       "fallbackReasons": [
+        "selected_variant_by_entry_id_tiebreak",
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_family_name_token_overlap",
         "used_figma_analysis_family_name",
+        "used_file_key_design_link",
+        "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
       "figma": {
         "familyKey": "component:1:39169",
         "familyName": "<Dynamic Typography> (headlines)",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "<Dynamic Typography> (headlines)",
-          "canonicalFamilyNameSource": "analysis",
-          "designLinks": [],
-          "issues": [
+          "canonicalFamilyName": "Variant=headline05, Color=Default",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '2a7d4e4f8d3cb589eb86b22ebf64877bb86df37b' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "15753:46114"
             }
           ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
           "resolutionSource": "live",
-          "status": "error"
+          "status": "resolved"
         },
         "nodeCount": 3,
         "variantProperties": [
@@ -1447,57 +1444,132 @@
         ]
       },
       "libraryResolution": {
-        "componentKey": "DynamicTypography",
-        "profileFamily": "Reactlib",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
-        "storybookTier": "Reactlib"
+        "componentKey": "Typography",
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@customer/ui",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
+        "profileFamily": "Components",
+        "reason": "profile_import_resolved",
+        "status": "resolved_import",
+        "storybookTier": "Components"
       },
       "match": {
-        "confidence": "low",
-        "confidenceScore": 50,
+        "confidence": "high",
+        "confidenceScore": 76,
         "status": "matched"
       },
       "rejectionReasons": [],
       "resolvedApi": {
-        "allowedProps": [],
+        "allowedProps": [
+          {
+            "allowedValues": [
+              "attention",
+              "default",
+              "disabled",
+              "error",
+              "info",
+              "primary",
+              "secondary",
+              "success",
+              "warning"
+            ],
+            "kind": "enum",
+            "name": "color"
+          }
+        ],
         "children": {
-          "policy": "unknown"
+          "policy": "unsupported"
         },
+        "componentKey": "Typography",
         "defaultProps": [],
-        "diagnostics": [],
+        "diagnostics": [
+          {
+            "code": "component_api_children_unsupported",
+            "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+            "severity": "warning",
+            "targetProp": "children"
+          },
+          {
+            "code": "component_api_prop_unsupported",
+            "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+            "severity": "warning",
+            "sourceProp": "variant",
+            "targetProp": "variant"
+          }
+        ],
+        "import": {
+          "exportName": "Typography",
+          "localName": "Typography",
+          "package": "@customer/ui",
+          "propMappings": {
+            "variant": "variant"
+          }
+        },
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "resolved"
       },
       "resolvedProps": {
         "children": {
-          "policy": "unknown"
+          "policy": "unsupported"
         },
-        "codegenCompatible": true,
-        "diagnostics": [],
+        "codegenCompatible": false,
+        "diagnostics": [
+          {
+            "code": "component_api_children_unsupported",
+            "message": "Resolved component 'Typography' does not expose 'children', but the generator surface relies on it.",
+            "severity": "warning",
+            "targetProp": "children"
+          },
+          {
+            "code": "component_api_prop_unsupported",
+            "message": "Resolved component 'Typography' does not expose prop 'variant' (mapped from 'variant').",
+            "severity": "warning",
+            "sourceProp": "variant",
+            "targetProp": "variant"
+          }
+        ],
         "fallbackPolicy": "allow",
         "omittedDefaults": [],
-        "omittedProps": [],
-        "props": [],
+        "omittedProps": [
+          {
+            "sourceProp": "variant",
+            "targetProp": "variant"
+          }
+        ],
+        "props": [
+          {
+            "kind": "enum",
+            "sourceProp": "color",
+            "targetProp": "color",
+            "values": [
+              "default"
+            ]
+          }
+        ],
         "slots": {
           "policy": "not_used",
           "props": []
         },
-        "status": "not_applicable"
+        "status": "incompatible"
       },
       "storybookFamily": {
-        "familyId": "family:b5aee49ef09bcb1a",
-        "name": "DynamicTypography",
-        "storyCount": 1,
-        "tier": "Reactlib",
-        "title": "Reactlib/DynamicTypography"
+        "familyId": "family:551261f1f5319081",
+        "name": "Typography",
+        "storyCount": 42,
+        "tier": "Components",
+        "title": "Components/Display/Typography"
       },
       "storyVariant": {
-        "entryId": "reactlib-dynamictypography--default",
-        "storyName": "Default"
+        "entryId": "components-display-typography--h-5",
+        "storyName": "headline05"
       },
       "usedEvidence": [
         {
@@ -1506,14 +1578,19 @@
           "role": "candidate_selection"
         },
         {
-          "class": "component_path_present",
-          "reliability": "authoritative",
-          "role": "candidate_selection"
-        },
-        {
           "class": "customer_profile_tier_priority",
           "reliability": "derived",
           "role": "candidate_selection"
+        },
+        {
+          "class": "design_link",
+          "reliability": "derived",
+          "role": "candidate_selection"
+        },
+        {
+          "class": "reference_only_docs",
+          "reliability": "reference_only",
+          "role": "tie_breaker"
         },
         {
           "class": "semantic_type",
@@ -1831,6 +1908,7 @@
         "selected_variant_by_overlap",
         "used_customer_profile_tier_priority",
         "used_figma_analysis_family_name",
+        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker",
         "used_semantic_bucket"
       ],
@@ -1838,19 +1916,18 @@
         "familyKey": "component:1:43449",
         "familyName": "<IconButton>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "<IconButton>",
-          "canonicalFamilyNameSource": "analysis",
-          "designLinks": [],
-          "issues": [
+          "canonicalFamilyName": "Color=Default, Size=Small, State=Enabled",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'ea64a1291d4fba6d4a845d263db73482975431fb' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "11940:107547"
             }
           ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
           "resolutionSource": "live",
-          "status": "error"
+          "status": "resolved"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -1930,8 +2007,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "medium",
-        "confidenceScore": 57,
+        "confidence": "high",
+        "confidenceScore": 92,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -2083,6 +2160,11 @@
           "role": "candidate_selection"
         },
         {
+          "class": "design_link",
+          "reliability": "derived",
+          "role": "candidate_selection"
+        },
+        {
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
@@ -2226,30 +2308,28 @@
     },
     {
       "fallbackReasons": [
-        "selected_docs_entry_fallback",
+        "selected_variant_by_entry_id_tiebreak",
         "used_customer_profile_tier_priority",
-        "used_customer_profile_tier_priority_tiebreaker",
         "used_figma_analysis_family_name",
-        "used_reference_only_docs_tiebreaker",
-        "used_secondary_match_resolution"
+        "used_file_key_design_link",
+        "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:54316",
         "familyName": "<Radio>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "<Radio>",
-          "canonicalFamilyNameSource": "analysis",
-          "designLinks": [],
-          "issues": [
+          "canonicalFamilyName": "State=Enabled, Checked=True, Size=Medium",
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for '58c36fb2138d057ea2e87ee54859f85f71dad734' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
+              "nodeId": "5908:49314"
             }
           ],
+          "issues": [],
+          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
           "resolutionSource": "live",
-          "status": "error"
+          "status": "resolved"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -2274,18 +2354,17 @@
         ]
       },
       "libraryResolution": {
-        "componentKey": "Radio",
-        "profileFamily": "Components",
-        "reason": "profile_import_missing",
-        "status": "mui_fallback_allowed",
-        "storybookTier": "Components"
+        "reason": "match_ambiguous",
+        "status": "not_applicable"
       },
       "match": {
-        "confidence": "none",
-        "confidenceScore": 36,
-        "status": "matched"
+        "confidence": "medium",
+        "confidenceScore": 56,
+        "status": "ambiguous"
       },
-      "rejectionReasons": [],
+      "rejectionReasons": [
+        "insufficient_primary_lead"
+      ],
       "resolvedApi": {
         "allowedProps": [],
         "children": {
@@ -2305,7 +2384,6 @@
         },
         "codegenCompatible": true,
         "diagnostics": [],
-        "fallbackPolicy": "allow",
         "omittedDefaults": [],
         "omittedProps": [],
         "props": [],
@@ -2316,24 +2394,24 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:efcf07191e83d7f3",
-        "name": "Radio",
-        "storyCount": 0,
+        "familyId": "family:5be441426fc2073a",
+        "name": "Checkbox",
+        "storyCount": 2,
         "tier": "Components",
-        "title": "Components/Inputs/Radio"
+        "title": "Components/Inputs/Checkbox"
       },
       "storyVariant": {
-        "entryId": "components-inputs-radio--docs",
-        "storyName": "Docs"
+        "entryId": "components-inputs-checkbox--checkbox-group",
+        "storyName": "Checkbox Group"
       },
       "usedEvidence": [
         {
-          "class": "canonical_family_name",
+          "class": "customer_profile_tier_priority",
           "reliability": "derived",
           "role": "candidate_selection"
         },
         {
-          "class": "customer_profile_tier_priority",
+          "class": "design_link",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -2341,6 +2419,11 @@
           "class": "reference_only_docs",
           "reliability": "reference_only",
           "role": "tie_breaker"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "candidate_selection"
         }
       ]
     },
@@ -2496,26 +2579,27 @@
       "fallbackReasons": [
         "selected_variant_by_entry_id_tiebreak",
         "used_customer_profile_tier_priority",
+        "used_customer_profile_tier_priority_tiebreaker",
         "used_figma_analysis_family_name",
-        "used_file_key_design_link",
         "used_reference_only_docs_tiebreaker"
       ],
       "figma": {
         "familyKey": "component:1:45150",
         "familyName": "<Select>",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "State=Enabled, Has Value=True, Placeholder=False, Data-Variant=Default, Size=Medium, AutoWidth=False, Disabled=False",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Select>",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "772:75865"
+              "code": "E_LIBRARY_ASSET_HTTP",
+              "message": "Published component metadata for '37294278bceb18ffb2a30c4161fafc08f86e8c14' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+              "retriable": true,
+              "scope": "component"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
           "resolutionSource": "live",
-          "status": "resolved"
+          "status": "error"
         },
         "nodeCount": 2,
         "variantProperties": [
@@ -2571,8 +2655,8 @@
         "storybookTier": "Components"
       },
       "match": {
-        "confidence": "high",
-        "confidenceScore": 81,
+        "confidence": "low",
+        "confidenceScore": 46,
         "status": "matched"
       },
       "rejectionReasons": [],
@@ -2624,11 +2708,6 @@
         },
         {
           "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
           "reliability": "derived",
           "role": "candidate_selection"
         },
@@ -3138,9 +3217,9 @@
           "designLinks": [],
           "issues": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
+              "code": "E_LIBRARY_ASSET_FORBIDDEN",
+              "message": "Published component metadata for 'a49272dcbf68347cec3dd2f932ae46edf0cb7153' is not accessible. The Figma token may be missing the library_assets:read scope. You don't have permission to view this component.",
+              "retriable": false,
               "scope": "component"
             }
           ],
@@ -3347,26 +3426,27 @@
     },
     {
       "fallbackReasons": [
-        "used_customer_profile_tier_priority",
-        "used_figma_analysis_family_name",
-        "used_file_key_design_link"
+        "selected_variant_by_entry_id_tiebreak",
+        "selected_variant_by_overlap",
+        "used_figma_analysis_family_name"
       ],
       "figma": {
         "familyKey": "component:1:41763",
         "familyName": "<Stack2>(Nested)",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Stack2>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "9445:27853"
+              "code": "E_LIBRARY_ASSET_HTTP",
+              "message": "Published component metadata for '290ec8d2964f3d827ab56b8a9c4b781092328db6' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+              "retriable": true,
+              "scope": "component"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
           "resolutionSource": "live",
-          "status": "resolved"
+          "status": "error"
         },
         "nodeCount": 5,
         "variantProperties": [
@@ -3397,16 +3477,17 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
+        "reason": "match_unmatched",
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "medium",
-        "confidenceScore": 55,
-        "status": "ambiguous"
+        "confidence": "none",
+        "confidenceScore": 15,
+        "status": "unmatched"
       },
       "rejectionReasons": [
-        "insufficient_primary_lead"
+        "insufficient_primary_score",
+        "insufficient_total_score"
       ],
       "resolvedApi": {
         "allowedProps": [],
@@ -3437,31 +3518,31 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:456ad848bd366d33",
-        "name": "Divider",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Display/Divider"
+        "familyId": "family:09856bac732f00a2",
+        "name": "Player",
+        "storyCount": 2,
+        "tier": "Reactlib",
+        "title": "Reactlib/Player"
       },
       "storyVariant": {
-        "entryId": "components-display-divider--default",
+        "entryId": "reactlib-player--default",
         "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
-          "reliability": "derived",
+          "class": "component_path_present",
+          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "story_variant_selection"
         }
       ]
     },
@@ -3589,26 +3670,27 @@
     },
     {
       "fallbackReasons": [
-        "used_customer_profile_tier_priority",
-        "used_figma_analysis_family_name",
-        "used_file_key_design_link"
+        "selected_variant_by_entry_id_tiebreak",
+        "selected_variant_by_overlap",
+        "used_figma_analysis_family_name"
       ],
       "figma": {
         "familyKey": "component:1:42234",
         "familyName": "<Stack3>(Nested)",
         "figmaLibraryResolution": {
-          "canonicalFamilyName": "Direction=Row, Divider=false, alignItems=Start, Direction-S=column",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyName": "<Stack3>(Nested)",
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
-              "nodeId": "9445:28916"
+              "code": "E_LIBRARY_ASSET_HTTP",
+              "message": "Published component metadata for 'c6935fd7c96deeb8069aee1f086f2f843c85a4e3' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+              "retriable": true,
+              "scope": "component"
             }
           ],
-          "issues": [],
-          "originFileKey": "NVm3Wm7ZwjXnrhoCQ9enV7",
           "resolutionSource": "live",
-          "status": "resolved"
+          "status": "error"
         },
         "nodeCount": 1,
         "variantProperties": [
@@ -3639,16 +3721,17 @@
         ]
       },
       "libraryResolution": {
-        "reason": "match_ambiguous",
+        "reason": "match_unmatched",
         "status": "not_applicable"
       },
       "match": {
-        "confidence": "medium",
-        "confidenceScore": 55,
-        "status": "ambiguous"
+        "confidence": "none",
+        "confidenceScore": 15,
+        "status": "unmatched"
       },
       "rejectionReasons": [
-        "insufficient_primary_lead"
+        "insufficient_primary_score",
+        "insufficient_total_score"
       ],
       "resolvedApi": {
         "allowedProps": [],
@@ -3679,31 +3762,31 @@
         "status": "not_applicable"
       },
       "storybookFamily": {
-        "familyId": "family:456ad848bd366d33",
-        "name": "Divider",
-        "storyCount": 1,
-        "tier": "Components",
-        "title": "Components/Display/Divider"
+        "familyId": "family:09856bac732f00a2",
+        "name": "Player",
+        "storyCount": 2,
+        "tier": "Reactlib",
+        "title": "Reactlib/Player"
       },
       "storyVariant": {
-        "entryId": "components-display-divider--default",
+        "entryId": "reactlib-player--default",
         "storyName": "Default"
       },
       "usedEvidence": [
         {
-          "class": "customer_profile_tier_priority",
-          "reliability": "derived",
-          "role": "candidate_selection"
-        },
-        {
-          "class": "design_link",
-          "reliability": "derived",
+          "class": "component_path_present",
+          "reliability": "authoritative",
           "role": "candidate_selection"
         },
         {
           "class": "variant_or_prop_overlap",
           "reliability": "authoritative",
           "role": "candidate_selection"
+        },
+        {
+          "class": "variant_or_prop_overlap",
+          "reliability": "authoritative",
+          "role": "story_variant_selection"
         }
       ]
     },
@@ -5163,7 +5246,7 @@
     },
     {
       "fallbackReasons": [
-        "used_figma_analysis_family_name",
+        "used_library_resolution_canonical_name",
         "used_semantic_bucket"
       ],
       "figma": {
@@ -5171,18 +5254,17 @@
         "familyName": "ic_circle_s 🔥",
         "figmaLibraryResolution": {
           "canonicalFamilyName": "ic_circle_s 🔥",
-          "canonicalFamilyNameSource": "analysis",
-          "designLinks": [],
-          "issues": [
+          "canonicalFamilyNameSource": "published_component",
+          "designLinks": [
             {
-              "code": "E_LIBRARY_ASSET_HTTP",
-              "message": "Published component metadata for 'dd8fb32e6738132f05ca2bf6384d05edd44150ea' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
-              "retriable": true,
-              "scope": "component"
+              "fileKey": "aF8QEt4HOW6I5aGnmV9hAa",
+              "nodeId": "63:6075"
             }
           ],
+          "issues": [],
+          "originFileKey": "aF8QEt4HOW6I5aGnmV9hAa",
           "resolutionSource": "live",
-          "status": "error"
+          "status": "resolved"
         },
         "nodeCount": 5,
         "variantProperties": []
@@ -5678,7 +5760,7 @@
     },
     {
       "fallbackReasons": [
-        "used_library_resolution_canonical_name",
+        "used_figma_analysis_family_name",
         "used_semantic_bucket"
       ],
       "figma": {
@@ -5686,17 +5768,18 @@
         "familyName": "ic_radio_selected_s 🔥",
         "figmaLibraryResolution": {
           "canonicalFamilyName": "ic_radio_selected_s 🔥",
-          "canonicalFamilyNameSource": "published_component",
-          "designLinks": [
+          "canonicalFamilyNameSource": "analysis",
+          "designLinks": [],
+          "issues": [
             {
-              "fileKey": "aF8QEt4HOW6I5aGnmV9hAa",
-              "nodeId": "63:6792"
+              "code": "E_LIBRARY_ASSET_HTTP",
+              "message": "Published component metadata for 'a1bd6dfc60bdd4d557d0d23635689355969b0398' failed with HTTP 429. {\"status\":429,\"err\":\"Rate limit exceeded\"}",
+              "retriable": true,
+              "scope": "component"
             }
           ],
-          "issues": [],
-          "originFileKey": "aF8QEt4HOW6I5aGnmV9hAa",
           "resolutionSource": "live",
-          "status": "resolved"
+          "status": "error"
         },
         "nodeCount": 1,
         "variantProperties": []
@@ -6064,7 +6147,7 @@
     }
   ],
   "summary": {
-    "ambiguous": 4,
+    "ambiguous": 3,
     "iconResolution": {
       "byReason": {
         "match_ambiguous": 0,
@@ -6088,25 +6171,25 @@
     },
     "libraryResolution": {
       "byReason": {
-        "match_ambiguous": 4,
-        "match_unmatched": 13,
+        "match_ambiguous": 3,
+        "match_unmatched": 15,
         "profile_family_unresolved": 0,
         "profile_import_family_mismatch": 0,
-        "profile_import_missing": 19,
-        "profile_import_resolved": 6
+        "profile_import_missing": 17,
+        "profile_import_resolved": 7
       },
       "byStatus": {
-        "mui_fallback_allowed": 19,
+        "mui_fallback_allowed": 17,
         "mui_fallback_denied": 0,
-        "not_applicable": 17,
-        "resolved_import": 6
+        "not_applicable": 18,
+        "resolved_import": 7
       }
     },
-    "matched": 25,
+    "matched": 24,
     "storybookEntryCount": 499,
     "storybookFamilyCount": 289,
     "totalFigmaFamilies": 42,
-    "unmatched": 13
+    "unmatched": 15
   },
   "version": 1
 }

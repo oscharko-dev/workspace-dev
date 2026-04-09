@@ -1134,13 +1134,35 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const resolvedFormHandlingMode = resolveFormHandlingMode({
       submitFormHandlingMode: input.formHandlingMode
     });
+    const visualQualityCompatibilityEnabled = input.visualAudit !== undefined;
+    const resolvedEnableVisualQualityValidation =
+      typeof input.enableVisualQualityValidation === "boolean"
+        ? input.enableVisualQualityValidation
+        : visualQualityCompatibilityEnabled || runtime.enableVisualQualityValidation;
+    const resolvedVisualQualityReferenceMode =
+      input.visualQualityReferenceMode ??
+      (visualQualityCompatibilityEnabled ? "frozen_fixture" : runtime.visualQualityReferenceMode);
+    const resolvedVisualQualityViewportWidth =
+      typeof input.visualQualityViewportWidth === "number" && Number.isFinite(input.visualQualityViewportWidth)
+        ? Math.trunc(input.visualQualityViewportWidth)
+        : typeof input.visualAudit?.capture?.viewport?.width === "number" &&
+            Number.isFinite(input.visualAudit.capture.viewport.width)
+          ? Math.trunc(input.visualAudit.capture.viewport.width)
+          : runtime.visualQualityViewportWidth;
     const request: WorkspaceJobStatus["request"] = {
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
       llmCodegenMode: acceptedModes.llmCodegenMode,
       brandTheme: input.brandTheme ?? runtime.brandTheme,
       generationLocale: generationLocaleResolution.locale,
-      formHandlingMode: resolvedFormHandlingMode
+      formHandlingMode: resolvedFormHandlingMode,
+      enableVisualQualityValidation: resolvedEnableVisualQualityValidation,
+      ...(resolvedEnableVisualQualityValidation
+        ? {
+            visualQualityReferenceMode: resolvedVisualQualityReferenceMode,
+            visualQualityViewportWidth: resolvedVisualQualityViewportWidth
+          }
+        : {})
     };
     if (input.figmaFileKey) {
       request.figmaFileKey = input.figmaFileKey;

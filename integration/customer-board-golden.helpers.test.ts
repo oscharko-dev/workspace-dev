@@ -22,7 +22,7 @@ test("customer-board helper rejects unsupported generated artifact kinds in the 
     manifestPath,
     JSON.stringify(
       {
-        version: 2,
+        version: 3,
         fixtureId: "customer-board-golden",
         inputs: {
           figma: "inputs/figma.json",
@@ -37,6 +37,10 @@ test("customer-board helper rejects unsupported generated artifact kinds in the 
           figmaAnalysis: "derived/figma-analysis.json",
           figmaLibraryResolution: "derived/figma-library-resolution.json",
           componentMatchReport: "derived/component-match-report.json"
+        },
+        visualQuality: {
+          frozenReferenceImage: "visual-quality/reference.png",
+          frozenReferenceMetadata: "visual-quality/reference.metadata.json"
         },
         expected: {
           validationSummary: "expected/validation-summary.json",
@@ -75,7 +79,7 @@ test("customer-board helper rejects manifest paths that leak forbidden fixture s
     manifestPath,
     JSON.stringify(
       {
-        version: 2,
+        version: 3,
         fixtureId: "customer-board-golden",
         inputs: {
           figma: "inputs/figma.json",
@@ -90,6 +94,10 @@ test("customer-board helper rejects manifest paths that leak forbidden fixture s
           figmaAnalysis: "derived/figma-analysis.json",
           figmaLibraryResolution: "derived/figma-library-resolution.json",
           componentMatchReport: "derived/component-match-report.json"
+        },
+        visualQuality: {
+          frozenReferenceImage: "visual-quality/reference.png",
+          frozenReferenceMetadata: "visual-quality/reference.metadata.json"
         },
         expected: {
           validationSummary: "expected/validation-summary.json",
@@ -348,7 +356,7 @@ test("customer-board helper configures hybrid live runtime with MCP enrichment l
 test("customer-board bundle equality ignores volatile figma library resolution live metadata", async () => {
   const expected = {
     manifest: {
-      version: 2,
+      version: 3,
       fixtureId: "customer-board-golden",
       inputs: {
         figma: "inputs/figma.json",
@@ -363,6 +371,10 @@ test("customer-board bundle equality ignores volatile figma library resolution l
         figmaAnalysis: "derived/figma-analysis.json",
         figmaLibraryResolution: "derived/figma-library-resolution.json",
         componentMatchReport: "derived/component-match-report.json"
+      },
+      visualQuality: {
+        frozenReferenceImage: "visual-quality/reference.png",
+        frozenReferenceMetadata: "visual-quality/reference.metadata.json"
       },
       expected: {
         validationSummary: "expected/validation-summary.json",
@@ -498,7 +510,7 @@ test("customer-board bundle equality ignores volatile figma library resolution l
 test("customer-board bundle equality ignores volatile component match report evidence derived from live library lookups", async () => {
   const expected = {
     manifest: {
-      version: 2,
+      version: 3,
       fixtureId: "customer-board-golden",
       inputs: {
         figma: "inputs/figma.json",
@@ -513,6 +525,10 @@ test("customer-board bundle equality ignores volatile component match report evi
         figmaAnalysis: "derived/figma-analysis.json",
         figmaLibraryResolution: "derived/figma-library-resolution.json",
         componentMatchReport: "derived/component-match-report.json"
+      },
+      visualQuality: {
+        frozenReferenceImage: "visual-quality/reference.png",
+        frozenReferenceMetadata: "visual-quality/reference.metadata.json"
       },
       expected: {
         validationSummary: "expected/validation-summary.json",

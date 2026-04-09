@@ -22,6 +22,7 @@ import type {
   WorkspaceJobStage,
   WorkspaceJobStageName,
   WorkspaceJobStatus,
+  WorkspaceVisualQualityReferenceMode,
   WorkspaceRegenerationAccepted,
   WorkspaceRegenerationInput,
   WorkspaceRemapSuggestInput,
@@ -143,6 +144,9 @@ export interface JobEngineRuntime {
   commandStderrMaxBytes: number;
   pipelineDiagnosticLimits: PipelineDiagnosticLimits;
   enableUiValidation: boolean;
+  enableVisualQualityValidation: boolean;
+  visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
+  visualQualityViewportWidth: number;
   enableUnitTestValidation: boolean;
   unitTestIgnoreFailure: boolean;
   installPreferOffline: boolean;

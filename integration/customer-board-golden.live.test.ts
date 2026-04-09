@@ -232,6 +232,14 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
     import?: {
       status?: string;
     };
+    visualQuality?: {
+      status?: string;
+      referenceSource?: string;
+      capturedAt?: string;
+      overallScore?: number;
+      dimensions?: Array<{ name?: string; score?: number }>;
+      diffImagePath?: string;
+    };
   };
 
   assert.equal(validationSummary.storybook?.status, "ok");
@@ -247,6 +255,12 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
   assert.equal(validationSummary.style?.storybook?.themes?.status, "ok");
   assert.equal(validationSummary.style?.storybook?.componentMatchReport?.status, "ok");
   assert.notEqual(validationSummary.import?.status, "not_available");
+  assert.equal(validationSummary.visualQuality?.status, "completed");
+  assert.equal(validationSummary.visualQuality?.referenceSource, "frozen_fixture");
+  assert.match(validationSummary.visualQuality?.capturedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(typeof validationSummary.visualQuality?.overallScore, "number");
+  assert.equal((validationSummary.visualQuality?.dimensions?.length ?? 0) > 0, true);
+  assert.equal(validationSummary.visualQuality?.diffImagePath, "<job-dir>/visual-quality/diff.png");
 
   const sanitizedArtifactPaths = [
     STAGE_ARTIFACT_KEYS.storybookCatalog,

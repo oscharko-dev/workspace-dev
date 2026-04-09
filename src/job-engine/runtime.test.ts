@@ -37,6 +37,9 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 20);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 4);
   assert.equal(runtime.enableUiValidation, false);
+  assert.equal(runtime.enableVisualQualityValidation, false);
+  assert.equal(runtime.visualQualityReferenceMode, "figma_api");
+  assert.equal(runtime.visualQualityViewportWidth, 1280);
   assert.equal(runtime.enableUnitTestValidation, false);
   assert.equal(runtime.installPreferOffline, true);
   assert.equal(runtime.skipInstall, false);
@@ -74,6 +77,9 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     pipelineDiagnosticDetailsMaxItems: 999,
     pipelineDiagnosticDetailsMaxDepth: -1,
     enableUiValidation: false,
+    enableVisualQualityValidation: true,
+    visualQualityReferenceMode: "FROZEN_FIXTURE",
+    visualQualityViewportWidth: 99_999,
     enableUnitTestValidation: true,
     installPreferOffline: false,
     skipInstall: true,
@@ -108,6 +114,9 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 200);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 1);
   assert.equal(runtime.enableUiValidation, false);
+  assert.equal(runtime.enableVisualQualityValidation, true);
+  assert.equal(runtime.visualQualityReferenceMode, "frozen_fixture");
+  assert.equal(runtime.visualQualityViewportWidth, 4_096);
   assert.equal(runtime.enableUnitTestValidation, true);
   assert.equal(runtime.installPreferOffline, false);
   assert.equal(runtime.skipInstall, true);
@@ -137,6 +146,16 @@ test("resolveRuntimeSettings normalizes empty design system path to undefined", 
   });
 
   assert.equal(runtime.designSystemFilePath, undefined);
+});
+
+test("resolveRuntimeSettings falls back to default visual quality settings for invalid values", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityReferenceMode: "invalid_mode",
+    visualQualityViewportWidth: -10
+  });
+
+  assert.equal(runtime.visualQualityReferenceMode, "figma_api");
+  assert.equal(runtime.visualQualityViewportWidth, 1280);
 });
 
 test("resolveRuntimeSettings falls back to derived brand theme for unknown values", () => {

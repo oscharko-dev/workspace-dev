@@ -138,6 +138,15 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       ? { pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth }
       : {}),
     ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
+    ...(options.enableVisualQualityValidation !== undefined
+      ? { enableVisualQualityValidation: options.enableVisualQualityValidation }
+      : {}),
+    ...(options.visualQualityReferenceMode !== undefined
+      ? { visualQualityReferenceMode: options.visualQualityReferenceMode }
+      : {}),
+    ...(options.visualQualityViewportWidth !== undefined
+      ? { visualQualityViewportWidth: options.visualQualityViewportWidth }
+      : {}),
     ...(options.enableUnitTestValidation !== undefined
       ? { enableUnitTestValidation: options.enableUnitTestValidation }
       : {}),

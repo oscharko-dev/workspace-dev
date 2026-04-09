@@ -11,6 +11,10 @@ import { cleanFigmaForCodegen } from "../src/job-engine/figma-clean.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "../src/job-engine/figma-hybrid-enrichment.js";
 import { fetchFigmaFile } from "../src/job-engine/figma-source.js";
 import {
+  fetchFigmaVisualReference,
+  selectVisualQualityReferenceNode
+} from "../src/job-engine/visual-quality-reference.js";
+import {
   resolveFigmaLibraryResolutionArtifact,
   type FigmaLibraryResolutionArtifact
 } from "../src/job-engine/figma-library-resolution.js";
@@ -72,9 +76,19 @@ const FIXTURE_ROOT = path.resolve(MODULE_DIR, "fixtures", "customer-board-golden
 const MANIFEST_PATH = path.join(FIXTURE_ROOT, "manifest.json");
 const REQUESTED_STORYBOOK_STATIC_DIR = "storybook-static/storybook-static";
 const CUSTOMER_BOARD_BRAND_ID = "customer-board";
+const CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const WORKSPACE_ROOT = process.cwd();
 
-const TIMESTAMP_KEYS = new Set(["validatedAt", "submittedAt", "startedAt", "finishedAt", "lastModified", "updatedAt", "createdAt"]);
+const TIMESTAMP_KEYS = new Set([
+  "validatedAt",
+  "submittedAt",
+  "startedAt",
+  "finishedAt",
+  "lastModified",
+  "updatedAt",
+  "createdAt",
+  "comparedAt"
+]);
 const PATH_KEYS = new Set(["filePath", "reportPath", "outputDir", "catalogPath", "generatedProjectDir", "jobDir", "reproDir"]);
 const FORBIDDEN_FIXTURE_PATH_SEGMENTS = [
   "storybook-static",
@@ -98,6 +112,9 @@ export const resolveCustomerBoardLiveRuntimeSettings = () =>
     enablePreview: false,
     skipInstall: false,
     enableUiValidation: true,
+    enableVisualQualityValidation: true,
+    visualQualityReferenceMode: "frozen_fixture",
+    visualQualityViewportWidth: CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH,
     enableUnitTestValidation: true,
     unitTestIgnoreFailure: true,
     figmaRequestTimeoutMs: 30_000,
@@ -124,7 +141,7 @@ export const createCustomerBoardHybridLiveRuntimeSettings = () => {
   return runtime;
 };
 
-type FixtureArtifactKind = "json" | "text";
+type FixtureArtifactKind = "json" | "text" | "binary";
 
 export interface CustomerBoardGoldenGeneratedArtifactSpec {
   name: string;
@@ -168,7 +185,7 @@ export interface CustomerBoardStorybookEvidenceHintSummary {
 }
 
 export interface CustomerBoardGoldenManifest {
-  version: 2;
+  version: 3;
   fixtureId: "customer-board-golden";
   inputs: {
     figma: string;
@@ -183,6 +200,10 @@ export interface CustomerBoardGoldenManifest {
     figmaAnalysis: string;
     figmaLibraryResolution: string;
     componentMatchReport: string;
+  };
+  visualQuality: {
+    frozenReferenceImage: string;
+    frozenReferenceMetadata: string;
   };
   expected: {
     validationSummary: string;
@@ -266,15 +287,16 @@ const parseManifest = ({
   if (fixtureId !== "customer-board-golden") {
     throw new Error("customer-board manifest fixtureId must be 'customer-board-golden'.");
   }
-  if (parsed.version !== 2) {
-    throw new Error("customer-board manifest version must be 2.");
+  if (parsed.version !== 3) {
+    throw new Error("customer-board manifest version must be 3.");
   }
 
   const inputs = parsed.inputs;
   const derived = parsed.derived;
+  const visualQuality = parsed.visualQuality;
   const expected = parsed.expected;
-  if (!isPlainRecord(inputs) || !isPlainRecord(derived) || !isPlainRecord(expected)) {
-    throw new Error("customer-board manifest inputs, derived, and expected sections are required.");
+  if (!isPlainRecord(inputs) || !isPlainRecord(derived) || !isPlainRecord(visualQuality) || !isPlainRecord(expected)) {
+    throw new Error("customer-board manifest inputs, derived, visualQuality, and expected sections are required.");
   }
 
   const generated = expected.generated;
@@ -283,7 +305,7 @@ const parseManifest = ({
   }
 
   const output: CustomerBoardGoldenManifest = {
-    version: 2,
+    version: 3,
     fixtureId: "customer-board-golden",
     inputs: {
       figma: assertAllowedFixturePath(String(inputs.figma ?? "")),
@@ -298,6 +320,10 @@ const parseManifest = ({
       figmaAnalysis: assertAllowedFixturePath(String(derived.figmaAnalysis ?? "")),
       figmaLibraryResolution: assertAllowedFixturePath(String(derived.figmaLibraryResolution ?? "")),
       componentMatchReport: assertAllowedFixturePath(String(derived.componentMatchReport ?? ""))
+    },
+    visualQuality: {
+      frozenReferenceImage: assertAllowedFixturePath(String(visualQuality.frozenReferenceImage ?? "")),
+      frozenReferenceMetadata: assertAllowedFixturePath(String(visualQuality.frozenReferenceMetadata ?? ""))
     },
     expected: {
       validationSummary: assertAllowedFixturePath(String(expected.validationSummary ?? "")),
@@ -1016,6 +1042,7 @@ const normalizeValidationSummaryArtifactForComparison = ({
   const style = isPlainRecord(parsed.style) ? parsed.style : undefined;
   const styleStorybook = isPlainRecord(style?.storybook) ? style.storybook : undefined;
   const importSummary = isPlainRecord(parsed.import) ? parsed.import : undefined;
+  const visualQuality = isPlainRecord(parsed.visualQuality) ? parsed.visualQuality : undefined;
 
   const normalizeStatusObject = (value: unknown): Record<string, unknown> | undefined => {
     if (!isPlainRecord(value) || typeof value.status !== "string") {
@@ -1070,7 +1097,49 @@ const normalizeValidationSummaryArtifactForComparison = ({
           }
         }
       : undefined,
+    visualQuality: visualQuality
+      ? {
+          ...(typeof visualQuality.status === "string" ? { status: visualQuality.status } : {}),
+          ...(typeof visualQuality.referenceSource === "string"
+            ? { referenceSource: visualQuality.referenceSource }
+            : {})
+        }
+      : undefined,
     import: importSummary && typeof importSummary.status === "string" ? { status: importSummary.status } : undefined
+  });
+};
+
+const normalizeVisualReferenceMetadataForComparison = ({
+  content
+}: {
+  content: string;
+}): string => {
+  const parsed = JSON.parse(content) as unknown;
+  if (!isPlainRecord(parsed)) {
+    return content;
+  }
+  const source = isPlainRecord(parsed.source) ? parsed.source : undefined;
+  const viewport = isPlainRecord(parsed.viewport) ? parsed.viewport : undefined;
+  return toStableJsonString({
+    ...(typeof parsed.capturedAt === "string" ? { capturedAt: "<timestamp>" } : {}),
+    ...(source
+      ? {
+          source: {
+            ...(typeof source.fileKey === "string" ? { fileKey: source.fileKey } : {}),
+            ...(typeof source.nodeId === "string" ? { nodeId: source.nodeId } : {}),
+            ...(typeof source.nodeName === "string" ? { nodeName: source.nodeName } : {}),
+            ...(typeof source.lastModified === "string" ? { lastModified: "<timestamp>" } : {})
+          }
+        }
+      : {}),
+    ...(viewport
+      ? {
+          viewport: {
+            ...(typeof viewport.width === "number" ? { width: viewport.width } : {}),
+            ...(typeof viewport.height === "number" ? { height: viewport.height } : {})
+          }
+        }
+      : {})
   });
 };
 
@@ -1093,6 +1162,11 @@ const normalizeBundleEntryContentForComparison = ({
   }
   if (entry.kind === "json" && relativePath.endsWith("validation-summary.json")) {
     return normalizeValidationSummaryArtifactForComparison({
+      content: entry.content
+    });
+  }
+  if (entry.kind === "json" && relativePath.endsWith("visual-quality/reference.metadata.json")) {
+    return normalizeVisualReferenceMetadataForComparison({
       content: entry.content
     });
   }
@@ -1149,22 +1223,27 @@ const buildCuratedGeneratedArtifactSpecs = async ({
 
 const createJobRecord = ({
   runtime,
-  jobDir
+  jobDir,
+  customerProfilePath
 }: {
   runtime: ReturnType<typeof resolveRuntimeSettings>;
   jobDir: string;
+  customerProfilePath: string;
 }): JobRecord => {
   return {
     jobId: "customer-board-golden",
     status: "queued",
     submittedAt: nowIso(),
     request: {
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH,
       enableGitPr: false,
       figmaSourceMode: "local_json",
       llmCodegenMode: "deterministic",
       brandTheme: "derived",
       customerBrandId: CUSTOMER_BOARD_BRAND_ID,
-      customerProfilePath: "integration/fixtures/customer-board-golden/inputs/customer-profile.json",
+      customerProfilePath,
       storybookStaticDir: REQUESTED_STORYBOOK_STATIC_DIR,
       generationLocale: "en-US",
       formHandlingMode: "react_hook_form"
@@ -1187,9 +1266,11 @@ const createJobRecord = ({
 
 const createExecutionContext = async ({
   customerProfile,
+  fixtureRoot = FIXTURE_ROOT,
   rootDir
 }: {
   customerProfile: ResolvedCustomerProfile;
+  fixtureRoot?: string;
   rootDir?: string;
 }): Promise<{
   executionContext: PipelineExecutionContext;
@@ -1203,6 +1284,9 @@ const createExecutionContext = async ({
     enablePreview: false,
     skipInstall: false,
     enableUiValidation: true,
+    enableVisualQualityValidation: true,
+    visualQualityReferenceMode: "frozen_fixture",
+    visualQualityViewportWidth: CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH,
     enableUnitTestValidation: true,
     unitTestIgnoreFailure: true,
     figmaMaxRetries: 1,
@@ -1214,11 +1298,13 @@ const createExecutionContext = async ({
   await mkdir(generatedProjectDir, { recursive: true });
 
   const artifactStore = new StageArtifactStore({ jobDir });
+  const customerProfilePath = path.join(fixtureRoot, "inputs", "customer-profile.json");
   const executionContext: PipelineExecutionContext = {
     mode: "submission",
     job: createJobRecord({
       runtime,
-      jobDir
+      jobDir,
+      customerProfilePath
     }),
     runtime,
     resolvedPaths: {
@@ -1300,11 +1386,23 @@ const readNormalizedFixtureArtifact = async ({
   filePath: string;
   kind: FixtureArtifactKind;
 }): Promise<string> => {
+  if (kind === "binary") {
+    return (await readFile(filePath)).toString("base64");
+  }
   const raw = await readFile(filePath, "utf8");
   if (kind === "text") {
     return normalizeText(raw);
   }
   const parsed = JSON.parse(raw) as unknown;
+  if (filePath.endsWith("validation-summary.json")) {
+    return toStableJsonString(
+      normalizeCustomerBoardFixtureValue({
+        value: sanitizeValidationSummaryForFixture({
+          value: parsed
+        })
+      })
+    );
+  }
   return toStableJsonString(parsed);
 };
 
@@ -1444,7 +1542,8 @@ export const executeCustomerBoardFixture = async ({
     figmaInput
   });
   const { executionContext, stageContextFor } = await createExecutionContext({
-    customerProfile
+    customerProfile,
+    fixtureRoot
   });
 
   await seedFixtureArtifacts({
@@ -1568,6 +1667,22 @@ const addBundleText = ({
   files.set(normalizedPath, {
     kind: "text",
     content: normalizeText(value)
+  });
+};
+
+const addBundleBinary = ({
+  files,
+  relativePath,
+  value
+}: {
+  files: Map<string, CustomerBoardBundleFile>;
+  relativePath: string;
+  value: Buffer;
+}): void => {
+  const normalizedPath = assertAllowedFixturePath(relativePath);
+  files.set(normalizedPath, {
+    kind: "binary",
+    content: value.toString("base64")
   });
 };
 
@@ -1777,9 +1892,13 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
     const storybookEvidenceHintsArtifact = createCustomerBoardStorybookEvidenceHintsArtifact({
       artifact: evidenceArtifact
     });
+    const selectedVisualReferenceNode = selectVisualQualityReferenceNode({
+      file: figmaInput,
+      preferredNamePattern: "SeitenContent"
+    });
 
     const manifestBase: CustomerBoardGoldenManifest = {
-      version: 2,
+      version: 3,
       fixtureId: "customer-board-golden",
       inputs: {
         figma: "inputs/figma.json",
@@ -1795,11 +1914,30 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
         figmaLibraryResolution: "derived/figma-library-resolution.json",
         componentMatchReport: "derived/component-match-report.json"
       },
+      visualQuality: {
+        frozenReferenceImage: "visual-quality/reference.png",
+        frozenReferenceMetadata: "visual-quality/reference.metadata.json"
+      },
       expected: {
         validationSummary: "expected/validation-summary.json",
         generated: []
       }
     };
+    const frozenVisualReference = figmaLibrarySeed
+      ? await fetchFigmaVisualReference({
+          fileKey: figmaLibrarySeed.fileKey,
+          nodeId: selectedVisualReferenceNode.nodeId,
+          accessToken: figmaLibrarySeed.accessToken,
+          desiredWidth: CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH,
+          fetchImpl: fetch,
+          maxRetries: 4
+        })
+      : {
+          buffer: await readFile(path.join(fixtureRoot, manifestBase.visualQuality.frozenReferenceImage)),
+          metadata: await readJsonFile({
+            filePath: path.join(fixtureRoot, manifestBase.visualQuality.frozenReferenceMetadata)
+          })
+        };
 
     const tempDerivedRoot = path.join(tempFixtureRoot, "derived");
     await writeJsonFixtureFile({
@@ -1832,6 +1970,15 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
       filePath: path.join(tempFixtureRoot, manifestBase.derived.componentMatchReport),
       value: componentMatchReportArtifact
     });
+    await mkdir(path.join(tempFixtureRoot, path.dirname(manifestBase.visualQuality.frozenReferenceImage)), { recursive: true });
+    await writeFile(
+      path.join(tempFixtureRoot, manifestBase.visualQuality.frozenReferenceImage),
+      frozenVisualReference.buffer
+    );
+    await writeJsonFixtureFile({
+      filePath: path.join(tempFixtureRoot, manifestBase.visualQuality.frozenReferenceMetadata),
+      value: frozenVisualReference.metadata
+    });
     void tempDerivedRoot;
 
     const runtimeManifest = {
@@ -1849,6 +1996,10 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
     await writeJsonFixtureFile({
       filePath: path.join(tempFixtureRoot, runtimeManifest.inputs.customerProfile),
       value: customerProfileInput
+    });
+    await writeJsonFixtureFile({
+      filePath: path.join(tempFixtureRoot, "manifest.json"),
+      value: runtimeManifest
     });
 
     const { executionContext } = await executeCustomerBoardFixture({
@@ -1922,6 +2073,17 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
       relativePath: manifest.derived.componentMatchReport,
       value: componentMatchReportArtifact
     });
+    addBundleBinary({
+      files,
+      relativePath: manifest.visualQuality.frozenReferenceImage,
+      value: frozenVisualReference.buffer
+    });
+    addBundleJson({
+      files,
+      relativePath: manifest.visualQuality.frozenReferenceMetadata,
+      value: frozenVisualReference.metadata,
+      sanitize: false
+    });
 
     const outputs = await collectActualFixtureOutputs({
       manifest,
@@ -1961,6 +2123,10 @@ export const writeCustomerBoardGoldenBundle = async ({
   for (const [relativePath, entry] of bundle.files.entries()) {
     const absolutePath = path.join(fixtureRoot, relativePath);
     await mkdir(path.dirname(absolutePath), { recursive: true });
+    if (entry.kind === "binary") {
+      await writeFile(absolutePath, Buffer.from(entry.content, "base64"));
+      continue;
+    }
     await writeFile(absolutePath, entry.content, "utf8");
   }
 };
@@ -1986,13 +2152,19 @@ export const readCommittedCustomerBoardGoldenBundle = async ({
     manifest.derived.figmaAnalysis,
     manifest.derived.figmaLibraryResolution,
     manifest.derived.componentMatchReport,
+    manifest.visualQuality.frozenReferenceImage,
+    manifest.visualQuality.frozenReferenceMetadata,
     manifest.expected.validationSummary,
     ...manifest.expected.generated.map((entry) => entry.expected)
   ];
 
   for (const relativePath of allRelativePaths) {
     const kind: FixtureArtifactKind =
-      relativePath.endsWith(".json") || relativePath === "manifest.json" ? "json" : "text";
+      relativePath === manifest.visualQuality.frozenReferenceImage
+        ? "binary"
+        : relativePath.endsWith(".json") || relativePath === "manifest.json"
+          ? "json"
+          : "text";
     files.set(relativePath, {
       kind,
       content: await readNormalizedFixtureArtifact({

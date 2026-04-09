@@ -170,6 +170,15 @@ export const syncPublicJobProjection = async ({
     }
   });
   await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.visualQualityReport,
+    assign: (value) => {
+      job.artifacts.visualQualityReportFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.visualQualityReportFile;
+    }
+  });
+  await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.validationSummaryFile,
     assign: (value) => {
       job.artifacts.validationSummaryFile = value;

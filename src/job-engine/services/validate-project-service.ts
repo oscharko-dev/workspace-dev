@@ -1,6 +1,10 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { WorkspaceVisualAuditResult } from "../../contracts/index.js";
+import type {
+  WorkspaceVisualAuditResult,
+  WorkspaceVisualQualityReferenceMode,
+  WorkspaceVisualQualityReport
+} from "../../contracts/index.js";
 import {
   prepareGenerationDiff,
   saveCurrentSnapshot,
@@ -42,6 +46,12 @@ import { isWithinRoot } from "../preview.js";
 import { captureFromProject } from "../visual-capture.js";
 import { comparePngBuffers, writeDiffImage } from "../visual-diff.js";
 import { computeVisualQualityReport, type VisualQualityReport } from "../visual-scoring.js";
+import {
+  fetchFigmaVisualReference,
+  findVisualQualityFixtureManifest,
+  loadFrozenVisualReference,
+  selectVisualQualityReferenceNode
+} from "../visual-quality-reference.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
@@ -176,7 +186,7 @@ interface ValidationSummaryArtifact {
       };
   uiA11y: ValidationUiA11ySummary;
   visualAudit: WorkspaceVisualAuditResult;
-  visualQuality?: VisualQualityReport;
+  visualQuality: WorkspaceVisualQualityReport;
   storybook:
     | {
         status: "ok" | "failed";
@@ -375,6 +385,96 @@ const cloneVisualAuditResult = (value: WorkspaceVisualAuditResult): WorkspaceVis
         }
       : {}),
     ...(value.warnings ? { warnings: [...value.warnings] } : {})
+  };
+};
+
+const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): WorkspaceVisualQualityReport => {
+  return {
+    ...value,
+    ...(value.dimensions
+      ? {
+          dimensions: value.dimensions.map((dimension) => ({ ...dimension }))
+        }
+      : {}),
+    ...(value.hotspots
+      ? {
+          hotspots: value.hotspots.map((hotspot) => ({ ...hotspot }))
+        }
+      : {}),
+    ...(value.metadata
+      ? {
+          metadata: {
+            ...value.metadata,
+            ...(value.metadata.configuredWeights
+              ? {
+                  configuredWeights: { ...value.metadata.configuredWeights }
+                }
+              : {}),
+            ...(value.metadata.viewport
+              ? {
+                  viewport: { ...value.metadata.viewport }
+                }
+              : {}),
+            ...(value.metadata.versions
+              ? {
+                  versions: { ...value.metadata.versions }
+                }
+              : {})
+          }
+        }
+      : {}),
+    ...(value.warnings ? { warnings: [...value.warnings] } : {})
+  };
+};
+
+const createNotRequestedVisualQualityReport = (): WorkspaceVisualQualityReport => ({
+  status: "not_requested"
+});
+
+const createFailedVisualQualityReport = ({
+  referenceSource,
+  capturedAt,
+  message,
+  warnings
+}: {
+  referenceSource: WorkspaceVisualQualityReferenceMode;
+  capturedAt: string;
+  message: string;
+  warnings?: string[];
+}): WorkspaceVisualQualityReport => {
+  return {
+    status: "failed",
+    referenceSource,
+    capturedAt,
+    message,
+    ...(warnings && warnings.length > 0 ? { warnings } : {})
+  };
+};
+
+const createCompletedVisualQualityReport = ({
+  referenceSource,
+  capturedAt,
+  report
+}: {
+  referenceSource: WorkspaceVisualQualityReferenceMode;
+  capturedAt: string;
+  report: VisualQualityReport;
+}): WorkspaceVisualQualityReport => {
+  return {
+    status: "completed",
+    referenceSource,
+    capturedAt,
+    overallScore: report.overallScore,
+    interpretation: report.interpretation,
+    dimensions: report.dimensions.map((dimension) => ({ ...dimension })),
+    diffImagePath: report.diffImagePath,
+    hotspots: report.hotspots.map((hotspot) => ({ ...hotspot })),
+    metadata: {
+      ...report.metadata,
+      configuredWeights: { ...report.metadata.configuredWeights },
+      viewport: { ...report.metadata.viewport },
+      versions: { ...report.metadata.versions }
+    }
   };
 };
 
@@ -787,7 +887,7 @@ const buildValidationSummaryArtifact = async ({
   componentMatchReportArtifact?: ComponentMatchReportArtifact;
   storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
   visualAuditResult?: WorkspaceVisualAuditResult;
-  visualQualityReport?: VisualQualityReport;
+  visualQualityReport?: WorkspaceVisualQualityReport;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -1008,6 +1108,9 @@ const buildValidationSummaryArtifact = async ({
     ...(validationResult ? { validationResult } : {})
   });
   const resolvedVisualAuditResult = cloneVisualAuditResult(visualAuditResult ?? context.job.visualAudit ?? { status: "not_requested" });
+  const resolvedVisualQualityReport = cloneVisualQualityReport(
+    visualQualityReport ?? context.job.visualQuality ?? createNotRequestedVisualQualityReport()
+  );
 
   return {
     status: resolveSummaryStatus({
@@ -1023,7 +1126,7 @@ const buildValidationSummaryArtifact = async ({
     generatedApp: generatedAppSummary,
     uiA11y: uiA11ySummary,
     visualAudit: resolvedVisualAuditResult,
-    ...(visualQualityReport ? { visualQuality: visualQualityReport } : {}),
+    visualQuality: resolvedVisualQualityReport,
     storybook: storybookSummary,
     mapping: mappingSummary,
     style: styleSummary,
@@ -1076,7 +1179,19 @@ export const createValidateProjectService = ({
       let visualAuditActualImagePath: string | undefined;
       let visualAuditDiffImagePath: string | undefined;
       let visualAuditReportPath: string | undefined;
-      let resolvedVisualQualityReport: VisualQualityReport | undefined;
+      const requestedVisualQualityEnabled = context.job.request.enableVisualQualityValidation === true;
+      const explicitVisualQualityRequest =
+        context.input?.enableVisualQualityValidation !== undefined ||
+        context.input?.visualQualityReferenceMode !== undefined ||
+        context.input?.visualQualityViewportWidth !== undefined;
+      const standaloneVisualQualityMode =
+        (context.job.request.visualQualityReferenceMode ?? context.runtime.visualQualityReferenceMode) as WorkspaceVisualQualityReferenceMode;
+      const standaloneVisualQualityViewportWidth =
+        context.job.request.visualQualityViewportWidth ?? context.runtime.visualQualityViewportWidth;
+      const shouldRunStandaloneVisualQuality = requestedVisualQualityEnabled && (!visualAuditRequest || explicitVisualQualityRequest);
+      let resolvedVisualQualityReport: WorkspaceVisualQualityReport = createNotRequestedVisualQualityReport();
+      context.job.visualQuality = createNotRequestedVisualQualityReport();
+      delete context.job.artifacts.visualQualityReportFile;
 
       const buildSummary = async ({
         generatedAppFailure,
@@ -1085,9 +1200,10 @@ export const createValidateProjectService = ({
       }: {
         generatedAppFailure?: { failedCommand: string };
         storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
-        visualQualityReport?: VisualQualityReport;
+        visualQualityReport?: WorkspaceVisualQualityReport;
       } = {}): Promise<ValidationSummaryArtifact> => {
         context.job.visualAudit = cloneVisualAuditResult(visualAuditResult);
+        context.job.visualQuality = cloneVisualQualityReport(visualQualityReport ?? resolvedVisualQualityReport);
         return buildValidationSummaryArtifact({
           context,
           validatedAt,
@@ -1100,7 +1216,7 @@ export const createValidateProjectService = ({
           ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
           ...(storybookArtifactStatusOverrides ? { storybookArtifactStatusOverrides } : {}),
           visualAuditResult,
-          ...(visualQualityReport ? { visualQualityReport } : {})
+          visualQualityReport: visualQualityReport ?? resolvedVisualQualityReport
         });
       };
 
@@ -1164,6 +1280,31 @@ export const createValidateProjectService = ({
           value: cloneVisualAuditResult(clonedResult)
         });
         return clonedResult;
+      };
+
+      const persistVisualQualityResult = async (result: WorkspaceVisualQualityReport): Promise<WorkspaceVisualQualityReport> => {
+        const clonedResult = cloneVisualQualityReport(result);
+        resolvedVisualQualityReport = clonedResult;
+        context.job.visualQuality = cloneVisualQualityReport(clonedResult);
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.visualQualityResult,
+          stage: "validate.project",
+          value: cloneVisualQualityReport(clonedResult)
+        });
+        return clonedResult;
+      };
+
+      const persistVisualQualityReportPath = async ({
+        absolutePath
+      }: {
+        absolutePath: string;
+      }): Promise<void> => {
+        context.job.artifacts.visualQualityReportFile = absolutePath;
+        await context.artifactStore.setPath({
+          key: STAGE_ARTIFACT_KEYS.visualQualityReport,
+          stage: "validate.project",
+          absolutePath
+        });
       };
 
       const failVisualAudit = async ({
@@ -1891,7 +2032,7 @@ export const createValidateProjectService = ({
         });
 
         const reportPath = path.join(visualAuditDir, "report.json");
-        const visualQualityReport = (() => {
+        const visualQualityScoringReport = (() => {
           try {
             return computeVisualQualityReport({
               diffResult,
@@ -1914,7 +2055,7 @@ export const createValidateProjectService = ({
           }
         })();
         try {
-          await writeFile(reportPath, toJsonFileContent(await visualQualityReport), "utf8");
+          await writeFile(reportPath, toJsonFileContent(await visualQualityScoringReport), "utf8");
           await persistVisualAuditArtifactPath({
             key: STAGE_ARTIFACT_KEYS.visualAuditReport,
             absolutePath: reportPath
@@ -1933,13 +2074,18 @@ export const createValidateProjectService = ({
 
         finalizedVisualAuditResult.reportPath = reportPath;
         await persistVisualAuditResult(finalizedVisualAuditResult);
-        resolvedVisualQualityReport = visualQualityReport as VisualQualityReport;
-        await context.artifactStore.setValue({
-          key: STAGE_ARTIFACT_KEYS.visualQualityResult,
-          stage: "validate.project",
-          value: resolvedVisualQualityReport
-        });
-        context.job.visualQuality = resolvedVisualQualityReport;
+        if (!shouldRunStandaloneVisualQuality) {
+          await persistVisualQualityResult(
+            createCompletedVisualQualityReport({
+              referenceSource: standaloneVisualQualityMode,
+              capturedAt: validatedAt,
+              report: visualQualityScoringReport as VisualQualityReport
+            })
+          );
+          await persistVisualQualityReportPath({
+            absolutePath: reportPath
+          });
+        }
         context.log({
           level: finalizedVisualAuditResult.status === "warn" ? "warn" : "info",
           message:
@@ -1948,7 +2094,165 @@ export const createValidateProjectService = ({
               : "Visual audit completed without detected pixel differences."
         });
       }
-      const summary = await buildSummary(resolvedVisualQualityReport ? { visualQualityReport: resolvedVisualQualityReport } : {});
+      if (shouldRunStandaloneVisualQuality) {
+        const runStandaloneVisualQuality = async (): Promise<void> => {
+          const distDir = path.join(generatedProjectDir, "dist");
+          const distIndexPath = path.join(distDir, "index.html");
+          await access(distIndexPath);
+
+          const visualQualityDir = path.join(context.paths.jobDir, "visual-quality");
+          await mkdir(visualQualityDir, { recursive: true });
+
+          const referenceResult =
+            standaloneVisualQualityMode === "figma_api"
+              ? await (async () => {
+                  const figmaFileKey = context.job.request.figmaFileKey;
+                  if (!figmaFileKey) {
+                    throw new Error("Visual quality validation requires figmaFileKey for figma_api mode.");
+                  }
+                  const figmaAccessToken = context.input?.figmaAccessToken?.trim();
+                  if (!figmaAccessToken) {
+                    throw new Error("Visual quality validation requires figmaAccessToken for figma_api mode.");
+                  }
+                  const figmaJsonPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaCleaned);
+                  if (!figmaJsonPath) {
+                    throw new Error("Visual quality validation requires a cleaned figma.json artifact for figma_api mode.");
+                  }
+                  const cleanedFigma = JSON.parse(await readFile(figmaJsonPath, "utf8")) as unknown;
+                  const selectedNode = selectVisualQualityReferenceNode({
+                    file: cleanedFigma,
+                    ...(context.runtime.figmaScreenNamePattern
+                      ? { preferredNamePattern: context.runtime.figmaScreenNamePattern }
+                      : {})
+                  });
+                  const liveReference = await fetchFigmaVisualReference({
+                    fileKey: figmaFileKey,
+                    nodeId: selectedNode.nodeId,
+                    accessToken: figmaAccessToken,
+                    desiredWidth: standaloneVisualQualityViewportWidth,
+                    fetchImpl: context.fetchWithCancellation,
+                    maxRetries: context.runtime.figmaMaxRetries,
+                    onLog: (message) => {
+                      context.log({
+                        level: "info",
+                        message: `Visual quality reference: ${message}`
+                      });
+                    }
+                  });
+                  return {
+                    buffer: liveReference.buffer,
+                    metadata: liveReference.metadata
+                  };
+                })()
+              : await (async () => {
+                  const fixtureManifest = await findVisualQualityFixtureManifest({
+                    workspaceRoot: context.resolvedWorkspaceRoot,
+                    inputPaths: [
+                      context.job.request.customerProfilePath,
+                      context.job.request.figmaJsonPath
+                    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+                  });
+                  if (!fixtureManifest) {
+                    throw new Error("Visual quality validation could not locate a frozen fixture manifest for the current job.");
+                  }
+                  const frozenReference = await loadFrozenVisualReference({
+                    imagePath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceImage),
+                    metadataPath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceMetadata)
+                  });
+                  return {
+                    buffer: frozenReference.buffer,
+                    metadata: frozenReference.metadata
+                  };
+                })();
+
+          if (referenceResult.metadata.viewport.width !== standaloneVisualQualityViewportWidth) {
+            throw new Error(
+              `Visual quality reference width ${String(referenceResult.metadata.viewport.width)} does not match requested viewport width ${String(standaloneVisualQualityViewportWidth)}.`
+            );
+          }
+
+          const referenceImagePath = path.join(visualQualityDir, "reference.png");
+          await writeFile(referenceImagePath, referenceResult.buffer);
+
+          const captureResult = await captureFromProjectFn({
+            projectDir: distDir,
+            config: {
+              viewport: {
+                width: standaloneVisualQualityViewportWidth,
+                height: referenceResult.metadata.viewport.height,
+                deviceScaleFactor: 1
+              },
+              waitForNetworkIdle: true,
+              waitForFonts: true,
+              waitForAnimations: true,
+              timeoutMs: 30_000,
+              fullPage: false
+            },
+            onLog: (message) => {
+              context.log({
+                level: "info",
+                message: `Visual quality capture: ${message}`
+              });
+            }
+          });
+
+          const actualImagePath = path.join(visualQualityDir, "actual.png");
+          await writeFile(actualImagePath, captureResult.screenshotBuffer);
+
+          const diffResult = comparePngBuffersFn({
+            referenceBuffer: referenceResult.buffer,
+            testBuffer: captureResult.screenshotBuffer
+          });
+          const diffImagePath = path.join(visualQualityDir, "diff.png");
+          await writeDiffImage({
+            diffImageBuffer: diffResult.diffImageBuffer,
+            outputPath: diffImagePath
+          });
+
+          const scoringReport = computeVisualQualityReport({
+            diffResult,
+            comparedAt: validatedAt,
+            diffImagePath,
+            viewport: captureResult.viewport
+          });
+          const completedReport = createCompletedVisualQualityReport({
+            referenceSource: standaloneVisualQualityMode,
+            capturedAt: referenceResult.metadata.capturedAt,
+            report: scoringReport
+          });
+          const reportPath = path.join(visualQualityDir, "report.json");
+          await writeFile(reportPath, toJsonFileContent(completedReport), "utf8");
+          await persistVisualQualityResult(completedReport);
+          await persistVisualQualityReportPath({
+            absolutePath: reportPath
+          });
+          context.log({
+            level: completedReport.overallScore !== undefined && completedReport.overallScore < 100 ? "warn" : "info",
+            message: `Visual quality validation completed via ${standaloneVisualQualityMode}.`
+          });
+        };
+
+        try {
+          await runStandaloneVisualQuality();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Visual quality validation failed.";
+          await persistVisualQualityResult(
+            createFailedVisualQualityReport({
+              referenceSource: standaloneVisualQualityMode,
+              capturedAt: new Date().toISOString(),
+              message,
+              warnings: [message]
+            })
+          );
+          context.log({
+            level: "warn",
+            message: `Visual quality validation failed without blocking the pipeline: ${message}`
+          });
+        }
+      }
+      const summary = await buildSummary({
+        visualQualityReport: resolvedVisualQualityReport
+      });
       await persistValidationSummaryArtifacts({
         context,
         summary
