@@ -1,7 +1,6 @@
 {
   "thresholds": {
-    "warn": 80,
-    "fail": 60
+    "warn": 80
   },
   "weights": {
     "layoutAccuracy": 0.30,

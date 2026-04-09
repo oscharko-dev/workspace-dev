@@ -38,6 +38,7 @@ import {
   computeVisualBenchmarkScores,
   formatVisualBenchmarkTable,
   loadVisualBenchmarkBaseline,
+  loadVisualBenchmarkLastRunArtifact,
   runVisualBenchmark,
   saveVisualBenchmarkBaseline,
   type VisualBenchmarkBaseline,
@@ -887,8 +888,36 @@ test("resolveVisualBenchmarkCliResolution accepts --ci with --quality-threshold"
   assert.equal(resolution.qualityThreshold, 75);
 });
 
-test("runVisualBenchmarkCli returns exit code 1 with --ci when any fixture fails threshold", async () => {
+test("resolveVisualBenchmarkCliResolution accepts --enforce-thresholds", () => {
+  const resolution = resolveVisualBenchmarkCliResolution(["--ci", "--enforce-thresholds"]);
+  assert.equal(resolution.action, "benchmark");
+  assert.equal(resolution.ci, true);
+  assert.equal(resolution.enforceThresholds, true);
+});
+
+test("runVisualBenchmarkCli returns exit code 0 with --ci when any fixture fails threshold", async () => {
   const status = await runVisualBenchmarkCli(["--ci"], {
+    runBenchmark: async () => ({
+      deltas: [
+        {
+          fixtureId: "simple-form",
+          baseline: 100,
+          current: 50,
+          delta: -50,
+          indicator: "degraded" as const,
+          thresholdResult: { score: 50, verdict: "fail" as const, thresholds: { warn: 80, fail: 60 } },
+        },
+      ],
+      overallBaseline: 100,
+      overallCurrent: 50,
+      overallDelta: -50,
+    }),
+  });
+  assert.equal(status, 0);
+});
+
+test("runVisualBenchmarkCli returns exit code 1 with --enforce-thresholds when any fixture fails threshold", async () => {
+  const status = await runVisualBenchmarkCli(["--ci", "--enforce-thresholds"], {
     runBenchmark: async () => ({
       deltas: [
         {
@@ -969,4 +998,51 @@ test("runVisualBenchmarkCli returns exit code 0 with --ci when all fixtures pass
     }),
   });
   assert.equal(status, 0);
+});
+
+test("runVisualBenchmark stores warn-only threshold results in the last-run artifact manifest", async () => {
+  const env = await createBenchmarkFixtureEnvironment();
+
+  try {
+    const result = await runVisualBenchmark(
+      {
+        ...env,
+        qualityConfig: {
+          thresholds: { warn: 90 },
+        },
+      },
+      {
+        executeFixture: async (fixtureId) => ({
+          fixtureId,
+          score: 75,
+          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+          report: createCompletedVisualQualityReport(75),
+          viewport: { width: 1280, height: 720 },
+        }),
+      },
+    );
+
+    const artifact = await loadVisualBenchmarkLastRunArtifact("simple-form", env);
+    assert.equal(result.deltas[0]?.thresholdResult?.verdict, "warn");
+    assert.deepEqual(artifact?.thresholdResult, {
+      score: 87.5,
+      verdict: "warn",
+      thresholds: { warn: 90 },
+    });
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("visual benchmark workflow keeps PR mode non-blocking and updates the existing check run", async () => {
+  const workflow = await readFile(path.join(process.cwd(), ".github", "workflows", "visual-benchmark.yml"), "utf8");
+  assert.match(workflow, /name:\s+benchmark/);
+  assert.match(workflow, /pnpm benchmark:visual -- --ci/);
+  assert.doesNotMatch(workflow, /--enforce-thresholds/);
+  assert.doesNotMatch(workflow, /FIGMA_ACCESS_TOKEN/);
+  assert.doesNotMatch(workflow, /FIGMA_FILE_KEY/);
+  assert.match(workflow, /actions\/github-script@v8/);
+  assert.match(workflow, /check-output\.json/);
+  assert.match(workflow, /github\.rest\.checks\.update/);
 });

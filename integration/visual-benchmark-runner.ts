@@ -76,6 +76,7 @@ export interface VisualBenchmarkLastRunArtifactManifest {
     width: number;
     height: number;
   };
+  thresholdResult?: VisualQualityThresholdResult;
 }
 
 export interface VisualBenchmarkLastRunArtifactPaths {
@@ -103,6 +104,7 @@ export interface VisualBenchmarkLastRunArtifactInput {
   actualImageBuffer: Buffer;
   diffImageBuffer?: Buffer | null;
   report?: unknown | null;
+  thresholdResult?: VisualQualityThresholdResult;
 }
 
 export interface VisualBenchmarkRunnerDependencies {
@@ -263,6 +265,33 @@ const parseLastRunArtifactManifest = (content: string): VisualBenchmarkLastRunAr
     throw new Error("Last-run artifact viewport.height must be a positive number.");
   }
 
+  let thresholdResult: VisualQualityThresholdResult | undefined;
+  if (isPlainRecord(parsed.thresholdResult)) {
+    const thresholds = parsed.thresholdResult.thresholds;
+    if (
+      typeof parsed.thresholdResult.score !== "number" ||
+      !Number.isFinite(parsed.thresholdResult.score) ||
+      (parsed.thresholdResult.verdict !== "pass" &&
+        parsed.thresholdResult.verdict !== "warn" &&
+        parsed.thresholdResult.verdict !== "fail") ||
+      !isPlainRecord(thresholds) ||
+      typeof thresholds.warn !== "number" ||
+      !Number.isFinite(thresholds.warn) ||
+      (thresholds.fail !== undefined &&
+        (typeof thresholds.fail !== "number" || !Number.isFinite(thresholds.fail)))
+    ) {
+      throw new Error("Last-run artifact thresholdResult must contain a valid score, verdict, and thresholds.");
+    }
+    thresholdResult = {
+      score: parsed.thresholdResult.score,
+      verdict: parsed.thresholdResult.verdict,
+      thresholds: {
+        warn: thresholds.warn,
+        ...(thresholds.fail !== undefined ? { fail: thresholds.fail } : {}),
+      },
+    };
+  }
+
   return {
     version: 1,
     fixtureId: assertAllowedFixtureId(parsed.fixtureId),
@@ -272,6 +301,7 @@ const parseLastRunArtifactManifest = (content: string): VisualBenchmarkLastRunAr
       width: parsed.viewport.width,
       height: parsed.viewport.height,
     },
+    ...(thresholdResult !== undefined ? { thresholdResult } : {}),
   };
 };
 
@@ -374,6 +404,7 @@ export const saveVisualBenchmarkLastRunArtifact = async (
       width: input.viewport.width,
       height: input.viewport.height,
     },
+    ...(input.thresholdResult !== undefined ? { thresholdResult: input.thresholdResult } : {}),
   };
 
   await mkdir(paths.fixtureDir, { recursive: true });
@@ -594,6 +625,7 @@ export const runVisualBenchmark = async (
   const runAt = new Date().toISOString();
   let scores: VisualBenchmarkScoreEntry[];
   const fixtureScreenContexts = new Map<string, VisualQualityScreenContext>();
+  const artifactEntries: VisualBenchmarkLastRunArtifactInput[] = [];
 
   if (dependencies?.runFixtureBenchmark !== undefined && dependencies.executeFixture === undefined) {
     scores = await computeVisualBenchmarkScores(options, dependencies);
@@ -624,18 +656,15 @@ export const runVisualBenchmark = async (
         fixtureId: result.fixtureId,
         score: patchedScore,
       });
-      await saveVisualBenchmarkLastRunArtifact(
-        {
-          fixtureId: result.fixtureId,
-          score: patchedScore,
-          ranAt: runAt,
-          viewport: result.viewport,
-          actualImageBuffer: result.screenshotBuffer,
-          diffImageBuffer: result.diffBuffer,
-          report: patchedReport,
-        },
-        options,
-      );
+      artifactEntries.push({
+        fixtureId: result.fixtureId,
+        score: patchedScore,
+        ranAt: runAt,
+        viewport: result.viewport,
+        actualImageBuffer: result.screenshotBuffer,
+        diffImageBuffer: result.diffBuffer,
+        report: patchedReport,
+      });
     }
     scores = sortScores(scores);
   }
@@ -655,6 +684,19 @@ export const runVisualBenchmark = async (
       }
       const thresholds = resolveVisualQualityThresholds(qualityConfig, delta.fixtureId, screenContext);
       delta.thresholdResult = checkVisualQualityThreshold(delta.current, thresholds);
+    }
+  }
+
+  if (artifactEntries.length > 0) {
+    for (const artifactEntry of artifactEntries) {
+      const delta = result.deltas.find((entry) => entry.fixtureId === artifactEntry.fixtureId);
+      await saveVisualBenchmarkLastRunArtifact(
+        {
+          ...artifactEntry,
+          thresholdResult: delta?.thresholdResult,
+        },
+        options,
+      );
     }
   }
 

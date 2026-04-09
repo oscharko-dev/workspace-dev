@@ -51,7 +51,7 @@ export type VisualQualityConfig = z.infer<typeof VisualQualityConfigSchema>;
 
 export interface VisualQualityResolvedThresholds {
   warn: number;
-  fail: number;
+  fail?: number;
 }
 
 export type VisualQualityThresholdVerdict = "pass" | "warn" | "fail";
@@ -71,7 +71,6 @@ const CONFIG_FILE_NAME = "visual-quality.config.json";
 
 export const DEFAULT_THRESHOLDS: VisualQualityResolvedThresholds = {
   warn: 80,
-  fail: 60,
 };
 
 const validateThresholdOrder = (thresholds: VisualQualityThresholds | undefined, path: string): void => {
@@ -204,7 +203,7 @@ export const checkVisualQualityThreshold = (
   thresholds: VisualQualityResolvedThresholds,
 ): VisualQualityThresholdResult => {
   let verdict: VisualQualityThresholdVerdict;
-  if (score < thresholds.fail) {
+  if (thresholds.fail !== undefined && score < thresholds.fail) {
     verdict = "fail";
   } else if (score < thresholds.warn) {
     verdict = "warn";
