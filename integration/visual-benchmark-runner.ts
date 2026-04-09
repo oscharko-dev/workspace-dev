@@ -13,6 +13,12 @@ import {
   type VisualBenchmarkExecutionOptions,
   type VisualBenchmarkFixtureExecutionArtifacts,
 } from "./visual-benchmark.execution.js";
+import {
+  resolveVisualQualityThresholds,
+  checkVisualQualityThreshold,
+  type VisualQualityConfig,
+  type VisualQualityThresholdResult,
+} from "./visual-quality-config.js";
 
 const BASELINE_FILE_NAME = "baseline.json";
 const LAST_RUN_FILE_NAME = "last-run.json";
@@ -41,6 +47,7 @@ export interface VisualBenchmarkDelta {
   current: number;
   delta: number | null;
   indicator: "improved" | "degraded" | "neutral";
+  thresholdResult?: VisualQualityThresholdResult;
 }
 
 export interface VisualBenchmarkResult {
@@ -562,7 +569,7 @@ export const formatVisualBenchmarkTable = (result: VisualBenchmarkResult): strin
 };
 
 export const runVisualBenchmark = async (
-  options?: VisualBenchmarkExecutionOptions & { updateBaseline?: boolean },
+  options?: VisualBenchmarkExecutionOptions & { updateBaseline?: boolean; qualityConfig?: VisualQualityConfig },
   dependencies?: VisualBenchmarkRunnerDependencies,
 ): Promise<VisualBenchmarkResult> => {
   const runAt = new Date().toISOString();
@@ -603,8 +610,32 @@ export const runVisualBenchmark = async (
   await saveVisualBenchmarkLastRun(scores, options, runAt);
   const baseline = await loadVisualBenchmarkBaseline(options);
   const result = computeVisualBenchmarkDeltas(scores, baseline);
+
+  // Apply quality config thresholds if config is present
+  const qualityConfig = options?.qualityConfig;
+  if (qualityConfig) {
+    for (const delta of result.deltas) {
+      const thresholds = resolveVisualQualityThresholds(qualityConfig, delta.fixtureId);
+      delta.thresholdResult = checkVisualQualityThreshold(delta.current, thresholds);
+    }
+  }
+
   const table = formatVisualBenchmarkTable(result);
   process.stdout.write(`${table}\n`);
+
+  if (qualityConfig) {
+    const failedFixtures = result.deltas.filter((d) => d.thresholdResult?.verdict === "fail");
+    const warnedFixtures = result.deltas.filter((d) => d.thresholdResult?.verdict === "warn");
+    if (failedFixtures.length > 0) {
+      process.stdout.write(`\n\u274C ${failedFixtures.length} fixture(s) below fail threshold: ${failedFixtures.map((d) => d.fixtureId).join(", ")}\n`);
+    }
+    if (warnedFixtures.length > 0) {
+      process.stdout.write(`\u26A0\uFE0F ${warnedFixtures.length} fixture(s) below warn threshold: ${warnedFixtures.map((d) => d.fixtureId).join(", ")}\n`);
+    }
+    if (failedFixtures.length === 0 && warnedFixtures.length === 0) {
+      process.stdout.write(`\n\u2705 All fixtures pass quality thresholds.\n`);
+    }
+  }
 
   if (options?.updateBaseline === true) {
     await saveVisualBenchmarkBaselineScores(scores, options);
