@@ -1,69 +1,94 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { PNG } from "pngjs";
+import { fileURLToPath } from "node:url";
 import {
-  getVisualBenchmarkFixtureRoot,
   isValidPngBuffer,
   listVisualBenchmarkFixtureIds,
-  loadVisualBenchmarkManifest,
+  loadVisualBenchmarkFixtureInputs,
+  loadVisualBenchmarkFixtureMetadata,
+  loadVisualBenchmarkReference,
+  resolveVisualBenchmarkFixturePaths,
   toStableJsonString,
-  writeVisualBenchmarkManifest,
+  type VisualBenchmarkFixtureMetadata,
+  type VisualBenchmarkFixtureOptions,
+  type VisualBenchmarkViewport,
+  writeVisualBenchmarkFixtureInputs,
+  writeVisualBenchmarkFixtureMetadata,
   writeVisualBenchmarkReference
 } from "./visual-benchmark.helpers.js";
 
-// ---------------------------------------------------------------------------
-// Approval gate
-// ---------------------------------------------------------------------------
+type FetchLike = typeof fetch;
+type VisualBenchmarkMode = "update-fixtures" | "update-references" | "live";
 
-const shouldApprove = (): boolean => {
-  const raw = process.env.FIGMAPIPE_VISUAL_BENCHMARK_APPROVE?.trim().toLowerCase();
-  return raw === "1" || raw === "true";
+export interface VisualBenchmarkUpdateDependencies extends VisualBenchmarkFixtureOptions {
+  fetchImpl?: FetchLike;
+  log?: (message: string) => void;
+  now?: () => string;
+}
+
+export interface VisualBenchmarkNodeSnapshot {
+  payload: Record<string, unknown>;
+  nodeName: string;
+  lastModified: string;
+  viewport: VisualBenchmarkViewport;
+}
+
+export interface VisualBenchmarkLiveAuditResult {
+  fixtureId: string;
+  figmaChanged: boolean;
+  referenceChanged: boolean;
+  frozenLastModified: string;
+  liveLastModified: string;
+}
+
+const MODULE_FILE = fileURLToPath(import.meta.url);
+
+const isPlainRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-// ---------------------------------------------------------------------------
-// Placeholder PNG generation
-// ---------------------------------------------------------------------------
+const defaultLog = (message: string): void => {
+  process.stdout.write(`${message}\n`);
+};
 
-const createPlaceholderPng = (width: number, height: number): Buffer => {
-  const png = new PNG({ width, height });
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (width * y + x) << 2;
-      png.data[idx] = 200;
-      png.data[idx + 1] = 200;
-      png.data[idx + 2] = 200;
-      png.data[idx + 3] = 255;
-    }
+const readRequiredString = (value: unknown, fieldName: string): string => {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new Error(`${fieldName} must be a non-empty string.`);
   }
-  return PNG.sync.write(png);
+  return value;
 };
 
-// ---------------------------------------------------------------------------
-// Figma API helpers
-// ---------------------------------------------------------------------------
+const readPositiveNumber = (value: unknown, fieldName: string): number => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${fieldName} must be a positive number.`);
+  }
+  return parsed;
+};
 
 const fetchWithRetry = async (
   url: string,
   headers: Record<string, string>,
-  maxRetries: number
+  maxRetries: number,
+  fetchImpl: FetchLike,
+  log: (message: string) => void
 ): Promise<Response> => {
   let lastError: unknown;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
-      const response = await fetch(url, { headers });
+      const response = await fetchImpl(url, { headers });
       if (response.ok) {
         return response;
       }
       if (response.status >= 500 && attempt < maxRetries) {
-        process.stdout.write(`  Figma API returned ${response.status}, retrying (${attempt + 1}/${maxRetries})...\n`);
+        log(`Figma API returned ${response.status}, retrying (${attempt + 1}/${maxRetries})...`);
         continue;
       }
       throw new Error(`Figma API request failed: ${response.status} ${response.statusText} — ${url}`);
     } catch (error: unknown) {
       lastError = error;
       if (attempt < maxRetries) {
-        process.stdout.write(`  Fetch error, retrying (${attempt + 1}/${maxRetries})...\n`);
+        log(`Fetch error, retrying (${attempt + 1}/${maxRetries})...`);
         continue;
       }
     }
@@ -71,227 +96,258 @@ const fetchWithRetry = async (
   throw lastError;
 };
 
-// ---------------------------------------------------------------------------
-// Modes
-// ---------------------------------------------------------------------------
-
-const updateFixtures = async (): Promise<void> => {
-  const figmaFileKey = process.env.FIGMA_FILE_KEY?.trim();
-  const figmaAccessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
-  assert.ok(figmaFileKey, "FIGMA_FILE_KEY is required to update visual-benchmark fixtures.");
-  assert.ok(figmaAccessToken, "FIGMA_ACCESS_TOKEN is required to update visual-benchmark fixtures.");
-
-  const fixtureRoot = getVisualBenchmarkFixtureRoot();
-  const fixtureIds = await listVisualBenchmarkFixtureIds();
-  process.stdout.write(`Updating fixtures for ${fixtureIds.length} fixture(s)...\n`);
-
-  const figmaUrl = `https://api.figma.com/v1/files/${encodeURIComponent(figmaFileKey)}?geometry=paths`;
-  process.stdout.write(`  Fetching Figma file: ${figmaUrl}\n`);
-  const response = await fetchWithRetry(figmaUrl, { "X-Figma-Token": figmaAccessToken }, 3);
-  const figmaData = await response.json() as unknown;
-
-  for (const fixtureId of fixtureIds) {
-    const manifest = await loadVisualBenchmarkManifest(fixtureId);
-    const figmaInputPath = path.join(fixtureRoot, fixtureId, manifest.inputs.figma);
-    await mkdir(path.dirname(figmaInputPath), { recursive: true });
-    await writeFile(figmaInputPath, toStableJsonString(figmaData), "utf8");
-    process.stdout.write(`  Updated ${fixtureId}/inputs/figma.json\n`);
+const extractNodeSnapshot = (payload: unknown, nodeId: string): VisualBenchmarkNodeSnapshot => {
+  if (!isPlainRecord(payload)) {
+    throw new Error("Expected Figma node payload to be an object.");
   }
 
-  process.stdout.write("Fixture inputs updated.\n");
-};
+  const lastModified = readRequiredString(payload.lastModified, "Figma node payload lastModified");
+  const nodes = payload.nodes;
+  if (!isPlainRecord(nodes)) {
+    throw new Error("Figma node payload must contain a nodes map.");
+  }
 
-const updateReferences = async (): Promise<void> => {
-  const figmaFileKey = process.env.FIGMA_FILE_KEY?.trim();
-  const figmaAccessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
+  const nodeEntry = nodes[nodeId];
+  if (!isPlainRecord(nodeEntry)) {
+    throw new Error(`Figma node payload does not contain node '${nodeId}'.`);
+  }
 
-  const fixtureRoot = getVisualBenchmarkFixtureRoot();
-  const fixtureIds = await listVisualBenchmarkFixtureIds();
-  process.stdout.write(`Updating references for ${fixtureIds.length} fixture(s)...\n`);
+  const document = nodeEntry.document;
+  if (!isPlainRecord(document)) {
+    throw new Error(`Figma node '${nodeId}' is missing a document payload.`);
+  }
 
-  for (const fixtureId of fixtureIds) {
-    const manifest = await loadVisualBenchmarkManifest(fixtureId);
+  const absoluteBoundingBox = document.absoluteBoundingBox;
+  if (!isPlainRecord(absoluteBoundingBox)) {
+    throw new Error(`Figma node '${nodeId}' is missing absoluteBoundingBox.`);
+  }
 
-    for (const refSpec of manifest.references) {
-      const refPath = path.join(fixtureRoot, fixtureId, refSpec.path);
-      let buffer: Buffer | undefined;
-
-      if (figmaFileKey && figmaAccessToken) {
-        const figmaInput = JSON.parse(
-          await readFile(path.join(fixtureRoot, fixtureId, manifest.inputs.figma), "utf8")
-        ) as unknown;
-        const nodeId = extractFirstFrameNodeId(figmaInput);
-        if (nodeId) {
-          const imagesUrl = `https://api.figma.com/v1/images/${encodeURIComponent(figmaFileKey)}?ids=${encodeURIComponent(nodeId)}&format=png&scale=2`;
-          process.stdout.write(`  Fetching reference image: ${imagesUrl}\n`);
-          const response = await fetchWithRetry(imagesUrl, { "X-Figma-Token": figmaAccessToken }, 3);
-          const imagesResult = (await response.json()) as Record<string, unknown>;
-          const images = imagesResult.images as Record<string, string> | undefined;
-          const imageUrl = images?.[nodeId];
-          if (imageUrl) {
-            const imageResponse = await fetchWithRetry(imageUrl, {}, 3);
-            buffer = Buffer.from(await imageResponse.arrayBuffer());
-          }
-        }
-      }
-
-      if (!buffer || !isValidPngBuffer(buffer)) {
-        process.stdout.write(`  Generating placeholder reference for ${fixtureId}/${refSpec.name}...\n`);
-        buffer = createPlaceholderPng(refSpec.viewport.width, refSpec.viewport.height);
-      }
-
-      const updatedRefSpec = {
-        ...refSpec,
-        capturedAt: new Date().toISOString()
-      };
-
-      await writeVisualBenchmarkReference(fixtureId, updatedRefSpec, buffer);
-      process.stdout.write(`  Updated ${fixtureId}/${refSpec.path}\n`);
-
-      const updatedManifest = {
-        ...manifest,
-        references: manifest.references.map((ref) =>
-          ref.name === refSpec.name ? updatedRefSpec : ref
-        )
-      };
-      await writeVisualBenchmarkManifest(fixtureId, updatedManifest);
+  return {
+    payload: payload as Record<string, unknown>,
+    nodeName: readRequiredString(document.name, `Figma node '${nodeId}' name`),
+    lastModified,
+    viewport: {
+      width: Math.round(readPositiveNumber(absoluteBoundingBox.width, `Figma node '${nodeId}' absoluteBoundingBox.width`)),
+      height: Math.round(readPositiveNumber(absoluteBoundingBox.height, `Figma node '${nodeId}' absoluteBoundingBox.height`))
     }
-  }
-
-  process.stdout.write("References updated.\n");
+  };
 };
 
-const liveAudit = async (): Promise<void> => {
-  const figmaFileKey = process.env.FIGMA_FILE_KEY?.trim();
-  const figmaAccessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
-  assert.ok(figmaFileKey, "FIGMA_FILE_KEY is required for live visual-benchmark audit.");
-  assert.ok(figmaAccessToken, "FIGMA_ACCESS_TOKEN is required for live visual-benchmark audit.");
+const buildNodeUrl = (fileKey: string, nodeId: string): string => {
+  const params = new URLSearchParams({
+    ids: nodeId,
+    geometry: "paths"
+  });
+  return `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?${params.toString()}`;
+};
 
-  const fixtureIds = await listVisualBenchmarkFixtureIds();
-  process.stdout.write(`Running live audit for ${fixtureIds.length} fixture(s)...\n`);
+const buildImageUrl = (metadata: VisualBenchmarkFixtureMetadata): string => {
+  const params = new URLSearchParams({
+    ids: metadata.source.nodeId,
+    format: metadata.export.format,
+    scale: String(metadata.export.scale)
+  });
+  return `https://api.figma.com/v1/images/${encodeURIComponent(metadata.source.fileKey)}?${params.toString()}`;
+};
 
-  const figmaUrl = `https://api.figma.com/v1/files/${encodeURIComponent(figmaFileKey)}?geometry=paths`;
-  process.stdout.write(`  Fetching current Figma state: ${figmaUrl}\n`);
-  const response = await fetchWithRetry(figmaUrl, { "X-Figma-Token": figmaAccessToken }, 3);
-  const liveFigmaData = (await response.json()) as Record<string, unknown>;
+export const fetchVisualBenchmarkNodeSnapshot = async (
+  metadata: VisualBenchmarkFixtureMetadata,
+  accessToken: string,
+  dependencies?: Pick<VisualBenchmarkUpdateDependencies, "fetchImpl" | "log">
+): Promise<VisualBenchmarkNodeSnapshot> => {
+  const fetchImpl = dependencies?.fetchImpl ?? fetch;
+  const log = dependencies?.log ?? defaultLog;
+  const url = buildNodeUrl(metadata.source.fileKey, metadata.source.nodeId);
+  const response = await fetchWithRetry(url, { "X-Figma-Token": accessToken }, 3, fetchImpl, log);
+  const payload = await response.json() as unknown;
+  return extractNodeSnapshot(payload, metadata.source.nodeId);
+};
 
-  const fixtureRoot = getVisualBenchmarkFixtureRoot();
+export const fetchVisualBenchmarkReferenceImage = async (
+  metadata: VisualBenchmarkFixtureMetadata,
+  accessToken: string,
+  dependencies?: Pick<VisualBenchmarkUpdateDependencies, "fetchImpl" | "log">
+): Promise<Buffer> => {
+  const fetchImpl = dependencies?.fetchImpl ?? fetch;
+  const log = dependencies?.log ?? defaultLog;
+  const imageLookupUrl = buildImageUrl(metadata);
+  const imageLookupResponse = await fetchWithRetry(
+    imageLookupUrl,
+    { "X-Figma-Token": accessToken },
+    3,
+    fetchImpl,
+    log
+  );
+  const imageLookupResult = await imageLookupResponse.json() as unknown;
+  if (!isPlainRecord(imageLookupResult)) {
+    throw new Error("Expected Figma image response to be an object.");
+  }
+  const images = imageLookupResult.images;
+  if (!isPlainRecord(images)) {
+    throw new Error("Figma image response must contain an images map.");
+  }
 
+  const imageUrl = images[metadata.source.nodeId];
+  if (typeof imageUrl !== "string" || imageUrl.trim().length === 0) {
+    throw new Error(`Figma image export returned no renderable image for node '${metadata.source.nodeId}'.`);
+  }
+
+  const imageResponse = await fetchWithRetry(imageUrl, {}, 3, fetchImpl, log);
+  const buffer = Buffer.from(await imageResponse.arrayBuffer());
+  if (!isValidPngBuffer(buffer)) {
+    throw new Error(`Figma image export for node '${metadata.source.nodeId}' returned an invalid PNG.`);
+  }
+  return buffer;
+};
+
+const updateMetadataFromSnapshot = (
+  metadata: VisualBenchmarkFixtureMetadata,
+  snapshot: VisualBenchmarkNodeSnapshot,
+  options?: {
+    capturedAt?: string;
+  }
+): VisualBenchmarkFixtureMetadata => {
+  return {
+    ...metadata,
+    ...(options?.capturedAt ? { capturedAt: options.capturedAt } : {}),
+    source: {
+      ...metadata.source,
+      nodeName: snapshot.nodeName,
+      lastModified: snapshot.lastModified
+    },
+    viewport: snapshot.viewport
+  };
+};
+
+const requireAccessToken = (): string => {
+  const accessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
+  assert.ok(accessToken, "FIGMA_ACCESS_TOKEN is required for visual-benchmark maintenance.");
+  return accessToken;
+};
+
+export const updateVisualBenchmarkFixtures = async (
+  dependencies?: VisualBenchmarkUpdateDependencies
+): Promise<void> => {
+  const accessToken = requireAccessToken();
+  const log = dependencies?.log ?? defaultLog;
+  const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
+
+  log(`Updating fixtures for ${fixtureIds.length} fixture(s)...`);
   for (const fixtureId of fixtureIds) {
-    const manifest = await loadVisualBenchmarkManifest(fixtureId);
-    const frozenFigmaPath = path.join(fixtureRoot, fixtureId, manifest.inputs.figma);
-    const frozenFigma = JSON.parse(await readFile(frozenFigmaPath, "utf8")) as Record<string, unknown>;
+    const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, dependencies);
+    const snapshot = await fetchVisualBenchmarkNodeSnapshot(metadata, accessToken, dependencies);
+    const updatedMetadata = updateMetadataFromSnapshot(metadata, snapshot);
 
-    const frozenLastModified = frozenFigma.lastModified ?? "(unknown)";
-    const liveLastModified = liveFigmaData.lastModified ?? "(unknown)";
+    await writeVisualBenchmarkFixtureInputs(fixtureId, snapshot.payload, dependencies);
+    await writeVisualBenchmarkFixtureMetadata(fixtureId, updatedMetadata, dependencies);
 
-    const hasDrift = frozenLastModified !== liveLastModified;
-    process.stdout.write(
-      `  Fixture '${fixtureId}': frozen=${String(frozenLastModified)}, live=${String(liveLastModified)} — ${hasDrift ? "DRIFT DETECTED" : "no drift"}\n`
+    const paths = resolveVisualBenchmarkFixturePaths(fixtureId, dependencies);
+    log(`Updated ${path.relative(process.cwd(), paths.figmaJsonPath)}`);
+  }
+}
+
+export const updateVisualBenchmarkReferences = async (
+  dependencies?: VisualBenchmarkUpdateDependencies
+): Promise<void> => {
+  const accessToken = requireAccessToken();
+  const log = dependencies?.log ?? defaultLog;
+  const now = dependencies?.now ?? (() => new Date().toISOString());
+  const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
+
+  log(`Updating references for ${fixtureIds.length} fixture(s)...`);
+  for (const fixtureId of fixtureIds) {
+    const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, dependencies);
+    const snapshot = await fetchVisualBenchmarkNodeSnapshot(metadata, accessToken, dependencies);
+    const referenceBuffer = await fetchVisualBenchmarkReferenceImage(metadata, accessToken, dependencies);
+    const updatedMetadata = updateMetadataFromSnapshot(metadata, snapshot, {
+      capturedAt: now()
+    });
+
+    await writeVisualBenchmarkFixtureInputs(fixtureId, snapshot.payload, dependencies);
+    await writeVisualBenchmarkReference(fixtureId, referenceBuffer, dependencies);
+    await writeVisualBenchmarkFixtureMetadata(fixtureId, updatedMetadata, dependencies);
+
+    const paths = resolveVisualBenchmarkFixturePaths(fixtureId, dependencies);
+    log(`Updated ${path.relative(process.cwd(), paths.referencePngPath)}`);
+  }
+}
+
+export const runVisualBenchmarkLiveAudit = async (
+  dependencies?: VisualBenchmarkUpdateDependencies
+): Promise<VisualBenchmarkLiveAuditResult[]> => {
+  const accessToken = requireAccessToken();
+  const log = dependencies?.log ?? defaultLog;
+  const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
+  const results: VisualBenchmarkLiveAuditResult[] = [];
+
+  log(`Running live audit for ${fixtureIds.length} fixture(s)...`);
+  for (const fixtureId of fixtureIds) {
+    const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, dependencies);
+    const frozenFigmaInput = await loadVisualBenchmarkFixtureInputs(fixtureId, dependencies);
+    const frozenReference = await loadVisualBenchmarkReference(fixtureId, dependencies);
+    const liveSnapshot = await fetchVisualBenchmarkNodeSnapshot(metadata, accessToken, dependencies);
+    const liveReference = await fetchVisualBenchmarkReferenceImage(metadata, accessToken, dependencies);
+
+    const figmaChanged = toStableJsonString(frozenFigmaInput) !== toStableJsonString(liveSnapshot.payload);
+    const referenceChanged = !frozenReference.equals(liveReference);
+    const result: VisualBenchmarkLiveAuditResult = {
+      fixtureId,
+      figmaChanged,
+      referenceChanged,
+      frozenLastModified: metadata.source.lastModified,
+      liveLastModified: liveSnapshot.lastModified
+    };
+    results.push(result);
+
+    log(
+      `Fixture '${fixtureId}': figma=${figmaChanged ? "DRIFT" : "stable"}, reference=${referenceChanged ? "DRIFT" : "stable"}, frozenLastModified=${result.frozenLastModified}, liveLastModified=${result.liveLastModified}`
     );
   }
 
-  process.stdout.write("Live audit complete.\n");
+  return results;
 };
 
-const bootstrapFixtures = async (): Promise<void> => {
-  const fixtureRoot = getVisualBenchmarkFixtureRoot();
-  const fixtureIds = await listVisualBenchmarkFixtureIds();
+export const resolveVisualBenchmarkMaintenanceMode = (args: readonly string[]): VisualBenchmarkMode => {
+  const modes = args.filter((arg): arg is `--${VisualBenchmarkMode}` => {
+    return arg === "--update-fixtures" || arg === "--update-references" || arg === "--live";
+  });
 
-  for (const fixtureId of fixtureIds) {
-    const manifest = await loadVisualBenchmarkManifest(fixtureId);
+  if (modes.length !== 1 || modes.length !== args.length) {
+    throw new Error("Usage: visual-benchmark.update.ts --update-fixtures | --update-references | --live");
+  }
 
-    for (const refSpec of manifest.references) {
-      const refPath = path.join(fixtureRoot, fixtureId, refSpec.path);
-      let needsGeneration = false;
-      try {
-        const existing = await readFile(refPath);
-        if (!isValidPngBuffer(existing)) {
-          needsGeneration = true;
-        }
-      } catch {
-        needsGeneration = true;
-      }
-
-      if (needsGeneration) {
-        process.stdout.write(`  Bootstrapping placeholder: ${fixtureId}/${refSpec.path}\n`);
-        const buffer = createPlaceholderPng(refSpec.viewport.width, refSpec.viewport.height);
-        await writeVisualBenchmarkReference(fixtureId, refSpec, buffer);
-      }
-    }
+  switch (modes[0]) {
+    case "--update-fixtures":
+      return "update-fixtures";
+    case "--update-references":
+      return "update-references";
+    case "--live":
+      return "live";
   }
 };
 
-// ---------------------------------------------------------------------------
-// Figma document traversal helper
-// ---------------------------------------------------------------------------
-
-const extractFirstFrameNodeId = (figmaData: unknown): string | undefined => {
-  if (typeof figmaData !== "object" || figmaData === null) {
-    return undefined;
-  }
-  const doc = (figmaData as Record<string, unknown>).document;
-  if (typeof doc !== "object" || doc === null) {
-    return undefined;
-  }
-  const docChildren = (doc as Record<string, unknown>).children;
-  if (!Array.isArray(docChildren)) {
-    return undefined;
-  }
-  for (const page of docChildren) {
-    if (typeof page !== "object" || page === null) {
-      continue;
-    }
-    const pageChildren = (page as Record<string, unknown>).children;
-    if (!Array.isArray(pageChildren)) {
-      continue;
-    }
-    for (const node of pageChildren) {
-      if (typeof node !== "object" || node === null) {
-        continue;
-      }
-      const nodeRecord = node as Record<string, unknown>;
-      if (nodeRecord.type === "FRAME" && typeof nodeRecord.id === "string") {
-        return nodeRecord.id;
-      }
-    }
-  }
-  return undefined;
-};
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
-const run = async (): Promise<void> => {
-  const args = process.argv.slice(2);
-
-  if (args.includes("--bootstrap")) {
-    await bootstrapFixtures();
+export const runVisualBenchmarkMaintenance = async (
+  args: readonly string[],
+  dependencies?: VisualBenchmarkUpdateDependencies
+): Promise<void> => {
+  const mode = resolveVisualBenchmarkMaintenanceMode(args);
+  if (mode === "update-fixtures") {
+    await updateVisualBenchmarkFixtures(dependencies);
     return;
   }
-
-  if (!shouldApprove()) {
-    throw new Error(
-      "Refusing to update visual-benchmark fixtures without FIGMAPIPE_VISUAL_BENCHMARK_APPROVE=true."
-    );
+  if (mode === "update-references") {
+    await updateVisualBenchmarkReferences(dependencies);
+    return;
   }
-
-  if (args.includes("--update-fixtures")) {
-    await updateFixtures();
-  } else if (args.includes("--update-references")) {
-    await updateReferences();
-  } else if (args.includes("--live")) {
-    await liveAudit();
-  } else {
-    throw new Error(
-      "Usage: visual-benchmark.update.ts --update-fixtures | --update-references | --live | --bootstrap"
-    );
-  }
+  await runVisualBenchmarkLiveAudit(dependencies);
 };
 
-void run().catch((error: unknown) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  process.stderr.write(`${message}\n`);
-  process.exitCode = 1;
-});
+const isDirectExecution = process.argv[1] !== undefined && path.resolve(process.argv[1]) === MODULE_FILE;
+
+if (isDirectExecution) {
+  void runVisualBenchmarkMaintenance(process.argv.slice(2)).catch((error: unknown) => {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    process.stderr.write(`${message}\n`);
+    process.exitCode = 1;
+  });
+}
