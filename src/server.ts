@@ -147,6 +147,12 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.visualQualityViewportWidth !== undefined
       ? { visualQualityViewportWidth: options.visualQualityViewportWidth }
       : {}),
+    ...(options.visualQualityViewportHeight !== undefined
+      ? { visualQualityViewportHeight: options.visualQualityViewportHeight }
+      : {}),
+    ...(options.visualQualityDeviceScaleFactor !== undefined
+      ? { visualQualityDeviceScaleFactor: options.visualQualityDeviceScaleFactor }
+      : {}),
     ...(options.enableUnitTestValidation !== undefined
       ? { enableUnitTestValidation: options.enableUnitTestValidation }
       : {}),
