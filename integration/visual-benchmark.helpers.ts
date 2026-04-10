@@ -14,6 +14,7 @@ const METADATA_JSON_FILE_NAME = "metadata.json";
 const REFERENCE_PNG_FILE_NAME = "reference.png";
 const SCREENS_DIR_NAME = "screens";
 const ALLOWED_SCREEN_ID_PATTERN = /^[A-Za-z0-9:_\-]+$/u;
+export const ALLOWED_VIEWPORT_ID_PATTERN = /^[A-Za-z0-9_-]+$/u;
 
 const FORBIDDEN_FIXTURE_PATH_SEGMENTS = [
   "storybook-static",
@@ -28,6 +29,15 @@ const SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE = `${SCREEN_ID_TOKEN_ESCAPE}u`;
 export interface VisualBenchmarkViewport {
   width: number;
   height: number;
+}
+
+export interface VisualBenchmarkViewportSpec {
+  id: string;
+  label?: string;
+  width: number;
+  height: number;
+  deviceScaleFactor?: number;
+  weight?: number;
 }
 
 export interface VisualBenchmarkExportConfig {
@@ -48,10 +58,11 @@ export interface VisualBenchmarkFixtureScreenMetadata {
   nodeId: string;
   viewport: VisualBenchmarkViewport;
   weight?: number;
+  viewports?: VisualBenchmarkViewportSpec[];
 }
 
 export interface VisualBenchmarkFixtureMetadata {
-  version: 1 | 2;
+  version: 1 | 2 | 3;
   fixtureId: string;
   capturedAt: string;
   source: VisualBenchmarkFixtureSource;
@@ -85,6 +96,11 @@ export interface VisualBenchmarkFixturePaths {
 }
 
 export interface VisualBenchmarkFixtureScreenPaths {
+  screenDir: string;
+  referencePngPath: string;
+}
+
+export interface VisualBenchmarkFixtureScreenViewportPaths {
   screenDir: string;
   referencePngPath: string;
 }
@@ -136,9 +152,76 @@ const parsePositiveNumber = (value: unknown, fieldName: string): number => {
   return parsed;
 };
 
+const parsePositiveInteger = (value: unknown, fieldName: string): number => {
+  const parsed = parsePositiveNumber(value, fieldName);
+  if (!Number.isInteger(parsed)) {
+    throw new Error(`${fieldName} must be a positive integer.`);
+  }
+  return parsed;
+};
+
+const parseScreenViewports = (
+  raw: unknown,
+  fixtureId: string,
+  screenId: string,
+): VisualBenchmarkViewportSpec[] => {
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `visual-benchmark metadata screens.viewports for fixture '${fixtureId}' screen '${screenId}' must be an array.`,
+    );
+  }
+  const out: VisualBenchmarkViewportSpec[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (!isPlainRecord(entry)) {
+      throw new Error(
+        `visual-benchmark metadata screens.viewports entry for fixture '${fixtureId}' screen '${screenId}' must be an object.`,
+      );
+    }
+    const id = assertAllowedViewportId(entry.id);
+    if (seen.has(id)) {
+      throw new Error(
+        `visual-benchmark metadata fixture '${fixtureId}' screen '${screenId}' has duplicate viewport id '${id}'.`,
+      );
+    }
+    seen.add(id);
+    const width = parsePositiveInteger(
+      entry.width,
+      `visual-benchmark metadata screens.viewports.width`,
+    );
+    const height = parsePositiveInteger(
+      entry.height,
+      `visual-benchmark metadata screens.viewports.height`,
+    );
+    const spec: VisualBenchmarkViewportSpec = { id, width, height };
+    if (entry.label !== undefined) {
+      const label = parseRequiredString(
+        entry.label,
+        `visual-benchmark metadata screens.viewports.label`,
+      );
+      spec.label = label;
+    }
+    if (entry.deviceScaleFactor !== undefined) {
+      spec.deviceScaleFactor = parsePositiveNumber(
+        entry.deviceScaleFactor,
+        `visual-benchmark metadata screens.viewports.deviceScaleFactor`,
+      );
+    }
+    if (entry.weight !== undefined) {
+      spec.weight = parsePositiveNumber(
+        entry.weight,
+        `visual-benchmark metadata screens.viewports.weight`,
+      );
+    }
+    out.push(spec);
+  }
+  return out;
+};
+
 const parseScreens = (
   raw: unknown,
   fixtureId: string,
+  parseViewports: boolean,
 ): VisualBenchmarkFixtureScreenMetadata[] => {
   if (!Array.isArray(raw)) {
     throw new Error(
@@ -202,6 +285,13 @@ const parseScreens = (
       }
       screen.weight = weight;
     }
+    if (parseViewports && entry.viewports !== undefined) {
+      screen.viewports = parseScreenViewports(
+        entry.viewports,
+        fixtureId,
+        screenId,
+      );
+    }
     out.push(screen);
   }
   return out;
@@ -214,8 +304,8 @@ export const parseVisualBenchmarkFixtureMetadata = (
   if (!isPlainRecord(parsed)) {
     throw new Error("Expected visual-benchmark metadata to be an object.");
   }
-  if (parsed.version !== 1 && parsed.version !== 2) {
-    throw new Error("visual-benchmark metadata version must be 1 or 2.");
+  if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) {
+    throw new Error("visual-benchmark metadata version must be 1, 2, or 3.");
   }
 
   const source = parsed.source;
@@ -290,8 +380,15 @@ export const parseVisualBenchmarkFixtureMetadata = (
     },
   };
 
-  if (parsed.version === 2 && parsed.screens !== undefined) {
-    base.screens = parseScreens(parsed.screens, fixtureId);
+  if (
+    (parsed.version === 2 || parsed.version === 3) &&
+    parsed.screens !== undefined
+  ) {
+    base.screens = parseScreens(
+      parsed.screens,
+      fixtureId,
+      parsed.version === 3,
+    );
   }
 
   return base;
@@ -388,6 +485,27 @@ export function assertAllowedScreenId(value: string): string {
   return trimmed;
 }
 
+export function assertAllowedViewportId(value: unknown): string {
+  if (typeof value !== "string") {
+    throw new Error("Viewport id must be a non-empty string.");
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Viewport id must be a non-empty string.");
+  }
+  if (trimmed === ".." || trimmed.includes("..")) {
+    throw new Error(
+      `Viewport id '${trimmed}' contains forbidden segment '..' (not allowed).`,
+    );
+  }
+  if (!ALLOWED_VIEWPORT_ID_PATTERN.test(trimmed)) {
+    throw new Error(
+      `Viewport id '${trimmed}' contains invalid characters (allowed: A-Z, a-z, 0-9, '_', '-').`,
+    );
+  }
+  return trimmed;
+}
+
 export const toScreenIdToken = (screenId: string): string =>
   assertAllowedScreenId(screenId)
     .replace(/_/gu, SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE)
@@ -436,7 +554,9 @@ export const computeVisualBenchmarkAggregateScore = (
     );
   }
 
-  const hasDeclaredWeight = screens.some((screen) => screen.weight !== undefined);
+  const hasDeclaredWeight = screens.some(
+    (screen) => screen.weight !== undefined,
+  );
   if (!hasDeclaredWeight) {
     const total = screens.reduce((sum, screen) => sum + screen.score, 0);
     return Math.round((total / screens.length) * 100) / 100;
@@ -519,15 +639,75 @@ export const resolveVisualBenchmarkScreenPaths = (
   };
 };
 
+export const resolveVisualBenchmarkScreenViewportPaths = (
+  fixtureId: string,
+  screenId: string,
+  viewportId: string,
+  options?: VisualBenchmarkFixtureOptions,
+): VisualBenchmarkFixtureScreenViewportPaths => {
+  const normalizedFixtureId = assertAllowedFixtureId(fixtureId);
+  const normalizedScreenId = assertAllowedScreenId(screenId);
+  const normalizedViewportId = assertAllowedViewportId(viewportId);
+  const token = toScreenIdToken(normalizedScreenId);
+  const fixtureDir = path.join(
+    resolveFixtureRoot(options),
+    normalizedFixtureId,
+  );
+  const screenDir = path.join(fixtureDir, SCREENS_DIR_NAME, token);
+  return {
+    screenDir,
+    referencePngPath: path.join(screenDir, `${normalizedViewportId}.png`),
+  };
+};
+
+const cloneViewportSpec = (
+  viewport: VisualBenchmarkViewportSpec,
+): VisualBenchmarkViewportSpec => {
+  const clone: VisualBenchmarkViewportSpec = {
+    id: viewport.id,
+    width: viewport.width,
+    height: viewport.height,
+  };
+  if (viewport.label !== undefined) {
+    clone.label = viewport.label;
+  }
+  if (viewport.deviceScaleFactor !== undefined) {
+    clone.deviceScaleFactor = viewport.deviceScaleFactor;
+  }
+  if (viewport.weight !== undefined) {
+    clone.weight = viewport.weight;
+  }
+  return clone;
+};
+
 export const enumerateFixtureScreens = (
   metadata: VisualBenchmarkFixtureMetadata,
 ): VisualBenchmarkFixtureScreenMetadata[] => {
   if (
-    metadata.version === 2 &&
+    (metadata.version === 2 || metadata.version === 3) &&
     Array.isArray(metadata.screens) &&
     metadata.screens.length > 0
   ) {
-    return metadata.screens.map((screen) => ({ ...screen }));
+    return metadata.screens.map((screen) => {
+      const clone: VisualBenchmarkFixtureScreenMetadata = {
+        screenId: screen.screenId,
+        screenName: screen.screenName,
+        nodeId: screen.nodeId,
+        viewport: {
+          width: screen.viewport.width,
+          height: screen.viewport.height,
+        },
+      };
+      if (screen.weight !== undefined) {
+        clone.weight = screen.weight;
+      }
+      if (screen.viewports !== undefined) {
+        clone.viewports = screen.viewports.map((viewport) =>
+          cloneViewportSpec(viewport),
+        );
+      }
+      return clone;
+    });
   }
   return [
     {
@@ -538,6 +718,26 @@ export const enumerateFixtureScreens = (
         width: metadata.viewport.width,
         height: metadata.viewport.height,
       },
+    },
+  ];
+};
+
+export const enumerateFixtureScreenViewports = (
+  screen: VisualBenchmarkFixtureScreenMetadata,
+  defaultList: readonly VisualBenchmarkViewportSpec[],
+): VisualBenchmarkViewportSpec[] => {
+  if (screen.viewports !== undefined && screen.viewports.length > 0) {
+    return screen.viewports.map((viewport) => cloneViewportSpec(viewport));
+  }
+  if (defaultList.length > 0) {
+    return defaultList.map((viewport) => cloneViewportSpec(viewport));
+  }
+  return [
+    {
+      id: "default",
+      width: screen.viewport.width,
+      height: screen.viewport.height,
+      deviceScaleFactor: 1,
     },
   ];
 };

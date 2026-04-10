@@ -5,16 +5,20 @@ import path from "node:path";
 import test from "node:test";
 import {
   assertAllowedScreenId,
+  assertAllowedViewportId,
   computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
+  enumerateFixtureScreenViewports,
   fromScreenIdToken,
   loadVisualBenchmarkFixtureMetadata,
   parseVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkScreenPaths,
+  resolveVisualBenchmarkScreenViewportPaths,
   toScreenIdToken,
   writeVisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureScreenMetadata,
+  type VisualBenchmarkViewportSpec,
 } from "./visual-benchmark.helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -323,7 +327,7 @@ test("parseVisualBenchmarkFixtureMetadata rejects v2 metadata with weight <= 0",
 
 test("parseVisualBenchmarkFixtureMetadata rejects unknown version", () => {
   const badJson = JSON.stringify({
-    version: 3,
+    version: 4,
     fixtureId: "x",
     capturedAt: "2026-04-09T00:00:00.000Z",
     source: {
@@ -513,4 +517,427 @@ test("loadVisualBenchmarkFixtureMetadata accepts legacy v1 metadata unchanged", 
   } finally {
     await rm(root, { recursive: true, force: true });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — assertAllowedViewportId
+// ---------------------------------------------------------------------------
+
+test("assertAllowedViewportId accepts alphanumeric, underscore, hyphen", () => {
+  assert.equal(assertAllowedViewportId("desktop"), "desktop");
+  assert.equal(assertAllowedViewportId("mobile-390"), "mobile-390");
+  assert.equal(assertAllowedViewportId("ABC_123"), "ABC_123");
+  assert.equal(assertAllowedViewportId("a"), "a");
+});
+
+test("assertAllowedViewportId trims whitespace and returns trimmed id", () => {
+  assert.equal(assertAllowedViewportId("  desktop  "), "desktop");
+});
+
+test("assertAllowedViewportId rejects empty or whitespace-only input", () => {
+  assert.throws(() => assertAllowedViewportId(""), /non-empty/i);
+  assert.throws(() => assertAllowedViewportId("   "), /non-empty/i);
+});
+
+test("assertAllowedViewportId rejects path traversal sequences", () => {
+  assert.throws(
+    () => assertAllowedViewportId(".."),
+    /forbidden|invalid|not allowed/i,
+  );
+  assert.throws(
+    () => assertAllowedViewportId("../evil"),
+    /forbidden|invalid|not allowed|characters/i,
+  );
+});
+
+test("assertAllowedViewportId rejects whitespace, path separators, and punctuation", () => {
+  assert.throws(
+    () => assertAllowedViewportId("has space"),
+    /invalid|characters|not allowed/i,
+  );
+  assert.throws(
+    () => assertAllowedViewportId("has:colon"),
+    /invalid|characters|not allowed/i,
+  );
+  assert.throws(
+    () => assertAllowedViewportId("has/slash"),
+    /invalid|characters|not allowed/i,
+  );
+  assert.throws(
+    () => assertAllowedViewportId("has@symbol"),
+    /invalid|characters|not allowed/i,
+  );
+});
+
+test("assertAllowedViewportId rejects unicode and non-ASCII characters", () => {
+  assert.throws(
+    () => assertAllowedViewportId("unicode_é"),
+    /invalid|characters|not allowed/i,
+  );
+});
+
+test("assertAllowedViewportId rejects non-string input", () => {
+  assert.throws(() => assertAllowedViewportId(null), /non-empty/i);
+  assert.throws(() => assertAllowedViewportId(undefined), /non-empty/i);
+  assert.throws(() => assertAllowedViewportId(42), /non-empty/i);
+  assert.throws(() => assertAllowedViewportId({}), /non-empty/i);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — resolveVisualBenchmarkScreenViewportPaths
+// ---------------------------------------------------------------------------
+
+test("resolveVisualBenchmarkScreenViewportPaths joins fixtureId/screens/<token>/<viewport>.png", () => {
+  const paths = resolveVisualBenchmarkScreenViewportPaths(
+    "simple-form",
+    "2:10001",
+    "desktop",
+    { fixtureRoot: "/tmp/fake-root" },
+  );
+  assert.ok(
+    paths.referencePngPath.endsWith(
+      path.join("simple-form", "screens", "2_10001", "desktop.png"),
+    ),
+    `Expected reference path to end with simple-form/screens/2_10001/desktop.png, got ${paths.referencePngPath}`,
+  );
+  assert.ok(
+    paths.screenDir.endsWith(path.join("simple-form", "screens", "2_10001")),
+  );
+});
+
+test("resolveVisualBenchmarkScreenViewportPaths round-trips a screen id containing underscore and colon", () => {
+  // screenId "home_view:1" -> token "home~uview_1"
+  const paths = resolveVisualBenchmarkScreenViewportPaths(
+    "multi-fixture",
+    "home_view:1",
+    "mobile-390",
+    { fixtureRoot: "/tmp/fake-root" },
+  );
+  assert.ok(
+    paths.referencePngPath.endsWith(
+      path.join("multi-fixture", "screens", "home~uview_1", "mobile-390.png"),
+    ),
+    `Expected path to use reversible token encoding, got ${paths.referencePngPath}`,
+  );
+  assert.equal(fromScreenIdToken("home~uview_1"), "home_view:1");
+});
+
+test("resolveVisualBenchmarkScreenViewportPaths rejects invalid fixtureId", () => {
+  assert.throws(() =>
+    resolveVisualBenchmarkScreenViewportPaths(
+      "nested/fixture",
+      "2:10001",
+      "desktop",
+      { fixtureRoot: "/tmp/x" },
+    ),
+  );
+});
+
+test("resolveVisualBenchmarkScreenViewportPaths rejects invalid screenId", () => {
+  assert.throws(() =>
+    resolveVisualBenchmarkScreenViewportPaths(
+      "simple-form",
+      "../escape",
+      "desktop",
+      { fixtureRoot: "/tmp/x" },
+    ),
+  );
+});
+
+test("resolveVisualBenchmarkScreenViewportPaths rejects invalid viewportId", () => {
+  assert.throws(() =>
+    resolveVisualBenchmarkScreenViewportPaths(
+      "simple-form",
+      "2:10001",
+      "../escape",
+      { fixtureRoot: "/tmp/x" },
+    ),
+  );
+  assert.throws(() =>
+    resolveVisualBenchmarkScreenViewportPaths(
+      "simple-form",
+      "2:10001",
+      "has space",
+      { fixtureRoot: "/tmp/x" },
+    ),
+  );
+  assert.throws(() =>
+    resolveVisualBenchmarkScreenViewportPaths("simple-form", "2:10001", "", {
+      fixtureRoot: "/tmp/x",
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — metadata schema v3 (optional screens[].viewports[])
+// ---------------------------------------------------------------------------
+
+const v3MetadataJson = (screens: unknown): string =>
+  JSON.stringify({
+    version: 3,
+    fixtureId: "multi-fixture",
+    capturedAt: "2026-04-09T00:00:00.000Z",
+    source: {
+      fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      nodeId: "2:10001",
+      nodeName: "Fixture Root",
+      lastModified: "2026-03-30T20:59:16Z",
+    },
+    viewport: { width: 1280, height: 720 },
+    export: { format: "png", scale: 2 },
+    screens,
+  });
+
+test("parseVisualBenchmarkFixtureMetadata parses v1 metadata unchanged (no regression)", () => {
+  const metadata = parseVisualBenchmarkFixtureMetadata(v1MetadataJson());
+  assert.equal(metadata.version, 1);
+  assert.equal(metadata.screens, undefined);
+});
+
+test("parseVisualBenchmarkFixtureMetadata parses v2 metadata unchanged (no viewports parsed)", () => {
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+    },
+  ];
+  const metadata = parseVisualBenchmarkFixtureMetadata(v2MetadataJson(screens));
+  assert.equal(metadata.version, 2);
+  assert.equal(metadata.screens?.length, 1);
+  assert.equal(metadata.screens?.[0]?.viewports, undefined);
+});
+
+test("parseVisualBenchmarkFixtureMetadata parses v3 metadata with per-screen viewports", () => {
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+      viewports: [
+        { id: "desktop", width: 1280, height: 800, deviceScaleFactor: 1 },
+        {
+          id: "mobile",
+          label: "Mobile",
+          width: 390,
+          height: 844,
+          deviceScaleFactor: 3,
+          weight: 2,
+        },
+      ],
+    },
+  ];
+  const metadata = parseVisualBenchmarkFixtureMetadata(v3MetadataJson(screens));
+  assert.equal(metadata.version, 3);
+  assert.equal(metadata.screens?.length, 1);
+  const [screen] = metadata.screens ?? [];
+  assert.ok(screen !== undefined);
+  assert.equal(screen.viewports?.length, 2);
+  assert.equal(screen.viewports?.[0]?.id, "desktop");
+  assert.equal(screen.viewports?.[0]?.deviceScaleFactor, 1);
+  assert.equal(screen.viewports?.[1]?.id, "mobile");
+  assert.equal(screen.viewports?.[1]?.label, "Mobile");
+  assert.equal(screen.viewports?.[1]?.weight, 2);
+});
+
+test("parseVisualBenchmarkFixtureMetadata parses v3 metadata without explicit viewports", () => {
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+    },
+  ];
+  const metadata = parseVisualBenchmarkFixtureMetadata(v3MetadataJson(screens));
+  assert.equal(metadata.version, 3);
+  assert.equal(metadata.screens?.[0]?.viewports, undefined);
+});
+
+test("parseVisualBenchmarkFixtureMetadata rejects v3 metadata with duplicate viewport ids", () => {
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+      viewports: [
+        { id: "desktop", width: 1280, height: 800 },
+        { id: "desktop", width: 1440, height: 900 },
+      ],
+    },
+  ];
+  assert.throws(
+    () => parseVisualBenchmarkFixtureMetadata(v3MetadataJson(screens)),
+    /duplicate/i,
+  );
+});
+
+test("parseVisualBenchmarkFixtureMetadata rejects v3 metadata with non-positive viewport width", () => {
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+      viewports: [{ id: "desktop", width: 0, height: 800 }],
+    },
+  ];
+  assert.throws(() =>
+    parseVisualBenchmarkFixtureMetadata(v3MetadataJson(screens)),
+  );
+});
+
+test("parseVisualBenchmarkFixtureMetadata rejects v3 metadata with non-integer viewport height", () => {
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+      viewports: [{ id: "desktop", width: 1280, height: 800.5 }],
+    },
+  ];
+  assert.throws(() =>
+    parseVisualBenchmarkFixtureMetadata(v3MetadataJson(screens)),
+  );
+});
+
+test("parseVisualBenchmarkFixtureMetadata rejects v3 metadata with invalid viewport id", () => {
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+      viewports: [{ id: "../escape", width: 1280, height: 800 }],
+    },
+  ];
+  assert.throws(() =>
+    parseVisualBenchmarkFixtureMetadata(v3MetadataJson(screens)),
+  );
+});
+
+test("parseVisualBenchmarkFixtureMetadata ignores viewports field on v2 metadata (strict version gating)", () => {
+  // A v2 doc that happens to include a `viewports` field should parse as v2
+  // and NOT expose the field — this preserves v2 schema stability.
+  const screens = [
+    {
+      screenId: "2:10001",
+      screenName: "Dashboard",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+      viewports: [{ id: "desktop", width: 1280, height: 800 }],
+    },
+  ];
+  const metadata = parseVisualBenchmarkFixtureMetadata(v2MetadataJson(screens));
+  assert.equal(metadata.version, 2);
+  assert.equal(metadata.screens?.[0]?.viewports, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — enumerateFixtureScreenViewports
+// ---------------------------------------------------------------------------
+
+test("enumerateFixtureScreenViewports returns declared viewports when screen has them", () => {
+  const screen: VisualBenchmarkFixtureScreenMetadata = {
+    screenId: "2:10001",
+    screenName: "Dashboard",
+    nodeId: "2:10001",
+    viewport: { width: 1280, height: 720 },
+    viewports: [
+      { id: "desktop", width: 1280, height: 800, deviceScaleFactor: 1 },
+      { id: "mobile", width: 390, height: 844, deviceScaleFactor: 3 },
+    ],
+  };
+  const defaults: VisualBenchmarkViewportSpec[] = [
+    { id: "tablet", width: 768, height: 1024 },
+  ];
+  const result = enumerateFixtureScreenViewports(screen, defaults);
+  assert.equal(result.length, 2);
+  assert.equal(result[0]?.id, "desktop");
+  assert.equal(result[1]?.id, "mobile");
+});
+
+test("enumerateFixtureScreenViewports falls back to defaults when screen has no viewports", () => {
+  const screen: VisualBenchmarkFixtureScreenMetadata = {
+    screenId: "2:10001",
+    screenName: "Dashboard",
+    nodeId: "2:10001",
+    viewport: { width: 1280, height: 720 },
+  };
+  const defaults: VisualBenchmarkViewportSpec[] = [
+    { id: "desktop", width: 1280, height: 800 },
+    { id: "mobile", width: 390, height: 844 },
+  ];
+  const result = enumerateFixtureScreenViewports(screen, defaults);
+  assert.equal(result.length, 2);
+  assert.equal(result[0]?.id, "desktop");
+});
+
+test("enumerateFixtureScreenViewports falls back to defaults when screen viewports is empty array", () => {
+  const screen: VisualBenchmarkFixtureScreenMetadata = {
+    screenId: "2:10001",
+    screenName: "Dashboard",
+    nodeId: "2:10001",
+    viewport: { width: 1280, height: 720 },
+    viewports: [],
+  };
+  const defaults: VisualBenchmarkViewportSpec[] = [
+    { id: "desktop", width: 1280, height: 800 },
+  ];
+  const result = enumerateFixtureScreenViewports(screen, defaults);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.id, "desktop");
+});
+
+test("enumerateFixtureScreenViewports synthesizes singleton from screen.viewport when both inputs empty", () => {
+  const screen: VisualBenchmarkFixtureScreenMetadata = {
+    screenId: "2:10001",
+    screenName: "Dashboard",
+    nodeId: "2:10001",
+    viewport: { width: 1336, height: 1578 },
+  };
+  const result = enumerateFixtureScreenViewports(screen, []);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.id, "default");
+  assert.equal(result[0]?.width, 1336);
+  assert.equal(result[0]?.height, 1578);
+  assert.equal(result[0]?.deviceScaleFactor, 1);
+});
+
+test("enumerateFixtureScreenViewports does not mutate or alias its inputs", () => {
+  const declared: VisualBenchmarkViewportSpec[] = [
+    { id: "desktop", width: 1280, height: 800 },
+  ];
+  const screen: VisualBenchmarkFixtureScreenMetadata = {
+    screenId: "2:10001",
+    screenName: "Dashboard",
+    nodeId: "2:10001",
+    viewport: { width: 1280, height: 720 },
+    viewports: declared,
+  };
+  const result = enumerateFixtureScreenViewports(screen, []);
+  result[0]!.width = 9999;
+  assert.equal(
+    declared[0]?.width,
+    1280,
+    "input viewports array must not be mutated",
+  );
+  assert.equal(screen.viewports?.[0]?.width, 1280);
+
+  const defaults: VisualBenchmarkViewportSpec[] = [
+    { id: "desktop", width: 1280, height: 800 },
+  ];
+  const screenNoViewports: VisualBenchmarkFixtureScreenMetadata = {
+    screenId: "2:10002",
+    screenName: "Other",
+    nodeId: "2:10002",
+    viewport: { width: 1280, height: 720 },
+  };
+  const result2 = enumerateFixtureScreenViewports(screenNoViewports, defaults);
+  result2[0]!.width = 9999;
+  assert.equal(defaults[0]?.width, 1280, "defaults array must not be mutated");
 });
