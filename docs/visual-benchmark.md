@@ -65,11 +65,93 @@ pnpm benchmark:visual:update-baseline
 
 ## Interpreting deltas
 
-- `improved`: delta greater than `+1`
-- `degraded`: delta less than `-1`
-- `neutral`: delta within `±1`
+- `improved`: delta greater than `+neutralTolerance`
+- `degraded`: delta less than `-neutralTolerance`
+- `neutral`: delta within `±neutralTolerance`
 
-The `±1` neutral band is intentional. It absorbs small rendering variance so deterministic reruns do not oscillate between improved and degraded.
+The default `neutralTolerance` is `1` point. It is configurable via
+`visual-quality.config.json > regression > neutralTolerance`. This band absorbs
+small rendering variance so deterministic reruns do not oscillate between
+improved and degraded and prevents false-positive regression alerts from
+environmental noise.
+
+## Historical trend analysis and regression detection
+
+After each benchmark run the runner emits a per-fixture trend summary alongside
+the comparison table:
+
+```text
+Trend (per fixture):
+  simple-form: 87 (↓3 from baseline 90)
+  complex-dashboard: 82 (↑2 from baseline 80)
+  data-table: 91 (→0 from baseline 91)
+```
+
+When a fixture's current score drops more than `maxScoreDropPercent` below its
+committed baseline, the runner emits an `ALERT_VISUAL_QUALITY_DROP` alert:
+
+```text
+1 visual quality regression alert(s):
+  ⚠️ ALERT_VISUAL_QUALITY_DROP: Visual quality dropped 11.11% for fixture 'simple-form' (baseline 90 -> current 80).
+```
+
+Alerts are returned on `VisualBenchmarkResult.alerts` as `KpiAlert` objects so
+downstream KPI pipelines can ingest them without custom translation.
+
+### Regression configuration
+
+Tune regression behavior in `integration/fixtures/visual-benchmark/visual-quality.config.json`:
+
+```json
+{
+  "regression": {
+    "maxScoreDropPercent": 5,
+    "neutralTolerance": 1,
+    "historySize": 20
+  }
+}
+```
+
+- `maxScoreDropPercent` (default `5`): percentage drop above which an
+  `ALERT_VISUAL_QUALITY_DROP` alert is emitted. A drop equal to the threshold
+  does NOT alert — only drops strictly greater than the threshold do.
+- `neutralTolerance` (default `1`): absolute point delta absorbed as
+  environmental variance. Applies to both improvement and degradation
+  indicators and to the regression detector's "down" classification.
+- `historySize` (default `20`, max `1000`): ring buffer size for
+  `integration/fixtures/visual-benchmark/history.json` which tracks the last
+  N accepted baselines.
+
+### History file
+
+`integration/fixtures/visual-benchmark/history.json` is a committed ring buffer
+of the last N accepted benchmark baselines. It is updated only when
+`pnpm benchmark:visual --update-baseline` (or equivalent) is used — ordinary
+read-only benchmark runs never touch it. This keeps the committed history
+focused on deliberately accepted quality snapshots and avoids git noise from
+local runs.
+
+Schema:
+
+```json
+{
+  "version": 1,
+  "entries": [
+    {
+      "runAt": "2026-04-10T00:00:00.000Z",
+      "scores": [
+        { "fixtureId": "complex-dashboard", "score": 82 },
+        { "fixtureId": "data-table", "score": 91 },
+        { "fixtureId": "design-system-showcase", "score": 84 },
+        { "fixtureId": "navigation-sidebar", "score": 78 },
+        { "fixtureId": "simple-form", "score": 88 }
+      ]
+    }
+  ]
+}
+```
+
+When the ring buffer exceeds `historySize`, the oldest entry is dropped.
 
 ## Fixture layout
 
@@ -94,16 +176,16 @@ The committed fixture set contains exactly five benchmark views:
 
 `pnpm benchmark:visual:update-references` is offline. It regenerates each committed `reference.png` from the current benchmark pipeline output.
 
-| Command                                   | Description |
-| ----------------------------------------- | ----------- |
+| Command                                   | Description                                                                                          |
+| ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `pnpm visual:baseline update`             | Run benchmark, persist last-run artifacts, update committed references, metadata, and score baseline |
-| `pnpm visual:baseline approve --screen`   | Promote a persisted last-run `actual.png` to the committed reference for one fixture |
-| `pnpm visual:baseline status`             | Show per-fixture baseline status including capture age and pending diffs |
-| `pnpm visual:baseline diff`               | Summarize pending diffs from persisted last-run artifacts |
-| `pnpm benchmark:visual:update-fixtures`   | Refreshes frozen `figma.json` payloads from Figma |
-| `pnpm benchmark:visual:update-references` | Regenerates committed `reference.png` files from the current benchmark output |
-| `pnpm benchmark:visual:update-baseline`   | Compatibility shim for `pnpm visual:baseline update` |
-| `pnpm benchmark:visual:live`              | Compares frozen fixture data against live Figma responses |
+| `pnpm visual:baseline approve --screen`   | Promote a persisted last-run `actual.png` to the committed reference for one fixture                 |
+| `pnpm visual:baseline status`             | Show per-fixture baseline status including capture age and pending diffs                             |
+| `pnpm visual:baseline diff`               | Summarize pending diffs from persisted last-run artifacts                                            |
+| `pnpm benchmark:visual:update-fixtures`   | Refreshes frozen `figma.json` payloads from Figma                                                    |
+| `pnpm benchmark:visual:update-references` | Regenerates committed `reference.png` files from the current benchmark output                        |
+| `pnpm benchmark:visual:update-baseline`   | Compatibility shim for `pnpm visual:baseline update`                                                 |
+| `pnpm benchmark:visual:live`              | Compares frozen fixture data against live Figma responses                                            |
 
 ## CI behavior
 

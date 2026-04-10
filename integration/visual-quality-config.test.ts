@@ -7,9 +7,11 @@ import { DEFAULT_SCORING_WEIGHTS } from "../src/job-engine/visual-scoring.js";
 import {
   applyVisualQualityConfigToReport,
   checkVisualQualityThreshold,
+  DEFAULT_RESOLVED_REGRESSION_CONFIG,
   loadVisualQualityConfig,
   parseVisualQualityConfig,
   recomputeVisualQualityScore,
+  resolveVisualQualityRegressionConfig,
   resolveVisualQualityThresholds,
   resolveVisualQualityWeights,
 } from "./visual-quality-config.js";
@@ -28,11 +30,11 @@ test("parseVisualQualityConfig accepts full config with all fields", () => {
   const config = parseVisualQualityConfig({
     thresholds: { warn: 80, fail: 60 },
     weights: {
-      layoutAccuracy: 0.30,
+      layoutAccuracy: 0.3,
       colorFidelity: 0.25,
-      typography: 0.20,
+      typography: 0.2,
       componentStructure: 0.15,
-      spacingAlignment: 0.10,
+      spacingAlignment: 0.1,
     },
     fixtures: {
       "simple-form": {
@@ -45,15 +47,15 @@ test("parseVisualQualityConfig accepts full config with all fields", () => {
   });
   assert.equal(config.thresholds?.warn, 80);
   assert.equal(config.thresholds?.fail, 60);
-  assert.equal(config.weights?.layoutAccuracy, 0.30);
+  assert.equal(config.weights?.layoutAccuracy, 0.3);
   assert.ok(config.fixtures?.["simple-form"]);
 });
 
 test("parseVisualQualityConfig accepts partial weights", () => {
   const config = parseVisualQualityConfig({
-    weights: { layoutAccuracy: 0.50 },
+    weights: { layoutAccuracy: 0.5 },
   });
-  assert.equal(config.weights?.layoutAccuracy, 0.50);
+  assert.equal(config.weights?.layoutAccuracy, 0.5);
 });
 
 // ---------------------------------------------------------------------------
@@ -65,11 +67,11 @@ test("parseVisualQualityConfig rejects weights summing != 1.0", () => {
     () =>
       parseVisualQualityConfig({
         weights: {
-          layoutAccuracy: 0.50,
-          colorFidelity: 0.50,
-          typography: 0.50,
-          componentStructure: 0.50,
-          spacingAlignment: 0.50,
+          layoutAccuracy: 0.5,
+          colorFidelity: 0.5,
+          typography: 0.5,
+          componentStructure: 0.5,
+          spacingAlignment: 0.5,
         },
       }),
     /weights must sum to 1.0/,
@@ -166,29 +168,29 @@ test("loadVisualQualityConfig throws on invalid JSON content", async () => {
 
 test("resolveVisualQualityWeights returns defaults when no config", () => {
   const weights = resolveVisualQualityWeights();
-  assert.equal(weights.layoutAccuracy, 0.30);
+  assert.equal(weights.layoutAccuracy, 0.3);
   assert.equal(weights.colorFidelity, 0.25);
-  assert.equal(weights.typography, 0.20);
+  assert.equal(weights.typography, 0.2);
   assert.equal(weights.componentStructure, 0.15);
-  assert.equal(weights.spacingAlignment, 0.10);
+  assert.equal(weights.spacingAlignment, 0.1);
 });
 
 test("resolveVisualQualityWeights merges partial weights", () => {
   const weights = resolveVisualQualityWeights({
-    weights: { layoutAccuracy: 0.40, spacingAlignment: 0.00 },
+    weights: { layoutAccuracy: 0.4, spacingAlignment: 0.0 },
   });
-  assert.equal(weights.layoutAccuracy, 0.40);
+  assert.equal(weights.layoutAccuracy, 0.4);
   assert.equal(weights.colorFidelity, 0.25);
-  assert.equal(weights.typography, 0.20);
+  assert.equal(weights.typography, 0.2);
   assert.equal(weights.componentStructure, 0.15);
-  assert.equal(weights.spacingAlignment, 0.00);
+  assert.equal(weights.spacingAlignment, 0.0);
 });
 
 test("resolveVisualQualityWeights throws when merged weights don't sum to 1.0", () => {
   assert.throws(
     () =>
       resolveVisualQualityWeights({
-        weights: { layoutAccuracy: 0.80 },
+        weights: { layoutAccuracy: 0.8 },
       }),
     /sum to 1.0/,
   );
@@ -323,18 +325,12 @@ test("checkVisualQualityThreshold handles edge cases", () => {
 });
 
 test("checkVisualQualityThreshold keeps warn-only semantics when fail is disabled", () => {
-  assert.equal(
-    checkVisualQualityThreshold(80, { warn: 80 }).verdict,
-    "pass",
-  );
+  assert.equal(checkVisualQualityThreshold(80, { warn: 80 }).verdict, "pass");
   assert.equal(
     checkVisualQualityThreshold(79.99, { warn: 80 }).verdict,
     "warn",
   );
-  assert.equal(
-    checkVisualQualityThreshold(5, { warn: 80 }).verdict,
-    "warn",
-  );
+  assert.equal(checkVisualQualityThreshold(5, { warn: 80 }).verdict, "warn");
 });
 
 // ---------------------------------------------------------------------------
@@ -343,13 +339,16 @@ test("checkVisualQualityThreshold keeps warn-only semantics when fail is disable
 
 test("recomputeVisualQualityScore with default weights matches original", () => {
   const dimensions = [
-    { name: "Layout Accuracy", weight: 0.30, score: 95, details: "" },
+    { name: "Layout Accuracy", weight: 0.3, score: 95, details: "" },
     { name: "Color Fidelity", weight: 0.25, score: 90, details: "" },
-    { name: "Typography", weight: 0.20, score: 85, details: "" },
+    { name: "Typography", weight: 0.2, score: 85, details: "" },
     { name: "Component Structure", weight: 0.15, score: 80, details: "" },
-    { name: "Spacing & Alignment", weight: 0.10, score: 75, details: "" },
+    { name: "Spacing & Alignment", weight: 0.1, score: 75, details: "" },
   ];
-  const score = recomputeVisualQualityScore(dimensions, DEFAULT_SCORING_WEIGHTS);
+  const score = recomputeVisualQualityScore(
+    dimensions,
+    DEFAULT_SCORING_WEIGHTS,
+  );
   // 95*0.30 + 90*0.25 + 85*0.20 + 80*0.15 + 75*0.10
   // = 28.5 + 22.5 + 17 + 12 + 7.5 = 87.5
   assert.equal(score, 87.5);
@@ -357,18 +356,18 @@ test("recomputeVisualQualityScore with default weights matches original", () => 
 
 test("recomputeVisualQualityScore with custom weights changes score", () => {
   const dimensions = [
-    { name: "Layout Accuracy", weight: 0.30, score: 95, details: "" },
+    { name: "Layout Accuracy", weight: 0.3, score: 95, details: "" },
     { name: "Color Fidelity", weight: 0.25, score: 90, details: "" },
-    { name: "Typography", weight: 0.20, score: 85, details: "" },
+    { name: "Typography", weight: 0.2, score: 85, details: "" },
     { name: "Component Structure", weight: 0.15, score: 80, details: "" },
-    { name: "Spacing & Alignment", weight: 0.10, score: 75, details: "" },
+    { name: "Spacing & Alignment", weight: 0.1, score: 75, details: "" },
   ];
   const customWeights = {
-    layoutAccuracy: 0.10,
-    colorFidelity: 0.10,
-    typography: 0.10,
-    componentStructure: 0.10,
-    spacingAlignment: 0.60,
+    layoutAccuracy: 0.1,
+    colorFidelity: 0.1,
+    typography: 0.1,
+    componentStructure: 0.1,
+    spacingAlignment: 0.6,
   };
   const score = recomputeVisualQualityScore(dimensions, customWeights);
   // 95*0.10 + 90*0.10 + 85*0.10 + 80*0.10 + 75*0.60
@@ -383,11 +382,11 @@ test("applyVisualQualityConfigToReport rewrites completed report weights and agg
       overallScore: 87.5,
       interpretation: "Good parity — small layout or color deviations",
       dimensions: [
-        { name: "Layout Accuracy", weight: 0.30, score: 95, details: "" },
+        { name: "Layout Accuracy", weight: 0.3, score: 95, details: "" },
         { name: "Color Fidelity", weight: 0.25, score: 90, details: "" },
-        { name: "Typography", weight: 0.20, score: 85, details: "" },
+        { name: "Typography", weight: 0.2, score: 85, details: "" },
         { name: "Component Structure", weight: 0.15, score: 80, details: "" },
-        { name: "Spacing & Alignment", weight: 0.10, score: 75, details: "" },
+        { name: "Spacing & Alignment", weight: 0.1, score: 75, details: "" },
       ],
       diffImagePath: "visual-quality/diff.png",
       hotspots: [],
@@ -404,19 +403,22 @@ test("applyVisualQualityConfigToReport rewrites completed report weights and agg
     },
     {
       weights: {
-        layoutAccuracy: 0.10,
-        colorFidelity: 0.10,
-        typography: 0.10,
-        componentStructure: 0.10,
-        spacingAlignment: 0.60,
+        layoutAccuracy: 0.1,
+        colorFidelity: 0.1,
+        typography: 0.1,
+        componentStructure: 0.1,
+        spacingAlignment: 0.6,
       },
     },
   );
 
   assert.equal(report.overallScore, 80);
-  assert.equal(report.interpretation, "Good parity — small layout or color deviations");
-  assert.equal(report.dimensions?.[4]?.weight, 0.60);
-  assert.equal(report.metadata?.configuredWeights.spacingAlignment, 0.60);
+  assert.equal(
+    report.interpretation,
+    "Good parity — small layout or color deviations",
+  );
+  assert.equal(report.dimensions?.[4]?.weight, 0.6);
+  assert.equal(report.metadata?.configuredWeights.spacingAlignment, 0.6);
 });
 
 // ---------------------------------------------------------------------------
@@ -424,7 +426,10 @@ test("applyVisualQualityConfigToReport rewrites completed report weights and agg
 // ---------------------------------------------------------------------------
 
 test("resolveVisualBenchmarkCliResolution parses --quality-threshold", () => {
-  const result = resolveVisualBenchmarkCliResolution(["--quality-threshold", "85"]);
+  const result = resolveVisualBenchmarkCliResolution([
+    "--quality-threshold",
+    "85",
+  ]);
   assert.equal(result.action, "benchmark");
   assert.equal(result.qualityThreshold, 85);
 });
@@ -458,4 +463,141 @@ test("resolveVisualBenchmarkCliResolution rejects --quality-threshold with inval
     () => resolveVisualBenchmarkCliResolution(["--quality-threshold", "abc"]),
     /between 0 and 100/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// Issue #841 — regression config parsing and resolution
+// ---------------------------------------------------------------------------
+
+test("parseVisualQualityConfig accepts regression config section", () => {
+  const config = parseVisualQualityConfig({
+    regression: {
+      maxScoreDropPercent: 10,
+      neutralTolerance: 2,
+      historySize: 30,
+    },
+  });
+  assert.equal(config.regression?.maxScoreDropPercent, 10);
+  assert.equal(config.regression?.neutralTolerance, 2);
+  assert.equal(config.regression?.historySize, 30);
+});
+
+test("parseVisualQualityConfig accepts partial regression config", () => {
+  const config = parseVisualQualityConfig({
+    regression: { maxScoreDropPercent: 7 },
+  });
+  assert.equal(config.regression?.maxScoreDropPercent, 7);
+  assert.equal(config.regression?.neutralTolerance, undefined);
+  assert.equal(config.regression?.historySize, undefined);
+});
+
+test("parseVisualQualityConfig rejects negative maxScoreDropPercent", () => {
+  assert.throws(
+    () =>
+      parseVisualQualityConfig({
+        regression: { maxScoreDropPercent: -1 },
+      }),
+    /Invalid visual quality config/,
+  );
+});
+
+test("parseVisualQualityConfig rejects maxScoreDropPercent > 100", () => {
+  assert.throws(
+    () =>
+      parseVisualQualityConfig({
+        regression: { maxScoreDropPercent: 101 },
+      }),
+    /Invalid visual quality config/,
+  );
+});
+
+test("parseVisualQualityConfig rejects negative neutralTolerance", () => {
+  assert.throws(
+    () =>
+      parseVisualQualityConfig({
+        regression: { neutralTolerance: -0.5 },
+      }),
+    /Invalid visual quality config/,
+  );
+});
+
+test("parseVisualQualityConfig rejects historySize <= 0", () => {
+  assert.throws(
+    () =>
+      parseVisualQualityConfig({
+        regression: { historySize: 0 },
+      }),
+    /Invalid visual quality config/,
+  );
+});
+
+test("parseVisualQualityConfig rejects historySize > 1000", () => {
+  assert.throws(
+    () =>
+      parseVisualQualityConfig({
+        regression: { historySize: 1001 },
+      }),
+    /Invalid visual quality config/,
+  );
+});
+
+test("parseVisualQualityConfig rejects non-integer historySize", () => {
+  assert.throws(
+    () =>
+      parseVisualQualityConfig({
+        regression: { historySize: 5.5 },
+      }),
+    /Invalid visual quality config/,
+  );
+});
+
+test("resolveVisualQualityRegressionConfig returns defaults when config is undefined", () => {
+  const resolved = resolveVisualQualityRegressionConfig(undefined);
+  assert.deepEqual(resolved, DEFAULT_RESOLVED_REGRESSION_CONFIG);
+});
+
+test("resolveVisualQualityRegressionConfig returns defaults when regression section is empty", () => {
+  const resolved = resolveVisualQualityRegressionConfig({});
+  assert.deepEqual(resolved, DEFAULT_RESOLVED_REGRESSION_CONFIG);
+});
+
+test("resolveVisualQualityRegressionConfig merges user values with defaults", () => {
+  const resolved = resolveVisualQualityRegressionConfig({
+    regression: { maxScoreDropPercent: 8 },
+  });
+  assert.equal(resolved.maxScoreDropPercent, 8);
+  assert.equal(
+    resolved.neutralTolerance,
+    DEFAULT_RESOLVED_REGRESSION_CONFIG.neutralTolerance,
+  );
+  assert.equal(
+    resolved.historySize,
+    DEFAULT_RESOLVED_REGRESSION_CONFIG.historySize,
+  );
+});
+
+test("resolveVisualQualityRegressionConfig accepts full override", () => {
+  const resolved = resolveVisualQualityRegressionConfig({
+    regression: {
+      maxScoreDropPercent: 12,
+      neutralTolerance: 3,
+      historySize: 50,
+    },
+  });
+  assert.deepEqual(resolved, {
+    maxScoreDropPercent: 12,
+    neutralTolerance: 3,
+    historySize: 50,
+  });
+});
+
+test("committed visual-quality.config.json contains regression section with valid values", async () => {
+  const config = await loadVisualQualityConfig();
+  assert.ok(
+    config.regression !== undefined,
+    "regression section must be present",
+  );
+  assert.equal(typeof config.regression?.maxScoreDropPercent, "number");
+  assert.equal(typeof config.regression?.neutralTolerance, "number");
+  assert.equal(typeof config.regression?.historySize, "number");
 });
