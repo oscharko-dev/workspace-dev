@@ -1201,6 +1201,10 @@ export const createValidateProjectService = ({
         (context.job.request.visualQualityReferenceMode ?? context.runtime.visualQualityReferenceMode) as WorkspaceVisualQualityReferenceMode;
       const standaloneVisualQualityViewportWidth =
         context.job.request.visualQualityViewportWidth ?? context.runtime.visualQualityViewportWidth;
+      const standaloneVisualQualityViewportHeight =
+        context.job.request.visualQualityViewportHeight ?? context.runtime.visualQualityViewportHeight;
+      const standaloneVisualQualityDeviceScaleFactor =
+        context.job.request.visualQualityDeviceScaleFactor ?? context.runtime.visualQualityDeviceScaleFactor;
       const shouldRunStandaloneVisualQuality = requestedVisualQualityEnabled && (!visualAuditRequest || explicitVisualQualityRequest);
       let resolvedVisualQualityReport: WorkspaceVisualQualityReport = createNotRequestedVisualQualityReport();
       context.job.visualQuality = createNotRequestedVisualQualityReport();
@@ -2201,8 +2205,8 @@ export const createValidateProjectService = ({
             config: {
               viewport: {
                 width: standaloneVisualQualityViewportWidth,
-                height: referenceResult.metadata.viewport.height,
-                deviceScaleFactor: 1
+                height: standaloneVisualQualityViewportHeight ?? referenceResult.metadata.viewport.height,
+                deviceScaleFactor: standaloneVisualQualityDeviceScaleFactor ?? referenceResult.metadata.viewport.deviceScaleFactor ?? 1
               },
               waitForNetworkIdle: true,
               waitForFonts: true,
