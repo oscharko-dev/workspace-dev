@@ -38,16 +38,61 @@ export const VisualQualityFixtureConfigSchema = z.object({
   screens: z.record(z.string(), VisualQualityScreenConfigSchema).optional(),
 });
 
+export const VisualQualityRegressionConfigSchema = z.object({
+  maxScoreDropPercent: z.number().min(0).max(100).optional(),
+  neutralTolerance: z.number().min(0).max(100).optional(),
+  historySize: z.number().int().min(1).max(1000).optional(),
+});
+
 export const VisualQualityConfigSchema = z.object({
   thresholds: VisualQualityThresholdsSchema.optional(),
   weights: VisualQualityScoringWeightsSchema.optional(),
   fixtures: z.record(z.string(), VisualQualityFixtureConfigSchema).optional(),
+  regression: VisualQualityRegressionConfigSchema.optional(),
 });
 
-export type VisualQualityThresholds = z.infer<typeof VisualQualityThresholdsSchema>;
-export type VisualQualityScreenConfig = z.infer<typeof VisualQualityScreenConfigSchema>;
-export type VisualQualityFixtureConfig = z.infer<typeof VisualQualityFixtureConfigSchema>;
+export type VisualQualityThresholds = z.infer<
+  typeof VisualQualityThresholdsSchema
+>;
+export type VisualQualityScreenConfig = z.infer<
+  typeof VisualQualityScreenConfigSchema
+>;
+export type VisualQualityFixtureConfig = z.infer<
+  typeof VisualQualityFixtureConfigSchema
+>;
+export type VisualQualityRegressionConfig = z.infer<
+  typeof VisualQualityRegressionConfigSchema
+>;
 export type VisualQualityConfig = z.infer<typeof VisualQualityConfigSchema>;
+
+export interface VisualQualityResolvedRegressionConfig {
+  maxScoreDropPercent: number;
+  neutralTolerance: number;
+  historySize: number;
+}
+
+export const DEFAULT_RESOLVED_REGRESSION_CONFIG: VisualQualityResolvedRegressionConfig =
+  {
+    maxScoreDropPercent: 5,
+    neutralTolerance: 1,
+    historySize: 20,
+  };
+
+export const resolveVisualQualityRegressionConfig = (
+  config?: VisualQualityConfig,
+): VisualQualityResolvedRegressionConfig => {
+  const regression = config?.regression ?? {};
+  return {
+    maxScoreDropPercent:
+      regression.maxScoreDropPercent ??
+      DEFAULT_RESOLVED_REGRESSION_CONFIG.maxScoreDropPercent,
+    neutralTolerance:
+      regression.neutralTolerance ??
+      DEFAULT_RESOLVED_REGRESSION_CONFIG.neutralTolerance,
+    historySize:
+      regression.historySize ?? DEFAULT_RESOLVED_REGRESSION_CONFIG.historySize,
+  };
+};
 
 export interface VisualQualityResolvedThresholds {
   warn: number;
@@ -73,16 +118,29 @@ export const DEFAULT_THRESHOLDS: VisualQualityResolvedThresholds = {
   warn: 80,
 };
 
-const validateThresholdOrder = (thresholds: VisualQualityThresholds | undefined, path: string): void => {
-  if (thresholds?.warn !== undefined && thresholds?.fail !== undefined && thresholds.warn < thresholds.fail) {
-    throw new Error(`${path}: warn threshold (${String(thresholds.warn)}) must be >= fail threshold (${String(thresholds.fail)}).`);
+const validateThresholdOrder = (
+  thresholds: VisualQualityThresholds | undefined,
+  path: string,
+): void => {
+  if (
+    thresholds?.warn !== undefined &&
+    thresholds?.fail !== undefined &&
+    thresholds.warn < thresholds.fail
+  ) {
+    throw new Error(
+      `${path}: warn threshold (${String(thresholds.warn)}) must be >= fail threshold (${String(thresholds.fail)}).`,
+    );
   }
 };
 
-export const parseVisualQualityConfig = (input: unknown): VisualQualityConfig => {
+export const parseVisualQualityConfig = (
+  input: unknown,
+): VisualQualityConfig => {
   const result = VisualQualityConfigSchema.safeParse(input);
   if (!result.success) {
-    const messages = result.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+    const messages = result.error.issues
+      .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
+      .join("; ");
     throw new Error(`Invalid visual quality config: ${messages}`);
   }
   const config = result.data;
@@ -103,7 +161,9 @@ export const parseVisualQualityConfig = (input: unknown): VisualQualityConfig =>
         provided.componentStructure! +
         provided.spacingAlignment!;
       if (Math.abs(sum - 1.0) > 0.001) {
-        throw new Error(`Scoring weights must sum to 1.0 (100%). Received ${String(sum)}.`);
+        throw new Error(
+          `Scoring weights must sum to 1.0 (100%). Received ${String(sum)}.`,
+        );
       }
     }
   }
@@ -111,10 +171,18 @@ export const parseVisualQualityConfig = (input: unknown): VisualQualityConfig =>
   validateThresholdOrder(config.thresholds, "thresholds");
   if (config.fixtures) {
     for (const [fixtureId, fixtureConfig] of Object.entries(config.fixtures)) {
-      validateThresholdOrder(fixtureConfig.thresholds, `fixtures.${fixtureId}.thresholds`);
+      validateThresholdOrder(
+        fixtureConfig.thresholds,
+        `fixtures.${fixtureId}.thresholds`,
+      );
       if (fixtureConfig.screens) {
-        for (const [screenId, screenConfig] of Object.entries(fixtureConfig.screens)) {
-          validateThresholdOrder(screenConfig.thresholds, `fixtures.${fixtureId}.screens.${screenId}.thresholds`);
+        for (const [screenId, screenConfig] of Object.entries(
+          fixtureConfig.screens,
+        )) {
+          validateThresholdOrder(
+            screenConfig.thresholds,
+            `fixtures.${fixtureId}.screens.${screenId}.thresholds`,
+          );
         }
       }
     }
@@ -133,23 +201,35 @@ export const loadVisualQualityConfig = async (
     const parsed: unknown = JSON.parse(content);
     return parseVisualQualityConfig(parsed);
   } catch (error: unknown) {
-    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
       return {};
     }
     throw error;
   }
 };
 
-export const resolveVisualQualityWeights = (config?: VisualQualityConfig): VisualScoringWeights => {
+export const resolveVisualQualityWeights = (
+  config?: VisualQualityConfig,
+): VisualScoringWeights => {
   if (!config?.weights) {
     return { ...DEFAULT_SCORING_WEIGHTS };
   }
   const merged: VisualScoringWeights = {
-    layoutAccuracy: config.weights.layoutAccuracy ?? DEFAULT_SCORING_WEIGHTS.layoutAccuracy,
-    colorFidelity: config.weights.colorFidelity ?? DEFAULT_SCORING_WEIGHTS.colorFidelity,
+    layoutAccuracy:
+      config.weights.layoutAccuracy ?? DEFAULT_SCORING_WEIGHTS.layoutAccuracy,
+    colorFidelity:
+      config.weights.colorFidelity ?? DEFAULT_SCORING_WEIGHTS.colorFidelity,
     typography: config.weights.typography ?? DEFAULT_SCORING_WEIGHTS.typography,
-    componentStructure: config.weights.componentStructure ?? DEFAULT_SCORING_WEIGHTS.componentStructure,
-    spacingAlignment: config.weights.spacingAlignment ?? DEFAULT_SCORING_WEIGHTS.spacingAlignment,
+    componentStructure:
+      config.weights.componentStructure ??
+      DEFAULT_SCORING_WEIGHTS.componentStructure,
+    spacingAlignment:
+      config.weights.spacingAlignment ??
+      DEFAULT_SCORING_WEIGHTS.spacingAlignment,
   };
   const sum =
     merged.layoutAccuracy +
@@ -158,7 +238,9 @@ export const resolveVisualQualityWeights = (config?: VisualQualityConfig): Visua
     merged.componentStructure +
     merged.spacingAlignment;
   if (Math.abs(sum - 1.0) > 0.001) {
-    throw new Error(`Resolved scoring weights must sum to 1.0 (100%). Got ${String(sum)}.`);
+    throw new Error(
+      `Resolved scoring weights must sum to 1.0 (100%). Got ${String(sum)}.`,
+    );
   }
   return merged;
 };
@@ -169,23 +251,31 @@ export const resolveVisualQualityThresholds = (
   screenContext?: VisualQualityScreenContext,
 ): VisualQualityResolvedThresholds => {
   const globalThresholds = config?.thresholds ?? {};
-  const fixtureThresholds = fixtureId !== undefined ? config?.fixtures?.[fixtureId]?.thresholds ?? {} : {};
-  const screenConfigs = fixtureId !== undefined ? config?.fixtures?.[fixtureId]?.screens : undefined;
+  const fixtureThresholds =
+    fixtureId !== undefined
+      ? (config?.fixtures?.[fixtureId]?.thresholds ?? {})
+      : {};
+  const screenConfigs =
+    fixtureId !== undefined
+      ? config?.fixtures?.[fixtureId]?.screens
+      : undefined;
   const normalizedScreenName =
-    typeof screenContext?.screenName === "string" && screenContext.screenName.trim().length > 0
+    typeof screenContext?.screenName === "string" &&
+    screenContext.screenName.trim().length > 0
       ? screenContext.screenName.trim()
       : undefined;
   const normalizedScreenId =
-    typeof screenContext?.screenId === "string" && screenContext.screenId.trim().length > 0
+    typeof screenContext?.screenId === "string" &&
+    screenContext.screenId.trim().length > 0
       ? screenContext.screenId.trim()
       : undefined;
   const screenNameThresholds =
     normalizedScreenName !== undefined
-      ? screenConfigs?.[normalizedScreenName]?.thresholds ?? {}
+      ? (screenConfigs?.[normalizedScreenName]?.thresholds ?? {})
       : {};
   const screenIdThresholds =
     normalizedScreenId !== undefined
-      ? screenConfigs?.[normalizedScreenId]?.thresholds ?? {}
+      ? (screenConfigs?.[normalizedScreenId]?.thresholds ?? {})
       : {};
   const screenThresholds: VisualQualityThresholds = {
     warn: screenIdThresholds.warn ?? screenNameThresholds.warn,
@@ -193,8 +283,16 @@ export const resolveVisualQualityThresholds = (
   };
 
   return {
-    warn: screenThresholds.warn ?? fixtureThresholds.warn ?? globalThresholds.warn ?? DEFAULT_THRESHOLDS.warn,
-    fail: screenThresholds.fail ?? fixtureThresholds.fail ?? globalThresholds.fail ?? DEFAULT_THRESHOLDS.fail,
+    warn:
+      screenThresholds.warn ??
+      fixtureThresholds.warn ??
+      globalThresholds.warn ??
+      DEFAULT_THRESHOLDS.warn,
+    fail:
+      screenThresholds.fail ??
+      fixtureThresholds.fail ??
+      globalThresholds.fail ??
+      DEFAULT_THRESHOLDS.fail,
   };
 };
 
@@ -216,7 +314,7 @@ export const checkVisualQualityThreshold = (
 const DIMENSION_KEY_MAP: Record<string, keyof VisualScoringWeights> = {
   "Layout Accuracy": "layoutAccuracy",
   "Color Fidelity": "colorFidelity",
-  "Typography": "typography",
+  Typography: "typography",
   "Component Structure": "componentStructure",
   "Spacing & Alignment": "spacingAlignment",
 };
@@ -240,21 +338,26 @@ export const applyVisualQualityConfigToReport = (
   report: WorkspaceVisualQualityReport,
   config?: VisualQualityConfig,
 ): WorkspaceVisualQualityReport => {
-  if (report.status !== "completed" || report.dimensions === undefined || report.metadata === undefined) {
+  if (
+    report.status !== "completed" ||
+    report.dimensions === undefined ||
+    report.metadata === undefined
+  ) {
     return report;
   }
 
   const weights = resolveVisualQualityWeights(config);
-  const patchedDimensions: WorkspaceVisualDimensionScore[] = report.dimensions.map((dimension) => {
-    const key = DIMENSION_KEY_MAP[dimension.name];
-    if (key === undefined) {
-      return { ...dimension };
-    }
-    return {
-      ...dimension,
-      weight: weights[key],
-    };
-  });
+  const patchedDimensions: WorkspaceVisualDimensionScore[] =
+    report.dimensions.map((dimension) => {
+      const key = DIMENSION_KEY_MAP[dimension.name];
+      if (key === undefined) {
+        return { ...dimension };
+      }
+      return {
+        ...dimension,
+        weight: weights[key],
+      };
+    });
   const overallScore = recomputeVisualQualityScore(patchedDimensions, weights);
 
   return {

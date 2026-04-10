@@ -16,12 +16,28 @@ import {
 } from "./visual-benchmark.execution.js";
 import {
   applyVisualQualityConfigToReport,
+  resolveVisualQualityRegressionConfig,
   resolveVisualQualityThresholds,
   checkVisualQualityThreshold,
   type VisualQualityScreenContext,
   type VisualQualityConfig,
+  type VisualQualityResolvedRegressionConfig,
   type VisualQualityThresholdResult,
 } from "./visual-quality-config.js";
+import {
+  appendVisualBenchmarkHistoryEntry,
+  loadVisualBenchmarkHistory,
+  saveVisualBenchmarkHistory,
+  type VisualBenchmarkHistory,
+} from "./visual-benchmark-history.js";
+import {
+  detectVisualBenchmarkRegression,
+  formatVisualBenchmarkTrendSummaryBlock,
+  type VisualBenchmarkRegressionDetectionResult,
+  type VisualBenchmarkScoreCandidate,
+  type VisualBenchmarkTrendSummary,
+} from "./visual-benchmark-regression.js";
+import type { KpiAlert } from "../src/parity/types-kpi.js";
 import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
 
 const BASELINE_FILE_NAME = "baseline.json";
@@ -31,8 +47,12 @@ const LAST_RUN_MANIFEST_FILE_NAME = "manifest.json";
 const LAST_RUN_ACTUAL_FILE_NAME = "actual.png";
 const LAST_RUN_DIFF_FILE_NAME = "diff.png";
 const LAST_RUN_REPORT_FILE_NAME = "report.json";
-const DEFAULT_ARTIFACT_ROOT = path.resolve(process.cwd(), "artifacts", "visual-benchmark");
-const NEUTRAL_DELTA_TOLERANCE = 1;
+const DEFAULT_ARTIFACT_ROOT = path.resolve(
+  process.cwd(),
+  "artifacts",
+  "visual-benchmark",
+);
+const DEFAULT_NEUTRAL_DELTA_TOLERANCE = 1;
 
 export interface VisualBenchmarkScoreEntry {
   fixtureId: string;
@@ -59,6 +79,8 @@ export interface VisualBenchmarkResult {
   overallBaseline: number | null;
   overallCurrent: number;
   overallDelta: number | null;
+  alerts: KpiAlert[];
+  trendSummaries: VisualBenchmarkTrendSummary[];
 }
 
 export interface VisualBenchmarkLastRun {
@@ -118,19 +140,24 @@ export interface VisualBenchmarkRunnerDependencies {
   ) => Promise<VisualBenchmarkFixtureExecutionArtifacts>;
 }
 
-const resolveBaselinePath = (options?: VisualBenchmarkFixtureOptions): string => {
+const resolveBaselinePath = (
+  options?: VisualBenchmarkFixtureOptions,
+): string => {
   const root = options?.fixtureRoot ?? getVisualBenchmarkFixtureRoot();
   return path.join(root, BASELINE_FILE_NAME);
 };
 
-const resolveLastRunPath = (options?: VisualBenchmarkFixtureOptions): string => {
+const resolveLastRunPath = (
+  options?: VisualBenchmarkFixtureOptions,
+): string => {
   return path.join(resolveArtifactRoot(options), LAST_RUN_FILE_NAME);
 };
 
 const resolveArtifactRoot = (options?: VisualBenchmarkFixtureOptions): string =>
   options?.artifactRoot ?? DEFAULT_ARTIFACT_ROOT;
 
-const toWorkspaceRelativePath = (filePath: string): string => path.relative(process.cwd(), filePath) || ".";
+const toWorkspaceRelativePath = (filePath: string): string =>
+  path.relative(process.cwd(), filePath) || ".";
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -143,9 +170,12 @@ const fixtureIdToDisplayName = (fixtureId: string): string => {
     .join(" ");
 };
 
-const roundToTwoDecimals = (value: number): number => Math.round(value * 100) / 100;
+const roundToTwoDecimals = (value: number): number =>
+  Math.round(value * 100) / 100;
 
-const sortScores = (scores: readonly VisualBenchmarkScoreEntry[]): VisualBenchmarkScoreEntry[] =>
+const sortScores = (
+  scores: readonly VisualBenchmarkScoreEntry[],
+): VisualBenchmarkScoreEntry[] =>
   [...scores]
     .map((entry) => ({
       fixtureId: assertAllowedFixtureId(entry.fixtureId),
@@ -170,8 +200,13 @@ const parseBaseline = (content: string): VisualBenchmarkBaseline => {
     if (!isPlainRecord(entry)) {
       throw new Error("Each baseline score entry must be an object.");
     }
-    if (typeof entry.fixtureId !== "string" || entry.fixtureId.trim().length === 0) {
-      throw new Error("Baseline score entry fixtureId must be a non-empty string.");
+    if (
+      typeof entry.fixtureId !== "string" ||
+      entry.fixtureId.trim().length === 0
+    ) {
+      throw new Error(
+        "Baseline score entry fixtureId must be a non-empty string.",
+      );
     }
     if (typeof entry.score !== "number" || !Number.isFinite(entry.score)) {
       throw new Error("Baseline score entry score must be a finite number.");
@@ -183,7 +218,10 @@ const parseBaseline = (content: string): VisualBenchmarkBaseline => {
   }
 
   if (parsed.version === 1) {
-    if (typeof parsed.updatedAt !== "string" || parsed.updatedAt.trim().length === 0) {
+    if (
+      typeof parsed.updatedAt !== "string" ||
+      parsed.updatedAt.trim().length === 0
+    ) {
       throw new Error("Baseline updatedAt must be a non-empty string.");
     }
     return {
@@ -219,8 +257,13 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
     if (!isPlainRecord(entry)) {
       throw new Error("Each last-run score entry must be an object.");
     }
-    if (typeof entry.fixtureId !== "string" || entry.fixtureId.trim().length === 0) {
-      throw new Error("Last-run score entry fixtureId must be a non-empty string.");
+    if (
+      typeof entry.fixtureId !== "string" ||
+      entry.fixtureId.trim().length === 0
+    ) {
+      throw new Error(
+        "Last-run score entry fixtureId must be a non-empty string.",
+      );
     }
     if (typeof entry.score !== "number" || !Number.isFinite(entry.score)) {
       throw new Error("Last-run score entry score must be a finite number.");
@@ -238,7 +281,9 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
   };
 };
 
-const parseLastRunArtifactManifest = (content: string): VisualBenchmarkLastRunArtifactManifest => {
+const parseLastRunArtifactManifest = (
+  content: string,
+): VisualBenchmarkLastRunArtifactManifest => {
   const parsed: unknown = JSON.parse(content);
   if (!isPlainRecord(parsed)) {
     throw new Error("Expected last-run artifact manifest to be an object.");
@@ -246,7 +291,10 @@ const parseLastRunArtifactManifest = (content: string): VisualBenchmarkLastRunAr
   if (parsed.version !== 1) {
     throw new Error("Last-run artifact manifest version must be 1.");
   }
-  if (typeof parsed.fixtureId !== "string" || parsed.fixtureId.trim().length === 0) {
+  if (
+    typeof parsed.fixtureId !== "string" ||
+    parsed.fixtureId.trim().length === 0
+  ) {
     throw new Error("Last-run artifact fixtureId must be a non-empty string.");
   }
   if (typeof parsed.score !== "number" || !Number.isFinite(parsed.score)) {
@@ -258,11 +306,23 @@ const parseLastRunArtifactManifest = (content: string): VisualBenchmarkLastRunAr
   if (!isPlainRecord(parsed.viewport)) {
     throw new Error("Last-run artifact viewport must be an object.");
   }
-  if (typeof parsed.viewport.width !== "number" || !Number.isFinite(parsed.viewport.width) || parsed.viewport.width <= 0) {
-    throw new Error("Last-run artifact viewport.width must be a positive number.");
+  if (
+    typeof parsed.viewport.width !== "number" ||
+    !Number.isFinite(parsed.viewport.width) ||
+    parsed.viewport.width <= 0
+  ) {
+    throw new Error(
+      "Last-run artifact viewport.width must be a positive number.",
+    );
   }
-  if (typeof parsed.viewport.height !== "number" || !Number.isFinite(parsed.viewport.height) || parsed.viewport.height <= 0) {
-    throw new Error("Last-run artifact viewport.height must be a positive number.");
+  if (
+    typeof parsed.viewport.height !== "number" ||
+    !Number.isFinite(parsed.viewport.height) ||
+    parsed.viewport.height <= 0
+  ) {
+    throw new Error(
+      "Last-run artifact viewport.height must be a positive number.",
+    );
   }
 
   let thresholdResult: VisualQualityThresholdResult | undefined;
@@ -278,9 +338,12 @@ const parseLastRunArtifactManifest = (content: string): VisualBenchmarkLastRunAr
       typeof thresholds.warn !== "number" ||
       !Number.isFinite(thresholds.warn) ||
       (thresholds.fail !== undefined &&
-        (typeof thresholds.fail !== "number" || !Number.isFinite(thresholds.fail)))
+        (typeof thresholds.fail !== "number" ||
+          !Number.isFinite(thresholds.fail)))
     ) {
-      throw new Error("Last-run artifact thresholdResult must contain a valid score, verdict, and thresholds.");
+      throw new Error(
+        "Last-run artifact thresholdResult must contain a valid score, verdict, and thresholds.",
+      );
     }
     thresholdResult = {
       score: parsed.thresholdResult.score,
@@ -310,7 +373,11 @@ export const resolveVisualBenchmarkLastRunArtifactPaths = (
   options?: VisualBenchmarkFixtureOptions,
 ): VisualBenchmarkLastRunArtifactPaths => {
   const normalizedFixtureId = assertAllowedFixtureId(fixtureId);
-  const fixtureDir = path.join(resolveArtifactRoot(options), LAST_RUN_ARTIFACT_ROOT_NAME, normalizedFixtureId);
+  const fixtureDir = path.join(
+    resolveArtifactRoot(options),
+    LAST_RUN_ARTIFACT_ROOT_NAME,
+    normalizedFixtureId,
+  );
   return {
     fixtureDir,
     manifestJsonPath: path.join(fixtureDir, LAST_RUN_MANIFEST_FILE_NAME),
@@ -328,7 +395,11 @@ export const loadVisualBenchmarkBaseline = async (
     const content = await readFile(baselinePath, "utf8");
     return parseBaseline(content);
   } catch (error: unknown) {
-    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
       return null;
     }
     throw error;
@@ -383,7 +454,11 @@ export const loadVisualBenchmarkLastRun = async (
     const content = await readFile(lastRunPath, "utf8");
     return parseLastRun(content);
   } catch (error: unknown) {
-    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
       return null;
     }
     throw error;
@@ -394,7 +469,10 @@ export const saveVisualBenchmarkLastRunArtifact = async (
   input: VisualBenchmarkLastRunArtifactInput,
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkLastRunArtifactEntry> => {
-  const paths = resolveVisualBenchmarkLastRunArtifactPaths(input.fixtureId, options);
+  const paths = resolveVisualBenchmarkLastRunArtifactPaths(
+    input.fixtureId,
+    options,
+  );
   const manifest: VisualBenchmarkLastRunArtifactManifest = {
     version: 1,
     fixtureId: assertAllowedFixtureId(input.fixtureId),
@@ -404,7 +482,9 @@ export const saveVisualBenchmarkLastRunArtifact = async (
       width: input.viewport.width,
       height: input.viewport.height,
     },
-    ...(input.thresholdResult !== undefined ? { thresholdResult: input.thresholdResult } : {}),
+    ...(input.thresholdResult !== undefined
+      ? { thresholdResult: input.thresholdResult }
+      : {}),
   };
 
   await mkdir(paths.fixtureDir, { recursive: true });
@@ -413,19 +493,25 @@ export const saveVisualBenchmarkLastRunArtifact = async (
     await writeFile(paths.diffPngPath, input.diffImageBuffer);
   }
   if (input.report !== undefined && input.report !== null) {
-    await writeFile(paths.reportJsonPath, toStableJsonString(input.report), "utf8");
+    await writeFile(
+      paths.reportJsonPath,
+      toStableJsonString(input.report),
+      "utf8",
+    );
   }
   await writeFile(paths.manifestJsonPath, toStableJsonString(manifest), "utf8");
 
   return {
     ...manifest,
     actualImagePath: toWorkspaceRelativePath(paths.actualPngPath),
-    diffImagePath: input.diffImageBuffer !== undefined && input.diffImageBuffer !== null
-      ? toWorkspaceRelativePath(paths.diffPngPath)
-      : null,
-    reportPath: input.report !== undefined && input.report !== null
-      ? toWorkspaceRelativePath(paths.reportJsonPath)
-      : null,
+    diffImagePath:
+      input.diffImageBuffer !== undefined && input.diffImageBuffer !== null
+        ? toWorkspaceRelativePath(paths.diffPngPath)
+        : null,
+    reportPath:
+      input.report !== undefined && input.report !== null
+        ? toWorkspaceRelativePath(paths.reportJsonPath)
+        : null,
   };
 };
 
@@ -435,14 +521,22 @@ export const loadVisualBenchmarkLastRunArtifact = async (
 ): Promise<VisualBenchmarkLastRunArtifactEntry | null> => {
   const paths = resolveVisualBenchmarkLastRunArtifactPaths(fixtureId, options);
   try {
-    const manifest = parseLastRunArtifactManifest(await readFile(paths.manifestJsonPath, "utf8"));
+    const manifest = parseLastRunArtifactManifest(
+      await readFile(paths.manifestJsonPath, "utf8"),
+    );
     let diffImagePath: string | null = null;
     let reportPath: string | null = null;
     try {
       await readFile(paths.diffPngPath);
       diffImagePath = toWorkspaceRelativePath(paths.diffPngPath);
     } catch (error: unknown) {
-      if (!(error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT")) {
+      if (
+        !(
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        )
+      ) {
         throw error;
       }
     }
@@ -450,7 +544,13 @@ export const loadVisualBenchmarkLastRunArtifact = async (
       await readFile(paths.reportJsonPath, "utf8");
       reportPath = toWorkspaceRelativePath(paths.reportJsonPath);
     } catch (error: unknown) {
-      if (!(error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT")) {
+      if (
+        !(
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        )
+      ) {
         throw error;
       }
     }
@@ -462,14 +562,20 @@ export const loadVisualBenchmarkLastRunArtifact = async (
       reportPath,
     };
   } catch (error: unknown) {
-    if (error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "ENOENT") {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
       return null;
     }
     throw error;
   }
 };
 
-const isWorkspaceVisualQualityReport = (value: unknown): value is WorkspaceVisualQualityReport => {
+const isWorkspaceVisualQualityReport = (
+  value: unknown,
+): value is WorkspaceVisualQualityReport => {
   return typeof value === "object" && value !== null && "status" in value;
 };
 
@@ -492,8 +598,10 @@ export const computeVisualBenchmarkScores = async (
   const scores: VisualBenchmarkScoreEntry[] = [];
   const runFixtureBenchmark =
     dependencies?.runFixtureBenchmark ??
-    (async (fixtureId: string, fixtureOptions?: VisualBenchmarkExecutionOptions) =>
-      runVisualBenchmarkFixture(fixtureId, fixtureOptions));
+    (async (
+      fixtureId: string,
+      fixtureOptions?: VisualBenchmarkExecutionOptions,
+    ) => runVisualBenchmarkFixture(fixtureId, fixtureOptions));
 
   for (const fixtureId of fixtureIds) {
     scores.push(await runFixtureBenchmark(fixtureId, options));
@@ -502,12 +610,23 @@ export const computeVisualBenchmarkScores = async (
   return sortScores(scores);
 };
 
+export interface ComputeVisualBenchmarkDeltasOptions {
+  neutralTolerance?: number;
+}
+
 export const computeVisualBenchmarkDeltas = (
   current: VisualBenchmarkScoreEntry[],
   baseline: VisualBenchmarkBaseline | null,
+  deltaOptions?: ComputeVisualBenchmarkDeltasOptions,
 ): VisualBenchmarkResult => {
   if (current.length === 0) {
     throw new Error("Current visual benchmark scores must not be empty.");
+  }
+
+  const neutralTolerance =
+    deltaOptions?.neutralTolerance ?? DEFAULT_NEUTRAL_DELTA_TOLERANCE;
+  if (!Number.isFinite(neutralTolerance) || neutralTolerance < 0) {
+    throw new Error("neutralTolerance must be a non-negative finite number.");
   }
 
   const baselineMap = new Map<string, number>();
@@ -520,11 +639,14 @@ export const computeVisualBenchmarkDeltas = (
   const matchedPairs: Array<{ current: number; baseline: number }> = [];
   const deltas: VisualBenchmarkDelta[] = current.map((entry) => {
     const baselineScore = baselineMap.get(entry.fixtureId) ?? null;
-    const delta = baselineScore !== null ? roundToTwoDecimals(entry.score - baselineScore) : null;
+    const delta =
+      baselineScore !== null
+        ? roundToTwoDecimals(entry.score - baselineScore)
+        : null;
     let indicator: "improved" | "degraded" | "neutral" | "unavailable";
     if (delta === null) {
       indicator = "unavailable";
-    } else if (Math.abs(delta) <= NEUTRAL_DELTA_TOLERANCE) {
+    } else if (Math.abs(delta) <= neutralTolerance) {
       indicator = "neutral";
     } else if (delta > 0) {
       indicator = "improved";
@@ -551,38 +673,61 @@ export const computeVisualBenchmarkDeltas = (
   );
 
   const matchedCount = matchedPairs.length;
-  const overallBaseline = matchedCount > 0
-    ? roundToTwoDecimals(matchedPairs.reduce((sum, pair) => sum + pair.baseline, 0) / matchedCount)
-    : null;
-  const overallComparableCurrent = matchedCount > 0
-    ? roundToTwoDecimals(matchedPairs.reduce((sum, pair) => sum + pair.current, 0) / matchedCount)
-    : null;
-  const overallDelta = overallComparableCurrent !== null && overallBaseline !== null
-    ? roundToTwoDecimals(overallComparableCurrent - overallBaseline)
-    : null;
+  const overallBaseline =
+    matchedCount > 0
+      ? roundToTwoDecimals(
+          matchedPairs.reduce((sum, pair) => sum + pair.baseline, 0) /
+            matchedCount,
+        )
+      : null;
+  const overallComparableCurrent =
+    matchedCount > 0
+      ? roundToTwoDecimals(
+          matchedPairs.reduce((sum, pair) => sum + pair.current, 0) /
+            matchedCount,
+        )
+      : null;
+  const overallDelta =
+    overallComparableCurrent !== null && overallBaseline !== null
+      ? roundToTwoDecimals(overallComparableCurrent - overallBaseline)
+      : null;
 
   return {
     deltas,
     overallBaseline,
     overallCurrent,
     overallDelta,
+    alerts: [],
+    trendSummaries: [],
   };
 };
 
-const padRight = (value: string, width: number): string => value + " ".repeat(Math.max(0, width - value.length));
+const padRight = (value: string, width: number): string =>
+  value + " ".repeat(Math.max(0, width - value.length));
 
-const padLeft = (value: string, width: number): string => " ".repeat(Math.max(0, width - value.length)) + value;
+const padLeft = (value: string, width: number): string =>
+  " ".repeat(Math.max(0, width - value.length)) + value;
 
-const formatDeltaCell = (delta: number | null, indicator: "improved" | "degraded" | "neutral" | "unavailable"): string => {
+const formatDeltaCell = (
+  delta: number | null,
+  indicator: "improved" | "degraded" | "neutral" | "unavailable",
+): string => {
   if (delta === null) {
     return indicator === "unavailable" ? "\u2014 n/a" : "\u2014 \u2796";
   }
   const sign = delta > 0 ? "+" : "";
-  const emoji = indicator === "improved" ? " \u2705" : indicator === "degraded" ? " \u26A0\uFE0F" : " \u2796";
+  const emoji =
+    indicator === "improved"
+      ? " \u2705"
+      : indicator === "degraded"
+        ? " \u26A0\uFE0F"
+        : " \u2796";
   return `${sign}${String(delta)}${emoji}`;
 };
 
-export const formatVisualBenchmarkTable = (result: VisualBenchmarkResult): string => {
+export const formatVisualBenchmarkTable = (
+  result: VisualBenchmarkResult,
+): string => {
   const viewCol = 23;
   const baselineCol = 8;
   const currentCol = 8;
@@ -595,7 +740,12 @@ export const formatVisualBenchmarkTable = (result: VisualBenchmarkResult): strin
     return String(score);
   };
 
-  const hr = (left: string, mid: string, right: string, fill: string): string => {
+  const hr = (
+    left: string,
+    mid: string,
+    right: string,
+    fill: string,
+  ): string => {
     return `${left}${fill.repeat(viewCol + 2)}${mid}${fill.repeat(baselineCol + 2)}${mid}${fill.repeat(currentCol + 2)}${mid}${fill.repeat(deltaCol + 2)}${right}`;
   };
 
@@ -621,9 +771,10 @@ export const formatVisualBenchmarkTable = (result: VisualBenchmarkResult): strin
 
   const overallBaselineStr = formatScore(result.overallBaseline);
   const overallCurrentStr = String(result.overallCurrent);
-  const overallDeltaStr = result.overallDelta !== null
-    ? `${result.overallDelta > 0 ? "+" : ""}${String(result.overallDelta)}`
-    : "\u2014";
+  const overallDeltaStr =
+    result.overallDelta !== null
+      ? `${result.overallDelta > 0 ? "+" : ""}${String(result.overallDelta)}`
+      : "\u2014";
 
   lines.push(
     `\u2502 ${padRight("Overall Average", viewCol)} \u2502 ${padLeft(overallBaselineStr, baselineCol)} \u2502 ${padLeft(overallCurrentStr, currentCol)} \u2502 ${padRight(overallDeltaStr, deltaCol)} \u2502`,
@@ -634,7 +785,10 @@ export const formatVisualBenchmarkTable = (result: VisualBenchmarkResult): strin
 };
 
 export const runVisualBenchmark = async (
-  options?: VisualBenchmarkExecutionOptions & { updateBaseline?: boolean; qualityConfig?: VisualQualityConfig },
+  options?: VisualBenchmarkExecutionOptions & {
+    updateBaseline?: boolean;
+    qualityConfig?: VisualQualityConfig;
+  },
   dependencies?: VisualBenchmarkRunnerDependencies,
 ): Promise<VisualBenchmarkResult> => {
   const runAt = new Date().toISOString();
@@ -642,29 +796,39 @@ export const runVisualBenchmark = async (
   const fixtureScreenContexts = new Map<string, VisualQualityScreenContext>();
   const artifactEntries: VisualBenchmarkLastRunArtifactInput[] = [];
 
-  if (dependencies?.runFixtureBenchmark !== undefined && dependencies.executeFixture === undefined) {
+  if (
+    dependencies?.runFixtureBenchmark !== undefined &&
+    dependencies.executeFixture === undefined
+  ) {
     scores = await computeVisualBenchmarkScores(options, dependencies);
   } else {
     const fixtureIds = await listVisualBenchmarkFixtureIds(options);
     const executeFixture =
       dependencies?.executeFixture ??
-      (async (fixtureId: string, fixtureOptions?: VisualBenchmarkExecutionOptions) =>
-        executeVisualBenchmarkFixture(fixtureId, fixtureOptions));
+      (async (
+        fixtureId: string,
+        fixtureOptions?: VisualBenchmarkExecutionOptions,
+      ) => executeVisualBenchmarkFixture(fixtureId, fixtureOptions));
 
     scores = [];
     for (const fixtureId of fixtureIds) {
       const result = await executeFixture(fixtureId, options);
-      const screenContext = options?.qualityConfig !== undefined
-        ? await loadVisualQualityScreenContext(result.fixtureId, options)
-        : undefined;
+      const screenContext =
+        options?.qualityConfig !== undefined
+          ? await loadVisualQualityScreenContext(result.fixtureId, options)
+          : undefined;
       if (screenContext !== undefined) {
         fixtureScreenContexts.set(result.fixtureId, screenContext);
       }
       const patchedReport = isWorkspaceVisualQualityReport(result.report)
-        ? applyVisualQualityConfigToReport(result.report, options?.qualityConfig)
+        ? applyVisualQualityConfigToReport(
+            result.report,
+            options?.qualityConfig,
+          )
         : result.report;
       const patchedScore =
-        isWorkspaceVisualQualityReport(patchedReport) && typeof patchedReport.overallScore === "number"
+        isWorkspaceVisualQualityReport(patchedReport) &&
+        typeof patchedReport.overallScore === "number"
           ? patchedReport.overallScore
           : result.score;
       scores.push({
@@ -686,25 +850,55 @@ export const runVisualBenchmark = async (
 
   await saveVisualBenchmarkLastRun(scores, options, runAt);
   const baseline = await loadVisualBenchmarkBaseline(options);
-  const result = computeVisualBenchmarkDeltas(scores, baseline);
+  const qualityConfig = options?.qualityConfig;
+  const regressionConfig = resolveVisualQualityRegressionConfig(qualityConfig);
+  const result = computeVisualBenchmarkDeltas(scores, baseline, {
+    neutralTolerance: regressionConfig.neutralTolerance,
+  });
+
+  // Run regression detection (delta-based alerts + trend summaries)
+  const regressionDetection = detectVisualBenchmarkRegression(
+    result.deltas.map((delta) => ({
+      fixtureId: delta.fixtureId,
+      current: delta.current,
+      baseline: delta.baseline,
+    })),
+    {
+      maxScoreDropPercent: regressionConfig.maxScoreDropPercent,
+      neutralTolerance: regressionConfig.neutralTolerance,
+    },
+  );
+  result.alerts = regressionDetection.alerts;
+  result.trendSummaries = regressionDetection.summaries;
 
   // Apply quality config thresholds if config is present
-  const qualityConfig = options?.qualityConfig;
   if (qualityConfig) {
     for (const delta of result.deltas) {
       let screenContext = fixtureScreenContexts.get(delta.fixtureId);
       if (screenContext === undefined) {
-        screenContext = await loadVisualQualityScreenContext(delta.fixtureId, options);
+        screenContext = await loadVisualQualityScreenContext(
+          delta.fixtureId,
+          options,
+        );
         fixtureScreenContexts.set(delta.fixtureId, screenContext);
       }
-      const thresholds = resolveVisualQualityThresholds(qualityConfig, delta.fixtureId, screenContext);
-      delta.thresholdResult = checkVisualQualityThreshold(delta.current, thresholds);
+      const thresholds = resolveVisualQualityThresholds(
+        qualityConfig,
+        delta.fixtureId,
+        screenContext,
+      );
+      delta.thresholdResult = checkVisualQualityThreshold(
+        delta.current,
+        thresholds,
+      );
     }
   }
 
   if (artifactEntries.length > 0) {
     for (const artifactEntry of artifactEntries) {
-      const delta = result.deltas.find((entry) => entry.fixtureId === artifactEntry.fixtureId);
+      const delta = result.deltas.find(
+        (entry) => entry.fixtureId === artifactEntry.fixtureId,
+      );
       await saveVisualBenchmarkLastRunArtifact(
         {
           ...artifactEntry,
@@ -718,14 +912,40 @@ export const runVisualBenchmark = async (
   const table = formatVisualBenchmarkTable(result);
   process.stdout.write(`${table}\n`);
 
+  // Emit per-fixture trend summary block
+  const trendBlock = formatVisualBenchmarkTrendSummaryBlock(
+    result.trendSummaries,
+  );
+  if (trendBlock.length > 0) {
+    process.stdout.write(`\n${trendBlock}\n`);
+  }
+
+  // Emit regression alerts, if any
+  if (result.alerts.length > 0) {
+    const alertLines = result.alerts.map(
+      (alert) => `  \u26A0\uFE0F ${alert.code}: ${alert.message}`,
+    );
+    process.stdout.write(
+      `\n${String(result.alerts.length)} visual quality regression alert(s):\n${alertLines.join("\n")}\n`,
+    );
+  }
+
   if (qualityConfig) {
-    const failedFixtures = result.deltas.filter((d) => d.thresholdResult?.verdict === "fail");
-    const warnedFixtures = result.deltas.filter((d) => d.thresholdResult?.verdict === "warn");
+    const failedFixtures = result.deltas.filter(
+      (d) => d.thresholdResult?.verdict === "fail",
+    );
+    const warnedFixtures = result.deltas.filter(
+      (d) => d.thresholdResult?.verdict === "warn",
+    );
     if (failedFixtures.length > 0) {
-      process.stdout.write(`\n\u274C ${failedFixtures.length} fixture(s) below fail threshold: ${failedFixtures.map((d) => d.fixtureId).join(", ")}\n`);
+      process.stdout.write(
+        `\n\u274C ${failedFixtures.length} fixture(s) below fail threshold: ${failedFixtures.map((d) => d.fixtureId).join(", ")}\n`,
+      );
     }
     if (warnedFixtures.length > 0) {
-      process.stdout.write(`\u26A0\uFE0F ${warnedFixtures.length} fixture(s) below warn threshold: ${warnedFixtures.map((d) => d.fixtureId).join(", ")}\n`);
+      process.stdout.write(
+        `\u26A0\uFE0F ${warnedFixtures.length} fixture(s) below warn threshold: ${warnedFixtures.map((d) => d.fixtureId).join(", ")}\n`,
+      );
     }
     if (failedFixtures.length === 0 && warnedFixtures.length === 0) {
       process.stdout.write(`\n\u2705 All fixtures pass quality thresholds.\n`);
@@ -735,6 +955,22 @@ export const runVisualBenchmark = async (
   if (options?.updateBaseline === true) {
     await saveVisualBenchmarkBaselineScores(scores, options);
     process.stdout.write("Baseline updated.\n");
+    const existingHistory = await loadVisualBenchmarkHistory(options);
+    const updatedHistory = appendVisualBenchmarkHistoryEntry(
+      existingHistory,
+      {
+        runAt,
+        scores: scores.map((entry) => ({
+          fixtureId: entry.fixtureId,
+          score: entry.score,
+        })),
+      },
+      regressionConfig.historySize,
+    );
+    await saveVisualBenchmarkHistory(updatedHistory, options);
+    process.stdout.write(
+      `History updated (${String(updatedHistory.entries.length)} entries).\n`,
+    );
   }
 
   return result;

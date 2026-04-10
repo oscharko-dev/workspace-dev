@@ -1,12 +1,17 @@
 {
+  "regression": {
+    "historySize": 20,
+    "maxScoreDropPercent": 5,
+    "neutralTolerance": 1
+  },
   "thresholds": {
     "warn": 80
   },
   "weights": {
-    "layoutAccuracy": 0.30,
     "colorFidelity": 0.25,
-    "typography": 0.20,
     "componentStructure": 0.15,
-    "spacingAlignment": 0.10
+    "layoutAccuracy": 0.3,
+    "spacingAlignment": 0.1,
+    "typography": 0.2
   }
 }
