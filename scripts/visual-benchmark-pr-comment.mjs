@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const toDisplayName = (fixtureId) =>
@@ -6,6 +6,22 @@ const toDisplayName = (fixtureId) =>
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+
+const normalizeOptionalString = (value) =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const toDisplayLabel = (fixtureId, screenName, screenId) => {
+  const fixtureName = toDisplayName(fixtureId);
+  const normalizedScreenName = normalizeOptionalString(screenName);
+  if (normalizedScreenName !== null) {
+    return `${fixtureName} / ${normalizedScreenName}`;
+  }
+  const normalizedScreenId = normalizeOptionalString(screenId);
+  if (normalizedScreenId !== null && normalizedScreenId !== fixtureId) {
+    return `${fixtureName} / ${normalizedScreenId}`;
+  }
+  return fixtureName;
+};
 
 const getCompositeKey = (fixtureId, screenId) => {
   const normalizedScreenId =
@@ -18,7 +34,7 @@ const getCompositeKey = (fixtureId, screenId) => {
 // Mirrors integration/visual-benchmark.helpers.ts:toScreenIdToken — replaces
 // only `:` with `_`. Kept in sync so pr-comment.mjs can reconstruct per-screen
 // artifact paths without importing TypeScript sources.
-const toScreenIdToken = (screenId) => screenId.replace(/:/gu, "_");
+const toLegacyScreenIdToken = (screenId) => screenId.replace(/:/gu, "_");
 
 // Resolves the on-disk last-run artifact directory for a score entry. Legacy
 // single-screen entries (no screenId) still resolve to `<lastRunDir>/<fixture>`;
@@ -29,7 +45,7 @@ const getLastRunFixtureDir = (lastRunDir, fixtureId, screenId) => {
   if (typeof screenId !== "string" || screenId.trim().length === 0) {
     return fixtureRoot;
   }
-  return path.join(fixtureRoot, "screens", toScreenIdToken(screenId.trim()));
+  return path.join(fixtureRoot, "screens", toLegacyScreenIdToken(screenId));
 };
 
 // Comment body soft limit — stay under 60KB of the GitHub 65KB hard limit.
@@ -95,6 +111,153 @@ const readJsonFileOptional = async (filePath, label) => {
   }
 };
 
+const resolveFixtureArtifactDir = async (lastRunDir, fixtureId, screenId) => {
+  const normalizedScreenId = normalizeOptionalString(screenId);
+  if (normalizedScreenId === null) {
+    return getLastRunFixtureDir(lastRunDir, fixtureId);
+  }
+
+  const legacyDir = getLastRunFixtureDir(
+    lastRunDir,
+    fixtureId,
+    normalizedScreenId,
+  );
+  const legacyManifest = await readJsonFileOptional(
+    path.join(legacyDir, "manifest.json"),
+    `Visual benchmark manifest for '${fixtureId}' screen '${normalizedScreenId}'`,
+  );
+  if (
+    legacyManifest !== null &&
+    normalizeOptionalString(legacyManifest.screenId) === normalizedScreenId
+  ) {
+    return legacyDir;
+  }
+
+  const screensDir = path.join(lastRunDir, fixtureId, "screens");
+  let screenEntries = [];
+  try {
+    screenEntries = await readdir(screensDir, { withFileTypes: true });
+  } catch (error) {
+    if (
+      !(
+        error &&
+        typeof error === "object" &&
+        /** @type {any} */ (error).code === "ENOENT"
+      )
+    ) {
+      throw error;
+    }
+  }
+
+  for (const entry of screenEntries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const candidateDir = path.join(screensDir, entry.name);
+    const manifest = await readJsonFileOptional(
+      path.join(candidateDir, "manifest.json"),
+      `Visual benchmark manifest for '${fixtureId}' screen '${normalizedScreenId}'`,
+    );
+    if (
+      manifest !== null &&
+      normalizeOptionalString(manifest.screenId) === normalizedScreenId
+    ) {
+      return candidateDir;
+    }
+  }
+
+  return legacyDir;
+};
+
+const joinLines = (lines) => lines.join("\n");
+
+const buildBoundedCommentBody = ({
+  headerLines,
+  tableHeaderLines,
+  tableRowLines,
+  diffSectionHeaderLines,
+  diffRowLines,
+  detailBlocks,
+  footerLines,
+}) => {
+  const lines = [...headerLines, ...tableHeaderLines];
+  let truncated = false;
+
+  const noticeLines = [
+    "",
+    `_Additional benchmark details were omitted to keep this comment under ${MAX_COMMENT_BODY_CHARS.toLocaleString()} characters._`,
+  ];
+
+  const getReservedLength = (needsNotice) =>
+    joinLines(needsNotice ? [...noticeLines, ...footerLines] : footerLines)
+      .length + 1;
+
+  const canAppend = (candidateLines, needsNotice) =>
+    joinLines([...lines, ...candidateLines]).length + getReservedLength(needsNotice) <=
+    MAX_COMMENT_BODY_CHARS;
+
+  for (const rowLines of tableRowLines) {
+    if (!canAppend(rowLines, true)) {
+      truncated = true;
+      break;
+    }
+    lines.push(...rowLines);
+  }
+
+  if (!truncated && diffSectionHeaderLines.length > 0 && diffRowLines.length > 0) {
+    let diffHeaderAdded = false;
+    for (const rowLines of diffRowLines) {
+      const candidateLines = diffHeaderAdded
+        ? rowLines
+        : [...diffSectionHeaderLines, ...rowLines];
+      if (!canAppend(candidateLines, true)) {
+        truncated = true;
+        break;
+      }
+      if (!diffHeaderAdded) {
+        lines.push(...diffSectionHeaderLines);
+        diffHeaderAdded = true;
+      }
+      lines.push(...rowLines);
+    }
+  }
+
+  if (!truncated && detailBlocks.length > 0) {
+    const detailsOpenLines = ["", "<details>", "<summary>Full Metric Breakdown</summary>"];
+    const detailsCloseLines = ["", "</details>"];
+    let detailsOpened = false;
+
+    for (const blockLines of detailBlocks) {
+      const candidateLines = detailsOpened
+        ? blockLines
+        : [...detailsOpenLines, ...blockLines];
+      if (
+        joinLines([...lines, ...candidateLines, ...detailsCloseLines]).length +
+          getReservedLength(true) >
+        MAX_COMMENT_BODY_CHARS
+      ) {
+        truncated = true;
+        break;
+      }
+      if (!detailsOpened) {
+        lines.push(...detailsOpenLines);
+        detailsOpened = true;
+      }
+      lines.push(...blockLines);
+    }
+
+    if (detailsOpened) {
+      lines.push(...detailsCloseLines);
+    }
+  }
+
+  if (truncated) {
+    lines.push(...noticeLines);
+  }
+  lines.push(...footerLines);
+  return joinLines(lines);
+};
+
 export const VISUAL_BENCHMARK_PR_COMMENT_MARKER =
   "<!-- workspace-dev-visual-benchmark -->";
 
@@ -158,7 +321,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       );
     }
 
-    const fixtureDir = getLastRunFixtureDir(
+    const fixtureDir = await resolveFixtureArtifactDir(
       lastRunDir,
       entry.fixtureId,
       entry.screenId,
@@ -232,7 +395,15 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
 
     fixtures.push({
       fixtureId: entry.fixtureId,
-      displayName: toDisplayName(entry.fixtureId),
+      screenId: normalizeOptionalString(entry.screenId ?? manifest.screenId),
+      screenName: normalizeOptionalString(
+        entry.screenName ?? manifest.screenName,
+      ),
+      displayLabel: toDisplayLabel(
+        entry.fixtureId,
+        entry.screenName ?? manifest.screenName,
+        entry.screenId ?? manifest.screenId,
+      ),
       score: entry.score,
       baselineScore,
       delta,
@@ -243,6 +414,8 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
           ? manifest.thresholdResult
           : null,
       reportDimensions,
+      diffArtifactPath:
+        path.relative(artifactRoot, path.join(fixtureDir, "diff.png")) || ".",
     });
   }
 
@@ -293,13 +466,13 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     const sign = overallDelta > 0 ? "+" : "";
     const comparableText =
       baselineFixtures.length === 1
-        ? "across 1 comparable fixture"
-        : `across ${baselineFixtures.length} comparable fixtures`;
+        ? "across 1 comparable view"
+        : `across ${baselineFixtures.length} comparable views`;
     const excludedText =
       excludedFixtureCount > 0
         ? excludedFixtureCount === 1
-          ? "; 1 fixture excluded (no baseline)"
-          : `; ${excludedFixtureCount} fixtures excluded (no baseline)`
+          ? "; 1 view excluded (no baseline)"
+          : `; ${excludedFixtureCount} views excluded (no baseline)`
         : "";
     overallDeltaText = ` (${trendArrow} ${sign}${overallDelta} vs baseline ${overallBaselineAvg} ${comparableText}${excludedText})`;
   } else {
@@ -313,16 +486,20 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     return "\u2192 stable";
   };
 
-  const lines = [
+  const headerLines = [
     VISUAL_BENCHMARK_PR_COMMENT_MARKER,
     "## Visual Quality Benchmark",
     "",
     `${scoreEmoji(overallAverage)} **Overall Score:** ${overallAverage} / 100${overallDeltaText}`,
     "",
-    "| Fixture | Score | Baseline | Delta | Trend |",
-    "|---------|-------|----------|-------|-------|",
   ];
 
+  const tableHeaderLines = [
+    "| View | Score | Baseline | Delta | Trend |",
+    "|------|-------|----------|-------|-------|",
+  ];
+
+  const tableRowLines = [];
   for (const fixture of fixtures) {
     const baselineText =
       fixture.baselineScore !== null ? String(fixture.baselineScore) : "\u2014";
@@ -331,61 +508,59 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
         ? `${fixture.delta > 0 ? "+" : ""}${fixture.delta}`
         : "\u2014";
     const trend = trendText(fixture.indicator);
-    lines.push(
-      `| ${escapeMarkdownCell(fixture.displayName)} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${escapeMarkdownCell(baselineText)} | ${escapeMarkdownCell(deltaText)} | ${escapeMarkdownCell(trend)} |`,
-    );
+    tableRowLines.push([
+      `| ${escapeMarkdownCell(fixture.displayLabel)} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${escapeMarkdownCell(baselineText)} | ${escapeMarkdownCell(deltaText)} | ${escapeMarkdownCell(trend)} |`,
+    ]);
   }
 
-  if (artifactUrl) {
-    lines.push("");
-    lines.push("### Diff Images");
-    lines.push("");
-    lines.push("| Fixture | Diff |");
-    lines.push("|---------|------|");
-    for (const fixture of fixtures) {
-      lines.push(
-        `| ${escapeMarkdownCell(fixture.displayName)} | [View diff](${artifactUrl}) \`last-run/${fixture.fixtureId}/diff.png\` |`,
-      );
-    }
-  }
+  const diffSectionHeaderLines =
+    artifactUrl && fixtures.length > 0
+      ? ["", "### Diff Images", "", "| View | Diff |", "|------|------|"]
+      : [];
+  const diffRowLines = artifactUrl
+    ? fixtures.map((fixture) => [
+        `| ${escapeMarkdownCell(fixture.displayLabel)} | [View diff](${artifactUrl}) \`${escapeMarkdownCell(fixture.diffArtifactPath)}\` |`,
+      ])
+    : [];
 
   const fixturesWithDimensions = fixtures.filter(
     (fixture) =>
       Array.isArray(fixture.reportDimensions) &&
       fixture.reportDimensions.length > 0,
   );
-
-  if (fixturesWithDimensions.length > 0) {
-    lines.push("");
-    lines.push("<details>");
-    lines.push("<summary>Full Metric Breakdown</summary>");
-
-    for (const fixture of fixturesWithDimensions) {
-      lines.push("");
-      lines.push(
-        `#### ${escapeMarkdownHeading(fixture.displayName)} (score: ${fixture.score})`,
+  const detailBlocks = fixturesWithDimensions.map((fixture) => {
+    const blockLines = [
+      "",
+      `#### ${escapeMarkdownHeading(fixture.displayLabel)} (score: ${fixture.score})`,
+      "",
+      "| Dimension | Weight | Score |",
+      "|-----------|--------|-------|",
+    ];
+    for (const dim of fixture.reportDimensions) {
+      blockLines.push(
+        `| ${escapeMarkdownCell(dim.name)} | ${escapeMarkdownCell(`${(dim.weight * 100).toFixed(0)}%`)} | ${escapeMarkdownCell(dim.score)} |`,
       );
-      lines.push("");
-      lines.push("| Dimension | Weight | Score |");
-      lines.push("|-----------|--------|-------|");
-      for (const dim of fixture.reportDimensions) {
-        lines.push(
-          `| ${escapeMarkdownCell(dim.name)} | ${escapeMarkdownCell(`${(dim.weight * 100).toFixed(0)}%`)} | ${escapeMarkdownCell(dim.score)} |`,
-        );
-      }
     }
-
-    lines.push("");
-    lines.push("</details>");
-  }
+    return blockLines;
+  });
 
   const artifactLinkText = artifactUrl
     ? ` | [Download artifacts](${artifactUrl})`
     : "";
-  lines.push("");
-  lines.push(`_Benchmark ran at ${lastRun.ranAt}${artifactLinkText}_`);
+  const footerLines = [
+    "",
+    `_Benchmark ran at ${lastRun.ranAt}${artifactLinkText}_`,
+  ];
 
-  const body = lines.join("\n");
+  const body = buildBoundedCommentBody({
+    headerLines,
+    tableHeaderLines,
+    tableRowLines,
+    diffSectionHeaderLines,
+    diffRowLines,
+    detailBlocks,
+    footerLines,
+  });
 
   return {
     marker: VISUAL_BENCHMARK_PR_COMMENT_MARKER,

@@ -1928,7 +1928,7 @@ test("runVisualBenchmark processes a 2-screen synthetic v2 fixture with internal
   }
 });
 
-test("computeFixtureAggregate computes arithmetic mean of screen scores", async () => {
+test("computeFixtureAggregate computes arithmetic mean when no weights are declared", async () => {
   const { computeFixtureAggregate } =
     await import("./visual-benchmark-runner.js");
   assert.equal(computeFixtureAggregate([{ score: 90 }, { score: 80 }]), 85);
@@ -1939,10 +1939,62 @@ test("computeFixtureAggregate computes arithmetic mean of screen scores", async 
   assert.equal(computeFixtureAggregate([{ score: 88 }]), 88);
 });
 
+test("computeFixtureAggregate computes weighted mean when at least one weight is declared", async () => {
+  const { computeFixtureAggregate } =
+    await import("./visual-benchmark-runner.js");
+  assert.equal(
+    computeFixtureAggregate([
+      { score: 80, weight: 1 },
+      { score: 90, weight: 2 },
+      { score: 100, weight: 1 },
+    ]),
+    90,
+  );
+  assert.equal(
+    computeFixtureAggregate([
+      { score: 80, weight: 3 },
+      { score: 100 },
+    ]),
+    85,
+  );
+});
+
 test("computeFixtureAggregate throws when given an empty array", async () => {
   const { computeFixtureAggregate } =
     await import("./visual-benchmark-runner.js");
   assert.throws(() => computeFixtureAggregate([]), /empty|at least one/i);
+});
+
+test("formatVisualBenchmarkTable shows screen-specific view labels for multi-screen deltas", () => {
+  const table = formatVisualBenchmarkTable({
+    deltas: [
+      {
+        fixtureId: "multi-screen",
+        screenId: "2:10001",
+        screenName: "Home",
+        baseline: 80,
+        current: 90,
+        delta: 10,
+        indicator: "improved",
+      },
+      {
+        fixtureId: "multi-screen",
+        screenId: "2:10002",
+        screenName: "Settings",
+        baseline: 75,
+        current: 70,
+        delta: -5,
+        indicator: "degraded",
+      },
+    ],
+    overallBaseline: 77.5,
+    overallCurrent: 80,
+    overallDelta: 2.5,
+    alerts: [],
+    trendSummaries: [],
+  });
+  assert.match(table, /Multi Screen \/ Home/);
+  assert.match(table, /Multi Screen \/ Settings/);
 });
 
 test("computeVisualBenchmarkDeltas uses composite key so two screens with same fixtureId do not collide", () => {

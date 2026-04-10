@@ -22,6 +22,8 @@ const FORBIDDEN_FIXTURE_PATH_SEGMENTS = [
 ] as const;
 
 const PNG_MAGIC_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+const SCREEN_ID_TOKEN_ESCAPE = "~";
+const SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE = `${SCREEN_ID_TOKEN_ESCAPE}u`;
 
 export interface VisualBenchmarkViewport {
   width: number;
@@ -90,6 +92,11 @@ export interface VisualBenchmarkFixtureScreenPaths {
 export interface VisualBenchmarkFixtureOptions {
   fixtureRoot?: string;
   artifactRoot?: string;
+}
+
+export interface VisualBenchmarkAggregateScoreLike {
+  score: number;
+  weight?: number;
 }
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> => {
@@ -382,7 +389,74 @@ export function assertAllowedScreenId(value: string): string {
 }
 
 export const toScreenIdToken = (screenId: string): string =>
-  screenId.replace(/:/gu, "_");
+  assertAllowedScreenId(screenId)
+    .replace(/_/gu, SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE)
+    .replace(/:/gu, "_");
+
+export const fromScreenIdToken = (token: string): string => {
+  if (typeof token !== "string" || token.trim().length === 0) {
+    throw new Error("Screen id token must be a non-empty string.");
+  }
+  const trimmed = token.trim();
+  if (!trimmed.includes(SCREEN_ID_TOKEN_ESCAPE)) {
+    return assertAllowedScreenId(trimmed.replace(/_/gu, ":"));
+  }
+
+  let decoded = "";
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const character = trimmed[index];
+    if (character === "_") {
+      decoded += ":";
+      continue;
+    }
+    if (character !== SCREEN_ID_TOKEN_ESCAPE) {
+      decoded += character;
+      continue;
+    }
+
+    const escapeSequence = trimmed.slice(index, index + 2);
+    if (escapeSequence === SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE) {
+      decoded += "_";
+      index += 1;
+      continue;
+    }
+
+    throw new Error(`Unsupported screen id token escape '${escapeSequence}'.`);
+  }
+
+  return assertAllowedScreenId(decoded);
+};
+
+export const computeVisualBenchmarkAggregateScore = (
+  screens: readonly VisualBenchmarkAggregateScoreLike[],
+): number => {
+  if (screens.length === 0) {
+    throw new Error(
+      "computeVisualBenchmarkAggregateScore requires at least one screen.",
+    );
+  }
+
+  const hasDeclaredWeight = screens.some((screen) => screen.weight !== undefined);
+  if (!hasDeclaredWeight) {
+    const total = screens.reduce((sum, screen) => sum + screen.score, 0);
+    return Math.round((total / screens.length) * 100) / 100;
+  }
+
+  let weightedScoreTotal = 0;
+  let weightTotal = 0;
+  for (const screen of screens) {
+    const weight = screen.weight ?? 1;
+    if (!Number.isFinite(weight) || weight <= 0) {
+      throw new Error(
+        "computeVisualBenchmarkAggregateScore weights must be positive finite numbers.",
+      );
+    }
+    weightedScoreTotal += screen.score * weight;
+    weightTotal += weight;
+  }
+
+  return Math.round((weightedScoreTotal / weightTotal) * 100) / 100;
+};
 
 export const normalizeOptionalScreenName = (
   screenName: string | undefined,

@@ -54,7 +54,18 @@ export const parseVisualBaselineCliArgs = (args: readonly string[]): VisualBasel
   }
 
   if (command === "approve" && (screen === undefined || screen.trim().length === 0)) {
-    throw new Error(`--screen <name> is required for approve command. ${USAGE}`);
+    if (fixture === undefined) {
+      throw new Error(`--fixture <id> is required for approve command. ${USAGE}`);
+    }
+  }
+
+  // Screen targeting is only valid when a fixture has been selected.
+  if (
+    screen !== undefined &&
+    (command === "update" || command === "approve" || command === "status" || command === "diff") &&
+    fixture === undefined
+  ) {
+    throw new Error(`--fixture <id> is required when using --screen. ${USAGE}`);
   }
 
   return {
@@ -80,23 +91,46 @@ export const runVisualBaselineCli = async (
 
   switch (cliOptions.command) {
     case "update": {
-      const result = await updateVisualBaselines({ fixtureId: cliOptions.fixture });
+      const result = await updateVisualBaselines({
+        fixtureId: cliOptions.fixture,
+        screenId: cliOptions.screen,
+      });
       if (cliOptions.json) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       }
       return 0;
     }
     case "approve": {
-      const result = await approveVisualBaseline(cliOptions.screen!);
+      const result = await approveVisualBaseline(
+        cliOptions.fixture !== undefined
+          ? {
+              fixtureId: cliOptions.fixture,
+              ...(cliOptions.screen !== undefined
+                ? { screenId: cliOptions.screen }
+                : {}),
+            }
+          : cliOptions.screen!,
+      );
       if (cliOptions.json) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       } else {
-        process.stdout.write(`Approved '${result.fixtureId}': ${result.previousScore !== null ? String(result.previousScore) : "\u2014"} \u2192 ${result.newScore}\n`);
+        if (result.approvals.length === 1) {
+          process.stdout.write(
+            `Approved '${result.fixtureId}${result.screenName !== undefined ? ` / ${result.screenName}` : ""}': ${result.previousScore !== null ? String(result.previousScore) : "\u2014"} \u2192 ${result.newScore}\n`,
+          );
+        } else {
+          process.stdout.write(
+            `Approved ${result.approvals.length} screen(s) for '${result.fixtureId}'.\n`,
+          );
+        }
       }
       return 0;
     }
     case "status": {
-      const result = await computeVisualBaselineStatus();
+      const result = await computeVisualBaselineStatus({
+        fixtureId: cliOptions.fixture,
+        screenId: cliOptions.screen,
+      });
       if (cliOptions.json) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       } else {
@@ -105,7 +139,10 @@ export const runVisualBaselineCli = async (
       return 0;
     }
     case "diff": {
-      const result = await computeVisualBaselineDiff();
+      const result = await computeVisualBaselineDiff({
+        fixtureId: cliOptions.fixture,
+        screenId: cliOptions.screen,
+      });
       if (cliOptions.json) {
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
       } else {

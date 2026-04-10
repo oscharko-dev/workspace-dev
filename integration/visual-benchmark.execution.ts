@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import type { WorkspaceJobInput } from "../src/contracts/index.js";
 import type { WorkspaceJobStageName } from "../src/contracts/index.js";
 import { createInitialStages, nowIso } from "../src/job-engine/stage-state.js";
 import { resolveRuntimeSettings } from "../src/job-engine/runtime.js";
@@ -19,10 +20,13 @@ import { createValidateProjectService } from "../src/job-engine/services/validat
 import type { JobRecord } from "../src/job-engine/types.js";
 import { ensureTemplateValidationSeedNodeModules } from "../src/job-engine/test-validation-seed.js";
 import {
+  computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
   loadVisualBenchmarkFixtureInputs,
   loadVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkFixturePaths,
+  resolveVisualBenchmarkScreenPaths,
+  toScreenIdToken,
   toStableJsonString,
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureOptions,
@@ -61,6 +65,7 @@ export interface VisualBenchmarkFixtureScreenArtifact {
   screenName: string;
   nodeId: string;
   score: number;
+  weight?: number;
   screenshotBuffer: Buffer;
   diffBuffer: Buffer | null;
   report: unknown | null;
@@ -74,6 +79,11 @@ export interface VisualBenchmarkFixtureRunResult {
   fixtureId: string;
   aggregateScore: number;
   screens: VisualBenchmarkFixtureScreenArtifact[];
+}
+
+interface VisualQualityFrozenReferenceOverride {
+  imagePath: string;
+  metadataPath: string;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -365,6 +375,12 @@ const executeVisualBenchmarkScreen = async ({
       visualQualityViewportWidth: screen.viewport.width,
       workspaceRoot,
     });
+  const fixturePaths = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const multiScreenFixture =
+    metadata.version === 2 &&
+    Array.isArray(metadata.screens) &&
+    metadata.screens.length > 1;
+  let temporaryMetadataPath: string | null = null;
 
   try {
     const localFigmaJsonPath = path.join(
@@ -382,6 +398,43 @@ const executeVisualBenchmarkScreen = async ({
       ),
       "utf8",
     );
+    const referenceImagePath = multiScreenFixture
+      ? resolveVisualBenchmarkScreenPaths(
+          fixtureId,
+          screen.screenId,
+          options,
+        ).referencePngPath
+      : fixturePaths.referencePngPath;
+    const metadataPath = multiScreenFixture
+      ? path.join(
+          fixturePaths.fixtureDir,
+          ".benchmark-runtime",
+          `reference-${toScreenIdToken(screen.screenId)}.metadata.json`,
+        )
+      : fixturePaths.metadataJsonPath;
+    if (multiScreenFixture) {
+      temporaryMetadataPath = metadataPath;
+      await mkdir(path.dirname(metadataPath), { recursive: true });
+      await writeFile(
+        metadataPath,
+        toStableJsonString(perScreenMetadata),
+        "utf8",
+      );
+    }
+    const visualQualityFrozenReference: VisualQualityFrozenReferenceOverride = {
+      imagePath: referenceImagePath,
+      metadataPath,
+    };
+    (
+      executionContext.input as WorkspaceJobInput & {
+        visualQualityFrozenReference?: VisualQualityFrozenReferenceOverride;
+      }
+    ).visualQualityFrozenReference = visualQualityFrozenReference;
+    (
+      executionContext.job.request as typeof executionContext.job.request & {
+        visualQualityFrozenReference?: VisualQualityFrozenReferenceOverride;
+      }
+    ).visualQualityFrozenReference = visualQualityFrozenReference;
     await FigmaSourceService.execute(
       {
         figmaJsonPath: localFigmaJsonPath,
@@ -465,6 +518,7 @@ const executeVisualBenchmarkScreen = async ({
         typeof effectiveVisualQuality?.overallScore === "number"
           ? effectiveVisualQuality.overallScore
           : 100,
+      ...(screen.weight !== undefined ? { weight: screen.weight } : {}),
       screenshotBuffer,
       diffBuffer,
       report,
@@ -474,6 +528,13 @@ const executeVisualBenchmarkScreen = async ({
       },
     };
   } finally {
+    if (temporaryMetadataPath !== null) {
+      await rm(temporaryMetadataPath, { force: true });
+      await rm(path.dirname(temporaryMetadataPath), {
+        recursive: true,
+        force: true,
+      });
+    }
     await rm(rootDir, { recursive: true, force: true });
   }
 };
@@ -481,13 +542,14 @@ const executeVisualBenchmarkScreen = async ({
 const computeAggregateFromScreens = (
   screens: readonly VisualBenchmarkFixtureScreenArtifact[],
 ): number => {
-  if (screens.length === 0) {
+  try {
+    return computeVisualBenchmarkAggregateScore(screens);
+  } catch (error: unknown) {
+    const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
-      "executeVisualBenchmarkFixture requires at least one screen to aggregate.",
+      `executeVisualBenchmarkFixture requires at least one screen to aggregate: ${detail}`,
     );
   }
-  const total = screens.reduce((sum, screen) => sum + screen.score, 0);
-  return Math.round((total / screens.length) * 100) / 100;
 };
 
 export const executeVisualBenchmarkFixture = async (

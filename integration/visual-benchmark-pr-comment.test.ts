@@ -60,7 +60,7 @@ test("buildVisualBenchmarkPrComment renders markdown with score, delta, trend, a
     assert.equal(result.marker, "<!-- workspace-dev-visual-benchmark -->");
     assert.ok(result.body.startsWith(result.marker));
     assert.match(result.body, /Overall Score:\*\* 85/);
-    assert.match(result.body, /\+5 vs baseline 80 across 1 comparable fixture/);
+    assert.match(result.body, /\+5 vs baseline 80 across 1 comparable view/);
     assert.match(result.body, /\u2191 improved/);
     assert.match(result.body, /Layout Accuracy/);
     assert.match(result.body, /<details>/);
@@ -327,7 +327,7 @@ test("buildVisualBenchmarkPrComment computes header delta from matched fixtures 
     assert.match(result.body, /Overall Score:\*\* 75 \/ 100/);
     assert.match(
       result.body,
-      /\+20 vs baseline 80 across 1 comparable fixture; 1 fixture excluded \(no baseline\)/,
+      /\+20 vs baseline 80 across 1 comparable view; 1 view excluded \(no baseline\)/,
     );
     assert.match(
       result.body,
@@ -524,8 +524,182 @@ test("buildVisualBenchmarkPrComment looks up baseline with composite key for mul
     // and we lose the Home baseline or get a wrong delta for one of them.
     assert.match(
       result.body,
-      /\+10 vs baseline 70 across 2 comparable fixtures/,
+      /\+10 vs baseline 70 across 2 comparable views/,
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkPrComment renders per-screen labels and diff paths for multi-screen artifacts", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pr-comment-multiscreen-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureId = "multi-form";
+    const homeDir = path.join(
+      artifactRoot,
+      "last-run",
+      fixtureId,
+      "screens",
+      "custom-home-token",
+    );
+    const settingsDir = path.join(
+      artifactRoot,
+      "last-run",
+      fixtureId,
+      "screens",
+      "custom-settings-token",
+    );
+    await mkdir(homeDir, { recursive: true });
+    await mkdir(settingsDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      scores: [
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          score: 92,
+        },
+        {
+          fixtureId,
+          screenId: "2:10002",
+          screenName: "Settings",
+          score: 78,
+        },
+      ],
+    });
+    await writeJson(path.join(homeDir, "manifest.json"), {
+      version: 1,
+      fixtureId,
+      screenId: "2:10001",
+      screenName: "Home",
+      score: 92,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+    });
+    await writeJson(path.join(settingsDir, "manifest.json"), {
+      version: 1,
+      fixtureId,
+      screenId: "2:10002",
+      screenName: "Settings",
+      score: 78,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      viewport: { width: 1440, height: 900 },
+    });
+    await writeJson(path.join(homeDir, "report.json"), {
+      status: "completed",
+      overallScore: 92,
+      dimensions: [{ name: "Layout", weight: 1, score: 92 }],
+    });
+    await writeJson(path.join(settingsDir, "report.json"), {
+      status: "completed",
+      overallScore: 78,
+      dimensions: [{ name: "Layout", weight: 1, score: 78 }],
+    });
+
+    const baselinePath = path.join(root, "baseline.json");
+    await writeJson(baselinePath, {
+      version: 3,
+      scores: [
+        { fixtureId, screenId: "2:10001", screenName: "Home", score: 88 },
+        { fixtureId, screenId: "2:10002", screenName: "Settings", score: 80 },
+      ],
+    });
+
+    const { buildVisualBenchmarkPrComment } =
+      await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {
+      baselinePath,
+      artifactUrl: "https://example.com/artifacts",
+    });
+
+    assert.match(result.body, /\| View \| Score \| Baseline \| Delta \| Trend \|/);
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Home \| ✅ 92 \| 88 \| \+4 \| ↑ improved \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Settings \| ⚠️ 78 \| 80 \| -2 \| ↓ regressed \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Home \| \[View diff\]\(https:\/\/example\.com\/artifacts\) `last-run\/multi-form\/screens\/custom-home-token\/diff\.png` \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Settings \| \[View diff\]\(https:\/\/example\.com\/artifacts\) `last-run\/multi-form\/screens\/custom-settings-token\/diff\.png` \|/,
+    );
+    assert.match(result.body, /#### Multi Form \/ Home \(score: 92\)/);
+    assert.match(result.body, /#### Multi Form \/ Settings \(score: 78\)/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkPrComment truncates oversized detail sections without breaking markdown structure", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pr-comment-truncate-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const lastRunDir = path.join(artifactRoot, "last-run");
+    const scores = [];
+
+    for (let index = 0; index < 160; index++) {
+      const fixtureId = `fixture-${String(index).padStart(3, "0")}`;
+      const fixtureDir = path.join(lastRunDir, fixtureId);
+      await mkdir(fixtureDir, { recursive: true });
+      scores.push({ fixtureId, score: 80 + (index % 10) });
+      await writeJson(path.join(fixtureDir, "manifest.json"), {
+        version: 1,
+        fixtureId,
+        score: 80 + (index % 10),
+        ranAt: "2026-04-10T10:00:00.000Z",
+        viewport: { width: 1280, height: 720 },
+      });
+      await writeJson(path.join(fixtureDir, "report.json"), {
+        status: "completed",
+        overallScore: 80 + (index % 10),
+        dimensions: Array.from({ length: 12 }, (_, dimIndex) => ({
+          name: `Dimension ${dimIndex} ${"x".repeat(120)}`,
+          weight: 1 / 12,
+          score: 80 + (dimIndex % 10),
+        })),
+      });
+    }
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      scores,
+    });
+
+    const { buildVisualBenchmarkPrComment } =
+      await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {
+      artifactUrl: "https://example.com/artifacts",
+    });
+
+    assert.ok(result.body.length <= 60_000, `body length ${result.body.length}`);
+    assert.match(
+      result.body,
+      /Additional benchmark details were omitted to keep this comment under 60,000 characters\./,
+    );
+    assert.ok(result.body.startsWith("<!-- workspace-dev-visual-benchmark -->"));
+    assert.match(result.body, /_Benchmark ran at 2026-04-10T10:00:00.000Z/);
+    const detailsOpenCount = (result.body.match(/<details>/g) ?? []).length;
+    const detailsCloseCount = (result.body.match(/<\/details>/g) ?? []).length;
+    assert.equal(detailsOpenCount, detailsCloseCount);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

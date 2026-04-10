@@ -24,6 +24,12 @@ export type WorkspaceRouterMode = "browser" | "hash";
 /** Supported visual quality reference sources. */
 export type WorkspaceVisualQualityReferenceMode = "figma_api" | "frozen_fixture";
 
+/** Explicit frozen visual reference files used by validate.project. */
+export interface WorkspaceVisualQualityFrozenReference {
+  imagePath: string;
+  metadataPath: string;
+}
+
 /** Output format for operational runtime logs. */
 export type WorkspaceLogFormat = "text" | "json";
 
@@ -196,6 +202,7 @@ export interface WorkspaceJobInput {
   enableVisualQualityValidation?: boolean;
   visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth?: number;
+  visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
   /** @deprecated Use visual quality settings instead. */
   visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
@@ -221,6 +228,7 @@ export interface WorkspaceJobRequestMetadata {
   enableVisualQualityValidation: boolean;
   visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth?: number;
+  visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
   /** @deprecated Compatibility alias for legacy callers. */
   visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;

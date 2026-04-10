@@ -2,10 +2,12 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stat } from "node:fs/promises";
 import {
+  computeVisualBenchmarkAggregateScore,
   loadVisualBenchmarkFixtureMetadata,
   assertAllowedFixtureId,
   assertAllowedScreenId,
   enumerateFixtureScreens,
+  fromScreenIdToken,
   getVisualBenchmarkFixtureRoot,
   listVisualBenchmarkFixtureIds,
   toScreenIdToken,
@@ -172,13 +174,9 @@ export interface VisualBenchmarkRunnerDependencies {
  * Rounded to 2 decimals to match the rest of the runner's score precision.
  */
 export const computeFixtureAggregate = (
-  screens: readonly { score: number }[],
+  screens: readonly { score: number; weight?: number }[],
 ): number => {
-  if (screens.length === 0) {
-    throw new Error("computeFixtureAggregate requires at least one screen.");
-  }
-  const total = screens.reduce((sum, screen) => sum + screen.score, 0);
-  return Math.round((total / screens.length) * 100) / 100;
+  return computeVisualBenchmarkAggregateScore(screens);
 };
 
 const resolveBaselinePath = (
@@ -823,7 +821,7 @@ export const loadVisualBenchmarkLastRunArtifact = async (
           if (firstScreenDir !== undefined) {
             return loadVisualBenchmarkLastRunArtifact(
               fixtureId,
-              firstScreenDir.replace(/_/g, ":"),
+              fromScreenIdToken(firstScreenDir),
               options,
             );
           }
@@ -1122,7 +1120,21 @@ export const formatVisualBenchmarkTable = (
   lines.push(hr("\u251C", "\u253C", "\u2524", "\u2500"));
 
   for (const delta of result.deltas) {
-    const displayName = fixtureIdToDisplayName(delta.fixtureId);
+    const displayName = (() => {
+      const fixtureName = fixtureIdToDisplayName(delta.fixtureId);
+      const normalizedScreenName = normalizeOptionalScreenName(delta.screenName);
+      if (normalizedScreenName !== undefined) {
+        return `${fixtureName} / ${normalizedScreenName}`;
+      }
+      if (
+        typeof delta.screenId === "string" &&
+        delta.screenId.length > 0 &&
+        delta.screenId !== delta.fixtureId
+      ) {
+        return `${fixtureName} / ${delta.screenId}`;
+      }
+      return fixtureName;
+    })();
     const baselineStr = formatScore(delta.baseline);
     const currentStr = String(delta.current);
     const deltaStr = formatDeltaCell(delta.delta, delta.indicator);

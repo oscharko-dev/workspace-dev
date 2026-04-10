@@ -47,8 +47,8 @@ test("buildVisualBenchmarkSummary renders markdown and check payload with thresh
     );
 
     assert.match(summary.markdown, /Overall Average:\*\* 75/);
-    assert.match(summary.markdown, /Warned Fixtures:\*\* 1/);
-    assert.match(summary.markdown, /Failed Fixtures:\*\* 0/);
+    assert.match(summary.markdown, /Warned Views:\*\* 1/);
+    assert.match(summary.markdown, /Failed Views:\*\* 0/);
     assert.equal(summary.check.annotations.length, 1);
     assert.equal(summary.check.annotations[0]?.annotation_level, "warning");
     assert.match(summary.check.text, /Artifacts: /);
@@ -217,6 +217,96 @@ test("buildVisualBenchmarkSummary escapes markdown-sensitive fixture names and a
         "annotation message must not contain unescaped pipes",
       );
     }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkSummary renders multi-screen rows and screen-specific artifact paths", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-multiscreen-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureRoot = path.join(artifactRoot, "last-run", "multi-form");
+    const homeDir = path.join(fixtureRoot, "screens", "custom-home-token");
+    const settingsDir = path.join(fixtureRoot, "screens", "custom-settings-token");
+    await mkdir(homeDir, { recursive: true });
+    await mkdir(settingsDir, { recursive: true });
+
+    await writeJson(path.join(artifactRoot, "last-run.json"), {
+      version: 1,
+      ranAt: "2026-04-10T20:00:00.000Z",
+      scores: [
+        {
+          fixtureId: "multi-form",
+          screenId: "2:10001",
+          screenName: "Home",
+          score: 91,
+        },
+        {
+          fixtureId: "multi-form",
+          screenId: "2:10002",
+          screenName: "Settings",
+          score: 79,
+        },
+      ],
+    });
+    await writeJson(path.join(homeDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "multi-form",
+      screenId: "2:10001",
+      screenName: "Home",
+      score: 91,
+      ranAt: "2026-04-10T20:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+    });
+    await writeJson(path.join(settingsDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "multi-form",
+      screenId: "2:10002",
+      screenName: "Settings",
+      score: 79,
+      ranAt: "2026-04-10T20:00:00.000Z",
+      viewport: { width: 1440, height: 900 },
+      thresholdResult: {
+        score: 79,
+        verdict: "warn",
+        thresholds: { warn: 80 },
+      },
+    });
+    await writeJson(path.join(homeDir, "report.json"), {
+      status: "completed",
+      overallScore: 91,
+      diffImagePath: "diff.png",
+    });
+    await writeJson(path.join(settingsDir, "report.json"), {
+      status: "completed",
+      overallScore: 79,
+      diffImagePath: "nested/ignored-name.png",
+    });
+
+    const { buildVisualBenchmarkSummary } =
+      await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(
+      path.join(artifactRoot, "last-run.json"),
+    );
+
+    assert.match(summary.markdown, /\| View \| Score \| Threshold \| Viewport \|/);
+    assert.match(summary.markdown, /\| Multi Form \/ Home \| ✅ 91 \| — \| 1280×720 \|/);
+    assert.match(
+      summary.markdown,
+      /\| Multi Form \/ Settings \| ⚠️ 79 \| warn \(warn 80, fail disabled\) \| 1440×900 \|/,
+    );
+    assert.match(
+      summary.check.text,
+      /report=.*last-run\/multi-form\/screens\/custom-home-token\/report\.json/,
+    );
+    assert.match(
+      summary.check.text,
+      /diff=.*last-run\/multi-form\/screens\/custom-settings-token\/ignored-name\.png/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
