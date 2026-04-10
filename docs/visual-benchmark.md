@@ -93,6 +93,37 @@ It is resolved from
 `integration/fixtures/visual-benchmark/visual-quality.config.json > regression > neutralTolerance`.
 The same setting is used for benchmark delta classification, regression trend direction, and baseline maintenance commands such as `visual:baseline status` and `visual:baseline diff`. This band absorbs small rendering variance so deterministic reruns do not oscillate between improved and degraded and prevents false-positive regression alerts from environmental noise.
 
+## Responsive viewport validation
+
+Fixtures can declare one or more viewports (desktop, tablet, mobile) to capture and
+score the same screen at different widths and device pixel ratios. Viewports are
+configured in `integration/fixtures/visual-benchmark/visual-quality.config.json`:
+
+```json
+{
+  "viewports": [
+    { "id": "desktop", "width": 1280, "height": 800, "deviceScaleFactor": 1 },
+    { "id": "tablet", "width": 768, "height": 1024, "deviceScaleFactor": 2 },
+    { "id": "mobile", "width": 390, "height": 844, "deviceScaleFactor": 3 }
+  ]
+}
+```
+
+Resolution precedence, most specific wins: `screen-level > fixture-level > global > default`.
+The default is a single `desktop` viewport at `1280x800` with `deviceScaleFactor: 1`,
+which keeps single-viewport fixtures byte-identical to pre-#838 behavior.
+
+Current build supports per-viewport config resolution and passes the effective
+viewport to the `validate-project` pipeline via `visualQualityViewportHeight` and
+`visualQualityDeviceScaleFactor` runtime fields. The multi-viewport execution loop
+is scheduled as a follow-up; today a run uses the first resolved viewport.
+
+The `--viewport <id>` CLI flag on `pnpm benchmark:visual` is parsed and validated
+for future per-viewport filtering. Runner integration follows.
+
+Reference images live at `<fixture>/screens/<screenToken>/<viewportId>.png` when
+multi-viewport is configured; legacy `reference.png` is used otherwise.
+
 ## Historical trend analysis and regression detection
 
 After each benchmark run the runner emits a per-fixture trend summary alongside
