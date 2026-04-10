@@ -7,6 +7,7 @@ export interface ViewportConfig {
   width: number;
   height: number;
   deviceScaleFactor: number;
+  deviceProfileId?: CaptureDeviceProfileId;
 }
 
 export interface CaptureConfig {
@@ -23,6 +24,17 @@ export interface CaptureResult {
   width: number;
   height: number;
   viewport: ViewportConfig;
+}
+
+export type CaptureDeviceProfileId = "pixel-7";
+
+export interface CaptureContextOptions {
+  viewport: { width: number; height: number };
+  deviceScaleFactor: number;
+  screen?: { width: number; height: number };
+  isMobile?: boolean;
+  hasTouch?: boolean;
+  userAgent?: string;
 }
 
 export const DEFAULT_VIEWPORT: ViewportConfig = {
@@ -43,6 +55,19 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
 const isFiniteNumber = (value: unknown): value is number => {
   return typeof value === "number" && Number.isFinite(value);
 };
+
+const PIXEL_7_BENCHMARK_PROFILE = Object.freeze({
+  id: "pixel-7" as const,
+  userAgent:
+    "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 " +
+    "(KHTML, like Gecko) Chrome/147.0.7727.15 Mobile Safari/537.36",
+  screen: Object.freeze({
+    width: 390,
+    height: 844,
+  }),
+  isMobile: true,
+  hasTouch: true,
+});
 
 const assertPositiveNumber = ({
   value,
@@ -91,6 +116,9 @@ export const resolveCaptureConfig = (
       value: partial.viewport?.deviceScaleFactor ?? DEFAULT_VIEWPORT.deviceScaleFactor,
       fieldName: "viewport.deviceScaleFactor",
     }),
+    ...(partial.viewport?.deviceProfileId !== undefined
+      ? { deviceProfileId: partial.viewport.deviceProfileId }
+      : {}),
   };
 
   return {
@@ -106,6 +134,45 @@ export const resolveCaptureConfig = (
       fieldName: "timeoutMs",
     }),
     fullPage: partial.fullPage ?? DEFAULT_CAPTURE_CONFIG.fullPage,
+  };
+};
+
+const resolveCaptureDeviceProfile = (
+  viewport: ViewportConfig,
+): typeof PIXEL_7_BENCHMARK_PROFILE | null => {
+  if (viewport.deviceProfileId === "pixel-7") {
+    return PIXEL_7_BENCHMARK_PROFILE;
+  }
+  if (
+    viewport.width === 390 &&
+    viewport.height === 844 &&
+    viewport.deviceScaleFactor >= 3
+  ) {
+    return PIXEL_7_BENCHMARK_PROFILE;
+  }
+  return null;
+};
+
+export const resolveCaptureContextOptions = (
+  config: CaptureConfig,
+): CaptureContextOptions => {
+  const contextOptions: CaptureContextOptions = {
+    viewport: {
+      width: config.viewport.width,
+      height: config.viewport.height,
+    },
+    deviceScaleFactor: config.viewport.deviceScaleFactor,
+  };
+  const deviceProfile = resolveCaptureDeviceProfile(config.viewport);
+  if (deviceProfile === null) {
+    return contextOptions;
+  }
+  return {
+    ...contextOptions,
+    screen: { ...deviceProfile.screen },
+    isMobile: deviceProfile.isMobile,
+    hasTouch: deviceProfile.hasTouch,
+    userAgent: deviceProfile.userAgent,
   };
 };
 
@@ -333,10 +400,7 @@ interface PlaywrightBrowserType {
 }
 
 interface PlaywrightBrowser {
-  newContext(options?: {
-    viewport?: { width: number; height: number };
-    deviceScaleFactor?: number;
-  }): Promise<PlaywrightBrowserContext>;
+  newContext(options?: CaptureContextOptions): Promise<PlaywrightBrowserContext>;
   close(): Promise<void>;
 }
 
@@ -404,13 +468,13 @@ export const captureScreenshot = async (input: {
   }
 
   try {
-    const context = await browser.newContext({
-      viewport: {
-        width: config.viewport.width,
-        height: config.viewport.height,
-      },
-      deviceScaleFactor: config.viewport.deviceScaleFactor,
-    });
+    const contextOptions = resolveCaptureContextOptions(config);
+    if (contextOptions.isMobile === true) {
+      log(
+        `Applying mobile device profile semantics for ${config.viewport.width}x${config.viewport.height} capture`,
+      );
+    }
+    const context = await browser.newContext(contextOptions);
 
     const page = await context.newPage();
 

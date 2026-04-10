@@ -26,6 +26,8 @@ const makeEntry = (
     fixtureId: string;
     screenId?: string;
     screenName?: string;
+    viewportId?: string;
+    viewportLabel?: string;
     score: number;
   }>,
 ): VisualBenchmarkHistoryEntry => ({
@@ -159,6 +161,39 @@ test("parseVisualBenchmarkHistory accepts valid version 2 object", () => {
   ]);
 });
 
+test("parseVisualBenchmarkHistory accepts optional viewport identity fields for version 2", () => {
+  const parsed = parseVisualBenchmarkHistory(
+    JSON.stringify({
+      version: 2,
+      entries: [
+        {
+          runAt: "2026-04-10T00:00:00.000Z",
+          scores: [
+            {
+              fixtureId: "simple-form",
+              screenId: "1:65671",
+              screenName: "Simple Form Screen",
+              viewportId: "mobile",
+              viewportLabel: "Mobile",
+              score: 88,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  assert.deepEqual(parsed.entries[0]?.scores, [
+    {
+      fixtureId: "simple-form",
+      screenId: "1:65671",
+      screenName: "Simple Form Screen",
+      viewportId: "mobile",
+      viewportLabel: "Mobile",
+      score: 88,
+    },
+  ]);
+});
+
 test("parseVisualBenchmarkHistory accepts empty entries array", () => {
   const parsed = parseVisualBenchmarkHistory(
     JSON.stringify({ version: 1, entries: [] }),
@@ -268,7 +303,7 @@ test("appendVisualBenchmarkHistoryEntry seeds empty history when no prior exists
   assert.equal(result.entries[0]?.runAt, "2026-04-10T00:00:00Z");
 });
 
-test("appendVisualBenchmarkHistoryEntry sorts scores by fixtureId, screenId, and screenName", () => {
+test("appendVisualBenchmarkHistoryEntry sorts scores by fixtureId, screenId, viewportId, and screenName", () => {
   const result = appendVisualBenchmarkHistoryEntry(
     null,
     makeEntry("2026-04-10T00:00:00Z", [
@@ -288,18 +323,28 @@ test("appendVisualBenchmarkHistoryEntry sorts scores by fixtureId, screenId, and
         fixtureId: "simple-form",
         screenId: "1:1000",
         screenName: "Screen A",
+        viewportId: "mobile",
         score: 89,
+      },
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1000",
+        screenName: "Screen A",
+        viewportId: "desktop",
+        score: 90,
       },
     ]),
   );
   assert.deepEqual(
     result.entries[0]?.scores.map(
-      (entry) => `${entry.fixtureId}:${entry.screenId}:${entry.screenName ?? ""}`,
+      (entry) =>
+        `${entry.fixtureId}:${entry.screenId}:${entry.viewportId ?? "default"}:${entry.screenName ?? ""}`,
     ),
     [
-      "complex-dashboard:1:1000:Dashboard",
-      "simple-form:1:1000:Screen A",
-      "simple-form:2:2000:Screen B",
+      "complex-dashboard:1:1000:default:Dashboard",
+      "simple-form:1:1000:desktop:Screen A",
+      "simple-form:1:1000:mobile:Screen A",
+      "simple-form:2:2000:default:Screen B",
     ],
   );
 });

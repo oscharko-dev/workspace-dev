@@ -1,12 +1,13 @@
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { stat } from "node:fs/promises";
 import {
   computeVisualBenchmarkAggregateScore,
   loadVisualBenchmarkFixtureMetadata,
   assertAllowedFixtureId,
   assertAllowedScreenId,
+  assertAllowedViewportId,
   enumerateFixtureScreens,
+  enumerateFixtureScreenViewports,
   fromScreenIdToken,
   getVisualBenchmarkFixtureRoot,
   listVisualBenchmarkFixtureIds,
@@ -25,6 +26,8 @@ import {
 } from "./visual-benchmark.execution.js";
 import {
   applyVisualQualityConfigToReport,
+  normalizeVisualQualityViewportWeights,
+  resolveVisualQualityViewports,
   resolveVisualQualityRegressionConfig,
   resolveVisualQualityThresholds,
   checkVisualQualityThreshold,
@@ -111,6 +114,8 @@ export interface VisualBenchmarkLastRunArtifactManifest {
   fixtureId: string;
   screenId?: string;
   screenName?: string;
+  viewportId?: string;
+  viewportLabel?: string;
   score: number;
   ranAt: string;
   viewport: {
@@ -128,6 +133,11 @@ export interface VisualBenchmarkLastRunArtifactPaths {
   reportJsonPath: string;
 }
 
+interface VisualBenchmarkArtifactLocation {
+  screenId?: string;
+  viewportId?: string;
+}
+
 export interface VisualBenchmarkLastRunArtifactEntry extends VisualBenchmarkLastRunArtifactManifest {
   actualImagePath: string;
   diffImagePath: string | null;
@@ -138,6 +148,8 @@ export interface VisualBenchmarkLastRunArtifactInput {
   fixtureId: string;
   screenId?: string;
   screenName?: string;
+  viewportId?: string;
+  viewportLabel?: string;
   score: number;
   ranAt: string;
   viewport: {
@@ -153,6 +165,11 @@ export interface VisualBenchmarkLastRunArtifactInput {
 export interface VisualBenchmarkFixtureScreenScoreLike {
   screenId?: string;
   screenName?: string;
+  viewports?: Array<{
+    viewportId?: string;
+    viewportLabel?: string;
+    score: number;
+  }>;
   score: number;
 }
 
@@ -171,6 +188,12 @@ export interface VisualBenchmarkRunnerDependencies {
     fixtureId: string,
     options?: VisualBenchmarkExecutionOptions,
   ) => Promise<VisualBenchmarkFixtureRunResult>;
+}
+
+export interface VisualBenchmarkScreenAggregateEntry {
+  fixtureId: string;
+  screenId: string;
+  score: number;
 }
 
 /**
@@ -224,6 +247,78 @@ const normalizeOptionalScreenName = (
   }
   const normalized = screenName.trim();
   return normalized.length > 0 ? normalized : undefined;
+};
+
+const getScreenAggregateKey = (fixtureId: string, screenId?: string): string => {
+  const normalizedFixtureId = assertAllowedFixtureId(fixtureId);
+  const normalizedScreenId =
+    typeof screenId === "string" && screenId.trim().length > 0
+      ? assertAllowedScreenId(screenId.trim())
+      : normalizedFixtureId;
+  return `${normalizedFixtureId}::${normalizedScreenId}`;
+};
+
+const buildScreenAggregateMapFromScores = (
+  scores: readonly VisualBenchmarkScoreEntry[],
+): Map<string, VisualBenchmarkScreenAggregateEntry> => {
+  const grouped = new Map<string, { fixtureId: string; screenId: string; scores: number[] }>();
+  for (const entry of scores) {
+    const canonical = toCanonicalScoreEntry(entry);
+    const screenId =
+      typeof canonical.screenId === "string" && canonical.screenId.length > 0
+        ? canonical.screenId
+        : canonical.fixtureId;
+    const key = getScreenAggregateKey(canonical.fixtureId, screenId);
+    const existing = grouped.get(key);
+    if (existing === undefined) {
+      grouped.set(key, {
+        fixtureId: canonical.fixtureId,
+        screenId,
+        scores: [canonical.score],
+      });
+      continue;
+    }
+    existing.scores.push(canonical.score);
+  }
+  const aggregateMap = new Map<string, VisualBenchmarkScreenAggregateEntry>();
+  for (const [key, group] of grouped.entries()) {
+    const average =
+      group.scores.length > 0
+        ? roundToTwoDecimals(
+            group.scores.reduce((sum, score) => sum + score, 0) /
+              group.scores.length,
+          )
+        : 0;
+    aggregateMap.set(key, {
+      fixtureId: group.fixtureId,
+      screenId: group.screenId,
+      score: average,
+    });
+  }
+  return aggregateMap;
+};
+
+const buildScreenAggregateMapFromEntries = (
+  entries:
+    | readonly VisualBenchmarkScreenAggregateEntry[]
+    | undefined,
+): Map<string, VisualBenchmarkScreenAggregateEntry> => {
+  const aggregateMap = new Map<string, VisualBenchmarkScreenAggregateEntry>();
+  if (entries === undefined) {
+    return aggregateMap;
+  }
+  for (const entry of entries) {
+    const key = getScreenAggregateKey(entry.fixtureId, entry.screenId);
+    aggregateMap.set(key, {
+      fixtureId: assertAllowedFixtureId(entry.fixtureId),
+      screenId:
+        typeof entry.screenId === "string" && entry.screenId.trim().length > 0
+          ? assertAllowedScreenId(entry.screenId.trim())
+          : assertAllowedFixtureId(entry.fixtureId),
+      score: entry.score,
+    });
+  }
+  return aggregateMap;
 };
 
 const toCanonicalScoreEntry = (
@@ -315,6 +410,13 @@ const sortRawScores = (
       return screenComparison;
     }
 
+    const viewportComparison = (left.viewportId ?? "").localeCompare(
+      right.viewportId ?? "",
+    );
+    if (viewportComparison !== 0) {
+      return viewportComparison;
+    }
+
     return (left.screenName ?? "").localeCompare(right.screenName ?? "");
   });
 
@@ -349,6 +451,8 @@ const parseBaseline = (content: string): VisualBenchmarkBaseline => {
 
     let screenId: string | undefined;
     let screenName: string | undefined;
+    let viewportId: string | undefined;
+    let viewportLabel: string | undefined;
     if (parsed.version === 3) {
       if (
         typeof entry.screenId !== "string" ||
@@ -370,12 +474,36 @@ const parseBaseline = (content: string): VisualBenchmarkBaseline => {
         }
         screenName = entry.screenName.trim();
       }
+      if (entry.viewportId !== undefined) {
+        if (
+          typeof entry.viewportId !== "string" ||
+          entry.viewportId.trim().length === 0
+        ) {
+          throw new Error(
+            "Baseline version 3 score entry viewportId must be a non-empty string when provided.",
+          );
+        }
+        viewportId = assertAllowedViewportId(entry.viewportId.trim());
+      }
+      if (entry.viewportLabel !== undefined) {
+        if (
+          typeof entry.viewportLabel !== "string" ||
+          entry.viewportLabel.trim().length === 0
+        ) {
+          throw new Error(
+            "Baseline version 3 score entry viewportLabel must be a non-empty string when provided.",
+          );
+        }
+        viewportLabel = entry.viewportLabel.trim();
+      }
     }
 
     scores.push({
       fixtureId: entry.fixtureId,
       ...(screenId !== undefined ? { screenId } : {}),
       ...(screenName !== undefined ? { screenName } : {}),
+      ...(viewportId !== undefined ? { viewportId } : {}),
+      ...(viewportLabel !== undefined ? { viewportLabel } : {}),
       score: entry.score,
     });
   }
@@ -441,6 +569,8 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
 
     let screenId: string | undefined;
     let screenName: string | undefined;
+    let viewportId: string | undefined;
+    let viewportLabel: string | undefined;
     if (entry.screenId !== undefined) {
       if (
         typeof entry.screenId !== "string" ||
@@ -463,10 +593,34 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
       }
       screenName = entry.screenName.trim();
     }
+    if (entry.viewportId !== undefined) {
+      if (
+        typeof entry.viewportId !== "string" ||
+        entry.viewportId.trim().length === 0
+      ) {
+        throw new Error(
+          "Last-run score entry viewportId must be a non-empty string when provided.",
+        );
+      }
+      viewportId = assertAllowedViewportId(entry.viewportId.trim());
+    }
+    if (entry.viewportLabel !== undefined) {
+      if (
+        typeof entry.viewportLabel !== "string" ||
+        entry.viewportLabel.trim().length === 0
+      ) {
+        throw new Error(
+          "Last-run score entry viewportLabel must be a non-empty string when provided.",
+        );
+      }
+      viewportLabel = entry.viewportLabel.trim();
+    }
     scores.push({
       fixtureId: entry.fixtureId,
       ...(screenId !== undefined ? { screenId } : {}),
       ...(screenName !== undefined ? { screenName } : {}),
+      ...(viewportId !== undefined ? { viewportId } : {}),
+      ...(viewportLabel !== undefined ? { viewportLabel } : {}),
       score: entry.score,
     });
   }
@@ -493,6 +647,54 @@ const parseLastRunArtifactManifest = (
     parsed.fixtureId.trim().length === 0
   ) {
     throw new Error("Last-run artifact fixtureId must be a non-empty string.");
+  }
+  let screenId: string | undefined;
+  let screenName: string | undefined;
+  let viewportId: string | undefined;
+  let viewportLabel: string | undefined;
+  if (parsed.screenId !== undefined) {
+    if (
+      typeof parsed.screenId !== "string" ||
+      parsed.screenId.trim().length === 0
+    ) {
+      throw new Error(
+        "Last-run artifact screenId must be a non-empty string when provided.",
+      );
+    }
+    screenId = assertAllowedScreenId(parsed.screenId.trim());
+  }
+  if (parsed.screenName !== undefined) {
+    if (
+      typeof parsed.screenName !== "string" ||
+      parsed.screenName.trim().length === 0
+    ) {
+      throw new Error(
+        "Last-run artifact screenName must be a non-empty string when provided.",
+      );
+    }
+    screenName = parsed.screenName.trim();
+  }
+  if (parsed.viewportId !== undefined) {
+    if (
+      typeof parsed.viewportId !== "string" ||
+      parsed.viewportId.trim().length === 0
+    ) {
+      throw new Error(
+        "Last-run artifact viewportId must be a non-empty string when provided.",
+      );
+    }
+    viewportId = assertAllowedViewportId(parsed.viewportId.trim());
+  }
+  if (parsed.viewportLabel !== undefined) {
+    if (
+      typeof parsed.viewportLabel !== "string" ||
+      parsed.viewportLabel.trim().length === 0
+    ) {
+      throw new Error(
+        "Last-run artifact viewportLabel must be a non-empty string when provided.",
+      );
+    }
+    viewportLabel = parsed.viewportLabel.trim();
   }
   if (typeof parsed.score !== "number" || !Number.isFinite(parsed.score)) {
     throw new Error("Last-run artifact score must be a finite number.");
@@ -555,6 +757,10 @@ const parseLastRunArtifactManifest = (
   return {
     version: 1,
     fixtureId: assertAllowedFixtureId(parsed.fixtureId),
+    ...(screenId !== undefined ? { screenId } : {}),
+    ...(screenName !== undefined ? { screenName } : {}),
+    ...(viewportId !== undefined ? { viewportId } : {}),
+    ...(viewportLabel !== undefined ? { viewportLabel } : {}),
     score: parsed.score,
     ranAt: parsed.ranAt,
     viewport: {
@@ -565,30 +771,36 @@ const parseLastRunArtifactManifest = (
   };
 };
 
-export const resolveVisualBenchmarkLastRunArtifactPaths = (
+const resolveVisualBenchmarkLastRunArtifactPathsInternal = (
   fixtureId: string,
-  optionsOrScreenId?: VisualBenchmarkFixtureOptions | string,
-  maybeOptions?: VisualBenchmarkFixtureOptions,
+  location: VisualBenchmarkArtifactLocation,
+  options?: VisualBenchmarkFixtureOptions,
 ): VisualBenchmarkLastRunArtifactPaths => {
-  // Overload: second positional can be screenId (string) OR options.
-  // Preserves the legacy single-arg path call sites used by visual-baseline.
-  const screenId =
-    typeof optionsOrScreenId === "string" ? optionsOrScreenId : undefined;
-  const options =
-    typeof optionsOrScreenId === "string" ? maybeOptions : optionsOrScreenId;
   const normalizedFixtureId = assertAllowedFixtureId(fixtureId);
+  const normalizedScreenId =
+    typeof location.screenId === "string" && location.screenId.trim().length > 0
+      ? assertAllowedScreenId(location.screenId.trim())
+      : undefined;
+  const normalizedViewportId =
+    typeof location.viewportId === "string" &&
+    location.viewportId.trim().length > 0
+      ? assertAllowedViewportId(location.viewportId.trim())
+      : undefined;
   const fixtureRoot = path.join(
     resolveArtifactRoot(options),
     LAST_RUN_ARTIFACT_ROOT_NAME,
     normalizedFixtureId,
   );
-  // Multi-screen layout: place per-screen artifacts in `<fixture>/screens/<token>/`.
-  // Single-screen (no screenId) writes at the legacy `<fixture>/` root for
-  // byte-identity with pre-multi-screen consumers (visual-baseline.ts).
-  const artifactDir =
-    screenId !== undefined
-      ? path.join(fixtureRoot, "screens", toScreenIdToken(screenId))
+  let artifactDir =
+    normalizedScreenId !== undefined
+      ? path.join(fixtureRoot, "screens", toScreenIdToken(normalizedScreenId))
       : fixtureRoot;
+  if (normalizedViewportId !== undefined) {
+    artifactDir =
+      normalizedScreenId !== undefined
+        ? path.join(artifactDir, normalizedViewportId)
+        : path.join(artifactDir, "viewports", normalizedViewportId);
+  }
   return {
     fixtureDir: artifactDir,
     manifestJsonPath: path.join(artifactDir, LAST_RUN_MANIFEST_FILE_NAME),
@@ -596,6 +808,234 @@ export const resolveVisualBenchmarkLastRunArtifactPaths = (
     diffPngPath: path.join(artifactDir, LAST_RUN_DIFF_FILE_NAME),
     reportJsonPath: path.join(artifactDir, LAST_RUN_REPORT_FILE_NAME),
   };
+};
+
+export const resolveVisualBenchmarkLastRunArtifactPaths = (
+  fixtureId: string,
+  optionsOrScreenId?: VisualBenchmarkFixtureOptions | string,
+  maybeOptions?: VisualBenchmarkFixtureOptions,
+): VisualBenchmarkLastRunArtifactPaths => {
+  const screenId =
+    typeof optionsOrScreenId === "string" ? optionsOrScreenId : undefined;
+  const options =
+    typeof optionsOrScreenId === "string" ? maybeOptions : optionsOrScreenId;
+  return resolveVisualBenchmarkLastRunArtifactPathsInternal(
+    fixtureId,
+    { screenId },
+    options,
+  );
+};
+
+const deleteLegacyRootLastRunArtifacts = async (
+  fixtureId: string,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<void> => {
+  const fixtureRootPaths = resolveVisualBenchmarkLastRunArtifactPathsInternal(
+    fixtureId,
+    {},
+    options,
+  );
+  await Promise.all([
+    rm(fixtureRootPaths.actualPngPath, { force: true }),
+    rm(fixtureRootPaths.diffPngPath, { force: true }),
+    rm(fixtureRootPaths.manifestJsonPath, { force: true }),
+    rm(fixtureRootPaths.reportJsonPath, { force: true }),
+    rm(path.join(fixtureRootPaths.fixtureDir, "viewports"), {
+      recursive: true,
+      force: true,
+    }),
+  ]);
+};
+
+const loadVisualBenchmarkLastRunArtifactAtLocation = async (
+  fixtureId: string,
+  location: VisualBenchmarkArtifactLocation,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<VisualBenchmarkLastRunArtifactEntry | null> => {
+  const paths = resolveVisualBenchmarkLastRunArtifactPathsInternal(
+    fixtureId,
+    location,
+    options,
+  );
+  try {
+    const manifest = parseLastRunArtifactManifest(
+      await readFile(paths.manifestJsonPath, "utf8"),
+    );
+    let diffImagePath: string | null = null;
+    let reportPath: string | null = null;
+    try {
+      await readFile(paths.diffPngPath);
+      diffImagePath = toWorkspaceRelativePath(paths.diffPngPath);
+    } catch (error: unknown) {
+      if (
+        !(
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        )
+      ) {
+        throw error;
+      }
+    }
+    try {
+      await readFile(paths.reportJsonPath, "utf8");
+      reportPath = toWorkspaceRelativePath(paths.reportJsonPath);
+    } catch (error: unknown) {
+      if (
+        !(
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        )
+      ) {
+        throw error;
+      }
+    }
+
+    return {
+      ...manifest,
+      actualImagePath: toWorkspaceRelativePath(paths.actualPngPath),
+      diffImagePath,
+      reportPath,
+    };
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return null;
+    }
+    throw error;
+  }
+};
+
+const loadArtifactEntriesFromViewportDirectory = async (
+  fixtureId: string,
+  baseDir: string,
+  location: Omit<VisualBenchmarkArtifactLocation, "viewportId">,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<VisualBenchmarkLastRunArtifactEntry[]> => {
+  try {
+    const entries = await readdir(baseDir, { withFileTypes: true });
+    const artifacts: VisualBenchmarkLastRunArtifactEntry[] = [];
+    for (const entry of entries.filter((candidate) => candidate.isDirectory())) {
+      const artifact = await loadVisualBenchmarkLastRunArtifactAtLocation(
+        fixtureId,
+        { ...location, viewportId: entry.name },
+        options,
+      );
+      if (artifact !== null) {
+        artifacts.push(artifact);
+      }
+    }
+    return artifacts.sort((left, right) =>
+      (left.viewportId ?? "").localeCompare(right.viewportId ?? ""),
+    );
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return [];
+    }
+    throw error;
+  }
+};
+
+export const loadVisualBenchmarkLastRunArtifacts = async (
+  fixtureId: string,
+  optionsOrScreenId?: VisualBenchmarkFixtureOptions | string,
+  maybeOptions?: VisualBenchmarkFixtureOptions,
+): Promise<VisualBenchmarkLastRunArtifactEntry[]> => {
+  const screenId =
+    typeof optionsOrScreenId === "string" ? optionsOrScreenId : undefined;
+  const options =
+    typeof optionsOrScreenId === "string" ? maybeOptions : optionsOrScreenId;
+
+  if (screenId === undefined) {
+    const legacyArtifact = await loadVisualBenchmarkLastRunArtifactAtLocation(
+      fixtureId,
+      {},
+      options,
+    );
+    if (legacyArtifact !== null) {
+      return [legacyArtifact];
+    }
+
+    const fixtureRoot = path.join(
+      resolveArtifactRoot(options),
+      LAST_RUN_ARTIFACT_ROOT_NAME,
+      assertAllowedFixtureId(fixtureId),
+    );
+    const rootViewportArtifacts = await loadArtifactEntriesFromViewportDirectory(
+      fixtureId,
+      path.join(fixtureRoot, "viewports"),
+      {},
+      options,
+    );
+    if (rootViewportArtifacts.length > 0) {
+      return rootViewportArtifacts;
+    }
+
+    try {
+      const screenEntries = await readdir(path.join(fixtureRoot, "screens"), {
+        withFileTypes: true,
+      });
+      const artifacts: VisualBenchmarkLastRunArtifactEntry[] = [];
+      for (const entry of screenEntries.filter((candidate) =>
+        candidate.isDirectory(),
+      )) {
+        artifacts.push(
+          ...(await loadVisualBenchmarkLastRunArtifacts(
+            fixtureId,
+            fromScreenIdToken(entry.name),
+            options,
+          )),
+        );
+      }
+      return artifacts.sort((left, right) => {
+        const screenComparison = (left.screenId ?? "").localeCompare(
+          right.screenId ?? "",
+        );
+        if (screenComparison !== 0) {
+          return screenComparison;
+        }
+        return (left.viewportId ?? "").localeCompare(right.viewportId ?? "");
+      });
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  const directArtifact = await loadVisualBenchmarkLastRunArtifactAtLocation(
+    fixtureId,
+    { screenId },
+    options,
+  );
+  if (directArtifact !== null) {
+    return [directArtifact];
+  }
+
+  const screenDir = resolveVisualBenchmarkLastRunArtifactPathsInternal(
+    fixtureId,
+    { screenId },
+    options,
+  ).fixtureDir;
+  return loadArtifactEntriesFromViewportDirectory(
+    fixtureId,
+    screenDir,
+    { screenId },
+    options,
+  );
 };
 
 const loadScoreScreenContext = async (
@@ -640,6 +1080,12 @@ const normalizeScoreEntryWithMetadata = async (
     fixtureId: canonical.fixtureId,
     screenId,
     ...(screenName !== undefined ? { screenName } : {}),
+    ...(canonical.viewportId !== undefined
+      ? { viewportId: canonical.viewportId }
+      : {}),
+    ...(canonical.viewportLabel !== undefined
+      ? { viewportLabel: canonical.viewportLabel }
+      : {}),
     score: canonical.score,
   };
 };
@@ -708,6 +1154,12 @@ export const saveVisualBenchmarkBaseline = async (
       fixtureId: delta.fixtureId,
       screenId: delta.screenId,
       screenName: delta.screenName,
+      ...(delta.viewportId !== undefined
+        ? { viewportId: delta.viewportId }
+        : {}),
+      ...(delta.viewportLabel !== undefined
+        ? { viewportLabel: delta.viewportLabel }
+        : {}),
       score: delta.current,
     })),
     options,
@@ -753,20 +1205,22 @@ export const saveVisualBenchmarkLastRunArtifact = async (
   input: VisualBenchmarkLastRunArtifactInput,
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkLastRunArtifactEntry> => {
-  // Validate screenId up-front so it cannot escape the fixture sandbox via
-  // path tokens. Legacy single-screen callers pass no screenId.
   const normalizedScreenId =
     typeof input.screenId === "string" && input.screenId.trim().length > 0
       ? assertAllowedScreenId(input.screenId.trim())
       : undefined;
-  const paths =
-    normalizedScreenId !== undefined
-      ? resolveVisualBenchmarkLastRunArtifactPaths(
-          input.fixtureId,
-          normalizedScreenId,
-          options,
-        )
-      : resolveVisualBenchmarkLastRunArtifactPaths(input.fixtureId, options);
+  const normalizedViewportId =
+    typeof input.viewportId === "string" && input.viewportId.trim().length > 0
+      ? assertAllowedViewportId(input.viewportId.trim())
+      : undefined;
+  const paths = resolveVisualBenchmarkLastRunArtifactPathsInternal(
+    input.fixtureId,
+    {
+      screenId: normalizedScreenId,
+      viewportId: normalizedViewportId,
+    },
+    options,
+  );
   const manifest: VisualBenchmarkLastRunArtifactManifest = {
     version: 1,
     fixtureId: assertAllowedFixtureId(input.fixtureId),
@@ -775,6 +1229,13 @@ export const saveVisualBenchmarkLastRunArtifact = async (
       : {}),
     ...(typeof input.screenName === "string" && input.screenName.length > 0
       ? { screenName: input.screenName }
+      : {}),
+    ...(normalizedViewportId !== undefined
+      ? { viewportId: normalizedViewportId }
+      : {}),
+    ...(typeof input.viewportLabel === "string" &&
+    input.viewportLabel.trim().length > 0
+      ? { viewportLabel: input.viewportLabel.trim() }
       : {}),
     score: input.score,
     ranAt: input.ranAt,
@@ -820,111 +1281,12 @@ export const loadVisualBenchmarkLastRunArtifact = async (
   optionsOrScreenId?: VisualBenchmarkFixtureOptions | string,
   maybeOptions?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkLastRunArtifactEntry | null> => {
-  const screenId =
-    typeof optionsOrScreenId === "string" ? optionsOrScreenId : undefined;
-  const options =
-    typeof optionsOrScreenId === "string" ? maybeOptions : optionsOrScreenId;
-  // Legacy call with no screenId: if the legacy path has no manifest but a
-  // per-screen layout exists (multi-screen fixture), fall back to the first
-  // screen's manifest for backward compatibility with single-artifact consumers.
-  if (screenId === undefined) {
-    const legacyPaths = resolveVisualBenchmarkLastRunArtifactPaths(
-      fixtureId,
-      options,
-    );
-    try {
-      await stat(legacyPaths.manifestJsonPath);
-    } catch (error: unknown) {
-      if (
-        error instanceof Error &&
-        "code" in error &&
-        (error as NodeJS.ErrnoException).code === "ENOENT"
-      ) {
-        const screensDir = path.join(legacyPaths.fixtureDir, "screens");
-        try {
-          const entries = await readdir(screensDir, { withFileTypes: true });
-          const firstScreenDir = entries
-            .filter((entry) => entry.isDirectory())
-            .map((entry) => entry.name)
-            .sort()[0];
-          if (firstScreenDir !== undefined) {
-            return loadVisualBenchmarkLastRunArtifact(
-              fixtureId,
-              fromScreenIdToken(firstScreenDir),
-              options,
-            );
-          }
-        } catch (readdirError: unknown) {
-          if (
-            !(
-              readdirError instanceof Error &&
-              "code" in readdirError &&
-              (readdirError as NodeJS.ErrnoException).code === "ENOENT"
-            )
-          ) {
-            throw readdirError;
-          }
-        }
-      } else {
-        throw error;
-      }
-    }
-  }
-  const paths =
-    screenId !== undefined
-      ? resolveVisualBenchmarkLastRunArtifactPaths(fixtureId, screenId, options)
-      : resolveVisualBenchmarkLastRunArtifactPaths(fixtureId, options);
-  try {
-    const manifest = parseLastRunArtifactManifest(
-      await readFile(paths.manifestJsonPath, "utf8"),
-    );
-    let diffImagePath: string | null = null;
-    let reportPath: string | null = null;
-    try {
-      await readFile(paths.diffPngPath);
-      diffImagePath = toWorkspaceRelativePath(paths.diffPngPath);
-    } catch (error: unknown) {
-      if (
-        !(
-          error instanceof Error &&
-          "code" in error &&
-          (error as NodeJS.ErrnoException).code === "ENOENT"
-        )
-      ) {
-        throw error;
-      }
-    }
-    try {
-      await readFile(paths.reportJsonPath, "utf8");
-      reportPath = toWorkspaceRelativePath(paths.reportJsonPath);
-    } catch (error: unknown) {
-      if (
-        !(
-          error instanceof Error &&
-          "code" in error &&
-          (error as NodeJS.ErrnoException).code === "ENOENT"
-        )
-      ) {
-        throw error;
-      }
-    }
-
-    return {
-      ...manifest,
-      actualImagePath: toWorkspaceRelativePath(paths.actualPngPath),
-      diffImagePath,
-      reportPath,
-    };
-  } catch (error: unknown) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return null;
-    }
-    throw error;
-  }
+  const artifacts = await loadVisualBenchmarkLastRunArtifacts(
+    fixtureId,
+    optionsOrScreenId as VisualBenchmarkFixtureOptions | string | undefined,
+    maybeOptions,
+  );
+  return artifacts[0] ?? null;
 };
 
 const isWorkspaceVisualQualityReport = (
@@ -963,14 +1325,35 @@ const defaultRunFixtureBenchmark = async (
 const runResultToScoreEntries = (
   result: VisualBenchmarkFixtureRunResultLike,
 ): VisualBenchmarkScoreEntry[] => {
-  return result.screens.map((screen) => ({
-    fixtureId: result.fixtureId,
-    ...(screen.screenId !== undefined ? { screenId: screen.screenId } : {}),
-    ...(screen.screenName !== undefined
-      ? { screenName: screen.screenName }
-      : {}),
-    score: screen.score,
-  }));
+  return result.screens.flatMap((screen) => {
+    if (Array.isArray(screen.viewports) && screen.viewports.length > 0) {
+      return screen.viewports.map((viewport) => ({
+        fixtureId: result.fixtureId,
+        ...(screen.screenId !== undefined ? { screenId: screen.screenId } : {}),
+        ...(screen.screenName !== undefined
+          ? { screenName: screen.screenName }
+          : {}),
+        ...(viewport.viewportId !== undefined
+          ? { viewportId: viewport.viewportId }
+          : {}),
+        ...(viewport.viewportLabel !== undefined
+          ? { viewportLabel: viewport.viewportLabel }
+          : {}),
+        score: viewport.score,
+      }));
+    }
+
+    return [
+      {
+        fixtureId: result.fixtureId,
+        ...(screen.screenId !== undefined ? { screenId: screen.screenId } : {}),
+        ...(screen.screenName !== undefined
+          ? { screenName: screen.screenName }
+          : {}),
+        score: screen.score,
+      },
+    ];
+  });
 };
 
 export const computeVisualBenchmarkScores = async (
@@ -994,6 +1377,10 @@ export const computeVisualBenchmarkScores = async (
 
 export interface ComputeVisualBenchmarkDeltasOptions {
   neutralTolerance?: number;
+  screenAggregates?: {
+    current?: VisualBenchmarkScreenAggregateEntry[];
+    baseline?: VisualBenchmarkScreenAggregateEntry[];
+  };
 }
 
 export const computeVisualBenchmarkDeltas = (
@@ -1021,7 +1408,6 @@ export const computeVisualBenchmarkDeltas = (
     }
   }
 
-  const matchedPairs: Array<{ current: number; baseline: number }> = [];
   const deltas: VisualBenchmarkDelta[] = current.map((entry) => {
     const canonicalEntry = toCanonicalScoreEntry(entry);
     const baselineEntry =
@@ -1041,17 +1427,17 @@ export const computeVisualBenchmarkDeltas = (
     } else {
       indicator = "degraded";
     }
-    if (baselineScore !== null) {
-      matchedPairs.push({
-        current: canonicalEntry.score,
-        baseline: baselineScore,
-      });
-    }
     return {
       fixtureId: canonicalEntry.fixtureId,
       screenId: canonicalEntry.screenId,
       ...(canonicalEntry.screenName !== undefined
         ? { screenName: canonicalEntry.screenName }
+        : {}),
+      ...(canonicalEntry.viewportId !== undefined
+        ? { viewportId: canonicalEntry.viewportId }
+        : {}),
+      ...(canonicalEntry.viewportLabel !== undefined
+        ? { viewportLabel: canonicalEntry.viewportLabel }
         : {}),
       baseline: baselineScore,
       current: canonicalEntry.score,
@@ -1060,22 +1446,47 @@ export const computeVisualBenchmarkDeltas = (
     };
   });
 
+  const currentScreenAggregateMap =
+    deltaOptions?.screenAggregates?.current !== undefined
+      ? buildScreenAggregateMapFromEntries(deltaOptions.screenAggregates.current)
+      : buildScreenAggregateMapFromScores(current);
+  const baselineScreenAggregateMap =
+    deltaOptions?.screenAggregates?.baseline !== undefined
+      ? buildScreenAggregateMapFromEntries(deltaOptions.screenAggregates.baseline)
+      : baseline !== null
+        ? buildScreenAggregateMapFromScores(baseline.scores)
+        : new Map<string, VisualBenchmarkScreenAggregateEntry>();
+
+  const currentScreenScores = Array.from(currentScreenAggregateMap.values()).map(
+    (entry) => entry.score,
+  );
   const overallCurrent = roundToTwoDecimals(
-    current.reduce((sum, entry) => sum + entry.score, 0) / current.length,
+    currentScreenScores.reduce((sum, score) => sum + score, 0) /
+      currentScreenScores.length,
   );
 
-  const matchedCount = matchedPairs.length;
+  const matchedCurrentScreenScores: number[] = [];
+  const matchedBaselineScreenScores: number[] = [];
+  for (const [key, currentEntry] of currentScreenAggregateMap.entries()) {
+    const baselineEntry = baselineScreenAggregateMap.get(key);
+    if (baselineEntry === undefined) {
+      continue;
+    }
+    matchedCurrentScreenScores.push(currentEntry.score);
+    matchedBaselineScreenScores.push(baselineEntry.score);
+  }
+  const matchedCount = matchedCurrentScreenScores.length;
   const overallBaseline =
     matchedCount > 0
       ? roundToTwoDecimals(
-          matchedPairs.reduce((sum, pair) => sum + pair.baseline, 0) /
+          matchedBaselineScreenScores.reduce((sum, score) => sum + score, 0) /
             matchedCount,
         )
       : null;
   const overallComparableCurrent =
     matchedCount > 0
       ? roundToTwoDecimals(
-          matchedPairs.reduce((sum, pair) => sum + pair.current, 0) /
+          matchedCurrentScreenScores.reduce((sum, score) => sum + score, 0) /
             matchedCount,
         )
       : null;
@@ -1155,14 +1566,30 @@ export const formatVisualBenchmarkTable = (
         delta.screenName,
       );
       if (normalizedScreenName !== undefined) {
-        return `${fixtureName} / ${normalizedScreenName}`;
+        const screenDisplay = `${fixtureName} / ${normalizedScreenName}`;
+        return delta.viewportLabel !== undefined
+          ? `${screenDisplay} / ${delta.viewportLabel}`
+          : delta.viewportId !== undefined && delta.viewportId !== "default"
+            ? `${screenDisplay} / ${delta.viewportId}`
+            : screenDisplay;
       }
       if (
         typeof delta.screenId === "string" &&
         delta.screenId.length > 0 &&
         delta.screenId !== delta.fixtureId
       ) {
-        return `${fixtureName} / ${delta.screenId}`;
+        const screenDisplay = `${fixtureName} / ${delta.screenId}`;
+        return delta.viewportLabel !== undefined
+          ? `${screenDisplay} / ${delta.viewportLabel}`
+          : delta.viewportId !== undefined && delta.viewportId !== "default"
+            ? `${screenDisplay} / ${delta.viewportId}`
+            : screenDisplay;
+      }
+      if (delta.viewportLabel !== undefined) {
+        return `${fixtureName} / ${delta.viewportLabel}`;
+      }
+      if (delta.viewportId !== undefined && delta.viewportId !== "default") {
+        return `${fixtureName} / ${delta.viewportId}`;
       }
       return fixtureName;
     })();
@@ -1216,6 +1643,76 @@ interface MultiScreenAlertInputs {
   loadMetadata: (fixtureId: string) => Promise<VisualBenchmarkFixtureMetadata>;
   baselinePath: string;
 }
+
+interface PersistedVisualBenchmarkViewportArtifact {
+  viewportId?: string;
+  viewportLabel?: string;
+  score: number;
+  viewport: {
+    width: number;
+    height: number;
+  };
+  screenshotBuffer: Buffer;
+  diffBuffer: Buffer | null;
+  report: unknown | null;
+}
+
+const resolvePersistedViewportArtifacts = (
+  screen: VisualBenchmarkFixtureScreenArtifact,
+  qualityConfig?: VisualQualityConfig,
+): PersistedVisualBenchmarkViewportArtifact[] => {
+  if (Array.isArray(screen.viewports) && screen.viewports.length > 0) {
+    return screen.viewports.map((viewportArtifact) => {
+      const patchedReport =
+        qualityConfig !== undefined &&
+        isWorkspaceVisualQualityReport(viewportArtifact.report)
+          ? applyVisualQualityConfigToReport(
+              viewportArtifact.report,
+              qualityConfig,
+            )
+          : viewportArtifact.report;
+      const patchedScore =
+        qualityConfig !== undefined &&
+        isWorkspaceVisualQualityReport(patchedReport) &&
+        typeof patchedReport.overallScore === "number"
+          ? patchedReport.overallScore
+          : viewportArtifact.score;
+      return {
+        ...(viewportArtifact.viewportId !== undefined
+          ? { viewportId: viewportArtifact.viewportId }
+          : {}),
+        ...(viewportArtifact.viewportLabel !== undefined
+          ? { viewportLabel: viewportArtifact.viewportLabel }
+          : {}),
+        score: patchedScore,
+        viewport: viewportArtifact.viewport,
+        screenshotBuffer: viewportArtifact.screenshotBuffer,
+        diffBuffer: viewportArtifact.diffBuffer,
+        report: patchedReport,
+      };
+    });
+  }
+
+  const patchedReport =
+    qualityConfig !== undefined && isWorkspaceVisualQualityReport(screen.report)
+      ? applyVisualQualityConfigToReport(screen.report, qualityConfig)
+      : screen.report;
+  const patchedScore =
+    qualityConfig !== undefined &&
+    isWorkspaceVisualQualityReport(patchedReport) &&
+    typeof patchedReport.overallScore === "number"
+      ? patchedReport.overallScore
+      : screen.score;
+  return [
+    {
+      score: patchedScore,
+      viewport: screen.viewport,
+      screenshotBuffer: screen.screenshotBuffer,
+      diffBuffer: screen.diffBuffer,
+      report: patchedReport,
+    },
+  ];
+};
 
 const computeMultiScreenBaselineAlerts = async ({
   currentScoresByFixture,
@@ -1320,6 +1817,7 @@ export const runVisualBenchmark = async (
 ): Promise<VisualBenchmarkResult> => {
   const runAt = new Date().toISOString();
   let scores: VisualBenchmarkScoreEntry[];
+  const currentScreenAggregateMap = new Map<string, VisualBenchmarkScreenAggregateEntry>();
   const fixtureScreenContexts = new Map<string, VisualQualityScreenContext>();
   const artifactEntries: VisualBenchmarkLastRunArtifactInput[] = [];
   const fixtureMetadataCache = new Map<
@@ -1343,17 +1841,37 @@ export const runVisualBenchmark = async (
     dependencies?.runFixtureBenchmark !== undefined &&
     dependencies.executeFixture === undefined
   ) {
-    scores = await computeVisualBenchmarkScores(options, dependencies);
-    for (const entry of scores) {
-      if (entry.screenId !== undefined) {
-        let set = fixtureObservedScreens.get(entry.fixtureId);
+    const fixtureIds = await listVisualBenchmarkFixtureIds(options);
+    const runFixtureBenchmark = dependencies.runFixtureBenchmark;
+    scores = [];
+    for (const fixtureId of fixtureIds) {
+      const result = await runFixtureBenchmark(fixtureId, options);
+      for (const screen of result.screens) {
+        const normalizedScreenId =
+          typeof screen.screenId === "string" && screen.screenId.trim().length > 0
+            ? screen.screenId.trim()
+            : fixtureId;
+        const aggregateKey = getScreenAggregateKey(
+          result.fixtureId,
+          normalizedScreenId,
+        );
+        currentScreenAggregateMap.set(aggregateKey, {
+          fixtureId: result.fixtureId,
+          screenId: normalizedScreenId,
+          score: screen.score,
+        });
+        let set = fixtureObservedScreens.get(result.fixtureId);
         if (set === undefined) {
           set = new Set<string>();
-          fixtureObservedScreens.set(entry.fixtureId, set);
+          fixtureObservedScreens.set(result.fixtureId, set);
         }
-        set.add(entry.screenId);
+        set.add(normalizedScreenId);
+      }
+      for (const entry of runResultToScoreEntries(result)) {
+        scores.push(await normalizeScoreEntryWithMetadata(entry, options));
       }
     }
+    scores = sortScores(scores);
   } else {
     const fixtureIds = await listVisualBenchmarkFixtureIds(options);
     const executeFixture =
@@ -1382,41 +1900,49 @@ export const runVisualBenchmark = async (
         if (screenContext !== undefined) {
           fixtureScreenContexts.set(screenContextKey, screenContext);
         }
-        // Only re-apply the config when a qualityConfig is supplied.
-        // Without a config, preserve the per-screen score from the
-        // execution result so that stubbed fan-out tests can exercise
-        // distinct per-screen scores via `screen.score`.
-        const patchedReport =
-          options?.qualityConfig !== undefined &&
-          isWorkspaceVisualQualityReport(screen.report)
-            ? applyVisualQualityConfigToReport(
-                screen.report,
-                options.qualityConfig,
-              )
-            : screen.report;
-        const patchedScore =
-          options?.qualityConfig !== undefined &&
-          isWorkspaceVisualQualityReport(patchedReport) &&
-          typeof patchedReport.overallScore === "number"
-            ? patchedReport.overallScore
-            : screen.score;
-        scores.push({
-          fixtureId: result.fixtureId,
-          screenId: screen.screenId,
-          screenName: screen.screenName,
-          score: patchedScore,
-        });
-        artifactEntries.push({
-          fixtureId: result.fixtureId,
-          screenId: screen.screenId,
-          screenName: screen.screenName,
-          score: patchedScore,
-          ranAt: runAt,
-          viewport: screen.viewport,
-          actualImageBuffer: screen.screenshotBuffer,
-          diffImageBuffer: screen.diffBuffer,
-          report: patchedReport,
-        });
+        const persistedViewportArtifacts = resolvePersistedViewportArtifacts(
+          screen,
+          options?.qualityConfig,
+        );
+        currentScreenAggregateMap.set(
+          getScreenAggregateKey(result.fixtureId, screen.screenId),
+          {
+            fixtureId: result.fixtureId,
+            screenId: screen.screenId,
+            score: screen.score,
+          },
+        );
+        for (const artifact of persistedViewportArtifacts) {
+          scores.push({
+            fixtureId: result.fixtureId,
+            screenId: screen.screenId,
+            screenName: screen.screenName,
+            ...(artifact.viewportId !== undefined
+              ? { viewportId: artifact.viewportId }
+              : {}),
+            ...(artifact.viewportLabel !== undefined
+              ? { viewportLabel: artifact.viewportLabel }
+              : {}),
+            score: artifact.score,
+          });
+          artifactEntries.push({
+            fixtureId: result.fixtureId,
+            screenId: screen.screenId,
+            screenName: screen.screenName,
+            ...(artifact.viewportId !== undefined
+              ? { viewportId: artifact.viewportId }
+              : {}),
+            ...(artifact.viewportLabel !== undefined
+              ? { viewportLabel: artifact.viewportLabel }
+              : {}),
+            score: artifact.score,
+            ranAt: runAt,
+            viewport: artifact.viewport,
+            actualImageBuffer: artifact.screenshotBuffer,
+            diffImageBuffer: artifact.diffBuffer,
+            report: artifact.report,
+          });
+        }
       }
     }
     scores = sortScores(scores);
@@ -1429,6 +1955,146 @@ export const runVisualBenchmark = async (
   const result = computeVisualBenchmarkDeltas(scores, baseline, {
     neutralTolerance: regressionConfig.neutralTolerance,
   });
+
+  const computeScreenAggregateForEntry = async (
+    entry: VisualBenchmarkScreenAggregateEntry,
+    sourceScores: readonly VisualBenchmarkScoreEntry[],
+  ): Promise<number> => {
+    const matchingViewportScores = sourceScores
+      .map((scoreEntry) => toCanonicalScoreEntry(scoreEntry))
+      .filter((scoreEntry) => {
+        const scoreScreenId =
+          typeof scoreEntry.screenId === "string" && scoreEntry.screenId.length > 0
+            ? scoreEntry.screenId
+            : scoreEntry.fixtureId;
+        return (
+          scoreEntry.fixtureId === entry.fixtureId &&
+          scoreScreenId === entry.screenId
+        );
+      });
+    if (matchingViewportScores.length <= 1) {
+      return matchingViewportScores[0]?.score ?? entry.score;
+    }
+
+    const metadata = await loadCachedMetadata(entry.fixtureId);
+    const screens = enumerateFixtureScreens(metadata);
+    const screen = screens.find((candidate) => candidate.screenId === entry.screenId);
+    if (screen === undefined) {
+      return roundToTwoDecimals(
+        matchingViewportScores.reduce((sum, candidate) => sum + candidate.score, 0) /
+          matchingViewportScores.length,
+      );
+    }
+
+    const configuredViewports = resolveVisualQualityViewports(
+      qualityConfig,
+      entry.fixtureId,
+      {
+        screenId: screen.screenId,
+        screenName: screen.screenName,
+      },
+    );
+    const resolvedViewports = enumerateFixtureScreenViewports(
+      screen,
+      configuredViewports ?? [],
+    );
+    const scoreByViewport = new Map<string, number>();
+    for (const scoreEntry of matchingViewportScores) {
+      const viewportId =
+        typeof scoreEntry.viewportId === "string" && scoreEntry.viewportId.length > 0
+          ? scoreEntry.viewportId
+          : "default";
+      scoreByViewport.set(viewportId, scoreEntry.score);
+    }
+    const matchedViewportSpecs = resolvedViewports.filter((viewport) =>
+      scoreByViewport.has(viewport.id),
+    );
+    if (matchedViewportSpecs.length !== scoreByViewport.size) {
+      return roundToTwoDecimals(
+        matchingViewportScores.reduce((sum, candidate) => sum + candidate.score, 0) /
+          matchingViewportScores.length,
+      );
+    }
+    const normalizedSpecs = normalizeVisualQualityViewportWeights(
+      matchedViewportSpecs,
+    );
+    let weightedScore = 0;
+    for (const viewportSpec of normalizedSpecs) {
+      weightedScore +=
+        (scoreByViewport.get(viewportSpec.id) ?? 0) * (viewportSpec.weight ?? 0);
+    }
+    return roundToTwoDecimals(weightedScore);
+  };
+
+  const baselineScreenAggregateMap = new Map<
+    string,
+    VisualBenchmarkScreenAggregateEntry
+  >();
+  if (baseline !== null) {
+    const baselineScreenKeys = new Set<string>();
+    for (const entry of baseline.scores) {
+      const canonical = toCanonicalScoreEntry(entry);
+      const key = getScreenAggregateKey(canonical.fixtureId, canonical.screenId);
+      if (baselineScreenKeys.has(key)) {
+        continue;
+      }
+      baselineScreenKeys.add(key);
+      baselineScreenAggregateMap.set(key, {
+        fixtureId: canonical.fixtureId,
+        screenId:
+          canonical.screenId !== undefined
+            ? canonical.screenId
+            : canonical.fixtureId,
+        score: await computeScreenAggregateForEntry(
+          {
+            fixtureId: canonical.fixtureId,
+            screenId:
+              canonical.screenId !== undefined
+                ? canonical.screenId
+                : canonical.fixtureId,
+            score: canonical.score,
+          },
+          baseline.scores,
+        ),
+      });
+    }
+  }
+
+  if (currentScreenAggregateMap.size > 0) {
+    const currentScreenScores = Array.from(currentScreenAggregateMap.values()).map(
+      (entry) => entry.score,
+    );
+    result.overallCurrent = roundToTwoDecimals(
+      currentScreenScores.reduce((sum, score) => sum + score, 0) /
+        currentScreenScores.length,
+    );
+    const matchedCurrentScores: number[] = [];
+    const matchedBaselineScores: number[] = [];
+    for (const [key, currentEntry] of currentScreenAggregateMap.entries()) {
+      const baselineEntry = baselineScreenAggregateMap.get(key);
+      if (baselineEntry === undefined) {
+        continue;
+      }
+      matchedCurrentScores.push(currentEntry.score);
+      matchedBaselineScores.push(baselineEntry.score);
+    }
+    if (matchedBaselineScores.length > 0) {
+      const comparableCurrentAverage = roundToTwoDecimals(
+        matchedCurrentScores.reduce((sum, score) => sum + score, 0) /
+          matchedCurrentScores.length,
+      );
+      result.overallBaseline = roundToTwoDecimals(
+        matchedBaselineScores.reduce((sum, score) => sum + score, 0) /
+          matchedBaselineScores.length,
+      );
+      result.overallDelta = roundToTwoDecimals(
+        comparableCurrentAverage - result.overallBaseline,
+      );
+    } else {
+      result.overallBaseline = null;
+      result.overallDelta = null;
+    }
+  }
 
   // Run regression detection (delta-based alerts + trend summaries)
   const regressionDetection = detectVisualBenchmarkRegression(
@@ -1461,10 +2127,7 @@ export const runVisualBenchmark = async (
   // Apply quality config thresholds if config is present
   if (qualityConfig) {
     for (const delta of result.deltas) {
-      const screenContextKey = getVisualBenchmarkScoreKey({
-        fixtureId: delta.fixtureId,
-        screenId: delta.screenId,
-      });
+      const screenContextKey = `${delta.fixtureId}::${delta.screenId ?? delta.fixtureId}`;
       let screenContext = fixtureScreenContexts.get(screenContextKey);
       if (screenContext === undefined) {
         screenContext = await loadVisualQualityScreenContext(
@@ -1501,10 +2164,23 @@ export const runVisualBenchmark = async (
         (entriesPerFixture.get(entry.fixtureId) ?? 0) + 1,
       );
     }
+    const fixturesNeedingLegacyRootCleanup = new Set<string>();
+    for (const entry of artifactEntries) {
+      const fixtureEntryCount = entriesPerFixture.get(entry.fixtureId) ?? 0;
+      const hasViewportId =
+        typeof entry.viewportId === "string" && entry.viewportId.length > 0;
+      if (fixtureEntryCount > 1 || hasViewportId) {
+        fixturesNeedingLegacyRootCleanup.add(entry.fixtureId);
+      }
+    }
+    for (const fixtureId of fixturesNeedingLegacyRootCleanup) {
+      await deleteLegacyRootLastRunArtifacts(fixtureId, options);
+    }
     for (const artifactEntry of artifactEntries) {
       const key = getVisualBenchmarkScoreKey({
         fixtureId: artifactEntry.fixtureId,
         screenId: artifactEntry.screenId,
+        viewportId: artifactEntry.viewportId,
       });
       const delta = deltaByKey.get(key);
       const isMultiScreen =
@@ -1512,7 +2188,9 @@ export const runVisualBenchmark = async (
       await saveVisualBenchmarkLastRunArtifact(
         {
           ...artifactEntry,
-          ...(isMultiScreen ? {} : { screenId: undefined }),
+          ...(isMultiScreen || artifactEntry.viewportId !== undefined
+            ? {}
+            : { screenId: undefined }),
           thresholdResult: delta?.thresholdResult,
         },
         options,
@@ -1573,6 +2251,8 @@ export const runVisualBenchmark = async (
           fixtureId: entry.fixtureId,
           screenId: entry.screenId,
           screenName: entry.screenName,
+          viewportId: entry.viewportId,
+          viewportLabel: entry.viewportLabel,
           score: entry.score,
         })),
       },

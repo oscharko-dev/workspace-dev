@@ -108,7 +108,10 @@ export const runVisualBenchmarkCli = async (
   args: readonly string[],
   options?: {
     runBenchmark?: (
-      qualityThreshold?: number,
+      input?: {
+        qualityThreshold?: number;
+        viewportId?: string;
+      },
     ) => Promise<VisualBenchmarkResult>;
   },
 ): Promise<number> => {
@@ -120,16 +123,29 @@ export const runVisualBenchmarkCli = async (
 
   const runBenchmark =
     options?.runBenchmark ??
-    (async (threshold?: number) => {
+    (async (input?: { qualityThreshold?: number; viewportId?: string }) => {
       // Load config and apply CLI threshold override
       const config = await loadVisualQualityConfig();
       const effectiveConfig: VisualQualityConfig =
-        threshold !== undefined
-          ? { ...config, thresholds: { ...config.thresholds, warn: threshold } }
+        input?.qualityThreshold !== undefined
+          ? {
+              ...config,
+              thresholds: {
+                ...config.thresholds,
+                warn: input.qualityThreshold,
+              },
+            }
           : config;
-      return runVisualBenchmark({ qualityConfig: effectiveConfig });
+      return runVisualBenchmark({
+        qualityConfig: effectiveConfig,
+        viewportId: input?.viewportId,
+      });
     });
-  const result = await runBenchmark(resolution.qualityThreshold);
+  const threshold = resolution.qualityThreshold;
+  const result = await runBenchmark({
+    qualityThreshold: threshold,
+    viewportId: resolution.viewportId,
+  });
 
   if (
     resolution.enforceThresholds &&

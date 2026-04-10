@@ -26,7 +26,7 @@ import {
   loadVisualBenchmarkFixtureInputs,
   loadVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkFixturePaths,
-  resolveVisualBenchmarkScreenPaths,
+  resolveVisualBenchmarkScreenViewportPaths,
   toScreenIdToken,
   toStableJsonString,
   type VisualBenchmarkFixtureMetadata,
@@ -36,6 +36,7 @@ import {
 } from "./visual-benchmark.helpers.js";
 import {
   applyVisualQualityConfigToReport,
+  normalizeVisualQualityViewportWeights,
   resolveVisualQualityViewports,
   type VisualQualityConfig,
 } from "./visual-quality-config.js";
@@ -45,6 +46,7 @@ const DEFAULT_WORKSPACE_ROOT = process.cwd();
 export interface VisualBenchmarkExecutionOptions extends VisualBenchmarkFixtureOptions {
   allowIncompleteVisualQuality?: boolean;
   qualityConfig?: VisualQualityConfig;
+  viewportId?: string;
   workspaceRoot?: string;
 }
 
@@ -102,6 +104,8 @@ interface VisualQualityFrozenReferenceOverride {
   imagePath: string;
   metadataPath: string;
 }
+
+const DEFAULT_MOBILE_DEVICE_SCALE_FACTOR = 3;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -371,11 +375,78 @@ const createExecutionContext = async ({
   };
 };
 
-const executeVisualBenchmarkScreen = async ({
+const resolveViewportDeviceScaleFactor = (
+  viewport: VisualBenchmarkViewportSpec,
+): number => {
+  if (viewport.deviceScaleFactor !== undefined) {
+    return viewport.deviceScaleFactor;
+  }
+  return viewport.id === "mobile" ? DEFAULT_MOBILE_DEVICE_SCALE_FACTOR : 1;
+};
+
+const selectScreenViewports = ({
+  fixtureId,
+  screen,
+  resolvedViewports,
+  selectedViewportId,
+}: {
+  fixtureId: string;
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  resolvedViewports: readonly VisualBenchmarkViewportSpec[];
+  selectedViewportId: string | undefined;
+}): VisualBenchmarkViewportSpec[] => {
+  if (selectedViewportId === undefined) {
+    return [...resolvedViewports];
+  }
+  const selectedViewport = resolvedViewports.find(
+    (viewport) => viewport.id === selectedViewportId,
+  );
+  if (selectedViewport === undefined) {
+    const availableViewportIds = resolvedViewports.map((viewport) => viewport.id);
+    throw new Error(
+      `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' does not define viewport '${selectedViewportId}'. Available viewports: ${availableViewportIds.join(", ")}.`,
+    );
+  }
+  return [selectedViewport];
+};
+
+const computeAggregateFromViewportArtifacts = ({
+  viewportSpecs,
+  viewportArtifacts,
+}: {
+  viewportSpecs: readonly VisualBenchmarkViewportSpec[];
+  viewportArtifacts: readonly VisualBenchmarkScreenViewportArtifact[];
+}): number => {
+  if (viewportArtifacts.length === 0) {
+    throw new Error(
+      "computeAggregateFromViewportArtifacts requires at least one viewport result.",
+    );
+  }
+  if (viewportArtifacts.length === 1) {
+    return viewportArtifacts[0]!.score;
+  }
+
+  const normalizedViewports = normalizeVisualQualityViewportWeights(viewportSpecs);
+  let weightedScore = 0;
+  for (let index = 0; index < viewportArtifacts.length; index += 1) {
+    const viewportArtifact = viewportArtifacts[index]!;
+    const viewportSpec = normalizedViewports[index];
+    if (viewportSpec === undefined) {
+      throw new Error(
+        "Viewport scoring configuration does not align with executed viewport artifacts.",
+      );
+    }
+    weightedScore += viewportArtifact.score * (viewportSpec.weight ?? 0);
+  }
+  return Math.round(weightedScore * 100) / 100;
+};
+
+const executeVisualBenchmarkViewport = async ({
   fixtureId,
   metadata,
   figmaInput,
   screen,
+  activeViewport,
   figmaJsonPath,
   workspaceRoot,
   options,
@@ -384,25 +455,12 @@ const executeVisualBenchmarkScreen = async ({
   metadata: VisualBenchmarkFixtureMetadata;
   figmaInput: unknown;
   screen: VisualBenchmarkFixtureScreenMetadata;
+  activeViewport: VisualBenchmarkViewportSpec;
   figmaJsonPath: string;
   workspaceRoot: string;
   options?: VisualBenchmarkExecutionOptions;
-}): Promise<VisualBenchmarkFixtureScreenArtifact> => {
-  // TODO(#838 follow-up PR): when resolvedViewports.length > 1, execute the
-  // pipeline once per viewport with visualQualityViewportHeight/DeviceScaleFactor
-  // overrides. Currently only the first viewport is honored. See spec notes for
-  // the codegen-hoist optimization.
-  const userConfiguredViewports = resolveVisualQualityViewports(
-    options?.qualityConfig,
-    fixtureId,
-    { screenId: screen.screenId, screenName: screen.screenName },
-  );
-  const resolvedViewports = enumerateFixtureScreenViewports(
-    screen,
-    userConfiguredViewports ?? [],
-  );
-  const activeViewport: VisualBenchmarkViewportSpec = resolvedViewports[0]!;
-  const activeDeviceScaleFactor = activeViewport.deviceScaleFactor ?? 1;
+}): Promise<VisualBenchmarkScreenViewportArtifact> => {
+  const activeDeviceScaleFactor = resolveViewportDeviceScaleFactor(activeViewport);
 
   const perScreenMetadata: VisualBenchmarkFixtureMetadata = {
     ...metadata,
@@ -427,11 +485,17 @@ const executeVisualBenchmarkScreen = async ({
       workspaceRoot,
     });
   const fixturePaths = resolveVisualBenchmarkFixturePaths(fixtureId, options);
-  const multiScreenFixture =
-    metadata.version === 2 &&
-    Array.isArray(metadata.screens) &&
-    metadata.screens.length > 1;
-  let temporaryMetadataPath: string | null = null;
+  const screenViewportPaths = resolveVisualBenchmarkScreenViewportPaths(
+    fixtureId,
+    screen.screenId,
+    activeViewport.id,
+    options,
+  );
+  const metadataPath = path.join(
+    fixturePaths.fixtureDir,
+    ".benchmark-runtime",
+    `reference-${toScreenIdToken(screen.screenId)}-${activeViewport.id}.metadata.json`,
+  );
 
   try {
     const localFigmaJsonPath = path.join(
@@ -449,28 +513,14 @@ const executeVisualBenchmarkScreen = async ({
       ),
       "utf8",
     );
-    const referenceImagePath = multiScreenFixture
-      ? resolveVisualBenchmarkScreenPaths(fixtureId, screen.screenId, options)
-          .referencePngPath
-      : fixturePaths.referencePngPath;
-    const metadataPath = multiScreenFixture
-      ? path.join(
-          fixturePaths.fixtureDir,
-          ".benchmark-runtime",
-          `reference-${toScreenIdToken(screen.screenId)}.metadata.json`,
-        )
-      : fixturePaths.metadataJsonPath;
-    if (multiScreenFixture) {
-      temporaryMetadataPath = metadataPath;
-      await mkdir(path.dirname(metadataPath), { recursive: true });
-      await writeFile(
-        metadataPath,
-        toStableJsonString(perScreenMetadata),
-        "utf8",
-      );
-    }
+    await mkdir(path.dirname(metadataPath), { recursive: true });
+    await writeFile(
+      metadataPath,
+      toStableJsonString(perScreenMetadata),
+      "utf8",
+    );
     const visualQualityFrozenReference: VisualQualityFrozenReferenceOverride = {
-      imagePath: referenceImagePath,
+      imagePath: screenViewportPaths.referencePngPath,
       metadataPath,
     };
     (
@@ -547,7 +597,7 @@ const executeVisualBenchmarkScreen = async ({
     ) {
       if (options?.allowIncompleteVisualQuality !== true) {
         throw new Error(
-          `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' did not produce a completed visual quality score.`,
+          `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' viewport '${activeViewport.id}' did not produce a completed visual quality score.`,
         );
       }
     }
@@ -558,15 +608,13 @@ const executeVisualBenchmarkScreen = async ({
       deviceScaleFactor: activeDeviceScaleFactor,
     };
 
-    const singleViewportResult: VisualBenchmarkFixtureScreenArtifact = {
-      screenId: screen.screenId,
-      screenName: screen.screenName,
-      nodeId: screen.nodeId,
+    return {
+      viewportId: activeViewport.id,
+      viewportLabel: activeViewport.label ?? activeViewport.id,
       score:
         typeof effectiveVisualQuality?.overallScore === "number"
           ? effectiveVisualQuality.overallScore
           : 100,
-      ...(screen.weight !== undefined ? { weight: screen.weight } : {}),
       screenshotBuffer,
       diffBuffer,
       report,
@@ -575,33 +623,86 @@ const executeVisualBenchmarkScreen = async ({
         height: viewport.height,
       },
     };
-
-    const viewports: VisualBenchmarkScreenViewportArtifact[] = [
-      {
-        viewportId: activeViewport.id,
-        viewportLabel: activeViewport.label ?? activeViewport.id,
-        score: singleViewportResult.score,
-        screenshotBuffer: singleViewportResult.screenshotBuffer,
-        diffBuffer: singleViewportResult.diffBuffer,
-        report: singleViewportResult.report,
-        viewport: singleViewportResult.viewport,
-      },
-    ];
-
-    return {
-      ...singleViewportResult,
-      viewports,
-    };
   } finally {
-    if (temporaryMetadataPath !== null) {
-      await rm(temporaryMetadataPath, { force: true });
-      await rm(path.dirname(temporaryMetadataPath), {
-        recursive: true,
-        force: true,
-      });
-    }
+    await rm(metadataPath, { force: true });
+    await rm(path.dirname(metadataPath), {
+      recursive: true,
+      force: true,
+    });
     await rm(rootDir, { recursive: true, force: true });
   }
+};
+
+const executeVisualBenchmarkScreen = async ({
+  fixtureId,
+  metadata,
+  figmaInput,
+  screen,
+  figmaJsonPath,
+  workspaceRoot,
+  options,
+}: {
+  fixtureId: string;
+  metadata: VisualBenchmarkFixtureMetadata;
+  figmaInput: unknown;
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  figmaJsonPath: string;
+  workspaceRoot: string;
+  options?: VisualBenchmarkExecutionOptions;
+}): Promise<VisualBenchmarkFixtureScreenArtifact> => {
+  const userConfiguredViewports = resolveVisualQualityViewports(
+    options?.qualityConfig,
+    fixtureId,
+    { screenId: screen.screenId, screenName: screen.screenName },
+  );
+  const resolvedViewports = enumerateFixtureScreenViewports(
+    screen,
+    userConfiguredViewports ?? [],
+  );
+  const selectedViewports = selectScreenViewports({
+    fixtureId,
+    screen,
+    resolvedViewports,
+    selectedViewportId: options?.viewportId,
+  });
+
+  const viewports = await Promise.all(
+    selectedViewports.map((activeViewport) =>
+      executeVisualBenchmarkViewport({
+        fixtureId,
+        metadata,
+        figmaInput,
+        screen,
+        activeViewport,
+        figmaJsonPath,
+        workspaceRoot,
+        options,
+      }),
+    ),
+  );
+
+  const representativeViewport = viewports[0];
+  if (representativeViewport === undefined) {
+    throw new Error(
+      `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' did not produce any viewport artifacts.`,
+    );
+  }
+
+  return {
+    screenId: screen.screenId,
+    screenName: screen.screenName,
+    nodeId: screen.nodeId,
+    score: computeAggregateFromViewportArtifacts({
+      viewportSpecs: selectedViewports,
+      viewportArtifacts: viewports,
+    }),
+    ...(screen.weight !== undefined ? { weight: screen.weight } : {}),
+    screenshotBuffer: representativeViewport.screenshotBuffer,
+    diffBuffer: representativeViewport.diffBuffer,
+    report: representativeViewport.report,
+    viewport: representativeViewport.viewport,
+    viewports,
+  };
 };
 
 const computeAggregateFromScreens = (

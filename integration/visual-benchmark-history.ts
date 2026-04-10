@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   assertAllowedFixtureId,
+  assertAllowedViewportId,
   getVisualBenchmarkFixtureRoot,
   loadVisualBenchmarkFixtureMetadata,
   toStableJsonString,
@@ -17,6 +18,8 @@ export interface VisualBenchmarkHistoryScoreEntry {
   fixtureId: string;
   screenId?: string;
   screenName?: string;
+  viewportId?: string;
+  viewportLabel?: string;
   score: number;
 }
 
@@ -93,6 +96,8 @@ export const parseVisualBenchmarkHistory = (
       }
       let screenId: string | undefined;
       let screenName: string | undefined;
+      let viewportId: string | undefined;
+      let viewportLabel: string | undefined;
       if (parsed.version === 2) {
         if (
           typeof score.screenId !== "string" ||
@@ -114,11 +119,35 @@ export const parseVisualBenchmarkHistory = (
           }
           screenName = score.screenName.trim();
         }
+        if (score.viewportId !== undefined) {
+          if (
+            typeof score.viewportId !== "string" ||
+            score.viewportId.trim().length === 0
+          ) {
+            throw new Error(
+              "Visual benchmark history version 2 score entry viewportId must be a non-empty string when provided.",
+            );
+          }
+          viewportId = assertAllowedViewportId(score.viewportId.trim());
+        }
+        if (score.viewportLabel !== undefined) {
+          if (
+            typeof score.viewportLabel !== "string" ||
+            score.viewportLabel.trim().length === 0
+          ) {
+            throw new Error(
+              "Visual benchmark history version 2 score entry viewportLabel must be a non-empty string when provided.",
+            );
+          }
+          viewportLabel = score.viewportLabel.trim();
+        }
       }
       scores.push({
         fixtureId: score.fixtureId,
         ...(screenId !== undefined ? { screenId } : {}),
         ...(screenName !== undefined ? { screenName } : {}),
+        ...(viewportId !== undefined ? { viewportId } : {}),
+        ...(viewportLabel !== undefined ? { viewportLabel } : {}),
         score: score.score,
       });
     }
@@ -148,11 +177,22 @@ const normalizeHistoryScoreEntry = (
       ? entry.screenId.trim()
       : fixtureId;
   const screenName = normalizeOptionalScreenName(entry.screenName);
+  const viewportId =
+    typeof entry.viewportId === "string" && entry.viewportId.trim().length > 0
+      ? assertAllowedViewportId(entry.viewportId.trim())
+      : undefined;
+  const viewportLabel =
+    typeof entry.viewportLabel === "string" &&
+    entry.viewportLabel.trim().length > 0
+      ? entry.viewportLabel.trim()
+      : undefined;
 
   return {
     fixtureId,
     screenId,
     ...(screenName !== undefined ? { screenName } : {}),
+    ...(viewportId !== undefined ? { viewportId } : {}),
+    ...(viewportLabel !== undefined ? { viewportLabel } : {}),
     score: entry.score,
   };
 };
@@ -215,6 +255,12 @@ const normalizeHistoryScoreEntryWithMetadata = async (
     fixtureId: normalized.fixtureId,
     screenId: providedScreenId ?? metadata.source.nodeId,
     ...(screenName !== undefined ? { screenName } : {}),
+    ...(normalized.viewportId !== undefined
+      ? { viewportId: normalized.viewportId }
+      : {}),
+    ...(normalized.viewportLabel !== undefined
+      ? { viewportLabel: normalized.viewportLabel }
+      : {}),
     score: normalized.score,
   };
 };
@@ -298,6 +344,13 @@ const normalizeHistoryScores = (
       const screenComparison = left.screenId!.localeCompare(right.screenId!);
       if (screenComparison !== 0) {
         return screenComparison;
+      }
+
+      const viewportComparison = (left.viewportId ?? "").localeCompare(
+        right.viewportId ?? "",
+      );
+      if (viewportComparison !== 0) {
+        return viewportComparison;
       }
 
       return (left.screenName ?? "").localeCompare(right.screenName ?? "");

@@ -1,12 +1,16 @@
 import assert from "node:assert/strict";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  enumerateFixtureScreens,
   isValidPngBuffer,
   listVisualBenchmarkFixtureIds,
   loadVisualBenchmarkFixtureInputs,
   loadVisualBenchmarkFixtureMetadata,
   loadVisualBenchmarkReference,
+  resolveVisualBenchmarkScreenPaths,
+  resolveVisualBenchmarkScreenViewportPaths,
   resolveVisualBenchmarkFixturePaths,
   toStableJsonString,
   type VisualBenchmarkFixtureMetadata,
@@ -17,7 +21,11 @@ import {
   writeVisualBenchmarkReference,
 } from "./visual-benchmark.helpers.js";
 import { updateVisualBaselines } from "./visual-baseline.js";
-import { executeVisualBenchmarkFixture } from "./visual-benchmark.execution.js";
+import {
+  executeVisualBenchmarkFixture,
+  type VisualBenchmarkExecutionOptions,
+  type VisualBenchmarkFixtureRunResult,
+} from "./visual-benchmark.execution.js";
 
 type FetchLike = typeof fetch;
 type VisualBenchmarkMode =
@@ -28,6 +36,10 @@ type VisualBenchmarkMode =
 
 export interface VisualBenchmarkUpdateDependencies extends VisualBenchmarkFixtureOptions {
   fetchImpl?: FetchLike;
+  executeFixture?: (
+    fixtureId: string,
+    options?: VisualBenchmarkExecutionOptions,
+  ) => Promise<VisualBenchmarkFixtureRunResult>;
   log?: (message: string) => void;
   now?: () => string;
 }
@@ -123,6 +135,25 @@ const fetchWithRetry = async (
     }
   }
   throw lastError;
+};
+
+const loadValidPngIfPresent = async (pngPath: string): Promise<Buffer | null> => {
+  try {
+    const buffer = await readFile(pngPath);
+    if (!isValidPngBuffer(buffer)) {
+      throw new Error(`Expected a valid PNG at '${pngPath}'.`);
+    }
+    return buffer;
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return null;
+    }
+    throw error;
+  }
 };
 
 const extractNodeSnapshot = (
@@ -324,6 +355,8 @@ export const updateVisualBenchmarkReferences = async (
 ): Promise<void> => {
   const log = dependencies?.log ?? defaultLog;
   const now = dependencies?.now ?? (() => new Date().toISOString());
+  const executeFixture =
+    dependencies?.executeFixture ?? executeVisualBenchmarkFixture;
   const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
 
   log(`Updating references for ${fixtureIds.length} fixture(s)...`);
@@ -332,22 +365,96 @@ export const updateVisualBenchmarkReferences = async (
       fixtureId,
       dependencies,
     );
-    const renderedReference = await executeVisualBenchmarkFixture(fixtureId, {
+    const renderedReference = await executeFixture(fixtureId, {
       ...dependencies,
       allowIncompleteVisualQuality: true,
     });
+    const firstScreenArtifact = renderedReference.screens[0];
+    if (firstScreenArtifact === undefined) {
+      throw new Error(
+        `Benchmark fixture '${fixtureId}' did not produce any screen artifacts.`,
+      );
+    }
+    const firstViewportArtifact =
+      firstScreenArtifact.viewports?.[0] ?? firstScreenArtifact;
+    if (!isValidPngBuffer(firstViewportArtifact.screenshotBuffer)) {
+      throw new Error(
+        `Benchmark fixture '${fixtureId}' produced an invalid representative PNG.`,
+      );
+    }
     const updatedMetadata: VisualBenchmarkFixtureMetadata = {
       ...metadata,
       capturedAt: now(),
       viewport: {
-        width: renderedReference.viewport.width,
-        height: renderedReference.viewport.height,
+        width: firstViewportArtifact.viewport.width,
+        height: firstViewportArtifact.viewport.height,
       },
     };
 
+    const declaredScreensById = new Map(
+      enumerateFixtureScreens(metadata).map((screen) => [screen.screenId, screen]),
+    );
+
+    for (const renderedScreen of renderedReference.screens) {
+      const viewportArtifacts =
+        renderedScreen.viewports !== undefined && renderedScreen.viewports.length > 0
+          ? renderedScreen.viewports
+          : [
+              {
+                viewportId: "default",
+                screenshotBuffer: renderedScreen.screenshotBuffer,
+              },
+            ];
+      const representativeScreenViewport = viewportArtifacts[0];
+      if (
+        representativeScreenViewport !== undefined &&
+        isValidPngBuffer(representativeScreenViewport.screenshotBuffer)
+      ) {
+        const legacyScreenPath = resolveVisualBenchmarkScreenPaths(
+          fixtureId,
+          renderedScreen.screenId,
+          dependencies,
+        ).referencePngPath;
+        await mkdir(path.dirname(legacyScreenPath), { recursive: true });
+        await writeFile(
+          legacyScreenPath,
+          representativeScreenViewport.screenshotBuffer,
+        );
+        log(`Updated ${path.relative(process.cwd(), legacyScreenPath)}`);
+      }
+
+      for (const viewportArtifact of viewportArtifacts) {
+        const viewportId =
+          typeof viewportArtifact.viewportId === "string" &&
+          viewportArtifact.viewportId.trim().length > 0
+            ? viewportArtifact.viewportId.trim()
+            : "default";
+        if (!isValidPngBuffer(viewportArtifact.screenshotBuffer)) {
+          throw new Error(
+            `Benchmark fixture '${fixtureId}' screen '${renderedScreen.screenId}' viewport '${viewportId}' produced an invalid PNG.`,
+          );
+        }
+        const viewportPath = resolveVisualBenchmarkScreenViewportPaths(
+          fixtureId,
+          renderedScreen.screenId,
+          viewportId,
+          dependencies,
+        ).referencePngPath;
+        await mkdir(path.dirname(viewportPath), { recursive: true });
+        await writeFile(viewportPath, viewportArtifact.screenshotBuffer);
+        log(`Updated ${path.relative(process.cwd(), viewportPath)}`);
+      }
+
+      if (!declaredScreensById.has(renderedScreen.screenId)) {
+        throw new Error(
+          `Benchmark fixture '${fixtureId}' produced undeclared screen '${renderedScreen.screenId}'.`,
+        );
+      }
+    }
+
     await writeVisualBenchmarkReference(
       fixtureId,
-      renderedReference.screenshotBuffer,
+      firstViewportArtifact.screenshotBuffer,
       dependencies,
     );
     await writeVisualBenchmarkFixtureMetadata(
@@ -393,11 +500,93 @@ export const runVisualBenchmarkLiveAudit = async (
       accessToken,
       dependencies,
     );
+    let viewportReferenceDrift = false;
+    const declaredScreens = enumerateFixtureScreens(metadata);
+    for (const screen of declaredScreens) {
+      const screenMetadata: VisualBenchmarkFixtureMetadata = {
+        ...metadata,
+        source: {
+          ...metadata.source,
+          nodeId: screen.nodeId,
+          nodeName: screen.screenName,
+        },
+        viewport: {
+          width: screen.viewport.width,
+          height: screen.viewport.height,
+        },
+      };
+      const liveScreenReference =
+        screen.nodeId === metadata.source.nodeId
+          ? liveReference
+          : await fetchVisualBenchmarkReferenceImage(
+              screenMetadata,
+              accessToken,
+              dependencies,
+            );
+      const frozenScreenPaths = resolveVisualBenchmarkScreenPaths(
+        fixtureId,
+        screen.screenId,
+        dependencies,
+      );
+      const candidateBuffers: Buffer[] = [];
+      const screenReference = await loadValidPngIfPresent(
+        frozenScreenPaths.referencePngPath,
+      );
+      if (screenReference !== null) {
+        candidateBuffers.push(screenReference);
+      }
+      if (screen.nodeId === metadata.source.nodeId) {
+        candidateBuffers.push(frozenReference);
+      }
+
+      const hasMatch = candidateBuffers.some((buffer) =>
+        buffer.equals(liveScreenReference),
+      );
+      if (!hasMatch) {
+        viewportReferenceDrift = true;
+      }
+
+      let viewportFiles: string[] = [];
+      try {
+        viewportFiles = await readdir(frozenScreenPaths.screenDir);
+      } catch (error: unknown) {
+        if (
+          !(
+            error instanceof Error &&
+            "code" in error &&
+            (error as NodeJS.ErrnoException).code === "ENOENT"
+          )
+        ) {
+          throw error;
+        }
+      }
+      for (const fileName of viewportFiles) {
+        if (
+          !fileName.endsWith(".png") ||
+          fileName === "reference.png" ||
+          fileName.trim().length === 0
+        ) {
+          continue;
+        }
+        const viewportReferencePath = path.join(
+          frozenScreenPaths.screenDir,
+          fileName,
+        );
+        const viewportReference = await loadValidPngIfPresent(
+          viewportReferencePath,
+        );
+        if (viewportReference === null) {
+          viewportReferenceDrift = true;
+          continue;
+        }
+      }
+    }
 
     const figmaChanged =
       toStableJsonString(frozenFigmaInput) !==
       toStableJsonString(liveSnapshot.payload);
-    const referenceChanged = !frozenReference.equals(liveReference);
+    const referenceChanged =
+      !frozenReference.equals(liveReference) || viewportReferenceDrift;
     const result: VisualBenchmarkLiveAuditResult = {
       fixtureId,
       figmaChanged,

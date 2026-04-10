@@ -28,20 +28,46 @@ const toDisplayName = (fixtureId) =>
 const normalizeOptionalString = (value) =>
   typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 
-const toDisplayLabel = (fixtureId, screenName, screenId) => {
+const roundToTwo = (value) => Math.round(value * 100) / 100;
+
+const getScreenAggregateKey = (fixtureId, screenId) => {
+  const normalizedScreenId =
+    typeof screenId === "string" && screenId.trim().length > 0
+      ? screenId.trim()
+      : fixtureId;
+  return `${fixtureId}::${normalizedScreenId}`;
+};
+
+const toDisplayLabel = (
+  fixtureId,
+  screenName,
+  screenId,
+  viewportLabel,
+  viewportId,
+) => {
   const fixtureName = toDisplayName(fixtureId);
   const normalizedScreenName = normalizeOptionalString(screenName);
+  const normalizedViewportLabel =
+    normalizeOptionalString(viewportLabel) ?? normalizeOptionalString(viewportId);
+  const appendViewportLabel = (baseLabel) =>
+    normalizedViewportLabel === null
+      ? baseLabel
+      : `${baseLabel} / ${normalizedViewportLabel}`;
   if (normalizedScreenName !== null) {
-    return `${fixtureName} / ${normalizedScreenName}`;
+    return appendViewportLabel(`${fixtureName} / ${normalizedScreenName}`);
   }
   const normalizedScreenId = normalizeOptionalString(screenId);
   if (normalizedScreenId !== null && normalizedScreenId !== fixtureId) {
-    return `${fixtureName} / ${normalizedScreenId}`;
+    return appendViewportLabel(`${fixtureName} / ${normalizedScreenId}`);
   }
-  return fixtureName;
+  return appendViewportLabel(fixtureName);
 };
 
 const toLegacyScreenIdToken = (screenId) => screenId.replace(/:/gu, "_");
+const normalizePathToken = (value) =>
+  typeof value === "string" && /^[A-Za-z0-9._-]+$/u.test(value.trim())
+    ? value.trim()
+    : null;
 
 const scoreEmoji = (score) => {
   if (score >= 90) return "\u2705";
@@ -86,65 +112,430 @@ const readJsonFileOptional = async (filePath, label) => {
 const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);
 
+const isPlainRecord = (value) =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const normalizeViewportList = (value) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const normalized = [];
+  const seen = new Set();
+  for (const entry of value) {
+    if (!isPlainRecord(entry)) {
+      continue;
+    }
+    const viewportId = normalizeOptionalString(entry.id);
+    if (viewportId === null || seen.has(viewportId)) {
+      continue;
+    }
+    seen.add(viewportId);
+    const viewport = { id: viewportId };
+    if (isFiniteNumber(entry.weight) && entry.weight > 0) {
+      viewport.weight = entry.weight;
+    }
+    normalized.push(viewport);
+  }
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const normalizeViewportWeights = (viewports) => {
+  if (!Array.isArray(viewports) || viewports.length === 0) {
+    return [];
+  }
+  const withWeight = viewports.filter(
+    (viewport) => isFiniteNumber(viewport.weight) && viewport.weight > 0,
+  );
+  if (withWeight.length > 0 && withWeight.length < viewports.length) {
+    return viewports.map((viewport) => ({
+      ...viewport,
+      weight: 1 / viewports.length,
+    }));
+  }
+  if (withWeight.length === 0) {
+    return viewports.map((viewport) => ({
+      ...viewport,
+      weight: 1 / viewports.length,
+    }));
+  }
+  const total = withWeight.reduce((sum, viewport) => sum + viewport.weight, 0);
+  if (!isFiniteNumber(total) || total <= 0) {
+    return viewports.map((viewport) => ({
+      ...viewport,
+      weight: 1 / viewports.length,
+    }));
+  }
+  return viewports.map((viewport) => ({
+    ...viewport,
+    weight: viewport.weight / total,
+  }));
+};
+
+const enumerateMetadataScreens = (metadata) => {
+  if (
+    isPlainRecord(metadata) &&
+    Array.isArray(metadata.screens) &&
+    metadata.screens.length > 0
+  ) {
+    const screens = [];
+    for (const screen of metadata.screens) {
+      if (!isPlainRecord(screen)) {
+        continue;
+      }
+      const screenId = normalizeOptionalString(screen.screenId);
+      if (screenId === null) {
+        continue;
+      }
+      screens.push({
+        screenId,
+        screenName: normalizeOptionalString(screen.screenName),
+        viewports: normalizeViewportList(screen.viewports),
+      });
+    }
+    if (screens.length > 0) {
+      return screens;
+    }
+  }
+
+  const fallbackScreenId = normalizeOptionalString(metadata?.source?.nodeId);
+  return fallbackScreenId === null
+    ? []
+    : [
+        {
+          screenId: fallbackScreenId,
+          screenName: normalizeOptionalString(metadata?.source?.nodeName),
+          viewports: undefined,
+        },
+      ];
+};
+
+const resolveConfiguredViewports = (
+  qualityConfig,
+  fixtureId,
+  screenId,
+  screenName,
+) => {
+  if (!isPlainRecord(qualityConfig)) {
+    return undefined;
+  }
+  const fixtures = isPlainRecord(qualityConfig.fixtures)
+    ? qualityConfig.fixtures
+    : undefined;
+  const fixtureConfig =
+    fixtures !== undefined && isPlainRecord(fixtures[fixtureId])
+      ? fixtures[fixtureId]
+      : undefined;
+  const screenConfigs = isPlainRecord(fixtureConfig?.screens)
+    ? fixtureConfig.screens
+    : undefined;
+  const byScreenId =
+    screenConfigs !== undefined &&
+    typeof screenId === "string" &&
+    screenId.trim().length > 0 &&
+    isPlainRecord(screenConfigs[screenId])
+      ? normalizeViewportList(screenConfigs[screenId].viewports)
+      : undefined;
+  const byScreenName =
+    screenConfigs !== undefined &&
+    typeof screenName === "string" &&
+    screenName.trim().length > 0 &&
+    isPlainRecord(screenConfigs[screenName])
+      ? normalizeViewportList(screenConfigs[screenName].viewports)
+      : undefined;
+  const fixtureLevel = normalizeViewportList(fixtureConfig?.viewports);
+  const globalLevel = normalizeViewportList(qualityConfig.viewports);
+  return byScreenId ?? byScreenName ?? fixtureLevel ?? globalLevel;
+};
+
+const resolveScreenViewportSpecs = (
+  metadata,
+  qualityConfig,
+  fixtureId,
+  screenId,
+  screenName,
+) => {
+  const screens = enumerateMetadataScreens(metadata);
+  const normalizedScreenId = normalizeOptionalString(screenId) ?? fixtureId;
+  const matchedScreen =
+    screens.find((screen) => screen.screenId === normalizedScreenId) ??
+    screens.find((screen) => screen.screenName === normalizeOptionalString(screenName));
+  if (matchedScreen?.viewports !== undefined && matchedScreen.viewports.length > 0) {
+    return matchedScreen.viewports;
+  }
+  return resolveConfiguredViewports(
+    qualityConfig,
+    fixtureId,
+    normalizedScreenId,
+    normalizeOptionalString(screenName) ?? matchedScreen?.screenName ?? undefined,
+  );
+};
+
+const computeOverallAverageFromFixtures = async (fixtures) => {
+  const qualityConfig = await readJsonFileOptional(
+    ANNOTATION_PATH,
+    "Visual quality config",
+  );
+  const metadataCache = new Map();
+  const screenGroups = new Map();
+
+  for (const fixture of fixtures) {
+    const screenKey = getScreenAggregateKey(fixture.fixtureId, fixture.screenId);
+    const existing = screenGroups.get(screenKey);
+    if (existing !== undefined) {
+      existing.rows.push(fixture);
+      continue;
+    }
+    screenGroups.set(screenKey, {
+      fixtureId: fixture.fixtureId,
+      screenId: normalizeOptionalString(fixture.screenId) ?? fixture.fixtureId,
+      screenName: normalizeOptionalString(fixture.screenName),
+      rows: [fixture],
+    });
+  }
+
+  const screenScores = [];
+  for (const group of screenGroups.values()) {
+    const byViewport = new Map();
+    for (const row of group.rows) {
+      const viewportId = normalizeOptionalString(row.viewportId) ?? "default";
+      byViewport.set(viewportId, row.score);
+    }
+    if (byViewport.size <= 1) {
+      screenScores.push(group.rows[0]?.score ?? 0);
+      continue;
+    }
+
+    let metadata = metadataCache.get(group.fixtureId);
+    if (metadata === undefined) {
+      const metadataPath = path.join(
+        "integration",
+        "fixtures",
+        "visual-benchmark",
+        group.fixtureId,
+        "metadata.json",
+      );
+      metadata = await readJsonFileOptional(
+        metadataPath,
+        `Visual benchmark metadata for '${group.fixtureId}'`,
+      );
+      metadataCache.set(group.fixtureId, metadata);
+    }
+
+    const viewportSpecs = resolveScreenViewportSpecs(
+      metadata,
+      qualityConfig,
+      group.fixtureId,
+      group.screenId,
+      group.screenName,
+    );
+    if (!Array.isArray(viewportSpecs) || viewportSpecs.length === 0) {
+      screenScores.push(
+        roundToTwo(
+          group.rows.reduce((sum, row) => sum + row.score, 0) / group.rows.length,
+        ),
+      );
+      continue;
+    }
+
+    const matchedViewportSpecs = viewportSpecs.filter((viewport) =>
+      byViewport.has(viewport.id),
+    );
+    if (matchedViewportSpecs.length !== byViewport.size) {
+      screenScores.push(
+        roundToTwo(
+          group.rows.reduce((sum, row) => sum + row.score, 0) / group.rows.length,
+        ),
+      );
+      continue;
+    }
+
+    const normalizedViewports = normalizeViewportWeights(matchedViewportSpecs);
+    const weightedScore = normalizedViewports.reduce(
+      (sum, viewport) =>
+        sum + (byViewport.get(viewport.id) ?? 0) * (viewport.weight ?? 0),
+      0,
+    );
+    screenScores.push(roundToTwo(weightedScore));
+  }
+
+  if (screenScores.length === 0) {
+    return 0;
+  }
+  return roundToTwo(
+    screenScores.reduce((sum, score) => sum + score, 0) / screenScores.length,
+  );
+};
+
 const safeRelativePath = (filePath) =>
   path.relative(process.cwd(), filePath) || ".";
 
-const resolveFixtureArtifactDir = async (lastRunDir, fixtureId, screenId) => {
-  const fixtureRoot = path.join(lastRunDir, fixtureId);
-  const normalizedScreenId = normalizeOptionalString(screenId);
-  if (normalizedScreenId === null) {
-    return fixtureRoot;
-  }
-
-  const screensDir = path.join(fixtureRoot, "screens");
-  const legacyDir = path.join(
-    screensDir,
-    toLegacyScreenIdToken(normalizedScreenId),
-  );
-  const legacyManifest = await readJsonFileOptional(
-    path.join(legacyDir, "manifest.json"),
-    `Visual benchmark manifest for '${fixtureId}' screen '${normalizedScreenId}'`,
-  );
-  if (
-    legacyManifest !== null &&
-    normalizeOptionalString(legacyManifest.screenId) === normalizedScreenId
-  ) {
-    return legacyDir;
-  }
-
-  let screenEntries = [];
-  try {
-    screenEntries = await readdir(screensDir, { withFileTypes: true });
-  } catch (error) {
-    if (
-      !(
-        error &&
-        typeof error === "object" &&
-        /** @type {any} */ (error).code === "ENOENT"
-      )
-    ) {
-      throw error;
-    }
-  }
-
-  for (const entry of screenEntries) {
-    if (!entry.isDirectory()) {
+const collectArtifactCandidates = async (rootDir, maxDepth) => {
+  const candidates = [];
+  const queue = [{ dir: rootDir, depth: 0 }];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
       continue;
     }
-    const candidateDir = path.join(screensDir, entry.name);
+
     const manifest = await readJsonFileOptional(
-      path.join(candidateDir, "manifest.json"),
-      `Visual benchmark manifest for '${fixtureId}' screen '${normalizedScreenId}'`,
+      path.join(current.dir, "manifest.json"),
+      `Visual benchmark manifest in '${current.dir}'`,
     );
-    if (
-      manifest !== null &&
-      normalizeOptionalString(manifest.screenId) === normalizedScreenId
-    ) {
-      return candidateDir;
+    if (manifest !== null) {
+      candidates.push({ dir: current.dir, manifest });
+    }
+
+    if (current.depth >= maxDepth) {
+      continue;
+    }
+
+    let entries = [];
+    try {
+      entries = await readdir(current.dir, { withFileTypes: true });
+    } catch (error) {
+      if (
+        !(
+          error &&
+          typeof error === "object" &&
+          /** @type {any} */ (error).code === "ENOENT"
+        )
+      ) {
+        throw error;
+      }
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      queue.push({
+        dir: path.join(current.dir, entry.name),
+        depth: current.depth + 1,
+      });
     }
   }
 
-  return legacyDir;
+  return candidates;
+};
+
+const scoreArtifactCandidate = (candidate, fixtureId, screenId, viewportId) => {
+  const manifestFixtureId = normalizeOptionalString(candidate.manifest.fixtureId);
+  if (manifestFixtureId !== fixtureId) {
+    return null;
+  }
+
+  const normalizedScreenId = normalizeOptionalString(screenId);
+  const normalizedViewportId = normalizeOptionalString(viewportId);
+  const manifestScreenId = normalizeOptionalString(candidate.manifest.screenId);
+  const manifestViewportId = normalizeOptionalString(candidate.manifest.viewportId);
+  const candidateDirToken = path.basename(candidate.dir);
+  let score = 0;
+
+  if (normalizedScreenId !== null) {
+    if (manifestScreenId === normalizedScreenId) {
+      score += 8;
+    } else if (manifestScreenId !== null) {
+      return null;
+    }
+  }
+
+  if (normalizedViewportId !== null) {
+    if (manifestViewportId === normalizedViewportId) {
+      score += 16;
+    } else if (manifestViewportId !== null) {
+      return null;
+    } else if (candidateDirToken === normalizedViewportId) {
+      score += 12;
+    }
+  } else if (manifestViewportId === null) {
+    score += 2;
+  }
+
+  return score;
+};
+
+const resolveFixtureArtifactDir = async (
+  lastRunDir,
+  fixtureId,
+  screenId,
+  viewportId,
+) => {
+  const fixtureRoot = path.join(lastRunDir, fixtureId);
+  const normalizedScreenId = normalizeOptionalString(screenId);
+  const normalizedViewportId = normalizeOptionalString(viewportId);
+
+  const candidateDirs = [];
+  if (normalizedScreenId === null) {
+    candidateDirs.push(fixtureRoot);
+    const viewportToken = normalizePathToken(normalizedViewportId);
+    if (viewportToken !== null) {
+      candidateDirs.unshift(path.join(fixtureRoot, viewportToken));
+    }
+  } else {
+    const screensDir = path.join(fixtureRoot, "screens");
+    const legacyDir = path.join(
+      screensDir,
+      toLegacyScreenIdToken(normalizedScreenId),
+    );
+    candidateDirs.push(legacyDir);
+    const viewportToken = normalizePathToken(normalizedViewportId);
+    if (viewportToken !== null) {
+      candidateDirs.unshift(path.join(legacyDir, viewportToken));
+    }
+  }
+
+  let bestCandidate = null;
+  for (const dir of candidateDirs) {
+    const manifest = await readJsonFileOptional(
+      path.join(dir, "manifest.json"),
+      `Visual benchmark manifest for '${fixtureId}'`,
+    );
+    if (manifest === null) {
+      continue;
+    }
+    const score = scoreArtifactCandidate(
+      { dir, manifest },
+      fixtureId,
+      normalizedScreenId,
+      normalizedViewportId,
+    );
+    if (score !== null && (bestCandidate === null || score > bestCandidate.score)) {
+      bestCandidate = { dir, score };
+    }
+  }
+
+  if (bestCandidate !== null) {
+    return bestCandidate.dir;
+  }
+
+  const searchRoot =
+    normalizedScreenId === null ? fixtureRoot : path.join(fixtureRoot, "screens");
+  const searchDepth = normalizedScreenId === null ? 1 : 2;
+  const candidates = await collectArtifactCandidates(searchRoot, searchDepth);
+  for (const candidate of candidates) {
+    const score = scoreArtifactCandidate(
+      candidate,
+      fixtureId,
+      normalizedScreenId,
+      normalizedViewportId,
+    );
+    if (score === null) {
+      continue;
+    }
+    if (bestCandidate === null || score > bestCandidate.score) {
+      bestCandidate = {
+        dir: candidate.dir,
+        score,
+      };
+    }
+  }
+
+  if (bestCandidate !== null) {
+    return bestCandidate.dir;
+  }
+  return candidateDirs[0] ?? fixtureRoot;
 };
 
 export const buildUnavailableVisualBenchmarkSummary = (reportPath, reason) => {
@@ -239,7 +630,7 @@ const buildAnnotation = (fixture) => {
       thresholdResult.verdict === "fail"
         ? `Visual benchmark failed: ${safeDisplayName}`
         : `Visual benchmark warning: ${safeDisplayName}`,
-    message: `Score ${fixture.score} is ${thresholdResult.verdict === "fail" ? "below fail" : "below warn"} threshold (${safeThresholds}).`,
+    message: `${safeDisplayName} scored ${fixture.score} and is ${thresholdResult.verdict === "fail" ? "below fail" : "below warn"} threshold (${safeThresholds}).`,
   };
 };
 
@@ -258,9 +649,9 @@ const buildCheckText = (fixtures, average, artifactRoot) => {
         : `${fixture.thresholdResult.verdict} (${formatThresholdLabel(fixture.thresholdResult.thresholds)})`;
     const artifactText = [
       `manifest=${fixture.manifestPath}`,
-      `report=${fixture.reportPath}`,
-      `actual=${fixture.actualImagePath}`,
-      `diff=${fixture.diffImagePath ?? "n/a"}`,
+        `report=${fixture.reportPath}`,
+        `actual=${fixture.actualImagePath}`,
+        `diff=${fixture.diffImagePath ?? "n/a"}`,
     ].join(", ");
     lines.push(
       `- ${fixture.displayLabel}: score=${fixture.score}, ${thresholdText}; ${artifactText}`,
@@ -317,6 +708,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       lastRunDir,
       entry.fixtureId,
       entry.screenId,
+      entry.viewportId,
     );
     const manifestPath = path.join(fixtureDir, "manifest.json");
     const reportJsonPath = path.join(fixtureDir, "report.json");
@@ -372,12 +764,19 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
         : null;
     fixtures.push({
       fixtureId: entry.fixtureId,
+      screenId: normalizeOptionalString(entry.screenId ?? manifest.screenId),
+      screenName: normalizeOptionalString(entry.screenName ?? manifest.screenName),
       displayLabel: toDisplayLabel(
         entry.fixtureId,
         entry.screenName ?? manifest.screenName,
         entry.screenId ?? manifest.screenId,
+        entry.viewportLabel ?? manifest.viewportLabel,
+        entry.viewportId ?? manifest.viewportId,
       ),
       score: entry.score,
+      viewportId:
+        normalizeOptionalString(entry.viewportId ?? manifest.viewportId) ??
+        "default",
       viewport: `${viewport.width}\u00d7${viewport.height}`,
       thresholdResult,
       manifestPath: safeRelativePath(manifestPath),
@@ -401,11 +800,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
   const failedFixtures = fixtures.filter(
     (fixture) => fixture.thresholdResult?.verdict === "fail",
   );
-  const average =
-    fixtures.length > 0
-      ? fixtures.reduce((sum, fixture) => sum + fixture.score, 0) /
-        fixtures.length
-      : 0;
+  const average = await computeOverallAverageFromFixtures(fixtures);
 
   const lines = [
     "## Visual Quality Benchmark",
