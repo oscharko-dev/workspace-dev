@@ -3,6 +3,7 @@ import path from "node:path";
 import {
   assertAllowedFixtureId,
   getVisualBenchmarkFixtureRoot,
+  loadVisualBenchmarkFixtureMetadata,
   toStableJsonString,
   type VisualBenchmarkFixtureOptions,
 } from "./visual-benchmark.helpers.js";
@@ -14,6 +15,8 @@ export const MAX_VISUAL_BENCHMARK_HISTORY_SIZE = 1000;
 
 export interface VisualBenchmarkHistoryScoreEntry {
   fixtureId: string;
+  screenId?: string;
+  screenName?: string;
   score: number;
 }
 
@@ -23,7 +26,7 @@ export interface VisualBenchmarkHistoryEntry {
 }
 
 export interface VisualBenchmarkHistory {
-  version: 1;
+  version: 1 | 2;
   entries: VisualBenchmarkHistoryEntry[];
 }
 
@@ -45,8 +48,8 @@ export const parseVisualBenchmarkHistory = (
   if (!isPlainRecord(parsed)) {
     throw new Error("Expected visual benchmark history to be an object.");
   }
-  if (parsed.version !== 1) {
-    throw new Error("Visual benchmark history version must be 1.");
+  if (parsed.version !== 1 && parsed.version !== 2) {
+    throw new Error("Visual benchmark history version must be 1 or 2.");
   }
   if (!Array.isArray(parsed.entries)) {
     throw new Error("Visual benchmark history entries must be an array.");
@@ -88,13 +91,107 @@ export const parseVisualBenchmarkHistory = (
           "Visual benchmark history score entry score must be a finite number.",
         );
       }
-      scores.push({ fixtureId: score.fixtureId, score: score.score });
+      let screenId: string | undefined;
+      let screenName: string | undefined;
+      if (parsed.version === 2) {
+        if (
+          typeof score.screenId !== "string" ||
+          score.screenId.trim().length === 0
+        ) {
+          throw new Error(
+            "Visual benchmark history version 2 score entry screenId must be a non-empty string.",
+          );
+        }
+        screenId = score.screenId.trim();
+        if (score.screenName !== undefined) {
+          if (
+            typeof score.screenName !== "string" ||
+            score.screenName.trim().length === 0
+          ) {
+            throw new Error(
+              "Visual benchmark history version 2 score entry screenName must be a non-empty string when provided.",
+            );
+          }
+          screenName = score.screenName.trim();
+        }
+      }
+      scores.push({
+        fixtureId: score.fixtureId,
+        ...(screenId !== undefined ? { screenId } : {}),
+        ...(screenName !== undefined ? { screenName } : {}),
+        score: score.score,
+      });
     }
 
     entries.push({ runAt: entry.runAt, scores });
   }
 
-  return { version: 1, entries };
+  return { version: parsed.version, entries };
+};
+
+const normalizeOptionalScreenName = (
+  screenName: string | undefined,
+): string | undefined => {
+  if (typeof screenName !== "string") {
+    return undefined;
+  }
+  const normalized = screenName.trim();
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const normalizeHistoryScoreEntry = (
+  entry: VisualBenchmarkHistoryScoreEntry,
+): VisualBenchmarkHistoryScoreEntry => {
+  const fixtureId = assertAllowedFixtureId(entry.fixtureId);
+  const screenId =
+    typeof entry.screenId === "string" && entry.screenId.trim().length > 0
+      ? entry.screenId.trim()
+      : fixtureId;
+  const screenName = normalizeOptionalScreenName(entry.screenName);
+
+  return {
+    fixtureId,
+    screenId,
+    ...(screenName !== undefined ? { screenName } : {}),
+    score: entry.score,
+  };
+};
+
+const normalizeHistoryScoreEntryWithMetadata = async (
+  entry: VisualBenchmarkHistoryScoreEntry,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<VisualBenchmarkHistoryScoreEntry> => {
+  const providedScreenId =
+    typeof entry.screenId === "string" && entry.screenId.trim().length > 0
+      ? entry.screenId.trim()
+      : undefined;
+  const providedScreenName = normalizeOptionalScreenName(entry.screenName);
+  const normalized = normalizeHistoryScoreEntry(entry);
+  try {
+    const metadata = await loadVisualBenchmarkFixtureMetadata(
+      normalized.fixtureId,
+      options,
+    );
+    const screenName =
+      providedScreenName ??
+      normalizeOptionalScreenName(metadata.source.nodeName);
+
+    return {
+      fixtureId: normalized.fixtureId,
+      screenId: providedScreenId ?? metadata.source.nodeId,
+      ...(screenName !== undefined ? { screenName } : {}),
+      score: normalized.score,
+    };
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return normalized;
+    }
+    throw error;
+  }
 };
 
 export const loadVisualBenchmarkHistory = async (
@@ -103,7 +200,32 @@ export const loadVisualBenchmarkHistory = async (
   const historyPath = resolveVisualBenchmarkHistoryPath(options);
   try {
     const content = await readFile(historyPath, "utf8");
-    return parseVisualBenchmarkHistory(content);
+    const parsed = parseVisualBenchmarkHistory(content);
+    if (parsed.version === 2) {
+      return {
+        version: 2,
+        entries: parsed.entries.map((entry) => ({
+          runAt: entry.runAt,
+          scores: normalizeHistoryScores(entry.scores),
+        })),
+      };
+    }
+
+    const entries: VisualBenchmarkHistoryEntry[] = [];
+    for (const entry of parsed.entries) {
+      const scores: VisualBenchmarkHistoryScoreEntry[] = [];
+      for (const score of entry.scores) {
+        scores.push(
+          await normalizeHistoryScoreEntryWithMetadata(score, options),
+        );
+      }
+      entries.push({
+        runAt: entry.runAt,
+        scores: normalizeHistoryScores(scores),
+      });
+    }
+
+    return { version: 2, entries };
   } catch (error: unknown) {
     if (
       error instanceof Error &&
@@ -121,19 +243,35 @@ export const saveVisualBenchmarkHistory = async (
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<void> => {
   const historyPath = resolveVisualBenchmarkHistoryPath(options);
+  const normalized: VisualBenchmarkHistory = {
+    version: 2,
+    entries: history.entries.map((entry) => ({
+      runAt: entry.runAt,
+      scores: normalizeHistoryScores(entry.scores),
+    })),
+  };
   await mkdir(path.dirname(historyPath), { recursive: true });
-  await writeFile(historyPath, toStableJsonString(history), "utf8");
+  await writeFile(historyPath, toStableJsonString(normalized), "utf8");
 };
 
 const normalizeHistoryScores = (
   scores: readonly VisualBenchmarkHistoryScoreEntry[],
 ): VisualBenchmarkHistoryScoreEntry[] => {
   return [...scores]
-    .map((entry) => ({
-      fixtureId: assertAllowedFixtureId(entry.fixtureId),
-      score: entry.score,
-    }))
-    .sort((left, right) => left.fixtureId.localeCompare(right.fixtureId));
+    .map((entry) => normalizeHistoryScoreEntry(entry))
+    .sort((left, right) => {
+      const fixtureComparison = left.fixtureId.localeCompare(right.fixtureId);
+      if (fixtureComparison !== 0) {
+        return fixtureComparison;
+      }
+
+      const screenComparison = left.screenId!.localeCompare(right.screenId!);
+      if (screenComparison !== 0) {
+        return screenComparison;
+      }
+
+      return (left.screenName ?? "").localeCompare(right.screenName ?? "");
+    });
 };
 
 export const appendVisualBenchmarkHistoryEntry = (
@@ -166,5 +304,5 @@ export const appendVisualBenchmarkHistoryEntry = (
   const combined = [...existing, newEntry];
   const trimmed =
     combined.length > maxEntries ? combined.slice(-maxEntries) : combined;
-  return { version: 1, entries: trimmed };
+  return { version: 2, entries: trimmed };
 };

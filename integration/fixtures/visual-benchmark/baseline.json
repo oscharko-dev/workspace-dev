@@ -2,24 +2,34 @@
   "scores": [
     {
       "fixtureId": "complex-dashboard",
-      "score": 100
+      "score": 82,
+      "screenId": "2:10001",
+      "screenName": "Dashboard — KPI Overview, Charts, Activity Feed"
     },
     {
       "fixtureId": "data-table",
-      "score": 100
+      "score": 91,
+      "screenId": "2:10002",
+      "screenName": "Data Table — Sortable Columns, Pagination, Filters"
     },
     {
       "fixtureId": "design-system-showcase",
-      "score": 100
+      "score": 84,
+      "screenId": "2:10004",
+      "screenName": "Design System — Buttons, Inputs, Cards, Typography Scale"
     },
     {
       "fixtureId": "navigation-sidebar",
-      "score": 100
+      "score": 78,
+      "screenId": "2:10003",
+      "screenName": "Navigation Sidebar — Menu Items, Nested Groups, Icons"
     },
     {
       "fixtureId": "simple-form",
-      "score": 100
+      "score": 88,
+      "screenId": "1:65671",
+      "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
     }
   ],
-  "version": 2
+  "version": 3
 }

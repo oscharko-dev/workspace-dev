@@ -22,16 +22,30 @@ import {
   type VisualBenchmarkScoreEntry,
 } from "./visual-benchmark-runner.js";
 import {
+  appendVisualBenchmarkHistoryEntry,
+  loadVisualBenchmarkHistory,
+  saveVisualBenchmarkHistory,
+} from "./visual-benchmark-history.js";
+import {
   executeVisualBenchmarkFixture,
   type VisualBenchmarkExecutionOptions,
   type VisualBenchmarkFixtureExecutionArtifacts,
 } from "./visual-benchmark.execution.js";
+import {
+  loadVisualQualityConfig,
+  resolveVisualQualityRegressionConfig,
+  type VisualQualityConfig,
+  type VisualQualityResolvedRegressionConfig,
+} from "./visual-quality-config.js";
 
 export interface VisualBaselineStatusEntry {
   fixtureId: string;
+  screenId: string;
+  screenName?: string;
   baselineScore: number | null;
   lastRunScore: number | null;
   hasPendingDiff: boolean;
+  indicator: "improved" | "degraded" | "neutral" | "new" | "unavailable";
   capturedAt: string | null;
   ageInDays: number | null;
   lastRunAt: string | null;
@@ -47,6 +61,8 @@ export interface VisualBaselineStatusResult {
 
 export interface VisualBaselineDiffEntry {
   fixtureId: string;
+  screenId: string;
+  screenName?: string;
   baseline: number | null;
   current: number;
   delta: number | null;
@@ -77,6 +93,7 @@ export interface VisualBaselineApproveResult {
 }
 
 export interface VisualBaselineDependencies extends VisualBenchmarkFixtureOptions {
+  qualityConfig?: VisualQualityConfig;
   log?: (message: string) => void;
   now?: () => Date;
   executeFixture?: (
@@ -85,7 +102,6 @@ export interface VisualBaselineDependencies extends VisualBenchmarkFixtureOption
   ) => Promise<VisualBenchmarkFixtureExecutionArtifacts>;
 }
 
-const NEUTRAL_DELTA_TOLERANCE = 1;
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
 
 const defaultLog = (message: string): void => {
@@ -97,6 +113,47 @@ const fixtureIdToDisplayName = (fixtureId: string): string => {
     .split("-")
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
+};
+
+const normalizeOptionalScreenName = (
+  screenName: string | undefined,
+): string | undefined => {
+  if (typeof screenName !== "string") {
+    return undefined;
+  }
+  const normalized = screenName.trim();
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const getScoreKey = (
+  entry: Pick<VisualBenchmarkScoreEntry, "fixtureId" | "screenId">,
+): string => {
+  const fixtureId = assertAllowedFixtureId(entry.fixtureId);
+  const screenId =
+    typeof entry.screenId === "string" && entry.screenId.trim().length > 0
+      ? entry.screenId.trim()
+      : fixtureId;
+  return `${fixtureId}::${screenId}`;
+};
+
+const sortScores = (
+  scores: readonly VisualBenchmarkScoreEntry[],
+): VisualBenchmarkScoreEntry[] => {
+  return [...scores].sort((left, right) => {
+    const fixtureComparison = left.fixtureId.localeCompare(right.fixtureId);
+    if (fixtureComparison !== 0) {
+      return fixtureComparison;
+    }
+
+    const screenComparison = (left.screenId ?? "").localeCompare(
+      right.screenId ?? "",
+    );
+    if (screenComparison !== 0) {
+      return screenComparison;
+    }
+
+    return (left.screenName ?? "").localeCompare(right.screenName ?? "");
+  });
 };
 
 const padRight = (value: string, width: number): string => value + " ".repeat(Math.max(0, width - value.length));
@@ -140,22 +197,18 @@ const mergeScores = (
   existingScores: readonly VisualBenchmarkScoreEntry[],
   replacementScores: readonly VisualBenchmarkScoreEntry[],
 ): VisualBenchmarkScoreEntry[] => {
-  const replacements = new Map(replacementScores.map((entry) => [entry.fixtureId, entry.score]));
+  const replacements = new Map(
+    replacementScores.map((entry) => [getScoreKey(entry), entry]),
+  );
   const merged = existingScores
-    .filter((entry) => !replacements.has(entry.fixtureId))
-    .map((entry) => ({
-      fixtureId: entry.fixtureId,
-      score: entry.score,
-    }));
+    .filter((entry) => !replacements.has(getScoreKey(entry)))
+    .map((entry) => ({ ...entry }));
 
   for (const entry of replacementScores) {
-    merged.push({
-      fixtureId: entry.fixtureId,
-      score: entry.score,
-    });
+    merged.push({ ...entry });
   }
 
-  return merged.sort((left, right) => left.fixtureId.localeCompare(right.fixtureId));
+  return sortScores(merged);
 };
 
 const updateFixtureMetadata = async (
@@ -179,15 +232,68 @@ const updateFixtureMetadata = async (
   );
 };
 
-const getDiffIndicator = (baselineScore: number | null, currentScore: number): "improved" | "degraded" | "neutral" | "new" => {
+const getDiffIndicator = (
+  baselineScore: number | null,
+  currentScore: number,
+  regressionConfig: VisualQualityResolvedRegressionConfig,
+): "improved" | "degraded" | "neutral" | "new" => {
   if (baselineScore === null) {
     return "new";
   }
   const delta = Math.round((currentScore - baselineScore) * 100) / 100;
-  if (Math.abs(delta) <= NEUTRAL_DELTA_TOLERANCE) {
+  if (Math.abs(delta) <= regressionConfig.neutralTolerance) {
     return "neutral";
   }
   return delta > 0 ? "improved" : "degraded";
+};
+
+const resolveRegressionConfig = async (
+  options?: VisualBaselineDependencies,
+): Promise<VisualQualityResolvedRegressionConfig> => {
+  const qualityConfig =
+    options?.qualityConfig ?? (await loadVisualQualityConfig(options));
+  return resolveVisualQualityRegressionConfig(qualityConfig);
+};
+
+const createScoreEntry = (
+  fixtureId: string,
+  score: number,
+  metadata: VisualBenchmarkFixtureMetadata,
+): VisualBenchmarkScoreEntry => {
+  return {
+    fixtureId,
+    screenId: metadata.source.nodeId,
+    screenName: normalizeOptionalScreenName(metadata.source.nodeName),
+    score,
+  };
+};
+
+const getBaselineMapScore = (
+  baselineMap: ReadonlyMap<string, number>,
+  fixtureId: string,
+  screenId: string | undefined,
+): number | null => {
+  const screenKey = getScoreKey({ fixtureId, screenId });
+  if (baselineMap.has(screenKey)) {
+    return baselineMap.get(screenKey) ?? null;
+  }
+
+  const legacyKey = getScoreKey({ fixtureId });
+  return baselineMap.get(legacyKey) ?? null;
+};
+
+const getEntryDisplayName = (
+  fixtureId: string,
+  screenName?: string,
+): string => {
+  const normalizedScreenName = normalizeOptionalScreenName(screenName);
+  if (
+    normalizedScreenName !== undefined &&
+    normalizedScreenName !== fixtureId
+  ) {
+    return normalizedScreenName;
+  }
+  return fixtureIdToDisplayName(fixtureId);
 };
 
 const buildArtifactEntry = async (
@@ -218,6 +324,7 @@ export const updateVisualBaselines = async (
     options?.executeFixture ??
     (async (fixtureId: string, fixtureOptions?: VisualBenchmarkExecutionOptions) =>
       executeVisualBenchmarkFixture(fixtureId, fixtureOptions));
+  const regressionConfig = await resolveRegressionConfig(options);
   const runAt = (options?.now ?? (() => new Date()))().toISOString();
 
   let fixtureIds: string[];
@@ -243,7 +350,7 @@ export const updateVisualBaselines = async (
     await updateFixtureMetadata(fixtureId, metadata, runAt, result.viewport, options);
     const artifact = await buildArtifactEntry(fixtureId, result, runAt, options);
 
-    scores.push({ fixtureId, score: result.score });
+    scores.push(createScoreEntry(fixtureId, result.score, metadata));
     artifacts.push(artifact);
     log(`  Updated reference and baseline score: ${result.score}`);
   }
@@ -255,6 +362,21 @@ export const updateVisualBaselines = async (
 
   await saveVisualBenchmarkLastRun(mergedLastRunScores, options, runAt);
   await saveVisualBenchmarkBaselineScores(mergedBaselineScores, options);
+  const existingHistory = await loadVisualBenchmarkHistory(options);
+  const updatedHistory = appendVisualBenchmarkHistoryEntry(
+    existingHistory,
+    {
+      runAt,
+      scores: scores.map((entry) => ({
+        fixtureId: entry.fixtureId,
+        screenId: entry.screenId,
+        screenName: entry.screenName,
+        score: entry.score,
+      })),
+    },
+    regressionConfig.historySize,
+  );
+  await saveVisualBenchmarkHistory(updatedHistory, options);
 
   log("Visual baseline updated.");
   return {
@@ -269,6 +391,7 @@ export const approveVisualBaseline = async (
   options?: VisualBaselineDependencies,
 ): Promise<VisualBaselineApproveResult> => {
   const fixtureId = assertAllowedFixtureId(screenName);
+  const regressionConfig = await resolveRegressionConfig(options);
   const artifact = await loadVisualBenchmarkLastRunArtifact(fixtureId, options);
   if (artifact === null) {
     throw new Error(`No last-run artifact found for '${fixtureId}'. Run 'pnpm visual:baseline update --fixture ${fixtureId}' or 'pnpm benchmark:visual' first.`);
@@ -279,19 +402,43 @@ export const approveVisualBaseline = async (
   const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
   await writeVisualBenchmarkReference(fixtureId, actualImageBuffer, options);
   await updateFixtureMetadata(fixtureId, metadata, artifact.ranAt, artifact.viewport, options);
+  const approvedScoreEntry = createScoreEntry(fixtureId, artifact.score, metadata);
 
   const previousBaseline = await loadVisualBenchmarkBaseline(options);
-  const previousScore = previousBaseline?.scores.find((entry) => entry.fixtureId === fixtureId)?.score ?? null;
+  const previousScore = getBaselineMapScore(
+    new Map(
+      (previousBaseline?.scores ?? []).map((entry) => [getScoreKey(entry), entry.score]),
+    ),
+    fixtureId,
+    approvedScoreEntry.screenId,
+  );
   const mergedBaselineScores = mergeScores(previousBaseline?.scores ?? [], [
-    { fixtureId, score: artifact.score },
+    approvedScoreEntry,
   ]);
   await saveVisualBenchmarkBaselineScores(mergedBaselineScores, options);
 
   const previousLastRun = await loadVisualBenchmarkLastRun(options);
   const mergedLastRunScores = mergeScores(previousLastRun?.scores ?? [], [
-    { fixtureId, score: artifact.score },
+    approvedScoreEntry,
   ]);
   await saveVisualBenchmarkLastRun(mergedLastRunScores, options, artifact.ranAt);
+  const existingHistory = await loadVisualBenchmarkHistory(options);
+  const updatedHistory = appendVisualBenchmarkHistoryEntry(
+    existingHistory,
+    {
+      runAt: artifact.ranAt,
+      scores: [
+        {
+          fixtureId: approvedScoreEntry.fixtureId,
+          screenId: approvedScoreEntry.screenId,
+          screenName: approvedScoreEntry.screenName,
+          score: approvedScoreEntry.score,
+        },
+      ],
+    },
+    regressionConfig.historySize,
+  );
+  await saveVisualBenchmarkHistory(updatedHistory, options);
 
   return {
     fixtureId,
@@ -307,11 +454,12 @@ export const computeVisualBaselineStatus = async (
 ): Promise<VisualBaselineStatusResult> => {
   const fixtureIds = await listVisualBenchmarkFixtureIds(options);
   const baseline = await loadVisualBenchmarkBaseline(options);
+  const regressionConfig = await resolveRegressionConfig(options);
   const now = (options?.now ?? (() => new Date()))();
   const baselineMap = new Map<string, number>();
   if (baseline !== null) {
     for (const entry of baseline.scores) {
-      baselineMap.set(entry.fixtureId, entry.score);
+      baselineMap.set(getScoreKey(entry), entry.score);
     }
   }
 
@@ -320,14 +468,23 @@ export const computeVisualBaselineStatus = async (
     const paths = resolveVisualBenchmarkFixturePaths(fixtureId, options);
     const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
     const artifact = await loadVisualBenchmarkLastRunArtifact(fixtureId, options);
-    const baselineScore = baselineMap.get(fixtureId) ?? null;
+    const screenId = metadata.source.nodeId;
+    const screenName = normalizeOptionalScreenName(metadata.source.nodeName);
+    const baselineScore = getBaselineMapScore(baselineMap, fixtureId, screenId);
     const lastRunScore = artifact?.score ?? null;
+    const indicator =
+      lastRunScore === null
+        ? "unavailable"
+        : getDiffIndicator(baselineScore, lastRunScore, regressionConfig);
 
     entries.push({
       fixtureId,
+      screenId,
+      ...(screenName !== undefined ? { screenName } : {}),
       baselineScore,
       lastRunScore,
-      hasPendingDiff: lastRunScore !== null && getDiffIndicator(baselineScore, lastRunScore) !== "neutral",
+      hasPendingDiff: lastRunScore !== null && indicator !== "neutral",
+      indicator,
       capturedAt: metadata.capturedAt,
       ageInDays: computeAgeInDays(metadata.capturedAt, now),
       lastRunAt: artifact?.ranAt ?? null,
@@ -350,21 +507,37 @@ export const computeVisualBaselineDiff = async (
   }
 
   const baseline = await loadVisualBenchmarkBaseline(options);
+  const regressionConfig = await resolveRegressionConfig(options);
   const baselineMap = new Map<string, number>();
   if (baseline !== null) {
     for (const entry of baseline.scores) {
-      baselineMap.set(entry.fixtureId, entry.score);
+      baselineMap.set(getScoreKey(entry), entry.score);
     }
   }
 
   const diffs: VisualBaselineDiffEntry[] = [];
   for (const entry of lastRun.scores) {
     const artifact = await loadVisualBenchmarkLastRunArtifact(entry.fixtureId, options);
-    const baselineScore = baselineMap.get(entry.fixtureId) ?? null;
+    const screenId =
+      typeof entry.screenId === "string" && entry.screenId.trim().length > 0
+        ? entry.screenId.trim()
+        : entry.fixtureId;
+    const screenName = normalizeOptionalScreenName(entry.screenName);
+    const baselineScore = getBaselineMapScore(
+      baselineMap,
+      entry.fixtureId,
+      screenId,
+    );
     const delta = baselineScore !== null ? Math.round((entry.score - baselineScore) * 100) / 100 : null;
-    const indicator = getDiffIndicator(baselineScore, entry.score);
+    const indicator = getDiffIndicator(
+      baselineScore,
+      entry.score,
+      regressionConfig,
+    );
     diffs.push({
       fixtureId: entry.fixtureId,
+      screenId,
+      ...(screenName !== undefined ? { screenName } : {}),
       baseline: baselineScore,
       current: entry.score,
       delta,
@@ -395,11 +568,11 @@ export const formatVisualBaselineStatusTable = (result: VisualBaselineStatusResu
       ? "\u2014 \u2796"
       : formatDeltaCell(
           entry.baselineScore !== null ? Math.round((entry.lastRunScore - entry.baselineScore) * 100) / 100 : null,
-          getDiffIndicator(entry.baselineScore, entry.lastRunScore),
+          entry.indicator,
         );
 
     lines.push(
-      `\u2502 ${padRight(fixtureIdToDisplayName(entry.fixtureId), cols[0])} \u2502 ${padLeft(entry.baselineScore !== null ? String(entry.baselineScore) : "\u2014", cols[1])} \u2502 ${padLeft(entry.lastRunScore !== null ? String(entry.lastRunScore) : "\u2014", cols[2])} \u2502 ${padRight(diffStr, cols[3])} \u2502 ${padRight(entry.referencePngExists ? "\u2713" : "\u2717", cols[4])} \u2502 ${padRight(entry.capturedAt !== null ? entry.capturedAt.slice(0, 10) : "\u2014", cols[5])} \u2502 ${padLeft(entry.ageInDays !== null ? String(entry.ageInDays) : "\u2014", cols[6])} \u2502`,
+      `\u2502 ${padRight(getEntryDisplayName(entry.fixtureId, entry.screenName), cols[0])} \u2502 ${padLeft(entry.baselineScore !== null ? String(entry.baselineScore) : "\u2014", cols[1])} \u2502 ${padLeft(entry.lastRunScore !== null ? String(entry.lastRunScore) : "\u2014", cols[2])} \u2502 ${padRight(diffStr, cols[3])} \u2502 ${padRight(entry.referencePngExists ? "\u2713" : "\u2717", cols[4])} \u2502 ${padRight(entry.capturedAt !== null ? entry.capturedAt.slice(0, 10) : "\u2014", cols[5])} \u2502 ${padLeft(entry.ageInDays !== null ? String(entry.ageInDays) : "\u2014", cols[6])} \u2502`,
     );
   }
 
@@ -419,7 +592,7 @@ export const formatVisualBaselineDiffTable = (result: VisualBaselineDiffResult):
 
   for (const diff of result.diffs) {
     lines.push(
-      `\u2502 ${padRight(fixtureIdToDisplayName(diff.fixtureId), cols[0])} \u2502 ${padLeft(diff.baseline !== null ? String(diff.baseline) : "\u2014", cols[1])} \u2502 ${padLeft(String(diff.current), cols[2])} \u2502 ${padRight(formatDeltaCell(diff.delta, diff.indicator), cols[3])} \u2502 ${padRight(diff.ranAt !== null ? diff.ranAt.slice(0, 10) : "\u2014", cols[4])} \u2502`,
+      `\u2502 ${padRight(getEntryDisplayName(diff.fixtureId, diff.screenName), cols[0])} \u2502 ${padLeft(diff.baseline !== null ? String(diff.baseline) : "\u2014", cols[1])} \u2502 ${padLeft(String(diff.current), cols[2])} \u2502 ${padRight(formatDeltaCell(diff.delta, diff.indicator), cols[3])} \u2502 ${padRight(diff.ranAt !== null ? diff.ranAt.slice(0, 10) : "\u2014", cols[4])} \u2502`,
     );
   }
 

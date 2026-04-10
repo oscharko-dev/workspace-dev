@@ -14,7 +14,15 @@ const makeCandidate = (
   fixtureId: string,
   current: number,
   baseline: number | null,
-): VisualBenchmarkScoreCandidate => ({ fixtureId, current, baseline });
+  screenId = `${fixtureId}-screen`,
+  screenName = `${fixtureId} screen`,
+): VisualBenchmarkScoreCandidate => ({
+  fixtureId,
+  screenId,
+  screenName,
+  current,
+  baseline,
+});
 
 // ---------------------------------------------------------------------------
 // detectVisualBenchmarkRegression — no regression
@@ -79,6 +87,8 @@ test("detectVisualBenchmarkRegression emits alert when drop exceeds maxScoreDrop
   assert.ok(alert?.message.includes("11.11"));
   assert.equal(alert?.threshold, 5);
   assert.equal(alert?.value, 11.11);
+  assert.equal(result.summaries[0]?.screenId, "simple-form-screen");
+  assert.equal(result.summaries[0]?.screenName, "simple-form screen");
 });
 
 test("detectVisualBenchmarkRegression does not alert when drop equals threshold exactly", () => {
@@ -88,6 +98,17 @@ test("detectVisualBenchmarkRegression does not alert when drop equals threshold 
     { maxScoreDropPercent: 5, neutralTolerance: 1 },
   );
   assert.equal(result.alerts.length, 0);
+});
+
+test("detectVisualBenchmarkRegression alerts when raw drop percent exceeds threshold despite rounded display", () => {
+  const result = detectVisualBenchmarkRegression(
+    [makeCandidate("simple-form", 94.996, 100)],
+    { maxScoreDropPercent: 5, neutralTolerance: 0 },
+  );
+  assert.equal(result.alerts.length, 1);
+  assert.equal(result.summaries[0]?.dropPercent, 5);
+  assert.equal(result.alerts[0]?.value, 5);
+  assert.ok(result.alerts[0]?.message.includes("5%"));
 });
 
 test("detectVisualBenchmarkRegression emits alert per fixture with distinct messages", () => {
@@ -131,6 +152,7 @@ test("detectVisualBenchmarkRegression marks missing baseline as unavailable and 
   assert.equal(result.summaries[0]?.baseline, null);
   assert.equal(result.summaries[0]?.delta, null);
   assert.equal(result.summaries[0]?.dropPercent, null);
+  assert.equal(result.summaries[0]?.screenId, "new-fixture-screen");
 });
 
 test("detectVisualBenchmarkRegression handles baseline of zero gracefully", () => {

@@ -611,45 +611,55 @@ test("computeVisualBenchmarkScores returns a score for each fixture", async () =
       typeof entry.fixtureId === "string" && entry.fixtureId.length > 0,
     );
     assert.ok(
+      typeof entry.screenId === "string" && entry.screenId.length > 0,
+      `Expected screen identity for '${entry.fixtureId}'.`,
+    );
+    assert.ok(
       entry.score >= 90,
       `Expected stubbed score for '${entry.fixtureId}'.`,
     );
   }
 });
 
-test("computeVisualBenchmarkDeltas with baseline computes correct deltas", () => {
+test("computeVisualBenchmarkDeltas with baseline computes correct deltas per fixture and screen", () => {
   const current: VisualBenchmarkScoreEntry[] = [
-    { fixtureId: "fixture-a", score: 95 },
-    { fixtureId: "fixture-b", score: 80 },
-    { fixtureId: "fixture-c", score: 100 },
+    { fixtureId: "fixture-a", screenId: "screen-a", screenName: "Screen A", score: 95 },
+    { fixtureId: "fixture-a", screenId: "screen-b", screenName: "Screen B", score: 80 },
+    { fixtureId: "fixture-c", screenId: "screen-c", screenName: "Screen C", score: 100 },
   ];
   const baseline: VisualBenchmarkBaseline = {
-    version: 1,
-    updatedAt: "2026-04-01T00:00:00.000Z",
+    version: 3,
     scores: [
-      { fixtureId: "fixture-a", score: 90 },
-      { fixtureId: "fixture-b", score: 85 },
-      { fixtureId: "fixture-c", score: 100 },
+      { fixtureId: "fixture-a", screenId: "screen-a", screenName: "Screen A", score: 90 },
+      { fixtureId: "fixture-a", screenId: "screen-b", screenName: "Screen B", score: 85 },
+      { fixtureId: "fixture-c", screenId: "screen-c", screenName: "Screen C", score: 100 },
     ],
   };
   const result = computeVisualBenchmarkDeltas(current, baseline);
   assert.equal(result.deltas.length, 3);
 
-  const deltaA = result.deltas.find((d) => d.fixtureId === "fixture-a");
+  const deltaA = result.deltas.find(
+    (d) => d.fixtureId === "fixture-a" && d.screenId === "screen-a",
+  );
   assert.ok(deltaA);
   assert.equal(deltaA.baseline, 90);
   assert.equal(deltaA.current, 95);
   assert.equal(deltaA.delta, 5);
   assert.equal(deltaA.indicator, "improved");
+  assert.equal(deltaA.screenName, "Screen A");
 
-  const deltaB = result.deltas.find((d) => d.fixtureId === "fixture-b");
+  const deltaB = result.deltas.find(
+    (d) => d.fixtureId === "fixture-a" && d.screenId === "screen-b",
+  );
   assert.ok(deltaB);
   assert.equal(deltaB.baseline, 85);
   assert.equal(deltaB.current, 80);
   assert.equal(deltaB.delta, -5);
   assert.equal(deltaB.indicator, "degraded");
 
-  const deltaC = result.deltas.find((d) => d.fixtureId === "fixture-c");
+  const deltaC = result.deltas.find(
+    (d) => d.fixtureId === "fixture-c" && d.screenId === "screen-c",
+  );
   assert.ok(deltaC);
   assert.equal(deltaC.baseline, 100);
   assert.equal(deltaC.current, 100);
@@ -659,13 +669,14 @@ test("computeVisualBenchmarkDeltas with baseline computes correct deltas", () =>
 
 test("computeVisualBenchmarkDeltas with null baseline returns null deltas", () => {
   const current: VisualBenchmarkScoreEntry[] = [
-    { fixtureId: "fixture-a", score: 88 },
+    { fixtureId: "fixture-a", screenId: "screen-a", screenName: "Screen A", score: 88 },
   ];
   const result = computeVisualBenchmarkDeltas(current, null);
   assert.equal(result.deltas.length, 1);
   assert.equal(result.deltas[0]?.baseline, null);
   assert.equal(result.deltas[0]?.delta, null);
   assert.equal(result.deltas[0]?.indicator, "unavailable");
+  assert.equal(result.deltas[0]?.screenId, "screen-a");
   assert.equal(result.overallBaseline, null);
   assert.equal(result.overallDelta, null);
   assert.equal(result.overallCurrent, 88);
@@ -673,14 +684,14 @@ test("computeVisualBenchmarkDeltas with null baseline returns null deltas", () =
 
 test("computeVisualBenchmarkDeltas computes overallDelta from matched fixture pairs only", () => {
   const current: VisualBenchmarkScoreEntry[] = [
-    { fixtureId: "fixture-a", score: 100 },
-    { fixtureId: "fixture-b", score: 50 },
+    { fixtureId: "fixture-a", screenId: "screen-a", score: 100 },
+    { fixtureId: "fixture-b", screenId: "screen-b", score: 50 },
   ];
   const baseline: VisualBenchmarkBaseline = {
-    version: 2,
+    version: 3,
     scores: [
-      { fixtureId: "fixture-a", score: 80 },
-      { fixtureId: "fixture-c", score: 90 },
+      { fixtureId: "fixture-a", screenId: "screen-a", score: 80 },
+      { fixtureId: "fixture-c", screenId: "screen-c", score: 90 },
     ],
   };
 
@@ -696,15 +707,14 @@ test("computeVisualBenchmarkDeltas computes overallDelta from matched fixture pa
 
 test("computeVisualBenchmarkDeltas treats +/-1 deltas as neutral tolerance", () => {
   const current: VisualBenchmarkScoreEntry[] = [
-    { fixtureId: "fixture-a", score: 91 },
-    { fixtureId: "fixture-b", score: 89 },
+    { fixtureId: "fixture-a", screenId: "screen-a", score: 91 },
+    { fixtureId: "fixture-b", screenId: "screen-b", score: 89 },
   ];
   const baseline: VisualBenchmarkBaseline = {
-    version: 1,
-    updatedAt: "2026-04-01T00:00:00.000Z",
+    version: 3,
     scores: [
-      { fixtureId: "fixture-a", score: 90 },
-      { fixtureId: "fixture-b", score: 90 },
+      { fixtureId: "fixture-a", screenId: "screen-a", score: 90 },
+      { fixtureId: "fixture-b", screenId: "screen-b", score: 90 },
     ],
   };
 
@@ -781,7 +791,7 @@ test("computeVisualBenchmarkDeltas throws when current score list is empty", () 
 test("loadVisualBenchmarkBaseline loads the committed baseline file", async () => {
   const baseline = await loadVisualBenchmarkBaseline();
   assert.ok(baseline !== null, "Expected baseline to exist.");
-  assert.equal(baseline.version, 2);
+  assert.equal(baseline.version, 3);
   assert.equal(baseline.scores.length, 5);
   for (const entry of baseline.scores) {
     assert.equal(
@@ -792,6 +802,10 @@ test("loadVisualBenchmarkBaseline loads the committed baseline file", async () =
     assert.ok(
       Number.isFinite(entry.score),
       `Expected finite baseline score for '${entry.fixtureId}'.`,
+    );
+    assert.ok(
+      typeof entry.screenId === "string" && entry.screenId.length > 0,
+      `Expected screenId for '${entry.fixtureId}'.`,
     );
   }
 });
@@ -821,9 +835,10 @@ test("saveVisualBenchmarkBaseline and loadVisualBenchmarkBaseline round-trip", a
 
     const loaded = await loadVisualBenchmarkBaseline({ fixtureRoot });
     assert.ok(loaded !== null);
-    assert.equal(loaded.version, 2);
+    assert.equal(loaded.version, 3);
     assert.equal(loaded.scores.length, 1);
     assert.equal(loaded.scores[0]?.fixtureId, "test-fixture");
+    assert.equal(loaded.scores[0]?.screenId, "test-fixture");
     assert.equal(loaded.scores[0]?.score, 92);
     assert.equal(loaded.updatedAt, undefined);
   } finally {
@@ -831,13 +846,17 @@ test("saveVisualBenchmarkBaseline and loadVisualBenchmarkBaseline round-trip", a
   }
 });
 
-test("loadVisualBenchmarkBaseline accepts legacy v1 baseline and save normalizes to v2", async () => {
-  const fixtureRoot = await mkdtemp(
-    path.join(os.tmpdir(), "workspace-dev-visual-benchmark-baseline-v1-"),
-  );
+test("loadVisualBenchmarkBaseline accepts legacy v1 baseline and save normalizes to v3 screen-scoped entries", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "legacy-fixture",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:7777",
+      nodeName: "Legacy Fixture Screen",
+    },
+  });
   try {
-    const baselinePath = path.join(fixtureRoot, "baseline.json");
-    await mkdir(fixtureRoot, { recursive: true });
+    const baselinePath = path.join(env.fixtureRoot, "baseline.json");
     await writeFile(
       baselinePath,
       JSON.stringify(
@@ -852,12 +871,16 @@ test("loadVisualBenchmarkBaseline accepts legacy v1 baseline and save normalizes
       "utf8",
     );
 
-    const loaded = await loadVisualBenchmarkBaseline({ fixtureRoot });
+    const loaded = await loadVisualBenchmarkBaseline(env);
     assert.ok(loaded !== null);
-    assert.equal(loaded.version, 1);
-    assert.equal(loaded.updatedAt, "2026-04-01T00:00:00.000Z");
+    assert.equal(loaded.version, 3);
     assert.deepEqual(loaded.scores, [
-      { fixtureId: "legacy-fixture", score: 91 },
+      {
+        fixtureId: "legacy-fixture",
+        screenId: "2:7777",
+        screenName: "Legacy Fixture Screen",
+        score: 91,
+      },
     ]);
 
     await saveVisualBenchmarkBaseline(
@@ -865,6 +888,8 @@ test("loadVisualBenchmarkBaseline accepts legacy v1 baseline and save normalizes
         deltas: [
           {
             fixtureId: "legacy-fixture",
+            screenId: "2:7777",
+            screenName: "Legacy Fixture Screen",
             baseline: 91,
             current: 94,
             delta: 3,
@@ -875,18 +900,23 @@ test("loadVisualBenchmarkBaseline accepts legacy v1 baseline and save normalizes
         overallCurrent: 94,
         overallDelta: 3,
       },
-      { fixtureRoot },
+      env,
     );
 
-    const normalized = await loadVisualBenchmarkBaseline({ fixtureRoot });
+    const normalized = await loadVisualBenchmarkBaseline(env);
     assert.ok(normalized !== null);
-    assert.equal(normalized.version, 2);
+    assert.equal(normalized.version, 3);
     assert.equal(normalized.updatedAt, undefined);
     assert.deepEqual(normalized.scores, [
-      { fixtureId: "legacy-fixture", score: 94 },
+      {
+        fixtureId: "legacy-fixture",
+        screenId: "2:7777",
+        screenName: "Legacy Fixture Screen",
+        score: 94,
+      },
     ]);
   } finally {
-    await rm(fixtureRoot, { recursive: true, force: true });
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }
 });
 
@@ -1337,6 +1367,11 @@ test("runVisualBenchmark attaches trendSummaries matching deltas", async () => {
 
     assert.equal(result.trendSummaries.length, 1);
     assert.equal(result.trendSummaries[0]?.fixtureId, "simple-form");
+    assert.equal(result.trendSummaries[0]?.screenId, simpleFormMetadata.source.nodeId);
+    assert.equal(
+      result.trendSummaries[0]?.screenName,
+      simpleFormMetadata.source.nodeName,
+    );
     assert.equal(result.trendSummaries[0]?.current, 87);
     assert.equal(result.trendSummaries[0]?.baseline, 90);
     assert.equal(result.trendSummaries[0]?.delta, -3);
@@ -1466,6 +1501,14 @@ test("runVisualBenchmark appends history entry when --update-baseline is passed"
     assert.equal(history.entries.length, 1);
     assert.equal(history.entries[0]?.scores.length, 1);
     assert.equal(history.entries[0]?.scores[0]?.fixtureId, "simple-form");
+    assert.equal(
+      history.entries[0]?.scores[0]?.screenId,
+      simpleFormMetadata.source.nodeId,
+    );
+    assert.equal(
+      history.entries[0]?.scores[0]?.screenName,
+      simpleFormMetadata.source.nodeName,
+    );
     assert.equal(history.entries[0]?.scores[0]?.score, 92);
     assert.equal(result.overallCurrent, 92);
   } finally {
@@ -1473,7 +1516,7 @@ test("runVisualBenchmark appends history entry when --update-baseline is passed"
   }
 });
 
-test("runVisualBenchmark does NOT touch history when --update-baseline is omitted", async () => {
+test("runVisualBenchmark appends history entry on ordinary benchmark runs", async () => {
   const env = await createBenchmarkFixtureEnvironment();
   try {
     await runVisualBenchmark(env, {
@@ -1482,36 +1525,65 @@ test("runVisualBenchmark does NOT touch history when --update-baseline is omitte
 
     const historyModule = await import("./visual-benchmark-history.js");
     const history = await historyModule.loadVisualBenchmarkHistory(env);
+    assert.ok(history !== null, "history file must be created for ordinary runs");
+    assert.equal(history.entries.length, 1);
+    assert.equal(history.entries[0]?.scores[0]?.fixtureId, "simple-form");
     assert.equal(
-      history,
+      history.entries[0]?.scores[0]?.screenId,
+      simpleFormMetadata.source.nodeId,
+    );
+    const baseline = await loadVisualBenchmarkBaseline(env);
+    assert.equal(
+      baseline,
       null,
-      "history file must not be created without update-baseline",
+      "ordinary runs must not rewrite the baseline without update-baseline",
     );
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }
 });
 
-test("runVisualBenchmark honours historySize config when appending history", async () => {
+test("runVisualBenchmark honours historySize when appending history from ordinary runs", async () => {
   const env = await createBenchmarkFixtureEnvironment();
   try {
     const historyModule = await import("./visual-benchmark-history.js");
     // Seed history with 3 pre-existing entries
     await historyModule.saveVisualBenchmarkHistory(
       {
-        version: 1,
+        version: 2,
         entries: [
           {
             runAt: "2026-04-01T00:00:00.000Z",
-            scores: [{ fixtureId: "simple-form", score: 70 }],
+            scores: [
+              {
+                fixtureId: "simple-form",
+                screenId: simpleFormMetadata.source.nodeId,
+                screenName: simpleFormMetadata.source.nodeName,
+                score: 70,
+              },
+            ],
           },
           {
             runAt: "2026-04-02T00:00:00.000Z",
-            scores: [{ fixtureId: "simple-form", score: 72 }],
+            scores: [
+              {
+                fixtureId: "simple-form",
+                screenId: simpleFormMetadata.source.nodeId,
+                screenName: simpleFormMetadata.source.nodeName,
+                score: 72,
+              },
+            ],
           },
           {
             runAt: "2026-04-03T00:00:00.000Z",
-            scores: [{ fixtureId: "simple-form", score: 74 }],
+            scores: [
+              {
+                fixtureId: "simple-form",
+                screenId: simpleFormMetadata.source.nodeId,
+                screenName: simpleFormMetadata.source.nodeName,
+                score: 74,
+              },
+            ],
           },
         ],
       },
@@ -1521,7 +1593,6 @@ test("runVisualBenchmark honours historySize config when appending history", asy
     await runVisualBenchmark(
       {
         ...env,
-        updateBaseline: true,
         qualityConfig: {
           regression: { historySize: 2 },
         },
@@ -1537,6 +1608,10 @@ test("runVisualBenchmark honours historySize config when appending history", asy
     // Oldest (2026-04-01, 2026-04-02) dropped, newest (2026-04-03, current run) kept
     assert.equal(history.entries[0]?.runAt, "2026-04-03T00:00:00.000Z");
     assert.equal(history.entries[1]?.scores[0]?.score, 80);
+    assert.equal(
+      history.entries[1]?.scores[0]?.screenId,
+      simpleFormMetadata.source.nodeId,
+    );
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }
@@ -1628,6 +1703,6 @@ test("committed integration/fixtures/visual-benchmark/history.json parses as val
     committed !== null,
     "history.json should be committed and loadable",
   );
-  assert.equal(committed.version, 1);
+  assert.equal(committed.version, 2);
   assert.ok(Array.isArray(committed.entries));
 });

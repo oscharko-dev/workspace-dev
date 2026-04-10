@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -13,6 +13,10 @@ import {
   saveVisualBenchmarkLastRunArtifact,
   type VisualBenchmarkScoreEntry,
 } from "./visual-benchmark-runner.js";
+import {
+  loadVisualBenchmarkHistory,
+  saveVisualBenchmarkHistory,
+} from "./visual-benchmark-history.js";
 import {
   loadVisualBenchmarkFixtureMetadata,
   loadVisualBenchmarkReference,
@@ -119,6 +123,17 @@ const createFixtureEnvironment = async (options?: {
   return { fixtureRoot, artifactRoot };
 };
 
+const writeVisualQualityConfig = async (
+  fixtureRoot: string,
+  config: Record<string, unknown>,
+): Promise<void> => {
+  await writeFile(
+    path.join(fixtureRoot, "visual-quality.config.json"),
+    JSON.stringify(config, null, 2),
+    "utf8",
+  );
+};
+
 // ---------------------------------------------------------------------------
 // 1. CLI argument parsing tests
 // ---------------------------------------------------------------------------
@@ -200,12 +215,26 @@ test("updateVisualBaselines rewrites references, metadata, artifacts, and baseli
 
     const baseline = await loadVisualBenchmarkBaseline(env);
     assert.ok(baseline !== null);
-    assert.equal(baseline.version, 2);
-    assert.deepEqual(baseline.scores, [{ fixtureId: "simple-form", score: 92 }]);
+    assert.equal(baseline.version, 3);
+    assert.deepEqual(baseline.scores, [
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
+        score: 92,
+      },
+    ]);
 
     const lastRun = await loadVisualBenchmarkLastRun(env);
     assert.ok(lastRun !== null);
-    assert.equal(lastRun.scores[0]?.score, 92);
+    assert.deepEqual(lastRun.scores, [
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
+        score: 92,
+      },
+    ]);
 
     const metadata = await loadVisualBenchmarkFixtureMetadata("simple-form", env);
     assert.equal(metadata.capturedAt, runAt.toISOString());
@@ -259,15 +288,145 @@ test("updateVisualBaselines with single fixture merges into existing baseline an
     const baseline = await loadVisualBenchmarkBaseline(env);
     assert.ok(baseline !== null);
     assert.deepEqual(baseline.scores, [
-      { fixtureId: "complex-dashboard", score: 90 },
-      { fixtureId: "simple-form", score: 95 },
+      {
+        fixtureId: "complex-dashboard",
+        screenId: "1:1",
+        screenName: "complex-dashboard",
+        score: 90,
+      },
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
+        score: 95,
+      },
     ]);
 
     const lastRun = await loadVisualBenchmarkLastRun(env);
     assert.ok(lastRun !== null);
     assert.deepEqual(lastRun.scores, [
-      { fixtureId: "complex-dashboard", score: 88 },
-      { fixtureId: "simple-form", score: 95 },
+      {
+        fixtureId: "complex-dashboard",
+        screenId: "1:1",
+        screenName: "complex-dashboard",
+        score: 88,
+      },
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
+        score: 95,
+      },
+    ]);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("updateVisualBaselines merges replacement scores by fixture and screen identity", async () => {
+  const env = await createFixtureEnvironment({
+    fixtureIds: ["simple-form"],
+    baselineScores: [
+      { fixtureId: "simple-form", screenId: "1:1", screenName: "Main", score: 85 },
+      { fixtureId: "simple-form", screenId: "2:2", screenName: "Secondary", score: 80 },
+    ],
+    lastRunScores: [
+      { fixtureId: "simple-form", screenId: "1:1", screenName: "Main", score: 84 },
+      { fixtureId: "simple-form", screenId: "2:2", screenName: "Secondary", score: 79 },
+    ],
+  });
+  const runAt = new Date("2026-04-09T12:00:00.000Z");
+
+  try {
+    await updateVisualBaselines({
+      ...env,
+      fixtureId: "simple-form",
+      log: () => {},
+      now: () => runAt,
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        score: 95,
+        screenshotBuffer: createTestPngBuffer(8, 8, [10, 20, 30, 255]),
+        diffBuffer: createTestPngBuffer(8, 8, [200, 20, 30, 255]),
+        report: { fixtureId, outcome: "merged" },
+        viewport: { width: 1024, height: 768 },
+      }),
+    });
+
+    const baseline = await loadVisualBenchmarkBaseline(env);
+    assert.ok(baseline !== null);
+    assert.deepEqual(baseline.scores, [
+      { fixtureId: "simple-form", screenId: "1:1", screenName: "simple-form", score: 95 },
+      { fixtureId: "simple-form", screenId: "2:2", screenName: "Secondary", score: 80 },
+    ]);
+
+    const lastRun = await loadVisualBenchmarkLastRun(env);
+    assert.ok(lastRun !== null);
+    assert.deepEqual(lastRun.scores, [
+      { fixtureId: "simple-form", screenId: "1:1", screenName: "simple-form", score: 95 },
+      { fixtureId: "simple-form", screenId: "2:2", screenName: "Secondary", score: 79 },
+    ]);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("updateVisualBaselines appends bounded history using regression historySize", async () => {
+  const env = await createFixtureEnvironment();
+  const runAt = new Date("2026-04-09T12:00:00.000Z");
+
+  try {
+    await writeVisualQualityConfig(env.fixtureRoot, {
+      regression: { historySize: 1 },
+    });
+    await saveVisualBenchmarkHistory(
+      {
+        version: 2,
+        entries: [
+          {
+            runAt: "2026-04-08T12:00:00.000Z",
+            scores: [
+              {
+                fixtureId: "simple-form",
+                screenId: "1:1",
+                screenName: "simple-form",
+                score: 88,
+              },
+            ],
+          },
+        ],
+      },
+      env,
+    );
+
+    await updateVisualBaselines({
+      ...env,
+      log: () => {},
+      now: () => runAt,
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        score: 92,
+        screenshotBuffer: createTestPngBuffer(8, 8, [255, 0, 0, 255]),
+        diffBuffer: createTestPngBuffer(8, 8, [0, 255, 0, 255]),
+        report: { fixtureId, outcome: "ok" },
+        viewport: { width: 1440, height: 900 },
+      }),
+    });
+
+    const history = await loadVisualBenchmarkHistory(env);
+    assert.ok(history !== null);
+    assert.deepEqual(history.entries, [
+      {
+        runAt: runAt.toISOString(),
+        scores: [
+          {
+            fixtureId: "simple-form",
+            screenId: "1:1",
+            screenName: "simple-form",
+            score: 92,
+          },
+        ],
+      },
     ]);
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
@@ -306,7 +465,14 @@ test("approveVisualBaseline updates baseline and committed reference from persis
 
     const baseline = await loadVisualBenchmarkBaseline(env);
     assert.ok(baseline !== null);
-    assert.deepEqual(baseline.scores, [{ fixtureId: "simple-form", score: 95 }]);
+    assert.deepEqual(baseline.scores, [
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
+        score: 95,
+      },
+    ]);
 
     const metadata = await loadVisualBenchmarkFixtureMetadata("simple-form", env);
     assert.equal(metadata.capturedAt, artifactTime);
@@ -314,6 +480,92 @@ test("approveVisualBaseline updates baseline and committed reference from persis
 
     const reference = await loadVisualBenchmarkReference("simple-form", env);
     assert.deepEqual(reference, actualBuffer);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("approveVisualBaseline appends history using regression historySize", async () => {
+  const env = await createFixtureEnvironment({
+    baselineScores: [{ fixtureId: "simple-form", score: 90 }],
+  });
+  const actualBuffer = createTestPngBuffer(8, 8, [200, 10, 10, 255]);
+
+  try {
+    await writeVisualQualityConfig(env.fixtureRoot, {
+      regression: { historySize: 2 },
+    });
+    await saveVisualBenchmarkHistory(
+      {
+        version: 2,
+        entries: [
+          {
+            runAt: "2026-04-07T15:00:00.000Z",
+            scores: [
+              {
+                fixtureId: "simple-form",
+                screenId: "1:1",
+                screenName: "simple-form",
+                score: 80,
+              },
+            ],
+          },
+          {
+            runAt: "2026-04-08T15:00:00.000Z",
+            scores: [
+              {
+                fixtureId: "simple-form",
+                screenId: "1:1",
+                screenName: "simple-form",
+                score: 85,
+              },
+            ],
+          },
+        ],
+      },
+      env,
+    );
+    await saveVisualBenchmarkLastRunArtifact(
+      {
+        fixtureId: "simple-form",
+        score: 95,
+        ranAt: "2026-04-09T15:00:00.000Z",
+        viewport: { width: 1366, height: 768 },
+        actualImageBuffer: actualBuffer,
+        diffImageBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+        report: { approved: true },
+      },
+      env,
+    );
+
+    await approveVisualBaseline("simple-form", env);
+
+    const history = await loadVisualBenchmarkHistory(env);
+    assert.ok(history !== null);
+    assert.deepEqual(history.entries, [
+      {
+        runAt: "2026-04-08T15:00:00.000Z",
+        scores: [
+          {
+            fixtureId: "simple-form",
+            screenId: "1:1",
+            screenName: "simple-form",
+            score: 85,
+          },
+        ],
+      },
+      {
+        runAt: "2026-04-09T15:00:00.000Z",
+        scores: [
+          {
+            fixtureId: "simple-form",
+            screenId: "1:1",
+            screenName: "simple-form",
+            score: 95,
+          },
+        ],
+      },
+    ]);
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }
@@ -367,9 +619,12 @@ test("computeVisualBaselineStatus shows captured age and persisted last-run arti
     const entry = status.entries[0];
     assert.ok(entry);
     assert.equal(entry.fixtureId, "simple-form");
+    assert.equal(entry.screenId, "1:1");
+    assert.equal(entry.screenName, "simple-form");
     assert.equal(entry.baselineScore, 90);
     assert.equal(entry.lastRunScore, 95);
     assert.equal(entry.hasPendingDiff, true);
+    assert.equal(entry.indicator, "improved");
     assert.equal(entry.referencePngExists, true);
     assert.equal(entry.capturedAt, "2026-04-01T00:00:00.000Z");
     assert.equal(entry.ageInDays, 9);
@@ -391,9 +646,12 @@ test("computeVisualBaselineStatus handles missing baseline and last-run artifact
 
     const entry = status.entries[0];
     assert.ok(entry);
+    assert.equal(entry.screenId, "1:1");
+    assert.equal(entry.screenName, "simple-form");
     assert.equal(entry.baselineScore, null);
     assert.equal(entry.lastRunScore, null);
     assert.equal(entry.hasPendingDiff, false);
+    assert.equal(entry.indicator, "unavailable");
     assert.equal(entry.actualImagePath, null);
     assert.equal(entry.lastRunAt, null);
     assert.equal(entry.ageInDays, 9);
@@ -430,6 +688,8 @@ test("computeVisualBaselineDiff computes deltas and returns artifact paths", asy
     const entry = diff.diffs[0];
     assert.ok(entry);
     assert.equal(entry.fixtureId, "simple-form");
+    assert.equal(entry.screenId, "1:1");
+    assert.equal(entry.screenName, "simple-form");
     assert.equal(entry.baseline, 90);
     assert.equal(entry.current, 95);
     assert.equal(entry.delta, 5);
@@ -452,6 +712,55 @@ test("computeVisualBaselineDiff detects neutral deltas within tolerance", async 
     const diff = await computeVisualBaselineDiff(env);
     assert.equal(diff.diffs[0]?.indicator, "neutral");
     assert.equal(diff.hasPendingDiffs, false);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("computeVisualBaselineStatus uses configured regression neutralTolerance", async () => {
+  const env = await createFixtureEnvironment({
+    baselineScores: [{ fixtureId: "simple-form", score: 100 }],
+  });
+
+  try {
+    await writeVisualQualityConfig(env.fixtureRoot, {
+      regression: { neutralTolerance: 0.5 },
+    });
+    await saveVisualBenchmarkLastRunArtifact(
+      {
+        fixtureId: "simple-form",
+        score: 100.9,
+        ranAt: "2026-04-09T12:00:00.000Z",
+        viewport: { width: 1280, height: 720 },
+        actualImageBuffer: createTestPngBuffer(8, 8, [255, 0, 0, 255]),
+        diffImageBuffer: createTestPngBuffer(8, 8, [0, 255, 0, 255]),
+        report: { diff: true },
+      },
+      env,
+    );
+
+    const status = await computeVisualBaselineStatus(env);
+    assert.equal(status.entries[0]?.indicator, "improved");
+    assert.equal(status.entries[0]?.hasPendingDiff, true);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("computeVisualBaselineDiff uses configured regression neutralTolerance", async () => {
+  const env = await createFixtureEnvironment({
+    baselineScores: [{ fixtureId: "simple-form", score: 100 }],
+    lastRunScores: [{ fixtureId: "simple-form", score: 100.9 }],
+  });
+
+  try {
+    await writeVisualQualityConfig(env.fixtureRoot, {
+      regression: { neutralTolerance: 0.5 },
+    });
+
+    const diff = await computeVisualBaselineDiff(env);
+    assert.equal(diff.diffs[0]?.indicator, "improved");
+    assert.equal(diff.hasPendingDiffs, true);
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }
@@ -480,9 +789,12 @@ test("formatVisualBaselineStatusTable produces a table with captured and age col
     entries: [
       {
         fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
         baselineScore: 90,
         lastRunScore: 95,
         hasPendingDiff: true,
+        indicator: "improved",
         capturedAt: "2026-04-01T00:00:00.000Z",
         ageInDays: 9,
         lastRunAt: "2026-04-09T00:00:00.000Z",
@@ -505,6 +817,8 @@ test("formatVisualBaselineDiffTable produces a table with run date column", () =
     diffs: [
       {
         fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
         baseline: 90,
         current: 95,
         delta: 5,
