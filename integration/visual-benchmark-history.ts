@@ -157,8 +157,41 @@ const normalizeHistoryScoreEntry = (
   };
 };
 
+type FixtureMetadataCache = Map<
+  string,
+  Promise<Awaited<ReturnType<typeof loadVisualBenchmarkFixtureMetadata>> | null>
+>;
+
+const loadMetadataWithCache = (
+  fixtureId: string,
+  cache: FixtureMetadataCache,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<Awaited<
+  ReturnType<typeof loadVisualBenchmarkFixtureMetadata>
+> | null> => {
+  const existing = cache.get(fixtureId);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const promise = loadVisualBenchmarkFixtureMetadata(fixtureId, options).catch(
+    (error: unknown) => {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return null;
+      }
+      throw error;
+    },
+  );
+  cache.set(fixtureId, promise);
+  return promise;
+};
+
 const normalizeHistoryScoreEntryWithMetadata = async (
   entry: VisualBenchmarkHistoryScoreEntry,
+  cache: FixtureMetadataCache,
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkHistoryScoreEntry> => {
   const providedScreenId =
@@ -167,31 +200,23 @@ const normalizeHistoryScoreEntryWithMetadata = async (
       : undefined;
   const providedScreenName = normalizeOptionalScreenName(entry.screenName);
   const normalized = normalizeHistoryScoreEntry(entry);
-  try {
-    const metadata = await loadVisualBenchmarkFixtureMetadata(
-      normalized.fixtureId,
-      options,
-    );
-    const screenName =
-      providedScreenName ??
-      normalizeOptionalScreenName(metadata.source.nodeName);
-
-    return {
-      fixtureId: normalized.fixtureId,
-      screenId: providedScreenId ?? metadata.source.nodeId,
-      ...(screenName !== undefined ? { screenName } : {}),
-      score: normalized.score,
-    };
-  } catch (error: unknown) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
-      return normalized;
-    }
-    throw error;
+  const metadata = await loadMetadataWithCache(
+    normalized.fixtureId,
+    cache,
+    options,
+  );
+  if (metadata === null) {
+    return normalized;
   }
+  const screenName =
+    providedScreenName ?? normalizeOptionalScreenName(metadata.source.nodeName);
+
+  return {
+    fixtureId: normalized.fixtureId,
+    screenId: providedScreenId ?? metadata.source.nodeId,
+    ...(screenName !== undefined ? { screenName } : {}),
+    score: normalized.score,
+  };
 };
 
 export const loadVisualBenchmarkHistory = async (
@@ -212,11 +237,16 @@ export const loadVisualBenchmarkHistory = async (
     }
 
     const entries: VisualBenchmarkHistoryEntry[] = [];
+    const metadataCache: FixtureMetadataCache = new Map();
     for (const entry of parsed.entries) {
       const scores: VisualBenchmarkHistoryScoreEntry[] = [];
       for (const score of entry.scores) {
         scores.push(
-          await normalizeHistoryScoreEntryWithMetadata(score, options),
+          await normalizeHistoryScoreEntryWithMetadata(
+            score,
+            metadataCache,
+            options,
+          ),
         );
       }
       entries.push({

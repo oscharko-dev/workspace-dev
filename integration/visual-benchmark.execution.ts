@@ -6,7 +6,11 @@ import { createInitialStages, nowIso } from "../src/job-engine/stage-state.js";
 import { resolveRuntimeSettings } from "../src/job-engine/runtime.js";
 import { createTemplateCopyFilter } from "../src/job-engine/template-copy-filter.js";
 import { StageArtifactStore } from "../src/job-engine/pipeline/artifact-store.js";
-import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../src/job-engine/pipeline/context.js";
+import {
+  createStageRuntimeContext,
+  type PipelineExecutionContext,
+  type StageRuntimeContext,
+} from "../src/job-engine/pipeline/context.js";
 import { FigmaSourceService } from "../src/job-engine/services/figma-source-service.js";
 import { IrDeriveService } from "../src/job-engine/services/ir-derive-service.js";
 import { TemplatePrepareService } from "../src/job-engine/services/template-prepare-service.js";
@@ -15,12 +19,14 @@ import { createValidateProjectService } from "../src/job-engine/services/validat
 import type { JobRecord } from "../src/job-engine/types.js";
 import { ensureTemplateValidationSeedNodeModules } from "../src/job-engine/test-validation-seed.js";
 import {
+  enumerateFixtureScreens,
   loadVisualBenchmarkFixtureInputs,
   loadVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkFixturePaths,
   toStableJsonString,
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureOptions,
+  type VisualBenchmarkFixtureScreenMetadata,
 } from "./visual-benchmark.helpers.js";
 import {
   applyVisualQualityConfigToReport,
@@ -50,6 +56,26 @@ export interface VisualBenchmarkFixtureExecutionArtifacts extends VisualBenchmar
   };
 }
 
+export interface VisualBenchmarkFixtureScreenArtifact {
+  screenId: string;
+  screenName: string;
+  nodeId: string;
+  score: number;
+  screenshotBuffer: Buffer;
+  diffBuffer: Buffer | null;
+  report: unknown | null;
+  viewport: {
+    width: number;
+    height: number;
+  };
+}
+
+export interface VisualBenchmarkFixtureRunResult {
+  fixtureId: string;
+  aggregateScore: number;
+  screens: VisualBenchmarkFixtureScreenArtifact[];
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
@@ -58,11 +84,15 @@ const cloneJsonValue = <T>(value: T): T => {
   return JSON.parse(JSON.stringify(value)) as T;
 };
 
-const isWorkspaceVisualQualityReport = (value: unknown): value is WorkspaceVisualQualityReport => {
+const isWorkspaceVisualQualityReport = (
+  value: unknown,
+): value is WorkspaceVisualQualityReport => {
   return typeof value === "object" && value !== null && "status" in value;
 };
 
-const mergeOptionalRecords = (...values: unknown[]): Record<string, unknown> | undefined => {
+const mergeOptionalRecords = (
+  ...values: unknown[]
+): Record<string, unknown> | undefined => {
   const merged: Record<string, unknown> = {};
   for (const value of values) {
     if (!isRecord(value)) {
@@ -83,7 +113,9 @@ const normalizeBenchmarkFigmaInput = ({
   metadata: VisualBenchmarkFixtureMetadata;
 }): Record<string, unknown> => {
   if (!isRecord(figmaInput)) {
-    throw new Error(`Benchmark fixture '${fixtureId}' figma.json must be an object.`);
+    throw new Error(
+      `Benchmark fixture '${fixtureId}' figma.json must be an object.`,
+    );
   }
 
   if (isRecord(figmaInput.document)) {
@@ -92,26 +124,38 @@ const normalizeBenchmarkFigmaInput = ({
 
   if (!isRecord(figmaInput.nodes)) {
     throw new Error(
-      `Benchmark fixture '${fixtureId}' figma.json must expose either a top-level document or a nodes map.`
+      `Benchmark fixture '${fixtureId}' figma.json must expose either a top-level document or a nodes map.`,
     );
   }
 
   const nodeEntry = figmaInput.nodes[metadata.source.nodeId];
   if (!isRecord(nodeEntry) || !isRecord(nodeEntry.document)) {
     throw new Error(
-      `Benchmark fixture '${fixtureId}' figma.json is missing node '${metadata.source.nodeId}' in nodes payload.`
+      `Benchmark fixture '${fixtureId}' figma.json is missing node '${metadata.source.nodeId}' in nodes payload.`,
     );
   }
 
   const document = cloneJsonValue(nodeEntry.document);
-  const components = mergeOptionalRecords(figmaInput.components, nodeEntry.components);
-  const componentSets = mergeOptionalRecords(figmaInput.componentSets, nodeEntry.componentSets);
+  const components = mergeOptionalRecords(
+    figmaInput.components,
+    nodeEntry.components,
+  );
+  const componentSets = mergeOptionalRecords(
+    figmaInput.componentSets,
+    nodeEntry.componentSets,
+  );
   const styles = mergeOptionalRecords(figmaInput.styles, nodeEntry.styles);
 
   return {
-    ...(typeof figmaInput.editorType === "string" ? { editorType: figmaInput.editorType } : {}),
-    ...(typeof figmaInput.lastModified === "string" ? { lastModified: figmaInput.lastModified } : {}),
-    ...(typeof figmaInput.linkAccess === "string" ? { linkAccess: figmaInput.linkAccess } : {}),
+    ...(typeof figmaInput.editorType === "string"
+      ? { editorType: figmaInput.editorType }
+      : {}),
+    ...(typeof figmaInput.lastModified === "string"
+      ? { lastModified: figmaInput.lastModified }
+      : {}),
+    ...(typeof figmaInput.linkAccess === "string"
+      ? { linkAccess: figmaInput.linkAccess }
+      : {}),
     name: typeof figmaInput.name === "string" ? figmaInput.name : fixtureId,
     document: {
       id: `visual-benchmark-document-${fixtureId}`,
@@ -195,7 +239,9 @@ const createExecutionContext = async ({
   rootDir: string;
   stageContextFor: (stage: WorkspaceJobStageName) => StageRuntimeContext;
 }> => {
-  const rootDir = await mkdtemp(path.join(os.tmpdir(), `workspace-dev-visual-benchmark-${fixtureId}-`));
+  const rootDir = await mkdtemp(
+    path.join(os.tmpdir(), `workspace-dev-visual-benchmark-${fixtureId}-`),
+  );
   const jobsRoot = path.join(rootDir, "jobs");
   const jobDir = path.join(jobsRoot, fixtureId);
   const generatedProjectDir = path.join(jobDir, "generated-app");
@@ -277,37 +323,61 @@ const createExecutionContext = async ({
   return {
     executionContext,
     rootDir,
-    stageContextFor: (stage) => createStageRuntimeContext({ executionContext, stage }),
+    stageContextFor: (stage) =>
+      createStageRuntimeContext({ executionContext, stage }),
   };
 };
 
-export const executeVisualBenchmarkFixture = async (
-  fixtureId: string,
-  options?: VisualBenchmarkExecutionOptions,
-): Promise<VisualBenchmarkFixtureExecutionArtifacts> => {
-  const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
-  const { figmaJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
-  const figmaInput = await loadVisualBenchmarkFixtureInputs(fixtureId, options);
-  const workspaceRoot = options?.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT;
+const executeVisualBenchmarkScreen = async ({
+  fixtureId,
+  metadata,
+  figmaInput,
+  screen,
+  figmaJsonPath,
+  workspaceRoot,
+  options,
+}: {
+  fixtureId: string;
+  metadata: VisualBenchmarkFixtureMetadata;
+  figmaInput: unknown;
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  figmaJsonPath: string;
+  workspaceRoot: string;
+  options?: VisualBenchmarkExecutionOptions;
+}): Promise<VisualBenchmarkFixtureScreenArtifact> => {
+  const perScreenMetadata: VisualBenchmarkFixtureMetadata = {
+    ...metadata,
+    viewport: {
+      width: screen.viewport.width,
+      height: screen.viewport.height,
+    },
+    source: {
+      ...metadata.source,
+      nodeId: screen.nodeId,
+      nodeName: screen.screenName,
+    },
+  };
 
-  await ensureTemplateValidationSeedNodeModules();
-
-  const { executionContext, rootDir, stageContextFor } = await createExecutionContext({
-    fixtureId,
-    figmaJsonPath,
-    visualQualityViewportWidth: metadata.viewport.width,
-    workspaceRoot,
-  });
+  const { executionContext, rootDir, stageContextFor } =
+    await createExecutionContext({
+      fixtureId,
+      figmaJsonPath,
+      visualQualityViewportWidth: screen.viewport.width,
+      workspaceRoot,
+    });
 
   try {
-    const localFigmaJsonPath = path.join(executionContext.paths.jobDir, "benchmark-local-figma.json");
+    const localFigmaJsonPath = path.join(
+      executionContext.paths.jobDir,
+      "benchmark-local-figma.json",
+    );
     await writeFile(
       localFigmaJsonPath,
       toStableJsonString(
         normalizeBenchmarkFigmaInput({
           fixtureId,
           figmaInput,
-          metadata,
+          metadata: perScreenMetadata,
         }),
       ),
       "utf8",
@@ -319,23 +389,40 @@ export const executeVisualBenchmarkFixture = async (
       stageContextFor("figma.source"),
     );
     await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
-    await TemplatePrepareService.execute(undefined, stageContextFor("template.prepare"));
+    await TemplatePrepareService.execute(
+      undefined,
+      stageContextFor("template.prepare"),
+    );
     await createCodegenGenerateService().execute(
       {
         boardKeySeed: fixtureId,
       },
       stageContextFor("codegen.generate"),
     );
-    await createValidateProjectService().execute(undefined, stageContextFor("validate.project"));
+    await createValidateProjectService().execute(
+      undefined,
+      stageContextFor("validate.project"),
+    );
 
     const visualQuality = executionContext.job.visualQuality;
-    const screenshotBuffer = await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "actual.png"));
+    const screenshotBuffer = await readFile(
+      path.join(executionContext.paths.jobDir, "visual-quality", "actual.png"),
+    );
     let diffBuffer: Buffer | null = null;
     let report: unknown | null = null;
     try {
-      diffBuffer = await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "diff.png"));
+      diffBuffer = await readFile(
+        path.join(executionContext.paths.jobDir, "visual-quality", "diff.png"),
+      );
       report = JSON.parse(
-        await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "report.json"), "utf8"),
+        await readFile(
+          path.join(
+            executionContext.paths.jobDir,
+            "visual-quality",
+            "report.json",
+          ),
+          "utf8",
+        ),
       ) as unknown;
     } catch (error: unknown) {
       if (options?.allowIncompleteVisualQuality !== true) {
@@ -345,32 +432,39 @@ export const executeVisualBenchmarkFixture = async (
     if (isWorkspaceVisualQualityReport(report)) {
       report = applyVisualQualityConfigToReport(report, options?.qualityConfig);
     }
-    const effectiveVisualQuality =
-      isWorkspaceVisualQualityReport(report)
-        ? report
-        : visualQuality !== undefined
-          ? applyVisualQualityConfigToReport(visualQuality, options?.qualityConfig)
-          : visualQuality;
+    const effectiveVisualQuality = isWorkspaceVisualQualityReport(report)
+      ? report
+      : visualQuality !== undefined
+        ? applyVisualQualityConfigToReport(
+            visualQuality,
+            options?.qualityConfig,
+          )
+        : visualQuality;
     if (
       effectiveVisualQuality?.status !== "completed" ||
       typeof effectiveVisualQuality.overallScore !== "number"
     ) {
       if (options?.allowIncompleteVisualQuality !== true) {
         throw new Error(
-          `Benchmark fixture '${fixtureId}' did not produce a completed visual quality score.`
+          `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' did not produce a completed visual quality score.`,
         );
       }
     }
 
     const viewport = effectiveVisualQuality?.metadata?.viewport ?? {
-      width: metadata.viewport.width,
-      height: metadata.viewport.height,
+      width: screen.viewport.width,
+      height: screen.viewport.height,
       deviceScaleFactor: 1,
     };
 
     return {
-      fixtureId,
-      score: typeof effectiveVisualQuality?.overallScore === "number" ? effectiveVisualQuality.overallScore : 100,
+      screenId: screen.screenId,
+      screenName: screen.screenName,
+      nodeId: screen.nodeId,
+      score:
+        typeof effectiveVisualQuality?.overallScore === "number"
+          ? effectiveVisualQuality.overallScore
+          : 100,
       screenshotBuffer,
       diffBuffer,
       report,
@@ -379,12 +473,64 @@ export const executeVisualBenchmarkFixture = async (
         height: viewport.height,
       },
     };
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`Benchmark fixture '${fixtureId}' failed: ${detail}`);
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
+};
+
+const computeAggregateFromScreens = (
+  screens: readonly VisualBenchmarkFixtureScreenArtifact[],
+): number => {
+  if (screens.length === 0) {
+    throw new Error(
+      "executeVisualBenchmarkFixture requires at least one screen to aggregate.",
+    );
+  }
+  const total = screens.reduce((sum, screen) => sum + screen.score, 0);
+  return Math.round((total / screens.length) * 100) / 100;
+};
+
+export const executeVisualBenchmarkFixture = async (
+  fixtureId: string,
+  options?: VisualBenchmarkExecutionOptions,
+): Promise<VisualBenchmarkFixtureRunResult> => {
+  const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
+  const { figmaJsonPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
+  const figmaInput = await loadVisualBenchmarkFixtureInputs(fixtureId, options);
+  const workspaceRoot = options?.workspaceRoot ?? DEFAULT_WORKSPACE_ROOT;
+
+  await ensureTemplateValidationSeedNodeModules();
+
+  const screens = enumerateFixtureScreens(metadata);
+  const screenArtifacts: VisualBenchmarkFixtureScreenArtifact[] = [];
+  try {
+    for (const screen of screens) {
+      const artifact = await executeVisualBenchmarkScreen({
+        fixtureId,
+        metadata,
+        figmaInput,
+        screen,
+        figmaJsonPath,
+        workspaceRoot,
+        options,
+      });
+      screenArtifacts.push(artifact);
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`Benchmark fixture '${fixtureId}' failed: ${detail}`);
+  }
+
+  const aggregateScore = computeAggregateFromScreens(screenArtifacts);
+
+  return {
+    fixtureId,
+    aggregateScore,
+    screens: screenArtifacts,
+  };
 };
 
 export const runVisualBenchmarkFixture = async (
@@ -394,6 +540,34 @@ export const runVisualBenchmarkFixture = async (
   const result = await executeVisualBenchmarkFixture(fixtureId, options);
   return {
     fixtureId: result.fixtureId,
-    score: result.score,
+    score: result.aggregateScore,
+  };
+};
+
+/**
+ * Legacy single-screen execution wrapper used by visual-baseline.ts which
+ * still consumes per-fixture (not per-screen) artifacts. This fans out to the
+ * multi-screen executor and collapses to the first screen. Single-screen
+ * fixtures (v1 metadata) produce byte-identical output to the pre-multi-screen
+ * behaviour.
+ */
+export const executeVisualBenchmarkFixtureLegacy = async (
+  fixtureId: string,
+  options?: VisualBenchmarkExecutionOptions,
+): Promise<VisualBenchmarkFixtureExecutionArtifacts> => {
+  const result = await executeVisualBenchmarkFixture(fixtureId, options);
+  const first = result.screens[0];
+  if (first === undefined) {
+    throw new Error(
+      `Benchmark fixture '${fixtureId}' produced no screens in legacy execution.`,
+    );
+  }
+  return {
+    fixtureId: result.fixtureId,
+    score: result.aggregateScore,
+    screenshotBuffer: first.screenshotBuffer,
+    diffBuffer: first.diffBuffer,
+    report: first.report,
+    viewport: first.viewport,
   };
 };

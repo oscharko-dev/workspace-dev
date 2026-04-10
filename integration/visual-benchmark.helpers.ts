@@ -3,17 +3,22 @@ import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const MODULE_DIR =
+  typeof __dirname === "string"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
 const FIXTURE_ROOT = path.resolve(MODULE_DIR, "fixtures", "visual-benchmark");
 const FIGMA_JSON_FILE_NAME = "figma.json";
 const MANIFEST_JSON_FILE_NAME = "manifest.json";
 const METADATA_JSON_FILE_NAME = "metadata.json";
 const REFERENCE_PNG_FILE_NAME = "reference.png";
+const SCREENS_DIR_NAME = "screens";
+const ALLOWED_SCREEN_ID_PATTERN = /^[A-Za-z0-9:_\-]+$/u;
 
 const FORBIDDEN_FIXTURE_PATH_SEGMENTS = [
   "storybook-static",
   ".zip",
-  ".."
+  "..",
 ] as const;
 
 const PNG_MAGIC_BYTES = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
@@ -35,13 +40,22 @@ export interface VisualBenchmarkFixtureSource {
   lastModified: string;
 }
 
+export interface VisualBenchmarkFixtureScreenMetadata {
+  screenId: string;
+  screenName: string;
+  nodeId: string;
+  viewport: VisualBenchmarkViewport;
+  weight?: number;
+}
+
 export interface VisualBenchmarkFixtureMetadata {
-  version: 1;
+  version: 1 | 2;
   fixtureId: string;
   capturedAt: string;
   source: VisualBenchmarkFixtureSource;
   viewport: VisualBenchmarkViewport;
   export: VisualBenchmarkExportConfig;
+  screens?: VisualBenchmarkFixtureScreenMetadata[];
 }
 
 export interface VisualBenchmarkFixtureBundle {
@@ -68,6 +82,11 @@ export interface VisualBenchmarkFixturePaths {
   referencePngPath: string;
 }
 
+export interface VisualBenchmarkFixtureScreenPaths {
+  screenDir: string;
+  referencePngPath: string;
+}
+
 export interface VisualBenchmarkFixtureOptions {
   fixtureRoot?: string;
   artifactRoot?: string;
@@ -85,7 +104,9 @@ const toStableJsonValue = (value: unknown): unknown => {
     return value;
   }
 
-  const sortedEntries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+  const sortedEntries = Object.entries(value).sort(([left], [right]) =>
+    left.localeCompare(right),
+  );
   const output: Record<string, unknown> = {};
   for (const [key, entryValue] of sortedEntries) {
     output[key] = toStableJsonValue(entryValue);
@@ -108,13 +129,86 @@ const parsePositiveNumber = (value: unknown, fieldName: string): number => {
   return parsed;
 };
 
-const parseMetadata = (input: string): VisualBenchmarkFixtureMetadata => {
+const parseScreens = (
+  raw: unknown,
+  fixtureId: string,
+): VisualBenchmarkFixtureScreenMetadata[] => {
+  if (!Array.isArray(raw)) {
+    throw new Error(
+      `visual-benchmark metadata screens for fixture '${fixtureId}' must be an array.`,
+    );
+  }
+  const out: VisualBenchmarkFixtureScreenMetadata[] = [];
+  const seen = new Set<string>();
+  for (const entry of raw) {
+    if (!isPlainRecord(entry)) {
+      throw new Error(
+        `visual-benchmark metadata screens entry for fixture '${fixtureId}' must be an object.`,
+      );
+    }
+    const screenId = assertAllowedScreenId(
+      parseRequiredString(
+        entry.screenId,
+        `visual-benchmark metadata screens.screenId`,
+      ),
+    );
+    if (seen.has(screenId)) {
+      throw new Error(
+        `visual-benchmark metadata fixture '${fixtureId}' has duplicate screenId '${screenId}'.`,
+      );
+    }
+    seen.add(screenId);
+    const screenName = parseRequiredString(
+      entry.screenName,
+      `visual-benchmark metadata screens.screenName`,
+    );
+    const nodeId = parseRequiredString(
+      entry.nodeId,
+      `visual-benchmark metadata screens.nodeId`,
+    );
+    const viewport = entry.viewport;
+    if (!isPlainRecord(viewport)) {
+      throw new Error(
+        `visual-benchmark metadata screens.viewport for fixture '${fixtureId}' must be an object.`,
+      );
+    }
+    const width = parsePositiveNumber(
+      viewport.width,
+      `visual-benchmark metadata screens.viewport.width`,
+    );
+    const height = parsePositiveNumber(
+      viewport.height,
+      `visual-benchmark metadata screens.viewport.height`,
+    );
+    const screen: VisualBenchmarkFixtureScreenMetadata = {
+      screenId,
+      screenName,
+      nodeId,
+      viewport: { width, height },
+    };
+    if (entry.weight !== undefined) {
+      const weight = Number(entry.weight);
+      if (!Number.isFinite(weight) || weight <= 0) {
+        throw new Error(
+          `visual-benchmark metadata screens.weight for fixture '${fixtureId}' must be a positive finite number.`,
+        );
+      }
+      screen.weight = weight;
+    }
+    out.push(screen);
+  }
+  return out;
+};
+
+export const parseVisualBenchmarkFixtureMetadata = (
+  input: string,
+): VisualBenchmarkFixtureMetadata => {
   const parsed = JSON.parse(input) as unknown;
   if (!isPlainRecord(parsed)) {
     throw new Error("Expected visual-benchmark metadata to be an object.");
   }
-  if (parsed.version !== 1) {
-    throw new Error("visual-benchmark metadata version must be 1.");
+  if (parsed.version !== 1 && parsed.version !== 2) {
+    throw new Error("visual-benchmark metadata version must be 1 or 2.");
   }
 
   const source = parsed.source;
@@ -132,30 +226,68 @@ const parseMetadata = (input: string): VisualBenchmarkFixtureMetadata => {
     throw new Error("visual-benchmark metadata export section is required.");
   }
 
-  const format = parseRequiredString(exportConfig.format, "visual-benchmark metadata export.format");
+  const format = parseRequiredString(
+    exportConfig.format,
+    "visual-benchmark metadata export.format",
+  );
   if (format !== "png") {
     throw new Error("visual-benchmark metadata export.format must be 'png'.");
   }
 
-  return {
-    version: 1,
-    fixtureId: parseRequiredString(parsed.fixtureId, "visual-benchmark metadata fixtureId"),
-    capturedAt: parseRequiredString(parsed.capturedAt, "visual-benchmark metadata capturedAt"),
+  const fixtureId = parseRequiredString(
+    parsed.fixtureId,
+    "visual-benchmark metadata fixtureId",
+  );
+
+  const base: VisualBenchmarkFixtureMetadata = {
+    version: parsed.version,
+    fixtureId,
+    capturedAt: parseRequiredString(
+      parsed.capturedAt,
+      "visual-benchmark metadata capturedAt",
+    ),
     source: {
-      fileKey: parseRequiredString(source.fileKey, "visual-benchmark metadata source.fileKey"),
-      nodeId: parseRequiredString(source.nodeId, "visual-benchmark metadata source.nodeId"),
-      nodeName: parseRequiredString(source.nodeName, "visual-benchmark metadata source.nodeName"),
-      lastModified: parseRequiredString(source.lastModified, "visual-benchmark metadata source.lastModified")
+      fileKey: parseRequiredString(
+        source.fileKey,
+        "visual-benchmark metadata source.fileKey",
+      ),
+      nodeId: parseRequiredString(
+        source.nodeId,
+        "visual-benchmark metadata source.nodeId",
+      ),
+      nodeName: parseRequiredString(
+        source.nodeName,
+        "visual-benchmark metadata source.nodeName",
+      ),
+      lastModified: parseRequiredString(
+        source.lastModified,
+        "visual-benchmark metadata source.lastModified",
+      ),
     },
     viewport: {
-      width: parsePositiveNumber(viewport.width, "visual-benchmark metadata viewport.width"),
-      height: parsePositiveNumber(viewport.height, "visual-benchmark metadata viewport.height")
+      width: parsePositiveNumber(
+        viewport.width,
+        "visual-benchmark metadata viewport.width",
+      ),
+      height: parsePositiveNumber(
+        viewport.height,
+        "visual-benchmark metadata viewport.height",
+      ),
     },
     export: {
       format: "png",
-      scale: parsePositiveNumber(exportConfig.scale, "visual-benchmark metadata export.scale")
-    }
+      scale: parsePositiveNumber(
+        exportConfig.scale,
+        "visual-benchmark metadata export.scale",
+      ),
+    },
   };
+
+  if (parsed.version === 2 && parsed.screens !== undefined) {
+    base.screens = parseScreens(parsed.screens, fixtureId);
+  }
+
+  return base;
 };
 
 const parseManifest = (input: string): VisualBenchmarkFixtureManifest => {
@@ -168,29 +300,37 @@ const parseManifest = (input: string): VisualBenchmarkFixtureManifest => {
   }
   const visualQuality = parsed.visualQuality;
   if (!isPlainRecord(visualQuality)) {
-    throw new Error("visual-benchmark manifest visualQuality section is required.");
+    throw new Error(
+      "visual-benchmark manifest visualQuality section is required.",
+    );
   }
   return {
     version: 1,
-    fixtureId: parseRequiredString(parsed.fixtureId, "visual-benchmark manifest fixtureId"),
+    fixtureId: parseRequiredString(
+      parsed.fixtureId,
+      "visual-benchmark manifest fixtureId",
+    ),
     visualQuality: {
       frozenReferenceImage: parseRequiredString(
         visualQuality.frozenReferenceImage,
-        "visual-benchmark manifest visualQuality.frozenReferenceImage"
+        "visual-benchmark manifest visualQuality.frozenReferenceImage",
       ),
       frozenReferenceMetadata: parseRequiredString(
         visualQuality.frozenReferenceMetadata,
-        "visual-benchmark manifest visualQuality.frozenReferenceMetadata"
-      )
-    }
+        "visual-benchmark manifest visualQuality.frozenReferenceMetadata",
+      ),
+    },
   };
 };
 
-const resolveFixtureRoot = (options?: VisualBenchmarkFixtureOptions): string => {
+const resolveFixtureRoot = (
+  options?: VisualBenchmarkFixtureOptions,
+): string => {
   return options?.fixtureRoot ?? FIXTURE_ROOT;
 };
 
-export const toStableJsonString = (value: unknown): string => `${JSON.stringify(toStableJsonValue(value), null, 2)}\n`;
+export const toStableJsonString = (value: unknown): string =>
+  `${JSON.stringify(toStableJsonValue(value), null, 2)}\n`;
 
 export const assertAllowedFixturePath = (value: string): string => {
   const normalized = value.replace(/\\/gu, "/").trim();
@@ -202,7 +342,9 @@ export const assertAllowedFixturePath = (value: string): string => {
   }
   for (const forbiddenSegment of FORBIDDEN_FIXTURE_PATH_SEGMENTS) {
     if (normalized.includes(forbiddenSegment)) {
-      throw new Error(`Fixture path '${normalized}' contains forbidden segment '${forbiddenSegment}'.`);
+      throw new Error(
+        `Fixture path '${normalized}' contains forbidden segment '${forbiddenSegment}'.`,
+      );
     }
   }
   return normalized;
@@ -211,9 +353,45 @@ export const assertAllowedFixturePath = (value: string): string => {
 export const assertAllowedFixtureId = (value: string): string => {
   const normalized = assertAllowedFixturePath(value);
   if (normalized.includes("/")) {
-    throw new Error(`Fixture id '${normalized}' must not contain path separators.`);
+    throw new Error(
+      `Fixture id '${normalized}' must not contain path separators.`,
+    );
   }
   return normalized;
+};
+
+export function assertAllowedScreenId(value: string): string {
+  if (typeof value !== "string") {
+    throw new Error("Screen id must be a non-empty string.");
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error("Screen id must be a non-empty string.");
+  }
+  if (trimmed === ".." || trimmed.includes("..")) {
+    throw new Error(
+      `Screen id '${trimmed}' contains forbidden segment '..' (not allowed).`,
+    );
+  }
+  if (!ALLOWED_SCREEN_ID_PATTERN.test(trimmed)) {
+    throw new Error(
+      `Screen id '${trimmed}' contains invalid characters (allowed: A-Z, a-z, 0-9, ':', '_', '-').`,
+    );
+  }
+  return trimmed;
+}
+
+export const toScreenIdToken = (screenId: string): string =>
+  screenId.replace(/:/gu, "_");
+
+export const normalizeOptionalScreenName = (
+  screenName: string | undefined,
+): string | undefined => {
+  if (typeof screenName !== "string") {
+    return undefined;
+  }
+  const normalized = screenName.trim();
+  return normalized.length > 0 ? normalized : undefined;
 };
 
 export const isValidPngBuffer = (buffer: Buffer): boolean => {
@@ -232,21 +410,70 @@ export const getVisualBenchmarkFixtureRoot = (): string => FIXTURE_ROOT;
 
 export const resolveVisualBenchmarkFixturePaths = (
   fixtureId: string,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): VisualBenchmarkFixturePaths => {
   const normalizedFixtureId = assertAllowedFixtureId(fixtureId);
-  const fixtureDir = path.join(resolveFixtureRoot(options), normalizedFixtureId);
+  const fixtureDir = path.join(
+    resolveFixtureRoot(options),
+    normalizedFixtureId,
+  );
   return {
     fixtureDir,
     figmaJsonPath: path.join(fixtureDir, FIGMA_JSON_FILE_NAME),
     manifestJsonPath: path.join(fixtureDir, MANIFEST_JSON_FILE_NAME),
     metadataJsonPath: path.join(fixtureDir, METADATA_JSON_FILE_NAME),
-    referencePngPath: path.join(fixtureDir, REFERENCE_PNG_FILE_NAME)
+    referencePngPath: path.join(fixtureDir, REFERENCE_PNG_FILE_NAME),
   };
 };
 
-export const listVisualBenchmarkFixtureIds = async (options?: VisualBenchmarkFixtureOptions): Promise<string[]> => {
-  const entries = await readdir(resolveFixtureRoot(options), { withFileTypes: true });
+export const resolveVisualBenchmarkScreenPaths = (
+  fixtureId: string,
+  screenId: string,
+  options?: VisualBenchmarkFixtureOptions,
+): VisualBenchmarkFixtureScreenPaths => {
+  const normalizedFixtureId = assertAllowedFixtureId(fixtureId);
+  const normalizedScreenId = assertAllowedScreenId(screenId);
+  const token = toScreenIdToken(normalizedScreenId);
+  const fixtureDir = path.join(
+    resolveFixtureRoot(options),
+    normalizedFixtureId,
+  );
+  const screenDir = path.join(fixtureDir, SCREENS_DIR_NAME, token);
+  return {
+    screenDir,
+    referencePngPath: path.join(screenDir, REFERENCE_PNG_FILE_NAME),
+  };
+};
+
+export const enumerateFixtureScreens = (
+  metadata: VisualBenchmarkFixtureMetadata,
+): VisualBenchmarkFixtureScreenMetadata[] => {
+  if (
+    metadata.version === 2 &&
+    Array.isArray(metadata.screens) &&
+    metadata.screens.length > 0
+  ) {
+    return metadata.screens.map((screen) => ({ ...screen }));
+  }
+  return [
+    {
+      screenId: metadata.source.nodeId,
+      screenName: metadata.source.nodeName,
+      nodeId: metadata.source.nodeId,
+      viewport: {
+        width: metadata.viewport.width,
+        height: metadata.viewport.height,
+      },
+    },
+  ];
+};
+
+export const listVisualBenchmarkFixtureIds = async (
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<string[]> => {
+  const entries = await readdir(resolveFixtureRoot(options), {
+    withFileTypes: true,
+  });
   return entries
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)
@@ -255,48 +482,60 @@ export const listVisualBenchmarkFixtureIds = async (options?: VisualBenchmarkFix
 
 export const loadVisualBenchmarkFixtureMetadata = async (
   fixtureId: string,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkFixtureMetadata> => {
-  const { metadataJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { metadataJsonPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   const content = await readFile(metadataJsonPath, "utf8");
-  const metadata = parseMetadata(content);
+  const metadata = parseVisualBenchmarkFixtureMetadata(content);
   assert.equal(
     metadata.fixtureId,
     fixtureId,
-    `Metadata fixtureId '${metadata.fixtureId}' does not match directory name '${fixtureId}'.`
+    `Metadata fixtureId '${metadata.fixtureId}' does not match directory name '${fixtureId}'.`,
   );
   return metadata;
 };
 
 export const loadVisualBenchmarkFixtureManifest = async (
   fixtureId: string,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkFixtureManifest> => {
-  const { manifestJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { manifestJsonPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   const content = await readFile(manifestJsonPath, "utf8");
   const manifest = parseManifest(content);
   assert.equal(
     manifest.fixtureId,
     fixtureId,
-    `Manifest fixtureId '${manifest.fixtureId}' does not match directory name '${fixtureId}'.`
+    `Manifest fixtureId '${manifest.fixtureId}' does not match directory name '${fixtureId}'.`,
   );
   return manifest;
 };
 
 export const loadVisualBenchmarkFixtureInputs = async (
   fixtureId: string,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<unknown> => {
-  const { figmaJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { figmaJsonPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   const content = await readFile(figmaJsonPath, "utf8");
   return JSON.parse(content) as unknown;
 };
 
 export const loadVisualBenchmarkReference = async (
   fixtureId: string,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<Buffer> => {
-  const { referencePngPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { referencePngPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   const buffer = await readFile(referencePngPath);
   if (!isValidPngBuffer(buffer)) {
     throw new Error(`Reference for fixture '${fixtureId}' is not a valid PNG.`);
@@ -306,27 +545,33 @@ export const loadVisualBenchmarkReference = async (
 
 export const loadVisualBenchmarkFixtureBundle = async (
   fixtureId: string,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualBenchmarkFixtureBundle> => {
   const manifest = await loadVisualBenchmarkFixtureManifest(fixtureId, options);
   const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
   const figmaInput = await loadVisualBenchmarkFixtureInputs(fixtureId, options);
-  const referenceBuffer = await loadVisualBenchmarkReference(fixtureId, options);
+  const referenceBuffer = await loadVisualBenchmarkReference(
+    fixtureId,
+    options,
+  );
 
   return {
     manifest,
     metadata,
     figmaInput,
-    referenceBuffer
+    referenceBuffer,
   };
 };
 
 export const writeVisualBenchmarkFixtureManifest = async (
   fixtureId: string,
   manifest: VisualBenchmarkFixtureManifest,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<void> => {
-  const { manifestJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { manifestJsonPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   await mkdir(path.dirname(manifestJsonPath), { recursive: true });
   await writeFile(manifestJsonPath, toStableJsonString(manifest), "utf8");
 };
@@ -334,9 +579,12 @@ export const writeVisualBenchmarkFixtureManifest = async (
 export const writeVisualBenchmarkFixtureMetadata = async (
   fixtureId: string,
   metadata: VisualBenchmarkFixtureMetadata,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<void> => {
-  const { metadataJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { metadataJsonPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   await mkdir(path.dirname(metadataJsonPath), { recursive: true });
   await writeFile(metadataJsonPath, toStableJsonString(metadata), "utf8");
 };
@@ -344,9 +592,12 @@ export const writeVisualBenchmarkFixtureMetadata = async (
 export const writeVisualBenchmarkFixtureInputs = async (
   fixtureId: string,
   figmaInput: unknown,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<void> => {
-  const { figmaJsonPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { figmaJsonPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   await mkdir(path.dirname(figmaJsonPath), { recursive: true });
   await writeFile(figmaJsonPath, toStableJsonString(figmaInput), "utf8");
 };
@@ -354,12 +605,17 @@ export const writeVisualBenchmarkFixtureInputs = async (
 export const writeVisualBenchmarkReference = async (
   fixtureId: string,
   buffer: Buffer,
-  options?: VisualBenchmarkFixtureOptions
+  options?: VisualBenchmarkFixtureOptions,
 ): Promise<void> => {
   if (!isValidPngBuffer(buffer)) {
-    throw new Error(`Refusing to write invalid PNG for fixture '${fixtureId}'.`);
+    throw new Error(
+      `Refusing to write invalid PNG for fixture '${fixtureId}'.`,
+    );
   }
-  const { referencePngPath } = resolveVisualBenchmarkFixturePaths(fixtureId, options);
+  const { referencePngPath } = resolveVisualBenchmarkFixturePaths(
+    fixtureId,
+    options,
+  );
   await mkdir(path.dirname(referencePngPath), { recursive: true });
   await writeFile(referencePngPath, buffer);
 };

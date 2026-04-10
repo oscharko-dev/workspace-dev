@@ -1,7 +1,23 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-const ANNOTATION_PATH = "integration/fixtures/visual-benchmark/visual-quality.config.json";
+const ANNOTATION_PATH =
+  "integration/fixtures/visual-benchmark/visual-quality.config.json";
+
+// Escape markdown table cell separators and control characters so that a
+// hostile fixture id or annotation message cannot break out of the rendered
+// table. Pipes become \|, backticks become \`, and newlines become spaces.
+const escapeMarkdownCell = (value) => {
+  if (typeof value !== "string") {
+    return "";
+  }
+  return value
+    .replace(/\\/gu, "\\\\")
+    .replace(/\|/gu, "\\|")
+    .replace(/`/gu, "\\`")
+    .replace(/\r?\n/gu, " ")
+    .trim();
+};
 
 const toDisplayName = (fixtureId) =>
   fixtureId
@@ -20,19 +36,26 @@ const readJsonFile = async (filePath, label) => {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    throw new Error(`${label} at '${filePath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${label} at '${filePath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 };
 
-const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
+const isFiniteNumber = (value) =>
+  typeof value === "number" && Number.isFinite(value);
 
-const safeRelativePath = (filePath) => path.relative(process.cwd(), filePath) || ".";
+const safeRelativePath = (filePath) =>
+  path.relative(process.cwd(), filePath) || ".";
 
 export const buildUnavailableVisualBenchmarkSummary = (reportPath, reason) => {
   const absolutePath = path.resolve(reportPath);
   const artifactRoot = path.dirname(absolutePath);
   const artifactRootDisplay = safeRelativePath(artifactRoot);
-  const details = typeof reason === "string" && reason.trim().length > 0 ? reason.trim() : "benchmark artifacts are unavailable.";
+  const details =
+    typeof reason === "string" && reason.trim().length > 0
+      ? reason.trim()
+      : "benchmark artifacts are unavailable.";
   const markdown = [
     "## Visual Quality Benchmark",
     "",
@@ -95,12 +118,19 @@ const normalizeThresholdResult = (value) => {
 };
 
 const buildAnnotation = (fixture) => {
-  if (fixture.thresholdResult === null || fixture.thresholdResult.verdict === "pass") {
+  if (
+    fixture.thresholdResult === null ||
+    fixture.thresholdResult.verdict === "pass"
+  ) {
     return null;
   }
 
   const { thresholdResult } = fixture;
   const level = thresholdResult.verdict === "fail" ? "failure" : "warning";
+  const safeDisplayName = escapeMarkdownCell(fixture.displayName);
+  const safeThresholds = escapeMarkdownCell(
+    formatThresholdLabel(thresholdResult.thresholds),
+  );
   return {
     path: ANNOTATION_PATH,
     start_line: 1,
@@ -108,9 +138,9 @@ const buildAnnotation = (fixture) => {
     annotation_level: level,
     title:
       thresholdResult.verdict === "fail"
-        ? `Visual benchmark failed: ${fixture.displayName}`
-        : `Visual benchmark warning: ${fixture.displayName}`,
-    message: `Score ${fixture.score} is ${thresholdResult.verdict === "fail" ? "below fail" : "below warn"} threshold (${formatThresholdLabel(thresholdResult.thresholds)}).`,
+        ? `Visual benchmark failed: ${safeDisplayName}`
+        : `Visual benchmark warning: ${safeDisplayName}`,
+    message: `Score ${fixture.score} is ${thresholdResult.verdict === "fail" ? "below fail" : "below warn"} threshold (${safeThresholds}).`,
   };
 };
 
@@ -133,7 +163,9 @@ const buildCheckText = (fixtures, average, artifactRoot) => {
       `actual=${fixture.actualImagePath}`,
       `diff=${fixture.diffImagePath ?? "n/a"}`,
     ].join(", ");
-    lines.push(`- ${fixture.displayName}: score=${fixture.score}, ${thresholdText}; ${artifactText}`);
+    lines.push(
+      `- ${fixture.displayName}: score=${fixture.score}, ${thresholdText}; ${artifactText}`,
+    );
   }
 
   return lines.join("\n");
@@ -147,7 +179,10 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
   const absolutePath = path.resolve(reportPath);
   let lastRun;
   try {
-    lastRun = await readJsonFile(absolutePath, "Visual benchmark last-run report");
+    lastRun = await readJsonFile(
+      absolutePath,
+      "Visual benchmark last-run report",
+    );
   } catch (error) {
     return buildUnavailableVisualBenchmarkSummary(
       absolutePath,
@@ -173,7 +208,9 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       typeof entry.fixtureId !== "string" ||
       !isFiniteNumber(entry.score)
     ) {
-      skippedFixtureReasons.push("A score entry in last-run.json is malformed.");
+      skippedFixtureReasons.push(
+        "A score entry in last-run.json is malformed.",
+      );
       continue;
     }
 
@@ -183,8 +220,14 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     let manifest;
     let report;
     try {
-      manifest = await readJsonFile(manifestPath, `Visual benchmark manifest for '${entry.fixtureId}'`);
-      report = await readJsonFile(reportJsonPath, `Visual benchmark report for '${entry.fixtureId}'`);
+      manifest = await readJsonFile(
+        manifestPath,
+        `Visual benchmark manifest for '${entry.fixtureId}'`,
+      );
+      report = await readJsonFile(
+        reportJsonPath,
+        `Visual benchmark report for '${entry.fixtureId}'`,
+      );
     } catch (error) {
       skippedFixtureReasons.push(
         `Fixture '${entry.fixtureId}' artifacts are unavailable: ${error instanceof Error ? error.message : String(error)}`,
@@ -198,7 +241,9 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       !isFiniteNumber(viewport.width) ||
       !isFiniteNumber(viewport.height)
     ) {
-      skippedFixtureReasons.push(`Fixture '${entry.fixtureId}' has an invalid viewport in manifest.json.`);
+      skippedFixtureReasons.push(
+        `Fixture '${entry.fixtureId}' has an invalid viewport in manifest.json.`,
+      );
       continue;
     }
     if (report.status !== "completed" || !isFiniteNumber(report.overallScore)) {
@@ -209,9 +254,18 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     }
 
     const thresholdResult = normalizeThresholdResult(manifest.thresholdResult);
+    // Invariant: report.diffImagePath originates from our own runner's
+    // saveVisualBenchmarkLastRunArtifact, which always writes the diff PNG to
+    // fixtureDir/<LAST_RUN_DIFF_FILE_NAME>. path.basename strips any attacker-
+    // controlled subpath so we cannot resolve outside fixtureDir even if the
+    // on-disk report has been tampered with.
     const diffImagePath =
-      typeof report.diffImagePath === "string" && report.diffImagePath.trim().length > 0
-        ? path.relative(process.cwd(), path.resolve(fixtureDir, path.basename(report.diffImagePath))) || "."
+      typeof report.diffImagePath === "string" &&
+      report.diffImagePath.trim().length > 0
+        ? path.relative(
+            process.cwd(),
+            path.resolve(fixtureDir, path.basename(report.diffImagePath)),
+          ) || "."
         : null;
     fixtures.push({
       fixtureId: entry.fixtureId,
@@ -234,11 +288,16 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     return buildUnavailableVisualBenchmarkSummary(absolutePath, reason);
   }
 
-  const warnedFixtures = fixtures.filter((fixture) => fixture.thresholdResult?.verdict === "warn");
-  const failedFixtures = fixtures.filter((fixture) => fixture.thresholdResult?.verdict === "fail");
+  const warnedFixtures = fixtures.filter(
+    (fixture) => fixture.thresholdResult?.verdict === "warn",
+  );
+  const failedFixtures = fixtures.filter(
+    (fixture) => fixture.thresholdResult?.verdict === "fail",
+  );
   const average =
     fixtures.length > 0
-      ? fixtures.reduce((sum, fixture) => sum + fixture.score, 0) / fixtures.length
+      ? fixtures.reduce((sum, fixture) => sum + fixture.score, 0) /
+        fixtures.length
       : 0;
 
   const lines = [
@@ -257,14 +316,23 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       fixture.thresholdResult === null
         ? "\u2014"
         : `${fixture.thresholdResult.verdict} (${formatThresholdLabel(fixture.thresholdResult.thresholds)})`;
-    lines.push(`| ${fixture.displayName} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${thresholdLabel} | ${fixture.viewport} |`);
+    const safeDisplayName = escapeMarkdownCell(fixture.displayName);
+    const safeThresholdLabel = escapeMarkdownCell(thresholdLabel);
+    const safeViewport = escapeMarkdownCell(fixture.viewport);
+    lines.push(
+      `| ${safeDisplayName} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${safeThresholdLabel} | ${safeViewport} |`,
+    );
   }
 
   lines.push("");
-  lines.push("Artifacts include `actual.png`, `diff.png`, and `report.json` for each fixture under `artifacts/visual-benchmark/last-run/`.");
+  lines.push(
+    "Artifacts include `actual.png`, `diff.png`, and `report.json` for each fixture under `artifacts/visual-benchmark/last-run/`.",
+  );
   if (skippedFixtureReasons.length > 0) {
     lines.push("");
-    lines.push(`_Skipped fixtures: ${skippedFixtureReasons.length} (invalid or missing artifacts)._`);
+    lines.push(
+      `_Skipped fixtures: ${skippedFixtureReasons.length} (invalid or missing artifacts)._`,
+    );
   }
   lines.push("");
   lines.push(`_Ran at ${lastRun.ranAt}_`);
@@ -279,7 +347,11 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     check: {
       title: `Visual benchmark: ${average % 1 === 0 ? average : average.toFixed(1)} average (${warnedFixtures.length} warn, ${failedFixtures.length} fail)`,
       summary: markdown,
-      text: buildCheckText(fixtures, average, path.relative(process.cwd(), artifactRoot) || "."),
+      text: buildCheckText(
+        fixtures,
+        average,
+        path.relative(process.cwd(), artifactRoot) || ".",
+      ),
       annotations,
     },
     counts: {
