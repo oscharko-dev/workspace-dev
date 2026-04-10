@@ -40,6 +40,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.enableVisualQualityValidation, false);
   assert.equal(runtime.visualQualityReferenceMode, "figma_api");
   assert.equal(runtime.visualQualityViewportWidth, 1280);
+  assert.equal(runtime.visualQualityViewportHeight, 800);
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 1);
   assert.equal(runtime.enableUnitTestValidation, false);
   assert.equal(runtime.installPreferOffline, true);
   assert.equal(runtime.skipInstall, false);
@@ -80,6 +82,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     enableVisualQualityValidation: true,
     visualQualityReferenceMode: "FROZEN_FIXTURE",
     visualQualityViewportWidth: 99_999,
+    visualQualityViewportHeight: 99_999,
+    visualQualityDeviceScaleFactor: 99,
     enableUnitTestValidation: true,
     installPreferOffline: false,
     skipInstall: true,
@@ -117,6 +121,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.enableVisualQualityValidation, true);
   assert.equal(runtime.visualQualityReferenceMode, "frozen_fixture");
   assert.equal(runtime.visualQualityViewportWidth, 4_096);
+  assert.equal(runtime.visualQualityViewportHeight, 4_096);
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 4);
   assert.equal(runtime.enableUnitTestValidation, true);
   assert.equal(runtime.installPreferOffline, false);
   assert.equal(runtime.skipInstall, true);
@@ -151,11 +157,81 @@ test("resolveRuntimeSettings normalizes empty design system path to undefined", 
 test("resolveRuntimeSettings falls back to default visual quality settings for invalid values", () => {
   const runtime = resolveRuntimeSettings({
     visualQualityReferenceMode: "invalid_mode",
-    visualQualityViewportWidth: -10
+    visualQualityViewportWidth: -10,
+    visualQualityViewportHeight: -10,
+    visualQualityDeviceScaleFactor: -0.25
   });
 
   assert.equal(runtime.visualQualityReferenceMode, "figma_api");
   assert.equal(runtime.visualQualityViewportWidth, 1280);
+  assert.equal(runtime.visualQualityViewportHeight, 800);
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 1);
+});
+
+test("resolveRuntimeSettings accepts in-range visual quality viewport height and device scale factor", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityViewportHeight: 1024,
+    visualQualityDeviceScaleFactor: 2
+  });
+
+  assert.equal(runtime.visualQualityViewportHeight, 1024);
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 2);
+});
+
+test("resolveRuntimeSettings rejects out-of-range viewport height values below minimum", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityViewportHeight: 50
+  });
+
+  assert.equal(runtime.visualQualityViewportHeight, 800);
+});
+
+test("resolveRuntimeSettings clamps viewport height values above the maximum", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityViewportHeight: 10_000
+  });
+
+  assert.equal(runtime.visualQualityViewportHeight, 4_096);
+});
+
+test("resolveRuntimeSettings rejects non-finite viewport height values", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityViewportHeight: Number.NaN
+  });
+
+  assert.equal(runtime.visualQualityViewportHeight, 800);
+});
+
+test("resolveRuntimeSettings preserves fractional device scale factors in range", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityDeviceScaleFactor: 1.5
+  });
+
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 1.5);
+});
+
+test("resolveRuntimeSettings rejects device scale factors below minimum", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityDeviceScaleFactor: 0.25
+  });
+
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 1);
+});
+
+test("resolveRuntimeSettings clamps device scale factors above the maximum", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityDeviceScaleFactor: 16
+  });
+
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 4);
+});
+
+test("resolveRuntimeSettings rejects non-finite device scale factors", () => {
+  const runtime = resolveRuntimeSettings({
+    visualQualityDeviceScaleFactor: Number.POSITIVE_INFINITY
+  });
+
+  assert.equal(runtime.visualQualityDeviceScaleFactor, 1);
 });
 
 test("resolveRuntimeSettings falls back to derived brand theme for unknown values", () => {

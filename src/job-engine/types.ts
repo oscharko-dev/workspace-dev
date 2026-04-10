@@ -147,6 +147,8 @@ export interface JobEngineRuntime {
   enableVisualQualityValidation: boolean;
   visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth: number;
+  visualQualityViewportHeight: number;
+  visualQualityDeviceScaleFactor: number;
   enableUnitTestValidation: boolean;
   unitTestIgnoreFailure: boolean;
   installPreferOffline: boolean;

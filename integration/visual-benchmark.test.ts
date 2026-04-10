@@ -37,6 +37,7 @@ import {
   computeVisualBenchmarkDeltas,
   computeVisualBenchmarkScores,
   formatVisualBenchmarkTable,
+  getVisualBenchmarkScoreKey,
   loadVisualBenchmarkBaseline,
   loadVisualBenchmarkLastRunArtifact,
   runVisualBenchmark,
@@ -1951,10 +1952,7 @@ test("computeFixtureAggregate computes weighted mean when at least one weight is
     90,
   );
   assert.equal(
-    computeFixtureAggregate([
-      { score: 80, weight: 3 },
-      { score: 100 },
-    ]),
+    computeFixtureAggregate([{ score: 80, weight: 3 }, { score: 100 }]),
     85,
   );
 });
@@ -2554,5 +2552,35 @@ test("fetchWithRetry retries 5xx responses and throws a defined error on exhaust
   assert.ok(
     attempts >= 2,
     `5xx must retry at least once, got ${attempts} attempts`,
+  );
+});
+
+test('getVisualBenchmarkScoreKey returns "fixture::screen::default" when viewportId missing', () => {
+  assert.equal(
+    getVisualBenchmarkScoreKey({
+      fixtureId: "simple-form",
+      screenId: "home",
+    }),
+    "simple-form::home::default",
+  );
+});
+
+test('getVisualBenchmarkScoreKey returns "fixture::screen::mobile" when viewportId set', () => {
+  assert.equal(
+    getVisualBenchmarkScoreKey({
+      fixtureId: "simple-form",
+      screenId: "home",
+      viewportId: "mobile",
+    }),
+    "simple-form::home::mobile",
+  );
+});
+
+test("getVisualBenchmarkScoreKey uses fixtureId as screenId fallback", () => {
+  assert.equal(
+    getVisualBenchmarkScoreKey({
+      fixtureId: "simple-form",
+    }),
+    "simple-form::simple-form::default",
   );
 });

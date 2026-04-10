@@ -48,6 +48,8 @@ const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
 const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode = "figma_api";
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
+const DEFAULT_VISUAL_QUALITY_VIEWPORT_HEIGHT = 800;
+const DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR = 1;
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
@@ -90,6 +92,26 @@ const resolveIntegerInRange = ({
     return fallback;
   }
   return Math.min(max, normalized);
+};
+
+const resolveFiniteNumberInRange = ({
+  value,
+  min,
+  max,
+  fallback
+}: {
+  value: number | undefined;
+  min: number;
+  max: number;
+  fallback: number;
+}): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return fallback;
+  }
+  if (value < min) {
+    return fallback;
+  }
+  return Math.min(max, value);
 };
 
 const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | undefined => {
@@ -179,6 +201,8 @@ export const resolveRuntimeSettings = ({
   enableVisualQualityValidation,
   visualQualityReferenceMode,
   visualQualityViewportWidth,
+  visualQualityViewportHeight,
+  visualQualityDeviceScaleFactor,
   enableUnitTestValidation,
   unitTestIgnoreFailure,
   installPreferOffline,
@@ -227,6 +251,8 @@ export const resolveRuntimeSettings = ({
   enableVisualQualityValidation?: boolean;
   visualQualityReferenceMode?: string;
   visualQualityViewportWidth?: number;
+  visualQualityViewportHeight?: number;
+  visualQualityDeviceScaleFactor?: number;
   enableUnitTestValidation?: boolean;
   unitTestIgnoreFailure?: boolean;
   installPreferOffline?: boolean;
@@ -392,6 +418,18 @@ export const resolveRuntimeSettings = ({
       min: 320,
       max: 4_096,
       fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH
+    }),
+    visualQualityViewportHeight: resolveIntegerInRange({
+      value: visualQualityViewportHeight,
+      min: 200,
+      max: 4_096,
+      fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_HEIGHT
+    }),
+    visualQualityDeviceScaleFactor: resolveFiniteNumberInRange({
+      value: visualQualityDeviceScaleFactor,
+      min: 0.5,
+      max: 4,
+      fallback: DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR
     }),
     enableUnitTestValidation:
       typeof enableUnitTestValidation === "boolean"
