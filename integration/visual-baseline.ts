@@ -1,13 +1,19 @@
-import { readFile, stat } from "node:fs/promises";
+import path from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import {
   assertAllowedFixtureId,
+  assertAllowedScreenId,
+  enumerateFixtureScreens,
+  isValidPngBuffer,
   listVisualBenchmarkFixtureIds,
   loadVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkFixturePaths,
+  resolveVisualBenchmarkScreenPaths,
   writeVisualBenchmarkFixtureMetadata,
   writeVisualBenchmarkReference,
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureOptions,
+  type VisualBenchmarkFixtureScreenMetadata,
 } from "./visual-benchmark.helpers.js";
 import {
   loadVisualBenchmarkBaseline,
@@ -27,9 +33,11 @@ import {
   saveVisualBenchmarkHistory,
 } from "./visual-benchmark-history.js";
 import {
-  executeVisualBenchmarkFixtureLegacy,
+  executeVisualBenchmarkFixture,
   type VisualBenchmarkExecutionOptions,
   type VisualBenchmarkFixtureExecutionArtifacts,
+  type VisualBenchmarkFixtureRunResult,
+  type VisualBenchmarkFixtureScreenArtifact,
 } from "./visual-benchmark.execution.js";
 import {
   loadVisualQualityConfig,
@@ -86,11 +94,31 @@ export interface VisualBaselineUpdateResult {
 
 export interface VisualBaselineApproveResult {
   fixtureId: string;
+  screenId?: string;
+  screenName?: string;
   previousScore: number | null;
   newScore: number;
   approvedFrom: string;
   referencePath: string;
+  approvals: Array<{
+    fixtureId: string;
+    screenId: string;
+    screenName?: string;
+    previousScore: number | null;
+    newScore: number;
+    approvedFrom: string;
+    referencePath: string;
+  }>;
 }
+
+interface VisualBaselineTargetOptions {
+  fixtureId?: string;
+  screenId?: string;
+}
+
+type VisualBaselineFixtureExecutionLike =
+  | VisualBenchmarkFixtureExecutionArtifacts
+  | VisualBenchmarkFixtureRunResult;
 
 export interface VisualBaselineDependencies extends VisualBenchmarkFixtureOptions {
   qualityConfig?: VisualQualityConfig;
@@ -99,7 +127,7 @@ export interface VisualBaselineDependencies extends VisualBenchmarkFixtureOption
   executeFixture?: (
     fixtureId: string,
     options?: VisualBenchmarkExecutionOptions,
-  ) => Promise<VisualBenchmarkFixtureExecutionArtifacts>;
+  ) => Promise<VisualBaselineFixtureExecutionLike>;
 }
 
 const DAY_IN_MS = 24 * 60 * 60 * 1000;
@@ -230,7 +258,7 @@ const updateFixtureMetadata = async (
   fixtureId: string,
   metadata: VisualBenchmarkFixtureMetadata,
   capturedAt: string,
-  viewport: { width: number; height: number },
+  viewport: { width: number; height: number } | undefined,
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<void> => {
   await writeVisualBenchmarkFixtureMetadata(
@@ -238,13 +266,216 @@ const updateFixtureMetadata = async (
     {
       ...metadata,
       capturedAt,
-      viewport: {
-        width: viewport.width,
-        height: viewport.height,
-      },
+      viewport:
+        viewport === undefined
+          ? metadata.viewport
+          : {
+              width: viewport.width,
+              height: viewport.height,
+            },
     },
     options,
   );
+};
+
+const assertValidTargetSelection = (
+  target?: VisualBaselineTargetOptions,
+): void => {
+  if (target?.fixtureId !== undefined) {
+    assertAllowedFixtureId(target.fixtureId);
+  }
+  if (target?.screenId !== undefined) {
+    assertAllowedScreenId(target.screenId);
+    if (target.fixtureId === undefined) {
+      throw new Error("A fixture id is required when targeting a screen.");
+    }
+  }
+};
+
+const isMultiScreenFixture = (
+  screens: readonly VisualBenchmarkFixtureScreenMetadata[],
+): boolean => screens.length > 1;
+
+const resolveTargetScreens = (
+  fixtureId: string,
+  metadata: VisualBenchmarkFixtureMetadata,
+  screenId?: string,
+): VisualBenchmarkFixtureScreenMetadata[] => {
+  const screens = enumerateFixtureScreens(metadata);
+  if (screenId === undefined) {
+    return screens;
+  }
+
+  const normalizedScreenId = assertAllowedScreenId(screenId);
+  const matched = screens.find((entry) => entry.screenId === normalizedScreenId);
+  if (matched === undefined) {
+    throw new Error(
+      `Fixture '${fixtureId}' does not declare screen '${normalizedScreenId}'.`,
+    );
+  }
+  return [matched];
+};
+
+const createScoreEntryForScreen = (
+  fixtureId: string,
+  screen: Pick<VisualBenchmarkFixtureScreenMetadata, "screenId" | "screenName">,
+  score: number,
+): VisualBenchmarkScoreEntry => {
+  return {
+    fixtureId,
+    screenId: screen.screenId,
+    screenName: normalizeOptionalScreenName(screen.screenName),
+    score,
+  };
+};
+
+const mergeScoresForFixture = (
+  existingScores: readonly VisualBenchmarkScoreEntry[],
+  replacementScores: readonly VisualBenchmarkScoreEntry[],
+  fixtureId: string,
+  replaceAllFixtureScreens: boolean,
+): VisualBenchmarkScoreEntry[] => {
+  const normalizedFixtureId = assertAllowedFixtureId(fixtureId);
+  if (!replaceAllFixtureScreens) {
+    return mergeScores(existingScores, replacementScores);
+  }
+
+  const merged = existingScores
+    .filter((entry) => entry.fixtureId !== normalizedFixtureId)
+    .map((entry) => ({ ...entry }));
+  for (const entry of replacementScores) {
+    merged.push({ ...entry });
+  }
+  return sortScores(merged);
+};
+
+const getReferencePngPath = (
+  fixtureId: string,
+  screen: VisualBenchmarkFixtureScreenMetadata,
+  multiScreen: boolean,
+  options?: VisualBenchmarkFixtureOptions,
+): string => {
+  return multiScreen
+    ? resolveVisualBenchmarkScreenPaths(fixtureId, screen.screenId, options)
+        .referencePngPath
+    : resolveVisualBenchmarkFixturePaths(fixtureId, options).referencePngPath;
+};
+
+const writeReferenceForScreen = async (
+  fixtureId: string,
+  screen: VisualBenchmarkFixtureScreenMetadata,
+  multiScreen: boolean,
+  buffer: Buffer,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<string> => {
+  if (!isValidPngBuffer(buffer)) {
+    throw new Error(
+      `Refusing to write invalid PNG for fixture '${fixtureId}' screen '${screen.screenId}'.`,
+    );
+  }
+  if (!multiScreen) {
+    await writeVisualBenchmarkReference(fixtureId, buffer, options);
+    return resolveVisualBenchmarkFixturePaths(fixtureId, options).referencePngPath;
+  }
+
+  const referencePngPath = getReferencePngPath(fixtureId, screen, true, options);
+  await mkdir(path.dirname(referencePngPath), { recursive: true });
+  await writeFile(referencePngPath, buffer);
+  return referencePngPath;
+};
+
+const loadArtifactForScreen = async (
+  fixtureId: string,
+  screen: VisualBenchmarkFixtureScreenMetadata,
+  allScreens: readonly VisualBenchmarkFixtureScreenMetadata[],
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<VisualBenchmarkLastRunArtifactEntry | null> => {
+  const artifact = await loadVisualBenchmarkLastRunArtifact(
+    fixtureId,
+    screen.screenId,
+    options,
+  );
+  if (artifact !== null) {
+    return artifact;
+  }
+
+  if (allScreens.length === 1) {
+    return await loadVisualBenchmarkLastRunArtifact(fixtureId, options);
+  }
+
+  return null;
+};
+
+const buildArtifactEntry = async (
+  fixtureId: string,
+  screen: VisualBenchmarkFixtureScreenMetadata,
+  result: Pick<
+    VisualBenchmarkFixtureScreenArtifact,
+    "score" | "screenshotBuffer" | "diffBuffer" | "report" | "viewport"
+  >,
+  ranAt: string,
+  multiScreen: boolean,
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<VisualBenchmarkLastRunArtifactEntry> => {
+  return await saveVisualBenchmarkLastRunArtifact(
+    {
+      fixtureId,
+      ...(multiScreen ? { screenId: screen.screenId } : {}),
+      ...(screen.screenName.trim().length > 0
+        ? { screenName: screen.screenName }
+        : {}),
+      score: result.score,
+      ranAt,
+      viewport: result.viewport,
+      actualImageBuffer: result.screenshotBuffer,
+      diffImageBuffer: result.diffBuffer,
+      report: result.report,
+    },
+    options,
+  );
+};
+
+const normalizeExecutionResult = (
+  fixtureId: string,
+  metadata: VisualBenchmarkFixtureMetadata,
+  executionResult: VisualBaselineFixtureExecutionLike,
+  targetScreens: readonly VisualBenchmarkFixtureScreenMetadata[],
+): VisualBenchmarkFixtureScreenArtifact[] => {
+  if ("screens" in executionResult && Array.isArray(executionResult.screens)) {
+    const screenArtifacts = new Map(
+      executionResult.screens.map((entry) => [entry.screenId, entry]),
+    );
+    return targetScreens.map((screen) => {
+      const artifact = screenArtifacts.get(screen.screenId);
+      if (artifact === undefined) {
+        throw new Error(
+          `Benchmark fixture '${fixtureId}' did not produce artifacts for screen '${screen.screenId}'.`,
+        );
+      }
+      return artifact;
+    });
+  }
+
+  const allScreens = enumerateFixtureScreens(metadata);
+  if (allScreens.length !== 1 || targetScreens.length !== 1) {
+    throw new Error(
+      `Benchmark fixture '${fixtureId}' returned legacy single-screen artifacts for a multi-screen baseline update.`,
+    );
+  }
+
+  const [screen] = targetScreens;
+  return [
+    {
+      screenId: screen.screenId,
+      screenName: screen.screenName,
+      nodeId: screen.nodeId,
+      score: executionResult.score,
+      screenshotBuffer: executionResult.screenshotBuffer,
+      diffBuffer: executionResult.diffBuffer,
+      report: executionResult.report,
+      viewport: executionResult.viewport,
+    },
+  ];
 };
 
 const getDiffIndicator = (
@@ -268,19 +499,6 @@ const resolveRegressionConfig = async (
   const qualityConfig =
     options?.qualityConfig ?? (await loadVisualQualityConfig(options));
   return resolveVisualQualityRegressionConfig(qualityConfig);
-};
-
-const createScoreEntry = (
-  fixtureId: string,
-  score: number,
-  metadata: VisualBenchmarkFixtureMetadata,
-): VisualBenchmarkScoreEntry => {
-  return {
-    fixtureId,
-    screenId: metadata.source.nodeId,
-    screenName: normalizeOptionalScreenName(metadata.source.nodeName),
-    score,
-  };
 };
 
 const getBaselineMapScore = (
@@ -311,36 +529,17 @@ const getEntryDisplayName = (
   return fixtureIdToDisplayName(fixtureId);
 };
 
-const buildArtifactEntry = async (
-  fixtureId: string,
-  result: VisualBenchmarkFixtureExecutionArtifacts,
-  ranAt: string,
-  options?: VisualBenchmarkFixtureOptions,
-): Promise<VisualBenchmarkLastRunArtifactEntry> => {
-  return await saveVisualBenchmarkLastRunArtifact(
-    {
-      fixtureId,
-      score: result.score,
-      ranAt,
-      viewport: result.viewport,
-      actualImageBuffer: result.screenshotBuffer,
-      diffImageBuffer: result.diffBuffer,
-      report: result.report,
-    },
-    options,
-  );
-};
-
 export const updateVisualBaselines = async (
-  options?: VisualBaselineDependencies & { fixtureId?: string },
+  options?: VisualBaselineDependencies & VisualBaselineTargetOptions,
 ): Promise<VisualBaselineUpdateResult> => {
+  assertValidTargetSelection(options);
   const log = options?.log ?? defaultLog;
   const executeFixture =
     options?.executeFixture ??
     (async (
       fixtureId: string,
       fixtureOptions?: VisualBenchmarkExecutionOptions,
-    ) => executeVisualBenchmarkFixtureLegacy(fixtureId, fixtureOptions));
+    ) => executeVisualBenchmarkFixture(fixtureId, fixtureOptions));
   const regressionConfig = await resolveRegressionConfig(options);
   const runAt = (options?.now ?? (() => new Date()))().toISOString();
 
@@ -348,7 +547,13 @@ export const updateVisualBaselines = async (
   if (options?.fixtureId !== undefined) {
     assertAllowedFixtureId(options.fixtureId);
     fixtureIds = [options.fixtureId];
-    log(`Updating visual baseline for fixture '${options.fixtureId}'...`);
+    if (options.screenId !== undefined) {
+      log(
+        `Updating visual baseline for fixture '${options.fixtureId}' screen '${options.screenId}'...`,
+      );
+    } else {
+      log(`Updating visual baseline for fixture '${options.fixtureId}'...`);
+    }
   } else {
     fixtureIds = await listVisualBenchmarkFixtureIds(options);
     log(`Updating visual baselines for ${fixtureIds.length} fixture(s)...`);
@@ -358,46 +563,102 @@ export const updateVisualBaselines = async (
   const previousLastRun = await loadVisualBenchmarkLastRun(options);
   const scores: VisualBenchmarkScoreEntry[] = [];
   const artifacts: VisualBenchmarkLastRunArtifactEntry[] = [];
+  let replaceAllTargetFixtureScreens = options?.screenId === undefined;
 
   for (const fixtureId of fixtureIds) {
     log(`Running benchmark for '${fixtureId}'...`);
-    const result = await executeFixture(fixtureId, options);
     const metadata = await loadVisualBenchmarkFixtureMetadata(
       fixtureId,
       options,
     );
-    await writeVisualBenchmarkReference(
+    const allScreens = enumerateFixtureScreens(metadata);
+    const targetScreens = resolveTargetScreens(
       fixtureId,
-      result.screenshotBuffer,
-      options,
+      metadata,
+      options?.screenId,
     );
+    const multiScreen = isMultiScreenFixture(allScreens);
+    if (
+      options?.fixtureId === fixtureId &&
+      options.screenId === undefined &&
+      !multiScreen
+    ) {
+      // Legacy single-screen fixture updates should only replace that screen's
+      // score entry, preserving any unrelated historical screen rows.
+      replaceAllTargetFixtureScreens = false;
+    }
+    const result = await executeFixture(fixtureId, options);
+    const screenArtifacts = normalizeExecutionResult(
+      fixtureId,
+      metadata,
+      result,
+      targetScreens,
+    );
+
+    for (const screenArtifact of screenArtifacts) {
+      const targetScreen =
+        targetScreens.find((screen) => screen.screenId === screenArtifact.screenId) ??
+        targetScreens[0];
+      if (targetScreen === undefined) {
+        throw new Error(
+          `Benchmark fixture '${fixtureId}' produced an unexpected screen artifact.`,
+        );
+      }
+      await writeReferenceForScreen(
+        fixtureId,
+        targetScreen,
+        multiScreen,
+        screenArtifact.screenshotBuffer,
+        options,
+      );
+      const artifact = await buildArtifactEntry(
+        fixtureId,
+        targetScreen,
+        screenArtifact,
+        runAt,
+        multiScreen,
+        options,
+      );
+      scores.push(
+        createScoreEntryForScreen(
+          fixtureId,
+          targetScreen,
+          screenArtifact.score,
+        ),
+      );
+      artifacts.push(artifact);
+      log(
+        `  Updated reference for '${targetScreen.screenName}' (${targetScreen.screenId}): ${screenArtifact.score}`,
+      );
+    }
+
     await updateFixtureMetadata(
       fixtureId,
       metadata,
       runAt,
-      result.viewport,
+      multiScreen ? undefined : screenArtifacts[0]?.viewport,
       options,
     );
-    const artifact = await buildArtifactEntry(
-      fixtureId,
-      result,
-      runAt,
-      options,
-    );
-
-    scores.push(createScoreEntry(fixtureId, result.score, metadata));
-    artifacts.push(artifact);
-    log(`  Updated reference and baseline score: ${result.score}`);
   }
 
-  const mergedLastRunScores = mergeScores(
-    previousLastRun?.scores ?? [],
-    scores,
-  );
+  const mergedLastRunScores =
+    options?.fixtureId === undefined
+      ? sortScores(scores)
+      : mergeScoresForFixture(
+          previousLastRun?.scores ?? [],
+          scores,
+          options.fixtureId,
+          replaceAllTargetFixtureScreens,
+        );
   const mergedBaselineScores =
-    options?.fixtureId !== undefined
-      ? mergeScores(previousBaseline?.scores ?? [], scores)
-      : scores;
+    options?.fixtureId === undefined
+      ? sortScores(scores)
+      : mergeScoresForFixture(
+          previousBaseline?.scores ?? [],
+          scores,
+          options.fixtureId,
+          replaceAllTargetFixtureScreens,
+        );
 
   await saveVisualBenchmarkLastRun(mergedLastRunScores, options, runAt);
   await saveVisualBenchmarkBaselineScores(mergedBaselineScores, options);
@@ -426,95 +687,163 @@ export const updateVisualBaselines = async (
 };
 
 export const approveVisualBaseline = async (
-  screenName: string,
+  target: string | { fixtureId: string; screenId?: string },
   options?: VisualBaselineDependencies,
 ): Promise<VisualBaselineApproveResult> => {
-  const fixtureId = assertAllowedFixtureId(screenName);
+  const fixtureId =
+    typeof target === "string"
+      ? assertAllowedFixtureId(target)
+      : assertAllowedFixtureId(target.fixtureId);
+  const targetScreenId =
+    typeof target === "string" ? undefined : target.screenId;
+  assertValidTargetSelection({ fixtureId, screenId: targetScreenId });
   const regressionConfig = await resolveRegressionConfig(options);
-  const artifact = await loadVisualBenchmarkLastRunArtifact(fixtureId, options);
-  if (artifact === null) {
-    throw new Error(
-      `No last-run artifact found for '${fixtureId}'. Run 'pnpm visual:baseline update --fixture ${fixtureId}' or 'pnpm benchmark:visual' first.`,
+  const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
+  const allScreens = enumerateFixtureScreens(metadata);
+  const targetScreens = resolveTargetScreens(fixtureId, metadata, targetScreenId);
+  const multiScreen = isMultiScreenFixture(allScreens);
+  const previousBaseline = await loadVisualBenchmarkBaseline(options);
+  const baselineMap = new Map(
+    (previousBaseline?.scores ?? []).map((entry) => [getScoreKey(entry), entry.score]),
+  );
+
+  const approvedScores: VisualBenchmarkScoreEntry[] = [];
+  const approvals: VisualBaselineApproveResult["approvals"] = [];
+  let latestRanAt: string | null = null;
+  let singleViewport: { width: number; height: number } | undefined;
+
+  for (const screen of targetScreens) {
+    const artifact = await loadArtifactForScreen(
+      fixtureId,
+      screen,
+      allScreens,
+      options,
     );
+    if (artifact === null) {
+      const commandSuffix =
+        targetScreenId === undefined
+          ? `--fixture ${fixtureId}`
+          : `--fixture ${fixtureId} --screen ${screen.screenId}`;
+      throw new Error(
+        `No last-run artifact found for '${fixtureId}' screen '${screen.screenId}'. Run 'pnpm visual:baseline update ${commandSuffix}' or 'pnpm benchmark:visual' first.`,
+      );
+    }
+
+    const actualImageBuffer = await readFile(
+      path.resolve(process.cwd(), artifact.actualImagePath),
+    );
+    const referencePath = await writeReferenceForScreen(
+      fixtureId,
+      screen,
+      multiScreen,
+      actualImageBuffer,
+      options,
+    );
+    const approvedScoreEntry = createScoreEntryForScreen(
+      fixtureId,
+      screen,
+      artifact.score,
+    );
+    const previousScore = getBaselineMapScore(
+      baselineMap,
+      fixtureId,
+      approvedScoreEntry.screenId,
+    );
+
+    approvedScores.push(approvedScoreEntry);
+    approvals.push({
+      fixtureId,
+      screenId: approvedScoreEntry.screenId!,
+      ...(approvedScoreEntry.screenName !== undefined
+        ? { screenName: approvedScoreEntry.screenName }
+        : {}),
+      previousScore,
+      newScore: artifact.score,
+      approvedFrom: artifact.actualImagePath,
+      referencePath,
+    });
+    if (latestRanAt === null || artifact.ranAt > latestRanAt) {
+      latestRanAt = artifact.ranAt;
+    }
+    if (!multiScreen) {
+      singleViewport = artifact.viewport;
+    }
   }
 
-  const artifactPaths = resolveVisualBenchmarkLastRunArtifactPaths(
-    fixtureId,
-    options,
-  );
-  const actualImageBuffer = await readFile(artifactPaths.actualPngPath);
-  const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
-  await writeVisualBenchmarkReference(fixtureId, actualImageBuffer, options);
+  if (latestRanAt === null) {
+    throw new Error(`No screens were approved for fixture '${fixtureId}'.`);
+  }
+
   await updateFixtureMetadata(
     fixtureId,
     metadata,
-    artifact.ranAt,
-    artifact.viewport,
+    latestRanAt,
+    multiScreen ? undefined : singleViewport,
     options,
   );
-  const approvedScoreEntry = createScoreEntry(
+  const mergedBaselineScores = mergeScoresForFixture(
+    previousBaseline?.scores ?? [],
+    approvedScores,
     fixtureId,
-    artifact.score,
-    metadata,
+    targetScreenId === undefined && multiScreen,
   );
-
-  const previousBaseline = await loadVisualBenchmarkBaseline(options);
-  const previousScore = getBaselineMapScore(
-    new Map(
-      (previousBaseline?.scores ?? []).map((entry) => [
-        getScoreKey(entry),
-        entry.score,
-      ]),
-    ),
-    fixtureId,
-    approvedScoreEntry.screenId,
-  );
-  const mergedBaselineScores = mergeScores(previousBaseline?.scores ?? [], [
-    approvedScoreEntry,
-  ]);
   await saveVisualBenchmarkBaselineScores(mergedBaselineScores, options);
 
   const previousLastRun = await loadVisualBenchmarkLastRun(options);
-  const mergedLastRunScores = mergeScores(previousLastRun?.scores ?? [], [
-    approvedScoreEntry,
-  ]);
+  const mergedLastRunScores = mergeScoresForFixture(
+    previousLastRun?.scores ?? [],
+    approvedScores,
+    fixtureId,
+    targetScreenId === undefined && multiScreen,
+  );
   await saveVisualBenchmarkLastRun(
     mergedLastRunScores,
     options,
-    artifact.ranAt,
+    latestRanAt,
   );
   const existingHistory = await loadVisualBenchmarkHistory(options);
   const updatedHistory = appendVisualBenchmarkHistoryEntry(
     existingHistory,
     {
-      runAt: artifact.ranAt,
-      scores: [
-        {
-          fixtureId: approvedScoreEntry.fixtureId,
-          screenId: approvedScoreEntry.screenId,
-          screenName: approvedScoreEntry.screenName,
-          score: approvedScoreEntry.score,
-        },
-      ],
+      runAt: latestRanAt,
+      scores: approvedScores.map((entry) => ({
+        fixtureId: entry.fixtureId,
+        screenId: entry.screenId,
+        screenName: entry.screenName,
+        score: entry.score,
+      })),
     },
     regressionConfig.historySize,
   );
   await saveVisualBenchmarkHistory(updatedHistory, options);
 
+  const [firstApproval] = approvals;
+  if (firstApproval === undefined) {
+    throw new Error(`No screens were approved for fixture '${fixtureId}'.`);
+  }
+
   return {
     fixtureId,
-    previousScore,
-    newScore: artifact.score,
-    approvedFrom: artifact.actualImagePath,
-    referencePath: resolveVisualBenchmarkFixturePaths(fixtureId, options)
-      .referencePngPath,
+    screenId: firstApproval.screenId,
+    ...(firstApproval.screenName !== undefined
+      ? { screenName: firstApproval.screenName }
+      : {}),
+    previousScore: firstApproval.previousScore,
+    newScore: firstApproval.newScore,
+    approvedFrom: firstApproval.approvedFrom,
+    referencePath: firstApproval.referencePath,
+    approvals,
   };
 };
 
 export const computeVisualBaselineStatus = async (
-  options?: VisualBaselineDependencies,
+  options?: VisualBaselineDependencies & VisualBaselineTargetOptions,
 ): Promise<VisualBaselineStatusResult> => {
-  const fixtureIds = await listVisualBenchmarkFixtureIds(options);
+  assertValidTargetSelection(options);
+  const fixtureIds =
+    options?.fixtureId !== undefined
+      ? [assertAllowedFixtureId(options.fixtureId)]
+      : await listVisualBenchmarkFixtureIds(options);
   const baseline = await loadVisualBenchmarkBaseline(options);
   const regressionConfig = await resolveRegressionConfig(options);
   const now = (options?.now ?? (() => new Date()))();
@@ -527,48 +856,65 @@ export const computeVisualBaselineStatus = async (
 
   const entries: VisualBaselineStatusEntry[] = [];
   for (const fixtureId of fixtureIds) {
-    const paths = resolveVisualBenchmarkFixturePaths(fixtureId, options);
     const metadata = await loadVisualBenchmarkFixtureMetadata(
       fixtureId,
       options,
     );
-    const artifact = await loadVisualBenchmarkLastRunArtifact(
+    const allScreens = enumerateFixtureScreens(metadata);
+    const targetScreens = resolveTargetScreens(
       fixtureId,
-      options,
+      metadata,
+      options?.screenId,
     );
-    const screenId = metadata.source.nodeId;
-    const screenName = normalizeOptionalScreenName(metadata.source.nodeName);
-    const baselineScore = getBaselineMapScore(baselineMap, fixtureId, screenId);
-    const lastRunScore = artifact?.score ?? null;
-    const indicator =
-      lastRunScore === null
-        ? "unavailable"
-        : getDiffIndicator(baselineScore, lastRunScore, regressionConfig);
+    const multiScreen = isMultiScreenFixture(allScreens);
+    for (const screen of targetScreens) {
+      const artifact = await loadArtifactForScreen(
+        fixtureId,
+        screen,
+        allScreens,
+        options,
+      );
+      const baselineScore = getBaselineMapScore(
+        baselineMap,
+        fixtureId,
+        screen.screenId,
+      );
+      const lastRunScore = artifact?.score ?? null;
+      const indicator =
+        lastRunScore === null
+          ? "unavailable"
+          : getDiffIndicator(baselineScore, lastRunScore, regressionConfig);
 
-    entries.push({
-      fixtureId,
-      screenId,
-      ...(screenName !== undefined ? { screenName } : {}),
-      baselineScore,
-      lastRunScore,
-      hasPendingDiff: lastRunScore !== null && indicator !== "neutral",
-      indicator,
-      capturedAt: metadata.capturedAt,
-      ageInDays: computeAgeInDays(metadata.capturedAt, now),
-      lastRunAt: artifact?.ranAt ?? null,
-      referencePngExists: await fileExists(paths.referencePngPath),
-      actualImagePath: artifact?.actualImagePath ?? null,
-      diffImagePath: artifact?.diffImagePath ?? null,
-      reportPath: artifact?.reportPath ?? null,
-    });
+      entries.push({
+        fixtureId,
+        screenId: screen.screenId,
+        ...(normalizeOptionalScreenName(screen.screenName) !== undefined
+          ? { screenName: normalizeOptionalScreenName(screen.screenName) }
+          : {}),
+        baselineScore,
+        lastRunScore,
+        hasPendingDiff: lastRunScore !== null && indicator !== "neutral",
+        indicator,
+        capturedAt: metadata.capturedAt,
+        ageInDays: computeAgeInDays(metadata.capturedAt, now),
+        lastRunAt: artifact?.ranAt ?? null,
+        referencePngExists: await fileExists(
+          getReferencePngPath(fixtureId, screen, multiScreen, options),
+        ),
+        actualImagePath: artifact?.actualImagePath ?? null,
+        diffImagePath: artifact?.diffImagePath ?? null,
+        reportPath: artifact?.reportPath ?? null,
+      });
+    }
   }
 
   return { entries };
 };
 
 export const computeVisualBaselineDiff = async (
-  options?: VisualBaselineDependencies,
+  options?: VisualBaselineDependencies & VisualBaselineTargetOptions,
 ): Promise<VisualBaselineDiffResult> => {
+  assertValidTargetSelection(options);
   const lastRun = await loadVisualBenchmarkLastRun(options);
   if (lastRun === null || lastRun.scores.length === 0) {
     throw new Error(
@@ -586,39 +932,75 @@ export const computeVisualBaselineDiff = async (
   }
 
   const diffs: VisualBaselineDiffEntry[] = [];
-  for (const entry of lastRun.scores) {
-    const artifact = await loadVisualBenchmarkLastRunArtifact(
-      entry.fixtureId,
-      options,
-    );
+  const filteredScores = lastRun.scores.filter((entry) => {
+    if (
+      options?.fixtureId !== undefined &&
+      entry.fixtureId !== options.fixtureId
+    ) {
+      return false;
+    }
+    if (options?.screenId === undefined) {
+      return true;
+    }
+    return entry.screenId === options.screenId;
+  });
+  if (filteredScores.length === 0) {
+    const targetLabel =
+      options?.screenId === undefined
+        ? options?.fixtureId ?? "requested selection"
+        : `${options.fixtureId}::${options.screenId}`;
+    throw new Error(`No last run found for '${targetLabel}'.`);
+  }
+
+  for (const entry of filteredScores) {
     const metadata = await loadVisualBenchmarkFixtureMetadata(
       entry.fixtureId,
       options,
     );
-    const metadataScreenId =
-      typeof metadata.source.nodeId === "string" &&
-      metadata.source.nodeId.trim().length > 0
-        ? metadata.source.nodeId.trim()
-        : undefined;
+    const allScreens = enumerateFixtureScreens(metadata);
     const lastRunScreenId =
       typeof entry.screenId === "string" && entry.screenId.trim().length > 0
         ? entry.screenId.trim()
         : undefined;
-    const screenId =
-      lastRunScreenId === undefined
-        ? (metadataScreenId ?? entry.fixtureId)
-        : lastRunScreenId === entry.fixtureId &&
-            metadataScreenId !== undefined &&
-            metadataScreenId !== entry.fixtureId
-          ? metadataScreenId
-          : lastRunScreenId;
-    const screenName =
-      normalizeOptionalScreenName(entry.screenName) ??
-      normalizeOptionalScreenName(metadata.source.nodeName);
+    const canonicalLegacyScreenId =
+      lastRunScreenId !== undefined &&
+      lastRunScreenId === entry.fixtureId &&
+      allScreens.length === 1
+        ? undefined
+        : lastRunScreenId;
+    const resolvedScreen =
+      canonicalLegacyScreenId !== undefined
+        ? allScreens.find((screen) => screen.screenId === canonicalLegacyScreenId) ?? {
+            screenId: canonicalLegacyScreenId,
+            screenName:
+              normalizeOptionalScreenName(entry.screenName) ??
+              normalizeOptionalScreenName(metadata.source.nodeName) ??
+              canonicalLegacyScreenId,
+            nodeId: canonicalLegacyScreenId,
+            viewport: metadata.viewport,
+          }
+        : allScreens.length === 1
+          ? allScreens[0]
+          : {
+              screenId: metadata.source.nodeId,
+              screenName:
+                normalizeOptionalScreenName(entry.screenName) ??
+                normalizeOptionalScreenName(metadata.source.nodeName) ??
+                metadata.source.nodeId,
+              nodeId: metadata.source.nodeId,
+              viewport: metadata.viewport,
+            };
+    const artifact = await loadArtifactForScreen(
+      entry.fixtureId,
+      resolvedScreen,
+      allScreens,
+      options,
+    );
+    const screenName = normalizeOptionalScreenName(resolvedScreen.screenName);
     const baselineScore = getBaselineMapScore(
       baselineMap,
       entry.fixtureId,
-      screenId,
+      resolvedScreen.screenId,
     );
     const delta =
       baselineScore !== null
@@ -631,7 +1013,7 @@ export const computeVisualBaselineDiff = async (
     );
     diffs.push({
       fixtureId: entry.fixtureId,
-      screenId,
+      screenId: resolvedScreen.screenId,
       ...(screenName !== undefined ? { screenName } : {}),
       baseline: baselineScore,
       current: entry.score,
@@ -656,7 +1038,7 @@ export const formatVisualBaselineStatusTable = (
 
   lines.push(hr("\u250C", "\u252C", "\u2510", "\u2500", cols));
   lines.push(
-    `\u2502 ${padRight("Fixture", cols[0])} \u2502 ${padRight("Baseline", cols[1])} \u2502 ${padRight("Last Run", cols[2])} \u2502 ${padRight("Diff", cols[3])} \u2502 ${padRight("Ref", cols[4])} \u2502 ${padRight("Captured", cols[5])} \u2502 ${padRight("Age", cols[6])} \u2502`,
+    `\u2502 ${padRight("View", cols[0])} \u2502 ${padRight("Baseline", cols[1])} \u2502 ${padRight("Last Run", cols[2])} \u2502 ${padRight("Diff", cols[3])} \u2502 ${padRight("Ref", cols[4])} \u2502 ${padRight("Captured", cols[5])} \u2502 ${padRight("Age", cols[6])} \u2502`,
   );
   lines.push(hr("\u251C", "\u253C", "\u2524", "\u2500", cols));
 
@@ -689,7 +1071,7 @@ export const formatVisualBaselineDiffTable = (
 
   lines.push(hr("\u250C", "\u252C", "\u2510", "\u2500", cols));
   lines.push(
-    `\u2502 ${padRight("Fixture", cols[0])} \u2502 ${padRight("Baseline", cols[1])} \u2502 ${padRight("Current", cols[2])} \u2502 ${padRight("Delta", cols[3])} \u2502 ${padRight("Run Date", cols[4])} \u2502`,
+    `\u2502 ${padRight("View", cols[0])} \u2502 ${padRight("Baseline", cols[1])} \u2502 ${padRight("Current", cols[2])} \u2502 ${padRight("Delta", cols[3])} \u2502 ${padRight("Run Date", cols[4])} \u2502`,
   );
   lines.push(hr("\u251C", "\u253C", "\u2524", "\u2500", cols));
 

@@ -5,7 +5,9 @@ import path from "node:path";
 import test from "node:test";
 import {
   assertAllowedScreenId,
+  computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
+  fromScreenIdToken,
   loadVisualBenchmarkFixtureMetadata,
   parseVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkScreenPaths,
@@ -106,8 +108,8 @@ test("toScreenIdToken replaces every colon with an underscore", () => {
   assert.equal(toScreenIdToken("2:10001:extra"), "2_10001_extra");
 });
 
-test("toScreenIdToken is a pure identity on ids without colons", () => {
-  assert.equal(toScreenIdToken("a_b"), "a_b");
+test("toScreenIdToken escapes underscores so token decoding is reversible", () => {
+  assert.equal(toScreenIdToken("a_b"), "a~ub");
   assert.equal(toScreenIdToken("screen-1"), "screen-1");
   assert.equal(toScreenIdToken("abc123"), "abc123");
 });
@@ -119,6 +121,16 @@ test("toScreenIdToken performs no other substitutions", () => {
     toScreenIdToken("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
   );
+});
+
+test("fromScreenIdToken decodes new reversible tokens", () => {
+  assert.equal(fromScreenIdToken("2_10001"), "2:10001");
+  assert.equal(fromScreenIdToken("a~ub"), "a_b");
+  assert.equal(fromScreenIdToken("home~uview_1"), "home_view:1");
+});
+
+test("fromScreenIdToken preserves backward compatibility for legacy tokens", () => {
+  assert.equal(fromScreenIdToken("2_10001_extra"), "2:10001:extra");
 });
 
 // ---------------------------------------------------------------------------
@@ -139,6 +151,24 @@ test("resolveVisualBenchmarkScreenPaths joins fixtureId/screens/<token>/referenc
   assert.ok(
     paths.screenDir.endsWith(path.join("simple-form", "screens", "2_10001")),
   );
+});
+
+test("computeVisualBenchmarkAggregateScore computes weighted aggregate when any weight is declared", () => {
+  const score = computeVisualBenchmarkAggregateScore([
+    { score: 80, weight: 1 },
+    { score: 90, weight: 2 },
+    { score: 100, weight: 1 },
+  ]);
+  assert.equal(score, 90);
+});
+
+test("computeVisualBenchmarkAggregateScore falls back to arithmetic mean when no weights are declared", () => {
+  const score = computeVisualBenchmarkAggregateScore([
+    { score: 80 },
+    { score: 90 },
+    { score: 100 },
+  ]);
+  assert.equal(score, 90);
 });
 
 test("resolveVisualBenchmarkScreenPaths rejects invalid fixtureId", () => {

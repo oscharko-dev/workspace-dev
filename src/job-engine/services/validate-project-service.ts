@@ -2,6 +2,7 @@ import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
   WorkspaceVisualAuditResult,
+  WorkspaceVisualQualityFrozenReference,
   WorkspaceVisualQualityReferenceMode,
   WorkspaceVisualQualityReport
 } from "../../contracts/index.js";
@@ -50,6 +51,7 @@ import {
   fetchFigmaVisualReference,
   findVisualQualityFixtureManifest,
   loadFrozenVisualReference,
+  resolveVisualQualityFrozenReferencePaths,
   selectVisualQualityReferenceNode
 } from "../visual-quality-reference.js";
 
@@ -480,6 +482,14 @@ const createCompletedVisualQualityReport = ({
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+};
+
+const resolveRequestedVisualQualityFrozenReference = ({
+  context
+}: {
+  context: Parameters<StageService<void>["execute"]>[1];
+}): WorkspaceVisualQualityFrozenReference | undefined => {
+  return context.input?.visualQualityFrozenReference ?? context.job.request.visualQualityFrozenReference;
 };
 
 const toUiA11yWarnSummary = ({
@@ -1180,10 +1190,13 @@ export const createValidateProjectService = ({
       let visualAuditDiffImagePath: string | undefined;
       let visualAuditReportPath: string | undefined;
       const requestedVisualQualityEnabled = context.job.request.enableVisualQualityValidation === true;
+      const requestedVisualQualityFrozenReference = resolveRequestedVisualQualityFrozenReference({ context });
       const explicitVisualQualityRequest =
         context.input?.enableVisualQualityValidation !== undefined ||
         context.input?.visualQualityReferenceMode !== undefined ||
-        context.input?.visualQualityViewportWidth !== undefined;
+        context.input?.visualQualityViewportWidth !== undefined ||
+        context.input?.visualQualityFrozenReference !== undefined ||
+        context.job.request.visualQualityFrozenReference !== undefined;
       const standaloneVisualQualityMode =
         (context.job.request.visualQualityReferenceMode ?? context.runtime.visualQualityReferenceMode) as WorkspaceVisualQualityReferenceMode;
       const standaloneVisualQualityViewportWidth =
@@ -2155,9 +2168,18 @@ export const createValidateProjectService = ({
                   if (!fixtureManifest) {
                     throw new Error("Visual quality validation could not locate a frozen fixture manifest for the current job.");
                   }
+                  const frozenReferencePaths = requestedVisualQualityFrozenReference
+                    ? resolveVisualQualityFrozenReferencePaths({
+                        fixtureRoot: fixtureManifest.fixtureRoot,
+                        frozenReference: requestedVisualQualityFrozenReference
+                      })
+                    : {
+                        imagePath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceImage),
+                        metadataPath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceMetadata)
+                      };
                   const frozenReference = await loadFrozenVisualReference({
-                    imagePath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceImage),
-                    metadataPath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceMetadata)
+                    imagePath: frozenReferencePaths.imagePath,
+                    metadataPath: frozenReferencePaths.metadataPath
                   });
                   return {
                     buffer: frozenReference.buffer,

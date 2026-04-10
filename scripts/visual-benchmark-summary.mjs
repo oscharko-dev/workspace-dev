@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const ANNOTATION_PATH =
@@ -25,6 +25,24 @@ const toDisplayName = (fixtureId) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
+const normalizeOptionalString = (value) =>
+  typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+
+const toDisplayLabel = (fixtureId, screenName, screenId) => {
+  const fixtureName = toDisplayName(fixtureId);
+  const normalizedScreenName = normalizeOptionalString(screenName);
+  if (normalizedScreenName !== null) {
+    return `${fixtureName} / ${normalizedScreenName}`;
+  }
+  const normalizedScreenId = normalizeOptionalString(screenId);
+  if (normalizedScreenId !== null && normalizedScreenId !== fixtureId) {
+    return `${fixtureName} / ${normalizedScreenId}`;
+  }
+  return fixtureName;
+};
+
+const toLegacyScreenIdToken = (screenId) => screenId.replace(/:/gu, "_");
+
 const scoreEmoji = (score) => {
   if (score >= 90) return "\u2705";
   if (score >= 70) return "\u26A0\uFE0F";
@@ -42,11 +60,92 @@ const readJsonFile = async (filePath, label) => {
   }
 };
 
+const readJsonFileOptional = async (filePath, label) => {
+  let raw;
+  try {
+    raw = await readFile(filePath, "utf8");
+  } catch (error) {
+    if (
+      error &&
+      typeof error === "object" &&
+      /** @type {any} */ (error).code === "ENOENT"
+    ) {
+      return null;
+    }
+    throw error;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(
+      `${label} at '${filePath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+};
+
 const isFiniteNumber = (value) =>
   typeof value === "number" && Number.isFinite(value);
 
 const safeRelativePath = (filePath) =>
   path.relative(process.cwd(), filePath) || ".";
+
+const resolveFixtureArtifactDir = async (lastRunDir, fixtureId, screenId) => {
+  const fixtureRoot = path.join(lastRunDir, fixtureId);
+  const normalizedScreenId = normalizeOptionalString(screenId);
+  if (normalizedScreenId === null) {
+    return fixtureRoot;
+  }
+
+  const screensDir = path.join(fixtureRoot, "screens");
+  const legacyDir = path.join(
+    screensDir,
+    toLegacyScreenIdToken(normalizedScreenId),
+  );
+  const legacyManifest = await readJsonFileOptional(
+    path.join(legacyDir, "manifest.json"),
+    `Visual benchmark manifest for '${fixtureId}' screen '${normalizedScreenId}'`,
+  );
+  if (
+    legacyManifest !== null &&
+    normalizeOptionalString(legacyManifest.screenId) === normalizedScreenId
+  ) {
+    return legacyDir;
+  }
+
+  let screenEntries = [];
+  try {
+    screenEntries = await readdir(screensDir, { withFileTypes: true });
+  } catch (error) {
+    if (
+      !(
+        error &&
+        typeof error === "object" &&
+        /** @type {any} */ (error).code === "ENOENT"
+      )
+    ) {
+      throw error;
+    }
+  }
+
+  for (const entry of screenEntries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+    const candidateDir = path.join(screensDir, entry.name);
+    const manifest = await readJsonFileOptional(
+      path.join(candidateDir, "manifest.json"),
+      `Visual benchmark manifest for '${fixtureId}' screen '${normalizedScreenId}'`,
+    );
+    if (
+      manifest !== null &&
+      normalizeOptionalString(manifest.screenId) === normalizedScreenId
+    ) {
+      return candidateDir;
+    }
+  }
+
+  return legacyDir;
+};
 
 export const buildUnavailableVisualBenchmarkSummary = (reportPath, reason) => {
   const absolutePath = path.resolve(reportPath);
@@ -127,7 +226,7 @@ const buildAnnotation = (fixture) => {
 
   const { thresholdResult } = fixture;
   const level = thresholdResult.verdict === "fail" ? "failure" : "warning";
-  const safeDisplayName = escapeMarkdownCell(fixture.displayName);
+  const safeDisplayName = escapeMarkdownCell(fixture.displayLabel);
   const safeThresholds = escapeMarkdownCell(
     formatThresholdLabel(thresholdResult.thresholds),
   );
@@ -149,7 +248,7 @@ const buildCheckText = (fixtures, average, artifactRoot) => {
     `Overall average: ${average % 1 === 0 ? average : average.toFixed(1)}`,
     `Artifacts: ${artifactRoot}`,
     "",
-    "Fixture details:",
+    "View details:",
   ];
 
   for (const fixture of fixtures) {
@@ -164,7 +263,7 @@ const buildCheckText = (fixtures, average, artifactRoot) => {
       `diff=${fixture.diffImagePath ?? "n/a"}`,
     ].join(", ");
     lines.push(
-      `- ${fixture.displayName}: score=${fixture.score}, ${thresholdText}; ${artifactText}`,
+      `- ${fixture.displayLabel}: score=${fixture.score}, ${thresholdText}; ${artifactText}`,
     );
   }
 
@@ -214,7 +313,11 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       continue;
     }
 
-    const fixtureDir = path.join(lastRunDir, entry.fixtureId);
+    const fixtureDir = await resolveFixtureArtifactDir(
+      lastRunDir,
+      entry.fixtureId,
+      entry.screenId,
+    );
     const manifestPath = path.join(fixtureDir, "manifest.json");
     const reportJsonPath = path.join(fixtureDir, "report.json");
     let manifest;
@@ -269,7 +372,11 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
         : null;
     fixtures.push({
       fixtureId: entry.fixtureId,
-      displayName: toDisplayName(entry.fixtureId),
+      displayLabel: toDisplayLabel(
+        entry.fixtureId,
+        entry.screenName ?? manifest.screenName,
+        entry.screenId ?? manifest.screenId,
+      ),
       score: entry.score,
       viewport: `${viewport.width}\u00d7${viewport.height}`,
       thresholdResult,
@@ -304,11 +411,11 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     "## Visual Quality Benchmark",
     "",
     `**Overall Average:** ${average % 1 === 0 ? average : average.toFixed(1)}`,
-    `**Warned Fixtures:** ${warnedFixtures.length}`,
-    `**Failed Fixtures:** ${failedFixtures.length}`,
+    `**Warned Views:** ${warnedFixtures.length}`,
+    `**Failed Views:** ${failedFixtures.length}`,
     "",
-    "| Fixture | Score | Threshold | Viewport |",
-    "|---------|-------|-----------|----------|",
+    "| View | Score | Threshold | Viewport |",
+    "|------|-------|-----------|----------|",
   ];
 
   for (const fixture of fixtures) {
@@ -316,7 +423,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       fixture.thresholdResult === null
         ? "\u2014"
         : `${fixture.thresholdResult.verdict} (${formatThresholdLabel(fixture.thresholdResult.thresholds)})`;
-    const safeDisplayName = escapeMarkdownCell(fixture.displayName);
+    const safeDisplayName = escapeMarkdownCell(fixture.displayLabel);
     const safeThresholdLabel = escapeMarkdownCell(thresholdLabel);
     const safeViewport = escapeMarkdownCell(fixture.viewport);
     lines.push(
@@ -326,12 +433,12 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
 
   lines.push("");
   lines.push(
-    "Artifacts include `actual.png`, `diff.png`, and `report.json` for each fixture under `artifacts/visual-benchmark/last-run/`.",
+    "Artifacts include `actual.png`, `diff.png`, and `report.json` for each view under `artifacts/visual-benchmark/last-run/`.",
   );
   if (skippedFixtureReasons.length > 0) {
     lines.push("");
     lines.push(
-      `_Skipped fixtures: ${skippedFixtureReasons.length} (invalid or missing artifacts)._`,
+      `_Skipped views: ${skippedFixtureReasons.length} (invalid or missing artifacts)._`,
     );
   }
   lines.push("");

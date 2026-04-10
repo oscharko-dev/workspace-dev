@@ -1,8 +1,10 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import type {
+  WorkspaceVisualQualityFrozenReference,
   WorkspaceVisualReferenceFixtureMetadata
 } from "../contracts/index.js";
+import { isWithinRoot } from "./preview.js";
 
 type FetchLike = typeof fetch;
 
@@ -348,6 +350,49 @@ export const loadFrozenVisualReference = async ({
     metadata,
     imagePath,
     metadataPath
+  };
+};
+
+const resolveFrozenReferenceOverridePath = ({
+  fixtureRoot,
+  candidatePath,
+  fieldName
+}: {
+  fixtureRoot: string;
+  candidatePath: string;
+  fieldName: string;
+}): string => {
+  const normalizedPath = readRequiredString(candidatePath, fieldName);
+  const resolvedPath = path.isAbsolute(normalizedPath)
+    ? path.resolve(normalizedPath)
+    : path.resolve(fixtureRoot, normalizedPath);
+  if (!isWithinRoot({ candidatePath: resolvedPath, rootPath: fixtureRoot })) {
+    throw new Error(`${fieldName} must resolve within fixture root '${fixtureRoot}'.`);
+  }
+  return resolvedPath;
+};
+
+export const resolveVisualQualityFrozenReferencePaths = ({
+  fixtureRoot,
+  frozenReference
+}: {
+  fixtureRoot: string;
+  frozenReference: WorkspaceVisualQualityFrozenReference;
+}): {
+  imagePath: string;
+  metadataPath: string;
+} => {
+  return {
+    imagePath: resolveFrozenReferenceOverridePath({
+      fixtureRoot,
+      candidatePath: frozenReference.imagePath,
+      fieldName: "visualQualityFrozenReference.imagePath"
+    }),
+    metadataPath: resolveFrozenReferenceOverridePath({
+      fixtureRoot,
+      candidatePath: frozenReference.metadataPath,
+      fieldName: "visualQualityFrozenReference.metadataPath"
+    })
   };
 };
 

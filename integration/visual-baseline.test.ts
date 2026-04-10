@@ -20,6 +20,7 @@ import {
 import {
   loadVisualBenchmarkFixtureMetadata,
   loadVisualBenchmarkReference,
+  resolveVisualBenchmarkScreenPaths,
   writeVisualBenchmarkFixtureInputs,
   writeVisualBenchmarkFixtureManifest,
   writeVisualBenchmarkFixtureMetadata,
@@ -68,6 +69,36 @@ const createFixtureMetadata = (fixtureId: string): VisualBenchmarkFixtureMetadat
   },
   viewport: { width: 1280, height: 720 },
   export: { format: "png", scale: 2 },
+});
+
+const createMultiScreenFixtureMetadata = (fixtureId: string): VisualBenchmarkFixtureMetadata => ({
+  version: 2,
+  fixtureId,
+  capturedAt: "2026-04-01T00:00:00.000Z",
+  source: {
+    fileKey: "test",
+    nodeId: "2:10001",
+    nodeName: "Home",
+    lastModified: "2026-04-01T00:00:00.000Z",
+  },
+  viewport: { width: 1280, height: 720 },
+  export: { format: "png", scale: 2 },
+  screens: [
+    {
+      screenId: "2:10001",
+      screenName: "Home",
+      nodeId: "2:10001",
+      viewport: { width: 1280, height: 720 },
+      weight: 2,
+    },
+    {
+      screenId: "2:10002",
+      screenName: "Settings",
+      nodeId: "2:10002",
+      viewport: { width: 1440, height: 900 },
+      weight: 1,
+    },
+  ],
 });
 
 const createFixtureManifest = (fixtureId: string): VisualBenchmarkFixtureManifest => ({
@@ -134,6 +165,37 @@ const writeVisualQualityConfig = async (
   );
 };
 
+const upgradeFixtureToMultiScreen = async (
+  fixtureId: string,
+  env: { fixtureRoot: string; artifactRoot: string },
+): Promise<void> => {
+  await writeVisualBenchmarkFixtureMetadata(
+    fixtureId,
+    createMultiScreenFixtureMetadata(fixtureId),
+    env,
+  );
+  await mkdir(
+    path.dirname(
+      resolveVisualBenchmarkScreenPaths(fixtureId, "2:10001", env).referencePngPath,
+    ),
+    { recursive: true },
+  );
+  await mkdir(
+    path.dirname(
+      resolveVisualBenchmarkScreenPaths(fixtureId, "2:10002", env).referencePngPath,
+    ),
+    { recursive: true },
+  );
+  await writeFile(
+    resolveVisualBenchmarkScreenPaths(fixtureId, "2:10001", env).referencePngPath,
+    createTestPngBuffer(8, 8, [0, 100, 200, 255]),
+  );
+  await writeFile(
+    resolveVisualBenchmarkScreenPaths(fixtureId, "2:10002", env).referencePngPath,
+    createTestPngBuffer(8, 8, [0, 100, 200, 255]),
+  );
+};
+
 // ---------------------------------------------------------------------------
 // 1. CLI argument parsing tests
 // ---------------------------------------------------------------------------
@@ -148,9 +210,14 @@ test("parseVisualBaselineCliArgs parses update with --fixture", () => {
   assert.deepEqual(result, { command: "update", fixture: "simple-form", screen: undefined, json: false });
 });
 
-test("parseVisualBaselineCliArgs parses approve with --screen", () => {
-  const result = parseVisualBaselineCliArgs(["approve", "--screen", "simple-form"]);
-  assert.deepEqual(result, { command: "approve", fixture: undefined, screen: "simple-form", json: false });
+test("parseVisualBaselineCliArgs parses approve with --fixture only", () => {
+  const result = parseVisualBaselineCliArgs(["approve", "--fixture", "simple-form"]);
+  assert.deepEqual(result, { command: "approve", fixture: "simple-form", screen: undefined, json: false });
+});
+
+test("parseVisualBaselineCliArgs parses approve with --fixture and --screen", () => {
+  const result = parseVisualBaselineCliArgs(["approve", "--fixture", "simple-form", "--screen", "2:10001"]);
+  assert.deepEqual(result, { command: "approve", fixture: "simple-form", screen: "2:10001", json: false });
 });
 
 test("parseVisualBaselineCliArgs parses status with --json", () => {
@@ -176,8 +243,15 @@ test("parseVisualBaselineCliArgs throws on unknown command", () => {
   assert.throws(() => parseVisualBaselineCliArgs(["unknown"]), /Unknown command 'unknown'/);
 });
 
-test("parseVisualBaselineCliArgs throws when approve missing --screen", () => {
-  assert.throws(() => parseVisualBaselineCliArgs(["approve"]), /--screen <name> is required/);
+test("parseVisualBaselineCliArgs throws when approve missing --fixture", () => {
+  assert.throws(() => parseVisualBaselineCliArgs(["approve"]), /--fixture <id> is required/);
+});
+
+test("parseVisualBaselineCliArgs throws when --screen is used without --fixture", () => {
+  assert.throws(
+    () => parseVisualBaselineCliArgs(["status", "--screen", "2:10001"]),
+    /--fixture <id> is required when using --screen/,
+  );
 });
 
 test("parseVisualBaselineCliArgs throws on unknown option", () => {
@@ -433,6 +507,92 @@ test("updateVisualBaselines appends bounded history using regression historySize
   }
 });
 
+test("updateVisualBaselines writes per-screen references and scores for multi-screen fixtures", async () => {
+  const env = await createFixtureEnvironment();
+  const runAt = new Date("2026-04-09T12:00:00.000Z");
+  await upgradeFixtureToMultiScreen("simple-form", env);
+  const homeBuffer = createTestPngBuffer(8, 8, [255, 0, 0, 255]);
+  const settingsBuffer = createTestPngBuffer(8, 8, [0, 0, 255, 255]);
+
+  try {
+    await updateVisualBaselines({
+      ...env,
+      fixtureId: "simple-form",
+      now: () => runAt,
+      log: () => {},
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 86,
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            nodeId: "2:10001",
+            score: 90,
+            screenshotBuffer: homeBuffer,
+            diffBuffer: createTestPngBuffer(8, 8, [20, 20, 20, 255]),
+            report: { status: "completed", overallScore: 90 },
+            viewport: { width: 1280, height: 720 },
+          },
+          {
+            screenId: "2:10002",
+            screenName: "Settings",
+            nodeId: "2:10002",
+            score: 78,
+            screenshotBuffer: settingsBuffer,
+            diffBuffer: createTestPngBuffer(8, 8, [40, 40, 40, 255]),
+            report: { status: "completed", overallScore: 78 },
+            viewport: { width: 1440, height: 900 },
+          },
+        ],
+      }),
+    });
+
+    const baseline = await loadVisualBenchmarkBaseline(env);
+    assert.ok(baseline !== null);
+    assert.deepEqual(baseline.scores, [
+      {
+        fixtureId: "simple-form",
+        screenId: "2:10001",
+        screenName: "Home",
+        score: 90,
+      },
+      {
+        fixtureId: "simple-form",
+        screenId: "2:10002",
+        screenName: "Settings",
+        score: 78,
+      },
+    ]);
+
+    const homeReference = await readFile(
+      resolveVisualBenchmarkScreenPaths("simple-form", "2:10001", env)
+        .referencePngPath,
+    );
+    const settingsReference = await readFile(
+      resolveVisualBenchmarkScreenPaths("simple-form", "2:10002", env)
+        .referencePngPath,
+    );
+    assert.deepEqual(homeReference, homeBuffer);
+    assert.deepEqual(settingsReference, settingsBuffer);
+
+    const homeArtifact = await loadVisualBenchmarkLastRunArtifact(
+      "simple-form",
+      "2:10001",
+      env,
+    );
+    const settingsArtifact = await loadVisualBenchmarkLastRunArtifact(
+      "simple-form",
+      "2:10002",
+      env,
+    );
+    assert.equal(homeArtifact?.score, 90);
+    assert.equal(settingsArtifact?.score, 78);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // 3. approveVisualBaseline tests
 // ---------------------------------------------------------------------------
@@ -580,6 +740,66 @@ test("approveVisualBaseline throws when no persisted artifact exists", async () 
       async () => approveVisualBaseline("simple-form", env),
       /No last-run artifact found/,
     );
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("approveVisualBaseline supports targeting a single screen in a multi-screen fixture", async () => {
+  const env = await createFixtureEnvironment({
+    baselineScores: [
+      { fixtureId: "simple-form", screenId: "2:10001", screenName: "Home", score: 80 },
+      { fixtureId: "simple-form", screenId: "2:10002", screenName: "Settings", score: 81 },
+    ],
+  });
+  await upgradeFixtureToMultiScreen("simple-form", env);
+  const homeBuffer = createTestPngBuffer(8, 8, [200, 10, 10, 255]);
+  const settingsBuffer = createTestPngBuffer(8, 8, [10, 10, 200, 255]);
+
+  try {
+    await saveVisualBenchmarkLastRunArtifact(
+      {
+        fixtureId: "simple-form",
+        screenId: "2:10001",
+        screenName: "Home",
+        score: 90,
+        ranAt: "2026-04-09T15:00:00.000Z",
+        viewport: { width: 1280, height: 720 },
+        actualImageBuffer: homeBuffer,
+        diffImageBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+        report: { approved: true },
+      },
+      env,
+    );
+    await saveVisualBenchmarkLastRunArtifact(
+      {
+        fixtureId: "simple-form",
+        screenId: "2:10002",
+        screenName: "Settings",
+        score: 95,
+        ranAt: "2026-04-10T15:00:00.000Z",
+        viewport: { width: 1440, height: 900 },
+        actualImageBuffer: settingsBuffer,
+        diffImageBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+        report: { approved: true },
+      },
+      env,
+    );
+
+    const result = await approveVisualBaseline(
+      { fixtureId: "simple-form", screenId: "2:10002" },
+      env,
+    );
+    assert.equal(result.approvals.length, 1);
+    assert.equal(result.screenId, "2:10002");
+    assert.equal(result.newScore, 95);
+
+    const baseline = await loadVisualBenchmarkBaseline(env);
+    assert.ok(baseline !== null);
+    assert.deepEqual(baseline.scores, [
+      { fixtureId: "simple-form", screenId: "2:10001", screenName: "Home", score: 80 },
+      { fixtureId: "simple-form", screenId: "2:10002", screenName: "Settings", score: 95 },
+    ]);
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }
@@ -854,7 +1074,7 @@ test("formatVisualBaselineStatusTable produces a table with captured and age col
     ],
   };
   const table = formatVisualBaselineStatusTable(statusResult);
-  assert.ok(table.includes("Fixture"));
+  assert.ok(table.includes("View"));
   assert.ok(table.includes("Captured"));
   assert.ok(table.includes("Age"));
   assert.ok(table.includes("Simple Form"));
@@ -880,6 +1100,7 @@ test("formatVisualBaselineDiffTable produces a table with run date column", () =
     hasPendingDiffs: true,
   };
   const table = formatVisualBaselineDiffTable(diffResult);
+  assert.ok(table.includes("View"));
   assert.ok(table.includes("Run Date"));
   assert.ok(table.includes("Simple Form"));
 });

@@ -5319,6 +5319,155 @@ test("ValidateProjectService runs standalone visual quality in frozen_fixture mo
   assert.equal(executionContext.job.visualQuality?.referenceSource, "frozen_fixture");
 });
 
+test("ValidateProjectService frozen_fixture mode uses visualQualityFrozenReference override when provided", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-frozen-override-"));
+  const fixtureRoot = path.join(root, "fixtures", "customer-board");
+  const customerProfilePath = path.join(fixtureRoot, "inputs", "customer-profile.json");
+  const defaultReferenceImagePath = path.join(fixtureRoot, "visual-quality", "reference.png");
+  const defaultReferenceMetadataPath = path.join(fixtureRoot, "visual-quality", "reference.metadata.json");
+  const overrideReferenceImagePath = path.join(fixtureRoot, "screens", "2_10001", "reference.png");
+  const overrideReferenceMetadataPath = path.join(fixtureRoot, "screens", "2_10001", "reference.metadata.json");
+  await mkdir(path.dirname(customerProfilePath), { recursive: true });
+  await mkdir(path.dirname(defaultReferenceImagePath), { recursive: true });
+  await mkdir(path.dirname(overrideReferenceImagePath), { recursive: true });
+  await writeFile(customerProfilePath, JSON.stringify({ brandId: "customer-board" }), "utf8");
+  await writeFile(
+    path.join(fixtureRoot, "manifest.json"),
+    JSON.stringify(
+      {
+        version: 3,
+        visualQuality: {
+          frozenReferenceImage: "visual-quality/reference.png",
+          frozenReferenceMetadata: "visual-quality/reference.metadata.json"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    defaultReferenceImagePath,
+    createSolidPngBuffer({ width: 8, height: 6, rgba: [255, 255, 255, 255] })
+  );
+  await writeFile(
+    defaultReferenceMetadataPath,
+    JSON.stringify(
+      {
+        capturedAt: "2026-04-08T00:00:00.000Z",
+        source: {
+          fileKey: "fixture-file",
+          nodeId: "1:2",
+          nodeName: "Default Fixture Screen",
+          lastModified: "2026-04-08T00:00:00.000Z"
+        },
+        viewport: {
+          width: 8,
+          height: 6
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    overrideReferenceImagePath,
+    createSolidPngBuffer({ width: 8, height: 6, rgba: [240, 240, 240, 255] })
+  );
+  await writeFile(
+    overrideReferenceMetadataPath,
+    JSON.stringify(
+      {
+        capturedAt: "2026-04-10T00:00:00.000Z",
+        source: {
+          fileKey: "fixture-file",
+          nodeId: "2:10001",
+          nodeName: "Override Screen",
+          lastModified: "2026-04-10T00:00:00.000Z"
+        },
+        viewport: {
+          width: 8,
+          height: 6
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    rootDir: root,
+    runtimeOverrides: {
+      enableUiValidation: true,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8
+    },
+    requestOverrides: {
+      customerProfilePath,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8,
+      visualQualityFrozenReference: {
+        imagePath: "screens/2_10001/reference.png",
+        metadataPath: "screens/2_10001/reference.metadata.json"
+      }
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-visual-quality-frozen-override"
+    } satisfies GenerationDiffContext
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>visual quality override</body></html>\n", "utf8");
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult({ includeUiValidation: true }),
+    captureFromProjectFn: async () => {
+      return {
+        screenshotBuffer: createSolidPngBuffer({ width: 8, height: 6, rgba: [248, 248, 248, 255] }),
+        width: 8,
+        height: 6,
+        viewport: { width: 8, height: 6, deviceScaleFactor: 1 }
+      };
+    },
+    comparePngBuffersFn: () => {
+      return {
+        diffImageBuffer: createSolidPngBuffer({ width: 8, height: 6, rgba: [255, 0, 0, 255] }),
+        similarityScore: 90,
+        diffPixelCount: 4,
+        totalPixels: 48,
+        regions: [],
+        width: 8,
+        height: 6
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const visualQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    referenceSource?: string;
+    capturedAt?: string;
+  }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
+
+  assert.equal(visualQuality?.status, "completed");
+  assert.equal(visualQuality?.referenceSource, "frozen_fixture");
+  assert.equal(visualQuality?.capturedAt, "2026-04-10T00:00:00.000Z");
+});
+
 test("ValidateProjectService runs standalone visual quality in figma_api mode", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-figma-"));
   const referenceBuffer = createSolidPngBuffer({
