@@ -22,6 +22,7 @@ import { ensureTemplateValidationSeedNodeModules } from "../src/job-engine/test-
 import {
   computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
+  enumerateFixtureScreenViewports,
   loadVisualBenchmarkFixtureInputs,
   loadVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkFixturePaths,
@@ -31,9 +32,11 @@ import {
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureOptions,
   type VisualBenchmarkFixtureScreenMetadata,
+  type VisualBenchmarkViewportSpec,
 } from "./visual-benchmark.helpers.js";
 import {
   applyVisualQualityConfigToReport,
+  resolveVisualQualityViewports,
   type VisualQualityConfig,
 } from "./visual-quality-config.js";
 import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
@@ -60,6 +63,19 @@ export interface VisualBenchmarkFixtureExecutionArtifacts extends VisualBenchmar
   };
 }
 
+export interface VisualBenchmarkScreenViewportArtifact {
+  viewportId: string;
+  viewportLabel?: string;
+  score: number;
+  screenshotBuffer: Buffer;
+  diffBuffer: Buffer | null;
+  report: unknown | null;
+  viewport: {
+    width: number;
+    height: number;
+  };
+}
+
 export interface VisualBenchmarkFixtureScreenArtifact {
   screenId: string;
   screenName: string;
@@ -73,6 +89,7 @@ export interface VisualBenchmarkFixtureScreenArtifact {
     width: number;
     height: number;
   };
+  viewports?: VisualBenchmarkScreenViewportArtifact[];
 }
 
 export interface VisualBenchmarkFixtureRunResult {
