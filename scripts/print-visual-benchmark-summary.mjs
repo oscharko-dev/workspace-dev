@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 
 import { appendFile, writeFile } from "node:fs/promises";
-import { buildVisualBenchmarkSummary } from "./visual-benchmark-summary.mjs";
+import {
+  buildUnavailableVisualBenchmarkSummary,
+  buildVisualBenchmarkSummary,
+} from "./visual-benchmark-summary.mjs";
 
 const [reportPath, ...restArgs] = process.argv.slice(2);
 
@@ -20,7 +23,14 @@ const resolveCheckOutputPath = (args) => {
 };
 
 const main = async () => {
-  const summary = await buildVisualBenchmarkSummary(reportPath);
+  let summary;
+  try {
+    summary = await buildVisualBenchmarkSummary(reportPath);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn("[visual-benchmark-summary] Using unavailable summary fallback:", reason);
+    summary = buildUnavailableVisualBenchmarkSummary(reportPath, reason);
+  }
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   if (summaryPath) {
     await appendFile(summaryPath, `${summary.markdown}\n`, "utf8");
@@ -35,6 +45,6 @@ const main = async () => {
 };
 
 main().catch((error) => {
-  console.error("[visual-benchmark-summary] Failed to summarize report:", error);
+  console.error("[visual-benchmark-summary] Unexpected failure while writing summary output:", error);
   process.exit(1);
 });

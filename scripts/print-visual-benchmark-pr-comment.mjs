@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { appendFile, writeFile } from "node:fs/promises";
-import { buildVisualBenchmarkPrComment } from "./visual-benchmark-pr-comment.mjs";
+import { buildVisualBenchmarkPrComment, VISUAL_BENCHMARK_PR_COMMENT_MARKER } from "./visual-benchmark-pr-comment.mjs";
 
 const [reportPath, ...restArgs] = process.argv.slice(2);
 
@@ -34,7 +34,28 @@ const main = async () => {
     process.exit(1);
   }
 
-  const result = await buildVisualBenchmarkPrComment(reportPath, { baselinePath, artifactUrl });
+  let result;
+  try {
+    result = await buildVisualBenchmarkPrComment(reportPath, { baselinePath, artifactUrl });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    const artifactLinkText = artifactUrl ? `\n\n[Download artifacts](${artifactUrl})` : "";
+    result = {
+      marker: VISUAL_BENCHMARK_PR_COMMENT_MARKER,
+      body: [
+        VISUAL_BENCHMARK_PR_COMMENT_MARKER,
+        "## Visual Quality Benchmark",
+        "",
+        ":warning: Visual benchmark comment was skipped due to missing or malformed artifacts.",
+        "",
+        `Reason: ${reason}`,
+        artifactLinkText,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    };
+  }
+
   await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
@@ -42,8 +63,7 @@ const main = async () => {
     await appendFile(summaryPath, `${result.body}\n`, "utf8");
   }
 };
-
 main().catch((error) => {
-  console.error("[visual-benchmark-pr-comment] Failed to build PR comment:", error);
+  console.error("[visual-benchmark-pr-comment] Unexpected failure:", error);
   process.exit(1);
 });

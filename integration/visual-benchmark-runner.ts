@@ -50,7 +50,7 @@ export interface VisualBenchmarkDelta {
   baseline: number | null;
   current: number;
   delta: number | null;
-  indicator: "improved" | "degraded" | "neutral";
+  indicator: "improved" | "degraded" | "neutral" | "unavailable";
   thresholdResult?: VisualQualityThresholdResult;
 }
 
@@ -506,6 +506,10 @@ export const computeVisualBenchmarkDeltas = (
   current: VisualBenchmarkScoreEntry[],
   baseline: VisualBenchmarkBaseline | null,
 ): VisualBenchmarkResult => {
+  if (current.length === 0) {
+    throw new Error("Current visual benchmark scores must not be empty.");
+  }
+
   const baselineMap = new Map<string, number>();
   if (baseline !== null) {
     for (const entry of baseline.scores) {
@@ -513,16 +517,25 @@ export const computeVisualBenchmarkDeltas = (
     }
   }
 
+  const matchedPairs: Array<{ current: number; baseline: number }> = [];
   const deltas: VisualBenchmarkDelta[] = current.map((entry) => {
     const baselineScore = baselineMap.get(entry.fixtureId) ?? null;
     const delta = baselineScore !== null ? roundToTwoDecimals(entry.score - baselineScore) : null;
-    let indicator: "improved" | "degraded" | "neutral";
-    if (delta === null || Math.abs(delta) <= NEUTRAL_DELTA_TOLERANCE) {
+    let indicator: "improved" | "degraded" | "neutral" | "unavailable";
+    if (delta === null) {
+      indicator = "unavailable";
+    } else if (Math.abs(delta) <= NEUTRAL_DELTA_TOLERANCE) {
       indicator = "neutral";
     } else if (delta > 0) {
       indicator = "improved";
     } else {
       indicator = "degraded";
+    }
+    if (baselineScore !== null) {
+      matchedPairs.push({
+        current: entry.score,
+        baseline: baselineScore,
+      });
     }
     return {
       fixtureId: entry.fixtureId,
@@ -537,14 +550,16 @@ export const computeVisualBenchmarkDeltas = (
     current.reduce((sum, entry) => sum + entry.score, 0) / current.length,
   );
 
-  let overallBaseline: number | null = null;
-  if (baseline !== null && baseline.scores.length > 0) {
-    overallBaseline = roundToTwoDecimals(
-      baseline.scores.reduce((sum, entry) => sum + entry.score, 0) / baseline.scores.length,
-    );
-  }
-
-  const overallDelta = overallBaseline !== null ? roundToTwoDecimals(overallCurrent - overallBaseline) : null;
+  const matchedCount = matchedPairs.length;
+  const overallBaseline = matchedCount > 0
+    ? roundToTwoDecimals(matchedPairs.reduce((sum, pair) => sum + pair.baseline, 0) / matchedCount)
+    : null;
+  const overallComparableCurrent = matchedCount > 0
+    ? roundToTwoDecimals(matchedPairs.reduce((sum, pair) => sum + pair.current, 0) / matchedCount)
+    : null;
+  const overallDelta = overallComparableCurrent !== null && overallBaseline !== null
+    ? roundToTwoDecimals(overallComparableCurrent - overallBaseline)
+    : null;
 
   return {
     deltas,
@@ -558,9 +573,9 @@ const padRight = (value: string, width: number): string => value + " ".repeat(Ma
 
 const padLeft = (value: string, width: number): string => " ".repeat(Math.max(0, width - value.length)) + value;
 
-const formatDeltaCell = (delta: number | null, indicator: "improved" | "degraded" | "neutral"): string => {
+const formatDeltaCell = (delta: number | null, indicator: "improved" | "degraded" | "neutral" | "unavailable"): string => {
   if (delta === null) {
-    return "\u2014 \u2796";
+    return indicator === "unavailable" ? "\u2014 n/a" : "\u2014 \u2796";
   }
   const sign = delta > 0 ? "+" : "";
   const emoji = indicator === "improved" ? " \u2705" : indicator === "degraded" ? " \u26A0\uFE0F" : " \u2796";

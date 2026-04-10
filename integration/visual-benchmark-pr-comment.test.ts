@@ -57,7 +57,7 @@ test("buildVisualBenchmarkPrComment renders markdown with score, delta, trend, a
     assert.equal(result.marker, "<!-- workspace-dev-visual-benchmark -->");
     assert.ok(result.body.startsWith(result.marker));
     assert.match(result.body, /Overall Score:\*\* 85/);
-    assert.match(result.body, /\+5/);
+    assert.match(result.body, /\+5 vs baseline 80 across 1 comparable fixture/);
     assert.match(result.body, /\u2191 improved/);
     assert.match(result.body, /Layout Accuracy/);
     assert.match(result.body, /<details>/);
@@ -107,9 +107,9 @@ test("buildVisualBenchmarkPrComment handles missing baseline gracefully", async 
       baselinePath: path.join(root, "nonexistent-baseline.json"),
     });
 
-    assert.match(result.body, /no baseline/);
+    assert.match(result.body, /no comparable baseline/);
     assert.match(result.body, /\u2014/);
-    assert.match(result.body, /\u2192 stable/);
+    assert.match(result.body, /\u2014 no baseline/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -260,6 +260,170 @@ test("print-visual-benchmark-pr-comment CLI writes JSON payload", async () => {
           { cwd: process.cwd() },
         ),
     );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkPrComment computes header delta from matched fixtures only", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pr-comment-partial-baseline-"));
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureA = path.join(artifactRoot, "last-run", "fixture-a");
+    const fixtureB = path.join(artifactRoot, "last-run", "fixture-b");
+    await mkdir(fixtureA, { recursive: true });
+    await mkdir(fixtureB, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      scores: [
+        { fixtureId: "fixture-a", score: 100 },
+        { fixtureId: "fixture-b", score: 50 },
+      ],
+    });
+
+    for (const [fixtureId, fixtureDir, score] of [
+      ["fixture-a", fixtureA, 100],
+      ["fixture-b", fixtureB, 50],
+    ] as const) {
+      await writeJson(path.join(fixtureDir, "manifest.json"), {
+        version: 1,
+        fixtureId,
+        score,
+        ranAt: "2026-04-10T10:00:00.000Z",
+        viewport: { width: 1280, height: 720 },
+      });
+    }
+
+    const baselinePath = path.join(root, "baseline.json");
+    await writeJson(baselinePath, {
+      version: 2,
+      scores: [{ fixtureId: "fixture-a", score: 80 }],
+    });
+
+    const { buildVisualBenchmarkPrComment } = await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, { baselinePath });
+
+    assert.match(result.body, /Overall Score:\*\* 75 \/ 100/);
+    assert.match(result.body, /\+20 vs baseline 80 across 1 comparable fixture; 1 fixture excluded \(no baseline\)/);
+    assert.match(result.body, /\| Fixture B \| ❌ 50 \| — \| — \| — no baseline \|/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkPrComment escapes markdown-sensitive fixture and dimension values", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pr-comment-escape-"));
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureId = "pipe-|fixture|-name";
+    const fixtureDir = path.join(artifactRoot, "last-run", fixtureId);
+    await mkdir(fixtureDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      scores: [{ fixtureId, score: 88 }],
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId,
+      score: 88,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 88,
+      dimensions: [
+        { name: "Spacing | Alignment", weight: 0.5, score: 89 },
+        { name: "<Unsafe>", weight: 0.5, score: 87 },
+      ],
+    });
+
+    const { buildVisualBenchmarkPrComment } = await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {});
+
+    assert.match(result.body, /\| Pipe \\|fixture\\| Name \|/);
+    assert.match(result.body, /\| Spacing \\| Alignment \|/);
+    assert.match(result.body, /\| &lt;Unsafe&gt; \|/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkPrComment ignores malformed dimension rows gracefully", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pr-comment-dimension-validation-"));
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureDir = path.join(artifactRoot, "last-run", "simple-form");
+    await mkdir(fixtureDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      scores: [{ fixtureId: "simple-form", score: 83 }],
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "simple-form",
+      score: 83,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 83,
+      dimensions: [
+        { name: "Valid Dimension", weight: 0.5, score: 84 },
+        { name: "Bad Weight", weight: "0.2", score: 81 },
+        { name: "Bad Score", weight: 0.3, score: "81" },
+      ],
+    });
+
+    const { buildVisualBenchmarkPrComment } = await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {});
+
+    assert.match(result.body, /\| Valid Dimension \| 50% \| 84 \|/);
+    assert.doesNotMatch(result.body, /Bad Weight/);
+    assert.doesNotMatch(result.body, /Bad Score/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("print-visual-benchmark-pr-comment CLI writes fallback payload when report cannot be built", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pr-comment-cli-fallback-"));
+
+  try {
+    const outputPath = path.join(root, "output.json");
+    const summaryPath = path.join(root, "step-summary.md");
+    await writeFile(summaryPath, "", "utf8");
+
+    const missingReportPath = path.join(root, "missing-last-run.json");
+    const command = `GITHUB_STEP_SUMMARY=${JSON.stringify(summaryPath)} node scripts/print-visual-benchmark-pr-comment.mjs ${JSON.stringify(missingReportPath)} --output ${JSON.stringify(outputPath)}`;
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+
+    await execFileAsync("zsh", ["-lc", command], {
+      cwd: process.cwd(),
+    });
+
+    const outputRaw = await readFile(outputPath, "utf8");
+    const output = JSON.parse(outputRaw) as { marker: string; body: string };
+    assert.equal(output.marker, "<!-- workspace-dev-visual-benchmark -->");
+    assert.match(output.body, /skipped due to missing or malformed artifacts/);
+
+    const summaryContent = await readFile(summaryPath, "utf8");
+    assert.match(summaryContent, /skipped due to missing or malformed artifacts/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

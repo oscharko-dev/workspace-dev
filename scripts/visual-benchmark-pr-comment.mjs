@@ -14,6 +14,23 @@ const scoreEmoji = (score) => {
 };
 
 const roundToTwo = (n) => Math.round(n * 100) / 100;
+const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
+
+const escapeMarkdownCell = (value) =>
+  String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\|/g, "\\|")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\r?\n/g, " ");
+
+const escapeMarkdownHeading = (value) =>
+  String(value)
+    .replace(/\\/g, "\\\\")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\r?\n/g, " ")
+    .trim();
 
 const readJsonFile = async (filePath, label) => {
   const raw = await readFile(filePath, "utf8");
@@ -41,7 +58,7 @@ const readJsonFileOptional = async (filePath, label) => {
   }
 };
 
-const MARKER = "<!-- workspace-dev-visual-benchmark -->";
+export const VISUAL_BENCHMARK_PR_COMMENT_MARKER = "<!-- workspace-dev-visual-benchmark -->";
 
 export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   if (typeof reportPath !== "string" || reportPath.trim().length === 0) {
@@ -68,7 +85,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
         entry !== null &&
         typeof entry === "object" &&
         typeof entry.fixtureId === "string" &&
-        typeof entry.score === "number"
+        isFiniteNumber(entry.score)
       ) {
         baselineScoreMap.set(entry.fixtureId, entry.score);
       }
@@ -84,7 +101,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       entry === null ||
       typeof entry !== "object" ||
       typeof entry.fixtureId !== "string" ||
-      typeof entry.score !== "number"
+      !isFiniteNumber(entry.score)
     ) {
       throw new Error(`Visual benchmark last-run report at '${absolutePath}' contains an invalid score entry.`);
     }
@@ -98,21 +115,39 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     if (
       viewport === null ||
       typeof viewport !== "object" ||
-      typeof viewport.width !== "number" ||
-      typeof viewport.height !== "number"
+      !isFiniteNumber(viewport.width) ||
+      !isFiniteNumber(viewport.height)
     ) {
       throw new Error(`Visual benchmark manifest for '${entry.fixtureId}' is missing a valid viewport.`);
     }
 
-    let report = null;
+    let reportDimensions = null;
     const reportRaw = await readJsonFileOptional(reportJsonPath, `Visual benchmark report for '${entry.fixtureId}'`);
-    if (reportRaw !== null && reportRaw.status === "completed") {
-      report = reportRaw;
+    if (reportRaw !== null && reportRaw.status === "completed" && Array.isArray(reportRaw.dimensions)) {
+      const validDimensions = [];
+      for (const dim of reportRaw.dimensions) {
+        if (
+          dim !== null &&
+          typeof dim === "object" &&
+          typeof dim.name === "string" &&
+          isFiniteNumber(dim.weight) &&
+          isFiniteNumber(dim.score)
+        ) {
+          validDimensions.push({
+            name: dim.name,
+            weight: dim.weight,
+            score: dim.score,
+          });
+        }
+      }
+      if (validDimensions.length > 0) {
+        reportDimensions = validDimensions;
+      }
     }
 
     const baselineScore = baselineScoreMap.has(entry.fixtureId) ? baselineScoreMap.get(entry.fixtureId) : null;
     let delta = null;
-    let indicator = "neutral";
+    let indicator = "unavailable";
     if (baselineScore !== null) {
       delta = roundToTwo(entry.score - baselineScore);
       if (Math.abs(delta) <= 1) {
@@ -135,41 +170,61 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
         manifest.thresholdResult !== null && typeof manifest.thresholdResult === "object"
           ? manifest.thresholdResult
           : null,
-      report,
+      reportDimensions,
     });
   }
 
-  const overallAverage =
-    fixtures.length > 0
-      ? roundToTwo(fixtures.reduce((sum, f) => sum + f.score, 0) / fixtures.length)
-      : 0;
+  if (fixtures.length === 0) {
+    throw new Error(`Visual benchmark last-run report at '${absolutePath}' contains no valid score entries.`);
+  }
 
-  const baselineFixtures = fixtures.filter((f) => f.baselineScore !== null);
+  const overallAverage = roundToTwo(fixtures.reduce((sum, fixture) => sum + fixture.score, 0) / fixtures.length);
+
+  const baselineFixtures = fixtures.filter((fixture) => fixture.baselineScore !== null && fixture.delta !== null);
   const overallBaselineAvg =
     baselineFixtures.length > 0
-      ? roundToTwo(baselineFixtures.reduce((sum, f) => sum + f.baselineScore, 0) / baselineFixtures.length)
+      ? roundToTwo(baselineFixtures.reduce((sum, fixture) => sum + fixture.baselineScore, 0) / baselineFixtures.length)
+      : null;
+  const comparableCurrentAvg =
+    baselineFixtures.length > 0
+      ? roundToTwo(baselineFixtures.reduce((sum, fixture) => sum + fixture.score, 0) / baselineFixtures.length)
       : null;
 
-  const overallDelta = overallBaselineAvg !== null ? roundToTwo(overallAverage - overallBaselineAvg) : null;
+  const overallDelta =
+    overallBaselineAvg !== null && comparableCurrentAvg !== null
+      ? roundToTwo(comparableCurrentAvg - overallBaselineAvg)
+      : null;
+  const excludedFixtureCount = fixtures.length - baselineFixtures.length;
 
   let overallDeltaText;
   if (overallDelta !== null) {
     const trendArrow =
       Math.abs(overallDelta) <= 1 ? "\u2192" : overallDelta > 0 ? "\u2191" : "\u2193";
     const sign = overallDelta > 0 ? "+" : "";
-    overallDeltaText = ` (${trendArrow} ${sign}${overallDelta} vs baseline ${overallBaselineAvg})`;
+    const comparableText =
+      baselineFixtures.length === 1
+        ? "across 1 comparable fixture"
+        : `across ${baselineFixtures.length} comparable fixtures`;
+    const excludedText =
+      excludedFixtureCount > 0
+        ? excludedFixtureCount === 1
+          ? "; 1 fixture excluded (no baseline)"
+          : `; ${excludedFixtureCount} fixtures excluded (no baseline)`
+        : "";
+    overallDeltaText = ` (${trendArrow} ${sign}${overallDelta} vs baseline ${overallBaselineAvg} ${comparableText}${excludedText})`;
   } else {
-    overallDeltaText = " (no baseline)";
+    overallDeltaText = " (no comparable baseline)";
   }
 
   const trendText = (indicator) => {
     if (indicator === "improved") return "\u2191 improved";
     if (indicator === "degraded") return "\u2193 regressed";
+    if (indicator === "unavailable") return "\u2014 no baseline";
     return "\u2192 stable";
   };
 
   const lines = [
-    MARKER,
+    VISUAL_BENCHMARK_PR_COMMENT_MARKER,
     "## Visual Quality Benchmark",
     "",
     `${scoreEmoji(overallAverage)} **Overall Score:** ${overallAverage} / 100${overallDeltaText}`,
@@ -182,7 +237,9 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     const baselineText = fixture.baselineScore !== null ? String(fixture.baselineScore) : "\u2014";
     const deltaText = fixture.delta !== null ? `${fixture.delta > 0 ? "+" : ""}${fixture.delta}` : "\u2014";
     const trend = trendText(fixture.indicator);
-    lines.push(`| ${fixture.displayName} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${baselineText} | ${deltaText} | ${trend} |`);
+    lines.push(
+      `| ${escapeMarkdownCell(fixture.displayName)} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${escapeMarkdownCell(baselineText)} | ${escapeMarkdownCell(deltaText)} | ${escapeMarkdownCell(trend)} |`,
+    );
   }
 
   if (artifactUrl) {
@@ -192,12 +249,14 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     lines.push("| Fixture | Diff |");
     lines.push("|---------|------|");
     for (const fixture of fixtures) {
-      lines.push(`| ${fixture.displayName} | [View diff](${artifactUrl}) \`last-run/${fixture.fixtureId}/diff.png\` |`);
+      lines.push(
+        `| ${escapeMarkdownCell(fixture.displayName)} | [View diff](${artifactUrl}) \`last-run/${fixture.fixtureId}/diff.png\` |`,
+      );
     }
   }
 
   const fixturesWithDimensions = fixtures.filter(
-    (f) => f.report !== null && Array.isArray(f.report.dimensions) && f.report.dimensions.length > 0,
+    (fixture) => Array.isArray(fixture.reportDimensions) && fixture.reportDimensions.length > 0,
   );
 
   if (fixturesWithDimensions.length > 0) {
@@ -207,12 +266,14 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
 
     for (const fixture of fixturesWithDimensions) {
       lines.push("");
-      lines.push(`#### ${fixture.displayName} (score: ${fixture.score})`);
+      lines.push(`#### ${escapeMarkdownHeading(fixture.displayName)} (score: ${fixture.score})`);
       lines.push("");
       lines.push("| Dimension | Weight | Score |");
       lines.push("|-----------|--------|-------|");
-      for (const dim of fixture.report.dimensions) {
-        lines.push(`| ${dim.name} | ${(dim.weight * 100).toFixed(0)}% | ${dim.score} |`);
+      for (const dim of fixture.reportDimensions) {
+        lines.push(
+          `| ${escapeMarkdownCell(dim.name)} | ${escapeMarkdownCell(`${(dim.weight * 100).toFixed(0)}%`)} | ${escapeMarkdownCell(dim.score)} |`,
+        );
       }
     }
 
@@ -227,7 +288,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   const body = lines.join("\n");
 
   return {
-    marker: MARKER,
+    marker: VISUAL_BENCHMARK_PR_COMMENT_MARKER,
     body,
   };
 };

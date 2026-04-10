@@ -52,7 +52,7 @@ test("buildVisualBenchmarkSummary renders markdown and check payload with thresh
   }
 });
 
-test("print-visual-benchmark-summary writes check output and fails on malformed reports", async () => {
+test("print-visual-benchmark-summary writes check output and degrades gracefully on malformed reports", async () => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-summary-cli-"));
 
   try {
@@ -105,17 +105,38 @@ test("print-visual-benchmark-summary writes check output and fails on malformed 
       status: "failed",
     });
 
-    await assert.rejects(
-      () =>
-        execFileAsync(
-          "zsh",
-          [
-            "-lc",
-            `node scripts/print-visual-benchmark-summary.mjs ${JSON.stringify(path.join(artifactRoot, "last-run.json"))}`,
-          ],
-          { cwd: process.cwd() },
-        ),
-    );
+    const malformedOutputPath = path.join(artifactRoot, "check-output-malformed.json");
+    const malformedCommand = `node scripts/print-visual-benchmark-summary.mjs ${JSON.stringify(path.join(artifactRoot, "last-run.json"))} --check-output ${JSON.stringify(malformedOutputPath)}`;
+    await execFileAsync("zsh", ["-lc", malformedCommand], {
+      cwd: process.cwd(),
+    });
+
+    const malformedCheckOutput = JSON.parse(await readFile(malformedOutputPath, "utf8")) as {
+      title: string;
+      summary: string;
+      text: string;
+    };
+    assert.equal(malformedCheckOutput.title, "Visual benchmark: unavailable");
+    assert.match(malformedCheckOutput.summary, /Status:\*\* unavailable/);
+    assert.match(malformedCheckOutput.text, /Visual benchmark unavailable/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkSummary returns unavailable payload when last-run artifact is missing", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-summary-missing-"));
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    await mkdir(artifactRoot, { recursive: true });
+
+    const { buildVisualBenchmarkSummary } = await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(path.join(artifactRoot, "last-run.json"));
+
+    assert.equal(summary.check.title, "Visual benchmark: unavailable");
+    assert.match(summary.markdown, /Status:\*\* unavailable/);
+    assert.match(summary.check.text, /Visual benchmark unavailable/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
