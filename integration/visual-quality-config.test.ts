@@ -1056,10 +1056,20 @@ test("normalizeVisualQualityViewportWeights preserves non-weight fields", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Issue #838 — committed config omits global viewports
+// Issue #838 — committed config defines global benchmark viewports
 // ---------------------------------------------------------------------------
 
-test("committed visual-quality.config.json omits global viewports", async () => {
+test("committed visual-quality.config.json defines the default desktop/tablet/mobile viewports", async () => {
   const config = await loadVisualQualityConfig();
-  assert.equal(config.viewports, undefined);
+  assert.ok(Array.isArray(config.viewports));
+  assert.deepEqual(
+    config.viewports?.map((viewport) => viewport.id),
+    ["desktop", "tablet", "mobile"],
+  );
+  assert.deepEqual(config.viewports?.map((viewport) => viewport.width), [
+    1280, 768, 390,
+  ]);
+  assert.deepEqual(config.viewports?.map((viewport) => viewport.height), [
+    800, 1024, 844,
+  ]);
 });

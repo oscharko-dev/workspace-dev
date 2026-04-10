@@ -1,7 +1,7 @@
 # Visual Benchmark
 
 The visual benchmark provides a fixed five-fixture test set for comparing generator output against committed reference screenshots.
-Storage and comparisons are screen-aware: score records are keyed by `fixtureId + screenId`, with optional `screenName` metadata for display and migration. The current committed fixture set still maps one screen to each fixture, so the CLI output continues to read like a five-row fixture benchmark today.
+Storage and comparisons are viewport-aware: score records are keyed by `fixtureId + screenId + viewportId`, with optional `screenName` and `viewportLabel` metadata for display and migration. The current committed fixture set still maps one screen to each fixture, but each screen now runs across the committed benchmark viewport set unless a more specific override is configured.
 
 Default benchmark runs are offline:
 
@@ -19,26 +19,31 @@ pnpm benchmark:visual
 
 This command runs the real benchmark runner, not the benchmark test suite.
 
-The output is a comparison table with one row per benchmark screen plus an overall average. In the current fixture set that still means one row per fixture:
+The output is a comparison table with one row per benchmark viewport capture plus an overall average:
 
 ```text
-┌─────────────────────────┬──────────┬──────────┬────────┐
-│ View                    │ Baseline │ Current  │ Delta  │
-├─────────────────────────┼──────────┼──────────┼────────┤
-│ Simple Form             │ 85       │ 88       │ +3 ✅  │
-│ Complex Dashboard       │ 72       │ 71       │ -1 ➖  │
-├─────────────────────────┼──────────┼──────────┼────────┤
-│ Overall Average         │ 78.5     │ 79.5     │ +1     │
-└─────────────────────────┴──────────┴──────────┴────────┘
+┌───────────────────────────────────┬──────────┬──────────┬────────┐
+│ View                              │ Baseline │ Current  │ Delta  │
+├───────────────────────────────────┼──────────┼──────────┼────────┤
+│ Simple Form / Desktop             │ 85       │ 88       │ +3 ✅  │
+│ Simple Form / Tablet              │ 83       │ 84       │ +1 ➖  │
+│ Simple Form / Mobile              │ 79       │ 77       │ -2 ⚠️ │
+│ Complex Dashboard / Desktop       │ 72       │ 71       │ -1 ➖  │
+│ Complex Dashboard / Tablet        │ 74       │ 74       │  0 ➖  │
+│ Complex Dashboard / Mobile        │ 69       │ 68       │ -1 ➖  │
+├───────────────────────────────────┼──────────┼──────────┼────────┤
+│ Overall Average                   │ 77.0     │ 77.0     │  0     │
+└───────────────────────────────────┴──────────┴──────────┴────────┘
 ```
 
 ## Baseline management
 
 The committed visual baseline consists of:
 
-- `reference.png` in each fixture directory
+- viewport-specific reference images at `screens/<screenToken>/<viewportId>.png` for migrated fixtures
+- legacy `reference.png` in each fixture directory for older single-viewport fixtures that have not been migrated yet
 - `metadata.json` in each fixture directory
-- `integration/fixtures/visual-benchmark/baseline.json` for deterministic score tracking at fixture-plus-screen granularity
+- `integration/fixtures/visual-benchmark/baseline.json` for deterministic score tracking at fixture-plus-screen-plus-viewport granularity
 
 Use the dedicated baseline CLI for day-to-day maintenance:
 
@@ -50,9 +55,9 @@ pnpm visual:baseline status
 pnpm visual:baseline diff
 ```
 
-`pnpm visual:baseline update` runs the selected fixture benchmarks, saves the latest `actual.png`/`diff.png`/`report.json` artifacts under `artifacts/visual-benchmark/last-run/<fixture-id>/`, updates the committed `reference.png`, refreshes fixture `metadata.json`, and syncs the tracked score baseline.
+`pnpm visual:baseline update` runs the selected fixture benchmarks, saves the latest `actual.png`/`diff.png`/`report.json` artifacts under `artifacts/visual-benchmark/last-run/<fixture-id>/.../<viewportId>/`, updates the committed viewport reference PNGs, refreshes fixture `metadata.json`, and syncs the tracked score baseline.
 
-`pnpm visual:baseline approve --screen <fixture-id>` promotes the last persisted `actual.png` for that fixture to the committed `reference.png` without rerunning the full suite.
+`pnpm visual:baseline approve --screen <fixture-id>` promotes the last persisted viewport `actual.png` artifacts for that screen to the committed viewport reference PNGs without rerunning the full suite.
 
 `pnpm visual:baseline status` shows the current committed baseline state per fixture, including capture date and age in days.
 
@@ -68,6 +73,8 @@ pnpm visual:baseline diff
       "fixtureId": "simple-form",
       "screenId": "1:65671",
       "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+      "viewportId": "desktop",
+      "viewportLabel": "Desktop",
       "score": 88
     }
   ]
@@ -110,16 +117,15 @@ configured in `integration/fixtures/visual-benchmark/visual-quality.config.json`
 ```
 
 Resolution precedence, most specific wins: `screen-level > fixture-level > global > default`.
-The default is a single `desktop` viewport at `1280x800` with `deviceScaleFactor: 1`,
-which keeps single-viewport fixtures byte-identical to pre-#838 behavior.
+The committed global defaults are:
 
-Current build supports per-viewport config resolution and passes the effective
-viewport to the `validate-project` pipeline via `visualQualityViewportHeight` and
-`visualQualityDeviceScaleFactor` runtime fields. The multi-viewport execution loop
-is scheduled as a follow-up; today a run uses the first resolved viewport.
+- `desktop`: `1280x800`, `deviceScaleFactor: 1`
+- `tablet`: `768x1024`, `deviceScaleFactor: 2`
+- `mobile`: `390x844`, `deviceScaleFactor: 3`
 
-The `--viewport <id>` CLI flag on `pnpm benchmark:visual` is parsed and validated
-for future per-viewport filtering. Runner integration follows.
+Runs execute every resolved viewport for each selected screen, persist artifacts per viewport, and render benchmark summaries and PR comments at `fixture + screen + viewport` granularity.
+
+The `--viewport <id>` CLI flag on `pnpm benchmark:visual` filters execution to a single resolved viewport after config precedence is applied.
 
 Reference images live at `<fixture>/screens/<screenToken>/<viewportId>.png` when
 multi-viewport is configured; legacy `reference.png` is used otherwise.
@@ -136,7 +142,7 @@ Trend (per fixture):
   data-table: 91 (→0 from baseline 91)
 ```
 
-Internally those trend comparisons are scoped by `fixtureId + screenId`. The block header still says `Trend (per fixture)` because the committed benchmark set currently contains one screen per fixture.
+Internally those trend comparisons are scoped by `fixtureId + screenId + viewportId`. Human-facing output still groups naturally by fixture and screen label, but every viewport keeps its own baseline, delta, and regression classification.
 
 When a fixture's current score drops more than `maxScoreDropPercent` below its
 committed baseline, the runner emits an `ALERT_VISUAL_QUALITY_DROP` alert:
@@ -236,7 +242,8 @@ Each benchmark fixture directory under `integration/fixtures/visual-benchmark/<f
 
 - `figma.json`: frozen Figma input for the view
 - `metadata.json`: frozen reference metadata including capture size
-- `reference.png`: committed reference screenshot
+- `screens/<screenToken>/<viewportId>.png`: committed viewport reference screenshots for migrated fixtures
+- optional legacy `reference.png`: committed single-viewport screenshot for older fixtures
 - `manifest.json`: fixture-local manifest used by `validate.project` to locate the frozen reference
 
 The committed fixture set contains exactly five benchmark views:
@@ -251,24 +258,24 @@ The committed fixture set contains exactly five benchmark views:
 
 `pnpm benchmark:visual:update-fixtures` and `pnpm benchmark:visual:live` refresh data from live Figma and require `FIGMA_ACCESS_TOKEN`.
 
-`pnpm benchmark:visual:update-references` is offline. It regenerates each committed `reference.png` from the current benchmark pipeline output.
+`pnpm benchmark:visual:update-references` is offline. It regenerates each committed viewport reference PNG from the current benchmark pipeline output.
 
 | Command                                   | Description                                                                                          |
 | ----------------------------------------- | ---------------------------------------------------------------------------------------------------- |
 | `pnpm visual:baseline update`             | Run benchmark, persist last-run artifacts, update committed references, metadata, and score baseline |
-| `pnpm visual:baseline approve --screen`   | Promote a persisted last-run `actual.png` to the committed reference for one fixture                 |
+| `pnpm visual:baseline approve --screen`   | Promote persisted last-run viewport `actual.png` artifacts to committed references for one screen    |
 | `pnpm visual:baseline status`             | Show per-fixture baseline status including capture age and pending diffs                             |
 | `pnpm visual:baseline diff`               | Summarize pending diffs from persisted last-run artifacts                                            |
 | `pnpm benchmark:visual:update-fixtures`   | Refreshes frozen `figma.json` payloads from Figma                                                    |
-| `pnpm benchmark:visual:update-references` | Regenerates committed `reference.png` files from the current benchmark output                        |
+| `pnpm benchmark:visual:update-references` | Regenerates committed viewport reference PNGs from the current benchmark output                      |
 | `pnpm benchmark:visual:update-baseline`   | Compatibility shim for `pnpm visual:baseline update`                                                 |
 | `pnpm benchmark:visual:live`              | Compares frozen fixture data against live Figma responses                                            |
 
 ## CI behavior
 
-`.github/workflows/visual-benchmark.yml` runs `pnpm benchmark:visual` on pushes to `dev` and pull requests targeting `dev`.
+`.github/workflows/visual-benchmark.yml` runs `pnpm benchmark:visual -- --ci --enforce-thresholds` on pushes to `dev` and pull requests targeting `dev`.
 
-The workflow installs Playwright Chromium and executes the same real benchmark runner used locally. It does not require `FIGMA_ACCESS_TOKEN` for the default benchmark path.
+The workflow installs Playwright Chromium and executes the same real benchmark runner used locally. The default benchmark path remains offline and does not require `FIGMA_ACCESS_TOKEN`.
 
 ## Further reading
 

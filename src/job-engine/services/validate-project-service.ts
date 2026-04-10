@@ -407,21 +407,9 @@ const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): Workspac
       ? {
           metadata: {
             ...value.metadata,
-            ...(value.metadata.configuredWeights
-              ? {
-                  configuredWeights: { ...value.metadata.configuredWeights }
-                }
-              : {}),
-            ...(value.metadata.viewport
-              ? {
-                  viewport: { ...value.metadata.viewport }
-                }
-              : {}),
-            ...(value.metadata.versions
-              ? {
-                  versions: { ...value.metadata.versions }
-                }
-              : {})
+            configuredWeights: { ...value.metadata.configuredWeights },
+            viewport: { ...value.metadata.viewport },
+            versions: { ...value.metadata.versions }
           }
         }
       : {}),
@@ -1189,7 +1177,7 @@ export const createValidateProjectService = ({
       let visualAuditActualImagePath: string | undefined;
       let visualAuditDiffImagePath: string | undefined;
       let visualAuditReportPath: string | undefined;
-      const requestedVisualQualityEnabled = context.job.request.enableVisualQualityValidation === true;
+      const requestedVisualQualityEnabled = context.job.request.enableVisualQualityValidation;
       const requestedVisualQualityFrozenReference = resolveRequestedVisualQualityFrozenReference({ context });
       const explicitVisualQualityRequest =
         context.input?.enableVisualQualityValidation !== undefined ||
@@ -1198,7 +1186,7 @@ export const createValidateProjectService = ({
         context.input?.visualQualityFrozenReference !== undefined ||
         context.job.request.visualQualityFrozenReference !== undefined;
       const standaloneVisualQualityMode =
-        (context.job.request.visualQualityReferenceMode ?? context.runtime.visualQualityReferenceMode) as WorkspaceVisualQualityReferenceMode;
+        context.job.request.visualQualityReferenceMode ?? context.runtime.visualQualityReferenceMode;
       const standaloneVisualQualityViewportWidth =
         context.job.request.visualQualityViewportWidth ?? context.runtime.visualQualityViewportWidth;
       const standaloneVisualQualityViewportHeight =

@@ -15,6 +15,9 @@ import {
   loadVisualBenchmarkFixtureManifest,
   loadVisualBenchmarkFixtureMetadata,
   loadVisualBenchmarkReference,
+  resolveVisualBenchmarkFixturePaths,
+  resolveVisualBenchmarkScreenPaths,
+  resolveVisualBenchmarkScreenViewportPaths,
   toStableJsonString,
   type VisualBenchmarkFixtureManifest,
   type VisualBenchmarkFixtureMetadata,
@@ -27,6 +30,7 @@ import {
   fetchVisualBenchmarkNodeSnapshot,
   fetchVisualBenchmarkReferenceImage,
   resolveVisualBenchmarkMaintenanceMode,
+  updateVisualBenchmarkReferences,
   runVisualBenchmarkLiveAudit,
 } from "./visual-benchmark.update.js";
 import {
@@ -479,6 +483,108 @@ test("runVisualBenchmarkLiveAudit detects JSON and PNG drift", async () => {
     assert.equal(results[0]?.liveLastModified, "2026-04-10T09:15:00Z");
   } finally {
     delete process.env.FIGMA_ACCESS_TOKEN;
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("updateVisualBenchmarkReferences writes per-viewport references and updates representative legacy paths", async () => {
+  const fixtureRoot = await createFixtureRoot();
+  const desktopBuffer = createTestPngBuffer(16, 12, [10, 20, 30, 255]);
+  const mobileBuffer = createTestPngBuffer(12, 20, [80, 70, 60, 255]);
+
+  try {
+    await updateVisualBenchmarkReferences({
+      fixtureRoot,
+      now: () => "2026-04-10T12:00:00.000Z",
+      log: () => {
+        return;
+      },
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 95,
+        screens: [
+          {
+            screenId: "1:65671",
+            screenName: "Simple Form",
+            nodeId: "1:65671",
+            score: 95,
+            screenshotBuffer: desktopBuffer,
+            diffBuffer: null,
+            report: null,
+            viewport: {
+              width: 1280,
+              height: 800,
+            },
+            viewports: [
+              {
+                viewportId: "desktop",
+                viewportLabel: "Desktop",
+                score: 96,
+                screenshotBuffer: desktopBuffer,
+                diffBuffer: null,
+                report: null,
+                viewport: {
+                  width: 1280,
+                  height: 800,
+                },
+              },
+              {
+                viewportId: "mobile",
+                viewportLabel: "Mobile",
+                score: 94,
+                screenshotBuffer: mobileBuffer,
+                diffBuffer: null,
+                report: null,
+                viewport: {
+                  width: 390,
+                  height: 844,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const fixtureReference = await readFile(
+      resolveVisualBenchmarkFixturePaths("simple-form", { fixtureRoot })
+        .referencePngPath,
+    );
+    assert.equal(fixtureReference.equals(desktopBuffer), true);
+
+    const legacyScreenReference = await readFile(
+      resolveVisualBenchmarkScreenPaths("simple-form", "1:65671", { fixtureRoot })
+        .referencePngPath,
+    );
+    assert.equal(legacyScreenReference.equals(desktopBuffer), true);
+
+    const desktopReference = await readFile(
+      resolveVisualBenchmarkScreenViewportPaths(
+        "simple-form",
+        "1:65671",
+        "desktop",
+        { fixtureRoot },
+      ).referencePngPath,
+    );
+    assert.equal(desktopReference.equals(desktopBuffer), true);
+
+    const mobileReference = await readFile(
+      resolveVisualBenchmarkScreenViewportPaths(
+        "simple-form",
+        "1:65671",
+        "mobile",
+        { fixtureRoot },
+      ).referencePngPath,
+    );
+    assert.equal(mobileReference.equals(mobileBuffer), true);
+
+    const updatedMetadata = await loadVisualBenchmarkFixtureMetadata(
+      "simple-form",
+      { fixtureRoot },
+    );
+    assert.equal(updatedMetadata.capturedAt, "2026-04-10T12:00:00.000Z");
+    assert.deepEqual(updatedMetadata.viewport, { width: 1280, height: 800 });
+  } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
@@ -1383,14 +1489,13 @@ test("runVisualBenchmark stores warn-only threshold results in the last-run arti
   }
 });
 
-test("visual benchmark workflow keeps PR mode non-blocking and updates the existing check run", async () => {
+test("visual benchmark workflow enforces thresholds and updates the existing check run", async () => {
   const workflow = await readFile(
     path.join(process.cwd(), ".github", "workflows", "visual-benchmark.yml"),
     "utf8",
   );
   assert.match(workflow, /name:\s+benchmark/);
-  assert.match(workflow, /pnpm benchmark:visual -- --ci/);
-  assert.doesNotMatch(workflow, /--enforce-thresholds/);
+  assert.match(workflow, /pnpm benchmark:visual -- --ci --enforce-thresholds/);
   assert.doesNotMatch(workflow, /FIGMA_ACCESS_TOKEN/);
   assert.doesNotMatch(workflow, /FIGMA_FILE_KEY/);
   assert.match(workflow, /actions\/github-script@v8/);
@@ -2082,6 +2187,26 @@ test("runVisualBenchmark artifact save uses composite key and does not collide o
       },
       { fixtureRoot: env.fixtureRoot },
     );
+    const staleLegacyArtifactDir = path.join(
+      env.artifactRoot,
+      "last-run",
+      "artifact-multi",
+    );
+    await mkdir(staleLegacyArtifactDir, { recursive: true });
+    await writeFile(
+      path.join(staleLegacyArtifactDir, "actual.png"),
+      createTestPngBuffer(2, 2, [10, 20, 30, 255]),
+    );
+    await writeFile(
+      path.join(staleLegacyArtifactDir, "diff.png"),
+      createTestPngBuffer(2, 2, [30, 20, 10, 255]),
+    );
+    await writeFile(
+      path.join(staleLegacyArtifactDir, "manifest.json"),
+      "{}",
+      "utf8",
+    );
+    await writeFile(path.join(staleLegacyArtifactDir, "report.json"), "{}", "utf8");
 
     await runVisualBenchmark(
       {
@@ -2132,6 +2257,21 @@ test("runVisualBenchmark artifact save uses composite key and does not collide o
       firstArtifact.thresholdResult !== undefined,
       "multi-screen fixture artifact must have its thresholdResult populated (H4 composite key fix)",
     );
+    const staleLegacyFiles = [
+      "actual.png",
+      "diff.png",
+      "manifest.json",
+      "report.json",
+    ] as const;
+    for (const fileName of staleLegacyFiles) {
+      await assert.rejects(
+        readFile(path.join(staleLegacyArtifactDir, fileName)),
+        (error: unknown) =>
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT",
+      );
+    }
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }

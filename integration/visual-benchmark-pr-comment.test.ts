@@ -62,6 +62,10 @@ test("buildVisualBenchmarkPrComment renders markdown with score, delta, trend, a
     assert.match(result.body, /Overall Score:\*\* 85/);
     assert.match(result.body, /\+5 vs baseline 80 across 1 comparable view/);
     assert.match(result.body, /\u2191 improved/);
+    assert.match(
+      result.body,
+      /\| Simple Form \| ⚠️ 85 \| 80 \| \+5 \| ↑ improved \| pass \(warn 80, fail disabled\) \| 1280×720 \|/,
+    );
     assert.match(result.body, /Layout Accuracy/);
     assert.match(result.body, /<details>/);
     assert.match(result.body, /Diff Images/);
@@ -331,7 +335,7 @@ test("buildVisualBenchmarkPrComment computes header delta from matched fixtures 
     );
     assert.match(
       result.body,
-      /\| Fixture B \| ❌ 50 \| — \| — \| — no baseline \|/,
+      /\| Fixture B \| ❌ 50 \| — \| — \| — no baseline \| — \| 1280×720 \|/,
     );
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -620,14 +624,17 @@ test("buildVisualBenchmarkPrComment renders per-screen labels and diff paths for
       artifactUrl: "https://example.com/artifacts",
     });
 
-    assert.match(result.body, /\| View \| Score \| Baseline \| Delta \| Trend \|/);
     assert.match(
       result.body,
-      /\| Multi Form \/ Home \| ✅ 92 \| 88 \| \+4 \| ↑ improved \|/,
+      /\| View \| Score \| Baseline \| Delta \| Trend \| Threshold \| Viewport \|/,
     );
     assert.match(
       result.body,
-      /\| Multi Form \/ Settings \| ⚠️ 78 \| 80 \| -2 \| ↓ regressed \|/,
+      /\| Multi Form \/ Home \| ✅ 92 \| 88 \| \+4 \| ↑ improved \| — \| 1280×720 \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Settings \| ⚠️ 78 \| 80 \| -2 \| ↓ regressed \| — \| 1440×900 \|/,
     );
     assert.match(
       result.body,
@@ -639,6 +646,277 @@ test("buildVisualBenchmarkPrComment renders per-screen labels and diff paths for
     );
     assert.match(result.body, /#### Multi Form \/ Home \(score: 92\)/);
     assert.match(result.body, /#### Multi Form \/ Settings \(score: 78\)/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkPrComment renders same-screen viewport rows with viewport-specific baseline and diff paths", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pr-comment-multiviewport-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureId = "multi-form";
+    const desktopDir = path.join(
+      artifactRoot,
+      "last-run",
+      fixtureId,
+      "screens",
+      "custom-home-token",
+      "desktop",
+    );
+    const mobileDir = path.join(
+      artifactRoot,
+      "last-run",
+      fixtureId,
+      "screens",
+      "custom-home-token",
+      "mobile",
+    );
+    await mkdir(desktopDir, { recursive: true });
+    await mkdir(mobileDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-10T11:00:00.000Z",
+      scores: [
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "desktop",
+          viewportLabel: "Desktop",
+          score: 93,
+        },
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "mobile",
+          viewportLabel: "Mobile",
+          score: 74,
+        },
+      ],
+    });
+    await writeJson(path.join(desktopDir, "manifest.json"), {
+      version: 1,
+      fixtureId,
+      screenId: "2:10001",
+      screenName: "Home",
+      viewportId: "desktop",
+      viewportLabel: "Desktop",
+      score: 93,
+      ranAt: "2026-04-10T11:00:00.000Z",
+      viewport: { width: 1280, height: 800 },
+      thresholdResult: { score: 93, verdict: "pass", thresholds: { warn: 80 } },
+    });
+    await writeJson(path.join(mobileDir, "manifest.json"), {
+      version: 1,
+      fixtureId,
+      screenId: "2:10001",
+      screenName: "Home",
+      viewportId: "mobile",
+      viewportLabel: "Mobile",
+      score: 74,
+      ranAt: "2026-04-10T11:00:00.000Z",
+      viewport: { width: 390, height: 844 },
+      thresholdResult: { score: 74, verdict: "warn", thresholds: { warn: 80 } },
+    });
+    await writeJson(path.join(desktopDir, "report.json"), {
+      status: "completed",
+      overallScore: 93,
+      diffImagePath: "desktop-diff.png",
+      dimensions: [{ name: "Layout", weight: 1, score: 93 }],
+    });
+    await writeJson(path.join(mobileDir, "report.json"), {
+      status: "completed",
+      overallScore: 74,
+      diffImagePath: "nested/mobile-diff.png",
+      dimensions: [{ name: "Layout", weight: 1, score: 74 }],
+    });
+
+    const baselinePath = path.join(root, "baseline.json");
+    await writeJson(baselinePath, {
+      version: 3,
+      scores: [
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "desktop",
+          viewportLabel: "Desktop",
+          score: 90,
+        },
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "mobile",
+          viewportLabel: "Mobile",
+          score: 78,
+        },
+      ],
+    });
+
+    const { buildVisualBenchmarkPrComment } =
+      await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {
+      baselinePath,
+      artifactUrl: "https://example.com/artifacts",
+    });
+
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Home \/ Desktop \| ✅ 93 \| 90 \| \+3 \| ↑ improved \| pass \(warn 80, fail disabled\) \| 1280×800 \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Home \/ Mobile \| ⚠️ 74 \| 78 \| -4 \| ↓ regressed \| warn \(warn 80, fail disabled\) \| 390×844 \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Home \/ Desktop \| \[View diff\]\(https:\/\/example\.com\/artifacts\) `last-run\/multi-form\/screens\/custom-home-token\/desktop\/desktop-diff\.png` \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Multi Form \/ Home \/ Mobile \| \[View diff\]\(https:\/\/example\.com\/artifacts\) `last-run\/multi-form\/screens\/custom-home-token\/mobile\/mobile-diff\.png` \|/,
+    );
+    assert.match(result.body, /#### Multi Form \/ Home \/ Desktop \(score: 93\)/);
+    assert.match(result.body, /#### Multi Form \/ Home \/ Mobile \(score: 74\)/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkPrComment computes headline score from per-screen aggregates", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pr-comment-screen-aggregate-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureId = "aggregate-fixture";
+    const homeDesktopDir = path.join(
+      artifactRoot,
+      "last-run",
+      fixtureId,
+      "screens",
+      "screen-a-token",
+      "desktop",
+    );
+    const homeMobileDir = path.join(
+      artifactRoot,
+      "last-run",
+      fixtureId,
+      "screens",
+      "screen-a-token",
+      "mobile",
+    );
+    const settingsDesktopDir = path.join(
+      artifactRoot,
+      "last-run",
+      fixtureId,
+      "screens",
+      "screen-b-token",
+      "desktop",
+    );
+    await mkdir(homeDesktopDir, { recursive: true });
+    await mkdir(homeMobileDir, { recursive: true });
+    await mkdir(settingsDesktopDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-10T11:00:00.000Z",
+      scores: [
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "desktop",
+          score: 90,
+        },
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "mobile",
+          score: 70,
+        },
+        {
+          fixtureId,
+          screenId: "2:10002",
+          screenName: "Settings",
+          viewportId: "desktop",
+          score: 60,
+        },
+      ],
+    });
+
+    for (const [dir, screenId, screenName, viewportId, score, width, height] of [
+      [homeDesktopDir, "2:10001", "Home", "desktop", 90, 1280, 800],
+      [homeMobileDir, "2:10001", "Home", "mobile", 70, 390, 844],
+      [settingsDesktopDir, "2:10002", "Settings", "desktop", 60, 1280, 800],
+    ] as const) {
+      await writeJson(path.join(dir, "manifest.json"), {
+        version: 1,
+        fixtureId,
+        screenId,
+        screenName,
+        viewportId,
+        score,
+        ranAt: "2026-04-10T11:00:00.000Z",
+        viewport: { width, height },
+      });
+      await writeJson(path.join(dir, "report.json"), {
+        status: "completed",
+        overallScore: score,
+        dimensions: [{ name: "Layout", weight: 1, score }],
+      });
+    }
+
+    const baselinePath = path.join(root, "baseline.json");
+    await writeJson(baselinePath, {
+      version: 3,
+      scores: [
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "desktop",
+          score: 80,
+        },
+        {
+          fixtureId,
+          screenId: "2:10001",
+          screenName: "Home",
+          viewportId: "mobile",
+          score: 60,
+        },
+        {
+          fixtureId,
+          screenId: "2:10002",
+          screenName: "Settings",
+          viewportId: "desktop",
+          score: 50,
+        },
+      ],
+    });
+
+    const { buildVisualBenchmarkPrComment } =
+      await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {
+      baselinePath,
+    });
+
+    assert.match(result.body, /Overall Score:\*\* 70 \/ 100/);
+    assert.match(
+      result.body,
+      /\+10 vs baseline 60 across 2 comparable views/,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }

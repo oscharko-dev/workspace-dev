@@ -234,7 +234,7 @@ export const fetchFigmaVisualReference = async ({
     maxRetries,
     ...(onLog ? { onLog } : {})
   });
-  const nodePayload = await nodeResponse.json() as unknown;
+  const nodePayload: unknown = await nodeResponse.json();
   if (!isRecord(nodePayload)) {
     throw new Error("Expected Figma node payload to be an object.");
   }
@@ -267,7 +267,7 @@ export const fetchFigmaVisualReference = async ({
     maxRetries,
     ...(onLog ? { onLog } : {})
   });
-  const imageLookup = await imageLookupResponse.json() as unknown;
+  const imageLookup: unknown = await imageLookupResponse.json();
   if (!isRecord(imageLookup) || !isRecord(imageLookup.images)) {
     throw new Error("Figma image response must contain an images map.");
   }
@@ -411,7 +411,7 @@ export const findVisualQualityFixtureManifest = async ({
   for (const inputPath of inputPaths) {
     const resolvedInputPath = path.resolve(workspaceRoot, inputPath);
     let currentDir = path.dirname(resolvedInputPath);
-    while (true) {
+    for (;;) {
       if (visited.has(currentDir)) {
         break;
       }

@@ -8,6 +8,7 @@ import {
   loadVisualBenchmarkBaseline,
   loadVisualBenchmarkLastRun,
   loadVisualBenchmarkLastRunArtifact,
+  loadVisualBenchmarkLastRunArtifacts,
   saveVisualBenchmarkBaselineScores,
   saveVisualBenchmarkLastRun,
   saveVisualBenchmarkLastRunArtifact,
@@ -588,6 +589,113 @@ test("updateVisualBaselines writes per-screen references and scores for multi-sc
     );
     assert.equal(homeArtifact?.score, 90);
     assert.equal(settingsArtifact?.score, 78);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("updateVisualBaselines persists per-viewport references and artifact manifests for a single-screen fixture", async () => {
+  const env = await createFixtureEnvironment();
+  const runAt = new Date("2026-04-09T12:00:00.000Z");
+  const desktopBuffer = createTestPngBuffer(8, 8, [255, 0, 0, 255]);
+  const mobileBuffer = createTestPngBuffer(8, 8, [0, 255, 0, 255]);
+
+  try {
+    await updateVisualBaselines({
+      ...env,
+      fixtureId: "simple-form",
+      now: () => runAt,
+      log: () => {},
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 84,
+        screens: [
+          {
+            screenId: "1:1",
+            screenName: "simple-form",
+            nodeId: "1:1",
+            score: 84,
+            screenshotBuffer: desktopBuffer,
+            diffBuffer: createTestPngBuffer(8, 8, [20, 20, 20, 255]),
+            report: { status: "completed", overallScore: 84 },
+            viewport: { width: 1280, height: 720 },
+            viewports: [
+              {
+                viewportId: "desktop",
+                viewportLabel: "Desktop",
+                score: 92,
+                screenshotBuffer: desktopBuffer,
+                diffBuffer: createTestPngBuffer(8, 8, [10, 10, 10, 255]),
+                report: { status: "completed", overallScore: 92 },
+                viewport: { width: 1280, height: 800 },
+              },
+              {
+                viewportId: "mobile",
+                viewportLabel: "Mobile",
+                score: 76,
+                screenshotBuffer: mobileBuffer,
+                diffBuffer: createTestPngBuffer(8, 8, [30, 30, 30, 255]),
+                report: { status: "completed", overallScore: 76 },
+                viewport: { width: 390, height: 844 },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const baseline = await loadVisualBenchmarkBaseline(env);
+    assert.ok(baseline !== null);
+    assert.deepEqual(baseline.scores, [
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
+        viewportId: "desktop",
+        viewportLabel: "Desktop",
+        score: 92,
+      },
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1",
+        screenName: "simple-form",
+        viewportId: "mobile",
+        viewportLabel: "Mobile",
+        score: 76,
+      },
+    ]);
+
+    const desktopReference = await readFile(
+      path.join(
+        env.fixtureRoot,
+        "simple-form",
+        "screens",
+        "1_1",
+        "desktop.png",
+      ),
+    );
+    const mobileReference = await readFile(
+      path.join(
+        env.fixtureRoot,
+        "simple-form",
+        "screens",
+        "1_1",
+        "mobile.png",
+      ),
+    );
+    assert.deepEqual(desktopReference, desktopBuffer);
+    assert.deepEqual(mobileReference, mobileBuffer);
+
+    const artifacts = await loadVisualBenchmarkLastRunArtifacts(
+      "simple-form",
+      "1:1",
+      env,
+    );
+    assert.equal(artifacts.length, 2);
+    assert.deepEqual(
+      artifacts.map((artifact) => artifact.viewportId),
+      ["desktop", "mobile"],
+    );
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }

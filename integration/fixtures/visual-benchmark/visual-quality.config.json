@@ -1,4 +1,27 @@
 {
+  "viewports": [
+    {
+      "id": "desktop",
+      "label": "Desktop",
+      "width": 1280,
+      "height": 800,
+      "deviceScaleFactor": 1
+    },
+    {
+      "id": "tablet",
+      "label": "Tablet",
+      "width": 768,
+      "height": 1024,
+      "deviceScaleFactor": 2
+    },
+    {
+      "id": "mobile",
+      "label": "Mobile",
+      "width": 390,
+      "height": 844,
+      "deviceScaleFactor": 3
+    }
+  ],
   "regression": {
     "historySize": 20,
     "maxScoreDropPercent": 5,
