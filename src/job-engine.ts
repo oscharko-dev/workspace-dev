@@ -1149,6 +1149,18 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             Number.isFinite(input.visualAudit.capture.viewport.width)
           ? Math.trunc(input.visualAudit.capture.viewport.width)
           : runtime.visualQualityViewportWidth;
+    const resolvedVisualQualityViewportHeight =
+      typeof input.visualQualityViewportHeight === "number" && Number.isFinite(input.visualQualityViewportHeight)
+        ? Math.trunc(input.visualQualityViewportHeight)
+        : typeof input.visualAudit?.capture?.viewport?.height === "number" &&
+            Number.isFinite(input.visualAudit.capture.viewport.height)
+          ? Math.trunc(input.visualAudit.capture.viewport.height)
+          : runtime.visualQualityViewportHeight;
+    const resolvedVisualQualityDeviceScaleFactor =
+      typeof input.visualQualityDeviceScaleFactor === "number" &&
+      Number.isFinite(input.visualQualityDeviceScaleFactor)
+        ? input.visualQualityDeviceScaleFactor
+        : runtime.visualQualityDeviceScaleFactor;
     const request: WorkspaceJobStatus["request"] = {
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
@@ -1160,7 +1172,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       ...(resolvedEnableVisualQualityValidation
         ? {
             visualQualityReferenceMode: resolvedVisualQualityReferenceMode,
-            visualQualityViewportWidth: resolvedVisualQualityViewportWidth
+            visualQualityViewportWidth: resolvedVisualQualityViewportWidth,
+            visualQualityViewportHeight: resolvedVisualQualityViewportHeight,
+            visualQualityDeviceScaleFactor: resolvedVisualQualityDeviceScaleFactor
           }
         : {})
     };
