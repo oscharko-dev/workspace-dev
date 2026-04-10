@@ -27,7 +27,7 @@ import {
   saveVisualBenchmarkHistory,
 } from "./visual-benchmark-history.js";
 import {
-  executeVisualBenchmarkFixture,
+  executeVisualBenchmarkFixtureLegacy,
   type VisualBenchmarkExecutionOptions,
   type VisualBenchmarkFixtureExecutionArtifacts,
 } from "./visual-benchmark.execution.js";
@@ -156,20 +156,35 @@ const sortScores = (
   });
 };
 
-const padRight = (value: string, width: number): string => value + " ".repeat(Math.max(0, width - value.length));
+const padRight = (value: string, width: number): string =>
+  value + " ".repeat(Math.max(0, width - value.length));
 
-const padLeft = (value: string, width: number): string => " ".repeat(Math.max(0, width - value.length)) + value;
+const padLeft = (value: string, width: number): string =>
+  " ".repeat(Math.max(0, width - value.length)) + value;
 
 const formatDeltaCell = (delta: number | null, indicator: string): string => {
   if (delta === null) {
     return "\u2014 \u2796";
   }
   const sign = delta > 0 ? "+" : "";
-  const emoji = indicator === "improved" ? " \u2705" : indicator === "degraded" ? " \u26A0\uFE0F" : indicator === "new" ? " \uD83C\uDD95" : " \u2796";
+  const emoji =
+    indicator === "improved"
+      ? " \u2705"
+      : indicator === "degraded"
+        ? " \u26A0\uFE0F"
+        : indicator === "new"
+          ? " \uD83C\uDD95"
+          : " \u2796";
   return `${sign}${String(delta)}${emoji}`;
 };
 
-const hr = (left: string, mid: string, right: string, fill: string, colWidths: number[]): string => {
+const hr = (
+  left: string,
+  mid: string,
+  right: string,
+  fill: string,
+  colWidths: number[],
+): string => {
   return `${left}${colWidths.map((w) => fill.repeat(w + 2)).join(mid)}${right}`;
 };
 
@@ -322,8 +337,10 @@ export const updateVisualBaselines = async (
   const log = options?.log ?? defaultLog;
   const executeFixture =
     options?.executeFixture ??
-    (async (fixtureId: string, fixtureOptions?: VisualBenchmarkExecutionOptions) =>
-      executeVisualBenchmarkFixture(fixtureId, fixtureOptions));
+    (async (
+      fixtureId: string,
+      fixtureOptions?: VisualBenchmarkExecutionOptions,
+    ) => executeVisualBenchmarkFixtureLegacy(fixtureId, fixtureOptions));
   const regressionConfig = await resolveRegressionConfig(options);
   const runAt = (options?.now ?? (() => new Date()))().toISOString();
 
@@ -345,20 +362,42 @@ export const updateVisualBaselines = async (
   for (const fixtureId of fixtureIds) {
     log(`Running benchmark for '${fixtureId}'...`);
     const result = await executeFixture(fixtureId, options);
-    const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
-    await writeVisualBenchmarkReference(fixtureId, result.screenshotBuffer, options);
-    await updateFixtureMetadata(fixtureId, metadata, runAt, result.viewport, options);
-    const artifact = await buildArtifactEntry(fixtureId, result, runAt, options);
+    const metadata = await loadVisualBenchmarkFixtureMetadata(
+      fixtureId,
+      options,
+    );
+    await writeVisualBenchmarkReference(
+      fixtureId,
+      result.screenshotBuffer,
+      options,
+    );
+    await updateFixtureMetadata(
+      fixtureId,
+      metadata,
+      runAt,
+      result.viewport,
+      options,
+    );
+    const artifact = await buildArtifactEntry(
+      fixtureId,
+      result,
+      runAt,
+      options,
+    );
 
     scores.push(createScoreEntry(fixtureId, result.score, metadata));
     artifacts.push(artifact);
     log(`  Updated reference and baseline score: ${result.score}`);
   }
 
-  const mergedLastRunScores = mergeScores(previousLastRun?.scores ?? [], scores);
-  const mergedBaselineScores = options?.fixtureId !== undefined
-    ? mergeScores(previousBaseline?.scores ?? [], scores)
-    : scores;
+  const mergedLastRunScores = mergeScores(
+    previousLastRun?.scores ?? [],
+    scores,
+  );
+  const mergedBaselineScores =
+    options?.fixtureId !== undefined
+      ? mergeScores(previousBaseline?.scores ?? [], scores)
+      : scores;
 
   await saveVisualBenchmarkLastRun(mergedLastRunScores, options, runAt);
   await saveVisualBenchmarkBaselineScores(mergedBaselineScores, options);
@@ -394,20 +433,38 @@ export const approveVisualBaseline = async (
   const regressionConfig = await resolveRegressionConfig(options);
   const artifact = await loadVisualBenchmarkLastRunArtifact(fixtureId, options);
   if (artifact === null) {
-    throw new Error(`No last-run artifact found for '${fixtureId}'. Run 'pnpm visual:baseline update --fixture ${fixtureId}' or 'pnpm benchmark:visual' first.`);
+    throw new Error(
+      `No last-run artifact found for '${fixtureId}'. Run 'pnpm visual:baseline update --fixture ${fixtureId}' or 'pnpm benchmark:visual' first.`,
+    );
   }
 
-  const artifactPaths = resolveVisualBenchmarkLastRunArtifactPaths(fixtureId, options);
+  const artifactPaths = resolveVisualBenchmarkLastRunArtifactPaths(
+    fixtureId,
+    options,
+  );
   const actualImageBuffer = await readFile(artifactPaths.actualPngPath);
   const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
   await writeVisualBenchmarkReference(fixtureId, actualImageBuffer, options);
-  await updateFixtureMetadata(fixtureId, metadata, artifact.ranAt, artifact.viewport, options);
-  const approvedScoreEntry = createScoreEntry(fixtureId, artifact.score, metadata);
+  await updateFixtureMetadata(
+    fixtureId,
+    metadata,
+    artifact.ranAt,
+    artifact.viewport,
+    options,
+  );
+  const approvedScoreEntry = createScoreEntry(
+    fixtureId,
+    artifact.score,
+    metadata,
+  );
 
   const previousBaseline = await loadVisualBenchmarkBaseline(options);
   const previousScore = getBaselineMapScore(
     new Map(
-      (previousBaseline?.scores ?? []).map((entry) => [getScoreKey(entry), entry.score]),
+      (previousBaseline?.scores ?? []).map((entry) => [
+        getScoreKey(entry),
+        entry.score,
+      ]),
     ),
     fixtureId,
     approvedScoreEntry.screenId,
@@ -421,7 +478,11 @@ export const approveVisualBaseline = async (
   const mergedLastRunScores = mergeScores(previousLastRun?.scores ?? [], [
     approvedScoreEntry,
   ]);
-  await saveVisualBenchmarkLastRun(mergedLastRunScores, options, artifact.ranAt);
+  await saveVisualBenchmarkLastRun(
+    mergedLastRunScores,
+    options,
+    artifact.ranAt,
+  );
   const existingHistory = await loadVisualBenchmarkHistory(options);
   const updatedHistory = appendVisualBenchmarkHistoryEntry(
     existingHistory,
@@ -445,7 +506,8 @@ export const approveVisualBaseline = async (
     previousScore,
     newScore: artifact.score,
     approvedFrom: artifact.actualImagePath,
-    referencePath: resolveVisualBenchmarkFixturePaths(fixtureId, options).referencePngPath,
+    referencePath: resolveVisualBenchmarkFixturePaths(fixtureId, options)
+      .referencePngPath,
   };
 };
 
@@ -466,8 +528,14 @@ export const computeVisualBaselineStatus = async (
   const entries: VisualBaselineStatusEntry[] = [];
   for (const fixtureId of fixtureIds) {
     const paths = resolveVisualBenchmarkFixturePaths(fixtureId, options);
-    const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
-    const artifact = await loadVisualBenchmarkLastRunArtifact(fixtureId, options);
+    const metadata = await loadVisualBenchmarkFixtureMetadata(
+      fixtureId,
+      options,
+    );
+    const artifact = await loadVisualBenchmarkLastRunArtifact(
+      fixtureId,
+      options,
+    );
     const screenId = metadata.source.nodeId;
     const screenName = normalizeOptionalScreenName(metadata.source.nodeName);
     const baselineScore = getBaselineMapScore(baselineMap, fixtureId, screenId);
@@ -503,7 +571,9 @@ export const computeVisualBaselineDiff = async (
 ): Promise<VisualBaselineDiffResult> => {
   const lastRun = await loadVisualBenchmarkLastRun(options);
   if (lastRun === null || lastRun.scores.length === 0) {
-    throw new Error("No last run found. Run 'pnpm visual:baseline update' or 'pnpm benchmark:visual' first.");
+    throw new Error(
+      "No last run found. Run 'pnpm visual:baseline update' or 'pnpm benchmark:visual' first.",
+    );
   }
 
   const baseline = await loadVisualBenchmarkBaseline(options);
@@ -517,7 +587,10 @@ export const computeVisualBaselineDiff = async (
 
   const diffs: VisualBaselineDiffEntry[] = [];
   for (const entry of lastRun.scores) {
-    const artifact = await loadVisualBenchmarkLastRunArtifact(entry.fixtureId, options);
+    const artifact = await loadVisualBenchmarkLastRunArtifact(
+      entry.fixtureId,
+      options,
+    );
     const screenId =
       typeof entry.screenId === "string" && entry.screenId.trim().length > 0
         ? entry.screenId.trim()
@@ -528,7 +601,10 @@ export const computeVisualBaselineDiff = async (
       entry.fixtureId,
       screenId,
     );
-    const delta = baselineScore !== null ? Math.round((entry.score - baselineScore) * 100) / 100 : null;
+    const delta =
+      baselineScore !== null
+        ? Math.round((entry.score - baselineScore) * 100) / 100
+        : null;
     const indicator = getDiffIndicator(
       baselineScore,
       entry.score,
@@ -553,7 +629,9 @@ export const computeVisualBaselineDiff = async (
   return { diffs, hasPendingDiffs };
 };
 
-export const formatVisualBaselineStatusTable = (result: VisualBaselineStatusResult): string => {
+export const formatVisualBaselineStatusTable = (
+  result: VisualBaselineStatusResult,
+): string => {
   const cols = [23, 10, 10, 10, 5, 10, 5];
   const lines: string[] = [];
 
@@ -564,12 +642,16 @@ export const formatVisualBaselineStatusTable = (result: VisualBaselineStatusResu
   lines.push(hr("\u251C", "\u253C", "\u2524", "\u2500", cols));
 
   for (const entry of result.entries) {
-    const diffStr = entry.lastRunScore === null
-      ? "\u2014 \u2796"
-      : formatDeltaCell(
-          entry.baselineScore !== null ? Math.round((entry.lastRunScore - entry.baselineScore) * 100) / 100 : null,
-          entry.indicator,
-        );
+    const diffStr =
+      entry.lastRunScore === null
+        ? "\u2014 \u2796"
+        : formatDeltaCell(
+            entry.baselineScore !== null
+              ? Math.round((entry.lastRunScore - entry.baselineScore) * 100) /
+                  100
+              : null,
+            entry.indicator,
+          );
 
     lines.push(
       `\u2502 ${padRight(getEntryDisplayName(entry.fixtureId, entry.screenName), cols[0])} \u2502 ${padLeft(entry.baselineScore !== null ? String(entry.baselineScore) : "\u2014", cols[1])} \u2502 ${padLeft(entry.lastRunScore !== null ? String(entry.lastRunScore) : "\u2014", cols[2])} \u2502 ${padRight(diffStr, cols[3])} \u2502 ${padRight(entry.referencePngExists ? "\u2713" : "\u2717", cols[4])} \u2502 ${padRight(entry.capturedAt !== null ? entry.capturedAt.slice(0, 10) : "\u2014", cols[5])} \u2502 ${padLeft(entry.ageInDays !== null ? String(entry.ageInDays) : "\u2014", cols[6])} \u2502`,
@@ -580,7 +662,9 @@ export const formatVisualBaselineStatusTable = (result: VisualBaselineStatusResu
   return lines.join("\n");
 };
 
-export const formatVisualBaselineDiffTable = (result: VisualBaselineDiffResult): string => {
+export const formatVisualBaselineDiffTable = (
+  result: VisualBaselineDiffResult,
+): string => {
   const cols = [23, 10, 10, 10, 10];
   const lines: string[] = [];
 

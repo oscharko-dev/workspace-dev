@@ -9,7 +9,9 @@ const writeJson = async (filePath: string, value: unknown): Promise<void> => {
 };
 
 test("buildVisualBenchmarkSummary renders markdown and check payload with threshold annotations", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-summary-"));
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-"),
+  );
 
   try {
     const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
@@ -38,8 +40,11 @@ test("buildVisualBenchmarkSummary renders markdown and check payload with thresh
       diffImagePath: "visual-quality/diff.png",
     });
 
-    const { buildVisualBenchmarkSummary } = await import("../scripts/visual-benchmark-summary.mjs");
-    const summary = await buildVisualBenchmarkSummary(path.join(artifactRoot, "last-run.json"));
+    const { buildVisualBenchmarkSummary } =
+      await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(
+      path.join(artifactRoot, "last-run.json"),
+    );
 
     assert.match(summary.markdown, /Overall Average:\*\* 75/);
     assert.match(summary.markdown, /Warned Fixtures:\*\* 1/);
@@ -53,7 +58,9 @@ test("buildVisualBenchmarkSummary renders markdown and check payload with thresh
 });
 
 test("print-visual-benchmark-summary writes check output and degrades gracefully on malformed reports", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-summary-cli-"));
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-cli-"),
+  );
 
   try {
     const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
@@ -105,13 +112,18 @@ test("print-visual-benchmark-summary writes check output and degrades gracefully
       status: "failed",
     });
 
-    const malformedOutputPath = path.join(artifactRoot, "check-output-malformed.json");
+    const malformedOutputPath = path.join(
+      artifactRoot,
+      "check-output-malformed.json",
+    );
     const malformedCommand = `node scripts/print-visual-benchmark-summary.mjs ${JSON.stringify(path.join(artifactRoot, "last-run.json"))} --check-output ${JSON.stringify(malformedOutputPath)}`;
     await execFileAsync("zsh", ["-lc", malformedCommand], {
       cwd: process.cwd(),
     });
 
-    const malformedCheckOutput = JSON.parse(await readFile(malformedOutputPath, "utf8")) as {
+    const malformedCheckOutput = JSON.parse(
+      await readFile(malformedOutputPath, "utf8"),
+    ) as {
       title: string;
       summary: string;
       text: string;
@@ -125,18 +137,86 @@ test("print-visual-benchmark-summary writes check output and degrades gracefully
 });
 
 test("buildVisualBenchmarkSummary returns unavailable payload when last-run artifact is missing", async () => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-summary-missing-"));
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-missing-"),
+  );
 
   try {
     const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
     await mkdir(artifactRoot, { recursive: true });
 
-    const { buildVisualBenchmarkSummary } = await import("../scripts/visual-benchmark-summary.mjs");
-    const summary = await buildVisualBenchmarkSummary(path.join(artifactRoot, "last-run.json"));
+    const { buildVisualBenchmarkSummary } =
+      await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(
+      path.join(artifactRoot, "last-run.json"),
+    );
 
     assert.equal(summary.check.title, "Visual benchmark: unavailable");
     assert.match(summary.markdown, /Status:\*\* unavailable/);
     assert.match(summary.check.text, /Visual benchmark unavailable/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("buildVisualBenchmarkSummary escapes markdown-sensitive fixture names and annotation messages (M2 fix)", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-escape-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureId = "pipe-|evil|-fixture";
+    const fixtureDir = path.join(artifactRoot, "last-run", fixtureId);
+    await mkdir(fixtureDir, { recursive: true });
+    await writeJson(path.join(artifactRoot, "last-run.json"), {
+      version: 1,
+      ranAt: "2026-04-09T20:00:00.000Z",
+      scores: [{ fixtureId, score: 70 }],
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId,
+      score: 70,
+      ranAt: "2026-04-09T20:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+      thresholdResult: {
+        score: 70,
+        verdict: "warn",
+        thresholds: { warn: 80 },
+      },
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 70,
+      diffImagePath: "visual-quality/diff.png",
+    });
+
+    const { buildVisualBenchmarkSummary } =
+      await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(
+      path.join(artifactRoot, "last-run.json"),
+    );
+
+    // Display name is derived from fixtureId — pipes must be escaped in markdown
+    // tables to avoid breaking row structure
+    assert.ok(
+      summary.markdown.includes("Pipe \\|evil\\| Fixture") ||
+        summary.markdown.includes("pipe-\\|evil\\|-fixture"),
+      `expected markdown to contain escaped pipes, got:\n${summary.markdown}`,
+    );
+    // Bare pipes inside a table cell would break the row — assert the escaped
+    // version is present and no raw '| evil |' pattern appears in a cell.
+    assert.doesNotMatch(summary.markdown, /\| Pipe \|evil\| Fixture \|/);
+
+    // Annotation messages referencing the fixture id must also be escaped.
+    for (const annotation of summary.check.annotations) {
+      assert.doesNotMatch(
+        annotation.message,
+        /[^\\]\|evil\|/,
+        "annotation message must not contain unescaped pipes",
+      );
+    }
   } finally {
     await rm(root, { recursive: true, force: true });
   }

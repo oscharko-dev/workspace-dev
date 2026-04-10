@@ -211,6 +211,23 @@ const createBenchmarkFixtureEnvironment = async (
   return { fixtureRoot, artifactRoot, metadata };
 };
 
+const singleScreenRunResult = (
+  fixtureId: string,
+  score: number,
+  screenId: string = simpleFormMetadata.source.nodeId,
+  screenName: string = simpleFormMetadata.source.nodeName,
+) => ({
+  fixtureId,
+  aggregateScore: score,
+  screens: [
+    {
+      screenId,
+      screenName,
+      score,
+    },
+  ],
+});
+
 const createCompletedVisualQualityReport = (overallScore = 87.5) => ({
   status: "completed" as const,
   referenceSource: "frozen_fixture" as const,
@@ -566,7 +583,10 @@ test("listVisualBenchmarkFixtureIds returns all 5 fixture IDs", async () => {
     ids.includes("design-system-showcase"),
     "Expected 'design-system-showcase' fixture.",
   );
-  assert.equal(ids.length, 5, "Expected exactly 5 fixture IDs.");
+  assert.ok(
+    ids.length >= 5,
+    `Expected at least 5 fixture IDs, got ${ids.length}.`,
+  );
 });
 
 test("all 5 fixtures can be loaded (manifest, metadata, figma.json, reference.png)", async () => {
@@ -600,12 +620,22 @@ test("all 5 fixtures can be loaded (manifest, metadata, figma.json, reference.pn
 
 test("computeVisualBenchmarkScores returns a score for each fixture", async () => {
   const scores = await computeVisualBenchmarkScores(undefined, {
-    runFixtureBenchmark: async (fixtureId) => ({
-      fixtureId,
-      score: fixtureId === "simple-form" ? 91 : 90,
-    }),
+    runFixtureBenchmark: async (fixtureId) => {
+      const screenScore = fixtureId === "simple-form" ? 91 : 90;
+      return {
+        fixtureId,
+        aggregateScore: screenScore,
+        screens: [
+          {
+            screenId: fixtureId,
+            screenName: fixtureId,
+            score: screenScore,
+          },
+        ],
+      };
+    },
   });
-  assert.equal(scores.length, 5, "Expected scores for all 5 fixtures.");
+  assert.ok(scores.length >= 5, "Expected scores for at least 5 fixtures.");
   for (const entry of scores) {
     assert.ok(
       typeof entry.fixtureId === "string" && entry.fixtureId.length > 0,
@@ -623,16 +653,46 @@ test("computeVisualBenchmarkScores returns a score for each fixture", async () =
 
 test("computeVisualBenchmarkDeltas with baseline computes correct deltas per fixture and screen", () => {
   const current: VisualBenchmarkScoreEntry[] = [
-    { fixtureId: "fixture-a", screenId: "screen-a", screenName: "Screen A", score: 95 },
-    { fixtureId: "fixture-a", screenId: "screen-b", screenName: "Screen B", score: 80 },
-    { fixtureId: "fixture-c", screenId: "screen-c", screenName: "Screen C", score: 100 },
+    {
+      fixtureId: "fixture-a",
+      screenId: "screen-a",
+      screenName: "Screen A",
+      score: 95,
+    },
+    {
+      fixtureId: "fixture-a",
+      screenId: "screen-b",
+      screenName: "Screen B",
+      score: 80,
+    },
+    {
+      fixtureId: "fixture-c",
+      screenId: "screen-c",
+      screenName: "Screen C",
+      score: 100,
+    },
   ];
   const baseline: VisualBenchmarkBaseline = {
     version: 3,
     scores: [
-      { fixtureId: "fixture-a", screenId: "screen-a", screenName: "Screen A", score: 90 },
-      { fixtureId: "fixture-a", screenId: "screen-b", screenName: "Screen B", score: 85 },
-      { fixtureId: "fixture-c", screenId: "screen-c", screenName: "Screen C", score: 100 },
+      {
+        fixtureId: "fixture-a",
+        screenId: "screen-a",
+        screenName: "Screen A",
+        score: 90,
+      },
+      {
+        fixtureId: "fixture-a",
+        screenId: "screen-b",
+        screenName: "Screen B",
+        score: 85,
+      },
+      {
+        fixtureId: "fixture-c",
+        screenId: "screen-c",
+        screenName: "Screen C",
+        score: 100,
+      },
     ],
   };
   const result = computeVisualBenchmarkDeltas(current, baseline);
@@ -669,7 +729,12 @@ test("computeVisualBenchmarkDeltas with baseline computes correct deltas per fix
 
 test("computeVisualBenchmarkDeltas with null baseline returns null deltas", () => {
   const current: VisualBenchmarkScoreEntry[] = [
-    { fixtureId: "fixture-a", screenId: "screen-a", screenName: "Screen A", score: 88 },
+    {
+      fixtureId: "fixture-a",
+      screenId: "screen-a",
+      screenName: "Screen A",
+      score: 88,
+    },
   ];
   const result = computeVisualBenchmarkDeltas(current, null);
   assert.equal(result.deltas.length, 1);
@@ -966,11 +1031,18 @@ test("runVisualBenchmark applies configured weights to execution results and per
       {
         executeFixture: async (fixtureId) => ({
           fixtureId,
-          score: 87.5,
-          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
-          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
-          report: createCompletedVisualQualityReport(),
-          viewport: { width: 1280, height: 720 },
+          aggregateScore: 87.5,
+          screens: [
+            {
+              screenId: simpleFormMetadata.source.nodeId,
+              screenName: simpleFormMetadata.source.nodeName,
+              score: 87.5,
+              screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+              diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+              report: createCompletedVisualQualityReport(),
+              viewport: { width: 1280, height: 720 },
+            },
+          ],
         }),
       },
     );
@@ -1029,11 +1101,18 @@ test("runVisualBenchmark applies screen-level thresholds using the fixture nodeI
       {
         executeFixture: async (fixtureId) => ({
           fixtureId,
-          score: 50,
-          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
-          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
-          report: null,
-          viewport: { width: 1280, height: 720 },
+          aggregateScore: 50,
+          screens: [
+            {
+              screenId: "2:2222",
+              screenName: "Fixture Screen",
+              score: 50,
+              screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+              diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+              report: null,
+              viewport: { width: 1280, height: 720 },
+            },
+          ],
         }),
       },
     );
@@ -1078,11 +1157,18 @@ test("runVisualBenchmark applies screen-level thresholds using the fixture nodeN
       {
         executeFixture: async (fixtureId) => ({
           fixtureId,
-          score: 44,
-          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
-          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
-          report: null,
-          viewport: { width: 1280, height: 720 },
+          aggregateScore: 44,
+          screens: [
+            {
+              screenId: "2:3333",
+              screenName: "Marketing Page",
+              score: 44,
+              screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+              diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+              report: null,
+              viewport: { width: 1280, height: 720 },
+            },
+          ],
         }),
       },
     );
@@ -1264,11 +1350,18 @@ test("runVisualBenchmark stores warn-only threshold results in the last-run arti
       {
         executeFixture: async (fixtureId) => ({
           fixtureId,
-          score: 75,
-          screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
-          diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
-          report: createCompletedVisualQualityReport(75),
-          viewport: { width: 1280, height: 720 },
+          aggregateScore: 75,
+          screens: [
+            {
+              screenId: simpleFormMetadata.source.nodeId,
+              screenName: simpleFormMetadata.source.nodeName,
+              score: 75,
+              screenshotBuffer: createTestPngBuffer(8, 8, [200, 10, 10, 255]),
+              diffBuffer: createTestPngBuffer(8, 8, [10, 200, 10, 255]),
+              report: createCompletedVisualQualityReport(75),
+              viewport: { width: 1280, height: 720 },
+            },
+          ],
         }),
       },
     );
@@ -1362,12 +1455,16 @@ test("runVisualBenchmark attaches trendSummaries matching deltas", async () => {
     );
 
     const result = await runVisualBenchmark(env, {
-      runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 87 }),
+      runFixtureBenchmark: async (fixtureId) =>
+        singleScreenRunResult(fixtureId, 87),
     });
 
     assert.equal(result.trendSummaries.length, 1);
     assert.equal(result.trendSummaries[0]?.fixtureId, "simple-form");
-    assert.equal(result.trendSummaries[0]?.screenId, simpleFormMetadata.source.nodeId);
+    assert.equal(
+      result.trendSummaries[0]?.screenId,
+      simpleFormMetadata.source.nodeId,
+    );
     assert.equal(
       result.trendSummaries[0]?.screenName,
       simpleFormMetadata.source.nodeName,
@@ -1415,7 +1512,8 @@ test("runVisualBenchmark emits ALERT_VISUAL_QUALITY_DROP when drop exceeds confi
         },
       },
       {
-        runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 80 }),
+        runFixtureBenchmark: async (fixtureId) =>
+          singleScreenRunResult(fixtureId, 80),
       },
     );
 
@@ -1467,7 +1565,8 @@ test("runVisualBenchmark does not emit alert when drop is within neutralToleranc
         },
       },
       {
-        runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 88 }),
+        runFixtureBenchmark: async (fixtureId) =>
+          singleScreenRunResult(fixtureId, 88),
       },
     );
 
@@ -1488,7 +1587,8 @@ test("runVisualBenchmark appends history entry when --update-baseline is passed"
         updateBaseline: true,
       },
       {
-        runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 92 }),
+        runFixtureBenchmark: async (fixtureId) =>
+          singleScreenRunResult(fixtureId, 92),
       },
     );
 
@@ -1520,12 +1620,16 @@ test("runVisualBenchmark appends history entry on ordinary benchmark runs", asyn
   const env = await createBenchmarkFixtureEnvironment();
   try {
     await runVisualBenchmark(env, {
-      runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 92 }),
+      runFixtureBenchmark: async (fixtureId) =>
+        singleScreenRunResult(fixtureId, 92),
     });
 
     const historyModule = await import("./visual-benchmark-history.js");
     const history = await historyModule.loadVisualBenchmarkHistory(env);
-    assert.ok(history !== null, "history file must be created for ordinary runs");
+    assert.ok(
+      history !== null,
+      "history file must be created for ordinary runs",
+    );
     assert.equal(history.entries.length, 1);
     assert.equal(history.entries[0]?.scores[0]?.fixtureId, "simple-form");
     assert.equal(
@@ -1598,7 +1702,8 @@ test("runVisualBenchmark honours historySize when appending history from ordinar
         },
       },
       {
-        runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 80 }),
+        runFixtureBenchmark: async (fixtureId) =>
+          singleScreenRunResult(fixtureId, 80),
       },
     );
 
@@ -1649,7 +1754,8 @@ test("runVisualBenchmark uses resolved regression config from quality config", a
         },
       },
       {
-        runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 86 }),
+        runFixtureBenchmark: async (fixtureId) =>
+          singleScreenRunResult(fixtureId, 86),
       },
     );
 
@@ -1685,7 +1791,8 @@ test("runVisualBenchmark with default config uses 5% maxScoreDropPercent and 1-p
 
     // Drop of 10% with no regression config -> defaults apply -> alert emitted
     const result = await runVisualBenchmark(env, {
-      runFixtureBenchmark: async (fixtureId) => ({ fixtureId, score: 90 }),
+      runFixtureBenchmark: async (fixtureId) =>
+        singleScreenRunResult(fixtureId, 90),
     });
 
     assert.equal(result.alerts.length, 1);
@@ -1705,4 +1812,698 @@ test("committed integration/fixtures/visual-benchmark/history.json parses as val
   );
   assert.equal(committed.version, 2);
   assert.ok(Array.isArray(committed.entries));
+});
+
+// ---------------------------------------------------------------------------
+// Issue #837 — Multi-Screen Visual Comparison
+// ---------------------------------------------------------------------------
+
+test("committed integration/fixtures/visual-benchmark/baseline.json is unchanged v3 with 5 entries", async () => {
+  // Byte-identity invariant: Issue #837 must NOT version-bump or edit committed baseline.
+  const baseline = await loadVisualBenchmarkBaseline();
+  assert.ok(baseline !== null, "baseline.json should be committed");
+  assert.equal(baseline.version, 3);
+  assert.equal(baseline.scores.length, 5);
+  const fixtureIds = baseline.scores.map((entry) => entry.fixtureId);
+  assert.ok(fixtureIds.includes("simple-form"));
+  assert.ok(fixtureIds.includes("complex-dashboard"));
+  assert.ok(fixtureIds.includes("data-table"));
+  assert.ok(fixtureIds.includes("navigation-sidebar"));
+  assert.ok(fixtureIds.includes("design-system-showcase"));
+});
+
+test("runVisualBenchmark processes a 2-screen synthetic v2 fixture with internal fan-out", async () => {
+  const { computeFixtureAggregate } =
+    await import("./visual-benchmark-runner.js");
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "multi-screen-fixture",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:10001",
+      nodeName: "Dashboard Home",
+    },
+  });
+  try {
+    // Upgrade the fixture metadata to v2 with two screens
+    await writeVisualBenchmarkFixtureMetadata(
+      "multi-screen-fixture",
+      {
+        version: 2,
+        fixtureId: "multi-screen-fixture",
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+          nodeId: "2:10001",
+          nodeName: "Fixture Root",
+          lastModified: "2026-03-30T20:59:16Z",
+        },
+        viewport: { width: 1280, height: 720 },
+        export: { format: "png", scale: 2 },
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Dashboard Home",
+            nodeId: "2:10001",
+            viewport: { width: 1280, height: 720 },
+          },
+          {
+            screenId: "2:10002",
+            screenName: "Settings",
+            nodeId: "2:10002",
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      },
+      { fixtureRoot: env.fixtureRoot },
+    );
+
+    const result = await runVisualBenchmark(env, {
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 85,
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Dashboard Home",
+            score: 90,
+            screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+            report: createCompletedVisualQualityReport(90),
+            viewport: { width: 1280, height: 720 },
+          },
+          {
+            screenId: "2:10002",
+            screenName: "Settings",
+            score: 80,
+            screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+            report: createCompletedVisualQualityReport(80),
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      }),
+    });
+
+    // Two deltas one per screen
+    const fixtureDeltas = result.deltas.filter(
+      (delta) => delta.fixtureId === "multi-screen-fixture",
+    );
+    assert.equal(fixtureDeltas.length, 2);
+    assert.ok(
+      fixtureDeltas.some(
+        (delta) => delta.screenId === "2:10001" && delta.current === 90,
+      ),
+    );
+    assert.ok(
+      fixtureDeltas.some(
+        (delta) => delta.screenId === "2:10002" && delta.current === 80,
+      ),
+    );
+    // Aggregate mean
+    assert.equal(
+      computeFixtureAggregate(
+        fixtureDeltas.map((delta) => ({ score: delta.current })),
+      ),
+      85,
+    );
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("computeFixtureAggregate computes arithmetic mean of screen scores", async () => {
+  const { computeFixtureAggregate } =
+    await import("./visual-benchmark-runner.js");
+  assert.equal(computeFixtureAggregate([{ score: 90 }, { score: 80 }]), 85);
+  assert.equal(
+    computeFixtureAggregate([{ score: 100 }, { score: 50 }, { score: 75 }]),
+    75,
+  );
+  assert.equal(computeFixtureAggregate([{ score: 88 }]), 88);
+});
+
+test("computeFixtureAggregate throws when given an empty array", async () => {
+  const { computeFixtureAggregate } =
+    await import("./visual-benchmark-runner.js");
+  assert.throws(() => computeFixtureAggregate([]), /empty|at least one/i);
+});
+
+test("computeVisualBenchmarkDeltas uses composite key so two screens with same fixtureId do not collide", () => {
+  const current: VisualBenchmarkScoreEntry[] = [
+    {
+      fixtureId: "multi",
+      screenId: "2:10001",
+      screenName: "Home",
+      score: 90,
+    },
+    {
+      fixtureId: "multi",
+      screenId: "2:10002",
+      screenName: "Settings",
+      score: 70,
+    },
+  ];
+  const baseline: VisualBenchmarkBaseline = {
+    version: 3,
+    scores: [
+      {
+        fixtureId: "multi",
+        screenId: "2:10001",
+        screenName: "Home",
+        score: 85,
+      },
+      {
+        fixtureId: "multi",
+        screenId: "2:10002",
+        screenName: "Settings",
+        score: 75,
+      },
+    ],
+  };
+  const result = computeVisualBenchmarkDeltas(current, baseline);
+  assert.equal(result.deltas.length, 2);
+  const home = result.deltas.find((delta) => delta.screenId === "2:10001");
+  const settings = result.deltas.find((delta) => delta.screenId === "2:10002");
+  assert.ok(home);
+  assert.ok(settings);
+  assert.equal(home.baseline, 85);
+  assert.equal(home.current, 90);
+  assert.equal(home.delta, 5);
+  assert.equal(settings.baseline, 75);
+  assert.equal(settings.current, 70);
+  assert.equal(settings.delta, -5);
+});
+
+test("runVisualBenchmark artifact save uses composite key and does not collide on multi-screen fixtures", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "artifact-multi",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:10001",
+      nodeName: "Home",
+    },
+  });
+  try {
+    await writeVisualBenchmarkFixtureMetadata(
+      "artifact-multi",
+      {
+        version: 2,
+        fixtureId: "artifact-multi",
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+          nodeId: "2:10001",
+          nodeName: "Fixture Root",
+          lastModified: "2026-03-30T20:59:16Z",
+        },
+        viewport: { width: 1280, height: 720 },
+        export: { format: "png", scale: 2 },
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            nodeId: "2:10001",
+            viewport: { width: 1280, height: 720 },
+          },
+          {
+            screenId: "2:10002",
+            screenName: "Settings",
+            nodeId: "2:10002",
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      },
+      { fixtureRoot: env.fixtureRoot },
+    );
+
+    await runVisualBenchmark(
+      {
+        ...env,
+        qualityConfig: {
+          thresholds: { warn: 95 },
+        },
+      },
+      {
+        executeFixture: async (fixtureId) => ({
+          fixtureId,
+          aggregateScore: 50,
+          screens: [
+            {
+              screenId: "2:10001",
+              screenName: "Home",
+              score: 50,
+              screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+              diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+              report: createCompletedVisualQualityReport(50),
+              viewport: { width: 1280, height: 720 },
+            },
+            {
+              screenId: "2:10002",
+              screenName: "Settings",
+              score: 50,
+              screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+              diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+              report: createCompletedVisualQualityReport(50),
+              viewport: { width: 1280, height: 720 },
+            },
+          ],
+        }),
+      },
+    );
+
+    // Each screen's artifact manifest should exist separately with its own thresholdResult populated
+    const firstArtifact = await loadVisualBenchmarkLastRunArtifact(
+      "artifact-multi",
+      env,
+    );
+    assert.ok(
+      firstArtifact,
+      "multi-screen fixture should have a loadable artifact",
+    );
+    // Key point: threshold result must NOT be undefined — that's the H4 collision manifesting
+    assert.ok(
+      firstArtifact.thresholdResult !== undefined,
+      "multi-screen fixture artifact must have its thresholdResult populated (H4 composite key fix)",
+    );
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark emits ALERT_VISUAL_QUALITY_MISSING_SCREEN when metadata screens exceed baseline screens", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "missing-screen",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:10001",
+      nodeName: "Home",
+    },
+  });
+  try {
+    await writeVisualBenchmarkFixtureMetadata(
+      "missing-screen",
+      {
+        version: 2,
+        fixtureId: "missing-screen",
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+          nodeId: "2:10001",
+          nodeName: "Fixture Root",
+          lastModified: "2026-03-30T20:59:16Z",
+        },
+        viewport: { width: 1280, height: 720 },
+        export: { format: "png", scale: 2 },
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            nodeId: "2:10001",
+            viewport: { width: 1280, height: 720 },
+          },
+          {
+            screenId: "2:10002",
+            screenName: "Settings",
+            nodeId: "2:10002",
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      },
+      { fixtureRoot: env.fixtureRoot },
+    );
+
+    // Baseline only has the first screen — second screen is "missing" from baseline
+    await saveVisualBenchmarkBaseline(
+      {
+        deltas: [
+          {
+            fixtureId: "missing-screen",
+            screenId: "2:10001",
+            screenName: "Home",
+            baseline: 90,
+            current: 90,
+            delta: 0,
+            indicator: "neutral",
+          },
+        ],
+        overallBaseline: 90,
+        overallCurrent: 90,
+        overallDelta: 0,
+        alerts: [],
+        trendSummaries: [],
+      },
+      env,
+    );
+
+    const result = await runVisualBenchmark(env, {
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 88,
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            score: 90,
+            screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+            report: createCompletedVisualQualityReport(90),
+            viewport: { width: 1280, height: 720 },
+          },
+          {
+            screenId: "2:10002",
+            screenName: "Settings",
+            score: 86,
+            screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+            report: createCompletedVisualQualityReport(86),
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      }),
+    });
+
+    const missing = result.alerts.find(
+      (alert) => alert.code === "ALERT_VISUAL_QUALITY_MISSING_SCREEN",
+    );
+    assert.ok(missing, "missing-screen alert should be emitted");
+    assert.equal(missing.severity, "warn");
+    assert.ok(missing.message.includes("missing-screen"));
+    assert.ok(missing.message.includes("2:10002"));
+    assert.equal(missing.value, 1);
+    assert.equal(missing.threshold, 0);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark emits ALERT_VISUAL_QUALITY_ORPHAN_SCREEN_BASELINE when baseline has a screen metadata does not", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "orphan-screen",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:10001",
+      nodeName: "Home",
+    },
+  });
+  try {
+    await writeVisualBenchmarkFixtureMetadata(
+      "orphan-screen",
+      {
+        version: 2,
+        fixtureId: "orphan-screen",
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+          nodeId: "2:10001",
+          nodeName: "Fixture Root",
+          lastModified: "2026-03-30T20:59:16Z",
+        },
+        viewport: { width: 1280, height: 720 },
+        export: { format: "png", scale: 2 },
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            nodeId: "2:10001",
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      },
+      { fixtureRoot: env.fixtureRoot },
+    );
+
+    // Baseline has an extra screen "2:99999" not declared in metadata
+    await saveVisualBenchmarkBaselineScores(
+      [
+        {
+          fixtureId: "orphan-screen",
+          screenId: "2:10001",
+          screenName: "Home",
+          score: 90,
+        },
+        {
+          fixtureId: "orphan-screen",
+          screenId: "2:99999",
+          screenName: "Ghost",
+          score: 80,
+        },
+      ],
+      env,
+    );
+
+    const result = await runVisualBenchmark(env, {
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 90,
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            score: 90,
+            screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+            report: createCompletedVisualQualityReport(90),
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      }),
+    });
+
+    const orphan = result.alerts.find(
+      (alert) => alert.code === "ALERT_VISUAL_QUALITY_ORPHAN_SCREEN_BASELINE",
+    );
+    assert.ok(orphan, "orphan-baseline-screen alert should be emitted");
+    assert.equal(orphan.severity, "warn");
+    assert.ok(orphan.message.includes("orphan-screen"));
+    assert.ok(orphan.message.includes("2:99999"));
+    assert.equal(orphan.value, 1);
+    assert.equal(orphan.threshold, 0);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark emits ALERT_VISUAL_QUALITY_STALE_SCREEN_BASELINE when baseline captured date is older than metadata capturedAt", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "stale-screen",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:10001",
+      nodeName: "Home",
+    },
+  });
+  try {
+    // Upgrade metadata with capturedAt that is newer than baseline's updatedAt
+    await writeVisualBenchmarkFixtureMetadata(
+      "stale-screen",
+      {
+        version: 2,
+        fixtureId: "stale-screen",
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+          nodeId: "2:10001",
+          nodeName: "Fixture Root",
+          lastModified: "2026-04-09T00:00:00.000Z",
+        },
+        viewport: { width: 1280, height: 720 },
+        export: { format: "png", scale: 2 },
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            nodeId: "2:10001",
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      },
+      { fixtureRoot: env.fixtureRoot },
+    );
+
+    // Write baseline manually with an old updatedAt marker older than metadata.capturedAt.
+    // Phase 1 baseline v3 schema does not track per-screen updatedAt, so we use the
+    // file mtime. Write the file first, then rewind mtime via utimes.
+    const { utimes } = await import("node:fs/promises");
+    await saveVisualBenchmarkBaselineScores(
+      [
+        {
+          fixtureId: "stale-screen",
+          screenId: "2:10001",
+          screenName: "Home",
+          score: 90,
+        },
+      ],
+      env,
+    );
+    const staleTime = new Date("2026-01-01T00:00:00.000Z");
+    await utimes(
+      path.join(env.fixtureRoot, "baseline.json"),
+      staleTime,
+      staleTime,
+    );
+
+    const result = await runVisualBenchmark(env, {
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 90,
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home",
+            score: 90,
+            screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+            report: createCompletedVisualQualityReport(90),
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      }),
+    });
+
+    const stale = result.alerts.find(
+      (alert) => alert.code === "ALERT_VISUAL_QUALITY_STALE_SCREEN_BASELINE",
+    );
+    assert.ok(stale, "stale-baseline alert should be emitted");
+    assert.equal(stale.severity, "warn");
+    assert.ok(stale.message.includes("stale-screen"));
+    assert.equal(stale.value, 1);
+    assert.equal(stale.threshold, 0);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark single-screen fixture emits byte-identical last-run.json under v1 and v2 metadata", async () => {
+  const createEnv = async (
+    metadataVersion: 1 | 2,
+  ): Promise<{
+    env: Awaited<ReturnType<typeof createBenchmarkFixtureEnvironment>>;
+    lastRunJson: string;
+  }> => {
+    const env = await createBenchmarkFixtureEnvironment({
+      fixtureId: "equivalence-fixture",
+      source: {
+        ...simpleFormMetadata.source,
+        nodeId: "2:10001",
+        nodeName: "Home Screen",
+      },
+    });
+
+    if (metadataVersion === 2) {
+      await writeVisualBenchmarkFixtureMetadata(
+        "equivalence-fixture",
+        {
+          version: 2,
+          fixtureId: "equivalence-fixture",
+          capturedAt: "2026-04-09T00:00:00.000Z",
+          source: {
+            fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+            nodeId: "2:10001",
+            nodeName: "Home Screen",
+            lastModified: "2026-03-30T20:59:16Z",
+          },
+          viewport: { width: 1336, height: 1578 },
+          export: { format: "png", scale: 2 },
+          screens: [
+            {
+              screenId: "2:10001",
+              screenName: "Home Screen",
+              nodeId: "2:10001",
+              viewport: { width: 1336, height: 1578 },
+            },
+          ],
+        },
+        { fixtureRoot: env.fixtureRoot },
+      );
+    }
+
+    await runVisualBenchmark(env, {
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 92,
+        screens: [
+          {
+            screenId: "2:10001",
+            screenName: "Home Screen",
+            score: 92,
+            screenshotBuffer: createTestPngBuffer(4, 4, [100, 100, 100, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [50, 50, 50, 255]),
+            report: createCompletedVisualQualityReport(92),
+            viewport: { width: 1336, height: 1578 },
+          },
+        ],
+      }),
+    });
+
+    const lastRun = JSON.parse(
+      await readFile(path.join(env.artifactRoot, "last-run.json"), "utf8"),
+    ) as { scores: VisualBenchmarkScoreEntry[] };
+    // Normalize ranAt which varies per run
+    return {
+      env,
+      lastRunJson: JSON.stringify(lastRun.scores),
+    };
+  };
+
+  const v1 = await createEnv(1);
+  const v2 = await createEnv(2);
+  try {
+    assert.equal(
+      v1.lastRunJson,
+      v2.lastRunJson,
+      "single-screen v1 and v2 metadata must produce byte-identical score lists",
+    );
+  } finally {
+    await rm(path.dirname(v1.env.fixtureRoot), {
+      recursive: true,
+      force: true,
+    });
+    await rm(path.dirname(v2.env.fixtureRoot), {
+      recursive: true,
+      force: true,
+    });
+  }
+});
+
+test("fetchWithRetry does not retry 4xx responses (M3 fix)", async () => {
+  const { fetchVisualBenchmarkNodeSnapshot } =
+    await import("./visual-benchmark.update.js");
+  let attempts = 0;
+  await assert.rejects(async () => {
+    await fetchVisualBenchmarkNodeSnapshot(simpleFormMetadata, "bad-token", {
+      fetchImpl: async () => {
+        attempts += 1;
+        return new Response("Forbidden", {
+          status: 403,
+          statusText: "Forbidden",
+        });
+      },
+    });
+  }, /403|Forbidden|Figma API/i);
+  assert.equal(attempts, 1, "4xx must not be retried");
+});
+
+test("fetchWithRetry retries 5xx responses and throws a defined error on exhaustion (M3 fix)", async () => {
+  const { fetchVisualBenchmarkNodeSnapshot } =
+    await import("./visual-benchmark.update.js");
+  let attempts = 0;
+  await assert.rejects(
+    async () => {
+      await fetchVisualBenchmarkNodeSnapshot(simpleFormMetadata, "good-token", {
+        fetchImpl: async () => {
+          attempts += 1;
+          return new Response("Server Error", {
+            status: 503,
+            statusText: "Service Unavailable",
+          });
+        },
+      });
+    },
+    (error: unknown) => error instanceof Error,
+    "final throw must be a defined Error (not undefined)",
+  );
+  assert.ok(
+    attempts >= 2,
+    `5xx must retry at least once, got ${attempts} attempts`,
+  );
 });

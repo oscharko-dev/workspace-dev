@@ -7,6 +7,34 @@ const toDisplayName = (fixtureId) =>
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(" ");
 
+const getCompositeKey = (fixtureId, screenId) => {
+  const normalizedScreenId =
+    typeof screenId === "string" && screenId.trim().length > 0
+      ? screenId.trim()
+      : fixtureId;
+  return `${fixtureId}::${normalizedScreenId}`;
+};
+
+// Mirrors integration/visual-benchmark.helpers.ts:toScreenIdToken — replaces
+// only `:` with `_`. Kept in sync so pr-comment.mjs can reconstruct per-screen
+// artifact paths without importing TypeScript sources.
+const toScreenIdToken = (screenId) => screenId.replace(/:/gu, "_");
+
+// Resolves the on-disk last-run artifact directory for a score entry. Legacy
+// single-screen entries (no screenId) still resolve to `<lastRunDir>/<fixture>`;
+// multi-screen entries resolve to `<lastRunDir>/<fixture>/screens/<token>`.
+// Mirrors resolveVisualBenchmarkLastRunArtifactPaths in the TS runner.
+const getLastRunFixtureDir = (lastRunDir, fixtureId, screenId) => {
+  const fixtureRoot = path.join(lastRunDir, fixtureId);
+  if (typeof screenId !== "string" || screenId.trim().length === 0) {
+    return fixtureRoot;
+  }
+  return path.join(fixtureRoot, "screens", toScreenIdToken(screenId.trim()));
+};
+
+// Comment body soft limit — stay under 60KB of the GitHub 65KB hard limit.
+const MAX_COMMENT_BODY_CHARS = 60_000;
+
 const scoreEmoji = (score) => {
   if (score >= 90) return "\u2705";
   if (score >= 70) return "\u26A0\uFE0F";
@@ -14,7 +42,8 @@ const scoreEmoji = (score) => {
 };
 
 const roundToTwo = (n) => Math.round(n * 100) / 100;
-const isFiniteNumber = (value) => typeof value === "number" && Number.isFinite(value);
+const isFiniteNumber = (value) =>
+  typeof value === "number" && Number.isFinite(value);
 
 const escapeMarkdownCell = (value) =>
   String(value)
@@ -37,7 +66,9 @@ const readJsonFile = async (filePath, label) => {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    throw new Error(`${label} at '${filePath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${label} at '${filePath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 };
 
@@ -46,7 +77,11 @@ const readJsonFileOptional = async (filePath, label) => {
   try {
     raw = await readFile(filePath, "utf8");
   } catch (error) {
-    if (error && typeof error === "object" && /** @type {any} */ (error).code === "ENOENT") {
+    if (
+      error &&
+      typeof error === "object" &&
+      /** @type {any} */ (error).code === "ENOENT"
+    ) {
       return null;
     }
     throw error;
@@ -54,11 +89,14 @@ const readJsonFileOptional = async (filePath, label) => {
   try {
     return JSON.parse(raw);
   } catch (error) {
-    throw new Error(`${label} at '${filePath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `${label} at '${filePath}' is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 };
 
-export const VISUAL_BENCHMARK_PR_COMMENT_MARKER = "<!-- workspace-dev-visual-benchmark -->";
+export const VISUAL_BENCHMARK_PR_COMMENT_MARKER =
+  "<!-- workspace-dev-visual-benchmark -->";
 
 export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   if (typeof reportPath !== "string" || reportPath.trim().length === 0) {
@@ -68,16 +106,27 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   const { baselinePath, artifactUrl } = options ?? {};
 
   const absolutePath = path.resolve(reportPath);
-  const lastRun = await readJsonFile(absolutePath, "Visual benchmark last-run report");
+  const lastRun = await readJsonFile(
+    absolutePath,
+    "Visual benchmark last-run report",
+  );
   if (!Array.isArray(lastRun.scores)) {
-    throw new Error(`Visual benchmark last-run report at '${absolutePath}' must contain a scores array.`);
+    throw new Error(
+      `Visual benchmark last-run report at '${absolutePath}' must contain a scores array.`,
+    );
   }
 
   let baseline = null;
   if (typeof baselinePath === "string" && baselinePath.trim().length > 0) {
-    baseline = await readJsonFileOptional(path.resolve(baselinePath), "Visual benchmark baseline");
+    baseline = await readJsonFileOptional(
+      path.resolve(baselinePath),
+      "Visual benchmark baseline",
+    );
   }
 
+  // H4 fix: baseline entries are composite-keyed (fixtureId + screenId) so
+  // that multi-screen fixtures do not collide. Single-screen v1 fixtures map
+  // to `${fixtureId}::${fixtureId}` via getCompositeKey's fallback.
   const baselineScoreMap = new Map();
   if (baseline !== null && Array.isArray(baseline.scores)) {
     for (const entry of baseline.scores) {
@@ -87,7 +136,8 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
         typeof entry.fixtureId === "string" &&
         isFiniteNumber(entry.score)
       ) {
-        baselineScoreMap.set(entry.fixtureId, entry.score);
+        const key = getCompositeKey(entry.fixtureId, entry.screenId);
+        baselineScoreMap.set(key, entry.score);
       }
     }
   }
@@ -103,14 +153,23 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       typeof entry.fixtureId !== "string" ||
       !isFiniteNumber(entry.score)
     ) {
-      throw new Error(`Visual benchmark last-run report at '${absolutePath}' contains an invalid score entry.`);
+      throw new Error(
+        `Visual benchmark last-run report at '${absolutePath}' contains an invalid score entry.`,
+      );
     }
 
-    const fixtureDir = path.join(lastRunDir, entry.fixtureId);
+    const fixtureDir = getLastRunFixtureDir(
+      lastRunDir,
+      entry.fixtureId,
+      entry.screenId,
+    );
     const manifestPath = path.join(fixtureDir, "manifest.json");
     const reportJsonPath = path.join(fixtureDir, "report.json");
 
-    const manifest = await readJsonFile(manifestPath, `Visual benchmark manifest for '${entry.fixtureId}'`);
+    const manifest = await readJsonFile(
+      manifestPath,
+      `Visual benchmark manifest for '${entry.fixtureId}'`,
+    );
     const viewport = manifest.viewport;
     if (
       viewport === null ||
@@ -118,12 +177,21 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       !isFiniteNumber(viewport.width) ||
       !isFiniteNumber(viewport.height)
     ) {
-      throw new Error(`Visual benchmark manifest for '${entry.fixtureId}' is missing a valid viewport.`);
+      throw new Error(
+        `Visual benchmark manifest for '${entry.fixtureId}' is missing a valid viewport.`,
+      );
     }
 
     let reportDimensions = null;
-    const reportRaw = await readJsonFileOptional(reportJsonPath, `Visual benchmark report for '${entry.fixtureId}'`);
-    if (reportRaw !== null && reportRaw.status === "completed" && Array.isArray(reportRaw.dimensions)) {
+    const reportRaw = await readJsonFileOptional(
+      reportJsonPath,
+      `Visual benchmark report for '${entry.fixtureId}'`,
+    );
+    if (
+      reportRaw !== null &&
+      reportRaw.status === "completed" &&
+      Array.isArray(reportRaw.dimensions)
+    ) {
       const validDimensions = [];
       for (const dim of reportRaw.dimensions) {
         if (
@@ -145,7 +213,10 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       }
     }
 
-    const baselineScore = baselineScoreMap.has(entry.fixtureId) ? baselineScoreMap.get(entry.fixtureId) : null;
+    const compositeKey = getCompositeKey(entry.fixtureId, entry.screenId);
+    const baselineScore = baselineScoreMap.has(compositeKey)
+      ? baselineScoreMap.get(compositeKey)
+      : null;
     let delta = null;
     let indicator = "unavailable";
     if (baselineScore !== null) {
@@ -167,7 +238,8 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       delta,
       indicator,
       thresholdResult:
-        manifest.thresholdResult !== null && typeof manifest.thresholdResult === "object"
+        manifest.thresholdResult !== null &&
+        typeof manifest.thresholdResult === "object"
           ? manifest.thresholdResult
           : null,
       reportDimensions,
@@ -175,19 +247,33 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   }
 
   if (fixtures.length === 0) {
-    throw new Error(`Visual benchmark last-run report at '${absolutePath}' contains no valid score entries.`);
+    throw new Error(
+      `Visual benchmark last-run report at '${absolutePath}' contains no valid score entries.`,
+    );
   }
 
-  const overallAverage = roundToTwo(fixtures.reduce((sum, fixture) => sum + fixture.score, 0) / fixtures.length);
+  const overallAverage = roundToTwo(
+    fixtures.reduce((sum, fixture) => sum + fixture.score, 0) / fixtures.length,
+  );
 
-  const baselineFixtures = fixtures.filter((fixture) => fixture.baselineScore !== null && fixture.delta !== null);
+  const baselineFixtures = fixtures.filter(
+    (fixture) => fixture.baselineScore !== null && fixture.delta !== null,
+  );
   const overallBaselineAvg =
     baselineFixtures.length > 0
-      ? roundToTwo(baselineFixtures.reduce((sum, fixture) => sum + fixture.baselineScore, 0) / baselineFixtures.length)
+      ? roundToTwo(
+          baselineFixtures.reduce(
+            (sum, fixture) => sum + fixture.baselineScore,
+            0,
+          ) / baselineFixtures.length,
+        )
       : null;
   const comparableCurrentAvg =
     baselineFixtures.length > 0
-      ? roundToTwo(baselineFixtures.reduce((sum, fixture) => sum + fixture.score, 0) / baselineFixtures.length)
+      ? roundToTwo(
+          baselineFixtures.reduce((sum, fixture) => sum + fixture.score, 0) /
+            baselineFixtures.length,
+        )
       : null;
 
   const overallDelta =
@@ -199,7 +285,11 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   let overallDeltaText;
   if (overallDelta !== null) {
     const trendArrow =
-      Math.abs(overallDelta) <= 1 ? "\u2192" : overallDelta > 0 ? "\u2191" : "\u2193";
+      Math.abs(overallDelta) <= 1
+        ? "\u2192"
+        : overallDelta > 0
+          ? "\u2191"
+          : "\u2193";
     const sign = overallDelta > 0 ? "+" : "";
     const comparableText =
       baselineFixtures.length === 1
@@ -234,8 +324,12 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   ];
 
   for (const fixture of fixtures) {
-    const baselineText = fixture.baselineScore !== null ? String(fixture.baselineScore) : "\u2014";
-    const deltaText = fixture.delta !== null ? `${fixture.delta > 0 ? "+" : ""}${fixture.delta}` : "\u2014";
+    const baselineText =
+      fixture.baselineScore !== null ? String(fixture.baselineScore) : "\u2014";
+    const deltaText =
+      fixture.delta !== null
+        ? `${fixture.delta > 0 ? "+" : ""}${fixture.delta}`
+        : "\u2014";
     const trend = trendText(fixture.indicator);
     lines.push(
       `| ${escapeMarkdownCell(fixture.displayName)} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${escapeMarkdownCell(baselineText)} | ${escapeMarkdownCell(deltaText)} | ${escapeMarkdownCell(trend)} |`,
@@ -256,7 +350,9 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   }
 
   const fixturesWithDimensions = fixtures.filter(
-    (fixture) => Array.isArray(fixture.reportDimensions) && fixture.reportDimensions.length > 0,
+    (fixture) =>
+      Array.isArray(fixture.reportDimensions) &&
+      fixture.reportDimensions.length > 0,
   );
 
   if (fixturesWithDimensions.length > 0) {
@@ -266,7 +362,9 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
 
     for (const fixture of fixturesWithDimensions) {
       lines.push("");
-      lines.push(`#### ${escapeMarkdownHeading(fixture.displayName)} (score: ${fixture.score})`);
+      lines.push(
+        `#### ${escapeMarkdownHeading(fixture.displayName)} (score: ${fixture.score})`,
+      );
       lines.push("");
       lines.push("| Dimension | Weight | Score |");
       lines.push("|-----------|--------|-------|");
@@ -281,7 +379,9 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     lines.push("</details>");
   }
 
-  const artifactLinkText = artifactUrl ? ` | [Download artifacts](${artifactUrl})` : "";
+  const artifactLinkText = artifactUrl
+    ? ` | [Download artifacts](${artifactUrl})`
+    : "";
   lines.push("");
   lines.push(`_Benchmark ran at ${lastRun.ranAt}${artifactLinkText}_`);
 
