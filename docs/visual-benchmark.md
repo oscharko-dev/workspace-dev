@@ -1,6 +1,7 @@
 # Visual Benchmark
 
 The visual benchmark provides a fixed five-fixture test set for comparing generator output against committed reference screenshots.
+Storage and comparisons are screen-aware: score records are keyed by `fixtureId + screenId`, with optional `screenName` metadata for display and migration. The current committed fixture set still maps one screen to each fixture, so the CLI output continues to read like a five-row fixture benchmark today.
 
 Default benchmark runs are offline:
 
@@ -18,7 +19,7 @@ pnpm benchmark:visual
 
 This command runs the real benchmark runner, not the benchmark test suite.
 
-The output is a comparison table with one row per fixture plus an overall average:
+The output is a comparison table with one row per benchmark screen plus an overall average. In the current fixture set that still means one row per fixture:
 
 ```text
 ┌─────────────────────────┬──────────┬──────────┬────────┐
@@ -37,7 +38,7 @@ The committed visual baseline consists of:
 
 - `reference.png` in each fixture directory
 - `metadata.json` in each fixture directory
-- `integration/fixtures/visual-benchmark/baseline.json` for deterministic score tracking
+- `integration/fixtures/visual-benchmark/baseline.json` for deterministic score tracking at fixture-plus-screen granularity
 
 Use the dedicated baseline CLI for day-to-day maintenance:
 
@@ -57,6 +58,24 @@ pnpm visual:baseline diff
 
 `pnpm visual:baseline diff` summarizes pending diffs from the persisted last-run artifacts without rerunning the benchmark.
 
+`baseline.json` is persisted as schema `version: 3`:
+
+```json
+{
+  "version": 3,
+  "scores": [
+    {
+      "fixtureId": "simple-form",
+      "screenId": "1:65671",
+      "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+      "score": 88
+    }
+  ]
+}
+```
+
+Older baseline files (`version: 1` and `version: 2`) are still accepted on read. They are normalized in memory and rewritten as `version: 3` on the next baseline mutation path.
+
 The legacy compatibility command below still exists and delegates to the same baseline update flow:
 
 ```bash
@@ -69,11 +88,10 @@ pnpm benchmark:visual:update-baseline
 - `degraded`: delta less than `-neutralTolerance`
 - `neutral`: delta within `±neutralTolerance`
 
-The default `neutralTolerance` is `1` point. It is configurable via
-`visual-quality.config.json > regression > neutralTolerance`. This band absorbs
-small rendering variance so deterministic reruns do not oscillate between
-improved and degraded and prevents false-positive regression alerts from
-environmental noise.
+The default `neutralTolerance` is `1` point when the config does not override it.
+It is resolved from
+`integration/fixtures/visual-benchmark/visual-quality.config.json > regression > neutralTolerance`.
+The same setting is used for benchmark delta classification, regression trend direction, and baseline maintenance commands such as `visual:baseline status` and `visual:baseline diff`. This band absorbs small rendering variance so deterministic reruns do not oscillate between improved and degraded and prevents false-positive regression alerts from environmental noise.
 
 ## Historical trend analysis and regression detection
 
@@ -86,6 +104,8 @@ Trend (per fixture):
   complex-dashboard: 82 (↑2 from baseline 80)
   data-table: 91 (→0 from baseline 91)
 ```
+
+Internally those trend comparisons are scoped by `fixtureId + screenId`. The block header still says `Trend (per fixture)` because the committed benchmark set currently contains one screen per fixture.
 
 When a fixture's current score drops more than `maxScoreDropPercent` below its
 committed baseline, the runner emits an `ALERT_VISUAL_QUALITY_DROP` alert:
@@ -120,38 +140,64 @@ Tune regression behavior in `integration/fixtures/visual-benchmark/visual-qualit
   indicators and to the regression detector's "down" classification.
 - `historySize` (default `20`, max `1000`): ring buffer size for
   `integration/fixtures/visual-benchmark/history.json` which tracks the last
-  N accepted baselines.
+  N benchmark runs.
 
 ### History file
 
 `integration/fixtures/visual-benchmark/history.json` is a committed ring buffer
-of the last N accepted benchmark baselines. It is updated only when
-`pnpm benchmark:visual --update-baseline` (or equivalent) is used — ordinary
-read-only benchmark runs never touch it. This keeps the committed history
-focused on deliberately accepted quality snapshots and avoids git noise from
-local runs.
+of the last N benchmark runs. It is updated on every benchmark execution path,
+including ordinary `pnpm benchmark:visual` runs and baseline-maintenance flows
+that persist fresh scores. The file remains bounded by `historySize`, so the
+oldest entry is dropped once the ring buffer limit is exceeded.
+
+History loaders remain backward-compatible with legacy `version: 1` files that
+only stored fixture-level scores. Those files are normalized in memory to the
+current screen-aware model and rewritten as `version: 2` on the next save.
 
 Schema:
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "entries": [
     {
       "runAt": "2026-04-10T00:00:00.000Z",
       "scores": [
-        { "fixtureId": "complex-dashboard", "score": 82 },
-        { "fixtureId": "data-table", "score": 91 },
-        { "fixtureId": "design-system-showcase", "score": 84 },
-        { "fixtureId": "navigation-sidebar", "score": 78 },
-        { "fixtureId": "simple-form", "score": 88 }
+        {
+          "fixtureId": "complex-dashboard",
+          "screenId": "2:10001",
+          "screenName": "Dashboard — KPI Overview, Charts, Activity Feed",
+          "score": 82
+        },
+        {
+          "fixtureId": "data-table",
+          "screenId": "2:10002",
+          "screenName": "Data Table — Sortable Columns, Pagination, Filters",
+          "score": 91
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "screenId": "2:10004",
+          "screenName": "Design System — Buttons, Inputs, Cards, Typography Scale",
+          "score": 84
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "screenId": "2:10003",
+          "screenName": "Navigation Sidebar — Menu Items, Nested Groups, Icons",
+          "score": 78
+        },
+        {
+          "fixtureId": "simple-form",
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+          "score": 88
+        }
       ]
     }
   ]
 }
 ```
-
-When the ring buffer exceeds `historySize`, the oldest entry is dropped.
 
 ## Fixture layout
 

@@ -19,6 +19,8 @@ export type VisualBenchmarkTrendDirection =
 
 export interface VisualBenchmarkTrendSummary {
   fixtureId: string;
+  screenId?: string;
+  screenName?: string;
   current: number;
   baseline: number | null;
   delta: number | null;
@@ -29,6 +31,8 @@ export interface VisualBenchmarkTrendSummary {
 
 export interface VisualBenchmarkScoreCandidate {
   fixtureId: string;
+  screenId?: string;
+  screenName?: string;
   current: number;
   baseline: number | null;
 }
@@ -85,6 +89,8 @@ export const detectVisualBenchmarkRegression = (
     if (entry.baseline === null) {
       summaries.push({
         fixtureId: entry.fixtureId,
+        screenId: entry.screenId,
+        screenName: entry.screenName,
         current: entry.current,
         baseline: null,
         delta: null,
@@ -110,15 +116,19 @@ export const detectVisualBenchmarkRegression = (
         ? "up"
         : "down";
 
+    const rawDropPercent =
+      entry.baseline > 0
+        ? ((entry.baseline - entry.current) / entry.baseline) * 100
+        : null;
     const dropPercent =
       entry.baseline > 0
-        ? roundToTwoDecimals(
-            ((entry.baseline - entry.current) / entry.baseline) * 100,
-          )
+        ? roundToTwoDecimals(rawDropPercent!)
         : null;
 
     summaries.push({
       fixtureId: entry.fixtureId,
+      screenId: entry.screenId,
+      screenName: entry.screenName,
       current: entry.current,
       baseline: entry.baseline,
       delta,
@@ -129,8 +139,8 @@ export const detectVisualBenchmarkRegression = (
 
     if (
       direction === "down" &&
-      dropPercent !== null &&
-      dropPercent > config.maxScoreDropPercent
+      rawDropPercent !== null &&
+      rawDropPercent > config.maxScoreDropPercent
     ) {
       alerts.push({
         code: "ALERT_VISUAL_QUALITY_DROP",

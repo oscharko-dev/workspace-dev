@@ -1,4 +1,145 @@
 {
-  "entries": [],
-  "version": 1
+  "entries": [
+    {
+      "runAt": "2026-04-08T09:15:00.000Z",
+      "scores": [
+        {
+          "fixtureId": "complex-dashboard",
+          "score": 81,
+          "screenId": "2:10001",
+          "screenName": "Dashboard — KPI Overview, Charts, Activity Feed"
+        },
+        {
+          "fixtureId": "data-table",
+          "score": 90,
+          "screenId": "2:10002",
+          "screenName": "Data Table — Sortable Columns, Pagination, Filters"
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "score": 83,
+          "screenId": "2:10004",
+          "screenName": "Design System — Buttons, Inputs, Cards, Typography Scale"
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "score": 77,
+          "screenId": "2:10003",
+          "screenName": "Navigation Sidebar — Menu Items, Nested Groups, Icons"
+        },
+        {
+          "fixtureId": "simple-form",
+          "score": 87,
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
+        }
+      ]
+    },
+    {
+      "runAt": "2026-04-09T16:45:00.000Z",
+      "scores": [
+        {
+          "fixtureId": "complex-dashboard",
+          "score": 83,
+          "screenId": "2:10001",
+          "screenName": "Dashboard — KPI Overview, Charts, Activity Feed"
+        },
+        {
+          "fixtureId": "data-table",
+          "score": 92,
+          "screenId": "2:10002",
+          "screenName": "Data Table — Sortable Columns, Pagination, Filters"
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "score": 85,
+          "screenId": "2:10004",
+          "screenName": "Design System — Buttons, Inputs, Cards, Typography Scale"
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "score": 79,
+          "screenId": "2:10003",
+          "screenName": "Navigation Sidebar — Menu Items, Nested Groups, Icons"
+        },
+        {
+          "fixtureId": "simple-form",
+          "score": 89,
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
+        }
+      ]
+    },
+    {
+      "runAt": "2026-04-10T08:30:00.000Z",
+      "scores": [
+        {
+          "fixtureId": "complex-dashboard",
+          "score": 82,
+          "screenId": "2:10001",
+          "screenName": "Dashboard — KPI Overview, Charts, Activity Feed"
+        },
+        {
+          "fixtureId": "data-table",
+          "score": 91,
+          "screenId": "2:10002",
+          "screenName": "Data Table — Sortable Columns, Pagination, Filters"
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "score": 84,
+          "screenId": "2:10004",
+          "screenName": "Design System — Buttons, Inputs, Cards, Typography Scale"
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "score": 78,
+          "screenId": "2:10003",
+          "screenName": "Navigation Sidebar — Menu Items, Nested Groups, Icons"
+        },
+        {
+          "fixtureId": "simple-form",
+          "score": 88,
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
+        }
+      ]
+    },
+    {
+      "runAt": "2026-04-10T10:24:59.897Z",
+      "scores": [
+        {
+          "fixtureId": "complex-dashboard",
+          "score": 100,
+          "screenId": "2:10001",
+          "screenName": "Dashboard — KPI Overview, Charts, Activity Feed"
+        },
+        {
+          "fixtureId": "data-table",
+          "score": 100,
+          "screenId": "2:10002",
+          "screenName": "Data Table — Sortable Columns, Pagination, Filters"
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "score": 100,
+          "screenId": "2:10004",
+          "screenName": "Design System — Buttons, Inputs, Cards, Typography Scale"
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "score": 100,
+          "screenId": "2:10003",
+          "screenName": "Navigation Sidebar — Menu Items, Nested Groups, Icons"
+        },
+        {
+          "fixtureId": "simple-form",
+          "score": 100,
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
+        }
+      ]
+    }
+  ],
+  "version": 2
 }

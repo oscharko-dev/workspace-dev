@@ -340,6 +340,7 @@ export const runVisualBenchmarkMaintenance = async (
   dependencies?: VisualBenchmarkUpdateDependencies
 ): Promise<void> => {
   const mode = resolveVisualBenchmarkMaintenanceMode(args);
+  const log = dependencies?.log ?? defaultLog;
   if (mode === "update-fixtures") {
     await updateVisualBenchmarkFixtures(dependencies);
     return;

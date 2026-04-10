@@ -30,6 +30,7 @@ pnpm benchmark:visual
 ```
 
 This runs the five-fixture benchmark using frozen fixtures from `integration/fixtures/visual-benchmark/`. No Figma token is required. The output is an ASCII comparison table showing baseline scores, current scores, and deltas for each fixture.
+Internally, benchmark storage and comparisons are keyed by `fixtureId + screenId`; the current committed fixture set still contains one screen per fixture, so the CLI table remains one visible row per fixture today.
 
 ### Interpreting Quality Scores and Diff Images
 
@@ -48,16 +49,25 @@ These commands manage the committed visual baseline end-to-end:
 - `update` reruns the selected fixtures, persists `actual.png` / `diff.png` / `report.json` under `artifacts/visual-benchmark/last-run/<fixture-id>/`, updates committed `reference.png`, refreshes fixture `metadata.json`, and syncs `baseline.json`.
 - `approve` promotes a persisted last-run `actual.png` for one fixture to the committed `reference.png` without rerunning the full suite.
 
-The tracked score baseline lives at `integration/fixtures/visual-benchmark/baseline.json` and now follows a deterministic schema:
+The tracked score baseline lives at `integration/fixtures/visual-benchmark/baseline.json` and now follows a deterministic screen-aware schema:
 
 ```json
 {
-  "version": 2,
+  "version": 3,
   "scores": [
-    { "fixtureId": "simple-form", "score": 88 }
+    {
+      "fixtureId": "simple-form",
+      "screenId": "1:65671",
+      "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+      "score": 88
+    }
   ]
 }
 ```
+
+Legacy baseline schemas remain readable for backward compatibility. The next write normalizes them to `version: 3`.
+
+The committed trend history lives at `integration/fixtures/visual-benchmark/history.json`. It is a bounded ring buffer of all benchmark runs, not only accepted baseline updates. The current schema is `version: 2` and stores the same screen identity fields per score entry.
 
 ### Updating Frozen Fixtures and References
 
@@ -200,9 +210,9 @@ Hotspot categories are assigned by region name: header and footer regions are ca
 
 ### When to Accept vs. Investigate
 
-- **Accept**: score is 90 or above, or the benchmark delta is within the neutral band (plus or minus 1 point from baseline).
-- **Investigate**: score dropped more than 1 point from baseline, or any hotspot is flagged as "high" or "critical".
-- **Benchmark neutral band**: the plus-or-minus 1 neutral band in benchmark deltas absorbs small rendering variance so deterministic reruns do not oscillate between improved and degraded.
+- **Accept**: score is 90 or above, or the benchmark delta is within the configured neutral band from baseline.
+- **Investigate**: score dropped by more than the configured neutral band from baseline, or any hotspot is flagged as "high" or "critical".
+- **Benchmark neutral band**: the neutral band is resolved from `integration/fixtures/visual-benchmark/visual-quality.config.json > regression > neutralTolerance` and defaults to `1` when the config does not override it. The same tolerance is used by benchmark delta reporting, regression trend direction, and baseline maintenance commands.
 
 ## Benchmark Mode
 
@@ -229,9 +239,9 @@ Each fixture directory contains:
 
 | Indicator | Condition | Meaning |
 |-----------|-----------|---------|
-| improved | Delta greater than +1 | Score went up meaningfully |
-| degraded | Delta less than -1 | Score went down meaningfully |
-| neutral | Absolute delta is 1 or less | Within rendering variance |
+| improved | Delta greater than `+neutralTolerance` | Score went up meaningfully |
+| degraded | Delta less than `-neutralTolerance` | Score went down meaningfully |
+| neutral | Absolute delta is `neutralTolerance` or less | Within rendering variance |
 
 ### Command Reference
 
@@ -270,5 +280,6 @@ The visual benchmark runs in CI via `.github/workflows/visual-benchmark.yml`:
 
 1. Run `pnpm benchmark:visual` on each branch.
 2. Compare the ASCII table output or the scores in `baseline.json`.
-3. A delta greater than +1 indicates improvement; a delta less than -1 indicates degradation.
-4. Use `pnpm visual:baseline update` on the branch with the desired output to refresh the committed visual baseline.
+3. Compare rows by fixture-plus-screen identity. With the current committed fixtures that still reads as one row per fixture.
+4. A delta greater than `+neutralTolerance` indicates improvement; a delta less than `-neutralTolerance` indicates degradation. By default `neutralTolerance` is `1`, but the effective value comes from `visual-quality.config.json > regression > neutralTolerance`.
+5. Use `pnpm visual:baseline update` on the branch with the desired output to refresh the committed visual baseline.

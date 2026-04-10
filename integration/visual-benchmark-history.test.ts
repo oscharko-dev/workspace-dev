@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -14,10 +14,20 @@ import {
   type VisualBenchmarkHistory,
   type VisualBenchmarkHistoryEntry,
 } from "./visual-benchmark-history.js";
+import {
+  writeVisualBenchmarkFixtureInputs,
+  writeVisualBenchmarkFixtureManifest,
+  writeVisualBenchmarkFixtureMetadata,
+} from "./visual-benchmark.helpers.js";
 
 const makeEntry = (
   runAt: string,
-  scores: ReadonlyArray<{ fixtureId: string; score: number }>,
+  scores: ReadonlyArray<{
+    fixtureId: string;
+    screenId?: string;
+    screenName?: string;
+    score: number;
+  }>,
 ): VisualBenchmarkHistoryEntry => ({
   runAt,
   scores: scores.map((entry) => ({ ...entry })),
@@ -25,6 +35,74 @@ const makeEntry = (
 
 const createTempRoot = async (): Promise<string> => {
   return mkdtemp(path.join(os.tmpdir(), "visual-benchmark-history-"));
+};
+
+const createTempFixtureRoot = async (
+  fixtureId = "simple-form",
+  screenId = "1:65671",
+  screenName = "Simple Form Screen",
+): Promise<string> => {
+  const fixtureRoot = await createTempRoot();
+  await mkdir(path.join(fixtureRoot, fixtureId), { recursive: true });
+  await writeVisualBenchmarkFixtureManifest(
+    fixtureId,
+    {
+      version: 1,
+      fixtureId,
+      visualQuality: {
+        frozenReferenceImage: "reference.png",
+        frozenReferenceMetadata: "metadata.json",
+      },
+    },
+    { fixtureRoot },
+  );
+  await writeVisualBenchmarkFixtureMetadata(
+    fixtureId,
+    {
+      version: 1,
+      fixtureId,
+      capturedAt: "2026-04-10T00:00:00.000Z",
+      source: {
+        fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+        nodeId: screenId,
+        nodeName: screenName,
+        lastModified: "2026-04-10T00:00:00.000Z",
+      },
+      viewport: {
+        width: 1280,
+        height: 720,
+      },
+      export: {
+        format: "png",
+        scale: 2,
+      },
+    },
+    { fixtureRoot },
+  );
+  await writeVisualBenchmarkFixtureInputs(
+    fixtureId,
+    {
+      name: "Fixture Board",
+      lastModified: "2026-04-10T00:00:00.000Z",
+      nodes: {
+        [screenId]: {
+          document: {
+            id: screenId,
+            name: screenName,
+            type: "FRAME",
+            absoluteBoundingBox: {
+              x: 0,
+              y: 0,
+              width: 1280,
+              height: 720,
+            },
+          },
+        },
+      },
+    },
+    { fixtureRoot },
+  );
+  return fixtureRoot;
 };
 
 // ---------------------------------------------------------------------------
@@ -51,6 +129,36 @@ test("parseVisualBenchmarkHistory accepts valid version 1 object", () => {
   ]);
 });
 
+test("parseVisualBenchmarkHistory accepts valid version 2 object", () => {
+  const parsed = parseVisualBenchmarkHistory(
+    JSON.stringify({
+      version: 2,
+      entries: [
+        {
+          runAt: "2026-04-10T00:00:00.000Z",
+          scores: [
+            {
+              fixtureId: "simple-form",
+              screenId: "1:65671",
+              screenName: "Simple Form Screen",
+              score: 88,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  assert.equal(parsed.version, 2);
+  assert.deepEqual(parsed.entries[0]?.scores, [
+    {
+      fixtureId: "simple-form",
+      screenId: "1:65671",
+      screenName: "Simple Form Screen",
+      score: 88,
+    },
+  ]);
+});
+
 test("parseVisualBenchmarkHistory accepts empty entries array", () => {
   const parsed = parseVisualBenchmarkHistory(
     JSON.stringify({ version: 1, entries: [] }),
@@ -65,8 +173,8 @@ test("parseVisualBenchmarkHistory rejects non-object input", () => {
 test("parseVisualBenchmarkHistory rejects unsupported version", () => {
   assert.throws(
     () =>
-      parseVisualBenchmarkHistory(JSON.stringify({ version: 2, entries: [] })),
-    /version must be 1/,
+      parseVisualBenchmarkHistory(JSON.stringify({ version: 3, entries: [] })),
+    /version must be 1 or 2/,
   );
 });
 
@@ -147,41 +255,78 @@ test("appendVisualBenchmarkHistoryEntry seeds empty history when no prior exists
   const result = appendVisualBenchmarkHistoryEntry(
     null,
     makeEntry("2026-04-10T00:00:00Z", [
-      { fixtureId: "simple-form", score: 90 },
+      {
+        fixtureId: "simple-form",
+        screenId: "1:65671",
+        screenName: "Simple Form Screen",
+        score: 90,
+      },
     ]),
   );
-  assert.equal(result.version, 1);
+  assert.equal(result.version, 2);
   assert.equal(result.entries.length, 1);
   assert.equal(result.entries[0]?.runAt, "2026-04-10T00:00:00Z");
 });
 
-test("appendVisualBenchmarkHistoryEntry sorts scores alphabetically", () => {
+test("appendVisualBenchmarkHistoryEntry sorts scores by fixtureId, screenId, and screenName", () => {
   const result = appendVisualBenchmarkHistoryEntry(
     null,
     makeEntry("2026-04-10T00:00:00Z", [
-      { fixtureId: "simple-form", score: 88 },
-      { fixtureId: "complex-dashboard", score: 72 },
+      {
+        fixtureId: "simple-form",
+        screenId: "2:2000",
+        screenName: "Screen B",
+        score: 88,
+      },
+      {
+        fixtureId: "complex-dashboard",
+        screenId: "1:1000",
+        screenName: "Dashboard",
+        score: 72,
+      },
+      {
+        fixtureId: "simple-form",
+        screenId: "1:1000",
+        screenName: "Screen A",
+        score: 89,
+      },
     ]),
   );
   assert.deepEqual(
-    result.entries[0]?.scores.map((entry) => entry.fixtureId),
-    ["complex-dashboard", "simple-form"],
+    result.entries[0]?.scores.map(
+      (entry) => `${entry.fixtureId}:${entry.screenId}:${entry.screenName ?? ""}`,
+    ),
+    [
+      "complex-dashboard:1:1000:Dashboard",
+      "simple-form:1:1000:Screen A",
+      "simple-form:2:2000:Screen B",
+    ],
   );
 });
 
 test("appendVisualBenchmarkHistoryEntry appends to existing history", () => {
   const existing: VisualBenchmarkHistory = {
-    version: 1,
+    version: 2,
     entries: [
       makeEntry("2026-04-09T00:00:00Z", [
-        { fixtureId: "simple-form", score: 80 },
+        {
+          fixtureId: "simple-form",
+          screenId: "1:65671",
+          screenName: "Simple Form Screen",
+          score: 80,
+        },
       ]),
     ],
   };
   const result = appendVisualBenchmarkHistoryEntry(
     existing,
     makeEntry("2026-04-10T00:00:00Z", [
-      { fixtureId: "simple-form", score: 88 },
+      {
+        fixtureId: "simple-form",
+        screenId: "1:65671",
+        screenName: "Simple Form Screen",
+        score: 88,
+      },
     ]),
   );
   assert.equal(result.entries.length, 2);
@@ -191,23 +336,23 @@ test("appendVisualBenchmarkHistoryEntry appends to existing history", () => {
 
 test("appendVisualBenchmarkHistoryEntry drops oldest entries when ring buffer exceeds limit", () => {
   const existing: VisualBenchmarkHistory = {
-    version: 1,
+    version: 2,
     entries: [
       makeEntry("2026-04-01T00:00:00Z", [
-        { fixtureId: "simple-form", score: 70 },
+        { fixtureId: "simple-form", screenId: "1:65671", score: 70 },
       ]),
       makeEntry("2026-04-02T00:00:00Z", [
-        { fixtureId: "simple-form", score: 72 },
+        { fixtureId: "simple-form", screenId: "1:65671", score: 72 },
       ]),
       makeEntry("2026-04-03T00:00:00Z", [
-        { fixtureId: "simple-form", score: 74 },
+        { fixtureId: "simple-form", screenId: "1:65671", score: 74 },
       ]),
     ],
   };
   const result = appendVisualBenchmarkHistoryEntry(
     existing,
     makeEntry("2026-04-04T00:00:00Z", [
-      { fixtureId: "simple-form", score: 76 },
+      { fixtureId: "simple-form", screenId: "1:65671", score: 76 },
     ]),
     2,
   );
@@ -220,7 +365,7 @@ test("appendVisualBenchmarkHistoryEntry keeps all entries when below ring buffer
   const result = appendVisualBenchmarkHistoryEntry(
     null,
     makeEntry("2026-04-10T00:00:00Z", [
-      { fixtureId: "simple-form", score: 88 },
+      { fixtureId: "simple-form", screenId: "1:65671", score: 88 },
     ]),
     DEFAULT_VISUAL_BENCHMARK_HISTORY_SIZE,
   );
@@ -233,7 +378,7 @@ test("appendVisualBenchmarkHistoryEntry rejects maxEntries <= 0", () => {
       appendVisualBenchmarkHistoryEntry(
         null,
         makeEntry("2026-04-10T00:00:00Z", [
-          { fixtureId: "simple-form", score: 88 },
+          { fixtureId: "simple-form", screenId: "1:65671", score: 88 },
         ]),
         0,
       ),
@@ -247,7 +392,7 @@ test("appendVisualBenchmarkHistoryEntry rejects maxEntries beyond limit", () => 
       appendVisualBenchmarkHistoryEntry(
         null,
         makeEntry("2026-04-10T00:00:00Z", [
-          { fixtureId: "simple-form", score: 88 },
+          { fixtureId: "simple-form", screenId: "1:65671", score: 88 },
         ]),
         MAX_VISUAL_BENCHMARK_HISTORY_SIZE + 1,
       ),
@@ -260,7 +405,7 @@ test("appendVisualBenchmarkHistoryEntry rejects non-finite score", () => {
     () =>
       appendVisualBenchmarkHistoryEntry(null, {
         runAt: "2026-04-10T00:00:00Z",
-        scores: [{ fixtureId: "simple-form", score: Number.NaN }],
+        scores: [{ fixtureId: "simple-form", screenId: "1:65671", score: Number.NaN }],
       }),
     /score must be a finite number/,
   );
@@ -291,10 +436,15 @@ test("saveVisualBenchmarkHistory then loadVisualBenchmarkHistory round-trips", a
   const fixtureRoot = await createTempRoot();
   try {
     const history: VisualBenchmarkHistory = {
-      version: 1,
+      version: 2,
       entries: [
         makeEntry("2026-04-10T00:00:00Z", [
-          { fixtureId: "simple-form", score: 88 },
+          {
+            fixtureId: "simple-form",
+            screenId: "1:65671",
+            screenName: "Simple Form Screen",
+            score: 88,
+          },
         ]),
       ],
     };
@@ -310,10 +460,15 @@ test("saveVisualBenchmarkHistory writes deterministic stable JSON", async () => 
   const fixtureRoot = await createTempRoot();
   try {
     const history: VisualBenchmarkHistory = {
-      version: 1,
+      version: 2,
       entries: [
         makeEntry("2026-04-10T00:00:00Z", [
-          { fixtureId: "simple-form", score: 88 },
+          {
+            fixtureId: "simple-form",
+            screenId: "1:65671",
+            screenName: "Simple Form Screen",
+            score: 88,
+          },
         ]),
       ],
     };
@@ -331,6 +486,53 @@ test("saveVisualBenchmarkHistory writes deterministic stable JSON", async () => 
       entriesIndex < versionIndex,
       "stable JSON should sort entries before version",
     );
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadVisualBenchmarkHistory migrates legacy history entries to screen-scoped entries", async () => {
+  const fixtureRoot = await createTempFixtureRoot(
+    "simple-form",
+    "1:65671",
+    "Simple Form Screen",
+  );
+  try {
+    await writeFile(
+      resolveVisualBenchmarkHistoryPath({ fixtureRoot }),
+      JSON.stringify(
+        {
+          version: 1,
+          entries: [
+            {
+              runAt: "2026-04-10T00:00:00.000Z",
+              scores: [{ fixtureId: "simple-form", score: 88 }],
+            },
+          ],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const loaded = await loadVisualBenchmarkHistory({ fixtureRoot });
+    assert.deepEqual(loaded, {
+      version: 2,
+      entries: [
+        {
+          runAt: "2026-04-10T00:00:00.000Z",
+          scores: [
+            {
+              fixtureId: "simple-form",
+              screenId: "1:65671",
+              screenName: "Simple Form Screen",
+              score: 88,
+            },
+          ],
+        },
+      ],
+    });
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
@@ -363,7 +565,7 @@ test("loadVisualBenchmarkHistory rejects wrong version", async () => {
     );
     await assert.rejects(
       loadVisualBenchmarkHistory({ fixtureRoot }),
-      /version must be 1/,
+      /version must be 1 or 2/,
     );
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
