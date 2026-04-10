@@ -1545,7 +1545,16 @@ test("buildComponentMatchReportArtifact reports family mismatches while preservi
   const serialized = serializeComponentMatchReportArtifact({ artifact });
   assert.equal(serialized.includes("importPath"), false);
   assert.equal(serialized.includes("componentPath"), false);
-  assert.equal(serialized.includes("https://www.figma.com"), false);
+  const parsedHosts = Array.from(serialized.matchAll(/https?:\/\/[^\s"']+/g))
+    .map((match) => {
+      try {
+        return new URL(match[0]).hostname;
+      } catch {
+        return null;
+      }
+    })
+    .filter((host): host is string => host !== null);
+  assert.equal(parsedHosts.includes("www.figma.com"), false);
   assert.equal(serialized.includes("figmaLibraryResolution"), true);
   assert.equal(serialized.includes("originFileKey"), true);
   assert.equal(serialized.includes("lib-file"), true);
