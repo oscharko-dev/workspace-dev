@@ -415,6 +415,7 @@ export interface WorkspaceVisualReferenceFixtureMetadata {
   viewport: {
     width: number;
     height: number;
+    deviceScaleFactor?: number;
   };
 }
 
