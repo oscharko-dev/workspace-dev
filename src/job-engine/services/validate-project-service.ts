@@ -2205,8 +2205,8 @@ export const createValidateProjectService = ({
             config: {
               viewport: {
                 width: standaloneVisualQualityViewportWidth,
-                height: standaloneVisualQualityViewportHeight ?? referenceResult.metadata.viewport.height,
-                deviceScaleFactor: standaloneVisualQualityDeviceScaleFactor ?? referenceResult.metadata.viewport.deviceScaleFactor ?? 1
+                height: standaloneVisualQualityViewportHeight,
+                deviceScaleFactor: standaloneVisualQualityDeviceScaleFactor
               },
               waitForNetworkIdle: true,
               waitForFonts: true,
