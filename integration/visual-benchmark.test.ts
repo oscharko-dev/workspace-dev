@@ -1516,7 +1516,7 @@ test("runVisualBenchmark appends history entry when --update-baseline is passed"
   }
 });
 
-test("runVisualBenchmark appends history entry on ordinary benchmark runs", async () => {
+test("runVisualBenchmark does not append history on ordinary benchmark runs", async () => {
   const env = await createBenchmarkFixtureEnvironment();
   try {
     await runVisualBenchmark(env, {
@@ -1525,12 +1525,10 @@ test("runVisualBenchmark appends history entry on ordinary benchmark runs", asyn
 
     const historyModule = await import("./visual-benchmark-history.js");
     const history = await historyModule.loadVisualBenchmarkHistory(env);
-    assert.ok(history !== null, "history file must be created for ordinary runs");
-    assert.equal(history.entries.length, 1);
-    assert.equal(history.entries[0]?.scores[0]?.fixtureId, "simple-form");
     assert.equal(
-      history.entries[0]?.scores[0]?.screenId,
-      simpleFormMetadata.source.nodeId,
+      history,
+      null,
+      "history file must not be created for ordinary runs",
     );
     const baseline = await loadVisualBenchmarkBaseline(env);
     assert.equal(
@@ -1543,7 +1541,7 @@ test("runVisualBenchmark appends history entry on ordinary benchmark runs", asyn
   }
 });
 
-test("runVisualBenchmark honours historySize when appending history from ordinary runs", async () => {
+test("runVisualBenchmark honours historySize when appending history from update-baseline runs", async () => {
   const env = await createBenchmarkFixtureEnvironment();
   try {
     const historyModule = await import("./visual-benchmark-history.js");
@@ -1593,6 +1591,7 @@ test("runVisualBenchmark honours historySize when appending history from ordinar
     await runVisualBenchmark(
       {
         ...env,
+        updateBaseline: true,
         qualityConfig: {
           regression: { historySize: 2 },
         },

@@ -1165,26 +1165,26 @@ export const runVisualBenchmark = async (
     }
   }
 
-  const existingHistory = await loadVisualBenchmarkHistory(options);
-  const updatedHistory = appendVisualBenchmarkHistoryEntry(
-    existingHistory,
-    {
-      runAt,
-      scores: scores.map((entry) => ({
-        fixtureId: entry.fixtureId,
-        screenId: entry.screenId,
-        screenName: entry.screenName,
-        score: entry.score,
-      })),
-    },
-    regressionConfig.historySize,
-  );
-  await saveVisualBenchmarkHistory(updatedHistory, options);
-  process.stdout.write(
-    `History updated (${String(updatedHistory.entries.length)} entries).\n`,
-  );
-
   if (options?.updateBaseline === true) {
+    const existingHistory = await loadVisualBenchmarkHistory(options);
+    const updatedHistory = appendVisualBenchmarkHistoryEntry(
+      existingHistory,
+      {
+        runAt,
+        scores: scores.map((entry) => ({
+          fixtureId: entry.fixtureId,
+          screenId: entry.screenId,
+          screenName: entry.screenName,
+          score: entry.score,
+        })),
+      },
+      regressionConfig.historySize,
+    );
+    await saveVisualBenchmarkHistory(updatedHistory, options);
+    process.stdout.write(
+      `History updated (${String(updatedHistory.entries.length)} entries).\n`,
+    );
+
     await saveVisualBenchmarkBaselineScores(scores, options);
     process.stdout.write("Baseline updated.\n");
   }
