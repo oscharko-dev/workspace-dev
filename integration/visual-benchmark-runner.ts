@@ -67,6 +67,8 @@ export interface VisualBenchmarkScoreEntry {
   fixtureId: string;
   screenId?: string;
   screenName?: string;
+  viewportId?: string;
+  viewportLabel?: string;
   score: number;
 }
 
@@ -80,6 +82,8 @@ export interface VisualBenchmarkDelta {
   fixtureId: string;
   screenId?: string;
   screenName?: string;
+  viewportId?: string;
+  viewportLabel?: string;
   baseline: number | null;
   current: number;
   delta: number | null;
@@ -231,24 +235,42 @@ const toCanonicalScoreEntry = (
       ? entry.screenId.trim()
       : fixtureId;
   const screenName = normalizeOptionalScreenName(entry.screenName);
+  const viewportId =
+    typeof entry.viewportId === "string" && entry.viewportId.trim().length > 0
+      ? entry.viewportId.trim()
+      : undefined;
+  const viewportLabel =
+    typeof entry.viewportLabel === "string" &&
+    entry.viewportLabel.trim().length > 0
+      ? entry.viewportLabel.trim()
+      : undefined;
 
   return {
     fixtureId,
     screenId,
     ...(screenName !== undefined ? { screenName } : {}),
+    ...(viewportId !== undefined ? { viewportId } : {}),
+    ...(viewportLabel !== undefined ? { viewportLabel } : {}),
     score: entry.score,
   };
 };
 
 export const getVisualBenchmarkScoreKey = (
-  entry: Pick<VisualBenchmarkScoreEntry, "fixtureId" | "screenId">,
+  entry: Pick<
+    VisualBenchmarkScoreEntry,
+    "fixtureId" | "screenId" | "viewportId"
+  >,
 ): string => {
   const fixtureId = assertAllowedFixtureId(entry.fixtureId);
   const screenId =
     typeof entry.screenId === "string" && entry.screenId.trim().length > 0
       ? entry.screenId.trim()
       : fixtureId;
-  return `${fixtureId}::${screenId}`;
+  const viewportId =
+    typeof entry.viewportId === "string" && entry.viewportId.trim().length > 0
+      ? entry.viewportId.trim()
+      : "default";
+  return `${fixtureId}::${screenId}::${viewportId}`;
 };
 
 const sortScores = (
@@ -265,6 +287,13 @@ const sortScores = (
       const screenComparison = left.screenId!.localeCompare(right.screenId!);
       if (screenComparison !== 0) {
         return screenComparison;
+      }
+
+      const viewportComparison = (left.viewportId ?? "").localeCompare(
+        right.viewportId ?? "",
+      );
+      if (viewportComparison !== 0) {
+        return viewportComparison;
       }
 
       return (left.screenName ?? "").localeCompare(right.screenName ?? "");
@@ -1122,7 +1151,9 @@ export const formatVisualBenchmarkTable = (
   for (const delta of result.deltas) {
     const displayName = (() => {
       const fixtureName = fixtureIdToDisplayName(delta.fixtureId);
-      const normalizedScreenName = normalizeOptionalScreenName(delta.screenName);
+      const normalizedScreenName = normalizeOptionalScreenName(
+        delta.screenName,
+      );
       if (normalizedScreenName !== undefined) {
         return `${fixtureName} / ${normalizedScreenName}`;
       }

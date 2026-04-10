@@ -8,12 +8,18 @@ import {
   applyVisualQualityConfigToReport,
   checkVisualQualityThreshold,
   DEFAULT_RESOLVED_REGRESSION_CONFIG,
+  DEFAULT_VISUAL_QUALITY_VIEWPORTS,
   loadVisualQualityConfig,
+  normalizeVisualQualityViewportWeights,
   parseVisualQualityConfig,
   recomputeVisualQualityScore,
   resolveVisualQualityRegressionConfig,
   resolveVisualQualityThresholds,
+  resolveVisualQualityViewports,
   resolveVisualQualityWeights,
+  VisualQualityViewportListSchema,
+  VisualQualityViewportSchema,
+  type VisualQualityViewport,
 } from "./visual-quality-config.js";
 import { resolveVisualBenchmarkCliResolution } from "./visual-benchmark.cli.js";
 
@@ -600,4 +606,460 @@ test("committed visual-quality.config.json contains regression section with vali
   assert.equal(typeof config.regression?.maxScoreDropPercent, "number");
   assert.equal(typeof config.regression?.neutralTolerance, "number");
   assert.equal(typeof config.regression?.historySize, "number");
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — VisualQualityViewportSchema
+// ---------------------------------------------------------------------------
+
+test("VisualQualityViewportSchema accepts a minimal valid viewport", () => {
+  const parsed = VisualQualityViewportSchema.parse({
+    id: "desktop",
+    width: 1280,
+    height: 800,
+  });
+  assert.equal(parsed.id, "desktop");
+  assert.equal(parsed.width, 1280);
+  assert.equal(parsed.height, 800);
+});
+
+test("VisualQualityViewportSchema accepts optional fields", () => {
+  const parsed = VisualQualityViewportSchema.parse({
+    id: "mobile",
+    label: "Mobile",
+    width: 390,
+    height: 844,
+    deviceScaleFactor: 3,
+    weight: 2,
+  });
+  assert.equal(parsed.label, "Mobile");
+  assert.equal(parsed.deviceScaleFactor, 3);
+  assert.equal(parsed.weight, 2);
+});
+
+test("VisualQualityViewportSchema rejects empty id", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ id: "", width: 1280, height: 800 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects missing id", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ width: 1280, height: 800 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects zero width", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ id: "x", width: 0, height: 800 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects negative width", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ id: "x", width: -1, height: 800 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects zero height", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ id: "x", width: 1280, height: 0 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects negative height", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ id: "x", width: 1280, height: -10 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects non-integer width", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ id: "x", width: 1280.5, height: 800 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects non-integer height", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({ id: "x", width: 1280, height: 800.5 }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects non-positive deviceScaleFactor", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({
+      id: "x",
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 0,
+    }),
+  );
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({
+      id: "x",
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: -1,
+    }),
+  );
+});
+
+test("VisualQualityViewportSchema rejects non-positive weight", () => {
+  assert.throws(() =>
+    VisualQualityViewportSchema.parse({
+      id: "x",
+      width: 1280,
+      height: 800,
+      weight: 0,
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — VisualQualityViewportListSchema
+// ---------------------------------------------------------------------------
+
+test("VisualQualityViewportListSchema accepts a single-viewport list", () => {
+  const parsed = VisualQualityViewportListSchema.parse([
+    { id: "desktop", width: 1280, height: 800 },
+  ]);
+  assert.equal(parsed.length, 1);
+});
+
+test("VisualQualityViewportListSchema accepts multi-viewport list with unique ids", () => {
+  const parsed = VisualQualityViewportListSchema.parse([
+    { id: "desktop", width: 1280, height: 800 },
+    { id: "mobile", width: 390, height: 844 },
+  ]);
+  assert.equal(parsed.length, 2);
+});
+
+test("VisualQualityViewportListSchema rejects empty array", () => {
+  assert.throws(() => VisualQualityViewportListSchema.parse([]));
+});
+
+test("VisualQualityViewportListSchema rejects duplicate ids", () => {
+  assert.throws(
+    () =>
+      VisualQualityViewportListSchema.parse([
+        { id: "desktop", width: 1280, height: 800 },
+        { id: "desktop", width: 1440, height: 900 },
+      ]),
+    /unique/i,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — parseVisualQualityConfig extension (viewports on global/fixture/screen)
+// ---------------------------------------------------------------------------
+
+test("parseVisualQualityConfig accepts global viewports list", () => {
+  const config = parseVisualQualityConfig({
+    viewports: [
+      { id: "desktop", width: 1280, height: 800 },
+      { id: "mobile", width: 390, height: 844, deviceScaleFactor: 3 },
+    ],
+  });
+  assert.equal(config.viewports?.length, 2);
+});
+
+test("parseVisualQualityConfig accepts fixture-level viewports override", () => {
+  const config = parseVisualQualityConfig({
+    viewports: [{ id: "desktop", width: 1280, height: 800 }],
+    fixtures: {
+      "simple-form": {
+        viewports: [
+          { id: "tablet", width: 768, height: 1024, deviceScaleFactor: 2 },
+        ],
+      },
+    },
+  });
+  assert.equal(config.fixtures?.["simple-form"]?.viewports?.length, 1);
+  assert.equal(config.fixtures?.["simple-form"]?.viewports?.[0]?.id, "tablet");
+});
+
+test("parseVisualQualityConfig accepts screen-level viewports override", () => {
+  const config = parseVisualQualityConfig({
+    fixtures: {
+      "simple-form": {
+        screens: {
+          main: {
+            viewports: [{ id: "desktop", width: 1920, height: 1080 }],
+          },
+        },
+      },
+    },
+  });
+  assert.equal(
+    config.fixtures?.["simple-form"]?.screens?.["main"]?.viewports?.length,
+    1,
+  );
+});
+
+test("parseVisualQualityConfig rejects empty fixture viewports list", () => {
+  assert.throws(() =>
+    parseVisualQualityConfig({
+      fixtures: { "simple-form": { viewports: [] } },
+    }),
+  );
+});
+
+test("parseVisualQualityConfig rejects duplicate viewport ids at global level", () => {
+  assert.throws(() =>
+    parseVisualQualityConfig({
+      viewports: [
+        { id: "desktop", width: 1280, height: 800 },
+        { id: "desktop", width: 1440, height: 900 },
+      ],
+    }),
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — DEFAULT_VISUAL_QUALITY_VIEWPORTS
+// ---------------------------------------------------------------------------
+
+test("DEFAULT_VISUAL_QUALITY_VIEWPORTS is non-empty and parseable", () => {
+  assert.ok(DEFAULT_VISUAL_QUALITY_VIEWPORTS.length >= 1);
+  for (const viewport of DEFAULT_VISUAL_QUALITY_VIEWPORTS) {
+    VisualQualityViewportSchema.parse(viewport);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — resolveVisualQualityViewports precedence
+// ---------------------------------------------------------------------------
+
+test("resolveVisualQualityViewports returns undefined when no config", () => {
+  assert.equal(
+    resolveVisualQualityViewports(undefined, undefined, undefined),
+    undefined,
+  );
+});
+
+test("resolveVisualQualityViewports returns undefined for empty config", () => {
+  assert.equal(
+    resolveVisualQualityViewports({}, "simple-form", undefined),
+    undefined,
+  );
+});
+
+test("resolveVisualQualityViewports uses global config viewports when no fixture/screen override", () => {
+  const result = resolveVisualQualityViewports(
+    {
+      viewports: [
+        { id: "desktop", width: 1280, height: 800 },
+        { id: "mobile", width: 390, height: 844 },
+      ],
+    },
+    "simple-form",
+    undefined,
+  );
+  assert.ok(result !== undefined);
+  assert.deepEqual(
+    result.map((viewport) => viewport.id),
+    ["desktop", "mobile"],
+  );
+});
+
+test("resolveVisualQualityViewports fixture override replaces global list", () => {
+  const result = resolveVisualQualityViewports(
+    {
+      viewports: [{ id: "desktop", width: 1280, height: 800 }],
+      fixtures: {
+        "simple-form": {
+          viewports: [
+            { id: "tablet", width: 768, height: 1024 },
+            { id: "mobile", width: 390, height: 844 },
+          ],
+        },
+      },
+    },
+    "simple-form",
+    undefined,
+  );
+  assert.ok(result !== undefined);
+  assert.deepEqual(
+    result.map((viewport) => viewport.id),
+    ["tablet", "mobile"],
+  );
+});
+
+test("resolveVisualQualityViewports screen override beats fixture override", () => {
+  const result = resolveVisualQualityViewports(
+    {
+      viewports: [{ id: "desktop", width: 1280, height: 800 }],
+      fixtures: {
+        "simple-form": {
+          viewports: [{ id: "fixture", width: 1024, height: 768 }],
+          screens: {
+            main: {
+              viewports: [{ id: "screen", width: 1920, height: 1080 }],
+            },
+          },
+        },
+      },
+    },
+    "simple-form",
+    { screenId: "main" },
+  );
+  assert.ok(result !== undefined);
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.id, "screen");
+});
+
+test("resolveVisualQualityViewports screen lookup tries screenName when screenId does not match", () => {
+  const result = resolveVisualQualityViewports(
+    {
+      fixtures: {
+        "simple-form": {
+          screens: {
+            "Main Screen": {
+              viewports: [{ id: "named", width: 1280, height: 800 }],
+            },
+          },
+        },
+      },
+    },
+    "simple-form",
+    { screenName: "Main Screen" },
+  );
+  assert.ok(result !== undefined);
+  assert.equal(result[0]?.id, "named");
+});
+
+test("resolveVisualQualityViewports prefers screenId over screenName when both match", () => {
+  const result = resolveVisualQualityViewports(
+    {
+      fixtures: {
+        "simple-form": {
+          screens: {
+            "1:65671": {
+              viewports: [{ id: "by-id", width: 1280, height: 800 }],
+            },
+            "Main Screen": {
+              viewports: [{ id: "by-name", width: 1280, height: 800 }],
+            },
+          },
+        },
+      },
+    },
+    "simple-form",
+    { screenId: "1:65671", screenName: "Main Screen" },
+  );
+  assert.ok(result !== undefined);
+  assert.equal(result[0]?.id, "by-id");
+});
+
+test("resolveVisualQualityViewports returned array is frozen", () => {
+  const result = resolveVisualQualityViewports(
+    { viewports: [{ id: "desktop", width: 1280, height: 800 }] },
+    undefined,
+    undefined,
+  );
+  assert.ok(result !== undefined);
+  assert.throws(() => {
+    (result as VisualQualityViewport[]).push({
+      id: "extra",
+      width: 100,
+      height: 100,
+    });
+  }, /read.?only|frozen|extensible/i);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — normalizeVisualQualityViewportWeights
+// ---------------------------------------------------------------------------
+
+test("normalizeVisualQualityViewportWeights assigns equal weights when none provided", () => {
+  const result = normalizeVisualQualityViewportWeights([
+    { id: "a", width: 100, height: 100 },
+    { id: "b", width: 100, height: 100 },
+    { id: "c", width: 100, height: 100 },
+  ]);
+  assert.equal(result.length, 3);
+  for (const viewport of result) {
+    assert.ok(
+      Math.abs((viewport.weight ?? 0) - 1 / 3) < 1e-9,
+      `Expected weight 1/3, got ${String(viewport.weight)}`,
+    );
+  }
+});
+
+test("normalizeVisualQualityViewportWeights assigns weight=1 for single viewport", () => {
+  const result = normalizeVisualQualityViewportWeights([
+    { id: "only", width: 100, height: 100 },
+  ]);
+  assert.equal(result[0]?.weight, 1);
+});
+
+test("normalizeVisualQualityViewportWeights normalizes all-weighted list to sum 1", () => {
+  const result = normalizeVisualQualityViewportWeights([
+    { id: "a", width: 100, height: 100, weight: 2 },
+    { id: "b", width: 100, height: 100, weight: 3 },
+    { id: "c", width: 100, height: 100, weight: 5 },
+  ]);
+  assert.equal(result.length, 3);
+  assert.ok(Math.abs((result[0]?.weight ?? 0) - 0.2) < 1e-9);
+  assert.ok(Math.abs((result[1]?.weight ?? 0) - 0.3) < 1e-9);
+  assert.ok(Math.abs((result[2]?.weight ?? 0) - 0.5) < 1e-9);
+});
+
+test("normalizeVisualQualityViewportWeights throws when only some viewports have weights", () => {
+  assert.throws(
+    () =>
+      normalizeVisualQualityViewportWeights([
+        { id: "a", width: 100, height: 100, weight: 2 },
+        { id: "b", width: 100, height: 100 },
+      ]),
+    /all|partial|some|missing/i,
+  );
+});
+
+test("normalizeVisualQualityViewportWeights throws on empty input", () => {
+  assert.throws(
+    () => normalizeVisualQualityViewportWeights([]),
+    /empty|at least/i,
+  );
+});
+
+test("normalizeVisualQualityViewportWeights does not mutate input array", () => {
+  const input: VisualQualityViewport[] = [
+    { id: "a", width: 100, height: 100 },
+    { id: "b", width: 100, height: 100 },
+  ];
+  const snapshot = JSON.parse(JSON.stringify(input)) as unknown;
+  normalizeVisualQualityViewportWeights(input);
+  assert.deepEqual(input, snapshot);
+});
+
+test("normalizeVisualQualityViewportWeights preserves non-weight fields", () => {
+  const result = normalizeVisualQualityViewportWeights([
+    {
+      id: "desktop",
+      label: "Desktop",
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+    },
+    {
+      id: "mobile",
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+    },
+  ]);
+  assert.equal(result[0]?.id, "desktop");
+  assert.equal(result[0]?.label, "Desktop");
+  assert.equal(result[0]?.deviceScaleFactor, 1);
+  assert.equal(result[1]?.deviceScaleFactor, 3);
+});
+
+// ---------------------------------------------------------------------------
+// Issue #838 — committed config omits global viewports
+// ---------------------------------------------------------------------------
+
+test("committed visual-quality.config.json omits global viewports", async () => {
+  const config = await loadVisualQualityConfig();
+  assert.equal(config.viewports, undefined);
 });

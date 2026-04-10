@@ -17,6 +17,8 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
   - scripts `perf:baseline` and `perf:assert`
 - Field metric hook for CWV reporting in template app (`web-vitals` for INP/LCP/CLS).
 - CI `performance-web` jobs in release workflows with artifact upload.
+- Responsive viewport configuration for visual benchmark: declare per-fixture or per-screen viewport lists with `id/width/height/deviceScaleFactor/weight` in `visual-quality.config.json`. Default behavior is a single `desktop` viewport (1280x800) for byte-identical back-compat. Explicit viewports are honored by the `validate-project` service via `visualQualityViewportHeight` + `visualQualityDeviceScaleFactor` runtime fields. (#838)
+- `--viewport <id>` CLI flag on `pnpm benchmark:visual` for future per-viewport filtering. Flag is parsed and validated today; runner integration follows. (#838)
 
 ### Changed
 
@@ -26,6 +28,8 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 - Added offline local Figma JSON ingestion mode (`figmaSourceMode=local_json`, `figmaJsonPath`) with strict submit-source exclusivity validation.
 - `validate.project` can execute optional performance assertion when `FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION=true` (or `FIGMAPIPE_ENABLE_PERF_VALIDATION=true`).
 - Hardened deterministic MUI icon import emission with tuple-based dedupe and stable ordering for reproducible outputs.
+- Extended `WorkspaceVisualReferenceFixtureMetadata.viewport` with optional `deviceScaleFactor`. Back-compatible for v1/v2 fixtures. (#838)
+- Composite score key in visual-benchmark runner is now `fixtureId::screenId::viewportId` with `"default"` fallback when viewportId is missing. Back-compatible for baseline v3 entries without viewportId. (#838)
 
 ## [1.0.0] - 2026-03-13
 

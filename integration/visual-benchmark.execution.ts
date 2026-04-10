@@ -22,6 +22,7 @@ import { ensureTemplateValidationSeedNodeModules } from "../src/job-engine/test-
 import {
   computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
+  enumerateFixtureScreenViewports,
   loadVisualBenchmarkFixtureInputs,
   loadVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkFixturePaths,
@@ -31,9 +32,11 @@ import {
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureOptions,
   type VisualBenchmarkFixtureScreenMetadata,
+  type VisualBenchmarkViewportSpec,
 } from "./visual-benchmark.helpers.js";
 import {
   applyVisualQualityConfigToReport,
+  resolveVisualQualityViewports,
   type VisualQualityConfig,
 } from "./visual-quality-config.js";
 import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
@@ -60,6 +63,19 @@ export interface VisualBenchmarkFixtureExecutionArtifacts extends VisualBenchmar
   };
 }
 
+export interface VisualBenchmarkScreenViewportArtifact {
+  viewportId: string;
+  viewportLabel?: string;
+  score: number;
+  screenshotBuffer: Buffer;
+  diffBuffer: Buffer | null;
+  report: unknown | null;
+  viewport: {
+    width: number;
+    height: number;
+  };
+}
+
 export interface VisualBenchmarkFixtureScreenArtifact {
   screenId: string;
   screenName: string;
@@ -73,6 +89,7 @@ export interface VisualBenchmarkFixtureScreenArtifact {
     width: number;
     height: number;
   };
+  viewports?: VisualBenchmarkScreenViewportArtifact[];
 }
 
 export interface VisualBenchmarkFixtureRunResult {
@@ -191,12 +208,16 @@ const createJobRecord = ({
   jobDir,
   figmaJsonPath,
   visualQualityViewportWidth,
+  visualQualityViewportHeight,
+  visualQualityDeviceScaleFactor,
 }: {
   fixtureId: string;
   runtime: ReturnType<typeof resolveRuntimeSettings>;
   jobDir: string;
   figmaJsonPath: string;
   visualQualityViewportWidth: number;
+  visualQualityViewportHeight: number;
+  visualQualityDeviceScaleFactor: number;
 }): JobRecord => {
   return {
     jobId: `visual-benchmark-${fixtureId}`,
@@ -206,6 +227,8 @@ const createJobRecord = ({
       enableVisualQualityValidation: true,
       visualQualityReferenceMode: "frozen_fixture",
       visualQualityViewportWidth,
+      visualQualityViewportHeight,
+      visualQualityDeviceScaleFactor,
       enableUiValidation: false,
       enableUnitTestValidation: false,
       installPreferOffline: true,
@@ -238,11 +261,15 @@ const createExecutionContext = async ({
   fixtureId,
   figmaJsonPath,
   visualQualityViewportWidth,
+  visualQualityViewportHeight,
+  visualQualityDeviceScaleFactor,
   workspaceRoot,
 }: {
   fixtureId: string;
   figmaJsonPath: string;
   visualQualityViewportWidth: number;
+  visualQualityViewportHeight: number;
+  visualQualityDeviceScaleFactor: number;
   workspaceRoot: string;
 }): Promise<{
   executionContext: PipelineExecutionContext;
@@ -267,6 +294,8 @@ const createExecutionContext = async ({
     enableVisualQualityValidation: true,
     visualQualityReferenceMode: "frozen_fixture",
     visualQualityViewportWidth,
+    visualQualityViewportHeight,
+    visualQualityDeviceScaleFactor,
     enableUnitTestValidation: false,
     figmaMaxRetries: 1,
     figmaRequestTimeoutMs: 1_000,
@@ -281,6 +310,8 @@ const createExecutionContext = async ({
       jobDir,
       figmaJsonPath,
       visualQualityViewportWidth,
+      visualQualityViewportHeight,
+      visualQualityDeviceScaleFactor,
     }),
     input: {
       figmaSourceMode: "local_json",
@@ -288,6 +319,8 @@ const createExecutionContext = async ({
       enableVisualQualityValidation: true,
       visualQualityReferenceMode: "frozen_fixture",
       visualQualityViewportWidth,
+      visualQualityViewportHeight,
+      visualQualityDeviceScaleFactor,
     },
     runtime,
     resolvedPaths: {
@@ -355,11 +388,27 @@ const executeVisualBenchmarkScreen = async ({
   workspaceRoot: string;
   options?: VisualBenchmarkExecutionOptions;
 }): Promise<VisualBenchmarkFixtureScreenArtifact> => {
+  // TODO(#838 follow-up PR): when resolvedViewports.length > 1, execute the
+  // pipeline once per viewport with visualQualityViewportHeight/DeviceScaleFactor
+  // overrides. Currently only the first viewport is honored. See spec notes for
+  // the codegen-hoist optimization.
+  const userConfiguredViewports = resolveVisualQualityViewports(
+    options?.qualityConfig,
+    fixtureId,
+    { screenId: screen.screenId, screenName: screen.screenName },
+  );
+  const resolvedViewports = enumerateFixtureScreenViewports(
+    screen,
+    userConfiguredViewports ?? [],
+  );
+  const activeViewport: VisualBenchmarkViewportSpec = resolvedViewports[0]!;
+  const activeDeviceScaleFactor = activeViewport.deviceScaleFactor ?? 1;
+
   const perScreenMetadata: VisualBenchmarkFixtureMetadata = {
     ...metadata,
     viewport: {
-      width: screen.viewport.width,
-      height: screen.viewport.height,
+      width: activeViewport.width,
+      height: activeViewport.height,
     },
     source: {
       ...metadata.source,
@@ -372,7 +421,9 @@ const executeVisualBenchmarkScreen = async ({
     await createExecutionContext({
       fixtureId,
       figmaJsonPath,
-      visualQualityViewportWidth: screen.viewport.width,
+      visualQualityViewportWidth: activeViewport.width,
+      visualQualityViewportHeight: activeViewport.height,
+      visualQualityDeviceScaleFactor: activeDeviceScaleFactor,
       workspaceRoot,
     });
   const fixturePaths = resolveVisualBenchmarkFixturePaths(fixtureId, options);
@@ -399,11 +450,8 @@ const executeVisualBenchmarkScreen = async ({
       "utf8",
     );
     const referenceImagePath = multiScreenFixture
-      ? resolveVisualBenchmarkScreenPaths(
-          fixtureId,
-          screen.screenId,
-          options,
-        ).referencePngPath
+      ? resolveVisualBenchmarkScreenPaths(fixtureId, screen.screenId, options)
+          .referencePngPath
       : fixturePaths.referencePngPath;
     const metadataPath = multiScreenFixture
       ? path.join(
@@ -505,12 +553,12 @@ const executeVisualBenchmarkScreen = async ({
     }
 
     const viewport = effectiveVisualQuality?.metadata?.viewport ?? {
-      width: screen.viewport.width,
-      height: screen.viewport.height,
-      deviceScaleFactor: 1,
+      width: activeViewport.width,
+      height: activeViewport.height,
+      deviceScaleFactor: activeDeviceScaleFactor,
     };
 
-    return {
+    const singleViewportResult: VisualBenchmarkFixtureScreenArtifact = {
       screenId: screen.screenId,
       screenName: screen.screenName,
       nodeId: screen.nodeId,
@@ -526,6 +574,23 @@ const executeVisualBenchmarkScreen = async ({
         width: viewport.width,
         height: viewport.height,
       },
+    };
+
+    const viewports: VisualBenchmarkScreenViewportArtifact[] = [
+      {
+        viewportId: activeViewport.id,
+        viewportLabel: activeViewport.label ?? activeViewport.id,
+        score: singleViewportResult.score,
+        screenshotBuffer: singleViewportResult.screenshotBuffer,
+        diffBuffer: singleViewportResult.diffBuffer,
+        report: singleViewportResult.report,
+        viewport: singleViewportResult.viewport,
+      },
+    ];
+
+    return {
+      ...singleViewportResult,
+      viewports,
     };
   } finally {
     if (temporaryMetadataPath !== null) {

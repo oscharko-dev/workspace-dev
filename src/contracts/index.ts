@@ -149,6 +149,10 @@ export interface WorkspaceStartOptions {
   visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
   /** Viewport width used when capturing generated output for visual quality validation. Default: 1280 */
   visualQualityViewportWidth?: number;
+  /** Viewport height used when capturing generated output for visual quality validation. Default: 800 */
+  visualQualityViewportHeight?: number;
+  /** Device pixel ratio used when capturing generated output for visual quality validation. Default: 1 */
+  visualQualityDeviceScaleFactor?: number;
   /** Run generated-project unit tests in validate.project. Default: false */
   enableUnitTestValidation?: boolean;
   /** Make generated-project unit test failures non-fatal. When true, test results are recorded but failures do not throw. Default: false */
@@ -202,6 +206,8 @@ export interface WorkspaceJobInput {
   enableVisualQualityValidation?: boolean;
   visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth?: number;
+  visualQualityViewportHeight?: number;
+  visualQualityDeviceScaleFactor?: number;
   visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
   /** @deprecated Use visual quality settings instead. */
   visualAudit?: WorkspaceVisualAuditInput;
@@ -228,6 +234,8 @@ export interface WorkspaceJobRequestMetadata {
   enableVisualQualityValidation: boolean;
   visualQualityReferenceMode?: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth?: number;
+  visualQualityViewportHeight?: number;
+  visualQualityDeviceScaleFactor?: number;
   visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
   /** @deprecated Compatibility alias for legacy callers. */
   visualAudit?: WorkspaceVisualAuditInput;
@@ -415,6 +423,7 @@ export interface WorkspaceVisualReferenceFixtureMetadata {
   viewport: {
     width: number;
     height: number;
+    deviceScaleFactor?: number;
   };
 }
 
