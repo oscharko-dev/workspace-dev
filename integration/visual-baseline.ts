@@ -518,11 +518,24 @@ export const computeVisualBaselineDiff = async (
   const diffs: VisualBaselineDiffEntry[] = [];
   for (const entry of lastRun.scores) {
     const artifact = await loadVisualBenchmarkLastRunArtifact(entry.fixtureId, options);
-    const screenId =
+    const metadata = await loadVisualBenchmarkFixtureMetadata(entry.fixtureId, options);
+    const metadataScreenId =
+      typeof metadata.source.nodeId === "string" && metadata.source.nodeId.trim().length > 0
+        ? metadata.source.nodeId.trim()
+        : undefined;
+    const lastRunScreenId =
       typeof entry.screenId === "string" && entry.screenId.trim().length > 0
         ? entry.screenId.trim()
-        : entry.fixtureId;
-    const screenName = normalizeOptionalScreenName(entry.screenName);
+        : undefined;
+    const screenId =
+      lastRunScreenId === undefined
+        ? metadataScreenId ?? entry.fixtureId
+        : lastRunScreenId === entry.fixtureId && metadataScreenId !== undefined && metadataScreenId !== entry.fixtureId
+          ? metadataScreenId
+          : lastRunScreenId;
+    const screenName =
+      normalizeOptionalScreenName(entry.screenName) ??
+      normalizeOptionalScreenName(metadata.source.nodeName);
     const baselineScore = getBaselineMapScore(
       baselineMap,
       entry.fixtureId,
