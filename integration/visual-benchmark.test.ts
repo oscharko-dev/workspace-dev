@@ -41,6 +41,7 @@ import {
   loadVisualBenchmarkLastRunArtifact,
   runVisualBenchmark,
   saveVisualBenchmarkBaseline,
+  saveVisualBenchmarkBaselineScores,
   type VisualBenchmarkBaseline,
   type VisualBenchmarkResult,
   type VisualBenchmarkScoreEntry,

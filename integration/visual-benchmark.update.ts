@@ -72,6 +72,8 @@ const readPositiveNumber = (value: unknown, fieldName: string): number => {
   return parsed;
 };
 
+class NonRetryableFetchError extends Error {}
+
 const fetchWithRetry = async (
   url: string,
   headers: Record<string, string>,
@@ -90,7 +92,7 @@ const fetchWithRetry = async (
       }
       // 4xx responses are deterministic failures — do not retry.
       if (response.status >= 400 && response.status < 500) {
-        throw new Error(
+        throw new NonRetryableFetchError(
           `Figma API request failed: ${String(response.status)} ${response.statusText} — ${url}`,
         );
       }
@@ -108,6 +110,9 @@ const fetchWithRetry = async (
         `Figma API request failed: ${String(response.status)} ${response.statusText} — ${url}`,
       );
     } catch (error: unknown) {
+      if (error instanceof NonRetryableFetchError) {
+        throw error;
+      }
       lastError = error instanceof Error ? error : new Error(String(error));
       if (attempt < maxRetries) {
         log(
