@@ -583,10 +583,30 @@ test("computeVisualBenchmarkDeltas with null baseline returns null deltas", () =
   assert.equal(result.deltas.length, 1);
   assert.equal(result.deltas[0]?.baseline, null);
   assert.equal(result.deltas[0]?.delta, null);
-  assert.equal(result.deltas[0]?.indicator, "neutral");
+  assert.equal(result.deltas[0]?.indicator, "unavailable");
   assert.equal(result.overallBaseline, null);
   assert.equal(result.overallDelta, null);
   assert.equal(result.overallCurrent, 88);
+});
+
+test("computeVisualBenchmarkDeltas computes overallDelta from matched fixture pairs only", () => {
+  const current: VisualBenchmarkScoreEntry[] = [
+    { fixtureId: "fixture-a", score: 100 },
+    { fixtureId: "fixture-b", score: 50 },
+  ];
+  const baseline: VisualBenchmarkBaseline = {
+    version: 2,
+    scores: [
+      { fixtureId: "fixture-a", score: 80 },
+      { fixtureId: "fixture-c", score: 90 },
+    ],
+  };
+
+  const result = computeVisualBenchmarkDeltas(current, baseline);
+  assert.equal(result.overallCurrent, 75);
+  assert.equal(result.overallBaseline, 80);
+  assert.equal(result.overallDelta, 20);
+  assert.equal(result.deltas.find((d) => d.fixtureId === "fixture-b")?.indicator, "unavailable");
 });
 
 test("computeVisualBenchmarkDeltas treats +/-1 deltas as neutral tolerance", () => {
@@ -614,11 +634,11 @@ test("formatVisualBenchmarkTable produces a table with expected structure", () =
   const result: VisualBenchmarkResult = {
     deltas: [
       { fixtureId: "simple-form", baseline: 85, current: 88, delta: 3, indicator: "improved" },
-      { fixtureId: "complex-dashboard", baseline: null, current: 100, delta: null, indicator: "neutral" }
+      { fixtureId: "complex-dashboard", baseline: null, current: 100, delta: null, indicator: "unavailable" }
     ],
     overallBaseline: 85,
     overallCurrent: 94,
-    overallDelta: 9
+    overallDelta: 3
   };
   const table = formatVisualBenchmarkTable(result);
   assert.ok(table.includes("View"), "Table should contain 'View' header.");
@@ -631,6 +651,14 @@ test("formatVisualBenchmarkTable produces a table with expected structure", () =
   assert.ok(table.includes("88"), "Table should contain current score.");
   assert.ok(table.includes("85"), "Table should contain baseline score.");
   assert.ok(table.includes("\u2014"), "Table should contain em-dash for null baseline.");
+  assert.ok(table.includes("n/a"), "Table should contain unavailable marker.");
+});
+
+test("computeVisualBenchmarkDeltas throws when current score list is empty", () => {
+  assert.throws(
+    () => computeVisualBenchmarkDeltas([], null),
+    /Current visual benchmark scores must not be empty\./,
+  );
 });
 
 test("loadVisualBenchmarkBaseline loads the committed baseline file", async () => {
@@ -649,7 +677,7 @@ test("saveVisualBenchmarkBaseline and loadVisualBenchmarkBaseline round-trip", a
   try {
     const result: VisualBenchmarkResult = {
       deltas: [
-        { fixtureId: "test-fixture", baseline: null, current: 92, delta: null, indicator: "neutral" }
+        { fixtureId: "test-fixture", baseline: null, current: 92, delta: null, indicator: "unavailable" }
       ],
       overallBaseline: null,
       overallCurrent: 92,
@@ -1045,4 +1073,23 @@ test("visual benchmark workflow keeps PR mode non-blocking and updates the exist
   assert.match(workflow, /actions\/github-script@v8/);
   assert.match(workflow, /check-output\.json/);
   assert.match(workflow, /github\.rest\.checks\.update/);
+  assert.match(workflow, /scripts\/print-visual-benchmark-summary\.mjs/);
+  assert.match(workflow, /scripts\/visual-benchmark-summary\.mjs/);
+  assert.match(workflow, /scripts\/print-visual-benchmark-pr-comment\.mjs/);
+  assert.doesNotMatch(workflow, /name:\s+Post or update visual benchmark PR comment/);
+});
+
+test("visual benchmark comment workflow posts marker-based upserts from workflow_run artifacts", async () => {
+  const workflow = await readFile(
+    path.join(process.cwd(), ".github", "workflows", "visual-benchmark-comment.yml"),
+    "utf8",
+  );
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /workflows:\s+\['workspace-dev visual benchmark'\]/);
+  assert.match(workflow, /if:\s+github\.event\.workflow_run\.event == 'pull_request'/);
+  assert.match(workflow, /listWorkflowRunArtifacts/);
+  assert.match(workflow, /pr-comment\.json/);
+  assert.match(workflow, /payload\.body\.startsWith\(payload\.marker\)/);
+  assert.match(workflow, /github\.rest\.issues\.updateComment/);
+  assert.match(workflow, /github\.rest\.issues\.createComment/);
 });
