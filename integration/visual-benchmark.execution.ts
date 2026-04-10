@@ -392,14 +392,14 @@ const executeVisualBenchmarkScreen = async ({
   // pipeline once per viewport with visualQualityViewportHeight/DeviceScaleFactor
   // overrides. Currently only the first viewport is honored. See spec notes for
   // the codegen-hoist optimization.
-  const globalViewports = resolveVisualQualityViewports(
+  const userConfiguredViewports = resolveVisualQualityViewports(
     options?.qualityConfig,
     fixtureId,
     { screenId: screen.screenId, screenName: screen.screenName },
   );
   const resolvedViewports = enumerateFixtureScreenViewports(
     screen,
-    globalViewports,
+    userConfiguredViewports ?? [],
   );
   const activeViewport: VisualBenchmarkViewportSpec = resolvedViewports[0]!;
   const activeDeviceScaleFactor = activeViewport.deviceScaleFactor ?? 1;

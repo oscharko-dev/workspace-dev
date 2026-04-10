@@ -339,7 +339,7 @@ export const resolveVisualQualityViewports = (
   config: VisualQualityConfig | undefined,
   fixtureId: string | undefined,
   screenContext: VisualQualityScreenContext | undefined,
-): readonly VisualQualityViewport[] => {
+): readonly VisualQualityViewport[] | undefined => {
   const fixtureConfig =
     fixtureId !== undefined ? config?.fixtures?.[fixtureId] : undefined;
   const screenConfigs = fixtureConfig?.screens;
@@ -364,11 +364,10 @@ export const resolveVisualQualityViewports = (
   const screenViewports = screenByIdViewports ?? screenByNameViewports;
   const fixtureViewports = fixtureConfig?.viewports;
   const globalViewports = config?.viewports;
-  const resolved =
-    screenViewports ??
-    fixtureViewports ??
-    globalViewports ??
-    DEFAULT_VISUAL_QUALITY_VIEWPORTS;
+  const resolved = screenViewports ?? fixtureViewports ?? globalViewports;
+  if (resolved === undefined) {
+    return undefined;
+  }
   return freezeViewports(resolved);
 };
 

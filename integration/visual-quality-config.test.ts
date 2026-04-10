@@ -830,19 +830,17 @@ test("DEFAULT_VISUAL_QUALITY_VIEWPORTS is non-empty and parseable", () => {
 // Issue #838 — resolveVisualQualityViewports precedence
 // ---------------------------------------------------------------------------
 
-test("resolveVisualQualityViewports returns DEFAULT_VISUAL_QUALITY_VIEWPORTS when no config", () => {
-  const result = resolveVisualQualityViewports(undefined, undefined, undefined);
-  assert.deepEqual(
-    result.map((viewport) => viewport.id),
-    DEFAULT_VISUAL_QUALITY_VIEWPORTS.map((viewport) => viewport.id),
+test("resolveVisualQualityViewports returns undefined when no config", () => {
+  assert.equal(
+    resolveVisualQualityViewports(undefined, undefined, undefined),
+    undefined,
   );
 });
 
-test("resolveVisualQualityViewports returns DEFAULT_VISUAL_QUALITY_VIEWPORTS for empty config", () => {
-  const result = resolveVisualQualityViewports({}, "simple-form", undefined);
-  assert.deepEqual(
-    result.map((viewport) => viewport.id),
-    DEFAULT_VISUAL_QUALITY_VIEWPORTS.map((viewport) => viewport.id),
+test("resolveVisualQualityViewports returns undefined for empty config", () => {
+  assert.equal(
+    resolveVisualQualityViewports({}, "simple-form", undefined),
+    undefined,
   );
 });
 
@@ -857,6 +855,7 @@ test("resolveVisualQualityViewports uses global config viewports when no fixture
     "simple-form",
     undefined,
   );
+  assert.ok(result !== undefined);
   assert.deepEqual(
     result.map((viewport) => viewport.id),
     ["desktop", "mobile"],
@@ -879,6 +878,7 @@ test("resolveVisualQualityViewports fixture override replaces global list", () =
     "simple-form",
     undefined,
   );
+  assert.ok(result !== undefined);
   assert.deepEqual(
     result.map((viewport) => viewport.id),
     ["tablet", "mobile"],
@@ -903,6 +903,7 @@ test("resolveVisualQualityViewports screen override beats fixture override", () 
     "simple-form",
     { screenId: "main" },
   );
+  assert.ok(result !== undefined);
   assert.equal(result.length, 1);
   assert.equal(result[0]?.id, "screen");
 });
@@ -923,6 +924,7 @@ test("resolveVisualQualityViewports screen lookup tries screenName when screenId
     "simple-form",
     { screenName: "Main Screen" },
   );
+  assert.ok(result !== undefined);
   assert.equal(result[0]?.id, "named");
 });
 
@@ -945,11 +947,17 @@ test("resolveVisualQualityViewports prefers screenId over screenName when both m
     "simple-form",
     { screenId: "1:65671", screenName: "Main Screen" },
   );
+  assert.ok(result !== undefined);
   assert.equal(result[0]?.id, "by-id");
 });
 
 test("resolveVisualQualityViewports returned array is frozen", () => {
-  const result = resolveVisualQualityViewports(undefined, undefined, undefined);
+  const result = resolveVisualQualityViewports(
+    { viewports: [{ id: "desktop", width: 1280, height: 800 }] },
+    undefined,
+    undefined,
+  );
+  assert.ok(result !== undefined);
   assert.throws(() => {
     (result as VisualQualityViewport[]).push({
       id: "extra",
@@ -1048,19 +1056,10 @@ test("normalizeVisualQualityViewportWeights preserves non-weight fields", () => 
 });
 
 // ---------------------------------------------------------------------------
-// Issue #838 — committed config has default viewports
+// Issue #838 — committed config omits global viewports
 // ---------------------------------------------------------------------------
 
-test("committed visual-quality.config.json contains viewports section", async () => {
+test("committed visual-quality.config.json omits global viewports", async () => {
   const config = await loadVisualQualityConfig();
-  assert.ok(
-    config.viewports !== undefined,
-    "viewports section must be present",
-  );
-  assert.ok(config.viewports.length >= 1);
-  for (const viewport of config.viewports) {
-    assert.equal(typeof viewport.id, "string");
-    assert.equal(typeof viewport.width, "number");
-    assert.equal(typeof viewport.height, "number");
-  }
+  assert.equal(config.viewports, undefined);
 });
