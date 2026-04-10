@@ -7,6 +7,9 @@
   "thresholds": {
     "warn": 80
   },
+  "viewports": [
+    { "deviceScaleFactor": 1, "height": 800, "id": "desktop", "width": 1280 }
+  ],
   "weights": {
     "colorFidelity": 0.25,
     "componentStructure": 0.15,

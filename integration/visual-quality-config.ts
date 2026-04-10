@@ -29,13 +29,35 @@ export const VisualQualityScoringWeightsSchema = z.object({
   spacingAlignment: z.number().min(0).max(1).optional(),
 });
 
+export const VisualQualityViewportSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().optional(),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  deviceScaleFactor: z.number().positive().optional(),
+  weight: z.number().positive().optional(),
+});
+
+export const VisualQualityViewportListSchema = z
+  .array(VisualQualityViewportSchema)
+  .min(1)
+  .refine(
+    (viewports) => {
+      const ids = viewports.map((viewport) => viewport.id);
+      return new Set(ids).size === ids.length;
+    },
+    { message: "viewport ids must be unique within the list" },
+  );
+
 export const VisualQualityScreenConfigSchema = z.object({
   thresholds: VisualQualityThresholdsSchema.optional(),
+  viewports: VisualQualityViewportListSchema.optional(),
 });
 
 export const VisualQualityFixtureConfigSchema = z.object({
   thresholds: VisualQualityThresholdsSchema.optional(),
   screens: z.record(z.string(), VisualQualityScreenConfigSchema).optional(),
+  viewports: VisualQualityViewportListSchema.optional(),
 });
 
 export const VisualQualityRegressionConfigSchema = z.object({
@@ -49,6 +71,7 @@ export const VisualQualityConfigSchema = z.object({
   weights: VisualQualityScoringWeightsSchema.optional(),
   fixtures: z.record(z.string(), VisualQualityFixtureConfigSchema).optional(),
   regression: VisualQualityRegressionConfigSchema.optional(),
+  viewports: VisualQualityViewportListSchema.optional(),
 });
 
 export type VisualQualityThresholds = z.infer<
@@ -64,6 +87,17 @@ export type VisualQualityRegressionConfig = z.infer<
   typeof VisualQualityRegressionConfigSchema
 >;
 export type VisualQualityConfig = z.infer<typeof VisualQualityConfigSchema>;
+export type VisualQualityViewport = z.infer<typeof VisualQualityViewportSchema>;
+
+export const DEFAULT_VISUAL_QUALITY_VIEWPORTS: readonly VisualQualityViewport[] =
+  Object.freeze([
+    Object.freeze({
+      id: "desktop",
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+    }),
+  ]);
 
 export interface VisualQualityResolvedRegressionConfig {
   maxScoreDropPercent: number;
@@ -294,6 +328,84 @@ export const resolveVisualQualityThresholds = (
       globalThresholds.fail ??
       DEFAULT_THRESHOLDS.fail,
   };
+};
+
+const freezeViewports = (
+  viewports: readonly VisualQualityViewport[],
+): readonly VisualQualityViewport[] =>
+  Object.freeze(viewports.map((viewport) => Object.freeze({ ...viewport })));
+
+export const resolveVisualQualityViewports = (
+  config: VisualQualityConfig | undefined,
+  fixtureId: string | undefined,
+  screenContext: VisualQualityScreenContext | undefined,
+): readonly VisualQualityViewport[] => {
+  const fixtureConfig =
+    fixtureId !== undefined ? config?.fixtures?.[fixtureId] : undefined;
+  const screenConfigs = fixtureConfig?.screens;
+  const normalizedScreenId =
+    typeof screenContext?.screenId === "string" &&
+    screenContext.screenId.trim().length > 0
+      ? screenContext.screenId.trim()
+      : undefined;
+  const normalizedScreenName =
+    typeof screenContext?.screenName === "string" &&
+    screenContext.screenName.trim().length > 0
+      ? screenContext.screenName.trim()
+      : undefined;
+  const screenByIdViewports =
+    normalizedScreenId !== undefined
+      ? screenConfigs?.[normalizedScreenId]?.viewports
+      : undefined;
+  const screenByNameViewports =
+    normalizedScreenName !== undefined
+      ? screenConfigs?.[normalizedScreenName]?.viewports
+      : undefined;
+  const screenViewports = screenByIdViewports ?? screenByNameViewports;
+  const fixtureViewports = fixtureConfig?.viewports;
+  const globalViewports = config?.viewports;
+  const resolved =
+    screenViewports ??
+    fixtureViewports ??
+    globalViewports ??
+    DEFAULT_VISUAL_QUALITY_VIEWPORTS;
+  return freezeViewports(resolved);
+};
+
+export const normalizeVisualQualityViewportWeights = (
+  viewports: readonly VisualQualityViewport[],
+): VisualQualityViewport[] => {
+  if (viewports.length === 0) {
+    throw new Error(
+      "normalizeVisualQualityViewportWeights requires at least one viewport.",
+    );
+  }
+  const withWeight = viewports.filter(
+    (viewport) => viewport.weight !== undefined,
+  );
+  if (withWeight.length > 0 && withWeight.length < viewports.length) {
+    throw new Error(
+      "normalizeVisualQualityViewportWeights requires all viewports to declare a weight or none at all.",
+    );
+  }
+  if (withWeight.length === 0) {
+    const equalWeight = 1 / viewports.length;
+    return viewports.map((viewport) => ({ ...viewport, weight: equalWeight }));
+  }
+  let total = 0;
+  for (const viewport of viewports) {
+    const weight = viewport.weight ?? 0;
+    if (!Number.isFinite(weight) || weight <= 0) {
+      throw new Error(
+        "normalizeVisualQualityViewportWeights weights must be positive finite numbers.",
+      );
+    }
+    total += weight;
+  }
+  return viewports.map((viewport) => ({
+    ...viewport,
+    weight: (viewport.weight ?? 0) / total,
+  }));
 };
 
 export const checkVisualQualityThreshold = (
