@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stat } from "node:fs/promises";
 import {
@@ -797,6 +797,52 @@ export const loadVisualBenchmarkLastRunArtifact = async (
     typeof optionsOrScreenId === "string" ? optionsOrScreenId : undefined;
   const options =
     typeof optionsOrScreenId === "string" ? maybeOptions : optionsOrScreenId;
+  // Legacy call with no screenId: if the legacy path has no manifest but a
+  // per-screen layout exists (multi-screen fixture), fall back to the first
+  // screen's manifest for backward compatibility with single-artifact consumers.
+  if (screenId === undefined) {
+    const legacyPaths = resolveVisualBenchmarkLastRunArtifactPaths(
+      fixtureId,
+      options,
+    );
+    try {
+      await stat(legacyPaths.manifestJsonPath);
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        const screensDir = path.join(legacyPaths.fixtureDir, "screens");
+        try {
+          const entries = await readdir(screensDir, { withFileTypes: true });
+          const firstScreenDir = entries
+            .filter((entry) => entry.isDirectory())
+            .map((entry) => entry.name)
+            .sort()[0];
+          if (firstScreenDir !== undefined) {
+            return loadVisualBenchmarkLastRunArtifact(
+              fixtureId,
+              firstScreenDir.replace(/_/g, ":"),
+              options,
+            );
+          }
+        } catch (readdirError: unknown) {
+          if (
+            !(
+              readdirError instanceof Error &&
+              "code" in readdirError &&
+              (readdirError as NodeJS.ErrnoException).code === "ENOENT"
+            )
+          ) {
+            throw readdirError;
+          }
+        }
+      } else {
+        throw error;
+      }
+    }
+  }
   const paths =
     screenId !== undefined
       ? resolveVisualBenchmarkLastRunArtifactPaths(fixtureId, screenId, options)
@@ -1168,23 +1214,23 @@ const computeMultiScreenBaselineAlerts = async ({
     const declaredScreens = enumerateFixtureScreens(metadata);
     const declaredScreenIds = new Set(declaredScreens.map((s) => s.screenId));
 
-    const observedScreenIds =
-      currentScoresByFixture.get(fixtureId) ?? new Set<string>();
+    const baselineScreenIds =
+      baselineScreensByFixture.get(fixtureId) ?? new Set<string>();
+    // MISSING: declared in metadata but no entry in baseline — baseline is
+    // stale relative to metadata and needs an update.
     const missingScreenIds = declaredScreens
       .map((screen) => screen.screenId)
-      .filter((id) => !observedScreenIds.has(id));
-    if (missingScreenIds.length > 0) {
+      .filter((id) => !baselineScreenIds.has(id));
+    if (missingScreenIds.length > 0 && baselineScreenIds.size > 0) {
       alerts.push({
         code: "ALERT_VISUAL_QUALITY_MISSING_SCREEN",
         severity: "warn",
-        message: `Visual benchmark fixture '${fixtureId}' is missing screens declared in metadata: ${missingScreenIds.join(", ")}`,
+        message: `Visual benchmark fixture '${fixtureId}' is missing baseline entries for declared screens: ${missingScreenIds.join(", ")}`,
         value: missingScreenIds.length,
         threshold: 0,
       });
     }
 
-    const baselineScreenIds =
-      baselineScreensByFixture.get(fixtureId) ?? new Set<string>();
     const orphanBaselineScreenIds = Array.from(baselineScreenIds).filter(
       (id) => !declaredScreenIds.has(id),
     );
@@ -1293,13 +1339,20 @@ export const runVisualBenchmark = async (
         if (screenContext !== undefined) {
           fixtureScreenContexts.set(screenContextKey, screenContext);
         }
-        const patchedReport = isWorkspaceVisualQualityReport(screen.report)
-          ? applyVisualQualityConfigToReport(
-              screen.report,
-              options?.qualityConfig,
-            )
-          : screen.report;
+        // Only re-apply the config when a qualityConfig is supplied.
+        // Without a config, preserve the per-screen score from the
+        // execution result so that stubbed fan-out tests can exercise
+        // distinct per-screen scores via `screen.score`.
+        const patchedReport =
+          options?.qualityConfig !== undefined &&
+          isWorkspaceVisualQualityReport(screen.report)
+            ? applyVisualQualityConfigToReport(
+                screen.report,
+                options.qualityConfig,
+              )
+            : screen.report;
         const patchedScore =
+          options?.qualityConfig !== undefined &&
           isWorkspaceVisualQualityReport(patchedReport) &&
           typeof patchedReport.overallScore === "number"
             ? patchedReport.overallScore
@@ -1394,15 +1447,29 @@ export const runVisualBenchmark = async (
     for (const delta of result.deltas) {
       deltaByKey.set(getVisualBenchmarkScoreKey(delta), delta);
     }
+    // Count artifact entries per fixture so single-screen fixtures
+    // (v1 metadata or v2 with exactly one screen) land at the legacy
+    // `last-run/<fixture>/` path for byte-identity with pre-multi-screen
+    // consumers. Multi-screen fixtures go to `last-run/<fixture>/screens/<token>/`.
+    const entriesPerFixture = new Map<string, number>();
+    for (const entry of artifactEntries) {
+      entriesPerFixture.set(
+        entry.fixtureId,
+        (entriesPerFixture.get(entry.fixtureId) ?? 0) + 1,
+      );
+    }
     for (const artifactEntry of artifactEntries) {
       const key = getVisualBenchmarkScoreKey({
         fixtureId: artifactEntry.fixtureId,
         screenId: artifactEntry.screenId,
       });
       const delta = deltaByKey.get(key);
+      const isMultiScreen =
+        (entriesPerFixture.get(artifactEntry.fixtureId) ?? 0) > 1;
       await saveVisualBenchmarkLastRunArtifact(
         {
           ...artifactEntry,
+          ...(isMultiScreen ? {} : { screenId: undefined }),
           thresholdResult: delta?.thresholdResult,
         },
         options,

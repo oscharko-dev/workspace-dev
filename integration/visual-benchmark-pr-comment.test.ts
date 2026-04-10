@@ -439,12 +439,16 @@ test("buildVisualBenchmarkPrComment looks up baseline with composite key for mul
     const homeDir = path.join(
       artifactRoot,
       "last-run",
-      `${fixtureId}__2_10001`,
+      fixtureId,
+      "screens",
+      "2_10001",
     );
     const settingsDir = path.join(
       artifactRoot,
       "last-run",
-      `${fixtureId}__2_10002`,
+      fixtureId,
+      "screens",
+      "2_10002",
     );
     await mkdir(homeDir, { recursive: true });
     await mkdir(settingsDir, { recursive: true });
