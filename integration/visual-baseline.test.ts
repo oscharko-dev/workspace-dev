@@ -703,6 +703,54 @@ test("computeVisualBaselineDiff computes deltas and returns artifact paths", asy
   }
 });
 
+test("computeVisualBaselineDiff resolves legacy last-run entries to metadata screen IDs", async () => {
+  const env = await createFixtureEnvironment();
+
+  try {
+    await writeVisualBenchmarkFixtureMetadata(
+      "simple-form",
+      {
+        ...createFixtureMetadata("simple-form"),
+        source: {
+          ...createFixtureMetadata("simple-form").source,
+          nodeId: "2:7777",
+          nodeName: "Simple Form",
+        },
+      },
+      env,
+    );
+
+    await saveVisualBenchmarkBaselineScores(
+      [{ fixtureId: "simple-form", score: 90 }],
+      env,
+    );
+
+    await mkdir(env.artifactRoot, { recursive: true });
+    await writeFile(
+      path.join(env.artifactRoot, "last-run.json"),
+      JSON.stringify(
+        {
+          version: 1,
+          ranAt: "2026-04-09T12:00:00.000Z",
+          scores: [{ fixtureId: "simple-form", score: 95 }],
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+
+    const diff = await computeVisualBaselineDiff(env);
+    assert.equal(diff.diffs[0]?.screenId, "2:7777");
+    assert.equal(diff.diffs[0]?.screenName, "Simple Form");
+    assert.equal(diff.diffs[0]?.baseline, 90);
+    assert.equal(diff.diffs[0]?.indicator, "improved");
+    assert.equal(diff.hasPendingDiffs, true);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
 test("computeVisualBaselineDiff detects neutral deltas within tolerance", async () => {
   const env = await createFixtureEnvironment({
     baselineScores: [{ fixtureId: "simple-form", score: 100 }],
