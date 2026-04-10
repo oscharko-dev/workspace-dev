@@ -104,6 +104,7 @@ const EXPECTED_TYPES_EXPORTS = [
   "KpiDurationStats",
   "KpiRateStats",
   "KpiTrendBucket",
+  "KpiVisualQualityDimensionScores",
   "LatestSuccessJobResponse",
   "LatestSuccessPreview",
   "LlmApiKeyMode",
@@ -183,21 +184,37 @@ const EXPECTED_TYPES_EXPORTS = [
   "VariantMappingIR",
   "VariantMuiProps",
   "VariantStateSnapshot",
-  "VariantStateStyle"
+  "VariantStateStyle",
 ] as const;
 
 const hasExportModifier = (node: ts.Node): boolean =>
-  ts.canHaveModifiers(node) && (ts.getModifiers(node)?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false);
+  ts.canHaveModifiers(node) &&
+  (ts
+    .getModifiers(node)
+    ?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ??
+    false);
 
 test("types barrel exports stay stable and use named re-exports", async () => {
   const source = await readFile(typesFilePath, "utf8");
-  const parsed = ts.createSourceFile(typesFilePath, source, ts.ScriptTarget.ESNext, true, ts.ScriptKind.TS);
+  const parsed = ts.createSourceFile(
+    typesFilePath,
+    source,
+    ts.ScriptTarget.ESNext,
+    true,
+    ts.ScriptKind.TS,
+  );
   const names = new Set<string>();
 
   for (const statement of parsed.statements) {
     if (ts.isExportDeclaration(statement)) {
-      assert.ok(statement.exportClause, "types.ts must not use wildcard re-exports.");
-      assert.ok(ts.isNamedExports(statement.exportClause), "types.ts must only use named re-exports.");
+      assert.ok(
+        statement.exportClause,
+        "types.ts must not use wildcard re-exports.",
+      );
+      assert.ok(
+        ts.isNamedExports(statement.exportClause),
+        "types.ts must only use named re-exports.",
+      );
       if (ts.isNamedExports(statement.exportClause)) {
         for (const element of statement.exportClause.elements) {
           names.add(element.name.text);
@@ -217,6 +234,8 @@ test("types barrel exports stay stable and use named re-exports", async () => {
   }
 
   const actual = [...names].sort((left, right) => left.localeCompare(right));
-  const expected = [...EXPECTED_TYPES_EXPORTS].sort((left, right) => left.localeCompare(right));
+  const expected = [...EXPECTED_TYPES_EXPORTS].sort((left, right) =>
+    left.localeCompare(right),
+  );
   assert.deepEqual(actual, expected);
 });

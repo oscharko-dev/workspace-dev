@@ -20,7 +20,7 @@ export type {
   SyncRunResultStatus,
   SyncRunStatus,
   UiGateMode,
-  ValidatorInstallPolicy
+  ValidatorInstallPolicy,
 } from "./types-core.js";
 
 export type {
@@ -44,7 +44,7 @@ export type {
   SyncPolicySchedule,
   SyncRunRecord,
   SyncRunSummary,
-  UiGatePolicy
+  UiGatePolicy,
 } from "./types-sync.js";
 
 export type {
@@ -52,10 +52,14 @@ export type {
   ComponentMappingRule,
   ComponentMappingSource,
   MappingCoverageMetrics,
-  MappingPolicy
+  MappingPolicy,
 } from "./types-mapping.js";
 
-export { validateDesignIR, isTextElement, isNonTextElement } from "./types-ir.js";
+export {
+  validateDesignIR,
+  isTextElement,
+  isNonTextElement,
+} from "./types-ir.js";
 
 export type {
   AppShellIR,
@@ -119,7 +123,7 @@ export type {
   VariantMappingIR,
   VariantMuiProps,
   VariantStateSnapshot,
-  VariantStateStyle
+  VariantStateStyle,
 } from "./types-ir.js";
 
 export type {
@@ -131,7 +135,7 @@ export type {
   FigmaAnalysisExternalComponent,
   FigmaAnalysisFrameVariantGroup,
   FigmaAnalysisLayoutGraph,
-  FigmaAnalysisTokenSignals
+  FigmaAnalysisTokenSignals,
 } from "./figma-analysis.js";
 
 export type {
@@ -144,7 +148,7 @@ export type {
   EditableFileNode,
   FileContentRecord,
   SaveOperationCommit,
-  SaveOperationResult
+  SaveOperationResult,
 } from "./types-edit-session.js";
 
 export type {
@@ -155,10 +159,11 @@ export type {
   KpiDurationStats,
   KpiRateStats,
   KpiTrendBucket,
+  KpiVisualQualityDimensionScores,
   PortfolioKpiResponse,
   PortfolioKpiSnapshot,
   ProjectKpiResponse,
-  ProjectKpiSnapshot
+  ProjectKpiSnapshot,
 } from "./types-kpi.js";
 
 export type {
@@ -193,5 +198,5 @@ export type {
   RepoConfig,
   ReviewEvidenceRecord,
   ReviewEvidenceSummary,
-  UiGateResult
+  UiGateResult,
 } from "./types-job.js";

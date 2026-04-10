@@ -9,6 +9,14 @@ export interface KpiRateStats {
   warningRate: number;
 }
 
+export interface KpiVisualQualityDimensionScores {
+  layout?: number;
+  color?: number;
+  typography?: number;
+  component?: number;
+  spacing?: number;
+}
+
 export interface ProjectKpiSnapshot {
   projectId: string;
   from: string;
@@ -23,6 +31,10 @@ export interface ProjectKpiSnapshot {
   rates: KpiRateStats;
   mappingCoverageAvg?: number;
   uiGateWarnRate?: number;
+  visualQualityScoreAvg?: number;
+  visualQualityScoreP50?: number;
+  visualQualityScoreP95?: number;
+  visualQualityDimensions?: KpiVisualQualityDimensionScores;
 }
 
 export interface PortfolioKpiSnapshot {
@@ -38,6 +50,7 @@ export interface PortfolioKpiSnapshot {
   rates: KpiRateStats;
   mappingCoverageAvg?: number;
   uiGateWarnRate?: number;
+  visualQualityScoreAvg?: number;
   projects: Array<{
     projectId: string;
     totalJobs: number;
@@ -59,6 +72,7 @@ export interface KpiTrendBucket {
   uiGateWarnRate: number;
   retriesPerJob: number;
   mappingCoverageAvg?: number;
+  visualQualityScoreAvg?: number;
   duration: KpiDurationStats;
 }
 
@@ -70,13 +84,15 @@ export interface KpiBaselineComparison {
   mappingCoverageDelta?: number;
   uiGateWarnRateDelta?: number;
   retriesPerJobDelta?: number;
+  visualQualityScoreDelta?: number;
 }
 
 export type KpiAlertCode =
   | "ALERT_MAPPING_COVERAGE_DROP"
   | "ALERT_UI_GATE_WARN_SPIKE"
   | "ALERT_RETRY_INFLATION"
-  | "ALERT_QUEUE_SATURATION";
+  | "ALERT_QUEUE_SATURATION"
+  | "ALERT_VISUAL_QUALITY_DROP";
 
 export interface KpiAlert {
   code: KpiAlertCode;
