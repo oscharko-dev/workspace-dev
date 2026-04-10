@@ -62,7 +62,11 @@ jobs:
           --artifact-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Post or update visual benchmark PR comment
-        if: always() && github.event_name == 'pull_request' && hashFiles('artifacts/visual-benchmark/pr-comment.json') != ''
+        if: >-
+          always()
+          && github.event_name == 'pull_request'
+          && github.event.pull_request.head.repo.full_name == github.repository
+          && hashFiles('artifacts/visual-benchmark/pr-comment.json') != ''
         uses: actions/github-script@v8
         with:
           script: |
