@@ -6,21 +6,22 @@ const config = {
   checkers: ["typescript"],
   plugins: [
     "@stryker-mutator/tap-runner",
-    "@stryker-mutator/typescript-checker"
+    "@stryker-mutator/typescript-checker",
   ],
   mutate: [
     "src/mode-lock.ts",
     "src/schemas.ts",
     "src/server/request-security.ts",
     "src/job-engine/pipeline/orchestrator.ts",
-    "src/parity/ir.ts"
+    "src/job-engine/visual-scoring.ts",
+    "src/parity/ir.ts",
   ],
   reporters: ["clear-text", "json", "html"],
   htmlReporter: {
-    fileName: "artifacts/testing/mutation/mutation.html"
+    fileName: "artifacts/testing/mutation/mutation.html",
   },
   jsonReporter: {
-    fileName: "artifacts/testing/mutation/mutation.json"
+    fileName: "artifacts/testing/mutation/mutation.json",
   },
   tempDirName: "artifacts/testing/.stryker-tmp",
   ignorePatterns: [
@@ -30,16 +31,16 @@ const config = {
     "playwright-report/**/*",
     "template/react-mui-app/artifacts/**/*",
     "template/react-mui-app/dist/**/*",
-    "test-results/**/*"
+    "test-results/**/*",
   ],
   thresholds: {
     high: 62,
     low: 62,
-    break: null
+    break: null,
   },
   tsconfigFile: "tsconfig.json",
   typescriptChecker: {
-    prioritizePerformanceOverAccuracy: false
+    prioritizePerformanceOverAccuracy: false,
   },
   tap: {
     testFiles: [
@@ -47,10 +48,18 @@ const config = {
       "src/schemas.test.ts",
       "src/server/request-security.test.ts",
       "src/job-engine/pipeline/orchestrator.test.ts",
-      "src/parity/ir.test.ts"
+      "src/job-engine/visual-scoring.test.ts",
+      "src/parity/ir.test.ts",
     ],
-    nodeArgs: ["--test-reporter=tap", "-r", "{{hookFile}}", "--import", "tsx", "{{testFile}}"]
-  }
+    nodeArgs: [
+      "--test-reporter=tap",
+      "-r",
+      "{{hookFile}}",
+      "--import",
+      "tsx",
+      "{{testFile}}",
+    ],
+  },
 };
 
 export default config;
