@@ -1,4 +1,5 @@
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import {
   computeVisualBenchmarkAggregateScore,
@@ -13,7 +14,12 @@ import {
   listVisualBenchmarkFixtureIds,
   toScreenIdToken,
   toStableJsonString,
+  writeVisualBenchmarkFixtureInputs,
+  writeVisualBenchmarkFixtureManifest,
+  writeVisualBenchmarkFixtureMetadata,
+  writeVisualBenchmarkReference,
   type VisualBenchmarkFixtureMetadata,
+  type VisualBenchmarkFixtureManifest,
   type VisualBenchmarkFixtureOptions,
   type VisualBenchmarkFixtureScreenMetadata,
 } from "./visual-benchmark.helpers.js";
@@ -51,6 +57,13 @@ import {
 } from "./visual-benchmark-regression.js";
 import type { KpiAlert } from "../src/parity/types-kpi.js";
 import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
+import { parseStorybookComponentVisualCatalogArtifact } from "../src/storybook/artifact-validation.js";
+import type {
+  StorybookComponentVisualCatalogArtifact,
+  StorybookComponentVisualCatalogEntry,
+} from "../src/storybook/types.js";
+import { fetchVisualBenchmarkReferenceImage } from "./visual-benchmark.update.js";
+import { PNG } from "pngjs";
 
 const BASELINE_FILE_NAME = "baseline.json";
 const LAST_RUN_FILE_NAME = "last-run.json";
@@ -65,6 +78,9 @@ const DEFAULT_ARTIFACT_ROOT = path.resolve(
   "visual-benchmark",
 );
 const DEFAULT_NEUTRAL_DELTA_TOLERANCE = 1;
+const DEFAULT_HEADLINE_SCREEN_WEIGHT = 0.7;
+const DEFAULT_HEADLINE_COMPONENT_WEIGHT = 0.3;
+const STORYBOOK_COMPONENT_FIXTURE_ID = "storybook-components";
 
 export interface VisualBenchmarkScoreEntry {
   fixtureId: string;
@@ -101,12 +117,39 @@ export interface VisualBenchmarkResult {
   overallDelta: number | null;
   alerts: KpiAlert[];
   trendSummaries: VisualBenchmarkTrendSummary[];
+  screenAggregateScore?: number;
+  componentAggregateScore?: number;
+  componentCoverage?: {
+    comparedCount: number;
+    skippedCount: number;
+    coveragePercent: number;
+    bySkipReason: Record<string, number>;
+  };
+  warnings?: string[];
 }
+
+type VisualBenchmarkComponentResultEntry = NonNullable<
+  WorkspaceVisualQualityReport["components"]
+>[number];
 
 export interface VisualBenchmarkLastRun {
   version: 1;
   ranAt: string;
   scores: VisualBenchmarkScoreEntry[];
+  overallScore?: number;
+  overallCurrent?: number;
+  overallBaseline?: number | null;
+  overallDelta?: number | null;
+  screenAggregateScore?: number;
+  componentAggregateScore?: number;
+  componentCoverage?: {
+    comparedCount: number;
+    skippedCount: number;
+    coveragePercent: number;
+    bySkipReason: Record<string, number>;
+  };
+  components?: VisualBenchmarkComponentResultEntry[];
+  warnings?: string[];
 }
 
 export interface VisualBenchmarkLastRunArtifactManifest {
@@ -118,6 +161,7 @@ export interface VisualBenchmarkLastRunArtifactManifest {
   viewportLabel?: string;
   score: number;
   ranAt: string;
+  mode?: VisualBenchmarkFixtureMetadata["mode"];
   viewport: {
     width: number;
     height: number;
@@ -152,6 +196,7 @@ export interface VisualBenchmarkLastRunArtifactInput {
   viewportLabel?: string;
   score: number;
   ranAt: string;
+  mode?: VisualBenchmarkFixtureMetadata["mode"];
   viewport: {
     width: number;
     height: number;
@@ -188,13 +233,45 @@ export interface VisualBenchmarkRunnerDependencies {
     fixtureId: string,
     options?: VisualBenchmarkExecutionOptions,
   ) => Promise<VisualBenchmarkFixtureRunResult>;
+  prepareStorybookComponentFixtures?: (
+    options?: VisualBenchmarkRunOptions,
+  ) => Promise<PreparedStorybookComponentFixtures>;
 }
 
 export interface VisualBenchmarkScreenAggregateEntry {
   fixtureId: string;
   screenId: string;
   score: number;
+  weight?: number;
 }
+
+interface VisualBenchmarkCategorizedAggregates {
+  screen: VisualBenchmarkScreenAggregateEntry[];
+  component: VisualBenchmarkScreenAggregateEntry[];
+}
+
+interface VisualBenchmarkCoverageAccumulator {
+  comparedCount: number;
+  skippedCount: number;
+  bySkipReason: Record<string, number>;
+}
+
+export interface VisualBenchmarkRunOptions extends VisualBenchmarkExecutionOptions {
+  updateBaseline?: boolean;
+  qualityConfig?: VisualQualityConfig;
+  componentVisualCatalogFile?: string;
+}
+
+interface PreparedStorybookComponentFixtures {
+  options?: VisualBenchmarkRunOptions;
+  cleanup?: () => Promise<void>;
+  warnings: string[];
+  skippedComponents: VisualBenchmarkComponentResultEntry[];
+  skippedCoverage: VisualBenchmarkCoverageAccumulator;
+}
+
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === "number" && Number.isFinite(value);
 
 /**
  * Arithmetic mean of per-screen scores. Empty input throws (undefined behavior).
@@ -204,6 +281,37 @@ export const computeFixtureAggregate = (
   screens: readonly { score: number; weight?: number }[],
 ): number => {
   return computeVisualBenchmarkAggregateScore(screens);
+};
+
+export const blendVisualBenchmarkHeadlineScore = (input: {
+  screenAggregateScore?: number | null;
+  componentAggregateScore?: number | null;
+  screenWeight?: number;
+  componentWeight?: number;
+}): number | null => {
+  const screenScore =
+    typeof input.screenAggregateScore === "number"
+      ? input.screenAggregateScore
+      : null;
+  const componentScore =
+    typeof input.componentAggregateScore === "number"
+      ? input.componentAggregateScore
+      : null;
+  if (screenScore === null && componentScore === null) {
+    return null;
+  }
+  if (screenScore === null) {
+    return roundToTwoDecimals(componentScore!);
+  }
+  if (componentScore === null) {
+    return roundToTwoDecimals(screenScore);
+  }
+  const screenWeight = input.screenWeight ?? DEFAULT_HEADLINE_SCREEN_WEIGHT;
+  const componentWeight =
+    input.componentWeight ?? DEFAULT_HEADLINE_COMPONENT_WEIGHT;
+  return roundToTwoDecimals(
+    screenScore * screenWeight + componentScore * componentWeight,
+  );
 };
 
 const resolveBaselinePath = (
@@ -316,9 +424,497 @@ const buildScreenAggregateMapFromEntries = (
           ? assertAllowedScreenId(entry.screenId.trim())
           : assertAllowedFixtureId(entry.fixtureId),
       score: entry.score,
+      ...(entry.weight !== undefined ? { weight: entry.weight } : {}),
     });
   }
   return aggregateMap;
+};
+
+const createEmptyCoverageAccumulator = (): VisualBenchmarkCoverageAccumulator => ({
+  comparedCount: 0,
+  skippedCount: 0,
+  bySkipReason: {},
+});
+
+const mergeComponentCoverage = (
+  accumulator: VisualBenchmarkCoverageAccumulator,
+  coverage:
+    | {
+        comparedCount: number;
+        skippedCount: number;
+        bySkipReason: Record<string, number>;
+      }
+    | undefined,
+): void => {
+  if (coverage === undefined) {
+    return;
+  }
+  accumulator.comparedCount += coverage.comparedCount;
+  accumulator.skippedCount += coverage.skippedCount;
+  for (const [key, value] of Object.entries(coverage.bySkipReason)) {
+    accumulator.bySkipReason[key] = (accumulator.bySkipReason[key] ?? 0) + value;
+  }
+};
+
+const sortWarnings = (warnings: readonly string[] | undefined): string[] | undefined => {
+  if (!Array.isArray(warnings) || warnings.length === 0) {
+    return undefined;
+  }
+  const normalized = [...new Set(
+    warnings.filter((warning) => typeof warning === "string" && warning.trim().length > 0)
+  )]
+    .map((warning) => warning.trim())
+    .sort((left, right) => left.localeCompare(right));
+  return normalized.length > 0 ? normalized : undefined;
+};
+
+const createTransparentPngBuffer = ({
+  width,
+  height,
+}: {
+  width: number;
+  height: number;
+}): Buffer => {
+  const png = new PNG({ width, height });
+  png.data.fill(0);
+  return PNG.sync.write(png);
+};
+
+const readPngViewport = (
+  buffer: Buffer,
+): {
+  width: number;
+  height: number;
+} => {
+  const parsed = PNG.sync.read(buffer);
+  return {
+    width: parsed.width,
+    height: parsed.height,
+  };
+};
+
+const resolveStorybookComponentFixtureCatalogPath = async (
+  options?: VisualBenchmarkRunOptions,
+): Promise<string | null> => {
+  const requested = options?.componentVisualCatalogFile;
+  if (typeof requested !== "string" || requested.trim().length === 0) {
+    return null;
+  }
+  const resolved = path.isAbsolute(requested)
+    ? requested
+    : path.resolve(process.cwd(), requested);
+  try {
+    await stat(resolved);
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      throw new Error(
+        `Storybook component visual catalog '${resolved}' does not exist.`,
+      );
+    }
+    throw error;
+  }
+  return resolved;
+};
+
+const toStorybookSkippedComponentSummary = (
+  entry: StorybookComponentVisualCatalogEntry,
+): VisualBenchmarkComponentResultEntry => ({
+  componentId: entry.componentId,
+  componentName: entry.storyTitle ?? entry.figmaFamilyName,
+  status: "skipped",
+  ...(entry.skipReason ? { skipReason: entry.skipReason } : {}),
+  ...(entry.storyEntryId ? { storyEntryId: entry.storyEntryId } : {}),
+  ...(entry.referenceNodeId ? { referenceNodeId: entry.referenceNodeId } : {}),
+  ...(entry.warnings.length > 0 ? { warnings: [...entry.warnings] } : {}),
+});
+
+const buildStorybookComponentCoverageFromCatalog = (
+  artifact: StorybookComponentVisualCatalogArtifact,
+): VisualBenchmarkCoverageAccumulator => {
+  const accumulator = createEmptyCoverageAccumulator();
+  for (const entry of artifact.entries) {
+    if (entry.comparisonStatus === "ready") {
+      continue;
+    }
+    accumulator.skippedCount += 1;
+    if (entry.skipReason) {
+      accumulator.bySkipReason[entry.skipReason] =
+        (accumulator.bySkipReason[entry.skipReason] ?? 0) + 1;
+    }
+  }
+  return accumulator;
+};
+
+export const prepareStorybookComponentFixtures = async (
+  options?: VisualBenchmarkRunOptions,
+  dependencies?: {
+    fetchReferenceImage?: (
+      metadata: VisualBenchmarkFixtureMetadata,
+    ) => Promise<Buffer>;
+  },
+): Promise<PreparedStorybookComponentFixtures> => {
+  const catalogPath = await resolveStorybookComponentFixtureCatalogPath(options);
+  if (catalogPath === null) {
+    return {
+      warnings: [],
+      skippedComponents: [],
+      skippedCoverage: createEmptyCoverageAccumulator(),
+    };
+  }
+
+  const artifact = parseStorybookComponentVisualCatalogArtifact({
+    input: await readFile(catalogPath, "utf8"),
+  });
+  const skippedComponents = artifact.entries
+    .filter((entry) => entry.comparisonStatus !== "ready")
+    .map((entry) => toStorybookSkippedComponentSummary(entry));
+  const skippedCoverage = buildStorybookComponentCoverageFromCatalog(artifact);
+  const readyEntries = artifact.entries.filter(
+    (entry) => entry.comparisonStatus === "ready",
+  );
+  if (readyEntries.length === 0) {
+    return {
+      warnings: [],
+      skippedComponents,
+      skippedCoverage,
+    };
+  }
+
+  const sourceFixtureRoot = options?.fixtureRoot ?? getVisualBenchmarkFixtureRoot();
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-storybook-components-"),
+  );
+  const mergedFixtureRoot = path.join(tempRoot, "fixtures");
+  const warnings: string[] = [];
+  try {
+    await cp(sourceFixtureRoot, mergedFixtureRoot, {
+      recursive: true,
+      force: true,
+    });
+  } catch (error: unknown) {
+    if (
+      !(
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      )
+    ) {
+      await rm(tempRoot, { recursive: true, force: true });
+      throw error;
+    }
+    await mkdir(mergedFixtureRoot, { recursive: true });
+  }
+
+  const fixtureId = STORYBOOK_COMPONENT_FIXTURE_ID;
+  const now = new Date().toISOString();
+  const fetchReferenceImage = dependencies?.fetchReferenceImage;
+  const accessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
+  const fixtureScreens: Array<Record<string, unknown>> = [];
+  let representativeSource:
+    | VisualBenchmarkFixtureMetadata["source"]
+    | undefined;
+  let representativeViewport:
+    | VisualBenchmarkFixtureMetadata["viewport"]
+    | undefined;
+  let fixtureReferenceBuffer: Buffer | undefined;
+
+  for (const entry of readyEntries) {
+    const referenceFileKey = entry.referenceFileKey;
+    const referenceNodeId = entry.referenceNodeId;
+    const storyEntryId = entry.storyEntryId;
+    if (!referenceFileKey || !referenceNodeId || !storyEntryId) {
+      warnings.push(
+        `Storybook component '${entry.componentId}' is marked ready but is missing fixture metadata and will be skipped.`,
+      );
+      skippedComponents.push({
+        componentId: entry.componentId,
+        componentName: entry.storyTitle ?? entry.figmaFamilyName,
+        status: "skipped",
+        skipReason: "missing_story",
+        ...(entry.warnings.length > 0 ? { warnings: [...entry.warnings] } : {}),
+      });
+      skippedCoverage.skippedCount += 1;
+      skippedCoverage.bySkipReason.missing_story =
+        (skippedCoverage.bySkipReason.missing_story ?? 0) + 1;
+      continue;
+    }
+
+    let referenceBuffer: Buffer | undefined;
+    const referenceMetadata: VisualBenchmarkFixtureMetadata = {
+      version: 4,
+      mode: "storybook_component",
+      fixtureId,
+      capturedAt: now,
+      source: {
+        fileKey: referenceFileKey,
+        nodeId: referenceNodeId,
+        nodeName: entry.figmaFamilyName,
+        lastModified: now,
+      },
+      viewport: { width: 1, height: 1 },
+      export: { format: "png", scale: 1 },
+    };
+
+    if (fetchReferenceImage) {
+      referenceBuffer = await fetchReferenceImage(referenceMetadata);
+    } else if (accessToken) {
+      try {
+        referenceBuffer = await fetchVisualBenchmarkReferenceImage(
+          referenceMetadata,
+          accessToken,
+        );
+      } catch (error: unknown) {
+        warnings.push(
+          `Storybook component '${entry.componentId}' reference export failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
+    } else {
+      warnings.push(
+        `Storybook component '${entry.componentId}' could not export a frozen Figma reference because FIGMA_ACCESS_TOKEN is not set.`,
+      );
+    }
+
+    const referenceViewport =
+      referenceBuffer !== undefined
+        ? readPngViewport(referenceBuffer)
+        : { width: 1, height: 1 };
+    const padding = entry.baselineCanvas?.padding ?? 16;
+    const executionViewport = {
+      width: referenceViewport.width + padding * 2,
+      height: referenceViewport.height + padding * 2,
+    };
+
+    fixtureScreens.push({
+      screenId: entry.componentId,
+      screenName: entry.figmaFamilyName,
+      nodeId: referenceNodeId,
+      viewport: referenceViewport,
+      viewports: [
+        {
+          id: "default",
+          width: executionViewport.width,
+          height: executionViewport.height,
+        },
+      ],
+      entryId: storyEntryId,
+      ...(entry.storyTitle ? { storyTitle: entry.storyTitle } : {}),
+      referenceNodeId,
+      referenceFileKey,
+      captureStrategy: "storybook_root_union",
+      baselineCanvas: entry.baselineCanvas
+        ? { ...entry.baselineCanvas }
+        : { width: referenceViewport.width, height: referenceViewport.height },
+    });
+
+    if (referenceBuffer !== undefined) {
+      await mkdir(
+        path.join(
+          mergedFixtureRoot,
+          fixtureId,
+          "screens",
+          toScreenIdToken(entry.componentId),
+        ),
+        { recursive: true },
+      );
+      await writeFile(
+        path.join(
+          mergedFixtureRoot,
+          fixtureId,
+          "screens",
+          toScreenIdToken(entry.componentId),
+          "default.png",
+        ),
+        referenceBuffer,
+      );
+      fixtureReferenceBuffer ??= referenceBuffer;
+    }
+
+    representativeSource ??= referenceMetadata.source;
+    representativeViewport ??= referenceViewport;
+  }
+
+  if (fixtureScreens.length === 0) {
+    await rm(tempRoot, { recursive: true, force: true });
+    return {
+      warnings,
+      skippedComponents,
+      skippedCoverage,
+    };
+  }
+
+  representativeSource ??= {
+    fileKey: "storybook-components",
+    nodeId: "storybook-components",
+    nodeName: "Storybook Components",
+    lastModified: now,
+  };
+  representativeViewport ??= fixtureScreens[0]!.viewport as {
+    width: number;
+    height: number;
+  };
+  fixtureReferenceBuffer ??= createTransparentPngBuffer({
+    width: representativeViewport.width,
+    height: representativeViewport.height,
+  });
+
+  const manifest: VisualBenchmarkFixtureManifest = {
+    version: 1,
+    fixtureId,
+    visualQuality: {
+      frozenReferenceImage: "reference.png",
+      frozenReferenceMetadata: "metadata.json",
+    },
+  };
+  const metadata: VisualBenchmarkFixtureMetadata = {
+    version: 4,
+    mode: "storybook_component",
+    fixtureId,
+    capturedAt: now,
+    source: representativeSource,
+    viewport: representativeViewport,
+    export: {
+      format: "png",
+      scale: 1,
+    },
+    screens:
+      fixtureScreens as unknown as VisualBenchmarkFixtureMetadata["screens"],
+  };
+
+  await writeVisualBenchmarkFixtureManifest(
+    fixtureId,
+    manifest,
+    { fixtureRoot: mergedFixtureRoot },
+  );
+  await writeVisualBenchmarkFixtureMetadata(
+    fixtureId,
+    metadata,
+    { fixtureRoot: mergedFixtureRoot },
+  );
+  await writeVisualBenchmarkFixtureInputs(
+    fixtureId,
+    {},
+    { fixtureRoot: mergedFixtureRoot },
+  );
+  await writeVisualBenchmarkReference(
+    fixtureId,
+    fixtureReferenceBuffer,
+    { fixtureRoot: mergedFixtureRoot },
+  );
+
+  return {
+    options: {
+      ...options,
+      fixtureRoot: mergedFixtureRoot,
+    },
+    cleanup: async () => {
+      await rm(tempRoot, { recursive: true, force: true });
+    },
+    warnings,
+    skippedComponents,
+    skippedCoverage,
+  };
+};
+
+const resolveDeclaredScreenWeight = (
+  metadata: VisualBenchmarkFixtureMetadata,
+  screenId: string,
+): number | undefined =>
+  enumerateFixtureScreens(metadata).find((screen) => screen.screenId === screenId)
+    ?.weight;
+
+const normalizeLastRunComponentCoverage = (
+  value: unknown,
+): VisualBenchmarkLastRun["componentCoverage"] | undefined => {
+  if (!isPlainRecord(value)) {
+    return undefined;
+  }
+  if (
+    !isFiniteNumber(value.comparedCount) ||
+    !isFiniteNumber(value.skippedCount) ||
+    !isFiniteNumber(value.coveragePercent) ||
+    !isPlainRecord(value.bySkipReason)
+  ) {
+    return undefined;
+  }
+  const bySkipReason: Record<string, number> = {};
+  for (const [key, entryValue] of Object.entries(value.bySkipReason)) {
+    if (isFiniteNumber(entryValue)) {
+      bySkipReason[key] = entryValue;
+    }
+  }
+  return {
+    comparedCount: value.comparedCount,
+    skippedCount: value.skippedCount,
+    coveragePercent: value.coveragePercent,
+    bySkipReason,
+  };
+};
+
+const normalizeLastRunComponents = (
+  value: unknown,
+): VisualBenchmarkComponentResultEntry[] | undefined => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const normalized: VisualBenchmarkComponentResultEntry[] = [];
+  for (const entry of value) {
+    if (!isPlainRecord(entry)) {
+      continue;
+    }
+    if (
+      typeof entry.componentId !== "string" ||
+      entry.componentId.trim().length === 0 ||
+      typeof entry.componentName !== "string" ||
+      entry.componentName.trim().length === 0 ||
+      (entry.status !== "compared" && entry.status !== "skipped")
+    ) {
+      continue;
+    }
+    const component: VisualBenchmarkComponentResultEntry = {
+      componentId: entry.componentId.trim(),
+      componentName: entry.componentName.trim(),
+      status: entry.status,
+    };
+    if (isFiniteNumber(entry.score)) {
+      component.score = entry.score;
+    }
+    if (typeof entry.diffImagePath === "string" && entry.diffImagePath.trim().length > 0) {
+      component.diffImagePath = entry.diffImagePath.trim();
+    }
+    if (typeof entry.reportPath === "string" && entry.reportPath.trim().length > 0) {
+      component.reportPath = entry.reportPath.trim();
+    }
+    if (typeof entry.skipReason === "string" && entry.skipReason.trim().length > 0) {
+      component.skipReason = entry.skipReason.trim();
+    }
+    if (typeof entry.storyEntryId === "string" && entry.storyEntryId.trim().length > 0) {
+      component.storyEntryId = entry.storyEntryId.trim();
+    }
+    if (typeof entry.referenceNodeId === "string" && entry.referenceNodeId.trim().length > 0) {
+      component.referenceNodeId = entry.referenceNodeId.trim();
+    }
+    const warnings = sortWarnings(entry.warnings);
+    if (warnings) {
+      component.warnings = warnings;
+    }
+    normalized.push(component);
+  }
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  return normalized.sort((left, right) => {
+    const byId = left.componentId.localeCompare(right.componentId);
+    if (byId !== 0) {
+      return byId;
+    }
+    return left.componentName.localeCompare(right.componentName);
+  });
 };
 
 const toCanonicalScoreEntry = (
@@ -625,11 +1221,42 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
     });
   }
 
-  return {
+  const lastRun: VisualBenchmarkLastRun = {
     version: 1,
     ranAt: parsed.ranAt,
     scores: sortScores(scores),
   };
+  if (isFiniteNumber(parsed.overallScore)) {
+    lastRun.overallScore = parsed.overallScore;
+  }
+  if (isFiniteNumber(parsed.overallCurrent)) {
+    lastRun.overallCurrent = parsed.overallCurrent;
+  }
+  if (parsed.overallBaseline === null || isFiniteNumber(parsed.overallBaseline)) {
+    lastRun.overallBaseline = parsed.overallBaseline;
+  }
+  if (parsed.overallDelta === null || isFiniteNumber(parsed.overallDelta)) {
+    lastRun.overallDelta = parsed.overallDelta;
+  }
+  if (isFiniteNumber(parsed.screenAggregateScore)) {
+    lastRun.screenAggregateScore = parsed.screenAggregateScore;
+  }
+  if (isFiniteNumber(parsed.componentAggregateScore)) {
+    lastRun.componentAggregateScore = parsed.componentAggregateScore;
+  }
+  const componentCoverage = normalizeLastRunComponentCoverage(parsed.componentCoverage);
+  if (componentCoverage) {
+    lastRun.componentCoverage = componentCoverage;
+  }
+  const components = normalizeLastRunComponents(parsed.components);
+  if (components) {
+    lastRun.components = components;
+  }
+  const warnings = sortWarnings(parsed.warnings);
+  if (warnings) {
+    lastRun.warnings = warnings;
+  }
+  return lastRun;
 };
 
 const parseLastRunArtifactManifest = (
@@ -702,6 +1329,18 @@ const parseLastRunArtifactManifest = (
   if (typeof parsed.ranAt !== "string" || parsed.ranAt.trim().length === 0) {
     throw new Error("Last-run artifact ranAt must be a non-empty string.");
   }
+  let mode: VisualBenchmarkFixtureMetadata["mode"] | undefined;
+  if (parsed.mode !== undefined) {
+    if (
+      parsed.mode !== "generated_app_screen" &&
+      parsed.mode !== "storybook_component"
+    ) {
+      throw new Error(
+        "Last-run artifact mode must be 'generated_app_screen' or 'storybook_component' when provided.",
+      );
+    }
+    mode = parsed.mode;
+  }
   if (!isPlainRecord(parsed.viewport)) {
     throw new Error("Last-run artifact viewport must be an object.");
   }
@@ -763,6 +1402,7 @@ const parseLastRunArtifactManifest = (
     ...(viewportLabel !== undefined ? { viewportLabel } : {}),
     score: parsed.score,
     ranAt: parsed.ranAt,
+    ...(mode !== undefined ? { mode } : {}),
     viewport: {
       width: parsed.viewport.width,
       height: parsed.viewport.height,
@@ -1040,10 +1680,11 @@ export const loadVisualBenchmarkLastRunArtifacts = async (
 
 const loadScoreScreenContext = async (
   fixtureId: string,
+  screenId: string | undefined,
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualQualityScreenContext | null> => {
   try {
-    return await loadVisualQualityScreenContext(fixtureId, options);
+    return await loadVisualQualityScreenContext(fixtureId, screenId, options);
   } catch (error: unknown) {
     if (
       error instanceof Error &&
@@ -1068,6 +1709,7 @@ const normalizeScoreEntryWithMetadata = async (
   const providedScreenName = normalizeOptionalScreenName(entry.screenName);
   const screenContext = await loadScoreScreenContext(
     canonical.fixtureId,
+    providedScreenId ?? canonical.screenId,
     options,
   );
   const screenId =
@@ -1170,6 +1812,17 @@ export const saveVisualBenchmarkLastRun = async (
   scores: VisualBenchmarkScoreEntry[],
   options?: VisualBenchmarkFixtureOptions,
   ranAt?: string,
+  summary?: {
+    overallScore?: number;
+    overallCurrent?: number;
+    overallBaseline?: number | null;
+    overallDelta?: number | null;
+    screenAggregateScore?: number;
+    componentAggregateScore?: number;
+    componentCoverage?: VisualBenchmarkLastRun["componentCoverage"];
+    components?: VisualBenchmarkComponentResultEntry[];
+    warnings?: string[];
+  },
 ): Promise<void> => {
   const lastRunPath = resolveLastRunPath(options);
   const normalizedScores = await normalizeScoresWithMetadata(scores, options);
@@ -1177,6 +1830,33 @@ export const saveVisualBenchmarkLastRun = async (
     version: 1,
     ranAt: ranAt ?? new Date().toISOString(),
     scores: normalizedScores,
+    ...(summary?.overallScore !== undefined ? { overallScore: summary.overallScore } : {}),
+    ...(summary?.overallCurrent !== undefined ? { overallCurrent: summary.overallCurrent } : {}),
+    ...(summary?.overallBaseline !== undefined ? { overallBaseline: summary.overallBaseline } : {}),
+    ...(summary?.overallDelta !== undefined ? { overallDelta: summary.overallDelta } : {}),
+    ...(summary?.screenAggregateScore !== undefined
+      ? { screenAggregateScore: summary.screenAggregateScore }
+      : {}),
+    ...(summary?.componentAggregateScore !== undefined
+      ? { componentAggregateScore: summary.componentAggregateScore }
+      : {}),
+    ...(summary?.componentCoverage
+      ? {
+          componentCoverage: {
+            ...summary.componentCoverage,
+            bySkipReason: { ...summary.componentCoverage.bySkipReason },
+          },
+        }
+      : {}),
+    ...(summary?.components && summary.components.length > 0
+      ? {
+          components: summary.components.map((component) => ({
+            ...component,
+            ...(component.warnings ? { warnings: [...component.warnings] } : {}),
+          })),
+        }
+      : {}),
+    ...(summary?.warnings && summary.warnings.length > 0 ? { warnings: [...summary.warnings] } : {}),
   };
   await mkdir(path.dirname(lastRunPath), { recursive: true });
   await writeFile(lastRunPath, toStableJsonString(lastRun), "utf8");
@@ -1239,6 +1919,7 @@ export const saveVisualBenchmarkLastRunArtifact = async (
       : {}),
     score: input.score,
     ranAt: input.ranAt,
+    ...(input.mode !== undefined ? { mode: input.mode } : {}),
     viewport: {
       width: input.viewport.width,
       height: input.viewport.height,
@@ -1297,9 +1978,23 @@ const isWorkspaceVisualQualityReport = (
 
 const loadVisualQualityScreenContext = async (
   fixtureId: string,
+  screenId: string | undefined,
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<VisualQualityScreenContext> => {
   const metadata = await loadVisualBenchmarkFixtureMetadata(fixtureId, options);
+  if (
+    typeof screenId === "string" &&
+    Array.isArray(metadata.screens) &&
+    metadata.screens.length > 0
+  ) {
+    const screen = metadata.screens.find((candidate) => candidate.screenId === screenId);
+    if (screen !== undefined) {
+      return {
+        screenId: screen.screenId,
+        screenName: screen.storyTitle ?? screen.screenName,
+      };
+    }
+  }
   return {
     screenId: metadata.source.nodeId,
     screenName: metadata.source.nodeName,
@@ -1809,17 +2504,31 @@ const computeMultiScreenBaselineAlerts = async ({
 };
 
 export const runVisualBenchmark = async (
-  options?: VisualBenchmarkExecutionOptions & {
-    updateBaseline?: boolean;
-    qualityConfig?: VisualQualityConfig;
-  },
+  options?: VisualBenchmarkRunOptions,
   dependencies?: VisualBenchmarkRunnerDependencies,
 ): Promise<VisualBenchmarkResult> => {
   const runAt = new Date().toISOString();
+  const preparedStorybookComponents =
+    await (dependencies?.prepareStorybookComponentFixtures ??
+      (async (fixtureOptions?: VisualBenchmarkRunOptions) =>
+        prepareStorybookComponentFixtures(fixtureOptions)))(options);
+  const effectiveOptions = preparedStorybookComponents.options ?? options;
   let scores: VisualBenchmarkScoreEntry[];
   const currentScreenAggregateMap = new Map<string, VisualBenchmarkScreenAggregateEntry>();
   const fixtureScreenContexts = new Map<string, VisualQualityScreenContext>();
   const artifactEntries: VisualBenchmarkLastRunArtifactInput[] = [];
+  const benchmarkWarnings: string[] = [
+    ...preparedStorybookComponents.warnings,
+  ];
+  const componentCoverageAccumulator = createEmptyCoverageAccumulator();
+  const componentSummaries = new Map<string, VisualBenchmarkComponentResultEntry>();
+  mergeComponentCoverage(
+    componentCoverageAccumulator,
+    preparedStorybookComponents.skippedCoverage,
+  );
+  for (const component of preparedStorybookComponents.skippedComponents) {
+    componentSummaries.set(component.componentId, { ...component });
+  }
   const fixtureMetadataCache = new Map<
     string,
     Promise<VisualBenchmarkFixtureMetadata>
@@ -1831,127 +2540,228 @@ export const runVisualBenchmark = async (
     if (existing !== undefined) {
       return existing;
     }
-    const promise = loadVisualBenchmarkFixtureMetadata(fixtureId, options);
+    const promise = loadVisualBenchmarkFixtureMetadata(fixtureId, effectiveOptions);
     fixtureMetadataCache.set(fixtureId, promise);
     return promise;
   };
   const fixtureObservedScreens = new Map<string, Set<string>>();
-
-  if (
-    dependencies?.runFixtureBenchmark !== undefined &&
-    dependencies.executeFixture === undefined
-  ) {
-    const fixtureIds = await listVisualBenchmarkFixtureIds(options);
-    const runFixtureBenchmark = dependencies.runFixtureBenchmark;
-    scores = [];
-    for (const fixtureId of fixtureIds) {
-      const result = await runFixtureBenchmark(fixtureId, options);
-      for (const screen of result.screens) {
-        const normalizedScreenId =
-          typeof screen.screenId === "string" && screen.screenId.trim().length > 0
-            ? screen.screenId.trim()
-            : fixtureId;
-        const aggregateKey = getScreenAggregateKey(
-          result.fixtureId,
-          normalizedScreenId,
-        );
-        currentScreenAggregateMap.set(aggregateKey, {
-          fixtureId: result.fixtureId,
-          screenId: normalizedScreenId,
-          score: screen.score,
-        });
-        let set = fixtureObservedScreens.get(result.fixtureId);
-        if (set === undefined) {
-          set = new Set<string>();
-          fixtureObservedScreens.set(result.fixtureId, set);
-        }
-        set.add(normalizedScreenId);
-      }
-      for (const entry of runResultToScoreEntries(result)) {
-        scores.push(await normalizeScoreEntryWithMetadata(entry, options));
-      }
-    }
-    scores = sortScores(scores);
-  } else {
-    const fixtureIds = await listVisualBenchmarkFixtureIds(options);
-    const executeFixture =
-      dependencies?.executeFixture ??
-      (async (
-        fixtureId: string,
-        fixtureOptions?: VisualBenchmarkExecutionOptions,
-      ) => executeVisualBenchmarkFixture(fixtureId, fixtureOptions));
-
-    scores = [];
-    for (const fixtureId of fixtureIds) {
-      const result = await executeFixture(fixtureId, options);
-      const observedSet = new Set<string>();
-      fixtureObservedScreens.set(result.fixtureId, observedSet);
-
-      for (const screen of result.screens) {
-        observedSet.add(screen.screenId);
-        const screenContextKey = `${result.fixtureId}::${screen.screenId}`;
-        const screenContext =
-          options?.qualityConfig !== undefined
-            ? {
-                screenId: screen.screenId,
-                screenName: screen.screenName,
-              }
-            : undefined;
-        if (screenContext !== undefined) {
-          fixtureScreenContexts.set(screenContextKey, screenContext);
-        }
-        const persistedViewportArtifacts = resolvePersistedViewportArtifacts(
-          screen,
-          options?.qualityConfig,
-        );
-        currentScreenAggregateMap.set(
-          getScreenAggregateKey(result.fixtureId, screen.screenId),
-          {
+  try {
+    if (
+      dependencies?.runFixtureBenchmark !== undefined &&
+      dependencies.executeFixture === undefined
+    ) {
+      const fixtureIds = await listVisualBenchmarkFixtureIds(effectiveOptions);
+      const runFixtureBenchmark = dependencies.runFixtureBenchmark;
+      scores = [];
+      for (const fixtureId of fixtureIds) {
+        const result = await runFixtureBenchmark(fixtureId, effectiveOptions);
+        for (const screen of result.screens) {
+          const normalizedScreenId =
+            typeof screen.screenId === "string" &&
+            screen.screenId.trim().length > 0
+              ? screen.screenId.trim()
+              : fixtureId;
+          const aggregateKey = getScreenAggregateKey(
+            result.fixtureId,
+            normalizedScreenId,
+          );
+          currentScreenAggregateMap.set(aggregateKey, {
             fixtureId: result.fixtureId,
-            screenId: screen.screenId,
+            screenId: normalizedScreenId,
             score: screen.score,
-          },
-        );
-        for (const artifact of persistedViewportArtifacts) {
-          scores.push({
-            fixtureId: result.fixtureId,
-            screenId: screen.screenId,
-            screenName: screen.screenName,
-            ...(artifact.viewportId !== undefined
-              ? { viewportId: artifact.viewportId }
-              : {}),
-            ...(artifact.viewportLabel !== undefined
-              ? { viewportLabel: artifact.viewportLabel }
-              : {}),
-            score: artifact.score,
           });
-          artifactEntries.push({
-            fixtureId: result.fixtureId,
-            screenId: screen.screenId,
-            screenName: screen.screenName,
-            ...(artifact.viewportId !== undefined
-              ? { viewportId: artifact.viewportId }
-              : {}),
-            ...(artifact.viewportLabel !== undefined
-              ? { viewportLabel: artifact.viewportLabel }
-              : {}),
-            score: artifact.score,
-            ranAt: runAt,
-            viewport: artifact.viewport,
-            actualImageBuffer: artifact.screenshotBuffer,
-            diffImageBuffer: artifact.diffBuffer,
-            report: artifact.report,
-          });
+          let set = fixtureObservedScreens.get(result.fixtureId);
+          if (set === undefined) {
+            set = new Set<string>();
+            fixtureObservedScreens.set(result.fixtureId, set);
+          }
+          set.add(normalizedScreenId);
+        }
+        for (const entry of runResultToScoreEntries(result)) {
+          scores.push(
+            await normalizeScoreEntryWithMetadata(entry, effectiveOptions),
+          );
         }
       }
-    }
-    scores = sortScores(scores);
-  }
+      scores = sortScores(scores);
+    } else {
+      const fixtureIds = await listVisualBenchmarkFixtureIds(effectiveOptions);
+      const executeFixture =
+        dependencies?.executeFixture ??
+        (async (
+          fixtureId: string,
+          fixtureOptions?: VisualBenchmarkExecutionOptions,
+        ) => executeVisualBenchmarkFixture(fixtureId, fixtureOptions));
 
-  await saveVisualBenchmarkLastRun(scores, options, runAt);
-  const baseline = await loadVisualBenchmarkBaseline(options);
-  const qualityConfig = options?.qualityConfig;
-  const regressionConfig = resolveVisualQualityRegressionConfig(qualityConfig);
+      scores = [];
+      for (const fixtureId of fixtureIds) {
+        const result = await executeFixture(fixtureId, effectiveOptions);
+        const metadata = await loadCachedMetadata(result.fixtureId);
+        const declaredScreensById = new Map(
+          enumerateFixtureScreens(metadata).map((screen) => [
+            screen.screenId,
+            screen,
+          ]),
+        );
+        const observedSet = new Set<string>();
+        fixtureObservedScreens.set(result.fixtureId, observedSet);
+        if (Array.isArray(result.warnings)) {
+          benchmarkWarnings.push(...result.warnings);
+        }
+        mergeComponentCoverage(
+          componentCoverageAccumulator,
+          result.componentCoverage,
+        );
+
+        for (const screen of result.screens) {
+          const declaredScreen = declaredScreensById.get(screen.screenId);
+          if (metadata.mode === "storybook_component") {
+            const warnings = sortWarnings(screen.warnings);
+            componentSummaries.set(screen.screenId, {
+              componentId: screen.screenId,
+              componentName:
+                declaredScreen?.storyTitle ??
+                normalizeOptionalScreenName(screen.screenName) ??
+                screen.screenId,
+              status: screen.status === "skipped" ? "skipped" : "compared",
+              ...(screen.status === "skipped"
+                ? {
+                    skipReason:
+                      typeof screen.skipReason === "string" &&
+                      screen.skipReason.trim().length > 0
+                        ? screen.skipReason.trim()
+                        : "skipped",
+                  }
+                : { score: screen.score }),
+              ...(declaredScreen?.entryId
+                ? { storyEntryId: declaredScreen.entryId }
+                : {}),
+              ...(declaredScreen?.referenceNodeId
+                ? { referenceNodeId: declaredScreen.referenceNodeId }
+                : {}),
+              ...(warnings ? { warnings } : {}),
+            });
+          }
+          if (screen.status === "skipped") {
+            continue;
+          }
+          observedSet.add(screen.screenId);
+          const screenContextKey = `${result.fixtureId}::${screen.screenId}`;
+          const screenContext =
+            effectiveOptions?.qualityConfig !== undefined
+              ? {
+                  screenId: screen.screenId,
+                  screenName: screen.screenName,
+                }
+              : undefined;
+          if (screenContext !== undefined) {
+            fixtureScreenContexts.set(screenContextKey, screenContext);
+          }
+          const persistedViewportArtifacts = resolvePersistedViewportArtifacts(
+            screen,
+            effectiveOptions?.qualityConfig,
+          );
+          currentScreenAggregateMap.set(
+            getScreenAggregateKey(result.fixtureId, screen.screenId),
+            {
+              fixtureId: result.fixtureId,
+              screenId: screen.screenId,
+              score: screen.score,
+              ...(screen.weight !== undefined
+                ? { weight: screen.weight }
+                : declaredScreen?.weight !== undefined
+                  ? { weight: declaredScreen.weight }
+                  : {}),
+            },
+          );
+          for (const artifact of persistedViewportArtifacts) {
+            scores.push({
+              fixtureId: result.fixtureId,
+              screenId: screen.screenId,
+              screenName: screen.screenName,
+              ...(artifact.viewportId !== undefined
+                ? { viewportId: artifact.viewportId }
+                : {}),
+              ...(artifact.viewportLabel !== undefined
+                ? { viewportLabel: artifact.viewportLabel }
+                : {}),
+              score: artifact.score,
+            });
+            artifactEntries.push({
+              fixtureId: result.fixtureId,
+              screenId: screen.screenId,
+              screenName: screen.screenName,
+              ...(artifact.viewportId !== undefined
+                ? { viewportId: artifact.viewportId }
+                : {}),
+              ...(artifact.viewportLabel !== undefined
+                ? { viewportLabel: artifact.viewportLabel }
+                : {}),
+              score: artifact.score,
+              ranAt: runAt,
+              mode: metadata.mode,
+              viewport: artifact.viewport,
+              actualImageBuffer: artifact.screenshotBuffer,
+              diffImageBuffer: artifact.diffBuffer,
+              report: artifact.report,
+            });
+          }
+        }
+      }
+      scores = sortScores(scores);
+    }
+    const baseline = await loadVisualBenchmarkBaseline(effectiveOptions);
+    const qualityConfig = effectiveOptions?.qualityConfig;
+    const regressionConfig = resolveVisualQualityRegressionConfig(qualityConfig);
+  if (scores.length === 0) {
+    const emptyResult: VisualBenchmarkResult = {
+      deltas: [],
+      overallBaseline: null,
+      overallCurrent: 0,
+      overallDelta: null,
+      alerts: [],
+      trendSummaries: [],
+      ...(benchmarkWarnings.length > 0 ? { warnings: [...benchmarkWarnings] } : {}),
+    };
+    if (
+      componentCoverageAccumulator.comparedCount > 0 ||
+      componentCoverageAccumulator.skippedCount > 0
+    ) {
+      const total =
+        componentCoverageAccumulator.comparedCount +
+        componentCoverageAccumulator.skippedCount;
+      emptyResult.componentCoverage = {
+        comparedCount: componentCoverageAccumulator.comparedCount,
+        skippedCount: componentCoverageAccumulator.skippedCount,
+        coveragePercent:
+          total === 0
+            ? 0
+            : roundToTwoDecimals(
+                (componentCoverageAccumulator.comparedCount / total) * 100,
+              ),
+        bySkipReason: { ...componentCoverageAccumulator.bySkipReason },
+      };
+    }
+    const components = [...componentSummaries.values()].sort((left, right) => {
+      const byId = left.componentId.localeCompare(right.componentId);
+      if (byId !== 0) {
+        return byId;
+      }
+      return left.componentName.localeCompare(right.componentName);
+    });
+    await saveVisualBenchmarkLastRun(scores, effectiveOptions, runAt, {
+      overallScore: emptyResult.overallCurrent,
+      overallCurrent: emptyResult.overallCurrent,
+      overallBaseline: emptyResult.overallBaseline,
+      overallDelta: emptyResult.overallDelta,
+      ...(emptyResult.componentCoverage
+        ? { componentCoverage: emptyResult.componentCoverage }
+        : {}),
+      ...(components.length > 0 ? { components } : {}),
+      ...(emptyResult.warnings ? { warnings: emptyResult.warnings } : {}),
+    });
+    return emptyResult;
+  }
   const result = computeVisualBenchmarkDeltas(scores, baseline, {
     neutralTolerance: regressionConfig.neutralTolerance,
   });
@@ -2039,61 +2849,147 @@ export const runVisualBenchmark = async (
         continue;
       }
       baselineScreenKeys.add(key);
+      const resolvedScreenId =
+        canonical.screenId !== undefined
+          ? canonical.screenId
+          : canonical.fixtureId;
+      const metadata = await loadCachedMetadata(canonical.fixtureId);
+      const weight = resolveDeclaredScreenWeight(metadata, resolvedScreenId);
       baselineScreenAggregateMap.set(key, {
         fixtureId: canonical.fixtureId,
-        screenId:
-          canonical.screenId !== undefined
-            ? canonical.screenId
-            : canonical.fixtureId,
+        screenId: resolvedScreenId,
         score: await computeScreenAggregateForEntry(
           {
             fixtureId: canonical.fixtureId,
-            screenId:
-              canonical.screenId !== undefined
-                ? canonical.screenId
-                : canonical.fixtureId,
+            screenId: resolvedScreenId,
             score: canonical.score,
           },
           baseline.scores,
         ),
+        ...(weight !== undefined ? { weight } : {}),
       });
     }
   }
 
-  if (currentScreenAggregateMap.size > 0) {
-    const currentScreenScores = Array.from(currentScreenAggregateMap.values()).map(
-      (entry) => entry.score,
-    );
-    result.overallCurrent = roundToTwoDecimals(
-      currentScreenScores.reduce((sum, score) => sum + score, 0) /
-        currentScreenScores.length,
-    );
-    const matchedCurrentScores: number[] = [];
-    const matchedBaselineScores: number[] = [];
-    for (const [key, currentEntry] of currentScreenAggregateMap.entries()) {
-      const baselineEntry = baselineScreenAggregateMap.get(key);
-      if (baselineEntry === undefined) {
-        continue;
+  const categorizeAggregatesByMode = async (
+    aggregateMap: Map<string, VisualBenchmarkScreenAggregateEntry>,
+  ): Promise<VisualBenchmarkCategorizedAggregates> => {
+    const categorized: VisualBenchmarkCategorizedAggregates = {
+      screen: [],
+      component: [],
+    };
+    for (const entry of aggregateMap.values()) {
+      const metadata = await loadCachedMetadata(entry.fixtureId);
+      if (metadata.mode === "storybook_component") {
+        categorized.component.push(entry);
+      } else {
+        categorized.screen.push(entry);
       }
-      matchedCurrentScores.push(currentEntry.score);
-      matchedBaselineScores.push(baselineEntry.score);
     }
-    if (matchedBaselineScores.length > 0) {
-      const comparableCurrentAverage = roundToTwoDecimals(
-        matchedCurrentScores.reduce((sum, score) => sum + score, 0) /
-          matchedCurrentScores.length,
-      );
-      result.overallBaseline = roundToTwoDecimals(
-        matchedBaselineScores.reduce((sum, score) => sum + score, 0) /
-          matchedBaselineScores.length,
-      );
-      result.overallDelta = roundToTwoDecimals(
-        comparableCurrentAverage - result.overallBaseline,
-      );
-    } else {
-      result.overallBaseline = null;
-      result.overallDelta = null;
+    return categorized;
+  };
+
+  const computeAggregateAverage = (
+    entries: readonly VisualBenchmarkScreenAggregateEntry[],
+  ): number | null => {
+    if (entries.length === 0) {
+      return null;
     }
+    return computeFixtureAggregate(entries);
+  };
+
+  const currentCategorizedAggregates = await categorizeAggregatesByMode(
+    currentScreenAggregateMap,
+  );
+  const baselineCategorizedAggregates = await categorizeAggregatesByMode(
+    baselineScreenAggregateMap,
+  );
+
+  const currentScreenAggregateScore = computeAggregateAverage(
+    currentCategorizedAggregates.screen,
+  );
+  const currentComponentAggregateScore = computeAggregateAverage(
+    currentCategorizedAggregates.component,
+  );
+  const baselineScreenAggregateScore = computeAggregateAverage(
+    baselineCategorizedAggregates.screen,
+  );
+  const baselineComponentAggregateScore = computeAggregateAverage(
+    baselineCategorizedAggregates.component,
+  );
+
+  const comparableCurrentScreenAggregateScore =
+    baselineScreenAggregateScore !== null ? currentScreenAggregateScore : null;
+  const comparableCurrentComponentAggregateScore =
+    baselineComponentAggregateScore !== null
+      ? currentComponentAggregateScore
+      : null;
+
+  result.screenAggregateScore = currentScreenAggregateScore ?? undefined;
+  result.componentAggregateScore = currentComponentAggregateScore ?? undefined;
+  if (
+    componentCoverageAccumulator.comparedCount > 0 ||
+    componentCoverageAccumulator.skippedCount > 0
+  ) {
+    const totalComponentCount =
+      componentCoverageAccumulator.comparedCount +
+      componentCoverageAccumulator.skippedCount;
+    result.componentCoverage = {
+      comparedCount: componentCoverageAccumulator.comparedCount,
+      skippedCount: componentCoverageAccumulator.skippedCount,
+      coveragePercent:
+        totalComponentCount === 0
+          ? 0
+          : roundToTwoDecimals(
+              (componentCoverageAccumulator.comparedCount / totalComponentCount) *
+                100,
+            ),
+      bySkipReason: { ...componentCoverageAccumulator.bySkipReason },
+    };
+    if (componentCoverageAccumulator.skippedCount > 0) {
+      benchmarkWarnings.push(
+        `Storybook component coverage skipped ${String(componentCoverageAccumulator.skippedCount)} component screen(s).`,
+      );
+    }
+  }
+
+  if (currentScreenAggregateMap.size > 0) {
+    if (
+      currentScreenAggregateScore !== null &&
+      currentComponentAggregateScore === null
+    ) {
+      benchmarkWarnings.push(
+        "Visual benchmark headline score used full-page results only because no component aggregate was available.",
+      );
+    } else if (
+      currentScreenAggregateScore === null &&
+      currentComponentAggregateScore !== null
+    ) {
+      benchmarkWarnings.push(
+        "Visual benchmark headline score used component results only because no full-page aggregate was available.",
+      );
+    }
+    result.overallCurrent =
+      blendVisualBenchmarkHeadlineScore({
+        screenAggregateScore: currentScreenAggregateScore,
+        componentAggregateScore: currentComponentAggregateScore,
+      }) ?? 0;
+    const comparableCurrentHeadline = blendVisualBenchmarkHeadlineScore({
+      screenAggregateScore: comparableCurrentScreenAggregateScore,
+      componentAggregateScore: comparableCurrentComponentAggregateScore,
+    });
+    result.overallBaseline = blendVisualBenchmarkHeadlineScore({
+      screenAggregateScore: baselineScreenAggregateScore,
+      componentAggregateScore: baselineComponentAggregateScore,
+    });
+    result.overallDelta =
+      comparableCurrentHeadline !== null && result.overallBaseline !== null
+        ? roundToTwoDecimals(comparableCurrentHeadline - result.overallBaseline)
+        : null;
+  }
+
+  if (benchmarkWarnings.length > 0) {
+    result.warnings = [...new Set(benchmarkWarnings)];
   }
 
   // Run regression detection (delta-based alerts + trend summaries)
@@ -2118,7 +3014,7 @@ export const runVisualBenchmark = async (
     currentScoresByFixture: fixtureObservedScreens,
     baseline,
     loadMetadata: loadCachedMetadata,
-    baselinePath: resolveBaselinePath(options),
+    baselinePath: resolveBaselinePath(effectiveOptions),
   });
   if (screenAlerts.length > 0) {
     result.alerts = [...result.alerts, ...screenAlerts];
@@ -2132,7 +3028,8 @@ export const runVisualBenchmark = async (
       if (screenContext === undefined) {
         screenContext = await loadVisualQualityScreenContext(
           delta.fixtureId,
-          options,
+          delta.screenId,
+          effectiveOptions,
         );
         fixtureScreenContexts.set(screenContextKey, screenContext);
       }
@@ -2146,6 +3043,10 @@ export const runVisualBenchmark = async (
         thresholds,
       );
     }
+  }
+
+  if (benchmarkWarnings.length > 0) {
+    result.warnings = [...benchmarkWarnings];
   }
 
   if (artifactEntries.length > 0) {
@@ -2174,7 +3075,7 @@ export const runVisualBenchmark = async (
       }
     }
     for (const fixtureId of fixturesNeedingLegacyRootCleanup) {
-      await deleteLegacyRootLastRunArtifacts(fixtureId, options);
+      await deleteLegacyRootLastRunArtifacts(fixtureId, effectiveOptions);
     }
     for (const artifactEntry of artifactEntries) {
       const key = getVisualBenchmarkScoreKey({
@@ -2185,7 +3086,7 @@ export const runVisualBenchmark = async (
       const delta = deltaByKey.get(key);
       const isMultiScreen =
         (entriesPerFixture.get(artifactEntry.fixtureId) ?? 0) > 1;
-      await saveVisualBenchmarkLastRunArtifact(
+      const savedArtifact = await saveVisualBenchmarkLastRunArtifact(
         {
           ...artifactEntry,
           ...(isMultiScreen || artifactEntry.viewportId !== undefined
@@ -2193,10 +3094,44 @@ export const runVisualBenchmark = async (
             : { screenId: undefined }),
           thresholdResult: delta?.thresholdResult,
         },
-        options,
+        effectiveOptions,
       );
+      const component = artifactEntry.screenId
+        ? componentSummaries.get(artifactEntry.screenId)
+        : undefined;
+      if (component && component.status === "compared") {
+        if (component.diffImagePath === undefined && savedArtifact.diffImagePath !== null) {
+          component.diffImagePath = savedArtifact.diffImagePath;
+        }
+        if (component.reportPath === undefined && savedArtifact.reportPath !== null) {
+          component.reportPath = savedArtifact.reportPath;
+        }
+      }
     }
   }
+
+  const components = [...componentSummaries.values()].sort((left, right) => {
+    const byId = left.componentId.localeCompare(right.componentId);
+    if (byId !== 0) {
+      return byId;
+    }
+    return left.componentName.localeCompare(right.componentName);
+  });
+  await saveVisualBenchmarkLastRun(scores, effectiveOptions, runAt, {
+    overallScore: result.overallCurrent,
+    overallCurrent: result.overallCurrent,
+    overallBaseline: result.overallBaseline,
+    overallDelta: result.overallDelta,
+    ...(result.screenAggregateScore !== undefined
+      ? { screenAggregateScore: result.screenAggregateScore }
+      : {}),
+    ...(result.componentAggregateScore !== undefined
+      ? { componentAggregateScore: result.componentAggregateScore }
+      : {}),
+    ...(result.componentCoverage ? { componentCoverage: result.componentCoverage } : {}),
+    ...(components.length > 0 ? { components } : {}),
+    ...(result.warnings ? { warnings: result.warnings } : {}),
+  });
 
   const table = formatVisualBenchmarkTable(result);
   process.stdout.write(`${table}\n`);
@@ -2241,8 +3176,8 @@ export const runVisualBenchmark = async (
     }
   }
 
-  if (options?.updateBaseline === true) {
-    const existingHistory = await loadVisualBenchmarkHistory(options);
+  if (effectiveOptions?.updateBaseline === true) {
+    const existingHistory = await loadVisualBenchmarkHistory(effectiveOptions);
     const updatedHistory = appendVisualBenchmarkHistoryEntry(
       existingHistory,
       {
@@ -2258,14 +3193,17 @@ export const runVisualBenchmark = async (
       },
       regressionConfig.historySize,
     );
-    await saveVisualBenchmarkHistory(updatedHistory, options);
+    await saveVisualBenchmarkHistory(updatedHistory, effectiveOptions);
     process.stdout.write(
       `History updated (${String(updatedHistory.entries.length)} entries).\n`,
     );
 
-    await saveVisualBenchmarkBaselineScores(scores, options);
+    await saveVisualBenchmarkBaselineScores(scores, effectiveOptions);
     process.stdout.write("Baseline updated.\n");
   }
 
   return result;
+  } finally {
+    await preparedStorybookComponents.cleanup?.();
+  }
 };

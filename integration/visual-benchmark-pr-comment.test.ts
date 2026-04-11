@@ -1017,3 +1017,112 @@ test("print-visual-benchmark-pr-comment CLI writes fallback payload when report 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("buildVisualBenchmarkPrComment renders component coverage, rows, and blended headline score", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pr-comment-components-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const screenFixtureDir = path.join(artifactRoot, "last-run", "screen-board");
+    const componentFixtureDir = path.join(
+      artifactRoot,
+      "last-run",
+      "component-board",
+      "screens",
+      "button__button--primary",
+    );
+    await mkdir(screenFixtureDir, { recursive: true });
+    await mkdir(componentFixtureDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-11T10:00:00.000Z",
+      screenAggregateScore: 80,
+      scores: [
+        { fixtureId: "screen-board", score: 80 },
+        {
+          fixtureId: "component-board",
+          screenId: "button::button--primary",
+          score: 70,
+        },
+      ],
+      componentAggregateScore: 90,
+      componentCoverage: {
+        comparedCount: 2,
+        skippedCount: 1,
+        coveragePercent: 66.7,
+        bySkipReason: {
+          ambiguous: 1,
+        },
+      },
+      components: [
+        {
+          componentId: "button::button--primary",
+          componentName: "Primary Button",
+          status: "compared",
+          score: 92,
+          storyEntryId: "button--primary",
+        },
+        {
+          componentId: "input::input--docs",
+          componentName: "Input Docs",
+          status: "skipped",
+          skipReason: "docs_only",
+          warnings: ["requires authoritative story"],
+        },
+      ],
+    });
+    await writeJson(path.join(screenFixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "screen-board",
+      score: 80,
+      ranAt: "2026-04-11T10:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+    });
+    await writeJson(path.join(screenFixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 80,
+    });
+    await writeJson(path.join(componentFixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "component-board",
+      screenId: "button::button--primary",
+      score: 70,
+      ranAt: "2026-04-11T10:00:00.000Z",
+      mode: "storybook_component",
+      viewport: { width: 240, height: 120 },
+    });
+    await writeJson(path.join(componentFixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 70,
+    });
+
+    const { buildVisualBenchmarkPrComment } =
+      await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {});
+
+    assert.match(result.body, /Overall Score:\*\* 83 \/ 100 \(no comparable baseline\)/);
+    assert.match(result.body, /Full-Page Average:\*\* 80 \/ 100/);
+    assert.match(result.body, /Component Aggregate:\*\* 90 \/ 100/);
+    assert.doesNotMatch(result.body, /\| Component Board \|/);
+    assert.match(
+      result.body,
+      /Component Coverage:\*\* 2 compared, 1 skipped \(66\.7%\)/,
+    );
+    assert.match(result.body, /Skipped By Reason:\*\* ambiguous: 1/);
+    assert.match(result.body, /### Component Results/);
+    assert.match(
+      result.body,
+      /\| Primary Button \| compared \| ✅ 92 \| button--primary \| — \|/,
+    );
+    assert.match(
+      result.body,
+      /\| Input Docs \| skipped \| — \| — \| docs_only \\?\| requires authoritative story \|/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

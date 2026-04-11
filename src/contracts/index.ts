@@ -313,6 +313,7 @@ export interface WorkspaceJobArtifacts {
   storybookTokensFile?: string;
   storybookThemesFile?: string;
   storybookComponentsFile?: string;
+  componentVisualCatalogFile?: string;
   figmaLibraryResolutionFile?: string;
   componentMatchReportFile?: string;
   generationMetricsFile?: string;
@@ -476,6 +477,26 @@ export interface WorkspaceVisualComparisonMetadata {
   };
 }
 
+export interface WorkspaceVisualComponentCoverage {
+  comparedCount: number;
+  skippedCount: number;
+  coveragePercent: number;
+  bySkipReason: Record<string, number>;
+}
+
+export interface WorkspaceVisualQualityComponentEntry {
+  componentId: string;
+  componentName: string;
+  status: "compared" | "skipped";
+  score?: number;
+  diffImagePath?: string;
+  reportPath?: string;
+  skipReason?: string;
+  storyEntryId?: string;
+  referenceNodeId?: string;
+  warnings?: string[];
+}
+
 /** Full visual quality report produced by the scoring system. */
 export interface WorkspaceVisualQualityReport {
   status: "completed" | "failed" | "not_requested";
@@ -484,6 +505,9 @@ export interface WorkspaceVisualQualityReport {
   overallScore?: number;
   interpretation?: string;
   dimensions?: WorkspaceVisualDimensionScore[];
+  componentAggregateScore?: number;
+  componentCoverage?: WorkspaceVisualComponentCoverage;
+  components?: WorkspaceVisualQualityComponentEntry[];
   diffImagePath?: string;
   hotspots?: WorkspaceVisualDeviationHotspot[];
   metadata?: WorkspaceVisualComparisonMetadata;

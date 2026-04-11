@@ -8,7 +8,14 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { PNG } from "pngjs";
 import { executeVisualBenchmarkFixture } from "./visual-benchmark.execution.js";
-import { toScreenIdToken } from "./visual-benchmark.helpers.js";
+import {
+  toScreenIdToken,
+  writeVisualBenchmarkFixtureInputs,
+  writeVisualBenchmarkFixtureManifest,
+  writeVisualBenchmarkFixtureMetadata,
+  type VisualBenchmarkFixtureManifest,
+  type VisualBenchmarkFixtureMetadata,
+} from "./visual-benchmark.helpers.js";
 
 const REPO_ROOT = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -149,6 +156,137 @@ const createFixtureUnderTest = async ({
   );
 };
 
+const createStorybookStaticDir = async ({
+  rootDir,
+}: {
+  rootDir: string;
+}): Promise<string> => {
+  const storybookStaticDir = path.join(rootDir, "storybook-static", "storybook-static");
+  await mkdir(storybookStaticDir, { recursive: true });
+  await writeFile(
+    path.join(storybookStaticDir, "index.html"),
+    "<!doctype html><html><body>Storybook</body></html>",
+    "utf8",
+  );
+  await writeFile(
+    path.join(storybookStaticDir, "iframe.html"),
+    [
+      "<!doctype html>",
+      "<html>",
+      "  <head>",
+      "    <meta charset=\"utf-8\" />",
+      "    <style>",
+      "      html, body { margin: 0; padding: 0; background: #ffffff; }",
+      "      #storybook-root { position: relative; width: 200px; height: 160px; background: #ffffff; }",
+      "      #component-box { width: 88px; height: 64px; margin-left: 16px; margin-top: 16px; background: rgb(32, 92, 196); border-radius: 8px; }",
+      "    </style>",
+      "  </head>",
+      "  <body>",
+      "    <div id=\"storybook-root\">",
+      "      <div id=\"component-box\"></div>",
+      "    </div>",
+      "  </body>",
+      "</html>",
+    ].join("\n"),
+    "utf8",
+  );
+  return storybookStaticDir;
+};
+
+const createStorybookReferenceBuffer = (): Buffer => {
+  const png = new PNG({ width: 120, height: 96 });
+  for (let y = 0; y < png.height; y += 1) {
+    for (let x = 0; x < png.width; x += 1) {
+      const offset = (png.width * y + x) << 2;
+      const insideComponent = x >= 16 && x < 104 && y >= 16 && y < 80;
+      png.data[offset] = insideComponent ? 32 : 255;
+      png.data[offset + 1] = insideComponent ? 92 : 255;
+      png.data[offset + 2] = insideComponent ? 196 : 255;
+      png.data[offset + 3] = 255;
+    }
+  }
+  return PNG.sync.write(png);
+};
+
+const createStorybookComponentFixture = async ({
+  fixtureRoot,
+  fixtureId,
+}: {
+  fixtureRoot: string;
+  fixtureId: string;
+}): Promise<void> => {
+  const manifest: VisualBenchmarkFixtureManifest = {
+    version: 1,
+    fixtureId,
+    visualQuality: {
+      frozenReferenceImage: "reference.png",
+      frozenReferenceMetadata: "metadata.json",
+    },
+  };
+  const metadata: VisualBenchmarkFixtureMetadata = {
+    version: 4,
+    mode: "storybook_component",
+    fixtureId,
+    capturedAt: "2026-04-09T00:00:00.000Z",
+    source: {
+      fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      nodeId: "12:34",
+      nodeName: "Storybook Components",
+      lastModified: "2026-03-30T20:59:16Z",
+    },
+    viewport: {
+      width: 200,
+      height: 160,
+    },
+    export: {
+      format: "png",
+      scale: 1,
+    },
+    screens: [
+      {
+        screenId: "button-primary",
+        screenName: "Button",
+        storyTitle: "Button / Primary",
+        nodeId: "12:34",
+        viewport: { width: 200, height: 160 },
+        entryId: "components-button--primary",
+        referenceNodeId: "12:34",
+        referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+        captureStrategy: "storybook_root_union",
+        baselineCanvas: { width: 120, height: 96 },
+        viewports: [{ id: "desktop", width: 200, height: 160 }],
+      },
+    ],
+  };
+  await mkdir(path.join(fixtureRoot, fixtureId), { recursive: true });
+  await writeVisualBenchmarkFixtureManifest(fixtureId, manifest, { fixtureRoot });
+  await writeVisualBenchmarkFixtureMetadata(fixtureId, metadata, { fixtureRoot });
+  await writeVisualBenchmarkFixtureInputs(
+    fixtureId,
+    { document: { id: "fixture", type: "DOCUMENT", children: [] } },
+    { fixtureRoot },
+  );
+  await mkdir(
+    path.join(
+      fixtureRoot,
+      fixtureId,
+      "screens",
+      toScreenIdToken("button-primary"),
+    ),
+    { recursive: true },
+  );
+  await writeFile(
+    path.join(
+      fixtureRoot,
+      fixtureId,
+      "screens",
+      toScreenIdToken("button-primary"),
+      "desktop.png",
+    ),
+    createStorybookReferenceBuffer(),
+  );
+};
+
 test(
   "executeVisualBenchmarkFixture fans out configured viewports and aggregates their scores",
   { timeout: 300_000 },
@@ -272,6 +410,111 @@ test(
       );
     } finally {
       await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "executeVisualBenchmarkFixture captures storybook_component screens and normalizes them to the baseline canvas",
+  { timeout: 180_000 },
+  async (context) => {
+    await skipIfChromiumUnavailable(context);
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), "workspace-dev-storybook-component-execution-"),
+    );
+    const fixtureRoot = path.join(tempRoot, "fixtures");
+    const fixtureId = "storybook-components";
+
+    try {
+      await createStorybookStaticDir({ rootDir: tempRoot });
+      await createStorybookComponentFixture({ fixtureRoot, fixtureId });
+
+      const result = await executeVisualBenchmarkFixture(fixtureId, {
+        fixtureRoot,
+        workspaceRoot: tempRoot,
+        storybookStaticDir: path.join("storybook-static", "storybook-static"),
+      });
+
+      assert.equal(result.fixtureId, fixtureId);
+      assert.equal(result.componentAggregateScore, result.aggregateScore);
+      assert.equal(result.componentCoverage?.comparedCount, 1);
+      assert.equal(result.componentCoverage?.skippedCount, 0);
+      assert.equal(result.screens.length, 1);
+      assert.equal(result.screens[0]?.status, "completed");
+      assert.equal(result.screens[0]?.viewports?.[0]?.viewport.width, 120);
+      assert.equal(result.screens[0]?.viewports?.[0]?.viewport.height, 96);
+      assert.ok((result.screens[0]?.score ?? 0) >= 99);
+      assert.ok(
+        result.screens[0]?.diffBuffer !== null,
+        "expected a diff buffer to be produced",
+      );
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "executeVisualBenchmarkFixture skips incomplete storybook_component mappings without failing the run",
+  async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), "workspace-dev-storybook-component-skip-"),
+    );
+    const fixtureRoot = path.join(tempRoot, "fixtures");
+    const fixtureId = "storybook-components-skip";
+
+    try {
+      await createStorybookComponentFixture({ fixtureRoot, fixtureId });
+      const metadata: VisualBenchmarkFixtureMetadata = {
+        version: 4,
+        mode: "storybook_component",
+        fixtureId,
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+          nodeId: "12:34",
+          nodeName: "Storybook Components",
+          lastModified: "2026-03-30T20:59:16Z",
+        },
+        viewport: {
+          width: 200,
+          height: 160,
+        },
+        export: {
+          format: "png",
+          scale: 1,
+        },
+        screens: [
+          {
+            screenId: "button-primary",
+            screenName: "Button",
+            nodeId: "12:34",
+            viewport: { width: 200, height: 160 },
+            referenceNodeId: "12:34",
+            referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+            captureStrategy: "storybook_root_union",
+            baselineCanvas: { width: 120, height: 96 },
+            viewports: [{ id: "desktop", width: 200, height: 160 }],
+          },
+        ],
+      };
+      await writeVisualBenchmarkFixtureMetadata(fixtureId, metadata, {
+        fixtureRoot,
+      });
+
+      const result = await executeVisualBenchmarkFixture(fixtureId, {
+        fixtureRoot,
+        workspaceRoot: tempRoot,
+      });
+
+      assert.equal(result.aggregateScore, 0);
+      assert.equal(result.componentCoverage?.comparedCount, 0);
+      assert.equal(result.componentCoverage?.skippedCount, 1);
+      assert.equal(result.componentCoverage?.bySkipReason.incomplete_mapping, 1);
+      assert.equal(result.screens[0]?.status, "skipped");
+      assert.match(result.warnings?.[0] ?? "", /missing required metadata/i);
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
     }
   },
 );

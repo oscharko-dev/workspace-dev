@@ -37,6 +37,8 @@ test("runVisualBenchmarkCli forwards viewport selection to benchmark execution",
     | {
         qualityThreshold?: number;
         viewportId?: string;
+        componentVisualCatalogFile?: string;
+        storybookStaticDir?: string;
       }
     | undefined;
 
@@ -59,7 +61,9 @@ test("runVisualBenchmarkCli forwards viewport selection to benchmark execution",
 
   assert.equal(status, 0);
   assert.deepEqual(receivedInput, {
+    componentVisualCatalogFile: undefined,
     qualityThreshold: 92,
+    storybookStaticDir: undefined,
     viewportId: "mobile",
   });
 });

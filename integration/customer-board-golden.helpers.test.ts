@@ -34,6 +34,7 @@ test("customer-board helper rejects unsupported generated artifact kinds in the 
           storybookTokens: "derived/storybook.tokens.json",
           storybookThemes: "derived/storybook.themes.json",
           storybookComponents: "derived/storybook.components.json",
+          componentVisualCatalog: "derived/storybook.component-visual-catalog.json",
           figmaAnalysis: "derived/figma-analysis.json",
           figmaLibraryResolution: "derived/figma-library-resolution.json",
           componentMatchReport: "derived/component-match-report.json"
@@ -91,6 +92,7 @@ test("customer-board helper rejects manifest paths that leak forbidden fixture s
           storybookTokens: "derived/storybook.tokens.json",
           storybookThemes: "derived/storybook.themes.json",
           storybookComponents: "derived/storybook.components.json",
+          componentVisualCatalog: "derived/storybook.component-visual-catalog.json",
           figmaAnalysis: "derived/figma-analysis.json",
           figmaLibraryResolution: "derived/figma-library-resolution.json",
           componentMatchReport: "derived/component-match-report.json"
@@ -368,6 +370,7 @@ test("customer-board bundle equality ignores volatile figma library resolution l
         storybookTokens: "derived/storybook.tokens.json",
         storybookThemes: "derived/storybook.themes.json",
         storybookComponents: "derived/storybook.components.json",
+        componentVisualCatalog: "derived/storybook.component-visual-catalog.json",
         figmaAnalysis: "derived/figma-analysis.json",
         figmaLibraryResolution: "derived/figma-library-resolution.json",
         componentMatchReport: "derived/component-match-report.json"
@@ -522,6 +525,7 @@ test("customer-board bundle equality ignores volatile component match report evi
         storybookTokens: "derived/storybook.tokens.json",
         storybookThemes: "derived/storybook.themes.json",
         storybookComponents: "derived/storybook.components.json",
+        componentVisualCatalog: "derived/storybook.component-visual-catalog.json",
         figmaAnalysis: "derived/figma-analysis.json",
         figmaLibraryResolution: "derived/figma-library-resolution.json",
         componentMatchReport: "derived/component-match-report.json"

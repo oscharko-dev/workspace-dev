@@ -20,6 +20,8 @@ export interface VisualBenchmarkCliResolution {
   ci?: boolean;
   enforceThresholds?: boolean;
   viewportId?: string;
+  componentVisualCatalogFile?: string;
+  storybookStaticDir?: string;
 }
 
 const MODULE_FILE = fileURLToPath(import.meta.url);
@@ -34,6 +36,8 @@ export const resolveVisualBenchmarkCliResolution = (
   let enforceThresholds: boolean | undefined;
   let qualityThreshold: number | undefined;
   let viewportId: string | undefined;
+  let componentVisualCatalogFile: string | undefined;
+  let storybookStaticDir: string | undefined;
   const filteredArgs: string[] = [];
   for (let i = 0; i < forwardedArgs.length; i++) {
     if (forwardedArgs[i] === "--ci") {
@@ -68,6 +72,22 @@ export const resolveVisualBenchmarkCliResolution = (
       i++; // skip the value
       continue;
     }
+    if (forwardedArgs[i] === "--storybook-component-catalog") {
+      if (i + 1 >= forwardedArgs.length) {
+        throw new Error("--storybook-component-catalog requires a path.");
+      }
+      componentVisualCatalogFile = forwardedArgs[i + 1];
+      i++;
+      continue;
+    }
+    if (forwardedArgs[i] === "--storybook-static-dir") {
+      if (i + 1 >= forwardedArgs.length) {
+        throw new Error("--storybook-static-dir requires a path.");
+      }
+      storybookStaticDir = forwardedArgs[i + 1];
+      i++;
+      continue;
+    }
     filteredArgs.push(forwardedArgs[i]);
   }
 
@@ -79,6 +99,8 @@ export const resolveVisualBenchmarkCliResolution = (
       ci,
       enforceThresholds,
       viewportId,
+      componentVisualCatalogFile,
+      storybookStaticDir,
     };
   }
 
@@ -96,11 +118,13 @@ export const resolveVisualBenchmarkCliResolution = (
       ci,
       enforceThresholds,
       viewportId,
+      componentVisualCatalogFile,
+      storybookStaticDir,
     };
   }
 
   throw new Error(
-    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--viewport <id>] [--quality-threshold <0-100>] [--ci] [--enforce-thresholds]",
+    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--viewport <id>] [--quality-threshold <0-100>] [--storybook-component-catalog <path>] [--storybook-static-dir <path>] [--ci] [--enforce-thresholds]",
   );
 };
 
@@ -111,6 +135,8 @@ export const runVisualBenchmarkCli = async (
       input?: {
         qualityThreshold?: number;
         viewportId?: string;
+        componentVisualCatalogFile?: string;
+        storybookStaticDir?: string;
       },
     ) => Promise<VisualBenchmarkResult>;
   },
@@ -123,7 +149,12 @@ export const runVisualBenchmarkCli = async (
 
   const runBenchmark =
     options?.runBenchmark ??
-    (async (input?: { qualityThreshold?: number; viewportId?: string }) => {
+    (async (input?: {
+      qualityThreshold?: number;
+      viewportId?: string;
+      componentVisualCatalogFile?: string;
+      storybookStaticDir?: string;
+    }) => {
       // Load config and apply CLI threshold override
       const config = await loadVisualQualityConfig();
       const effectiveConfig: VisualQualityConfig =
@@ -139,12 +170,16 @@ export const runVisualBenchmarkCli = async (
       return runVisualBenchmark({
         qualityConfig: effectiveConfig,
         viewportId: input?.viewportId,
+        componentVisualCatalogFile: input?.componentVisualCatalogFile,
+        storybookStaticDir: input?.storybookStaticDir,
       });
     });
   const threshold = resolution.qualityThreshold;
   const result = await runBenchmark({
     qualityThreshold: threshold,
     viewportId: resolution.viewportId,
+    componentVisualCatalogFile: resolution.componentVisualCatalogFile,
+    storybookStaticDir: resolution.storybookStaticDir,
   });
 
   if (
