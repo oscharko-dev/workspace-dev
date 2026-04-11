@@ -56,12 +56,28 @@ import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
 import { PNG } from "pngjs";
 
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
+
+export type BenchmarkBrowserName = "chromium" | "firefox" | "webkit";
+
+export const BENCHMARK_BROWSER_NAMES = [
+  "chromium",
+  "firefox",
+  "webkit",
+] as const satisfies readonly BenchmarkBrowserName[];
+
+const CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD = 95;
+const DEFAULT_BENCHMARK_BROWSER: BenchmarkBrowserName = "chromium";
+
 export interface VisualBenchmarkExecutionOptions extends VisualBenchmarkFixtureOptions {
   allowIncompleteVisualQuality?: boolean;
   qualityConfig?: VisualQualityConfig;
   storybookStaticDir?: string;
   viewportId?: string;
   workspaceRoot?: string;
+  browsers?: readonly BenchmarkBrowserName[];
+  loadBrowser?: (
+    browser: BenchmarkBrowserName,
+  ) => Promise<PlaywrightBrowserType>;
 }
 
 export interface VisualBenchmarkFixtureExecutionResult {
@@ -92,6 +108,24 @@ export interface VisualBenchmarkScreenViewportArtifact {
   };
 }
 
+export interface BrowserScreenViewportArtifact extends VisualBenchmarkScreenViewportArtifact {
+  browser: BenchmarkBrowserName;
+}
+
+export interface CrossBrowserPairwiseDiff {
+  browserA: BenchmarkBrowserName;
+  browserB: BenchmarkBrowserName;
+  diffPercent: number;
+  diffBuffer: Buffer | null;
+}
+
+export interface CrossBrowserConsistencyResult {
+  browsers: BenchmarkBrowserName[];
+  pairwiseDiffs: CrossBrowserPairwiseDiff[];
+  consistencyScore: number;
+  warnings: string[];
+}
+
 export interface VisualBenchmarkFixtureScreenArtifact {
   screenId: string;
   screenName: string;
@@ -109,6 +143,8 @@ export interface VisualBenchmarkFixtureScreenArtifact {
     height: number;
   };
   viewports?: VisualBenchmarkScreenViewportArtifact[];
+  browserArtifacts?: BrowserScreenViewportArtifact[];
+  crossBrowserConsistency?: CrossBrowserConsistencyResult;
 }
 
 export interface VisualBenchmarkFixtureRunResult {
@@ -124,6 +160,8 @@ export interface VisualBenchmarkFixtureRunResult {
     coveragePercent: number;
     bySkipReason: Record<string, number>;
   };
+  crossBrowserConsistency?: CrossBrowserConsistencyResult;
+  browserBreakdown?: Partial<Record<BenchmarkBrowserName, number>>;
 }
 
 interface VisualQualityFrozenReferenceOverride {
@@ -183,10 +221,7 @@ interface PlaywrightPage {
     options?: { timeout?: number },
   ): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
-  screenshot(options?: {
-    fullPage?: boolean;
-    type?: string;
-  }): Promise<Buffer>;
+  screenshot(options?: { fullPage?: boolean; type?: string }): Promise<Buffer>;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -197,15 +232,12 @@ const cloneJsonValue = <T>(value: T): T => {
   return JSON.parse(JSON.stringify(value)) as T;
 };
 
-const isErrno = (
-  error: unknown,
-): error is NodeJS.ErrnoException & Error => {
+const isErrno = (error: unknown): error is NodeJS.ErrnoException & Error => {
   return error instanceof Error && "code" in error;
 };
 
-const isStorybookMode = (
-  metadata: VisualBenchmarkFixtureMetadata,
-): boolean => metadata.mode === "storybook_component";
+const isStorybookMode = (metadata: VisualBenchmarkFixtureMetadata): boolean =>
+  metadata.mode === "storybook_component";
 
 const createTransparentPngBuffer = ({
   width,
@@ -308,10 +340,14 @@ const resolveStorybookRequestPath = ({
   const pathname = decodeURIComponent(parsedUrl.pathname);
   const segments = pathname.split("/").filter((segment) => segment.length > 0);
   if (segments.some((segment) => segment === "." || segment === "..")) {
-    throw new Error(`Refusing to serve Storybook traversal path '${pathname}'.`);
+    throw new Error(
+      `Refusing to serve Storybook traversal path '${pathname}'.`,
+    );
   }
   const safePathname =
-    path.posix.normalize(pathname) === "/" ? "/index.html" : path.posix.normalize(pathname);
+    path.posix.normalize(pathname) === "/"
+      ? "/index.html"
+      : path.posix.normalize(pathname);
   const relativePath = safePathname.startsWith("/")
     ? safePathname.slice(1)
     : safePathname;
@@ -405,9 +441,133 @@ const createStorybookStaticServer = async (
   };
 };
 
-const loadChromium = async (): Promise<PlaywrightBrowserType> => {
-  const playwright = await import("@playwright/test");
-  return playwright.chromium as PlaywrightBrowserType;
+export const isBenchmarkBrowserName = (
+  value: unknown,
+): value is BenchmarkBrowserName => {
+  return (
+    typeof value === "string" &&
+    (BENCHMARK_BROWSER_NAMES as readonly string[]).includes(value)
+  );
+};
+
+export const assertBenchmarkBrowserName = (
+  value: unknown,
+): BenchmarkBrowserName => {
+  if (!isBenchmarkBrowserName(value)) {
+    throw new Error(
+      `Unknown browser '${String(value)}'. Allowed values: ${BENCHMARK_BROWSER_NAMES.join(", ")}.`,
+    );
+  }
+  return value;
+};
+
+const loadBrowserByName = async (
+  browserName: BenchmarkBrowserName,
+): Promise<PlaywrightBrowserType> => {
+  const playwright = (await import("@playwright/test")) as unknown as Record<
+    BenchmarkBrowserName,
+    PlaywrightBrowserType
+  >;
+  const browserType = playwright[browserName];
+  if (browserType === undefined) {
+    throw new Error(
+      `Playwright does not export a '${browserName}' browser type.`,
+    );
+  }
+  return browserType;
+};
+
+const resolveBenchmarkBrowsers = (
+  requested: readonly BenchmarkBrowserName[] | undefined,
+): BenchmarkBrowserName[] => {
+  if (requested === undefined || requested.length === 0) {
+    return [DEFAULT_BENCHMARK_BROWSER];
+  }
+  const seen = new Set<BenchmarkBrowserName>();
+  const ordered: BenchmarkBrowserName[] = [];
+  for (const browser of requested) {
+    const validated = assertBenchmarkBrowserName(browser);
+    if (!seen.has(validated)) {
+      seen.add(validated);
+      ordered.push(validated);
+    }
+  }
+  return ordered;
+};
+
+const roundToTwoDecimals = (value: number): number =>
+  Math.round(value * 100) / 100;
+
+interface CrossBrowserComputeInput {
+  browser: BenchmarkBrowserName;
+  screenshotBuffer: Buffer;
+}
+
+export const computeCrossBrowserConsistencyScore = (
+  entries: readonly CrossBrowserComputeInput[],
+): CrossBrowserConsistencyResult => {
+  if (entries.length === 0) {
+    throw new Error(
+      "computeCrossBrowserConsistencyScore requires at least one browser entry.",
+    );
+  }
+
+  const browsers = entries.map((entry) => entry.browser);
+  if (entries.length === 1) {
+    return {
+      browsers,
+      pairwiseDiffs: [],
+      consistencyScore: 100,
+      warnings: [],
+    };
+  }
+
+  const pairwiseDiffs: CrossBrowserPairwiseDiff[] = [];
+  let worstDiffFraction = 0;
+  const warnings: string[] = [];
+  const baselineBrowser = entries[0]!.browser;
+
+  for (let i = 0; i < entries.length; i += 1) {
+    const left = entries[i]!;
+    for (let j = i + 1; j < entries.length; j += 1) {
+      const right = entries[j]!;
+      const diff = comparePngBuffers({
+        referenceBuffer: left.screenshotBuffer,
+        testBuffer: right.screenshotBuffer,
+      });
+      const diffFraction =
+        diff.totalPixels === 0 ? 0 : diff.diffPixelCount / diff.totalPixels;
+      const diffPercent = roundToTwoDecimals(diffFraction * 100);
+      worstDiffFraction = Math.max(worstDiffFraction, diffFraction);
+      pairwiseDiffs.push({
+        browserA: left.browser,
+        browserB: right.browser,
+        diffPercent,
+        diffBuffer: diff.diffImageBuffer,
+      });
+    }
+  }
+
+  const consistencyScore = Math.round((1 - worstDiffFraction) * 100);
+  if (consistencyScore < CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD) {
+    for (const pair of pairwiseDiffs) {
+      if (pair.browserA !== baselineBrowser) {
+        continue;
+      }
+      if (pair.diffPercent >= 100 - CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD) {
+        warnings.push(
+          `${pair.browserB}: rendering differs from ${pair.browserA} by ${pair.diffPercent}%`,
+        );
+      }
+    }
+  }
+
+  return {
+    browsers,
+    pairwiseDiffs,
+    consistencyScore,
+    warnings,
+  };
 };
 
 const WAIT_FOR_FONTS_EXPRESSION = "document.fonts.ready.then(() => undefined)";
@@ -480,10 +640,7 @@ const cropPngBuffer = (
   const source = PNG.sync.read(buffer);
   const safeX = Math.max(0, Math.min(cropBox.x, source.width - 1));
   const safeY = Math.max(0, Math.min(cropBox.y, source.height - 1));
-  const safeWidth = Math.max(
-    1,
-    Math.min(cropBox.width, source.width - safeX),
-  );
+  const safeWidth = Math.max(1, Math.min(cropBox.width, source.width - safeX));
   const safeHeight = Math.max(
     1,
     Math.min(cropBox.height, source.height - safeY),
@@ -840,7 +997,9 @@ const selectScreenViewports = ({
     (viewport) => viewport.id === selectedViewportId,
   );
   if (selectedViewport === undefined) {
-    const availableViewportIds = resolvedViewports.map((viewport) => viewport.id);
+    const availableViewportIds = resolvedViewports.map(
+      (viewport) => viewport.id,
+    );
     throw new Error(
       `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' does not define viewport '${selectedViewportId}'. Available viewports: ${availableViewportIds.join(", ")}.`,
     );
@@ -864,7 +1023,8 @@ const computeAggregateFromViewportArtifacts = ({
     return viewportArtifacts[0]!.score;
   }
 
-  const normalizedViewports = normalizeVisualQualityViewportWeights(viewportSpecs);
+  const normalizedViewports =
+    normalizeVisualQualityViewportWeights(viewportSpecs);
   let weightedScore = 0;
   for (let index = 0; index < viewportArtifacts.length; index += 1) {
     const viewportArtifact = viewportArtifacts[index]!;
@@ -898,11 +1058,8 @@ const resolveStorybookReferencePath = ({
       options,
     ).referencePngPath;
   }
-  return resolveVisualBenchmarkScreenPaths(
-    fixtureId,
-    screen.screenId,
-    options,
-  ).referencePngPath;
+  return resolveVisualBenchmarkScreenPaths(fixtureId, screen.screenId, options)
+    .referencePngPath;
 };
 
 const executeStorybookComponentViewport = async ({
@@ -911,21 +1068,25 @@ const executeStorybookComponentViewport = async ({
   activeViewport,
   workspaceRoot,
   options,
+  browser: browserName = DEFAULT_BENCHMARK_BROWSER,
 }: {
   fixtureId: string;
   screen: VisualBenchmarkFixtureScreenMetadata;
   activeViewport: VisualBenchmarkViewportSpec;
   workspaceRoot: string;
   options?: VisualBenchmarkExecutionOptions;
+  browser?: BenchmarkBrowserName;
 }): Promise<VisualBenchmarkScreenViewportArtifact> => {
-  const activeDeviceScaleFactor = resolveViewportDeviceScaleFactor(activeViewport);
+  const activeDeviceScaleFactor =
+    resolveViewportDeviceScaleFactor(activeViewport);
   const storybookStaticDir = await resolveStorybookStaticDir({
     options,
     workspaceRoot,
   });
   const server = await createStorybookStaticServer(storybookStaticDir);
-  const chromium = await loadChromium();
-  const browser = await chromium.launch({ headless: true });
+  const loadBrowser = options?.loadBrowser ?? loadBrowserByName;
+  const browserType = await loadBrowser(browserName);
+  const browser = await browserType.launch({ headless: true });
   const normalizedViewport = {
     width: screen.baselineCanvas?.width ?? activeViewport.width,
     height: screen.baselineCanvas?.height ?? activeViewport.height,
@@ -952,10 +1113,9 @@ const executeStorybookComponentViewport = async ({
       await page.evaluate(WAIT_FOR_FONTS_EXPRESSION);
       await page.evaluate(WAIT_FOR_ANIMATIONS_EXPRESSION);
 
-      const captureBox =
-        await page.evaluate<StorybookCaptureBox | null>(
-          STORYBOOK_CAPTURE_BOX_EXPRESSION,
-        );
+      const captureBox = await page.evaluate<StorybookCaptureBox | null>(
+        STORYBOOK_CAPTURE_BOX_EXPRESSION,
+      );
       if (captureBox === null) {
         throw new Error(
           `Storybook story '${screen.entryId}' rendered no visible content under ${STORYBOOK_ROOT_SELECTOR}.`,
@@ -1043,6 +1203,93 @@ const executeStorybookComponentViewport = async ({
   }
 };
 
+interface MultiBrowserViewportResult {
+  primary: VisualBenchmarkScreenViewportArtifact;
+  browserArtifacts: BrowserScreenViewportArtifact[];
+  crossBrowserConsistency: CrossBrowserConsistencyResult;
+}
+
+const executeStorybookComponentViewportMultiBrowser = async ({
+  fixtureId,
+  screen,
+  activeViewport,
+  workspaceRoot,
+  options,
+  browsers,
+}: {
+  fixtureId: string;
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  activeViewport: VisualBenchmarkViewportSpec;
+  workspaceRoot: string;
+  options?: VisualBenchmarkExecutionOptions;
+  browsers: readonly BenchmarkBrowserName[];
+}): Promise<MultiBrowserViewportResult> => {
+  if (browsers.length === 0) {
+    throw new Error(
+      `executeStorybookComponentViewportMultiBrowser requires at least one browser for screen '${screen.screenId}'.`,
+    );
+  }
+  const captures = await Promise.all(
+    browsers.map(async (browserName) => {
+      const artifact = await executeStorybookComponentViewport({
+        fixtureId,
+        screen,
+        activeViewport,
+        workspaceRoot,
+        options,
+        browser: browserName,
+      });
+      return { browser: browserName, artifact };
+    }),
+  );
+
+  const browserArtifacts: BrowserScreenViewportArtifact[] = captures.map(
+    ({ browser, artifact }) => ({ ...artifact, browser }),
+  );
+
+  const consistency = computeCrossBrowserConsistencyScore(
+    captures.map(({ browser, artifact }) => ({
+      browser,
+      screenshotBuffer: artifact.screenshotBuffer,
+    })),
+  );
+
+  const primary = captures[0]!.artifact;
+  return {
+    primary,
+    browserArtifacts,
+    crossBrowserConsistency: consistency,
+  };
+};
+
+const aggregateCrossBrowserConsistency = (
+  perViewportResults: readonly CrossBrowserConsistencyResult[],
+): CrossBrowserConsistencyResult | undefined => {
+  if (perViewportResults.length === 0) {
+    return undefined;
+  }
+  if (perViewportResults.length === 1) {
+    return perViewportResults[0]!;
+  }
+  const first = perViewportResults[0]!;
+  const combinedPairwise: CrossBrowserPairwiseDiff[] = perViewportResults
+    .flatMap((entry) => entry.pairwiseDiffs)
+    .map((pair) => ({ ...pair }));
+  const combinedWarnings = perViewportResults.flatMap(
+    (entry) => entry.warnings,
+  );
+  const worstConsistencyScore = perViewportResults.reduce(
+    (acc, entry) => Math.min(acc, entry.consistencyScore),
+    100,
+  );
+  return {
+    browsers: [...first.browsers],
+    pairwiseDiffs: combinedPairwise,
+    consistencyScore: worstConsistencyScore,
+    warnings: combinedWarnings,
+  };
+};
+
 const executeStorybookComponentScreen = async ({
   fixtureId,
   screen,
@@ -1106,17 +1353,39 @@ const executeStorybookComponentScreen = async ({
     });
   }
 
-  const viewports = await Promise.all(
-    selectedViewports.map((activeViewport) =>
-      executeStorybookComponentViewport({
-        fixtureId,
-        screen,
-        activeViewport,
-        workspaceRoot,
-        options,
-      }),
-    ),
-  );
+  const browsers = resolveBenchmarkBrowsers(options?.browsers);
+  const isMultiBrowser = browsers.length > 1;
+
+  const multiBrowserResults = isMultiBrowser
+    ? await Promise.all(
+        selectedViewports.map((activeViewport) =>
+          executeStorybookComponentViewportMultiBrowser({
+            fixtureId,
+            screen,
+            activeViewport,
+            workspaceRoot,
+            options,
+            browsers,
+          }),
+        ),
+      )
+    : null;
+
+  const viewports: VisualBenchmarkScreenViewportArtifact[] =
+    multiBrowserResults !== null
+      ? multiBrowserResults.map((entry) => entry.primary)
+      : await Promise.all(
+          selectedViewports.map((activeViewport) =>
+            executeStorybookComponentViewport({
+              fixtureId,
+              screen,
+              activeViewport,
+              workspaceRoot,
+              options,
+              browser: browsers[0],
+            }),
+          ),
+        );
   const representativeViewport = viewports[0];
   if (representativeViewport === undefined) {
     return createSkippedStorybookScreenArtifact({
@@ -1126,12 +1395,32 @@ const executeStorybookComponentScreen = async ({
     });
   }
 
-  const warnings = viewports.flatMap((viewport) => {
+  const reportWarnings = viewports.flatMap((viewport) => {
     const report = viewport.report;
-    return isWorkspaceVisualQualityReport(report) && Array.isArray(report.warnings)
+    return isWorkspaceVisualQualityReport(report) &&
+      Array.isArray(report.warnings)
       ? report.warnings
       : [];
   });
+
+  const crossBrowserWarnings = (multiBrowserResults ?? []).flatMap((entry) =>
+    entry.crossBrowserConsistency.warnings.map(
+      (warning) => `${screen.screenId}@${entry.primary.viewportId}: ${warning}`,
+    ),
+  );
+  const combinedWarnings = [...reportWarnings, ...crossBrowserWarnings];
+
+  const aggregatedCrossBrowser: CrossBrowserConsistencyResult | undefined =
+    multiBrowserResults !== null
+      ? aggregateCrossBrowserConsistency(
+          multiBrowserResults.map((entry) => entry.crossBrowserConsistency),
+        )
+      : undefined;
+
+  const browserArtifacts: BrowserScreenViewportArtifact[] | undefined =
+    multiBrowserResults !== null
+      ? multiBrowserResults.flatMap((entry) => entry.browserArtifacts)
+      : undefined;
 
   return {
     screenId: screen.screenId,
@@ -1139,7 +1428,7 @@ const executeStorybookComponentScreen = async ({
     nodeId: screen.nodeId,
     status: "completed",
     ...(screen.weight !== undefined ? { weight: screen.weight } : {}),
-    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(combinedWarnings.length > 0 ? { warnings: combinedWarnings } : {}),
     score: computeAggregateFromViewportArtifacts({
       viewportSpecs: selectedViewports,
       viewportArtifacts: viewports,
@@ -1149,6 +1438,10 @@ const executeStorybookComponentScreen = async ({
     report: representativeViewport.report,
     viewport: representativeViewport.viewport,
     viewports,
+    ...(browserArtifacts !== undefined ? { browserArtifacts } : {}),
+    ...(aggregatedCrossBrowser !== undefined
+      ? { crossBrowserConsistency: aggregatedCrossBrowser }
+      : {}),
   };
 };
 
@@ -1171,7 +1464,8 @@ const executeVisualBenchmarkViewport = async ({
   workspaceRoot: string;
   options?: VisualBenchmarkExecutionOptions;
 }): Promise<VisualBenchmarkScreenViewportArtifact> => {
-  const activeDeviceScaleFactor = resolveViewportDeviceScaleFactor(activeViewport);
+  const activeDeviceScaleFactor =
+    resolveViewportDeviceScaleFactor(activeViewport);
 
   const perScreenMetadata: VisualBenchmarkFixtureMetadata = {
     ...metadata,
@@ -1429,7 +1723,9 @@ const executeVisualBenchmarkScreen = async ({
 const computeAggregateFromScreens = (
   screens: readonly VisualBenchmarkFixtureScreenArtifact[],
 ): number => {
-  const completedScreens = screens.filter((screen) => screen.status !== "skipped");
+  const completedScreens = screens.filter(
+    (screen) => screen.status !== "skipped",
+  );
   if (completedScreens.length === 0) {
     return 0;
   }
@@ -1484,9 +1780,21 @@ export const executeVisualBenchmarkFixture = async (
   const completedScreens = screenArtifacts.filter(
     (screen) => screen.status !== "skipped",
   );
+  const crossBrowserAccumulator = completedScreens.flatMap((screen) =>
+    screen.crossBrowserConsistency !== undefined
+      ? [screen.crossBrowserConsistency]
+      : [],
+  );
+  const fixtureCrossBrowserConsistency = aggregateCrossBrowserConsistency(
+    crossBrowserAccumulator,
+  );
   const warnings = [
     ...skippedScreens.flatMap((screen) => screen.warnings ?? []),
+    ...(fixtureCrossBrowserConsistency !== undefined
+      ? fixtureCrossBrowserConsistency.warnings
+      : []),
   ];
+  const browserBreakdown = computeBrowserBreakdown(completedScreens);
   const componentCoverage = isStorybookMode(metadata)
     ? {
         comparedCount: completedScreens.length,
@@ -1516,7 +1824,43 @@ export const executeVisualBenchmarkFixture = async (
       ? { screenAggregateScore: aggregateScore }
       : { componentAggregateScore: aggregateScore }),
     ...(componentCoverage !== undefined ? { componentCoverage } : {}),
+    ...(fixtureCrossBrowserConsistency !== undefined
+      ? { crossBrowserConsistency: fixtureCrossBrowserConsistency }
+      : {}),
+    ...(browserBreakdown !== undefined ? { browserBreakdown } : {}),
   };
+};
+
+const computeBrowserBreakdown = (
+  completedScreens: readonly VisualBenchmarkFixtureScreenArtifact[],
+): Partial<Record<BenchmarkBrowserName, number>> | undefined => {
+  const sums: Partial<Record<BenchmarkBrowserName, number>> = {};
+  const counts: Partial<Record<BenchmarkBrowserName, number>> = {};
+  let sawAny = false;
+  for (const screen of completedScreens) {
+    const browserArtifacts = screen.browserArtifacts;
+    if (browserArtifacts === undefined || browserArtifacts.length === 0) {
+      continue;
+    }
+    sawAny = true;
+    for (const artifact of browserArtifacts) {
+      sums[artifact.browser] = (sums[artifact.browser] ?? 0) + artifact.score;
+      counts[artifact.browser] = (counts[artifact.browser] ?? 0) + 1;
+    }
+  }
+  if (!sawAny) {
+    return undefined;
+  }
+  const averaged: Partial<Record<BenchmarkBrowserName, number>> = {};
+  for (const browserName of BENCHMARK_BROWSER_NAMES) {
+    const total = sums[browserName];
+    const count = counts[browserName];
+    if (total === undefined || count === undefined || count === 0) {
+      continue;
+    }
+    averaged[browserName] = Math.round((total / count) * 100) / 100;
+  }
+  return averaged;
 };
 
 export const runVisualBenchmarkFixture = async (

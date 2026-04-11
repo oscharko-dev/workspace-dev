@@ -7,6 +7,10 @@ import {
 } from "./visual-benchmark-runner.js";
 import { assertAllowedViewportId } from "./visual-benchmark.helpers.js";
 import {
+  assertBenchmarkBrowserName,
+  type BenchmarkBrowserName,
+} from "./visual-benchmark.execution.js";
+import {
   loadVisualQualityConfig,
   type VisualQualityConfig,
 } from "./visual-quality-config.js";
@@ -22,7 +26,30 @@ export interface VisualBenchmarkCliResolution {
   viewportId?: string;
   componentVisualCatalogFile?: string;
   storybookStaticDir?: string;
+  browsers?: BenchmarkBrowserName[];
 }
+
+const parseBrowsersFlagValue = (value: string): BenchmarkBrowserName[] => {
+  const tokens = value
+    .split(",")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    throw new Error(
+      "--browsers requires a non-empty comma-separated list (e.g. chromium,firefox,webkit).",
+    );
+  }
+  const seen = new Set<BenchmarkBrowserName>();
+  const ordered: BenchmarkBrowserName[] = [];
+  for (const token of tokens) {
+    const validated = assertBenchmarkBrowserName(token);
+    if (!seen.has(validated)) {
+      seen.add(validated);
+      ordered.push(validated);
+    }
+  }
+  return ordered;
+};
 
 const MODULE_FILE = fileURLToPath(import.meta.url);
 
@@ -38,6 +65,7 @@ export const resolveVisualBenchmarkCliResolution = (
   let viewportId: string | undefined;
   let componentVisualCatalogFile: string | undefined;
   let storybookStaticDir: string | undefined;
+  let browsers: BenchmarkBrowserName[] | undefined;
   const filteredArgs: string[] = [];
   for (let i = 0; i < forwardedArgs.length; i++) {
     if (forwardedArgs[i] === "--ci") {
@@ -88,6 +116,18 @@ export const resolveVisualBenchmarkCliResolution = (
       i++;
       continue;
     }
+    if (forwardedArgs[i] === "--browsers") {
+      if (i + 1 >= forwardedArgs.length) {
+        throw new Error("--browsers requires a value.");
+      }
+      const rawValue = forwardedArgs[i + 1];
+      if (rawValue === undefined) {
+        throw new Error("--browsers requires a value.");
+      }
+      browsers = parseBrowsersFlagValue(rawValue);
+      i++;
+      continue;
+    }
     filteredArgs.push(forwardedArgs[i]);
   }
 
@@ -101,6 +141,7 @@ export const resolveVisualBenchmarkCliResolution = (
       viewportId,
       componentVisualCatalogFile,
       storybookStaticDir,
+      browsers,
     };
   }
 
@@ -120,25 +161,25 @@ export const resolveVisualBenchmarkCliResolution = (
       viewportId,
       componentVisualCatalogFile,
       storybookStaticDir,
+      browsers,
     };
   }
 
   throw new Error(
-    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--viewport <id>] [--quality-threshold <0-100>] [--storybook-component-catalog <path>] [--storybook-static-dir <path>] [--ci] [--enforce-thresholds]",
+    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--viewport <id>] [--quality-threshold <0-100>] [--storybook-component-catalog <path>] [--storybook-static-dir <path>] [--browsers <chromium,firefox,webkit>] [--ci] [--enforce-thresholds]",
   );
 };
 
 export const runVisualBenchmarkCli = async (
   args: readonly string[],
   options?: {
-    runBenchmark?: (
-      input?: {
-        qualityThreshold?: number;
-        viewportId?: string;
-        componentVisualCatalogFile?: string;
-        storybookStaticDir?: string;
-      },
-    ) => Promise<VisualBenchmarkResult>;
+    runBenchmark?: (input?: {
+      qualityThreshold?: number;
+      viewportId?: string;
+      componentVisualCatalogFile?: string;
+      storybookStaticDir?: string;
+      browsers?: BenchmarkBrowserName[];
+    }) => Promise<VisualBenchmarkResult>;
   },
 ): Promise<number> => {
   const resolution = resolveVisualBenchmarkCliResolution(args);
@@ -154,6 +195,7 @@ export const runVisualBenchmarkCli = async (
       viewportId?: string;
       componentVisualCatalogFile?: string;
       storybookStaticDir?: string;
+      browsers?: BenchmarkBrowserName[];
     }) => {
       // Load config and apply CLI threshold override
       const config = await loadVisualQualityConfig();
@@ -172,6 +214,7 @@ export const runVisualBenchmarkCli = async (
         viewportId: input?.viewportId,
         componentVisualCatalogFile: input?.componentVisualCatalogFile,
         storybookStaticDir: input?.storybookStaticDir,
+        browsers: input?.browsers,
       });
     });
   const threshold = resolution.qualityThreshold;
@@ -180,6 +223,7 @@ export const runVisualBenchmarkCli = async (
     viewportId: resolution.viewportId,
     componentVisualCatalogFile: resolution.componentVisualCatalogFile,
     storybookStaticDir: resolution.storybookStaticDir,
+    browsers: resolution.browsers,
   });
 
   if (
