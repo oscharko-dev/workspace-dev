@@ -1,0 +1,20 @@
+{
+  "label": "Strict",
+  "description": "Higher warning threshold with a tighter neutral band for A/B scoring audits.",
+  "qualityConfig": {
+    "thresholds": {
+      "warn": 82
+    },
+    "weights": {
+      "layoutAccuracy": 0.32,
+      "colorFidelity": 0.24,
+      "typography": 0.22,
+      "componentStructure": 0.14,
+      "spacingAlignment": 0.08
+    },
+    "regression": {
+      "neutralTolerance": 1
+    }
+  },
+  "browsers": ["chromium"]
+}

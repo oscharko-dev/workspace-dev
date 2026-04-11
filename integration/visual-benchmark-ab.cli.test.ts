@@ -8,6 +8,7 @@ import {
 import type {
   VisualBenchmarkAbConfig,
   VisualBenchmarkAbResult,
+  ThreeWayDiffPersistedRecord,
 } from "./visual-benchmark-ab.js";
 
 // ---------------------------------------------------------------------------
@@ -170,6 +171,19 @@ test("runVisualBenchmarkAbCli loads both configs, runs the comparison, and persi
       },
       persistThreeWayDiffs: async (_result, artifactRoot) => {
         persistedThreeWay.push({ artifactRoot });
+        return [
+          {
+            fixtureId: "simple-form",
+            screenId: "1:65671",
+            threeWayDiff: {
+              status: "generated",
+              diffImagePath: "three-way/simple-form/1_65671/default.png",
+              referenceImagePath: "ref.png",
+              outputAImagePath: "a.png",
+              outputBImagePath: "b.png",
+            },
+          },
+        ] satisfies ThreeWayDiffPersistedRecord[];
       },
       output: (line) => lines.push(line),
     },
@@ -182,6 +196,11 @@ test("runVisualBenchmarkAbCli loads both configs, runs the comparison, and persi
   assert.equal(persistedComparisons.length, 1);
   assert.ok(persistedComparisons[0]!.tableLength > 0);
   assert.equal(persistedThreeWay.length, 1);
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 1 generated, 0 disabled, 0 missing-input, 0 failed."),
+    ),
+  );
   assert.ok(lines.some((line) => line.includes("Overall Average")));
   assert.ok(lines.some((line) => line.includes("Statistical summary")));
 });
@@ -196,6 +215,7 @@ test("runVisualBenchmarkAbCli skips three-way diff generation when --skip-three-
       persistComparison: async () => undefined,
       persistThreeWayDiffs: async (_result, artifactRoot) => {
         persistedThreeWay.push({ artifactRoot });
+        return [];
       },
       output: () => undefined,
     },
@@ -220,7 +240,12 @@ test("runVisualBenchmarkAbCli reports three-way diff failures without aborting",
   assert.equal(status, 0);
   assert.ok(
     lines.some((line) =>
-      line.includes("Three-way diff generation skipped: disk full"),
+      line.includes("Three-way diff generation failed: disk full"),
+    ),
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 0 generated, 0 disabled, 0 missing-input, 1 failed."),
     ),
   );
 });
@@ -276,4 +301,74 @@ test("runVisualBenchmarkAbCli prints labelled warnings when present", async () =
   );
   assert.ok(lines.some((line) => line.includes("Warnings:")));
   assert.ok(lines.some((line) => line.includes("[A] stale baseline")));
+});
+
+test("runVisualBenchmarkAbCli marks entries as disabled when --skip-three-way-diff is set", async () => {
+  const persistedResults: VisualBenchmarkAbResult[] = [];
+  const lines: string[] = [];
+  await runVisualBenchmarkAbCli(
+    ["--config-a", "a.json", "--config-b", "b.json", "--skip-three-way-diff"],
+    {
+      loadConfig: async () => ({ label: Math.random().toString() }),
+      runAb: async () => buildAbResult(),
+      persistComparison: async (result) => {
+        persistedResults.push(structuredClone(result));
+      },
+      output: (line) => lines.push(line),
+    },
+  );
+  assert.equal(
+    persistedResults[0]?.entries[0]?.threeWayDiff?.status,
+    "skipped_disabled",
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 0 generated, 1 disabled, 0 missing-input, 0 failed."),
+    ),
+  );
+});
+
+test("runVisualBenchmarkAbCli surfaces missing-input three-way diff statuses", async () => {
+  const lines: string[] = [];
+  await runVisualBenchmarkAbCli(
+    ["--config-a", "a.json", "--config-b", "b.json"],
+    {
+      loadConfig: async () => ({ label: Math.random().toString() }),
+      runAb: async () => buildAbResult(),
+      persistComparison: async () => undefined,
+      persistThreeWayDiffs: async () => [
+        {
+          fixtureId: "simple-form",
+          screenId: "1:65671",
+          threeWayDiff: {
+            status: "skipped_missing_input",
+            diffImagePath: null,
+            referenceImagePath: null,
+            outputAImagePath: null,
+            outputBImagePath: null,
+            reason: "No reference or generated outputs were available for this entry.",
+          },
+        },
+      ],
+      output: (line) => lines.push(line),
+    },
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 0 generated, 0 disabled, 1 missing-input, 0 failed."),
+    ),
+  );
+});
+
+test("runVisualBenchmarkAbCli fails fast when configs are non-comparable", async () => {
+  await assert.rejects(
+    async () =>
+      runVisualBenchmarkAbCli(["--config-a", "a.json", "--config-b", "b.json"], {
+        loadConfig: async (filePath) =>
+          filePath === "a.json"
+            ? { label: "A", browsers: ["chromium"] }
+            : { label: "B", browsers: ["firefox"] },
+      }),
+    /same browsers/i,
+  );
 });

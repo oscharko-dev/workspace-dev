@@ -26,6 +26,8 @@ import {
   assertAllowedViewportId,
   fromScreenIdToken,
   getVisualBenchmarkFixtureRoot,
+  resolveVisualBenchmarkScreenPaths,
+  resolveVisualBenchmarkScreenViewportPaths,
   toScreenIdToken,
   type VisualBenchmarkFixtureOptions,
 } from "./visual-benchmark.helpers.js";
@@ -45,6 +47,10 @@ const CONFIG_B_DIRECTORY_NAME = "config-b";
 const COMPARISON_FILE_NAME = "comparison.json";
 const COMPARISON_TABLE_FILE_NAME = "comparison.txt";
 const THREE_WAY_DIFF_DIRECTORY_NAME = "three-way";
+const WORKSPACE_ROOT = path.resolve(process.cwd());
+const MAX_THREE_WAY_PNG_BYTES = 10 * 1024 * 1024;
+const MAX_THREE_WAY_PNG_PIXELS = 4_194_304;
+const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 export const VisualBenchmarkAbConfigSchema = z
   .object({
@@ -67,6 +73,31 @@ export interface VisualBenchmarkAbConfig {
   componentVisualCatalogFile?: string;
   storybookStaticDir?: string;
 }
+
+const isWithinRoot = (candidatePath: string, rootPath: string): boolean => {
+  const resolvedCandidate = path.resolve(candidatePath);
+  const resolvedRoot = path.resolve(rootPath);
+  return (
+    resolvedCandidate === resolvedRoot ||
+    resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`)
+  );
+};
+
+const normalizeWorkspacePath = (value: string, fieldName: string): string => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    throw new Error(`Invalid A/B config: ${fieldName} must be a non-empty string.`);
+  }
+  const resolved = path.isAbsolute(trimmed)
+    ? path.resolve(trimmed)
+    : path.resolve(WORKSPACE_ROOT, trimmed);
+  if (!isWithinRoot(resolved, WORKSPACE_ROOT)) {
+    throw new Error(
+      `Invalid A/B config: ${fieldName} resolves outside the workspace root ('${WORKSPACE_ROOT}').`,
+    );
+  }
+  return resolved;
+};
 
 export const parseVisualBenchmarkAbConfig = (
   input: unknown,
@@ -102,10 +133,16 @@ export const parseVisualBenchmarkAbConfig = (
     config.viewportId = assertAllowedViewportId(raw.viewportId);
   }
   if (raw.componentVisualCatalogFile !== undefined) {
-    config.componentVisualCatalogFile = raw.componentVisualCatalogFile;
+    config.componentVisualCatalogFile = normalizeWorkspacePath(
+      raw.componentVisualCatalogFile,
+      "componentVisualCatalogFile",
+    );
   }
   if (raw.storybookStaticDir !== undefined) {
-    config.storybookStaticDir = raw.storybookStaticDir;
+    config.storybookStaticDir = normalizeWorkspacePath(
+      raw.storybookStaticDir,
+      "storybookStaticDir",
+    );
   }
   return config;
 };
@@ -158,6 +195,7 @@ export interface VisualBenchmarkAbComparisonEntry {
   scoreB: number | null;
   delta: number | null;
   indicator: VisualBenchmarkAbIndicator;
+  threeWayDiff?: VisualBenchmarkAbThreeWayDiffMetadata;
 }
 
 export interface VisualBenchmarkAbStatistics {
@@ -187,6 +225,21 @@ export interface VisualBenchmarkAbResult {
   overallDelta: number | null;
   statistics: VisualBenchmarkAbStatistics;
   warnings?: string[];
+}
+
+export type VisualBenchmarkAbThreeWayDiffStatus =
+  | "generated"
+  | "skipped_disabled"
+  | "skipped_missing_input"
+  | "failed";
+
+export interface VisualBenchmarkAbThreeWayDiffMetadata {
+  status: VisualBenchmarkAbThreeWayDiffStatus;
+  diffImagePath: string | null;
+  referenceImagePath: string | null;
+  outputAImagePath: string | null;
+  outputBImagePath: string | null;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -270,16 +323,16 @@ const computeStatistics = (
       improvedCount += 1;
       positiveDeltaSum += entry.delta;
       positiveDeltaCount += 1;
+      if (bestImprovement === null || entry.delta > bestImprovement) {
+        bestImprovement = entry.delta;
+      }
     } else if (entry.indicator === "degraded") {
       degradedCount += 1;
+      if (worstRegression === null || entry.delta < worstRegression) {
+        worstRegression = entry.delta;
+      }
     } else {
       neutralCount += 1;
-    }
-    if (bestImprovement === null || entry.delta > bestImprovement) {
-      bestImprovement = entry.delta;
-    }
-    if (worstRegression === null || entry.delta < worstRegression) {
-      worstRegression = entry.delta;
     }
   }
   const meanDelta =
@@ -306,6 +359,70 @@ const computeStatistics = (
     netChange: roundToTwoDecimals(netChange),
   };
 };
+
+const canonicalizeBrowsers = (
+  browsers: readonly BenchmarkBrowserName[] | undefined,
+): string | null => {
+  if (browsers === undefined) {
+    return null;
+  }
+  return [...browsers].sort().join(",");
+};
+
+const formatComparableValue = (value: string | null): string =>
+  value === null ? "<unset>" : value;
+
+const assertComparableConfigInputs = (
+  configA: VisualBenchmarkAbConfig,
+  configB: VisualBenchmarkAbConfig,
+): void => {
+  const comparableFields: Array<{
+    label: string;
+    valueA: string | null;
+    valueB: string | null;
+  }> = [
+    {
+      label: "browsers",
+      valueA: canonicalizeBrowsers(configA.browsers),
+      valueB: canonicalizeBrowsers(configB.browsers),
+    },
+    {
+      label: "viewportId",
+      valueA: configA.viewportId ?? null,
+      valueB: configB.viewportId ?? null,
+    },
+    {
+      label: "componentVisualCatalogFile",
+      valueA: configA.componentVisualCatalogFile ?? null,
+      valueB: configB.componentVisualCatalogFile ?? null,
+    },
+    {
+      label: "storybookStaticDir",
+      valueA: configA.storybookStaticDir ?? null,
+      valueB: configB.storybookStaticDir ?? null,
+    },
+  ];
+  for (const field of comparableFields) {
+    if (field.valueA !== field.valueB) {
+      throw new Error(
+        `A/B configs must use the same ${field.label}. Received ${formatComparableValue(field.valueA)} for '${configA.label}' and ${formatComparableValue(field.valueB)} for '${configB.label}'.`,
+      );
+    }
+  }
+};
+
+const sanitizeComparisonEntry = (
+  entry: VisualBenchmarkAbComparisonEntry,
+): VisualBenchmarkAbComparisonEntry => ({
+  ...entry,
+  fixtureId: assertAllowedFixtureId(entry.fixtureId),
+  ...(entry.screenId !== undefined
+    ? { screenId: assertAllowedScreenId(entry.screenId) }
+    : {}),
+  ...(entry.viewportId !== undefined
+    ? { viewportId: assertAllowedViewportId(entry.viewportId) }
+    : {}),
+});
 
 export interface CompareVisualBenchmarkResultsInput {
   configA: {
@@ -343,7 +460,7 @@ export const compareVisualBenchmarkResults = (
       scoreA !== null && scoreB !== null
         ? roundToTwoDecimals(scoreB - scoreA)
         : null;
-    const entry: VisualBenchmarkAbComparisonEntry = {
+    const entry = sanitizeComparisonEntry({
       fixtureId: reference.fixtureId,
       ...(reference.screenId !== undefined
         ? { screenId: reference.screenId }
@@ -361,7 +478,7 @@ export const compareVisualBenchmarkResults = (
       scoreB,
       delta,
       indicator: indicatorFromDelta(delta, neutralTolerance),
-    };
+    });
     entries.push(entry);
   }
   const sortedEntries = sortEntries(entries);
@@ -562,6 +679,44 @@ const DEFAULT_BACKGROUND_RGB = { r: 255, g: 255, b: 255 };
 const DEFAULT_THREE_WAY_GAP = 16;
 const PLACEHOLDER_FALLBACK_SIZE = 64;
 
+const parsePngDimensions = (
+  buffer: Buffer,
+): { width: number; height: number } | null => {
+  if (buffer.length < 24) {
+    return null;
+  }
+  const hasSignature = PNG_SIGNATURE.every(
+    (byte, index) => buffer[index] === byte,
+  );
+  if (!hasSignature || buffer.toString("ascii", 12, 16) !== "IHDR") {
+    return null;
+  }
+  return {
+    width: buffer.readUInt32BE(16),
+    height: buffer.readUInt32BE(20),
+  };
+};
+
+const assertSafePngBuffer = (buffer: Buffer, label: string): void => {
+  if (buffer.length > MAX_THREE_WAY_PNG_BYTES) {
+    throw new Error(
+      `${label} exceeds the ${String(MAX_THREE_WAY_PNG_BYTES)} byte limit for three-way diff generation.`,
+    );
+  }
+  const dimensions = parsePngDimensions(buffer);
+  if (dimensions === null) {
+    return;
+  }
+  if (dimensions.width === 0 || dimensions.height === 0) {
+    throw new Error(`${label} declares an invalid PNG size.`);
+  }
+  if (dimensions.width * dimensions.height > MAX_THREE_WAY_PNG_PIXELS) {
+    throw new Error(
+      `${label} exceeds the ${String(MAX_THREE_WAY_PNG_PIXELS)} pixel limit for three-way diff generation.`,
+    );
+  }
+};
+
 const fillPng = (
   png: PNG,
   color: { r: number; g: number; b: number },
@@ -580,6 +735,15 @@ export const composeThreeWayDiff = (
   const gap = input.gap ?? DEFAULT_THREE_WAY_GAP;
   const background = input.background ?? DEFAULT_BACKGROUND_RGB;
   const present: PNG[] = [];
+  if (input.reference !== null) {
+    assertSafePngBuffer(input.reference, "reference");
+  }
+  if (input.outputA !== null) {
+    assertSafePngBuffer(input.outputA, "outputA");
+  }
+  if (input.outputB !== null) {
+    assertSafePngBuffer(input.outputB, "outputB");
+  }
   const refPng = input.reference ? PNG.sync.read(input.reference) : null;
   if (refPng) present.push(refPng);
   const aPng = input.outputA ? PNG.sync.read(input.outputA) : null;
@@ -615,6 +779,11 @@ export const composeThreeWayDiff = (
     aCanvas.height,
     bCanvas.height,
   );
+  if (totalWidth * totalHeight > MAX_THREE_WAY_PNG_PIXELS) {
+    throw new Error(
+      `Three-way diff canvas exceeds the ${String(MAX_THREE_WAY_PNG_PIXELS)} pixel limit.`,
+    );
+  }
   const canvas = new PNG({ width: totalWidth, height: totalHeight });
   fillPng(canvas, background);
   const drawAt = (source: PNG, dx: number): void => {
@@ -639,21 +808,21 @@ const resolveReferenceImagePath = (
 ): string => {
   const root = options?.fixtureRoot ?? getVisualBenchmarkFixtureRoot();
   const validatedFixtureId = assertAllowedFixtureId(fixtureId);
-  if (
-    typeof screenId === "string" &&
-    screenId.length > 0 &&
-    typeof viewportId === "string" &&
-    viewportId.length > 0
-  ) {
+  if (typeof screenId === "string" && screenId.length > 0) {
     const validatedScreenId = assertAllowedScreenId(screenId);
-    const validatedViewportId = assertAllowedViewportId(viewportId);
-    return path.join(
-      root,
+    if (typeof viewportId === "string" && viewportId.length > 0) {
+      return resolveVisualBenchmarkScreenViewportPaths(
+        validatedFixtureId,
+        validatedScreenId,
+        viewportId,
+        { fixtureRoot: root },
+      ).referencePngPath;
+    }
+    return resolveVisualBenchmarkScreenPaths(
       validatedFixtureId,
-      "screens",
-      toScreenIdToken(validatedScreenId),
-      `${validatedViewportId}.png`,
-    );
+      validatedScreenId,
+      { fixtureRoot: root },
+    ).referencePngPath;
   }
   return path.join(root, validatedFixtureId, "reference.png");
 };
@@ -723,10 +892,7 @@ export interface ThreeWayDiffPersistedRecord {
   fixtureId: string;
   screenId?: string;
   viewportId?: string;
-  diffImagePath: string;
-  referenceImagePath: string | null;
-  outputAImagePath: string | null;
-  outputBImagePath: string | null;
+  threeWayDiff: VisualBenchmarkAbThreeWayDiffMetadata;
 }
 
 export interface PersistThreeWayDiffsInput {
@@ -786,6 +952,21 @@ export const persistVisualBenchmarkAbThreeWayDiffs = async (
       outputABuffer === null &&
       outputBBuffer === null
     ) {
+      records.push({
+        fixtureId: entry.fixtureId,
+        ...(entry.screenId !== undefined ? { screenId: entry.screenId } : {}),
+        ...(entry.viewportId !== undefined
+          ? { viewportId: entry.viewportId }
+          : {}),
+        threeWayDiff: {
+          status: "skipped_missing_input",
+          diffImagePath: null,
+          referenceImagePath: null,
+          outputAImagePath: null,
+          outputBImagePath: null,
+          reason: "No reference or generated outputs were available for this entry.",
+        },
+      });
       continue;
     }
     let composed: Buffer;
@@ -795,7 +976,32 @@ export const persistVisualBenchmarkAbThreeWayDiffs = async (
         outputA: outputABuffer,
         outputB: outputBBuffer,
       });
-    } catch {
+    } catch (error: unknown) {
+      const reason = error instanceof Error ? error.message : String(error);
+      records.push({
+        fixtureId: entry.fixtureId,
+        ...(entry.screenId !== undefined ? { screenId: entry.screenId } : {}),
+        ...(entry.viewportId !== undefined
+          ? { viewportId: entry.viewportId }
+          : {}),
+        threeWayDiff: {
+          status: "failed",
+          diffImagePath: null,
+          referenceImagePath:
+            referenceBuffer !== null
+              ? path.relative(process.cwd(), referencePath) || referencePath
+              : null,
+          outputAImagePath:
+            outputAPath !== null
+              ? path.relative(process.cwd(), outputAPath) || outputAPath
+              : null,
+          outputBImagePath:
+            outputBPath !== null
+              ? path.relative(process.cwd(), outputBPath) || outputBPath
+              : null,
+          reason,
+        },
+      });
       continue;
     }
     const screenSegment =
@@ -818,22 +1024,70 @@ export const persistVisualBenchmarkAbThreeWayDiffs = async (
       ...(entry.viewportId !== undefined
         ? { viewportId: entry.viewportId }
         : {}),
-      diffImagePath: path.relative(process.cwd(), diffPath) || diffPath,
-      referenceImagePath:
-        referenceBuffer !== null
-          ? path.relative(process.cwd(), referencePath) || referencePath
-          : null,
-      outputAImagePath:
-        outputAPath !== null
-          ? path.relative(process.cwd(), outputAPath) || outputAPath
-          : null,
-      outputBImagePath:
-        outputBPath !== null
-          ? path.relative(process.cwd(), outputBPath) || outputBPath
-          : null,
+      threeWayDiff: {
+        status: "generated",
+        diffImagePath: path.relative(process.cwd(), diffPath) || diffPath,
+        referenceImagePath:
+          referenceBuffer !== null
+            ? path.relative(process.cwd(), referencePath) || referencePath
+            : null,
+        outputAImagePath:
+          outputAPath !== null
+            ? path.relative(process.cwd(), outputAPath) || outputAPath
+            : null,
+        outputBImagePath:
+          outputBPath !== null
+            ? path.relative(process.cwd(), outputBPath) || outputBPath
+            : null,
+      },
     });
   }
   return records;
+};
+
+const toComparisonEntryKey = (entry: {
+  fixtureId: string;
+  screenId?: string;
+  viewportId?: string;
+}): string =>
+  getVisualBenchmarkScoreKey({
+    fixtureId: entry.fixtureId,
+    screenId: entry.screenId,
+    viewportId: entry.viewportId,
+  });
+
+export const applyVisualBenchmarkAbThreeWayDiffRecords = (
+  result: VisualBenchmarkAbResult,
+  records: readonly ThreeWayDiffPersistedRecord[],
+): VisualBenchmarkAbResult => {
+  const byKey = new Map<string, VisualBenchmarkAbThreeWayDiffMetadata>();
+  for (const record of records) {
+    byKey.set(toComparisonEntryKey(record), record.threeWayDiff);
+  }
+  for (const entry of result.entries) {
+    const threeWayDiff = byKey.get(toComparisonEntryKey(entry));
+    if (threeWayDiff !== undefined) {
+      entry.threeWayDiff = threeWayDiff;
+    }
+  }
+  return result;
+};
+
+export const markVisualBenchmarkAbThreeWayDiffSkipped = (
+  result: VisualBenchmarkAbResult,
+  reason: string,
+): VisualBenchmarkAbResult => {
+  for (const entry of result.entries) {
+    entry.threeWayDiff = {
+      status: "skipped_disabled",
+      diffImagePath: null,
+      referenceImagePath: null,
+      outputAImagePath: null,
+      outputBImagePath: null,
+      reason,
+    };
+  }
+  return result;
 };
 
 // ---------------------------------------------------------------------------
@@ -918,6 +1172,7 @@ export const runVisualBenchmarkAb = async (
       `A/B configs must declare distinct labels, both received '${input.configA.label}'.`,
     );
   }
+  assertComparableConfigInputs(input.configA, input.configB);
   const artifactRoot = input.artifactRoot ?? DEFAULT_AB_ARTIFACT_ROOT;
   const sideARoot = path.join(artifactRoot, CONFIG_A_DIRECTORY_NAME);
   const sideBRoot = path.join(artifactRoot, CONFIG_B_DIRECTORY_NAME);

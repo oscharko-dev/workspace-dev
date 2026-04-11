@@ -83,6 +83,19 @@ const buildSolidPng = (
   return PNG.sync.write(png);
 };
 
+const buildPngHeaderOnly = (width: number, height: number): Buffer => {
+  const buffer = Buffer.alloc(24, 0);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(
+    buffer,
+    0,
+  );
+  buffer.writeUInt32BE(13, 8);
+  buffer.write("IHDR", 12, "ascii");
+  buffer.writeUInt32BE(width, 16);
+  buffer.writeUInt32BE(height, 20);
+  return buffer;
+};
+
 // ---------------------------------------------------------------------------
 // parseVisualBenchmarkAbConfig
 // ---------------------------------------------------------------------------
@@ -142,6 +155,28 @@ test("parseVisualBenchmarkAbConfig validates qualityConfig content", () => {
         },
       }),
     /Scoring weights must sum to 1\.0/i,
+  );
+});
+
+test("parseVisualBenchmarkAbConfig rejects componentVisualCatalogFile outside the workspace root", () => {
+  assert.throws(
+    () =>
+      parseVisualBenchmarkAbConfig({
+        label: "Strict",
+        componentVisualCatalogFile: path.resolve(os.tmpdir(), "catalog.json"),
+      }),
+    /componentVisualCatalogFile resolves outside the workspace root/i,
+  );
+});
+
+test("parseVisualBenchmarkAbConfig rejects storybookStaticDir outside the workspace root", () => {
+  assert.throws(
+    () =>
+      parseVisualBenchmarkAbConfig({
+        label: "Strict",
+        storybookStaticDir: path.resolve(os.tmpdir(), "storybook-static"),
+      }),
+    /storybookStaticDir resolves outside the workspace root/i,
   );
 });
 
@@ -249,6 +284,25 @@ test("compareVisualBenchmarkResults computes statistics across multiple entries"
   assert.equal(result.overallDelta, 3);
 });
 
+test("compareVisualBenchmarkResults keeps best/worst stats empty for neutral-only rows", () => {
+  const resultA = buildResultWithDeltas(80, [
+    { fixtureId: "simple-form", screenId: "1:65671", current: 80 },
+  ]);
+  const resultB = buildResultWithDeltas(80, [
+    { fixtureId: "simple-form", screenId: "1:65671", current: 84 },
+  ]);
+  const result = compareVisualBenchmarkResults({
+    configA: { label: "A", result: resultA },
+    configB: { label: "B", result: resultB },
+    neutralTolerance: 5,
+  });
+  assert.equal(result.entries[0]!.indicator, "neutral");
+  assert.equal(result.statistics.improvedCount, 0);
+  assert.equal(result.statistics.degradedCount, 0);
+  assert.equal(result.statistics.bestImprovement, null);
+  assert.equal(result.statistics.worstRegression, null);
+});
+
 test("compareVisualBenchmarkResults sorts entries deterministically", () => {
   const resultA = buildResultWithDeltas(80, [
     {
@@ -328,6 +382,33 @@ test("compareVisualBenchmarkResults aggregates warnings labelled by config", () 
     "[A] Stale baseline",
     "[B] Storybook coverage skipped",
   ]);
+});
+
+test("compareVisualBenchmarkResults rejects viewport ids that would escape artifact paths", () => {
+  const resultA = buildResultWithDeltas(80, [
+    {
+      fixtureId: "simple-form",
+      screenId: "1:65671",
+      viewportId: "../outside",
+      current: 80,
+    },
+  ]);
+  const resultB = buildResultWithDeltas(82, [
+    {
+      fixtureId: "simple-form",
+      screenId: "1:65671",
+      viewportId: "../outside",
+      current: 82,
+    },
+  ]);
+  assert.throws(
+    () =>
+      compareVisualBenchmarkResults({
+        configA: { label: "A", result: resultA },
+        configB: { label: "B", result: resultB },
+      }),
+    /viewport/i,
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -429,6 +510,18 @@ test("composeThreeWayDiff throws when all inputs are null", () => {
   );
 });
 
+test("composeThreeWayDiff rejects oversized PNG inputs before decoding", () => {
+  assert.throws(
+    () =>
+      composeThreeWayDiff({
+        reference: buildPngHeaderOnly(4096, 4096),
+        outputA: buildSolidPng(8, 8, { r: 0, g: 0, b: 0 }),
+        outputB: buildSolidPng(8, 8, { r: 255, g: 255, b: 255 }),
+      }),
+    /pixel limit/i,
+  );
+});
+
 // ---------------------------------------------------------------------------
 // runVisualBenchmarkAb
 // ---------------------------------------------------------------------------
@@ -471,17 +564,19 @@ test("runVisualBenchmarkAb invokes runBenchmark twice with isolated artifact roo
   assert.equal(result.statistics.improvedCount, 1);
 });
 
-test("runVisualBenchmarkAb forwards qualityConfig and browsers from each config", async () => {
+test("runVisualBenchmarkAb forwards shared benchmark options from both configs", async () => {
   const seen: VisualBenchmarkRunOptions[] = [];
   const configA: VisualBenchmarkAbConfig = {
     label: "Default",
     qualityConfig: { thresholds: { warn: 80 } },
     browsers: ["chromium"],
+    viewportId: "desktop",
   };
   const configB: VisualBenchmarkAbConfig = {
     label: "Strict",
     qualityConfig: { thresholds: { warn: 90 } },
-    browsers: ["chromium", "firefox"],
+    browsers: ["chromium"],
+    viewportId: "desktop",
   };
   await runVisualBenchmarkAb(
     {
@@ -500,7 +595,9 @@ test("runVisualBenchmarkAb forwards qualityConfig and browsers from each config"
   assert.equal(seen[0]!.qualityConfig?.thresholds?.warn, 80);
   assert.equal(seen[1]!.qualityConfig?.thresholds?.warn, 90);
   assert.deepEqual(seen[0]!.browsers, ["chromium"]);
-  assert.deepEqual(seen[1]!.browsers, ["chromium", "firefox"]);
+  assert.deepEqual(seen[1]!.browsers, ["chromium"]);
+  assert.equal(seen[0]!.viewportId, "desktop");
+  assert.equal(seen[1]!.viewportId, "desktop");
 });
 
 test("runVisualBenchmarkAb rejects identical labels", async () => {
@@ -516,6 +613,22 @@ test("runVisualBenchmarkAb rejects identical labels", async () => {
         },
       ),
     /distinct labels/i,
+  );
+});
+
+test("runVisualBenchmarkAb rejects mismatched execution-shaping inputs", async () => {
+  await assert.rejects(
+    async () =>
+      runVisualBenchmarkAb(
+        {
+          configA: { label: "A", browsers: ["chromium"] },
+          configB: { label: "B", browsers: ["firefox"] },
+        },
+        {
+          runBenchmark: async () => buildEmptyResult(),
+        },
+      ),
+    /same browsers/i,
   );
 });
 
@@ -547,6 +660,8 @@ test("runVisualBenchmarkAb resolves neutralTolerance from config B regression", 
   assert.ok(observedToleranceWasSet);
   // delta is +4, within neutralTolerance=5 → neutral
   assert.equal(result.entries[0]!.indicator, "neutral");
+  assert.equal(result.statistics.bestImprovement, null);
+  assert.equal(result.statistics.worstRegression, null);
 });
 
 // ---------------------------------------------------------------------------
@@ -689,9 +804,10 @@ test("persistVisualBenchmarkAbThreeWayDiffs writes a PNG when both sides have ar
     assert.equal(record.fixtureId, fixtureId);
     assert.equal(record.screenId, screenId);
     assert.equal(record.viewportId, viewportId);
-    assert.ok(record.diffImagePath.endsWith(".png"));
+    assert.equal(record.threeWayDiff.status, "generated");
+    assert.ok(record.threeWayDiff.diffImagePath?.endsWith(".png"));
     const composed = await readFile(
-      path.resolve(process.cwd(), record.diffImagePath),
+      path.resolve(process.cwd(), record.threeWayDiff.diffImagePath!),
     );
     const png = PNG.sync.read(composed);
     // 20 + 16 + 20 + 16 + 20 = 92
@@ -699,6 +815,117 @@ test("persistVisualBenchmarkAbThreeWayDiffs writes a PNG when both sides have ar
     assert.equal(png.height, 20);
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("persistVisualBenchmarkAbThreeWayDiffs uses screen reference.png when viewportId is absent", async () => {
+  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-screen-ref-"));
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-screen-fixtures-"));
+  try {
+    const fixtureId = "simple-form";
+    const screenId = "1:65671";
+    const screenToken = screenId.replace(/:/g, "_");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(path.join(fixtureRoot, fixtureId, "screens", screenToken), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(fixtureRoot, fixtureId, "screens", screenToken, "reference.png"),
+      buildSolidPng(12, 18, { r: 0, g: 0, b: 0 }),
+    );
+    const buildSideArtifact = async (sideRoot: string, color: number): Promise<void> => {
+      const lastRunDir = path.join(
+        sideRoot,
+        "last-run",
+        fixtureId,
+        "screens",
+        screenToken,
+      );
+      await mkdir(lastRunDir, { recursive: true });
+      await writeFile(
+        path.join(lastRunDir, "actual.png"),
+        buildSolidPng(12, 18, { r: color, g: color, b: color }),
+      );
+      await writeFile(
+        path.join(lastRunDir, "manifest.json"),
+        JSON.stringify({
+          version: 2,
+          fixtureId,
+          screenId,
+          score: 80,
+          ranAt: "2026-04-11T00:00:00.000Z",
+          viewport: { width: 12, height: 18 },
+        }),
+      );
+    };
+    await buildSideArtifact(path.join(tmpRoot, "config-a"), 100);
+    await buildSideArtifact(path.join(tmpRoot, "config-b"), 180);
+    const result = compareVisualBenchmarkResults({
+      configA: {
+        label: "A",
+        result: buildResultWithDeltas(80, [{ fixtureId, screenId, current: 80 }]),
+      },
+      configB: {
+        label: "B",
+        result: buildResultWithDeltas(82, [{ fixtureId, screenId, current: 82 }]),
+      },
+    });
+    const records = await persistVisualBenchmarkAbThreeWayDiffs({
+      result,
+      artifactRoot: tmpRoot,
+      fixtureOptions: { fixtureRoot },
+    });
+    assert.equal(records[0]?.threeWayDiff.status, "generated");
+    assert.equal(
+      records[0]?.threeWayDiff.referenceImagePath,
+      path.relative(
+        process.cwd(),
+        path.join(
+          fixtureRoot,
+          fixtureId,
+          "screens",
+          screenToken,
+          "reference.png",
+        ),
+      ) ||
+        path.join(
+          fixtureRoot,
+          fixtureId,
+          "screens",
+          screenToken,
+          "reference.png",
+        ),
+    );
+  } finally {
+    await rm(tmpRoot, { recursive: true, force: true });
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("persistVisualBenchmarkAbThreeWayDiffs records missing-input rows explicitly", async () => {
+  const artifactRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-no-inputs-"));
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-missing-fixtures-"));
+  try {
+    const result = compareVisualBenchmarkResults({
+      configA: {
+        label: "A",
+        result: buildResultWithDeltas(80, [{ fixtureId: "simple-form", current: 80 }]),
+      },
+      configB: {
+        label: "B",
+        result: buildResultWithDeltas(82, [{ fixtureId: "simple-form", current: 82 }]),
+      },
+    });
+    const records = await persistVisualBenchmarkAbThreeWayDiffs({
+      result,
+      artifactRoot,
+      fixtureOptions: { fixtureRoot },
+    });
+    assert.equal(records[0]?.threeWayDiff.status, "skipped_missing_input");
+    assert.match(records[0]?.threeWayDiff.reason ?? "", /No reference or generated outputs/i);
+  } finally {
+    await rm(artifactRoot, { recursive: true, force: true });
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
