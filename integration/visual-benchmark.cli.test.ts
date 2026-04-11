@@ -142,3 +142,59 @@ test("runVisualBenchmarkCli forwards browsers to benchmark execution", async () 
 
   assert.deepEqual(receivedInput?.browsers, ["chromium", "firefox"]);
 });
+
+// ---------------------------------------------------------------------------
+// --enforce-thresholds + all-fixtures-failed — guard against silent pass (#826)
+// ---------------------------------------------------------------------------
+
+test("runVisualBenchmarkCli returns 1 with --enforce-thresholds when every fixture failed", async () => {
+  const status = await runVisualBenchmarkCli(["--enforce-thresholds"], {
+    runBenchmark: async () => {
+      return {
+        deltas: [],
+        overallBaseline: null,
+        overallCurrent: 0,
+        overallDelta: null,
+        alerts: [],
+        trendSummaries: [],
+        failedFixtures: [
+          {
+            fixtureId: "simple-form",
+            error: {
+              code: "E_VISUAL_DIFF_REFERENCE_MISSING",
+              message: "Reference image not found",
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(status, 1);
+});
+
+test("runVisualBenchmarkCli returns 0 without --enforce-thresholds even when every fixture failed", async () => {
+  const status = await runVisualBenchmarkCli([], {
+    runBenchmark: async () => {
+      return {
+        deltas: [],
+        overallBaseline: null,
+        overallCurrent: 0,
+        overallDelta: null,
+        alerts: [],
+        trendSummaries: [],
+        failedFixtures: [
+          {
+            fixtureId: "simple-form",
+            error: {
+              code: "E_VISUAL_DIFF_REFERENCE_MISSING",
+              message: "Reference image not found",
+            },
+          },
+        ],
+      };
+    },
+  });
+
+  assert.equal(status, 0);
+});
