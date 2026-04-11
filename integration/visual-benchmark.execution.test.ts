@@ -518,3 +518,118 @@ test(
     }
   },
 );
+
+// ---------------------------------------------------------------------------
+// computeCrossBrowserConsistencyScore — Issue #848
+// ---------------------------------------------------------------------------
+
+import {
+  computeCrossBrowserConsistencyScore,
+  isBenchmarkBrowserName,
+  assertBenchmarkBrowserName,
+  BENCHMARK_BROWSER_NAMES,
+} from "./visual-benchmark.execution.js";
+
+const makeSolidPngBuffer = ({
+  width,
+  height,
+  r,
+  g,
+  b,
+}: {
+  width: number;
+  height: number;
+  r: number;
+  g: number;
+  b: number;
+}): Buffer => {
+  const png = new PNG({ width, height });
+  for (let i = 0; i < width * height; i++) {
+    png.data[i * 4 + 0] = r;
+    png.data[i * 4 + 1] = g;
+    png.data[i * 4 + 2] = b;
+    png.data[i * 4 + 3] = 255;
+  }
+  return PNG.sync.write(png);
+};
+
+test("computeCrossBrowserConsistencyScore returns score 100 for a single browser", () => {
+  const buffer = makeSolidPngBuffer({ width: 10, height: 10, r: 255, g: 0, b: 0 });
+  const result = computeCrossBrowserConsistencyScore([
+    { browser: "chromium", screenshotBuffer: buffer },
+  ]);
+  assert.equal(result.consistencyScore, 100);
+  assert.deepEqual(result.pairwiseDiffs, []);
+  assert.deepEqual(result.warnings, []);
+  assert.deepEqual(result.browsers, ["chromium"]);
+});
+
+test("computeCrossBrowserConsistencyScore returns score 100 for identical screenshots", () => {
+  const buffer = makeSolidPngBuffer({ width: 10, height: 10, r: 0, g: 128, b: 255 });
+  const result = computeCrossBrowserConsistencyScore([
+    { browser: "chromium", screenshotBuffer: buffer },
+    { browser: "firefox", screenshotBuffer: buffer },
+  ]);
+  assert.equal(result.consistencyScore, 100);
+  assert.equal(result.pairwiseDiffs.length, 1);
+  assert.equal(result.pairwiseDiffs[0]?.diffPercent, 0);
+  assert.deepEqual(result.warnings, []);
+});
+
+test("computeCrossBrowserConsistencyScore detects differences between browsers", () => {
+  const redBuffer = makeSolidPngBuffer({ width: 10, height: 10, r: 255, g: 0, b: 0 });
+  const blueBuffer = makeSolidPngBuffer({ width: 10, height: 10, r: 0, g: 0, b: 255 });
+  const result = computeCrossBrowserConsistencyScore([
+    { browser: "chromium", screenshotBuffer: redBuffer },
+    { browser: "firefox", screenshotBuffer: blueBuffer },
+  ]);
+  assert.ok(result.consistencyScore < 100);
+  assert.equal(result.pairwiseDiffs.length, 1);
+  assert.ok((result.pairwiseDiffs[0]?.diffPercent ?? 0) > 0);
+  assert.ok(result.warnings.length > 0);
+  assert.match(result.warnings[0] ?? "", /firefox.*differs.*chromium/i);
+});
+
+test("computeCrossBrowserConsistencyScore produces pairwise diffs for three browsers", () => {
+  const bufA = makeSolidPngBuffer({ width: 4, height: 4, r: 255, g: 0, b: 0 });
+  const bufB = makeSolidPngBuffer({ width: 4, height: 4, r: 0, g: 255, b: 0 });
+  const bufC = makeSolidPngBuffer({ width: 4, height: 4, r: 0, g: 0, b: 255 });
+  const result = computeCrossBrowserConsistencyScore([
+    { browser: "chromium", screenshotBuffer: bufA },
+    { browser: "firefox", screenshotBuffer: bufB },
+    { browser: "webkit", screenshotBuffer: bufC },
+  ]);
+  // 3 browsers → 3 pairwise combinations
+  assert.equal(result.pairwiseDiffs.length, 3);
+  assert.deepEqual(result.browsers, ["chromium", "firefox", "webkit"]);
+});
+
+test("computeCrossBrowserConsistencyScore throws for empty entry list", () => {
+  assert.throws(
+    () => computeCrossBrowserConsistencyScore([]),
+    /at least one browser/i,
+  );
+});
+
+test("isBenchmarkBrowserName returns true for known browsers", () => {
+  for (const name of BENCHMARK_BROWSER_NAMES) {
+    assert.ok(isBenchmarkBrowserName(name), `Expected ${name} to be valid`);
+  }
+});
+
+test("isBenchmarkBrowserName returns false for unknown values", () => {
+  assert.equal(isBenchmarkBrowserName("opera"), false);
+  assert.equal(isBenchmarkBrowserName(42), false);
+  assert.equal(isBenchmarkBrowserName(null), false);
+});
+
+test("assertBenchmarkBrowserName throws for unknown browser", () => {
+  assert.throws(
+    () => assertBenchmarkBrowserName("safari"),
+    /Unknown browser/i,
+  );
+});
+
+test("assertBenchmarkBrowserName returns the browser name when valid", () => {
+  assert.equal(assertBenchmarkBrowserName("firefox"), "firefox");
+});
