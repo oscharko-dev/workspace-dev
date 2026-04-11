@@ -166,7 +166,7 @@ export const resolveVisualBenchmarkCliResolution = (
   }
 
   throw new Error(
-    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--viewport <id>] [--quality-threshold <0-100>] [--storybook-component-catalog <path>] [--storybook-static-dir <path>] [--browsers <chromium,firefox,webkit>] [--ci] [--enforce-thresholds]",
+    "Usage: pnpm benchmark:visual [--update-fixtures | --update-references | --live | --update-baseline] [--viewport <id>] [--quality-threshold <0-100>] [--storybook-component-catalog <path>] [--storybook-static-dir <path>] [--browsers <chromium,firefox,webkit>] [--ci] [--enforce-thresholds]\n--live is the maintenance audit for frozen fixtures vs live Figma. For drift/regression classification against persisted generated output, use 'pnpm visual:audit live'.",
   );
 };
 

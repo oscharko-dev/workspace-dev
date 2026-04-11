@@ -12,6 +12,7 @@ import {
   type VisualBenchmarkFixtureManifest,
   type VisualBenchmarkFixtureMetadata,
 } from "./visual-benchmark.helpers.js";
+import { saveVisualBenchmarkLastRunArtifact } from "./visual-benchmark-runner.js";
 import { fetchVisualBenchmarkReferenceImage } from "./visual-benchmark.update.js";
 import type { VisualBenchmarkFixtureRunResult } from "./visual-benchmark.execution.js";
 import { runVisualAudit, type VisualAuditReport } from "./visual-audit.js";
@@ -82,6 +83,33 @@ interface AuditEnvironment {
   artifactRoot: string;
   frozenBuffer: Buffer;
 }
+
+const writeAuditLastRunArtifact = async (options: {
+  fixtureRoot: string;
+  artifactRoot: string;
+  fixtureId: string;
+  screenId?: string;
+  screenName: string;
+  ranAt: string;
+  buffer: Buffer;
+  viewport: { width: number; height: number };
+}): Promise<void> => {
+  await saveVisualBenchmarkLastRunArtifact(
+    {
+      fixtureId: options.fixtureId,
+      ...(options.screenId !== undefined ? { screenId: options.screenId } : {}),
+      screenName: options.screenName,
+      score: 100,
+      ranAt: options.ranAt,
+      viewport: options.viewport,
+      actualImageBuffer: options.buffer,
+    },
+    {
+      fixtureRoot: options.fixtureRoot,
+      artifactRoot: options.artifactRoot,
+    },
+  );
+};
 
 const writeAuditFixture = async (options: {
   fixtureRoot: string;
@@ -444,6 +472,8 @@ test("runVisualAudit reports Stable when frozen and live buffers match", async (
     imageLookupStep,
     () => pngStep(frozenPng),
   ]);
+  const logs: string[] = [];
+  let executeCalls = 0;
   process.env.FIGMA_ACCESS_TOKEN = "test-token";
   try {
     const report = await runVisualAudit({
@@ -451,17 +481,21 @@ test("runVisualAudit reports Stable when frozen and live buffers match", async (
       artifactRoot: env.artifactRoot,
       fetchImpl: mock.fetchImpl,
       sleepImpl: async () => undefined,
-      log: () => undefined,
+      log: (message) => {
+        logs.push(message);
+      },
       now: () => "2026-04-11T12:00:00.000Z",
-      executeFixture: async () =>
-        createGeneratedRun(AUDIT_FIXTURE_ID, [
+      executeFixture: async () => {
+        executeCalls += 1;
+        return createGeneratedRun(AUDIT_FIXTURE_ID, [
           {
             screenId: AUDIT_NODE_ID,
             screenName: "Audit Fixture Frame",
             buffer: frozenPng,
             viewport: { width: 8, height: 8 },
           },
-        ]),
+        ]);
+      },
     });
     assert.equal(report.totalFixtures, 1);
     assert.equal(report.driftedFixtures, 0);
@@ -481,13 +515,18 @@ test("runVisualAudit reports Stable when frozen and live buffers match", async (
     assert.equal(screen.regressionScore, 100);
     assert.equal(screen.frozenLastModified, "2026-03-30T20:59:16Z");
     assert.equal(screen.liveLastModified, "2026-04-10T09:15:00Z");
+    assert.equal(executeCalls, 1);
+    assert.match(
+      logs.join("\n"),
+      /persisted last-run artifact missing, falling back to a fresh render/i,
+    );
   } finally {
     delete process.env.FIGMA_ACCESS_TOKEN;
     await cleanup(env);
   }
 });
 
-test("runVisualAudit reports Design Drift Detected when live Figma differs from frozen", async () => {
+test("runVisualAudit prefers persisted last-run output for Design Drift detection", async () => {
   const env = await createAuditEnvironment({ frozenRgba: [0, 100, 200, 255] });
   const driftedPng = createTestPngBuffer(8, 8, [250, 0, 0, 255]);
   const mock = createSequencedFetch([
@@ -495,6 +534,17 @@ test("runVisualAudit reports Design Drift Detected when live Figma differs from 
     imageLookupStep,
     () => pngStep(driftedPng),
   ]);
+  await writeAuditLastRunArtifact({
+    fixtureRoot: env.fixtureRoot,
+    artifactRoot: env.artifactRoot,
+    fixtureId: AUDIT_FIXTURE_ID,
+    screenId: AUDIT_NODE_ID,
+    screenName: "Audit Fixture Frame",
+    ranAt: "2026-04-10T10:00:00.000Z",
+    buffer: driftedPng,
+    viewport: { width: 8, height: 8 },
+  });
+  let executeCalled = false;
   process.env.FIGMA_ACCESS_TOKEN = "test-token";
   try {
     const report = await runVisualAudit({
@@ -504,15 +554,10 @@ test("runVisualAudit reports Design Drift Detected when live Figma differs from 
       sleepImpl: async () => undefined,
       log: () => undefined,
       now: () => "2026-04-11T12:00:00.000Z",
-      executeFixture: async () =>
-        createGeneratedRun(AUDIT_FIXTURE_ID, [
-          {
-            screenId: AUDIT_NODE_ID,
-            screenName: "Audit Fixture Frame",
-            buffer: driftedPng,
-            viewport: { width: 8, height: 8 },
-          },
-        ]),
+      executeFixture: async () => {
+        executeCalled = true;
+        throw new Error("executeFixture should not run when persisted output exists");
+      },
     });
     assert.equal(report.driftedFixtures, 1);
     assert.equal(report.regressedFixtures, 0);
@@ -521,7 +566,7 @@ test("runVisualAudit reports Design Drift Detected when live Figma differs from 
     assert.ok(fixtureResult !== undefined);
     assert.equal(fixtureResult.status, "completed");
     assert.equal(fixtureResult.fixtureLabel, "Design Drift Detected");
-    assert.equal(fixtureResult.lastKnownGoodAt, "2026-04-11T12:00:00.000Z");
+    assert.equal(fixtureResult.lastKnownGoodAt, "2026-04-10T10:00:00.000Z");
     const screen = fixtureResult.screens[0];
     assert.ok(screen !== undefined);
     assert.equal(screen.label, "Design Drift Detected");
@@ -530,13 +575,14 @@ test("runVisualAudit reports Design Drift Detected when live Figma differs from 
       `expected driftScore < 95, got ${String(screen.driftScore)}`,
     );
     assert.ok(screen.regressionScore >= 95);
+    assert.equal(executeCalled, false);
   } finally {
     delete process.env.FIGMA_ACCESS_TOKEN;
     await cleanup(env);
   }
 });
 
-test("runVisualAudit reports Generator Regression when current generated output differs from live Figma", async () => {
+test("runVisualAudit uses persisted last-run timestamp for Generator Regression", async () => {
   const env = await createAuditEnvironment({ frozenRgba: [0, 100, 200, 255] });
   const regressedPng = createTestPngBuffer(8, 8, [255, 255, 0, 255]);
   const mock = createSequencedFetch([
@@ -544,6 +590,17 @@ test("runVisualAudit reports Generator Regression when current generated output 
     imageLookupStep,
     () => pngStep(env.frozenBuffer),
   ]);
+  await writeAuditLastRunArtifact({
+    fixtureRoot: env.fixtureRoot,
+    artifactRoot: env.artifactRoot,
+    fixtureId: AUDIT_FIXTURE_ID,
+    screenId: AUDIT_NODE_ID,
+    screenName: "Audit Fixture Frame",
+    ranAt: "2026-04-10T10:00:00.000Z",
+    buffer: regressedPng,
+    viewport: { width: 8, height: 8 },
+  });
+  let executeCalled = false;
   process.env.FIGMA_ACCESS_TOKEN = "test-token";
   try {
     const report = await runVisualAudit({
@@ -552,15 +609,10 @@ test("runVisualAudit reports Generator Regression when current generated output 
       fetchImpl: mock.fetchImpl,
       sleepImpl: async () => undefined,
       log: () => undefined,
-      executeFixture: async () =>
-        createGeneratedRun(AUDIT_FIXTURE_ID, [
-          {
-            screenId: AUDIT_NODE_ID,
-            screenName: "Audit Fixture Frame",
-            buffer: regressedPng,
-            viewport: { width: 8, height: 8 },
-          },
-        ]),
+      executeFixture: async () => {
+        executeCalled = true;
+        throw new Error("executeFixture should not run when persisted output exists");
+      },
     });
     assert.equal(report.driftedFixtures, 0);
     assert.equal(report.regressedFixtures, 1);
@@ -569,19 +621,24 @@ test("runVisualAudit reports Generator Regression when current generated output 
     assert.ok(fixtureResult !== undefined);
     assert.equal(fixtureResult.status, "completed");
     assert.equal(fixtureResult.fixtureLabel, "Generator Regression");
-    assert.equal(fixtureResult.lastKnownGoodAt, "2026-04-09T00:00:00.000Z");
+    assert.equal(fixtureResult.lastKnownGoodAt, "2026-04-10T10:00:00.000Z");
+    assert.notEqual(
+      fixtureResult.lastKnownGoodAt,
+      auditFixtureMetadata.capturedAt,
+    );
     const screen = fixtureResult.screens[0];
     assert.ok(screen !== undefined);
     assert.equal(screen.label, "Generator Regression");
     assert.equal(screen.driftScore, 100);
     assert.ok(screen.regressionScore !== null && screen.regressionScore < 95);
+    assert.equal(executeCalled, false);
   } finally {
     delete process.env.FIGMA_ACCESS_TOKEN;
     await cleanup(env);
   }
 });
 
-test("runVisualAudit reports Both Drifted when live Figma and current generated output both differ from frozen", async () => {
+test("runVisualAudit reports Both Drifted from persisted last-run output and live Figma", async () => {
   const env = await createAuditEnvironment({ frozenRgba: [0, 100, 200, 255] });
   const driftedPng = createTestPngBuffer(8, 8, [250, 0, 0, 255]);
   const regressedPng = createTestPngBuffer(8, 8, [255, 255, 0, 255]);
@@ -590,6 +647,17 @@ test("runVisualAudit reports Both Drifted when live Figma and current generated 
     imageLookupStep,
     () => pngStep(driftedPng),
   ]);
+  await writeAuditLastRunArtifact({
+    fixtureRoot: env.fixtureRoot,
+    artifactRoot: env.artifactRoot,
+    fixtureId: AUDIT_FIXTURE_ID,
+    screenId: AUDIT_NODE_ID,
+    screenName: "Audit Fixture Frame",
+    ranAt: "2026-04-10T10:00:00.000Z",
+    buffer: regressedPng,
+    viewport: { width: 8, height: 8 },
+  });
+  let executeCalled = false;
   process.env.FIGMA_ACCESS_TOKEN = "test-token";
   try {
     const report = await runVisualAudit({
@@ -598,15 +666,10 @@ test("runVisualAudit reports Both Drifted when live Figma and current generated 
       fetchImpl: mock.fetchImpl,
       sleepImpl: async () => undefined,
       log: () => undefined,
-      executeFixture: async () =>
-        createGeneratedRun(AUDIT_FIXTURE_ID, [
-          {
-            screenId: AUDIT_NODE_ID,
-            screenName: "Audit Fixture Frame",
-            buffer: regressedPng,
-            viewport: { width: 8, height: 8 },
-          },
-        ]),
+      executeFixture: async () => {
+        executeCalled = true;
+        throw new Error("executeFixture should not run when persisted output exists");
+      },
     });
     assert.equal(report.driftedFixtures, 1);
     assert.equal(report.regressedFixtures, 1);
@@ -615,12 +678,13 @@ test("runVisualAudit reports Both Drifted when live Figma and current generated 
     assert.ok(fixtureResult !== undefined);
     assert.equal(fixtureResult.status, "completed");
     assert.equal(fixtureResult.fixtureLabel, "Both Drifted");
-    assert.equal(fixtureResult.lastKnownGoodAt, "2026-04-09T00:00:00.000Z");
+    assert.equal(fixtureResult.lastKnownGoodAt, "2026-04-10T10:00:00.000Z");
     const screen = fixtureResult.screens[0];
     assert.ok(screen !== undefined);
     assert.equal(screen.label, "Both Drifted");
     assert.ok(screen.driftScore < 95);
     assert.ok(screen.regressionScore !== null && screen.regressionScore < 95);
+    assert.equal(executeCalled, false);
   } finally {
     delete process.env.FIGMA_ACCESS_TOKEN;
     await cleanup(env);
@@ -1060,19 +1124,32 @@ test("runVisualAudit returns fixture-level error and continues when a later fixt
       sleepImpl: async () => undefined,
       log: () => undefined,
       executeFixture: async (fixtureId) =>
-        createGeneratedRun(fixtureId, [
-          {
-            screenId:
-              fixtureId === goodFixtureId ? AUDIT_NODE_ID : missingNodeId,
-            nodeId:
-              fixtureId === goodFixtureId ? AUDIT_NODE_ID : missingNodeId,
-            screenName:
-              fixtureId === goodFixtureId ? "Audit Fixture Frame" : "Missing Node Frame",
-            buffer:
-              fixtureId === goodFixtureId ? goodImage : missingFrozen,
-            viewport: { width: 8, height: 8 },
-          },
-        ]),
+        fixtureId === goodFixtureId
+          ? createGeneratedRun(fixtureId, [
+              {
+                screenId: AUDIT_NODE_ID,
+                nodeId: AUDIT_NODE_ID,
+                screenName: "Audit Fixture Frame",
+                buffer: goodImage,
+                viewport: { width: 8, height: 8 },
+              },
+            ])
+          : createGeneratedRun(fixtureId, [
+              {
+                screenId: "screen-a",
+                nodeId: missingNodeId,
+                screenName: "Screen A",
+                buffer: missingFrozen,
+                viewport: { width: 8, height: 8 },
+              },
+              {
+                screenId: "screen-b",
+                nodeId: missingNodeId,
+                screenName: "Screen B",
+                buffer: missingFrozen,
+                viewport: { width: 8, height: 8 },
+              },
+            ]),
     });
     assert.equal(report.totalFixtures, 2);
     assert.equal(report.fixtures.some((fixture) => fixture.status === "unavailable"), true);

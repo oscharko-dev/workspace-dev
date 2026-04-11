@@ -24,6 +24,11 @@ export class VisualAuditSurfaceError extends Error {
   }
 }
 
+export interface VisualAuditLastRunSurface {
+  buffer: Buffer;
+  ranAt: string;
+}
+
 export const buildLiveImageCacheKey = (
   metadata: VisualBenchmarkFixtureMetadata,
 ): string =>
@@ -103,11 +108,11 @@ export const safeSimilarityScore = (
   }
 };
 
-export const loadLastRunBufferForScreen = async (
+export const loadLastRunSurfaceForScreen = async (
   fixtureId: string,
   screen: VisualBenchmarkFixtureScreenMetadata,
   options: VisualBenchmarkFixtureOptions,
-): Promise<Buffer | null> => {
+): Promise<VisualAuditLastRunSurface | null> => {
   const entry =
     (await loadVisualBenchmarkLastRunArtifact(
       fixtureId,
@@ -118,5 +123,12 @@ export const loadLastRunBufferForScreen = async (
     return null;
   }
   const absolutePath = path.resolve(process.cwd(), entry.actualImagePath);
-  return await loadValidPngIfPresent(absolutePath);
+  const buffer = await loadValidPngIfPresent(absolutePath);
+  if (buffer === null) {
+    return null;
+  }
+  return {
+    buffer,
+    ranAt: entry.ranAt,
+  };
 };

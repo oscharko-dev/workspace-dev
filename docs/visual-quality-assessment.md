@@ -59,6 +59,26 @@ Cross-browser benchmark runs are opt-in:
 pnpm benchmark:visual -- --browsers chromium,firefox,webkit
 ```
 
+### Running the Live Audit Commands
+
+Use the issue-842 live audit command when you want to answer "has the design drifted since we last generated?" against the current Figma state:
+
+```bash
+FIGMA_ACCESS_TOKEN=... pnpm visual:audit live --fixture simple-form --json
+```
+
+- `pnpm visual:audit live` compares the current live Figma export against both the frozen reference and the most recent persisted generated output under `artifacts/visual-benchmark/last-run/...`.
+- `driftScore` measures `frozen reference vs current live Figma`.
+- `regressionScore` measures `persisted last generated output vs current live Figma`.
+- `lastKnownGoodAt` reports the persisted last-run artifact `ranAt` when the persisted generated output is still good. If the audit has to fall back to a fresh render because no comparable persisted artifact is available, that run time is used only for that fallback comparison.
+- `FIGMA_ACCESS_TOKEN` is required. `FIGMA_FILE_KEY` is not required for this command because fixture metadata already stores the source file keys.
+
+Keep `pnpm benchmark:visual:live` for maintenance-oriented fixture drift checks:
+
+- `pnpm benchmark:visual:live` audits frozen `figma.json` payloads and committed references against the current live Figma export.
+- It does not classify `Design Drift Detected` vs `Generator Regression`.
+- Use it when refreshing or auditing fixture inputs, not when deciding whether generated output has drifted since the last run.
+
 ### Interpreting Quality Scores and Diff Images
 
 See the [Score Interpretation](#score-interpretation) section below for detailed guidance on what scores mean and when to act. Diff images use pixelmatch highlighting where red pixels indicate deviations from the reference.
@@ -108,7 +128,8 @@ Three maintenance commands handle fixture data:
 | `pnpm visual:baseline diff`                          | Summarize pending diffs from persisted last-run artifacts                | No                         |
 | `pnpm benchmark:visual:update-references`            | Regenerates `reference.png` files from the current pipeline (offline)    | No                         |
 | `pnpm benchmark:visual:update-fixtures`              | Fetches fresh `figma.json` payloads from live Figma                      | Yes (`FIGMA_ACCESS_TOKEN`) |
-| `pnpm benchmark:visual:live`                         | Audits drift between frozen fixtures and live Figma data                 | Yes (`FIGMA_ACCESS_TOKEN`) |
+| `pnpm benchmark:visual:live`                         | Maintenance audit of frozen fixtures and references vs live Figma        | Yes (`FIGMA_ACCESS_TOKEN`) |
+| `pnpm visual:audit live [--fixture <id>] [--json]`  | Drift/regression audit of live Figma vs frozen reference and last-run output | Yes (`FIGMA_ACCESS_TOKEN`) |
 
 ## Architecture
 
@@ -293,7 +314,8 @@ Each fixture directory contains:
 | `pnpm benchmark:visual:update-baseline`              | Compatibility shim for `pnpm visual:baseline update`            | No             |
 | `pnpm benchmark:visual:update-references`            | Regenerate `reference.png` from current pipeline                | No             |
 | `pnpm benchmark:visual:update-fixtures`              | Refresh `figma.json` from live Figma                            | Yes            |
-| `pnpm benchmark:visual:live`                         | Audit drift vs. live Figma                                      | Yes            |
+| `pnpm benchmark:visual:live`                         | Maintenance audit of frozen fixtures vs. live Figma             | Yes            |
+| `pnpm visual:audit live [--fixture <id>] [--json]`  | Audit live Figma drift and generator regression vs last-run output | Yes         |
 
 ## CI Integration
 
