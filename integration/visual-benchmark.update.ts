@@ -42,6 +42,7 @@ export interface VisualBenchmarkUpdateDependencies extends VisualBenchmarkFixtur
   ) => Promise<VisualBenchmarkFixtureRunResult>;
   log?: (message: string) => void;
   now?: () => string;
+  sleepImpl?: (ms: number) => Promise<void>;
 }
 
 export interface VisualBenchmarkNodeSnapshot {
@@ -69,6 +70,30 @@ const defaultLog = (message: string): void => {
   process.stdout.write(`${message}\n`);
 };
 
+const defaultSleep = (ms: number): Promise<void> => {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+};
+
+const MAX_RETRY_DELAY_MS = 60_000;
+
+const resolveRetryAfterDelay = (
+  retryAfterHeader: string | null,
+  attempt: number,
+): number => {
+  if (
+    typeof retryAfterHeader === "string" &&
+    retryAfterHeader.trim().length > 0
+  ) {
+    const seconds = Number.parseInt(retryAfterHeader.trim(), 10);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(MAX_RETRY_DELAY_MS, seconds * 1_000);
+    }
+  }
+  return Math.min(MAX_RETRY_DELAY_MS, 1_000 * 2 ** attempt);
+};
+
 const readRequiredString = (value: unknown, fieldName: string): string => {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new Error(`${fieldName} must be a non-empty string.`);
@@ -86,49 +111,78 @@ const readPositiveNumber = (value: unknown, fieldName: string): number => {
 
 class NonRetryableFetchError extends Error {}
 
+interface FetchWithRetryOptions {
+  url: string;
+  headers: Record<string, string>;
+  maxRetries: number;
+  fetchImpl: FetchLike;
+  log: (message: string) => void;
+  sleepImpl: (ms: number) => Promise<void>;
+}
+
+const formatFigmaFailure = (response: Response, url: string): string =>
+  `Figma API request failed: ${String(response.status)} ${response.statusText} — ${url}`;
+
+const handleRateLimitedResponse = async (
+  response: Response,
+  context: FetchWithRetryOptions,
+  attempt: number,
+): Promise<Error> => {
+  const delayMs = resolveRetryAfterDelay(
+    response.headers.get("Retry-After"),
+    attempt,
+  );
+  if (attempt < context.maxRetries) {
+    context.log(
+      `Figma API returned 429, retrying in ${String(delayMs)}ms (${String(attempt + 1)}/${String(context.maxRetries)})...`,
+    );
+    await context.sleepImpl(delayMs);
+  }
+  return new Error(formatFigmaFailure(response, context.url));
+};
+
 const fetchWithRetry = async (
-  url: string,
-  headers: Record<string, string>,
-  maxRetries: number,
-  fetchImpl: FetchLike,
-  log: (message: string) => void,
+  options: FetchWithRetryOptions,
 ): Promise<Response> => {
   let lastError: Error = new Error(
-    `fetchWithRetry exhausted ${String(maxRetries)} retries for ${url}`,
+    `fetchWithRetry exhausted ${String(options.maxRetries)} retries for ${options.url}`,
   );
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
     try {
-      const response = await fetchImpl(url, { headers });
+      const response = await options.fetchImpl(options.url, {
+        headers: options.headers,
+      });
       if (response.ok) {
         return response;
       }
-      // 4xx responses are deterministic failures — do not retry.
+      if (response.status === 429) {
+        lastError = await handleRateLimitedResponse(response, options, attempt);
+        if (attempt < options.maxRetries) {
+          continue;
+        }
+        throw lastError;
+      }
       if (response.status >= 400 && response.status < 500) {
         throw new NonRetryableFetchError(
-          `Figma API request failed: ${String(response.status)} ${response.statusText} — ${url}`,
+          formatFigmaFailure(response, options.url),
         );
       }
-      // 5xx responses are transient — retry if attempts remain.
-      if (response.status >= 500 && attempt < maxRetries) {
-        log(
-          `Figma API returned ${String(response.status)}, retrying (${String(attempt + 1)}/${String(maxRetries)})...`,
+      if (response.status >= 500 && attempt < options.maxRetries) {
+        options.log(
+          `Figma API returned ${String(response.status)}, retrying (${String(attempt + 1)}/${String(options.maxRetries)})...`,
         );
-        lastError = new Error(
-          `Figma API request failed: ${String(response.status)} ${response.statusText} — ${url}`,
-        );
+        lastError = new Error(formatFigmaFailure(response, options.url));
         continue;
       }
-      throw new Error(
-        `Figma API request failed: ${String(response.status)} ${response.statusText} — ${url}`,
-      );
+      throw new Error(formatFigmaFailure(response, options.url));
     } catch (error: unknown) {
       if (error instanceof NonRetryableFetchError) {
         throw error;
       }
       lastError = error instanceof Error ? error : new Error(String(error));
-      if (attempt < maxRetries) {
-        log(
-          `Fetch error, retrying (${String(attempt + 1)}/${String(maxRetries)})...`,
+      if (attempt < options.maxRetries) {
+        options.log(
+          `Fetch error, retrying (${String(attempt + 1)}/${String(options.maxRetries)})...`,
         );
         continue;
       }
@@ -137,7 +191,9 @@ const fetchWithRetry = async (
   throw lastError;
 };
 
-const loadValidPngIfPresent = async (pngPath: string): Promise<Buffer | null> => {
+const loadValidPngIfPresent = async (
+  pngPath: string,
+): Promise<Buffer | null> => {
   try {
     const buffer = await readFile(pngPath);
     if (!isValidPngBuffer(buffer)) {
@@ -229,18 +285,23 @@ const buildImageUrl = (metadata: VisualBenchmarkFixtureMetadata): string => {
 export const fetchVisualBenchmarkNodeSnapshot = async (
   metadata: VisualBenchmarkFixtureMetadata,
   accessToken: string,
-  dependencies?: Pick<VisualBenchmarkUpdateDependencies, "fetchImpl" | "log">,
+  dependencies?: Pick<
+    VisualBenchmarkUpdateDependencies,
+    "fetchImpl" | "log" | "sleepImpl"
+  >,
 ): Promise<VisualBenchmarkNodeSnapshot> => {
   const fetchImpl = dependencies?.fetchImpl ?? fetch;
   const log = dependencies?.log ?? defaultLog;
+  const sleepImpl = dependencies?.sleepImpl ?? defaultSleep;
   const url = buildNodeUrl(metadata.source.fileKey, metadata.source.nodeId);
-  const response = await fetchWithRetry(
+  const response = await fetchWithRetry({
     url,
-    { "X-Figma-Token": accessToken },
-    3,
+    headers: { "X-Figma-Token": accessToken },
+    maxRetries: 3,
     fetchImpl,
     log,
-  );
+    sleepImpl,
+  });
   const payload = (await response.json()) as unknown;
   return extractNodeSnapshot(payload, metadata.source.nodeId);
 };
@@ -248,18 +309,23 @@ export const fetchVisualBenchmarkNodeSnapshot = async (
 export const fetchVisualBenchmarkReferenceImage = async (
   metadata: VisualBenchmarkFixtureMetadata,
   accessToken: string,
-  dependencies?: Pick<VisualBenchmarkUpdateDependencies, "fetchImpl" | "log">,
+  dependencies?: Pick<
+    VisualBenchmarkUpdateDependencies,
+    "fetchImpl" | "log" | "sleepImpl"
+  >,
 ): Promise<Buffer> => {
   const fetchImpl = dependencies?.fetchImpl ?? fetch;
   const log = dependencies?.log ?? defaultLog;
+  const sleepImpl = dependencies?.sleepImpl ?? defaultSleep;
   const imageLookupUrl = buildImageUrl(metadata);
-  const imageLookupResponse = await fetchWithRetry(
-    imageLookupUrl,
-    { "X-Figma-Token": accessToken },
-    3,
+  const imageLookupResponse = await fetchWithRetry({
+    url: imageLookupUrl,
+    headers: { "X-Figma-Token": accessToken },
+    maxRetries: 3,
     fetchImpl,
     log,
-  );
+    sleepImpl,
+  });
   const imageLookupResult = (await imageLookupResponse.json()) as unknown;
   if (!isPlainRecord(imageLookupResult)) {
     throw new Error("Expected Figma image response to be an object.");
@@ -276,7 +342,14 @@ export const fetchVisualBenchmarkReferenceImage = async (
     );
   }
 
-  const imageResponse = await fetchWithRetry(imageUrl, {}, 3, fetchImpl, log);
+  const imageResponse = await fetchWithRetry({
+    url: imageUrl,
+    headers: {},
+    maxRetries: 3,
+    fetchImpl,
+    log,
+    sleepImpl,
+  });
   const buffer = Buffer.from(await imageResponse.arrayBuffer());
   if (!isValidPngBuffer(buffer)) {
     throw new Error(
@@ -392,12 +465,16 @@ export const updateVisualBenchmarkReferences = async (
     };
 
     const declaredScreensById = new Map(
-      enumerateFixtureScreens(metadata).map((screen) => [screen.screenId, screen]),
+      enumerateFixtureScreens(metadata).map((screen) => [
+        screen.screenId,
+        screen,
+      ]),
     );
 
     for (const renderedScreen of renderedReference.screens) {
       const viewportArtifacts =
-        renderedScreen.viewports !== undefined && renderedScreen.viewports.length > 0
+        renderedScreen.viewports !== undefined &&
+        renderedScreen.viewports.length > 0
           ? renderedScreen.viewports
           : [
               {
