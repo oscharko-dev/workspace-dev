@@ -40,6 +40,7 @@ import {
   type VisualBrowserName,
   VISUAL_BROWSER_NAMES,
 } from "../src/job-engine/visual-browser-matrix.js";
+import { captureFromProject } from "../src/job-engine/visual-capture.js";
 import {
   computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
@@ -1477,9 +1478,40 @@ const executeVisualBenchmarkViewport = async ({
       executionContext.paths.jobDir,
       "visual-quality",
     );
-    const screenshotBuffer = await readFile(
-      path.join(visualQualityDir, "actual.png"),
-    );
+    const captureResult = await captureFromProject({
+      projectDir: path.join(
+        executionContext.paths.jobDir,
+        "generated-app",
+        "dist",
+      ),
+      browser: browsers[0],
+      config: {
+        viewport: {
+          width: activeViewport.width,
+          height: activeViewport.height,
+          deviceScaleFactor: activeDeviceScaleFactor,
+        },
+        waitForNetworkIdle: true,
+        waitForFonts: true,
+        waitForAnimations: true,
+        timeoutMs: 30_000,
+        fullPage: false,
+      },
+      onLog: (message) => {
+        options?.log?.(message);
+      },
+    });
+    let screenshotBuffer: Buffer;
+    try {
+      screenshotBuffer = await readFile(
+        path.join(visualQualityDir, "actual.png"),
+      );
+    } catch (error: unknown) {
+      if (options?.allowIncompleteVisualQuality !== true) {
+        throw error;
+      }
+      screenshotBuffer = Buffer.from(captureResult.screenshotBuffer);
+    }
     try {
       diffBuffer = await readFile(
         path.join(visualQualityDir, "diff.png"),

@@ -1,3 +1,4 @@
+import { PNG } from "pngjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { comparePngBuffers } from "../src/job-engine/visual-diff.js";
@@ -11,10 +12,30 @@ import { loadVisualBenchmarkLastRunArtifact } from "./visual-benchmark-runner.js
 
 const DIMENSION_MISMATCH_SIGNAL = "Image dimensions do not match";
 
+export interface PngDimensions {
+  width: number;
+  height: number;
+}
+
+export class VisualAuditSurfaceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VisualAuditSurfaceError";
+  }
+}
+
 export const buildLiveImageCacheKey = (
   metadata: VisualBenchmarkFixtureMetadata,
 ): string =>
   `${metadata.source.fileKey}:${metadata.source.nodeId}:${metadata.export.format}:${String(metadata.export.scale)}`;
+
+export const readPngDimensions = (buffer: Buffer): PngDimensions => {
+  const png = PNG.sync.read(buffer);
+  return {
+    width: png.width,
+    height: png.height,
+  };
+};
 
 export const buildScreenMetadata = (
   parent: VisualBenchmarkFixtureMetadata,
@@ -76,7 +97,7 @@ export const safeSimilarityScore = (
       error instanceof Error &&
       error.message.includes(DIMENSION_MISMATCH_SIGNAL)
     ) {
-      return 0;
+      throw new VisualAuditSurfaceError(error.message);
     }
     throw error;
   }
