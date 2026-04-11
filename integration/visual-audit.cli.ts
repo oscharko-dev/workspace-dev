@@ -121,9 +121,15 @@ const formatReport = (report: VisualAuditReport): string => {
     `Audited ${String(report.totalFixtures)} fixture(s) at ${report.auditedAt}`,
   );
   lines.push(
-    `  drifted=${String(report.driftedFixtures)} regressed=${String(report.regressedFixtures)}`,
+    `  drifted=${String(report.driftedFixtures)} regressed=${String(report.regressedFixtures)} unavailable=${String(report.unavailableFixtures)}`,
   );
   for (const fixture of report.fixtures) {
+    if (fixture.status !== "completed") {
+      lines.push(
+        `  ${fixture.fixtureId} | Unavailable | error=${fixture.error ?? "unknown"} | last-known-good=${fixture.lastKnownGoodAt}`,
+      );
+      continue;
+    }
     for (const screen of fixture.screens) {
       lines.push(`  ${formatFixtureLine(fixture, screen)}`);
     }
@@ -134,7 +140,13 @@ const formatReport = (report: VisualAuditReport): string => {
 const buildDependencies = (
   cliOptions: VisualAuditCliOptions,
 ): VisualAuditDependencies => {
-  const deps: VisualAuditDependencies = {};
+  const deps: VisualAuditDependencies = {
+    log: cliOptions.json
+      ? (message: string) => {
+          process.stderr.write(`${message}\n`);
+        }
+      : undefined,
+  };
   if (cliOptions.fixture !== undefined) {
     deps.fixtureId = cliOptions.fixture;
   }
@@ -149,7 +161,7 @@ const buildDependencies = (
 
 const resolveExitCode = (report: VisualAuditReport): number => {
   const hasIssue = report.fixtures.some(
-    (fixture) => fixture.fixtureLabel !== "Stable",
+    (fixture) => fixture.status !== "completed" || fixture.fixtureLabel !== "Stable",
   );
   return hasIssue ? 1 : 0;
 };
