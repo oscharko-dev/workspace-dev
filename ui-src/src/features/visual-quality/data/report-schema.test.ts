@@ -1,0 +1,110 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { parseHistory, parseLastRun, parseScreenReport } from "./report-schema";
+
+const artifactRoot = path.resolve(process.cwd(), "artifacts/visual-benchmark");
+
+function readJson(filePath: string): unknown {
+  return JSON.parse(readFileSync(filePath, "utf-8")) as unknown;
+}
+
+describe("parseLastRun", () => {
+  it("parses the on-disk last-run.json aggregate", () => {
+    const raw = readJson(path.join(artifactRoot, "last-run.json"));
+    const parsed = parseLastRun(raw);
+    expect(parsed.version).toBe(2);
+    expect(parsed.scores.length).toBeGreaterThan(0);
+    expect(parsed.overallScore).toBeGreaterThan(0);
+    expect(parsed.ranAt).toMatch(/\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("rejects input missing required fields", () => {
+    expect(() => parseLastRun({})).toThrow(/Invalid last-run/);
+    expect(() => parseLastRun({ version: 2, ranAt: "x" })).toThrow(
+      /Invalid last-run/,
+    );
+  });
+
+  it("rejects wrong version number", () => {
+    expect(() =>
+      parseLastRun({
+        version: 1,
+        ranAt: "2026-04-11T00:00:00Z",
+        overallScore: 99,
+        scores: [],
+      }),
+    ).toThrow(/Invalid last-run/);
+  });
+});
+
+describe("parseScreenReport", () => {
+  it("parses a real per-screen report.json", () => {
+    const file = path.join(
+      artifactRoot,
+      "last-run/complex-dashboard/screens/2_10001/desktop/report.json",
+    );
+    const parsed = parseScreenReport(readJson(file));
+    expect(parsed.status).toBe("completed");
+    expect(parsed.dimensions.length).toBeGreaterThan(0);
+    expect(parsed.hotspots.length).toBeGreaterThanOrEqual(0);
+    expect(parsed.metadata?.imageWidth).toBeTypeOf("number");
+  });
+
+  it("defaults hotspots to an empty array when omitted", () => {
+    const parsed = parseScreenReport({
+      status: "completed",
+      overallScore: 99,
+      dimensions: [],
+    });
+    expect(parsed.hotspots).toEqual([]);
+  });
+
+  it("rejects a malformed report", () => {
+    expect(() => parseScreenReport({ status: "bogus" })).toThrow(
+      /Invalid screen report/,
+    );
+  });
+});
+
+describe("parseHistory", () => {
+  it("parses a v2 history with per-score entries", () => {
+    const parsed = parseHistory({
+      version: 2,
+      entries: [
+        {
+          runAt: "2026-04-10T00:00:00Z",
+          overallScore: 98.2,
+          scores: [{ fixtureId: "x", score: 99 }],
+        },
+      ],
+    });
+    expect(parsed.version).toBe(2);
+    expect(parsed.entries[0]?.scores).toHaveLength(1);
+    expect(parsed.entries[0]?.overallScore).toBe(98.2);
+  });
+
+  it("normalizes a v1 history (no per-score entries) into an empty scores array", () => {
+    const parsed = parseHistory({
+      version: 1,
+      entries: [{ runAt: "2026-04-10T00:00:00Z", overallScore: 97 }],
+    });
+    expect(parsed.version).toBe(1);
+    expect(parsed.entries[0]?.scores).toEqual([]);
+    expect(parsed.entries[0]?.overallScore).toBe(97);
+  });
+
+  it("tolerates v2 entries with no overallScore", () => {
+    const parsed = parseHistory({
+      version: 2,
+      entries: [{ runAt: "2026-04-10T00:00:00Z", scores: [] }],
+    });
+    expect(parsed.entries[0]?.overallScore).toBeUndefined();
+  });
+
+  it("rejects unsupported versions", () => {
+    expect(() => parseHistory({ version: 7, entries: [] })).toThrow(
+      /Invalid history/,
+    );
+  });
+});

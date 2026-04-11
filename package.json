@@ -168,7 +168,7 @@
     "prettier": "^3.8.1",
     "publint": "^0.3.15",
     "react": "^19.2.4",
-    "react-dom": "^19.2.4",
+    "react-dom": "^19.2.5",
     "react-hook-form": "^7.71.2",
     "react-router-dom": "^7.13.1",
     "shiki": "^4.0.2",
