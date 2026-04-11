@@ -6,9 +6,15 @@ import {
   runVisualBenchmarkAbCli,
 } from "./visual-benchmark-ab.cli.js";
 import type {
+  ThreeWayDiffPersistResult,
   VisualBenchmarkAbConfig,
   VisualBenchmarkAbResult,
 } from "./visual-benchmark-ab.js";
+
+const emptyThreeWayResult: ThreeWayDiffPersistResult = {
+  written: [],
+  skipped: [],
+};
 
 // ---------------------------------------------------------------------------
 // CLI parser
@@ -170,6 +176,7 @@ test("runVisualBenchmarkAbCli loads both configs, runs the comparison, and persi
       },
       persistThreeWayDiffs: async (_result, artifactRoot) => {
         persistedThreeWay.push({ artifactRoot });
+        return emptyThreeWayResult;
       },
       output: (line) => lines.push(line),
     },
@@ -196,6 +203,7 @@ test("runVisualBenchmarkAbCli skips three-way diff generation when --skip-three-
       persistComparison: async () => undefined,
       persistThreeWayDiffs: async (_result, artifactRoot) => {
         persistedThreeWay.push({ artifactRoot });
+        return emptyThreeWayResult;
       },
       output: () => undefined,
     },
@@ -276,4 +284,56 @@ test("runVisualBenchmarkAbCli prints labelled warnings when present", async () =
   );
   assert.ok(lines.some((line) => line.includes("Warnings:")));
   assert.ok(lines.some((line) => line.includes("[A] stale baseline")));
+});
+
+test("runVisualBenchmarkAbCli prints per-entry skipped reasons reported by persistThreeWayDiffs", async () => {
+  const lines: string[] = [];
+  const status = await runVisualBenchmarkAbCli(
+    ["--config-a", "a.json", "--config-b", "b.json"],
+    {
+      loadConfig: async () => ({ label: Math.random().toString() }),
+      runAb: async () => buildAbResult(),
+      persistComparison: async () => undefined,
+      persistThreeWayDiffs: async () => ({
+        written: [],
+        skipped: [
+          {
+            fixtureId: "simple-form",
+            screenId: "1:65671",
+            viewportId: "desktop",
+            reason: "side-a-artifact-missing-on-disk",
+            detail:
+              "artifacts/visual-benchmark-ab/config-a/last-run/simple-form/screens/1_65671/desktop/actual.png",
+          },
+          {
+            fixtureId: "complex-dashboard",
+            screenId: "2:10001",
+            viewportId: "desktop",
+            reason: "dimension-divergence",
+            detail:
+              "Three-way diff inputs diverge beyond the configured ratio (observed 40.00x, limit 4.00x).",
+          },
+        ],
+      }),
+      output: (line) => lines.push(line),
+    },
+  );
+  assert.equal(status, 0);
+  assert.ok(
+    lines.some((line) => line.includes("Three-way diff: wrote 0, skipped 2")),
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes(
+        "simple-form / 1:65671 / desktop: side-a-artifact-missing-on-disk",
+      ),
+    ),
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes(
+        "complex-dashboard / 2:10001 / desktop: dimension-divergence",
+      ),
+    ),
+  );
 });

@@ -9,6 +9,7 @@ import {
   persistVisualBenchmarkAbThreeWayDiffs,
   runVisualBenchmarkAb,
   type RunVisualBenchmarkAbDependencies,
+  type ThreeWayDiffPersistResult,
   type VisualBenchmarkAbConfig,
   type VisualBenchmarkAbResult,
 } from "./visual-benchmark-ab.js";
@@ -123,7 +124,7 @@ export interface RunVisualBenchmarkAbCliOptions {
   persistThreeWayDiffs?: (
     result: VisualBenchmarkAbResult,
     artifactRoot: string,
-  ) => Promise<void>;
+  ) => Promise<ThreeWayDiffPersistResult>;
   benchmarkDependencies?: RunVisualBenchmarkAbDependencies;
   output?: (line: string) => void;
 }
@@ -160,11 +161,24 @@ const defaultPersistComparison = async (
 const defaultPersistThreeWayDiffs = async (
   result: VisualBenchmarkAbResult,
   artifactRoot: string,
-): Promise<void> => {
-  await persistVisualBenchmarkAbThreeWayDiffs({
+): Promise<ThreeWayDiffPersistResult> =>
+  persistVisualBenchmarkAbThreeWayDiffs({
     result,
     artifactRoot,
   });
+
+const formatSkippedThreeWayDiffEntry = (
+  entry: ThreeWayDiffPersistResult["skipped"][number],
+): string => {
+  const location = [
+    entry.fixtureId,
+    entry.screenId ?? "",
+    entry.viewportId ?? "",
+  ]
+    .filter((segment) => segment.length > 0)
+    .join(" / ");
+  const detail = entry.detail ? ` — ${entry.detail}` : "";
+  return `  - ${location}: ${entry.reason}${detail}`;
 };
 
 export const runVisualBenchmarkAbCli = async (
@@ -212,7 +226,19 @@ export const runVisualBenchmarkAbCli = async (
     const persistThreeWayDiffs =
       options?.persistThreeWayDiffs ?? defaultPersistThreeWayDiffs;
     try {
-      await persistThreeWayDiffs(result, resolution.artifactRoot);
+      const threeWayResult = await persistThreeWayDiffs(
+        result,
+        resolution.artifactRoot,
+      );
+      if (threeWayResult.skipped.length > 0) {
+        output("");
+        output(
+          `Three-way diff: wrote ${String(threeWayResult.written.length)}, skipped ${String(threeWayResult.skipped.length)}:`,
+        );
+        for (const entry of threeWayResult.skipped) {
+          output(formatSkippedThreeWayDiffEntry(entry));
+        }
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
       output(`Three-way diff generation skipped: ${message}`);

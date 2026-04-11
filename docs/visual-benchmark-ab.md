@@ -150,11 +150,33 @@ For each comparison entry, A/B mode looks up:
 3. Run B's `actual.png` from `config-b/last-run/...`
 
 It composes them into a single horizontal PNG and writes it to
-`three-way/<fixture-id>/<token>/<viewport>.png`. Missing images are replaced
-with neutral grey placeholders so the mosaic still renders.
+`three-way/<fixture-id>/<token>/<viewport>.png`. Sides that are entirely
+missing (no manifest, no file) are replaced with neutral grey placeholders so
+the mosaic still renders.
 
-This step is best-effort: if PNG dimensions are incompatible or the buffers
-cannot be read, the entry is skipped and a single line is printed to stdout.
+The composer **does not resample images**. It places each side at its native
+size and centers shorter sides vertically. To prevent visually misleading
+mosaics where a tiny image sits next to a huge one, the composer rejects
+inputs whose largest/smallest dimension ratio exceeds **4×** (the
+`DEFAULT_THREE_WAY_DIVERGENCE_LIMIT`). When this happens the entry is
+recorded as `skipped` with reason `dimension-divergence`, and stdout shows
+the per-entry skip reason. Callers that need to compose deliberately divergent
+inputs can pass a higher `maxDimensionRatio` programmatically.
+
+The persistence layer also distinguishes two related failure modes for each
+entry, surfaced in stdout as `Three-way diff: wrote N, skipped M` followed
+by per-entry reasons:
+
+- `all-inputs-missing` — neither the reference nor either side artifact
+  could be read.
+- `side-a-artifact-missing-on-disk` / `side-b-artifact-missing-on-disk` —
+  the run wrote a manifest entry but the underlying `actual.png` is gone
+  (partial-corruption signal). This is treated as a hard skip rather than
+  silently substituting a placeholder.
+- `dimension-divergence` — see above.
+- `compose-failed` — any other error from PNG composition (logged with
+  `detail`).
+
 Pass `--skip-three-way-diff` to disable this step entirely (e.g. in CI when
 only the JSON comparison is needed).
 
@@ -169,6 +191,18 @@ only the JSON comparison is needed).
   diff in code review or to commit as a snapshot for downstream tooling.
 - Neither A nor B touches `baseline.json` or `history.json`. A/B mode is
   read-only with respect to the committed baseline.
+
+## Concurrency
+
+A and B run **strictly sequentially**, not in parallel. The underlying
+benchmark runner spawns a Playwright browser, builds the generated template,
+and writes intermediate state into temporary directories under `os.tmpdir()`.
+Two parallel runs would compete for the same browser binary, the same
+Playwright download lock, and the same per-fixture build cache, producing
+flaky captures and non-deterministic scores. The `config-a/` and `config-b/`
+artifact subdirectories isolate the _outputs_, not the intermediate runtime —
+sequential execution is the deliberate, conservative choice. Expected
+wall-clock cost is roughly `2 × pnpm benchmark:visual`.
 
 ## When to use A/B mode vs benchmark mode
 
