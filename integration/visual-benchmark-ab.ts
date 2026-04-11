@@ -555,12 +555,46 @@ export interface ThreeWayDiffComposeInput {
   outputB: Buffer | null;
   gap?: number;
   background?: { r: number; g: number; b: number };
+  /**
+   * Maximum allowed ratio between the largest and smallest *present* input
+   * dimension. When the actual ratio exceeds this threshold the composition
+   * is rejected via a thrown {@link DimensionDivergenceError} so callers can
+   * decide whether to skip the entry or render it with explicit visual
+   * scaling. Defaults to {@link DEFAULT_THREE_WAY_DIVERGENCE_LIMIT}.
+   */
+  maxDimensionRatio?: number;
 }
 
 const PLACEHOLDER_RGB = { r: 220, g: 220, b: 220 };
 const DEFAULT_BACKGROUND_RGB = { r: 255, g: 255, b: 255 };
 const DEFAULT_THREE_WAY_GAP = 16;
 const PLACEHOLDER_FALLBACK_SIZE = 64;
+/**
+ * Default upper bound on the largest/smallest dimension ratio between any two
+ * present inputs to {@link composeThreeWayDiff}. The composer does not
+ * resample images, so when the inputs differ wildly in size the resulting
+ * mosaic places a tiny image next to a giant one and is visually misleading.
+ * 4x is the empirically-chosen "still informative" threshold (e.g. ref 1280
+ * vs A 320 is fine, ref 1280 vs A 32 is not).
+ */
+export const DEFAULT_THREE_WAY_DIVERGENCE_LIMIT = 4;
+
+export class ThreeWayDiffDimensionDivergenceError extends Error {
+  constructor(
+    public readonly maxRatio: number,
+    public readonly observedRatio: number,
+    public readonly dimensions: ReadonlyArray<{
+      side: "reference" | "outputA" | "outputB";
+      width: number;
+      height: number;
+    }>,
+  ) {
+    super(
+      `Three-way diff inputs diverge beyond the configured ratio (observed ${observedRatio.toFixed(2)}x, limit ${maxRatio.toFixed(2)}x).`,
+    );
+    this.name = "ThreeWayDiffDimensionDivergenceError";
+  }
+}
 
 const fillPng = (
   png: PNG,
@@ -574,21 +608,77 @@ const fillPng = (
   }
 };
 
+const computeDivergenceRatio = (
+  present: ReadonlyArray<{ width: number; height: number }>,
+): number => {
+  if (present.length < 2) {
+    return 1;
+  }
+  let minDim = Number.POSITIVE_INFINITY;
+  let maxDim = 0;
+  for (const image of present) {
+    if (image.width < minDim) minDim = image.width;
+    if (image.height < minDim) minDim = image.height;
+    if (image.width > maxDim) maxDim = image.width;
+    if (image.height > maxDim) maxDim = image.height;
+  }
+  if (minDim <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return maxDim / minDim;
+};
+
 export const composeThreeWayDiff = (
   input: ThreeWayDiffComposeInput,
 ): Buffer => {
   const gap = input.gap ?? DEFAULT_THREE_WAY_GAP;
   const background = input.background ?? DEFAULT_BACKGROUND_RGB;
-  const present: PNG[] = [];
+  const maxDimensionRatio =
+    input.maxDimensionRatio ?? DEFAULT_THREE_WAY_DIVERGENCE_LIMIT;
   const refPng = input.reference ? PNG.sync.read(input.reference) : null;
-  if (refPng) present.push(refPng);
   const aPng = input.outputA ? PNG.sync.read(input.outputA) : null;
-  if (aPng) present.push(aPng);
   const bPng = input.outputB ? PNG.sync.read(input.outputB) : null;
+  const present: PNG[] = [];
+  if (refPng) present.push(refPng);
+  if (aPng) present.push(aPng);
   if (bPng) present.push(bPng);
   if (present.length === 0) {
     throw new Error(
       "composeThreeWayDiff requires at least one of reference, outputA, outputB.",
+    );
+  }
+  const observedRatio = computeDivergenceRatio(present);
+  if (observedRatio > maxDimensionRatio) {
+    const dimensions: Array<{
+      side: "reference" | "outputA" | "outputB";
+      width: number;
+      height: number;
+    }> = [];
+    if (refPng) {
+      dimensions.push({
+        side: "reference",
+        width: refPng.width,
+        height: refPng.height,
+      });
+    }
+    if (aPng) {
+      dimensions.push({
+        side: "outputA",
+        width: aPng.width,
+        height: aPng.height,
+      });
+    }
+    if (bPng) {
+      dimensions.push({
+        side: "outputB",
+        width: bPng.width,
+        height: bPng.height,
+      });
+    }
+    throw new ThreeWayDiffDimensionDivergenceError(
+      maxDimensionRatio,
+      observedRatio,
+      dimensions,
     );
   }
   const fallbackHeight = Math.max(...present.map((image) => image.height));
@@ -729,22 +819,55 @@ export interface ThreeWayDiffPersistedRecord {
   outputBImagePath: string | null;
 }
 
+export type ThreeWayDiffSkipReason =
+  | "all-inputs-missing"
+  | "side-a-artifact-missing-on-disk"
+  | "side-b-artifact-missing-on-disk"
+  | "dimension-divergence"
+  | "compose-failed";
+
+export interface ThreeWayDiffSkippedRecord {
+  fixtureId: string;
+  screenId?: string;
+  viewportId?: string;
+  reason: ThreeWayDiffSkipReason;
+  detail?: string;
+}
+
+export interface ThreeWayDiffPersistResult {
+  written: ThreeWayDiffPersistedRecord[];
+  skipped: ThreeWayDiffSkippedRecord[];
+}
+
 export interface PersistThreeWayDiffsInput {
   result: VisualBenchmarkAbResult;
   artifactRoot: string;
   fixtureOptions?: VisualBenchmarkFixtureOptions;
+  /** Override the default dimension-divergence guard. */
+  maxDimensionRatio?: number;
 }
 
 export const persistVisualBenchmarkAbThreeWayDiffs = async (
   input: PersistThreeWayDiffsInput,
-): Promise<ThreeWayDiffPersistedRecord[]> => {
-  const records: ThreeWayDiffPersistedRecord[] = [];
+): Promise<ThreeWayDiffPersistResult> => {
+  const written: ThreeWayDiffPersistedRecord[] = [];
+  const skipped: ThreeWayDiffSkippedRecord[] = [];
   const threeWayRoot = path.join(
     input.artifactRoot,
     THREE_WAY_DIFF_DIRECTORY_NAME,
   );
   const sideARoot = path.join(input.artifactRoot, CONFIG_A_DIRECTORY_NAME);
   const sideBRoot = path.join(input.artifactRoot, CONFIG_B_DIRECTORY_NAME);
+  const buildSkipKey = (
+    entry: VisualBenchmarkAbComparisonEntry,
+  ): Pick<
+    ThreeWayDiffSkippedRecord,
+    "fixtureId" | "screenId" | "viewportId"
+  > => ({
+    fixtureId: entry.fixtureId,
+    ...(entry.screenId !== undefined ? { screenId: entry.screenId } : {}),
+    ...(entry.viewportId !== undefined ? { viewportId: entry.viewportId } : {}),
+  });
   for (const entry of input.result.entries) {
     const referencePath = resolveReferenceImagePath(
       entry.fixtureId,
@@ -781,11 +904,34 @@ export const persistVisualBenchmarkAbThreeWayDiffs = async (
       outputAPath !== null ? await safeReadFile(outputAPath) : null;
     const outputBBuffer =
       outputBPath !== null ? await safeReadFile(outputBPath) : null;
+    // Edge: artifact manifest existed but the actual.png file is missing on
+    // disk. We surface this as a per-side skip so callers can distinguish a
+    // genuinely never-run side from a partially-corrupt artifact tree.
+    if (artifactA !== null && outputABuffer === null) {
+      skipped.push({
+        ...buildSkipKey(entry),
+        reason: "side-a-artifact-missing-on-disk",
+        detail: artifactA.actualImagePath,
+      });
+      continue;
+    }
+    if (artifactB !== null && outputBBuffer === null) {
+      skipped.push({
+        ...buildSkipKey(entry),
+        reason: "side-b-artifact-missing-on-disk",
+        detail: artifactB.actualImagePath,
+      });
+      continue;
+    }
     if (
       referenceBuffer === null &&
       outputABuffer === null &&
       outputBBuffer === null
     ) {
+      skipped.push({
+        ...buildSkipKey(entry),
+        reason: "all-inputs-missing",
+      });
       continue;
     }
     let composed: Buffer;
@@ -794,8 +940,24 @@ export const persistVisualBenchmarkAbThreeWayDiffs = async (
         reference: referenceBuffer,
         outputA: outputABuffer,
         outputB: outputBBuffer,
+        ...(input.maxDimensionRatio !== undefined
+          ? { maxDimensionRatio: input.maxDimensionRatio }
+          : {}),
       });
-    } catch {
+    } catch (error: unknown) {
+      if (error instanceof ThreeWayDiffDimensionDivergenceError) {
+        skipped.push({
+          ...buildSkipKey(entry),
+          reason: "dimension-divergence",
+          detail: error.message,
+        });
+        continue;
+      }
+      skipped.push({
+        ...buildSkipKey(entry),
+        reason: "compose-failed",
+        detail: error instanceof Error ? error.message : String(error),
+      });
       continue;
     }
     const screenSegment =
@@ -812,7 +974,7 @@ export const persistVisualBenchmarkAbThreeWayDiffs = async (
     );
     await mkdir(path.dirname(diffPath), { recursive: true });
     await writeFile(diffPath, composed);
-    records.push({
+    written.push({
       fixtureId: entry.fixtureId,
       ...(entry.screenId !== undefined ? { screenId: entry.screenId } : {}),
       ...(entry.viewportId !== undefined
@@ -833,7 +995,7 @@ export const persistVisualBenchmarkAbThreeWayDiffs = async (
           : null,
     });
   }
-  return records;
+  return { written, skipped };
 };
 
 // ---------------------------------------------------------------------------
@@ -909,6 +1071,20 @@ const resolveRunnerNeutralTolerance = (
   return DEFAULT_AB_NEUTRAL_TOLERANCE;
 };
 
+/**
+ * Run the visual benchmark twice — once with `configA` and once with
+ * `configB` — and return the per-row comparison.
+ *
+ * **Concurrency:** the two runs are executed strictly **sequentially**, not
+ * in parallel. The underlying `runVisualBenchmark` spawns a Playwright
+ * browser, builds the generated template, and writes intermediate state into
+ * temporary directories under `os.tmpdir()`. Running two instances at the
+ * same time would compete for the same browser binary, the same Playwright
+ * download lock, and the same per-fixture build cache, producing flaky
+ * captures and non-deterministic scores. Sequential execution is the
+ * deliberate, conservative choice; the artifact roots (`config-a` /
+ * `config-b`) only isolate the *outputs*, not the intermediate runtime.
+ */
 export const runVisualBenchmarkAb = async (
   input: RunVisualBenchmarkAbInput,
   dependencies?: RunVisualBenchmarkAbDependencies,
@@ -940,6 +1116,7 @@ export const runVisualBenchmarkAb = async (
     sideBRoot,
     input.fixtureOptions,
   );
+  // Sequential by design — see the docblock above for the rationale.
   const resultA = await runBenchmark("a", optionsA);
   const resultB = await runBenchmark("b", optionsB);
   return compareVisualBenchmarkResults({
