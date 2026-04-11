@@ -453,6 +453,10 @@ interface PlaywrightBrowser {
 
 interface PlaywrightBrowserContext {
   newPage(): Promise<PlaywrightPage>;
+  emulateMedia?(options: {
+    reducedMotion?: "reduce" | "no-preference";
+  }): Promise<void>;
+  addInitScript?(script: string): Promise<void>;
 }
 
 interface PlaywrightPage {
@@ -466,6 +470,7 @@ interface PlaywrightPage {
   ): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
   screenshot(options?: { fullPage?: boolean; type?: string }): Promise<Buffer>;
+  addStyleTag?(options: { content: string }): Promise<unknown>;
 }
 
 const loadBrowserByName = async (
@@ -489,6 +494,18 @@ const loadBrowserByName = async (
     );
   }
 };
+
+export const REDUCED_MOTION_STYLE: string = [
+  "*, *::before, *::after {",
+  "  animation-duration: 0ms !important;",
+  "  animation-delay: 0ms !important;",
+  "  animation-iteration-count: 1 !important;",
+  "  transition-duration: 0ms !important;",
+  "  transition-delay: 0ms !important;",
+  "  scroll-behavior: auto !important;",
+  "}",
+  "input, textarea { caret-color: transparent !important; }",
+].join("\n");
 
 const WAIT_FOR_FONTS_EXPRESSION = "document.fonts.ready.then(() => undefined)";
 
@@ -542,6 +559,10 @@ export const captureScreenshot = async (input: {
     }
     const context = await browser.newContext(contextOptions);
 
+    if (typeof context.emulateMedia === "function") {
+      await context.emulateMedia({ reducedMotion: "reduce" });
+    }
+
     const page = await context.newPage();
 
     log(`Navigating to ${input.url}`);
@@ -549,6 +570,10 @@ export const captureScreenshot = async (input: {
       timeout: config.timeoutMs,
       waitUntil: "load",
     });
+
+    if (typeof page.addStyleTag === "function") {
+      await page.addStyleTag({ content: REDUCED_MOTION_STYLE });
+    }
 
     if (config.waitForNetworkIdle) {
       log("Waiting for network idle");

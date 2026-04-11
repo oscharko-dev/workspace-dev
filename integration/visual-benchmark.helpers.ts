@@ -29,6 +29,7 @@ const SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE = `${SCREEN_ID_TOKEN_ESCAPE}u`;
 export interface VisualBenchmarkViewport {
   width: number;
   height: number;
+  readonly deviceScaleFactor?: number;
 }
 
 export interface VisualBenchmarkViewportSpec {
@@ -49,8 +50,7 @@ export type VisualBenchmarkFixtureMode =
   | "generated_app_screen"
   | "storybook_component";
 
-export type VisualBenchmarkStorybookCaptureStrategy =
-  "storybook_root_union";
+export type VisualBenchmarkStorybookCaptureStrategy = "storybook_root_union";
 
 export interface VisualBenchmarkBaselineCanvas {
   width: number;
@@ -442,10 +442,7 @@ export const parseVisualBenchmarkFixtureMetadata = (
       parsed.mode,
       "visual-benchmark metadata mode",
     ) as VisualBenchmarkFixtureMode;
-    if (
-      mode !== "generated_app_screen" &&
-      mode !== "storybook_component"
-    ) {
+    if (mode !== "generated_app_screen" && mode !== "storybook_component") {
       throw new Error(
         "visual-benchmark metadata mode must be 'generated_app_screen' or 'storybook_component'.",
       );
@@ -486,6 +483,13 @@ export const parseVisualBenchmarkFixtureMetadata = (
         viewport.height,
         "visual-benchmark metadata viewport.height",
       ),
+      deviceScaleFactor:
+        viewport.deviceScaleFactor === undefined
+          ? 1
+          : parsePositiveNumber(
+              viewport.deviceScaleFactor,
+              "visual-benchmark metadata viewport.deviceScaleFactor",
+            ),
     },
     export: {
       format: "png",
@@ -802,7 +806,9 @@ export const enumerateFixtureScreens = (
   metadata: VisualBenchmarkFixtureMetadata,
 ): VisualBenchmarkFixtureScreenMetadata[] => {
   if (
-    (metadata.version === 2 || metadata.version === 3 || metadata.version === 4) &&
+    (metadata.version === 2 ||
+      metadata.version === 3 ||
+      metadata.version === 4) &&
     Array.isArray(metadata.screens) &&
     metadata.screens.length > 0
   ) {

@@ -4,7 +4,14 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
-import { comparePngBuffers, comparePngFiles, writeDiffImage } from "./visual-diff.js";
+import {
+  comparePngBuffers,
+  comparePngFiles,
+  VisualDiffCorruptPngError,
+  VisualDiffDimensionMismatchError,
+  VisualDiffReferenceMissingError,
+  writeDiffImage,
+} from "./visual-diff.js";
 
 const createSolidPng = (
   width: number,
@@ -134,12 +141,55 @@ test("comparePngBuffers throws for dimension mismatch", () => {
   assert.throws(
     () => comparePngBuffers({ referenceBuffer: small, testBuffer: large }),
     (error: unknown) => {
-      assert.ok(error instanceof Error);
+      assert.ok(error instanceof VisualDiffDimensionMismatchError);
+      assert.equal(error.code, "E_VISUAL_DIFF_DIMENSION_MISMATCH");
       assert.ok(error.message.includes("100x100"));
       assert.ok(error.message.includes("200x200"));
       return true;
     },
   );
+});
+
+test("comparePngBuffers throws VisualDiffCorruptPngError when reference buffer is not a PNG", () => {
+  const red = createSolidPng(20, 20, 255, 0, 0);
+
+  assert.throws(
+    () =>
+      comparePngBuffers({
+        referenceBuffer: Buffer.from("not a png"),
+        testBuffer: red,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof VisualDiffCorruptPngError);
+      assert.equal(error.code, "E_VISUAL_DIFF_CORRUPT_PNG");
+      assert.match(error.message, /reference/i);
+      return true;
+    },
+  );
+});
+
+test("comparePngBuffers is deterministic across repeated runs on identical inputs", () => {
+  const reference = createHalfRedHalfBluePng(80, 60);
+  const candidate = createSolidPng(80, 60, 255, 0, 0);
+
+  const runs = Array.from({ length: 5 }, () =>
+    comparePngBuffers({
+      referenceBuffer: reference,
+      testBuffer: candidate,
+    }),
+  );
+
+  const [first, ...rest] = runs;
+  assert.ok(first !== undefined);
+  for (const run of rest) {
+    assert.equal(run.similarityScore, first.similarityScore);
+    assert.equal(run.diffPixelCount, first.diffPixelCount);
+    assert.equal(run.totalPixels, first.totalPixels);
+    assert.equal(run.width, first.width);
+    assert.equal(run.height, first.height);
+    assert.deepEqual(run.regions, first.regions);
+    assert.equal(Buffer.compare(run.diffImageBuffer, first.diffImageBuffer), 0);
+  }
 });
 
 test("comparePngBuffers validates regions before diffing", () => {
@@ -259,6 +309,28 @@ test("comparePngFiles reads files from disk and compares", async () => {
   assert.equal(result.diffPixelCount, 0);
   assert.equal(result.width, 40);
   assert.equal(result.height, 40);
+});
+
+test("comparePngFiles rejects with VisualDiffReferenceMissingError when reference path does not exist", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "visual-diff-missing-"));
+  const refPath = path.join(tmpDir, "does-not-exist.png");
+  const testPath = path.join(tmpDir, "test.png");
+
+  await writeFile(testPath, createSolidPng(40, 40, 255, 0, 0));
+
+  await assert.rejects(
+    () =>
+      comparePngFiles({
+        referencePath: refPath,
+        testPath: testPath,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof VisualDiffReferenceMissingError);
+      assert.equal(error.code, "E_VISUAL_DIFF_REFERENCE_MISSING");
+      assert.ok(error.message.includes(refPath));
+      return true;
+    },
+  );
 });
 
 test("writeDiffImage creates parent directories and writes PNG to disk", async () => {

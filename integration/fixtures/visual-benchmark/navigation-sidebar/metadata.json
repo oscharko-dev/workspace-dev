@@ -11,8 +11,9 @@
     "nodeId": "2:10003",
     "nodeName": "Navigation Sidebar — Menu Items, Nested Groups, Icons"
   },
-  "version": 1,
+  "version": 2,
   "viewport": {
+    "deviceScaleFactor": 2,
     "height": 768,
     "width": 1024
   }

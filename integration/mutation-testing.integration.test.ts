@@ -16,9 +16,15 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
     scripts?: Record<string, string>;
   };
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
-  const devQualityWorkflow = await readRepoFile(".github/workflows/dev-quality-gate.yml");
-  const releaseGateWorkflow = await readRepoFile(".github/workflows/release-gate.yml");
-  const changesetsReleaseWorkflow = await readRepoFile(".github/workflows/changesets-release.yml");
+  const devQualityWorkflow = await readRepoFile(
+    ".github/workflows/dev-quality-gate.yml",
+  );
+  const releaseGateWorkflow = await readRepoFile(
+    ".github/workflows/release-gate.yml",
+  );
+  const changesetsReleaseWorkflow = await readRepoFile(
+    ".github/workflows/changesets-release.yml",
+  );
   const strykerConfigModule = (await import(
     pathToFileURL(path.resolve(packageRoot, "stryker.config.mjs")).href
   )) as {
@@ -33,7 +39,7 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
 
   assert.equal(
     packageJson.scripts?.["test:mutation"],
-    "pnpm exec stryker run stryker.config.mjs"
+    "pnpm exec stryker run stryker.config.mjs",
   );
 
   assert.deepEqual(strykerConfigModule.default.mutate, [
@@ -41,20 +47,23 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
     "src/schemas.ts",
     "src/server/request-security.ts",
     "src/job-engine/pipeline/orchestrator.ts",
-    "src/parity/ir.ts"
+    "src/job-engine/visual-scoring.ts",
+    "src/parity/ir.ts",
   ]);
   assert.equal(strykerConfigModule.default.thresholds.break, null);
   assert.equal(
-    strykerConfigModule.default.tap.testFiles.includes("src/server/request-security.test.ts"),
-    true
+    strykerConfigModule.default.tap.testFiles.includes(
+      "src/server/request-security.test.ts",
+    ),
+    true,
   );
   assert.equal(
     strykerConfigModule.default.jsonReporter.fileName,
-    "artifacts/testing/mutation/mutation.json"
+    "artifacts/testing/mutation/mutation.json",
   );
   assert.equal(
     strykerConfigModule.default.htmlReporter.fileName,
-    "artifacts/testing/mutation/mutation.html"
+    "artifacts/testing/mutation/mutation.html",
   );
 
   assert.match(contributingDoc, /pnpm run test:mutation/);
@@ -65,7 +74,7 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   for (const workflow of [
     devQualityWorkflow,
     releaseGateWorkflow,
-    changesetsReleaseWorkflow
+    changesetsReleaseWorkflow,
   ]) {
     assert.match(workflow, /\n  mutation-testing:\n/);
     assert.match(workflow, /continue-on-error: true/);
@@ -75,6 +84,12 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   }
 
   assert.match(devQualityWorkflow, /needs: quality/);
-  assert.match(releaseGateWorkflow, /needs: \[quality, performance-web, mutation-testing, fips-smoke\]/);
-  assert.match(changesetsReleaseWorkflow, /needs: \[quality-matrix, performance-web, mutation-testing\]/);
+  assert.match(
+    releaseGateWorkflow,
+    /needs: \[quality, performance-web, mutation-testing, fips-smoke\]/,
+  );
+  assert.match(
+    changesetsReleaseWorkflow,
+    /needs: \[quality-matrix, performance-web, mutation-testing\]/,
+  );
 });

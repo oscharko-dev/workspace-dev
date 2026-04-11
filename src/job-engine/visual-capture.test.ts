@@ -9,6 +9,7 @@ import { chromium } from "@playwright/test";
 import {
   DEFAULT_CAPTURE_CONFIG,
   DEFAULT_VIEWPORT,
+  REDUCED_MOTION_STYLE,
   captureScreenshot,
   captureFromProject,
   resolveCaptureContextOptions,
@@ -177,7 +178,9 @@ test("DEFAULT_CAPTURE_CONFIG has expected values", () => {
   assert.equal(DEFAULT_CAPTURE_CONFIG.fullPage, true);
 });
 
-const startTestServer = (html: string): Promise<{ server: Server; port: number }> => {
+const startTestServer = (
+  html: string,
+): Promise<{ server: Server; port: number }> => {
   return new Promise<{ server: Server; port: number }>((resolve, reject) => {
     const server = createServer((_req, res) => {
       res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
@@ -229,7 +232,9 @@ const getChromiumAvailability = async (): Promise<
   return await chromiumAvailabilityPromise;
 };
 
-const skipIfChromiumUnavailable = async (context: TestContext): Promise<void> => {
+const skipIfChromiumUnavailable = async (
+  context: TestContext,
+): Promise<void> => {
   const availability = await getChromiumAvailability();
   if (!availability.available) {
     context.skip(availability.reason);
@@ -247,7 +252,10 @@ test("captureScreenshot captures a page served by a local HTTP server", async (c
       url: `http://127.0.0.1:${port}`,
     });
 
-    assert.ok(result.screenshotBuffer.length > 0, "Screenshot buffer should not be empty");
+    assert.ok(
+      result.screenshotBuffer.length > 0,
+      "Screenshot buffer should not be empty",
+    );
 
     for (let i = 0; i < PNG_MAGIC_BYTES.length; i++) {
       const expected = PNG_MAGIC_BYTES[i];
@@ -294,7 +302,10 @@ test("captureScreenshot respects viewport configuration", async (context) => {
       DEFAULT_VIEWPORT.deviceScaleFactor,
     );
 
-    assert.ok(result.screenshotBuffer.length > 0, "Screenshot buffer should not be empty");
+    assert.ok(
+      result.screenshotBuffer.length > 0,
+      "Screenshot buffer should not be empty",
+    );
     assert.ok(result.width > 0, "Width should be positive");
     assert.ok(result.height > 0, "Height should be positive");
   } finally {
@@ -341,8 +352,12 @@ test("waitWithTimeout clears the timeout handle after the wrapped promise settle
   }
 });
 
-const createTempProject = async (files: Record<string, string | Buffer>): Promise<string> => {
-  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-capture-"));
+const createTempProject = async (
+  files: Record<string, string | Buffer>,
+): Promise<string> => {
+  const projectDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-capture-"),
+  );
   await Promise.all(
     Object.entries(files).map(async ([relativePath, content]) => {
       const absolutePath = path.join(projectDir, relativePath);
@@ -446,4 +461,70 @@ test("captureScreenshot fails fast on invalid capture configuration", async () =
       }),
     /viewport\.width/,
   );
+});
+
+test("REDUCED_MOTION_STYLE neutralizes animations and transitions", () => {
+  assert.match(REDUCED_MOTION_STYLE, /animation-duration:\s*0ms/);
+  assert.match(REDUCED_MOTION_STYLE, /animation-delay:\s*0ms/);
+  assert.match(REDUCED_MOTION_STYLE, /transition-duration:\s*0ms/);
+  assert.match(REDUCED_MOTION_STYLE, /transition-delay:\s*0ms/);
+  assert.match(REDUCED_MOTION_STYLE, /scroll-behavior:\s*auto/);
+  assert.match(REDUCED_MOTION_STYLE, /caret-color:\s*transparent/);
+});
+
+test("captureScreenshot produces byte-identical screenshots across runs of an animated page", async (context) => {
+  await skipIfChromiumUnavailable(context);
+  const { server, port } = await startTestServer(
+    `<!doctype html>
+<html>
+  <head>
+    <style>
+      body { margin: 0; background: #fff; }
+      @keyframes pulse {
+        from { transform: translateX(0px); opacity: 0.2; }
+        to { transform: translateX(120px); opacity: 1; }
+      }
+      .animated {
+        width: 80px;
+        height: 80px;
+        background: rgb(220, 38, 38);
+        animation: pulse 1s infinite alternate;
+        transition: background-color 2s linear;
+      }
+      input { caret-color: rgb(0, 0, 0); }
+    </style>
+  </head>
+  <body>
+    <div class="animated"></div>
+    <input value="x" />
+  </body>
+</html>`,
+  );
+
+  try {
+    const first = await captureScreenshot({
+      url: `http://127.0.0.1:${port}`,
+      config: {
+        viewport: { width: 320, height: 200 },
+        fullPage: false,
+        waitForNetworkIdle: false,
+      },
+    });
+    const second = await captureScreenshot({
+      url: `http://127.0.0.1:${port}`,
+      config: {
+        viewport: { width: 320, height: 200 },
+        fullPage: false,
+        waitForNetworkIdle: false,
+      },
+    });
+
+    assert.equal(
+      Buffer.compare(first.screenshotBuffer, second.screenshotBuffer),
+      0,
+      "Two captures of the same animated page should be byte-identical when reduced-motion CSS is applied",
+    );
+  } finally {
+    await closeServer(server);
+  }
 });

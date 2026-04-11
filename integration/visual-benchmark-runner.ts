@@ -111,6 +111,14 @@ export interface VisualBenchmarkDelta {
   thresholdResult?: VisualQualityThresholdResult;
 }
 
+export interface VisualBenchmarkFixtureFailure {
+  readonly fixtureId: string;
+  readonly error: {
+    readonly code: string;
+    readonly message: string;
+  };
+}
+
 export interface VisualBenchmarkResult {
   deltas: VisualBenchmarkDelta[];
   overallBaseline: number | null;
@@ -129,6 +137,7 @@ export interface VisualBenchmarkResult {
   browserBreakdown?: VisualBenchmarkBrowserBreakdown;
   crossBrowserConsistency?: VisualBenchmarkCrossBrowserConsistency;
   warnings?: string[];
+  failedFixtures?: readonly VisualBenchmarkFixtureFailure[];
 }
 
 type VisualBenchmarkComponentResultEntry = NonNullable<
@@ -164,6 +173,7 @@ export interface VisualBenchmarkLastRun {
   crossBrowserConsistency?: VisualBenchmarkCrossBrowserConsistency;
   components?: VisualBenchmarkComponentResultEntry[];
   warnings?: string[];
+  failedFixtures?: readonly VisualBenchmarkFixtureFailure[];
 }
 
 export interface VisualBenchmarkLastRunArtifactManifest {
@@ -1988,6 +1998,7 @@ export const saveVisualBenchmarkLastRun = async (
     crossBrowserConsistency?: VisualBenchmarkLastRun["crossBrowserConsistency"];
     components?: VisualBenchmarkComponentResultEntry[];
     warnings?: string[];
+    failedFixtures?: readonly VisualBenchmarkFixtureFailure[];
   },
 ): Promise<void> => {
   const lastRunPath = resolveLastRunPath(options);
@@ -2040,6 +2051,17 @@ export const saveVisualBenchmarkLastRun = async (
         }
       : {}),
     ...(summary?.warnings && summary.warnings.length > 0 ? { warnings: [...summary.warnings] } : {}),
+    ...(summary?.failedFixtures && summary.failedFixtures.length > 0
+      ? {
+          failedFixtures: summary.failedFixtures.map((failure) => ({
+            fixtureId: failure.fixtureId,
+            error: {
+              code: failure.error.code,
+              message: failure.error.message,
+            },
+          })),
+        }
+      : {}),
   };
   await mkdir(path.dirname(lastRunPath), { recursive: true });
   await writeFile(lastRunPath, toStableJsonString(lastRun), "utf8");
@@ -2785,6 +2807,18 @@ const computeMultiScreenBaselineAlerts = async ({
   return alerts;
 };
 
+const toFixtureFailure = (
+  fixtureId: string,
+  error: unknown,
+): VisualBenchmarkFixtureFailure => {
+  const code =
+    error instanceof Error && typeof (error as { code?: unknown }).code === "string"
+      ? (error as { code: string }).code
+      : "E_VISUAL_BENCHMARK_FIXTURE_FAILED";
+  const message = error instanceof Error ? error.message : String(error);
+  return { fixtureId, error: { code, message } };
+};
+
 export const runVisualBenchmark = async (
   options?: VisualBenchmarkRunOptions,
   dependencies?: VisualBenchmarkRunnerDependencies,
@@ -2802,6 +2836,7 @@ export const runVisualBenchmark = async (
   const benchmarkWarnings: string[] = [
     ...preparedStorybookComponents.warnings,
   ];
+  const failedFixtures: VisualBenchmarkFixtureFailure[] = [];
   const benchmarkBrowserBreakdownAccumulator: Partial<
     Record<BenchmarkBrowserName, { sum: number; count: number }>
   > = {};
@@ -2840,7 +2875,20 @@ export const runVisualBenchmark = async (
       const runFixtureBenchmark = dependencies.runFixtureBenchmark;
       scores = [];
       for (const fixtureId of fixtureIds) {
-        const result = await runFixtureBenchmark(fixtureId, effectiveOptions);
+        let result: VisualBenchmarkFixtureRunResultLike;
+        try {
+          result = await runFixtureBenchmark(fixtureId, effectiveOptions);
+        } catch (error: unknown) {
+          const failure = toFixtureFailure(fixtureId, error);
+          failedFixtures.push(failure);
+          benchmarkWarnings.push(
+            `Visual benchmark fixture '${fixtureId}' failed: ${failure.error.code} ${failure.error.message}`,
+          );
+          process.stdout.write(
+            `\u26A0\uFE0F  Visual benchmark fixture '${fixtureId}' failed (${failure.error.code}); continuing with remaining fixtures.\n`,
+          );
+          continue;
+        }
         for (const screen of result.screens) {
           const normalizedScreenId =
             typeof screen.screenId === "string" &&
@@ -2881,7 +2929,20 @@ export const runVisualBenchmark = async (
 
       scores = [];
       for (const fixtureId of fixtureIds) {
-        const result = await executeFixture(fixtureId, effectiveOptions);
+        let result: VisualBenchmarkFixtureRunResult;
+        try {
+          result = await executeFixture(fixtureId, effectiveOptions);
+        } catch (error: unknown) {
+          const failure = toFixtureFailure(fixtureId, error);
+          failedFixtures.push(failure);
+          benchmarkWarnings.push(
+            `Visual benchmark fixture '${fixtureId}' failed: ${failure.error.code} ${failure.error.message}`,
+          );
+          process.stdout.write(
+            `\u26A0\uFE0F  Visual benchmark fixture '${fixtureId}' failed (${failure.error.code}); continuing with remaining fixtures.\n`,
+          );
+          continue;
+        }
         const metadata = await loadCachedMetadata(result.fixtureId);
         const declaredScreensById = new Map(
           enumerateFixtureScreens(metadata).map((screen) => [
@@ -3044,6 +3105,7 @@ export const runVisualBenchmark = async (
       alerts: [],
       trendSummaries: [],
       ...(benchmarkWarnings.length > 0 ? { warnings: [...benchmarkWarnings] } : {}),
+      ...(failedFixtures.length > 0 ? { failedFixtures: [...failedFixtures] } : {}),
     };
     if (
       componentCoverageAccumulator.comparedCount > 0 ||
@@ -3087,6 +3149,7 @@ export const runVisualBenchmark = async (
         : {}),
       ...(components.length > 0 ? { components } : {}),
       ...(emptyResult.warnings ? { warnings: emptyResult.warnings } : {}),
+      ...(failedFixtures.length > 0 ? { failedFixtures: [...failedFixtures] } : {}),
     });
     return emptyResult;
   }
@@ -3425,6 +3488,10 @@ export const runVisualBenchmark = async (
     result.warnings = [...benchmarkWarnings];
   }
 
+  if (failedFixtures.length > 0) {
+    result.failedFixtures = [...failedFixtures];
+  }
+
   if (artifactEntries.length > 0) {
     const deltaByKey = new Map<string, VisualBenchmarkDelta>();
     for (const delta of result.deltas) {
@@ -3513,6 +3580,7 @@ export const runVisualBenchmark = async (
     ...(result.componentCoverage ? { componentCoverage: result.componentCoverage } : {}),
     ...(components.length > 0 ? { components } : {}),
     ...(result.warnings ? { warnings: result.warnings } : {}),
+    ...(failedFixtures.length > 0 ? { failedFixtures: [...failedFixtures] } : {}),
   });
 
   const table = formatVisualBenchmarkTable(result);
@@ -3537,15 +3605,15 @@ export const runVisualBenchmark = async (
   }
 
   if (qualityConfig) {
-    const failedFixtures = result.deltas.filter(
+    const thresholdFailedFixtures = result.deltas.filter(
       (d) => d.thresholdResult?.verdict === "fail",
     );
     const warnedFixtures = result.deltas.filter(
       (d) => d.thresholdResult?.verdict === "warn",
     );
-    if (failedFixtures.length > 0) {
+    if (thresholdFailedFixtures.length > 0) {
       process.stdout.write(
-        `\n\u274C ${failedFixtures.length} fixture(s) below fail threshold: ${failedFixtures.map((d) => d.fixtureId).join(", ")}\n`,
+        `\n\u274C ${thresholdFailedFixtures.length} fixture(s) below fail threshold: ${thresholdFailedFixtures.map((d) => d.fixtureId).join(", ")}\n`,
       );
     }
     if (warnedFixtures.length > 0) {
@@ -3553,7 +3621,7 @@ export const runVisualBenchmark = async (
         `\u26A0\uFE0F ${warnedFixtures.length} fixture(s) below warn threshold: ${warnedFixtures.map((d) => d.fixtureId).join(", ")}\n`,
       );
     }
-    if (failedFixtures.length === 0 && warnedFixtures.length === 0) {
+    if (thresholdFailedFixtures.length === 0 && warnedFixtures.length === 0) {
       process.stdout.write(`\n\u2705 All fixtures pass quality thresholds.\n`);
     }
   }

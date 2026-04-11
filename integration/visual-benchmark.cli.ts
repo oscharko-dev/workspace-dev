@@ -233,6 +233,19 @@ export const runVisualBenchmarkCli = async (
     return 1;
   }
 
+  // Per-fixture try/catch in runVisualBenchmark turns fixture-level failures into
+  // `failedFixtures` entries with empty `deltas`. Without this guard, an
+  // `--enforce-thresholds` run where every fixture threw would exit 0 because the
+  // `deltas.some(...)` check above never fires. Treat a run with no passing fixtures
+  // but at least one failed fixture as a hard failure.
+  if (
+    resolution.enforceThresholds &&
+    result.deltas.length === 0 &&
+    (result.failedFixtures?.length ?? 0) > 0
+  ) {
+    return 1;
+  }
+
   return 0;
 };
 

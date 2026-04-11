@@ -61,12 +61,31 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-${{ env.VISUAL_BENCHMARK_BROWSERS }}
+
       - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: |
           browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
           pnpm exec playwright install --with-deps $browsers
 
+      - name: Install Playwright OS deps (cache hit)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: |
+          browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install-deps $browsers
+
       - name: Run frozen visual benchmark runner
+        id: benchmark-run
         run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
 
       - name: Build generated app for perf assertions
@@ -80,7 +99,7 @@ jobs:
         run: pnpm perf:web:assert
 
       - name: Compute composite quality report
-        if: always()
+        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
         run: >-
           pnpm composite:quality
           --visual-last-run artifacts/visual-benchmark/last-run.json
@@ -90,11 +109,11 @@ jobs:
           --no-history
 
       - name: Summarize visual quality report
-        if: always()
+        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
         run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
 
       - name: Generate visual benchmark PR comment payload
-        if: always() && github.event_name == 'pull_request'
+        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != '' && github.event_name == 'pull_request'
         run: >-
           node scripts/print-visual-benchmark-pr-comment.mjs
           artifacts/visual-benchmark/last-run.json
@@ -181,8 +200,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Get Playwright version
+        id: playwright-version
+        run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright-version.outputs.version }}-${{ matrix.browser }}
+
       - name: Install Playwright browser (${{ matrix.browser }})
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Install Playwright OS deps (cache hit) (${{ matrix.browser }})
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps ${{ matrix.browser }}
 
       - name: Run frozen visual benchmark runner (${{ matrix.browser }})
         run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "${{ matrix.browser }}"

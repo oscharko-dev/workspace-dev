@@ -11,8 +11,9 @@
     "nodeId": "1:65671",
     "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
   },
-  "version": 1,
+  "version": 2,
   "viewport": {
+    "deviceScaleFactor": 2,
     "height": 1578,
     "width": 1336
   }

@@ -11,8 +11,9 @@
     "nodeId": "2:10004",
     "nodeName": "Design System — Buttons, Inputs, Cards, Typography Scale"
   },
-  "version": 1,
+  "version": 2,
   "viewport": {
+    "deviceScaleFactor": 2,
     "height": 900,
     "width": 1440
   }
