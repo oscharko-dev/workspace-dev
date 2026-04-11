@@ -3,6 +3,44 @@ import path from "node:path";
 import pixelmatch from "pixelmatch";
 import { PNG } from "pngjs";
 
+export class VisualDiffReferenceMissingError extends Error {
+  readonly code = "E_VISUAL_DIFF_REFERENCE_MISSING" as const;
+  constructor(filePath: string, cause?: unknown) {
+    super(`Reference image not found at '${filePath}'`);
+    this.name = "VisualDiffReferenceMissingError";
+    if (cause !== undefined) {
+      (this as { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
+export class VisualDiffCorruptPngError extends Error {
+  readonly code = "E_VISUAL_DIFF_CORRUPT_PNG" as const;
+  constructor(which: "reference" | "test", cause?: unknown) {
+    const detail = cause instanceof Error ? cause.message : "unknown error";
+    super(`Failed to decode ${which} PNG: ${detail}`);
+    this.name = "VisualDiffCorruptPngError";
+    if (cause !== undefined) {
+      (this as { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
+export class VisualDiffDimensionMismatchError extends Error {
+  readonly code = "E_VISUAL_DIFF_DIMENSION_MISMATCH" as const;
+  constructor(
+    referenceWidth: number,
+    referenceHeight: number,
+    testWidth: number,
+    testHeight: number,
+  ) {
+    super(
+      `Image dimensions do not match: reference is ${String(referenceWidth)}x${String(referenceHeight)}, test is ${String(testWidth)}x${String(testHeight)}`,
+    );
+    this.name = "VisualDiffDimensionMismatchError";
+  }
+}
+
 export interface VisualDiffConfig {
   threshold: number;
   includeAntialiasing: boolean;
@@ -58,7 +96,9 @@ const assertFiniteNumber = (value: unknown, name: string): number => {
   return value;
 };
 
-const resolveConfig = (partial?: Partial<VisualDiffConfig>): VisualDiffConfig => {
+const resolveConfig = (
+  partial?: Partial<VisualDiffConfig>,
+): VisualDiffConfig => {
   if (!partial) {
     return { ...DEFAULT_DIFF_CONFIG };
   }
@@ -70,18 +110,26 @@ const resolveConfig = (partial?: Partial<VisualDiffConfig>): VisualDiffConfig =>
   assertFiniteNumber(alpha, "alpha");
 
   if (threshold < 0 || threshold > 1) {
-    throw new Error(`threshold must be between 0 and 1. Received ${String(threshold)}.`);
+    throw new Error(
+      `threshold must be between 0 and 1. Received ${String(threshold)}.`,
+    );
   }
   if (alpha < 0 || alpha > 1) {
-    throw new Error(`alpha must be between 0 and 1. Received ${String(alpha)}.`);
+    throw new Error(
+      `alpha must be between 0 and 1. Received ${String(alpha)}.`,
+    );
   }
-  if (partial.includeAntialiasing !== undefined && typeof partial.includeAntialiasing !== "boolean") {
+  if (
+    partial.includeAntialiasing !== undefined &&
+    typeof partial.includeAntialiasing !== "boolean"
+  ) {
     throw new Error("includeAntialiasing must be a boolean");
   }
 
   return {
     threshold,
-    includeAntialiasing: partial.includeAntialiasing ?? DEFAULT_DIFF_CONFIG.includeAntialiasing,
+    includeAntialiasing:
+      partial.includeAntialiasing ?? DEFAULT_DIFF_CONFIG.includeAntialiasing,
     alpha,
   };
 };
@@ -106,12 +154,19 @@ const validateRegion = (
   }
 
   if (region.width <= 0 || region.height <= 0) {
-    throw new Error(`Region '${region.name}' must have positive width and height`);
+    throw new Error(
+      `Region '${region.name}' must have positive width and height`,
+    );
   }
   if (region.x < 0 || region.y < 0) {
-    throw new Error(`Region '${region.name}' must start inside the image bounds`);
+    throw new Error(
+      `Region '${region.name}' must start inside the image bounds`,
+    );
   }
-  if (region.x + region.width > imageWidth || region.y + region.height > imageHeight) {
+  if (
+    region.x + region.width > imageWidth ||
+    region.y + region.height > imageHeight
+  ) {
     throw new Error(
       `Region '${region.name}' is out of bounds for image ${String(imageWidth)}x${String(imageHeight)}`,
     );
@@ -120,7 +175,10 @@ const validateRegion = (
   return region;
 };
 
-const buildDefaultRegions = (width: number, height: number): VisualDiffRegionInput[] => {
+const buildDefaultRegions = (
+  width: number,
+  height: number,
+): VisualDiffRegionInput[] => {
   const headerHeight = Math.max(1, Math.round(height * 0.2));
   const footerHeight = Math.max(1, Math.round(height * 0.2));
   const contentY = clamp(headerHeight, 0, Math.max(0, height - 1));
@@ -133,10 +191,34 @@ const buildDefaultRegions = (width: number, height: number): VisualDiffRegionInp
 
   return [
     { name: "header", x: 0, y: 0, width, height: headerHeight },
-    { name: "content-left", x: 0, y: contentY, width: leftWidth, height: contentHeight },
-    { name: "content-center", x: centerX, y: contentY, width: centerWidth, height: contentHeight },
-    { name: "content-right", x: rightX, y: contentY, width: rightWidth, height: contentHeight },
-    { name: "footer", x: 0, y: height - footerHeight, width, height: footerHeight },
+    {
+      name: "content-left",
+      x: 0,
+      y: contentY,
+      width: leftWidth,
+      height: contentHeight,
+    },
+    {
+      name: "content-center",
+      x: centerX,
+      y: contentY,
+      width: centerWidth,
+      height: contentHeight,
+    },
+    {
+      name: "content-right",
+      x: rightX,
+      y: contentY,
+      width: rightWidth,
+      height: contentHeight,
+    },
+    {
+      name: "footer",
+      x: 0,
+      y: height - footerHeight,
+      width,
+      height: footerHeight,
+    },
   ];
 };
 
@@ -146,9 +228,19 @@ const computeRegion = (
   region: VisualDiffRegionInput,
   config: VisualDiffConfig,
 ): VisualDiffRegionResult => {
-  const validatedRegion = validateRegion(region, referencePng.width, referencePng.height);
-  const refRegion = new PNG({ width: validatedRegion.width, height: validatedRegion.height });
-  const testRegion = new PNG({ width: validatedRegion.width, height: validatedRegion.height });
+  const validatedRegion = validateRegion(
+    region,
+    referencePng.width,
+    referencePng.height,
+  );
+  const refRegion = new PNG({
+    width: validatedRegion.width,
+    height: validatedRegion.height,
+  });
+  const testRegion = new PNG({
+    width: validatedRegion.width,
+    height: validatedRegion.height,
+  });
 
   PNG.bitblt(
     referencePng,
@@ -171,11 +263,26 @@ const computeRegion = (
     0,
   );
 
-  const regionDiff = new PNG({ width: validatedRegion.width, height: validatedRegion.height });
+  const regionDiff = new PNG({
+    width: validatedRegion.width,
+    height: validatedRegion.height,
+  });
   const regionDiffCount = pixelmatch(
-    new Uint8Array(refRegion.data.buffer, refRegion.data.byteOffset, refRegion.data.byteLength),
-    new Uint8Array(testRegion.data.buffer, testRegion.data.byteOffset, testRegion.data.byteLength),
-    new Uint8Array(regionDiff.data.buffer, regionDiff.data.byteOffset, regionDiff.data.byteLength),
+    new Uint8Array(
+      refRegion.data.buffer,
+      refRegion.data.byteOffset,
+      refRegion.data.byteLength,
+    ),
+    new Uint8Array(
+      testRegion.data.buffer,
+      testRegion.data.byteOffset,
+      testRegion.data.byteLength,
+    ),
+    new Uint8Array(
+      regionDiff.data.buffer,
+      regionDiff.data.byteOffset,
+      regionDiff.data.byteLength,
+    ),
     validatedRegion.width,
     validatedRegion.height,
     {
@@ -186,7 +293,8 @@ const computeRegion = (
   );
 
   const totalPixels = validatedRegion.width * validatedRegion.height;
-  const deviationPercent = Math.round((regionDiffCount / totalPixels) * 10000) / 100;
+  const deviationPercent =
+    Math.round((regionDiffCount / totalPixels) * 10000) / 100;
 
   return {
     name: validatedRegion.name,
@@ -206,12 +314,29 @@ export const comparePngBuffers = (input: {
   config?: Partial<VisualDiffConfig>;
   regions?: VisualDiffRegionInput[];
 }): VisualDiffResult => {
-  const referencePng = PNG.sync.read(input.referenceBuffer);
-  const testPng = PNG.sync.read(input.testBuffer);
+  let referencePng: PNG;
+  try {
+    referencePng = PNG.sync.read(input.referenceBuffer);
+  } catch (error: unknown) {
+    throw new VisualDiffCorruptPngError("reference", error);
+  }
 
-  if (referencePng.width !== testPng.width || referencePng.height !== testPng.height) {
-    throw new Error(
-      `Image dimensions do not match: reference is ${String(referencePng.width)}x${String(referencePng.height)}, test is ${String(testPng.width)}x${String(testPng.height)}`,
+  let testPng: PNG;
+  try {
+    testPng = PNG.sync.read(input.testBuffer);
+  } catch (error: unknown) {
+    throw new VisualDiffCorruptPngError("test", error);
+  }
+
+  if (
+    referencePng.width !== testPng.width ||
+    referencePng.height !== testPng.height
+  ) {
+    throw new VisualDiffDimensionMismatchError(
+      referencePng.width,
+      referencePng.height,
+      testPng.width,
+      testPng.height,
     );
   }
 
@@ -221,9 +346,21 @@ export const comparePngBuffers = (input: {
 
   const diffPng = new PNG({ width, height });
   const diffPixelCount = pixelmatch(
-    new Uint8Array(referencePng.data.buffer, referencePng.data.byteOffset, referencePng.data.byteLength),
-    new Uint8Array(testPng.data.buffer, testPng.data.byteOffset, testPng.data.byteLength),
-    new Uint8Array(diffPng.data.buffer, diffPng.data.byteOffset, diffPng.data.byteLength),
+    new Uint8Array(
+      referencePng.data.buffer,
+      referencePng.data.byteOffset,
+      referencePng.data.byteLength,
+    ),
+    new Uint8Array(
+      testPng.data.buffer,
+      testPng.data.byteOffset,
+      testPng.data.byteLength,
+    ),
+    new Uint8Array(
+      diffPng.data.buffer,
+      diffPng.data.byteOffset,
+      diffPng.data.byteLength,
+    ),
     width,
     height,
     {
@@ -234,9 +371,12 @@ export const comparePngBuffers = (input: {
   );
 
   const totalPixels = width * height;
-  const similarityScore = Math.round((1 - diffPixelCount / totalPixels) * 10000) / 100;
+  const similarityScore =
+    Math.round((1 - diffPixelCount / totalPixels) * 10000) / 100;
 
-  const regionResults = regions.map((region) => computeRegion(referencePng, testPng, region, config));
+  const regionResults = regions.map((region) =>
+    computeRegion(referencePng, testPng, region, config),
+  );
 
   const diffImageBuffer = PNG.sync.write(diffPng);
 
@@ -257,9 +397,24 @@ export const comparePngFiles = async (input: {
   config?: Partial<VisualDiffConfig>;
   regions?: VisualDiffRegionInput[];
 }): Promise<VisualDiffResult> => {
+  const readOrThrow = async (filePath: string): Promise<Buffer> => {
+    try {
+      return await readFile(filePath);
+    } catch (error: unknown) {
+      const code =
+        error instanceof Error && "code" in error
+          ? (error as NodeJS.ErrnoException).code
+          : undefined;
+      if (code === "ENOENT") {
+        throw new VisualDiffReferenceMissingError(filePath, error);
+      }
+      throw error;
+    }
+  };
+
   const [referenceBuffer, testBuffer] = await Promise.all([
-    readFile(input.referencePath),
-    readFile(input.testPath),
+    readOrThrow(input.referencePath),
+    readOrThrow(input.testPath),
   ]);
 
   const args: {
