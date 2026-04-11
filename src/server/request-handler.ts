@@ -16,7 +16,7 @@ import { createIpRateLimiter, resolveRateLimitClientKey } from "./rate-limit.js"
 import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
 import { WORKSPACE_UI_CONTENT_SECURITY_POLICY } from "./constants.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
-import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, validateSourceFilePath } from "./routes.js";
+import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, shouldFallbackToUiEntrypoint, validateSourceFilePath } from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
 
 /**
@@ -850,10 +850,21 @@ export function createWorkspaceRequestHandler({
       if (uiAssetPath || shouldServeWorkspaceAlias) {
         try {
           const uiAssets = await getUiAssets(moduleDir);
-          const uiAsset = getUiAsset({
+          const requestedUiAsset = getUiAsset({
             assets: uiAssets,
             assetPath: uiAssetPath ?? "index.html"
           });
+          const shouldServeUiEntrypoint =
+            shouldServeWorkspaceAlias ||
+            uiAssetPath === "index.html" ||
+            (requestedUiAsset === undefined && shouldFallbackToUiEntrypoint(pathname));
+          const uiAsset = shouldServeUiEntrypoint
+            ? getUiAsset({
+                assets: uiAssets,
+                assetPath: "index.html"
+              })
+            : requestedUiAsset;
+
           if (!uiAsset) {
             sendJson({
               response,
@@ -868,7 +879,7 @@ export function createWorkspaceRequestHandler({
 
           const isUiDocumentResponse =
             uiAsset.contentType.startsWith("text/html") &&
-            (shouldServeWorkspaceAlias || uiAssetPath === "index.html");
+            shouldServeUiEntrypoint;
           sendBuffer({
             response,
             statusCode: 200,

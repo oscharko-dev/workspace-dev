@@ -36,7 +36,7 @@ if (typeof window !== "undefined") {
         configurable: true,
         writable: true,
         value(this: object, key: string): string | null {
-          const value = getStore(this).get(String(key));
+          const value = getStore(this).get(key);
           return value === undefined ? null : value;
         },
       },
@@ -44,14 +44,14 @@ if (typeof window !== "undefined") {
         configurable: true,
         writable: true,
         value(this: object, key: string, value: string): void {
-          getStore(this).set(String(key), String(value));
+          getStore(this).set(key, value);
         },
       },
       removeItem: {
         configurable: true,
         writable: true,
         value(this: object, key: string): void {
-          getStore(this).delete(String(key));
+          getStore(this).delete(key);
         },
       },
       clear: {

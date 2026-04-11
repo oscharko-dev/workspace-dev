@@ -610,6 +610,18 @@ test("workspace server serves UI entrypoint on /workspace/ui and /workspace/:key
     assert.equal(workspacePathResponse.statusCode, 200);
     assert.match(workspacePathResponse.headers["content-type"] ?? "", /text\/html/i);
     assert.equal(workspacePathResponse.headers["content-security-policy"], WORKSPACE_UI_CONTENT_SECURITY_POLICY);
+
+    const nestedUiRouteResponse = await server.app.inject({
+      method: "GET",
+      url: "/workspace/ui/visual-quality"
+    });
+    assert.equal(nestedUiRouteResponse.statusCode, 200);
+    assert.match(nestedUiRouteResponse.headers["content-type"] ?? "", /text\/html/i);
+    assert.equal(
+      nestedUiRouteResponse.headers["content-security-policy"],
+      WORKSPACE_UI_CONTENT_SECURITY_POLICY
+    );
+    assert.match(nestedUiRouteResponse.body, /Workspace Dev/i);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
@@ -645,6 +657,12 @@ test("workspace server serves UI static assets", async () => {
         url
       });
       assert.equal(assetResponse.statusCode, 200, `Expected ${url} to be served`);
+      assert.doesNotMatch(assetResponse.headers["content-type"] ?? "", /text\/html/i);
+      assert.notEqual(
+        assetResponse.headers["content-security-policy"],
+        WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+        `Expected ${url} to be served as an asset instead of the UI entrypoint.`
+      );
       if (url.endsWith(".css")) {
         assert.match(assetResponse.headers["content-type"] ?? "", /text\/css/i);
       }

@@ -1,3 +1,4 @@
+import path from "node:path";
 import { JOB_ROUTE_PREFIX, REPRO_ROUTE_PREFIX, UI_ROUTE_PREFIX, type UiAssetPath } from "./constants.js";
 import { normalizePlatformPath } from "./route-params.js";
 
@@ -20,6 +21,23 @@ export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
   }
 
   return requestedAsset;
+}
+
+export function shouldFallbackToUiEntrypoint(pathname: string): boolean {
+  if (!pathname.startsWith(`${UI_ROUTE_PREFIX}/`)) {
+    return false;
+  }
+
+  const requestedPath = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
+  if (requestedPath.length === 0 || requestedPath.includes("..")) {
+    return false;
+  }
+
+  if (requestedPath.startsWith("assets/")) {
+    return false;
+  }
+
+  return !path.posix.basename(requestedPath).includes(".");
 }
 
 export function isWorkspaceProjectRoute(pathname: string): boolean {

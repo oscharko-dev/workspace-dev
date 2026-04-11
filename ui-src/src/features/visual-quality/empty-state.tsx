@@ -87,13 +87,16 @@ export function EmptyState({
           Load a visual benchmark report
         </div>
         <p className="m-0 max-w-md text-[11px] text-white/55">
-          Drop a <span className="font-mono text-white/80">last-run.json</span>{" "}
-          (and optionally the surrounding{" "}
+          Drop <span className="font-mono text-white/80">last-run.json</span>,{" "}
           <span className="font-mono text-white/80">
-            artifacts/visual-benchmark
+            visual-quality/report.json
+          </span>
+          , or{" "}
+          <span className="font-mono text-white/80">
+            visual-parity-report.json
           </span>{" "}
-          directory) to view scores, diffs, and history. Diff PNGs are matched
-          to screens by path.
+          to view benchmark results, standalone visual-quality captures, or
+          parity summaries. Diff assets are matched by path when available.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <button
@@ -132,7 +135,7 @@ export function EmptyState({
           <span className="font-mono text-white/55">
             ?report=https://…/last-run.json
           </span>{" "}
-          to the page URL.
+          or its supported report-file variants to the page URL.
         </p>
       </div>
       {errorMessage ? (

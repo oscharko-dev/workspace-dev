@@ -9,6 +9,7 @@
 export type BrowserId = "chromium" | "firefox" | "webkit";
 export type HotspotSeverity = "low" | "medium" | "high" | "critical";
 export type ReportStatus = "completed" | "failed" | "partial";
+export type VisualQualityStatus = "completed" | "failed" | "not_requested";
 
 export interface ScoreEntry {
   fixtureId: string;
@@ -84,6 +85,14 @@ export interface PerBrowserEntry {
   overallScore: number;
 }
 
+export interface StandaloneVisualQualityBrowserEntry
+  extends PerBrowserEntry {
+  actualImagePath?: string;
+  diffImagePath?: string;
+  reportPath?: string;
+  warnings?: string[];
+}
+
 export interface ScreenReport {
   status: ReportStatus;
   overallScore: number;
@@ -96,6 +105,36 @@ export interface ScreenReport {
   perBrowser?: PerBrowserEntry[];
   browserBreakdown?: BrowserBreakdown;
   crossBrowserConsistency?: CrossBrowserConsistency;
+}
+
+export interface StandaloneVisualQualityReport {
+  status: VisualQualityStatus;
+  referenceSource?: string;
+  capturedAt?: string;
+  overallScore?: number;
+  interpretation?: string;
+  dimensions?: DimensionScore[];
+  diffImagePath?: string;
+  hotspots?: Hotspot[];
+  metadata?: ReportMetadata & {
+    comparedAt?: string;
+    configuredWeights?: Record<string, number>;
+    versions?: Record<string, string>;
+  };
+  browserBreakdown?: BrowserBreakdown;
+  crossBrowserConsistency?: CrossBrowserConsistency;
+  perBrowser?: StandaloneVisualQualityBrowserEntry[];
+  warnings?: string[];
+  message?: string;
+}
+
+export interface VisualParitySummary {
+  status: "passed" | "warn";
+  mode: "warn" | "strict";
+  baselinePath: string;
+  runtimePreviewUrl: string;
+  maxDiffPixelRatio: number;
+  details: string;
 }
 
 export interface HistoryScoreEntry {
@@ -155,4 +194,7 @@ export interface MergedReport {
   screensByKey: Record<string, MergedScreen>;
   history: HistoryRuns | null;
   hasImages: boolean;
+  sourceKind?: "benchmark" | "visual-quality" | "visual-parity";
+  paritySummary?: VisualParitySummary;
+  notices?: string[];
 }
