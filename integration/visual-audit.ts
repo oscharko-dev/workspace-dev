@@ -17,8 +17,9 @@ import {
 import {
   buildLiveImageCacheKey,
   buildScreenMetadata,
-  readPngDimensions,
   loadFrozenScreenBuffer,
+  loadLastRunSurfaceForScreen,
+  readPngDimensions,
   safeSimilarityScore,
   VisualAuditSurfaceError,
 } from "./visual-audit.helpers.js";
@@ -256,10 +257,11 @@ interface AuditScreenContext {
   regressionThreshold: number;
   frozenBuffer: Buffer;
   frozenDimensions: { width: number; height: number };
-  generatedByScreenId: ReadonlyMap<
-    string,
-    VisualBenchmarkFixtureRunResult["screens"][number]
-  >;
+  regressionSurface: {
+    buffer: Buffer;
+    ranAt: string;
+    source: "persisted-last-run" | "fresh-render";
+  };
 }
 
 const auditScreen = async (
@@ -271,13 +273,11 @@ const auditScreen = async (
     screenMetadata,
     context.fetchContext,
   );
-  const generated = context.generatedByScreenId.get(screen.screenId);
-  if (generated === undefined) {
-    throw new VisualAuditSurfaceError(
-      `visual-audit: benchmark execution did not produce screen '${screen.screenId}'.`,
-    );
-  }
-  const generatedDimensions = readPngDimensions(generated.screenshotBuffer);
+  const comparisonDimensions = readPngDimensions(context.regressionSurface.buffer);
+  const comparisonLabel =
+    context.regressionSurface.source === "persisted-last-run"
+      ? "persisted last-run output"
+      : "fresh render output";
   const liveScale = resolveComparableScale(
     liveSnapshot.viewport,
     context.frozenDimensions,
@@ -299,15 +299,15 @@ const auditScreen = async (
   );
   const driftScore = safeSimilarityScore(context.frozenBuffer, liveBuffer);
   const regressionScore = safeSimilarityScore(
-    generated.screenshotBuffer,
+    context.regressionSurface.buffer,
     liveBuffer,
   );
   if (
-    generatedDimensions.width !== context.frozenDimensions.width ||
-    generatedDimensions.height !== context.frozenDimensions.height
+    comparisonDimensions.width !== context.frozenDimensions.width ||
+    comparisonDimensions.height !== context.frozenDimensions.height
   ) {
     throw new VisualAuditSurfaceError(
-      `visual-audit: generated output for '${screen.screenId}' resolved to ${String(generatedDimensions.width)}x${String(generatedDimensions.height)} instead of ${String(context.frozenDimensions.width)}x${String(context.frozenDimensions.height)}.`,
+      `visual-audit: ${comparisonLabel} for '${screen.screenId}' resolved to ${String(comparisonDimensions.width)}x${String(comparisonDimensions.height)} instead of ${String(context.frozenDimensions.width)}x${String(context.frozenDimensions.height)}.`,
     );
   }
   const label = resolveScreenLabel(
@@ -343,6 +343,24 @@ interface AuditFixtureContext {
     options?: Parameters<typeof executeVisualBenchmarkFixture>[1],
   ) => Promise<VisualBenchmarkFixtureRunResult>;
 }
+
+interface AuditRegressionSurface {
+  buffer: Buffer;
+  ranAt: string;
+  source: "persisted-last-run" | "fresh-render";
+}
+
+const pickMostRecentRunAt = (
+  timestamps: readonly string[],
+): string | null => {
+  let latest: string | null = null;
+  for (const timestamp of timestamps) {
+    if (latest === null || timestamp > latest) {
+      latest = timestamp;
+    }
+  }
+  return latest;
+};
 
 const auditFixture = async (
   context: AuditFixtureContext,
@@ -383,39 +401,115 @@ const auditFixture = async (
       dimensions: readPngDimensions(frozenBuffer),
     });
   }
-  const qualityConfig = buildAuditQualityConfig(
-    context.fixtureId,
-    new Map(
-      [...frozenScreens.entries()].map(([screenId, value]) => [
-        screenId,
-        value.dimensions,
-      ]),
-    ),
-  );
-
-  let generatedRun: VisualBenchmarkFixtureRunResult;
-  try {
-    generatedRun = await context.executeFixture(context.fixtureId, {
-      ...context.options,
-      qualityConfig,
-      allowIncompleteVisualQuality: true,
-      log: context.log,
+  const regressionSurfacesByScreenId = new Map<string, AuditRegressionSurface>();
+  const fallbackScreens: VisualBenchmarkFixtureScreenMetadata[] = [];
+  const comparisonErrorsByScreenId = new Map<string, string>();
+  for (const screen of screens) {
+    const persisted = await loadLastRunSurfaceForScreen(
+      context.fixtureId,
+      screen,
+      context.options,
+    );
+    if (persisted === null) {
+      fallbackScreens.push(screen);
+      context.log(
+        `visual-audit ${context.fixtureId}/${screen.screenId}: persisted last-run artifact missing, falling back to a fresh render.`,
+      );
+      continue;
+    }
+    const frozen = frozenScreens.get(screen.screenId);
+    assert.ok(
+      frozen !== undefined,
+      `Missing frozen screen dimensions for '${screen.screenId}'.`,
+    );
+    try {
+      const persistedDimensions = readPngDimensions(persisted.buffer);
+      if (
+        persistedDimensions.width !== frozen.dimensions.width ||
+        persistedDimensions.height !== frozen.dimensions.height
+      ) {
+        fallbackScreens.push(screen);
+        context.log(
+          `visual-audit ${context.fixtureId}/${screen.screenId}: persisted last-run artifact dimensions ${String(persistedDimensions.width)}x${String(persistedDimensions.height)} do not match frozen ${String(frozen.dimensions.width)}x${String(frozen.dimensions.height)}; falling back to a fresh render.`,
+        );
+        continue;
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      fallbackScreens.push(screen);
+      context.log(
+        `visual-audit ${context.fixtureId}/${screen.screenId}: persisted last-run artifact is invalid (${message}); falling back to a fresh render.`,
+      );
+      continue;
+    }
+    regressionSurfacesByScreenId.set(screen.screenId, {
+      buffer: persisted.buffer,
+      ranAt: persisted.ranAt,
+      source: "persisted-last-run",
     });
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      fixtureId: context.fixtureId,
-      status: "unavailable",
-      fixtureLabel: "Unavailable",
-      error: `visual-audit: generated render failed for fixture '${context.fixtureId}': ${message}`,
-      lastKnownGoodAt: metadata.capturedAt,
-      screens: [],
-    };
   }
 
-  const generatedByScreenId = new Map(
-    generatedRun.screens.map((screen) => [screen.screenId, screen]),
-  );
+  let freshRenderRanAt: string | null = null;
+  if (fallbackScreens.length > 0) {
+    const qualityConfig = buildAuditQualityConfig(
+      context.fixtureId,
+      new Map(
+        fallbackScreens.map((screen) => {
+          const frozen = frozenScreens.get(screen.screenId);
+          assert.ok(
+            frozen !== undefined,
+            `Missing frozen screen dimensions for '${screen.screenId}'.`,
+          );
+          return [screen.screenId, frozen.dimensions];
+        }),
+      ),
+    );
+
+    let generatedRun: VisualBenchmarkFixtureRunResult;
+    try {
+      generatedRun = await context.executeFixture(context.fixtureId, {
+        ...context.options,
+        qualityConfig,
+        allowIncompleteVisualQuality: true,
+        log: context.log,
+      });
+      freshRenderRanAt = context.now();
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      for (const screen of fallbackScreens) {
+        comparisonErrorsByScreenId.set(
+          screen.screenId,
+          `visual-audit: fresh render fallback failed for '${screen.screenId}': ${message}`,
+        );
+      }
+      generatedRun = {
+        fixtureId: context.fixtureId,
+        aggregateScore: 0,
+        screens: [],
+      };
+    }
+
+    const generatedByScreenId = new Map(
+      generatedRun.screens.map((screen) => [screen.screenId, screen]),
+    );
+    for (const screen of fallbackScreens) {
+      const generated = generatedByScreenId.get(screen.screenId);
+      if (generated === undefined) {
+        comparisonErrorsByScreenId.set(
+          screen.screenId,
+          comparisonErrorsByScreenId.get(screen.screenId) ??
+            `visual-audit: benchmark execution did not produce screen '${screen.screenId}' during fresh render fallback.`,
+        );
+        continue;
+      }
+      regressionSurfacesByScreenId.set(screen.screenId, {
+        buffer: generated.screenshotBuffer,
+        ranAt: freshRenderRanAt ?? metadata.capturedAt,
+        source: "fresh-render",
+      });
+    }
+  }
+
   const completedScreens: VisualAuditScreenResult[] = [];
   let fixtureError: string | undefined;
   for (const screen of screens) {
@@ -424,6 +518,13 @@ const auditFixture = async (
       if (frozen === undefined) {
         throw new VisualAuditSurfaceError(
           `visual-audit: missing frozen reference for screen '${screen.screenId}'.`,
+        );
+      }
+      const regressionSurface = regressionSurfacesByScreenId.get(screen.screenId);
+      if (regressionSurface === undefined) {
+        throw new VisualAuditSurfaceError(
+          comparisonErrorsByScreenId.get(screen.screenId) ??
+            `visual-audit: no comparison surface available for '${screen.screenId}'.`,
         );
       }
       const result = await auditScreen(screen, {
@@ -435,7 +536,7 @@ const auditFixture = async (
         regressionThreshold: context.regressionThreshold,
         frozenBuffer: frozen.buffer,
         frozenDimensions: frozen.dimensions,
-        generatedByScreenId,
+        regressionSurface,
       });
       completedScreens.push(result);
     } catch (error: unknown) {
@@ -448,6 +549,11 @@ const auditFixture = async (
   }
 
   if (completedScreens.length === 0 || fixtureError !== undefined) {
+    const persistedRunAt = pickMostRecentRunAt(
+      [...regressionSurfacesByScreenId.values()]
+        .filter((surface) => surface.source === "persisted-last-run")
+        .map((surface) => surface.ranAt),
+    );
     return {
       fixtureId: context.fixtureId,
       status: "unavailable",
@@ -455,20 +561,30 @@ const auditFixture = async (
       error:
         fixtureError ??
         `visual-audit: fixture '${context.fixtureId}' produced no comparable screens.`,
-      lastKnownGoodAt: metadata.capturedAt,
+      lastKnownGoodAt: persistedRunAt ?? metadata.capturedAt,
       screens: completedScreens,
     };
   }
+
+  const completedSurfaces = completedScreens
+    .map((screen) => regressionSurfacesByScreenId.get(screen.screenId))
+    .filter((surface): surface is AuditRegressionSurface => surface !== undefined);
+  const persistedRunAt = pickMostRecentRunAt(
+    completedSurfaces
+      .filter((surface) => surface.source === "persisted-last-run")
+      .map((surface) => surface.ranAt),
+  );
+  const allRegressionScoresHealthy = completedScreens.every((screen) =>
+    compareThreshold(screen.regressionScore, context.regressionThreshold),
+  );
 
   return {
     fixtureId: context.fixtureId,
     status: "completed",
     fixtureLabel: combineFixtureLabel(completedScreens),
-    lastKnownGoodAt: completedScreens.every((screen) =>
-      compareThreshold(screen.regressionScore, context.regressionThreshold),
-    )
-      ? context.now()
-      : metadata.capturedAt,
+    lastKnownGoodAt: allRegressionScoresHealthy
+      ? (persistedRunAt ?? freshRenderRanAt ?? metadata.capturedAt)
+      : (persistedRunAt ?? metadata.capturedAt),
     screens: completedScreens,
   };
 };

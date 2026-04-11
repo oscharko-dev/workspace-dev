@@ -553,7 +553,9 @@ export const runVisualBenchmarkLiveAudit = async (
   const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
   const results: VisualBenchmarkLiveAuditResult[] = [];
 
-  log(`Running live audit for ${fixtureIds.length} fixture(s)...`);
+  log(
+    `Running maintenance live audit for ${fixtureIds.length} fixture(s) (frozen fixtures vs live Figma)...`,
+  );
   for (const fixtureId of fixtureIds) {
     const metadata = await loadVisualBenchmarkFixtureMetadata(
       fixtureId,
@@ -695,7 +697,7 @@ export const resolveVisualBenchmarkMaintenanceMode = (
 
   if (modes.length !== 1 || args.length !== 1) {
     throw new Error(
-      "Usage: visual-benchmark.update.ts --update-fixtures | --update-references | --live | --update-baseline",
+      "Usage: visual-benchmark.update.ts --update-fixtures | --update-references | --live | --update-baseline\n--live is the maintenance audit for frozen fixtures vs live Figma. For drift/regression classification against persisted generated output, use 'pnpm visual:audit live'.",
     );
   }
 

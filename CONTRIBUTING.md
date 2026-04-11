@@ -79,6 +79,14 @@ pnpm visual:baseline update
 - `pnpm benchmark:visual:update-references` — regenerates `reference.png` from current pipeline output (offline, no token needed).
 - `pnpm benchmark:visual:update-baseline` — compatibility shim for `pnpm visual:baseline update`.
 
+### Choosing the correct live audit
+
+- `pnpm visual:audit live --fixture <fixture-id> --json` is the operator-facing live audit for Issue `#842`. It compares current live Figma against both the frozen reference and the most recent persisted last-run generated output under `artifacts/visual-benchmark/last-run/...`.
+- `Design Drift Detected` means live Figma moved away from the frozen reference while the last generated output still matches live Figma.
+- `Generator Regression` means live Figma still matches the frozen reference but the last generated output drifted away.
+- `lastKnownGoodAt` comes from the persisted last-run artifact timestamp when that artifact still represents a good generated state. If no comparable persisted artifact exists and the audit must fall back to a fresh render, that fallback run time is used only for that run.
+- `pnpm benchmark:visual:live` remains the maintenance audit for frozen fixtures and references vs live Figma. Use it when checking fixture freshness, not when classifying drift vs regression.
+
 See `docs/visual-quality-assessment.md` for detailed architecture and scoring documentation.
 
 ## Boundary Rules
