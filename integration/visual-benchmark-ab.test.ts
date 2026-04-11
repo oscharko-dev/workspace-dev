@@ -5,6 +5,8 @@ import path from "node:path";
 import test from "node:test";
 import { PNG } from "pngjs";
 import {
+  DEFAULT_THREE_WAY_DIVERGENCE_LIMIT,
+  ThreeWayDiffDimensionDivergenceError,
   compareVisualBenchmarkResults,
   composeThreeWayDiff,
   formatVisualBenchmarkAbStatistics,
@@ -522,6 +524,56 @@ test("composeThreeWayDiff rejects oversized PNG inputs before decoding", () => {
   );
 });
 
+test("composeThreeWayDiff rejects wildly divergent dimensions with a typed error", () => {
+  // ref is 200x200, outputA is 10x10 → ratio 20x, far above the default 4x limit
+  const ref = buildSolidPng(200, 200, { r: 0, g: 0, b: 0 });
+  const a = buildSolidPng(10, 10, { r: 255, g: 0, b: 0 });
+  const b = buildSolidPng(200, 200, { r: 0, g: 255, b: 0 });
+  let caught: unknown;
+  try {
+    composeThreeWayDiff({ reference: ref, outputA: a, outputB: b });
+  } catch (error) {
+    caught = error;
+  }
+  assert.ok(
+    caught instanceof ThreeWayDiffDimensionDivergenceError,
+    "expected a ThreeWayDiffDimensionDivergenceError",
+  );
+  const error = caught as ThreeWayDiffDimensionDivergenceError;
+  assert.equal(error.maxRatio, DEFAULT_THREE_WAY_DIVERGENCE_LIMIT);
+  assert.ok(error.observedRatio >= 20);
+  assert.equal(error.dimensions.length, 3);
+});
+
+test("composeThreeWayDiff allows divergent inputs when the caller raises maxDimensionRatio", () => {
+  const ref = buildSolidPng(200, 200, { r: 0, g: 0, b: 0 });
+  const a = buildSolidPng(10, 10, { r: 255, g: 0, b: 0 });
+  const b = buildSolidPng(200, 200, { r: 0, g: 255, b: 0 });
+  const composed = composeThreeWayDiff({
+    reference: ref,
+    outputA: a,
+    outputB: b,
+    maxDimensionRatio: 1000,
+  });
+  const png = PNG.sync.read(composed);
+  assert.equal(png.width, 200 + 16 + 10 + 16 + 200);
+  assert.equal(png.height, 200);
+});
+
+test("composeThreeWayDiff allows borderline divergence within the default limit", () => {
+  // ratio = 200/50 = 4, exactly at the limit (≤, not <)
+  const ref = buildSolidPng(200, 200, { r: 0, g: 0, b: 0 });
+  const a = buildSolidPng(50, 50, { r: 255, g: 0, b: 0 });
+  const b = buildSolidPng(100, 100, { r: 0, g: 255, b: 0 });
+  // Should NOT throw — 4x is the boundary, observedRatio === maxDimensionRatio
+  const composed = composeThreeWayDiff({
+    reference: ref,
+    outputA: a,
+    outputB: b,
+  });
+  assert.ok(composed.length > 0);
+});
+
 // ---------------------------------------------------------------------------
 // runVisualBenchmarkAb
 // ---------------------------------------------------------------------------
@@ -794,20 +846,20 @@ test("persistVisualBenchmarkAbThreeWayDiffs writes a PNG when both sides have ar
         ]),
       },
     });
-    const records = await persistVisualBenchmarkAbThreeWayDiffs({
+    const persistResult = await persistVisualBenchmarkAbThreeWayDiffs({
       result,
       artifactRoot: tmpRoot,
       fixtureOptions: { fixtureRoot },
     });
-    assert.equal(records.length, 1);
-    const record = records[0]!;
+    assert.equal(persistResult.written.length, 1);
+    assert.equal(persistResult.skipped.length, 0);
+    const record = persistResult.written[0]!;
     assert.equal(record.fixtureId, fixtureId);
     assert.equal(record.screenId, screenId);
     assert.equal(record.viewportId, viewportId);
-    assert.equal(record.threeWayDiff.status, "generated");
-    assert.ok(record.threeWayDiff.diffImagePath?.endsWith(".png"));
+    assert.ok(record.diffImagePath.endsWith(".png"));
     const composed = await readFile(
-      path.resolve(process.cwd(), record.threeWayDiff.diffImagePath!),
+      path.resolve(process.cwd(), record.diffImagePath),
     );
     const png = PNG.sync.read(composed);
     // 20 + 16 + 20 + 16 + 20 = 92
@@ -820,21 +872,25 @@ test("persistVisualBenchmarkAbThreeWayDiffs writes a PNG when both sides have ar
 });
 
 test("persistVisualBenchmarkAbThreeWayDiffs uses screen reference.png when viewportId is absent", async () => {
-  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-screen-ref-"));
-  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-screen-fixtures-"));
+  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-3way-screen-"));
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-screen-ref-"));
   try {
     const fixtureId = "simple-form";
     const screenId = "1:65671";
     const screenToken = screenId.replace(/:/g, "_");
     const { mkdir, writeFile } = await import("node:fs/promises");
-    await mkdir(path.join(fixtureRoot, fixtureId, "screens", screenToken), {
-      recursive: true,
-    });
-    await writeFile(
-      path.join(fixtureRoot, fixtureId, "screens", screenToken, "reference.png"),
-      buildSolidPng(12, 18, { r: 0, g: 0, b: 0 }),
+    const referenceDir = path.join(
+      fixtureRoot,
+      fixtureId,
+      "screens",
+      screenToken,
     );
-    const buildSideArtifact = async (sideRoot: string, color: number): Promise<void> => {
+    await mkdir(referenceDir, { recursive: true });
+    await writeFile(
+      path.join(referenceDir, "reference.png"),
+      buildSolidPng(20, 20, { r: 0, g: 0, b: 0 }),
+    );
+    const buildSideArtifact = async (sideRoot: string): Promise<void> => {
       const lastRunDir = path.join(
         sideRoot,
         "last-run",
@@ -845,7 +901,7 @@ test("persistVisualBenchmarkAbThreeWayDiffs uses screen reference.png when viewp
       await mkdir(lastRunDir, { recursive: true });
       await writeFile(
         path.join(lastRunDir, "actual.png"),
-        buildSolidPng(12, 18, { r: color, g: color, b: color }),
+        buildSolidPng(20, 20, { r: 150, g: 150, b: 150 }),
       );
       await writeFile(
         path.join(lastRunDir, "manifest.json"),
@@ -855,47 +911,37 @@ test("persistVisualBenchmarkAbThreeWayDiffs uses screen reference.png when viewp
           screenId,
           score: 80,
           ranAt: "2026-04-11T00:00:00.000Z",
-          viewport: { width: 12, height: 18 },
+          viewport: { width: 20, height: 20 },
         }),
       );
     };
-    await buildSideArtifact(path.join(tmpRoot, "config-a"), 100);
-    await buildSideArtifact(path.join(tmpRoot, "config-b"), 180);
+    await buildSideArtifact(path.join(tmpRoot, "config-a"));
+    await buildSideArtifact(path.join(tmpRoot, "config-b"));
     const result = compareVisualBenchmarkResults({
       configA: {
         label: "A",
-        result: buildResultWithDeltas(80, [{ fixtureId, screenId, current: 80 }]),
+        result: buildResultWithDeltas(80, [
+          { fixtureId, screenId, current: 80 },
+        ]),
       },
       configB: {
         label: "B",
-        result: buildResultWithDeltas(82, [{ fixtureId, screenId, current: 82 }]),
+        result: buildResultWithDeltas(82, [
+          { fixtureId, screenId, current: 82 },
+        ]),
       },
     });
-    const records = await persistVisualBenchmarkAbThreeWayDiffs({
+    const persistResult = await persistVisualBenchmarkAbThreeWayDiffs({
       result,
       artifactRoot: tmpRoot,
       fixtureOptions: { fixtureRoot },
     });
-    assert.equal(records[0]?.threeWayDiff.status, "generated");
-    assert.equal(
-      records[0]?.threeWayDiff.referenceImagePath,
-      path.relative(
-        process.cwd(),
-        path.join(
-          fixtureRoot,
-          fixtureId,
-          "screens",
-          screenToken,
-          "reference.png",
-        ),
-      ) ||
-        path.join(
-          fixtureRoot,
-          fixtureId,
-          "screens",
-          screenToken,
-          "reference.png",
-        ),
+    assert.equal(persistResult.written.length, 1);
+    assert.equal(persistResult.skipped.length, 0);
+    assert.ok(
+      persistResult.written[0]!.referenceImagePath?.endsWith(
+        `${path.sep}${fixtureId}${path.sep}screens${path.sep}${screenToken}${path.sep}reference.png`,
+      ),
     );
   } finally {
     await rm(tmpRoot, { recursive: true, force: true });
@@ -903,29 +949,211 @@ test("persistVisualBenchmarkAbThreeWayDiffs uses screen reference.png when viewp
   }
 });
 
-test("persistVisualBenchmarkAbThreeWayDiffs records missing-input rows explicitly", async () => {
-  const artifactRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-no-inputs-"));
-  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-missing-fixtures-"));
+test("persistVisualBenchmarkAbThreeWayDiffs surfaces side-A artifact-missing-on-disk skips", async () => {
+  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-3way-missing-"));
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "vb-ab-fixtures-missing-"),
+  );
+  try {
+    const fixtureId = "simple-form";
+    const screenId = "1:65671";
+    const viewportId = "desktop";
+    const referenceDir = path.join(
+      fixtureRoot,
+      fixtureId,
+      "screens",
+      screenId.replace(/:/g, "_"),
+    );
+    const { mkdir, writeFile, unlink } = await import("node:fs/promises");
+    await mkdir(referenceDir, { recursive: true });
+    await writeFile(
+      path.join(referenceDir, `${viewportId}.png`),
+      buildSolidPng(20, 20, { r: 0, g: 0, b: 0 }),
+    );
+    // Build BOTH sides, then delete the actual.png from side A only.
+    const buildSideArtifact = async (sideRoot: string): Promise<string> => {
+      const screenToken = screenId.replace(/:/g, "_");
+      const lastRunDir = path.join(
+        sideRoot,
+        "last-run",
+        fixtureId,
+        "screens",
+        screenToken,
+        viewportId,
+      );
+      await mkdir(lastRunDir, { recursive: true });
+      const actualPath = path.join(lastRunDir, "actual.png");
+      await writeFile(
+        actualPath,
+        buildSolidPng(20, 20, { r: 200, g: 200, b: 200 }),
+      );
+      await writeFile(
+        path.join(lastRunDir, "manifest.json"),
+        JSON.stringify({
+          version: 2,
+          fixtureId,
+          screenId,
+          viewportId,
+          score: 80,
+          ranAt: "2026-04-11T00:00:00.000Z",
+          viewport: { width: 20, height: 20 },
+        }),
+      );
+      return actualPath;
+    };
+    const sideAActual = await buildSideArtifact(path.join(tmpRoot, "config-a"));
+    await buildSideArtifact(path.join(tmpRoot, "config-b"));
+    // Simulate a partially-corrupt artifact tree: manifest exists, actual.png
+    // does not.
+    await unlink(sideAActual);
+    const result = compareVisualBenchmarkResults({
+      configA: {
+        label: "A",
+        result: buildResultWithDeltas(80, [
+          { fixtureId, screenId, viewportId, current: 80 },
+        ]),
+      },
+      configB: {
+        label: "B",
+        result: buildResultWithDeltas(82, [
+          { fixtureId, screenId, viewportId, current: 82 },
+        ]),
+      },
+    });
+    const persistResult = await persistVisualBenchmarkAbThreeWayDiffs({
+      result,
+      artifactRoot: tmpRoot,
+      fixtureOptions: { fixtureRoot },
+    });
+    assert.equal(persistResult.written.length, 0);
+    assert.equal(persistResult.skipped.length, 1);
+    const skipped = persistResult.skipped[0]!;
+    assert.equal(skipped.fixtureId, fixtureId);
+    assert.equal(skipped.screenId, screenId);
+    assert.equal(skipped.viewportId, viewportId);
+    assert.equal(skipped.reason, "side-a-artifact-missing-on-disk");
+    assert.ok(skipped.detail && skipped.detail.endsWith("actual.png"));
+  } finally {
+    await rm(tmpRoot, { recursive: true, force: true });
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
+test("persistVisualBenchmarkAbThreeWayDiffs reports all-inputs-missing when nothing can be loaded", async () => {
+  const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "vb-ab-3way-empty-"));
   try {
     const result = compareVisualBenchmarkResults({
       configA: {
         label: "A",
-        result: buildResultWithDeltas(80, [{ fixtureId: "simple-form", current: 80 }]),
+        result: buildResultWithDeltas(80, [
+          { fixtureId: "simple-form", screenId: "1:65671", current: 80 },
+        ]),
       },
       configB: {
         label: "B",
-        result: buildResultWithDeltas(82, [{ fixtureId: "simple-form", current: 82 }]),
+        result: buildResultWithDeltas(82, [
+          { fixtureId: "simple-form", screenId: "1:65671", current: 82 },
+        ]),
       },
     });
-    const records = await persistVisualBenchmarkAbThreeWayDiffs({
+    const persistResult = await persistVisualBenchmarkAbThreeWayDiffs({
       result,
-      artifactRoot,
+      artifactRoot: tmpRoot,
+    });
+    assert.equal(persistResult.written.length, 0);
+    assert.equal(persistResult.skipped.length, 1);
+    assert.equal(persistResult.skipped[0]!.reason, "all-inputs-missing");
+  } finally {
+    await rm(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test("persistVisualBenchmarkAbThreeWayDiffs surfaces dimension-divergence skips", async () => {
+  const tmpRoot = await mkdtemp(
+    path.join(os.tmpdir(), "vb-ab-3way-divergent-"),
+  );
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "vb-ab-fixtures-divergent-"),
+  );
+  try {
+    const fixtureId = "simple-form";
+    const screenId = "1:65671";
+    const viewportId = "desktop";
+    const referenceDir = path.join(
+      fixtureRoot,
+      fixtureId,
+      "screens",
+      screenId.replace(/:/g, "_"),
+    );
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    await mkdir(referenceDir, { recursive: true });
+    // Reference is 200x200, but side A is 5x5 → ratio 40x, far above the limit.
+    await writeFile(
+      path.join(referenceDir, `${viewportId}.png`),
+      buildSolidPng(200, 200, { r: 0, g: 0, b: 0 }),
+    );
+    const buildSideArtifact = async (
+      sideRoot: string,
+      width: number,
+      height: number,
+    ): Promise<void> => {
+      const screenToken = screenId.replace(/:/g, "_");
+      const lastRunDir = path.join(
+        sideRoot,
+        "last-run",
+        fixtureId,
+        "screens",
+        screenToken,
+        viewportId,
+      );
+      await mkdir(lastRunDir, { recursive: true });
+      await writeFile(
+        path.join(lastRunDir, "actual.png"),
+        buildSolidPng(width, height, { r: 200, g: 200, b: 200 }),
+      );
+      await writeFile(
+        path.join(lastRunDir, "manifest.json"),
+        JSON.stringify({
+          version: 2,
+          fixtureId,
+          screenId,
+          viewportId,
+          score: 80,
+          ranAt: "2026-04-11T00:00:00.000Z",
+          viewport: { width, height },
+        }),
+      );
+    };
+    await buildSideArtifact(path.join(tmpRoot, "config-a"), 5, 5);
+    await buildSideArtifact(path.join(tmpRoot, "config-b"), 200, 200);
+    const result = compareVisualBenchmarkResults({
+      configA: {
+        label: "A",
+        result: buildResultWithDeltas(80, [
+          { fixtureId, screenId, viewportId, current: 80 },
+        ]),
+      },
+      configB: {
+        label: "B",
+        result: buildResultWithDeltas(82, [
+          { fixtureId, screenId, viewportId, current: 82 },
+        ]),
+      },
+    });
+    const persistResult = await persistVisualBenchmarkAbThreeWayDiffs({
+      result,
+      artifactRoot: tmpRoot,
       fixtureOptions: { fixtureRoot },
     });
-    assert.equal(records[0]?.threeWayDiff.status, "skipped_missing_input");
-    assert.match(records[0]?.threeWayDiff.reason ?? "", /No reference or generated outputs/i);
+    assert.equal(persistResult.written.length, 0);
+    assert.equal(persistResult.skipped.length, 1);
+    assert.equal(persistResult.skipped[0]!.reason, "dimension-divergence");
+    assert.ok(
+      persistResult.skipped[0]!.detail &&
+        /diverge beyond/i.test(persistResult.skipped[0]!.detail),
+    );
   } finally {
-    await rm(artifactRoot, { recursive: true, force: true });
+    await rm(tmpRoot, { recursive: true, force: true });
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });

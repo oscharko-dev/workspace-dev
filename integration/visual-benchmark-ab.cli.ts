@@ -1,19 +1,20 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  applyVisualBenchmarkAbThreeWayDiffRecords,
   DEFAULT_AB_ARTIFACT_ROOT,
+  applyVisualBenchmarkAbThreeWayDiffResult,
   formatVisualBenchmarkAbStatistics,
   formatVisualBenchmarkAbTable,
   loadVisualBenchmarkAbConfig,
+  markVisualBenchmarkAbThreeWayDiffFailed,
   markVisualBenchmarkAbThreeWayDiffSkipped,
   persistVisualBenchmarkAbResult,
   persistVisualBenchmarkAbThreeWayDiffs,
   runVisualBenchmarkAb,
   type RunVisualBenchmarkAbDependencies,
+  type ThreeWayDiffPersistResult,
   type VisualBenchmarkAbConfig,
   type VisualBenchmarkAbResult,
-  type ThreeWayDiffPersistedRecord,
 } from "./visual-benchmark-ab.js";
 
 const USAGE_LINE =
@@ -126,7 +127,7 @@ export interface RunVisualBenchmarkAbCliOptions {
   persistThreeWayDiffs?: (
     result: VisualBenchmarkAbResult,
     artifactRoot: string,
-  ) => Promise<ThreeWayDiffPersistedRecord[]>;
+  ) => Promise<ThreeWayDiffPersistResult>;
   benchmarkDependencies?: RunVisualBenchmarkAbDependencies;
   output?: (line: string) => void;
 }
@@ -163,11 +164,24 @@ const defaultPersistComparison = async (
 const defaultPersistThreeWayDiffs = async (
   result: VisualBenchmarkAbResult,
   artifactRoot: string,
-): Promise<ThreeWayDiffPersistedRecord[]> => {
-  return persistVisualBenchmarkAbThreeWayDiffs({
+): Promise<ThreeWayDiffPersistResult> =>
+  persistVisualBenchmarkAbThreeWayDiffs({
     result,
     artifactRoot,
   });
+
+const formatSkippedThreeWayDiffEntry = (
+  entry: ThreeWayDiffPersistResult["skipped"][number],
+): string => {
+  const location = [
+    entry.fixtureId,
+    entry.screenId ?? "",
+    entry.viewportId ?? "",
+  ]
+    .filter((segment) => segment.length > 0)
+    .join(" / ");
+  const detail = entry.detail ? ` — ${entry.detail}` : "";
+  return `  - ${location}: ${entry.reason}${detail}`;
 };
 
 const summarizeThreeWayDiffStatuses = (
@@ -248,20 +262,23 @@ export const runVisualBenchmarkAbCli = async (
     const persistThreeWayDiffs =
       options?.persistThreeWayDiffs ?? defaultPersistThreeWayDiffs;
     try {
-      const records = await persistThreeWayDiffs(result, resolution.artifactRoot);
-      applyVisualBenchmarkAbThreeWayDiffRecords(result, records);
+      const threeWayResult = await persistThreeWayDiffs(
+        result,
+        resolution.artifactRoot,
+      );
+      applyVisualBenchmarkAbThreeWayDiffResult(result, threeWayResult);
+      if (threeWayResult.skipped.length > 0) {
+        output("");
+        output(
+          `Three-way diff: wrote ${String(threeWayResult.written.length)}, skipped ${String(threeWayResult.skipped.length)}:`,
+        );
+        for (const entry of threeWayResult.skipped) {
+          output(formatSkippedThreeWayDiffEntry(entry));
+        }
+      }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      for (const entry of result.entries) {
-        entry.threeWayDiff = {
-          status: "failed",
-          diffImagePath: null,
-          referenceImagePath: null,
-          outputAImagePath: null,
-          outputBImagePath: null,
-          reason: message,
-        };
-      }
+      markVisualBenchmarkAbThreeWayDiffFailed(result, message);
       output(`Three-way diff generation failed: ${message}`);
     }
   } else {

@@ -81,7 +81,7 @@ build the comparison table headers.
 
 A/B mode is only valid when both configs execute against the same effective
 input surface. The following fields must either be omitted on both sides or
-resolve to the same value in both `strict.json` and `loose.json`:
+resolve to the same value in both configs:
 
 - `browsers`
 - `viewportId`
@@ -93,9 +93,11 @@ Run A and Run B would no longer be rendering the same benchmark surface. Keep
 those fields shared across both configs and restrict the A/B difference to the
 quality/scoring settings inside `qualityConfig`.
 
-The committed sample configs follow that rule: they use the same browser list
-on both sides and leave the other execution-shaping fields unset so they work
-across the full frozen fixture corpus.
+The committed sample configs under
+`integration/fixtures/visual-benchmark-ab/strict.json` and
+`integration/fixtures/visual-benchmark-ab/loose.json` follow that rule: they
+use the same browser list on both sides and leave the other execution-shaping
+fields unset so they work across the frozen fixture corpus.
 
 ## Output layout
 
@@ -124,10 +126,9 @@ The per-run subdirectories are byte-for-byte equivalent to a normal
 
 - `configA` / `configB`: label, optional description, overall score
 - `entries[]`: one row per `fixtureId + screenId + viewportId`, with
-  `scoreA`, `scoreB`, `delta`, `indicator` (`improved`, `degraded`,
-  `neutral`, or `unavailable` when one side is missing), and per-entry
-  three-way diff metadata describing whether the mosaic was generated,
-  skipped, or failed
+  `scoreA`, `scoreB`, `delta`, and `indicator` (`improved`, `degraded`,
+  `neutral`, or `unavailable` when one side is missing), plus `threeWayDiff`
+  metadata describing whether the mosaic was generated, skipped, or failed
 - `overallDelta`: B − A on the overall current score
 - `statistics`: `improvedCount`, `degradedCount`, `neutralCount`,
   `meanDelta`, `meanImprovement`, `bestImprovement`, `worstRegression`,
@@ -172,15 +173,36 @@ For each comparison entry, A/B mode looks up:
 3. Run B's `actual.png` from `config-b/last-run/...`
 
 It composes them into a single horizontal PNG and writes it to
-`three-way/<fixture-id>/<token>/<viewport>.png`. Missing images are replaced
-with neutral grey placeholders so the mosaic still renders.
+`three-way/<fixture-id>/<token>/<viewport>.png`. Sides that are entirely
+missing (no manifest, no file) are replaced with neutral grey placeholders so
+the mosaic still renders.
 
-Per-entry results are recorded in `comparison.json`, so downstream tooling can
-see whether a mosaic was:
+The composer **does not resample images**. It places each side at its native
+size and centers shorter sides vertically. To prevent visually misleading
+mosaics where a tiny image sits next to a huge one, the composer rejects
+inputs whose largest/smallest dimension ratio exceeds **4×** (the
+`DEFAULT_THREE_WAY_DIVERGENCE_LIMIT`). When this happens the entry is
+recorded as `skipped` with reason `dimension-divergence`, and stdout shows
+the per-entry skip reason. Callers that need to compose deliberately divergent
+inputs can pass a higher `maxDimensionRatio` programmatically.
 
-- generated successfully, including the artifact path
-- skipped because the inputs were unavailable
-- skipped or failed because the images could not be composed safely
+The persistence layer also distinguishes related failure modes for each entry,
+surfaced in stdout as `Three-way diff: wrote N, skipped M` followed by
+per-entry reasons:
+
+- `all-inputs-missing` — neither the reference nor either side artifact
+  could be read.
+- `side-a-artifact-missing-on-disk` / `side-b-artifact-missing-on-disk` —
+  the run wrote a manifest entry but the underlying `actual.png` is gone
+  (partial-corruption signal). This is treated as a hard skip rather than
+  silently substituting a placeholder.
+- `dimension-divergence` — see above.
+- `compose-failed` — any other error from PNG composition (logged with
+  `detail`).
+
+The same outcome is also attached to each `comparison.json` entry under
+`threeWayDiff`, so downstream tooling can distinguish generated artifacts from
+disabled, missing-input, and failed rows without scraping stdout.
 
 Pass `--skip-three-way-diff` to disable this step entirely (e.g. in CI when
 only the JSON comparison is needed).
@@ -197,13 +219,25 @@ only the JSON comparison is needed).
 - Neither A nor B touches `baseline.json` or `history.json`. A/B mode is
   read-only with respect to the committed baseline.
 
+## Concurrency
+
+A and B run **strictly sequentially**, not in parallel. The underlying
+benchmark runner spawns a Playwright browser, builds the generated template,
+and writes intermediate state into temporary directories under `os.tmpdir()`.
+Two parallel runs would compete for the same browser binary, the same
+Playwright download lock, and the same per-fixture build cache, producing
+flaky captures and non-deterministic scores. The `config-a/` and `config-b/`
+artifact subdirectories isolate the _outputs_, not the intermediate runtime —
+sequential execution is the deliberate, conservative choice. Expected
+wall-clock cost is roughly `2 × pnpm benchmark:visual`.
+
 ## When to use A/B mode vs benchmark mode
 
 - Use **benchmark mode** (`pnpm benchmark:visual`) to verify that the
   current build still meets the committed quality bar.
 - Use **A/B mode** (`pnpm benchmark:visual:ab`) when you want to compare
   two configurations head-to-head — typically because you are tuning
-  scoring weights and regression thresholds while keeping browsers,
-  viewport selection, catalog inputs, and Storybook inputs fixed, and
-  you want explicit per-screen evidence of the trade-offs before
-  promoting one config to the committed baseline.
+  scoring weights and regression thresholds while keeping browser, viewport,
+  catalog, and Storybook inputs fixed, and you want explicit per-screen
+  evidence of the trade-offs before promoting one config to the committed
+  baseline.
