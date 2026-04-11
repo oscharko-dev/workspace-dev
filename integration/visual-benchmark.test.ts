@@ -364,13 +364,17 @@ test("listVisualBenchmarkFixtureIds returns at least one fixture", async () => {
 
 test("loadVisualBenchmarkFixtureMetadata validates the committed simple-form fixture", async () => {
   const metadata = await loadVisualBenchmarkFixtureMetadata("simple-form");
-  assert.equal(metadata.version, 1);
+  assert.equal(metadata.version, 2);
   assert.equal(metadata.fixtureId, "simple-form");
   assert.equal(metadata.source.fileKey, "DUArQ8VuM3aPMjXFLaQSSH");
   assert.equal(metadata.source.nodeId, "1:65671");
   assert.equal(metadata.export.format, "png");
   assert.ok(metadata.viewport.width > 0);
   assert.ok(metadata.viewport.height > 0);
+  assert.ok(
+    metadata.viewport.deviceScaleFactor === undefined ||
+      metadata.viewport.deviceScaleFactor >= 1,
+  );
 });
 
 test("loadVisualBenchmarkFixtureManifest validates the committed simple-form fixture", async () => {
@@ -609,8 +613,9 @@ test("updateVisualBenchmarkReferences writes per-viewport references and updates
     assert.equal(fixtureReference.equals(desktopBuffer), true);
 
     const legacyScreenReference = await readFile(
-      resolveVisualBenchmarkScreenPaths("simple-form", "1:65671", { fixtureRoot })
-        .referencePngPath,
+      resolveVisualBenchmarkScreenPaths("simple-form", "1:65671", {
+        fixtureRoot,
+      }).referencePngPath,
     );
     assert.equal(legacyScreenReference.equals(desktopBuffer), true);
 
@@ -639,7 +644,11 @@ test("updateVisualBenchmarkReferences writes per-viewport references and updates
       { fixtureRoot },
     );
     assert.equal(updatedMetadata.capturedAt, "2026-04-10T12:00:00.000Z");
-    assert.deepEqual(updatedMetadata.viewport, { width: 1280, height: 800 });
+    assert.deepEqual(updatedMetadata.viewport, {
+      width: 1280,
+      height: 800,
+      deviceScaleFactor: 1,
+    });
   } finally {
     await rm(fixtureRoot, { recursive: true, force: true });
   }
@@ -764,7 +773,7 @@ test("all 5 fixtures can be loaded (manifest, metadata, figma.json, reference.pn
       manifest.visualQuality.frozenReferenceMetadata,
       "metadata.json",
     );
-    assert.equal(metadata.version, 1);
+    assert.equal(metadata.version, 2);
     assert.equal(metadata.fixtureId, id);
     assert.equal(metadata.source.fileKey, "DUArQ8VuM3aPMjXFLaQSSH");
     assert.ok(metadata.viewport.width > 0);
@@ -981,7 +990,10 @@ test("prepareStorybookComponentFixtures synthesizes runnable component fixtures 
     path.join(os.tmpdir(), "workspace-dev-storybook-component-fixtures-"),
   );
   const fixtureRoot = path.join(root, "fixtures");
-  const catalogPath = path.join(root, "storybook.component-visual-catalog.json");
+  const catalogPath = path.join(
+    root,
+    "storybook.component-visual-catalog.json",
+  );
 
   try {
     await mkdir(fixtureRoot, { recursive: true });
@@ -1192,7 +1204,11 @@ test("runVisualBenchmark blends generated screens with storybook component aggre
                   nodeId: "1:100",
                   status: "completed" as const,
                   score: 80,
-                  screenshotBuffer: createTestPngBuffer(4, 4, [10, 20, 30, 255]),
+                  screenshotBuffer: createTestPngBuffer(
+                    4,
+                    4,
+                    [10, 20, 30, 255],
+                  ),
                   diffBuffer: createTestPngBuffer(4, 4, [0, 0, 0, 0]),
                   report: createCompletedVisualQualityReport(80),
                   viewport: { width: 1280, height: 720 },
@@ -1211,7 +1227,9 @@ test("runVisualBenchmark blends generated screens with storybook component aggre
               coveragePercent: 50,
               bySkipReason: { incomplete_mapping: 1 },
             },
-            warnings: ["Storybook component coverage skipped 1 component screen."],
+            warnings: [
+              "Storybook component coverage skipped 1 component screen.",
+            ],
             screens: [
               {
                 screenId: "button-primary",
@@ -2519,7 +2537,11 @@ test("runVisualBenchmark blends full-page and component aggregates while preserv
                   nodeId: "2:10001",
                   status: "completed",
                   score: 80,
-                  screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                  screenshotBuffer: createTestPngBuffer(
+                    4,
+                    4,
+                    [255, 255, 255, 255],
+                  ),
                   diffBuffer: null,
                   report: createCompletedVisualQualityReport(80),
                   viewport: { width: 1280, height: 720 },
@@ -2540,7 +2562,9 @@ test("runVisualBenchmark blends full-page and component aggregates while preserv
                 incomplete_mapping: 1,
               },
             },
-            warnings: ["Storybook component coverage skipped 1 component screen(s)."],
+            warnings: [
+              "Storybook component coverage skipped 1 component screen(s).",
+            ],
             screens: [
               {
                 screenId: "button-primary",
@@ -2548,7 +2572,11 @@ test("runVisualBenchmark blends full-page and component aggregates while preserv
                 nodeId: "12:34",
                 status: "completed",
                 score: 90,
-                screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                screenshotBuffer: createTestPngBuffer(
+                  4,
+                  4,
+                  [255, 255, 255, 255],
+                ),
                 diffBuffer: null,
                 report: createCompletedVisualQualityReport(90),
                 viewport: { width: 240, height: 160 },
@@ -2683,7 +2711,11 @@ test("runVisualBenchmark weights component screen aggregates before blending the
                   nodeId: "2:10021",
                   status: "completed",
                   score: 80,
-                  screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                  screenshotBuffer: createTestPngBuffer(
+                    4,
+                    4,
+                    [255, 255, 255, 255],
+                  ),
                   diffBuffer: null,
                   report: createCompletedVisualQualityReport(80),
                   viewport: { width: 1280, height: 720 },
@@ -2710,7 +2742,11 @@ test("runVisualBenchmark weights component screen aggregates before blending the
                 status: "completed",
                 score: 80,
                 weight: 1,
-                screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                screenshotBuffer: createTestPngBuffer(
+                  4,
+                  4,
+                  [255, 255, 255, 255],
+                ),
                 diffBuffer: null,
                 report: createCompletedVisualQualityReport(80),
                 viewport: { width: 240, height: 160 },
@@ -2722,7 +2758,11 @@ test("runVisualBenchmark weights component screen aggregates before blending the
                 status: "completed",
                 score: 90,
                 weight: 3,
-                screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                screenshotBuffer: createTestPngBuffer(
+                  4,
+                  4,
+                  [255, 255, 255, 255],
+                ),
                 diffBuffer: null,
                 report: createCompletedVisualQualityReport(90),
                 viewport: { width: 240, height: 160 },
@@ -2921,7 +2961,11 @@ test("runVisualBenchmark computes headline delta against a like-for-like baselin
                   nodeId: "2:10031",
                   status: "completed",
                   score: 90,
-                  screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                  screenshotBuffer: createTestPngBuffer(
+                    4,
+                    4,
+                    [255, 255, 255, 255],
+                  ),
                   diffBuffer: null,
                   report: createCompletedVisualQualityReport(90),
                   viewport: { width: 1280, height: 720 },
@@ -3101,7 +3145,11 @@ test("runVisualBenchmark artifact save uses composite key and does not collide o
       "{}",
       "utf8",
     );
-    await writeFile(path.join(staleLegacyArtifactDir, "report.json"), "{}", "utf8");
+    await writeFile(
+      path.join(staleLegacyArtifactDir, "report.json"),
+      "{}",
+      "utf8",
+    );
 
     await runVisualBenchmark(
       {
@@ -3265,8 +3313,7 @@ test("runVisualBenchmark persists browser-aware last-run metadata and artifact m
                   actualImagePath:
                     "visual-quality/browsers/chromium/actual.png",
                   diffImagePath: "visual-quality/browsers/chromium/diff.png",
-                  reportPath:
-                    "visual-quality/browsers/chromium/report.json",
+                  reportPath: "visual-quality/browsers/chromium/report.json",
                 },
               ],
             },
@@ -3330,7 +3377,10 @@ test("runVisualBenchmark persists browser-aware last-run metadata and artifact m
     });
     assert.equal(lastRun?.crossBrowserConsistency?.pairwiseDiffs.length, 3);
 
-    const artifact = await loadVisualBenchmarkLastRunArtifact("browser-aware", env);
+    const artifact = await loadVisualBenchmarkLastRunArtifact(
+      "browser-aware",
+      env,
+    );
     assert.ok(artifact);
     assert.equal(artifact?.version, 2);
     assert.deepEqual(artifact?.browserBreakdown, {
@@ -3431,9 +3481,7 @@ test("saveVisualBenchmarkLastRunArtifact removes stale browser and pairwise arti
       "1_65671",
       "desktop",
     );
-    await readFile(
-      path.join(artifactDir, "browsers", "firefox", "actual.png"),
-    );
+    await readFile(path.join(artifactDir, "browsers", "firefox", "actual.png"));
     await readFile(
       path.join(artifactDir, "pairwise", "chromium-vs-firefox.png"),
     );
