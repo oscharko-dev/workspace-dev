@@ -7,22 +7,26 @@ import tailwindcss from "@tailwindcss/vite";
 
 const uiRoot = fileURLToPath(new URL(".", import.meta.url));
 const packageJsonPath = path.resolve(uiRoot, "../package.json");
-const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as { version?: unknown };
+const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8")) as {
+  version?: unknown;
+};
 const workspaceDevVersion =
-  typeof packageJson.version === "string" && packageJson.version.length > 0 ? packageJson.version : "0.0.0";
+  typeof packageJson.version === "string" && packageJson.version.length > 0
+    ? packageJson.version
+    : "0.0.0";
 
 export default defineConfig({
   root: uiRoot,
   base: "/workspace/ui/",
   define: {
-    __WORKSPACE_DEV_VERSION__: JSON.stringify(workspaceDevVersion)
+    __WORKSPACE_DEV_VERSION__: JSON.stringify(workspaceDevVersion),
   },
   plugins: [react(), tailwindcss()],
   build: {
     target: "es2022",
     outDir: path.resolve(uiRoot, "../dist/ui"),
     emptyOutDir: true,
-    sourcemap: false
+    sourcemap: false,
   },
   test: {
     environment: "jsdom",
@@ -43,14 +47,26 @@ export default defineConfig({
         "src/features/workspace/inspector-page.tsx",
         "src/features/workspace/inspector/InspectorPanel.tsx",
         "src/features/workspace/inspector/InspectorScopeContext.tsx",
-        "src/lib/shiki-highlight.worker.ts"
+        "src/features/visual-quality/visual-quality-page.tsx",
+        "src/features/visual-quality/empty-state.tsx",
+        "src/features/visual-quality/gallery/gallery-view.tsx",
+        "src/features/visual-quality/gallery/screen-detail.tsx",
+        "src/features/visual-quality/gallery/screen-card.tsx",
+        "src/features/visual-quality/gallery/filter-controls.tsx",
+        "src/features/visual-quality/gallery/overlay-side-by-side.tsx",
+        "src/features/visual-quality/gallery/overlay-onion-skin.tsx",
+        "src/features/visual-quality/gallery/overlay-heatmap.tsx",
+        "src/features/visual-quality/gallery/zoom-modal.tsx",
+        "src/features/visual-quality/data/file-source.ts",
+        "src/features/visual-quality/data/sample-report.ts",
+        "src/lib/shiki-highlight.worker.ts",
       ],
       thresholds: {
         lines: 90,
         statements: 90,
         functions: 90,
-        branches: 80
-      }
-    }
-  }
+        branches: 80,
+      },
+    },
+  },
 });

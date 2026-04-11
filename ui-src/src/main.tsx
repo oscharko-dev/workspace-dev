@@ -10,7 +10,14 @@ const LazyInspectorPage = lazy(async () => {
   return { default: module.InspectorPage };
 });
 
-const routeFallback = <div aria-hidden="true" className="min-h-screen bg-[#101010]" />;
+const LazyVisualQualityPage = lazy(async () => {
+  const module = await import("./features/visual-quality/visual-quality-page");
+  return { default: module.VisualQualityPage };
+});
+
+const routeFallback = (
+  <div aria-hidden="true" className="min-h-screen bg-[#101010]" />
+);
 
 const appRouter = createBrowserRouter([
   {
@@ -19,33 +26,41 @@ const appRouter = createBrowserRouter([
       <Suspense fallback={routeFallback}>
         <LazyInspectorPage />
       </Suspense>
-    )
+    ),
+  },
+  {
+    path: "/workspace/ui/visual-quality",
+    element: (
+      <Suspense fallback={routeFallback}>
+        <LazyVisualQualityPage />
+      </Suspense>
+    ),
   },
   {
     path: "/workspace/ui",
-    element: <WorkspacePage />
+    element: <WorkspacePage />,
   },
   {
     path: "/workspace/ui/*",
-    element: <WorkspacePage />
+    element: <WorkspacePage />,
   },
   {
     path: "/workspace/:figmaFileKey",
-    element: <WorkspacePage />
+    element: <WorkspacePage />,
   },
   {
     path: "*",
-    element: <WorkspacePage />
-  }
+    element: <WorkspacePage />,
+  },
 ]);
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      refetchOnWindowFocus: false
-    }
-  }
+      refetchOnWindowFocus: false,
+    },
+  },
 });
 
 const rootElement = document.getElementById("root");
@@ -58,5 +73,5 @@ createRoot(rootElement).render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={appRouter} />
     </QueryClientProvider>
-  </React.StrictMode>
+  </React.StrictMode>,
 );
