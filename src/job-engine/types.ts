@@ -22,6 +22,7 @@ import type {
   WorkspaceJobStage,
   WorkspaceJobStageName,
   WorkspaceJobStatus,
+  WorkspaceVisualBrowserName,
   WorkspaceVisualQualityReferenceMode,
   WorkspaceRegenerationAccepted,
   WorkspaceRegenerationInput,
@@ -149,6 +150,7 @@ export interface JobEngineRuntime {
   visualQualityViewportWidth: number;
   visualQualityViewportHeight: number;
   visualQualityDeviceScaleFactor: number;
+  visualQualityBrowsers: WorkspaceVisualBrowserName[];
   enableUnitTestValidation: boolean;
   unitTestIgnoreFailure: boolean;
   installPreferOffline: boolean;

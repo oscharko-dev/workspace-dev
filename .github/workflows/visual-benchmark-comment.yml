@@ -31,7 +31,10 @@ jobs:
             }
 
             const prNumber = pullRequests[0].number;
-            const artifactName = `workspace-dev-visual-benchmark-${workflowRun.id}`;
+            const candidateArtifactNames = [
+              `workspace-dev-visual-benchmark-${workflowRun.id}`,
+              `workspace-dev-visual-benchmark-${workflowRun.id}-benchmark`,
+            ];
             const { owner, repo } = context.repo;
             const response = await github.rest.actions.listWorkflowRunArtifacts({
               owner,
@@ -40,12 +43,16 @@ jobs:
               per_page: 100,
             });
             const artifact = (response.data.artifacts ?? []).find(
-              (candidate) => candidate.name === artifactName && candidate.expired === false,
+              (candidate) =>
+                candidate.expired === false &&
+                candidateArtifactNames.includes(candidate.name),
             );
 
             core.setOutput("pr_number", String(prNumber));
             if (!artifact) {
-              core.notice(`Artifact '${artifactName}' was not found for run ${workflowRun.id}; skipping.`);
+              core.notice(
+                `Artifacts '${candidateArtifactNames.join(", ")}' were not found for run ${workflowRun.id}; skipping.`,
+              );
               core.setOutput("skip", "true");
               return;
             }

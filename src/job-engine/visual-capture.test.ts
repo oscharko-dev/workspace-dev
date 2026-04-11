@@ -12,6 +12,7 @@ import {
   captureScreenshot,
   captureFromProject,
   resolveCaptureContextOptions,
+  resolveCaptureContextOptionsForBrowser,
   resolveCaptureConfig,
   waitWithTimeout,
 } from "./visual-capture.js";
@@ -93,6 +94,32 @@ test("resolveCaptureContextOptions applies mobile device semantics for benchmark
     height: 844,
   });
   assert.equal(contextOptions.isMobile, true);
+  assert.equal(contextOptions.hasTouch, true);
+  assert.match(contextOptions.userAgent ?? "", /Pixel 7/i);
+});
+
+test("resolveCaptureContextOptionsForBrowser strips unsupported Firefox isMobile while preserving mobile viewport semantics", () => {
+  const config = resolveCaptureConfig({
+    viewport: {
+      width: 390,
+      height: 844,
+      deviceScaleFactor: 3,
+    },
+  });
+
+  const contextOptions = resolveCaptureContextOptionsForBrowser(
+    config,
+    "firefox",
+  );
+
+  assert.equal(contextOptions.viewport.width, 390);
+  assert.equal(contextOptions.viewport.height, 844);
+  assert.equal(contextOptions.deviceScaleFactor, 3);
+  assert.deepEqual(contextOptions.screen, {
+    width: 390,
+    height: 844,
+  });
+  assert.equal(contextOptions.isMobile, undefined);
   assert.equal(contextOptions.hasTouch, true);
   assert.match(contextOptions.userAgent ?? "", /Pixel 7/i);
 });

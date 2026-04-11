@@ -30,6 +30,17 @@ import { ensureTemplateValidationSeedNodeModules } from "../src/job-engine/test-
 import { comparePngBuffers } from "../src/job-engine/visual-diff.js";
 import { computeVisualQualityReport } from "../src/job-engine/visual-scoring.js";
 import {
+  assertVisualBrowserName,
+  computeCrossBrowserConsistencyScore,
+  DEFAULT_VISUAL_BROWSER,
+  type CrossBrowserConsistencyResult,
+  type CrossBrowserPairwiseDiff,
+  isVisualBrowserName,
+  normalizeVisualBrowserNames,
+  type VisualBrowserName,
+  VISUAL_BROWSER_NAMES,
+} from "../src/job-engine/visual-browser-matrix.js";
+import {
   computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
   enumerateFixtureScreenViewports,
@@ -57,16 +68,12 @@ import { PNG } from "pngjs";
 
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
 
-export type BenchmarkBrowserName = "chromium" | "firefox" | "webkit";
+export type BenchmarkBrowserName = VisualBrowserName;
 
-export const BENCHMARK_BROWSER_NAMES = [
-  "chromium",
-  "firefox",
-  "webkit",
-] as const satisfies readonly BenchmarkBrowserName[];
+export const BENCHMARK_BROWSER_NAMES =
+  VISUAL_BROWSER_NAMES as readonly BenchmarkBrowserName[];
 
-const CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD = 95;
-const DEFAULT_BENCHMARK_BROWSER: BenchmarkBrowserName = "chromium";
+const DEFAULT_BENCHMARK_BROWSER: BenchmarkBrowserName = DEFAULT_VISUAL_BROWSER;
 
 export interface VisualBenchmarkExecutionOptions extends VisualBenchmarkFixtureOptions {
   allowIncompleteVisualQuality?: boolean;
@@ -106,24 +113,12 @@ export interface VisualBenchmarkScreenViewportArtifact {
     width: number;
     height: number;
   };
+  browserArtifacts?: BrowserScreenViewportArtifact[];
+  crossBrowserConsistency?: CrossBrowserConsistencyResult;
 }
 
 export interface BrowserScreenViewportArtifact extends VisualBenchmarkScreenViewportArtifact {
   browser: BenchmarkBrowserName;
-}
-
-export interface CrossBrowserPairwiseDiff {
-  browserA: BenchmarkBrowserName;
-  browserB: BenchmarkBrowserName;
-  diffPercent: number;
-  diffBuffer: Buffer | null;
-}
-
-export interface CrossBrowserConsistencyResult {
-  browsers: BenchmarkBrowserName[];
-  pairwiseDiffs: CrossBrowserPairwiseDiff[];
-  consistencyScore: number;
-  warnings: string[];
 }
 
 export interface VisualBenchmarkFixtureScreenArtifact {
@@ -444,21 +439,13 @@ const createStorybookStaticServer = async (
 export const isBenchmarkBrowserName = (
   value: unknown,
 ): value is BenchmarkBrowserName => {
-  return (
-    typeof value === "string" &&
-    (BENCHMARK_BROWSER_NAMES as readonly string[]).includes(value)
-  );
+  return isVisualBrowserName(value);
 };
 
 export const assertBenchmarkBrowserName = (
   value: unknown,
 ): BenchmarkBrowserName => {
-  if (!isBenchmarkBrowserName(value)) {
-    throw new Error(
-      `Unknown browser '${String(value)}'. Allowed values: ${BENCHMARK_BROWSER_NAMES.join(", ")}.`,
-    );
-  }
-  return value;
+  return assertVisualBrowserName(value);
 };
 
 const loadBrowserByName = async (
@@ -480,94 +467,7 @@ const loadBrowserByName = async (
 const resolveBenchmarkBrowsers = (
   requested: readonly BenchmarkBrowserName[] | undefined,
 ): BenchmarkBrowserName[] => {
-  if (requested === undefined || requested.length === 0) {
-    return [DEFAULT_BENCHMARK_BROWSER];
-  }
-  const seen = new Set<BenchmarkBrowserName>();
-  const ordered: BenchmarkBrowserName[] = [];
-  for (const browser of requested) {
-    const validated = assertBenchmarkBrowserName(browser);
-    if (!seen.has(validated)) {
-      seen.add(validated);
-      ordered.push(validated);
-    }
-  }
-  return ordered;
-};
-
-const roundToTwoDecimals = (value: number): number =>
-  Math.round(value * 100) / 100;
-
-interface CrossBrowserComputeInput {
-  browser: BenchmarkBrowserName;
-  screenshotBuffer: Buffer;
-}
-
-export const computeCrossBrowserConsistencyScore = (
-  entries: readonly CrossBrowserComputeInput[],
-): CrossBrowserConsistencyResult => {
-  if (entries.length === 0) {
-    throw new Error(
-      "computeCrossBrowserConsistencyScore requires at least one browser entry.",
-    );
-  }
-
-  const browsers = entries.map((entry) => entry.browser);
-  if (entries.length === 1) {
-    return {
-      browsers,
-      pairwiseDiffs: [],
-      consistencyScore: 100,
-      warnings: [],
-    };
-  }
-
-  const pairwiseDiffs: CrossBrowserPairwiseDiff[] = [];
-  let worstDiffFraction = 0;
-  const warnings: string[] = [];
-  const baselineBrowser = entries[0]!.browser;
-
-  for (let i = 0; i < entries.length; i += 1) {
-    const left = entries[i]!;
-    for (let j = i + 1; j < entries.length; j += 1) {
-      const right = entries[j]!;
-      const diff = comparePngBuffers({
-        referenceBuffer: left.screenshotBuffer,
-        testBuffer: right.screenshotBuffer,
-      });
-      const diffFraction =
-        diff.totalPixels === 0 ? 0 : diff.diffPixelCount / diff.totalPixels;
-      const diffPercent = roundToTwoDecimals(diffFraction * 100);
-      worstDiffFraction = Math.max(worstDiffFraction, diffFraction);
-      pairwiseDiffs.push({
-        browserA: left.browser,
-        browserB: right.browser,
-        diffPercent,
-        diffBuffer: diff.diffImageBuffer,
-      });
-    }
-  }
-
-  const consistencyScore = Math.round((1 - worstDiffFraction) * 100);
-  if (consistencyScore < CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD) {
-    for (const pair of pairwiseDiffs) {
-      if (pair.browserA !== baselineBrowser) {
-        continue;
-      }
-      if (pair.diffPercent >= 100 - CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD) {
-        warnings.push(
-          `${pair.browserB}: rendering differs from ${pair.browserA} by ${pair.diffPercent}%`,
-        );
-      }
-    }
-  }
-
-  return {
-    browsers,
-    pairwiseDiffs,
-    consistencyScore,
-    warnings,
-  };
+  return normalizeVisualBrowserNames(requested) as BenchmarkBrowserName[];
 };
 
 const WAIT_FOR_FONTS_EXPRESSION = "document.fonts.ready.then(() => undefined)";
@@ -809,6 +709,7 @@ const createJobRecord = ({
   visualQualityViewportWidth,
   visualQualityViewportHeight,
   visualQualityDeviceScaleFactor,
+  visualQualityBrowsers,
 }: {
   fixtureId: string;
   runtime: ReturnType<typeof resolveRuntimeSettings>;
@@ -817,6 +718,7 @@ const createJobRecord = ({
   visualQualityViewportWidth: number;
   visualQualityViewportHeight: number;
   visualQualityDeviceScaleFactor: number;
+  visualQualityBrowsers: readonly BenchmarkBrowserName[];
 }): JobRecord => {
   return {
     jobId: `visual-benchmark-${fixtureId}`,
@@ -828,6 +730,7 @@ const createJobRecord = ({
       visualQualityViewportWidth,
       visualQualityViewportHeight,
       visualQualityDeviceScaleFactor,
+      visualQualityBrowsers: [...visualQualityBrowsers],
       enableUiValidation: false,
       enableUnitTestValidation: false,
       installPreferOffline: true,
@@ -862,6 +765,7 @@ const createExecutionContext = async ({
   visualQualityViewportWidth,
   visualQualityViewportHeight,
   visualQualityDeviceScaleFactor,
+  visualQualityBrowsers,
   workspaceRoot,
 }: {
   fixtureId: string;
@@ -869,6 +773,7 @@ const createExecutionContext = async ({
   visualQualityViewportWidth: number;
   visualQualityViewportHeight: number;
   visualQualityDeviceScaleFactor: number;
+  visualQualityBrowsers: readonly BenchmarkBrowserName[];
   workspaceRoot: string;
 }): Promise<{
   executionContext: PipelineExecutionContext;
@@ -895,6 +800,7 @@ const createExecutionContext = async ({
     visualQualityViewportWidth,
     visualQualityViewportHeight,
     visualQualityDeviceScaleFactor,
+    visualQualityBrowsers: [...visualQualityBrowsers],
     enableUnitTestValidation: false,
     figmaMaxRetries: 1,
     figmaRequestTimeoutMs: 1_000,
@@ -911,6 +817,7 @@ const createExecutionContext = async ({
       visualQualityViewportWidth,
       visualQualityViewportHeight,
       visualQualityDeviceScaleFactor,
+      visualQualityBrowsers,
     }),
     input: {
       figmaSourceMode: "local_json",
@@ -920,6 +827,7 @@ const createExecutionContext = async ({
       visualQualityViewportWidth,
       visualQualityViewportHeight,
       visualQualityDeviceScaleFactor,
+      visualQualityBrowsers: [...visualQualityBrowsers],
     },
     runtime,
     resolvedPaths: {
@@ -1466,6 +1374,7 @@ const executeVisualBenchmarkViewport = async ({
 }): Promise<VisualBenchmarkScreenViewportArtifact> => {
   const activeDeviceScaleFactor =
     resolveViewportDeviceScaleFactor(activeViewport);
+  const browsers = resolveBenchmarkBrowsers(options?.browsers);
 
   const perScreenMetadata: VisualBenchmarkFixtureMetadata = {
     ...metadata,
@@ -1487,6 +1396,7 @@ const executeVisualBenchmarkViewport = async ({
       visualQualityViewportWidth: activeViewport.width,
       visualQualityViewportHeight: activeViewport.height,
       visualQualityDeviceScaleFactor: activeDeviceScaleFactor,
+      visualQualityBrowsers: browsers,
       workspaceRoot,
     });
   const fixturePaths = resolveVisualBenchmarkFixturePaths(fixtureId, options);
@@ -1561,22 +1471,22 @@ const executeVisualBenchmarkViewport = async ({
     );
 
     const visualQuality = executionContext.job.visualQuality;
-    const screenshotBuffer = await readFile(
-      path.join(executionContext.paths.jobDir, "visual-quality", "actual.png"),
-    );
     let diffBuffer: Buffer | null = null;
     let report: unknown | null = null;
+    const visualQualityDir = path.join(
+      executionContext.paths.jobDir,
+      "visual-quality",
+    );
+    const screenshotBuffer = await readFile(
+      path.join(visualQualityDir, "actual.png"),
+    );
     try {
       diffBuffer = await readFile(
-        path.join(executionContext.paths.jobDir, "visual-quality", "diff.png"),
+        path.join(visualQualityDir, "diff.png"),
       );
       report = JSON.parse(
         await readFile(
-          path.join(
-            executionContext.paths.jobDir,
-            "visual-quality",
-            "report.json",
-          ),
+          path.join(visualQualityDir, "report.json"),
           "utf8",
         ),
       ) as unknown;
@@ -1613,6 +1523,86 @@ const executeVisualBenchmarkViewport = async ({
       deviceScaleFactor: activeDeviceScaleFactor,
     };
 
+    const browserArtifacts =
+      effectiveVisualQuality?.perBrowser !== undefined
+        ? (
+            await Promise.all(
+              effectiveVisualQuality.perBrowser.map(async (entry) => {
+                if (!entry.actualImagePath) {
+                  return null;
+                }
+                let browserReport: unknown | null = null;
+                let browserDiffBuffer: Buffer | null = null;
+                if (entry.reportPath) {
+                  try {
+                    browserReport = JSON.parse(
+                      await readFile(entry.reportPath, "utf8"),
+                    ) as unknown;
+                  } catch (error: unknown) {
+                    if (options?.allowIncompleteVisualQuality !== true) {
+                      throw error;
+                    }
+                  }
+                }
+                if (entry.diffImagePath) {
+                  try {
+                    browserDiffBuffer = await readFile(entry.diffImagePath);
+                  } catch (error: unknown) {
+                    if (options?.allowIncompleteVisualQuality !== true) {
+                      throw error;
+                    }
+                  }
+                }
+                const browserViewport =
+                  isWorkspaceVisualQualityReport(browserReport) &&
+                  browserReport.metadata !== undefined
+                    ? browserReport.metadata.viewport
+                    : viewport;
+                return {
+                  browser: entry.browser,
+                  viewportId: activeViewport.id,
+                  viewportLabel: activeViewport.label ?? activeViewport.id,
+                  score: entry.overallScore,
+                  screenshotBuffer: await readFile(entry.actualImagePath),
+                  diffBuffer: browserDiffBuffer,
+                  report: browserReport,
+                  viewport: {
+                    width: browserViewport.width,
+                    height: browserViewport.height,
+                  },
+                } satisfies BrowserScreenViewportArtifact;
+              }),
+            )
+          ).filter(
+            (entry): entry is BrowserScreenViewportArtifact => entry !== null,
+          )
+        : undefined;
+
+    const crossBrowserConsistency =
+      effectiveVisualQuality?.crossBrowserConsistency !== undefined
+        ? {
+            browsers: [...effectiveVisualQuality.crossBrowserConsistency.browsers],
+            consistencyScore:
+              effectiveVisualQuality.crossBrowserConsistency.consistencyScore,
+            warnings: [
+              ...(effectiveVisualQuality.crossBrowserConsistency.warnings ?? []),
+            ],
+            pairwiseDiffs: await Promise.all(
+              effectiveVisualQuality.crossBrowserConsistency.pairwiseDiffs.map(
+                async (pair) => ({
+                  browserA: pair.browserA,
+                  browserB: pair.browserB,
+                  diffPercent: pair.diffPercent,
+                  diffBuffer:
+                    pair.diffImagePath !== undefined
+                      ? await readFile(pair.diffImagePath)
+                      : null,
+                }),
+              ),
+            ),
+          }
+        : undefined;
+
     return {
       viewportId: activeViewport.id,
       viewportLabel: activeViewport.label ?? activeViewport.id,
@@ -1627,6 +1617,12 @@ const executeVisualBenchmarkViewport = async ({
         width: viewport.width,
         height: viewport.height,
       },
+      ...(browserArtifacts && browserArtifacts.length > 0
+        ? { browserArtifacts }
+        : {}),
+      ...(crossBrowserConsistency !== undefined
+        ? { crossBrowserConsistency }
+        : {}),
     };
   } finally {
     await rm(metadataPath, { force: true });
@@ -1702,6 +1698,30 @@ const executeVisualBenchmarkScreen = async ({
     );
   }
 
+  const reportWarnings = viewports.flatMap((viewportArtifact) => {
+    const viewportReport = viewportArtifact.report;
+    return isWorkspaceVisualQualityReport(viewportReport) &&
+      Array.isArray(viewportReport.warnings)
+      ? viewportReport.warnings
+      : [];
+  });
+  const crossBrowserWarnings = viewports.flatMap((viewportArtifact) =>
+    viewportArtifact.crossBrowserConsistency?.warnings.map(
+      (warning) => `${screen.screenId}@${viewportArtifact.viewportId}: ${warning}`,
+    ) ?? [],
+  );
+  const aggregatedCrossBrowser = aggregateCrossBrowserConsistency(
+    viewports.flatMap((viewportArtifact) =>
+      viewportArtifact.crossBrowserConsistency
+        ? [viewportArtifact.crossBrowserConsistency]
+        : [],
+    ),
+  );
+  const browserArtifacts = viewports.flatMap(
+    (viewportArtifact) => viewportArtifact.browserArtifacts ?? [],
+  );
+  const combinedWarnings = [...reportWarnings, ...crossBrowserWarnings];
+
   return {
     screenId: screen.screenId,
     screenName: screen.screenName,
@@ -1712,11 +1732,16 @@ const executeVisualBenchmarkScreen = async ({
       viewportArtifacts: viewports,
     }),
     ...(screen.weight !== undefined ? { weight: screen.weight } : {}),
+    ...(combinedWarnings.length > 0 ? { warnings: combinedWarnings } : {}),
     screenshotBuffer: representativeViewport.screenshotBuffer,
     diffBuffer: representativeViewport.diffBuffer,
     report: representativeViewport.report,
     viewport: representativeViewport.viewport,
     viewports,
+    ...(browserArtifacts.length > 0 ? { browserArtifacts } : {}),
+    ...(aggregatedCrossBrowser !== undefined
+      ? { crossBrowserConsistency: aggregatedCrossBrowser }
+      : {}),
   };
 };
 

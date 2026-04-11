@@ -24,6 +24,9 @@ export type WorkspaceRouterMode = "browser" | "hash";
 /** Supported visual quality reference sources. */
 export type WorkspaceVisualQualityReferenceMode = "figma_api" | "frozen_fixture";
 
+/** Supported browser engines for visual quality capture. */
+export type WorkspaceVisualBrowserName = "chromium" | "firefox" | "webkit";
+
 /** Explicit frozen visual reference files used by validate.project. */
 export interface WorkspaceVisualQualityFrozenReference {
   imagePath: string;
@@ -153,6 +156,8 @@ export interface WorkspaceStartOptions {
   visualQualityViewportHeight?: number;
   /** Device pixel ratio used when capturing generated output for visual quality validation. Default: 1 */
   visualQualityDeviceScaleFactor?: number;
+  /** Browser engines used when capturing generated output for visual quality validation. Default: ["chromium"] */
+  visualQualityBrowsers?: WorkspaceVisualBrowserName[];
   /** Run generated-project unit tests in validate.project. Default: false */
   enableUnitTestValidation?: boolean;
   /** Make generated-project unit test failures non-fatal. When true, test results are recorded but failures do not throw. Default: false */
@@ -208,6 +213,7 @@ export interface WorkspaceJobInput {
   visualQualityViewportWidth?: number;
   visualQualityViewportHeight?: number;
   visualQualityDeviceScaleFactor?: number;
+  visualQualityBrowsers?: WorkspaceVisualBrowserName[];
   visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
   /** @deprecated Use visual quality settings instead. */
   visualAudit?: WorkspaceVisualAuditInput;
@@ -236,6 +242,7 @@ export interface WorkspaceJobRequestMetadata {
   visualQualityViewportWidth?: number;
   visualQualityViewportHeight?: number;
   visualQualityDeviceScaleFactor?: number;
+  visualQualityBrowsers?: WorkspaceVisualBrowserName[];
   visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
   /** @deprecated Compatibility alias for legacy callers. */
   visualAudit?: WorkspaceVisualAuditInput;
@@ -477,6 +484,29 @@ export interface WorkspaceVisualComparisonMetadata {
   };
 }
 
+export interface WorkspaceVisualCrossBrowserPairwiseDiff {
+  browserA: WorkspaceVisualBrowserName;
+  browserB: WorkspaceVisualBrowserName;
+  diffPercent: number;
+  diffImagePath?: string;
+}
+
+export interface WorkspaceVisualCrossBrowserConsistency {
+  browsers: WorkspaceVisualBrowserName[];
+  consistencyScore: number;
+  pairwiseDiffs: WorkspaceVisualCrossBrowserPairwiseDiff[];
+  warnings?: string[];
+}
+
+export interface WorkspaceVisualPerBrowserResult {
+  browser: WorkspaceVisualBrowserName;
+  overallScore: number;
+  actualImagePath?: string;
+  diffImagePath?: string;
+  reportPath?: string;
+  warnings?: string[];
+}
+
 export interface WorkspaceVisualComponentCoverage {
   comparedCount: number;
   skippedCount: number;
@@ -511,6 +541,9 @@ export interface WorkspaceVisualQualityReport {
   diffImagePath?: string;
   hotspots?: WorkspaceVisualDeviationHotspot[];
   metadata?: WorkspaceVisualComparisonMetadata;
+  browserBreakdown?: Partial<Record<WorkspaceVisualBrowserName, number>>;
+  crossBrowserConsistency?: WorkspaceVisualCrossBrowserConsistency;
+  perBrowser?: WorkspaceVisualPerBrowserResult[];
   warnings?: string[];
   message?: string;
 }

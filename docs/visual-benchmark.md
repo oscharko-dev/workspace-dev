@@ -8,8 +8,14 @@ Default benchmark runs are offline:
 - they use frozen `figma.json` fixtures from `integration/fixtures/visual-benchmark`
 - they generate a fresh project for each fixture
 - they build the generated app
-- they capture the rendered output in headless Chromium
+- they capture the rendered output in headless Chromium by default
 - they compute a visual quality score against the committed reference image
+
+Cross-browser execution is opt-in. Pass a browser list when you need Firefox/WebKit coverage or cross-browser consistency data:
+
+```bash
+pnpm benchmark:visual -- --browsers chromium,firefox,webkit
+```
 
 ## Running the benchmark
 
@@ -18,6 +24,15 @@ pnpm benchmark:visual
 ```
 
 This command runs the real benchmark runner, not the benchmark test suite.
+
+The default browser set is `chromium`. To override it, pass `--browsers <comma-separated-list>`:
+
+```bash
+pnpm benchmark:visual -- --browsers chromium,firefox,webkit
+pnpm benchmark:visual -- --browsers firefox
+```
+
+Supported browser names are `chromium`, `firefox`, and `webkit`. The same browser list format is used by the per-job `validate.project` path, so benchmark runs and standalone visual-quality runs stay aligned.
 
 The output is a comparison table with one row per benchmark viewport capture plus an overall average:
 
@@ -55,7 +70,7 @@ pnpm visual:baseline status
 pnpm visual:baseline diff
 ```
 
-`pnpm visual:baseline update` runs the selected fixture benchmarks, saves the latest `actual.png`/`diff.png`/`report.json` artifacts under `artifacts/visual-benchmark/last-run/<fixture-id>/.../<viewportId>/`, updates the committed viewport reference PNGs, refreshes fixture `metadata.json`, and syncs the tracked score baseline.
+`pnpm visual:baseline update` runs the selected fixture benchmarks, saves the latest artifacts under `artifacts/visual-benchmark/last-run/<fixture-id>/.../<viewportId>/`, updates the committed viewport reference PNGs, refreshes fixture `metadata.json`, and syncs the tracked score baseline.
 
 `pnpm visual:baseline approve --screen <fixture-id>` promotes the last persisted viewport `actual.png` artifacts for that screen to the committed viewport reference PNGs without rerunning the full suite.
 
@@ -129,6 +144,40 @@ The `--viewport <id>` CLI flag on `pnpm benchmark:visual` filters execution to a
 
 Reference images live at `<fixture>/screens/<screenToken>/<viewportId>.png` when
 multi-viewport is configured; legacy `reference.png` is used otherwise.
+
+## Browser-aware artifacts
+
+Every benchmark run resolves a browser list. If no browser list is provided, the runner behaves exactly like the historical single-browser flow and captures only `chromium`. When multiple browsers are requested, browser-aware scores and diff artifacts are persisted alongside the viewport run:
+
+```text
+artifacts/visual-benchmark/last-run/<fixture-id>/<screen-token>/<viewport-id>/
+  browsers/
+    chromium/
+      actual.png
+      diff.png
+      report.json
+    firefox/
+      actual.png
+      diff.png
+      report.json
+    webkit/
+      actual.png
+      diff.png
+      report.json
+  pairwise/
+    chromium-vs-firefox.png
+    chromium-vs-webkit.png
+    firefox-vs-webkit.png
+```
+
+`last-run.json` remains the top-level benchmark manifest. For each fixture/screen/viewport entry it now records:
+
+- the resolved browser list
+- per-browser quality scores (`browserBreakdown`)
+- per-browser warnings and artifact paths
+- cross-browser consistency, including pairwise diff percentages and pairwise diff image paths
+
+Default Chromium-only runs still use the same layout, but only populate `browsers/chromium/` and omit `pairwise/` because there is nothing to compare across browsers.
 
 ## Historical trend analysis and regression detection
 
@@ -258,6 +307,17 @@ The committed fixture set contains exactly five benchmark views:
 
 `pnpm benchmark:visual:update-fixtures` and `pnpm benchmark:visual:live` refresh data from live Figma and require `FIGMA_ACCESS_TOKEN`.
 
+## CI behavior
+
+The required GitHub Actions workflow at `.github/workflows/visual-benchmark.yml` keeps normal `push` and `pull_request` latency unchanged by running the benchmark in Chromium only.
+
+Manual `workflow_dispatch` runs expose two opt-in controls:
+
+- `browsers`: comma-separated browser list for the main benchmark job, default `chromium`
+- `run_browser_matrix`: optional per-browser matrix run across `chromium`, `firefox`, and `webkit`
+
+Use the `browsers` input when you want one combined cross-browser run and cross-browser consistency output. Use `run_browser_matrix` when you want lightweight browser-specific smoke coverage without changing the default PR path.
+
 `pnpm benchmark:visual:update-references` is offline. It regenerates each committed viewport reference PNG from the current benchmark pipeline output.
 
 | Command                                   | Description                                                                                          |
@@ -270,12 +330,6 @@ The committed fixture set contains exactly five benchmark views:
 | `pnpm benchmark:visual:update-references` | Regenerates committed viewport reference PNGs from the current benchmark output                      |
 | `pnpm benchmark:visual:update-baseline`   | Compatibility shim for `pnpm visual:baseline update`                                                 |
 | `pnpm benchmark:visual:live`              | Compares frozen fixture data against live Figma responses                                            |
-
-## CI behavior
-
-`.github/workflows/visual-benchmark.yml` runs `pnpm benchmark:visual -- --ci --enforce-thresholds` on pushes to `dev` and pull requests targeting `dev`.
-
-The workflow installs Playwright Chromium and executes the same real benchmark runner used locally. The default benchmark path remains offline and does not require `FIGMA_ACCESS_TOKEN`.
 
 ## Further reading
 

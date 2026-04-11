@@ -202,6 +202,130 @@ test("buildVisualBenchmarkPrComment handles missing report.json gracefully", asy
   }
 });
 
+test("buildVisualBenchmarkPrComment renders browser-aware aggregates and artifact links from v2 manifests", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pr-comment-browsers-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureDir = path.join(artifactRoot, "last-run", "simple-form");
+    await mkdir(fixtureDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 2,
+      ranAt: "2026-04-11T20:00:00.000Z",
+      scores: [{ fixtureId: "simple-form", score: 94 }],
+      browserBreakdown: {
+        chromium: 96,
+        firefox: 94,
+        webkit: 92,
+      },
+      crossBrowserConsistency: {
+        browsers: ["chromium", "firefox", "webkit"],
+        consistencyScore: 93,
+        warnings: ["firefox differs from chromium by 6%."],
+        pairwiseDiffs: [
+          {
+            browserA: "chromium",
+            browserB: "firefox",
+            diffPercent: 6,
+            diffImagePath:
+              "last-run/simple-form/pairwise/chromium-vs-firefox.png",
+          },
+        ],
+      },
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 2,
+      fixtureId: "simple-form",
+      score: 94,
+      ranAt: "2026-04-11T20:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+      browserBreakdown: {
+        chromium: 96,
+        firefox: 94,
+        webkit: 92,
+      },
+      crossBrowserConsistency: {
+        browsers: ["chromium", "firefox", "webkit"],
+        consistencyScore: 93,
+        warnings: ["firefox differs from chromium by 6%."],
+        pairwiseDiffs: [
+          {
+            browserA: "chromium",
+            browserB: "firefox",
+            diffPercent: 6,
+            diffImagePath:
+              "last-run/simple-form/pairwise/chromium-vs-firefox.png",
+          },
+        ],
+      },
+      perBrowser: [
+        {
+          browser: "chromium",
+          overallScore: 96,
+          actualImagePath: "last-run/simple-form/browsers/chromium/actual.png",
+          diffImagePath: "last-run/simple-form/browsers/chromium/diff.png",
+          reportPath: "last-run/simple-form/browsers/chromium/report.json",
+        },
+        {
+          browser: "firefox",
+          overallScore: 94,
+          actualImagePath: "last-run/simple-form/browsers/firefox/actual.png",
+          diffImagePath: "last-run/simple-form/browsers/firefox/diff.png",
+          reportPath: "last-run/simple-form/browsers/firefox/report.json",
+          warnings: ["minor anti-aliasing drift"],
+        },
+      ],
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 94,
+      dimensions: [{ name: "Layout Accuracy", weight: 1, score: 94 }],
+    });
+
+    const { buildVisualBenchmarkPrComment } =
+      await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {
+      artifactUrl: "https://example.com/artifacts",
+    });
+
+    assert.match(
+      result.body,
+      /Per-Browser Averages:\*\* chromium: 96, firefox: 94, webkit: 92/,
+    );
+    assert.match(
+      result.body,
+      /Cross-Browser Consistency:\*\* 93 \/ 100/,
+    );
+    assert.match(result.body, /### Cross-Browser Details/);
+    assert.match(
+      result.body,
+      /Simple Form: scores chromium: 96, firefox: 94, webkit: 92; consistency 93 \/ 100;/,
+    );
+    assert.match(
+      result.body,
+      /warnings firefox differs from chromium by 6%\./,
+    );
+    assert.match(
+      result.body,
+      /chromium\/firefox: 6% \(\[View pair diff\]\(https:\/\/example\.com\/artifacts\) `last-run\/simple-form\/pairwise\/chromium-vs-firefox\.png`\)/,
+    );
+    assert.match(
+      result.body,
+      /\[actual\]\(https:\/\/example\.com\/artifacts\) `last-run\/simple-form\/browsers\/chromium\/actual\.png`/,
+    );
+    assert.match(
+      result.body,
+      /\[diff\]\(https:\/\/example\.com\/artifacts\) `last-run\/simple-form\/browsers\/firefox\/diff\.png`/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("print-visual-benchmark-pr-comment CLI writes JSON payload", async () => {
   const root = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-pr-comment-cli-"),

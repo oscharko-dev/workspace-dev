@@ -6,19 +6,30 @@ on:
   pull_request:
     branches: [dev]
     paths:
-      - 'src/parity/**'
-      - 'src/job-engine/**'
-      - 'template/**'
-      - 'integration/visual-benchmark*'
-      - 'integration/visual-quality*'
-      - 'integration/fixtures/visual-benchmark/**'
-      - '.github/workflows/visual-benchmark.yml'
-      - '.github/workflows/visual-benchmark-comment.yml'
-      - 'scripts/print-visual-benchmark-summary.mjs'
-      - 'scripts/visual-benchmark-summary.mjs'
-      - 'scripts/print-visual-benchmark-pr-comment.mjs'
-      - 'scripts/visual-benchmark-pr-comment.mjs'
+      - "src/parity/**"
+      - "src/job-engine/**"
+      - "template/**"
+      - "integration/visual-benchmark*"
+      - "integration/visual-quality*"
+      - "integration/fixtures/visual-benchmark/**"
+      - ".github/workflows/visual-benchmark.yml"
+      - ".github/workflows/visual-benchmark-comment.yml"
+      - "scripts/print-visual-benchmark-summary.mjs"
+      - "scripts/visual-benchmark-summary.mjs"
+      - "scripts/print-visual-benchmark-pr-comment.mjs"
+      - "scripts/visual-benchmark-pr-comment.mjs"
   workflow_dispatch:
+    inputs:
+      browsers:
+        description: "Comma-separated browser list for the main benchmark job"
+        required: false
+        default: "chromium"
+        type: string
+      run_browser_matrix:
+        description: "Also run the manual per-browser matrix job"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   actions: read
@@ -30,6 +41,8 @@ jobs:
     name: benchmark
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      VISUAL_BENCHMARK_BROWSERS: ${{ github.event_name == 'workflow_dispatch' && inputs.browsers || 'chromium' }}
 
     steps:
       - uses: actions/checkout@v6
@@ -46,11 +59,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install Playwright browser (Chromium)
-        run: pnpm exec playwright install --with-deps chromium
+      - name: Install Playwright browsers
+        run: |
+          browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
+          pnpm exec playwright install --with-deps $browsers
 
       - name: Run frozen visual benchmark runner
-        run: pnpm benchmark:visual -- --ci --enforce-thresholds
+        run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
 
       - name: Summarize visual quality report
         if: always()
@@ -116,5 +131,48 @@ jobs:
         if: always()
         with:
           name: workspace-dev-visual-benchmark-${{ github.run_id }}
+          path: artifacts/visual-benchmark
+          if-no-files-found: ignore
+
+  benchmark-browser-matrix:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_browser_matrix
+    name: benchmark matrix (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright browser (${{ matrix.browser }})
+        run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run frozen visual benchmark runner (${{ matrix.browser }})
+        run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "${{ matrix.browser }}"
+
+      - name: Summarize visual quality report
+        if: always()
+        run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
+
+      - name: Upload visual benchmark artifacts (${{ matrix.browser }})
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}-${{ matrix.browser }}
           path: artifacts/visual-benchmark
           if-no-files-found: ignore
