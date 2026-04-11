@@ -1,5 +1,6 @@
 import type {
   WorkspaceBrandTheme,
+  WorkspaceCompositeQualityWeightsInput,
   WorkspaceRouterMode,
   WorkspaceVisualQualityReferenceMode
 } from "../contracts/index.js";
@@ -51,6 +52,10 @@ const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_HEIGHT = 800;
 const DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR = 1;
+const DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT: WorkspaceCompositeQualityWeightsInput = {
+  visual: 0.6,
+  performance: 0.4
+};
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
@@ -150,6 +155,76 @@ const normalizeVisualQualityReferenceMode = (
   return undefined;
 };
 
+const parseCompositeQualityWeight = (value: string | undefined): number | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const resolveCompositeQualityWeightInput = (
+  input: WorkspaceCompositeQualityWeightsInput | undefined,
+): WorkspaceCompositeQualityWeightsInput => {
+  if (input?.visual !== undefined || input?.performance !== undefined) {
+    return {
+      ...(input.visual !== undefined ? { visual: input.visual } : {}),
+      ...(input.performance !== undefined ? { performance: input.performance } : {})
+    };
+  }
+  const visualFromEnv = parseCompositeQualityWeight(process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT);
+  const performanceFromEnv = parseCompositeQualityWeight(process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT);
+  if (visualFromEnv !== undefined || performanceFromEnv !== undefined) {
+    return {
+      ...(visualFromEnv !== undefined ? { visual: visualFromEnv } : {}),
+      ...(performanceFromEnv !== undefined ? { performance: performanceFromEnv } : {})
+    };
+  }
+  return { ...DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT };
+};
+
+const resolveNormalizedCompositeQualityWeights = (
+  input: WorkspaceCompositeQualityWeightsInput | undefined,
+): { visual: number; performance: number } => {
+  const visual = input?.visual;
+  const performance = input?.performance;
+  const validate = (value: number | undefined, label: string): void => {
+    if (value === undefined) {
+      return;
+    }
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error(`runtime: ${label} composite quality weight must be within 0..1.`);
+    }
+  };
+  validate(visual, "visual");
+  validate(performance, "performance");
+  if (visual === undefined && performance === undefined) {
+    return {
+      visual: DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT.visual ?? 0.6,
+      performance: DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT.performance ?? 0.4
+    };
+  }
+  let resolvedVisual = visual;
+  let resolvedPerformance = performance;
+  if (resolvedVisual === undefined && resolvedPerformance !== undefined) {
+    resolvedVisual = 1 - resolvedPerformance;
+  } else if (resolvedPerformance === undefined && resolvedVisual !== undefined) {
+    resolvedPerformance = 1 - resolvedVisual;
+  }
+  const total = (resolvedVisual ?? 0) + (resolvedPerformance ?? 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error("runtime: composite quality weights must sum to a positive value.");
+  }
+  return {
+    visual: Math.round(((resolvedVisual ?? 0) / total) * 10_000) / 10_000,
+    performance: Math.round(((resolvedPerformance ?? 0) / total) * 10_000) / 10_000
+  };
+};
+
 const toFigmaRestCircuitTransitionLogMessage = ({
   fromState,
   toState,
@@ -205,6 +280,7 @@ export const resolveRuntimeSettings = ({
   visualQualityViewportHeight,
   visualQualityDeviceScaleFactor,
   visualQualityBrowsers,
+  compositeQualityWeights,
   enableUnitTestValidation,
   unitTestIgnoreFailure,
   installPreferOffline,
@@ -256,6 +332,7 @@ export const resolveRuntimeSettings = ({
   visualQualityViewportHeight?: number;
   visualQualityDeviceScaleFactor?: number;
   visualQualityBrowsers?: string[];
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
   enableUnitTestValidation?: boolean;
   unitTestIgnoreFailure?: boolean;
   installPreferOffline?: boolean;
@@ -435,6 +512,9 @@ export const resolveRuntimeSettings = ({
       fallback: DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR
     }),
     visualQualityBrowsers: normalizeVisualBrowserNames(visualQualityBrowsers),
+    compositeQualityWeights: resolveNormalizedCompositeQualityWeights(
+      resolveCompositeQualityWeightInput(compositeQualityWeights)
+    ),
     enableUnitTestValidation:
       typeof enableUnitTestValidation === "boolean"
         ? enableUnitTestValidation

@@ -53,6 +53,19 @@ const makeLighthouseReport = (overrides?: {
   },
 });
 
+const makeLegacyWrappedLighthouseReport = (overrides?: {
+  performanceScore?: number;
+  fcp?: number;
+  lcp?: number;
+  cls?: number;
+  tbt?: number;
+  si?: number;
+}): Record<string, unknown> => ({
+  report: {
+    lhr: makeLighthouseReport(overrides),
+  },
+});
+
 test("resolveCompositeQualityWeights returns defaults for null/undefined", () => {
   assert.deepEqual(
     resolveCompositeQualityWeights(undefined),
@@ -76,6 +89,17 @@ test("resolveCompositeQualityWeights normalizes custom ratios to sum 1", () => {
   assert.equal(weights.visual, 0.7);
   assert.equal(weights.performance, 0.3);
   assert.equal(weights.visual + weights.performance, 1);
+});
+
+test("resolveCompositeQualityHistoryPath uses canonical composite artifact location", () => {
+  assert.equal(
+    resolveCompositeQualityHistoryPath("artifacts"),
+    path.join(
+      "artifacts",
+      "composite-quality",
+      "composite-quality-history.json",
+    ),
+  );
 });
 
 test("resolveCompositeQualityWeights normalizes fractional pairs that don't sum to 1", () => {
@@ -238,6 +262,94 @@ test("computeCompositeQualityScore rejects out-of-range scores", () => {
       ),
     /finite/,
   );
+});
+
+test("loadLighthouseSamplesFromPerfReport supports legacy report.lhr JSON", async () => {
+  const root = await createTempRoot();
+
+  try {
+    const artifactDir = path.join(root, "artifacts", "performance");
+    await mkdir(artifactDir, { recursive: true });
+    await writeJson(
+      path.join(artifactDir, "lighthouse-home-mobile.json"),
+      makeLegacyWrappedLighthouseReport({
+        performanceScore: 0.81,
+        fcp: 1500,
+        lcp: 2100,
+        cls: 0.02,
+        tbt: 75,
+        si: 2800,
+      }),
+    );
+    await writeJson(path.join(artifactDir, "perf-assert-report.json"), {
+      samples: [
+        {
+          profile: "mobile",
+          route: "/",
+          artifacts: {
+            lighthouseReport: "lighthouse-home-mobile.json",
+          },
+        },
+      ],
+    });
+
+    const result = await loadLighthouseSamplesFromPerfReport({ artifactDir });
+
+    assert.equal(result.warnings.length, 0);
+    assert.equal(result.samples.length, 1);
+    assert.deepEqual(result.samples[0], {
+      profile: "mobile",
+      route: "/",
+      performanceScore: 81,
+      fcp_ms: 1500,
+      lcp_ms: 2100,
+      cls: 0.02,
+      tbt_ms: 75,
+      speed_index_ms: 2800,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loadCompositeQualityHistory falls back to the legacy history filename", async () => {
+  const root = await createTempRoot();
+
+  try {
+    const historyPath = resolveCompositeQualityHistoryPath(root);
+    const legacyHistoryPath = path.join(path.dirname(historyPath), "history.json");
+
+    await mkdir(path.dirname(legacyHistoryPath), { recursive: true });
+    await writeJson(legacyHistoryPath, {
+      version: 1,
+      entries: [
+        {
+          runAt: "2026-04-12T00:00:00.000Z",
+          weights: { visual: 0.6, performance: 0.4 },
+          visualScore: 91,
+          performanceScore: 87,
+          compositeScore: 89.4,
+        },
+      ],
+    });
+
+    const history = await loadCompositeQualityHistory(historyPath);
+
+    assert.deepEqual(history, {
+      version: 1,
+      entries: [
+        {
+          runAt: "2026-04-12T00:00:00.000Z",
+          weights: { visual: 0.6, performance: 0.4 },
+          visualScore: 91,
+          performanceScore: 87,
+          compositeScore: 89.4,
+        },
+      ],
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("computePerformanceScore empty samples returns null score + warning", () => {
@@ -563,10 +675,12 @@ test("loadVisualBenchmarkScoreFromLastRun throws when no score extractable", asy
 test("history round-trip: save, load, append, trim", async () => {
   const root = await createTempRoot();
   try {
-    const historyPath = resolveCompositeQualityHistoryPath(
-      path.join(root, "artifacts", "composite"),
-    );
+    const historyPath = resolveCompositeQualityHistoryPath(path.join(root, "artifacts"));
     assert.equal(path.basename(historyPath), "composite-quality-history.json");
+    assert.match(
+      historyPath,
+      /artifacts[\\/]+composite-quality[\\/]+composite-quality-history\.json$/,
+    );
 
     // Initially, no file
     const initial = await loadCompositeQualityHistory(historyPath);

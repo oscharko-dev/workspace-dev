@@ -118,6 +118,51 @@ const normalizeOptionalInputString = (value: string | undefined): string | undef
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const resolveRequestCompositeQualityWeights = ({
+  input,
+  fallback
+}: {
+  input: WorkspaceJobInput["compositeQualityWeights"];
+  fallback: { visual: number; performance: number };
+}): { visual: number; performance: number } => {
+  if (input === undefined) {
+    return { ...fallback };
+  }
+
+  const validate = (value: number | undefined, label: string): void => {
+    if (value === undefined) {
+      return;
+    }
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error(`submit: composite quality ${label} weight must be within 0..1.`);
+    }
+  };
+
+  validate(input.visual, "visual");
+  validate(input.performance, "performance");
+
+  let visual = input.visual;
+  let performance = input.performance;
+  if (visual === undefined && performance === undefined) {
+    return { ...fallback };
+  }
+  if (visual === undefined && performance !== undefined) {
+    visual = 1 - performance;
+  } else if (performance === undefined && visual !== undefined) {
+    performance = 1 - visual;
+  }
+
+  const total = (visual ?? 0) + (performance ?? 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error("submit: composite quality weights must sum to a positive value.");
+  }
+
+  return {
+    visual: Math.round(((visual ?? 0) / total) * 10_000) / 10_000,
+    performance: Math.round(((performance ?? 0) / total) * 10_000) / 10_000
+  };
+};
+
 const isStoredCustomerProfileOrigin = (value: unknown): value is StoredCustomerProfileSnapshot["origin"] => {
   return value === "request" || value === "runtime";
 };
@@ -1166,6 +1211,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       input.visualQualityBrowsers.length > 0
         ? input.visualQualityBrowsers
         : runtime.visualQualityBrowsers;
+    const resolvedCompositeQualityWeights = resolveRequestCompositeQualityWeights({
+      input: input.compositeQualityWeights,
+      fallback: runtime.compositeQualityWeights
+    });
     const request: WorkspaceJobStatus["request"] = {
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
@@ -1174,6 +1223,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       generationLocale: generationLocaleResolution.locale,
       formHandlingMode: resolvedFormHandlingMode,
       enableVisualQualityValidation: resolvedEnableVisualQualityValidation,
+      compositeQualityWeights: resolvedCompositeQualityWeights,
       ...(resolvedEnableVisualQualityValidation
         ? {
             visualQualityReferenceMode: resolvedVisualQualityReferenceMode,

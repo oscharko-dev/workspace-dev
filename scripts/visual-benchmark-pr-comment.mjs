@@ -93,6 +93,97 @@ const isFiniteNumber = (value) =>
 const isPlainRecord = (value) =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const resolveCompositeReportPath = (reportPath) =>
+  path.join(path.dirname(path.resolve(reportPath)), "composite-quality-report.json");
+
+const formatPercent = (value) =>
+  isFiniteNumber(value) ? `${Math.round(value * 100)}%` : "\u2014";
+
+const formatScoreOrUnavailable = (value) =>
+  isFiniteNumber(value) ? `${formatScore(roundToTwo(value))} / 100` : "unavailable";
+
+const formatMetricOrUnavailable = (value, suffix = "") =>
+  isFiniteNumber(value)
+    ? `${formatScore(roundToTwo(value))}${suffix}`
+    : "unavailable";
+
+const normalizeCompositeAggregateMetrics = (value) => {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  return {
+    fcp_ms: isFiniteNumber(value.fcp_ms) ? roundToTwo(value.fcp_ms) : null,
+    lcp_ms: isFiniteNumber(value.lcp_ms) ? roundToTwo(value.lcp_ms) : null,
+    cls: isFiniteNumber(value.cls) ? roundToTwo(value.cls) : null,
+    tbt_ms: isFiniteNumber(value.tbt_ms) ? roundToTwo(value.tbt_ms) : null,
+    speed_index_ms: isFiniteNumber(value.speed_index_ms)
+      ? roundToTwo(value.speed_index_ms)
+      : null,
+  };
+};
+
+const loadCompositeQualityReport = async (reportPath) => {
+  const compositePath = resolveCompositeReportPath(reportPath);
+  const parsed = await readJsonFileOptional(
+    compositePath,
+    "Composite quality report",
+  );
+  if (!isPlainRecord(parsed)) {
+    return null;
+  }
+
+  const weights = isPlainRecord(parsed.weights)
+    ? {
+        visual: isFiniteNumber(parsed.weights.visual)
+          ? parsed.weights.visual
+          : null,
+        performance: isFiniteNumber(parsed.weights.performance)
+          ? parsed.weights.performance
+          : null,
+      }
+    : null;
+  const visual = isPlainRecord(parsed.visual)
+    ? {
+        score: isFiniteNumber(parsed.visual.score)
+          ? roundToTwo(parsed.visual.score)
+          : null,
+      }
+    : null;
+  const performance = isPlainRecord(parsed.performance)
+    ? {
+        score: isFiniteNumber(parsed.performance.score)
+          ? roundToTwo(parsed.performance.score)
+          : null,
+        sampleCount: isFiniteNumber(parsed.performance.sampleCount)
+          ? parsed.performance.sampleCount
+          : 0,
+        aggregateMetrics: normalizeCompositeAggregateMetrics(
+          parsed.performance.aggregateMetrics,
+        ),
+      }
+    : null;
+  const composite = isPlainRecord(parsed.composite)
+    ? {
+        score: isFiniteNumber(parsed.composite.score)
+          ? roundToTwo(parsed.composite.score)
+          : null,
+      }
+    : null;
+  const warnings = Array.isArray(parsed.warnings)
+    ? parsed.warnings.filter(
+        (warning) => typeof warning === "string" && warning.trim().length > 0,
+      )
+    : [];
+
+  return {
+    weights,
+    visual,
+    performance,
+    composite,
+    warnings,
+  };
+};
+
 const normalizeBrowserBreakdown = (value) => {
   if (value === null || typeof value !== "object") {
     return null;
@@ -1285,6 +1376,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
             comparablePairs.length,
         )
       : null;
+  const compositeQuality = await loadCompositeQualityReport(absolutePath);
 
   const overallDelta =
     overallBaselineAvg !== null && comparableCurrentAvg !== null
@@ -1365,6 +1457,32 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     headerLines.push(
       `**Cross-Browser Consistency:** ${overallCrossBrowserConsistency.consistencyScore} / 100`,
     );
+  }
+  if (compositeQuality !== null) {
+    headerLines.push(
+      "",
+      "### Combined Visual + Performance Quality",
+      "",
+      `**Visual Score:** ${formatScoreOrUnavailable(compositeQuality.visual?.score ?? null)}`,
+      `**Performance Score:** ${formatScoreOrUnavailable(compositeQuality.performance?.score ?? null)}`,
+      `**Composite Score:** ${formatScoreOrUnavailable(compositeQuality.composite?.score ?? null)}`,
+    );
+    if (compositeQuality.weights !== null) {
+      headerLines.push(
+        `**Weights:** visual ${formatPercent(compositeQuality.weights.visual)}, performance ${formatPercent(compositeQuality.weights.performance)}`,
+      );
+    }
+    if (compositeQuality.performance?.aggregateMetrics !== null) {
+      const metrics = compositeQuality.performance.aggregateMetrics;
+      headerLines.push(
+        `**Lighthouse Metrics:** FCP ${formatMetricOrUnavailable(metrics.fcp_ms, " ms")}, LCP ${formatMetricOrUnavailable(metrics.lcp_ms, " ms")}, CLS ${formatMetricOrUnavailable(metrics.cls)}, TBT ${formatMetricOrUnavailable(metrics.tbt_ms, " ms")}, Speed Index ${formatMetricOrUnavailable(metrics.speed_index_ms, " ms")}`,
+      );
+    }
+    if (compositeQuality.warnings.length > 0) {
+      headerLines.push(
+        `**Composite Warnings:** ${compositeQuality.warnings.join("; ")}`,
+      );
+    }
   }
   headerLines.push("");
 

@@ -33,6 +33,18 @@ export interface WorkspaceVisualQualityFrozenReference {
   metadataPath: string;
 }
 
+/** Optional overrides for the combined visual/performance quality weights. */
+export interface WorkspaceCompositeQualityWeightsInput {
+  visual?: number;
+  performance?: number;
+}
+
+/** Normalized weights for the combined visual/performance quality score. */
+export interface WorkspaceCompositeQualityWeights {
+  visual: number;
+  performance: number;
+}
+
 /** Output format for operational runtime logs. */
 export type WorkspaceLogFormat = "text" | "json";
 
@@ -158,6 +170,8 @@ export interface WorkspaceStartOptions {
   visualQualityDeviceScaleFactor?: number;
   /** Browser engines used when capturing generated output for visual quality validation. Default: ["chromium"] */
   visualQualityBrowsers?: WorkspaceVisualBrowserName[];
+  /** Weight overrides used when computing the combined visual/performance quality score. Default: visual 0.6, performance 0.4 */
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
   /** Run generated-project unit tests in validate.project. Default: false */
   enableUnitTestValidation?: boolean;
   /** Make generated-project unit test failures non-fatal. When true, test results are recorded but failures do not throw. Default: false */
@@ -215,6 +229,7 @@ export interface WorkspaceJobInput {
   visualQualityDeviceScaleFactor?: number;
   visualQualityBrowsers?: WorkspaceVisualBrowserName[];
   visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
   /** @deprecated Use visual quality settings instead. */
   visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
@@ -244,6 +259,7 @@ export interface WorkspaceJobRequestMetadata {
   visualQualityDeviceScaleFactor?: number;
   visualQualityBrowsers?: WorkspaceVisualBrowserName[];
   visualQualityFrozenReference?: WorkspaceVisualQualityFrozenReference;
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
   /** @deprecated Compatibility alias for legacy callers. */
   visualAudit?: WorkspaceVisualAuditInput;
   repoUrl?: string;
@@ -333,6 +349,7 @@ export interface WorkspaceJobArtifacts {
   visualAuditDiffImageFile?: string;
   visualAuditReportFile?: string;
   visualQualityReportFile?: string;
+  compositeQualityReportFile?: string;
   reproDir?: string;
 }
 
@@ -548,6 +565,63 @@ export interface WorkspaceVisualQualityReport {
   message?: string;
 }
 
+/** Supported Lighthouse profiles in the combined visual/performance quality report. */
+export type WorkspaceCompositeQualityLighthouseProfile = "mobile" | "desktop";
+
+/** Per-sample Lighthouse metrics captured for the combined visual/performance quality report. */
+export interface WorkspaceCompositeQualityLighthouseSample {
+  profile: WorkspaceCompositeQualityLighthouseProfile;
+  route: string;
+  performanceScore: number | null;
+  fcp_ms: number | null;
+  lcp_ms: number | null;
+  cls: number | null;
+  tbt_ms: number | null;
+  speed_index_ms: number | null;
+}
+
+/** Aggregated Lighthouse metrics included in the combined visual/performance quality report. */
+export interface WorkspaceCompositeQualityPerformanceAggregateMetrics {
+  fcp_ms: number | null;
+  lcp_ms: number | null;
+  cls: number | null;
+  tbt_ms: number | null;
+  speed_index_ms: number | null;
+}
+
+/** Performance breakdown included in the combined visual/performance quality report. */
+export interface WorkspaceCompositeQualityPerformanceBreakdown {
+  sourcePath?: string;
+  score: number | null;
+  sampleCount: number;
+  samples: WorkspaceCompositeQualityLighthouseSample[];
+  aggregateMetrics: WorkspaceCompositeQualityPerformanceAggregateMetrics;
+  warnings: string[];
+}
+
+/** Dimensions that may contribute to the combined visual/performance quality score. */
+export type WorkspaceCompositeQualityDimension = "visual" | "performance";
+
+/** Combined visual + performance quality report surfaced by validate.project. */
+export interface WorkspaceCompositeQualityReport {
+  status: "completed" | "failed" | "not_requested";
+  generatedAt?: string;
+  weights?: WorkspaceCompositeQualityWeights;
+  visual?: {
+    score: number;
+    ranAt: string;
+    source: string;
+  } | null;
+  performance?: WorkspaceCompositeQualityPerformanceBreakdown | null;
+  composite?: {
+    score: number | null;
+    includedDimensions: WorkspaceCompositeQualityDimension[];
+    explanation: string;
+  };
+  warnings?: string[];
+  message?: string;
+}
+
 /** PR execution status attached to completed jobs when Git PR integration is enabled. */
 export interface WorkspaceGitPrStatus {
   status: "executed" | "skipped";
@@ -605,6 +679,7 @@ export interface WorkspaceJobStatus {
   generationDiff?: WorkspaceGenerationDiffReport;
   visualAudit?: WorkspaceVisualAuditResult;
   visualQuality?: WorkspaceVisualQualityReport;
+  compositeQuality?: WorkspaceCompositeQualityReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -624,6 +699,7 @@ export interface WorkspaceJobResult {
   generationDiff?: WorkspaceGenerationDiffReport;
   visualAudit?: WorkspaceVisualAuditResult;
   visualQuality?: WorkspaceVisualQualityReport;
+  compositeQuality?: WorkspaceCompositeQualityReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }

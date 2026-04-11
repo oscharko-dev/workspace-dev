@@ -125,6 +125,92 @@ test("buildVisualBenchmarkPrComment handles missing baseline gracefully", async 
   }
 });
 
+test("buildVisualBenchmarkPrComment folds composite quality into the existing benchmark comment channel", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-pr-comment-composite-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureDir = path.join(artifactRoot, "last-run", "simple-form");
+    await mkdir(fixtureDir, { recursive: true });
+
+    const reportPath = path.join(artifactRoot, "last-run.json");
+    await writeJson(reportPath, {
+      version: 1,
+      ranAt: "2026-04-12T10:00:00.000Z",
+      scores: [{ fixtureId: "simple-form", score: 90 }],
+      overallCurrent: 90,
+    });
+    await writeJson(path.join(artifactRoot, "composite-quality-report.json"), {
+      version: 1,
+      generatedAt: "2026-04-12T10:05:00.000Z",
+      weights: {
+        visual: 0.6,
+        performance: 0.4,
+      },
+      visual: {
+        score: 90,
+        ranAt: "2026-04-12T10:00:00.000Z",
+        source: "artifacts/visual-benchmark/last-run.json",
+      },
+      performance: {
+        score: 84,
+        sampleCount: 2,
+        aggregateMetrics: {
+          fcp_ms: 1250,
+          lcp_ms: 1750,
+          cls: 0.04,
+          tbt_ms: 110,
+          speed_index_ms: 1500,
+        },
+        samples: [],
+        warnings: [],
+      },
+      composite: {
+        score: 87.6,
+        includedDimensions: ["visual", "performance"],
+        explanation: "0.6 * 90 + 0.4 * 84 = 87.6",
+      },
+      warnings: [],
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "simple-form",
+      score: 90,
+      ranAt: "2026-04-12T10:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+      thresholdResult: { score: 90, verdict: "pass", thresholds: { warn: 80 } },
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 90,
+      dimensions: [{ name: "Layout Accuracy", weight: 1, score: 90 }],
+    });
+
+    const { buildVisualBenchmarkPrComment, VISUAL_BENCHMARK_PR_COMMENT_MARKER } =
+      await import("../scripts/visual-benchmark-pr-comment.mjs");
+    const result = await buildVisualBenchmarkPrComment(reportPath, {
+      artifactUrl: "https://github.com/test/repo/actions/runs/123",
+    });
+
+    assert.equal(result.marker, VISUAL_BENCHMARK_PR_COMMENT_MARKER);
+    assert.ok(result.body.startsWith(VISUAL_BENCHMARK_PR_COMMENT_MARKER));
+    assert.doesNotMatch(result.body, /workspace-dev-composite-quality/);
+    assert.match(result.body, /### Combined Visual \+ Performance Quality/);
+    assert.match(result.body, /\*\*Visual Score:\*\* 90 \/ 100/);
+    assert.match(result.body, /\*\*Performance Score:\*\* 84 \/ 100/);
+    assert.match(result.body, /\*\*Composite Score:\*\* 87.6 \/ 100/);
+    assert.match(result.body, /\*\*Weights:\*\* visual 60%, performance 40%/);
+    assert.match(
+      result.body,
+      /\*\*Lighthouse Metrics:\*\* FCP 1250 ms, LCP 1750 ms, CLS 0\.0, TBT 110 ms, Speed Index 1500 ms/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("buildVisualBenchmarkPrComment handles missing report.json gracefully", async () => {
   const root = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-pr-comment-missing-report-"),

@@ -42,6 +42,10 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.visualQualityViewportWidth, 1280);
   assert.equal(runtime.visualQualityViewportHeight, 800);
   assert.equal(runtime.visualQualityDeviceScaleFactor, 1);
+  assert.deepEqual(runtime.compositeQualityWeights, {
+    visual: 0.6,
+    performance: 0.4
+  });
   assert.equal(runtime.enableUnitTestValidation, false);
   assert.equal(runtime.installPreferOffline, true);
   assert.equal(runtime.skipInstall, false);
@@ -123,6 +127,10 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.visualQualityViewportWidth, 4_096);
   assert.equal(runtime.visualQualityViewportHeight, 4_096);
   assert.equal(runtime.visualQualityDeviceScaleFactor, 4);
+  assert.deepEqual(runtime.compositeQualityWeights, {
+    visual: 0.6,
+    performance: 0.4
+  });
   assert.equal(runtime.enableUnitTestValidation, true);
   assert.equal(runtime.installPreferOffline, false);
   assert.equal(runtime.skipInstall, true);
@@ -166,6 +174,42 @@ test("resolveRuntimeSettings falls back to default visual quality settings for i
   assert.equal(runtime.visualQualityViewportWidth, 1280);
   assert.equal(runtime.visualQualityViewportHeight, 800);
   assert.equal(runtime.visualQualityDeviceScaleFactor, 1);
+});
+
+test("resolveRuntimeSettings resolves composite quality weights from explicit input and environment fallbacks", () => {
+  const previousVisual = process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT;
+  const previousPerformance = process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT;
+
+  process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT = "0.2";
+  process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT = "0.8";
+  try {
+    const fromEnv = resolveRuntimeSettings({});
+    assert.deepEqual(fromEnv.compositeQualityWeights, {
+      visual: 0.2,
+      performance: 0.8
+    });
+
+    const fromInput = resolveRuntimeSettings({
+      compositeQualityWeights: {
+        visual: 0.75
+      }
+    });
+    assert.deepEqual(fromInput.compositeQualityWeights, {
+      visual: 0.75,
+      performance: 0.25
+    });
+  } finally {
+    if (previousVisual === undefined) {
+      delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT;
+    } else {
+      process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT = previousVisual;
+    }
+    if (previousPerformance === undefined) {
+      delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT;
+    } else {
+      process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT = previousPerformance;
+    }
+  }
 });
 
 test("resolveRuntimeSettings accepts in-range visual quality viewport height and device scale factor", () => {

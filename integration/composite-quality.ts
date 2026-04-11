@@ -3,10 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import { toStableJsonString } from "./visual-benchmark.helpers.js";
 
-export const CompositeQualityWeightsSchema: z.ZodType<{
-  visual?: number;
-  performance?: number;
-}> = z.object({
+export const CompositeQualityWeightsSchema = z.object({
   visual: z.number().min(0).optional(),
   performance: z.number().min(0).optional(),
 });
@@ -95,7 +92,9 @@ export const MAX_COMPOSITE_QUALITY_HISTORY_SIZE = 1000;
 export const COMPOSITE_QUALITY_PR_COMMENT_MARKER =
   "<!-- workspace-dev-composite-quality -->" as const;
 
+const COMPOSITE_HISTORY_DIR_NAME = "composite-quality";
 const COMPOSITE_HISTORY_FILE_NAME = "composite-quality-history.json";
+const LEGACY_COMPOSITE_HISTORY_FILE_NAME = "history.json";
 
 const isPlainRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -368,6 +367,25 @@ const extractPerformanceCategoryScore = (lhr: unknown): number | null => {
   return roundTo(score * 100, 2);
 };
 
+const resolveLighthouseRoot = (value: unknown): Record<string, unknown> | null => {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  const nestedReport = value["report"];
+  if (isPlainRecord(nestedReport)) {
+    const nestedReportLhr = nestedReport["lhr"];
+    if (isPlainRecord(nestedReportLhr)) {
+      return nestedReportLhr;
+    }
+    return nestedReport;
+  }
+  const nestedLhr = value["lhr"];
+  if (isPlainRecord(nestedLhr)) {
+    return nestedLhr;
+  }
+  return value;
+};
+
 const assertLighthouseProfile = (value: unknown): LighthouseProfile => {
   if (value === "mobile" || value === "desktop") {
     return value;
@@ -503,11 +521,13 @@ export const loadLighthouseSamplesFromPerfReport = async (
       );
       continue;
     }
-    const audits = isPlainRecord(lhr) ? lhr["audits"] : undefined;
+    const lighthouseRoot = resolveLighthouseRoot(lhr);
+    const audits =
+      lighthouseRoot !== null ? lighthouseRoot["audits"] : undefined;
     samples.push({
       profile,
       route,
-      performanceScore: extractPerformanceCategoryScore(lhr),
+      performanceScore: extractPerformanceCategoryScore(lighthouseRoot),
       fcp_ms: extractNumericValue(audits, "first-contentful-paint"),
       lcp_ms: extractNumericValue(audits, "largest-contentful-paint"),
       cls: extractNumericValue(audits, "cumulative-layout-shift"),
@@ -602,7 +622,11 @@ export const loadVisualBenchmarkScoreFromLastRun = async (
 export const resolveCompositeQualityHistoryPath = (
   artifactRoot: string,
 ): string => {
-  return path.join(artifactRoot, COMPOSITE_HISTORY_FILE_NAME);
+  return path.join(
+    artifactRoot,
+    COMPOSITE_HISTORY_DIR_NAME,
+    COMPOSITE_HISTORY_FILE_NAME,
+  );
 };
 
 const parseHistoryEntry = (
@@ -689,17 +713,36 @@ export const parseCompositeQualityHistory = (
 export const loadCompositeQualityHistory = async (
   historyPath: string,
 ): Promise<CompositeQualityHistory | null> => {
+  const loadFromPath = async (
+    candidatePath: string,
+  ): Promise<CompositeQualityHistory | null> => {
+    try {
+      const content = await readFile(candidatePath, "utf8");
+      return parseCompositeQualityHistory(content);
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        return null;
+      }
+      throw error;
+    }
+  };
+
   try {
-    const content = await readFile(historyPath, "utf8");
-    return parseCompositeQualityHistory(content);
-  } catch (error: unknown) {
-    if (
-      error instanceof Error &&
-      "code" in error &&
-      (error as NodeJS.ErrnoException).code === "ENOENT"
-    ) {
+    const directHistory = await loadFromPath(historyPath);
+    if (directHistory !== null) {
+      return directHistory;
+    }
+    if (path.basename(historyPath) !== COMPOSITE_HISTORY_FILE_NAME) {
       return null;
     }
+    return await loadFromPath(
+      path.join(path.dirname(historyPath), LEGACY_COMPOSITE_HISTORY_FILE_NAME),
+    );
+  } catch (error: unknown) {
     throw error;
   }
 };

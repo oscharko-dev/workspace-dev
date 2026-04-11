@@ -10,10 +10,12 @@ on:
       - "src/job-engine/**"
       - "template/**"
       - "integration/visual-benchmark*"
+      - "integration/composite-quality*"
       - "integration/visual-quality*"
       - "integration/fixtures/visual-benchmark/**"
       - ".github/workflows/visual-benchmark.yml"
       - ".github/workflows/visual-benchmark-comment.yml"
+      - "scripts/compute-composite-quality.ts"
       - "scripts/print-visual-benchmark-summary.mjs"
       - "scripts/visual-benchmark-summary.mjs"
       - "scripts/print-visual-benchmark-pr-comment.mjs"
@@ -66,6 +68,20 @@ jobs:
 
       - name: Run frozen visual benchmark runner
         run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
+
+      - name: Run performance assertion for composite quality
+        if: always()
+        run: pnpm perf:web:assert
+
+      - name: Compute composite quality report
+        if: always()
+        run: >-
+          pnpm composite:quality
+          --visual-last-run artifacts/visual-benchmark/last-run.json
+          --perf-report template/react-mui-app/artifacts/performance/perf-assert-report.json
+          --perf-artifact-dir template/react-mui-app/artifacts/performance
+          --output artifacts/visual-benchmark/composite-quality-report.json
+          --no-history
 
       - name: Summarize visual quality report
         if: always()

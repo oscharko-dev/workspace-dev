@@ -1,4 +1,5 @@
 import type {
+  WorkspaceCompositeQualityReport,
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
   WorkspaceVisualAuditResult,
@@ -188,6 +189,15 @@ export const syncPublicJobProjection = async ({
     }
   });
   await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.compositeQualityReport,
+    assign: (value) => {
+      job.artifacts.compositeQualityReportFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.compositeQualityReportFile;
+    }
+  });
+  await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.validationSummaryFile,
     assign: (value) => {
       job.artifacts.validationSummaryFile = value;
@@ -227,6 +237,15 @@ export const syncPublicJobProjection = async ({
     job.visualQuality = visualQuality;
   } else {
     delete job.visualQuality;
+  }
+
+  const compositeQuality = await artifactStore.getValue<WorkspaceCompositeQualityReport>(
+    STAGE_ARTIFACT_KEYS.compositeQualityResult
+  );
+  if (compositeQuality !== undefined) {
+    job.compositeQuality = compositeQuality;
+  } else {
+    delete job.compositeQuality;
   }
 
   const gitPrStatus = await artifactStore.getValue<WorkspaceGitPrStatus>(STAGE_ARTIFACT_KEYS.gitPrStatus);

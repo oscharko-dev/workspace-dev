@@ -8,6 +8,7 @@
 
 import type {
   WorkspaceBrandTheme,
+  WorkspaceCompositeQualityWeightsInput,
   WorkspaceLogFormat,
   WorkspaceRouterMode,
   WorkspaceVisualBrowserName,
@@ -103,6 +104,7 @@ interface CliOptions {
   pipelineDiagnosticDetailsMaxDepth: number;
   enableUiValidation: boolean;
   enableVisualQualityValidation: boolean;
+  compositeQualityWeights?: WorkspaceCompositeQualityWeightsInput;
   visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth: number;
   visualQualityBrowsers: WorkspaceVisualBrowserName[];
@@ -155,6 +157,14 @@ const parseIntInRange = ({
     return fallback;
   }
   return Math.max(min, Math.min(max, parsed));
+};
+
+const parseOptionalFloat = (value: string | undefined): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number.parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 const parseBrandTheme = ({
@@ -369,6 +379,19 @@ const parseArgs = (argv: string[]): CliOptions => {
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION,
     DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION
   );
+  const compositeQualityVisualWeight = parseOptionalFloat(
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT
+  );
+  const compositeQualityPerformanceWeight = parseOptionalFloat(
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT
+  );
+  const compositeQualityWeights =
+    compositeQualityVisualWeight !== undefined || compositeQualityPerformanceWeight !== undefined
+      ? {
+          ...(compositeQualityVisualWeight !== undefined ? { visual: compositeQualityVisualWeight } : {}),
+          ...(compositeQualityPerformanceWeight !== undefined ? { performance: compositeQualityPerformanceWeight } : {})
+        }
+      : undefined;
   let visualQualityReferenceMode = parseVisualQualityReferenceMode({
     value: process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE,
     fallback: DEFAULT_VISUAL_QUALITY_REFERENCE_MODE
@@ -926,6 +949,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     pipelineDiagnosticDetailsMaxDepth,
     enableUiValidation,
     enableVisualQualityValidation,
+    ...(compositeQualityWeights !== undefined ? { compositeQualityWeights } : {}),
     visualQualityReferenceMode,
     visualQualityViewportWidth,
     visualQualityBrowsers,
@@ -1161,6 +1185,18 @@ const main = async (): Promise<void> => {
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION = options.enableVisualQualityValidation ? "true" : "false";
+  if (options.compositeQualityWeights?.visual !== undefined) {
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT = String(options.compositeQualityWeights.visual);
+  } else {
+    delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT;
+  }
+  if (options.compositeQualityWeights?.performance !== undefined) {
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT = String(
+      options.compositeQualityWeights.performance
+    );
+  } else {
+    delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT;
+  }
   process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE = options.visualQualityReferenceMode;
   process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH = String(options.visualQualityViewportWidth);
   process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS = options.visualQualityBrowsers.join(",");
@@ -1203,6 +1239,9 @@ const main = async (): Promise<void> => {
       pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth,
       enableUiValidation: options.enableUiValidation,
       enableVisualQualityValidation: options.enableVisualQualityValidation,
+      ...(options.compositeQualityWeights !== undefined
+        ? { compositeQualityWeights: options.compositeQualityWeights }
+        : {}),
       visualQualityReferenceMode: options.visualQualityReferenceMode,
       visualQualityViewportWidth: options.visualQualityViewportWidth,
       visualQualityBrowsers: options.visualQualityBrowsers,
@@ -1235,6 +1274,13 @@ const main = async (): Promise<void> => {
     logger.log({ level: "info", message: `Perf validation enabled: ${options.enablePerfValidation}` });
     logger.log({ level: "info", message: `UI validation enabled: ${options.enableUiValidation}` });
     logger.log({ level: "info", message: `Visual quality validation enabled: ${options.enableVisualQualityValidation}` });
+    logger.log({
+      level: "info",
+      message:
+        "Composite quality weights: " +
+        `${options.compositeQualityWeights?.visual ?? 0.6} visual, ` +
+        `${options.compositeQualityWeights?.performance ?? 0.4} performance`
+    });
     logger.log({ level: "info", message: `Visual quality reference mode: ${options.visualQualityReferenceMode}` });
     logger.log({ level: "info", message: `Visual quality viewport width: ${options.visualQualityViewportWidth}` });
     logger.log({ level: "info", message: `Visual quality browsers: ${options.visualQualityBrowsers.join(", ")}` });
