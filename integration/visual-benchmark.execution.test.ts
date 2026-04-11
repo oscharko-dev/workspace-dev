@@ -636,6 +636,28 @@ const makeSolidPngBuffer = ({
   return PNG.sync.write(png);
 };
 
+const makeSparsePixelPngBuffer = ({
+  width,
+  height,
+  activePixelIndexes,
+}: {
+  width: number;
+  height: number;
+  activePixelIndexes: readonly number[];
+}): Buffer => {
+  const png = new PNG({ width, height });
+  for (let i = 0; i < width * height; i += 1) {
+    const index = i * 4;
+    const isActive = activePixelIndexes.includes(i);
+    const channel = isActive ? 0 : 255;
+    png.data[index + 0] = channel;
+    png.data[index + 1] = channel;
+    png.data[index + 2] = channel;
+    png.data[index + 3] = 255;
+  }
+  return PNG.sync.write(png);
+};
+
 test("computeCrossBrowserConsistencyScore returns score 100 for a single browser", () => {
   const buffer = makeSolidPngBuffer({ width: 10, height: 10, r: 255, g: 0, b: 0 });
   const result = computeCrossBrowserConsistencyScore([
@@ -670,7 +692,10 @@ test("computeCrossBrowserConsistencyScore detects differences between browsers",
   assert.equal(result.pairwiseDiffs.length, 1);
   assert.ok((result.pairwiseDiffs[0]?.diffPercent ?? 0) > 0);
   assert.ok(result.warnings.length > 0);
-  assert.match(result.warnings[0] ?? "", /firefox.*differs.*chromium/i);
+  assert.match(
+    result.warnings[0] ?? "",
+    /chromium\s+vs\s+firefox: rendering differs by 100%/i,
+  );
 });
 
 test("computeCrossBrowserConsistencyScore produces pairwise diffs for three browsers", () => {
@@ -685,6 +710,44 @@ test("computeCrossBrowserConsistencyScore produces pairwise diffs for three brow
   // 3 browsers → 3 pairwise combinations
   assert.equal(result.pairwiseDiffs.length, 3);
   assert.deepEqual(result.browsers, ["chromium", "firefox", "webkit"]);
+});
+
+test("computeCrossBrowserConsistencyScore warns when the worst pair does not include the first browser", () => {
+  const chromiumBuffer = makeSparsePixelPngBuffer({
+    width: 10,
+    height: 10,
+    activePixelIndexes: [],
+  });
+  const firefoxBuffer = makeSparsePixelPngBuffer({
+    width: 10,
+    height: 10,
+    activePixelIndexes: [0, 1, 2, 3],
+  });
+  const webkitBuffer = makeSparsePixelPngBuffer({
+    width: 10,
+    height: 10,
+    activePixelIndexes: [4, 5, 6, 7],
+  });
+
+  const result = computeCrossBrowserConsistencyScore([
+    { browser: "chromium", screenshotBuffer: chromiumBuffer },
+    { browser: "firefox", screenshotBuffer: firefoxBuffer },
+    { browser: "webkit", screenshotBuffer: webkitBuffer },
+  ]);
+
+  assert.equal(result.consistencyScore, 92);
+  assert.equal(result.pairwiseDiffs.length, 3);
+  assert.equal(
+    result.pairwiseDiffs.find(
+      (pair) => pair.browserA === "firefox" && pair.browserB === "webkit",
+    )?.diffPercent,
+    8,
+  );
+  assert.ok(
+    result.warnings.some((warning) =>
+      /firefox\s+vs\s+webkit: rendering differs by 8%/i.test(warning),
+    ),
+  );
 });
 
 test("computeCrossBrowserConsistencyScore throws for empty entry list", () => {

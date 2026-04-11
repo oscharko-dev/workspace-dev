@@ -50,6 +50,7 @@ import {
   runVisualBenchmark,
   saveVisualBenchmarkBaseline,
   saveVisualBenchmarkBaselineScores,
+  saveVisualBenchmarkLastRunArtifact,
   type VisualBenchmarkBaseline,
   type VisualBenchmarkResult,
   type VisualBenchmarkScoreEntry,
@@ -3351,6 +3352,130 @@ test("runVisualBenchmark persists browser-aware last-run metadata and artifact m
         await readFile(path.resolve(process.cwd(), pair.diffImagePath));
       }
     }
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("saveVisualBenchmarkLastRunArtifact removes stale browser and pairwise artifacts on rerun", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "browser-aware-rerun",
+  });
+  try {
+    const artifactBaseInput = {
+      fixtureId: "browser-aware-rerun",
+      screenId: simpleFormMetadata.source.nodeId,
+      screenName: simpleFormMetadata.source.nodeName,
+      viewportId: "desktop",
+      viewportLabel: "Desktop",
+      score: 96,
+      ranAt: "2026-04-11T12:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+      actualImageBuffer: createTestPngBuffer(4, 4, [240, 240, 240, 255]),
+      diffImageBuffer: createTestPngBuffer(4, 4, [64, 64, 64, 255]),
+      report: createCompletedVisualQualityReport(96),
+    } as const;
+
+    await saveVisualBenchmarkLastRunArtifact(
+      {
+        ...artifactBaseInput,
+        browserArtifacts: [
+          {
+            browser: "chromium",
+            viewportId: "desktop",
+            viewportLabel: "Desktop",
+            score: 97,
+            screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [255, 0, 0, 255]),
+            report: createCompletedVisualQualityReport(97),
+            viewport: { width: 1280, height: 720 },
+          },
+          {
+            browser: "firefox",
+            viewportId: "desktop",
+            viewportLabel: "Desktop",
+            score: 95,
+            screenshotBuffer: createTestPngBuffer(4, 4, [250, 250, 250, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [255, 64, 0, 255]),
+            report: createCompletedVisualQualityReport(95),
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+        crossBrowserConsistency: {
+          browsers: ["chromium", "firefox"],
+          consistencyScore: 94,
+          warnings: ["chromium vs firefox: rendering differs by 6%"],
+          pairwiseDiffs: [
+            {
+              browserA: "chromium",
+              browserB: "firefox",
+              diffPercent: 6,
+              diffBuffer: createTestPngBuffer(4, 4, [255, 128, 0, 255]),
+            },
+          ],
+        },
+      },
+      env,
+    );
+
+    const artifactDir = path.join(
+      env.artifactRoot,
+      "last-run",
+      "browser-aware-rerun",
+      "screens",
+      "1_65671",
+      "desktop",
+    );
+    await readFile(
+      path.join(artifactDir, "browsers", "firefox", "actual.png"),
+    );
+    await readFile(
+      path.join(artifactDir, "pairwise", "chromium-vs-firefox.png"),
+    );
+
+    await saveVisualBenchmarkLastRunArtifact(
+      {
+        ...artifactBaseInput,
+        score: 98,
+        browserArtifacts: [
+          {
+            browser: "chromium",
+            viewportId: "desktop",
+            viewportLabel: "Desktop",
+            score: 98,
+            screenshotBuffer: createTestPngBuffer(4, 4, [248, 248, 248, 255]),
+            diffBuffer: createTestPngBuffer(4, 4, [0, 255, 0, 255]),
+            report: createCompletedVisualQualityReport(98),
+            viewport: { width: 1280, height: 720 },
+          },
+        ],
+      },
+      env,
+    );
+
+    await assert.rejects(
+      readFile(path.join(artifactDir, "browsers", "firefox", "actual.png")),
+      (error: unknown) =>
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT",
+    );
+    await assert.rejects(
+      readFile(path.join(artifactDir, "pairwise", "chromium-vs-firefox.png")),
+      (error: unknown) =>
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT",
+    );
+
+    const rerunArtifact = await loadVisualBenchmarkLastRunArtifact(
+      "browser-aware-rerun",
+      env,
+    );
+    assert.ok(rerunArtifact);
+    assert.deepEqual(rerunArtifact?.browserBreakdown, { chromium: 98 });
+    assert.equal(rerunArtifact?.perBrowser?.length, 1);
+    assert.equal(rerunArtifact?.crossBrowserConsistency, undefined);
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }

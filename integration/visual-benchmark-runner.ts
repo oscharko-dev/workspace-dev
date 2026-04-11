@@ -2112,6 +2112,22 @@ export const saveVisualBenchmarkLastRunArtifact = async (
       : {}),
   };
 
+  await Promise.all([
+    rm(path.join(paths.fixtureDir, "browsers"), {
+      recursive: true,
+      force: true,
+    }),
+    rm(path.join(paths.fixtureDir, "pairwise"), {
+      recursive: true,
+      force: true,
+    }),
+    input.diffImageBuffer !== undefined && input.diffImageBuffer !== null
+      ? Promise.resolve()
+      : rm(paths.diffPngPath, { force: true }),
+    input.report !== undefined && input.report !== null
+      ? Promise.resolve()
+      : rm(paths.reportJsonPath, { force: true }),
+  ]);
   await mkdir(paths.fixtureDir, { recursive: true });
   await writeFile(paths.actualPngPath, input.actualImageBuffer);
   if (input.diffImageBuffer !== undefined && input.diffImageBuffer !== null) {

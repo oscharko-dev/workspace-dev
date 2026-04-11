@@ -130,7 +130,7 @@ jobs:
         uses: actions/upload-artifact@v7
         if: always()
         with:
-          name: workspace-dev-visual-benchmark-${{ github.run_id }}-benchmark
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}
           path: artifacts/visual-benchmark
           if-no-files-found: ignore
 

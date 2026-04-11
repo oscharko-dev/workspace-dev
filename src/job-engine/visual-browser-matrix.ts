@@ -111,7 +111,8 @@ export const computeCrossBrowserConsistencyScore = (
   const pairwiseDiffs: CrossBrowserPairwiseDiff[] = [];
   let worstDiffFraction = 0;
   const warnings: string[] = [];
-  const baselineBrowser = entries[0]!.browser;
+  const warningDiffPercentThreshold =
+    100 - CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD;
 
   for (let i = 0; i < entries.length; i += 1) {
     const left = entries[i]!;
@@ -137,12 +138,9 @@ export const computeCrossBrowserConsistencyScore = (
   const consistencyScore = Math.round((1 - worstDiffFraction) * 100);
   if (consistencyScore < CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD) {
     for (const pair of pairwiseDiffs) {
-      if (pair.browserA !== baselineBrowser) {
-        continue;
-      }
-      if (pair.diffPercent >= 100 - CROSS_BROWSER_CONSISTENCY_WARN_THRESHOLD) {
+      if (pair.diffPercent >= warningDiffPercentThreshold) {
         warnings.push(
-          `${pair.browserB}: rendering differs from ${pair.browserA} by ${pair.diffPercent}%`,
+          `${pair.browserA} vs ${pair.browserB}: rendering differs by ${pair.diffPercent}%`,
         );
       }
     }
