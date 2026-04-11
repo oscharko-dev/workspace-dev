@@ -2,9 +2,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   DEFAULT_AB_ARTIFACT_ROOT,
+  applyVisualBenchmarkAbThreeWayDiffResult,
   formatVisualBenchmarkAbStatistics,
   formatVisualBenchmarkAbTable,
   loadVisualBenchmarkAbConfig,
+  markVisualBenchmarkAbThreeWayDiffFailed,
+  markVisualBenchmarkAbThreeWayDiffSkipped,
   persistVisualBenchmarkAbResult,
   persistVisualBenchmarkAbThreeWayDiffs,
   runVisualBenchmarkAb,
@@ -181,6 +184,42 @@ const formatSkippedThreeWayDiffEntry = (
   return `  - ${location}: ${entry.reason}${detail}`;
 };
 
+const summarizeThreeWayDiffStatuses = (
+  result: VisualBenchmarkAbResult,
+): string | null => {
+  let generated = 0;
+  let skippedDisabled = 0;
+  let skippedMissingInput = 0;
+  let failed = 0;
+  for (const entry of result.entries) {
+    switch (entry.threeWayDiff?.status) {
+      case "generated":
+        generated += 1;
+        break;
+      case "skipped_disabled":
+        skippedDisabled += 1;
+        break;
+      case "skipped_missing_input":
+        skippedMissingInput += 1;
+        break;
+      case "failed":
+        failed += 1;
+        break;
+      default:
+        break;
+    }
+  }
+  if (
+    generated === 0 &&
+    skippedDisabled === 0 &&
+    skippedMissingInput === 0 &&
+    failed === 0
+  ) {
+    return null;
+  }
+  return `Three-way diff status: ${String(generated)} generated, ${String(skippedDisabled)} disabled, ${String(skippedMissingInput)} missing-input, ${String(failed)} failed.`;
+};
+
 export const runVisualBenchmarkAbCli = async (
   args: readonly string[],
   options?: RunVisualBenchmarkAbCliOptions,
@@ -219,9 +258,6 @@ export const runVisualBenchmarkAbCli = async (
       output(`  - ${warning}`);
     }
   }
-  const persistComparison =
-    options?.persistComparison ?? defaultPersistComparison;
-  await persistComparison(result, resolution.artifactRoot, table);
   if (!resolution.skipThreeWayDiff) {
     const persistThreeWayDiffs =
       options?.persistThreeWayDiffs ?? defaultPersistThreeWayDiffs;
@@ -230,6 +266,7 @@ export const runVisualBenchmarkAbCli = async (
         result,
         resolution.artifactRoot,
       );
+      applyVisualBenchmarkAbThreeWayDiffResult(result, threeWayResult);
       if (threeWayResult.skipped.length > 0) {
         output("");
         output(
@@ -241,9 +278,23 @@ export const runVisualBenchmarkAbCli = async (
       }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      output(`Three-way diff generation skipped: ${message}`);
+      markVisualBenchmarkAbThreeWayDiffFailed(result, message);
+      output(`Three-way diff generation failed: ${message}`);
     }
+  } else {
+    markVisualBenchmarkAbThreeWayDiffSkipped(
+      result,
+      "Three-way diff generation disabled via --skip-three-way-diff.",
+    );
   }
+  const threeWaySummary = summarizeThreeWayDiffStatuses(result);
+  if (threeWaySummary !== null) {
+    output("");
+    output(threeWaySummary);
+  }
+  const persistComparison =
+    options?.persistComparison ?? defaultPersistComparison;
+  await persistComparison(result, resolution.artifactRoot, table);
   if (resolution.enforceNoRegression && result.statistics.degradedCount > 0) {
     output("");
     output(

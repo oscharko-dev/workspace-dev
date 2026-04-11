@@ -176,7 +176,19 @@ test("runVisualBenchmarkAbCli loads both configs, runs the comparison, and persi
       },
       persistThreeWayDiffs: async (_result, artifactRoot) => {
         persistedThreeWay.push({ artifactRoot });
-        return emptyThreeWayResult;
+        return {
+          written: [
+            {
+              fixtureId: "simple-form",
+              screenId: "1:65671",
+              diffImagePath: "three-way/simple-form/1_65671/default.png",
+              referenceImagePath: "ref.png",
+              outputAImagePath: "a.png",
+              outputBImagePath: "b.png",
+            },
+          ],
+          skipped: [],
+        };
       },
       output: (line) => lines.push(line),
     },
@@ -191,6 +203,11 @@ test("runVisualBenchmarkAbCli loads both configs, runs the comparison, and persi
   assert.equal(persistedThreeWay.length, 1);
   assert.ok(lines.some((line) => line.includes("Overall Average")));
   assert.ok(lines.some((line) => line.includes("Statistical summary")));
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 1 generated, 0 disabled, 0 missing-input, 0 failed."),
+    ),
+  );
 });
 
 test("runVisualBenchmarkAbCli skips three-way diff generation when --skip-three-way-diff is set", async () => {
@@ -228,7 +245,12 @@ test("runVisualBenchmarkAbCli reports three-way diff failures without aborting",
   assert.equal(status, 0);
   assert.ok(
     lines.some((line) =>
-      line.includes("Three-way diff generation skipped: disk full"),
+      line.includes("Three-way diff generation failed: disk full"),
+    ),
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 0 generated, 0 disabled, 0 missing-input, 1 failed."),
     ),
   );
 });
@@ -300,7 +322,6 @@ test("runVisualBenchmarkAbCli prints per-entry skipped reasons reported by persi
           {
             fixtureId: "simple-form",
             screenId: "1:65671",
-            viewportId: "desktop",
             reason: "side-a-artifact-missing-on-disk",
             detail:
               "artifacts/visual-benchmark-ab/config-a/last-run/simple-form/screens/1_65671/desktop/actual.png",
@@ -325,7 +346,7 @@ test("runVisualBenchmarkAbCli prints per-entry skipped reasons reported by persi
   assert.ok(
     lines.some((line) =>
       line.includes(
-        "simple-form / 1:65671 / desktop: side-a-artifact-missing-on-disk",
+        "simple-form / 1:65671: side-a-artifact-missing-on-disk",
       ),
     ),
   );
@@ -335,5 +356,83 @@ test("runVisualBenchmarkAbCli prints per-entry skipped reasons reported by persi
         "complex-dashboard / 2:10001 / desktop: dimension-divergence",
       ),
     ),
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 0 generated, 0 disabled, 0 missing-input, 1 failed."),
+    ),
+  );
+});
+
+test("runVisualBenchmarkAbCli marks entries as disabled when --skip-three-way-diff is set", async () => {
+  const persistedResults: VisualBenchmarkAbResult[] = [];
+  const lines: string[] = [];
+  await runVisualBenchmarkAbCli(
+    ["--config-a", "a.json", "--config-b", "b.json", "--skip-three-way-diff"],
+    {
+      loadConfig: async () => ({ label: Math.random().toString() }),
+      runAb: async () => buildAbResult(),
+      persistComparison: async (result) => {
+        persistedResults.push(structuredClone(result));
+      },
+      output: (line) => lines.push(line),
+    },
+  );
+  assert.equal(
+    persistedResults[0]?.entries[0]?.threeWayDiff?.status,
+    "skipped_disabled",
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 0 generated, 1 disabled, 0 missing-input, 0 failed."),
+    ),
+  );
+});
+
+test("runVisualBenchmarkAbCli surfaces missing-input three-way diff statuses", async () => {
+  const persistedResults: VisualBenchmarkAbResult[] = [];
+  const lines: string[] = [];
+  await runVisualBenchmarkAbCli(
+    ["--config-a", "a.json", "--config-b", "b.json"],
+    {
+      loadConfig: async () => ({ label: Math.random().toString() }),
+      runAb: async () => buildAbResult(),
+      persistComparison: async (result) => {
+        persistedResults.push(structuredClone(result));
+      },
+      persistThreeWayDiffs: async () => ({
+        written: [],
+        skipped: [
+          {
+            fixtureId: "simple-form",
+            screenId: "1:65671",
+            reason: "all-inputs-missing",
+          },
+        ],
+      }),
+      output: (line) => lines.push(line),
+    },
+  );
+  assert.equal(
+    persistedResults[0]?.entries[0]?.threeWayDiff?.status,
+    "skipped_missing_input",
+  );
+  assert.ok(
+    lines.some((line) =>
+      line.includes("Three-way diff status: 0 generated, 0 disabled, 1 missing-input, 0 failed."),
+    ),
+  );
+});
+
+test("runVisualBenchmarkAbCli fails fast when configs are non-comparable", async () => {
+  await assert.rejects(
+    async () =>
+      runVisualBenchmarkAbCli(["--config-a", "a.json", "--config-b", "b.json"], {
+        loadConfig: async (filePath) =>
+          filePath === "a.json"
+            ? { label: "A", browsers: ["chromium"] }
+            : { label: "B", browsers: ["firefox"] },
+      }),
+    /same browsers/i,
   );
 });

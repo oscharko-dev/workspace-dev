@@ -1,0 +1,20 @@
+{
+  "label": "Loose",
+  "description": "Lower warning threshold with a wider neutral band for A/B scoring audits.",
+  "qualityConfig": {
+    "thresholds": {
+      "warn": 78
+    },
+    "weights": {
+      "layoutAccuracy": 0.28,
+      "colorFidelity": 0.26,
+      "typography": 0.18,
+      "componentStructure": 0.16,
+      "spacingAlignment": 0.12
+    },
+    "regression": {
+      "neutralTolerance": 3
+    }
+  },
+  "browsers": ["chromium"]
+}

@@ -20,7 +20,7 @@ pnpm benchmark:visual:ab \
 Each run uses the frozen fixtures under
 `integration/fixtures/visual-benchmark/` (the same fixtures benchmark mode
 uses), so the only thing that changes between Run A and Run B is the
-configuration file you supply.
+quality/scoring configuration file you supply.
 
 ### CLI flags
 
@@ -77,6 +77,28 @@ with the rest of the visual quality system.
 Both labels must be distinct. The label is used to namespace warnings and to
 build the comparison table headers.
 
+### Comparability rule
+
+A/B mode is only valid when both configs execute against the same effective
+input surface. The following fields must either be omitted on both sides or
+resolve to the same value in both configs:
+
+- `browsers`
+- `viewportId`
+- `componentVisualCatalogFile`
+- `storybookStaticDir`
+
+Different values for any of those fields make the run non-comparable, because
+Run A and Run B would no longer be rendering the same benchmark surface. Keep
+those fields shared across both configs and restrict the A/B difference to the
+quality/scoring settings inside `qualityConfig`.
+
+The committed sample configs under
+`integration/fixtures/visual-benchmark-ab/strict.json` and
+`integration/fixtures/visual-benchmark-ab/loose.json` follow that rule: they
+use the same browser list on both sides and leave the other execution-shaping
+fields unset so they work across the frozen fixture corpus.
+
 ## Output layout
 
 ```
@@ -105,7 +127,8 @@ The per-run subdirectories are byte-for-byte equivalent to a normal
 - `configA` / `configB`: label, optional description, overall score
 - `entries[]`: one row per `fixtureId + screenId + viewportId`, with
   `scoreA`, `scoreB`, `delta`, and `indicator` (`improved`, `degraded`,
-  `neutral`, or `unavailable` when one side is missing)
+  `neutral`, or `unavailable` when one side is missing), plus `threeWayDiff`
+  metadata describing whether the mosaic was generated, skipped, or failed
 - `overallDelta`: B − A on the overall current score
 - `statistics`: `improvedCount`, `degradedCount`, `neutralCount`,
   `meanDelta`, `meanImprovement`, `bestImprovement`, `worstRegression`,
@@ -163,9 +186,9 @@ recorded as `skipped` with reason `dimension-divergence`, and stdout shows
 the per-entry skip reason. Callers that need to compose deliberately divergent
 inputs can pass a higher `maxDimensionRatio` programmatically.
 
-The persistence layer also distinguishes two related failure modes for each
-entry, surfaced in stdout as `Three-way diff: wrote N, skipped M` followed
-by per-entry reasons:
+The persistence layer also distinguishes related failure modes for each entry,
+surfaced in stdout as `Three-way diff: wrote N, skipped M` followed by
+per-entry reasons:
 
 - `all-inputs-missing` — neither the reference nor either side artifact
   could be read.
@@ -176,6 +199,10 @@ by per-entry reasons:
 - `dimension-divergence` — see above.
 - `compose-failed` — any other error from PNG composition (logged with
   `detail`).
+
+The same outcome is also attached to each `comparison.json` entry under
+`threeWayDiff`, so downstream tooling can distinguish generated artifacts from
+disabled, missing-input, and failed rows without scraping stdout.
 
 Pass `--skip-three-way-diff` to disable this step entirely (e.g. in CI when
 only the JSON comparison is needed).
@@ -210,6 +237,7 @@ wall-clock cost is roughly `2 × pnpm benchmark:visual`.
   current build still meets the committed quality bar.
 - Use **A/B mode** (`pnpm benchmark:visual:ab`) when you want to compare
   two configurations head-to-head — typically because you are tuning
-  scoring weights, evaluating browser sets, or experimenting with viewport
-  precedence and want explicit per-screen evidence of the trade-offs
-  before promoting one config to the committed baseline.
+  scoring weights and regression thresholds while keeping browser, viewport,
+  catalog, and Storybook inputs fixed, and you want explicit per-screen
+  evidence of the trade-offs before promoting one config to the committed
+  baseline.
