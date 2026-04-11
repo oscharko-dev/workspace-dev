@@ -1,5 +1,7 @@
 import type {
   WorkspaceBrandTheme,
+  WorkspaceCompositeQualityReport,
+  WorkspaceCompositeQualityWeights,
   WorkspaceCreatePrInput,
   WorkspaceCreatePrResult,
   WorkspaceLocalSyncFileDecisionEntry,
@@ -99,6 +101,7 @@ export interface JobRecord {
   generationDiff?: WorkspaceGenerationDiffReport;
   visualAudit?: WorkspaceVisualAuditResult;
   visualQuality?: WorkspaceVisualQualityReport;
+  compositeQuality?: WorkspaceCompositeQualityReport;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -151,6 +154,7 @@ export interface JobEngineRuntime {
   visualQualityViewportHeight: number;
   visualQualityDeviceScaleFactor: number;
   visualQualityBrowsers: WorkspaceVisualBrowserName[];
+  compositeQualityWeights: WorkspaceCompositeQualityWeights;
   enableUnitTestValidation: boolean;
   unitTestIgnoreFailure: boolean;
   installPreferOffline: boolean;

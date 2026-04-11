@@ -494,10 +494,12 @@ const createMinimalIr = (): DesignIR =>
 
 const createSuccessfulValidationResult = ({
   attempts = 1,
-  includeUiValidation = false
+  includeUiValidation = false,
+  includePerfValidation = false
 }: {
   attempts?: number;
   includeUiValidation?: boolean;
+  includePerfValidation?: boolean;
 } = {}): ProjectValidationResult => {
   return {
     attempts,
@@ -540,6 +542,17 @@ const createSuccessfulValidationResult = ({
             status: "passed" as const,
             command: "pnpm" as const,
             args: ["run", "validate:ui"],
+            attempt: attempts,
+            timedOut: false
+          }
+        }
+      : {}),
+    ...(includePerfValidation
+      ? {
+          perfAssert: {
+            status: "passed" as const,
+            command: "pnpm" as const,
+            args: ["run", "perf:assert"],
             attempt: attempts,
             timedOut: false
           }
@@ -4892,11 +4905,13 @@ test("ValidateProjectService reads generated.project and writes validation.summa
     generatedApp?: { status?: string; lint?: { args?: string[] } };
     visualAudit?: { status?: string };
     visualQuality?: { status?: string };
+    compositeQuality?: { status?: string };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.status, "ok");
   assert.equal(summary?.generatedApp?.status, "ok");
   assert.equal(summary?.visualAudit?.status, "not_requested");
   assert.equal(summary?.visualQuality?.status, "not_requested");
+  assert.equal(summary?.compositeQuality?.status, "not_requested");
   assert.deepEqual(summary?.generatedApp?.lint?.args, ["lint"]);
   assert.equal(
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.validationSummaryFile),
@@ -5053,6 +5068,11 @@ test("ValidateProjectService runs visual audit against the built dist bundle and
   const summary = await executionContext.artifactStore.getValue<{
     visualAudit?: { status?: string; reportPath?: string; actualImagePath?: string };
     visualQuality?: { overallScore?: number; interpretation?: string };
+    compositeQuality?: {
+      status?: string;
+      warnings?: string[];
+      composite?: { includedDimensions?: string[] };
+    };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
   assert.equal(summary?.visualAudit?.status, "warn");
   assert.equal(summary?.visualAudit?.reportPath, reportPath);
@@ -5102,8 +5122,17 @@ test("ValidateProjectService runs visual audit against the built dist bundle and
   assert.equal(typeof visualQualityArtifact?.overallScore, "number");
   assert.ok(summary?.visualQuality !== undefined, "Expected visualQuality in summary");
   assert.equal(typeof summary?.visualQuality?.overallScore, "number");
+  assert.equal(summary?.compositeQuality?.status, "completed");
+  assert.deepEqual(summary?.compositeQuality?.composite?.includedDimensions, ["visual"]);
+  assert.match(summary?.compositeQuality?.warnings?.[0] ?? "", /performance:/i);
   assert.ok(executionContext.job.visualQuality !== undefined, "Expected visualQuality on job record");
   assert.equal(typeof executionContext.job.visualQuality?.overallScore, "number");
+  assert.equal(executionContext.job.compositeQuality?.status, "completed");
+  assert.deepEqual(executionContext.job.compositeQuality?.composite?.includedDimensions, ["visual"]);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.compositeQualityReport),
+    path.join(executionContext.paths.jobDir, "composite-quality", "report.json")
+  );
 });
 
 test("ValidateProjectService fails with a structured error when the visual audit baseline is missing", async () => {
@@ -5295,7 +5324,18 @@ test("ValidateProjectService runs standalone visual quality in frozen_fixture mo
       capturedAt?: string;
       overallScore?: number;
     };
+    compositeQuality?: {
+      status?: string;
+      warnings?: string[];
+      composite?: { includedDimensions?: string[] };
+    };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  const compositeQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    weights?: { visual?: number; performance?: number };
+    composite?: { includedDimensions?: string[] };
+    warnings?: string[];
+  }>(STAGE_ARTIFACT_KEYS.compositeQualityResult);
 
   assert.equal(captureViewport?.width, 8);
   assert.equal(captureViewport?.deviceScaleFactor, 1);
@@ -5309,12 +5349,249 @@ test("ValidateProjectService runs standalone visual quality in frozen_fixture mo
   assert.equal(summary?.visualQuality?.referenceSource, "frozen_fixture");
   assert.equal(summary?.visualQuality?.capturedAt, "2026-04-09T00:00:00.000Z");
   assert.equal(typeof summary?.visualQuality?.overallScore, "number");
+  assert.equal(summary?.compositeQuality?.status, "completed");
+  assert.deepEqual(summary?.compositeQuality?.composite?.includedDimensions, ["visual"]);
+  assert.match(summary?.compositeQuality?.warnings?.[0] ?? "", /performance:/i);
+  assert.equal(compositeQuality?.status, "completed");
+  assert.equal(compositeQuality?.weights?.visual, 0.6);
+  assert.equal(compositeQuality?.weights?.performance, 0.4);
+  assert.deepEqual(compositeQuality?.composite?.includedDimensions, ["visual"]);
+  assert.match(compositeQuality?.warnings?.[0] ?? "", /performance:/i);
   assert.equal(
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualQualityReport),
     path.join(executionContext.paths.jobDir, "visual-quality", "report.json")
   );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.compositeQualityReport),
+    path.join(executionContext.paths.jobDir, "composite-quality", "report.json")
+  );
   assert.equal(executionContext.job.visualQuality?.status, "completed");
   assert.equal(executionContext.job.visualQuality?.referenceSource, "frozen_fixture");
+});
+
+test("ValidateProjectService persists composite quality with perf data and request-level weight overrides", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-composite-quality-perf-"));
+  const fixtureRoot = path.join(root, "fixtures", "customer-board");
+  const customerProfilePath = path.join(fixtureRoot, "inputs", "customer-profile.json");
+  const referenceImagePath = path.join(fixtureRoot, "visual-quality", "reference.png");
+  const referenceMetadataPath = path.join(fixtureRoot, "visual-quality", "reference.metadata.json");
+  await mkdir(path.dirname(customerProfilePath), { recursive: true });
+  await mkdir(path.dirname(referenceImagePath), { recursive: true });
+  await writeFile(customerProfilePath, JSON.stringify({ brandId: "customer-board" }), "utf8");
+  await writeFile(
+    path.join(fixtureRoot, "manifest.json"),
+    JSON.stringify(
+      {
+        version: 3,
+        visualQuality: {
+          frozenReferenceImage: "visual-quality/reference.png",
+          frozenReferenceMetadata: "visual-quality/reference.metadata.json"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    referenceImagePath,
+    createSolidPngBuffer({
+      width: 8,
+      height: 6,
+      rgba: [255, 255, 255, 255]
+    })
+  );
+  await writeFile(
+    referenceMetadataPath,
+    JSON.stringify(
+      {
+        capturedAt: "2026-04-11T00:00:00.000Z",
+        source: {
+          fileKey: "fixture-file",
+          nodeId: "1:2",
+          nodeName: "Fixture Screen",
+          lastModified: "2026-04-10T00:00:00.000Z"
+        },
+        viewport: {
+          width: 8,
+          height: 6
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    rootDir: root,
+    input: {
+      compositeQualityWeights: {
+        visual: 0.75,
+        performance: 0.25
+      }
+    },
+    runtimeOverrides: {
+      enableUiValidation: true,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8
+    },
+    requestOverrides: {
+      customerProfilePath,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8,
+      compositeQualityWeights: {
+        visual: 0.75,
+        performance: 0.25
+      }
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-composite-quality"
+    } satisfies GenerationDiffContext
+  });
+
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  const perfArtifactDir = path.join(executionContext.paths.generatedProjectDir, ".figmapipe", "performance");
+  await mkdir(distDir, { recursive: true });
+  await mkdir(perfArtifactDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>composite quality</body></html>\n", "utf8");
+  await writeFile(
+    path.join(perfArtifactDir, "lighthouse-home-mobile.json"),
+    JSON.stringify(
+      {
+        report: {
+          lhr: {
+            categories: {
+              performance: {
+                score: 0.94
+              }
+            },
+            audits: {
+              "first-contentful-paint": { numericValue: 1200 },
+              "largest-contentful-paint": { numericValue: 1800 },
+              "cumulative-layout-shift": { numericValue: 0.02 },
+              "total-blocking-time": { numericValue: 40 },
+              "speed-index": { numericValue: 1500 }
+            }
+          }
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    path.join(perfArtifactDir, "perf-assert-report.json"),
+    JSON.stringify(
+      {
+        samples: [
+          {
+            profile: "mobile",
+            route: "/",
+            artifacts: {
+              lighthouseReport: "./lighthouse-home-mobile.json"
+            }
+          }
+        ]
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () =>
+      createSuccessfulValidationResult({ includeUiValidation: true, includePerfValidation: true }),
+    captureFromProjectFn: async () => {
+      return {
+        screenshotBuffer: createSolidPngBuffer({
+          width: 8,
+          height: 6,
+          rgba: [248, 248, 248, 255]
+        }),
+        width: 8,
+        height: 6,
+        viewport: {
+          width: 8,
+          height: 6,
+          deviceScaleFactor: 1
+        }
+      };
+    },
+    comparePngBuffersFn: () => {
+      return {
+        diffImageBuffer: createSolidPngBuffer({
+          width: 8,
+          height: 6,
+          rgba: [255, 0, 0, 255]
+        }),
+        similarityScore: 90,
+        diffPixelCount: 4,
+        totalPixels: 48,
+        regions: [],
+        width: 8,
+        height: 6
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const compositeQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    weights?: { visual?: number; performance?: number };
+    performance?: {
+      score?: number | null;
+      sampleCount?: number;
+      sourcePath?: string;
+      aggregateMetrics?: { lcp_ms?: number | null };
+    };
+    composite?: { score?: number | null; includedDimensions?: string[] };
+    warnings?: string[];
+  }>(STAGE_ARTIFACT_KEYS.compositeQualityResult);
+  const summary = await executionContext.artifactStore.getValue<{
+    compositeQuality?: {
+      status?: string;
+      weights?: { visual?: number; performance?: number };
+      composite?: { score?: number | null; includedDimensions?: string[] };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+
+  assert.equal(compositeQuality?.status, "completed");
+  assert.equal(compositeQuality?.weights?.visual, 0.75);
+  assert.equal(compositeQuality?.weights?.performance, 0.25);
+  assert.equal(compositeQuality?.performance?.score, 94);
+  assert.equal(compositeQuality?.performance?.sampleCount, 1);
+  assert.equal(compositeQuality?.performance?.aggregateMetrics?.lcp_ms, 1800);
+  assert.match(compositeQuality?.performance?.sourcePath ?? "", /perf-assert-report\.json$/);
+  assert.deepEqual(compositeQuality?.composite?.includedDimensions, ["visual", "performance"]);
+  assert.equal(typeof compositeQuality?.composite?.score, "number");
+  assert.deepEqual(compositeQuality?.warnings, []);
+  assert.equal(summary?.compositeQuality?.status, "completed");
+  assert.equal(summary?.compositeQuality?.weights?.visual, 0.75);
+  assert.deepEqual(summary?.compositeQuality?.composite?.includedDimensions, ["visual", "performance"]);
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.compositeQualityReport),
+    path.join(executionContext.paths.jobDir, "composite-quality", "report.json")
+  );
+  assert.equal(
+    executionContext.job.artifacts.compositeQualityReportFile,
+    path.join(executionContext.paths.jobDir, "composite-quality", "report.json")
+  );
+  assert.equal(executionContext.job.compositeQuality?.weights?.visual, 0.75);
 });
 
 test("ValidateProjectService emits browser-aware standalone visual quality reports and artifacts", async () => {

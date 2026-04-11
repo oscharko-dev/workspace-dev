@@ -50,7 +50,8 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
         visualAuditActualImageFile: path.join(jobDir, "stale-visual-actual.png"),
         visualAuditDiffImageFile: path.join(jobDir, "stale-visual-diff.png"),
         visualAuditReportFile: path.join(jobDir, "stale-visual-report.json"),
-        visualQualityReportFile: path.join(jobDir, "stale-visual-quality-report.json")
+        visualQualityReportFile: path.join(jobDir, "stale-visual-quality-report.json"),
+        compositeQualityReportFile: path.join(jobDir, "stale-composite-quality-report.json")
       },
       preview: { enabled: false },
       queue: {
@@ -86,6 +87,39 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
           versions: { packageVersion: "0.0.0", contractVersion: "0.0.0" }
         }
       },
+      compositeQuality: {
+        status: "completed",
+        generatedAt: "2026-01-01T00:00:00.000Z",
+        weights: {
+          visual: 0.6,
+          performance: 0.4
+        },
+        visual: {
+          score: 10,
+          ranAt: "2026-01-01T00:00:00.000Z",
+          source: "stale-visual"
+        },
+        performance: {
+          sourcePath: "stale-performance.json",
+          score: 20,
+          sampleCount: 1,
+          samples: [],
+          aggregateMetrics: {
+            fcp_ms: 1000,
+            lcp_ms: 1500,
+            cls: 0.01,
+            tbt_ms: 20,
+            speed_index_ms: 1200
+          },
+          warnings: []
+        },
+        composite: {
+          score: 14,
+          includedDimensions: ["visual", "performance"],
+          explanation: "stale"
+        },
+        warnings: ["stale composite"]
+      },
       gitPr: {
         status: "skipped",
         reason: "stale"
@@ -115,6 +149,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   const visualAuditDiffImageFile = path.join(jobDir, "visual-audit", "diff.png");
   const visualAuditReportFile = path.join(jobDir, "visual-audit", "report.json");
   const visualQualityReportFile = path.join(jobDir, "visual-quality", "report.json");
+  const compositeQualityReportFile = path.join(jobDir, "composite-quality", "report.json");
 
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.figmaCleaned,
@@ -201,6 +236,11 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     stage: "validate.project",
     absolutePath: visualQualityReportFile
   });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.compositeQualityReport,
+    stage: "validate.project",
+    absolutePath: compositeQualityReportFile
+  });
   await artifactStore.setValue({
     key: STAGE_ARTIFACT_KEYS.generationDiff,
     stage: "codegen.generate",
@@ -273,6 +313,54 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     }
   });
   await artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.compositeQualityResult,
+    stage: "validate.project",
+    value: {
+      status: "completed",
+      generatedAt: "2026-04-08T00:00:00.000Z",
+      weights: {
+        visual: 0.7,
+        performance: 0.3
+      },
+      visual: {
+        score: 87.5,
+        ranAt: "2026-04-08T00:00:00.000Z",
+        source: visualQualityReportFile
+      },
+      performance: {
+        sourcePath: path.join(jobDir, "generated-app", ".figmapipe", "performance", "perf-assert-report.json"),
+        score: 92.25,
+        sampleCount: 2,
+        samples: [
+          {
+            profile: "mobile",
+            route: "/",
+            performanceScore: 91,
+            fcp_ms: 1200,
+            lcp_ms: 1800,
+            cls: 0.02,
+            tbt_ms: 30,
+            speed_index_ms: 1600
+          }
+        ],
+        aggregateMetrics: {
+          fcp_ms: 1200,
+          lcp_ms: 1800,
+          cls: 0.02,
+          tbt_ms: 30,
+          speed_index_ms: 1600
+        },
+        warnings: []
+      },
+      composite: {
+        score: 88.93,
+        includedDimensions: ["visual", "performance"],
+        explanation: "0.7 * 87.5 + 0.3 * 92.25 = 88.93"
+      },
+      warnings: []
+    }
+  });
+  await artifactStore.setValue({
     key: STAGE_ARTIFACT_KEYS.gitPrStatus,
     stage: "git.pr",
     value: {
@@ -305,6 +393,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   assert.equal(job.artifacts.visualAuditDiffImageFile, visualAuditDiffImageFile);
   assert.equal(job.artifacts.visualAuditReportFile, visualAuditReportFile);
   assert.equal(job.artifacts.visualQualityReportFile, visualQualityReportFile);
+  assert.equal(job.artifacts.compositeQualityReportFile, compositeQualityReportFile);
   assert.deepEqual(job.generationDiff, { summary: "fresh diff" });
   assert.deepEqual(job.visualAudit, {
     status: "warn",
@@ -348,6 +437,14 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   ]);
   assert.equal(job.visualQuality?.interpretation, "Good");
   assert.equal(job.visualQuality?.diffImagePath, visualAuditDiffImageFile);
+  assert.equal(job.compositeQuality?.status, "completed");
+  assert.equal(job.compositeQuality?.weights?.visual, 0.7);
+  assert.equal(job.compositeQuality?.weights?.performance, 0.3);
+  assert.equal(job.compositeQuality?.visual?.score, 87.5);
+  assert.equal(job.compositeQuality?.performance?.score, 92.25);
+  assert.equal(job.compositeQuality?.performance?.sampleCount, 2);
+  assert.equal(job.compositeQuality?.composite?.score, 88.93);
+  assert.deepEqual(job.compositeQuality?.composite?.includedDimensions, ["visual", "performance"]);
   assert.deepEqual(job.gitPr, {
     status: "executed",
     branchName: "feature/public-projection",
@@ -362,4 +459,5 @@ test("syncPublicJobProjection clears stale visualQuality when no artifact is sto
   await syncPublicJobProjection({ job, artifactStore });
 
   assert.equal(job.visualQuality, undefined);
+  assert.equal(job.compositeQuality, undefined);
 });

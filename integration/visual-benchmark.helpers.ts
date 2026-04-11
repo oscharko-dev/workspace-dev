@@ -505,7 +505,7 @@ export const parseVisualBenchmarkFixtureMetadata = (
       parsed.screens,
       fixtureId,
       parsed.version === 3 || parsed.version === 4,
-      { mode, version: parsed.version },
+      { version: parsed.version, ...(mode !== undefined ? { mode } : {}) },
     );
   }
 

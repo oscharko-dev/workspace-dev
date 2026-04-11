@@ -10,6 +10,7 @@ import {
   loadCompositeQualityHistory,
   loadLighthouseSamplesFromPerfReport,
   loadVisualBenchmarkScoreFromLastRun,
+  resolveCompositeQualityHistoryPath,
   renderCompositeQualityMarkdown,
   resolveCompositeQualityWeights,
   saveCompositeQualityHistory,
@@ -35,7 +36,7 @@ interface CompositeQualityCliOptions {
 const DEFAULT_VISUAL_LAST_RUN = "artifacts/visual-benchmark/last-run.json";
 const DEFAULT_PERF_REPORT =
   "template/react-mui-app/artifacts/performance/perf-assert-report.json";
-const DEFAULT_HISTORY_PATH = "artifacts/composite-quality/history.json";
+const DEFAULT_HISTORY_PATH = resolveCompositeQualityHistoryPath("artifacts");
 
 const usage = (): string =>
   [

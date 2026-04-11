@@ -1847,9 +1847,14 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   assert.match(workflow, /actions\/github-script@v8/);
   assert.match(workflow, /check-output\.json/);
   assert.match(workflow, /github\.rest\.checks\.update/);
+  assert.match(workflow, /integration\/composite-quality\*/);
+  assert.match(workflow, /scripts\/compute-composite-quality\.ts/);
   assert.match(workflow, /scripts\/print-visual-benchmark-summary\.mjs/);
   assert.match(workflow, /scripts\/visual-benchmark-summary\.mjs/);
   assert.match(workflow, /scripts\/print-visual-benchmark-pr-comment\.mjs/);
+  assert.match(workflow, /pnpm perf:web:assert/);
+  assert.match(workflow, /pnpm composite:quality/);
+  assert.match(workflow, /composite-quality-report\.json/);
   assert.doesNotMatch(
     workflow,
     /name:\s+Post or update visual benchmark PR comment/,

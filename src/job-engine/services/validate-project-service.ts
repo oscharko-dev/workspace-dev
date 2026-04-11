@@ -1,6 +1,10 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
+  WorkspaceCompositeQualityLighthouseSample,
+  WorkspaceCompositeQualityPerformanceBreakdown,
+  WorkspaceCompositeQualityReport,
+  WorkspaceCompositeQualityWeights,
   WorkspaceVisualBrowserName,
   WorkspaceVisualAuditResult,
   WorkspaceVisualQualityFrozenReference,
@@ -196,6 +200,7 @@ interface ValidationSummaryArtifact {
   uiA11y: ValidationUiA11ySummary;
   visualAudit: WorkspaceVisualAuditResult;
   visualQuality: WorkspaceVisualQualityReport;
+  compositeQuality: WorkspaceCompositeQualityReport;
   storybook:
     | {
         status: "ok" | "failed";
@@ -469,9 +474,60 @@ const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): Workspac
   };
 };
 
+const cloneCompositeQualityReport = (value: WorkspaceCompositeQualityReport): WorkspaceCompositeQualityReport => {
+  return {
+    ...value,
+    ...(value.weights ? { weights: { ...value.weights } } : {}),
+    ...(value.visual ? { visual: { ...value.visual } } : {}),
+    ...(value.performance
+      ? {
+          performance: {
+            ...value.performance,
+            samples: value.performance.samples.map((sample) => ({ ...sample })),
+            aggregateMetrics: { ...value.performance.aggregateMetrics },
+            warnings: [...value.performance.warnings]
+          }
+        }
+      : {}),
+    ...(value.composite
+      ? {
+          composite: {
+            ...value.composite,
+            includedDimensions: [...value.composite.includedDimensions]
+          }
+        }
+      : {}),
+    ...(value.warnings ? { warnings: [...value.warnings] } : {})
+  };
+};
+
 const createNotRequestedVisualQualityReport = (): WorkspaceVisualQualityReport => ({
   status: "not_requested"
 });
+
+const createNotRequestedCompositeQualityReport = (): WorkspaceCompositeQualityReport => ({
+  status: "not_requested"
+});
+
+const createFailedCompositeQualityReport = ({
+  weights,
+  generatedAt,
+  message,
+  warnings
+}: {
+  weights: WorkspaceCompositeQualityWeights;
+  generatedAt: string;
+  message: string;
+  warnings?: string[];
+}): WorkspaceCompositeQualityReport => {
+  return {
+    status: "failed",
+    generatedAt,
+    weights: { ...weights },
+    message,
+    ...(warnings && warnings.length > 0 ? { warnings: [...warnings] } : {})
+  };
+};
 
 const createFailedVisualQualityReport = ({
   referenceSource,
@@ -547,6 +603,326 @@ const createCompletedVisualQualityReport = ({
         }
       : {}),
     ...(warnings && warnings.length > 0 ? { warnings: [...warnings] } : {})
+  };
+};
+
+const DEFAULT_COMPOSITE_QUALITY_WEIGHTS: WorkspaceCompositeQualityWeights = {
+  visual: 0.6,
+  performance: 0.4
+};
+
+const roundCompositeMetric = (value: number, decimals: number): number => {
+  const factor = 10 ** decimals;
+  return Math.round(value * factor) / factor;
+};
+
+const resolveCompositeQualityWeights = (
+  input?: { visual?: number; performance?: number } | null
+): WorkspaceCompositeQualityWeights => {
+  if (input === undefined || input === null) {
+    return { ...DEFAULT_COMPOSITE_QUALITY_WEIGHTS };
+  }
+
+  const validate = (value: number | undefined, label: string): void => {
+    if (value === undefined) {
+      return;
+    }
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+      throw new Error(`composite quality ${label} weight must be within 0..1.`);
+    }
+  };
+
+  validate(input.visual, "visual");
+  validate(input.performance, "performance");
+
+  let visual = input.visual;
+  let performance = input.performance;
+  if (visual === undefined && performance === undefined) {
+    return { ...DEFAULT_COMPOSITE_QUALITY_WEIGHTS };
+  }
+  if (visual === undefined && performance !== undefined) {
+    visual = 1 - performance;
+  } else if (performance === undefined && visual !== undefined) {
+    performance = 1 - visual;
+  }
+
+  const total = (visual ?? 0) + (performance ?? 0);
+  if (!Number.isFinite(total) || total <= 0) {
+    throw new Error("composite quality weights must sum to a positive value.");
+  }
+
+  return {
+    visual: roundCompositeMetric((visual ?? 0) / total, 4),
+    performance: roundCompositeMetric((performance ?? 0) / total, 4)
+  };
+};
+
+const computeCompositeScore = ({
+  visualScore,
+  performanceScore,
+  weights
+}: {
+  visualScore: number | null;
+  performanceScore: number | null;
+  weights: WorkspaceCompositeQualityWeights;
+}): NonNullable<WorkspaceCompositeQualityReport["composite"]> => {
+  if (visualScore === null && performanceScore === null) {
+    return {
+      score: null,
+      includedDimensions: [],
+      explanation: "no scores available"
+    };
+  }
+  if (visualScore !== null && performanceScore === null) {
+    return {
+      score: roundCompositeMetric(visualScore, 2),
+      includedDimensions: ["visual"],
+      explanation: `visual-only fallback: ${String(roundCompositeMetric(visualScore, 2))}`
+    };
+  }
+  if (visualScore === null && performanceScore !== null) {
+    return {
+      score: roundCompositeMetric(performanceScore, 2),
+      includedDimensions: ["performance"],
+      explanation: `performance-only fallback: ${String(roundCompositeMetric(performanceScore, 2))}`
+    };
+  }
+  const resolvedVisual = visualScore ?? 0;
+  const resolvedPerformance = performanceScore ?? 0;
+  const score = roundCompositeMetric(
+    weights.visual * resolvedVisual + weights.performance * resolvedPerformance,
+    2
+  );
+  return {
+    score,
+    includedDimensions: ["visual", "performance"],
+    explanation: `${String(weights.visual)} * ${String(resolvedVisual)} + ${String(weights.performance)} * ${String(resolvedPerformance)} = ${String(score)}`
+  };
+};
+
+const meanCompositeMetricOrNull = (values: readonly number[]): number | null => {
+  if (values.length === 0) {
+    return null;
+  }
+  return roundCompositeMetric(values.reduce((sum, value) => sum + value, 0) / values.length, 2);
+};
+
+const loadCompositePerformanceBreakdown = async ({
+  artifactDir
+}: {
+  artifactDir: string;
+}): Promise<WorkspaceCompositeQualityPerformanceBreakdown> => {
+  const candidatePaths = [
+    path.join(artifactDir, "perf-assert-report.json"),
+    path.join(artifactDir, "perf-baseline.json")
+  ];
+  let sourcePath: string | undefined;
+  let rawContent: string | undefined;
+  for (const candidatePath of candidatePaths) {
+    try {
+      rawContent = await readFile(candidatePath, "utf8");
+      sourcePath = candidatePath;
+      break;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  const warnings: string[] = [];
+  if (rawContent === undefined || sourcePath === undefined) {
+    return {
+      score: null,
+      sampleCount: 0,
+      samples: [],
+      aggregateMetrics: {
+        fcp_ms: null,
+        lcp_ms: null,
+        cls: null,
+        tbt_ms: null,
+        speed_index_ms: null
+      },
+      warnings: [`performance report not found (looked for ${candidatePaths.join(", ")})`]
+    };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawContent);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      sourcePath,
+      score: null,
+      sampleCount: 0,
+      samples: [],
+      aggregateMetrics: {
+        fcp_ms: null,
+        lcp_ms: null,
+        cls: null,
+        tbt_ms: null,
+        speed_index_ms: null
+      },
+      warnings: [`performance report is not valid JSON: ${message}`]
+    };
+  }
+
+  if (!isRecord(parsed) || !Array.isArray(parsed.samples)) {
+    return {
+      sourcePath,
+      score: null,
+      sampleCount: 0,
+      samples: [],
+      aggregateMetrics: {
+        fcp_ms: null,
+        lcp_ms: null,
+        cls: null,
+        tbt_ms: null,
+        speed_index_ms: null
+      },
+      warnings: ["performance report missing samples[] array"]
+    };
+  }
+
+  const samples: WorkspaceCompositeQualityLighthouseSample[] = [];
+  const performanceScores: number[] = [];
+  const fcpValues: number[] = [];
+  const lcpValues: number[] = [];
+  const clsValues: number[] = [];
+  const tbtValues: number[] = [];
+  const speedIndexValues: number[] = [];
+
+  const resolveLighthouseRoot = (value: unknown): Record<string, unknown> | null => {
+    if (!isRecord(value)) {
+      return null;
+    }
+    const report = isRecord(value.report) ? value.report : null;
+    if (report && isRecord(report.lhr)) {
+      return report.lhr;
+    }
+    if (report) {
+      return report;
+    }
+    return isRecord(value.lhr) ? value.lhr : value;
+  };
+  const extractAuditMetric = (audits: unknown, key: string): number | null => {
+    if (!isRecord(audits) || !isRecord(audits[key])) {
+      return null;
+    }
+    const numericValue = audits[key].numericValue;
+    return typeof numericValue === "number" && Number.isFinite(numericValue) ? numericValue : null;
+  };
+  const extractPerformanceScore = (lhrRoot: unknown): number | null => {
+    if (!isRecord(lhrRoot) || !isRecord(lhrRoot.categories) || !isRecord(lhrRoot.categories.performance)) {
+      return null;
+    }
+    const score = lhrRoot.categories.performance.score;
+    return typeof score === "number" && Number.isFinite(score) ? roundCompositeMetric(score * 100, 2) : null;
+  };
+
+  for (let index = 0; index < parsed.samples.length; index += 1) {
+    const sample = parsed.samples[index];
+    if (!isRecord(sample)) {
+      warnings.push(`sample[${String(index)}]: not an object, skipping`);
+      continue;
+    }
+    const profile = sample.profile;
+    if (profile !== "mobile" && profile !== "desktop") {
+      warnings.push(`sample[${String(index)}]: unsupported lighthouse profile (${String(profile)})`);
+      continue;
+    }
+    const route = typeof sample.route === "string" ? sample.route : "(unknown)";
+    const lighthouseReportRaw =
+      isRecord(sample.artifacts) && typeof sample.artifacts.lighthouseReport === "string"
+        ? sample.artifacts.lighthouseReport
+        : undefined;
+    if (!lighthouseReportRaw) {
+      warnings.push(`sample[${String(index)}] ${profile} ${route}: missing artifacts.lighthouseReport path`);
+      continue;
+    }
+    const lighthouseReportPath = path.isAbsolute(lighthouseReportRaw)
+      ? lighthouseReportRaw
+      : path.resolve(artifactDir, lighthouseReportRaw);
+    let lighthouseReportContent: string;
+    try {
+      lighthouseReportContent = await readFile(lighthouseReportPath, "utf8");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`sample[${String(index)}] ${profile} ${route}: failed to read ${lighthouseReportPath} (${message})`);
+      continue;
+    }
+    let lighthouseReportParsed: unknown;
+    try {
+      lighthouseReportParsed = JSON.parse(lighthouseReportContent);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      warnings.push(`sample[${String(index)}] ${profile} ${route}: malformed lighthouse report (${message})`);
+      continue;
+    }
+
+    const lighthouseRoot = resolveLighthouseRoot(lighthouseReportParsed);
+    const audits = lighthouseRoot?.audits;
+    const performanceScore = extractPerformanceScore(lighthouseRoot);
+    const loadedSample: WorkspaceCompositeQualityLighthouseSample = {
+      profile,
+      route,
+      performanceScore,
+      fcp_ms: extractAuditMetric(audits, "first-contentful-paint"),
+      lcp_ms: extractAuditMetric(audits, "largest-contentful-paint"),
+      cls: extractAuditMetric(audits, "cumulative-layout-shift"),
+      tbt_ms: extractAuditMetric(audits, "total-blocking-time"),
+      speed_index_ms: extractAuditMetric(audits, "speed-index")
+    };
+    samples.push(loadedSample);
+
+    const label = `${profile} ${route}`;
+    if (performanceScore !== null) {
+      performanceScores.push(performanceScore);
+    } else {
+      warnings.push(`${label}: missing performance score`);
+    }
+    if (loadedSample.fcp_ms !== null) {
+      fcpValues.push(loadedSample.fcp_ms);
+    } else {
+      warnings.push(`${label}: missing FCP`);
+    }
+    if (loadedSample.lcp_ms !== null) {
+      lcpValues.push(loadedSample.lcp_ms);
+    } else {
+      warnings.push(`${label}: missing LCP`);
+    }
+    if (loadedSample.cls !== null) {
+      clsValues.push(loadedSample.cls);
+    } else {
+      warnings.push(`${label}: missing CLS`);
+    }
+    if (loadedSample.tbt_ms !== null) {
+      tbtValues.push(loadedSample.tbt_ms);
+    } else {
+      warnings.push(`${label}: missing TBT`);
+    }
+    if (loadedSample.speed_index_ms !== null) {
+      speedIndexValues.push(loadedSample.speed_index_ms);
+    } else {
+      warnings.push(`${label}: missing Speed Index`);
+    }
+  }
+
+  return {
+    sourcePath,
+    score: meanCompositeMetricOrNull(performanceScores),
+    sampleCount: samples.length,
+    samples,
+    aggregateMetrics: {
+      fcp_ms: meanCompositeMetricOrNull(fcpValues),
+      lcp_ms: meanCompositeMetricOrNull(lcpValues),
+      cls: meanCompositeMetricOrNull(clsValues),
+      tbt_ms: meanCompositeMetricOrNull(tbtValues),
+      speed_index_ms: meanCompositeMetricOrNull(speedIndexValues)
+    },
+    warnings
   };
 };
 
@@ -842,6 +1218,7 @@ const resolveSummaryStatus = ({
   generatedApp,
   uiA11y,
   visualAudit,
+  compositeQuality,
   storybook,
   mapping,
   style,
@@ -850,15 +1227,25 @@ const resolveSummaryStatus = ({
   generatedApp: ValidationSummaryArtifact["generatedApp"];
   uiA11y: ValidationSummaryArtifact["uiA11y"];
   visualAudit: ValidationSummaryArtifact["visualAudit"];
+  compositeQuality: ValidationSummaryArtifact["compositeQuality"];
   storybook: ValidationSummaryArtifact["storybook"];
   mapping: ValidationSummaryArtifact["mapping"];
   style: ValidationSummaryArtifact["style"];
   importSummary: ValidationSummaryArtifact["import"];
 }): ValidationSummaryArtifact["status"] => {
+  const compositeQualityStatus: ValidationGateStatus =
+    compositeQuality.status === "failed"
+      ? "failed"
+      : compositeQuality.status === "completed" && (compositeQuality.warnings?.length ?? 0) > 0
+        ? "warn"
+        : compositeQuality.status === "completed"
+          ? "ok"
+          : "not_requested";
   const gateStatuses: ValidationGateStatus[] = [
     generatedApp.status,
     uiA11y.status,
     visualAudit.status,
+    compositeQualityStatus,
     storybook.status,
     mapping.status,
     style.status,
@@ -954,7 +1341,8 @@ const buildValidationSummaryArtifact = async ({
   componentMatchReportArtifact,
   storybookArtifactStatusOverrides,
   visualAuditResult,
-  visualQualityReport
+  visualQualityReport,
+  compositeQualityReport
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -968,6 +1356,7 @@ const buildValidationSummaryArtifact = async ({
   storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
   visualAuditResult?: WorkspaceVisualAuditResult;
   visualQualityReport?: WorkspaceVisualQualityReport;
+  compositeQualityReport?: WorkspaceCompositeQualityReport;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
   const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
@@ -1200,12 +1589,16 @@ const buildValidationSummaryArtifact = async ({
   const resolvedVisualQualityReport = cloneVisualQualityReport(
     visualQualityReport ?? context.job.visualQuality ?? createNotRequestedVisualQualityReport()
   );
+  const resolvedCompositeQualityReport = cloneCompositeQualityReport(
+    compositeQualityReport ?? context.job.compositeQuality ?? createNotRequestedCompositeQualityReport()
+  );
 
   return {
     status: resolveSummaryStatus({
       generatedApp: generatedAppSummary,
       uiA11y: uiA11ySummary,
       visualAudit: resolvedVisualAuditResult,
+      compositeQuality: resolvedCompositeQualityReport,
       storybook: storybookSummary,
       mapping: mappingSummary,
       style: styleSummary,
@@ -1216,6 +1609,7 @@ const buildValidationSummaryArtifact = async ({
     uiA11y: uiA11ySummary,
     visualAudit: resolvedVisualAuditResult,
     visualQuality: resolvedVisualQualityReport,
+    compositeQuality: resolvedCompositeQualityReport,
     storybook: storybookSummary,
     mapping: mappingSummary,
     style: styleSummary,
@@ -1286,20 +1680,28 @@ export const createValidateProjectService = ({
         context.job.request.visualQualityDeviceScaleFactor ?? context.runtime.visualQualityDeviceScaleFactor;
       const shouldRunStandaloneVisualQuality = requestedVisualQualityEnabled && (!visualAuditRequest || explicitVisualQualityRequest);
       let resolvedVisualQualityReport: WorkspaceVisualQualityReport = createNotRequestedVisualQualityReport();
+      let resolvedCompositeQualityReport: WorkspaceCompositeQualityReport = createNotRequestedCompositeQualityReport();
       context.job.visualQuality = createNotRequestedVisualQualityReport();
+      context.job.compositeQuality = createNotRequestedCompositeQualityReport();
       delete context.job.artifacts.visualQualityReportFile;
+      delete context.job.artifacts.compositeQualityReportFile;
 
       const buildSummary = async ({
         generatedAppFailure,
         storybookArtifactStatusOverrides,
-        visualQualityReport
+        visualQualityReport,
+        compositeQualityReport
       }: {
         generatedAppFailure?: { failedCommand: string };
         storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
         visualQualityReport?: WorkspaceVisualQualityReport;
+        compositeQualityReport?: WorkspaceCompositeQualityReport;
       } = {}): Promise<ValidationSummaryArtifact> => {
         context.job.visualAudit = cloneVisualAuditResult(visualAuditResult);
         context.job.visualQuality = cloneVisualQualityReport(visualQualityReport ?? resolvedVisualQualityReport);
+        context.job.compositeQuality = cloneCompositeQualityReport(
+          compositeQualityReport ?? resolvedCompositeQualityReport
+        );
         return buildValidationSummaryArtifact({
           context,
           validatedAt,
@@ -1312,7 +1714,8 @@ export const createValidateProjectService = ({
           ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
           ...(storybookArtifactStatusOverrides ? { storybookArtifactStatusOverrides } : {}),
           visualAuditResult,
-          visualQualityReport: visualQualityReport ?? resolvedVisualQualityReport
+          visualQualityReport: visualQualityReport ?? resolvedVisualQualityReport,
+          compositeQualityReport: compositeQualityReport ?? resolvedCompositeQualityReport
         });
       };
 
@@ -1398,6 +1801,33 @@ export const createValidateProjectService = ({
         context.job.artifacts.visualQualityReportFile = absolutePath;
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.visualQualityReport,
+          stage: "validate.project",
+          absolutePath
+        });
+      };
+
+      const persistCompositeQualityResult = async (
+        result: WorkspaceCompositeQualityReport
+      ): Promise<WorkspaceCompositeQualityReport> => {
+        const clonedResult = cloneCompositeQualityReport(result);
+        resolvedCompositeQualityReport = clonedResult;
+        context.job.compositeQuality = cloneCompositeQualityReport(clonedResult);
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.compositeQualityResult,
+          stage: "validate.project",
+          value: cloneCompositeQualityReport(clonedResult)
+        });
+        return clonedResult;
+      };
+
+      const persistCompositeQualityReportPath = async ({
+        absolutePath
+      }: {
+        absolutePath: string;
+      }): Promise<void> => {
+        context.job.artifacts.compositeQualityReportFile = absolutePath;
+        await context.artifactStore.setPath({
+          key: STAGE_ARTIFACT_KEYS.compositeQualityReport,
           stage: "validate.project",
           absolutePath
         });
@@ -2491,8 +2921,112 @@ export const createValidateProjectService = ({
           });
         }
       }
+      const resolveCompositeQualityWeightOverrides = (): WorkspaceCompositeQualityWeights => {
+        return resolveCompositeQualityWeights(
+          context.input?.compositeQualityWeights ??
+            context.job.request.compositeQualityWeights ??
+            context.runtime.compositeQualityWeights
+        );
+      };
+
+      const buildCompositeQualityForValidation = async (): Promise<void> => {
+        const weights = resolveCompositeQualityWeightOverrides();
+        const generatedAt = new Date().toISOString();
+        const visualQualityReportPath =
+          context.job.artifacts.visualQualityReportFile ??
+          (await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualQualityReport)) ??
+          path.join(context.paths.jobDir, "visual-quality", "report.json");
+        const perfArtifactDir = path.join(generatedProjectDir, ".figmapipe", "performance");
+
+        try {
+          const performanceBreakdown = await loadCompositePerformanceBreakdown({
+            artifactDir: perfArtifactDir
+          });
+
+          const visualInput =
+            resolvedVisualQualityReport.status === "completed" &&
+            typeof resolvedVisualQualityReport.overallScore === "number"
+              ? {
+                  score: resolvedVisualQualityReport.overallScore,
+                  ranAt: resolvedVisualQualityReport.capturedAt ?? generatedAt,
+                  source: visualQualityReportPath
+                }
+              : null;
+          const visualWarnings =
+            resolvedVisualQualityReport.status === "failed"
+              ? [
+                  ...(resolvedVisualQualityReport.message ? [resolvedVisualQualityReport.message] : []),
+                  ...(resolvedVisualQualityReport.warnings ?? [])
+                ].map((warning) => `visual: ${warning}`)
+              : [];
+          const hasPerformanceSignal =
+            performanceBreakdown.sampleCount > 0 || performanceBreakdown.score !== null;
+
+          if (visualInput === null && !hasPerformanceSignal) {
+            await persistCompositeQualityResult({
+              status: "not_requested",
+              generatedAt,
+              weights: { ...weights },
+              ...(visualWarnings.length > 0 ? { warnings: [...new Set(visualWarnings)] } : {})
+            });
+            return;
+          }
+
+          const composite = computeCompositeScore({
+            visualScore: visualInput?.score ?? null,
+            performanceScore: performanceBreakdown.score,
+            weights
+          });
+          const warnings = [
+            ...(visualInput === null ? ["visual score missing"] : []),
+            ...performanceBreakdown.warnings.map((warning) => `performance: ${warning}`),
+            ...visualWarnings
+          ];
+          const normalizedReport: WorkspaceCompositeQualityReport = {
+            status: "completed",
+            generatedAt,
+            weights: { ...weights },
+            visual: visualInput ? { ...visualInput } : null,
+            performance: {
+              ...(performanceBreakdown.sourcePath ? { sourcePath: performanceBreakdown.sourcePath } : {}),
+              score: performanceBreakdown.score,
+              sampleCount: performanceBreakdown.sampleCount,
+              samples: performanceBreakdown.samples.map((sample) => ({ ...sample })),
+              aggregateMetrics: { ...performanceBreakdown.aggregateMetrics },
+              warnings: [...performanceBreakdown.warnings]
+            },
+            composite,
+            warnings: [...new Set(warnings)]
+          };
+          const compositeQualityDir = path.join(context.paths.jobDir, "composite-quality");
+          await mkdir(compositeQualityDir, { recursive: true });
+          const compositeQualityReportPath = path.join(compositeQualityDir, "report.json");
+          await writeFile(compositeQualityReportPath, toJsonFileContent(normalizedReport), "utf8");
+          await persistCompositeQualityResult(normalizedReport);
+          await persistCompositeQualityReportPath({
+            absolutePath: compositeQualityReportPath
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Composite quality report generation failed.";
+          await persistCompositeQualityResult(
+            createFailedCompositeQualityReport({
+              weights,
+              generatedAt,
+              message,
+              warnings: [message]
+            })
+          );
+          context.log({
+            level: "warn",
+            message: `Composite quality report generation failed without blocking validate.project: ${message}`
+          });
+        }
+      };
+
+      await buildCompositeQualityForValidation();
       const summary = await buildSummary({
-        visualQualityReport: resolvedVisualQualityReport
+        visualQualityReport: resolvedVisualQualityReport,
+        compositeQualityReport: resolvedCompositeQualityReport
       });
       await persistValidationSummaryArtifacts({
         context,

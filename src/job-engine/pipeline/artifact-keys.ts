@@ -31,6 +31,8 @@ export const STAGE_ARTIFACT_KEYS = {
   visualAuditResult: "visual.audit.result",
   visualQualityReport: "visual.quality.report",
   visualQualityResult: "visual.quality.result",
+  compositeQualityReport: "composite.quality.report",
+  compositeQualityResult: "composite.quality.result",
   validationSummary: "validation.summary",
   validationSummaryFile: "validation.summary.file",
   reproPath: "repro.path",

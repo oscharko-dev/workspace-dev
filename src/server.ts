@@ -141,6 +141,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.enableVisualQualityValidation !== undefined
       ? { enableVisualQualityValidation: options.enableVisualQualityValidation }
       : {}),
+    ...(options.compositeQualityWeights !== undefined
+      ? { compositeQualityWeights: options.compositeQualityWeights }
+      : {}),
     ...(options.visualQualityReferenceMode !== undefined
       ? { visualQualityReferenceMode: options.visualQualityReferenceMode }
       : {}),
