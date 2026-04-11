@@ -102,6 +102,38 @@ const createMultiScreenFixtureMetadata = (fixtureId: string): VisualBenchmarkFix
   ],
 });
 
+const createStorybookComponentFixtureMetadata = (
+  fixtureId: string,
+): VisualBenchmarkFixtureMetadata => ({
+  version: 4,
+  mode: "storybook_component",
+  fixtureId,
+  capturedAt: "2026-04-01T00:00:00.000Z",
+  source: {
+    fileKey: "test",
+    nodeId: "12:34",
+    nodeName: "Storybook Components",
+    lastModified: "2026-04-01T00:00:00.000Z",
+  },
+  viewport: { width: 200, height: 160 },
+  export: { format: "png", scale: 1 },
+  screens: [
+    {
+      screenId: "button-primary",
+      screenName: "Button",
+      storyTitle: "Button / Primary",
+      nodeId: "12:34",
+      viewport: { width: 200, height: 160 },
+      entryId: "components-button--primary",
+      referenceNodeId: "12:34",
+      referenceFileKey: "test",
+      captureStrategy: "storybook_root_union",
+      baselineCanvas: { width: 120, height: 96 },
+      viewports: [{ id: "desktop", width: 200, height: 160 }],
+    },
+  ],
+});
+
 const createFixtureManifest = (fixtureId: string): VisualBenchmarkFixtureManifest => ({
   version: 1,
   fixtureId,
@@ -696,6 +728,84 @@ test("updateVisualBaselines persists per-viewport references and artifact manife
       artifacts.map((artifact) => artifact.viewportId),
       ["desktop", "mobile"],
     );
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("updateVisualBaselines tolerates skipped storybook component screens without overwriting baseline state", async () => {
+  const env = await createFixtureEnvironment({
+    fixtureIds: ["storybook-components"],
+    baselineScores: [
+      {
+        fixtureId: "storybook-components",
+        screenId: "button-primary",
+        screenName: "Button / Primary",
+        viewportId: "desktop",
+        viewportLabel: "desktop",
+        score: 88,
+      },
+    ],
+    lastRunScores: [
+      {
+        fixtureId: "storybook-components",
+        screenId: "button-primary",
+        screenName: "Button / Primary",
+        viewportId: "desktop",
+        viewportLabel: "desktop",
+        score: 88,
+      },
+    ],
+  });
+
+  try {
+    await writeVisualBenchmarkFixtureMetadata(
+      "storybook-components",
+      createStorybookComponentFixtureMetadata("storybook-components"),
+      env,
+    );
+
+    const result = await updateVisualBaselines({
+      ...env,
+      fixtureId: "storybook-components",
+      log: () => undefined,
+      executeFixture: async (fixtureId) => ({
+        fixtureId,
+        aggregateScore: 0,
+        componentCoverage: {
+          comparedCount: 0,
+          skippedCount: 1,
+          coveragePercent: 0,
+          bySkipReason: { incomplete_mapping: 1 },
+        },
+        screens: [
+          {
+            screenId: "button-primary",
+            screenName: "Button / Primary",
+            nodeId: "12:34",
+            status: "skipped" as const,
+            skipReason: "incomplete_mapping",
+            warnings: ["missing entryId"],
+            score: 0,
+            screenshotBuffer: createTestPngBuffer(1, 1, [0, 0, 0, 0]),
+            diffBuffer: null,
+            report: { status: "not_requested" },
+            viewport: { width: 120, height: 96 },
+          },
+        ],
+      }),
+    });
+
+    assert.equal(result.scores.length, 0);
+    assert.equal(result.artifacts.length, 0);
+
+    const baseline = await loadVisualBenchmarkBaseline(env);
+    assert.equal(baseline?.scores.length, 1);
+    assert.equal(baseline?.scores[0]?.score, 88);
+
+    const lastRun = await loadVisualBenchmarkLastRun(env);
+    assert.equal(lastRun?.scores.length, 1);
+    assert.equal(lastRun?.scores[0]?.score, 88);
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }

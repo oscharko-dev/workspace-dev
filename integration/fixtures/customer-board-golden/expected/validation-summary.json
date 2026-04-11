@@ -1118,123 +1118,12 @@
     "status": "not_requested"
   },
   "visualQuality": {
-    "capturedAt": "2026-04-09T10:39:54.578Z",
-    "diffImagePath": "<job-dir>/visual-quality/diff.png",
-    "dimensions": [
-      {
-        "details": "Area-weighted average of 5 region scores",
-        "name": "Layout Accuracy",
-        "score": 97.57,
-        "weight": 0.3
-      },
-      {
-        "details": "Overall pixel similarity score: 97.57%",
-        "name": "Color Fidelity",
-        "score": 97.57,
-        "weight": 0.25
-      },
-      {
-        "details": "Weighted average of content region scores",
-        "name": "Typography",
-        "score": 98.16,
-        "weight": 0.2
-      },
-      {
-        "details": "Cross-region deviation consistency measure",
-        "name": "Component Structure",
-        "score": 97.12,
-        "weight": 0.15
-      },
-      {
-        "details": "Average of header and footer region scores",
-        "name": "Spacing & Alignment",
-        "score": 96.69,
-        "weight": 0.1
-      }
-    ],
-    "hotspots": [
-      {
-        "category": "spacing",
-        "deviationPercent": 5.24,
-        "height": 302,
-        "rank": 1,
-        "region": "footer",
-        "severity": "medium",
-        "width": 1280,
-        "x": 0,
-        "y": 1210
-      },
-      {
-        "category": "layout",
-        "deviationPercent": 2.18,
-        "height": 908,
-        "rank": 2,
-        "region": "content-left",
-        "severity": "low",
-        "width": 427,
-        "x": 0,
-        "y": 302
-      },
-      {
-        "category": "layout",
-        "deviationPercent": 1.94,
-        "height": 908,
-        "rank": 3,
-        "region": "content-center",
-        "severity": "low",
-        "width": 427,
-        "x": 427,
-        "y": 302
-      },
-      {
-        "category": "spacing",
-        "deviationPercent": 1.39,
-        "height": 302,
-        "rank": 4,
-        "region": "header",
-        "severity": "low",
-        "width": 1280,
-        "x": 0,
-        "y": 0
-      },
-      {
-        "category": "layout",
-        "deviationPercent": 1.39,
-        "height": 908,
-        "rank": 5,
-        "region": "content-right",
-        "severity": "low",
-        "width": 426,
-        "x": 854,
-        "y": 302
-      }
-    ],
-    "interpretation": "Excellent parity — minor sub-pixel or anti-aliasing differences",
-    "metadata": {
-      "comparedAt": "2026-04-09T10:40:22.294Z",
-      "configuredWeights": {
-        "colorFidelity": 0.25,
-        "componentStructure": 0.15,
-        "layoutAccuracy": 0.3,
-        "spacingAlignment": 0.1,
-        "typography": 0.2
-      },
-      "diffPixelCount": 46957,
-      "imageHeight": 1512,
-      "imageWidth": 1280,
-      "totalPixels": 1935360,
-      "versions": {
-        "contractVersion": "3.9.0",
-        "packageVersion": "1.0.0"
-      },
-      "viewport": {
-        "deviceScaleFactor": 1,
-        "height": 1512,
-        "width": 1280
-      }
-    },
-    "overallScore": 97.53,
+    "capturedAt": "<timestamp>",
+    "message": "Image dimensions do not match: reference is 1280x1512, test is 1280x800",
     "referenceSource": "frozen_fixture",
-    "status": "completed"
+    "status": "failed",
+    "warnings": [
+      "Image dimensions do not match: reference is 1280x1512, test is 1280x800"
+    ]
   }
 }

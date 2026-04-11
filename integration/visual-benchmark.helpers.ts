@@ -45,6 +45,18 @@ export interface VisualBenchmarkExportConfig {
   scale: number;
 }
 
+export type VisualBenchmarkFixtureMode =
+  | "generated_app_screen"
+  | "storybook_component";
+
+export type VisualBenchmarkStorybookCaptureStrategy =
+  "storybook_root_union";
+
+export interface VisualBenchmarkBaselineCanvas {
+  width: number;
+  height: number;
+}
+
 export interface VisualBenchmarkFixtureSource {
   fileKey: string;
   nodeId: string;
@@ -59,16 +71,23 @@ export interface VisualBenchmarkFixtureScreenMetadata {
   viewport: VisualBenchmarkViewport;
   weight?: number;
   viewports?: VisualBenchmarkViewportSpec[];
+  entryId?: string;
+  storyTitle?: string;
+  referenceNodeId?: string;
+  referenceFileKey?: string;
+  captureStrategy?: VisualBenchmarkStorybookCaptureStrategy;
+  baselineCanvas?: VisualBenchmarkBaselineCanvas;
 }
 
 export interface VisualBenchmarkFixtureMetadata {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   fixtureId: string;
   capturedAt: string;
   source: VisualBenchmarkFixtureSource;
   viewport: VisualBenchmarkViewport;
   export: VisualBenchmarkExportConfig;
   screens?: VisualBenchmarkFixtureScreenMetadata[];
+  mode?: VisualBenchmarkFixtureMode;
 }
 
 export interface VisualBenchmarkFixtureBundle {
@@ -222,6 +241,10 @@ const parseScreens = (
   raw: unknown,
   fixtureId: string,
   parseViewports: boolean,
+  options?: {
+    mode?: VisualBenchmarkFixtureMode;
+    version?: 1 | 2 | 3 | 4;
+  },
 ): VisualBenchmarkFixtureScreenMetadata[] => {
   if (!Array.isArray(raw)) {
     throw new Error(
@@ -292,6 +315,79 @@ const parseScreens = (
         screenId,
       );
     }
+    if (options?.version === 4 && options.mode === "storybook_component") {
+      if (entry.entryId !== undefined) {
+        screen.entryId = parseRequiredString(
+          entry.entryId,
+          `visual-benchmark metadata screens.entryId`,
+        );
+      }
+      if (entry.storyTitle !== undefined) {
+        screen.storyTitle = parseRequiredString(
+          entry.storyTitle,
+          `visual-benchmark metadata screens.storyTitle`,
+        );
+      }
+      if (entry.referenceNodeId !== undefined) {
+        screen.referenceNodeId = parseRequiredString(
+          entry.referenceNodeId,
+          `visual-benchmark metadata screens.referenceNodeId`,
+        );
+      }
+      if (entry.referenceFileKey !== undefined) {
+        screen.referenceFileKey = parseRequiredString(
+          entry.referenceFileKey,
+          `visual-benchmark metadata screens.referenceFileKey`,
+        );
+      }
+      if (entry.captureStrategy !== undefined) {
+        const captureStrategy = parseRequiredString(
+          entry.captureStrategy,
+          `visual-benchmark metadata screens.captureStrategy`,
+        );
+        if (captureStrategy !== "storybook_root_union") {
+          throw new Error(
+            `visual-benchmark metadata screens.captureStrategy for fixture '${fixtureId}' screen '${screenId}' must be 'storybook_root_union'.`,
+          );
+        }
+        screen.captureStrategy = "storybook_root_union";
+      }
+      if (entry.baselineCanvas !== undefined) {
+        if (!isPlainRecord(entry.baselineCanvas)) {
+          throw new Error(
+            `visual-benchmark metadata screens.baselineCanvas for fixture '${fixtureId}' screen '${screenId}' must be an object.`,
+          );
+        }
+        if (
+          entry.baselineCanvas.width !== undefined ||
+          entry.baselineCanvas.height !== undefined
+        ) {
+          screen.baselineCanvas = {
+            width: parsePositiveInteger(
+              entry.baselineCanvas.width,
+              `visual-benchmark metadata screens.baselineCanvas.width`,
+            ),
+            height: parsePositiveInteger(
+              entry.baselineCanvas.height,
+              `visual-benchmark metadata screens.baselineCanvas.height`,
+            ),
+          };
+        } else if (entry.baselineCanvas.padding !== undefined) {
+          parsePositiveInteger(
+            entry.baselineCanvas.padding,
+            `visual-benchmark metadata screens.baselineCanvas.padding`,
+          );
+          screen.baselineCanvas = {
+            width: Math.round(screen.viewport.width),
+            height: Math.round(screen.viewport.height),
+          };
+        } else {
+          throw new Error(
+            `visual-benchmark metadata screens.baselineCanvas for fixture '${fixtureId}' screen '${screenId}' must contain width and height or a padding value.`,
+          );
+        }
+      }
+    }
     out.push(screen);
   }
   return out;
@@ -304,8 +400,13 @@ export const parseVisualBenchmarkFixtureMetadata = (
   if (!isPlainRecord(parsed)) {
     throw new Error("Expected visual-benchmark metadata to be an object.");
   }
-  if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) {
-    throw new Error("visual-benchmark metadata version must be 1, 2, or 3.");
+  if (
+    parsed.version !== 1 &&
+    parsed.version !== 2 &&
+    parsed.version !== 3 &&
+    parsed.version !== 4
+  ) {
+    throw new Error("visual-benchmark metadata version must be 1, 2, 3, or 4.");
   }
 
   const source = parsed.source;
@@ -335,6 +436,21 @@ export const parseVisualBenchmarkFixtureMetadata = (
     parsed.fixtureId,
     "visual-benchmark metadata fixtureId",
   );
+  let mode: VisualBenchmarkFixtureMode | undefined;
+  if (parsed.version === 4) {
+    mode = parseRequiredString(
+      parsed.mode,
+      "visual-benchmark metadata mode",
+    ) as VisualBenchmarkFixtureMode;
+    if (
+      mode !== "generated_app_screen" &&
+      mode !== "storybook_component"
+    ) {
+      throw new Error(
+        "visual-benchmark metadata mode must be 'generated_app_screen' or 'storybook_component'.",
+      );
+    }
+  }
 
   const base: VisualBenchmarkFixtureMetadata = {
     version: parsed.version,
@@ -378,16 +494,18 @@ export const parseVisualBenchmarkFixtureMetadata = (
         "visual-benchmark metadata export.scale",
       ),
     },
+    ...(mode !== undefined ? { mode } : {}),
   };
 
   if (
-    (parsed.version === 2 || parsed.version === 3) &&
+    (parsed.version === 2 || parsed.version === 3 || parsed.version === 4) &&
     parsed.screens !== undefined
   ) {
     base.screens = parseScreens(
       parsed.screens,
       fixtureId,
-      parsed.version === 3,
+      parsed.version === 3 || parsed.version === 4,
+      { mode, version: parsed.version },
     );
   }
 
@@ -684,7 +802,7 @@ export const enumerateFixtureScreens = (
   metadata: VisualBenchmarkFixtureMetadata,
 ): VisualBenchmarkFixtureScreenMetadata[] => {
   if (
-    (metadata.version === 2 || metadata.version === 3) &&
+    (metadata.version === 2 || metadata.version === 3 || metadata.version === 4) &&
     Array.isArray(metadata.screens) &&
     metadata.screens.length > 0
   ) {
@@ -705,6 +823,27 @@ export const enumerateFixtureScreens = (
         clone.viewports = screen.viewports.map((viewport) =>
           cloneViewportSpec(viewport),
         );
+      }
+      if (screen.entryId !== undefined) {
+        clone.entryId = screen.entryId;
+      }
+      if (screen.storyTitle !== undefined) {
+        clone.storyTitle = screen.storyTitle;
+      }
+      if (screen.referenceNodeId !== undefined) {
+        clone.referenceNodeId = screen.referenceNodeId;
+      }
+      if (screen.referenceFileKey !== undefined) {
+        clone.referenceFileKey = screen.referenceFileKey;
+      }
+      if (screen.captureStrategy !== undefined) {
+        clone.captureStrategy = screen.captureStrategy;
+      }
+      if (screen.baselineCanvas !== undefined) {
+        clone.baselineCanvas = {
+          width: screen.baselineCanvas.width,
+          height: screen.baselineCanvas.height,
+        };
       }
       return clone;
     });

@@ -14,6 +14,7 @@ export const STAGE_ARTIFACT_KEYS = {
   storybookTokens: "storybook.tokens",
   storybookThemes: "storybook.themes",
   storybookComponents: "storybook.components",
+  componentVisualCatalog: "storybook.component_visual_catalog",
   figmaLibraryResolution: "figma.library_resolution",
   componentMatchReport: "component.match_report",
   generatedProject: "generated.project",

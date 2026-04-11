@@ -1,6 +1,7 @@
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "./types.js";
 import type {
   StorybookCatalogArtifact,
+  StorybookComponentVisualCatalogArtifact,
   StorybookEvidenceArtifact,
   StorybookPublicComponentsArtifact,
   StorybookPublicThemesArtifact,
@@ -47,6 +48,23 @@ export const parseStorybookEvidenceArtifact = ({
     throw new Error("Expected a storybook.evidence artifact with an evidence array.");
   }
   return parsed as unknown as StorybookEvidenceArtifact;
+};
+
+export const parseStorybookComponentVisualCatalogArtifact = ({
+  input
+}: {
+  input: string;
+}): StorybookComponentVisualCatalogArtifact => {
+  const parsed: unknown = JSON.parse(input);
+  if (
+    !isRecord(parsed) ||
+    parsed.artifact !== "storybook.component-visual-catalog" ||
+    !isRecord(parsed.stats) ||
+    !Array.isArray(parsed.entries)
+  ) {
+    throw new Error("Expected a storybook.component-visual-catalog artifact with stats and entries.");
+  }
+  return parsed as unknown as StorybookComponentVisualCatalogArtifact;
 };
 
 export const parseStorybookTokensArtifact = ({

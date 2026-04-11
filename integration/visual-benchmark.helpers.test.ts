@@ -327,7 +327,7 @@ test("parseVisualBenchmarkFixtureMetadata rejects v2 metadata with weight <= 0",
 
 test("parseVisualBenchmarkFixtureMetadata rejects unknown version", () => {
   const badJson = JSON.stringify({
-    version: 4,
+    version: 5,
     fixtureId: "x",
     capturedAt: "2026-04-09T00:00:00.000Z",
     source: {
@@ -688,6 +688,23 @@ const v3MetadataJson = (screens: unknown): string =>
     screens,
   });
 
+const v4StorybookMetadataJson = (screens: unknown): string =>
+  JSON.stringify({
+    version: 4,
+    mode: "storybook_component",
+    fixtureId: "storybook-components",
+    capturedAt: "2026-04-09T00:00:00.000Z",
+    source: {
+      fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      nodeId: "2:10001",
+      nodeName: "Component Fixture Root",
+      lastModified: "2026-03-30T20:59:16Z",
+    },
+    viewport: { width: 1280, height: 720 },
+    export: { format: "png", scale: 2 },
+    screens,
+  });
+
 test("parseVisualBenchmarkFixtureMetadata parses v1 metadata unchanged (no regression)", () => {
   const metadata = parseVisualBenchmarkFixtureMetadata(v1MetadataJson());
   assert.equal(metadata.version, 1);
@@ -820,6 +837,78 @@ test("parseVisualBenchmarkFixtureMetadata rejects v3 metadata with invalid viewp
   );
 });
 
+test("parseVisualBenchmarkFixtureMetadata parses v4 storybook metadata with component capture fields", () => {
+  const screens = [
+    {
+      screenId: "button-primary",
+      screenName: "Button",
+      storyTitle: "Button / Primary",
+      nodeId: "12:34",
+      entryId: "components-button--primary",
+      referenceNodeId: "12:34",
+      referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      captureStrategy: "storybook_root_union",
+      baselineCanvas: { width: 240, height: 160 },
+      viewport: { width: 320, height: 240 },
+      viewports: [{ id: "desktop", width: 320, height: 240 }],
+    },
+  ];
+  const metadata = parseVisualBenchmarkFixtureMetadata(
+    v4StorybookMetadataJson(screens),
+  );
+  assert.equal(metadata.version, 4);
+  assert.equal(metadata.mode, "storybook_component");
+  assert.equal(metadata.screens?.[0]?.entryId, "components-button--primary");
+  assert.equal(metadata.screens?.[0]?.storyTitle, "Button / Primary");
+  assert.equal(metadata.screens?.[0]?.referenceNodeId, "12:34");
+  assert.equal(metadata.screens?.[0]?.referenceFileKey, "DUArQ8VuM3aPMjXFLaQSSH");
+  assert.equal(metadata.screens?.[0]?.captureStrategy, "storybook_root_union");
+  assert.deepEqual(metadata.screens?.[0]?.baselineCanvas, {
+    width: 240,
+    height: 160,
+  });
+});
+
+test("parseVisualBenchmarkFixtureMetadata maps storybook catalog padding baselines onto the declared viewport canvas", () => {
+  const screens = [
+    {
+      screenId: "button-primary",
+      screenName: "Button",
+      storyTitle: "Button / Primary",
+      nodeId: "12:34",
+      entryId: "components-button--primary",
+      referenceNodeId: "12:34",
+      referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      captureStrategy: "storybook_root_union",
+      baselineCanvas: { padding: 16 },
+      viewport: { width: 320, height: 240 },
+    },
+  ];
+  const metadata = parseVisualBenchmarkFixtureMetadata(
+    v4StorybookMetadataJson(screens),
+  );
+  assert.deepEqual(metadata.screens?.[0]?.baselineCanvas, {
+    width: 320,
+    height: 240,
+  });
+});
+
+test("parseVisualBenchmarkFixtureMetadata rejects invalid v4 storybook capture strategy", () => {
+  const screens = [
+    {
+      screenId: "button-primary",
+      screenName: "Button",
+      nodeId: "12:34",
+      viewport: { width: 320, height: 240 },
+      captureStrategy: "unsupported",
+    },
+  ];
+  assert.throws(
+    () => parseVisualBenchmarkFixtureMetadata(v4StorybookMetadataJson(screens)),
+    /storybook_root_union/,
+  );
+});
+
 test("parseVisualBenchmarkFixtureMetadata ignores viewports field on v2 metadata (strict version gating)", () => {
   // A v2 doc that happens to include a `viewports` field should parse as v2
   // and NOT expose the field — this preserves v2 schema stability.
@@ -940,4 +1029,41 @@ test("enumerateFixtureScreenViewports does not mutate or alias its inputs", () =
   const result2 = enumerateFixtureScreenViewports(screenNoViewports, defaults);
   result2[0]!.width = 9999;
   assert.equal(defaults[0]?.width, 1280, "defaults array must not be mutated");
+});
+
+test("enumerateFixtureScreens preserves v4 storybook component metadata", () => {
+  const metadata: VisualBenchmarkFixtureMetadata = {
+    version: 4,
+    mode: "storybook_component",
+    fixtureId: "storybook-components",
+    capturedAt: "2026-04-09T00:00:00.000Z",
+    source: {
+      fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      nodeId: "2:10001",
+      nodeName: "Component Fixture Root",
+      lastModified: "2026-03-30T20:59:16Z",
+    },
+    viewport: { width: 1280, height: 720 },
+    export: { format: "png", scale: 2 },
+    screens: [
+      {
+        screenId: "button-primary",
+        screenName: "Button",
+        storyTitle: "Button / Primary",
+        nodeId: "12:34",
+        viewport: { width: 320, height: 240 },
+        entryId: "components-button--primary",
+        referenceNodeId: "12:34",
+        referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+        captureStrategy: "storybook_root_union",
+        baselineCanvas: { width: 240, height: 160 },
+      },
+    ],
+  };
+  const screens = enumerateFixtureScreens(metadata);
+  assert.equal(screens[0]?.storyTitle, "Button / Primary");
+  assert.equal(screens[0]?.entryId, "components-button--primary");
+  assert.equal(screens[0]?.referenceNodeId, "12:34");
+  assert.equal(screens[0]?.captureStrategy, "storybook_root_union");
+  assert.deepEqual(screens[0]?.baselineCanvas, { width: 240, height: 160 });
 });

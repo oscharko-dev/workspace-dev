@@ -29,6 +29,7 @@ import type {
   ComponentMatchFallbackReason,
   ComponentMatchReportFigmaLibraryDesignLink,
   ComponentMatchReportFigmaLibraryIssue,
+  ComponentMatchReportFigmaReferenceNode,
   ComponentMatchReportFigmaLibraryResolution,
   ComponentMatchReportIconFallbackWrapperImport,
   ComponentMatchReportIconResolution,
@@ -128,6 +129,7 @@ interface AggregatedFigmaResolution {
   canonicalFamilyName?: string;
   variantProperties: ComponentMatchReportVariantProperty[];
   designLinks: ComponentMatchReportFigmaLibraryDesignLink[];
+  referenceNodes: ComponentMatchReportFigmaReferenceNode[];
   fallbackReasons: ComponentMatchFallbackReason[];
   figmaLibraryResolution?: ComponentMatchReportFigmaLibraryResolution;
 }
@@ -141,6 +143,7 @@ interface ResolvedFigmaFamily {
   variantSignals: string[];
   variantValueSignals: string[];
   designLinks: ParsedFigmaLink[];
+  referenceNodes: ComponentMatchReportFigmaReferenceNode[];
   fallbackReasons: ComponentMatchFallbackReason[];
 }
 
@@ -409,6 +412,87 @@ const toFigmaLibraryDesignLink = (asset: { fileKey: string; nodeId: string }): C
   };
 };
 
+const compareReferenceNodes = (
+  left: ComponentMatchReportFigmaReferenceNode,
+  right: ComponentMatchReportFigmaReferenceNode
+): number => {
+  const byFileKey = left.fileKey.localeCompare(right.fileKey);
+  if (byFileKey !== 0) {
+    return byFileKey;
+  }
+  const byNodeId = left.nodeId.localeCompare(right.nodeId);
+  if (byNodeId !== 0) {
+    return byNodeId;
+  }
+  return left.source.localeCompare(right.source);
+};
+
+const toReferenceNodeKey = ({
+  fileKey,
+  nodeId
+}: Pick<ComponentMatchReportFigmaReferenceNode, "fileKey" | "nodeId">): string => `${fileKey}:${nodeId}`;
+
+const toReferenceNodeVariantProperties = (
+  variantProperties: FigmaAnalysisVariantProperty[] | ComponentMatchReportVariantProperty[]
+): ComponentMatchReportVariantProperty[] => {
+  return toSortedVariantProperties(variantProperties);
+};
+
+const buildReferenceNodes = ({
+  sortedEntries,
+  designLinks
+}: {
+  sortedEntries: FigmaLibraryResolutionEntry[];
+  designLinks: ComponentMatchReportFigmaLibraryDesignLink[];
+}): ComponentMatchReportFigmaReferenceNode[] => {
+  const byKey = new Map<string, ComponentMatchReportFigmaReferenceNode>();
+
+  for (const entry of sortedEntries) {
+    const entryVariantProperties = toReferenceNodeVariantProperties(entry.variantProperties);
+    for (const [source, asset] of [
+      ["published_component_set", entry.publishedComponentSet],
+      ["published_component", entry.publishedComponent]
+    ] as const) {
+      if (!asset) {
+        continue;
+      }
+      const normalizedNodeId = normalizeNodeId(asset.nodeId);
+      if (!normalizedNodeId) {
+        continue;
+      }
+      const referenceNode: ComponentMatchReportFigmaReferenceNode = {
+        fileKey: asset.fileKey,
+        nodeId: normalizedNodeId,
+        source,
+        variantProperties: source === "published_component" ? entryVariantProperties : [],
+        ...(asset.name.trim().length > 0 ? { nodeName: asset.name.trim() } : {})
+      };
+      byKey.set(toReferenceNodeKey(referenceNode), referenceNode);
+    }
+  }
+
+  for (const designLink of designLinks) {
+    if (!designLink.nodeId) {
+      continue;
+    }
+    const key = toReferenceNodeKey({
+      fileKey: designLink.fileKey,
+      nodeId: designLink.nodeId
+    });
+    if (byKey.has(key)) {
+      continue;
+    }
+    byKey.set(key, {
+      fileKey: designLink.fileKey,
+      nodeId: designLink.nodeId,
+      source: "design_link",
+      variantProperties: []
+    });
+  }
+
+  return [...byKey.values()].sort(compareReferenceNodes);
+};
+
 const parseFigmaLink = (value: string | undefined): ParsedFigmaLink | undefined => {
   if (!value) {
     return undefined;
@@ -518,6 +602,7 @@ const inferFigmaResolution = ({
     return {
       variantProperties: [],
       designLinks: [],
+      referenceNodes: [],
       fallbackReasons: ["used_figma_analysis_family_name"]
     };
   }
@@ -527,6 +612,7 @@ const inferFigmaResolution = ({
     return {
       variantProperties: [],
       designLinks: [],
+      referenceNodes: [],
       fallbackReasons: ["used_figma_analysis_family_name"]
     };
   }
@@ -574,6 +660,7 @@ const inferFigmaResolution = ({
     return {
       variantProperties: [],
       designLinks: [],
+      referenceNodes: [],
       fallbackReasons: ["used_figma_analysis_family_name"]
     };
   }
@@ -607,6 +694,10 @@ const inferFigmaResolution = ({
       return (left.nodeId ?? "").localeCompare(right.nodeId ?? "");
     })
   };
+  const referenceNodes = buildReferenceNodes({
+    sortedEntries,
+    designLinks: figmaLibraryResolution.designLinks
+  });
 
   const libraryCanonicalFamilyName = toCanonicalAnalysisFamilyName(selectedEntry.canonicalFamilyName);
   const heuristicCanonicalFamilyName = toCanonicalAnalysisFamilyName(selectedEntry.heuristicFamilyName);
@@ -623,6 +714,7 @@ const inferFigmaResolution = ({
     ...(canonicalFamilyName ? { canonicalFamilyName } : {}),
     variantProperties: toSortedVariantProperties(sortedEntries.flatMap((entry) => entry.variantProperties)),
     designLinks: figmaLibraryResolution.designLinks,
+    referenceNodes,
     fallbackReasons,
     figmaLibraryResolution
   };
@@ -657,7 +749,8 @@ const buildResolvedFigmaFamily = ({
       nodeCount: family.nodeCount,
       variantProperties,
       ...(canonicalFamilyName !== family.familyName ? { canonicalFamilyName } : {}),
-      ...(resolution.figmaLibraryResolution ? { figmaLibraryResolution: resolution.figmaLibraryResolution } : {})
+      ...(resolution.figmaLibraryResolution ? { figmaLibraryResolution: resolution.figmaLibraryResolution } : {}),
+      ...(resolution.referenceNodes.length > 0 ? { referenceNodes: resolution.referenceNodes } : {})
     },
     semanticBucket: toSemanticBucket([canonicalFamilyName, family.familyName]),
     canonicalName: canonicalFamilyName,
@@ -669,6 +762,7 @@ const buildResolvedFigmaFamily = ({
     variantSignals,
     variantValueSignals,
     designLinks: resolution.designLinks,
+    referenceNodes: resolution.referenceNodes,
     fallbackReasons: resolution.fallbackReasons
   };
 };

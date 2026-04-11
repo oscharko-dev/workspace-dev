@@ -107,6 +107,15 @@ export const syncPublicJobProjection = async ({
     }
   });
   await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.componentVisualCatalog,
+    assign: (value) => {
+      job.artifacts.componentVisualCatalogFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.componentVisualCatalogFile;
+    }
+  });
+  await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
     assign: (value) => {
       job.artifacts.figmaLibraryResolutionFile = value;

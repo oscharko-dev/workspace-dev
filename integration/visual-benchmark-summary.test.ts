@@ -543,3 +543,81 @@ test("buildVisualBenchmarkSummary computes headline average from per-screen aggr
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("buildVisualBenchmarkSummary renders component coverage, rows, and blended headline score", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-components-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureDir = path.join(artifactRoot, "last-run", "component-board");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeJson(path.join(artifactRoot, "last-run.json"), {
+      version: 1,
+      ranAt: "2026-04-11T10:00:00.000Z",
+      scores: [{ fixtureId: "component-board", score: 80 }],
+      componentAggregateScore: 90,
+      componentCoverage: {
+        comparedCount: 2,
+        skippedCount: 1,
+        coveragePercent: 66.7,
+        bySkipReason: {
+          ambiguous: 1,
+        },
+      },
+      components: [
+        {
+          componentId: "button::button--primary",
+          componentName: "Primary Button",
+          status: "compared",
+          score: 92,
+          storyEntryId: "button--primary",
+        },
+        {
+          componentId: "input::input--docs",
+          componentName: "Input Docs",
+          status: "skipped",
+          skipReason: "docs_only",
+          warnings: ["requires authoritative story"],
+        },
+      ],
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "component-board",
+      score: 80,
+      ranAt: "2026-04-11T10:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 80,
+    });
+
+    const { buildVisualBenchmarkSummary } =
+      await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(
+      path.join(artifactRoot, "last-run.json"),
+    );
+
+    assert.match(summary.markdown, /Overall Average:\*\* 83/);
+    assert.match(summary.markdown, /Full-Page Average:\*\* 80/);
+    assert.match(summary.markdown, /Component Aggregate:\*\* 90/);
+    assert.match(
+      summary.markdown,
+      /Component Coverage:\*\* 2 compared, 1 skipped \(66\.7%\)/,
+    );
+    assert.match(summary.markdown, /Skipped By Reason:\*\* ambiguous: 1/);
+    assert.match(summary.markdown, /### Component Results/);
+    assert.match(summary.markdown, /\| Primary Button \| compared \| ✅ 92 \| button--primary \| — \|/);
+    assert.match(
+      summary.markdown,
+      /\| Input Docs \| skipped \| — \| — \| docs_only \\| requires authoritative story \|/,
+    );
+    assert.match(summary.check.text, /Component aggregate: 90/);
+    assert.match(summary.check.text, /Component coverage: 2 compared, 1 skipped \(66\.7%\)/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

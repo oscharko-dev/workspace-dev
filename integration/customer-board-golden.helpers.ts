@@ -84,6 +84,7 @@ const TIMESTAMP_KEYS = new Set([
   "submittedAt",
   "startedAt",
   "finishedAt",
+  "capturedAt",
   "lastModified",
   "updatedAt",
   "createdAt",

@@ -34,6 +34,10 @@ import {
   buildComponentMatchReportArtifact,
   writeComponentMatchReportArtifact
 } from "../../storybook/component-match-report.js";
+import {
+  buildStorybookComponentVisualCatalogArtifact,
+  writeStorybookComponentVisualCatalogArtifact
+} from "../../storybook/component-visual-catalog.js";
 import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
 import {
   createJobStorybookArtifactPaths,
@@ -327,11 +331,27 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         stage: "ir.derive",
         absolutePath: writtenFile
       });
+      const componentVisualCatalogArtifact = buildStorybookComponentVisualCatalogArtifact({
+        componentMatchReportArtifact: artifact,
+        catalogArtifact: storybookArtifacts.catalogArtifact,
+        evidenceArtifact: storybookArtifacts.evidenceArtifact
+      });
+      const componentVisualCatalogFile = await writeStorybookComponentVisualCatalogArtifact({
+        artifact: componentVisualCatalogArtifact,
+        outputFilePath: storybookArtifacts.paths.componentVisualCatalogFile
+      });
+      await context.artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.componentVisualCatalog,
+        stage: "ir.derive",
+        absolutePath: componentVisualCatalogFile
+      });
       context.log({
         level: "info",
         message:
           `Generated component match report: matched=${artifact.summary.matched}, ` +
-          `ambiguous=${artifact.summary.ambiguous}, unmatched=${artifact.summary.unmatched}.`
+          `ambiguous=${artifact.summary.ambiguous}, unmatched=${artifact.summary.unmatched}; ` +
+          `component visuals ready=${componentVisualCatalogArtifact.stats.readyCount}, ` +
+          `skipped=${componentVisualCatalogArtifact.stats.skippedCount}.`
       });
     };
 

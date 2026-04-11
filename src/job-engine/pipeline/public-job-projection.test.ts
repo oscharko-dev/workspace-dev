@@ -42,6 +42,7 @@ const createJob = async (): Promise<{ job: JobRecord; artifactStore: StageArtifa
         storybookTokensFile: path.join(jobDir, "stale-storybook-tokens.json"),
         storybookThemesFile: path.join(jobDir, "stale-storybook-themes.json"),
         storybookComponentsFile: path.join(jobDir, "stale-storybook-components.json"),
+        componentVisualCatalogFile: path.join(jobDir, "stale-component-visual-catalog.json"),
         figmaLibraryResolutionFile: path.join(jobDir, "stale-figma-library-resolution.json"),
         componentMatchReportFile: path.join(jobDir, "stale-component-match-report.json"),
         validationSummaryFile: path.join(jobDir, "stale-validation-summary.json"),
@@ -105,6 +106,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   const storybookTokensFile = path.join(jobDir, "storybook", "public", "tokens.json");
   const storybookThemesFile = path.join(jobDir, "storybook", "public", "themes.json");
   const storybookComponentsFile = path.join(jobDir, "storybook", "public", "components.json");
+  const componentVisualCatalogFile = path.join(jobDir, "storybook", "public", "storybook.component-visual-catalog.json");
   const figmaLibraryResolutionFile = path.join(jobDir, "storybook", "public", "figma-library-resolution.json");
   const componentMatchReportFile = path.join(jobDir, "storybook", "public", "component-match-report.json");
   const validationSummaryFile = path.join(jobDir, "validation-summary.json");
@@ -153,6 +155,11 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     key: STAGE_ARTIFACT_KEYS.storybookComponents,
     stage: "ir.derive",
     absolutePath: storybookComponentsFile
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentVisualCatalog,
+    stage: "ir.derive",
+    absolutePath: componentVisualCatalogFile
   });
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
@@ -223,6 +230,32 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
       referenceSource: "frozen_fixture",
       capturedAt: "2026-04-08T00:00:00.000Z",
       overallScore: 87.5,
+      componentAggregateScore: 81.25,
+      componentCoverage: {
+        comparedCount: 2,
+        skippedCount: 1,
+        coveragePercent: 66.7,
+        bySkipReason: {
+          ambiguous: 1
+        }
+      },
+      components: [
+        {
+          componentId: "button::button--primary",
+          componentName: "Primary Button",
+          status: "compared",
+          score: 84,
+          storyEntryId: "button--primary",
+          referenceNodeId: "1:2",
+          warnings: ["minor spacing drift"]
+        },
+        {
+          componentId: "input::input--docs",
+          componentName: "Input Docs",
+          status: "skipped",
+          skipReason: "docs_only"
+        }
+      ],
       interpretation: "Good",
       dimensions: [],
       diffImagePath: visualAuditDiffImageFile,
@@ -263,6 +296,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   assert.equal(job.artifacts.storybookTokensFile, storybookTokensFile);
   assert.equal(job.artifacts.storybookThemesFile, storybookThemesFile);
   assert.equal(job.artifacts.storybookComponentsFile, storybookComponentsFile);
+  assert.equal(job.artifacts.componentVisualCatalogFile, componentVisualCatalogFile);
   assert.equal(job.artifacts.figmaLibraryResolutionFile, figmaLibraryResolutionFile);
   assert.equal(job.artifacts.componentMatchReportFile, componentMatchReportFile);
   assert.equal(job.artifacts.validationSummaryFile, validationSummaryFile);
@@ -286,6 +320,32 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   assert.equal(job.visualQuality?.referenceSource, "frozen_fixture");
   assert.equal(job.visualQuality?.capturedAt, "2026-04-08T00:00:00.000Z");
   assert.equal(job.visualQuality?.overallScore, 87.5);
+  assert.equal(job.visualQuality?.componentAggregateScore, 81.25);
+  assert.deepEqual(job.visualQuality?.componentCoverage, {
+    comparedCount: 2,
+    skippedCount: 1,
+    coveragePercent: 66.7,
+    bySkipReason: {
+      ambiguous: 1
+    }
+  });
+  assert.deepEqual(job.visualQuality?.components, [
+    {
+      componentId: "button::button--primary",
+      componentName: "Primary Button",
+      status: "compared",
+      score: 84,
+      storyEntryId: "button--primary",
+      referenceNodeId: "1:2",
+      warnings: ["minor spacing drift"]
+    },
+    {
+      componentId: "input::input--docs",
+      componentName: "Input Docs",
+      status: "skipped",
+      skipReason: "docs_only"
+    }
+  ]);
   assert.equal(job.visualQuality?.interpretation, "Good");
   assert.equal(job.visualQuality?.diffImagePath, visualAuditDiffImageFile);
   assert.deepEqual(job.gitPr, {

@@ -3,6 +3,8 @@ import path from "node:path";
 
 const ANNOTATION_PATH =
   "integration/fixtures/visual-benchmark/visual-quality.config.json";
+const FULL_PAGE_HEADLINE_WEIGHT = 0.7;
+const COMPONENT_HEADLINE_WEIGHT = 0.3;
 
 // Escape markdown table cell separators and control characters so that a
 // hostile fixture id or annotation message cannot break out of the rendered
@@ -607,6 +609,185 @@ const normalizeThresholdResult = (value) => {
   };
 };
 
+const formatScore = (value) =>
+  value % 1 === 0 ? String(value) : value.toFixed(1);
+
+const normalizeSkipReasonCounts = (value) => {
+  if (!isPlainRecord(value)) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([reason, count]) =>
+          typeof reason === "string" &&
+          reason.trim().length > 0 &&
+          isFiniteNumber(count) &&
+          count >= 0,
+      )
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+};
+
+const normalizeComponentCoverage = (value) => {
+  if (!isPlainRecord(value)) {
+    return null;
+  }
+  if (
+    !isFiniteNumber(value.comparedCount) ||
+    !isFiniteNumber(value.skippedCount) ||
+    !isFiniteNumber(value.coveragePercent)
+  ) {
+    return null;
+  }
+  return {
+    comparedCount: value.comparedCount,
+    skippedCount: value.skippedCount,
+    coveragePercent: roundToTwo(value.coveragePercent),
+    bySkipReason: normalizeSkipReasonCounts(value.bySkipReason),
+  };
+};
+
+const normalizeWarnings = (value) => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const warnings = value
+    .filter((warning) => typeof warning === "string" && warning.trim().length > 0)
+    .map((warning) => warning.trim());
+  return warnings.length > 0 ? warnings : undefined;
+};
+
+const normalizeComponentEntries = (value) => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const normalized = [];
+  for (const entry of value) {
+    if (!isPlainRecord(entry)) {
+      continue;
+    }
+    const componentId = normalizeOptionalString(entry.componentId);
+    const componentName = normalizeOptionalString(entry.componentName);
+    if (componentId === null || componentName === null) {
+      continue;
+    }
+    const status = entry.status;
+    if (status !== "compared" && status !== "skipped") {
+      continue;
+    }
+    const warnings = normalizeWarnings(entry.warnings);
+    normalized.push({
+      componentId,
+      componentName,
+      status,
+      ...(isFiniteNumber(entry.score) ? { score: roundToTwo(entry.score) } : {}),
+      ...(normalizeOptionalString(entry.diffImagePath)
+        ? { diffImagePath: normalizeOptionalString(entry.diffImagePath) }
+        : {}),
+      ...(normalizeOptionalString(entry.reportPath)
+        ? { reportPath: normalizeOptionalString(entry.reportPath) }
+        : {}),
+      ...(normalizeOptionalString(entry.skipReason)
+        ? { skipReason: normalizeOptionalString(entry.skipReason) }
+        : {}),
+      ...(normalizeOptionalString(entry.storyEntryId)
+        ? { storyEntryId: normalizeOptionalString(entry.storyEntryId) }
+        : {}),
+      ...(normalizeOptionalString(entry.referenceNodeId)
+        ? { referenceNodeId: normalizeOptionalString(entry.referenceNodeId) }
+        : {}),
+      ...(warnings ? { warnings } : {}),
+    });
+  }
+  return normalized;
+};
+
+const createComponentSummary = () => ({
+  componentAggregateScore: null,
+  componentCoverage: null,
+  components: [],
+});
+
+const mergeComponentSummary = (summary, value) => {
+  if (!isPlainRecord(value)) {
+    return summary;
+  }
+  if (
+    summary.componentAggregateScore === null &&
+    isFiniteNumber(value.componentAggregateScore)
+  ) {
+    summary.componentAggregateScore = roundToTwo(value.componentAggregateScore);
+  }
+  if (summary.componentCoverage === null) {
+    const coverage = normalizeComponentCoverage(value.componentCoverage);
+    if (coverage !== null) {
+      summary.componentCoverage = coverage;
+    }
+  }
+  for (const component of normalizeComponentEntries(value.components)) {
+    const existingIndex = summary.components.findIndex(
+      (entry) => entry.componentId === component.componentId,
+    );
+    if (existingIndex === -1) {
+      summary.components.push(component);
+      continue;
+    }
+    summary.components.splice(existingIndex, 1, {
+      ...summary.components[existingIndex],
+      ...component,
+      ...(component.warnings ? { warnings: [...component.warnings] } : {}),
+    });
+  }
+  return summary;
+};
+
+const formatComponentCoverageText = (coverage) =>
+  `${coverage.comparedCount} compared, ${coverage.skippedCount} skipped (${formatScore(coverage.coveragePercent)}%)`;
+
+const formatSkipReasonSummary = (coverage) => {
+  const reasons = Object.entries(coverage.bySkipReason);
+  if (reasons.length === 0) {
+    return null;
+  }
+  return reasons.map(([reason, count]) => `${reason}: ${count}`).join(", ");
+};
+
+const formatComponentNotes = (component) => {
+  const notes = [];
+  if (typeof component.skipReason === "string") {
+    notes.push(component.skipReason);
+  }
+  if (Array.isArray(component.warnings) && component.warnings.length > 0) {
+    notes.push(component.warnings.join("; "));
+  }
+  return notes.length > 0 ? notes.join(" | ") : "\u2014";
+};
+
+const resolveHeadlineAverage = ({
+  lastRun,
+  viewAverage,
+  componentAggregateScore,
+  hasViewScores,
+}) => {
+  if (isFiniteNumber(lastRun.overallScore)) {
+    return roundToTwo(lastRun.overallScore);
+  }
+  if (isFiniteNumber(lastRun.overallCurrent)) {
+    return roundToTwo(lastRun.overallCurrent);
+  }
+  if (componentAggregateScore !== null && hasViewScores) {
+    return roundToTwo(
+      viewAverage * FULL_PAGE_HEADLINE_WEIGHT +
+        componentAggregateScore * COMPONENT_HEADLINE_WEIGHT,
+    );
+  }
+  if (componentAggregateScore !== null) {
+    return componentAggregateScore;
+  }
+  return viewAverage;
+};
+
 const buildAnnotation = (fixture) => {
   if (
     fixture.thresholdResult === null ||
@@ -634,13 +815,38 @@ const buildAnnotation = (fixture) => {
   };
 };
 
-const buildCheckText = (fixtures, average, artifactRoot) => {
+const buildCheckText = (
+  fixtures,
+  average,
+  artifactRoot,
+  componentSummary,
+  viewAverage,
+) => {
   const lines = [
-    `Overall average: ${average % 1 === 0 ? average : average.toFixed(1)}`,
-    `Artifacts: ${artifactRoot}`,
-    "",
-    "View details:",
+    `Overall average: ${formatScore(average)}`,
   ];
+
+  if (componentSummary.componentAggregateScore !== null && fixtures.length > 0) {
+    lines.push(`Full-page average: ${formatScore(viewAverage)}`);
+  }
+  if (componentSummary.componentAggregateScore !== null) {
+    lines.push(
+      `Component aggregate: ${formatScore(componentSummary.componentAggregateScore)}`,
+    );
+  }
+  if (componentSummary.componentCoverage !== null) {
+    lines.push(
+      `Component coverage: ${formatComponentCoverageText(componentSummary.componentCoverage)}`,
+    );
+    const skipReasonSummary = formatSkipReasonSummary(
+      componentSummary.componentCoverage,
+    );
+    if (skipReasonSummary !== null) {
+      lines.push(`Skipped component reasons: ${skipReasonSummary}`);
+    }
+  }
+
+  lines.push(`Artifacts: ${artifactRoot}`, "", "View details:");
 
   for (const fixture of fixtures) {
     const thresholdText =
@@ -656,6 +862,19 @@ const buildCheckText = (fixtures, average, artifactRoot) => {
     lines.push(
       `- ${fixture.displayLabel}: score=${fixture.score}, ${thresholdText}; ${artifactText}`,
     );
+  }
+
+  if (componentSummary.components.length > 0) {
+    lines.push("", "Component details:");
+    for (const component of componentSummary.components) {
+      lines.push(
+        `- ${component.componentName}: status=${component.status}, score=${
+          isFiniteNumber(component.score) ? formatScore(component.score) : "n/a"
+        }, story=${component.storyEntryId ?? "n/a"}, reference=${
+          component.referenceNodeId ?? "n/a"
+        }, notes=${formatComponentNotes(component)}`,
+      );
+    }
   }
 
   return lines.join("\n");
@@ -690,6 +909,10 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
   const lastRunDir = path.join(artifactRoot, "last-run");
   const fixtures = [];
   const skippedFixtureReasons = [];
+  const componentSummary = mergeComponentSummary(
+    createComponentSummary(),
+    lastRun,
+  );
 
   for (const entry of lastRun.scores) {
     if (
@@ -784,6 +1007,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       actualImagePath: safeRelativePath(path.join(fixtureDir, "actual.png")),
       diffImagePath,
     });
+    mergeComponentSummary(componentSummary, report);
   }
 
   if (fixtures.length === 0) {
@@ -800,18 +1024,50 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
   const failedFixtures = fixtures.filter(
     (fixture) => fixture.thresholdResult?.verdict === "fail",
   );
-  const average = await computeOverallAverageFromFixtures(fixtures);
+  const viewAverage = await computeOverallAverageFromFixtures(fixtures);
+  const average = resolveHeadlineAverage({
+    lastRun,
+    viewAverage,
+    componentAggregateScore: componentSummary.componentAggregateScore,
+    hasViewScores: fixtures.length > 0,
+  });
 
   const lines = [
     "## Visual Quality Benchmark",
     "",
-    `**Overall Average:** ${average % 1 === 0 ? average : average.toFixed(1)}`,
+    `**Overall Average:** ${formatScore(average)}`,
     `**Warned Views:** ${warnedFixtures.length}`,
     `**Failed Views:** ${failedFixtures.length}`,
+  ];
+
+  if (componentSummary.componentAggregateScore !== null && fixtures.length > 0) {
+    lines.push(`**Full-Page Average:** ${formatScore(viewAverage)}`);
+  }
+  if (componentSummary.componentAggregateScore !== null) {
+    lines.push(
+      `**Component Aggregate:** ${formatScore(componentSummary.componentAggregateScore)}`,
+    );
+  }
+  if (componentSummary.componentCoverage !== null) {
+    lines.push(
+      `**Component Coverage:** ${formatComponentCoverageText(componentSummary.componentCoverage)}`,
+    );
+    lines.push(
+      `**Skipped Components:** ${componentSummary.componentCoverage.skippedCount}`,
+    );
+    const skipReasonSummary = formatSkipReasonSummary(
+      componentSummary.componentCoverage,
+    );
+    if (skipReasonSummary !== null) {
+      lines.push(`**Skipped By Reason:** ${skipReasonSummary}`);
+    }
+  }
+
+  lines.push(
     "",
     "| View | Score | Threshold | Viewport |",
     "|------|-------|-----------|----------|",
-  ];
+  );
 
   for (const fixture of fixtures) {
     const thresholdLabel =
@@ -830,6 +1086,22 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
   lines.push(
     "Artifacts include `actual.png`, `diff.png`, and `report.json` for each view under `artifacts/visual-benchmark/last-run/`.",
   );
+  if (componentSummary.components.length > 0) {
+    lines.push("");
+    lines.push("### Component Results");
+    lines.push("");
+    lines.push("| Component | Status | Score | Story | Notes |");
+    lines.push("|-----------|--------|-------|-------|-------|");
+    for (const component of componentSummary.components) {
+      const scoreText =
+        component.status === "compared" && isFiniteNumber(component.score)
+          ? `${scoreEmoji(component.score)} ${formatScore(component.score)}`
+          : "\u2014";
+      lines.push(
+        `| ${escapeMarkdownCell(component.componentName)} | ${escapeMarkdownCell(component.status)} | ${escapeMarkdownCell(scoreText)} | ${escapeMarkdownCell(component.storyEntryId ?? "\u2014")} | ${escapeMarkdownCell(formatComponentNotes(component))} |`,
+      );
+    }
+  }
   if (skippedFixtureReasons.length > 0) {
     lines.push("");
     lines.push(
@@ -847,12 +1119,14 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
   return {
     markdown,
     check: {
-      title: `Visual benchmark: ${average % 1 === 0 ? average : average.toFixed(1)} average (${warnedFixtures.length} warn, ${failedFixtures.length} fail)`,
+      title: `Visual benchmark: ${formatScore(average)} average (${warnedFixtures.length} warn, ${failedFixtures.length} fail)`,
       summary: markdown,
       text: buildCheckText(
         fixtures,
         average,
         path.relative(process.cwd(), artifactRoot) || ".",
+        componentSummary,
+        viewAverage,
       ),
       annotations,
     },

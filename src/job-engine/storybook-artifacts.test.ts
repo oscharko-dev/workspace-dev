@@ -826,3 +826,52 @@ test("reuseStorybookArtifactsFromSourceJob copies optional component.match_repor
     await readFile(sourceArtifacts.paths.componentMatchReportFile, "utf8")
   );
 });
+
+test("reuseStorybookArtifactsFromSourceJob copies optional storybook.component-visual-catalog artifacts when present", async () => {
+  const buildDir = await createSyntheticStorybookBuild();
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-storybook-reuse-component-visual-catalog-"));
+
+  const sourceJobDir = path.join(root, "jobs", "source-job");
+  await mkdir(sourceJobDir, { recursive: true });
+  const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJobDir });
+
+  const sourceArtifacts = await generateStorybookArtifactsForJob({
+    storybookStaticDir: buildDir,
+    jobDir: sourceJobDir,
+    artifactStore: sourceArtifactStore,
+    stage: "ir.derive",
+    limits: resolveRuntimeSettings({ enablePreview: false }).pipelineDiagnosticLimits
+  });
+  await writeFile(
+    sourceArtifacts.paths.componentVisualCatalogFile,
+    '{ "artifact": "storybook.component-visual-catalog", "version": 1, "stats": { "totalCount": 1, "readyCount": 1, "skippedCount": 0, "byMatchStatus": { "matched": 1, "ambiguous": 0, "unmatched": 0 }, "bySkipReason": { "unmatched": 0, "ambiguous": 0, "docs_only": 0, "missing_story": 0, "missing_reference_node": 0, "missing_authoritative_story": 0 } }, "entries": [] }\n',
+    "utf8"
+  );
+  await sourceArtifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentVisualCatalog,
+    stage: "ir.derive",
+    absolutePath: sourceArtifacts.paths.componentVisualCatalogFile
+  });
+
+  const targetJobDir = path.join(root, "jobs", "target-job");
+  await mkdir(targetJobDir, { recursive: true });
+  const targetArtifactStore = new StageArtifactStore({ jobDir: targetJobDir });
+
+  const targetPaths = await reuseStorybookArtifactsFromSourceJob({
+    sourceArtifactStore,
+    targetArtifactStore,
+    sourceJobId: "source-job",
+    sourceRequestedStorybookStaticDir: buildDir,
+    targetJobDir,
+    stage: "ir.derive"
+  });
+
+  assert.equal(
+    await targetArtifactStore.getPath(STAGE_ARTIFACT_KEYS.componentVisualCatalog),
+    targetPaths.componentVisualCatalogFile
+  );
+  assert.equal(
+    await readFile(targetPaths.componentVisualCatalogFile, "utf8"),
+    await readFile(sourceArtifacts.paths.componentVisualCatalogFile, "utf8")
+  );
+});

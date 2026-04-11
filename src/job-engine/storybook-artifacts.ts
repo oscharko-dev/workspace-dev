@@ -18,6 +18,7 @@ import {
   writeStorybookPublicArtifacts
 } from "../storybook/public-extracts.js";
 import { getComponentMatchReportOutputFileName } from "../storybook/component-match-report.js";
+import { getStorybookComponentVisualCatalogOutputFileName } from "../storybook/component-visual-catalog.js";
 import {
   getFatalStorybookExtractionDiagnostics,
   parseStorybookCatalogArtifact,
@@ -37,6 +38,7 @@ export interface JobStorybookArtifactPaths {
   tokensFile: string;
   themesFile: string;
   componentsFile: string;
+  componentVisualCatalogFile: string;
   figmaLibraryResolutionFile: string;
   componentMatchReportFile: string;
 }
@@ -209,6 +211,7 @@ export const createJobStorybookArtifactPaths = ({ jobDir }: { jobDir: string }):
     tokensFile: path.join(publicDir, publicFileNames.tokens),
     themesFile: path.join(publicDir, publicFileNames.themes),
     componentsFile: path.join(publicDir, publicFileNames.components),
+    componentVisualCatalogFile: path.join(publicDir, getStorybookComponentVisualCatalogOutputFileName()),
     figmaLibraryResolutionFile: path.join(publicDir, STORYBOOK_LIBRARY_RESOLUTION_FILE_NAME),
     componentMatchReportFile: path.join(publicDir, getComponentMatchReportOutputFileName())
   };
@@ -424,6 +427,7 @@ export const reuseStorybookArtifactsFromSourceJob = async ({
     { key: STAGE_ARTIFACT_KEYS.storybookComponents, targetPath: targetPaths.componentsFile }
   ] as const;
   const optionalArtifactMappings = [
+    { key: STAGE_ARTIFACT_KEYS.componentVisualCatalog, targetPath: targetPaths.componentVisualCatalogFile },
     { key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution, targetPath: targetPaths.figmaLibraryResolutionFile },
     { key: STAGE_ARTIFACT_KEYS.componentMatchReport, targetPath: targetPaths.componentMatchReportFile }
   ] as const;

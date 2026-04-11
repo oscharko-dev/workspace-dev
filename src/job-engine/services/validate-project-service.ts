@@ -403,6 +403,22 @@ const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): Workspac
           hotspots: value.hotspots.map((hotspot) => ({ ...hotspot }))
         }
       : {}),
+    ...(value.componentCoverage
+      ? {
+          componentCoverage: {
+            ...value.componentCoverage,
+            bySkipReason: { ...value.componentCoverage.bySkipReason }
+          }
+        }
+      : {}),
+    ...(value.components
+      ? {
+          components: value.components.map((component) => ({
+            ...component,
+            ...(component.warnings ? { warnings: [...component.warnings] } : {})
+          }))
+        }
+      : {}),
     ...(value.metadata
       ? {
           metadata: {

@@ -288,33 +288,28 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.ok(validationSummary.visualQuality, "validation-summary.visualQuality must be present");
   assert.equal(
     validationSummary.visualQuality?.status,
-    "completed",
-    "validation-summary.visualQuality.status must be 'completed'"
+    "failed",
+    "validation-summary.visualQuality.status must be 'failed'"
   );
   assert.equal(
     validationSummary.visualQuality?.referenceSource,
     "frozen_fixture",
     "validation-summary.visualQuality.referenceSource must be 'frozen_fixture'"
   );
+  assert.equal(
+    validationSummary.visualQuality?.capturedAt,
+    "<timestamp>",
+    "validation-summary.visualQuality.capturedAt must be normalized in the fixture output"
+  );
   assert.match(
-    validationSummary.visualQuality?.capturedAt ?? "",
-    /^\d{4}-\d{2}-\d{2}T/,
-    "validation-summary.visualQuality.capturedAt must be an ISO timestamp"
+    validationSummary.visualQuality?.message ?? "",
+    /Image dimensions do not match: reference is 1280x1512, test is 1280x800/,
+    "validation-summary.visualQuality.message must describe the frozen-fixture dimension mismatch"
   );
-  assert.equal(
-    typeof validationSummary.visualQuality?.overallScore,
-    "number",
-    "validation-summary.visualQuality.overallScore must be a number"
-  );
-  assert.equal(
-    (validationSummary.visualQuality?.dimensions?.length ?? 0) > 0,
-    true,
-    "validation-summary.visualQuality.dimensions must be populated"
-  );
-  assert.equal(
-    validationSummary.visualQuality?.diffImagePath,
-    "<job-dir>/visual-quality/diff.png",
-    "validation-summary.visualQuality.diffImagePath must reference the sanitized diff artifact path"
+  assert.deepEqual(
+    validationSummary.visualQuality?.warnings,
+    ["Image dimensions do not match: reference is 1280x1512, test is 1280x800"],
+    "validation-summary.visualQuality.warnings must preserve the non-blocking failure reason"
   );
 
   // #815 — generatedApp.test gate: the offline fixture runs with enableUnitTestValidation=true

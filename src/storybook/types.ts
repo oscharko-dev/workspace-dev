@@ -491,6 +491,19 @@ export interface ComponentMatchReportFigmaLibraryDesignLink {
   nodeId?: string;
 }
 
+export type ComponentMatchReportFigmaReferenceNodeSource =
+  | "published_component"
+  | "published_component_set"
+  | "design_link";
+
+export interface ComponentMatchReportFigmaReferenceNode {
+  fileKey: string;
+  nodeId: string;
+  source: ComponentMatchReportFigmaReferenceNodeSource;
+  variantProperties: ComponentMatchReportVariantProperty[];
+  nodeName?: string;
+}
+
 export interface ComponentMatchReportFigmaLibraryResolution {
   status: ComponentMatchFigmaLibraryResolutionStatus;
   resolutionSource: ComponentMatchFigmaLibraryResolutionSource;
@@ -532,6 +545,7 @@ export interface ComponentMatchReportFigmaFamily {
   variantProperties: ComponentMatchReportVariantProperty[];
   canonicalFamilyName?: string;
   figmaLibraryResolution?: ComponentMatchReportFigmaLibraryResolution;
+  referenceNodes?: ComponentMatchReportFigmaReferenceNode[];
 }
 
 export interface ComponentMatchReportStorybookFamily {
@@ -740,4 +754,53 @@ export interface ComponentMatchReportArtifact {
   version: 1;
   summary: ComponentMatchReportSummary;
   entries: ComponentMatchReportEntry[];
+}
+
+export type StorybookComponentVisualComparisonStatus = "ready" | "skipped";
+
+export type StorybookComponentVisualSkipReason =
+  | "unmatched"
+  | "ambiguous"
+  | "docs_only"
+  | "missing_story"
+  | "missing_reference_node"
+  | "missing_authoritative_story";
+
+export type StorybookComponentVisualCaptureStrategy = "storybook_root_union";
+
+export interface StorybookComponentVisualBaselineCanvas {
+  padding: number;
+}
+
+export interface StorybookComponentVisualCatalogEntry {
+  componentId: string;
+  figmaFamilyKey: string;
+  figmaFamilyName: string;
+  matchStatus: ComponentMatchStatus;
+  comparisonStatus: StorybookComponentVisualComparisonStatus;
+  warnings: string[];
+  familyId?: string;
+  skipReason?: StorybookComponentVisualSkipReason;
+  storyEntryId?: string;
+  storyTitle?: string;
+  iframeId?: string;
+  referenceFileKey?: string;
+  referenceNodeId?: string;
+  captureStrategy?: StorybookComponentVisualCaptureStrategy;
+  baselineCanvas?: StorybookComponentVisualBaselineCanvas;
+}
+
+export interface StorybookComponentVisualCatalogStats {
+  totalCount: number;
+  readyCount: number;
+  skippedCount: number;
+  byMatchStatus: Record<ComponentMatchStatus, number>;
+  bySkipReason: Record<StorybookComponentVisualSkipReason, number>;
+}
+
+export interface StorybookComponentVisualCatalogArtifact {
+  artifact: "storybook.component-visual-catalog";
+  version: 1;
+  stats: StorybookComponentVisualCatalogStats;
+  entries: StorybookComponentVisualCatalogEntry[];
 }

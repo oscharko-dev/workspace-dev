@@ -1,4 +1,12 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { WorkspaceJobInput } from "../src/contracts/index.js";
@@ -19,6 +27,8 @@ import { createCodegenGenerateService } from "../src/job-engine/services/codegen
 import { createValidateProjectService } from "../src/job-engine/services/validate-project-service.js";
 import type { JobRecord } from "../src/job-engine/types.js";
 import { ensureTemplateValidationSeedNodeModules } from "../src/job-engine/test-validation-seed.js";
+import { comparePngBuffers } from "../src/job-engine/visual-diff.js";
+import { computeVisualQualityReport } from "../src/job-engine/visual-scoring.js";
 import {
   computeVisualBenchmarkAggregateScore,
   enumerateFixtureScreens,
@@ -26,12 +36,14 @@ import {
   loadVisualBenchmarkFixtureInputs,
   loadVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkFixturePaths,
+  resolveVisualBenchmarkScreenPaths,
   resolveVisualBenchmarkScreenViewportPaths,
   toScreenIdToken,
   toStableJsonString,
   type VisualBenchmarkFixtureMetadata,
   type VisualBenchmarkFixtureOptions,
   type VisualBenchmarkFixtureScreenMetadata,
+  type VisualBenchmarkFixtureMode,
   type VisualBenchmarkViewportSpec,
 } from "./visual-benchmark.helpers.js";
 import {
@@ -41,11 +53,13 @@ import {
   type VisualQualityConfig,
 } from "./visual-quality-config.js";
 import type { WorkspaceVisualQualityReport } from "../src/contracts/index.js";
+import { PNG } from "pngjs";
 
 const DEFAULT_WORKSPACE_ROOT = process.cwd();
 export interface VisualBenchmarkExecutionOptions extends VisualBenchmarkFixtureOptions {
   allowIncompleteVisualQuality?: boolean;
   qualityConfig?: VisualQualityConfig;
+  storybookStaticDir?: string;
   viewportId?: string;
   workspaceRoot?: string;
 }
@@ -82,6 +96,9 @@ export interface VisualBenchmarkFixtureScreenArtifact {
   screenId: string;
   screenName: string;
   nodeId: string;
+  status?: "completed" | "skipped";
+  skipReason?: string;
+  warnings?: string[];
   score: number;
   weight?: number;
   screenshotBuffer: Buffer;
@@ -98,6 +115,15 @@ export interface VisualBenchmarkFixtureRunResult {
   fixtureId: string;
   aggregateScore: number;
   screens: VisualBenchmarkFixtureScreenArtifact[];
+  warnings?: string[];
+  screenAggregateScore?: number;
+  componentAggregateScore?: number;
+  componentCoverage?: {
+    comparedCount: number;
+    skippedCount: number;
+    coveragePercent: number;
+    bySkipReason: Record<string, number>;
+  };
 }
 
 interface VisualQualityFrozenReferenceOverride {
@@ -106,6 +132,62 @@ interface VisualQualityFrozenReferenceOverride {
 }
 
 const DEFAULT_MOBILE_DEVICE_SCALE_FACTOR = 3;
+const STORYBOOK_CAPTURE_PADDING = 16;
+const STORYBOOK_ROOT_SELECTOR = "#storybook-root";
+const STORYBOOK_DEFAULT_DIR_CANDIDATES = [
+  path.join("storybook-static", "storybook-static"),
+  "storybook-static",
+] as const;
+const DEFAULT_DIFF_IMAGE_PATH = "visual-quality/diff.png";
+
+interface StorybookCaptureBox {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+interface StorybookStaticServer {
+  baseUrl: string;
+  close: () => Promise<void>;
+}
+
+interface PlaywrightBrowserType {
+  launch(options?: { headless?: boolean }): Promise<PlaywrightBrowser>;
+}
+
+interface PlaywrightBrowser {
+  newContext(options?: {
+    viewport?: { width: number; height: number };
+    deviceScaleFactor?: number;
+    screen?: { width: number; height: number };
+    isMobile?: boolean;
+    hasTouch?: boolean;
+    userAgent?: string;
+  }): Promise<PlaywrightBrowserContext>;
+  close(): Promise<void>;
+}
+
+interface PlaywrightBrowserContext {
+  newPage(): Promise<PlaywrightPage>;
+  close(): Promise<void>;
+}
+
+interface PlaywrightPage {
+  goto(
+    url: string,
+    options?: { timeout?: number; waitUntil?: string },
+  ): Promise<unknown>;
+  waitForLoadState(
+    state: string,
+    options?: { timeout?: number },
+  ): Promise<void>;
+  evaluate<T>(expression: string): Promise<T>;
+  screenshot(options?: {
+    fullPage?: boolean;
+    type?: string;
+  }): Promise<Buffer>;
+}
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -113,6 +195,362 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const cloneJsonValue = <T>(value: T): T => {
   return JSON.parse(JSON.stringify(value)) as T;
+};
+
+const isErrno = (
+  error: unknown,
+): error is NodeJS.ErrnoException & Error => {
+  return error instanceof Error && "code" in error;
+};
+
+const isStorybookMode = (
+  metadata: VisualBenchmarkFixtureMetadata,
+): boolean => metadata.mode === "storybook_component";
+
+const createTransparentPngBuffer = ({
+  width,
+  height,
+}: {
+  width: number;
+  height: number;
+}): Buffer => {
+  const png = new PNG({ width, height });
+  png.data.fill(0);
+  return PNG.sync.write(png);
+};
+
+const PLACEHOLDER_SCREENSHOT_BUFFER = createTransparentPngBuffer({
+  width: 1,
+  height: 1,
+});
+
+const fileExists = async (targetPath: string): Promise<boolean> => {
+  try {
+    await stat(targetPath);
+    return true;
+  } catch (error: unknown) {
+    if (isErrno(error) && error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+};
+
+const resolveStorybookStaticDir = async ({
+  options,
+  workspaceRoot,
+}: {
+  options?: VisualBenchmarkExecutionOptions;
+  workspaceRoot: string;
+}): Promise<string> => {
+  const requested = options?.storybookStaticDir;
+  if (typeof requested === "string" && requested.trim().length > 0) {
+    const resolved = path.isAbsolute(requested)
+      ? requested
+      : path.resolve(workspaceRoot, requested);
+    if (!(await fileExists(resolved))) {
+      throw new Error(
+        `Storybook static dir '${resolved}' does not exist for visual benchmark execution.`,
+      );
+    }
+    return resolved;
+  }
+
+  for (const candidate of STORYBOOK_DEFAULT_DIR_CANDIDATES) {
+    const resolved = path.resolve(workspaceRoot, candidate);
+    if (await fileExists(resolved)) {
+      return resolved;
+    }
+  }
+
+  throw new Error(
+    `Unable to locate a Storybook static dir under '${workspaceRoot}'. Checked: ${STORYBOOK_DEFAULT_DIR_CANDIDATES.join(", ")}.`,
+  );
+};
+
+const getContentTypeForExtension = (filePath: string): string => {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".html":
+      return "text/html; charset=utf-8";
+    case ".css":
+      return "text/css; charset=utf-8";
+    case ".js":
+    case ".mjs":
+    case ".cjs":
+      return "application/javascript; charset=utf-8";
+    case ".json":
+    case ".map":
+      return "application/json; charset=utf-8";
+    case ".png":
+      return "image/png";
+    case ".svg":
+      return "image/svg+xml";
+    case ".woff":
+      return "font/woff";
+    case ".woff2":
+      return "font/woff2";
+    default:
+      return "application/octet-stream";
+  }
+};
+
+const resolveStorybookRequestPath = ({
+  buildDir,
+  requestUrl,
+  baseUrl,
+}: {
+  buildDir: string;
+  requestUrl: string | undefined;
+  baseUrl: string;
+}): string => {
+  const parsedUrl = new URL(requestUrl ?? "/", baseUrl);
+  const pathname = decodeURIComponent(parsedUrl.pathname);
+  const segments = pathname.split("/").filter((segment) => segment.length > 0);
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    throw new Error(`Refusing to serve Storybook traversal path '${pathname}'.`);
+  }
+  const safePathname =
+    path.posix.normalize(pathname) === "/" ? "/index.html" : path.posix.normalize(pathname);
+  const relativePath = safePathname.startsWith("/")
+    ? safePathname.slice(1)
+    : safePathname;
+  const candidatePath = path.resolve(buildDir, relativePath);
+  const resolvedBuildDir = path.resolve(buildDir);
+  if (
+    candidatePath !== resolvedBuildDir &&
+    !candidatePath.startsWith(`${resolvedBuildDir}${path.sep}`)
+  ) {
+    throw new Error(`Refusing to serve Storybook path outside build root.`);
+  }
+  return candidatePath;
+};
+
+const waitForServerReady = async (
+  url: string,
+  timeoutMs: number,
+): Promise<void> => {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    try {
+      const response = await fetch(url, { signal: AbortSignal.timeout(2_000) });
+      if (response.ok) {
+        return;
+      }
+    } catch {
+      // Server is still starting.
+    }
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 100);
+    });
+  }
+  throw new Error(`Storybook static server did not become ready at '${url}'.`);
+};
+
+const createStorybookStaticServer = async (
+  buildDir: string,
+): Promise<StorybookStaticServer> => {
+  const server = createServer((req, res) => {
+    let filePath: string;
+    try {
+      filePath = resolveStorybookRequestPath({
+        buildDir,
+        requestUrl: req.url,
+        baseUrl: "http://127.0.0.1",
+      });
+    } catch (error: unknown) {
+      res.writeHead(403);
+      res.end(error instanceof Error ? error.message : "Forbidden");
+      return;
+    }
+
+    readFile(filePath)
+      .then((buffer) => {
+        res.writeHead(200, {
+          "Content-Type": getContentTypeForExtension(filePath),
+        });
+        res.end(buffer);
+      })
+      .catch((error: unknown) => {
+        if (isErrno(error) && error.code === "ENOENT") {
+          res.writeHead(404);
+          res.end("Not Found");
+          return;
+        }
+        res.writeHead(500);
+        res.end("Internal Server Error");
+      });
+  });
+
+  const address = await new Promise<{ port: number }>((resolve, reject) => {
+    server.on("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const value = server.address();
+      if (value === null || typeof value === "string") {
+        reject(new Error("Failed to resolve Storybook static server port."));
+        return;
+      }
+      resolve({ port: value.port });
+    });
+  });
+
+  const baseUrl = `http://127.0.0.1:${address.port}`;
+  await waitForServerReady(baseUrl, 10_000);
+  return {
+    baseUrl,
+    close: async () =>
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      }),
+  };
+};
+
+const loadChromium = async (): Promise<PlaywrightBrowserType> => {
+  const playwright = await import("@playwright/test");
+  return playwright.chromium as PlaywrightBrowserType;
+};
+
+const WAIT_FOR_FONTS_EXPRESSION = "document.fonts.ready.then(() => undefined)";
+const WAIT_FOR_ANIMATIONS_EXPRESSION = [
+  "new Promise(resolve => {",
+  "  const allAnimations = document.getAnimations();",
+  "  if (allAnimations.length === 0) { resolve(); return; }",
+  "  Promise.allSettled(allAnimations.map(animation => animation.finished)).then(() => resolve());",
+  "})",
+].join("\n");
+
+const STORYBOOK_CAPTURE_BOX_EXPRESSION = `(() => {
+  const root = document.querySelector("${STORYBOOK_ROOT_SELECTOR}");
+  if (!(root instanceof HTMLElement)) {
+    return null;
+  }
+  const candidates = Array.from(root.children)
+    .filter((child) => child instanceof HTMLElement)
+    .map((child) => {
+      const style = window.getComputedStyle(child);
+      const rect = child.getBoundingClientRect();
+      const hidden =
+        style.display === "none" ||
+        style.visibility === "hidden" ||
+        style.opacity === "0";
+      if (hidden || rect.width <= 0 || rect.height <= 0) {
+        return null;
+      }
+      return {
+        left: rect.left + window.scrollX,
+        top: rect.top + window.scrollY,
+        right: rect.right + window.scrollX,
+        bottom: rect.bottom + window.scrollY,
+      };
+    })
+    .filter((candidate) => candidate !== null);
+  const sourceBoxes = candidates.length > 0
+    ? candidates
+    : (() => {
+        const rect = root.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+          return [];
+        }
+        return [{
+          left: rect.left + window.scrollX,
+          top: rect.top + window.scrollY,
+          right: rect.right + window.scrollX,
+          bottom: rect.bottom + window.scrollY,
+        }];
+      })();
+  if (sourceBoxes.length === 0) {
+    return null;
+  }
+  const left = Math.min(...sourceBoxes.map((box) => box.left));
+  const top = Math.min(...sourceBoxes.map((box) => box.top));
+  const right = Math.max(...sourceBoxes.map((box) => box.right));
+  const bottom = Math.max(...sourceBoxes.map((box) => box.bottom));
+  return {
+    x: Math.max(0, Math.floor(left - ${STORYBOOK_CAPTURE_PADDING})),
+    y: Math.max(0, Math.floor(top - ${STORYBOOK_CAPTURE_PADDING})),
+    width: Math.max(1, Math.ceil(right - left + ${STORYBOOK_CAPTURE_PADDING * 2})),
+    height: Math.max(1, Math.ceil(bottom - top + ${STORYBOOK_CAPTURE_PADDING * 2})),
+  };
+})()`;
+
+const cropPngBuffer = (
+  buffer: Buffer,
+  cropBox: StorybookCaptureBox,
+): Buffer => {
+  const source = PNG.sync.read(buffer);
+  const safeX = Math.max(0, Math.min(cropBox.x, source.width - 1));
+  const safeY = Math.max(0, Math.min(cropBox.y, source.height - 1));
+  const safeWidth = Math.max(
+    1,
+    Math.min(cropBox.width, source.width - safeX),
+  );
+  const safeHeight = Math.max(
+    1,
+    Math.min(cropBox.height, source.height - safeY),
+  );
+  const cropped = new PNG({ width: safeWidth, height: safeHeight });
+  PNG.bitblt(source, cropped, safeX, safeY, safeWidth, safeHeight, 0, 0);
+  return PNG.sync.write(cropped);
+};
+
+const normalizePngBufferToCanvas = ({
+  buffer,
+  canvasWidth,
+  canvasHeight,
+}: {
+  buffer: Buffer;
+  canvasWidth: number;
+  canvasHeight: number;
+}): { buffer: Buffer; warnings: string[] } => {
+  const source = PNG.sync.read(buffer);
+  const target = new PNG({ width: canvasWidth, height: canvasHeight });
+  target.data.fill(0);
+  const copyWidth = Math.min(source.width, canvasWidth);
+  const copyHeight = Math.min(source.height, canvasHeight);
+  const warnings: string[] = [];
+  if (source.width > canvasWidth || source.height > canvasHeight) {
+    warnings.push(
+      `Normalized image clipped from ${String(source.width)}x${String(source.height)} into ${String(canvasWidth)}x${String(canvasHeight)} baseline canvas.`,
+    );
+  }
+  PNG.bitblt(source, target, 0, 0, copyWidth, copyHeight, 0, 0);
+  return {
+    buffer: PNG.sync.write(target),
+    warnings,
+  };
+};
+
+const createSkippedStorybookScreenArtifact = ({
+  screen,
+  reason,
+  warning,
+}: {
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  reason: string;
+  warning: string;
+}): VisualBenchmarkFixtureScreenArtifact => {
+  const message = `${reason}: ${warning}`;
+  return {
+    screenId: screen.screenId,
+    screenName: screen.storyTitle ?? screen.screenName,
+    nodeId: screen.nodeId,
+    status: "skipped",
+    skipReason: reason,
+    warnings: [warning],
+    score: 0,
+    ...(screen.weight !== undefined ? { weight: screen.weight } : {}),
+    screenshotBuffer: PLACEHOLDER_SCREENSHOT_BUFFER,
+    diffBuffer: null,
+    report: {
+      status: "not_requested",
+      message,
+      warnings: [warning],
+    } satisfies WorkspaceVisualQualityReport,
+    viewport: {
+      width: screen.viewport.width,
+      height: screen.viewport.height,
+    },
+  };
 };
 
 const isWorkspaceVisualQualityReport = (
@@ -441,6 +879,279 @@ const computeAggregateFromViewportArtifacts = ({
   return Math.round(weightedScore * 100) / 100;
 };
 
+const resolveStorybookReferencePath = ({
+  fixtureId,
+  screen,
+  viewportId,
+  options,
+}: {
+  fixtureId: string;
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  viewportId: string;
+  options?: VisualBenchmarkExecutionOptions;
+}): string => {
+  if (viewportId !== "default") {
+    return resolveVisualBenchmarkScreenViewportPaths(
+      fixtureId,
+      screen.screenId,
+      viewportId,
+      options,
+    ).referencePngPath;
+  }
+  return resolveVisualBenchmarkScreenPaths(
+    fixtureId,
+    screen.screenId,
+    options,
+  ).referencePngPath;
+};
+
+const executeStorybookComponentViewport = async ({
+  fixtureId,
+  screen,
+  activeViewport,
+  workspaceRoot,
+  options,
+}: {
+  fixtureId: string;
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  activeViewport: VisualBenchmarkViewportSpec;
+  workspaceRoot: string;
+  options?: VisualBenchmarkExecutionOptions;
+}): Promise<VisualBenchmarkScreenViewportArtifact> => {
+  const activeDeviceScaleFactor = resolveViewportDeviceScaleFactor(activeViewport);
+  const storybookStaticDir = await resolveStorybookStaticDir({
+    options,
+    workspaceRoot,
+  });
+  const server = await createStorybookStaticServer(storybookStaticDir);
+  const chromium = await loadChromium();
+  const browser = await chromium.launch({ headless: true });
+  const normalizedViewport = {
+    width: screen.baselineCanvas?.width ?? activeViewport.width,
+    height: screen.baselineCanvas?.height ?? activeViewport.height,
+  };
+
+  try {
+    const context = await browser.newContext({
+      viewport: {
+        width: activeViewport.width,
+        height: activeViewport.height,
+      },
+      deviceScaleFactor: activeDeviceScaleFactor,
+    });
+    try {
+      const page = await context.newPage();
+      const storyUrl = new URL("/iframe.html", server.baseUrl);
+      storyUrl.searchParams.set("id", screen.entryId!);
+      storyUrl.searchParams.set("viewMode", "story");
+      await page.goto(storyUrl.toString(), {
+        timeout: 30_000,
+        waitUntil: "load",
+      });
+      await page.waitForLoadState("networkidle", { timeout: 30_000 });
+      await page.evaluate(WAIT_FOR_FONTS_EXPRESSION);
+      await page.evaluate(WAIT_FOR_ANIMATIONS_EXPRESSION);
+
+      const captureBox =
+        await page.evaluate<StorybookCaptureBox | null>(
+          STORYBOOK_CAPTURE_BOX_EXPRESSION,
+        );
+      if (captureBox === null) {
+        throw new Error(
+          `Storybook story '${screen.entryId}' rendered no visible content under ${STORYBOOK_ROOT_SELECTOR}.`,
+        );
+      }
+
+      const fullScreenshotBuffer = Buffer.from(
+        await page.screenshot({
+          fullPage: true,
+          type: "png",
+        }),
+      );
+      const croppedBuffer = cropPngBuffer(fullScreenshotBuffer, captureBox);
+      const referenceBuffer = await readFile(
+        resolveStorybookReferencePath({
+          fixtureId,
+          screen,
+          viewportId: activeViewport.id,
+          options,
+        }),
+      );
+      const targetPixelWidth = Math.max(
+        1,
+        Math.round(normalizedViewport.width * activeDeviceScaleFactor),
+      );
+      const targetPixelHeight = Math.max(
+        1,
+        Math.round(normalizedViewport.height * activeDeviceScaleFactor),
+      );
+      const normalizedActual = normalizePngBufferToCanvas({
+        buffer: croppedBuffer,
+        canvasWidth: targetPixelWidth,
+        canvasHeight: targetPixelHeight,
+      });
+      const normalizedReference = normalizePngBufferToCanvas({
+        buffer: referenceBuffer,
+        canvasWidth: targetPixelWidth,
+        canvasHeight: targetPixelHeight,
+      });
+      const diffResult = comparePngBuffers({
+        referenceBuffer: normalizedReference.buffer,
+        testBuffer: normalizedActual.buffer,
+      });
+      const scoredReport = computeVisualQualityReport({
+        diffResult,
+        diffImagePath: DEFAULT_DIFF_IMAGE_PATH,
+        viewport: {
+          width: normalizedViewport.width,
+          height: normalizedViewport.height,
+          deviceScaleFactor: activeDeviceScaleFactor,
+        },
+      });
+      const warnings = [
+        ...normalizedActual.warnings,
+        ...normalizedReference.warnings,
+      ];
+      const report: WorkspaceVisualQualityReport = {
+        status: "completed",
+        referenceSource: "frozen_fixture",
+        capturedAt: new Date().toISOString(),
+        overallScore: scoredReport.overallScore,
+        interpretation: scoredReport.interpretation,
+        dimensions: scoredReport.dimensions,
+        diffImagePath: scoredReport.diffImagePath,
+        hotspots: scoredReport.hotspots,
+        metadata: scoredReport.metadata,
+        ...(warnings.length > 0 ? { warnings } : {}),
+      };
+
+      return {
+        viewportId: activeViewport.id,
+        viewportLabel: activeViewport.label ?? activeViewport.id,
+        score: report.overallScore ?? 100,
+        screenshotBuffer: normalizedActual.buffer,
+        diffBuffer: diffResult.diffImageBuffer,
+        report,
+        viewport: normalizedViewport,
+      };
+    } finally {
+      await context.close();
+    }
+  } finally {
+    await browser.close();
+    await server.close();
+  }
+};
+
+const executeStorybookComponentScreen = async ({
+  fixtureId,
+  screen,
+  workspaceRoot,
+  options,
+}: {
+  fixtureId: string;
+  screen: VisualBenchmarkFixtureScreenMetadata;
+  workspaceRoot: string;
+  options?: VisualBenchmarkExecutionOptions;
+}): Promise<VisualBenchmarkFixtureScreenArtifact> => {
+  const missing: string[] = [];
+  if (screen.entryId === undefined) {
+    missing.push("entryId");
+  }
+  if (screen.referenceNodeId === undefined) {
+    missing.push("referenceNodeId");
+  }
+  if (screen.referenceFileKey === undefined) {
+    missing.push("referenceFileKey");
+  }
+  if (screen.captureStrategy !== "storybook_root_union") {
+    missing.push("captureStrategy");
+  }
+  if (screen.baselineCanvas === undefined) {
+    missing.push("baselineCanvas");
+  }
+  if (missing.length > 0) {
+    return createSkippedStorybookScreenArtifact({
+      screen,
+      reason: "incomplete_mapping",
+      warning: `Storybook component screen '${screen.screenId}' is missing required metadata: ${missing.join(", ")}.`,
+    });
+  }
+
+  const resolvedViewports = enumerateFixtureScreenViewports(screen, []);
+  const selectedViewports = selectScreenViewports({
+    fixtureId,
+    screen,
+    resolvedViewports,
+    selectedViewportId: options?.viewportId,
+  });
+
+  const missingReferences: string[] = [];
+  for (const viewport of selectedViewports) {
+    const referencePath = resolveStorybookReferencePath({
+      fixtureId,
+      screen,
+      viewportId: viewport.id,
+      options,
+    });
+    if (!(await fileExists(referencePath))) {
+      missingReferences.push(viewport.id);
+    }
+  }
+  if (missingReferences.length > 0) {
+    return createSkippedStorybookScreenArtifact({
+      screen,
+      reason: "missing_reference_image",
+      warning: `Storybook component screen '${screen.screenId}' is missing frozen references for viewport(s): ${missingReferences.join(", ")}.`,
+    });
+  }
+
+  const viewports = await Promise.all(
+    selectedViewports.map((activeViewport) =>
+      executeStorybookComponentViewport({
+        fixtureId,
+        screen,
+        activeViewport,
+        workspaceRoot,
+        options,
+      }),
+    ),
+  );
+  const representativeViewport = viewports[0];
+  if (representativeViewport === undefined) {
+    return createSkippedStorybookScreenArtifact({
+      screen,
+      reason: "missing_story",
+      warning: `Storybook component screen '${screen.screenId}' resolved no executable viewport artifacts.`,
+    });
+  }
+
+  const warnings = viewports.flatMap((viewport) => {
+    const report = viewport.report;
+    return isWorkspaceVisualQualityReport(report) && Array.isArray(report.warnings)
+      ? report.warnings
+      : [];
+  });
+
+  return {
+    screenId: screen.screenId,
+    screenName: screen.storyTitle ?? screen.screenName,
+    nodeId: screen.nodeId,
+    status: "completed",
+    ...(screen.weight !== undefined ? { weight: screen.weight } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+    score: computeAggregateFromViewportArtifacts({
+      viewportSpecs: selectedViewports,
+      viewportArtifacts: viewports,
+    }),
+    screenshotBuffer: representativeViewport.screenshotBuffer,
+    diffBuffer: representativeViewport.diffBuffer,
+    report: representativeViewport.report,
+    viewport: representativeViewport.viewport,
+    viewports,
+  };
+};
+
 const executeVisualBenchmarkViewport = async ({
   fixtureId,
   metadata,
@@ -650,6 +1361,15 @@ const executeVisualBenchmarkScreen = async ({
   workspaceRoot: string;
   options?: VisualBenchmarkExecutionOptions;
 }): Promise<VisualBenchmarkFixtureScreenArtifact> => {
+  if (isStorybookMode(metadata)) {
+    return await executeStorybookComponentScreen({
+      fixtureId,
+      screen,
+      workspaceRoot,
+      options,
+    });
+  }
+
   const userConfiguredViewports = resolveVisualQualityViewports(
     options?.qualityConfig,
     fixtureId,
@@ -692,6 +1412,7 @@ const executeVisualBenchmarkScreen = async ({
     screenId: screen.screenId,
     screenName: screen.screenName,
     nodeId: screen.nodeId,
+    status: "completed",
     score: computeAggregateFromViewportArtifacts({
       viewportSpecs: selectedViewports,
       viewportArtifacts: viewports,
@@ -708,8 +1429,12 @@ const executeVisualBenchmarkScreen = async ({
 const computeAggregateFromScreens = (
   screens: readonly VisualBenchmarkFixtureScreenArtifact[],
 ): number => {
+  const completedScreens = screens.filter((screen) => screen.status !== "skipped");
+  if (completedScreens.length === 0) {
+    return 0;
+  }
   try {
-    return computeVisualBenchmarkAggregateScore(screens);
+    return computeVisualBenchmarkAggregateScore(completedScreens);
   } catch (error: unknown) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(
@@ -753,11 +1478,44 @@ export const executeVisualBenchmarkFixture = async (
   }
 
   const aggregateScore = computeAggregateFromScreens(screenArtifacts);
+  const skippedScreens = screenArtifacts.filter(
+    (screen) => screen.status === "skipped",
+  );
+  const completedScreens = screenArtifacts.filter(
+    (screen) => screen.status !== "skipped",
+  );
+  const warnings = [
+    ...skippedScreens.flatMap((screen) => screen.warnings ?? []),
+  ];
+  const componentCoverage = isStorybookMode(metadata)
+    ? {
+        comparedCount: completedScreens.length,
+        skippedCount: skippedScreens.length,
+        coveragePercent:
+          screens.length === 0
+            ? 0
+            : Math.round((completedScreens.length / screens.length) * 10_000) /
+              100,
+        bySkipReason: skippedScreens.reduce<Record<string, number>>(
+          (accumulator, screen) => {
+            const key = screen.skipReason ?? "unknown";
+            accumulator[key] = (accumulator[key] ?? 0) + 1;
+            return accumulator;
+          },
+          {},
+        ),
+      }
+    : undefined;
 
   return {
     fixtureId,
     aggregateScore,
     screens: screenArtifacts,
+    ...(warnings.length > 0 ? { warnings } : {}),
+    ...(metadata.mode === "generated_app_screen" || metadata.mode === undefined
+      ? { screenAggregateScore: aggregateScore }
+      : { componentAggregateScore: aggregateScore }),
+    ...(componentCoverage !== undefined ? { componentCoverage } : {}),
   };
 };
 

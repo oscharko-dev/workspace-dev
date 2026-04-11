@@ -739,7 +739,14 @@ export const updateVisualBaselines = async (
     );
 
     let fixtureMetadataViewport: { width: number; height: number } | undefined;
+    let fixtureProducedArtifacts = false;
     for (const screenArtifact of screenArtifacts) {
+      if (screenArtifact.status === "skipped") {
+        log(
+          `  Skipped '${screenArtifact.screenName}' (${screenArtifact.screenId}): ${screenArtifact.skipReason ?? "benchmark execution skipped this screen"}`,
+        );
+        continue;
+      }
       const targetScreen =
         targetScreens.find((screen) => screen.screenId === screenArtifact.screenId) ??
         targetScreens[0];
@@ -781,6 +788,7 @@ export const updateVisualBaselines = async (
           ),
         );
         artifacts.push(artifact);
+        fixtureProducedArtifacts = true;
         if (
           !multiScreen &&
           fixtureMetadataViewport === undefined &&
@@ -799,13 +807,15 @@ export const updateVisualBaselines = async (
       }
     }
 
-    await updateFixtureMetadata(
-      fixtureId,
-      metadata,
-      runAt,
-      multiScreen ? undefined : fixtureMetadataViewport,
-      options,
-    );
+    if (fixtureProducedArtifacts) {
+      await updateFixtureMetadata(
+        fixtureId,
+        metadata,
+        runAt,
+        multiScreen ? undefined : fixtureMetadataViewport,
+        options,
+      );
+    }
   }
 
   const mergedLastRunScores =
