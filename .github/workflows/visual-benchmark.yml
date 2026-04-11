@@ -134,6 +134,14 @@ jobs:
           path: artifacts/visual-benchmark
           if-no-files-found: ignore
 
+      - name: Upload visual benchmark artifacts (legacy name)
+        uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}-benchmark
+          path: artifacts/visual-benchmark
+          if-no-files-found: ignore
+
   benchmark-browser-matrix:
     if: github.event_name == 'workflow_dispatch' && inputs.run_browser_matrix
     name: benchmark matrix (${{ matrix.browser }})
