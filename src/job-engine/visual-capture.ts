@@ -119,7 +119,9 @@ export const resolveCaptureConfig = (
       fieldName: "viewport.height",
     }),
     deviceScaleFactor: assertPositiveNumber({
-      value: partial.viewport?.deviceScaleFactor ?? DEFAULT_VIEWPORT.deviceScaleFactor,
+      value:
+        partial.viewport?.deviceScaleFactor ??
+        DEFAULT_VIEWPORT.deviceScaleFactor,
       fieldName: "viewport.deviceScaleFactor",
     }),
     ...(partial.viewport?.deviceProfileId !== undefined
@@ -131,8 +133,7 @@ export const resolveCaptureConfig = (
     viewport,
     waitForNetworkIdle:
       partial.waitForNetworkIdle ?? DEFAULT_CAPTURE_CONFIG.waitForNetworkIdle,
-    waitForFonts:
-      partial.waitForFonts ?? DEFAULT_CAPTURE_CONFIG.waitForFonts,
+    waitForFonts: partial.waitForFonts ?? DEFAULT_CAPTURE_CONFIG.waitForFonts,
     waitForAnimations:
       partial.waitForAnimations ?? DEFAULT_CAPTURE_CONFIG.waitForAnimations,
     timeoutMs: assertPositiveInteger({
@@ -190,7 +191,23 @@ export const resolveCaptureContextOptionsForBrowser = (
   if (browserName !== "firefox" || contextOptions.isMobile !== true) {
     return contextOptions;
   }
-  const { isMobile: _ignoredIsMobile, ...firefoxSafeOptions } = contextOptions;
+  // Firefox does not support the `isMobile` Playwright context flag, so we
+  // strip it for firefox-on-mobile-viewport runs while preserving every
+  // other context option (viewport, deviceScaleFactor, screen, hasTouch,
+  // userAgent).
+  const firefoxSafeOptions: CaptureContextOptions = {
+    viewport: contextOptions.viewport,
+    deviceScaleFactor: contextOptions.deviceScaleFactor,
+  };
+  if (contextOptions.screen !== undefined) {
+    firefoxSafeOptions.screen = contextOptions.screen;
+  }
+  if (contextOptions.hasTouch !== undefined) {
+    firefoxSafeOptions.hasTouch = contextOptions.hasTouch;
+  }
+  if (contextOptions.userAgent !== undefined) {
+    firefoxSafeOptions.userAgent = contextOptions.userAgent;
+  }
   return firefoxSafeOptions;
 };
 
@@ -310,18 +327,25 @@ const resolveRequestFilePath = ({
     throw new Error(`Invalid request path '${parsedUrl.pathname}': ${message}`);
   }
 
-  const rawSegments = pathname.split("/").filter((segment) => segment.length > 0);
+  const rawSegments = pathname
+    .split("/")
+    .filter((segment) => segment.length > 0);
   if (rawSegments.some((segment) => segment === "." || segment === "..")) {
     throw new Error(`Refusing to serve path traversal request '${pathname}'.`);
   }
 
   const normalizedPathname = path.posix.normalize(pathname);
-  const safePathname = normalizedPathname === "/" ? "/index.html" : normalizedPathname;
-  const relativePath = safePathname.startsWith("/") ? safePathname.slice(1) : safePathname;
+  const safePathname =
+    normalizedPathname === "/" ? "/index.html" : normalizedPathname;
+  const relativePath = safePathname.startsWith("/")
+    ? safePathname.slice(1)
+    : safePathname;
   const candidatePath = path.resolve(projectDir, relativePath);
 
   if (!isWithinProjectRoot({ candidatePath, projectDir })) {
-    throw new Error(`Refusing to serve path outside project root: '${pathname}'.`);
+    throw new Error(
+      `Refusing to serve path outside project root: '${pathname}'.`,
+    );
   }
 
   return candidatePath;
@@ -340,7 +364,10 @@ export const waitWithTimeout = async <T>(input: {
       timedOut = true;
       resolve({ status: "timeout" });
     }, timeoutMs);
-    if (typeof timeoutHandle === "object" && typeof timeoutHandle.unref === "function") {
+    if (
+      typeof timeoutHandle === "object" &&
+      typeof timeoutHandle.unref === "function"
+    ) {
       timeoutHandle.unref();
     }
   });
@@ -418,7 +445,9 @@ interface PlaywrightBrowserType {
 }
 
 interface PlaywrightBrowser {
-  newContext(options?: CaptureContextOptions): Promise<PlaywrightBrowserContext>;
+  newContext(
+    options?: CaptureContextOptions,
+  ): Promise<PlaywrightBrowserContext>;
   close(): Promise<void>;
 }
 
@@ -436,10 +465,7 @@ interface PlaywrightPage {
     options?: { timeout?: number },
   ): Promise<void>;
   evaluate<T>(expression: string): Promise<T>;
-  screenshot(options?: {
-    fullPage?: boolean;
-    type?: string;
-  }): Promise<Buffer>;
+  screenshot(options?: { fullPage?: boolean; type?: string }): Promise<Buffer>;
 }
 
 const loadBrowserByName = async (
@@ -447,9 +473,9 @@ const loadBrowserByName = async (
 ): Promise<PlaywrightBrowserType> => {
   try {
     const pw = await import("@playwright/test");
-    const browserType = (pw as unknown as Record<string, PlaywrightBrowserType>)[
-      browserName
-    ];
+    const browserType = (
+      pw as unknown as Record<string, PlaywrightBrowserType>
+    )[browserName];
     if (browserType === undefined) {
       throw new Error(
         `Playwright does not export a '${browserName}' browser type.`,
@@ -457,8 +483,7 @@ const loadBrowserByName = async (
     }
     return browserType;
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "unknown error";
+    const message = error instanceof Error ? error.message : "unknown error";
     throw new Error(
       `Failed to import @playwright/test for ${browserName}. Ensure it is installed: ${message}`,
     );
@@ -494,8 +519,7 @@ export const captureScreenshot = async (input: {
   try {
     browser = await browserType.launch({ headless: true });
   } catch (error: unknown) {
-    const message =
-      error instanceof Error ? error.message : "unknown error";
+    const message = error instanceof Error ? error.message : "unknown error";
     throw new Error(`Failed to launch ${browserName} browser: ${message}`);
   }
 
@@ -540,7 +564,9 @@ export const captureScreenshot = async (input: {
         timeoutMs: config.timeoutMs,
       });
       if (fontsResult.status === "timeout") {
-        log(`Font loading did not settle within ${config.timeoutMs}ms, proceeding with capture`);
+        log(
+          `Font loading did not settle within ${config.timeoutMs}ms, proceeding with capture`,
+        );
       }
     }
 
@@ -551,7 +577,9 @@ export const captureScreenshot = async (input: {
         timeoutMs: config.timeoutMs,
       });
       if (animationsResult.status === "timeout") {
-        log(`CSS animations did not settle within ${config.timeoutMs}ms, proceeding with capture`);
+        log(
+          `CSS animations did not settle within ${config.timeoutMs}ms, proceeding with capture`,
+        );
       }
     }
 
@@ -564,9 +592,7 @@ export const captureScreenshot = async (input: {
     const pngBuffer = Buffer.from(screenshotBuffer);
     const dimensions = parsePngDimensions(pngBuffer);
 
-    log(
-      `Screenshot captured: ${dimensions.width}x${dimensions.height}`,
-    );
+    log(`Screenshot captured: ${dimensions.width}x${dimensions.height}`);
 
     return {
       screenshotBuffer: pngBuffer,

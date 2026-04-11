@@ -41,9 +41,7 @@ export const isVisualBrowserName = (
   );
 };
 
-export const assertVisualBrowserName = (
-  value: unknown,
-): VisualBrowserName => {
+export const assertVisualBrowserName = (value: unknown): VisualBrowserName => {
   if (!isVisualBrowserName(value)) {
     throw new Error(
       `Unknown browser '${String(value)}'. Allowed values: ${VISUAL_BROWSER_NAMES.join(", ")}.`,
@@ -52,8 +50,15 @@ export const assertVisualBrowserName = (
   return value;
 };
 
+/**
+ * Coerce a list of arbitrary string-shaped browser identifiers (e.g. CLI
+ * tokens, env-var splits) into a deduplicated list of validated
+ * {@link VisualBrowserName}s. Each entry is run through
+ * {@link assertVisualBrowserName} so a typo throws with the allowed values.
+ * Empty/undefined/null inputs default to {@link DEFAULT_VISUAL_BROWSER}.
+ */
 export const normalizeVisualBrowserNames = (
-  value: readonly (VisualBrowserName | string)[] | undefined | null,
+  value: readonly string[] | undefined | null,
 ): VisualBrowserName[] => {
   if (value === undefined || value === null || value.length === 0) {
     return [DEFAULT_VISUAL_BROWSER];
