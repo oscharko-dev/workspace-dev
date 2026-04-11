@@ -28,21 +28,53 @@ const SEVERITY_RANK: Record<HotspotSeverity, number> = {
   critical: 4,
 };
 
+const SCREEN_ID_TOKEN_ESCAPE = "~";
+const SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE = `${SCREEN_ID_TOKEN_ESCAPE}u`;
+
+function normalizedScreenId(
+  fixtureId: string,
+  screenId: string | undefined,
+): string {
+  const trimmed = screenId?.trim();
+  if (trimmed && trimmed.length > 0) {
+    return trimmed;
+  }
+  return fixtureId;
+}
+
 /**
  * Build the canonical lookup key used to correlate a score entry from
  * `last-run.json` with a per-screen report on disk. The key deliberately
  * mirrors the on-disk directory convention:
  *   `{fixtureId}/{screenIdToken}/{viewportId}`
- * where `screenIdToken` replaces `:` with `_` (matches `artifacts/` layout).
+ * where `screenIdToken` follows the reversible benchmark encoding:
+ * underscores are escaped as `~u` and colons become `_`.
  */
 export function screenKey(
   fixtureId: string,
   screenId: string | undefined,
   viewportId: string | undefined,
 ): string {
-  const screen = (screenId ?? "unknown").replace(/:/g, "_");
-  const viewport = viewportId ?? "default";
-  return `${fixtureId}/${screen}/${viewport}`;
+  return screenKeyFromToken(
+    fixtureId,
+    toScreenIdToken(normalizedScreenId(fixtureId, screenId)),
+    viewportId,
+  );
+}
+
+export function toScreenIdToken(screenId: string): string {
+  return screenId
+    .replace(/_/g, SCREEN_ID_TOKEN_UNDERSCORE_ESCAPE)
+    .replace(/:/g, "_");
+}
+
+export function screenKeyFromToken(
+  fixtureId: string,
+  screenIdToken: string,
+  viewportId: string | undefined,
+): string {
+  const viewport = viewportId?.trim() || "default";
+  return `${fixtureId}/${screenIdToken}/${viewport}`;
 }
 
 /**
@@ -102,9 +134,9 @@ function mergedScreenFrom(
   artifacts: ScreenArtifacts | undefined,
 ): MergedScreen {
   const fixtureId = score.fixtureId;
-  const screenId = score.screenId ?? "unknown";
+  const screenId = normalizedScreenId(fixtureId, score.screenId);
   const screenName = score.screenName ?? screenId;
-  const viewportId = score.viewportId ?? "default";
+  const viewportId = score.viewportId?.trim() || "default";
   const viewportLabel = score.viewportLabel ?? viewportId;
   const key = screenKey(fixtureId, score.screenId, score.viewportId);
   const report = artifacts?.report ?? null;

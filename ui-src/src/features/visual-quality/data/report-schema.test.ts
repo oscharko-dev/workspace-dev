@@ -1,7 +1,13 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { parseHistory, parseLastRun, parseScreenReport } from "./report-schema";
+import {
+  parseHistory,
+  parseLastRun,
+  parseScreenReport,
+  parseStandaloneVisualQualityReport,
+  parseVisualParityReport,
+} from "./report-schema";
 
 const artifactRoot = path.resolve(process.cwd(), "artifacts/visual-benchmark");
 
@@ -106,5 +112,62 @@ describe("parseHistory", () => {
     expect(() => parseHistory({ version: 7, entries: [] })).toThrow(
       /Invalid history/,
     );
+  });
+});
+
+describe("parseStandaloneVisualQualityReport", () => {
+  it("parses a completed top-level visual-quality report", () => {
+    const parsed = parseStandaloneVisualQualityReport({
+      status: "completed",
+      referenceSource: "frozen_fixture",
+      capturedAt: "2026-04-10T00:00:00.000Z",
+      overallScore: 98.4,
+      interpretation: "Excellent parity",
+      dimensions: [],
+      hotspots: [],
+      metadata: {
+        imageWidth: 1280,
+        imageHeight: 800,
+      },
+      warnings: ["sample warning"],
+    });
+
+    expect(parsed.status).toBe("completed");
+    expect(parsed.overallScore).toBe(98.4);
+    expect(parsed.referenceSource).toBe("frozen_fixture");
+    expect(parsed.warnings).toEqual(["sample warning"]);
+  });
+
+  it("rejects malformed standalone reports", () => {
+    expect(() =>
+      parseStandaloneVisualQualityReport({
+        status: "bogus",
+      }),
+    ).toThrow(/Invalid visual-quality report/);
+  });
+});
+
+describe("parseVisualParityReport", () => {
+  it("parses a visual-parity-report.json payload", () => {
+    const parsed = parseVisualParityReport({
+      status: "warn",
+      mode: "strict",
+      baselinePath: "/tmp/baseline.png",
+      runtimePreviewUrl: "http://127.0.0.1:19835/workspace/repros/job-1/",
+      maxDiffPixelRatio: 0.2,
+      details: "Visual difference exceeded threshold.",
+    });
+
+    expect(parsed.status).toBe("warn");
+    expect(parsed.mode).toBe("strict");
+    expect(parsed.maxDiffPixelRatio).toBe(0.2);
+  });
+
+  it("rejects malformed parity summaries", () => {
+    expect(() =>
+      parseVisualParityReport({
+        status: "bad",
+      }),
+    ).toThrow(/Invalid visual-parity-report/);
   });
 });

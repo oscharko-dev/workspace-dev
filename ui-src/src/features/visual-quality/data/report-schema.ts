@@ -3,6 +3,8 @@ import {
   type HistoryRuns,
   type LastRunAggregate,
   type ScreenReport,
+  type StandaloneVisualQualityReport,
+  type VisualParitySummary,
 } from "./types";
 
 const browserIdSchema = z.enum(["chromium", "firefox", "webkit"]);
@@ -106,6 +108,60 @@ const screenReportSchema = z.object({
   crossBrowserConsistency: crossBrowserConsistencySchema.optional(),
 });
 
+const standaloneVisualQualityReportSchema = z.object({
+  status: z.enum(["completed", "failed", "not_requested"]),
+  referenceSource: z.string().optional(),
+  capturedAt: z.string().optional(),
+  overallScore: z.number().optional(),
+  interpretation: z.string().optional(),
+  dimensions: z.array(dimensionSchema).optional(),
+  diffImagePath: z.string().optional(),
+  hotspots: z.array(hotspotSchema).optional(),
+  metadata: z
+    .object({
+      comparedAt: z.string().optional(),
+      imageWidth: z.number().optional(),
+      imageHeight: z.number().optional(),
+      diffPixelCount: z.number().optional(),
+      totalPixels: z.number().optional(),
+      configuredWeights: z.record(z.string(), z.number()).optional(),
+      viewport: z
+        .object({
+          width: z.number(),
+          height: z.number(),
+          deviceScaleFactor: z.number().optional(),
+        })
+        .optional(),
+      versions: z.record(z.string(), z.string()).optional(),
+    })
+    .optional(),
+  perBrowser: z
+    .array(
+      z.object({
+        browser: browserIdSchema,
+        overallScore: z.number(),
+        actualImagePath: z.string().optional(),
+        diffImagePath: z.string().optional(),
+        reportPath: z.string().optional(),
+        warnings: z.array(z.string()).optional(),
+      }),
+    )
+    .optional(),
+  browserBreakdown: browserBreakdownSchema.optional(),
+  crossBrowserConsistency: crossBrowserConsistencySchema.optional(),
+  warnings: z.array(z.string()).optional(),
+  message: z.string().optional(),
+});
+
+const visualParityReportSchema = z.object({
+  status: z.enum(["passed", "warn"]),
+  mode: z.enum(["warn", "strict"]),
+  baselinePath: z.string().min(1),
+  runtimePreviewUrl: z.string().min(1),
+  maxDiffPixelRatio: z.number(),
+  details: z.string().min(1),
+});
+
 const historyScoreEntrySchema = z.object({
   fixtureId: z.string(),
   score: z.number(),
@@ -186,6 +242,34 @@ export function parseScreenReport(input: unknown): ScreenReport {
     );
   }
   return stripUndefinedDeep(result.data) as ScreenReport;
+}
+
+/**
+ * Parses a top-level `visual-quality/report.json` payload.
+ */
+export function parseStandaloneVisualQualityReport(
+  input: unknown,
+): StandaloneVisualQualityReport {
+  const result = standaloneVisualQualityReportSchema.safeParse(input);
+  if (!result.success) {
+    throw new Error(
+      `Invalid visual-quality report.json: ${result.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,
+    );
+  }
+  return stripUndefinedDeep(result.data) as StandaloneVisualQualityReport;
+}
+
+/**
+ * Parses a `visual-parity-report.json` summary payload.
+ */
+export function parseVisualParityReport(input: unknown): VisualParitySummary {
+  const result = visualParityReportSchema.safeParse(input);
+  if (!result.success) {
+    throw new Error(
+      `Invalid visual-parity-report.json: ${result.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,
+    );
+  }
+  return stripUndefinedDeep(result.data) as VisualParitySummary;
 }
 
 /**

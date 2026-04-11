@@ -1,4 +1,8 @@
-import { hotspotsMatchSeverity, severityRank } from "../data/report-loader";
+import {
+  hotspotsMatchSeverity,
+  screenKey,
+  severityRank,
+} from "../data/report-loader";
 import { type HotspotSeverity, type MergedScreen } from "../data/types";
 
 export type SortKey =
@@ -233,9 +237,7 @@ export function buildPreviousScoreMap(
   }
   const map: PreviousScoreMap = {};
   for (const score of latest.scores) {
-    const screenIdToken = (score.screenId ?? "unknown").replace(/:/g, "_");
-    const viewport = score.viewportId ?? "default";
-    const key = `${score.fixtureId}/${screenIdToken}/${viewport}`;
+    const key = screenKey(score.fixtureId, score.screenId, score.viewportId);
     map[key] = score.score;
   }
   return map;

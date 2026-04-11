@@ -23,6 +23,14 @@ interface ZoomModalProps {
 
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 8;
+const FOCUSABLE_SELECTOR = [
+  "a[href]",
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
 
 /**
  * Full-viewport zoom modal. Supports wheel-zoom, drag-to-pan when zoomed in,
@@ -49,22 +57,75 @@ export function ZoomModal({
     origY: number;
   } | null>(null);
 
+  const getFocusableElements = useCallback((): HTMLElement[] => {
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return [];
+    }
+
+    return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+      (element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true",
+    );
+  }, []);
+
   useEffect(() => {
     previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const firstFocusable = getFocusableElements()[0];
+    if (firstFocusable) {
+      firstFocusable.focus();
+      return () => {
+        previouslyFocused.current?.focus();
+      };
+    }
+
     dialogRef.current?.focus();
     return () => {
       previouslyFocused.current?.focus();
     };
-  }, []);
+  }, [getFocusableElements]);
 
   const handleKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       if (event.key === "Escape") {
         event.preventDefault();
         onClose();
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const focusableElements = getFocusableElements();
+      if (focusableElements.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+
+      const firstFocusable = focusableElements[0];
+      const lastFocusable = focusableElements.at(-1);
+      if (!firstFocusable || !lastFocusable) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
+      const activeElement = document.activeElement;
+
+      if (event.shiftKey) {
+        if (activeElement === firstFocusable || activeElement === dialogRef.current) {
+          event.preventDefault();
+          lastFocusable.focus();
+        }
+        return;
+      }
+
+      if (activeElement === lastFocusable || activeElement === dialogRef.current) {
+        event.preventDefault();
+        firstFocusable.focus();
       }
     },
-    [onClose],
+    [getFocusableElements, onClose],
   );
 
   const handleBackdropClick = useCallback(

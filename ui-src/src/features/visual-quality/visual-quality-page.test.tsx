@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { VisualQualityPage } from "./visual-quality-page";
 
 function LocationProbe(): JSX.Element {
@@ -48,10 +48,15 @@ function renderPage(initial: string): void {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   cleanup();
 });
 
 describe("VisualQualityPage", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders the empty state when no report is loaded", () => {
     renderPage("/workspace/ui/visual-quality");
     expect(screen.getByTestId("visual-quality-empty-state")).toBeVisible();
@@ -107,6 +112,114 @@ describe("VisualQualityPage", () => {
     });
 
     fireEvent.click(screen.getByTestId("visual-quality-reset"));
+    expect(screen.getByTestId("visual-quality-empty-state")).toBeVisible();
+  });
+
+  it("loads standalone visual-quality/report.json from the report query", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: "completed",
+            referenceSource: "frozen_fixture",
+            capturedAt: "2026-04-11T00:00:00.000Z",
+            overallScore: 98.8,
+            interpretation: "Excellent parity",
+            dimensions: [],
+            hotspots: [],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("score-dashboard")).toBeVisible();
+    });
+    expect(screen.getByTestId("gallery-view")).toBeVisible();
+    expect(screen.queryByTestId("visual-parity-summary")).not.toBeInTheDocument();
+  });
+
+  it("loads visual-parity-report.json in summary-only mode", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: "warn",
+            mode: "strict",
+            baselinePath: "/tmp/baseline.png",
+            runtimePreviewUrl: "http://127.0.0.1:19835/workspace/repros/job-1/",
+            maxDiffPixelRatio: 0.2,
+            details: "Visual difference exceeded threshold.",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-parity-report.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("visual-parity-summary")).toBeVisible();
+    });
+    expect(screen.getByTestId("visual-quality-notices")).toHaveTextContent(
+      /Per-screen overlays are unavailable/i,
+    );
+    expect(screen.queryByTestId("gallery-view")).not.toBeInTheDocument();
+  });
+
+  it("shows a clear error when the report URL returns 404", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fmissing%2Ffiles%2Fvisual-quality%2Freport.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /Failed to fetch report .* HTTP 404/i,
+      );
+    });
+    expect(screen.getByTestId("visual-quality-empty-state")).toBeVisible();
+  });
+
+  it("shows a clear error when the report JSON is malformed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ status: "bogus" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      ),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-parity-report.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /Invalid visual-parity-report\.json/i,
+      );
+    });
     expect(screen.getByTestId("visual-quality-empty-state")).toBeVisible();
   });
 });

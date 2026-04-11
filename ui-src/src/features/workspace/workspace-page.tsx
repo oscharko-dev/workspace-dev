@@ -665,6 +665,9 @@ export function WorkspacePage(): JSX.Element {
   const cancelInfo = jobPayload?.cancellation?.reason;
 
   const canOpenInspector = jobStatus === "completed" && previewUrl && activeJobId;
+  const visualQualityReportUrl = activeJobId
+    ? `/workspace/jobs/${encodeURIComponent(activeJobId)}/files/visual-quality/report.json`
+    : null;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-[#fafafa]">
@@ -1176,15 +1179,31 @@ export function WorkspacePage(): JSX.Element {
                         Open the Inspector to explore, preview, and review the generated code.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigate(`/workspace/ui/inspector?jobId=${encodeURIComponent(activeJobId)}&previewUrl=${encodeURIComponent(previewUrl)}${jobPayload?.generationDiff?.previousJobId ? `&previousJobId=${encodeURIComponent(jobPayload.generationDiff.previousJobId)}` : ""}${jobPayload?.lineage?.sourceJobId ? "&isRegeneration=true" : ""}`);
-                      }}
-                      className="cursor-pointer rounded-md bg-[#4eba87] px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-600"
-                    >
-                      Open Inspector
-                    </button>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!visualQualityReportUrl) {
+                            return;
+                          }
+                          void navigate(
+                            `/workspace/ui/visual-quality?report=${encodeURIComponent(visualQualityReportUrl)}`
+                          );
+                        }}
+                        className="cursor-pointer rounded-md border border-[#4eba87]/30 bg-white px-4 py-2 text-sm font-medium text-[#247a51] transition hover:border-[#4eba87] hover:bg-emerald-50"
+                      >
+                        Open Visual Quality
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void navigate(`/workspace/ui/inspector?jobId=${encodeURIComponent(activeJobId)}&previewUrl=${encodeURIComponent(previewUrl)}${jobPayload?.generationDiff?.previousJobId ? `&previousJobId=${encodeURIComponent(jobPayload.generationDiff.previousJobId)}` : ""}${jobPayload?.lineage?.sourceJobId ? "&isRegeneration=true" : ""}`);
+                        }}
+                        className="cursor-pointer rounded-md bg-[#4eba87] px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-600"
+                      >
+                        Open Inspector
+                      </button>
+                    </div>
                   </div>
                 ) : (
                   <div className="flex flex-col items-center gap-3 text-center">

@@ -4,6 +4,7 @@ import {
   mergeReport,
   screenKey,
   severityRank,
+  toScreenIdToken,
   worstSeverityFor,
   type ScreenArtifacts,
 } from "./report-loader";
@@ -74,9 +75,16 @@ describe("screenKey", () => {
     expect(screenKey("alpha", "1:1", "desktop")).toBe("alpha/1_1/desktop");
   });
 
-  it("falls back to unknown/default when parts are missing", () => {
+  it("escapes underscores before replacing colons", () => {
+    expect(toScreenIdToken("home_view:1")).toBe("home~uview_1");
+    expect(screenKey("alpha", "home_view:1", "desktop")).toBe(
+      "alpha/home~uview_1/desktop",
+    );
+  });
+
+  it("falls back to fixtureId/default when screen id is missing", () => {
     expect(screenKey("alpha", undefined, undefined)).toBe(
-      "alpha/unknown/default",
+      "alpha/alpha/default",
     );
   });
 });
@@ -204,6 +212,6 @@ describe("mergeReport", () => {
     const screen = merged.fixtures[0]?.screens[0];
     expect(screen?.viewportId).toBe("default");
     expect(screen?.viewportLabel).toBe("default");
-    expect(screen?.screenId).toBe("unknown");
+    expect(screen?.screenId).toBe("alpha");
   });
 });

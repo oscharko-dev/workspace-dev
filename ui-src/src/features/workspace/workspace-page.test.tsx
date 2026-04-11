@@ -64,7 +64,7 @@ function parseJsonBody({ init }: { init: RequestInit | undefined }): Record<stri
   return parsed as Record<string, unknown>;
 }
 
-function renderWorkspacePage(): void {
+function renderWorkspacePage() {
   window.history.pushState({}, "", "/workspace/ui");
 
   const queryClient = new QueryClient({
@@ -100,6 +100,8 @@ function renderWorkspacePage(): void {
       <RouterProvider router={router} />
     </QueryClientProvider>
   );
+
+  return { router };
 }
 
 describe("WorkspacePage", () => {
@@ -242,5 +244,77 @@ describe("WorkspacePage", () => {
     });
     expect(submittedPayloads[0]).not.toHaveProperty("figmaFileKey");
     expect(submittedPayloads[0]).not.toHaveProperty("figmaAccessToken");
+  });
+
+  it("shows an Open Visual Quality action for completed jobs and navigates with the report query", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/healthz") {
+        return createJsonResponse({ payload: { status: "ok" } }) as never;
+      }
+
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+
+      if (url === "/workspace/submit") {
+        submittedPayloads.push(parseJsonBody({ init }));
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-123" }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-123",
+            status: "completed",
+            preview: {
+              enabled: true,
+              url: "http://127.0.0.1:1983/preview"
+            }
+          }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123/result") {
+        return createJsonResponse({
+          payload: {
+            files: []
+          }
+        }) as never;
+      }
+
+      throw new Error(`Unexpected fetchJson url: ${url}`);
+    });
+
+    const { router } = renderWorkspacePage();
+
+    fireEvent.change(screen.getByLabelText("Figma File Key"), {
+      target: { value: "demo-file-key" }
+    });
+    fireEvent.change(screen.getByLabelText("Figma Access Token"), {
+      target: { value: "demo-access-token" }
+    });
+
+    const form = document.getElementById("workspace-submit-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("Expected workspace submit form to be rendered.");
+    }
+
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open Visual Quality" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Visual Quality" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/workspace/ui/visual-quality");
+      expect(router.state.location.search).toBe(
+        "?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json"
+      );
+    });
   });
 });

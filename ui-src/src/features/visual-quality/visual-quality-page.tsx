@@ -33,6 +33,85 @@ function BackIcon(): JSX.Element {
   );
 }
 
+function ReportNotices({
+  notices,
+}: {
+  notices: string[] | undefined;
+}): JSX.Element | null {
+  if (!notices || notices.length === 0) {
+    return null;
+  }
+
+  return (
+    <section
+      data-testid="visual-quality-notices"
+      className="rounded-md border border-amber-400/30 bg-amber-950/20 p-3 text-[11px] text-amber-200"
+    >
+      <h2 className="m-0 mb-1 text-[11px] font-semibold uppercase tracking-wider">
+        Notes
+      </h2>
+      <ul className="m-0 list-disc space-y-0.5 pl-4">
+        {notices.map((notice, index) => (
+          <li key={`${String(index)}-${notice}`}>{notice}</li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function VisualParitySummaryCard({
+  report,
+}: {
+  report: NonNullable<MergedReport["paritySummary"]>;
+}): JSX.Element {
+  return (
+    <section
+      data-testid="visual-parity-summary"
+      className="rounded-md border border-white/10 bg-[#171717] p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-white/45">
+            Visual parity summary
+          </div>
+          <h2 className="m-0 mt-1 text-sm font-semibold text-white">
+            {report.status === "passed" ? "Passed" : "Warn"}
+          </h2>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 text-[10px] uppercase tracking-wider text-white/60">
+            mode {report.mode}
+          </span>
+          <span className="rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 font-mono text-[10px] text-white/60">
+            max diff {report.maxDiffPixelRatio}
+          </span>
+        </div>
+      </div>
+
+      <p className="m-0 mt-3 text-sm text-white/75">{report.details}</p>
+
+      <dl className="m-0 mt-4 grid gap-3 md:grid-cols-2">
+        <div>
+          <dt className="text-[10px] uppercase tracking-wider text-white/45">
+            Baseline path
+          </dt>
+          <dd className="m-0 mt-1 break-all font-mono text-[11px] text-white/75">
+            {report.baselinePath}
+          </dd>
+        </div>
+        <div>
+          <dt className="text-[10px] uppercase tracking-wider text-white/45">
+            Runtime preview URL
+          </dt>
+          <dd className="m-0 mt-1 break-all font-mono text-[11px] text-white/75">
+            {report.runtimePreviewUrl}
+          </dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
 /**
  * Top-level route component for `/workspace/ui/visual-quality`.
  * Renders the empty state until a report is loaded (via file input, URL query
@@ -166,13 +245,20 @@ export function VisualQualityPage(): JSX.Element {
           ) : null}
           {report ? (
             <>
-              <ScoreDashboard report={report} />
-              <HistoryChart history={report.history} />
-              <GalleryView
-                report={report}
-                filterState={filterState}
-                onFilterStateChange={handleFilterChange}
-              />
+              <ReportNotices notices={report.notices} />
+              {report.paritySummary ? (
+                <VisualParitySummaryCard report={report.paritySummary} />
+              ) : (
+                <>
+                  <ScoreDashboard report={report} />
+                  <HistoryChart history={report.history} />
+                  <GalleryView
+                    report={report}
+                    filterState={filterState}
+                    onFilterStateChange={handleFilterChange}
+                  />
+                </>
+              )}
             </>
           ) : null}
         </InspectorErrorBoundary>
