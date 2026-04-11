@@ -2978,13 +2978,22 @@ export const runVisualBenchmark = async (
       screenAggregateScore: comparableCurrentScreenAggregateScore,
       componentAggregateScore: comparableCurrentComponentAggregateScore,
     });
-    result.overallBaseline = blendVisualBenchmarkHeadlineScore({
-      screenAggregateScore: baselineScreenAggregateScore,
-      componentAggregateScore: baselineComponentAggregateScore,
+    const comparableBaselineHeadline = blendVisualBenchmarkHeadlineScore({
+      screenAggregateScore:
+        comparableCurrentScreenAggregateScore !== null
+          ? baselineScreenAggregateScore
+          : null,
+      componentAggregateScore:
+        comparableCurrentComponentAggregateScore !== null
+          ? baselineComponentAggregateScore
+          : null,
     });
+    result.overallBaseline = comparableBaselineHeadline;
     result.overallDelta =
-      comparableCurrentHeadline !== null && result.overallBaseline !== null
-        ? roundToTwoDecimals(comparableCurrentHeadline - result.overallBaseline)
+      comparableCurrentHeadline !== null && comparableBaselineHeadline !== null
+        ? roundToTwoDecimals(
+            comparableCurrentHeadline - comparableBaselineHeadline,
+          )
         : null;
   }
 

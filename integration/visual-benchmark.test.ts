@@ -2826,6 +2826,137 @@ test("runVisualBenchmark warns when headline score falls back to component-only 
   }
 });
 
+test("runVisualBenchmark computes headline delta against a like-for-like baseline blend", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "screen-fixture",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:10031",
+      nodeName: "Screen Fixture",
+    },
+  });
+  const componentMetadata: VisualBenchmarkFixtureMetadata = {
+    version: 4,
+    mode: "storybook_component",
+    fixtureId: "component-fixture",
+    capturedAt: "2026-04-09T00:00:00.000Z",
+    source: {
+      fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      nodeId: "12:34",
+      nodeName: "Component Fixture",
+      lastModified: "2026-03-30T20:59:16Z",
+    },
+    viewport: {
+      width: 240,
+      height: 160,
+    },
+    export: {
+      format: "png",
+      scale: 1,
+    },
+    screens: [
+      {
+        screenId: "button-primary",
+        screenName: "Primary Button",
+        storyTitle: "Components/Button/Primary",
+        nodeId: "12:34",
+        viewport: { width: 240, height: 160 },
+        entryId: "components-button--primary",
+        referenceNodeId: "12:34",
+        referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+        captureStrategy: "storybook_root_union",
+        baselineCanvas: { width: 240, height: 160 },
+      },
+    ],
+  };
+
+  try {
+    await writeBenchmarkFixture({
+      fixtureRoot: env.fixtureRoot,
+      artifactRoot: env.artifactRoot,
+      metadata: componentMetadata,
+    });
+    await saveVisualBenchmarkBaselineScores(
+      [
+        {
+          fixtureId: "screen-fixture",
+          screenId: "2:10031",
+          screenName: "Screen Fixture",
+          score: 80,
+        },
+        {
+          fixtureId: "component-fixture",
+          screenId: "button-primary",
+          screenName: "Primary Button",
+          score: 50,
+        },
+      ],
+      {
+        fixtureRoot: env.fixtureRoot,
+        artifactRoot: env.artifactRoot,
+      },
+    );
+
+    const result = await runVisualBenchmark(
+      {
+        fixtureRoot: env.fixtureRoot,
+        artifactRoot: env.artifactRoot,
+      },
+      {
+        executeFixture: async (fixtureId) => {
+          if (fixtureId === "screen-fixture") {
+            return {
+              fixtureId,
+              aggregateScore: 90,
+              screens: [
+                {
+                  screenId: "2:10031",
+                  screenName: "Screen Fixture",
+                  nodeId: "2:10031",
+                  status: "completed",
+                  score: 90,
+                  screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                  diffBuffer: null,
+                  report: createCompletedVisualQualityReport(90),
+                  viewport: { width: 1280, height: 720 },
+                },
+              ],
+            };
+          }
+
+          return {
+            fixtureId,
+            aggregateScore: null,
+            componentAggregateScore: null,
+            componentCoverage: {
+              comparedCount: 0,
+              skippedCount: 1,
+              coveragePercent: 0,
+              bySkipReason: { missing_capture: 1 },
+            },
+            screens: [
+              {
+                screenId: "button-primary",
+                screenName: "Primary Button",
+                nodeId: "12:34",
+                status: "skipped",
+                skipReason: "missing_capture",
+                viewport: { width: 240, height: 160 },
+              },
+            ],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.overallCurrent, 90);
+    assert.equal(result.overallBaseline, 80);
+    assert.equal(result.overallDelta, 10);
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
 test("formatVisualBenchmarkTable shows screen-specific view labels for multi-screen deltas", () => {
   const table = formatVisualBenchmarkTable({
     deltas: [
