@@ -331,6 +331,13 @@ Use the `browsers` input when you want one combined cross-browser run and cross-
 | `pnpm benchmark:visual:update-baseline`   | Compatibility shim for `pnpm visual:baseline update`                                                 |
 | `pnpm benchmark:visual:live`              | Compares frozen fixture data against live Figma responses                                            |
 
+## A/B comparison mode
+
+For head-to-head comparison of two benchmark configurations against the same
+fixture set, see [Visual Benchmark — A/B Comparison Mode](visual-benchmark-ab.md).
+A/B mode shares fixtures and the underlying runner with benchmark mode but is
+read-only with respect to the committed baseline.
+
 ## Further reading
 
 For comprehensive documentation on the visual quality assessment system including architecture, scoring dimensions, score interpretation, and CI integration details, see [Visual Quality Assessment](visual-quality-assessment.md).
