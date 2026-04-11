@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import test, { type TestContext } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chromium } from "@playwright/test";
+import { chromium, firefox, webkit } from "@playwright/test";
 import { PNG } from "pngjs";
 import { executeVisualBenchmarkFixture } from "./visual-benchmark.execution.js";
 import {
@@ -37,34 +37,49 @@ type ExecutionTestViewport = {
   weight?: number;
 };
 
-let chromiumAvailabilityPromise:
-  | Promise<{ available: true } | { available: false; reason: string }>
-  | undefined;
+type AvailableBenchmarkBrowserName = "chromium" | "firefox" | "webkit";
 
-const getChromiumAvailability = async (): Promise<
+const PLAYWRIGHT_BROWSER_TYPES = {
+  chromium,
+  firefox,
+  webkit,
+} as const;
+
+const getBrowserAvailability = async (
+  browserName: AvailableBenchmarkBrowserName,
+): Promise<
   { available: true } | { available: false; reason: string }
 > => {
-  chromiumAvailabilityPromise ??= (async () => {
-    const executablePath = chromium.executablePath();
-    try {
-      await access(executablePath, fsConstants.X_OK);
-      return { available: true } as const;
-    } catch {
-      return {
-        available: false,
-        reason: `Chromium executable is unavailable at '${executablePath}'.`,
-      } as const;
-    }
-  })();
+  const cacheKey = `${browserName}` as const;
+  const browserType = PLAYWRIGHT_BROWSER_TYPES[cacheKey];
+  const executablePath = browserType.executablePath();
+  try {
+    await access(executablePath, fsConstants.X_OK);
+    return { available: true } as const;
+  } catch {
+    return {
+      available: false,
+      reason: `${browserName} executable is unavailable at '${executablePath}'.`,
+    } as const;
+  }
+};
 
-  return await chromiumAvailabilityPromise;
+const skipIfBrowsersUnavailable = async (
+  context: TestContext,
+  browsers: readonly AvailableBenchmarkBrowserName[],
+): Promise<boolean> => {
+  for (const browser of browsers) {
+    const availability = await getBrowserAvailability(browser);
+    if (!availability.available) {
+      context.skip(availability.reason);
+      return true;
+    }
+  }
+  return false;
 };
 
 const skipIfChromiumUnavailable = async (context: TestContext): Promise<void> => {
-  const availability = await getChromiumAvailability();
-  if (!availability.available) {
-    context.skip(availability.reason);
-  }
+  await skipIfBrowsersUnavailable(context, ["chromium"]);
 };
 
 const createSolidPngBuffer = ({
@@ -455,6 +470,74 @@ test(
 );
 
 test(
+  "executeVisualBenchmarkFixture captures generated_app_screen fixtures across the requested browsers",
+  { timeout: 300_000 },
+  async (context) => {
+    if (
+      await skipIfBrowsersUnavailable(context, [
+        "chromium",
+        "firefox",
+        "webkit",
+      ])
+    ) {
+      return;
+    }
+    const fixtureRoot = await mkdtemp(
+      path.join(os.tmpdir(), "workspace-dev-visual-benchmark-execution-browsers-"),
+    );
+    const fixtureId = "issue-848-browser-fanout";
+    const viewports: readonly ExecutionTestViewport[] = [
+      {
+        id: "desktop",
+        width: 640,
+        height: 480,
+        deviceScaleFactor: 1,
+        weight: 1,
+      },
+    ];
+
+    try {
+      await createFixtureUnderTest({
+        fixtureRoot,
+        fixtureId,
+        viewports,
+      });
+
+      const result = await executeVisualBenchmarkFixture(fixtureId, {
+        fixtureRoot,
+        workspaceRoot: REPO_ROOT,
+        qualityConfig: {
+          viewports,
+        },
+        browsers: ["chromium", "firefox", "webkit"],
+      });
+
+      assert.equal(result.screens.length, 1);
+      assert.deepEqual(
+        Object.keys(result.browserBreakdown ?? {}).sort(),
+        ["chromium", "firefox", "webkit"],
+      );
+      assert.deepEqual(
+        result.screens[0]?.browserArtifacts?.map((artifact) => artifact.browser),
+        ["chromium", "firefox", "webkit"],
+      );
+      assert.equal(
+        result.screens[0]?.crossBrowserConsistency?.pairwiseDiffs.length,
+        3,
+      );
+      assert.equal(result.crossBrowserConsistency?.pairwiseDiffs.length, 3);
+      assert.deepEqual(result.crossBrowserConsistency?.browsers, [
+        "chromium",
+        "firefox",
+        "webkit",
+      ]);
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
   "executeVisualBenchmarkFixture skips incomplete storybook_component mappings without failing the run",
   async () => {
     const tempRoot = await mkdtemp(
@@ -525,10 +608,10 @@ test(
 
 import {
   computeCrossBrowserConsistencyScore,
-  isBenchmarkBrowserName,
-  assertBenchmarkBrowserName,
-  BENCHMARK_BROWSER_NAMES,
-} from "./visual-benchmark.execution.js";
+  isVisualBrowserName as isBenchmarkBrowserName,
+  assertVisualBrowserName as assertBenchmarkBrowserName,
+  VISUAL_BROWSER_NAMES as BENCHMARK_BROWSER_NAMES,
+} from "../src/job-engine/visual-browser-matrix.js";
 
 const makeSolidPngBuffer = ({
   width,

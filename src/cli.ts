@@ -10,6 +10,7 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceLogFormat,
   WorkspaceRouterMode,
+  WorkspaceVisualBrowserName,
   WorkspaceVisualQualityReferenceMode
 } from "./contracts/index.js";
 import {
@@ -24,6 +25,7 @@ import {
   resolveWorkspaceLogFormat
 } from "./logging.js";
 import { DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS } from "./job-engine/errors.js";
+import { parseVisualBrowserList } from "./job-engine/visual-browser-matrix.js";
 import { createWorkspaceServer } from "./server.js";
 import path from "node:path";
 
@@ -103,6 +105,7 @@ interface CliOptions {
   enableVisualQualityValidation: boolean;
   visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;
   visualQualityViewportWidth: number;
+  visualQualityBrowsers: WorkspaceVisualBrowserName[];
   enableUnitTestValidation: boolean;
   installPreferOffline: boolean;
   skipInstall: boolean;
@@ -376,6 +379,13 @@ const parseArgs = (argv: string[]): CliOptions => {
     min: 320,
     max: 4096
   });
+  let visualQualityBrowsers = (() => {
+    const raw = process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS;
+    if (!raw || raw.trim().length === 0) {
+      return ["chromium"] as WorkspaceVisualBrowserName[];
+    }
+    return parseVisualBrowserList(raw, "FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS");
+  })();
   let enableUnitTestValidation = parseBooleanLike(
     process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION,
     DEFAULT_ENABLE_UNIT_TEST_VALIDATION
@@ -759,6 +769,16 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--visual-quality-browsers") {
+      const raw = args[index + 1];
+      if (!raw) {
+        throw new Error("--visual-quality-browsers requires a comma-separated list.");
+      }
+      visualQualityBrowsers = parseVisualBrowserList(raw, "--visual-quality-browsers");
+      index += 1;
+      continue;
+    }
+
     if (arg === "--unit-test-validation") {
       enableUnitTestValidation = parseBooleanLike(args[index + 1], enableUnitTestValidation);
       index += 1;
@@ -908,6 +928,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     enableVisualQualityValidation,
     visualQualityReferenceMode,
     visualQualityViewportWidth,
+    visualQualityBrowsers,
     enableUnitTestValidation,
     installPreferOffline,
     skipInstall,
@@ -996,6 +1017,8 @@ Options:
                              Reference source for visual quality validation (default: ${DEFAULT_VISUAL_QUALITY_REFERENCE_MODE})
   --visual-quality-viewport-width <px>
                              Capture width for visual quality validation (default: ${DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH})
+  --visual-quality-browsers <chromium,firefox,webkit>
+                             Browser engines used for visual quality validation (default: chromium)
   --unit-test-validation <true|false>
                              Run generated-project unit tests in validate.project (default: ${DEFAULT_ENABLE_UNIT_TEST_VALIDATION})
   --install-prefer-offline <true|false>
@@ -1054,6 +1077,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION
   FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE
   FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH
+  FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS
   FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION
   FIGMAPIPE_WORKSPACE_INSTALL_PREFER_OFFLINE
   FIGMAPIPE_WORKSPACE_SKIP_INSTALL
@@ -1139,6 +1163,7 @@ const main = async (): Promise<void> => {
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_VISUAL_QUALITY_VALIDATION = options.enableVisualQualityValidation ? "true" : "false";
   process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_REFERENCE_MODE = options.visualQualityReferenceMode;
   process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_VIEWPORT_WIDTH = String(options.visualQualityViewportWidth);
+  process.env.FIGMAPIPE_WORKSPACE_VISUAL_QUALITY_BROWSERS = options.visualQualityBrowsers.join(",");
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_UNIT_TEST_VALIDATION = options.enableUnitTestValidation ? "true" : "false";
 
   try {
@@ -1180,6 +1205,7 @@ const main = async (): Promise<void> => {
       enableVisualQualityValidation: options.enableVisualQualityValidation,
       visualQualityReferenceMode: options.visualQualityReferenceMode,
       visualQualityViewportWidth: options.visualQualityViewportWidth,
+      visualQualityBrowsers: options.visualQualityBrowsers,
       enableUnitTestValidation: options.enableUnitTestValidation,
       installPreferOffline: options.installPreferOffline,
       skipInstall: options.skipInstall,
@@ -1211,6 +1237,7 @@ const main = async (): Promise<void> => {
     logger.log({ level: "info", message: `Visual quality validation enabled: ${options.enableVisualQualityValidation}` });
     logger.log({ level: "info", message: `Visual quality reference mode: ${options.visualQualityReferenceMode}` });
     logger.log({ level: "info", message: `Visual quality viewport width: ${options.visualQualityViewportWidth}` });
+    logger.log({ level: "info", message: `Visual quality browsers: ${options.visualQualityBrowsers.join(", ")}` });
     logger.log({ level: "info", message: `Unit test validation enabled: ${options.enableUnitTestValidation}` });
     logger.log({ level: "info", message: `Install prefer-offline: ${options.installPreferOffline}` });
     logger.log({ level: "info", message: `Skip install: ${options.skipInstall}` });

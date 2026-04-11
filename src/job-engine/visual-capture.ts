@@ -2,6 +2,11 @@ import { createServer } from "node:http";
 import { createServer as createNetServer } from "node:net";
 import { readFile } from "node:fs/promises";
 import path, { extname } from "node:path";
+import type { WorkspaceVisualBrowserName } from "../contracts/index.js";
+import {
+  assertVisualBrowserName,
+  DEFAULT_VISUAL_BROWSER,
+} from "./visual-browser-matrix.js";
 
 export interface ViewportConfig {
   width: number;
@@ -24,6 +29,7 @@ export interface CaptureResult {
   width: number;
   height: number;
   viewport: ViewportConfig;
+  browser: WorkspaceVisualBrowserName;
 }
 
 export type CaptureDeviceProfileId = "pixel-7";
@@ -174,6 +180,18 @@ export const resolveCaptureContextOptions = (
     hasTouch: deviceProfile.hasTouch,
     userAgent: deviceProfile.userAgent,
   };
+};
+
+export const resolveCaptureContextOptionsForBrowser = (
+  config: CaptureConfig,
+  browserName: WorkspaceVisualBrowserName,
+): CaptureContextOptions => {
+  const contextOptions = resolveCaptureContextOptions(config);
+  if (browserName !== "firefox" || contextOptions.isMobile !== true) {
+    return contextOptions;
+  }
+  const { isMobile: _ignoredIsMobile, ...firefoxSafeOptions } = contextOptions;
+  return firefoxSafeOptions;
 };
 
 const parsePngDimensions = (
@@ -424,15 +442,25 @@ interface PlaywrightPage {
   }): Promise<Buffer>;
 }
 
-const loadChromium = async (): Promise<PlaywrightBrowserType> => {
+const loadBrowserByName = async (
+  browserName: WorkspaceVisualBrowserName,
+): Promise<PlaywrightBrowserType> => {
   try {
     const pw = await import("@playwright/test");
-    return pw.chromium as PlaywrightBrowserType;
+    const browserType = (pw as unknown as Record<string, PlaywrightBrowserType>)[
+      browserName
+    ];
+    if (browserType === undefined) {
+      throw new Error(
+        `Playwright does not export a '${browserName}' browser type.`,
+      );
+    }
+    return browserType;
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "unknown error";
     throw new Error(
-      `Failed to import @playwright/test. Ensure it is installed: ${message}`,
+      `Failed to import @playwright/test for ${browserName}. Ensure it is installed: ${message}`,
     );
   }
 };
@@ -450,28 +478,42 @@ const WAIT_FOR_ANIMATIONS_EXPRESSION = [
 export const captureScreenshot = async (input: {
   url: string;
   config?: Partial<CaptureConfig & { viewport?: Partial<ViewportConfig> }>;
+  browser?: WorkspaceVisualBrowserName;
   onLog?: (message: string) => void;
 }): Promise<CaptureResult> => {
   const config = resolveCaptureConfig(input.config);
   const log = input.onLog ?? (() => undefined);
+  const browserName = assertVisualBrowserName(
+    input.browser ?? DEFAULT_VISUAL_BROWSER,
+  );
 
-  const chromium = await loadChromium();
+  const browserType = await loadBrowserByName(browserName);
 
-  log("Launching headless Chromium browser");
+  log(`Launching headless ${browserName} browser`);
   let browser: PlaywrightBrowser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await browserType.launch({ headless: true });
   } catch (error: unknown) {
     const message =
       error instanceof Error ? error.message : "unknown error";
-    throw new Error(`Failed to launch Chromium browser: ${message}`);
+    throw new Error(`Failed to launch ${browserName} browser: ${message}`);
   }
 
   try {
-    const contextOptions = resolveCaptureContextOptions(config);
+    const contextOptions = resolveCaptureContextOptionsForBrowser(
+      config,
+      browserName,
+    );
     if (contextOptions.isMobile === true) {
       log(
         `Applying mobile device profile semantics for ${config.viewport.width}x${config.viewport.height} capture`,
+      );
+    } else if (
+      browserName === "firefox" &&
+      resolveCaptureContextOptions(config).isMobile === true
+    ) {
+      log(
+        `Applying mobile viewport semantics for ${config.viewport.width}x${config.viewport.height} capture without Firefox isMobile flag`,
       );
     }
     const context = await browser.newContext(contextOptions);
@@ -531,6 +573,7 @@ export const captureScreenshot = async (input: {
       width: dimensions.width,
       height: dimensions.height,
       viewport: { ...config.viewport },
+      browser: browserName,
     };
   } finally {
     await browser.close();
@@ -540,6 +583,7 @@ export const captureScreenshot = async (input: {
 export const captureFromProject = async (input: {
   projectDir: string;
   config?: Partial<CaptureConfig & { viewport?: Partial<ViewportConfig> }>;
+  browser?: WorkspaceVisualBrowserName;
   onLog?: (message: string) => void;
 }): Promise<CaptureResult> => {
   const log = input.onLog ?? (() => undefined);
@@ -602,6 +646,7 @@ export const captureFromProject = async (input: {
     const captureInput: {
       url: string;
       config?: Partial<CaptureConfig & { viewport?: Partial<ViewportConfig> }>;
+      browser?: WorkspaceVisualBrowserName;
       onLog?: (message: string) => void;
     } = { url: baseUrl };
 
@@ -610,6 +655,9 @@ export const captureFromProject = async (input: {
     }
     if (input.onLog !== undefined) {
       captureInput.onLog = input.onLog;
+    }
+    if (input.browser !== undefined) {
+      captureInput.browser = input.browser;
     }
 
     return await captureScreenshot(captureInput);

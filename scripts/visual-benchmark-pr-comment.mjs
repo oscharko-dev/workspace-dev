@@ -93,6 +93,107 @@ const isFiniteNumber = (value) =>
 const isPlainRecord = (value) =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const normalizeBrowserBreakdown = (value) => {
+  if (value === null || typeof value !== "object") {
+    return null;
+  }
+  const normalized = {};
+  for (const browserName of ["chromium", "firefox", "webkit"]) {
+    if (isFiniteNumber(value[browserName])) {
+      normalized[browserName] = roundToTwo(value[browserName]);
+    }
+  }
+  return Object.keys(normalized).length > 0 ? normalized : null;
+};
+
+const normalizeCrossBrowserConsistency = (value) => {
+  if (
+    value === null ||
+    typeof value !== "object" ||
+    !Array.isArray(value.browsers) ||
+    !isFiniteNumber(value.consistencyScore) ||
+    !Array.isArray(value.pairwiseDiffs)
+  ) {
+    return null;
+  }
+  const pairwiseDiffs = value.pairwiseDiffs
+    .filter(
+      (entry) =>
+        entry !== null &&
+        typeof entry === "object" &&
+        typeof entry.browserA === "string" &&
+        typeof entry.browserB === "string" &&
+        isFiniteNumber(entry.diffPercent),
+    )
+    .map((entry) => ({
+      browserA: entry.browserA,
+      browserB: entry.browserB,
+      diffPercent: roundToTwo(entry.diffPercent),
+      ...(normalizeOptionalString(entry.diffImagePath)
+        ? { diffImagePath: normalizeOptionalString(entry.diffImagePath) }
+        : {}),
+    }));
+  return {
+    browsers: value.browsers.filter((browser) => typeof browser === "string"),
+    consistencyScore: roundToTwo(value.consistencyScore),
+    pairwiseDiffs,
+    ...(Array.isArray(value.warnings) && value.warnings.length > 0
+      ? {
+          warnings: value.warnings.filter(
+            (warning) =>
+              typeof warning === "string" && warning.trim().length > 0,
+          ),
+        }
+      : {}),
+  };
+};
+
+const normalizePerBrowserArtifacts = (value) => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return null;
+  }
+  const normalized = value
+    .filter(
+      (entry) =>
+        entry !== null &&
+        typeof entry === "object" &&
+        typeof entry.browser === "string" &&
+        isFiniteNumber(entry.overallScore),
+    )
+    .map((entry) => ({
+      browser: entry.browser,
+      overallScore: roundToTwo(entry.overallScore),
+      ...(normalizeOptionalString(entry.actualImagePath)
+        ? { actualImagePath: normalizeOptionalString(entry.actualImagePath) }
+        : {}),
+      ...(normalizeOptionalString(entry.diffImagePath)
+        ? { diffImagePath: normalizeOptionalString(entry.diffImagePath) }
+        : {}),
+      ...(normalizeOptionalString(entry.reportPath)
+        ? { reportPath: normalizeOptionalString(entry.reportPath) }
+        : {}),
+      ...(Array.isArray(entry.warnings) && entry.warnings.length > 0
+        ? {
+            warnings: entry.warnings.filter(
+              (warning) =>
+                typeof warning === "string" && warning.trim().length > 0,
+            ),
+          }
+        : {}),
+    }));
+  return normalized.length > 0 ? normalized : null;
+};
+
+const formatBrowserBreakdown = (value) => {
+  const normalized = normalizeBrowserBreakdown(value);
+  if (normalized === null) {
+    return null;
+  }
+  return Object.entries(normalized)
+    .map(([browser, score]) => `${browser}: ${score}`)
+    .join(", ");
+};
+
 const normalizeViewportList = (value) => {
   if (!Array.isArray(value) || value.length === 0) {
     return undefined;
@@ -691,6 +792,7 @@ const buildBoundedCommentBody = ({
   tableHeaderLines,
   tableRowLines,
   componentSectionLines,
+  crossBrowserSectionLines,
   diffSectionHeaderLines,
   diffRowLines,
   detailBlocks,
@@ -725,6 +827,14 @@ const buildBoundedCommentBody = ({
       truncated = true;
     } else {
       lines.push(...componentSectionLines);
+    }
+  }
+
+  if (!truncated && crossBrowserSectionLines.length > 0) {
+    if (!canAppend(crossBrowserSectionLines, true)) {
+      truncated = true;
+    } else {
+      lines.push(...crossBrowserSectionLines);
     }
   }
 
@@ -1077,6 +1187,11 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       reportDimensions,
       viewport: `${viewport.width}\u00d7${viewport.height}`,
       diffArtifactPath,
+      browserBreakdown: normalizeBrowserBreakdown(manifest.browserBreakdown),
+      crossBrowserConsistency: normalizeCrossBrowserConsistency(
+        manifest.crossBrowserConsistency,
+      ),
+      perBrowser: normalizePerBrowserArtifacts(manifest.perBrowser),
     };
     if (!isStorybookComponentArtifact(manifest)) {
       fullPageFixtures.push(fixtureSummary);
@@ -1140,6 +1255,10 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     componentAggregateScore: componentSummary.componentAggregateScore,
     hasViewScores: fullPageFixtures.length > 0,
   });
+  const overallBrowserBreakdown = formatBrowserBreakdown(lastRun.browserBreakdown);
+  const overallCrossBrowserConsistency = normalizeCrossBrowserConsistency(
+    lastRun.crossBrowserConsistency,
+  );
 
   const comparablePairs = [];
   for (const [screenKey, currentScreen] of currentScreenAggregateMap.entries()) {
@@ -1239,6 +1358,14 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       headerLines.push(`**Skipped By Reason:** ${skipReasonSummary}`);
     }
   }
+  if (overallBrowserBreakdown !== null) {
+    headerLines.push(`**Per-Browser Averages:** ${overallBrowserBreakdown}`);
+  }
+  if (overallCrossBrowserConsistency !== null) {
+    headerLines.push(
+      `**Cross-Browser Consistency:** ${overallCrossBrowserConsistency.consistencyScore} / 100`,
+    );
+  }
   headerLines.push("");
 
   const tableHeaderLines =
@@ -1287,6 +1414,84 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     }
   }
 
+  const browserAwareFixtures = fullPageFixtures.filter(
+    (fixture) =>
+      fixture.browserBreakdown !== null ||
+      fixture.crossBrowserConsistency !== null ||
+      fixture.perBrowser !== null,
+  );
+  const crossBrowserSectionLines = [];
+  if (browserAwareFixtures.length > 0) {
+    crossBrowserSectionLines.push("", "### Cross-Browser Details", "");
+    for (const fixture of browserAwareFixtures) {
+      const detailParts = [];
+      const fixtureBreakdown = formatBrowserBreakdown(fixture.browserBreakdown);
+      if (fixtureBreakdown !== null) {
+        detailParts.push(`scores ${fixtureBreakdown}`);
+      }
+      if (fixture.crossBrowserConsistency !== null) {
+        detailParts.push(
+          `consistency ${fixture.crossBrowserConsistency.consistencyScore} / 100`,
+        );
+        if (
+          Array.isArray(fixture.crossBrowserConsistency.warnings) &&
+          fixture.crossBrowserConsistency.warnings.length > 0
+        ) {
+          detailParts.push(
+            `warnings ${fixture.crossBrowserConsistency.warnings.join(", ")}`,
+          );
+        }
+        if (fixture.crossBrowserConsistency.pairwiseDiffs.length > 0) {
+          detailParts.push(
+            `pairwise ${fixture.crossBrowserConsistency.pairwiseDiffs
+              .map((pair) => {
+                const pathText = pair.diffImagePath
+                  ? artifactUrl
+                    ? ` ([View pair diff](${artifactUrl}) \`${escapeMarkdownCell(pair.diffImagePath)}\`)`
+                    : ` (\`${escapeMarkdownCell(pair.diffImagePath)}\`)`
+                  : "";
+                return `${pair.browserA}/${pair.browserB}: ${pair.diffPercent}%${pathText}`;
+              })
+              .join(", ")}`,
+          );
+        }
+      }
+      if (fixture.perBrowser !== null) {
+        detailParts.push(
+          `artifacts ${fixture.perBrowser
+            .map((entry) => {
+              const refs = [
+                entry.actualImagePath
+                  ? artifactUrl
+                    ? `[actual](${artifactUrl}) \`${escapeMarkdownCell(entry.actualImagePath)}\``
+                    : `actual \`${escapeMarkdownCell(entry.actualImagePath)}\``
+                  : null,
+                entry.diffImagePath
+                  ? artifactUrl
+                    ? `[diff](${artifactUrl}) \`${escapeMarkdownCell(entry.diffImagePath)}\``
+                    : `diff \`${escapeMarkdownCell(entry.diffImagePath)}\``
+                  : null,
+                entry.reportPath
+                  ? artifactUrl
+                    ? `[report](${artifactUrl}) \`${escapeMarkdownCell(entry.reportPath)}\``
+                    : `report \`${escapeMarkdownCell(entry.reportPath)}\``
+                  : null,
+              ].filter((value) => value !== null);
+              const warningText =
+                Array.isArray(entry.warnings) && entry.warnings.length > 0
+                  ? ` warnings ${entry.warnings.join(", ")}`
+                  : "";
+              return `${entry.browser}: ${entry.overallScore}${refs.length > 0 ? ` (${refs.join(", ")})` : ""}${warningText}`;
+            })
+            .join("; ")}`,
+        );
+      }
+      crossBrowserSectionLines.push(
+        `- ${escapeMarkdownCell(fixture.displayLabel)}: ${detailParts.join("; ")}`,
+      );
+    }
+  }
+
   const diffSectionHeaderLines =
     artifactUrl && fullPageFixtures.length > 0
       ? ["", "### Diff Images", "", "| View | Diff |", "|------|------|"]
@@ -1331,6 +1536,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     tableHeaderLines,
     tableRowLines,
     componentSectionLines,
+    crossBrowserSectionLines,
     diffSectionHeaderLines,
     diffRowLines,
     detailBlocks,

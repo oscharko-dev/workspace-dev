@@ -1,6 +1,7 @@
 import { access, mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type {
+  WorkspaceVisualBrowserName,
   WorkspaceVisualAuditResult,
   WorkspaceVisualQualityFrozenReference,
   WorkspaceVisualQualityReferenceMode,
@@ -48,6 +49,10 @@ import { isWithinRoot } from "../preview.js";
 import { captureFromProject } from "../visual-capture.js";
 import { comparePngBuffers, writeDiffImage } from "../visual-diff.js";
 import { computeVisualQualityReport, type VisualQualityReport } from "../visual-scoring.js";
+import {
+  computeCrossBrowserConsistencyScore,
+  normalizeVisualBrowserNames,
+} from "../visual-browser-matrix.js";
 import {
   fetchFigmaVisualReference,
   findVisualQualityFixtureManifest,
@@ -435,6 +440,31 @@ const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): Workspac
           }
         }
       : {}),
+    ...(value.browserBreakdown
+      ? {
+          browserBreakdown: { ...value.browserBreakdown }
+        }
+      : {}),
+    ...(value.crossBrowserConsistency
+      ? {
+          crossBrowserConsistency: {
+            ...value.crossBrowserConsistency,
+            browsers: [...value.crossBrowserConsistency.browsers],
+            pairwiseDiffs: value.crossBrowserConsistency.pairwiseDiffs.map((pair) => ({ ...pair })),
+            ...(value.crossBrowserConsistency.warnings
+              ? { warnings: [...value.crossBrowserConsistency.warnings] }
+              : {})
+          }
+        }
+      : {}),
+    ...(value.perBrowser
+      ? {
+          perBrowser: value.perBrowser.map((entry) => ({
+            ...entry,
+            ...(entry.warnings ? { warnings: [...entry.warnings] } : {})
+          }))
+        }
+      : {}),
     ...(value.warnings ? { warnings: [...value.warnings] } : {})
   };
 };
@@ -466,11 +496,19 @@ const createFailedVisualQualityReport = ({
 const createCompletedVisualQualityReport = ({
   referenceSource,
   capturedAt,
-  report
+  report,
+  browserBreakdown,
+  crossBrowserConsistency,
+  perBrowser,
+  warnings
 }: {
   referenceSource: WorkspaceVisualQualityReferenceMode;
   capturedAt: string;
   report: VisualQualityReport;
+  browserBreakdown?: WorkspaceVisualQualityReport["browserBreakdown"];
+  crossBrowserConsistency?: WorkspaceVisualQualityReport["crossBrowserConsistency"];
+  perBrowser?: WorkspaceVisualQualityReport["perBrowser"];
+  warnings?: string[];
 }): WorkspaceVisualQualityReport => {
   return {
     status: "completed",
@@ -486,7 +524,29 @@ const createCompletedVisualQualityReport = ({
       configuredWeights: { ...report.metadata.configuredWeights },
       viewport: { ...report.metadata.viewport },
       versions: { ...report.metadata.versions }
-    }
+    },
+    ...(browserBreakdown ? { browserBreakdown: { ...browserBreakdown } } : {}),
+    ...(crossBrowserConsistency
+      ? {
+          crossBrowserConsistency: {
+            ...crossBrowserConsistency,
+            browsers: [...crossBrowserConsistency.browsers],
+            pairwiseDiffs: crossBrowserConsistency.pairwiseDiffs.map((pair) => ({ ...pair })),
+            ...(crossBrowserConsistency.warnings
+              ? { warnings: [...crossBrowserConsistency.warnings] }
+              : {})
+          }
+        }
+      : {}),
+    ...(perBrowser
+      ? {
+          perBrowser: perBrowser.map((entry) => ({
+            ...entry,
+            ...(entry.warnings ? { warnings: [...entry.warnings] } : {})
+          }))
+        }
+      : {}),
+    ...(warnings && warnings.length > 0 ? { warnings: [...warnings] } : {})
   };
 };
 
@@ -2228,52 +2288,178 @@ export const createValidateProjectService = ({
 
           const referenceImagePath = path.join(visualQualityDir, "reference.png");
           await writeFile(referenceImagePath, referenceResult.buffer);
+          const browsers = normalizeVisualBrowserNames(
+            context.job.request.visualQualityBrowsers,
+          );
+          const browserArtifacts: Array<{
+            browser: WorkspaceVisualBrowserName;
+            captureResult: Awaited<ReturnType<typeof captureFromProjectFn>>;
+            scoringReport: VisualQualityReport;
+            completedReport: WorkspaceVisualQualityReport;
+            actualImagePath: string;
+            diffImagePath: string;
+            reportPath: string;
+          }> = [];
 
-          const captureResult = await captureFromProjectFn({
-            projectDir: distDir,
-            config: {
-              viewport: {
-                width: standaloneVisualQualityViewportWidth,
-                height: standaloneVisualQualityViewportHeight,
-                deviceScaleFactor: standaloneVisualQualityDeviceScaleFactor
+          for (const browser of browsers) {
+            const browserDir = path.join(visualQualityDir, "browsers", browser);
+            await mkdir(browserDir, { recursive: true });
+
+            const captureResult = await captureFromProjectFn({
+              projectDir: distDir,
+              browser,
+              config: {
+                viewport: {
+                  width: standaloneVisualQualityViewportWidth,
+                  height: standaloneVisualQualityViewportHeight,
+                  deviceScaleFactor: standaloneVisualQualityDeviceScaleFactor
+                },
+                waitForNetworkIdle: true,
+                waitForFonts: true,
+                waitForAnimations: true,
+                timeoutMs: 30_000,
+                fullPage: false
               },
-              waitForNetworkIdle: true,
-              waitForFonts: true,
-              waitForAnimations: true,
-              timeoutMs: 30_000,
-              fullPage: false
-            },
-            onLog: (message) => {
-              context.log({
-                level: "info",
-                message: `Visual quality capture: ${message}`
-              });
-            }
-          });
+              onLog: (message) => {
+                context.log({
+                  level: "info",
+                  message: `Visual quality capture [${browser}]: ${message}`
+                });
+              }
+            });
+
+            const actualImagePath = path.join(browserDir, "actual.png");
+            await writeFile(actualImagePath, captureResult.screenshotBuffer);
+
+            const diffResult = comparePngBuffersFn({
+              referenceBuffer: referenceResult.buffer,
+              testBuffer: captureResult.screenshotBuffer
+            });
+            const diffImagePath = path.join(browserDir, "diff.png");
+            await writeDiffImage({
+              diffImageBuffer: diffResult.diffImageBuffer,
+              outputPath: diffImagePath
+            });
+
+            const scoringReport = computeVisualQualityReport({
+              diffResult,
+              comparedAt: validatedAt,
+              diffImagePath,
+              viewport: captureResult.viewport
+            });
+            const completedReport = createCompletedVisualQualityReport({
+              referenceSource: standaloneVisualQualityMode,
+              capturedAt: referenceResult.metadata.capturedAt,
+              report: scoringReport
+            });
+            const reportPath = path.join(browserDir, "report.json");
+            await writeFile(reportPath, toJsonFileContent(completedReport), "utf8");
+            browserArtifacts.push({
+              browser,
+              captureResult,
+              scoringReport,
+              completedReport,
+              actualImagePath,
+              diffImagePath,
+              reportPath
+            });
+          }
+
+          const primaryBrowserArtifact = browserArtifacts[0];
+          if (!primaryBrowserArtifact) {
+            throw new Error("Visual quality validation did not capture any browser artifacts.");
+          }
 
           const actualImagePath = path.join(visualQualityDir, "actual.png");
-          await writeFile(actualImagePath, captureResult.screenshotBuffer);
+          await writeFile(actualImagePath, primaryBrowserArtifact.captureResult.screenshotBuffer);
 
-          const diffResult = comparePngBuffersFn({
-            referenceBuffer: referenceResult.buffer,
-            testBuffer: captureResult.screenshotBuffer
-          });
           const diffImagePath = path.join(visualQualityDir, "diff.png");
           await writeDiffImage({
-            diffImageBuffer: diffResult.diffImageBuffer,
+            diffImageBuffer: await readFile(primaryBrowserArtifact.diffImagePath),
             outputPath: diffImagePath
           });
 
-          const scoringReport = computeVisualQualityReport({
-            diffResult,
-            comparedAt: validatedAt,
-            diffImagePath,
-            viewport: captureResult.viewport
-          });
+          const browserBreakdown = browserArtifacts.reduce<
+            NonNullable<WorkspaceVisualQualityReport["browserBreakdown"]>
+          >((accumulator, artifact) => {
+            accumulator[artifact.browser] = artifact.completedReport.overallScore ?? 100;
+            return accumulator;
+          }, {});
+
+          const crossBrowserConsistency =
+            browserArtifacts.length > 1
+              ? (() => {
+                  const consistency = computeCrossBrowserConsistencyScore(
+                    browserArtifacts.map((artifact) => ({
+                      browser: artifact.browser,
+                      screenshotBuffer: artifact.captureResult.screenshotBuffer
+                    })),
+                  );
+                  const pairwiseDir = path.join(visualQualityDir, "pairwise");
+                  return {
+                    consistency,
+                    pairwiseDir
+                  };
+                })()
+              : undefined;
+
+          let crossBrowserReport: WorkspaceVisualQualityReport["crossBrowserConsistency"];
+          if (crossBrowserConsistency) {
+            await mkdir(crossBrowserConsistency.pairwiseDir, { recursive: true });
+            crossBrowserReport = {
+              browsers: [...crossBrowserConsistency.consistency.browsers],
+              consistencyScore: crossBrowserConsistency.consistency.consistencyScore,
+              pairwiseDiffs: [],
+              ...(crossBrowserConsistency.consistency.warnings.length > 0
+                ? { warnings: [...crossBrowserConsistency.consistency.warnings] }
+                : {})
+            };
+            for (const pair of crossBrowserConsistency.consistency.pairwiseDiffs) {
+              const pairwiseDiffPath = path.join(
+                crossBrowserConsistency.pairwiseDir,
+                `${pair.browserA}-vs-${pair.browserB}.png`,
+              );
+              if (pair.diffBuffer !== null) {
+                await writeDiffImage({
+                  diffImageBuffer: pair.diffBuffer,
+                  outputPath: pairwiseDiffPath
+                });
+              }
+              crossBrowserReport.pairwiseDiffs.push({
+                browserA: pair.browserA,
+                browserB: pair.browserB,
+                diffPercent: pair.diffPercent,
+                ...(pair.diffBuffer !== null ? { diffImagePath: pairwiseDiffPath } : {})
+              });
+            }
+          }
+
+          const topLevelWarnings = [
+            ...(primaryBrowserArtifact.completedReport.warnings ?? []),
+            ...(crossBrowserReport?.warnings ?? [])
+          ];
           const completedReport = createCompletedVisualQualityReport({
             referenceSource: standaloneVisualQualityMode,
             capturedAt: referenceResult.metadata.capturedAt,
-            report: scoringReport
+            report: {
+              ...primaryBrowserArtifact.scoringReport,
+              diffImagePath
+            },
+            browserBreakdown,
+            ...(crossBrowserReport ? { crossBrowserConsistency: crossBrowserReport } : {}),
+            perBrowser: browserArtifacts.map((artifact) => ({
+              browser: artifact.browser,
+              overallScore: artifact.completedReport.overallScore ?? 100,
+              actualImagePath: artifact.actualImagePath,
+              diffImagePath: artifact.diffImagePath,
+              reportPath: artifact.reportPath,
+              ...(artifact.completedReport.warnings && artifact.completedReport.warnings.length > 0
+                ? { warnings: [...artifact.completedReport.warnings] }
+                : {})
+            })),
+            ...(topLevelWarnings.length > 0
+              ? { warnings: [...new Set(topLevelWarnings)] }
+              : {})
           });
           const reportPath = path.join(visualQualityDir, "report.json");
           await writeFile(reportPath, toJsonFileContent(completedReport), "utf8");
@@ -2283,7 +2469,7 @@ export const createValidateProjectService = ({
           });
           context.log({
             level: completedReport.overallScore !== undefined && completedReport.overallScore < 100 ? "warn" : "info",
-            message: `Visual quality validation completed via ${standaloneVisualQualityMode}.`
+            message: `Visual quality validation completed via ${standaloneVisualQualityMode} across ${browsers.join(", ")}.`
           });
         };
 

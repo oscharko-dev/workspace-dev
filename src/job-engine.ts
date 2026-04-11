@@ -1161,6 +1161,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       Number.isFinite(input.visualQualityDeviceScaleFactor)
         ? input.visualQualityDeviceScaleFactor
         : runtime.visualQualityDeviceScaleFactor;
+    const resolvedVisualQualityBrowsers =
+      Array.isArray(input.visualQualityBrowsers) &&
+      input.visualQualityBrowsers.length > 0
+        ? input.visualQualityBrowsers
+        : runtime.visualQualityBrowsers;
     const request: WorkspaceJobStatus["request"] = {
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
@@ -1174,7 +1179,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             visualQualityReferenceMode: resolvedVisualQualityReferenceMode,
             visualQualityViewportWidth: resolvedVisualQualityViewportWidth,
             visualQualityViewportHeight: resolvedVisualQualityViewportHeight,
-            visualQualityDeviceScaleFactor: resolvedVisualQualityDeviceScaleFactor
+            visualQualityDeviceScaleFactor: resolvedVisualQualityDeviceScaleFactor,
+            visualQualityBrowsers: [...resolvedVisualQualityBrowsers]
           }
         : {})
     };

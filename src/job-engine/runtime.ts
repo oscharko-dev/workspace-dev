@@ -22,6 +22,7 @@ import {
 } from "./figma-rest-circuit-breaker.js";
 import type { FigmaMcpEnrichmentLoaderInput, JobEngineRuntime } from "./types.js";
 import type { ResolvedCustomerProfile } from "../customer-profile.js";
+import { normalizeVisualBrowserNames } from "./visual-browser-matrix.js";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 3;
@@ -203,6 +204,7 @@ export const resolveRuntimeSettings = ({
   visualQualityViewportWidth,
   visualQualityViewportHeight,
   visualQualityDeviceScaleFactor,
+  visualQualityBrowsers,
   enableUnitTestValidation,
   unitTestIgnoreFailure,
   installPreferOffline,
@@ -253,6 +255,7 @@ export const resolveRuntimeSettings = ({
   visualQualityViewportWidth?: number;
   visualQualityViewportHeight?: number;
   visualQualityDeviceScaleFactor?: number;
+  visualQualityBrowsers?: string[];
   enableUnitTestValidation?: boolean;
   unitTestIgnoreFailure?: boolean;
   installPreferOffline?: boolean;
@@ -431,6 +434,7 @@ export const resolveRuntimeSettings = ({
       max: 4,
       fallback: DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR
     }),
+    visualQualityBrowsers: normalizeVisualBrowserNames(visualQualityBrowsers),
     enableUnitTestValidation:
       typeof enableUnitTestValidation === "boolean"
         ? enableUnitTestValidation

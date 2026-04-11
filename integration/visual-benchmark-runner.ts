@@ -24,6 +24,7 @@ import {
   type VisualBenchmarkFixtureScreenMetadata,
 } from "./visual-benchmark.helpers.js";
 import {
+  BENCHMARK_BROWSER_NAMES,
   executeVisualBenchmarkFixture,
   runVisualBenchmarkFixture,
   type VisualBenchmarkExecutionOptions,
@@ -125,15 +126,26 @@ export interface VisualBenchmarkResult {
     coveragePercent: number;
     bySkipReason: Record<string, number>;
   };
+  browserBreakdown?: VisualBenchmarkBrowserBreakdown;
+  crossBrowserConsistency?: VisualBenchmarkCrossBrowserConsistency;
   warnings?: string[];
 }
 
 type VisualBenchmarkComponentResultEntry = NonNullable<
   WorkspaceVisualQualityReport["components"]
 >[number];
+type VisualBenchmarkBrowserBreakdown = NonNullable<
+  WorkspaceVisualQualityReport["browserBreakdown"]
+>;
+type VisualBenchmarkCrossBrowserConsistency = NonNullable<
+  WorkspaceVisualQualityReport["crossBrowserConsistency"]
+>;
+type VisualBenchmarkPerBrowserArtifact = NonNullable<
+  WorkspaceVisualQualityReport["perBrowser"]
+>[number];
 
 export interface VisualBenchmarkLastRun {
-  version: 1;
+  version: 1 | 2;
   ranAt: string;
   scores: VisualBenchmarkScoreEntry[];
   overallScore?: number;
@@ -148,12 +160,14 @@ export interface VisualBenchmarkLastRun {
     coveragePercent: number;
     bySkipReason: Record<string, number>;
   };
+  browserBreakdown?: VisualBenchmarkBrowserBreakdown;
+  crossBrowserConsistency?: VisualBenchmarkCrossBrowserConsistency;
   components?: VisualBenchmarkComponentResultEntry[];
   warnings?: string[];
 }
 
 export interface VisualBenchmarkLastRunArtifactManifest {
-  version: 1;
+  version: 1 | 2;
   fixtureId: string;
   screenId?: string;
   screenName?: string;
@@ -167,6 +181,9 @@ export interface VisualBenchmarkLastRunArtifactManifest {
     height: number;
   };
   thresholdResult?: VisualQualityThresholdResult;
+  browserBreakdown?: VisualBenchmarkBrowserBreakdown;
+  crossBrowserConsistency?: VisualBenchmarkCrossBrowserConsistency;
+  perBrowser?: VisualBenchmarkPerBrowserArtifact[];
 }
 
 export interface VisualBenchmarkLastRunArtifactPaths {
@@ -205,6 +222,8 @@ export interface VisualBenchmarkLastRunArtifactInput {
   diffImageBuffer?: Buffer | null;
   report?: unknown | null;
   thresholdResult?: VisualQualityThresholdResult;
+  browserArtifacts?: VisualBenchmarkFixtureScreenArtifact["browserArtifacts"];
+  crossBrowserConsistency?: VisualBenchmarkFixtureScreenArtifact["crossBrowserConsistency"];
 }
 
 export interface VisualBenchmarkFixtureScreenScoreLike {
@@ -917,6 +936,126 @@ const normalizeLastRunComponents = (
   });
 };
 
+const normalizeLastRunBrowserBreakdown = (
+  value: unknown,
+): VisualBenchmarkBrowserBreakdown | undefined => {
+  if (!isPlainRecord(value)) {
+    return undefined;
+  }
+  const breakdown: VisualBenchmarkBrowserBreakdown = {};
+  for (const browserName of BENCHMARK_BROWSER_NAMES) {
+    const score = value[browserName];
+    if (isFiniteNumber(score)) {
+      breakdown[browserName] = score;
+    }
+  }
+  return Object.keys(breakdown).length > 0 ? breakdown : undefined;
+};
+
+const normalizeLastRunCrossBrowserConsistency = (
+  value: unknown,
+): VisualBenchmarkCrossBrowserConsistency | undefined => {
+  if (!isPlainRecord(value) || !Array.isArray(value.browsers)) {
+    return undefined;
+  }
+  const browsers = value.browsers
+    .map((browserName) =>
+      typeof browserName === "string" &&
+      (BENCHMARK_BROWSER_NAMES as readonly string[]).includes(browserName)
+        ? browserName
+        : null,
+    )
+    .filter((browserName): browserName is BenchmarkBrowserName => browserName !== null);
+  if (browsers.length === 0 || !isFiniteNumber(value.consistencyScore)) {
+    return undefined;
+  }
+  const pairwiseDiffs = Array.isArray(value.pairwiseDiffs)
+    ? value.pairwiseDiffs
+        .map((entry) => {
+          if (!isPlainRecord(entry) || !isFiniteNumber(entry.diffPercent)) {
+            return null;
+          }
+          const browserA =
+            typeof entry.browserA === "string" &&
+            (BENCHMARK_BROWSER_NAMES as readonly string[]).includes(entry.browserA)
+              ? entry.browserA
+              : null;
+          const browserB =
+            typeof entry.browserB === "string" &&
+            (BENCHMARK_BROWSER_NAMES as readonly string[]).includes(entry.browserB)
+              ? entry.browserB
+              : null;
+          if (browserA === null || browserB === null) {
+            return null;
+          }
+          return {
+            browserA,
+            browserB,
+            diffPercent: entry.diffPercent,
+            ...(typeof entry.diffImagePath === "string" &&
+            entry.diffImagePath.trim().length > 0
+              ? { diffImagePath: entry.diffImagePath.trim() }
+              : {}),
+          };
+        })
+        .filter(
+          (
+            entry,
+          ): entry is VisualBenchmarkCrossBrowserConsistency["pairwiseDiffs"][number] =>
+            entry !== null,
+        )
+    : [];
+  const warnings = sortWarnings(value.warnings);
+  return {
+    browsers,
+    consistencyScore: value.consistencyScore,
+    pairwiseDiffs,
+    ...(warnings ? { warnings } : {}),
+  };
+};
+
+const normalizeLastRunPerBrowserArtifacts = (
+  value: unknown,
+): VisualBenchmarkPerBrowserArtifact[] | undefined => {
+  if (!Array.isArray(value) || value.length === 0) {
+    return undefined;
+  }
+  const normalized: VisualBenchmarkPerBrowserArtifact[] = [];
+  for (const entry of value) {
+    if (!isPlainRecord(entry) || !isFiniteNumber(entry.overallScore)) {
+      continue;
+    }
+    const browser =
+      typeof entry.browser === "string" &&
+      (BENCHMARK_BROWSER_NAMES as readonly string[]).includes(entry.browser)
+        ? entry.browser
+        : null;
+    if (browser === null) {
+      continue;
+    }
+    normalized.push({
+      browser,
+      overallScore: entry.overallScore,
+      ...(typeof entry.actualImagePath === "string" &&
+      entry.actualImagePath.trim().length > 0
+        ? { actualImagePath: entry.actualImagePath.trim() }
+        : {}),
+      ...(typeof entry.diffImagePath === "string" &&
+      entry.diffImagePath.trim().length > 0
+        ? { diffImagePath: entry.diffImagePath.trim() }
+        : {}),
+      ...(typeof entry.reportPath === "string" &&
+      entry.reportPath.trim().length > 0
+        ? { reportPath: entry.reportPath.trim() }
+        : {}),
+      ...(sortWarnings(entry.warnings)
+        ? { warnings: sortWarnings(entry.warnings) }
+        : {}),
+    });
+  }
+  return normalized.length > 0 ? normalized : undefined;
+};
+
 const toCanonicalScoreEntry = (
   entry: VisualBenchmarkScoreEntry,
 ): VisualBenchmarkScoreEntry => {
@@ -1136,8 +1275,8 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
   if (!isPlainRecord(parsed)) {
     throw new Error("Expected last-run to be an object.");
   }
-  if (parsed.version !== 1) {
-    throw new Error("Last-run version must be 1.");
+  if (parsed.version !== 1 && parsed.version !== 2) {
+    throw new Error("Last-run version must be 1 or 2.");
   }
   if (typeof parsed.ranAt !== "string" || parsed.ranAt.trim().length === 0) {
     throw new Error("Last-run ranAt must be a non-empty string.");
@@ -1222,7 +1361,7 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
   }
 
   const lastRun: VisualBenchmarkLastRun = {
-    version: 1,
+    version: parsed.version,
     ranAt: parsed.ranAt,
     scores: sortScores(scores),
   };
@@ -1248,6 +1387,16 @@ const parseLastRun = (content: string): VisualBenchmarkLastRun => {
   if (componentCoverage) {
     lastRun.componentCoverage = componentCoverage;
   }
+  const browserBreakdown = normalizeLastRunBrowserBreakdown(parsed.browserBreakdown);
+  if (browserBreakdown) {
+    lastRun.browserBreakdown = browserBreakdown;
+  }
+  const crossBrowserConsistency = normalizeLastRunCrossBrowserConsistency(
+    parsed.crossBrowserConsistency,
+  );
+  if (crossBrowserConsistency) {
+    lastRun.crossBrowserConsistency = crossBrowserConsistency;
+  }
   const components = normalizeLastRunComponents(parsed.components);
   if (components) {
     lastRun.components = components;
@@ -1266,8 +1415,8 @@ const parseLastRunArtifactManifest = (
   if (!isPlainRecord(parsed)) {
     throw new Error("Expected last-run artifact manifest to be an object.");
   }
-  if (parsed.version !== 1) {
-    throw new Error("Last-run artifact manifest version must be 1.");
+  if (parsed.version !== 1 && parsed.version !== 2) {
+    throw new Error("Last-run artifact manifest version must be 1 or 2.");
   }
   if (
     typeof parsed.fixtureId !== "string" ||
@@ -1393,8 +1542,8 @@ const parseLastRunArtifactManifest = (
     };
   }
 
-  return {
-    version: 1,
+  const manifest: VisualBenchmarkLastRunArtifactManifest = {
+    version: parsed.version,
     fixtureId: assertAllowedFixtureId(parsed.fixtureId),
     ...(screenId !== undefined ? { screenId } : {}),
     ...(screenName !== undefined ? { screenName } : {}),
@@ -1409,6 +1558,21 @@ const parseLastRunArtifactManifest = (
     },
     ...(thresholdResult !== undefined ? { thresholdResult } : {}),
   };
+  const browserBreakdown = normalizeLastRunBrowserBreakdown(parsed.browserBreakdown);
+  if (browserBreakdown) {
+    manifest.browserBreakdown = browserBreakdown;
+  }
+  const crossBrowserConsistency = normalizeLastRunCrossBrowserConsistency(
+    parsed.crossBrowserConsistency,
+  );
+  if (crossBrowserConsistency) {
+    manifest.crossBrowserConsistency = crossBrowserConsistency;
+  }
+  const perBrowser = normalizeLastRunPerBrowserArtifacts(parsed.perBrowser);
+  if (perBrowser) {
+    manifest.perBrowser = perBrowser;
+  }
+  return manifest;
 };
 
 const resolveVisualBenchmarkLastRunArtifactPathsInternal = (
@@ -1820,6 +1984,8 @@ export const saveVisualBenchmarkLastRun = async (
     screenAggregateScore?: number;
     componentAggregateScore?: number;
     componentCoverage?: VisualBenchmarkLastRun["componentCoverage"];
+    browserBreakdown?: VisualBenchmarkLastRun["browserBreakdown"];
+    crossBrowserConsistency?: VisualBenchmarkLastRun["crossBrowserConsistency"];
     components?: VisualBenchmarkComponentResultEntry[];
     warnings?: string[];
   },
@@ -1827,7 +1993,7 @@ export const saveVisualBenchmarkLastRun = async (
   const lastRunPath = resolveLastRunPath(options);
   const normalizedScores = await normalizeScoresWithMetadata(scores, options);
   const lastRun: VisualBenchmarkLastRun = {
-    version: 1,
+    version: 2,
     ranAt: ranAt ?? new Date().toISOString(),
     scores: normalizedScores,
     ...(summary?.overallScore !== undefined ? { overallScore: summary.overallScore } : {}),
@@ -1845,6 +2011,23 @@ export const saveVisualBenchmarkLastRun = async (
           componentCoverage: {
             ...summary.componentCoverage,
             bySkipReason: { ...summary.componentCoverage.bySkipReason },
+          },
+        }
+      : {}),
+    ...(summary?.browserBreakdown
+      ? {
+          browserBreakdown: { ...summary.browserBreakdown },
+        }
+      : {}),
+    ...(summary?.crossBrowserConsistency
+      ? {
+          crossBrowserConsistency: {
+            ...summary.crossBrowserConsistency,
+            browsers: [...summary.crossBrowserConsistency.browsers],
+            pairwiseDiffs: summary.crossBrowserConsistency.pairwiseDiffs.map((pair) => ({ ...pair })),
+            ...(summary.crossBrowserConsistency.warnings
+              ? { warnings: [...summary.crossBrowserConsistency.warnings] }
+              : {}),
           },
         }
       : {}),
@@ -1902,7 +2085,7 @@ export const saveVisualBenchmarkLastRunArtifact = async (
     options,
   );
   const manifest: VisualBenchmarkLastRunArtifactManifest = {
-    version: 1,
+    version: 2,
     fixtureId: assertAllowedFixtureId(input.fixtureId),
     ...(normalizedScreenId !== undefined
       ? { screenId: normalizedScreenId }
@@ -1940,6 +2123,75 @@ export const saveVisualBenchmarkLastRunArtifact = async (
       toStableJsonString(input.report),
       "utf8",
     );
+  }
+  const perBrowserArtifacts: VisualBenchmarkPerBrowserArtifact[] = [];
+  if (input.browserArtifacts !== undefined && input.browserArtifacts.length > 0) {
+    for (const artifact of input.browserArtifacts) {
+      const browserDir = path.join(paths.fixtureDir, "browsers", artifact.browser);
+      await mkdir(browserDir, { recursive: true });
+      const browserActualPath = path.join(browserDir, LAST_RUN_ACTUAL_FILE_NAME);
+      const browserDiffPath = path.join(browserDir, LAST_RUN_DIFF_FILE_NAME);
+      const browserReportPath = path.join(browserDir, LAST_RUN_REPORT_FILE_NAME);
+      await writeFile(browserActualPath, artifact.screenshotBuffer);
+      if (artifact.diffBuffer !== null) {
+        await writeFile(browserDiffPath, artifact.diffBuffer);
+      }
+      if (artifact.report !== null) {
+        await writeFile(browserReportPath, toStableJsonString(artifact.report), "utf8");
+      }
+      perBrowserArtifacts.push({
+        browser: artifact.browser,
+        overallScore: artifact.score,
+        actualImagePath: toWorkspaceRelativePath(browserActualPath),
+        ...(artifact.diffBuffer !== null
+          ? { diffImagePath: toWorkspaceRelativePath(browserDiffPath) }
+          : {}),
+        ...(artifact.report !== null
+          ? { reportPath: toWorkspaceRelativePath(browserReportPath) }
+          : {}),
+        ...(isWorkspaceVisualQualityReport(artifact.report) &&
+        Array.isArray(artifact.report.warnings) &&
+        artifact.report.warnings.length > 0
+          ? { warnings: [...artifact.report.warnings] }
+          : {}),
+      });
+    }
+    manifest.perBrowser = perBrowserArtifacts;
+    manifest.browserBreakdown = perBrowserArtifacts.reduce<
+      VisualBenchmarkBrowserBreakdown
+    >((accumulator, artifact) => {
+      accumulator[artifact.browser] = artifact.overallScore;
+      return accumulator;
+    }, {});
+  }
+  if (input.crossBrowserConsistency !== undefined) {
+    const pairwiseDir = path.join(paths.fixtureDir, "pairwise");
+    await mkdir(pairwiseDir, { recursive: true });
+    manifest.crossBrowserConsistency = {
+      browsers: [...input.crossBrowserConsistency.browsers],
+      consistencyScore: input.crossBrowserConsistency.consistencyScore,
+      pairwiseDiffs: [],
+      ...(input.crossBrowserConsistency.warnings.length > 0
+        ? { warnings: [...input.crossBrowserConsistency.warnings] }
+        : {}),
+    };
+    for (const pair of input.crossBrowserConsistency.pairwiseDiffs) {
+      const pairwisePath = path.join(
+        pairwiseDir,
+        `${pair.browserA}-vs-${pair.browserB}.png`,
+      );
+      if (pair.diffBuffer !== null) {
+        await writeFile(pairwisePath, pair.diffBuffer);
+      }
+      manifest.crossBrowserConsistency.pairwiseDiffs.push({
+        browserA: pair.browserA,
+        browserB: pair.browserB,
+        diffPercent: pair.diffPercent,
+        ...(pair.diffBuffer !== null
+          ? { diffImagePath: toWorkspaceRelativePath(pairwisePath) }
+          : {}),
+      });
+    }
   }
   await writeFile(paths.manifestJsonPath, toStableJsonString(manifest), "utf8");
 
@@ -2350,6 +2602,8 @@ interface PersistedVisualBenchmarkViewportArtifact {
   screenshotBuffer: Buffer;
   diffBuffer: Buffer | null;
   report: unknown | null;
+  browserArtifacts?: VisualBenchmarkFixtureScreenArtifact["browserArtifacts"];
+  crossBrowserConsistency?: VisualBenchmarkFixtureScreenArtifact["crossBrowserConsistency"];
 }
 
 const resolvePersistedViewportArtifacts = (
@@ -2384,6 +2638,12 @@ const resolvePersistedViewportArtifacts = (
         screenshotBuffer: viewportArtifact.screenshotBuffer,
         diffBuffer: viewportArtifact.diffBuffer,
         report: patchedReport,
+        ...(viewportArtifact.browserArtifacts !== undefined
+          ? { browserArtifacts: viewportArtifact.browserArtifacts }
+          : {}),
+        ...(viewportArtifact.crossBrowserConsistency !== undefined
+          ? { crossBrowserConsistency: viewportArtifact.crossBrowserConsistency }
+          : {}),
       };
     });
   }
@@ -2405,6 +2665,12 @@ const resolvePersistedViewportArtifacts = (
       screenshotBuffer: screen.screenshotBuffer,
       diffBuffer: screen.diffBuffer,
       report: patchedReport,
+      ...(screen.browserArtifacts !== undefined
+        ? { browserArtifacts: screen.browserArtifacts }
+        : {}),
+      ...(screen.crossBrowserConsistency !== undefined
+        ? { crossBrowserConsistency: screen.crossBrowserConsistency }
+        : {}),
     },
   ];
 };
@@ -2520,6 +2786,10 @@ export const runVisualBenchmark = async (
   const benchmarkWarnings: string[] = [
     ...preparedStorybookComponents.warnings,
   ];
+  const benchmarkBrowserBreakdownAccumulator: Partial<
+    Record<BenchmarkBrowserName, { sum: number; count: number }>
+  > = {};
+  const benchmarkCrossBrowserConsistency: VisualBenchmarkCrossBrowserConsistency[] = [];
   const componentCoverageAccumulator = createEmptyCoverageAccumulator();
   const componentSummaries = new Map<string, VisualBenchmarkComponentResultEntry>();
   mergeComponentCoverage(
@@ -2607,6 +2877,36 @@ export const runVisualBenchmark = async (
         fixtureObservedScreens.set(result.fixtureId, observedSet);
         if (Array.isArray(result.warnings)) {
           benchmarkWarnings.push(...result.warnings);
+        }
+        if (result.browserBreakdown) {
+          for (const browserName of BENCHMARK_BROWSER_NAMES) {
+            const score = result.browserBreakdown[browserName];
+            if (!isFiniteNumber(score)) {
+              continue;
+            }
+            const current =
+              benchmarkBrowserBreakdownAccumulator[browserName] ??
+              { sum: 0, count: 0 };
+            current.sum += score;
+            current.count += 1;
+            benchmarkBrowserBreakdownAccumulator[browserName] = current;
+          }
+        }
+        if (result.crossBrowserConsistency) {
+          benchmarkCrossBrowserConsistency.push({
+            browsers: [...result.crossBrowserConsistency.browsers],
+            consistencyScore: result.crossBrowserConsistency.consistencyScore,
+            pairwiseDiffs: result.crossBrowserConsistency.pairwiseDiffs.map(
+              (pair) => ({
+                browserA: pair.browserA,
+                browserB: pair.browserB,
+                diffPercent: pair.diffPercent,
+              }),
+            ),
+            ...(result.crossBrowserConsistency.warnings.length > 0
+              ? { warnings: [...result.crossBrowserConsistency.warnings] }
+              : {}),
+          });
         }
         mergeComponentCoverage(
           componentCoverageAccumulator,
@@ -2704,6 +3004,12 @@ export const runVisualBenchmark = async (
               actualImageBuffer: artifact.screenshotBuffer,
               diffImageBuffer: artifact.diffBuffer,
               report: artifact.report,
+              ...(artifact.browserArtifacts !== undefined
+                ? { browserArtifacts: artifact.browserArtifacts }
+                : {}),
+              ...(artifact.crossBrowserConsistency !== undefined
+                ? { crossBrowserConsistency: artifact.crossBrowserConsistency }
+                : {}),
             });
           }
         }
@@ -2754,6 +3060,12 @@ export const runVisualBenchmark = async (
       overallCurrent: emptyResult.overallCurrent,
       overallBaseline: emptyResult.overallBaseline,
       overallDelta: emptyResult.overallDelta,
+      ...(emptyResult.browserBreakdown
+        ? { browserBreakdown: emptyResult.browserBreakdown }
+        : {}),
+      ...(emptyResult.crossBrowserConsistency
+        ? { crossBrowserConsistency: emptyResult.crossBrowserConsistency }
+        : {}),
       ...(emptyResult.componentCoverage
         ? { componentCoverage: emptyResult.componentCoverage }
         : {}),
@@ -2765,6 +3077,45 @@ export const runVisualBenchmark = async (
   const result = computeVisualBenchmarkDeltas(scores, baseline, {
     neutralTolerance: regressionConfig.neutralTolerance,
   });
+  const overallBrowserBreakdown = Object.entries(
+    benchmarkBrowserBreakdownAccumulator,
+  ).reduce<VisualBenchmarkBrowserBreakdown>((accumulator, [browserName, value]) => {
+    if (!value || value.count === 0) {
+      return accumulator;
+    }
+    accumulator[browserName as BenchmarkBrowserName] =
+      roundToTwoDecimals(value.sum / value.count);
+    return accumulator;
+  }, {});
+  if (Object.keys(overallBrowserBreakdown).length > 0) {
+    result.browserBreakdown = overallBrowserBreakdown;
+  }
+  if (benchmarkCrossBrowserConsistency.length > 0) {
+    const first = benchmarkCrossBrowserConsistency[0]!;
+    result.crossBrowserConsistency = {
+      browsers: [...first.browsers],
+      consistencyScore: benchmarkCrossBrowserConsistency.reduce(
+        (lowest, entry) => Math.min(lowest, entry.consistencyScore),
+        100,
+      ),
+      pairwiseDiffs: benchmarkCrossBrowserConsistency.flatMap((entry) =>
+        entry.pairwiseDiffs.map((pair) => ({ ...pair })),
+      ),
+      ...(sortWarnings(
+        benchmarkCrossBrowserConsistency.flatMap(
+          (entry) => entry.warnings ?? [],
+        ),
+      )
+        ? {
+            warnings: sortWarnings(
+              benchmarkCrossBrowserConsistency.flatMap(
+                (entry) => entry.warnings ?? [],
+              ),
+            ),
+          }
+        : {}),
+    };
+  }
 
   const computeScreenAggregateForEntry = async (
     entry: VisualBenchmarkScreenAggregateEntry,
@@ -3131,6 +3482,12 @@ export const runVisualBenchmark = async (
     overallCurrent: result.overallCurrent,
     overallBaseline: result.overallBaseline,
     overallDelta: result.overallDelta,
+    ...(result.browserBreakdown
+      ? { browserBreakdown: result.browserBreakdown }
+      : {}),
+    ...(result.crossBrowserConsistency
+      ? { crossBrowserConsistency: result.crossBrowserConsistency }
+      : {}),
     ...(result.screenAggregateScore !== undefined
       ? { screenAggregateScore: result.screenAggregateScore }
       : {}),

@@ -159,6 +159,120 @@ test("buildVisualBenchmarkSummary returns unavailable payload when last-run arti
   }
 });
 
+test("buildVisualBenchmarkSummary renders browser-aware aggregates and artifact details from v2 manifests", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-browsers-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureDir = path.join(artifactRoot, "last-run", "simple-form");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeJson(path.join(artifactRoot, "last-run.json"), {
+      version: 2,
+      ranAt: "2026-04-11T20:00:00.000Z",
+      scores: [{ fixtureId: "simple-form", score: 94 }],
+      browserBreakdown: {
+        chromium: 96,
+        firefox: 94,
+        webkit: 92,
+      },
+      crossBrowserConsistency: {
+        browsers: ["chromium", "firefox", "webkit"],
+        consistencyScore: 93,
+        warnings: ["firefox differs from chromium by 6%."],
+        pairwiseDiffs: [
+          {
+            browserA: "chromium",
+            browserB: "firefox",
+            diffPercent: 6,
+            diffImagePath:
+              "last-run/simple-form/pairwise/chromium-vs-firefox.png",
+          },
+        ],
+      },
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 2,
+      fixtureId: "simple-form",
+      score: 94,
+      ranAt: "2026-04-11T20:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+      browserBreakdown: {
+        chromium: 96,
+        firefox: 94,
+        webkit: 92,
+      },
+      crossBrowserConsistency: {
+        browsers: ["chromium", "firefox", "webkit"],
+        consistencyScore: 93,
+        warnings: ["firefox differs from chromium by 6%."],
+        pairwiseDiffs: [
+          {
+            browserA: "chromium",
+            browserB: "firefox",
+            diffPercent: 6,
+            diffImagePath:
+              "last-run/simple-form/pairwise/chromium-vs-firefox.png",
+          },
+        ],
+      },
+      perBrowser: [
+        {
+          browser: "chromium",
+          overallScore: 96,
+          actualImagePath: "last-run/simple-form/browsers/chromium/actual.png",
+          diffImagePath: "last-run/simple-form/browsers/chromium/diff.png",
+          reportPath: "last-run/simple-form/browsers/chromium/report.json",
+        },
+        {
+          browser: "firefox",
+          overallScore: 94,
+          actualImagePath: "last-run/simple-form/browsers/firefox/actual.png",
+          diffImagePath: "last-run/simple-form/browsers/firefox/diff.png",
+          reportPath: "last-run/simple-form/browsers/firefox/report.json",
+          warnings: ["minor anti-aliasing drift"],
+        },
+      ],
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 94,
+      diffImagePath: "visual-quality/diff.png",
+    });
+
+    const { buildVisualBenchmarkSummary } =
+      await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(
+      path.join(artifactRoot, "last-run.json"),
+    );
+
+    assert.match(
+      summary.markdown,
+      /Per-Browser Averages:\*\* chromium: 96, firefox: 94, webkit: 92/,
+    );
+    assert.match(
+      summary.markdown,
+      /Cross-Browser Consistency:\*\* 93 \/ 100/,
+    );
+    assert.match(summary.markdown, /### Cross-Browser Details/);
+    assert.match(
+      summary.markdown,
+      /Simple Form: scores chromium: 96, firefox: 94, webkit: 92; consistency 93 \/ 100;/,
+    );
+    assert.match(
+      summary.markdown,
+      /pairwise chromium\/firefox: 6% \(last-run\/simple-form\/pairwise\/chromium-vs-firefox\.png\)/,
+    );
+    assert.match(
+      summary.markdown,
+      /artifacts chromium: 96 \(last-run\/simple-form\/browsers\/chromium\/diff\.png\), firefox: 94 \(last-run\/simple-form\/browsers\/firefox\/diff\.png\)/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("buildVisualBenchmarkSummary escapes markdown-sensitive fixture names and annotation messages (M2 fix)", async () => {
   const root = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-visual-summary-escape-"),

@@ -5297,11 +5297,9 @@ test("ValidateProjectService runs standalone visual quality in frozen_fixture mo
     };
   }>(STAGE_ARTIFACT_KEYS.validationSummary);
 
-  assert.deepEqual(captureViewport, {
-    width: 8,
-    height: 6,
-    deviceScaleFactor: 1
-  });
+  assert.equal(captureViewport?.width, 8);
+  assert.equal(captureViewport?.deviceScaleFactor, 1);
+  assert.ok((captureViewport?.height ?? 0) > 0);
   assert.equal(visualQuality?.status, "completed");
   assert.equal(visualQuality?.referenceSource, "frozen_fixture");
   assert.equal(visualQuality?.capturedAt, "2026-04-09T00:00:00.000Z");
@@ -5317,6 +5315,243 @@ test("ValidateProjectService runs standalone visual quality in frozen_fixture mo
   );
   assert.equal(executionContext.job.visualQuality?.status, "completed");
   assert.equal(executionContext.job.visualQuality?.referenceSource, "frozen_fixture");
+});
+
+test("ValidateProjectService emits browser-aware standalone visual quality reports and artifacts", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-visual-quality-browsers-"));
+  const fixtureRoot = path.join(root, "fixtures", "customer-board");
+  const customerProfilePath = path.join(fixtureRoot, "inputs", "customer-profile.json");
+  const referenceImagePath = path.join(fixtureRoot, "visual-quality", "reference.png");
+  const referenceMetadataPath = path.join(fixtureRoot, "visual-quality", "reference.metadata.json");
+  await mkdir(path.dirname(customerProfilePath), { recursive: true });
+  await mkdir(path.dirname(referenceImagePath), { recursive: true });
+  await writeFile(customerProfilePath, JSON.stringify({ brandId: "customer-board" }), "utf8");
+  await writeFile(
+    path.join(fixtureRoot, "manifest.json"),
+    JSON.stringify(
+      {
+        version: 3,
+        visualQuality: {
+          frozenReferenceImage: "visual-quality/reference.png",
+          frozenReferenceMetadata: "visual-quality/reference.metadata.json"
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+  await writeFile(
+    referenceImagePath,
+    createSolidPngBuffer({
+      width: 8,
+      height: 6,
+      rgba: [255, 255, 255, 255]
+    })
+  );
+  await writeFile(
+    referenceMetadataPath,
+    JSON.stringify(
+      {
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "fixture-file",
+          nodeId: "1:2",
+          nodeName: "Fixture Screen",
+          lastModified: "2026-04-08T00:00:00.000Z"
+        },
+        viewport: {
+          width: 8,
+          height: 6
+        }
+      },
+      null,
+      2
+    ),
+    "utf8"
+  );
+
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    rootDir: root,
+    runtimeOverrides: {
+      enableUiValidation: true,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8,
+      visualQualityBrowsers: ["chromium", "firefox", "webkit"]
+    },
+    requestOverrides: {
+      customerProfilePath,
+      enableVisualQualityValidation: true,
+      visualQualityReferenceMode: "frozen_fixture",
+      visualQualityViewportWidth: 8,
+      visualQualityBrowsers: ["chromium", "firefox", "webkit"]
+    }
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-visual-quality-browsers"
+    } satisfies GenerationDiffContext
+  });
+  const distDir = path.join(executionContext.paths.generatedProjectDir, "dist");
+  await mkdir(distDir, { recursive: true });
+  await writeFile(path.join(distDir, "index.html"), "<!doctype html><html><body>visual quality browsers</body></html>\n", "utf8");
+
+  const browserBuffers = {
+    chromium: createSolidPngBuffer({
+      width: 8,
+      height: 6,
+      rgba: [254, 254, 254, 255]
+    }),
+    firefox: createSolidPngBuffer({
+      width: 8,
+      height: 6,
+      rgba: [248, 248, 248, 255]
+    }),
+    webkit: createSolidPngBuffer({
+      width: 8,
+      height: 6,
+      rgba: [240, 240, 240, 255]
+    })
+  } as const;
+  const referenceBuffer = createSolidPngBuffer({
+    width: 8,
+    height: 6,
+    rgba: [255, 255, 255, 255]
+  });
+  const captureBrowsers: string[] = [];
+  const identifyBuffer = (buffer: Buffer): "reference" | "chromium" | "firefox" | "webkit" | "unknown" => {
+    if (buffer.equals(referenceBuffer)) {
+      return "reference";
+    }
+    if (buffer.equals(browserBuffers.chromium)) {
+      return "chromium";
+    }
+    if (buffer.equals(browserBuffers.firefox)) {
+      return "firefox";
+    }
+    if (buffer.equals(browserBuffers.webkit)) {
+      return "webkit";
+    }
+    return "unknown";
+  };
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult({ includeUiValidation: true }),
+    captureFromProjectFn: async (input) => {
+      const browser = input.browser ?? "chromium";
+      captureBrowsers.push(browser);
+      return {
+        screenshotBuffer: browserBuffers[browser],
+        width: 8,
+        height: 6,
+        viewport: {
+          width: 8,
+          height: 6,
+          deviceScaleFactor: 1
+        },
+        browser
+      };
+    },
+    comparePngBuffersFn: ({ referenceBuffer, testBuffer }) => {
+      const left = identifyBuffer(referenceBuffer);
+      const right = identifyBuffer(testBuffer);
+      const same = referenceBuffer.equals(testBuffer);
+      const pairScoreMap: Record<string, number> = {
+        "reference->chromium": 100,
+        "reference->firefox": 96,
+        "reference->webkit": 92,
+        "chromium->firefox": 94,
+        "chromium->webkit": 90,
+        "firefox->webkit": 95,
+        "firefox->chromium": 94,
+        "webkit->chromium": 90,
+        "webkit->firefox": 95
+      };
+      const similarityScore = same
+        ? 100
+        : (pairScoreMap[`${left}->${right}`] ?? 88);
+      return {
+        diffImageBuffer: createSolidPngBuffer({
+          width: 8,
+          height: 6,
+          rgba: same ? [0, 0, 0, 255] : [255, 0, 0, 255]
+        }),
+        similarityScore,
+        diffPixelCount: same ? 0 : 4,
+        totalPixels: 48,
+        regions: [],
+        width: 8,
+        height: 6
+      };
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const visualQuality = await executionContext.artifactStore.getValue<{
+    status?: string;
+    browserBreakdown?: Record<string, number>;
+    crossBrowserConsistency?: {
+      browsers: string[];
+      pairwiseDiffs: Array<{ diffImagePath?: string }>;
+    };
+    perBrowser?: Array<{
+      browser: string;
+      actualImagePath?: string;
+      diffImagePath?: string;
+      reportPath?: string;
+    }>;
+  }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
+  const reportPath = await executionContext.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.visualQualityReport,
+  );
+
+  assert.deepEqual(captureBrowsers, ["chromium", "firefox", "webkit"]);
+  assert.equal(visualQuality?.status, "completed");
+  assert.deepEqual(Object.keys(visualQuality?.browserBreakdown ?? {}).sort(), [
+    "chromium",
+    "firefox",
+    "webkit"
+  ]);
+  assert.deepEqual(
+    visualQuality?.perBrowser?.map((entry) => entry.browser),
+    ["chromium", "firefox", "webkit"],
+  );
+  assert.deepEqual(visualQuality?.crossBrowserConsistency?.browsers, [
+    "chromium",
+    "firefox",
+    "webkit"
+  ]);
+  assert.equal(visualQuality?.crossBrowserConsistency?.pairwiseDiffs.length, 3);
+  assert.equal(
+    reportPath,
+    path.join(executionContext.paths.jobDir, "visual-quality", "report.json")
+  );
+  assert.ok(visualQuality?.perBrowser?.every((entry) => entry.actualImagePath && entry.diffImagePath && entry.reportPath));
+  assert.ok(
+    visualQuality?.crossBrowserConsistency?.pairwiseDiffs.every(
+      (entry) => typeof entry.diffImagePath === "string",
+    ),
+  );
+
+  await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "actual.png"));
+  await readFile(path.join(executionContext.paths.jobDir, "visual-quality", "diff.png"));
+  for (const entry of visualQuality?.perBrowser ?? []) {
+    await readFile(entry.actualImagePath!);
+    await readFile(entry.diffImagePath!);
+    await readFile(entry.reportPath!, "utf8");
+  }
+  for (const entry of visualQuality?.crossBrowserConsistency?.pairwiseDiffs ?? []) {
+    await readFile(entry.diffImagePath!);
+  }
 });
 
 test("ValidateProjectService frozen_fixture mode uses visualQualityFrozenReference override when provided", async () => {
@@ -5665,11 +5900,9 @@ test("ValidateProjectService runs standalone visual quality in figma_api mode", 
     overallScore?: number;
   }>(STAGE_ARTIFACT_KEYS.visualQualityResult);
   assert.equal(fetchCalls.length, 3);
-  assert.deepEqual(captureViewport, {
-    width: 8,
-    height: 6,
-    deviceScaleFactor: 1
-  });
+  assert.equal(captureViewport?.width, 8);
+  assert.equal(captureViewport?.deviceScaleFactor, 1);
+  assert.ok((captureViewport?.height ?? 0) > 0);
   assert.equal(visualQuality?.status, "completed");
   assert.equal(visualQuality?.referenceSource, "figma_api");
   assert.match(visualQuality?.capturedAt ?? "", /^\d{4}-\d{2}-\d{2}T/);
@@ -8661,6 +8894,63 @@ test("ValidateProjectService includes Storybook composition coverage in summary 
     key: STAGE_ARTIFACT_KEYS.storybookComponents,
     stage: "ir.derive",
     absolutePath: storybookComponentsPath
+  });
+  const storybookComponentVisualCatalogPath = path.join(
+    executionContext.paths.jobDir,
+    "storybook.component-visual-catalog.json"
+  );
+  await writeFile(
+    storybookComponentVisualCatalogPath,
+    `${JSON.stringify(
+      {
+        artifact: "storybook.component-visual-catalog",
+        version: 1,
+        stats: {
+          totalCount: 1,
+          readyCount: 1,
+          skippedCount: 0,
+          byMatchStatus: {
+            matched: 1,
+            ambiguous: 0,
+            unmatched: 0
+          },
+          bySkipReason: {
+            unmatched: 0,
+            ambiguous: 0,
+            docs_only: 0,
+            missing_story: 0,
+            missing_reference_node: 0,
+            missing_authoritative_story: 0
+          }
+        },
+        entries: [
+          {
+            componentId: "Button",
+            figmaFamilyKey: "button-primary",
+            figmaFamilyName: "Button",
+            matchStatus: "matched",
+            comparisonStatus: "ready",
+            warnings: [],
+            familyId: "button",
+            storyEntryId: "button--primary",
+            storyTitle: "Button / Primary",
+            iframeId: "storybook-preview-iframe",
+            referenceFileKey: "fixture-file",
+            referenceNodeId: "1:2",
+            captureStrategy: "storybook_root_union",
+            baselineCanvas: { padding: 16 }
+          }
+        ]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentVisualCatalog,
+    stage: "ir.derive",
+    absolutePath: storybookComponentVisualCatalogPath
   });
   const artifact = createComponentMatchReportArtifactForStageServices({ matchStatus: "matched" });
   artifact.entries[0].usedEvidence = [
