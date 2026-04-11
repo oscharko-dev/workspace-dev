@@ -1092,7 +1092,7 @@ const buildCheckText = (
         `- Weights: visual ${formatPercent(compositeQuality.weights.visual)}, performance ${formatPercent(compositeQuality.weights.performance)}`,
       );
     }
-    if (compositeQuality.performance?.aggregateMetrics !== null) {
+    if (compositeQuality.performance?.aggregateMetrics != null) {
       const metrics = compositeQuality.performance.aggregateMetrics;
       lines.push(
         `- Lighthouse metrics: FCP ${formatMetricOrUnavailable(metrics.fcp_ms, " ms")}, LCP ${formatMetricOrUnavailable(metrics.lcp_ms, " ms")}, CLS ${formatMetricOrUnavailable(metrics.cls)}, TBT ${formatMetricOrUnavailable(metrics.tbt_ms, " ms")}, Speed Index ${formatMetricOrUnavailable(metrics.speed_index_ms, " ms")}`,
@@ -1340,7 +1340,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
         `**Weights:** visual ${formatPercent(compositeQuality.weights.visual)}, performance ${formatPercent(compositeQuality.weights.performance)}`,
       );
     }
-    if (compositeQuality.performance?.aggregateMetrics !== null) {
+    if (compositeQuality.performance?.aggregateMetrics != null) {
       const metrics = compositeQuality.performance.aggregateMetrics;
       lines.push(
         `**Lighthouse Metrics:** FCP ${formatMetricOrUnavailable(metrics.fcp_ms, " ms")}, LCP ${formatMetricOrUnavailable(metrics.lcp_ms, " ms")}, CLS ${formatMetricOrUnavailable(metrics.cls)}, TBT ${formatMetricOrUnavailable(metrics.tbt_ms, " ms")}, Speed Index ${formatMetricOrUnavailable(metrics.speed_index_ms, " ms")}`,

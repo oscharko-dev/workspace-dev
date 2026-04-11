@@ -69,8 +69,14 @@ jobs:
       - name: Run frozen visual benchmark runner
         run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
 
+      - name: Build generated app for perf assertions
+        if: always()
+        run: pnpm --dir template/react-mui-app run build
+
       - name: Run performance assertion for composite quality
         if: always()
+        env:
+          FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
         run: pnpm perf:web:assert
 
       - name: Compute composite quality report

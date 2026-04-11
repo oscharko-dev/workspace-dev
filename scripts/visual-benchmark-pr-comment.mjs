@@ -1472,7 +1472,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
         `**Weights:** visual ${formatPercent(compositeQuality.weights.visual)}, performance ${formatPercent(compositeQuality.weights.performance)}`,
       );
     }
-    if (compositeQuality.performance?.aggregateMetrics !== null) {
+    if (compositeQuality.performance?.aggregateMetrics != null) {
       const metrics = compositeQuality.performance.aggregateMetrics;
       headerLines.push(
         `**Lighthouse Metrics:** FCP ${formatMetricOrUnavailable(metrics.fcp_ms, " ms")}, LCP ${formatMetricOrUnavailable(metrics.lcp_ms, " ms")}, CLS ${formatMetricOrUnavailable(metrics.cls)}, TBT ${formatMetricOrUnavailable(metrics.tbt_ms, " ms")}, Speed Index ${formatMetricOrUnavailable(metrics.speed_index_ms, " ms")}`,

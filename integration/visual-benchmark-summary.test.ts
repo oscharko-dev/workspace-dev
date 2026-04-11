@@ -246,6 +246,75 @@ test("buildVisualBenchmarkSummary includes composite quality scores, weights, an
   }
 });
 
+test("buildVisualBenchmarkSummary tolerates visual-only composite reports", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-summary-visual-only-"),
+  );
+
+  try {
+    const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
+    const fixtureDir = path.join(artifactRoot, "last-run", "simple-form");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeJson(path.join(artifactRoot, "last-run.json"), {
+      version: 1,
+      ranAt: "2026-04-12T10:00:00.000Z",
+      scores: [{ fixtureId: "simple-form", score: 92 }],
+      overallCurrent: 92,
+    });
+    await writeJson(path.join(artifactRoot, "composite-quality-report.json"), {
+      version: 1,
+      generatedAt: "2026-04-12T10:05:00.000Z",
+      weights: {
+        visual: 0.6,
+        performance: 0.4,
+      },
+      visual: {
+        score: 92,
+        ranAt: "2026-04-12T10:00:00.000Z",
+        source: "artifacts/visual-benchmark/last-run.json",
+      },
+      performance: null,
+      composite: {
+        score: 92,
+        includedDimensions: ["visual"],
+        explanation: "visual-only fallback: 92",
+      },
+      warnings: ["performance breakdown missing"],
+    });
+    await writeJson(path.join(fixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "simple-form",
+      score: 92,
+      ranAt: "2026-04-12T10:00:00.000Z",
+      viewport: { width: 1280, height: 720 },
+      thresholdResult: {
+        score: 92,
+        verdict: "pass",
+        thresholds: { warn: 80 },
+      },
+    });
+    await writeJson(path.join(fixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 92,
+      diffImagePath: "visual-quality/diff.png",
+    });
+
+    const { buildVisualBenchmarkSummary } =
+      await import("../scripts/visual-benchmark-summary.mjs");
+    const summary = await buildVisualBenchmarkSummary(
+      path.join(artifactRoot, "last-run.json"),
+    );
+
+    assert.match(summary.markdown, /### Combined Visual \+ Performance Quality/);
+    assert.match(summary.markdown, /\*\*Performance Score:\*\* unavailable/);
+    assert.match(summary.markdown, /\*\*Composite Warnings:\*\* performance breakdown missing/);
+    assert.doesNotMatch(summary.markdown, /\*\*Lighthouse Metrics:\*\*/);
+    assert.doesNotMatch(summary.check.text, /Visual benchmark unavailable/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("buildVisualBenchmarkSummary renders browser-aware aggregates and artifact details from v2 manifests", async () => {
   const root = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-visual-summary-browsers-"),
