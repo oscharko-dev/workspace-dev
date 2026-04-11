@@ -436,6 +436,11 @@ const formatComponentNotes = (component) => {
   return notes.length > 0 ? notes.join(" | ") : "\u2014";
 };
 
+const isStorybookComponentArtifact = (manifest) =>
+  manifest !== null &&
+  typeof manifest === "object" &&
+  manifest.mode === "storybook_component";
+
 const resolveHeadlineScore = ({
   lastRun,
   viewAverage,
@@ -936,7 +941,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
 
   const artifactRoot = path.dirname(absolutePath);
   const lastRunDir = path.join(artifactRoot, "last-run");
-  const fixtures = [];
+  const fullPageFixtures = [];
   const componentSummary = mergeComponentSummary(
     createComponentSummary(),
     lastRun,
@@ -1047,7 +1052,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       }
     }
 
-    fixtures.push({
+    const fixtureSummary = {
       fixtureId: entry.fixtureId,
       screenId: normalizeOptionalString(entry.screenId ?? manifest.screenId),
       screenName: normalizeOptionalString(
@@ -1072,10 +1077,16 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       reportDimensions,
       viewport: `${viewport.width}\u00d7${viewport.height}`,
       diffArtifactPath,
-    });
+    };
+    if (!isStorybookComponentArtifact(manifest)) {
+      fullPageFixtures.push(fixtureSummary);
+    }
   }
 
-  if (fixtures.length === 0) {
+  const hasComponentResults =
+    componentSummary.componentAggregateScore !== null ||
+    componentSummary.components.length > 0;
+  if (fullPageFixtures.length === 0 && !hasComponentResults) {
     throw new Error(
       `Visual benchmark last-run report at '${absolutePath}' contains no valid score entries.`,
     );
@@ -1092,7 +1103,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   );
   const metadataCache = new Map();
   const currentScreenAggregateMap = await computeScreenAggregateMap({
-    rows: fixtures,
+    rows: fullPageFixtures,
     qualityConfig,
     metadataCache,
   });
@@ -1113,7 +1124,9 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   });
 
   const viewAverage =
-    currentScreenAggregateMap.size > 0
+    isFiniteNumber(lastRun.screenAggregateScore)
+      ? roundToTwo(lastRun.screenAggregateScore)
+      : currentScreenAggregateMap.size > 0
       ? roundToTwo(
           Array.from(currentScreenAggregateMap.values()).reduce(
             (sum, fixture) => sum + fixture.score,
@@ -1125,7 +1138,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     lastRun,
     viewAverage,
     componentAggregateScore: componentSummary.componentAggregateScore,
-    hasViewScores: fixtures.length > 0,
+    hasViewScores: fullPageFixtures.length > 0,
   });
 
   const comparablePairs = [];
@@ -1199,7 +1212,10 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     `${scoreEmoji(overallAverage)} **Overall Score:** ${formatScore(overallAverage)} / 100${overallDeltaText}`,
   ];
 
-  if (componentSummary.componentAggregateScore !== null && fixtures.length > 0) {
+  if (
+    componentSummary.componentAggregateScore !== null &&
+    fullPageFixtures.length > 0
+  ) {
     headerLines.push(
       `**Full-Page Average:** ${formatScore(viewAverage)} / 100`,
     );
@@ -1225,13 +1241,16 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   }
   headerLines.push("");
 
-  const tableHeaderLines = [
-    "| View | Score | Baseline | Delta | Trend | Threshold | Viewport |",
-    "|------|-------|----------|-------|-------|-----------|----------|",
-  ];
+  const tableHeaderLines =
+    fullPageFixtures.length > 0
+      ? [
+          "| View | Score | Baseline | Delta | Trend | Threshold | Viewport |",
+          "|------|-------|----------|-------|-------|-----------|----------|",
+        ]
+      : [];
 
   const tableRowLines = [];
-  for (const fixture of fixtures) {
+  for (const fixture of fullPageFixtures) {
     const baselineText =
       fixture.baselineScore !== null ? String(fixture.baselineScore) : "\u2014";
     const deltaText =
@@ -1269,16 +1288,16 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   }
 
   const diffSectionHeaderLines =
-    artifactUrl && fixtures.length > 0
+    artifactUrl && fullPageFixtures.length > 0
       ? ["", "### Diff Images", "", "| View | Diff |", "|------|------|"]
       : [];
   const diffRowLines = artifactUrl
-    ? fixtures.map((fixture) => [
+    ? fullPageFixtures.map((fixture) => [
         `| ${escapeMarkdownCell(fixture.displayLabel)} | [View diff](${artifactUrl}) \`${escapeMarkdownCell(fixture.diffArtifactPath)}\` |`,
       ])
     : [];
 
-  const fixturesWithDimensions = fixtures.filter(
+  const fixturesWithDimensions = fullPageFixtures.filter(
     (fixture) =>
       Array.isArray(fixture.reportDimensions) &&
       fixture.reportDimensions.length > 0,

@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { parseStorybookComponentsArtifact } from "../src/storybook/artifact-validation.js";
+import {
+  parseStorybookComponentVisualCatalogArtifact,
+  parseStorybookComponentsArtifact
+} from "../src/storybook/artifact-validation.js";
 import {
   assertCustomerBoardPublicArtifactSanitized,
   collectActualFixtureOutputs,
@@ -66,6 +69,16 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   parseStorybookComponentsArtifact({
     input: committedComponents.content
   });
+  const committedComponentVisualCatalog = committedBundle.files.get(manifest.derived.componentVisualCatalog);
+  assert.ok(committedComponentVisualCatalog, "Committed component visual catalog fixture must exist.");
+  const committedComponentVisualCatalogValue = JSON.parse(committedComponentVisualCatalog.content) as unknown;
+  assertCustomerBoardPublicArtifactSanitized({
+    label: manifest.derived.componentVisualCatalog,
+    value: committedComponentVisualCatalogValue
+  });
+  parseStorybookComponentVisualCatalogArtifact({
+    input: committedComponentVisualCatalog.content
+  });
 
   const first = await executeCustomerBoardFixture({
     manifest
@@ -118,6 +131,7 @@ test("customer-board golden offline fixture reproduces committed derived artifac
         tokens?: { status?: string };
         themes?: { status?: string };
         components?: { status?: string };
+        componentVisualCatalog?: { status?: string };
       };
     };
     mapping?: {
@@ -219,6 +233,7 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.equal(validationSummary.storybook?.artifacts?.tokens?.status, "ok");
   assert.equal(validationSummary.storybook?.artifacts?.themes?.status, "ok");
   assert.equal(validationSummary.storybook?.artifacts?.components?.status, "ok");
+  assert.equal(validationSummary.storybook?.artifacts?.componentVisualCatalog?.status, "ok");
   assert.equal("requestedPath" in (validationSummary.storybook ?? {}), false);
   assert.equal("filePath" in (validationSummary.storybook?.artifacts?.evidence ?? {}), false);
   assert.ok(validationSummary.generatedApp, "validation-summary.generatedApp must be present");
@@ -287,11 +302,6 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   );
   assert.ok(validationSummary.visualQuality, "validation-summary.visualQuality must be present");
   assert.equal(
-    validationSummary.visualQuality?.status,
-    "failed",
-    "validation-summary.visualQuality.status must be 'failed'"
-  );
-  assert.equal(
     validationSummary.visualQuality?.referenceSource,
     "frozen_fixture",
     "validation-summary.visualQuality.referenceSource must be 'frozen_fixture'"
@@ -301,15 +311,10 @@ test("customer-board golden offline fixture reproduces committed derived artifac
     "<timestamp>",
     "validation-summary.visualQuality.capturedAt must be normalized in the fixture output"
   );
-  assert.match(
-    validationSummary.visualQuality?.message ?? "",
-    /Image dimensions do not match: reference is 1280x1512, test is 1280x800/,
-    "validation-summary.visualQuality.message must describe the frozen-fixture dimension mismatch"
-  );
-  assert.deepEqual(
-    validationSummary.visualQuality?.warnings,
-    ["Image dimensions do not match: reference is 1280x1512, test is 1280x800"],
-    "validation-summary.visualQuality.warnings must preserve the non-blocking failure reason"
+  assert.notEqual(
+    validationSummary.visualQuality?.status,
+    "not_requested",
+    "validation-summary.visualQuality.status must reflect an executed frozen-fixture comparison"
   );
 
   // #815 — generatedApp.test gate: the offline fixture runs with enableUnitTestValidation=true

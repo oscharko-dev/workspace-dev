@@ -124,6 +124,26 @@ test("parseVisualQualityConfig rejects invalid threshold values", () => {
   );
 });
 
+test("resolveVisualBenchmarkCliResolution accepts Storybook component benchmark inputs", () => {
+  const resolution = resolveVisualBenchmarkCliResolution([
+    "--storybook-component-catalog",
+    "artifacts/storybook/public/storybook.component-visual-catalog.json",
+    "--storybook-static-dir",
+    "storybook-static/storybook-static",
+    "--viewport",
+    "desktop",
+  ]);
+  assert.equal(
+    resolution.componentVisualCatalogFile,
+    "artifacts/storybook/public/storybook.component-visual-catalog.json",
+  );
+  assert.equal(
+    resolution.storybookStaticDir,
+    "storybook-static/storybook-static",
+  );
+  assert.equal(resolution.viewportId, "desktop");
+});
+
 // ---------------------------------------------------------------------------
 // loadVisualQualityConfig
 // ---------------------------------------------------------------------------

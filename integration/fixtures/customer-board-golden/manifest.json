@@ -1,6 +1,7 @@
 {
   "derived": {
     "componentMatchReport": "derived/component-match-report.json",
+    "componentVisualCatalog": "derived/storybook.component-visual-catalog.json",
     "figmaAnalysis": "derived/figma-analysis.json",
     "figmaLibraryResolution": "derived/figma-library-resolution.json",
     "storybookCatalog": "derived/storybook.catalog.json",

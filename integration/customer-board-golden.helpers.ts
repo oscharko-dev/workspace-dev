@@ -50,6 +50,7 @@ import {
   serializeComponentMatchReportArtifact,
   type ComponentMatchReportArtifact
 } from "../src/storybook/component-match-report.js";
+import { buildStorybookComponentVisualCatalogArtifact } from "../src/storybook/component-visual-catalog.js";
 import {
   buildStorybookEvidenceArtifact,
   loadStorybookBuildContext,
@@ -59,7 +60,10 @@ import {
   buildStorybookPublicArtifacts,
   type StorybookPublicArtifacts
 } from "../src/storybook/public-extracts.js";
-import { parseStorybookComponentsArtifact } from "../src/storybook/artifact-validation.js";
+import {
+  parseStorybookComponentVisualCatalogArtifact,
+  parseStorybookComponentsArtifact
+} from "../src/storybook/artifact-validation.js";
 import { resolveStorybookTheme } from "../src/storybook/theme-resolver.js";
 import {
   type StorybookEntryType,
@@ -198,6 +202,7 @@ export interface CustomerBoardGoldenManifest {
     storybookTokens: string;
     storybookThemes: string;
     storybookComponents: string;
+    componentVisualCatalog: string;
     figmaAnalysis: string;
     figmaLibraryResolution: string;
     componentMatchReport: string;
@@ -318,6 +323,7 @@ const parseManifest = ({
       storybookTokens: assertAllowedFixturePath(String(derived.storybookTokens ?? "")),
       storybookThemes: assertAllowedFixturePath(String(derived.storybookThemes ?? "")),
       storybookComponents: assertAllowedFixturePath(String(derived.storybookComponents ?? "")),
+      componentVisualCatalog: assertAllowedFixturePath(String(derived.componentVisualCatalog ?? "")),
       figmaAnalysis: assertAllowedFixturePath(String(derived.figmaAnalysis ?? "")),
       figmaLibraryResolution: assertAllowedFixturePath(String(derived.figmaLibraryResolution ?? "")),
       componentMatchReport: assertAllowedFixturePath(String(derived.componentMatchReport ?? ""))
@@ -666,6 +672,21 @@ const sanitizeComponentsArtifact = ({
     value: sanitized
   });
   return sanitized;
+};
+
+const sanitizeComponentVisualCatalogArtifact = ({
+  artifact
+}: {
+  artifact: Record<string, unknown>;
+}): Record<string, unknown> => {
+  parseStorybookComponentVisualCatalogArtifact({
+    input: JSON.stringify(artifact)
+  });
+  assertCustomerBoardPublicArtifactSanitized({
+    label: "storybook.component-visual-catalog",
+    value: artifact
+  });
+  return artifact;
 };
 
 const createEmptyStorybookEvidenceStats = (): StorybookEvidenceStats => ({
@@ -1066,6 +1087,9 @@ const normalizeValidationSummaryArtifactForComparison = ({
             ...(normalizeStatusObject(storybookArtifacts?.themes) ? { themes: normalizeStatusObject(storybookArtifacts?.themes) } : {}),
             ...(normalizeStatusObject(storybookArtifacts?.components)
               ? { components: normalizeStatusObject(storybookArtifacts?.components) }
+              : {}),
+            ...(normalizeStatusObject(storybookArtifacts?.componentVisualCatalog)
+              ? { componentVisualCatalog: normalizeStatusObject(storybookArtifacts?.componentVisualCatalog) }
               : {})
           }
         }
@@ -1490,6 +1514,7 @@ const seedFixtureArtifacts = async ({
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookTokens, manifest.derived.storybookTokens);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookThemes, manifest.derived.storybookThemes);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.storybookComponents, manifest.derived.storybookComponents);
+  await maybeSetPath(STAGE_ARTIFACT_KEYS.componentVisualCatalog, manifest.derived.componentVisualCatalog);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution, manifest.derived.figmaLibraryResolution);
   await maybeSetPath(STAGE_ARTIFACT_KEYS.componentMatchReport, manifest.derived.componentMatchReport);
 };
@@ -1836,7 +1861,7 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
   const libraryResolutionCacheDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-library-resolution-"));
   const tempFixtureRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-customer-board-bundle-"));
   try {
-    if (figmaLibrarySeed && !storybookJobDir) {
+    if (figmaLibrarySeed) {
       await resolveFigmaLibraryResolutionArtifact({
         analysis: figmaAnalysis,
         file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
@@ -1850,48 +1875,41 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
       });
     }
 
-    const libraryResolutionArtifact = storybookJobDir
-      ? await readJsonFile<FigmaLibraryResolutionArtifact>({
-          filePath: createJobStorybookArtifactPaths({
-            jobDir: storybookJobDir
-          }).figmaLibraryResolutionFile
-        })
-      : await resolveFigmaLibraryResolutionArtifact({
-          analysis: figmaAnalysis,
-          file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
-          figmaSourceMode: "local_json",
-          cacheDir: libraryResolutionCacheDir,
-          fetchImpl: fetch,
-          timeoutMs: 1_000,
-          maxRetries: 1
-        });
+    const libraryResolutionArtifact = await resolveFigmaLibraryResolutionArtifact({
+      analysis: figmaAnalysis,
+      file: figmaInput as Parameters<typeof resolveFigmaLibraryResolutionArtifact>[0]["file"],
+      figmaSourceMode: "local_json",
+      cacheDir: libraryResolutionCacheDir,
+      fetchImpl: fetch,
+      timeoutMs: 1_000,
+      maxRetries: 1
+    });
     if (!libraryResolutionArtifact) {
       throw new Error("Expected figma.library_resolution artifact for customer-board fixture generation.");
     }
 
-    const componentMatchReportArtifact = storybookJobDir
-      ? await readJsonFile<ComponentMatchReportArtifact>({
-          filePath: createJobStorybookArtifactPaths({
-            jobDir: storybookJobDir
-          }).componentMatchReportFile
-        })
-      : buildComponentMatchReportArtifact({
-          figmaAnalysis,
-          catalogArtifact,
-          evidenceArtifact,
-          componentsArtifact: publicArtifacts.componentsArtifact,
-          figmaLibraryResolutionArtifact: libraryResolutionArtifact,
-          resolvedCustomerProfile: customerProfile,
-          resolvedStorybookTheme: resolveStorybookTheme({
-            customerBrandId: CUSTOMER_BOARD_BRAND_ID,
-            customerProfile,
-            tokensArtifact,
-            themesArtifact
-          })
-        });
+    const componentMatchReportArtifact = buildComponentMatchReportArtifact({
+      figmaAnalysis,
+      catalogArtifact,
+      evidenceArtifact,
+      componentsArtifact: publicArtifacts.componentsArtifact,
+      figmaLibraryResolutionArtifact: libraryResolutionArtifact,
+      resolvedCustomerProfile: customerProfile,
+      resolvedStorybookTheme: resolveStorybookTheme({
+        customerBrandId: CUSTOMER_BOARD_BRAND_ID,
+        customerProfile,
+        tokensArtifact,
+        themesArtifact
+      })
+    });
 
     const storybookEvidenceHintsArtifact = createCustomerBoardStorybookEvidenceHintsArtifact({
       artifact: evidenceArtifact
+    });
+    const componentVisualCatalogArtifact = buildStorybookComponentVisualCatalogArtifact({
+      componentMatchReportArtifact,
+      catalogArtifact,
+      evidenceArtifact
     });
     const selectedVisualReferenceNode = selectVisualQualityReferenceNode({
       file: figmaInput,
@@ -1911,6 +1929,7 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
         storybookTokens: "derived/storybook.tokens.json",
         storybookThemes: "derived/storybook.themes.json",
         storybookComponents: "derived/storybook.components.json",
+        componentVisualCatalog: "derived/storybook.component-visual-catalog.json",
         figmaAnalysis: "derived/figma-analysis.json",
         figmaLibraryResolution: "derived/figma-library-resolution.json",
         componentMatchReport: "derived/component-match-report.json"
@@ -1960,6 +1979,12 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
     await writeJsonFixtureFile({
       filePath: path.join(tempFixtureRoot, manifestBase.derived.storybookComponents),
       value: sanitizeComponentsArtifact({ artifact: publicArtifacts.componentsArtifact })
+    });
+    await writeJsonFixtureFile({
+      filePath: path.join(tempFixtureRoot, manifestBase.derived.componentVisualCatalog),
+      value: sanitizeComponentVisualCatalogArtifact({
+        artifact: componentVisualCatalogArtifact as Record<string, unknown>
+      })
     });
     await writeJsonFixtureFile({
       filePath: path.join(tempFixtureRoot, manifestBase.derived.figmaLibraryResolution),
@@ -2057,6 +2082,13 @@ export const buildCustomerBoardGoldenBundleFromFigmaInput = async ({
     });
     addBundleJson({
       files,
+      relativePath: manifest.derived.componentVisualCatalog,
+      value: sanitizeComponentVisualCatalogArtifact({
+        artifact: componentVisualCatalogArtifact as Record<string, unknown>
+      })
+    });
+    addBundleJson({
+      files,
       relativePath: manifest.derived.figmaAnalysis,
       value: figmaAnalysis,
       sanitize: false
@@ -2150,6 +2182,7 @@ export const readCommittedCustomerBoardGoldenBundle = async ({
     manifest.derived.storybookTokens,
     manifest.derived.storybookThemes,
     manifest.derived.storybookComponents,
+    manifest.derived.componentVisualCatalog,
     manifest.derived.figmaAnalysis,
     manifest.derived.figmaLibraryResolution,
     manifest.derived.componentMatchReport,

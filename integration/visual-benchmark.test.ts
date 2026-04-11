@@ -46,6 +46,7 @@ import {
   loadVisualBenchmarkBaseline,
   loadVisualBenchmarkLastRun,
   loadVisualBenchmarkLastRunArtifact,
+  prepareStorybookComponentFixtures,
   runVisualBenchmark,
   saveVisualBenchmarkBaseline,
   saveVisualBenchmarkBaselineScores,
@@ -972,6 +973,134 @@ test("blendVisualBenchmarkHeadlineScore blends screen and component aggregates w
     }),
     60,
   );
+});
+
+test("prepareStorybookComponentFixtures synthesizes runnable component fixtures from the visual catalog", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-storybook-component-fixtures-"),
+  );
+  const fixtureRoot = path.join(root, "fixtures");
+  const catalogPath = path.join(root, "storybook.component-visual-catalog.json");
+
+  try {
+    await mkdir(fixtureRoot, { recursive: true });
+    await writeFile(
+      catalogPath,
+      `${JSON.stringify(
+        {
+          artifact: "storybook.component-visual-catalog",
+          version: 1,
+          stats: {
+            totalCount: 2,
+            readyCount: 1,
+            skippedCount: 1,
+            byMatchStatus: {
+              matched: 1,
+              ambiguous: 0,
+              unmatched: 1,
+            },
+            bySkipReason: {
+              unmatched: 0,
+              ambiguous: 0,
+              docs_only: 1,
+              missing_story: 0,
+              missing_reference_node: 0,
+              missing_authoritative_story: 0,
+            },
+          },
+          entries: [
+            {
+              componentId: "button::button--primary",
+              figmaFamilyKey: "button",
+              figmaFamilyName: "Button",
+              matchStatus: "matched",
+              comparisonStatus: "ready",
+              storyEntryId: "button--primary",
+              storyTitle: "Button/Primary",
+              iframeId: "button--primary",
+              referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+              referenceNodeId: "12:34",
+              captureStrategy: "storybook_root_union",
+              baselineCanvas: {
+                padding: 16,
+              },
+              warnings: [],
+            },
+            {
+              componentId: "input::input--docs",
+              figmaFamilyKey: "input",
+              figmaFamilyName: "Input",
+              matchStatus: "unmatched",
+              comparisonStatus: "skipped",
+              skipReason: "docs_only",
+              warnings: ["requires authoritative story"],
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const prepared = await prepareStorybookComponentFixtures(
+      {
+        fixtureRoot,
+        componentVisualCatalogFile: catalogPath,
+      },
+      {
+        fetchReferenceImage: async () =>
+          createTestPngBuffer(120, 64, [12, 34, 56, 255]),
+      },
+    );
+
+    try {
+      assert.ok(
+        prepared.options?.fixtureRoot,
+        "Expected a synthesized fixture root",
+      );
+      assert.notEqual(prepared.options?.fixtureRoot, fixtureRoot);
+      assert.equal(prepared.skippedComponents[0]?.skipReason, "docs_only");
+      assert.equal(prepared.skippedCoverage.skippedCount, 1);
+      assert.equal(prepared.skippedCoverage.bySkipReason.docs_only, 1);
+
+      const metadata = await loadVisualBenchmarkFixtureMetadata(
+        "storybook-components",
+        {
+          fixtureRoot: prepared.options?.fixtureRoot,
+        },
+      );
+      assert.equal(metadata.mode, "storybook_component");
+      assert.equal(metadata.screens?.[0]?.screenId, "button::button--primary");
+      assert.deepEqual(metadata.screens?.[0]?.baselineCanvas, {
+        width: 120,
+        height: 64,
+      });
+      assert.deepEqual(metadata.screens?.[0]?.viewports, [
+        {
+          id: "default",
+          width: 152,
+          height: 96,
+        },
+      ]);
+
+      const referenceBuffer = await readFile(
+        resolveVisualBenchmarkScreenViewportPaths(
+          "storybook-components",
+          "button::button--primary",
+          "default",
+          {
+            fixtureRoot: prepared.options?.fixtureRoot,
+          },
+        ).referencePngPath,
+      );
+      assert.ok(isValidPngBuffer(referenceBuffer));
+    } finally {
+      await prepared.cleanup?.();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test("runVisualBenchmark blends generated screens with storybook component aggregates and surfaces component coverage warnings", async () => {
@@ -2460,6 +2589,152 @@ test("runVisualBenchmark blends full-page and component aggregates while preserv
     assert.equal(lastRun.components?.[1]?.componentId, "button-secondary");
     assert.equal(lastRun.components?.[1]?.status, "skipped");
     assert.equal(lastRun.components?.[1]?.skipReason, "incomplete_mapping");
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark weights component screen aggregates before blending the headline score", async () => {
+  const env = await createBenchmarkFixtureEnvironment({
+    fixtureId: "screen-fixture",
+    source: {
+      ...simpleFormMetadata.source,
+      nodeId: "2:10021",
+      nodeName: "Screen Fixture",
+    },
+  });
+  const componentMetadata: VisualBenchmarkFixtureMetadata = {
+    version: 4,
+    mode: "storybook_component",
+    fixtureId: "component-fixture",
+    capturedAt: "2026-04-09T00:00:00.000Z",
+    source: {
+      fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+      nodeId: "12:34",
+      nodeName: "Component Fixture",
+      lastModified: "2026-03-30T20:59:16Z",
+    },
+    viewport: {
+      width: 240,
+      height: 160,
+    },
+    export: {
+      format: "png",
+      scale: 1,
+    },
+    screens: [
+      {
+        screenId: "button-primary",
+        screenName: "Primary Button",
+        storyTitle: "Components/Button/Primary",
+        nodeId: "12:34",
+        viewport: { width: 240, height: 160 },
+        entryId: "components-button--primary",
+        referenceNodeId: "12:34",
+        referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+        captureStrategy: "storybook_root_union",
+        baselineCanvas: { width: 240, height: 160 },
+        weight: 1,
+      },
+      {
+        screenId: "button-secondary",
+        screenName: "Secondary Button",
+        storyTitle: "Components/Button/Secondary",
+        nodeId: "12:35",
+        viewport: { width: 240, height: 160 },
+        entryId: "components-button--secondary",
+        referenceNodeId: "12:35",
+        referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+        captureStrategy: "storybook_root_union",
+        baselineCanvas: { width: 240, height: 160 },
+        weight: 3,
+      },
+    ],
+  };
+
+  try {
+    await writeBenchmarkFixture({
+      fixtureRoot: env.fixtureRoot,
+      artifactRoot: env.artifactRoot,
+      metadata: componentMetadata,
+    });
+
+    const result = await runVisualBenchmark(
+      {
+        fixtureRoot: env.fixtureRoot,
+        artifactRoot: env.artifactRoot,
+      },
+      {
+        executeFixture: async (fixtureId) => {
+          if (fixtureId === "screen-fixture") {
+            return {
+              fixtureId,
+              aggregateScore: 80,
+              screens: [
+                {
+                  screenId: "2:10021",
+                  screenName: "Screen Fixture",
+                  nodeId: "2:10021",
+                  status: "completed",
+                  score: 80,
+                  screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                  diffBuffer: null,
+                  report: createCompletedVisualQualityReport(80),
+                  viewport: { width: 1280, height: 720 },
+                },
+              ],
+            };
+          }
+
+          return {
+            fixtureId,
+            aggregateScore: 87.5,
+            componentAggregateScore: 87.5,
+            componentCoverage: {
+              comparedCount: 2,
+              skippedCount: 0,
+              coveragePercent: 100,
+              bySkipReason: {},
+            },
+            screens: [
+              {
+                screenId: "button-primary",
+                screenName: "Components/Button/Primary",
+                nodeId: "12:34",
+                status: "completed",
+                score: 80,
+                weight: 1,
+                screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                diffBuffer: null,
+                report: createCompletedVisualQualityReport(80),
+                viewport: { width: 240, height: 160 },
+              },
+              {
+                screenId: "button-secondary",
+                screenName: "Components/Button/Secondary",
+                nodeId: "12:35",
+                status: "completed",
+                score: 90,
+                weight: 3,
+                screenshotBuffer: createTestPngBuffer(4, 4, [255, 255, 255, 255]),
+                diffBuffer: null,
+                report: createCompletedVisualQualityReport(90),
+                viewport: { width: 240, height: 160 },
+              },
+            ],
+          };
+        },
+      },
+    );
+
+    assert.equal(result.componentAggregateScore, 87.5);
+    assert.equal(result.overallCurrent, 82.25);
+    const lastRun = await loadVisualBenchmarkLastRun({
+      fixtureRoot: env.fixtureRoot,
+      artifactRoot: env.artifactRoot,
+    });
+    assert.equal(lastRun?.componentAggregateScore, 87.5);
+    assert.equal(lastRun?.overallCurrent, 82.25);
   } finally {
     await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
   }

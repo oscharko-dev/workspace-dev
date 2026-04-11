@@ -551,12 +551,28 @@ test("buildVisualBenchmarkSummary renders component coverage, rows, and blended 
 
   try {
     const artifactRoot = path.join(root, "artifacts", "visual-benchmark");
-    const fixtureDir = path.join(artifactRoot, "last-run", "component-board");
-    await mkdir(fixtureDir, { recursive: true });
+    const screenFixtureDir = path.join(artifactRoot, "last-run", "screen-board");
+    const componentFixtureDir = path.join(
+      artifactRoot,
+      "last-run",
+      "component-board",
+      "screens",
+      "button__button--primary",
+    );
+    await mkdir(screenFixtureDir, { recursive: true });
+    await mkdir(componentFixtureDir, { recursive: true });
     await writeJson(path.join(artifactRoot, "last-run.json"), {
       version: 1,
       ranAt: "2026-04-11T10:00:00.000Z",
-      scores: [{ fixtureId: "component-board", score: 80 }],
+      screenAggregateScore: 80,
+      scores: [
+        { fixtureId: "screen-board", score: 80 },
+        {
+          fixtureId: "component-board",
+          screenId: "button::button--primary",
+          score: 70,
+        },
+      ],
       componentAggregateScore: 90,
       componentCoverage: {
         comparedCount: 2,
@@ -583,16 +599,29 @@ test("buildVisualBenchmarkSummary renders component coverage, rows, and blended 
         },
       ],
     });
-    await writeJson(path.join(fixtureDir, "manifest.json"), {
+    await writeJson(path.join(screenFixtureDir, "manifest.json"), {
       version: 1,
-      fixtureId: "component-board",
+      fixtureId: "screen-board",
       score: 80,
       ranAt: "2026-04-11T10:00:00.000Z",
       viewport: { width: 1280, height: 720 },
     });
-    await writeJson(path.join(fixtureDir, "report.json"), {
+    await writeJson(path.join(screenFixtureDir, "report.json"), {
       status: "completed",
       overallScore: 80,
+    });
+    await writeJson(path.join(componentFixtureDir, "manifest.json"), {
+      version: 1,
+      fixtureId: "component-board",
+      screenId: "button::button--primary",
+      score: 70,
+      ranAt: "2026-04-11T10:00:00.000Z",
+      mode: "storybook_component",
+      viewport: { width: 240, height: 120 },
+    });
+    await writeJson(path.join(componentFixtureDir, "report.json"), {
+      status: "completed",
+      overallScore: 70,
     });
 
     const { buildVisualBenchmarkSummary } =
@@ -604,6 +633,7 @@ test("buildVisualBenchmarkSummary renders component coverage, rows, and blended 
     assert.match(summary.markdown, /Overall Average:\*\* 83/);
     assert.match(summary.markdown, /Full-Page Average:\*\* 80/);
     assert.match(summary.markdown, /Component Aggregate:\*\* 90/);
+    assert.doesNotMatch(summary.markdown, /\| Component Board \|/);
     assert.match(
       summary.markdown,
       /Component Coverage:\*\* 2 compared, 1 skipped \(66\.7%\)/,

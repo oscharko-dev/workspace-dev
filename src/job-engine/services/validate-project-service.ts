@@ -38,6 +38,7 @@ import {
 } from "../../storybook/types.js";
 import {
   parseStorybookCatalogArtifact,
+  parseStorybookComponentVisualCatalogArtifact,
   parseStorybookComponentsArtifact,
   parseStorybookEvidenceArtifact,
   parseStorybookThemesArtifact,
@@ -122,6 +123,7 @@ interface ValidationStorybookArtifactSet {
   tokens: ValidationArtifactStatusSummary;
   themes: ValidationArtifactStatusSummary;
   components: ValidationArtifactStatusSummary;
+  componentVisualCatalog: ValidationArtifactStatusSummary;
 }
 
 interface ValidationStorybookCompositionCoverage {
@@ -279,6 +281,10 @@ const STORYBOOK_ARTIFACT_DESCRIPTORS: StorybookArtifactDescriptor[] = [
   {
     key: "components",
     label: "storybook.components"
+  },
+  {
+    key: "componentVisualCatalog",
+    label: "storybook.component-visual-catalog"
   }
 ];
 
@@ -336,7 +342,7 @@ const buildStorybookGateDiagnostics = ({
         ? `Required Storybook artifact '${artifact.label}' is unreadable or malformed.`
         : `Required Storybook artifact '${artifact.label}' is missing from validate.project inputs.`,
     suggestion:
-      "Generate and persist the Storybook catalog, evidence, tokens, themes, and components artifacts before validate.project runs.",
+      "Generate and persist the Storybook catalog, evidence, tokens, themes, components, and component visual catalog artifacts before validate.project runs.",
     stage: "validate.project" as const,
     severity: "error" as const,
     details: {
@@ -908,6 +914,9 @@ const buildValidationSummaryArtifact = async ({
   const storybookTokensFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens);
   const storybookThemesFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes);
   const storybookComponentsFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookComponents);
+  const storybookComponentVisualCatalogFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.componentVisualCatalog
+  );
   const figmaLibraryResolutionFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution);
   const componentMatchReportFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
   const figmaLibraryResolutionSummary = await toFigmaLibraryResolutionStatusSummary({
@@ -957,6 +966,12 @@ const buildValidationSummaryArtifact = async ({
     components: toRequiredStorybookArtifactStatus({
       filePath: storybookComponentsFile,
       ...(storybookArtifactStatusOverrides?.components ? { overrideStatus: storybookArtifactStatusOverrides.components } : {})
+    }),
+    componentVisualCatalog: toRequiredStorybookArtifactStatus({
+      filePath: storybookComponentVisualCatalogFile,
+      ...(storybookArtifactStatusOverrides?.componentVisualCatalog
+        ? { overrideStatus: storybookArtifactStatusOverrides.componentVisualCatalog }
+        : {})
     })
   };
 
@@ -1384,6 +1399,9 @@ export const createValidateProjectService = ({
       const storybookTokensPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens);
       const storybookThemesPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes);
       const storybookComponentsPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookComponents);
+      const storybookComponentVisualCatalogPath = await context.artifactStore.getPath(
+        STAGE_ARTIFACT_KEYS.componentVisualCatalog
+      );
       const isStorybookRequested = Boolean(context.requestedStorybookStaticDir);
       if (componentMatchReportPath) {
         try {
@@ -1432,7 +1450,8 @@ export const createValidateProjectService = ({
           evidence: storybookEvidencePath,
           tokens: storybookTokensPath,
           themes: storybookThemesPath,
-          components: storybookComponentsPath
+          components: storybookComponentsPath,
+          componentVisualCatalog: storybookComponentVisualCatalogPath
         };
         const persistAndThrowInvalidStorybookArtifact = async ({
           artifactKey,
@@ -1456,7 +1475,8 @@ export const createValidateProjectService = ({
               evidence: { status: "not_available" },
               tokens: { status: "not_available" },
               themes: { status: "not_available" },
-              components: { status: "not_available" }
+              components: { status: "not_available" },
+              componentVisualCatalog: { status: "not_available" }
             } : summary.storybook.artifacts
           });
           throw createPipelineError({
@@ -1517,6 +1537,11 @@ export const createValidateProjectService = ({
           artifactKey: "components",
           filePath: storybookComponentsPath,
           parse: parseStorybookComponentsArtifact
+        });
+        await parseStorybookArtifact({
+          artifactKey: "componentVisualCatalog",
+          filePath: storybookComponentVisualCatalogPath,
+          parse: parseStorybookComponentVisualCatalogArtifact
         });
 
         const missingRequiredStorybookArtifacts = STORYBOOK_ARTIFACT_DESCRIPTORS.filter(

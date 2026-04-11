@@ -764,6 +764,11 @@ const formatComponentNotes = (component) => {
   return notes.length > 0 ? notes.join(" | ") : "\u2014";
 };
 
+const isStorybookComponentArtifact = (manifest) =>
+  manifest !== null &&
+  typeof manifest === "object" &&
+  manifest.mode === "storybook_component";
+
 const resolveHeadlineAverage = ({
   lastRun,
   viewAverage,
@@ -907,7 +912,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
 
   const artifactRoot = path.dirname(absolutePath);
   const lastRunDir = path.join(artifactRoot, "last-run");
-  const fixtures = [];
+  const fullPageFixtures = [];
   const skippedFixtureReasons = [];
   const componentSummary = mergeComponentSummary(
     createComponentSummary(),
@@ -985,7 +990,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
             path.resolve(fixtureDir, path.basename(report.diffImagePath)),
           ) || "."
         : null;
-    fixtures.push({
+    const fixtureSummary = {
       fixtureId: entry.fixtureId,
       screenId: normalizeOptionalString(entry.screenId ?? manifest.screenId),
       screenName: normalizeOptionalString(entry.screenName ?? manifest.screenName),
@@ -1006,11 +1011,17 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       reportPath: safeRelativePath(reportJsonPath),
       actualImagePath: safeRelativePath(path.join(fixtureDir, "actual.png")),
       diffImagePath,
-    });
+    };
+    if (!isStorybookComponentArtifact(manifest)) {
+      fullPageFixtures.push(fixtureSummary);
+    }
     mergeComponentSummary(componentSummary, report);
   }
 
-  if (fixtures.length === 0) {
+  const hasComponentResults =
+    componentSummary.componentAggregateScore !== null ||
+    componentSummary.components.length > 0;
+  if (fullPageFixtures.length === 0 && !hasComponentResults) {
     const reason =
       skippedFixtureReasons.length > 0
         ? `No valid fixture benchmark artifacts were available. ${skippedFixtureReasons[0]}`
@@ -1018,18 +1029,22 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     return buildUnavailableVisualBenchmarkSummary(absolutePath, reason);
   }
 
-  const warnedFixtures = fixtures.filter(
+  const warnedFixtures = fullPageFixtures.filter(
     (fixture) => fixture.thresholdResult?.verdict === "warn",
   );
-  const failedFixtures = fixtures.filter(
+  const failedFixtures = fullPageFixtures.filter(
     (fixture) => fixture.thresholdResult?.verdict === "fail",
   );
-  const viewAverage = await computeOverallAverageFromFixtures(fixtures);
+  const viewAverage = isFiniteNumber(lastRun.screenAggregateScore)
+    ? roundToTwo(lastRun.screenAggregateScore)
+    : fullPageFixtures.length > 0
+      ? await computeOverallAverageFromFixtures(fullPageFixtures)
+      : 0;
   const average = resolveHeadlineAverage({
     lastRun,
     viewAverage,
     componentAggregateScore: componentSummary.componentAggregateScore,
-    hasViewScores: fixtures.length > 0,
+    hasViewScores: fullPageFixtures.length > 0,
   });
 
   const lines = [
@@ -1040,7 +1055,10 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     `**Failed Views:** ${failedFixtures.length}`,
   ];
 
-  if (componentSummary.componentAggregateScore !== null && fixtures.length > 0) {
+  if (
+    componentSummary.componentAggregateScore !== null &&
+    fullPageFixtures.length > 0
+  ) {
     lines.push(`**Full-Page Average:** ${formatScore(viewAverage)}`);
   }
   if (componentSummary.componentAggregateScore !== null) {
@@ -1063,28 +1081,32 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
     }
   }
 
-  lines.push(
-    "",
-    "| View | Score | Threshold | Viewport |",
-    "|------|-------|-----------|----------|",
-  );
-
-  for (const fixture of fixtures) {
-    const thresholdLabel =
-      fixture.thresholdResult === null
-        ? "\u2014"
-        : `${fixture.thresholdResult.verdict} (${formatThresholdLabel(fixture.thresholdResult.thresholds)})`;
-    const safeDisplayName = escapeMarkdownCell(fixture.displayLabel);
-    const safeThresholdLabel = escapeMarkdownCell(thresholdLabel);
-    const safeViewport = escapeMarkdownCell(fixture.viewport);
+  if (fullPageFixtures.length > 0) {
     lines.push(
-      `| ${safeDisplayName} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${safeThresholdLabel} | ${safeViewport} |`,
+      "",
+      "| View | Score | Threshold | Viewport |",
+      "|------|-------|-----------|----------|",
     );
+
+    for (const fixture of fullPageFixtures) {
+      const thresholdLabel =
+        fixture.thresholdResult === null
+          ? "\u2014"
+          : `${fixture.thresholdResult.verdict} (${formatThresholdLabel(fixture.thresholdResult.thresholds)})`;
+      const safeDisplayName = escapeMarkdownCell(fixture.displayLabel);
+      const safeThresholdLabel = escapeMarkdownCell(thresholdLabel);
+      const safeViewport = escapeMarkdownCell(fixture.viewport);
+      lines.push(
+        `| ${safeDisplayName} | ${scoreEmoji(fixture.score)} ${fixture.score} | ${safeThresholdLabel} | ${safeViewport} |`,
+      );
+    }
   }
 
   lines.push("");
   lines.push(
-    "Artifacts include `actual.png`, `diff.png`, and `report.json` for each view under `artifacts/visual-benchmark/last-run/`.",
+    fullPageFixtures.length > 0
+      ? "Artifacts include `actual.png`, `diff.png`, and `report.json` for each benchmark artifact under `artifacts/visual-benchmark/last-run/`."
+      : "Artifacts include `actual.png`, `diff.png`, and `report.json` for benchmark artifacts under `artifacts/visual-benchmark/last-run/`.",
   );
   if (componentSummary.components.length > 0) {
     lines.push("");
@@ -1112,7 +1134,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
   lines.push(`_Ran at ${lastRun.ranAt}_`);
 
   const markdown = lines.join("\n");
-  const annotations = fixtures
+  const annotations = fullPageFixtures
     .map((fixture) => buildAnnotation(fixture))
     .filter((annotation) => annotation !== null);
 
@@ -1122,7 +1144,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       title: `Visual benchmark: ${formatScore(average)} average (${warnedFixtures.length} warn, ${failedFixtures.length} fail)`,
       summary: markdown,
       text: buildCheckText(
-        fixtures,
+        fullPageFixtures,
         average,
         path.relative(process.cwd(), artifactRoot) || ".",
         componentSummary,
@@ -1131,7 +1153,7 @@ export const buildVisualBenchmarkSummary = async (reportPath) => {
       annotations,
     },
     counts: {
-      total: fixtures.length,
+      total: fullPageFixtures.length,
       warn: warnedFixtures.length,
       fail: failedFixtures.length,
     },
