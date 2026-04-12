@@ -1968,7 +1968,21 @@ export function createWorkspaceRequestHandler({
         let pasteTempPathToCleanup: string | undefined;
 
         if (resolvedFigmaSourceMode === "figma_paste") {
-          const pastePayload = parsed.data.figmaJsonPayload ?? "";
+          // Schema has already asserted figmaJsonPayload is a non-empty string
+          // when figmaSourceMode === "figma_paste". Crash fast if that contract
+          // is ever relaxed without this branch being updated.
+          const pastePayload = parsed.data.figmaJsonPayload;
+          if (typeof pastePayload !== "string" || pastePayload.length === 0) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_PAYLOAD",
+                message:
+                  "figmaJsonPayload is required when figmaSourceMode=figma_paste.",
+              },
+              fallbackMessage: "Submit request validation failed.",
+            });
+            return;
+          }
           const pasteUUID = randomUUID();
           const pasteTempDir = path.join(absoluteOutputRoot, "tmp-figma-paste");
           const pasteTempPath = path.join(pasteTempDir, `${pasteUUID}.json`);
@@ -1990,13 +2004,14 @@ export function createWorkspaceRequestHandler({
             });
             return;
           }
-          submitInput = Object.fromEntries(
-            Object.entries({
-              ...submitInput,
-              figmaSourceMode: "local_json",
-              figmaJsonPath: pasteTempPath,
-            }).filter(([k]) => k !== "figmaJsonPayload"),
-          ) as typeof submitInput;
+          const { figmaJsonPayload: _discardPayload, ...restSubmitInput } =
+            submitInput;
+          void _discardPayload;
+          submitInput = {
+            ...restSubmitInput,
+            figmaSourceMode: "local_json",
+            figmaJsonPath: pasteTempPath,
+          };
         }
 
         let accepted: ReturnType<JobEngine["submitJob"]>;

@@ -31,7 +31,25 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
-## 3.10.0
+## [3.11.0] - 2026-04-12
+
+### Inspector-initiated Figma paste import
+
+Added:
+
+- `WorkspaceFigmaSourceMode` union member `"figma_paste"` for inline Figma `JSON_REST_V1` payload submission.
+- `WorkspaceJobInput.figmaJsonPayload?: string` carrying the inline payload when `figmaSourceMode === "figma_paste"`.
+- Submit-time validation surfacing `INVALID_PAYLOAD` / `TOO_LARGE` / `SCHEMA_MISMATCH` error codes for the new source mode.
+- `WORKSPACE_FIGMA_PASTE_MAX_BYTES` env knob (default 2 MiB) for the per-payload cap.
+- `MAX_SUBMIT_BODY_BYTES` constant (4 MiB) scoping the larger body limit to `/workspace/submit`.
+
+Changed:
+
+- `CONTRACT_VERSION` from `3.10.0` to `3.11.0`.
+
+---
+
+## [3.10.0] - 2026-04-09
 
 - Added `WorkspaceConfidenceLevel`, `WorkspaceConfidenceContributor`, `WorkspaceComponentConfidence`, `WorkspaceScreenConfidence`, `WorkspaceJobConfidence` types.
 - Added optional `confidence` field to `WorkspaceJobStatus` and `WorkspaceJobResult`.

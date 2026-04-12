@@ -1059,4 +1059,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.10.0" as const;
+export const CONTRACT_VERSION = "3.11.0" as const;
