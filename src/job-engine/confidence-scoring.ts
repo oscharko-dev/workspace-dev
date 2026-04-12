@@ -6,12 +6,24 @@ export interface ConfidenceGenerationMetricsInput {
   fetchedNodes: number;
   skippedHidden: number;
   skippedPlaceholders: number;
-  truncatedScreens: Array<{
+  screenElementCounts: Array<{
+    screenId: string;
     screenName: string;
-    originalCount: number;
-    truncatedCount: number;
+    elements: number;
   }>;
-  depthTruncatedScreens?: Array<{ screenName: string; depthLimit: number }>;
+  truncatedScreens: Array<{
+    screenId: string;
+    screenName: string;
+    originalElements: number;
+    retainedElements: number;
+  }>;
+  depthTruncatedScreens?: Array<{
+    screenId: string;
+    screenName: string;
+    maxDepth: number;
+    firstTruncatedDepth: number;
+    truncatedBranchCount: number;
+  }>;
   degradedGeometryNodes: string[];
   classificationFallbacks?: Array<{
     nodeId: string;
@@ -20,18 +32,21 @@ export interface ConfidenceGenerationMetricsInput {
   }>;
 }
 
+export interface ConfidenceComponentMatchEntryInput {
+  figmaFamilyKey: string;
+  figmaFamilyName: string;
+  matchStatus: "matched" | "ambiguous" | "unmatched";
+  confidence: "high" | "medium" | "low" | "none";
+  confidenceScore: number;
+  aliases?: string[];
+}
+
 export interface ConfidenceComponentMatchInput {
   totalFigmaFamilies: number;
   matched: number;
   ambiguous: number;
   unmatched: number;
-  entries: Array<{
-    figmaFamilyKey: string;
-    figmaFamilyName: string;
-    matchStatus: "matched" | "ambiguous" | "unmatched";
-    confidence: "high" | "medium" | "low" | "none";
-    confidenceScore: number;
-  }>;
+  entries: ConfidenceComponentMatchEntryInput[];
 }
 
 export interface ConfidenceVisualQualityInput {
@@ -54,10 +69,16 @@ export interface ConfidenceStorybookEvidenceInput {
   };
 }
 
+export interface ConfidenceScreenComponentOwnershipInput {
+  screenId: string;
+  componentIds: string[];
+}
+
 export interface ConfidenceScoringInput {
   diagnostics: WorkspaceJobDiagnostic[];
   generationMetrics?: ConfidenceGenerationMetricsInput;
   componentMatch?: ConfidenceComponentMatchInput;
+  screenComponents?: ConfidenceScreenComponentOwnershipInput[];
   visualQuality?: ConfidenceVisualQualityInput;
   storybookEvidence?: ConfidenceStorybookEvidenceInput;
   validationPassed: boolean;
@@ -126,6 +147,8 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
+const clamp100 = (n: number): number => Math.max(0, Math.min(100, n));
+
 const levelFromScore = (score: number): ConfidenceLevel => {
   if (score >= 80) return "high";
   if (score >= 60) return "medium";
@@ -139,6 +162,13 @@ const impactFromValue = (
   if (value > 0.6) return "positive";
   if (value < 0.4) return "negative";
   return "neutral";
+};
+
+const average = (values: ReadonlyArray<number>): number => {
+  if (values.length === 0) {
+    return NEUTRAL_VALUE;
+  }
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 };
 
 // --- Signal computations ---
@@ -159,7 +189,7 @@ const computeComponentMatchRate = (
 ): number => {
   if (!match || match.entries.length === 0) return NEUTRAL_VALUE;
   const sum = match.entries.reduce(
-    (acc, e) => acc + e.confidenceScore / 100,
+    (acc, entry) => acc + entry.confidenceScore / 100,
     0,
   );
   return sum / match.entries.length;
@@ -273,93 +303,76 @@ const buildSignals = (input: ConfidenceScoringInput): SignalResult[] => [
 const signalsToContributors = (
   signals: ReadonlyArray<SignalResult>,
 ): ConfidenceContributor[] => {
-  const contributors: ConfidenceContributor[] = signals.map((s) => ({
-    signal: s.signal,
-    impact: impactFromValue(s.value),
-    weight: s.weight,
-    value: s.value,
-    detail: s.detail,
+  const contributors: ConfidenceContributor[] = signals.map((signal) => ({
+    signal: signal.signal,
+    impact: impactFromValue(signal.value),
+    weight: signal.weight,
+    value: signal.value,
+    detail: signal.detail,
   }));
 
   return contributors.sort(
-    (a, b) =>
-      b.weight * Math.abs(1 - b.value) - a.weight * Math.abs(1 - a.value),
+    (left, right) =>
+      right.weight * Math.abs(1 - right.value) -
+      left.weight * Math.abs(1 - left.value),
   );
 };
 
 // --- Screen- and component-level scoring ---
 
-const buildScreenResults = (
+interface ScreenInventoryEntry {
+  screenId: string;
+  screenName: string;
+}
+
+const buildScreenInventory = (
   input: ConfidenceScoringInput,
-  jobScore: number,
-): ScreenConfidenceResult[] => {
-  const screens: ScreenConfidenceResult[] = [];
-  const truncatedSet = new Map<
-    string,
-    { originalCount: number; truncatedCount: number }
-  >();
-  const depthTruncatedSet = new Map<string, { depthLimit: number }>();
+): ScreenInventoryEntry[] => {
+  const ordered: ScreenInventoryEntry[] = [];
+  const byId = new Map<string, ScreenInventoryEntry>();
+  const add = (screenId: string, screenName?: string): void => {
+    const trimmedId = screenId.trim();
+    if (trimmedId.length === 0) {
+      return;
+    }
+    const trimmedName = screenName?.trim();
+    const existing = byId.get(trimmedId);
+    if (existing) {
+      if (
+        (!existing.screenName || existing.screenName === existing.screenId) &&
+        trimmedName &&
+        trimmedName.length > 0
+      ) {
+        existing.screenName = trimmedName;
+      }
+      return;
+    }
+    const entry = {
+      screenId: trimmedId,
+      screenName:
+        trimmedName && trimmedName.length > 0 ? trimmedName : trimmedId,
+    };
+    byId.set(trimmedId, entry);
+    ordered.push(entry);
+  };
 
-  if (input.generationMetrics) {
-    for (const ts of input.generationMetrics.truncatedScreens) {
-      truncatedSet.set(ts.screenName, {
-        originalCount: ts.originalCount,
-        truncatedCount: ts.truncatedCount,
-      });
-    }
-    for (const ds of input.generationMetrics.depthTruncatedScreens ?? []) {
-      depthTruncatedSet.set(ds.screenName, { depthLimit: ds.depthLimit });
-    }
+  for (const screen of input.generationMetrics?.screenElementCounts ?? []) {
+    add(screen.screenId, screen.screenName);
+  }
+  for (const screen of input.generationMetrics?.truncatedScreens ?? []) {
+    add(screen.screenId, screen.screenName);
+  }
+  for (const screen of input.generationMetrics?.depthTruncatedScreens ?? []) {
+    add(screen.screenId, screen.screenName);
+  }
+  const ownership = [...(input.screenComponents ?? [])].sort((left, right) =>
+    left.screenId.localeCompare(right.screenId),
+  );
+  for (const screen of ownership) {
+    add(screen.screenId, screen.screenId);
   }
 
-  const allScreenNames = new Set<string>([
-    ...truncatedSet.keys(),
-    ...depthTruncatedSet.keys(),
-  ]);
-
-  for (const screenName of allScreenNames) {
-    const contributors: ConfidenceContributor[] = [];
-    let penalty = 0;
-
-    const truncInfo = truncatedSet.get(screenName);
-    if (truncInfo) {
-      const truncPenalty = GENERATION_PENALTY_CAPS.truncatedScreen.per;
-      penalty += truncPenalty;
-      contributors.push({
-        signal: "screen_truncation",
-        impact: "negative",
-        weight: SIGNAL_WEIGHTS.generation_integrity,
-        value: 1 - truncPenalty,
-        detail: `truncated from ${String(truncInfo.originalCount)} to ${String(truncInfo.truncatedCount)} nodes`,
-      });
-    }
-
-    const depthInfo = depthTruncatedSet.get(screenName);
-    if (depthInfo) {
-      const depthPenalty = GENERATION_PENALTY_CAPS.depthTruncatedScreen.per;
-      penalty += depthPenalty;
-      contributors.push({
-        signal: "screen_depth_truncation",
-        impact: "negative",
-        weight: SIGNAL_WEIGHTS.generation_integrity,
-        value: 1 - depthPenalty,
-        detail: `depth-truncated at limit ${String(depthInfo.depthLimit)}`,
-      });
-    }
-
-    const screenScore = round1(Math.max(0, jobScore - penalty * 100));
-
-    screens.push({
-      screenId: screenName,
-      screenName,
-      level: levelFromScore(screenScore),
-      score: screenScore,
-      contributors,
-      components: [],
-    });
-  }
-
-  return screens;
+  return ordered;
 };
 
 const buildComponentResults = (
@@ -389,15 +402,126 @@ const buildComponentResults = (
   });
 };
 
+const buildScreenResults = (
+  input: ConfidenceScoringInput,
+  jobScore: number,
+  jobComponentValue: number,
+  componentResults: ReadonlyArray<ComponentConfidenceResult>,
+): ScreenConfidenceResult[] => {
+  const inventory = buildScreenInventory(input);
+  if (inventory.length === 0) {
+    return [];
+  }
+
+  const componentResultsById = new Map(
+    componentResults.map((component) => [component.componentId, component] as const),
+  );
+  const ownershipByScreenId = new Map<string, string[]>();
+  for (const screen of input.screenComponents ?? []) {
+    ownershipByScreenId.set(
+      screen.screenId,
+      [...new Set(screen.componentIds)].filter((componentId) =>
+        componentResultsById.has(componentId),
+      ),
+    );
+  }
+
+  const truncatedByScreenId = new Map(
+    (input.generationMetrics?.truncatedScreens ?? []).map((screen) => [
+      screen.screenId,
+      screen,
+    ] as const),
+  );
+  const depthTruncatedByScreenId = new Map(
+    (input.generationMetrics?.depthTruncatedScreens ?? []).map((screen) => [
+      screen.screenId,
+      screen,
+    ] as const),
+  );
+
+  const baseScoreWithoutComponentSignal =
+    jobScore - jobComponentValue * SIGNAL_WEIGHTS.component_match_rate * 100;
+
+  return inventory.map((screen) => {
+    const contributors: ConfidenceContributor[] = [];
+    const components = (ownershipByScreenId.get(screen.screenId) ?? [])
+      .map((componentId) => componentResultsById.get(componentId))
+      .filter((component): component is ComponentConfidenceResult => Boolean(component));
+
+    const localComponentValue =
+      components.length > 0
+        ? average(components.map((component) => component.score / 100))
+        : jobComponentValue;
+
+    if (input.componentMatch) {
+      contributors.push({
+        signal: "screen_component_match_rate",
+        impact: impactFromValue(localComponentValue),
+        weight: SIGNAL_WEIGHTS.component_match_rate,
+        value: localComponentValue,
+        detail:
+          components.length > 0
+            ? `${String(components.length)} mapped component(s), average ${String(round1(localComponentValue * 100))}/100`
+            : "no screen-specific component mapping; using job-level component match rate",
+      });
+    }
+
+    let penalty = 0;
+
+    const truncation = truncatedByScreenId.get(screen.screenId);
+    if (truncation) {
+      const truncationPenalty = GENERATION_PENALTY_CAPS.truncatedScreen.per;
+      penalty += truncationPenalty;
+      contributors.push({
+        signal: "screen_truncation",
+        impact: "negative",
+        weight: SIGNAL_WEIGHTS.generation_integrity,
+        value: 1 - truncationPenalty,
+        detail: `truncated from ${String(truncation.originalElements)} to ${String(truncation.retainedElements)} elements`,
+      });
+    }
+
+    const depthTruncation = depthTruncatedByScreenId.get(screen.screenId);
+    if (depthTruncation) {
+      const depthPenalty = GENERATION_PENALTY_CAPS.depthTruncatedScreen.per;
+      penalty += depthPenalty;
+      contributors.push({
+        signal: "screen_depth_truncation",
+        impact: "negative",
+        weight: SIGNAL_WEIGHTS.generation_integrity,
+        value: 1 - depthPenalty,
+        detail: `${String(depthTruncation.truncatedBranchCount)} branch(es) truncated at max depth ${String(depthTruncation.maxDepth)}`,
+      });
+    }
+
+    const screenScore = round1(
+      clamp100(
+        baseScoreWithoutComponentSignal +
+          localComponentValue * SIGNAL_WEIGHTS.component_match_rate * 100 -
+          penalty * 100,
+      ),
+    );
+
+    return {
+      screenId: screen.screenId,
+      screenName: screen.screenName,
+      level: levelFromScore(screenScore),
+      score: screenScore,
+      contributors,
+      components,
+    };
+  });
+};
+
 // --- Summary ---
 
 const buildLowConfidenceSummary = (
   contributors: ReadonlyArray<ConfidenceContributor>,
 ): string[] => {
   return contributors
-    .filter((c) => c.impact === "negative")
+    .filter((contributor) => contributor.impact === "negative")
     .slice(0, 3)
-    .map((c) => `${c.signal}: ${c.detail}`);
+    .map((contributor) => `${contributor.signal}: ${contributor.detail}`);
 };
 
 // --- Public API ---
@@ -406,28 +530,24 @@ export const computeConfidenceReport = (
   input: ConfidenceScoringInput,
 ): ConfidenceScoringResult => {
   const signals = buildSignals(input);
-  const rawScore = signals.reduce((acc, s) => acc + s.value * s.weight, 0);
+  const rawScore = signals.reduce(
+    (sum, signal) => sum + signal.value * signal.weight,
+    0,
+  );
   const score = round1(rawScore * 100);
   const level = levelFromScore(score);
   const contributors = signalsToContributors(signals);
 
-  const screens = buildScreenResults(input, score);
-
+  const componentSignal =
+    signals.find((signal) => signal.signal === "component_match_rate")?.value ??
+    NEUTRAL_VALUE;
   const componentResults = buildComponentResults(input.componentMatch);
-  for (const screen of screens) {
-    screen.components = componentResults;
-  }
-  if (screens.length === 0 && componentResults.length > 0) {
-    screens.push({
-      screenId: "_default",
-      screenName: "Default",
-      level,
-      score,
-      contributors: [],
-      components: componentResults,
-    });
-  }
-
+  const screens = buildScreenResults(
+    input,
+    score,
+    componentSignal,
+    componentResults,
+  );
   const lowConfidenceSummary = buildLowConfidenceSummary(contributors);
 
   return { level, score, contributors, screens, lowConfidenceSummary };

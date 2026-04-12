@@ -82,6 +82,24 @@ describe("ScoreDashboard", () => {
     );
   });
 
+  it("renders confidence summary when confidence data is available", () => {
+    const merged = {
+      ...mergeReport(aggregate, {}, null),
+      confidence: {
+        status: "completed" as const,
+        level: "medium" as const,
+        score: 74.2,
+        lowConfidenceSummary: ["Missing diagnostics for 2 screens"],
+        contributors: [],
+      },
+    };
+    render(<ScoreDashboard report={merged} />);
+    expect(screen.getByTestId("confidence-summary")).toHaveTextContent(
+      "Medium Confidence",
+    );
+    expect(screen.getByTestId("confidence-summary")).toHaveTextContent("74.2%");
+  });
+
   it("omits the delta stat when overallDelta is missing", () => {
     const { overallDelta: _delta, ...rest } = aggregate;
     void _delta;

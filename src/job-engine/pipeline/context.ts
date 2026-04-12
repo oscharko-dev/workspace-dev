@@ -98,6 +98,7 @@ export interface StageRuntimeContext {
     diagnostics: PipelineDiagnosticInput[];
     stage?: WorkspaceJobStageName;
   }) => void;
+  getCollectedDiagnostics: () => WorkspaceJobDiagnostic[] | undefined;
 }
 
 export const createStageRuntimeContext = ({
@@ -162,6 +163,7 @@ export const createStageRuntimeContext = ({
           };
         })
       });
-    }
+    },
+    getCollectedDiagnostics: () => executionContext.getCollectedDiagnostics()
   };
 };

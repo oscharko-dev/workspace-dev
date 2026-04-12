@@ -2,11 +2,13 @@ import {
   type HistoryRuns,
   type Hotspot,
   type HotspotSeverity,
+  type JobConfidence,
   type LastRunAggregate,
   type MergedFixture,
   type MergedReport,
   type MergedScreen,
   type ScoreEntry,
+  type ScreenConfidence,
   type ScreenReport,
 } from "./types";
 
@@ -132,6 +134,7 @@ export function hotspotsMatchSeverity(
 function mergedScreenFrom(
   score: ScoreEntry,
   artifacts: ScreenArtifacts | undefined,
+  confidence: ScreenConfidence | undefined,
 ): MergedScreen {
   const fixtureId = score.fixtureId;
   const screenId = normalizedScreenId(fixtureId, score.screenId);
@@ -154,7 +157,51 @@ function mergedScreenFrom(
     actualUrl: artifacts?.actualUrl ?? null,
     diffUrl: artifacts?.diffUrl ?? null,
     worstSeverity: worst,
+    ...(confidence ? { confidence } : {}),
   };
+}
+
+function confidenceByScreenId(
+  confidence: JobConfidence | undefined,
+): Map<string, ScreenConfidence> {
+  const byId = new Map<string, ScreenConfidence>();
+  for (const screen of confidence?.screens ?? []) {
+    if (!byId.has(screen.screenId)) {
+      byId.set(screen.screenId, screen);
+    }
+  }
+  return byId;
+}
+
+function confidenceByScreenName(
+  confidence: JobConfidence | undefined,
+): Map<string, ScreenConfidence> {
+  const byName = new Map<string, ScreenConfidence>();
+  for (const screen of confidence?.screens ?? []) {
+    const screenName = screen.screenName.trim();
+    if (screenName.length > 0 && !byName.has(screenName)) {
+      byName.set(screenName, screen);
+    }
+  }
+  return byName;
+}
+
+function confidenceForScore(
+  score: ScoreEntry,
+  confidence: JobConfidence | undefined,
+  byId: ReadonlyMap<string, ScreenConfidence>,
+  byName: ReadonlyMap<string, ScreenConfidence>,
+  allowSingleScreenFallback: boolean,
+): ScreenConfidence | undefined {
+  const screenId = normalizedScreenId(score.fixtureId, score.screenId);
+  const screenName = score.screenName?.trim();
+  return (
+    byId.get(screenId) ??
+    (screenName ? byName.get(screenName) : undefined) ??
+    (allowSingleScreenFallback && confidence?.screens?.length === 1
+      ? confidence.screens[0]
+      : undefined)
+  );
 }
 
 /**
@@ -166,15 +213,29 @@ export function mergeReport(
   aggregate: LastRunAggregate,
   artifactsByKey: Record<string, ScreenArtifacts>,
   history: HistoryRuns | null,
+  confidence?: JobConfidence,
 ): MergedReport {
   const screensByKey: Record<string, MergedScreen> = {};
   const fixtureMap = new Map<string, MergedScreen[]>();
+  const screenConfidenceById = confidenceByScreenId(confidence);
+  const screenConfidenceByName = confidenceByScreenName(confidence);
+  const allowSingleScreenFallback = aggregate.scores.length === 1;
   let hasImages = false;
 
   for (const score of aggregate.scores) {
     const key = screenKey(score.fixtureId, score.screenId, score.viewportId);
     const artifacts = artifactsByKey[key];
-    const merged = mergedScreenFrom(score, artifacts);
+    const merged = mergedScreenFrom(
+      score,
+      artifacts,
+      confidenceForScore(
+        score,
+        confidence,
+        screenConfidenceById,
+        screenConfidenceByName,
+        allowSingleScreenFallback,
+      ),
+    );
     screensByKey[key] = merged;
     if (
       merged.diffUrl !== null ||
@@ -209,5 +270,6 @@ export function mergeReport(
     screensByKey,
     history,
     hasImages,
+    ...(confidence ? { confidence } : {}),
   };
 }

@@ -4920,6 +4920,202 @@ test("ValidateProjectService reads generated.project and writes validation.summa
   assert.deepEqual(executionContext.job.visualAudit, { status: "not_requested" });
 });
 
+test("ValidateProjectService confidence uses collected diagnostics, generation screen inventory, and manifest ownership", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  executionContext.getCollectedDiagnostics = () => [
+    {
+      code: "TEST_WARNING",
+      message: "test warning",
+      suggestion: "fix",
+      stage: "validate.project",
+      severity: "warning",
+    },
+  ];
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir,
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-confidence-screen-inventory",
+    } satisfies GenerationDiffContext,
+  });
+  const generationMetricsPath = path.join(
+    executionContext.paths.generatedProjectDir,
+    "generation-metrics.json",
+  );
+  await writeFile(
+    generationMetricsPath,
+    `${JSON.stringify(
+      {
+        fetchedNodes: 200,
+        skippedHidden: 0,
+        skippedPlaceholders: 0,
+        screenElementCounts: [
+          { screenId: "home", screenName: "Home", elements: 120 },
+          { screenId: "settings", screenName: "Settings", elements: 90 },
+        ],
+        truncatedScreens: [
+          {
+            screenId: "home",
+            screenName: "Home",
+            originalElements: 120,
+            retainedElements: 80,
+          },
+        ],
+        depthTruncatedScreens: [],
+        degradedGeometryNodes: [],
+        classificationFallbacks: [],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generationMetrics,
+    stage: "codegen.generate",
+    absolutePath: generationMetricsPath,
+  });
+
+  const componentManifestPath = path.join(
+    executionContext.paths.generatedProjectDir,
+    "component-manifest.json",
+  );
+  await writeFile(
+    componentManifestPath,
+    `${JSON.stringify(
+      {
+        screens: [
+          {
+            screenId: "home",
+            screenName: "Home",
+            file: "src/screens/Home.tsx",
+            components: [
+              {
+                irNodeId: "node-home-button",
+                irNodeName: "Button",
+                irNodeType: "button",
+                file: "src/screens/Home.tsx",
+                startLine: 1,
+                endLine: 10,
+              },
+            ],
+          },
+          {
+            screenId: "settings",
+            screenName: "Settings",
+            file: "src/screens/Settings.tsx",
+            components: [
+              {
+                irNodeId: "node-settings-card",
+                irNodeName: "Card",
+                irNodeType: "card",
+                file: "src/screens/Settings.tsx",
+                startLine: 1,
+                endLine: 10,
+              },
+            ],
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentManifest,
+    stage: "codegen.generate",
+    absolutePath: componentManifestPath,
+  });
+
+  const matchArtifact = createComponentMatchReportArtifactForStageServices();
+  matchArtifact.summary.totalFigmaFamilies = 2;
+  matchArtifact.summary.storybookFamilyCount = 2;
+  matchArtifact.summary.storybookEntryCount = 2;
+  matchArtifact.summary.matched = 2;
+  matchArtifact.entries.push({
+    ...structuredClone(matchArtifact.entries[0]),
+    figma: {
+      familyKey: "card-family",
+      familyName: "Card",
+      nodeCount: 1,
+      variantProperties: [],
+    },
+    libraryResolution: {
+      ...matchArtifact.entries[0].libraryResolution,
+      componentKey: "Card",
+    },
+    storybookFamily: {
+      familyId: "family-card",
+      title: "Components/Card",
+      name: "Card",
+      tier: "Components",
+      storyCount: 1,
+    },
+    resolvedApi: {
+      ...matchArtifact.entries[0].resolvedApi,
+      status: "resolved",
+      componentKey: "Card",
+    },
+  });
+  const componentMatchReportPath = path.join(
+    executionContext.paths.jobDir,
+    "component-match-report.json",
+  );
+  await writeFile(
+    componentMatchReportPath,
+    `${JSON.stringify(matchArtifact, null, 2)}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath,
+  });
+
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => createSuccessfulValidationResult(),
+  });
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  const confidence = await executionContext.artifactStore.getValue<{
+    status?: string;
+    contributors?: Array<{ signal?: string; value?: number }>;
+    screens?: Array<{
+      screenId?: string;
+      components?: Array<{ componentName?: string }>;
+    }>;
+  }>(STAGE_ARTIFACT_KEYS.confidenceResult);
+  assert.equal(confidence?.status, "completed");
+  assert.equal(
+    confidence?.contributors?.find(
+      (contributor) => contributor.signal === "diagnostic_severity",
+    )?.value,
+    0.95,
+  );
+  assert.deepEqual(
+    (confidence?.screens ?? []).map((screen) => screen.screenId).sort(),
+    ["home", "settings"],
+  );
+  assert.deepEqual(
+    confidence?.screens?.find((screen) => screen.screenId === "home")?.components?.map(
+      (component) => component.componentName,
+    ),
+    ["Button"],
+  );
+  assert.deepEqual(
+    confidence?.screens?.find((screen) => screen.screenId === "settings")?.components?.map(
+      (component) => component.componentName,
+    ),
+    ["Card"],
+  );
+});
+
 test("ValidateProjectService runs visual audit against the built dist bundle and persists visual artifacts", async () => {
   const baselineRelativePath = path.join("fixtures", "visual-baseline.png");
   const { executionContext, stageContextFor } = await createExecutionContext({

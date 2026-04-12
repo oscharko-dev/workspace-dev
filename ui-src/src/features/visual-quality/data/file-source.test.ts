@@ -313,20 +313,24 @@ describe("loadReportFromUrl", () => {
   });
 
   it("loads a remote visual-quality/report.json and derives sibling asset URLs", async () => {
-    vi.spyOn(globalThis, "fetch").mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          status: "completed",
-          referenceSource: "frozen_fixture",
-          capturedAt: "2026-04-11T12:00:00.000Z",
-          overallScore: 99.1,
-          interpretation: "Excellent parity",
-          dimensions: [],
-          hotspots: [],
-        }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
-      ),
-    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/visual-quality/report.json")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            referenceSource: "frozen_fixture",
+            capturedAt: "2026-04-11T12:00:00.000Z",
+            overallScore: 99.1,
+            interpretation: "Excellent parity",
+            dimensions: [],
+            hotspots: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
 
     const report = await loadReportFromUrl(
       "https://example.test/workspace/jobs/job-1/files/visual-quality/report.json",
@@ -345,6 +349,52 @@ describe("loadReportFromUrl", () => {
     expect(screen?.diffUrl).toBe(
       "https://example.test/workspace/jobs/job-1/files/visual-quality/diff.png",
     );
+  });
+
+  it("hydrates confidence from sibling job endpoints when loading by report URL", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.endsWith("/visual-quality/report.json")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            overallScore: 99.1,
+            dimensions: [],
+            hotspots: [],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url.endsWith("/files/confidence-report.json")) {
+        return new Response(
+          JSON.stringify({
+            status: "completed",
+            level: "low",
+            score: 62.5,
+            screens: [
+              {
+                screenId: "visual-quality",
+                screenName: "Visual Quality",
+                level: "low",
+                score: 62.5,
+                contributors: [],
+                components: [],
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const report = await loadReportFromUrl(
+      "https://example.test/workspace/jobs/job-1/files/visual-quality/report.json",
+    );
+
+    expect(report.confidence?.status).toBe("completed");
+    expect(report.confidence?.level).toBe("low");
+    expect(report.confidence?.screens?.[0]?.screenId).toBe("visual-quality");
   });
 
   it("loads a remote visual-parity-report.json as summary-only state", async () => {

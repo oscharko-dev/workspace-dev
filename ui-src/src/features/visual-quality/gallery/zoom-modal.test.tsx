@@ -16,6 +16,10 @@ vi.mock("./overlay-heatmap", () => ({
   OverlayHeatmap: () => <div data-testid="overlay-heatmap">heatmap</div>
 }));
 
+vi.mock("./overlay-confidence-view", () => ({
+  OverlayConfidenceView: () => <div data-testid="overlay-confidence">confidence</div>
+}));
+
 const sampleScreen: MergedScreen = {
   key: "fixture-1:screen-1:desktop",
   fixtureId: "fixture-1",
@@ -28,7 +32,15 @@ const sampleScreen: MergedScreen = {
   referenceUrl: "/reference.png",
   actualUrl: "/actual.png",
   diffUrl: "/diff.png",
-  worstSeverity: null
+  worstSeverity: null,
+  confidence: {
+    screenId: "screen-1",
+    screenName: "Primary screen",
+    level: "high",
+    score: 99,
+    contributors: [],
+    components: [],
+  },
 };
 
 function ZoomModalHarness(): JSX.Element {
@@ -85,5 +97,11 @@ describe("ZoomModal", () => {
       expect(screen.queryByTestId("zoom-modal")).not.toBeInTheDocument();
     });
     expect(trigger).toHaveFocus();
+  });
+
+  it("renders confidence overlay in confidence mode", () => {
+    render(<ZoomModal screen={sampleScreen} mode="confidence" onClose={() => {}} />);
+
+    expect(screen.getByTestId("overlay-confidence")).toBeVisible();
   });
 });

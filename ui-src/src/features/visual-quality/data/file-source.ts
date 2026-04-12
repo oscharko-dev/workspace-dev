@@ -1,4 +1,6 @@
 import {
+  parseJobConfidence,
+  parseJobConfidenceEnvelope,
   parseHistory,
   parseLastRun,
   parseScreenReport,
@@ -13,6 +15,7 @@ import {
   type ScreenArtifacts,
 } from "./report-loader";
 import {
+  type JobConfidence,
   type HistoryRuns,
   type LastRunAggregate,
   type MergedReport,
@@ -97,6 +100,13 @@ function basename(input: string): string {
     return normalized;
   }
   return normalized.slice(index + 1);
+}
+
+function pathnameFor(input: string): string {
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(input)) {
+    return new URL(input).pathname;
+  }
+  return stripQueryAndHash(input);
 }
 
 function resolveUrl(baseUrl: string, relativePath: string): string {
@@ -382,9 +392,16 @@ async function buildBenchmarkReportFromFiles(
     collected.legacyByFixture,
     collected.references,
   );
+  const confidence = await parseOptionalConfidenceFromFiles(picked);
   return {
-    ...mergeReport(aggregate, collected.artifactsByKey, history),
+    ...mergeReport(
+      aggregate,
+      collected.artifactsByKey,
+      history,
+      confidence,
+    ),
     sourceKind: "benchmark",
+    ...(confidence ? { confidence } : {}),
   };
 }
 
@@ -504,14 +521,18 @@ function buildStandaloneReport(
     actualUrl?: string;
     diffUrl?: string;
   },
+  confidenceOverride?: JobConfidence,
 ): MergedReport {
+  const confidence = confidenceOverride ?? report.confidence;
   return {
     ...mergeReport(
       buildStandaloneAggregate(report),
       buildStandaloneArtifacts(report, assets),
       null,
+      confidence,
     ),
     sourceKind: "visual-quality",
+    ...(confidence ? { confidence } : {}),
   };
 }
 
@@ -571,11 +592,29 @@ async function buildStandaloneReportFromFiles(
   const referenceFile = siblingFile(picked, parentDir, "reference.png");
   const actualFile = siblingFile(picked, parentDir, "actual.png");
   const diffFile = siblingFile(picked, parentDir, "diff.png");
-  return buildStandaloneReport(report, {
+  const merged = buildStandaloneReport(report, {
     ...(referenceFile ? { referenceUrl: blobUrl(referenceFile.file) } : {}),
     ...(actualFile ? { actualUrl: blobUrl(actualFile.file) } : {}),
     ...(diffFile ? { diffUrl: blobUrl(diffFile.file) } : {}),
   });
+  if (merged.confidence) {
+    return merged;
+  }
+  const confidence = await parseOptionalConfidenceFromFiles(picked);
+  if (!confidence) {
+    return merged;
+  }
+  return {
+    ...buildStandaloneReport(
+      report,
+      {
+        ...(referenceFile ? { referenceUrl: blobUrl(referenceFile.file) } : {}),
+        ...(actualFile ? { actualUrl: blobUrl(actualFile.file) } : {}),
+        ...(diffFile ? { diffUrl: blobUrl(diffFile.file) } : {}),
+      },
+      confidence,
+    ),
+  };
 }
 
 async function buildVisualParityReportFromFiles(
@@ -592,6 +631,28 @@ async function buildVisualParityReportFromFiles(
       JSON.parse(await readText(parityFile.file)) as unknown,
     ),
   );
+}
+
+function deriveJobBaseUrl(reportUrl: string): string | null {
+  const segments = pathSegments(pathnameFor(reportUrl));
+  const workspaceIndex = segments.indexOf("workspace");
+  if (workspaceIndex < 0) {
+    return null;
+  }
+  if (segments[workspaceIndex + 1] !== "jobs") {
+    return null;
+  }
+  const jobId = segments[workspaceIndex + 2];
+  if (!jobId || segments[workspaceIndex + 3] !== "files") {
+    return null;
+  }
+
+  const jobBasePath = `/${["workspace", "jobs", jobId].join("/")}`;
+  if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(reportUrl)) {
+    const url = new URL(reportUrl);
+    return new URL(jobBasePath, `${url.protocol}//${url.host}`).toString();
+  }
+  return jobBasePath;
 }
 
 function benchmarkAssetPrefix(score: ScoreEntry): string {
@@ -616,6 +677,53 @@ async function fetchOptionalJson<T>(
     return parser(raw);
   } catch {
     return null;
+  }
+}
+
+async function fetchConfidenceFromJobEndpoints(
+  reportUrl: string,
+): Promise<JobConfidence | undefined> {
+  const jobBaseUrl = deriveJobBaseUrl(reportUrl);
+  if (!jobBaseUrl) {
+    return undefined;
+  }
+
+  const filesConfidence = await fetchOptionalJson(
+    `${jobBaseUrl}/files/confidence-report.json`,
+    parseJobConfidence,
+  );
+  if (filesConfidence) {
+    return filesConfidence;
+  }
+
+  const statusConfidence = await fetchOptionalJson(
+    jobBaseUrl,
+    parseJobConfidenceEnvelope,
+  );
+  if (statusConfidence) {
+    return statusConfidence;
+  }
+
+  const resultConfidence = await fetchOptionalJson(
+    `${jobBaseUrl}/result`,
+    parseJobConfidenceEnvelope,
+  );
+  return resultConfidence ?? undefined;
+}
+
+async function parseOptionalConfidenceFromFiles(
+  picked: PickedFile[],
+): Promise<JobConfidence | undefined> {
+  const confidenceReport = pickByName(picked, "confidence-report.json");
+  if (!confidenceReport) {
+    return undefined;
+  }
+  try {
+    return parseJobConfidence(
+      JSON.parse(await readText(confidenceReport.file)) as unknown,
+    );
+  } catch {
+    return undefined;
   }
 }
 
@@ -658,9 +766,11 @@ async function buildBenchmarkReportFromUrl(
     aggregate,
     reportUrl,
   );
+  const confidence = await fetchConfidenceFromJobEndpoints(reportUrl);
   return {
-    ...mergeReport(aggregate, artifactsByKey, history),
+    ...mergeReport(aggregate, artifactsByKey, history, confidence),
     sourceKind: "benchmark",
+    ...(confidence ? { confidence } : {}),
   };
 }
 
@@ -669,11 +779,29 @@ async function buildStandaloneReportFromUrl(
   raw: unknown,
 ): Promise<MergedReport> {
   const report = parseStandaloneVisualQualityReport(raw);
-  return buildStandaloneReport(report, {
+  const merged = buildStandaloneReport(report, {
     referenceUrl: resolveUrl(reportUrl, "reference.png"),
     actualUrl: resolveUrl(reportUrl, "actual.png"),
     diffUrl: resolveUrl(reportUrl, "diff.png"),
   });
+  if (merged.confidence) {
+    return merged;
+  }
+  const confidence = await fetchConfidenceFromJobEndpoints(reportUrl);
+  if (!confidence) {
+    return merged;
+  }
+  return {
+    ...buildStandaloneReport(
+      report,
+      {
+        referenceUrl: resolveUrl(reportUrl, "reference.png"),
+        actualUrl: resolveUrl(reportUrl, "actual.png"),
+        diffUrl: resolveUrl(reportUrl, "diff.png"),
+      },
+      confidence,
+    ),
+  };
 }
 
 function detectRemoteMode(
