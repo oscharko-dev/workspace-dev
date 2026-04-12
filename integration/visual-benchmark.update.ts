@@ -366,6 +366,10 @@ const updateMetadataFromSnapshot = (
     capturedAt?: string;
   },
 ): VisualBenchmarkFixtureMetadata => {
+  const representativeDeviceScaleFactor =
+    snapshot.viewport.deviceScaleFactor ??
+    metadata.viewport.deviceScaleFactor ??
+    1;
   return {
     ...metadata,
     ...(options?.capturedAt ? { capturedAt: options.capturedAt } : {}),
@@ -376,8 +380,7 @@ const updateMetadataFromSnapshot = (
     },
     viewport: {
       ...snapshot.viewport,
-      deviceScaleFactor:
-        snapshot.viewport.deviceScaleFactor ?? metadata.export.scale,
+      deviceScaleFactor: representativeDeviceScaleFactor,
     },
   };
 };
@@ -465,7 +468,10 @@ export const updateVisualBenchmarkReferences = async (
       viewport: {
         width: firstViewportArtifact.viewport.width,
         height: firstViewportArtifact.viewport.height,
-        deviceScaleFactor: metadata.export.scale,
+        deviceScaleFactor:
+          firstViewportArtifact.viewport.deviceScaleFactor ??
+          metadata.viewport.deviceScaleFactor ??
+          1,
       },
     };
 
@@ -598,7 +604,9 @@ export const runVisualBenchmarkLiveAudit = async (
           width: screen.viewport.width,
           height: screen.viewport.height,
           deviceScaleFactor:
-            screen.viewport.deviceScaleFactor ?? metadata.export.scale,
+            screen.viewport.deviceScaleFactor ??
+            metadata.viewport.deviceScaleFactor ??
+            1,
         },
       };
       const liveScreenReference =

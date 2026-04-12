@@ -96,6 +96,12 @@ jobs:
           browsers="${VISUAL_BENCHMARK_BROWSERS//,/ }"
           pnpm exec playwright install-deps $browsers
 
+      - name: Run visual benchmark verification suites
+        run: |
+          pnpm exec tsx --test src/job-engine/visual-capture.test.ts src/job-engine/visual-diff.test.ts src/job-engine/visual-scoring.test.ts src/job-engine/pipeline/orchestrator.test.ts
+          pnpm exec tsx --test integration/visual-benchmark.execution.test.ts integration/visual-benchmark.test.ts integration/visual-benchmark-runner.error-isolation.test.ts integration/visual-quality-config.test.ts
+          pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts
+
       - name: Run frozen visual benchmark runner
         id: benchmark-run
         run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
@@ -235,7 +241,7 @@ jobs:
         run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "${{ matrix.browser }}"
 
       - name: Summarize visual quality report
-        if: always()
+        if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
         run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
 
       - name: Upload visual benchmark artifacts (${{ matrix.browser }})

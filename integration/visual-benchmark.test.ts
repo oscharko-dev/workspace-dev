@@ -1859,6 +1859,19 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
     "utf8",
   );
   assert.match(workflow, /name:\s+benchmark/);
+  assert.match(workflow, /Run visual benchmark verification suites/);
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test src\/job-engine\/visual-capture\.test\.ts src\/job-engine\/visual-diff\.test\.ts src\/job-engine\/visual-scoring\.test\.ts src\/job-engine\/pipeline\/orchestrator\.test\.ts/,
+  );
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test integration\/visual-benchmark\.execution\.test\.ts integration\/visual-benchmark\.test\.ts integration\/visual-benchmark-runner\.error-isolation\.test\.ts integration\/visual-quality-config\.test\.ts/,
+  );
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test integration\/mutation-testing\.integration\.test\.ts integration\/visual-benchmark\.cli\.test\.ts integration\/visual-benchmark-summary\.test\.ts/,
+  );
   assert.match(workflow, /pnpm benchmark:visual -- --ci --enforce-thresholds/);
   assert.doesNotMatch(workflow, /FIGMA_ACCESS_TOKEN/);
   assert.doesNotMatch(workflow, /FIGMA_FILE_KEY/);
@@ -1873,6 +1886,10 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   assert.match(workflow, /pnpm perf:web:assert/);
   assert.match(workflow, /pnpm composite:quality/);
   assert.match(workflow, /composite-quality-report\.json/);
+  assert.match(
+    workflow,
+    /if: always\(\) && hashFiles\('artifacts\/visual-benchmark\/last-run\.json'\) != ''/,
+  );
   assert.doesNotMatch(
     workflow,
     /name:\s+Post or update visual benchmark PR comment/,

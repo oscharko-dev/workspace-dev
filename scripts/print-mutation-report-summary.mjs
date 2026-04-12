@@ -7,6 +7,7 @@ const TARGET_FILES = [
   "src/schemas.ts",
   "src/server/request-security.ts",
   "src/job-engine/pipeline/orchestrator.ts",
+  "src/job-engine/visual-scoring.ts",
   "src/parity/ir.ts"
 ];
 
