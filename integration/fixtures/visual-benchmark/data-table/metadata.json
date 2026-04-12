@@ -1,20 +1,20 @@
 {
-  "capturedAt": "2026-04-09T16:18:13.037Z",
+  "capturedAt": "2026-04-12T07:46:31.708Z",
   "export": {
     "format": "png",
     "scale": 2
   },
   "fixtureId": "data-table",
   "source": {
-    "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
-    "lastModified": "2026-03-30T20:59:16Z",
-    "nodeId": "2:10002",
-    "nodeName": "Data Table — Sortable Columns, Pagination, Filters"
+    "fileKey": "M7FGS79qLfr3O4OXEYbxy0",
+    "lastModified": "2026-04-12T06:31:34Z",
+    "nodeId": "1:63225",
+    "nodeName": "Bedarfsermittlung Investitionskredit Flow ID-003"
   },
   "version": 2,
   "viewport": {
-    "deviceScaleFactor": 2,
-    "height": 960,
+    "deviceScaleFactor": 1,
+    "height": 800,
     "width": 1280
   }
 }

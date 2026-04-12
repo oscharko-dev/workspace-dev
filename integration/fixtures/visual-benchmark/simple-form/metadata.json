@@ -1,5 +1,5 @@
 {
-  "capturedAt": "2026-04-09T16:18:41.052Z",
+  "capturedAt": "2026-04-12T07:46:31.708Z",
   "export": {
     "format": "png",
     "scale": 2
@@ -7,14 +7,14 @@
   "fixtureId": "simple-form",
   "source": {
     "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
-    "lastModified": "2026-03-30T20:59:16Z",
+    "lastModified": "2026-04-12T06:21:51Z",
     "nodeId": "1:65671",
     "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
   },
   "version": 2,
   "viewport": {
-    "deviceScaleFactor": 2,
-    "height": 1578,
-    "width": 1336
+    "deviceScaleFactor": 1,
+    "height": 800,
+    "width": 1280
   }
 }

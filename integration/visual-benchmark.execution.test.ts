@@ -353,8 +353,8 @@ test(
       assert.deepEqual(
         result.screens[0]?.viewports?.map((viewport) => viewport.viewport),
         [
-          { width: 640, height: 480 },
-          { width: 390, height: 844 },
+          { width: 640, height: 480, deviceScaleFactor: 1 },
+          { width: 390, height: 844, deviceScaleFactor: 3 },
         ],
       );
 

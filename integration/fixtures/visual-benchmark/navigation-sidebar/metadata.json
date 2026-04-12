@@ -1,20 +1,20 @@
 {
-  "capturedAt": "2026-04-09T16:18:29.420Z",
+  "capturedAt": "2026-04-12T07:46:31.708Z",
   "export": {
     "format": "png",
     "scale": 2
   },
   "fixtureId": "navigation-sidebar",
   "source": {
-    "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
-    "lastModified": "2026-03-30T20:59:16Z",
-    "nodeId": "2:10003",
-    "nodeName": "Navigation Sidebar — Menu Items, Nested Groups, Icons"
+    "fileKey": "LATywBmBgvfBp1VvwUsGNB",
+    "lastModified": "2026-04-12T06:27:56Z",
+    "nodeId": "1:48176",
+    "nodeName": "Empty State ID-001.1_v1"
   },
   "version": 2,
   "viewport": {
-    "deviceScaleFactor": 2,
-    "height": 768,
-    "width": 1024
+    "deviceScaleFactor": 1,
+    "height": 800,
+    "width": 1280
   }
 }

@@ -42,6 +42,28 @@ describe("parseLastRun", () => {
       }),
     ).toThrow(/Invalid last-run/);
   });
+
+  it("derives overallScore from score entries when legacy aggregates omit it", () => {
+    const parsed = parseLastRun({
+      version: 2,
+      ranAt: "2026-04-11T00:00:00Z",
+      scores: [
+        { fixtureId: "a", score: 80 },
+        { fixtureId: "b", score: 100 },
+      ],
+    });
+    expect(parsed.overallScore).toBe(90);
+  });
+
+  it("rejects missing overallScore when scores are empty", () => {
+    expect(() =>
+      parseLastRun({
+        version: 2,
+        ranAt: "2026-04-11T00:00:00Z",
+        scores: [],
+      }),
+    ).toThrow(/overallScore is missing/);
+  });
 });
 
 describe("parseScreenReport", () => {

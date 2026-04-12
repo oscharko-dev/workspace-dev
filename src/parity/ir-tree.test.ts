@@ -300,7 +300,7 @@ test("shouldTruncateChildrenByDepth preserves accordion nodes beyond max depth w
 
 // ── E2E: Figma file round-trip ───────────────────────────────────────────────
 
-const FIGMA_BOARD_KEY = process.env.FIGMA_BOARD_KEY ?? "";
+const FIGMA_BOARD_KEY = process.env.FIGMA_BOARD_KEY ?? process.env.FIGMA_FILE_KEY ?? "";
 const FIGMA_ACCESS_TOKEN = process.env.FIGMA_ACCESS_TOKEN ?? "";
 
 const shouldRunE2E = FIGMA_BOARD_KEY.length > 0 && FIGMA_ACCESS_TOKEN.length > 0;

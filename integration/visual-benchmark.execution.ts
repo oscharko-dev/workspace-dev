@@ -100,6 +100,7 @@ export interface VisualBenchmarkFixtureExecutionArtifacts extends VisualBenchmar
   viewport: {
     width: number;
     height: number;
+    deviceScaleFactor?: number;
   };
 }
 
@@ -113,6 +114,7 @@ export interface VisualBenchmarkScreenViewportArtifact {
   viewport: {
     width: number;
     height: number;
+    deviceScaleFactor?: number;
   };
   browserArtifacts?: BrowserScreenViewportArtifact[];
   crossBrowserConsistency?: CrossBrowserConsistencyResult;
@@ -137,6 +139,7 @@ export interface VisualBenchmarkFixtureScreenArtifact {
   viewport: {
     width: number;
     height: number;
+    deviceScaleFactor?: number;
   };
   viewports?: VisualBenchmarkScreenViewportArtifact[];
   browserArtifacts?: BrowserScreenViewportArtifact[];
@@ -615,6 +618,53 @@ const isWorkspaceVisualQualityReport = (
   value: unknown,
 ): value is WorkspaceVisualQualityReport => {
   return typeof value === "object" && value !== null && "status" in value;
+};
+
+const recomputeVisualQualityFromBuffers = ({
+  referenceBuffer,
+  screenshotBuffer,
+  viewport,
+  qualityConfig,
+  warning,
+}: {
+  referenceBuffer: Buffer;
+  screenshotBuffer: Buffer;
+  viewport: {
+    width: number;
+    height: number;
+    deviceScaleFactor?: number;
+  };
+  qualityConfig?: VisualQualityConfig;
+  warning: string;
+}): { report: WorkspaceVisualQualityReport; diffBuffer: Buffer } => {
+  const diffResult = comparePngBuffers({
+    referenceBuffer,
+    testBuffer: screenshotBuffer,
+  });
+  const recomputed = computeVisualQualityReport({
+    diffResult,
+    diffImagePath: DEFAULT_DIFF_IMAGE_PATH,
+    viewport,
+  });
+  const report: WorkspaceVisualQualityReport = applyVisualQualityConfigToReport(
+    {
+      status: "completed",
+      referenceSource: "frozen_fixture",
+      capturedAt: new Date().toISOString(),
+      overallScore: recomputed.overallScore,
+      interpretation: recomputed.interpretation,
+      dimensions: recomputed.dimensions,
+      diffImagePath: recomputed.diffImagePath,
+      hotspots: recomputed.hotspots,
+      metadata: recomputed.metadata,
+      warnings: [warning],
+    },
+    qualityConfig,
+  );
+  return {
+    report,
+    diffBuffer: diffResult.diffImageBuffer,
+  };
 };
 
 const mergeOptionalRecords = (
@@ -1097,11 +1147,14 @@ const executeStorybookComponentViewport = async ({
       return {
         viewportId: activeViewport.id,
         viewportLabel: activeViewport.label ?? activeViewport.id,
-        score: report.overallScore ?? 100,
+        score: report.overallScore,
         screenshotBuffer: normalizedActual.buffer,
         diffBuffer: diffResult.diffImageBuffer,
         report,
-        viewport: normalizedViewport,
+        viewport: {
+          ...normalizedViewport,
+          deviceScaleFactor: activeDeviceScaleFactor,
+        },
       };
     } finally {
       await context.close();
@@ -1530,7 +1583,7 @@ const executeVisualBenchmarkViewport = async ({
     if (isWorkspaceVisualQualityReport(report)) {
       report = applyVisualQualityConfigToReport(report, options?.qualityConfig);
     }
-    const effectiveVisualQuality = isWorkspaceVisualQualityReport(report)
+    let effectiveVisualQuality = isWorkspaceVisualQualityReport(report)
       ? report
       : visualQuality !== undefined
         ? applyVisualQualityConfigToReport(
@@ -1547,9 +1600,58 @@ const executeVisualBenchmarkViewport = async ({
           `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' viewport '${activeViewport.id}' did not produce a completed visual quality score.`,
         );
       }
+      try {
+        const referenceBuffer = await readFile(screenViewportPaths.referencePngPath);
+        const fallback = recomputeVisualQualityFromBuffers({
+          referenceBuffer,
+          screenshotBuffer,
+          viewport: {
+            width: activeViewport.width,
+            height: activeViewport.height,
+            deviceScaleFactor: activeDeviceScaleFactor,
+          },
+          qualityConfig: options?.qualityConfig,
+          warning:
+            "Visual quality report was incomplete; recomputed score from captured screenshot and frozen reference.",
+        });
+        report = fallback.report;
+        diffBuffer = diffBuffer ?? fallback.diffBuffer;
+        effectiveVisualQuality = fallback.report;
+      } catch (error: unknown) {
+        if (!(isErrno(error) && error.code === "ENOENT")) {
+          throw error;
+        }
+        const fallbackWarning =
+          `Frozen reference image is missing for '${fixtureId}' screen '${screen.screenId}' viewport '${activeViewport.id}'. ` +
+          "Returning score 0 in incomplete mode so baseline refresh can proceed.";
+        const fallbackReport: WorkspaceVisualQualityReport = {
+          status: "completed",
+          referenceSource: "frozen_fixture",
+          capturedAt: new Date().toISOString(),
+          overallScore: 0,
+          warnings: [fallbackWarning],
+          metadata: {
+            viewport: {
+              width: activeViewport.width,
+              height: activeViewport.height,
+              deviceScaleFactor: activeDeviceScaleFactor,
+            },
+          },
+        };
+        report = fallbackReport;
+        effectiveVisualQuality = fallbackReport;
+      }
+    }
+    if (
+      effectiveVisualQuality?.status !== "completed" ||
+      typeof effectiveVisualQuality.overallScore !== "number"
+    ) {
+      throw new Error(
+        `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' viewport '${activeViewport.id}' has no valid visual quality score after fallback recomputation.`,
+      );
     }
 
-    const viewport = effectiveVisualQuality?.metadata?.viewport ?? {
+    const viewport = effectiveVisualQuality.metadata?.viewport ?? {
       width: activeViewport.width,
       height: activeViewport.height,
       deviceScaleFactor: activeDeviceScaleFactor,
@@ -1590,17 +1692,29 @@ const executeVisualBenchmarkViewport = async ({
                   browserReport.metadata !== undefined
                     ? browserReport.metadata.viewport
                     : viewport;
+                let browserScreenshotBuffer: Buffer;
+                try {
+                  browserScreenshotBuffer = await readFile(entry.actualImagePath);
+                } catch (error: unknown) {
+                  if (options?.allowIncompleteVisualQuality === true) {
+                    return null;
+                  }
+                  throw error;
+                }
                 return {
                   browser: entry.browser,
                   viewportId: activeViewport.id,
                   viewportLabel: activeViewport.label ?? activeViewport.id,
                   score: entry.overallScore,
-                  screenshotBuffer: await readFile(entry.actualImagePath),
+                  screenshotBuffer: browserScreenshotBuffer,
                   diffBuffer: browserDiffBuffer,
                   report: browserReport,
                   viewport: {
                     width: browserViewport.width,
                     height: browserViewport.height,
+                    ...(typeof browserViewport.deviceScaleFactor === "number"
+                      ? { deviceScaleFactor: browserViewport.deviceScaleFactor }
+                      : {}),
                   },
                 } satisfies BrowserScreenViewportArtifact;
               }),
@@ -1638,16 +1752,16 @@ const executeVisualBenchmarkViewport = async ({
     return {
       viewportId: activeViewport.id,
       viewportLabel: activeViewport.label ?? activeViewport.id,
-      score:
-        typeof effectiveVisualQuality?.overallScore === "number"
-          ? effectiveVisualQuality.overallScore
-          : 100,
+      score: effectiveVisualQuality.overallScore,
       screenshotBuffer,
       diffBuffer,
       report,
       viewport: {
         width: viewport.width,
         height: viewport.height,
+        ...(typeof viewport.deviceScaleFactor === "number"
+          ? { deviceScaleFactor: viewport.deviceScaleFactor }
+          : {}),
       },
       ...(browserArtifacts && browserArtifacts.length > 0
         ? { browserArtifacts }
