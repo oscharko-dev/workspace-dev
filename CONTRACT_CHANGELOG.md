@@ -4,16 +4,16 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ## Versioning Rules
 
-| Change Type | Version Bump | Example |
-|-------------|--------------|---------|
-| New optional field | Minor (x.Y.0) | Add `projectName` to `WorkspaceJobInput` |
-| New endpoint | Minor (x.Y.0) | Add `GET /workspace/version` |
-| New exported type | Minor (x.Y.0) | Export `WorkspaceVersionInfo` |
-| Remove field or type | Major (X.0.0) | Remove `WorkspaceJobResult.error` |
-| Rename field or type | Major (X.0.0) | Rename `figmaFileKey` to `fileKey` |
-| Change field type | Major (X.0.0) | Change `port` from `number` to `string` |
-| Change response status code | Major (X.0.0) | Change `501` to `202` on submit |
-| Change error code string | Major (X.0.0) | Rename `MODE_LOCK_VIOLATION` |
+| Change Type                 | Version Bump  | Example                                  |
+| --------------------------- | ------------- | ---------------------------------------- |
+| New optional field          | Minor (x.Y.0) | Add `projectName` to `WorkspaceJobInput` |
+| New endpoint                | Minor (x.Y.0) | Add `GET /workspace/version`             |
+| New exported type           | Minor (x.Y.0) | Export `WorkspaceVersionInfo`            |
+| Remove field or type        | Major (X.0.0) | Remove `WorkspaceJobResult.error`        |
+| Rename field or type        | Major (X.0.0) | Rename `figmaFileKey` to `fileKey`       |
+| Change field type           | Major (X.0.0) | Change `port` from `number` to `string`  |
+| Change response status code | Major (X.0.0) | Change `501` to `202` on submit          |
+| Change error code string    | Major (X.0.0) | Rename `MODE_LOCK_VIOLATION`             |
 
 ### Package alignment policy
 
@@ -30,6 +30,12 @@ All changes to the public contract surface of `workspace-dev` are documented her
 - Every contract change must add an entry in this file before merge.
 
 ---
+
+## 3.10.0
+
+- Added `WorkspaceConfidenceLevel`, `WorkspaceConfidenceContributor`, `WorkspaceComponentConfidence`, `WorkspaceScreenConfidence`, `WorkspaceJobConfidence` types.
+- Added optional `confidence` field to `WorkspaceJobStatus` and `WorkspaceJobResult`.
+- Added `confidenceReportFile` to `WorkspaceJobArtifacts`.
 
 ## [3.9.0] - 2026-04-09
 
@@ -352,6 +358,7 @@ Added:
 ### Generation diff report for design iteration cycles
 
 Added:
+
 - `WorkspaceGenerationDiffModifiedFile` type for modified file entries in diff report.
 - `WorkspaceGenerationDiffReport` type for full generation diff report.
 - `generationDiffFile?: string` to `WorkspaceJobArtifacts` for the diff report file path.
