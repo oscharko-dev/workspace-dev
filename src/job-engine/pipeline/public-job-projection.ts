@@ -2,8 +2,9 @@ import type {
   WorkspaceCompositeQualityReport,
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
+  WorkspaceJobConfidence,
   WorkspaceVisualAuditResult,
-  WorkspaceVisualQualityReport
+  WorkspaceVisualQualityReport,
 } from "../../contracts/index.js";
 import type { JobRecord } from "../types.js";
 import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
@@ -11,7 +12,7 @@ import type { StageArtifactStore } from "./artifact-store.js";
 
 export const syncPublicJobProjection = async ({
   job,
-  artifactStore
+  artifactStore,
 }: {
   job: JobRecord;
   artifactStore: StageArtifactStore;
@@ -23,7 +24,7 @@ export const syncPublicJobProjection = async ({
   const syncOptionalArtifactPath = async ({
     key,
     assign,
-    clear
+    clear,
   }: {
     key: string;
     assign: (value: string) => void;
@@ -37,12 +38,16 @@ export const syncPublicJobProjection = async ({
     clear();
   };
 
-  const figmaJsonFile = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaCleaned);
+  const figmaJsonFile = await artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.figmaCleaned,
+  );
   if (figmaJsonFile) {
     job.artifacts.figmaJsonFile = figmaJsonFile;
   }
 
-  const designIrFile = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr);
+  const designIrFile = await artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.designIr,
+  );
   if (designIrFile) {
     job.artifacts.designIrFile = designIrFile;
   }
@@ -54,10 +59,12 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.figmaAnalysisFile;
-    }
+    },
   });
 
-  const generatedProjectDir = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject);
+  const generatedProjectDir = await artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.generatedProject,
+  );
   if (generatedProjectDir) {
     job.artifacts.generatedProjectDir = generatedProjectDir;
   }
@@ -69,7 +76,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.generationMetricsFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.componentManifest,
@@ -78,7 +85,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.componentManifestFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.storybookTokens,
@@ -87,7 +94,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.storybookTokensFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.storybookThemes,
@@ -96,7 +103,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.storybookThemesFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.storybookComponents,
@@ -105,7 +112,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.storybookComponentsFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.componentVisualCatalog,
@@ -114,7 +121,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.componentVisualCatalogFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
@@ -123,7 +130,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.figmaLibraryResolutionFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.componentMatchReport,
@@ -132,7 +139,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.componentMatchReportFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.generationDiffFile,
@@ -141,7 +148,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.generationDiffFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.visualAuditReferenceImage,
@@ -150,7 +157,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.visualAuditReferenceImageFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.visualAuditActualImage,
@@ -159,7 +166,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.visualAuditActualImageFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
@@ -168,7 +175,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.visualAuditDiffImageFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.visualAuditReport,
@@ -177,7 +184,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.visualAuditReportFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.visualQualityReport,
@@ -186,7 +193,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.visualQualityReportFile;
-    }
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.compositeQualityReport,
@@ -195,7 +202,16 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.compositeQualityReportFile;
-    }
+    },
+  });
+  await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.confidenceReport,
+    assign: (value) => {
+      job.artifacts.confidenceReportFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.confidenceReportFile;
+    },
   });
   await syncOptionalArtifactPath({
     key: STAGE_ARTIFACT_KEYS.validationSummaryFile,
@@ -204,7 +220,7 @@ export const syncPublicJobProjection = async ({
     },
     clear: () => {
       delete job.artifacts.validationSummaryFile;
-    }
+    },
   });
 
   const reproDir = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.reproPath);
@@ -212,9 +228,10 @@ export const syncPublicJobProjection = async ({
     job.artifacts.reproDir = reproDir;
   }
 
-  const generationDiff = await artifactStore.getValue<WorkspaceGenerationDiffReport>(
-    STAGE_ARTIFACT_KEYS.generationDiff
-  );
+  const generationDiff =
+    await artifactStore.getValue<WorkspaceGenerationDiffReport>(
+      STAGE_ARTIFACT_KEYS.generationDiff,
+    );
   if (generationDiff) {
     job.generationDiff = generationDiff;
   } else {
@@ -222,7 +239,7 @@ export const syncPublicJobProjection = async ({
   }
 
   const visualAudit = await artifactStore.getValue<WorkspaceVisualAuditResult>(
-    STAGE_ARTIFACT_KEYS.visualAuditResult
+    STAGE_ARTIFACT_KEYS.visualAuditResult,
   );
   if (visualAudit) {
     jobWithVisualAudit.visualAudit = visualAudit;
@@ -230,25 +247,38 @@ export const syncPublicJobProjection = async ({
     delete jobWithVisualAudit.visualAudit;
   }
 
-  const visualQuality = await artifactStore.getValue<WorkspaceVisualQualityReport>(
-    STAGE_ARTIFACT_KEYS.visualQualityResult
-  );
+  const visualQuality =
+    await artifactStore.getValue<WorkspaceVisualQualityReport>(
+      STAGE_ARTIFACT_KEYS.visualQualityResult,
+    );
   if (visualQuality !== undefined) {
     job.visualQuality = visualQuality;
   } else {
     delete job.visualQuality;
   }
 
-  const compositeQuality = await artifactStore.getValue<WorkspaceCompositeQualityReport>(
-    STAGE_ARTIFACT_KEYS.compositeQualityResult
-  );
+  const compositeQuality =
+    await artifactStore.getValue<WorkspaceCompositeQualityReport>(
+      STAGE_ARTIFACT_KEYS.compositeQualityResult,
+    );
   if (compositeQuality !== undefined) {
     job.compositeQuality = compositeQuality;
   } else {
     delete job.compositeQuality;
   }
 
-  const gitPrStatus = await artifactStore.getValue<WorkspaceGitPrStatus>(STAGE_ARTIFACT_KEYS.gitPrStatus);
+  const confidence = await artifactStore.getValue<WorkspaceJobConfidence>(
+    STAGE_ARTIFACT_KEYS.confidenceResult,
+  );
+  if (confidence !== undefined) {
+    job.confidence = confidence;
+  } else {
+    delete job.confidence;
+  }
+
+  const gitPrStatus = await artifactStore.getValue<WorkspaceGitPrStatus>(
+    STAGE_ARTIFACT_KEYS.gitPrStatus,
+  );
   if (gitPrStatus) {
     job.gitPr = gitPrStatus;
   } else {

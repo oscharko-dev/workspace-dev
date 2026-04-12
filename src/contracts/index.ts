@@ -22,7 +22,9 @@ export type WorkspaceBrandTheme = "derived" | "sparkasse";
 export type WorkspaceRouterMode = "browser" | "hash";
 
 /** Supported visual quality reference sources. */
-export type WorkspaceVisualQualityReferenceMode = "figma_api" | "frozen_fixture";
+export type WorkspaceVisualQualityReferenceMode =
+  | "figma_api"
+  | "frozen_fixture";
 
 /** Supported browser engines for visual quality capture. */
 export type WorkspaceVisualBrowserName = "chromium" | "firefox" | "webkit";
@@ -52,7 +54,9 @@ export type WorkspaceLogFormat = "text" | "json";
 export type WorkspaceFormHandlingMode = "react_hook_form" | "legacy_use_state";
 
 /** Source that produced a manual or imported component mapping rule. */
-export type WorkspaceComponentMappingSource = "local_override" | "code_connect_import";
+export type WorkspaceComponentMappingSource =
+  | "local_override"
+  | "code_connect_import";
 
 /** Submit-time or regeneration-time component mapping override rule. */
 export interface WorkspaceComponentMappingRule {
@@ -75,10 +79,20 @@ export interface WorkspaceComponentMappingRule {
 }
 
 /** Runtime status values for asynchronous workspace jobs. */
-export type WorkspaceJobRuntimeStatus = "queued" | "running" | "completed" | "failed" | "canceled";
+export type WorkspaceJobRuntimeStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "canceled";
 
 /** Stage status values for each pipeline stage. */
-export type WorkspaceJobStageStatus = "queued" | "running" | "completed" | "failed" | "skipped";
+export type WorkspaceJobStageStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped";
 
 /** Structured stage names exposed by workspace-dev. */
 export type WorkspaceJobStageName =
@@ -350,6 +364,7 @@ export interface WorkspaceJobArtifacts {
   visualAuditReportFile?: string;
   visualQualityReportFile?: string;
   compositeQualityReportFile?: string;
+  confidenceReportFile?: string;
   reproDir?: string;
 }
 
@@ -419,7 +434,11 @@ export interface WorkspaceVisualAuditInput {
 }
 
 /** Runtime status for the optional visual audit flow. */
-export type WorkspaceVisualAuditStatus = "not_requested" | "ok" | "warn" | "failed";
+export type WorkspaceVisualAuditStatus =
+  | "not_requested"
+  | "ok"
+  | "warn"
+  | "failed";
 
 /** Computed output for the optional visual audit flow. */
 export interface WorkspaceVisualAuditResult {
@@ -680,6 +699,7 @@ export interface WorkspaceJobStatus {
   visualAudit?: WorkspaceVisualAuditResult;
   visualQuality?: WorkspaceVisualQualityReport;
   compositeQuality?: WorkspaceCompositeQualityReport;
+  confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -700,6 +720,7 @@ export interface WorkspaceJobResult {
   visualAudit?: WorkspaceVisualAuditResult;
   visualQuality?: WorkspaceVisualQualityReport;
   compositeQuality?: WorkspaceCompositeQualityReport;
+  confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -714,7 +735,11 @@ export interface WorkspaceVersionInfo {
 export interface WorkspaceRegenerationOverrideEntry {
   nodeId: string;
   field: string;
-  value: string | number | boolean | { top: number; right: number; bottom: number; left: number };
+  value:
+    | string
+    | number
+    | boolean
+    | { top: number; right: number; bottom: number; left: number };
 }
 
 /**
@@ -760,7 +785,12 @@ export type WorkspaceLocalSyncMode = "dry_run" | "apply";
 /** File action the sync planner intends to perform for a path. */
 export type WorkspaceLocalSyncFileAction = "create" | "overwrite" | "none";
 /** File status reported by the sync planner after comparing generated, baseline, and destination states. */
-export type WorkspaceLocalSyncFileStatus = "create" | "overwrite" | "conflict" | "untracked" | "unchanged";
+export type WorkspaceLocalSyncFileStatus =
+  | "create"
+  | "overwrite"
+  | "conflict"
+  | "untracked"
+  | "unchanged";
 /** Reason explaining why a file received its planned sync status. */
 export type WorkspaceLocalSyncFileReason =
   | "new_file"
@@ -793,7 +823,9 @@ export interface WorkspaceLocalSyncApplyRequest {
 }
 
 /** Union of supported local sync request payloads. */
-export type WorkspaceLocalSyncRequest = WorkspaceLocalSyncDryRunRequest | WorkspaceLocalSyncApplyRequest;
+export type WorkspaceLocalSyncRequest =
+  | WorkspaceLocalSyncDryRunRequest
+  | WorkspaceLocalSyncApplyRequest;
 
 /** Planned file entry returned by local sync preview/apply flows. */
 export interface WorkspaceLocalSyncFilePlanEntry {
@@ -868,7 +900,10 @@ export interface WorkspaceGitPrPrerequisites {
 }
 
 /** User decision for handling a stale draft. */
-export type WorkspaceStaleDraftDecision = "continue" | "discard" | "carry-forward";
+export type WorkspaceStaleDraftDecision =
+  | "continue"
+  | "discard"
+  | "carry-forward";
 
 /** Result of a stale-draft check for a given job. */
 export interface WorkspaceStaleDraftCheckResult {
@@ -893,7 +928,9 @@ export interface WorkspaceStaleDraftCheckResult {
 // ---------------------------------------------------------------------------
 
 /** User decision for handling a stale draft — extended with remap option. */
-export type WorkspaceStaleDraftDecisionExtended = WorkspaceStaleDraftDecision | "remap";
+export type WorkspaceStaleDraftDecisionExtended =
+  | WorkspaceStaleDraftDecision
+  | "remap";
 
 /** Confidence level for a remap suggestion. */
 export type WorkspaceRemapConfidence = "high" | "medium" | "low";
@@ -965,9 +1002,56 @@ export interface WorkspaceRemapDecisionEntry {
   accepted: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Generation confidence model types (#849)
+// ---------------------------------------------------------------------------
+
+/** Confidence level for a generated job, screen, or component. */
+export type WorkspaceConfidenceLevel = "high" | "medium" | "low" | "very_low";
+
+/** A single explainable contributor to a confidence score. */
+export interface WorkspaceConfidenceContributor {
+  signal: string;
+  impact: "positive" | "negative" | "neutral";
+  weight: number;
+  value: number;
+  detail: string;
+}
+
+/** Per-component confidence assessment. */
+export interface WorkspaceComponentConfidence {
+  componentId: string;
+  componentName: string;
+  level: WorkspaceConfidenceLevel;
+  score: number;
+  contributors: WorkspaceConfidenceContributor[];
+}
+
+/** Per-screen confidence assessment. */
+export interface WorkspaceScreenConfidence {
+  screenId: string;
+  screenName: string;
+  level: WorkspaceConfidenceLevel;
+  score: number;
+  contributors: WorkspaceConfidenceContributor[];
+  components: WorkspaceComponentConfidence[];
+}
+
+/** Job-level confidence report produced by the scoring model. */
+export interface WorkspaceJobConfidence {
+  status: "completed" | "failed" | "not_requested";
+  generatedAt?: string;
+  level?: WorkspaceConfidenceLevel;
+  score?: number;
+  contributors?: WorkspaceConfidenceContributor[];
+  screens?: WorkspaceScreenConfidence[];
+  lowConfidenceSummary?: string[];
+  message?: string;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.9.0" as const;
+export const CONTRACT_VERSION = "3.10.0" as const;

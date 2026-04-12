@@ -33,10 +33,14 @@ export const STAGE_ARTIFACT_KEYS = {
   visualQualityResult: "visual.quality.result",
   compositeQualityReport: "composite.quality.report",
   compositeQualityResult: "composite.quality.result",
+  confidenceReport: "confidence.report",
+  confidenceResult: "confidence.result",
   validationSummary: "validation.summary",
   validationSummaryFile: "validation.summary.file",
   reproPath: "repro.path",
-  gitPrStatus: "git.pr.status"
+  gitPrStatus: "git.pr.status",
 } as const;
 
-export type StageArtifactKey = (typeof STAGE_ARTIFACT_KEYS)[keyof typeof STAGE_ARTIFACT_KEYS] | (string & {});
+export type StageArtifactKey =
+  | (typeof STAGE_ARTIFACT_KEYS)[keyof typeof STAGE_ARTIFACT_KEYS]
+  | (string & {});

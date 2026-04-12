@@ -4,6 +4,7 @@ import type {
   WorkspaceCompositeQualityWeights,
   WorkspaceCreatePrInput,
   WorkspaceCreatePrResult,
+  WorkspaceJobConfidence,
   WorkspaceLocalSyncFileDecisionEntry,
   WorkspaceLogFormat,
   WorkspaceGenerationDiffReport,
@@ -33,7 +34,7 @@ import type {
   WorkspaceStaleDraftCheckResult,
   WorkspaceSubmitAccepted,
   WorkspaceVisualAuditResult,
-  WorkspaceVisualQualityReport
+  WorkspaceVisualQualityReport,
 } from "../contracts/index.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
 import type { WorkspaceRuntimeLogger } from "../logging.js";
@@ -102,6 +103,7 @@ export interface JobRecord {
   visualAudit?: WorkspaceVisualAuditResult;
   visualQuality?: WorkspaceVisualQualityReport;
   compositeQuality?: WorkspaceCompositeQualityReport;
+  confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
   error?: WorkspaceJobError;
 }
@@ -166,7 +168,9 @@ export interface JobEngineRuntime {
   previewEnabled: boolean;
   fetchImpl: typeof fetch;
   customerProfile?: ResolvedCustomerProfile;
-  figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
+  figmaMcpEnrichmentLoader?: (
+    input: FigmaMcpEnrichmentLoaderInput,
+  ) => Promise<FigmaMcpEnrichment | undefined>;
 }
 
 export interface FigmaMcpEnrichmentLoaderInput {
@@ -239,20 +243,39 @@ export interface JobRecordSnapshot {
 
 export interface JobEngine {
   submitJob: (input: WorkspaceJobInput) => WorkspaceSubmitAccepted;
-  submitRegeneration: (input: WorkspaceRegenerationInput) => WorkspaceRegenerationAccepted;
-  createPrFromJob: (input: { jobId: string; prInput: WorkspaceCreatePrInput }) => Promise<WorkspaceCreatePrResult>;
-  previewLocalSync: (input: { jobId: string; targetPath?: string }) => Promise<WorkspaceLocalSyncDryRunResult>;
+  submitRegeneration: (
+    input: WorkspaceRegenerationInput,
+  ) => WorkspaceRegenerationAccepted;
+  createPrFromJob: (input: {
+    jobId: string;
+    prInput: WorkspaceCreatePrInput;
+  }) => Promise<WorkspaceCreatePrResult>;
+  previewLocalSync: (input: {
+    jobId: string;
+    targetPath?: string;
+  }) => Promise<WorkspaceLocalSyncDryRunResult>;
   applyLocalSync: (input: {
     jobId: string;
     confirmationToken: string;
     confirmOverwrite: boolean;
     fileDecisions: WorkspaceLocalSyncFileDecisionEntry[];
   }) => Promise<WorkspaceLocalSyncApplyResult>;
-  cancelJob: (input: { jobId: string; reason?: string }) => WorkspaceJobStatus | undefined;
+  cancelJob: (input: {
+    jobId: string;
+    reason?: string;
+  }) => WorkspaceJobStatus | undefined;
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;
   getJobRecord: (jobId: string) => JobRecordSnapshot | undefined;
-  resolvePreviewAsset: (jobId: string, previewPath: string) => Promise<{ content: Buffer; contentType: string } | undefined>;
-  checkStaleDraft: (input: { jobId: string; draftNodeIds: string[] }) => Promise<WorkspaceStaleDraftCheckResult>;
-  suggestRemaps: (input: WorkspaceRemapSuggestInput) => Promise<WorkspaceRemapSuggestResult>;
+  resolvePreviewAsset: (
+    jobId: string,
+    previewPath: string,
+  ) => Promise<{ content: Buffer; contentType: string } | undefined>;
+  checkStaleDraft: (input: {
+    jobId: string;
+    draftNodeIds: string[];
+  }) => Promise<WorkspaceStaleDraftCheckResult>;
+  suggestRemaps: (
+    input: WorkspaceRemapSuggestInput,
+  ) => Promise<WorkspaceRemapSuggestResult>;
 }

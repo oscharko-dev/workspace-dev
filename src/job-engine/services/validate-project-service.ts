@@ -5,6 +5,7 @@ import type {
   WorkspaceCompositeQualityPerformanceBreakdown,
   WorkspaceCompositeQualityReport,
   WorkspaceCompositeQualityWeights,
+  WorkspaceJobConfidence,
   WorkspaceVisualBrowserName,
   WorkspaceVisualAuditResult,
   WorkspaceVisualQualityFrozenReference,
@@ -67,6 +68,10 @@ import {
   resolveVisualQualityFrozenReferencePaths,
   selectVisualQualityReferenceNode,
 } from "../visual-quality-reference.js";
+import {
+  computeConfidenceReport,
+  type ConfidenceScoringInput,
+} from "../confidence-scoring.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw =
@@ -227,6 +232,7 @@ interface ValidationSummaryArtifact {
   visualAudit: WorkspaceVisualAuditResult;
   visualQuality: WorkspaceVisualQualityReport;
   compositeQuality: WorkspaceCompositeQualityReport;
+  confidence: WorkspaceJobConfidence;
   storybook:
     | {
         status: "ok" | "failed";
@@ -1479,6 +1485,7 @@ const buildValidationSummaryArtifact = async ({
   visualAuditResult,
   visualQualityReport,
   compositeQualityReport,
+  confidence,
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -1495,6 +1502,7 @@ const buildValidationSummaryArtifact = async ({
   visualAuditResult?: WorkspaceVisualAuditResult;
   visualQualityReport?: WorkspaceVisualQualityReport;
   compositeQualityReport?: WorkspaceCompositeQualityReport;
+  confidence?: WorkspaceJobConfidence;
 }): Promise<ValidationSummaryArtifact> => {
   const storybookCatalogFile = await context.artifactStore.getPath(
     STAGE_ARTIFACT_KEYS.storybookCatalog,
@@ -1809,6 +1817,7 @@ const buildValidationSummaryArtifact = async ({
     visualAudit: resolvedVisualAuditResult,
     visualQuality: resolvedVisualQualityReport,
     compositeQuality: resolvedCompositeQualityReport,
+    confidence: confidence ?? { status: "not_requested" },
     storybook: storybookSummary,
     mapping: mappingSummary,
     style: styleSummary,
@@ -1912,6 +1921,7 @@ export const createValidateProjectService = ({
         storybookArtifactStatusOverrides,
         visualQualityReport,
         compositeQualityReport,
+        confidence,
       }: {
         generatedAppFailure?: { failedCommand: string };
         storybookArtifactStatusOverrides?: Partial<
@@ -1922,6 +1932,7 @@ export const createValidateProjectService = ({
         >;
         visualQualityReport?: WorkspaceVisualQualityReport;
         compositeQualityReport?: WorkspaceCompositeQualityReport;
+        confidence?: WorkspaceJobConfidence;
       } = {}): Promise<ValidationSummaryArtifact> => {
         context.job.visualAudit = cloneVisualAuditResult(visualAuditResult);
         context.job.visualQuality = cloneVisualQualityReport(
@@ -1930,6 +1941,9 @@ export const createValidateProjectService = ({
         context.job.compositeQuality = cloneCompositeQualityReport(
           compositeQualityReport ?? resolvedCompositeQualityReport,
         );
+        if (confidence) {
+          context.job.confidence = confidence;
+        }
         return buildValidationSummaryArtifact({
           context,
           validatedAt,
@@ -1958,6 +1972,7 @@ export const createValidateProjectService = ({
             visualQualityReport ?? resolvedVisualQualityReport,
           compositeQualityReport:
             compositeQualityReport ?? resolvedCompositeQualityReport,
+          ...(confidence ? { confidence } : {}),
         });
       };
 
@@ -2078,6 +2093,212 @@ export const createValidateProjectService = ({
           stage: "validate.project",
           absolutePath,
         });
+      };
+
+      const buildConfidenceInput = async ({
+        ctx,
+        validationPassed: passed,
+        matchReport,
+        evidenceArtifact,
+        visualReport,
+      }: {
+        ctx: Parameters<StageService<void>["execute"]>[1];
+        validationPassed: boolean;
+        matchReport: ComponentMatchReportArtifact | undefined;
+        evidenceArtifact: StorybookEvidenceArtifact | undefined;
+        visualReport: WorkspaceVisualQualityReport;
+      }): Promise<ConfidenceScoringInput> => {
+        const generationMetricsPath = await ctx.artifactStore.getPath(
+          STAGE_ARTIFACT_KEYS.generationMetrics,
+        );
+        let generationMetrics:
+          | ConfidenceScoringInput["generationMetrics"]
+          | undefined;
+        if (generationMetricsPath) {
+          try {
+            const raw = JSON.parse(
+              await readFile(generationMetricsPath, "utf8"),
+            ) as Record<string, unknown>;
+            const depthTruncated = raw.depthTruncatedScreens as
+              | Array<{ screenName: string; depthLimit: number }>
+              | undefined;
+            const classificationFb = raw.classificationFallbacks as
+              | Array<{
+                  nodeId: string;
+                  original: string;
+                  fallback: string;
+                }>
+              | undefined;
+            generationMetrics = {
+              fetchedNodes: (raw.fetchedNodes as number) ?? 0,
+              skippedHidden: (raw.skippedHidden as number) ?? 0,
+              skippedPlaceholders: (raw.skippedPlaceholders as number) ?? 0,
+              truncatedScreens:
+                (raw.truncatedScreens as Array<{
+                  screenName: string;
+                  originalCount: number;
+                  truncatedCount: number;
+                }>) ?? [],
+              ...(depthTruncated
+                ? { depthTruncatedScreens: depthTruncated }
+                : {}),
+              degradedGeometryNodes:
+                (raw.degradedGeometryNodes as string[]) ?? [],
+              ...(classificationFb
+                ? { classificationFallbacks: classificationFb }
+                : {}),
+            };
+          } catch {
+            ctx.log({
+              level: "warn",
+              message:
+                "Could not parse generation-metrics.json for confidence scoring; continuing without generation metrics.",
+            });
+          }
+        }
+
+        const componentMatch: ConfidenceScoringInput["componentMatch"] =
+          matchReport
+            ? {
+                totalFigmaFamilies: matchReport.summary.totalFigmaFamilies,
+                matched: matchReport.summary.matched,
+                ambiguous: matchReport.summary.ambiguous,
+                unmatched: matchReport.summary.unmatched,
+                entries: matchReport.entries.map((e) => ({
+                  figmaFamilyKey: e.figma.familyKey,
+                  figmaFamilyName: e.figma.familyName,
+                  matchStatus: e.match.status,
+                  confidence: e.match.confidence,
+                  confidenceScore: e.match.confidenceScore,
+                })),
+              }
+            : undefined;
+
+        const storybookEvidence: ConfidenceScoringInput["storybookEvidence"] =
+          evidenceArtifact
+            ? {
+                entryCount: evidenceArtifact.stats.entryCount,
+                evidenceCount: evidenceArtifact.stats.evidenceCount,
+                byReliability: {
+                  authoritative:
+                    evidenceArtifact.stats.byReliability.authoritative ?? 0,
+                  reference_only:
+                    evidenceArtifact.stats.byReliability.reference_only ?? 0,
+                  derived: evidenceArtifact.stats.byReliability.derived ?? 0,
+                },
+              }
+            : undefined;
+
+        let visualQuality: ConfidenceScoringInput["visualQuality"] | undefined;
+        if (
+          visualReport.status === "completed" &&
+          typeof visualReport.overallScore === "number"
+        ) {
+          const dims = visualReport.dimensions?.map((d) => ({
+            name: d.name,
+            score: d.score,
+            weight: d.weight,
+          }));
+          const spots = visualReport.hotspots?.map((h) => ({
+            severity: h.severity,
+            category: h.category,
+          }));
+          visualQuality = {
+            overallScore: visualReport.overallScore,
+            ...(dims ? { dimensions: dims } : {}),
+            ...(spots ? { hotspots: spots } : {}),
+            ...(visualReport.componentAggregateScore !== undefined
+              ? {
+                  componentAggregateScore: visualReport.componentAggregateScore,
+                }
+              : {}),
+          };
+        }
+
+        return {
+          diagnostics: [],
+          ...(generationMetrics ? { generationMetrics } : {}),
+          ...(componentMatch ? { componentMatch } : {}),
+          ...(storybookEvidence ? { storybookEvidence } : {}),
+          ...(visualQuality ? { visualQuality } : {}),
+          validationPassed: passed,
+        };
+      };
+
+      const computeAndPersistConfidence = async ({
+        ctx,
+        validationPassed: passed,
+        matchReport,
+        evidenceArtifact,
+        visualReport,
+      }: {
+        ctx: Parameters<StageService<void>["execute"]>[1];
+        validationPassed: boolean;
+        matchReport: ComponentMatchReportArtifact | undefined;
+        evidenceArtifact: StorybookEvidenceArtifact | undefined;
+        visualReport: WorkspaceVisualQualityReport;
+      }): Promise<WorkspaceJobConfidence> => {
+        try {
+          const scoringInput = await buildConfidenceInput({
+            ctx,
+            validationPassed: passed,
+            matchReport,
+            evidenceArtifact,
+            visualReport,
+          });
+          const confidenceResult = computeConfidenceReport(scoringInput);
+
+          const jobConfidence: WorkspaceJobConfidence = {
+            status: "completed",
+            generatedAt: new Date().toISOString(),
+            level: confidenceResult.level,
+            score: confidenceResult.score,
+            contributors: confidenceResult.contributors,
+            screens: confidenceResult.screens,
+            ...(confidenceResult.lowConfidenceSummary.length > 0
+              ? { lowConfidenceSummary: confidenceResult.lowConfidenceSummary }
+              : {}),
+          };
+
+          const confidenceReportPath = path.join(
+            ctx.paths.jobDir,
+            "confidence-report.json",
+          );
+          await writeFile(
+            confidenceReportPath,
+            toJsonFileContent(jobConfidence),
+            "utf8",
+          );
+          ctx.job.artifacts.confidenceReportFile = confidenceReportPath;
+          await ctx.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.confidenceReport,
+            stage: "validate.project",
+            absolutePath: confidenceReportPath,
+          });
+          await ctx.artifactStore.setValue({
+            key: STAGE_ARTIFACT_KEYS.confidenceResult,
+            stage: "validate.project",
+            value: jobConfidence,
+          });
+          ctx.job.confidence = jobConfidence;
+
+          ctx.log({
+            level: "info",
+            message: `Confidence scoring completed: ${confidenceResult.level} (${String(confidenceResult.score)}/100)`,
+          });
+
+          return jobConfidence;
+        } catch (error) {
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Confidence scoring failed.";
+          ctx.log({
+            level: "warn",
+            message: `Confidence scoring failed without blocking validate.project: ${message}`,
+          });
+          return { status: "failed", message };
+        }
       };
 
       const failVisualAudit = async ({
@@ -3476,9 +3697,19 @@ export const createValidateProjectService = ({
       };
 
       await buildCompositeQualityForValidation();
+
+      const jobConfidence = await computeAndPersistConfidence({
+        ctx: context,
+        validationPassed: validationResult !== undefined,
+        matchReport: componentMatchReportArtifact,
+        evidenceArtifact: storybookEvidenceArtifact,
+        visualReport: resolvedVisualQualityReport,
+      });
+
       const summary = await buildSummary({
         visualQualityReport: resolvedVisualQualityReport,
         compositeQualityReport: resolvedCompositeQualityReport,
+        confidence: jobConfidence,
       });
       await persistValidationSummaryArtifacts({
         context,
