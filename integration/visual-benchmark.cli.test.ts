@@ -37,6 +37,7 @@ test("runVisualBenchmarkCli forwards viewport selection to benchmark execution",
   let receivedInput:
     | {
         qualityThreshold?: number;
+        ci?: boolean;
         viewportId?: string;
         componentVisualCatalogFile?: string;
         storybookStaticDir?: string;
@@ -64,6 +65,7 @@ test("runVisualBenchmarkCli forwards viewport selection to benchmark execution",
   assert.equal(status, 0);
   assert.deepEqual(receivedInput, {
     componentVisualCatalogFile: undefined,
+    ci: undefined,
     qualityThreshold: 92,
     storybookStaticDir: undefined,
     viewportId: "mobile",
@@ -197,4 +199,79 @@ test("runVisualBenchmarkCli returns 0 without --enforce-thresholds even when eve
   });
 
   assert.equal(status, 0);
+});
+
+test("runVisualBenchmarkCli returns 1 with --enforce-thresholds when overfitting risk alert is present", async () => {
+  const status = await runVisualBenchmarkCli(["--enforce-thresholds"], {
+    runBenchmark: async () => {
+      return {
+        deltas: [],
+        overallBaseline: null,
+        overallCurrent: 88,
+        overallDelta: 2,
+        alerts: [
+          {
+            code: "ALERT_VISUAL_QUALITY_OVERFITTING_RISK",
+            severity: "warn",
+            message: "Potential overfitting detected",
+            value: -2,
+            threshold: -1,
+          },
+        ],
+        trendSummaries: [],
+      };
+    },
+  });
+
+  assert.equal(status, 1);
+});
+
+test("runVisualBenchmarkCli returns 1 with --enforce-thresholds when canonical diff alert is present", async () => {
+  const status = await runVisualBenchmarkCli(["--enforce-thresholds"], {
+    runBenchmark: async () => {
+      return {
+        deltas: [],
+        overallBaseline: null,
+        overallCurrent: 91,
+        overallDelta: 1,
+        alerts: [
+          {
+            code: "ALERT_VISUAL_QUALITY_CANONICAL_DIFF_EXCEEDED",
+            severity: "warn",
+            message: "Canonical pixel diff exceeded threshold",
+            value: 0.5,
+            threshold: 0.1,
+          },
+        ],
+        trendSummaries: [],
+      };
+    },
+  });
+
+  assert.equal(status, 1);
+});
+
+test("runVisualBenchmarkCli returns 1 with --enforce-thresholds when canonical reference alert is present", async () => {
+  const status = await runVisualBenchmarkCli(["--enforce-thresholds"], {
+    runBenchmark: async () => {
+      return {
+        deltas: [],
+        overallBaseline: null,
+        overallCurrent: 91,
+        overallDelta: 1,
+        alerts: [
+          {
+            code: "ALERT_VISUAL_QUALITY_CANONICAL_REFERENCE_MISSING",
+            severity: "warn",
+            message: "Canonical reference missing",
+            value: 0,
+            threshold: 0.1,
+          },
+        ],
+        trendSummaries: [],
+      };
+    },
+  });
+
+  assert.equal(status, 1);
 });

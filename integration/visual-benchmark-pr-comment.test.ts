@@ -526,7 +526,7 @@ test("print-visual-benchmark-pr-comment CLI writes JSON payload", async () => {
     const summaryPath = path.join(root, "step-summary.md");
     await writeFile(summaryPath, "", "utf8");
 
-    const command = `GITHUB_STEP_SUMMARY=${JSON.stringify(summaryPath)} node scripts/print-visual-benchmark-pr-comment.mjs ${JSON.stringify(reportPath)} --output ${JSON.stringify(outputPath)} --baseline-path ${JSON.stringify(baselinePath)} --artifact-url https://example.com/artifacts`;
+    const command = `GITHUB_STEP_SUMMARY=${JSON.stringify(summaryPath)} VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY=true node scripts/print-visual-benchmark-pr-comment.mjs ${JSON.stringify(reportPath)} --output ${JSON.stringify(outputPath)} --baseline-path ${JSON.stringify(baselinePath)} --artifact-url https://example.com/artifacts`;
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);
@@ -1272,7 +1272,7 @@ test("print-visual-benchmark-pr-comment CLI writes fallback payload when report 
     await writeFile(summaryPath, "", "utf8");
 
     const missingReportPath = path.join(root, "missing-last-run.json");
-    const command = `GITHUB_STEP_SUMMARY=${JSON.stringify(summaryPath)} node scripts/print-visual-benchmark-pr-comment.mjs ${JSON.stringify(missingReportPath)} --output ${JSON.stringify(outputPath)}`;
+    const command = `GITHUB_STEP_SUMMARY=${JSON.stringify(summaryPath)} VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY=true node scripts/print-visual-benchmark-pr-comment.mjs ${JSON.stringify(missingReportPath)} --output ${JSON.stringify(outputPath)}`;
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);

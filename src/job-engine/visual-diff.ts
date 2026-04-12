@@ -56,6 +56,8 @@ export interface VisualDiffConfig {
   threshold: number;
   includeAntialiasing: boolean;
   alpha: number;
+  maxDiffPixels?: number;
+  maxDiffPixelRatio?: number;
 }
 
 export interface VisualDiffRegionInput {
@@ -130,6 +132,22 @@ const resolveConfig = (
       `alpha must be between 0 and 1. Received ${String(alpha)}.`,
     );
   }
+  if (partial.maxDiffPixels !== undefined) {
+    assertFiniteNumber(partial.maxDiffPixels, "maxDiffPixels");
+    if (partial.maxDiffPixels < 0) {
+      throw new Error(
+        `maxDiffPixels must be greater than or equal to 0. Received ${String(partial.maxDiffPixels)}.`,
+      );
+    }
+  }
+  if (partial.maxDiffPixelRatio !== undefined) {
+    assertFiniteNumber(partial.maxDiffPixelRatio, "maxDiffPixelRatio");
+    if (partial.maxDiffPixelRatio < 0 || partial.maxDiffPixelRatio > 1) {
+      throw new Error(
+        `maxDiffPixelRatio must be between 0 and 1. Received ${String(partial.maxDiffPixelRatio)}.`,
+      );
+    }
+  }
   if (
     partial.includeAntialiasing !== undefined &&
     typeof partial.includeAntialiasing !== "boolean"
@@ -142,6 +160,12 @@ const resolveConfig = (
     includeAntialiasing:
       partial.includeAntialiasing ?? DEFAULT_DIFF_CONFIG.includeAntialiasing,
     alpha,
+    ...(partial.maxDiffPixels !== undefined
+      ? { maxDiffPixels: partial.maxDiffPixels }
+      : {}),
+    ...(partial.maxDiffPixelRatio !== undefined
+      ? { maxDiffPixelRatio: partial.maxDiffPixelRatio }
+      : {}),
   };
 };
 
@@ -382,8 +406,22 @@ export const comparePngBuffers = (input: {
   );
 
   const totalPixels = width * height;
+  let effectiveDiffPixelCount = diffPixelCount;
+  if (config.maxDiffPixels !== undefined) {
+    effectiveDiffPixelCount = Math.max(
+      0,
+      effectiveDiffPixelCount - Math.round(config.maxDiffPixels),
+    );
+  }
+  if (config.maxDiffPixelRatio !== undefined) {
+    effectiveDiffPixelCount = Math.max(
+      0,
+      effectiveDiffPixelCount -
+        Math.round(totalPixels * config.maxDiffPixelRatio),
+    );
+  }
   const similarityScore =
-    Math.round((1 - diffPixelCount / totalPixels) * 10000) / 100;
+    Math.round((1 - effectiveDiffPixelCount / totalPixels) * 10000) / 100;
 
   const regionResults = regions.map((region) =>
     computeRegion(referencePng, testPng, region, config),

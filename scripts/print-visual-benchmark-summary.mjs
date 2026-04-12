@@ -32,7 +32,9 @@ const main = async () => {
     summary = buildUnavailableVisualBenchmarkSummary(reportPath, reason);
   }
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (summaryPath) {
+  const allowStepSummary =
+    process.env.VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY === "true";
+  if (summaryPath && allowStepSummary) {
     await appendFile(summaryPath, `${summary.markdown}\n`, "utf8");
   } else {
     process.stdout.write(`${summary.markdown}\n`);

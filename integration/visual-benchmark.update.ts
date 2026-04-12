@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { PNG } from "pngjs";
 import {
   enumerateFixtureScreens,
   isValidPngBuffer,
@@ -30,6 +32,13 @@ import {
   type VisualBenchmarkExecutionOptions,
   type VisualBenchmarkFixtureRunResult,
 } from "./visual-benchmark.execution.js";
+import {
+  loadVisualBenchmarkViewCatalog,
+  resolveVisualBenchmarkCanonicalReferencePaths,
+  toCatalogViewMapByFixture,
+  type VisualBenchmarkViewCatalog,
+  type VisualBenchmarkViewCatalogEntry,
+} from "./visual-benchmark-view-catalog.js";
 
 type FetchLike = typeof fetch;
 type VisualBenchmarkMode =
@@ -39,6 +48,7 @@ type VisualBenchmarkMode =
   | "update-baseline";
 
 export interface VisualBenchmarkUpdateDependencies extends VisualBenchmarkFixtureOptions {
+  catalogPath?: string;
   fetchImpl?: FetchLike;
   executeFixture?: (
     fixtureId: string,
@@ -81,30 +91,128 @@ const defaultSleep = (ms: number): Promise<void> => {
   });
 };
 
-const REPRESENTATIVE_VIEWPORT_PRIORITY = [
-  "desktop",
-  "tablet",
-  "mobile",
-  "default",
-] as const;
+const DEFAULT_CANONICAL_REFERENCE_VERSION = 1;
 
-const selectRepresentativeViewportArtifact = <
-  T extends {
-    viewportId?: string;
-  },
->(
-  artifacts: readonly T[],
-): T | undefined => {
-  if (artifacts.length === 0) {
-    return undefined;
-  }
-  for (const id of REPRESENTATIVE_VIEWPORT_PRIORITY) {
-    const match = artifacts.find((artifact) => artifact.viewportId === id);
-    if (match !== undefined) {
-      return match;
+interface CanonicalReferenceMeta {
+  fixtureId: string;
+  label: string;
+  fileKey: string;
+  nodeId: string;
+  nodeName: string;
+  export: {
+    format: "png";
+    scale: number;
+  };
+  comparison: {
+    viewportId: string;
+    maxDiffPercent: number;
+  };
+  referenceVersion: number;
+  figmaLastModified: string;
+  capturedAt: string;
+  sha256: string;
+}
+
+const fileExists = async (targetPath: string): Promise<boolean> => {
+  try {
+    const targetStat = await stat(targetPath);
+    return targetStat.isFile();
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return false;
     }
+    throw error;
   }
-  return artifacts[0];
+};
+
+const resolveCatalogPath = async (
+  dependencies?: VisualBenchmarkUpdateDependencies,
+): Promise<string | null> => {
+  if (
+    typeof dependencies?.catalogPath === "string" &&
+    dependencies.catalogPath.trim().length > 0
+  ) {
+    return dependencies.catalogPath.trim();
+  }
+  if (
+    typeof dependencies?.fixtureRoot === "string" &&
+    dependencies.fixtureRoot.trim().length > 0
+  ) {
+    const candidatePath = path.join(
+      path.resolve(dependencies.fixtureRoot),
+      "benchmark-views.json",
+    );
+    if (await fileExists(candidatePath)) {
+      return candidatePath;
+    }
+    return null;
+  }
+  return null;
+};
+
+const loadCatalogByFixture = async (
+  dependencies?: VisualBenchmarkUpdateDependencies,
+): Promise<ReadonlyMap<string, VisualBenchmarkViewCatalogEntry>> => {
+  const catalogPath = await resolveCatalogPath(dependencies);
+  if (
+    catalogPath === null &&
+    typeof dependencies?.fixtureRoot === "string" &&
+    dependencies.fixtureRoot.trim().length > 0
+  ) {
+    return new Map();
+  }
+  const catalog: VisualBenchmarkViewCatalog =
+    catalogPath === null
+      ? await loadVisualBenchmarkViewCatalog()
+      : await loadVisualBenchmarkViewCatalog(catalogPath);
+  return toCatalogViewMapByFixture(catalog);
+};
+
+const createCanonicalReferenceMeta = (input: {
+  fixtureId: string;
+  now: string;
+  snapshot: VisualBenchmarkNodeSnapshot;
+  referenceBuffer: Buffer;
+  view?: VisualBenchmarkViewCatalogEntry;
+  metadata: VisualBenchmarkFixtureMetadata;
+}): CanonicalReferenceMeta => {
+  const view = input.view;
+  const label = view?.label ?? input.fixtureId;
+  const referenceVersion =
+    view?.referenceVersion ?? DEFAULT_CANONICAL_REFERENCE_VERSION;
+  const exportConfig =
+    view?.export ?? {
+      format: input.metadata.export.format,
+      scale: input.metadata.export.scale,
+    };
+  const comparison =
+    view?.comparison ?? {
+      viewportId: "default",
+      maxDiffPercent: 0.1,
+    };
+  return {
+    fixtureId: input.fixtureId,
+    label,
+    fileKey: view?.fileKey ?? input.metadata.source.fileKey,
+    nodeId: view?.nodeId ?? input.metadata.source.nodeId,
+    nodeName: view?.nodeName ?? input.metadata.source.nodeName,
+    export: {
+      format: "png",
+      scale: exportConfig.scale,
+    },
+    comparison: {
+      viewportId: comparison.viewportId,
+      maxDiffPercent: comparison.maxDiffPercent,
+    },
+    referenceVersion,
+    figmaLastModified: input.snapshot.lastModified,
+    capturedAt: input.now,
+    sha256: createHash("sha256").update(input.referenceBuffer).digest("hex"),
+  };
 };
 
 const MAX_RETRY_DELAY_MS = 60_000;
@@ -416,13 +524,22 @@ const updateMetadataFromSnapshot = (
   };
 };
 
+const FIGMA_TOKEN_ENV_KEYS = [
+  "WORKSPACEDEV_FIGMA_TOKEN",
+  "VISUAL_BENCHMARK_FIGMA_TOKEN",
+  "FIGMA_ACCESS_TOKEN",
+] as const;
+
 const requireAccessToken = (): string => {
-  const accessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
-  assert.ok(
-    accessToken,
-    "FIGMA_ACCESS_TOKEN is required for visual-benchmark maintenance.",
+  for (const envKey of FIGMA_TOKEN_ENV_KEYS) {
+    const token = process.env[envKey]?.trim();
+    if (token) {
+      return token;
+    }
+  }
+  assert.fail(
+    `A Figma token is required for visual-benchmark maintenance. Set one of: ${FIGMA_TOKEN_ENV_KEYS.join(", ")}.`,
   );
-  return accessToken;
 };
 
 export const updateVisualBenchmarkFixtures = async (
@@ -464,14 +581,16 @@ export const updateVisualBenchmarkFixtures = async (
 export const updateVisualBenchmarkReferences = async (
   dependencies?: VisualBenchmarkUpdateDependencies,
 ): Promise<void> => {
+  const accessToken = requireAccessToken();
   const log = dependencies?.log ?? defaultLog;
   const now = dependencies?.now ?? (() => new Date().toISOString());
-  const executeFixture =
-    dependencies?.executeFixture ?? executeVisualBenchmarkFixture;
-  const qualityConfig =
-    dependencies?.qualityConfig ??
-    (await loadVisualQualityConfig(dependencies));
   const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
+  const catalogPath = await resolveCatalogPath(dependencies);
+  const benchmarkViewsByFixture = await loadCatalogByFixture(dependencies);
+  const canonicalPathOptions =
+    catalogPath === null
+      ? { fixtureRoot: dependencies?.fixtureRoot }
+      : { fixtureRoot: dependencies?.fixtureRoot, catalogPath };
 
   log(`Updating references for ${fixtureIds.length} fixture(s)...`);
   for (const fixtureId of fixtureIds) {
@@ -479,140 +598,193 @@ export const updateVisualBenchmarkReferences = async (
       fixtureId,
       dependencies,
     );
-    const renderedReference = await executeFixture(fixtureId, {
-      ...dependencies,
-      qualityConfig,
-      allowIncompleteVisualQuality: true,
-    });
-    const firstScreenArtifact = renderedReference.screens[0];
-    if (firstScreenArtifact === undefined) {
-      throw new Error(
-        `Benchmark fixture '${fixtureId}' did not produce any screen artifacts.`,
-      );
-    }
-    const firstScreenViewportArtifacts =
-      firstScreenArtifact.viewports !== undefined &&
-      firstScreenArtifact.viewports.length > 0
-        ? firstScreenArtifact.viewports
-        : [firstScreenArtifact];
-    const representativeFixtureViewport = selectRepresentativeViewportArtifact(
-      firstScreenViewportArtifacts,
+    const view = benchmarkViewsByFixture.get(fixtureId);
+    const sourceNodeId = view?.nodeId ?? metadata.source.nodeId;
+    const sourceNodeName = view?.nodeName ?? metadata.source.nodeName;
+    const sourceFileKey = view?.fileKey ?? metadata.source.fileKey;
+    const selectedViewportId = view?.comparison.viewportId ?? "default";
+    const exportScale = view?.export.scale ?? metadata.export.scale;
+    const selectedScreen =
+      enumerateFixtureScreens(metadata).find(
+        (screen) => screen.screenId === sourceNodeId,
+      ) ?? enumerateFixtureScreens(metadata)[0];
+    const selectedViewport =
+      selectedScreen?.viewports?.find(
+        (candidate) => candidate.id === selectedViewportId,
+      ) ?? selectedScreen?.viewport;
+    const snapshotSeedMetadata: VisualBenchmarkFixtureMetadata = {
+      ...metadata,
+      source: {
+        ...metadata.source,
+        fileKey: sourceFileKey,
+        nodeId: sourceNodeId,
+        nodeName: sourceNodeName,
+      },
+      export: {
+        format: "png",
+        scale: exportScale,
+      },
+    };
+    const snapshot = await fetchVisualBenchmarkNodeSnapshot(
+      snapshotSeedMetadata,
+      accessToken,
+      dependencies,
     );
-    if (
-      representativeFixtureViewport === undefined ||
-      !isValidPngBuffer(representativeFixtureViewport.screenshotBuffer)
-    ) {
+    const exportMetadata: VisualBenchmarkFixtureMetadata = {
+      ...snapshotSeedMetadata,
+      source: {
+        ...snapshotSeedMetadata.source,
+        nodeName: snapshot.nodeName,
+        lastModified: snapshot.lastModified,
+      },
+      viewport: snapshot.viewport,
+    };
+    const referenceBuffer = await fetchVisualBenchmarkReferenceImage(
+      exportMetadata,
+      accessToken,
+      dependencies,
+    );
+    if (!isValidPngBuffer(referenceBuffer)) {
       throw new Error(
-        `Benchmark fixture '${fixtureId}' produced an invalid representative PNG.`,
+        `Benchmark fixture '${fixtureId}' returned an invalid PNG from Figma export.`,
       );
     }
-    const representativeFixtureViewportId =
-      typeof representativeFixtureViewport.viewportId === "string" &&
-      representativeFixtureViewport.viewportId.trim().length > 0
-        ? representativeFixtureViewport.viewportId.trim()
-        : "default";
+    const parsedReferencePng = PNG.sync.read(referenceBuffer);
+    const referenceViewport = {
+      width: parsedReferencePng.width,
+      height: parsedReferencePng.height,
+      deviceScaleFactor: selectedViewport?.deviceScaleFactor ?? 1,
+    };
 
-    const declaredScreensById = new Map(
-      enumerateFixtureScreens(metadata).map((screen) => [
-        screen.screenId,
-        screen,
-      ]),
+    const capturedAt = now();
+    const canonicalPaths = resolveVisualBenchmarkCanonicalReferencePaths(
+      {
+        fixtureId,
+        referenceVersion:
+          view?.referenceVersion ?? DEFAULT_CANONICAL_REFERENCE_VERSION,
+      },
+      canonicalPathOptions,
     );
-    const representativeDeclaredScreen = declaredScreensById.get(
-      firstScreenArtifact.screenId,
+    await mkdir(canonicalPaths.fixtureVersionDir, { recursive: true });
+    await writeFile(canonicalPaths.figmaPngPath, referenceBuffer);
+    const canonicalMeta = createCanonicalReferenceMeta({
+      fixtureId,
+      now: capturedAt,
+      snapshot,
+      referenceBuffer,
+      view,
+      metadata,
+    });
+    await writeFile(
+      canonicalPaths.referenceMetaJsonPath,
+      toStableJsonString(canonicalMeta),
+      "utf8",
     );
-    const representativeDeclaredViewportSpec =
-      representativeDeclaredScreen?.viewports?.find(
-        (viewport) => viewport.id === representativeFixtureViewportId,
-      );
-    const representativeDeviceScaleFactor =
-      representativeFixtureViewport.viewport.deviceScaleFactor ??
-      representativeDeclaredViewportSpec?.deviceScaleFactor ??
-      metadata.viewport.deviceScaleFactor ??
-      1;
+    log(`Updated ${path.relative(process.cwd(), canonicalPaths.figmaPngPath)}`);
+    log(
+      `Updated ${path.relative(process.cwd(), canonicalPaths.referenceMetaJsonPath)}`,
+    );
+
+    const legacyScreenPath = resolveVisualBenchmarkScreenPaths(
+      fixtureId,
+      sourceNodeId,
+      dependencies,
+    ).referencePngPath;
+    const viewportReferencePath = resolveVisualBenchmarkScreenViewportPaths(
+      fixtureId,
+      sourceNodeId,
+      selectedViewportId,
+      dependencies,
+    ).referencePngPath;
+    await mkdir(path.dirname(legacyScreenPath), { recursive: true });
+    await mkdir(path.dirname(viewportReferencePath), { recursive: true });
+    await writeFile(legacyScreenPath, referenceBuffer);
+    await writeFile(viewportReferencePath, referenceBuffer);
+    await writeVisualBenchmarkReference(
+      fixtureId,
+      referenceBuffer,
+      dependencies,
+    );
 
     const updatedMetadata: VisualBenchmarkFixtureMetadata = {
       ...metadata,
-      capturedAt: now(),
-      viewport: {
-        width: representativeFixtureViewport.viewport.width,
-        height: representativeFixtureViewport.viewport.height,
-        deviceScaleFactor: representativeDeviceScaleFactor,
+      capturedAt,
+      source: {
+        ...metadata.source,
+        fileKey: sourceFileKey,
+        nodeId: sourceNodeId,
+        nodeName: snapshot.nodeName,
+        lastModified: snapshot.lastModified,
       },
+      export: {
+        format: "png",
+        scale: exportScale,
+      },
+      viewport: {
+        width: referenceViewport.width,
+        height: referenceViewport.height,
+        deviceScaleFactor: referenceViewport.deviceScaleFactor,
+      },
+      ...(Array.isArray(metadata.screens) && metadata.screens.length > 0
+        ? {
+            screens: metadata.screens.map((screen) => {
+              const screenMatchesSource =
+                screen.screenId === sourceNodeId ||
+                screen.nodeId === sourceNodeId ||
+                screen.nodeId === metadata.source.nodeId ||
+                screen.screenName === sourceNodeName;
+              const updateSingleScreen =
+                !screenMatchesSource && metadata.screens?.length === 1;
+              if (!screenMatchesSource && !updateSingleScreen) {
+                return screen;
+              }
+              const updatedScreenViewports = Array.isArray(screen.viewports)
+                ? screen.viewports.map((viewport) =>
+                    viewport.id === selectedViewportId
+                      ? {
+                          ...viewport,
+                          width: referenceViewport.width,
+                          height: referenceViewport.height,
+                          deviceScaleFactor:
+                            viewport.deviceScaleFactor ??
+                            referenceViewport.deviceScaleFactor,
+                        }
+                      : viewport,
+                  )
+                : screen.viewports;
+              return {
+                ...screen,
+                screenId: sourceNodeId,
+                screenName: snapshot.nodeName,
+                nodeId: sourceNodeId,
+                viewport: {
+                  ...(screen.viewport ?? referenceViewport),
+                  width: referenceViewport.width,
+                  height: referenceViewport.height,
+                  deviceScaleFactor:
+                    screen.viewport?.deviceScaleFactor ??
+                    referenceViewport.deviceScaleFactor,
+                },
+                ...(updatedScreenViewports !== undefined
+                  ? { viewports: updatedScreenViewports }
+                  : {}),
+              };
+            }),
+          }
+        : {}),
     };
-
-    for (const renderedScreen of renderedReference.screens) {
-      const viewportArtifacts =
-        renderedScreen.viewports !== undefined &&
-        renderedScreen.viewports.length > 0
-          ? renderedScreen.viewports
-          : [
-              {
-                viewportId: "default",
-                screenshotBuffer: renderedScreen.screenshotBuffer,
-              },
-            ];
-      const representativeScreenViewport =
-        selectRepresentativeViewportArtifact(viewportArtifacts);
-      if (
-        representativeScreenViewport !== undefined &&
-        isValidPngBuffer(representativeScreenViewport.screenshotBuffer)
-      ) {
-        const legacyScreenPath = resolveVisualBenchmarkScreenPaths(
-          fixtureId,
-          renderedScreen.screenId,
-          dependencies,
-        ).referencePngPath;
-        await mkdir(path.dirname(legacyScreenPath), { recursive: true });
-        await writeFile(
-          legacyScreenPath,
-          representativeScreenViewport.screenshotBuffer,
-        );
-        log(`Updated ${path.relative(process.cwd(), legacyScreenPath)}`);
-      }
-
-      for (const viewportArtifact of viewportArtifacts) {
-        const viewportId =
-          typeof viewportArtifact.viewportId === "string" &&
-          viewportArtifact.viewportId.trim().length > 0
-            ? viewportArtifact.viewportId.trim()
-            : "default";
-        if (!isValidPngBuffer(viewportArtifact.screenshotBuffer)) {
-          throw new Error(
-            `Benchmark fixture '${fixtureId}' screen '${renderedScreen.screenId}' viewport '${viewportId}' produced an invalid PNG.`,
-          );
-        }
-        const viewportPath = resolveVisualBenchmarkScreenViewportPaths(
-          fixtureId,
-          renderedScreen.screenId,
-          viewportId,
-          dependencies,
-        ).referencePngPath;
-        await mkdir(path.dirname(viewportPath), { recursive: true });
-        await writeFile(viewportPath, viewportArtifact.screenshotBuffer);
-        log(`Updated ${path.relative(process.cwd(), viewportPath)}`);
-      }
-
-      if (!declaredScreensById.has(renderedScreen.screenId)) {
-        throw new Error(
-          `Benchmark fixture '${fixtureId}' produced undeclared screen '${renderedScreen.screenId}'.`,
-        );
-      }
-    }
-
-    await writeVisualBenchmarkReference(
-      fixtureId,
-      representativeFixtureViewport.screenshotBuffer,
-      dependencies,
-    );
     await writeVisualBenchmarkFixtureMetadata(
       fixtureId,
       updatedMetadata,
       dependencies,
     );
-
-    const paths = resolveVisualBenchmarkFixturePaths(fixtureId, dependencies);
-    log(`Updated ${path.relative(process.cwd(), paths.referencePngPath)}`);
+    const fixturePaths = resolveVisualBenchmarkFixturePaths(
+      fixtureId,
+      dependencies,
+    );
+    log(`Updated ${path.relative(process.cwd(), fixturePaths.referencePngPath)}`);
+    log(`Updated ${path.relative(process.cwd(), legacyScreenPath)}`);
+    log(`Updated ${path.relative(process.cwd(), viewportReferencePath)}`);
   }
 };
 
@@ -622,6 +794,12 @@ export const runVisualBenchmarkLiveAudit = async (
   const accessToken = requireAccessToken();
   const log = dependencies?.log ?? defaultLog;
   const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
+  const catalogPath = await resolveCatalogPath(dependencies);
+  const benchmarkViewsByFixture = await loadCatalogByFixture(dependencies);
+  const canonicalPathOptions =
+    catalogPath === null
+      ? { fixtureRoot: dependencies?.fixtureRoot }
+      : { fixtureRoot: dependencies?.fixtureRoot, catalogPath };
   const results: VisualBenchmarkLiveAuditResult[] = [];
 
   log(
@@ -632,6 +810,7 @@ export const runVisualBenchmarkLiveAudit = async (
       fixtureId,
       dependencies,
     );
+    const view = benchmarkViewsByFixture.get(fixtureId);
     const frozenFigmaInput = await loadVisualBenchmarkFixtureInputs(
       fixtureId,
       dependencies,
@@ -691,6 +870,26 @@ export const runVisualBenchmarkLiveAudit = async (
       }
       if (screen.nodeId === metadata.source.nodeId) {
         candidateBuffers.push(frozenReference);
+      }
+      if (screen.nodeId === (view?.nodeId ?? metadata.source.nodeId)) {
+        try {
+          const canonicalPaths = resolveVisualBenchmarkCanonicalReferencePaths(
+            {
+              fixtureId,
+              referenceVersion:
+                view?.referenceVersion ?? DEFAULT_CANONICAL_REFERENCE_VERSION,
+            },
+            canonicalPathOptions,
+          );
+          const canonicalBuffer = await loadValidPngIfPresent(
+            canonicalPaths.figmaPngPath,
+          );
+          if (canonicalBuffer !== null) {
+            candidateBuffers.push(canonicalBuffer);
+          }
+        } catch {
+          viewportReferenceDrift = true;
+        }
       }
 
       const hasMatch = candidateBuffers.some((buffer) =>

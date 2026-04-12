@@ -175,6 +175,7 @@ export const runVisualBenchmarkCli = async (
   options?: {
     runBenchmark?: (input?: {
       qualityThreshold?: number;
+      ci?: boolean;
       viewportId?: string;
       componentVisualCatalogFile?: string;
       storybookStaticDir?: string;
@@ -192,6 +193,7 @@ export const runVisualBenchmarkCli = async (
     options?.runBenchmark ??
     (async (input?: {
       qualityThreshold?: number;
+      ci?: boolean;
       viewportId?: string;
       componentVisualCatalogFile?: string;
       storybookStaticDir?: string;
@@ -210,6 +212,7 @@ export const runVisualBenchmarkCli = async (
             }
           : config;
       return runVisualBenchmark({
+        ci: input?.ci,
         qualityConfig: effectiveConfig,
         viewportId: input?.viewportId,
         componentVisualCatalogFile: input?.componentVisualCatalogFile,
@@ -220,6 +223,7 @@ export const runVisualBenchmarkCli = async (
   const threshold = resolution.qualityThreshold;
   const result = await runBenchmark({
     qualityThreshold: threshold,
+    ci: resolution.ci,
     viewportId: resolution.viewportId,
     componentVisualCatalogFile: resolution.componentVisualCatalogFile,
     storybookStaticDir: resolution.storybookStaticDir,
@@ -229,6 +233,18 @@ export const runVisualBenchmarkCli = async (
   if (
     resolution.enforceThresholds &&
     result.deltas.some((d) => d.thresholdResult?.verdict === "fail")
+  ) {
+    return 1;
+  }
+
+  if (
+    resolution.enforceThresholds &&
+    result.alerts.some(
+      (alert) =>
+        alert.code === "ALERT_VISUAL_QUALITY_OVERFITTING_RISK" ||
+        alert.code === "ALERT_VISUAL_QUALITY_CANONICAL_DIFF_EXCEEDED" ||
+        alert.code === "ALERT_VISUAL_QUALITY_CANONICAL_REFERENCE_MISSING",
+    )
   ) {
     return 1;
   }

@@ -133,6 +133,63 @@ test("comparePngBuffers rejects invalid diff config values", () => {
       return true;
     },
   );
+
+  assert.throws(
+    () =>
+      comparePngBuffers({
+        referenceBuffer: red,
+        testBuffer: red,
+        config: { maxDiffPixels: -1 },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /maxDiffPixels/i);
+      return true;
+    },
+  );
+
+  assert.throws(
+    () =>
+      comparePngBuffers({
+        referenceBuffer: red,
+        testBuffer: red,
+        config: { maxDiffPixelRatio: 1.1 },
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /maxDiffPixelRatio/i);
+      return true;
+    },
+  );
+});
+
+test("comparePngBuffers applies global diff budgets without mutating raw diff counts", () => {
+  const reference = createHalfRedHalfBluePng(40, 20);
+  const candidate = createSolidPng(40, 20, 255, 0, 0);
+
+  const strictResult = comparePngBuffers({
+    referenceBuffer: reference,
+    testBuffer: candidate,
+  });
+  const budgetedResult = comparePngBuffers({
+    referenceBuffer: reference,
+    testBuffer: candidate,
+    config: {
+      maxDiffPixels: strictResult.diffPixelCount,
+    },
+  });
+
+  assert.ok(strictResult.diffPixelCount > 0);
+  assert.equal(
+    budgetedResult.diffPixelCount,
+    strictResult.diffPixelCount,
+    "raw diff count should remain unchanged for diagnostics",
+  );
+  assert.equal(
+    budgetedResult.similarityScore,
+    100,
+    "similarity score should absorb the configured budget",
+  );
 });
 
 test("comparePngBuffers throws for dimension mismatch", () => {

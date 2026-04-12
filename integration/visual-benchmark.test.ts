@@ -58,6 +58,7 @@ import {
 } from "./visual-benchmark-runner.js";
 import {
   loadVisualBenchmarkViewCatalog,
+  resolveVisualBenchmarkCanonicalReferencePaths,
   toCatalogViewMapByFixture,
 } from "./visual-benchmark-view-catalog.js";
 
@@ -369,8 +370,9 @@ test("listVisualBenchmarkFixtureIds returns at least one fixture", async () => {
 
 test("loadVisualBenchmarkFixtureMetadata validates the committed simple-form fixture", async () => {
   const metadata = await loadVisualBenchmarkFixtureMetadata("simple-form");
-  assert.equal(metadata.version, 2);
+  assert.equal(metadata.version, 4);
   assert.equal(metadata.fixtureId, "simple-form");
+  assert.equal(metadata.mode, "generated_app_screen");
   assert.equal(metadata.source.fileKey, "DUArQ8VuM3aPMjXFLaQSSH");
   assert.equal(metadata.source.nodeId, "1:65671");
   assert.equal(metadata.export.format, "png");
@@ -552,77 +554,139 @@ test("runVisualBenchmarkLiveAudit detects JSON and PNG drift", async () => {
   }
 });
 
-test("updateVisualBenchmarkReferences writes per-viewport references and updates representative legacy paths", async () => {
+test("updateVisualBenchmarkReferences writes canonical Figma references and keeps legacy aliases in sync", async () => {
   const fixtureRoot = await createFixtureRoot();
-  const desktopBuffer = createTestPngBuffer(16, 12, [10, 20, 30, 255]);
-  const mobileBuffer = createTestPngBuffer(12, 20, [80, 70, 60, 255]);
+  const canonicalBuffer = createTestPngBuffer(16, 12, [10, 20, 30, 255]);
+  const simpleFormView = {
+    fixtureId: "simple-form",
+    label: "Test-View-01",
+    fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+    nodeId: "1:65671",
+    nodeName:
+      "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+    referenceVersion: 1,
+    export: {
+      format: "png" as const,
+      scale: 2,
+    },
+    comparison: {
+      viewportId: "desktop",
+      maxDiffPercent: 0.1,
+    },
+  };
+  const minimumCatalogViews = [
+    simpleFormView,
+    {
+      fixtureId: "complex-dashboard",
+      label: "Test-View-02",
+      fileKey: "E5h5554zKbYsIutW9hEro4",
+      nodeId: "2:46031",
+      nodeName: "Frame 1",
+      referenceVersion: 1,
+      export: { format: "png" as const, scale: 2 },
+      comparison: { viewportId: "desktop", maxDiffPercent: 0.1 },
+    },
+    {
+      fixtureId: "data-table",
+      label: "Test-View-03",
+      fileKey: "M7FGS79qLfr3O4OXEYbxy0",
+      nodeId: "4:38304",
+      nodeName:
+        "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded  ID-003.4_v1",
+      referenceVersion: 1,
+      export: { format: "png" as const, scale: 2 },
+      comparison: { viewportId: "desktop", maxDiffPercent: 0.1 },
+    },
+    {
+      fixtureId: "navigation-sidebar",
+      label: "Test-View-04",
+      fileKey: "LATywBmBgvfBp1VvwUsGNB",
+      nodeId: "1:48176",
+      nodeName: "Empty State ID-001.1_v1",
+      referenceVersion: 1,
+      export: { format: "png" as const, scale: 2 },
+      comparison: { viewportId: "desktop", maxDiffPercent: 0.1 },
+    },
+    {
+      fixtureId: "design-system-showcase",
+      label: "Test-View-05",
+      fileKey: "xr6NfWtzAj4mAk54ZsBs53",
+      nodeId: "1:63838",
+      nodeName: "NEO Desktop (stationär) ID-001.7_v1",
+      referenceVersion: 1,
+      export: { format: "png" as const, scale: 2 },
+      comparison: { viewportId: "desktop", maxDiffPercent: 0.1 },
+    },
+  ];
 
   try {
+    await writeFile(
+      path.join(fixtureRoot, "benchmark-views.json"),
+      JSON.stringify(
+        {
+          version: 2,
+          views: minimumCatalogViews,
+        },
+        null,
+        2,
+      ),
+      "utf8",
+    );
+    process.env.FIGMA_ACCESS_TOKEN = "test-token";
+    let fetchCall = 0;
     await updateVisualBenchmarkReferences({
       fixtureRoot,
       now: () => "2026-04-10T12:00:00.000Z",
       log: () => {
         return;
       },
-      executeFixture: async (fixtureId) => ({
-        fixtureId,
-        aggregateScore: 95,
-        screens: [
-          {
-            screenId: "1:65671",
-            screenName: "Simple Form",
-            nodeId: "1:65671",
-            score: 95,
-            screenshotBuffer: desktopBuffer,
-            diffBuffer: null,
-            report: null,
-            viewport: {
-              width: 1280,
-              height: 800,
+      fetchImpl: async (url) => {
+        fetchCall += 1;
+        if (fetchCall === 1) {
+          return createJsonResponse({
+            lastModified: "2026-04-10T09:15:00Z",
+            nodes: {
+              "1:65671": {
+                document: {
+                  id: "1:65671",
+                  name: "Simple Form",
+                  absoluteBoundingBox: {
+                    width: 1336,
+                    height: 1578,
+                  },
+                },
+              },
             },
-            viewports: [
-              {
-                viewportId: "desktop",
-                viewportLabel: "Desktop",
-                score: 96,
-                screenshotBuffer: desktopBuffer,
-                diffBuffer: null,
-                report: null,
-                viewport: {
-                  width: 1280,
-                  height: 800,
-                },
-              },
-              {
-                viewportId: "mobile",
-                viewportLabel: "Mobile",
-                score: 94,
-                screenshotBuffer: mobileBuffer,
-                diffBuffer: null,
-                report: null,
-                viewport: {
-                  width: 390,
-                  height: 844,
-                },
-              },
-            ],
+          });
+        }
+        if (fetchCall === 2) {
+          return createJsonResponse({
+            images: {
+              "1:65671": "https://example.test/simple-form-reference.png",
+            },
+          });
+        }
+        return new Response(canonicalBuffer, {
+          status: 200,
+          headers: {
+            "Content-Type": "image/png",
           },
-        ],
-      }),
+        });
+      },
     });
 
     const fixtureReference = await readFile(
       resolveVisualBenchmarkFixturePaths("simple-form", { fixtureRoot })
         .referencePngPath,
     );
-    assert.equal(fixtureReference.equals(desktopBuffer), true);
+    assert.equal(fixtureReference.equals(canonicalBuffer), true);
 
     const legacyScreenReference = await readFile(
       resolveVisualBenchmarkScreenPaths("simple-form", "1:65671", {
         fixtureRoot,
       }).referencePngPath,
     );
-    assert.equal(legacyScreenReference.equals(desktopBuffer), true);
+    assert.equal(legacyScreenReference.equals(canonicalBuffer), true);
 
     const desktopReference = await readFile(
       resolveVisualBenchmarkScreenViewportPaths(
@@ -632,17 +696,25 @@ test("updateVisualBenchmarkReferences writes per-viewport references and updates
         { fixtureRoot },
       ).referencePngPath,
     );
-    assert.equal(desktopReference.equals(desktopBuffer), true);
+    assert.equal(desktopReference.equals(canonicalBuffer), true);
 
-    const mobileReference = await readFile(
-      resolveVisualBenchmarkScreenViewportPaths(
-        "simple-form",
-        "1:65671",
-        "mobile",
-        { fixtureRoot },
-      ).referencePngPath,
+    const canonicalPaths = resolveVisualBenchmarkCanonicalReferencePaths(
+      simpleFormView,
+      { fixtureRoot },
     );
-    assert.equal(mobileReference.equals(mobileBuffer), true);
+    const canonicalReference = await readFile(canonicalPaths.figmaPngPath);
+    assert.equal(canonicalReference.equals(canonicalBuffer), true);
+    const canonicalMeta = JSON.parse(
+      await readFile(canonicalPaths.referenceMetaJsonPath, "utf8"),
+    ) as {
+      referenceVersion: number;
+      comparison: { viewportId: string };
+      sha256: string;
+    };
+    assert.equal(canonicalMeta.referenceVersion, 1);
+    assert.equal(canonicalMeta.comparison.viewportId, "desktop");
+    assert.equal(typeof canonicalMeta.sha256, "string");
+    assert.equal(canonicalMeta.sha256.length > 0, true);
 
     const updatedMetadata = await loadVisualBenchmarkFixtureMetadata(
       "simple-form",
@@ -650,11 +722,12 @@ test("updateVisualBenchmarkReferences writes per-viewport references and updates
     );
     assert.equal(updatedMetadata.capturedAt, "2026-04-10T12:00:00.000Z");
     assert.deepEqual(updatedMetadata.viewport, {
-      width: 1280,
-      height: 800,
+      width: 16,
+      height: 12,
       deviceScaleFactor: 1,
     });
   } finally {
+    delete process.env.FIGMA_ACCESS_TOKEN;
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
@@ -839,7 +912,8 @@ test("all 5 fixtures can be loaded (manifest, metadata, figma.json, reference.pn
       manifest.visualQuality.frozenReferenceMetadata,
       "metadata.json",
     );
-    assert.equal(metadata.version, 2);
+    assert.equal(metadata.version, 4);
+    assert.equal(metadata.mode, "generated_app_screen");
     assert.equal(metadata.fixtureId, id);
     const view = byFixture.get(id);
     assert.ok(view, `Expected benchmark view catalog entry for '${id}'.`);
@@ -1185,6 +1259,119 @@ test("prepareStorybookComponentFixtures synthesizes runnable component fixtures 
   }
 });
 
+test("prepareStorybookComponentFixtures reuses frozen component references in ci mode without live fetch", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-storybook-component-ci-"),
+  );
+  const fixtureRoot = path.join(root, "fixtures");
+  const catalogPath = path.join(
+    root,
+    "storybook.component-visual-catalog.json",
+  );
+  const screenId = "button::button--primary";
+
+  try {
+    await mkdir(fixtureRoot, { recursive: true });
+    await writeFile(
+      catalogPath,
+      `${JSON.stringify(
+        {
+          artifact: "storybook.component-visual-catalog",
+          version: 1,
+          stats: {
+            totalCount: 1,
+            readyCount: 1,
+            skippedCount: 0,
+            byMatchStatus: {
+              matched: 1,
+              ambiguous: 0,
+              unmatched: 0,
+            },
+            bySkipReason: {
+              unmatched: 0,
+              ambiguous: 0,
+              docs_only: 0,
+              missing_story: 0,
+              missing_reference_node: 0,
+              missing_authoritative_story: 0,
+            },
+          },
+          entries: [
+            {
+              componentId: screenId,
+              figmaFamilyKey: "button",
+              figmaFamilyName: "Button",
+              matchStatus: "matched",
+              comparisonStatus: "ready",
+              storyEntryId: "button--primary",
+              storyTitle: "Button/Primary",
+              iframeId: "button--primary",
+              referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+              referenceNodeId: "12:34",
+              captureStrategy: "storybook_root_union",
+              baselineCanvas: {
+                padding: 16,
+              },
+              warnings: [],
+            },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
+
+    const frozenReferencePath = resolveVisualBenchmarkScreenViewportPaths(
+      "storybook-components",
+      screenId,
+      "default",
+      { fixtureRoot },
+    ).referencePngPath;
+    await mkdir(path.dirname(frozenReferencePath), { recursive: true });
+    await writeFile(
+      frozenReferencePath,
+      createTestPngBuffer(90, 40, [120, 80, 220, 255]),
+    );
+
+    let fetchCalls = 0;
+    const prepared = await prepareStorybookComponentFixtures(
+      {
+        fixtureRoot,
+        componentVisualCatalogFile: catalogPath,
+        ci: true,
+      },
+      {
+        fetchReferenceImage: async () => {
+          fetchCalls += 1;
+          return createTestPngBuffer(1, 1, [0, 0, 0, 255]);
+        },
+      },
+    );
+
+    try {
+      assert.equal(fetchCalls, 0);
+      const metadata = await loadVisualBenchmarkFixtureMetadata(
+        "storybook-components",
+        {
+          fixtureRoot: prepared.options?.fixtureRoot,
+        },
+      );
+      assert.deepEqual(metadata.screens?.[0]?.viewports, [
+        {
+          id: "default",
+          width: 122,
+          height: 72,
+        },
+      ]);
+    } finally {
+      await prepared.cleanup?.();
+    }
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("runVisualBenchmark blends generated screens with storybook component aggregates and surfaces component coverage warnings", async () => {
   const root = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-visual-benchmark-blend-"),
@@ -1326,6 +1513,141 @@ test("runVisualBenchmark blends generated screens with storybook component aggre
     assert.equal(result.componentCoverage?.skippedCount, 1);
     assert.equal(result.componentCoverage?.bySkipReason.incomplete_mapping, 1);
     assert.match(result.warnings?.[0] ?? "", /component coverage skipped/i);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("runVisualBenchmark emits overfitting alert when screen aggregate improves while Storybook components regress", async () => {
+  const root = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-benchmark-overfitting-"),
+  );
+  const fixtureRoot = path.join(root, "fixtures");
+  const artifactRoot = path.join(root, "artifacts");
+  const screenFixtureId = "app-screen";
+  const componentFixtureId = "storybook-components";
+  try {
+    await writeBenchmarkFixture({
+      fixtureRoot,
+      artifactRoot,
+      metadata: {
+        ...simpleFormMetadata,
+        fixtureId: screenFixtureId,
+        source: {
+          ...simpleFormMetadata.source,
+          nodeId: "1:900",
+          nodeName: "App Screen",
+        },
+      },
+    });
+    await writeBenchmarkFixture({
+      fixtureRoot,
+      artifactRoot,
+      metadata: {
+        version: 4,
+        mode: "storybook_component",
+        fixtureId: componentFixtureId,
+        capturedAt: "2026-04-09T00:00:00.000Z",
+        source: {
+          fileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+          nodeId: "12:34",
+          nodeName: "Storybook Components",
+          lastModified: "2026-03-30T20:59:16Z",
+        },
+        viewport: { width: 200, height: 160 },
+        export: { format: "png", scale: 1 },
+        screens: [
+          {
+            screenId: "button-primary",
+            screenName: "Button",
+            storyTitle: "Button / Primary",
+            nodeId: "12:34",
+            viewport: { width: 200, height: 160 },
+            entryId: "components-button--primary",
+            referenceNodeId: "12:34",
+            referenceFileKey: "DUArQ8VuM3aPMjXFLaQSSH",
+            captureStrategy: "storybook_root_union",
+            baselineCanvas: { width: 120, height: 96 },
+          },
+        ],
+      },
+    });
+
+    await saveVisualBenchmarkBaselineScores(
+      [
+        {
+          fixtureId: screenFixtureId,
+          screenId: "1:900",
+          screenName: "App Screen",
+          score: 70,
+        },
+        {
+          fixtureId: componentFixtureId,
+          screenId: "button-primary",
+          screenName: "Button / Primary",
+          score: 80,
+        },
+      ],
+      { fixtureRoot, artifactRoot },
+    );
+
+    const result = await runVisualBenchmark(
+      { fixtureRoot, artifactRoot },
+      {
+        executeFixture: async (fixtureId) => {
+          if (fixtureId === screenFixtureId) {
+            return {
+              fixtureId,
+              aggregateScore: 82,
+              screens: [
+                {
+                  screenId: "1:900",
+                  screenName: "App Screen",
+                  nodeId: "1:900",
+                  status: "completed" as const,
+                  score: 82,
+                  screenshotBuffer: createTestPngBuffer(4, 4, [10, 20, 30, 255]),
+                  diffBuffer: createTestPngBuffer(4, 4, [0, 0, 0, 0]),
+                  report: createCompletedVisualQualityReport(82),
+                  viewport: { width: 1280, height: 720 },
+                },
+              ],
+            };
+          }
+          return {
+            fixtureId,
+            aggregateScore: 68,
+            componentAggregateScore: 68,
+            componentCoverage: {
+              comparedCount: 1,
+              skippedCount: 0,
+              coveragePercent: 100,
+              bySkipReason: {},
+            },
+            screens: [
+              {
+                screenId: "button-primary",
+                screenName: "Button / Primary",
+                nodeId: "12:34",
+                status: "completed" as const,
+                score: 68,
+                screenshotBuffer: createTestPngBuffer(4, 4, [40, 50, 60, 255]),
+                diffBuffer: createTestPngBuffer(4, 4, [0, 0, 0, 0]),
+                report: createCompletedVisualQualityReport(68),
+                viewport: { width: 120, height: 96 },
+              },
+            ],
+          };
+        },
+      },
+    );
+
+    assert.equal(
+      result.alerts.some(
+        (alert) => alert.code === "ALERT_VISUAL_QUALITY_OVERFITTING_RISK",
+      ),
+      true,
+    );
   } finally {
     await rm(root, { recursive: true, force: true });
   }
