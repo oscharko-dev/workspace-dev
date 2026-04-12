@@ -67,12 +67,31 @@ describe("parseLastRun", () => {
 });
 
 describe("parseScreenReport", () => {
-  it("parses a real per-screen report.json", () => {
-    const file = path.join(
-      artifactRoot,
-      "last-run/complex-dashboard/screens/2_10001/desktop/report.json",
-    );
-    const parsed = parseScreenReport(readJson(file));
+  it("parses a representative per-screen report payload", () => {
+    const parsed = parseScreenReport({
+      status: "completed",
+      overallScore: 98.2,
+      dimensions: [
+        { name: "layoutAccuracy", weight: 0.35, score: 99 },
+        { name: "spacingAlignment", weight: 0.15, score: 97.4 },
+      ],
+      hotspots: [
+        {
+          region: "top-right",
+          x: 24,
+          y: 16,
+          width: 120,
+          height: 64,
+          severity: "low",
+          category: "anti-aliasing",
+          deviationPercent: 0.7,
+        },
+      ],
+      metadata: {
+        imageWidth: 1280,
+        imageHeight: 800,
+      },
+    });
     expect(parsed.status).toBe("completed");
     expect(parsed.dimensions.length).toBeGreaterThan(0);
     expect(parsed.hotspots.length).toBeGreaterThanOrEqual(0);
