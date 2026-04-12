@@ -104,9 +104,6 @@ jobs:
           pnpm exec playwright install-deps $browsers
 
       - name: Run visual benchmark verification suites
-        env:
-          WORKSPACEDEV_BOARD_KEY: DUArQ8VuM3aPMjXFLaQSSH
-          WORKSPACEDEV_FIGMA_TOKEN: ${{ secrets.WORKSPACEDEV_FIGMA_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/visual-benchmark/logs
@@ -114,7 +111,7 @@ jobs:
             pnpm exec tsx --test src/job-engine/visual-capture.test.ts src/job-engine/visual-diff.test.ts src/job-engine/visual-scoring.test.ts src/job-engine/pipeline/orchestrator.test.ts
             pnpm exec tsx --test integration/visual-benchmark.execution.test.ts integration/visual-benchmark.test.ts integration/visual-benchmark-runner.error-isolation.test.ts integration/visual-quality-config.test.ts
             pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts
-            pnpm exec tsx --test src/parity/classification-engine.e2e.test.ts src/parity/ir-screen-variants.live.e2e.test.ts src/parity/ir-tree.test.ts
+            pnpm exec tsx --test src/parity/ir-classification.test.ts src/parity/ir-screen-variants.test.ts src/parity/ir.test.ts
             pnpm exec vitest run --config ui-src/vite.config.ts ui-src/src/features/visual-quality/data/report-schema.test.ts ui-src/src/features/visual-quality/data/file-source.test.ts
           } 2>&1 | tee artifacts/visual-benchmark/logs/verification-suites.log
           node scripts/assert-no-skipped-tests.mjs artifacts/visual-benchmark/logs/verification-suites.log

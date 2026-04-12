@@ -2265,7 +2265,7 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   );
   assert.match(
     workflow,
-    /pnpm exec tsx --test src\/parity\/classification-engine\.e2e\.test\.ts src\/parity\/ir-screen-variants\.live\.e2e\.test\.ts src\/parity\/ir-tree\.test\.ts/,
+    /pnpm exec tsx --test src\/parity\/ir-classification\.test\.ts src\/parity\/ir-screen-variants\.test\.ts src\/parity\/ir\.test\.ts/,
   );
   assert.match(
     workflow,
