@@ -35,6 +35,8 @@ export interface ProjectKpiSnapshot {
   visualQualityScoreP50?: number;
   visualQualityScoreP95?: number;
   visualQualityDimensions?: KpiVisualQualityDimensionScores;
+  confidenceScoreAvg?: number;
+  confidenceScoreP50?: number;
 }
 
 export interface PortfolioKpiSnapshot {
@@ -51,6 +53,7 @@ export interface PortfolioKpiSnapshot {
   mappingCoverageAvg?: number;
   uiGateWarnRate?: number;
   visualQualityScoreAvg?: number;
+  confidenceScoreAvg?: number;
   projects: Array<{
     projectId: string;
     totalJobs: number;
@@ -73,6 +76,7 @@ export interface KpiTrendBucket {
   retriesPerJob: number;
   mappingCoverageAvg?: number;
   visualQualityScoreAvg?: number;
+  confidenceScoreAvg?: number;
   duration: KpiDurationStats;
 }
 
@@ -85,6 +89,7 @@ export interface KpiBaselineComparison {
   uiGateWarnRateDelta?: number;
   retriesPerJobDelta?: number;
   visualQualityScoreDelta?: number;
+  confidenceScoreDelta?: number;
 }
 
 export type KpiAlertCode =
@@ -98,7 +103,9 @@ export type KpiAlertCode =
   | "ALERT_VISUAL_QUALITY_CANONICAL_REFERENCE_MISSING"
   | "ALERT_VISUAL_QUALITY_MISSING_SCREEN"
   | "ALERT_VISUAL_QUALITY_ORPHAN_SCREEN_BASELINE"
-  | "ALERT_VISUAL_QUALITY_STALE_SCREEN_BASELINE";
+  | "ALERT_VISUAL_QUALITY_STALE_SCREEN_BASELINE"
+  | "ALERT_CONFIDENCE_DROP"
+  | "ALERT_CONFIDENCE_LOW_SCREEN";
 
 export interface KpiAlert {
   code: KpiAlertCode;
