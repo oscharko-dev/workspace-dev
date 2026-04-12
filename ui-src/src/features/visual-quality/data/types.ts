@@ -175,48 +175,6 @@ export interface MergedScreen {
   worstSeverity: HotspotSeverity | null;
 }
 
-// ---------------------------------------------------------------------------
-// Generation confidence model types (#849)
-// ---------------------------------------------------------------------------
-
-export type ConfidenceLevel = "high" | "medium" | "low" | "very_low";
-
-export interface ConfidenceContributor {
-  signal: string;
-  impact: "positive" | "negative" | "neutral";
-  weight: number;
-  value: number;
-  detail: string;
-}
-
-export interface ComponentConfidence {
-  componentId: string;
-  componentName: string;
-  level: ConfidenceLevel;
-  score: number;
-  contributors: ConfidenceContributor[];
-}
-
-export interface ScreenConfidence {
-  screenId: string;
-  screenName: string;
-  level: ConfidenceLevel;
-  score: number;
-  contributors: ConfidenceContributor[];
-  components: ComponentConfidence[];
-}
-
-export interface JobConfidence {
-  status: "completed" | "failed" | "not_requested";
-  generatedAt?: string;
-  level?: ConfidenceLevel;
-  score?: number;
-  contributors?: ConfidenceContributor[];
-  screens?: ScreenConfidence[];
-  lowConfidenceSummary?: string[];
-  message?: string;
-}
-
 /**
  * A grouping of merged screens by fixture, used by the gallery view.
  */
