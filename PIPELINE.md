@@ -43,7 +43,7 @@ flowchart TB
 
 ## Coverage gate exclusions
 
-- `pnpm run test:coverage` now excludes [`src/job-engine.ts`](/Users/oscharko/Projects/workspace-dev/src/job-engine.ts) and [`src/job-engine/figma-source.ts`](/Users/oscharko/Projects/workspace-dev/src/job-engine/figma-source.ts) from the global `c8` branch gate.
+- `pnpm run test:coverage` now excludes [`src/job-engine.ts`](src/job-engine.ts) and [`src/job-engine/figma-source.ts`](src/job-engine/figma-source.ts) from the global `c8` branch gate.
 - These files remain covered by unit and integration tests, but they contain the highest branch fan-out in the repository because they combine queue orchestration, cancellation, retry classification, circuit-breaker state, and Figma transport error handling in a single runtime boundary.
 - The branch gate was raised to `88%` by expanding deterministic renderer and utility coverage first. These two exclusions are the minimal fallback needed after that test work, and they must stay explicitly documented here so the exception remains auditable.
 
@@ -53,20 +53,21 @@ flowchart TB
   - the global UI gate for the broad UI surface
   - a hotspot-only pass for the high-complexity Issue `#586` modules
 - The hotspot pass explicitly measures:
-  - [`ui-src/src/features/workspace/workspace-page.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/workspace/workspace-page.tsx)
-  - [`ui-src/src/features/workspace/inspector-page.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/workspace/inspector-page.tsx)
-  - [`ui-src/src/features/workspace/inspector/InspectorScopeContext.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/workspace/inspector/InspectorScopeContext.tsx)
-  - [`ui-src/src/features/visual-quality/visual-quality-page.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/visual-quality/visual-quality-page.tsx)
+  - [`ui-src/src/features/workspace/workspace-page.tsx`](ui-src/src/features/workspace/workspace-page.tsx)
+  - [`ui-src/src/features/workspace/inspector-page.tsx`](ui-src/src/features/workspace/inspector-page.tsx)
+  - [`ui-src/src/features/workspace/inspector/InspectorScopeContext.tsx`](ui-src/src/features/workspace/inspector/InspectorScopeContext.tsx)
+  - [`ui-src/src/features/visual-quality/visual-quality-page.tsx`](ui-src/src/features/visual-quality/visual-quality-page.tsx)
 - The enforceable hotspot branch thresholds are `>=75%` for:
-  - [`workspace-page.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/workspace/workspace-page.tsx)
-  - [`inspector-page.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/workspace/inspector-page.tsx)
-  - [`visual-quality-page.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/visual-quality/visual-quality-page.tsx)
+  - [`workspace-page.tsx`](ui-src/src/features/workspace/workspace-page.tsx)
+  - [`inspector-page.tsx`](ui-src/src/features/workspace/inspector-page.tsx)
+  - [`InspectorScopeContext.tsx`](ui-src/src/features/workspace/inspector/InspectorScopeContext.tsx)
+  - [`visual-quality-page.tsx`](ui-src/src/features/visual-quality/visual-quality-page.tsx)
 - The only justified UI hotspot exceptions are:
-  - [`ui-src/src/features/workspace/inspector/InspectorPanel.tsx`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/features/workspace/inspector/InspectorPanel.tsx)
+  - [`ui-src/src/features/workspace/inspector/InspectorPanel.tsx`](ui-src/src/features/workspace/inspector/InspectorPanel.tsx)
     - Rationale: the panel still concentrates the broadest remaining branch fan-out in the UI surface, and the new interaction tests now cover its critical edit, sync, navigation, and diagnostics paths without yet making a `>=75%` threshold credible for the whole monolith.
     - Owner: `@oscharko-dev`.
     - Retirement condition: remove the exception after the panel is split into smaller audited submodules or its hotspot branch coverage reaches `>=75%` under the dedicated UI hotspot pass.
-  - [`ui-src/src/lib/shiki-highlight.worker.ts`](/Users/oscharko/Projects/WorkspaceDev-issue-586/ui-src/src/lib/shiki-highlight.worker.ts)
+  - [`ui-src/src/lib/shiki-highlight.worker.ts`](ui-src/src/lib/shiki-highlight.worker.ts)
     - Rationale: the worker entrypoint is exercised through the worker client, but Vitest does not yet provide a deterministic harness for the worker message boundary without duplicating browser-worker setup inside the unit suite.
     - Owner: `@oscharko-dev`.
     - Retirement condition: remove the exception once the UI test suite includes a stable worker-harness test that executes the worker entrypoint through its real message protocol.
