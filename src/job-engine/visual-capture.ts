@@ -563,6 +563,22 @@ export const captureScreenshot = async (input: {
       await context.emulateMedia({ reducedMotion: "reduce" });
     }
 
+    if (typeof context.addInitScript === "function") {
+      const initScriptBody = [
+        "(function() {",
+        `  var css = ${JSON.stringify(REDUCED_MOTION_STYLE)};`,
+        "  function inject() {",
+        "    var s = document.createElement('style');",
+        "    s.textContent = css;",
+        "    document.head.appendChild(s);",
+        "  }",
+        "  if (document.head) { inject(); }",
+        '  else { document.addEventListener("DOMContentLoaded", inject); }',
+        "})();",
+      ].join("\n");
+      await context.addInitScript(initScriptBody);
+    }
+
     const page = await context.newPage();
 
     log(`Navigating to ${input.url}`);
@@ -571,7 +587,11 @@ export const captureScreenshot = async (input: {
       waitUntil: "load",
     });
 
-    if (typeof page.addStyleTag === "function") {
+    // Fallback for contexts without addInitScript (e.g., older Playwright versions)
+    if (
+      typeof context.addInitScript !== "function" &&
+      typeof page.addStyleTag === "function"
+    ) {
       await page.addStyleTag({ content: REDUCED_MOTION_STYLE });
     }
 
