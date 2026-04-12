@@ -85,8 +85,7 @@ export interface PerBrowserEntry {
   overallScore: number;
 }
 
-export interface StandaloneVisualQualityBrowserEntry
-  extends PerBrowserEntry {
+export interface StandaloneVisualQualityBrowserEntry extends PerBrowserEntry {
   actualImagePath?: string;
   diffImagePath?: string;
   reportPath?: string;
@@ -197,4 +196,46 @@ export interface MergedReport {
   sourceKind?: "benchmark" | "visual-quality" | "visual-parity";
   paritySummary?: VisualParitySummary;
   notices?: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Generation confidence model types (#849)
+// ---------------------------------------------------------------------------
+
+export type ConfidenceLevel = "high" | "medium" | "low" | "very_low";
+
+export interface ConfidenceContributor {
+  signal: string;
+  impact: "positive" | "negative" | "neutral";
+  weight: number;
+  value: number;
+  detail: string;
+}
+
+export interface ComponentConfidence {
+  componentId: string;
+  componentName: string;
+  level: ConfidenceLevel;
+  score: number;
+  contributors: ConfidenceContributor[];
+}
+
+export interface ScreenConfidence {
+  screenId: string;
+  screenName: string;
+  level: ConfidenceLevel;
+  score: number;
+  contributors: ConfidenceContributor[];
+  components: ComponentConfidence[];
+}
+
+export interface JobConfidence {
+  status: "completed" | "failed" | "not_requested";
+  generatedAt?: string;
+  level?: ConfidenceLevel;
+  score?: number;
+  contributors?: ConfidenceContributor[];
+  screens?: ScreenConfidence[];
+  lowConfidenceSummary?: string[];
+  message?: string;
 }
