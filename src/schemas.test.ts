@@ -522,6 +522,328 @@ test("schema: submit request rejects componentMappings with alternation quantifi
   }
 });
 
+test("schema: submit request preserves optional componentMappings metadata fields", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    componentMappings: [
+      {
+        id: 7,
+        boardKey: " board-1 ",
+        canonicalComponentName: " Button ",
+        figmaLibrary: " core-library ",
+        componentName: " FancyButton ",
+        importPath: " @fancy/ui ",
+        propContract: { size: "lg" },
+        priority: 3,
+        source: "code_connect_import",
+        enabled: true,
+        createdAt: " 2026-04-01T10:00:00.000Z ",
+        updatedAt: " 2026-04-02T10:00:00.000Z "
+      }
+    ]
+  });
+
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data.componentMappings, [
+      {
+        id: 7,
+        boardKey: "board-1",
+        canonicalComponentName: "Button",
+        figmaLibrary: "core-library",
+        componentName: "FancyButton",
+        importPath: "@fancy/ui",
+        propContract: { size: "lg" },
+        priority: 3,
+        source: "code_connect_import",
+        enabled: true,
+        createdAt: "2026-04-01T10:00:00.000Z",
+        updatedAt: "2026-04-02T10:00:00.000Z"
+      }
+    ]);
+  }
+});
+
+test("schema: submit request rejects malformed componentMappings entries with exact field issues", () => {
+  const nonArray = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    componentMappings: true
+  });
+
+  assert.equal(nonArray.success, false);
+  if (!nonArray.success) {
+    assert.deepEqual(nonArray.error.issues, [
+      {
+        path: ["componentMappings"],
+        message: "componentMappings must be an array when provided."
+      }
+    ]);
+  }
+
+  const malformed = SubmitRequestSchema.safeParse({
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    componentMappings: [
+      null,
+      {
+        id: 1.5,
+        boardKey: "   ",
+        nodeId: "button-node-1",
+        figmaLibrary: "   ",
+        componentName: "   ",
+        importPath: "   ",
+        propContract: "invalid-contract",
+        priority: Number.POSITIVE_INFINITY,
+        source: "remote",
+        enabled: "yes",
+        createdAt: "   ",
+        updatedAt: "   ",
+        unexpected: true
+      }
+    ]
+  });
+
+  assert.equal(malformed.success, false);
+  if (!malformed.success) {
+    assert.deepEqual(
+      malformed.error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })),
+      [
+        {
+          path: "componentMappings.0",
+          message: "Each component mapping rule must be an object."
+        },
+        {
+          path: "componentMappings.1.unexpected",
+          message: "Unexpected property 'unexpected'."
+        },
+        {
+          path: "componentMappings.1.boardKey",
+          message: "boardKey must be a non-empty string when provided."
+        },
+        {
+          path: "componentMappings.1.figmaLibrary",
+          message: "figmaLibrary must be a non-empty string when provided."
+        },
+        {
+          path: "componentMappings.1.componentName",
+          message: "componentName must be a non-empty string when provided."
+        },
+        {
+          path: "componentMappings.1.importPath",
+          message: "importPath must be a non-empty string when provided."
+        },
+        {
+          path: "componentMappings.1.createdAt",
+          message: "createdAt must be a non-empty string when provided."
+        },
+        {
+          path: "componentMappings.1.updatedAt",
+          message: "updatedAt must be a non-empty string when provided."
+        },
+        {
+          path: "componentMappings.1.id",
+          message: "id must be an integer when provided."
+        },
+        {
+          path: "componentMappings.1.priority",
+          message: "priority must be a finite number."
+        },
+        {
+          path: "componentMappings.1.source",
+          message: "source must be either 'local_override' or 'code_connect_import'."
+        },
+        {
+          path: "componentMappings.1.enabled",
+          message: "enabled must be a boolean."
+        },
+        {
+          path: "componentMappings.1.propContract",
+          message: "propContract must be an object when provided."
+        }
+      ]
+    );
+  }
+});
+
+test("schema: submit request parses visualAudit configuration deeply", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    visualAudit: {
+      baselineImagePath: " ./snapshots/home.png ",
+      capture: {
+        viewport: {
+          width: 1440,
+          height: 900,
+          deviceScaleFactor: 2
+        },
+        waitForNetworkIdle: true,
+        waitForFonts: false,
+        waitForAnimations: true,
+        timeoutMs: 5000,
+        fullPage: false
+      },
+      diff: {
+        threshold: 0.1,
+        includeAntialiasing: true,
+        alpha: 0.5
+      },
+      regions: [
+        {
+          name: " hero ",
+          x: 0,
+          y: 10,
+          width: 1200,
+          height: 400
+        }
+      ]
+    }
+  });
+
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data.visualAudit, {
+      baselineImagePath: "./snapshots/home.png",
+      capture: {
+        viewport: {
+          width: 1440,
+          height: 900,
+          deviceScaleFactor: 2
+        },
+        waitForNetworkIdle: true,
+        waitForFonts: false,
+        waitForAnimations: true,
+        timeoutMs: 5000,
+        fullPage: false
+      },
+      diff: {
+        threshold: 0.1,
+        includeAntialiasing: true,
+        alpha: 0.5
+      },
+      regions: [
+        {
+          name: "hero",
+          x: 0,
+          y: 10,
+          width: 1200,
+          height: 400
+        }
+      ]
+    });
+  }
+});
+
+test("schema: submit request rejects non-object and malformed visualAudit payloads with exact issues", () => {
+  const nonObject = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    visualAudit: true
+  });
+
+  assert.equal(nonObject.success, false);
+  if (!nonObject.success) {
+    assert.deepEqual(nonObject.error.issues, [
+      {
+        path: ["visualAudit"],
+        message: "visualAudit must be an object when provided."
+      }
+    ]);
+  }
+
+  const malformed = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    visualAudit: {
+      baselineImagePath: "   ",
+      unexpected: true,
+      capture: {
+        viewport: {
+          width: 0,
+          height: 1.5,
+          deviceScaleFactor: 0,
+          extra: true
+        },
+        waitForNetworkIdle: "yes",
+        waitForFonts: 1,
+        waitForAnimations: null,
+        timeoutMs: 0,
+        fullPage: "full",
+        extra: true
+      },
+      diff: {
+        threshold: 1.5,
+        includeAntialiasing: "yes",
+        alpha: -0.1,
+        extra: true
+      },
+      regions: [
+        null,
+        {
+          name: "   ",
+          x: -1,
+          y: 1.2,
+          width: 0,
+          height: "tall",
+          extra: true
+        }
+      ]
+    }
+  });
+
+  assert.equal(malformed.success, false);
+  if (!malformed.success) {
+    assert.deepEqual(
+      malformed.error.issues.map((issue) => issue.path.join(".")),
+      [
+        "visualAudit.unexpected",
+        "visualAudit.baselineImagePath",
+        "visualAudit.capture.extra",
+        "visualAudit.capture.viewport.extra",
+        "visualAudit.capture.viewport.width",
+        "visualAudit.capture.viewport.height",
+        "visualAudit.capture.viewport.deviceScaleFactor",
+        "visualAudit.capture.timeoutMs",
+        "visualAudit.capture.waitForNetworkIdle",
+        "visualAudit.capture.waitForFonts",
+        "visualAudit.capture.waitForAnimations",
+        "visualAudit.capture.fullPage",
+        "visualAudit.diff.extra",
+        "visualAudit.diff.includeAntialiasing",
+        "visualAudit.diff.threshold",
+        "visualAudit.diff.alpha",
+        "visualAudit.regions.0",
+        "visualAudit.regions.1.extra",
+        "visualAudit.regions.1.name",
+        "visualAudit.regions.1.x",
+        "visualAudit.regions.1.y",
+        "visualAudit.regions.1.width",
+        "visualAudit.regions.1.height"
+      ]
+    );
+    assert.deepEqual(
+      malformed.error.issues
+        .filter((issue) =>
+          [
+            "visualAudit.capture.viewport.height",
+            "visualAudit.capture.waitForNetworkIdle",
+            "visualAudit.diff.includeAntialiasing",
+            "visualAudit.regions.1.width"
+          ].includes(issue.path.join("."))
+        )
+        .map((issue) => issue.message),
+      [
+        "height must be an integer when provided.",
+        "waitForNetworkIdle must be a boolean when provided.",
+        "includeAntialiasing must be a boolean when provided.",
+        "width must be greater than 0."
+      ]
+    );
+  }
+});
+
 // ---------------------------------------------------------------------------
 // WorkspaceStatusSchema
 // ---------------------------------------------------------------------------
@@ -539,6 +861,19 @@ test("schema: valid workspace status parses", () => {
     previewEnabled: true
   });
   assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data, {
+      running: true,
+      url: "http://127.0.0.1:1983",
+      host: "127.0.0.1",
+      port: 1983,
+      figmaSourceMode: "rest",
+      llmCodegenMode: "deterministic",
+      uptimeMs: 1234,
+      outputRoot: "/tmp/.workspace-dev",
+      previewEnabled: true
+    });
+  }
 });
 
 test("schema: workspace status rejects non-rest figmaSourceMode", () => {
@@ -599,6 +934,72 @@ test("schema: workspace status requires outputRoot and previewEnabled", () => {
   assert.equal(result.success, false);
 });
 
+test("schema: workspace status rejects non-object and invalid field types with exact issues", () => {
+  const notObject = WorkspaceStatusSchema.safeParse(null);
+  assert.equal(notObject.success, false);
+  if (!notObject.success) {
+    assert.deepEqual(notObject.error.issues, [
+      {
+        path: [],
+        message: "Expected an object body."
+      }
+    ]);
+  }
+
+  const invalid = WorkspaceStatusSchema.safeParse({
+    running: "yes",
+    url: 123,
+    host: false,
+    port: 0,
+    figmaSourceMode: "mcp",
+    llmCodegenMode: "hybrid",
+    uptimeMs: -1,
+    outputRoot: "",
+    previewEnabled: "no"
+  });
+  assert.equal(invalid.success, false);
+  if (!invalid.success) {
+    assert.deepEqual(invalid.error.issues, [
+      {
+        path: ["running"],
+        message: "running must be a boolean"
+      },
+      {
+        path: ["url"],
+        message: "url must be a string"
+      },
+      {
+        path: ["host"],
+        message: "host must be a string"
+      },
+      {
+        path: ["port"],
+        message: "port must be a positive integer"
+      },
+      {
+        path: ["figmaSourceMode"],
+        message: "figmaSourceMode must be one of: rest, hybrid, local_json"
+      },
+      {
+        path: ["llmCodegenMode"],
+        message: "llmCodegenMode must equal 'deterministic'"
+      },
+      {
+        path: ["uptimeMs"],
+        message: "uptimeMs must be a non-negative number"
+      },
+      {
+        path: ["outputRoot"],
+        message: "outputRoot must be a non-empty string"
+      },
+      {
+        path: ["previewEnabled"],
+        message: "previewEnabled must be a boolean"
+      }
+    ]);
+  }
+});
+
 test("schema: error envelope requires message and error strings", () => {
   const result = ErrorResponseSchema.safeParse({
     error: "X",
@@ -611,6 +1012,49 @@ test("schema: error envelope requires message and error strings", () => {
 
   const notObject = ErrorResponseSchema.safeParse(undefined);
   assert.equal(notObject.success, false);
+});
+
+test("schema: error envelope returns exact data and field issues", () => {
+  const result = ErrorResponseSchema.safeParse({
+    error: "VALIDATION_ERROR",
+    message: "Request validation failed."
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data, {
+      error: "VALIDATION_ERROR",
+      message: "Request validation failed."
+    });
+  }
+
+  const invalid = ErrorResponseSchema.safeParse({
+    error: 404,
+    message: false
+  });
+  assert.equal(invalid.success, false);
+  if (!invalid.success) {
+    assert.deepEqual(invalid.error.issues, [
+      {
+        path: ["error"],
+        message: "error must be a string"
+      },
+      {
+        path: ["message"],
+        message: "message must be a string"
+      }
+    ]);
+  }
+
+  const notObject = ErrorResponseSchema.safeParse("bad-envelope");
+  assert.equal(notObject.success, false);
+  if (!notObject.success) {
+    assert.deepEqual(notObject.error.issues, [
+      {
+        path: [],
+        message: "Expected an object body."
+      }
+    ]);
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -636,6 +1080,8 @@ test("schema: valid regeneration request accepts layout overrides", () => {
       { nodeId: "node-1", field: "layoutMode", value: "HORIZONTAL" },
       { nodeId: "node-1", field: "primaryAxisAlignItems", value: "SPACE_BETWEEN" }
     ]);
+    assert.equal(result.data.draftId, "draft-1");
+    assert.equal(result.data.baseFingerprint, "fp-1");
     assert.equal(result.data.customerBrandId, "sparkasse-retail");
   }
 });
@@ -749,6 +1195,80 @@ test("schema: regeneration request rejects unexpected top-level properties", () 
   }
 });
 
+test("schema: regeneration request rejects non-object bodies and non-array overrides exactly", () => {
+  const notObject = RegenerationRequestSchema.safeParse(undefined);
+  assert.equal(notObject.success, false);
+  if (!notObject.success) {
+    assert.deepEqual(notObject.error.issues, [
+      {
+        path: [],
+        message: "Expected an object body."
+      }
+    ]);
+  }
+
+  const nonArrayOverrides = RegenerationRequestSchema.safeParse({
+    overrides: true
+  });
+  assert.equal(nonArrayOverrides.success, false);
+  if (!nonArrayOverrides.success) {
+    assert.deepEqual(nonArrayOverrides.error.issues, [
+      {
+        path: ["overrides"],
+        message: "overrides must be an array."
+      }
+    ]);
+  }
+});
+
+test("schema: regeneration request rejects malformed overrides and optional string fields with exact issues", () => {
+  const result = RegenerationRequestSchema.safeParse({
+    overrides: [
+      null,
+      { nodeId: "   ", field: "width", value: 320 },
+      { nodeId: "node-2", field: "   ", value: 320 },
+      { nodeId: "node-3", field: "width", value: 0 }
+    ],
+    draftId: "   ",
+    baseFingerprint: "",
+    customerBrandId: false
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["overrides", 0],
+        message: "Each override entry must be an object."
+      },
+      {
+        path: ["overrides", 1, "nodeId"],
+        message: "nodeId must be a non-empty string."
+      },
+      {
+        path: ["overrides", 2, "field"],
+        message: "field must be a non-empty string."
+      },
+      {
+        path: ["overrides", 3, "value"],
+        message: "width must be a finite positive number."
+      },
+      {
+        path: ["draftId"],
+        message: "draftId must be a non-empty string when provided."
+      },
+      {
+        path: ["baseFingerprint"],
+        message: "baseFingerprint must be a non-empty string when provided."
+      },
+      {
+        path: ["customerBrandId"],
+        message: "customerBrandId must be a non-empty string when provided."
+      }
+    ]);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // formatZodError
 // ---------------------------------------------------------------------------
@@ -772,6 +1292,18 @@ test("schema: formatZodError maps root-level paths correctly", () => {
     issues: [{ path: [], message: "root issue" }]
   });
   assert.equal(formatted.issues[0]?.path, "(root)");
+});
+
+test("schema: formatZodError joins nested issue paths with dots", () => {
+  const formatted = formatZodError({
+    issues: [{ path: ["componentMappings", 0, "source"], message: "bad source" }]
+  });
+  assert.deepEqual(formatted.issues, [
+    {
+      path: "componentMappings.0.source",
+      message: "bad source"
+    }
+  ]);
 });
 
 test("schema: sync dry_run parses with optional targetPath", () => {
@@ -894,6 +1426,7 @@ test("schema: sync apply trims confirmationToken and file decision paths", () =>
   assert.equal(result.success, true);
   if (result.success) {
     assert.equal(result.data.confirmationToken, "token-123");
+    assert.equal(result.data.confirmOverwrite, true);
     assert.deepEqual(result.data.fileDecisions, [
       {
         path: "src/App.tsx",
@@ -1135,4 +1668,12 @@ test("schema: create-pr rejects unexpected properties", () => {
     extraField: "nope"
   });
   assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["extraField"],
+        message: "Unexpected property 'extraField'."
+      }
+    ]);
+  }
 });

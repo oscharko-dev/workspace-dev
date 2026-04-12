@@ -150,7 +150,6 @@ jobs:
 
   mutation-testing:
     runs-on: ubuntu-latest
-    continue-on-error: true
     needs: quality-matrix
     steps:
       - uses: actions/checkout@v6
@@ -167,7 +166,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run mutation baseline (warn-only)
+      - name: Run mutation baseline (blocking >=68%)
         run: pnpm run test:mutation
 
       - name: Summarize mutation report

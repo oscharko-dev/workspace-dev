@@ -317,4 +317,326 @@ describe("WorkspacePage", () => {
       );
     });
   });
+
+  it("surfaces a non-accepted submit response without activating a job", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/healthz") {
+        return createJsonResponse({ payload: { status: "ok" } }) as never;
+      }
+
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+
+      if (url === "/workspace/submit") {
+        submittedPayloads.push(parseJsonBody({ init }));
+        return createJsonResponse({
+          status: 400,
+          ok: false,
+          payload: { error: "INVALID_REQUEST" },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected fetchJson url: ${url}`);
+    });
+
+    renderWorkspacePage();
+
+    fireEvent.change(screen.getByLabelText("Figma File Key"), {
+      target: { value: "demo-file-key" }
+    });
+    fireEvent.change(screen.getByLabelText("Figma Access Token"), {
+      target: { value: "demo-access-token" }
+    });
+
+    const form = document.getElementById("workspace-submit-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("Expected workspace submit form to be rendered.");
+    }
+
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(screen.queryByRole("button", { name: "Open Inspector" })).not.toBeInTheDocument();
+      expect(screen.getByTestId("submit-payload")).toHaveTextContent(
+        /INVALID_REQUEST/,
+      );
+    });
+  });
+
+  it("refreshes runtime diagnostics on demand", async () => {
+    renderWorkspacePage();
+
+    await waitFor(() => {
+      expect(fetchJsonMock).toHaveBeenCalledWith(
+        expect.objectContaining({ url: "/healthz" }),
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+    await waitFor(() => {
+      const healthCalls = fetchJsonMock.mock.calls.filter(
+        ([args]) => args?.url === "/healthz",
+      );
+      const workspaceCalls = fetchJsonMock.mock.calls.filter(
+        ([args]) => args?.url === "/workspace",
+      );
+      expect(healthCalls.length).toBeGreaterThanOrEqual(2);
+      expect(workspaceCalls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /runtime diagnostics/i }),
+    );
+
+    expect(screen.getByTestId("runtime-payload")).toHaveTextContent(
+      /"previewEnabled": true/,
+    );
+  });
+
+  it("shows job diagnostics, stage fallback labels, and generation diff badges", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/healthz") {
+        return createJsonResponse({ payload: { status: "ok" } }) as never;
+      }
+
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+
+      if (url === "/workspace/submit") {
+        submittedPayloads.push(parseJsonBody({ init }));
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-123" }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-123",
+            status: "completed",
+            stages: [{ name: "", status: "" }],
+            preview: {
+              enabled: true,
+              url: "http://127.0.0.1:1983/preview"
+            },
+            generationDiff: {
+              summary: "2 files changed",
+              added: ["src/new.ts"],
+              modified: [{ file: "src/changed.ts" }],
+              removed: ["src/old.ts"],
+              unchanged: ["src/same.ts"],
+            },
+          }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123/result") {
+        return createJsonResponse({
+          payload: {
+            files: []
+          }
+        }) as never;
+      }
+
+      throw new Error(`Unexpected fetchJson url: ${url}`);
+    });
+
+    renderWorkspacePage();
+
+    fireEvent.change(screen.getByLabelText("Figma File Key"), {
+      target: { value: "demo-file-key" }
+    });
+    fireEvent.change(screen.getByLabelText("Figma Access Token"), {
+      target: { value: "demo-access-token" }
+    });
+
+    const form = document.getElementById("workspace-submit-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("Expected workspace submit form to be rendered.");
+    }
+
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("generation-diff-summary")).toHaveTextContent(
+        /2 files changed/,
+      );
+    });
+
+    expect(screen.getByText("+1 added")).toBeVisible();
+    expect(screen.getByText("~1 modified")).toBeVisible();
+    expect(screen.getByText("-1 removed")).toBeVisible();
+    expect(screen.getByText("1 unchanged")).toBeVisible();
+    expect(screen.getByText("unknown")).toBeVisible();
+    expect(screen.getByText("QUEUED")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /job diagnostics/i }));
+
+    expect(screen.getByTestId("job-payload")).toHaveTextContent(
+      /"status": "completed"/,
+    );
+  });
+
+  it("cancels an active job and records the cancel response", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/healthz") {
+        return createJsonResponse({ payload: { status: "ok" } }) as never;
+      }
+
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+
+      if (url === "/workspace/submit") {
+        submittedPayloads.push(parseJsonBody({ init }));
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-123" }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-123",
+            status: "running",
+            queue: {
+              runningCount: 1,
+              queuedCount: 0,
+              maxConcurrentJobs: 2,
+              maxQueuedJobs: 3,
+            },
+          }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123/cancel") {
+        submittedPayloads.push(parseJsonBody({ init }));
+        return createJsonResponse({
+          payload: {
+            jobId: "job-123",
+            status: "running",
+            cancellation: {
+              reason: "Cancellation requested from workspace UI.",
+            },
+          }
+        }) as never;
+      }
+
+      throw new Error(`Unexpected fetchJson url: ${url}`);
+    });
+
+    renderWorkspacePage();
+
+    fireEvent.change(screen.getByLabelText("Figma File Key"), {
+      target: { value: "demo-file-key" }
+    });
+    fireEvent.change(screen.getByLabelText("Figma Access Token"), {
+      target: { value: "demo-access-token" }
+    });
+
+    const form = document.getElementById("workspace-submit-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("Expected workspace submit form to be rendered.");
+    }
+
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: "Cancel Job" }),
+      ).toBeEnabled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel Job" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("submit-payload")).toHaveTextContent(
+        /Cancellation requested from workspace UI/,
+      );
+    });
+  });
+
+  it("opens the inspector with regeneration context when lineage is present", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/healthz") {
+        return createJsonResponse({ payload: { status: "ok" } }) as never;
+      }
+
+      if (url === "/workspace") {
+        return createJsonResponse({ payload: runtimeStatusPayload }) as never;
+      }
+
+      if (url === "/workspace/submit") {
+        submittedPayloads.push(parseJsonBody({ init }));
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-123" }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-123",
+            status: "completed",
+            preview: {
+              enabled: true,
+              url: "http://127.0.0.1:1983/preview"
+            },
+            generationDiff: {
+              summary: "1 file changed",
+              previousJobId: "job-122",
+            },
+            lineage: {
+              sourceJobId: "job-121",
+            },
+          }
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-123/result") {
+        return createJsonResponse({
+          payload: {
+            files: []
+          }
+        }) as never;
+      }
+
+      throw new Error(`Unexpected fetchJson url: ${url}`);
+    });
+
+    const { router } = renderWorkspacePage();
+
+    fireEvent.change(screen.getByLabelText("Figma File Key"), {
+      target: { value: "demo-file-key" }
+    });
+    fireEvent.change(screen.getByLabelText("Figma Access Token"), {
+      target: { value: "demo-access-token" }
+    });
+
+    const form = document.getElementById("workspace-submit-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("Expected workspace submit form to be rendered.");
+    }
+
+    fireEvent.submit(form);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Open Inspector" })).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Inspector" }));
+
+    await waitFor(() => {
+      expect(router.state.location.pathname).toBe("/workspace/ui/inspector");
+      expect(router.state.location.search).toContain("jobId=job-123");
+      expect(router.state.location.search).toContain("previousJobId=job-122");
+      expect(router.state.location.search).toContain("isRegeneration=true");
+    });
+  });
 });

@@ -202,9 +202,11 @@ function renderInspectorPanel(
 }
 
 function editableNodeQueryOverrides({
-  invalidPadding = false
+  invalidPadding = false,
+  nodeOverrides = {}
 }: {
   invalidPadding?: boolean;
+  nodeOverrides?: Record<string, unknown>;
 } = {}): Partial<Record<MockQueryKey, Partial<MockQueryResult>>> {
   return {
     "inspector-manifest": {
@@ -268,6 +270,7 @@ function editableNodeQueryOverrides({
                   layoutMode: "HORIZONTAL",
                   primaryAxisAlignItems: "CENTER",
                   counterAxisAlignItems: "MAX",
+                  ...nodeOverrides,
                   children: [
                     {
                       id: "node-editable-child",
@@ -478,6 +481,46 @@ describe("InspectorPanel splitters", () => {
 
     fireEvent.click(screen.getByTestId("tree-expand-button"));
     expect(Number(screen.getByTestId("inspector-splitter-tree-preview").getAttribute("aria-valuenow"))).toBe(resizedValue);
+  });
+
+  it("ignores unsupported keys and keyboard resizing when desktop layout is disabled", () => {
+    renderInspectorPanel({ openDialog: "inspectability" });
+
+    const separator = screen.getByTestId("inspector-splitter-preview-code");
+    const before = Number(separator.getAttribute("aria-valuenow"));
+
+    fireEvent.keyDown(separator, { key: "Enter" });
+    expect(Number(separator.getAttribute("aria-valuenow"))).toBe(before);
+
+    const originalMatchMedia = window.matchMedia;
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: vi.fn().mockImplementation((_query: string) => ({
+        matches: false,
+        media: _query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn()
+      }))
+    });
+
+    cleanup();
+    installQueryMock();
+    installMutationMock();
+    renderInspectorPanel({ openDialog: "inspectability" });
+
+    const nonDesktopSeparator = screen.getByTestId("inspector-splitter-preview-code");
+    const nonDesktopBefore = Number(nonDesktopSeparator.getAttribute("aria-valuenow"));
+    fireEvent.keyDown(nonDesktopSeparator, { key: "ArrowRight" });
+    expect(Number(nonDesktopSeparator.getAttribute("aria-valuenow"))).toBe(nonDesktopBefore);
+
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      writable: true,
+      value: originalMatchMedia
+    });
   });
 });
 
@@ -786,6 +829,68 @@ describe("InspectorPanel data states", () => {
     );
   });
 
+  it("renders loading and empty design-ir states in the tree pane", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-design-ir": {
+          data: undefined,
+          isLoading: true
+        }
+      }
+    });
+
+    renderInspectorPanel({ openDialog: "inspectability" });
+
+    expect(screen.getByTestId("inspector-design-ir-state-loading")).toHaveTextContent("Loading design IR");
+
+    cleanup();
+    mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
+    installMutationMock();
+    installQueryMock({
+      overrides: {
+        "inspector-design-ir": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: []
+            }
+          },
+          isLoading: false
+        }
+      }
+    });
+
+    renderInspectorPanel({ openDialog: "inspectability" });
+
+    expect(screen.getByTestId("inspector-design-ir-state-empty")).toHaveTextContent(
+      "No component tree data is available for this job."
+    );
+  });
+
+  it("shows manifest empty warning when manifest payload has no screens", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-manifest": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: []
+            }
+          }
+        }
+      }
+    });
+
+    renderInspectorPanel({ openDialog: "inspectability" });
+
+    expect(screen.getByTestId("inspector-manifest-empty-warning")).toBeInTheDocument();
+  });
+
   it("persists boundary toggle state and syncs boundary clicks to tree selection", async () => {
     installQueryMock({
       overrides: {
@@ -1052,6 +1157,111 @@ describe("InspectorPanel Edit Studio", () => {
     expect(payloadText).toContain("\"field\": \"width\"");
     expect(payloadText).toContain("\"field\": \"layoutMode\"");
     expect(payloadText).toContain("\"value\": \"NONE\"");
+  });
+
+  it("applies padding override on blur and supports enter-to-commit for scalar and layout numeric fields", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides()
+    });
+
+    renderInspectorPanel({ openDialog: "preApplyReview" });
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-studio-panel")).toBeInTheDocument();
+    });
+
+    const paddingTopInput = screen.getByTestId("inspector-edit-input-padding-top");
+    const paddingRightInput = screen.getByTestId("inspector-edit-input-padding-right");
+    const paddingBottomInput = screen.getByTestId("inspector-edit-input-padding-bottom");
+    const paddingLeftInput = screen.getByTestId("inspector-edit-input-padding-left");
+    fireEvent.change(paddingTopInput, { target: { value: "20" } });
+    fireEvent.change(paddingRightInput, { target: { value: "24" } });
+    fireEvent.change(paddingBottomInput, { target: { value: "28" } });
+    fireEvent.change(paddingLeftInput, { target: { value: "32" } });
+    fireEvent.blur(paddingTopInput);
+
+    await waitFor(() => {
+      const payloadText = screen.getByTestId("inspector-edit-payload-preview").textContent ?? "";
+      expect(payloadText).toContain("\"field\": \"padding\"");
+      expect(payloadText).toContain("\"top\": 20");
+      expect(payloadText).toContain("\"right\": 24");
+      expect(payloadText).toContain("\"bottom\": 28");
+      expect(payloadText).toContain("\"left\": 32");
+    });
+
+    const fontSizeInput = screen.getByTestId("inspector-edit-input-fontSize");
+    fireEvent.change(fontSizeInput, { target: { value: "22" } });
+    fireEvent.keyDown(fontSizeInput, { key: "Enter" });
+    fireEvent.blur(fontSizeInput);
+
+    const widthInput = screen.getByTestId("inspector-edit-input-width");
+    fireEvent.change(widthInput, { target: { value: "480" } });
+    fireEvent.keyDown(widthInput, { key: "Enter" });
+    fireEvent.blur(widthInput);
+
+    await waitFor(() => {
+      const payloadText = screen.getByTestId("inspector-edit-payload-preview").textContent ?? "";
+      expect(payloadText).toContain("\"field\": \"fontSize\"");
+      expect(payloadText).toContain("\"value\": 22");
+      expect(payloadText).toContain("\"field\": \"width\"");
+      expect(payloadText).toContain("\"value\": 480");
+    });
+
+    expect(screen.getByTestId("inspector-edit-reset-padding")).toBeInTheDocument();
+  });
+
+  it("renders and updates form-validation controls when validation fields are present on the node", async () => {
+    installQueryMock({
+      overrides: editableNodeQueryOverrides({
+        nodeOverrides: {
+          required: false,
+          validationType: "email",
+          validationMessage: "Initial message"
+        }
+      })
+    });
+
+    renderInspectorPanel({ openDialog: "preApplyReview" });
+
+    fireEvent.click(screen.getByTestId("tree-node-node-editable"));
+    fireEvent.click(screen.getByTestId("inspector-enter-edit-mode"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-edit-form-validation-panel")).toBeInTheDocument();
+    });
+
+    const requiredCheckbox = screen.getByTestId("inspector-edit-input-required");
+    fireEvent.click(requiredCheckbox);
+    await waitFor(() => {
+      expect(screen.getByText("Yes")).toBeInTheDocument();
+    });
+
+    const validationTypeSelect = screen.getByTestId("inspector-edit-input-validationType");
+    fireEvent.change(validationTypeSelect, { target: { value: "url" } });
+
+    const validationMessageInput = screen.getAllByTestId("inspector-edit-input-validationMessage")[0];
+    if (!validationMessageInput) {
+      throw new Error("Expected at least one validation message input.");
+    }
+    fireEvent.change(validationMessageInput, { target: { value: "Needs a valid URL" } });
+    fireEvent.keyDown(validationMessageInput, { key: "Enter" });
+    fireEvent.blur(validationMessageInput);
+
+    await waitFor(() => {
+      const payloadText = screen.getByTestId("inspector-edit-payload-preview").textContent ?? "";
+      expect(payloadText).toContain("\"field\": \"required\"");
+      expect(payloadText).toContain("\"field\": \"validationType\"");
+      expect(payloadText).toContain("\"value\": \"url\"");
+      expect(payloadText).toContain("\"field\": \"validationMessage\"");
+      expect(payloadText).toContain("\"value\": \"Needs a valid URL\"");
+    });
+
+    expect(screen.getByTestId("inspector-edit-reset-required")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-edit-reset-validationType")).toBeInTheDocument();
+    expect(screen.getAllByTestId("inspector-edit-reset-validationMessage").length).toBeGreaterThan(0);
   });
 
   it("restores persisted draft for matching fingerprint after remount", async () => {

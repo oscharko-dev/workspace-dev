@@ -50,10 +50,11 @@ const formatScore = (value) => {
 };
 
 const resolveBaselineStatus = ({ score, thresholds }) => {
+  const blockingBaseline = thresholds.break ?? thresholds.high;
   if (Number.isNaN(score)) {
     return "no-valid-mutants";
   }
-  if (score >= thresholds.high) {
+  if (score >= blockingBaseline) {
     return "meets-or-exceeds-baseline";
   }
   if (score >= thresholds.low) {
@@ -68,6 +69,7 @@ const main = async () => {
   const raw = await readFile(absolutePath, "utf8");
   const report = JSON.parse(raw);
   const thresholds = report.thresholds ?? { high: 0, low: 0, break: null };
+  const blockingBaseline = thresholds.break ?? thresholds.high;
   const fileEntries = Object.entries(report.files ?? {});
   const overallMetrics = toMetrics(
     fileEntries.flatMap(([, fileResult]) => Array.isArray(fileResult?.mutants) ? fileResult.mutants : [])
@@ -79,7 +81,7 @@ const main = async () => {
 
   console.log(`[mutation-summary] report=${absolutePath}`);
   console.log(
-    `[mutation-summary] score=${formatScore(overallMetrics.mutationScore)} baseline=${formatScore(thresholds.high)} status=${baselineStatus}`
+    `[mutation-summary] score=${formatScore(overallMetrics.mutationScore)} baseline=${formatScore(blockingBaseline)} status=${baselineStatus}`
   );
   console.log(
     `[mutation-summary] killed=${overallMetrics.killed} timeout=${overallMetrics.timeout} survived=${overallMetrics.survived} no_coverage=${overallMetrics.noCoverage} errors=${overallMetrics.runtimeErrors + overallMetrics.compileErrors} ignored=${overallMetrics.ignored} pending=${overallMetrics.pending}`

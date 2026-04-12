@@ -11,6 +11,20 @@ const readRepoFile = async (relativePath: string): Promise<string> => {
   return await readFile(path.resolve(packageRoot, relativePath), "utf8");
 };
 
+const extractMutationTestingJobBlock = (workflow: string): string => {
+  const marker = "  mutation-testing:\n";
+  const markerIndex = workflow.indexOf(marker);
+  assert.notEqual(markerIndex, -1, "Expected workflow to contain mutation-testing job");
+
+  const afterMarker = workflow.slice(markerIndex + marker.length);
+  const nextJobMatch = afterMarker.match(/^  [a-z0-9-]+:\n/m);
+  if (!nextJobMatch || nextJobMatch.index === undefined) {
+    return workflow.slice(markerIndex);
+  }
+
+  return workflow.slice(markerIndex, markerIndex + marker.length + nextJobMatch.index);
+};
+
 test("integration: mutation-testing config, docs, and workflows stay aligned", async () => {
   const packageJson = JSON.parse(await readRepoFile("package.json")) as {
     scripts?: Record<string, string>;
@@ -33,7 +47,7 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   )) as {
     default: {
       mutate: string[];
-      thresholds: { break: number | null };
+      thresholds: { break: number | null; high: number; low: number };
       tap: { testFiles: string[] };
       jsonReporter: { fileName: string };
       htmlReporter: { fileName: string };
@@ -53,7 +67,9 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
     "src/job-engine/visual-scoring.ts",
     "src/parity/ir.ts",
   ]);
-  assert.equal(strykerConfigModule.default.thresholds.break, null);
+  assert.equal(strykerConfigModule.default.thresholds.break, 68);
+  assert.equal(strykerConfigModule.default.thresholds.high, 68);
+  assert.equal(strykerConfigModule.default.thresholds.low, 68);
   assert.equal(
     strykerConfigModule.default.tap.testFiles.includes(
       "src/server/request-security.test.ts",
@@ -71,7 +87,7 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
 
   assert.match(contributingDoc, /pnpm run test:mutation/);
   assert.match(contributingDoc, /artifacts\/testing\/mutation/);
-  assert.match(contributingDoc, /warn-only CI signal/i);
+  assert.match(contributingDoc, /CI-blocking quality gate/i);
   assert.match(contributingDoc, /Current baseline mutation score:/i);
   assert.match(
     mutationSummaryScript,
@@ -83,11 +99,16 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
     releaseGateWorkflow,
     changesetsReleaseWorkflow,
   ]) {
+    const mutationJobBlock = extractMutationTestingJobBlock(workflow);
     assert.match(workflow, /\n  mutation-testing:\n/);
-    assert.match(workflow, /continue-on-error: true/);
-    assert.match(workflow, /pnpm run test:mutation/);
-    assert.match(workflow, /print-mutation-report-summary\.mjs/);
-    assert.match(workflow, /artifacts\/testing\/mutation/);
+    assert.doesNotMatch(mutationJobBlock, /continue-on-error:\s*true/);
+    assert.match(
+      mutationJobBlock,
+      /Run mutation baseline \(blocking >=68%\)/,
+    );
+    assert.match(mutationJobBlock, /pnpm run test:mutation/);
+    assert.match(mutationJobBlock, /print-mutation-report-summary\.mjs/);
+    assert.match(mutationJobBlock, /artifacts\/testing\/mutation/);
   }
 
   assert.match(devQualityWorkflow, /needs: quality/);
