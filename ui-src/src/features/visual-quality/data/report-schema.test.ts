@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  parseJobConfidence,
+  parseJobConfidenceEnvelope,
   parseHistory,
   parseLastRun,
   parseScreenReport,
@@ -210,5 +212,57 @@ describe("parseVisualParityReport", () => {
         status: "bad",
       }),
     ).toThrow(/Invalid visual-parity-report/);
+  });
+});
+
+describe("confidence parsing", () => {
+  it("parses a standalone job confidence payload", () => {
+    const parsed = parseJobConfidence({
+      status: "completed",
+      level: "medium",
+      score: 74.5,
+      contributors: [
+        {
+          signal: "diagnostic_severity",
+          impact: "negative",
+          weight: 0.2,
+          value: 0.4,
+          detail: "2 warnings",
+        },
+      ],
+      screens: [
+        {
+          screenId: "1:1",
+          screenName: "Dashboard",
+          level: "low",
+          score: 66.7,
+          contributors: [],
+          components: [],
+        },
+      ],
+      lowConfidenceSummary: ["Dashboard confidence dropped because of warnings"],
+    });
+
+    expect(parsed.status).toBe("completed");
+    expect(parsed.level).toBe("medium");
+    expect(parsed.screens?.[0]?.screenId).toBe("1:1");
+  });
+
+  it("parses confidence from a job status/result envelope", () => {
+    const parsed = parseJobConfidenceEnvelope({
+      jobId: "job-123",
+      status: "completed",
+      confidence: {
+        status: "completed",
+        level: "high",
+        score: 98,
+      },
+    });
+    expect(parsed?.status).toBe("completed");
+    expect(parsed?.level).toBe("high");
+  });
+
+  it("returns null when confidence is not present", () => {
+    expect(parseJobConfidenceEnvelope({ jobId: "job-123" })).toBeNull();
   });
 });

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  type JobConfidence,
   type HistoryRuns,
   type LastRunAggregate,
   type ScreenReport,
@@ -151,6 +152,7 @@ const standaloneVisualQualityReportSchema = z.object({
   crossBrowserConsistency: crossBrowserConsistencySchema.optional(),
   warnings: z.array(z.string()).optional(),
   message: z.string().optional(),
+  confidence: z.lazy(() => jobConfidenceSchema).optional(),
 });
 
 const visualParityReportSchema = z.object({
@@ -193,6 +195,48 @@ const historySchemaV1 = z.object({
 });
 
 const historySchema = z.union([historySchemaV2, historySchemaV1]);
+
+const confidenceLevelSchema = z.enum(["high", "medium", "low", "very_low"]);
+
+const confidenceContributorSchema = z.object({
+  signal: z.string().min(1),
+  impact: z.enum(["positive", "negative", "neutral"]),
+  weight: z.number(),
+  value: z.number(),
+  detail: z.string().min(1),
+});
+
+const componentConfidenceSchema = z.object({
+  componentId: z.string().min(1),
+  componentName: z.string().min(1),
+  level: confidenceLevelSchema,
+  score: z.number(),
+  contributors: z.array(confidenceContributorSchema),
+});
+
+const screenConfidenceSchema = z.object({
+  screenId: z.string().min(1),
+  screenName: z.string().min(1),
+  level: confidenceLevelSchema,
+  score: z.number(),
+  contributors: z.array(confidenceContributorSchema),
+  components: z.array(componentConfidenceSchema),
+});
+
+const jobConfidenceSchema = z.object({
+  status: z.enum(["completed", "failed", "not_requested"]),
+  generatedAt: z.string().optional(),
+  level: confidenceLevelSchema.optional(),
+  score: z.number().optional(),
+  contributors: z.array(confidenceContributorSchema).optional(),
+  screens: z.array(screenConfidenceSchema).optional(),
+  lowConfidenceSummary: z.array(z.string()).optional(),
+  message: z.string().optional(),
+});
+
+const jobConfidenceEnvelopeSchema = z.object({
+  confidence: jobConfidenceSchema.optional(),
+});
 
 /**
  * Removes keys whose value is `undefined` so the result is compatible with
@@ -272,6 +316,34 @@ export function parseStandaloneVisualQualityReport(
     );
   }
   return stripUndefinedDeep(result.data) as StandaloneVisualQualityReport;
+}
+
+/**
+ * Parses a standalone `confidence-report.json` payload.
+ */
+export function parseJobConfidence(input: unknown): JobConfidence {
+  const result = jobConfidenceSchema.safeParse(input);
+  if (!result.success) {
+    throw new Error(
+      `Invalid confidence-report.json: ${result.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,
+    );
+  }
+  return stripUndefinedDeep(result.data) as JobConfidence;
+}
+
+/**
+ * Parses an envelope that may contain `confidence` as a top-level field.
+ * Used for job status/result payloads.
+ */
+export function parseJobConfidenceEnvelope(input: unknown): JobConfidence | null {
+  const result = jobConfidenceEnvelopeSchema.safeParse(input);
+  if (!result.success) {
+    throw new Error(
+      `Invalid confidence envelope: ${result.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,
+    );
+  }
+  return (stripUndefinedDeep(result.data) as { confidence?: JobConfidence })
+    .confidence ?? null;
 }
 
 /**

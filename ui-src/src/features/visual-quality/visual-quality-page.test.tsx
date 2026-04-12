@@ -148,6 +148,127 @@ describe("VisualQualityPage", () => {
     expect(screen.queryByTestId("visual-parity-summary")).not.toBeInTheDocument();
   });
 
+  it("hydrates confidence from the job confidence artifact when loading a report URL", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/files/visual-quality/report.json")) {
+          return new Response(
+            JSON.stringify({
+              status: "completed",
+              referenceSource: "frozen_fixture",
+              capturedAt: "2026-04-11T00:00:00.000Z",
+              overallScore: 98.8,
+              interpretation: "Excellent parity",
+              dimensions: [],
+              hotspots: [],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        if (url.endsWith("/files/confidence-report.json")) {
+          return new Response(
+            JSON.stringify({
+              status: "completed",
+              level: "medium",
+              score: 74.2,
+              lowConfidenceSummary: ["component_match_rate: 7/10 matched"],
+              screens: [
+                {
+                  screenId: "visual-quality",
+                  screenName: "Visual Quality",
+                  level: "medium",
+                  score: 74.2,
+                  contributors: [],
+                  components: [],
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confidence-summary")).toBeVisible();
+    });
+    expect(screen.getByTestId("confidence-summary")).toHaveTextContent(
+      "74.2%",
+    );
+  });
+
+  it("renders confidence summary when confidence is available from sibling job endpoints", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.endsWith("/visual-quality/report.json")) {
+          return new Response(
+            JSON.stringify({
+              status: "completed",
+              overallScore: 98.8,
+              dimensions: [],
+              hotspots: [],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        if (url.endsWith("/files/confidence-report.json")) {
+          return new Response(
+            JSON.stringify({
+              status: "completed",
+              level: "low",
+              score: 65.5,
+              lowConfidenceSummary: ["Low confidence in hero section"],
+              screens: [
+                {
+                  screenId: "visual-quality",
+                  screenName: "Visual Quality",
+                  level: "low",
+                  score: 65.5,
+                  contributors: [],
+                  components: [],
+                },
+              ],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          );
+        }
+        return new Response(null, { status: 404 });
+      }),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("confidence-summary")).toBeVisible();
+    });
+    expect(screen.getByTestId("confidence-summary")).toHaveTextContent(
+      "Low Confidence",
+    );
+  });
+
   it("loads visual-parity-report.json in summary-only mode", async () => {
     vi.stubGlobal(
       "fetch",
@@ -227,14 +348,18 @@ describe("VisualQualityPage", () => {
     let resolveFetch:
       | ((value: Response | PromiseLike<Response>) => void)
       | undefined;
+    let callCount = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(
-        () =>
-          new Promise<Response>((resolve) => {
+      vi.fn(() => {
+        callCount += 1;
+        if (callCount === 1) {
+          return new Promise<Response>((resolve) => {
             resolveFetch = resolve;
-          }),
-      ),
+          });
+        }
+        return Promise.resolve(new Response(null, { status: 404 }));
+      }),
     );
 
     renderPage(

@@ -9,6 +9,7 @@ import {
   type ScreenArtifacts,
 } from "./report-loader";
 import {
+  type JobConfidence,
   type Hotspot,
   type LastRunAggregate,
   type ScreenReport,
@@ -213,5 +214,66 @@ describe("mergeReport", () => {
     expect(screen?.viewportId).toBe("default");
     expect(screen?.viewportLabel).toBe("default");
     expect(screen?.screenId).toBe("alpha");
+  });
+
+  it("attaches job and per-screen confidence to merged screens", () => {
+    const confidence: JobConfidence = {
+      status: "completed",
+      level: "medium",
+      score: 72.5,
+      screens: [
+        {
+          screenId: "1:1",
+          screenName: "Alpha Home",
+          level: "high",
+          score: 88.1,
+          contributors: [],
+          components: [],
+        },
+      ],
+    };
+
+    const merged = mergeReport(aggregate, {}, null, confidence);
+
+    expect(merged.confidence?.score).toBe(72.5);
+    expect(merged.screensByKey["alpha/1_1/desktop"]?.confidence?.score).toBe(88.1);
+    expect(merged.screensByKey["alpha/1_1/mobile"]?.confidence?.level).toBe("high");
+    expect(merged.screensByKey["bravo/2_2/desktop"]?.confidence).toBeUndefined();
+  });
+
+  it("falls back to the only confidence screen when screen ids do not align", () => {
+    const standalone: LastRunAggregate = {
+      version: 2,
+      ranAt: "2026-04-11T00:00:00Z",
+      overallScore: 90,
+      scores: [
+        {
+          fixtureId: "visual-quality",
+          score: 90,
+          screenId: "visual-quality",
+          screenName: "Visual Quality",
+        },
+      ],
+    };
+
+    const merged = mergeReport(standalone, {}, null, {
+      status: "completed",
+      level: "medium",
+      score: 67,
+      screens: [
+        {
+          screenId: "job-screen-1",
+          screenName: "Hero",
+          level: "medium",
+          score: 67,
+          contributors: [],
+          components: [],
+        },
+      ],
+    });
+
+    expect(
+      merged.screensByKey["visual-quality/visual-quality/default"]?.confidence?.score,
+    ).toBe(67);
   });
 });

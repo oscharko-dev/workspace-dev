@@ -1,5 +1,6 @@
 import { mergeReport } from "./report-loader";
 import {
+  type JobConfidence,
   type HistoryRuns,
   type LastRunAggregate,
   type MergedReport,
@@ -250,11 +251,100 @@ const sampleHistory: HistoryRuns = {
   ],
 };
 
+const sampleConfidence: JobConfidence = {
+  status: "completed",
+  generatedAt: "2026-04-11T18:00:40.698Z",
+  level: "medium",
+  score: 71.4,
+  contributors: [
+    {
+      signal: "component_match_rate",
+      impact: "negative",
+      weight: 0.25,
+      value: 0.58,
+      detail: "7/10 matched",
+    },
+    {
+      signal: "visual_quality",
+      impact: "positive",
+      weight: 0.25,
+      value: 0.984,
+      detail: "overall 98.4/100",
+    },
+  ],
+  lowConfidenceSummary: [
+    "component_match_rate: 7/10 matched",
+    "generation_integrity: 1 truncated, 0 degraded",
+  ],
+  screens: [
+    {
+      screenId: "1:1",
+      screenName: "Dashboard — Sample",
+      level: "high",
+      score: 84.2,
+      contributors: [
+        {
+          signal: "screen_component_match_rate",
+          impact: "positive",
+          weight: 0.25,
+          value: 0.86,
+          detail: "2 mapped component(s), average 86/100",
+        },
+      ],
+      components: [
+        {
+          componentId: "button-family",
+          componentName: "Button",
+          level: "high",
+          score: 92,
+          contributors: [],
+        },
+        {
+          componentId: "card-family",
+          componentName: "Card",
+          level: "medium",
+          score: 80,
+          contributors: [],
+        },
+      ],
+    },
+    {
+      screenId: "1:2",
+      screenName: "Form — Sample",
+      level: "low",
+      score: 52.7,
+      contributors: [
+        {
+          signal: "screen_component_match_rate",
+          impact: "negative",
+          weight: 0.25,
+          value: 0.34,
+          detail: "1 mapped component(s), average 34/100",
+        },
+      ],
+      components: [
+        {
+          componentId: "textfield-family",
+          componentName: "TextField",
+          level: "low",
+          score: 34,
+          contributors: [],
+        },
+      ],
+    },
+  ],
+};
+
 /**
  * Returns a fully-hydrated sample `MergedReport` suitable for the empty-state
  * "Load sample" action. Uses only inline data URLs for images so it works
  * offline and in CI without a server.
  */
 export function buildSampleReport(): MergedReport {
-  return mergeReport(sampleAggregate, sampleArtifacts, sampleHistory);
+  return mergeReport(
+    sampleAggregate,
+    sampleArtifacts,
+    sampleHistory,
+    sampleConfidence,
+  );
 }

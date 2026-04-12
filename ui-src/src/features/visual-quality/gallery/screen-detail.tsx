@@ -3,6 +3,7 @@ import { type MergedScreen } from "../data/types";
 import { OverlaySideBySide } from "./overlay-side-by-side";
 import { OverlayOnionSkin } from "./overlay-onion-skin";
 import { OverlayHeatmap } from "./overlay-heatmap";
+import { OverlayConfidenceView } from "./overlay-confidence-view";
 import { ZoomModal } from "./zoom-modal";
 import { OVERLAY_MODES, type OverlayMode } from "./overlay-mode";
 
@@ -104,6 +105,14 @@ export function ScreenDetail({ screen }: ScreenDetailProps): JSX.Element {
         ) : null}
         {mode === "heatmap" ? (
           <OverlayHeatmap
+            screen={screen}
+            onZoom={() => {
+              setZoomOpen(true);
+            }}
+          />
+        ) : null}
+        {mode === "confidence" ? (
+          <OverlayConfidenceView
             screen={screen}
             onZoom={() => {
               setZoomOpen(true);

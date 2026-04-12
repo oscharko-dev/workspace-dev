@@ -72,6 +72,7 @@ import {
   computeConfidenceReport,
   type ConfidenceScoringInput,
 } from "../confidence-scoring.js";
+import type { ComponentManifest } from "../../parity/component-manifest.js";
 
 const isPerfValidationEnabled = (): boolean => {
   const raw =
@@ -2108,6 +2109,13 @@ export const createValidateProjectService = ({
         evidenceArtifact: StorybookEvidenceArtifact | undefined;
         visualReport: WorkspaceVisualQualityReport;
       }): Promise<ConfidenceScoringInput> => {
+        const normalizeComponentAlias = (value: string): string =>
+          value
+            .trim()
+            .toLowerCase()
+            .replace(/[<>]/g, "")
+            .replace(/[^a-z0-9]+/g, "");
+
         const generationMetricsPath = await ctx.artifactStore.getPath(
           STAGE_ARTIFACT_KEYS.generationMetrics,
         );
@@ -2119,8 +2127,30 @@ export const createValidateProjectService = ({
             const raw = JSON.parse(
               await readFile(generationMetricsPath, "utf8"),
             ) as Record<string, unknown>;
+            const screenElementCounts =
+              (raw.screenElementCounts as Array<{
+                screenId?: string;
+                screenName?: string;
+                elements?: number;
+              }>) ?? [];
+            const truncatedScreens =
+              (raw.truncatedScreens as Array<{
+                screenId?: string;
+                screenName?: string;
+                originalElements?: number;
+                retainedElements?: number;
+                originalCount?: number;
+                truncatedCount?: number;
+              }>) ?? [];
             const depthTruncated = raw.depthTruncatedScreens as
-              | Array<{ screenName: string; depthLimit: number }>
+              | Array<{
+                  screenId?: string;
+                  screenName?: string;
+                  maxDepth?: number;
+                  firstTruncatedDepth?: number;
+                  truncatedBranchCount?: number;
+                  depthLimit?: number;
+                }>
               | undefined;
             const classificationFb = raw.classificationFallbacks as
               | Array<{
@@ -2133,14 +2163,63 @@ export const createValidateProjectService = ({
               fetchedNodes: (raw.fetchedNodes as number) ?? 0,
               skippedHidden: (raw.skippedHidden as number) ?? 0,
               skippedPlaceholders: (raw.skippedPlaceholders as number) ?? 0,
-              truncatedScreens:
-                (raw.truncatedScreens as Array<{
-                  screenName: string;
-                  originalCount: number;
-                  truncatedCount: number;
-                }>) ?? [],
+              screenElementCounts: screenElementCounts
+                .filter(
+                  (entry): entry is {
+                    screenId: string;
+                    screenName?: string;
+                    elements?: number;
+                  } => typeof entry.screenId === "string",
+                )
+                .map((entry) => ({
+                  screenId: entry.screenId,
+                  screenName: entry.screenName ?? entry.screenId,
+                  elements: entry.elements ?? 0,
+                })),
+              truncatedScreens: truncatedScreens
+                .filter(
+                  (entry): entry is {
+                    screenId: string;
+                    screenName?: string;
+                    originalElements?: number;
+                    retainedElements?: number;
+                    originalCount?: number;
+                    truncatedCount?: number;
+                  } => typeof entry.screenId === "string",
+                )
+                .map((entry) => ({
+                  screenId: entry.screenId,
+                  screenName: entry.screenName ?? entry.screenId,
+                  originalElements:
+                    entry.originalElements ?? entry.originalCount ?? 0,
+                  retainedElements:
+                    entry.retainedElements ?? entry.truncatedCount ?? 0,
+                })),
               ...(depthTruncated
-                ? { depthTruncatedScreens: depthTruncated }
+                ? {
+                    depthTruncatedScreens: depthTruncated
+                      .filter(
+                        (entry): entry is {
+                          screenId: string;
+                          screenName?: string;
+                          maxDepth?: number;
+                          firstTruncatedDepth?: number;
+                          truncatedBranchCount?: number;
+                          depthLimit?: number;
+                        } => typeof entry.screenId === "string",
+                      )
+                      .map((entry) => ({
+                        screenId: entry.screenId,
+                        screenName: entry.screenName ?? entry.screenId,
+                        maxDepth: entry.maxDepth ?? entry.depthLimit ?? 0,
+                        firstTruncatedDepth:
+                          entry.firstTruncatedDepth ??
+                          entry.maxDepth ??
+                          entry.depthLimit ??
+                          0,
+                        truncatedBranchCount: entry.truncatedBranchCount ?? 0,
+                      })),
+                  }
                 : {}),
               degradedGeometryNodes:
                 (raw.degradedGeometryNodes as string[]) ?? [],
@@ -2170,9 +2249,99 @@ export const createValidateProjectService = ({
                   matchStatus: e.match.status,
                   confidence: e.match.confidence,
                   confidenceScore: e.match.confidenceScore,
+                  aliases: [
+                    e.figma.familyKey,
+                    e.figma.familyName,
+                    e.figma.canonicalFamilyName,
+                    e.storybookFamily?.name,
+                    e.storybookFamily?.title,
+                    e.libraryResolution.componentKey,
+                    e.resolvedApi?.componentKey,
+                  ].filter((alias): alias is string => Boolean(alias)),
                 })),
               }
             : undefined;
+
+        let screenComponents:
+          | ConfidenceScoringInput["screenComponents"]
+          | undefined;
+        const componentManifestPath = await ctx.artifactStore.getPath(
+          STAGE_ARTIFACT_KEYS.componentManifest,
+        );
+        if (componentManifestPath && componentMatch) {
+          try {
+            const manifest = JSON.parse(
+              await readFile(componentManifestPath, "utf8"),
+            ) as ComponentManifest;
+            const entriesWithAliases = componentMatch.entries.map((entry) => ({
+              ...entry,
+              normalizedAliases: [
+                ...new Set(
+                  (entry.aliases ?? [])
+                    .map((alias) => normalizeComponentAlias(alias))
+                    .filter((alias) => alias.length > 0),
+                ),
+              ],
+            }));
+
+            const pickComponentId = ({
+              irNodeName,
+              irNodeType,
+            }: {
+              irNodeName: string;
+              irNodeType: string;
+            }): string | undefined => {
+              const normalizedName = normalizeComponentAlias(irNodeName);
+              const normalizedType = normalizeComponentAlias(irNodeType);
+              if (normalizedName.length === 0 && normalizedType.length === 0) {
+                return undefined;
+              }
+              const nameMatches = entriesWithAliases.filter((entry) =>
+                entry.normalizedAliases.includes(normalizedName),
+              );
+              if (nameMatches.length === 1) {
+                return nameMatches[0]!.figmaFamilyKey;
+              }
+              if (nameMatches.length > 1) {
+                return undefined;
+              }
+
+              const typeMatches = entriesWithAliases.filter((entry) =>
+                entry.normalizedAliases.includes(normalizedType),
+              );
+              if (typeMatches.length === 1) {
+                return typeMatches[0]!.figmaFamilyKey;
+              }
+              return undefined;
+            };
+
+            screenComponents = manifest.screens
+              .map((screen) => ({
+                screenId: screen.screenId,
+                componentIds: [
+                  ...new Set(
+                    screen.components
+                      .map((component) =>
+                        pickComponentId({
+                          irNodeName: component.irNodeName,
+                          irNodeType: component.irNodeType,
+                        }),
+                      )
+                      .filter((componentId): componentId is string =>
+                        Boolean(componentId),
+                      ),
+                  ),
+                ],
+              }))
+              .filter((screen) => screen.componentIds.length > 0);
+          } catch {
+            ctx.log({
+              level: "warn",
+              message:
+                "Could not parse component-manifest.json for confidence scoring; continuing without screen component ownership.",
+            });
+          }
+        }
 
         const storybookEvidence: ConfidenceScoringInput["storybookEvidence"] =
           evidenceArtifact
@@ -2216,9 +2385,10 @@ export const createValidateProjectService = ({
         }
 
         return {
-          diagnostics: [],
+          diagnostics: ctx.getCollectedDiagnostics() ?? [],
           ...(generationMetrics ? { generationMetrics } : {}),
           ...(componentMatch ? { componentMatch } : {}),
+          ...(screenComponents ? { screenComponents } : {}),
           ...(storybookEvidence ? { storybookEvidence } : {}),
           ...(visualQuality ? { visualQuality } : {}),
           validationPassed: passed,

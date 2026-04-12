@@ -1,5 +1,6 @@
 import { type JSX } from "react";
 import { type MergedReport } from "../data/types";
+import { ConfidenceSummary } from "./confidence-summary";
 import { DimensionBreakdown } from "./dimension-breakdown";
 
 interface ScoreDashboardProps {
@@ -29,6 +30,8 @@ export function ScoreDashboard({ report }: ScoreDashboardProps): JSX.Element {
 
   return (
     <div data-testid="score-dashboard" className="grid gap-3">
+      <ConfidenceSummary confidence={report.confidence} />
+
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <DashboardStat
           label="Overall score"
@@ -87,7 +90,6 @@ export function ScoreDashboard({ report }: ScoreDashboardProps): JSX.Element {
 
         <DimensionBreakdown report={report} />
       </div>
-
       {aggregate.warnings && aggregate.warnings.length > 0 ? (
         <section
           data-testid="dashboard-warnings"

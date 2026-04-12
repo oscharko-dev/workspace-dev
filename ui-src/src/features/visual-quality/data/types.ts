@@ -125,6 +125,7 @@ export interface StandaloneVisualQualityReport {
   perBrowser?: StandaloneVisualQualityBrowserEntry[];
   warnings?: string[];
   message?: string;
+  confidence?: JobConfidence;
 }
 
 export interface VisualParitySummary {
@@ -173,6 +174,7 @@ export interface MergedScreen {
   actualUrl: string | null;
   diffUrl: string | null;
   worstSeverity: HotspotSeverity | null;
+  confidence?: ScreenConfidence;
 }
 
 /**
@@ -193,6 +195,7 @@ export interface MergedReport {
   screensByKey: Record<string, MergedScreen>;
   history: HistoryRuns | null;
   hasImages: boolean;
+  confidence?: JobConfidence;
   sourceKind?: "benchmark" | "visual-quality" | "visual-parity";
   paritySummary?: VisualParitySummary;
   notices?: string[];

@@ -58,14 +58,20 @@ Example:
 
 ## Screen-Level Confidence
 
-Screens with generation issues (truncation, depth limits) receive additional penalties on top of the job-level score:
+Every screen in generation metrics inventory (`screenElementCounts`) receives a confidence entry.
 
-- Truncated screens: −10 points per screen (capped)
-- Depth-truncated screens: −10 points per screen (capped)
+Screen scores inherit the job-level score, then apply:
+
+- The screen's own matched-component average when deterministic ownership can be recovered from `component-manifest.json`
+- Per-screen truncation and depth-truncation penalties
+
+If deterministic ownership cannot be recovered, the screen falls back to the job-level component match signal instead of inventing placeholder component data.
 
 ## Component-Level Confidence
 
 Per-component confidence comes directly from the component match report's confidence scoring (0–100 scale), mapped to the same level thresholds.
+
+Screen-level component lists are only populated when deterministic screen ownership can be resolved (for example via component-manifest node-name matching). If ownership cannot be resolved unambiguously, `screens[].components` is intentionally left empty.
 
 ## Low Confidence Summary
 
@@ -98,6 +104,7 @@ Confidence scores are tracked in the KPI model:
 
 The Inspector UI displays confidence through:
 
-- **Dashboard card**: Job confidence level, score, and low-confidence summary
-- **Confidence overlay**: Screen gallery overlay coloring regions by confidence level
-- **Signal breakdown**: Expandable table showing all contributor signals
+- **Dashboard card**: Job confidence level, score, low-confidence summary, and signal breakdown
+- **Confidence overlay**: Screen gallery confidence mode tints the selected screen by screen confidence level and lists the mapped component confidences for that screen
+
+The current confidence contract is screen- and component-scoped. It does not expose region-level confidence, so the confidence overlay is not a risk heatmap.
