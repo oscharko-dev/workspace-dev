@@ -1,5 +1,3 @@
-import { readFileSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   parseHistory,
@@ -9,16 +7,18 @@ import {
   parseVisualParityReport,
 } from "./report-schema";
 
-const artifactRoot = path.resolve(process.cwd(), "artifacts/visual-benchmark");
-
-function readJson(filePath: string): unknown {
-  return JSON.parse(readFileSync(filePath, "utf-8")) as unknown;
-}
-
 describe("parseLastRun", () => {
-  it("parses the on-disk last-run.json aggregate", () => {
-    const raw = readJson(path.join(artifactRoot, "last-run.json"));
-    const parsed = parseLastRun(raw);
+  it("parses a representative last-run.json aggregate", () => {
+    const parsed = parseLastRun({
+      version: 2,
+      ranAt: "2026-04-11T12:00:00.000Z",
+      overallScore: 97.3,
+      scores: [
+        { fixtureId: "simple-form", score: 98.1 },
+        { fixtureId: "navigation-sidebar", score: 96.5 },
+      ],
+      failedFixtures: [],
+    });
     expect(parsed.version).toBe(2);
     expect(parsed.scores.length).toBeGreaterThan(0);
     expect(parsed.overallScore).toBeGreaterThan(0);

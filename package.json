@@ -95,7 +95,7 @@
     "ui:typecheck": "pnpm exec tsc --project ui-src/tsconfig.json --noEmit",
     "ui:lint": "pnpm exec eslint --no-config-lookup --max-warnings=0 --config ui-src/eslint.config.js \"ui-src/src/**/*.{ts,tsx}\"",
     "ui:test": "pnpm exec vitest run --config ui-src/vite.config.ts",
-    "ui:test:coverage": "pnpm exec vitest run --config ui-src/vite.config.ts --coverage",
+    "ui:test:coverage": "pnpm exec vitest run --config ui-src/vite.config.ts --coverage && UI_HOTSPOT_COVERAGE=1 pnpm exec vitest run --config ui-src/vite.config.ts --coverage",
     "ui:test:e2e": "node scripts/run-ui-e2e.mjs chromium",
     "ui:test:visual-live": "pnpm exec playwright test --config ui-src/playwright.config.ts --project=chromium ui-src/e2e/visual-parity.live.spec.ts",
     "ui:test:e2e:matrix": "node scripts/run-ui-e2e.mjs matrix",

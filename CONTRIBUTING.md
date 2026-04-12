@@ -29,9 +29,9 @@ Run `pnpm run test:mutation` from the repository root to execute the scoped Stry
 
 The generated JSON and HTML reports are written to `artifacts/testing/mutation`, and CI uploads the same directory as a build artifact for inspection.
 
-Mutation testing is intentionally limited to the current high-value modules and is tracked as a warn-only CI signal so release gating can consume the report without blocking on the score alone.
+Mutation testing is intentionally limited to the current high-value modules and is enforced as a CI-blocking quality gate.
 
-Current baseline mutation score: `62%` (derived from the verified `62.86%` run across `src/mode-lock.ts`, `src/schemas.ts`, `src/server/request-security.ts`, `src/job-engine/pipeline/orchestrator.ts`, and `src/parity/ir.ts`).
+Current baseline mutation score: `68%` (CI fails below this threshold across `src/mode-lock.ts`, `src/schemas.ts`, `src/server/request-security.ts`, `src/job-engine/pipeline/orchestrator.ts`, `src/job-engine/visual-scoring.ts`, and `src/parity/ir.ts`).
 
 ## Visual Benchmark Workflow
 

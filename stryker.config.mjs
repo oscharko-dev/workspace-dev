@@ -34,9 +34,9 @@ const config = {
     "test-results/**/*",
   ],
   thresholds: {
-    high: 62,
-    low: 62,
-    break: null,
+    high: 68,
+    low: 68,
+    break: 68,
   },
   tsconfigFile: "tsconfig.json",
   typescriptChecker: {

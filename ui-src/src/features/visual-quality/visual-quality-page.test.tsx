@@ -222,4 +222,152 @@ describe("VisualQualityPage", () => {
     });
     expect(screen.getByTestId("visual-quality-empty-state")).toBeVisible();
   });
+
+  it("shows a loading state while fetching a report URL", async () => {
+    let resolveFetch:
+      | ((value: Response | PromiseLike<Response>) => void)
+      | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            resolveFetch = resolve;
+          }),
+      ),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json",
+    );
+    expect(screen.getByTestId("visual-quality-loading")).toBeVisible();
+    expect(screen.queryByTestId("visual-quality-empty-state")).not.toBeInTheDocument();
+
+    resolveFetch?.(
+      new Response(
+        JSON.stringify({
+          status: "completed",
+          referenceSource: "frozen_fixture",
+          capturedAt: "2026-04-11T00:00:00.000Z",
+          overallScore: 95.2,
+          interpretation: "Good parity",
+          dimensions: [],
+          hotspots: [],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("score-dashboard")).toBeVisible();
+    });
+  });
+
+  it("navigates back to /workspace/ui when Back is clicked", () => {
+    renderPage("/workspace/ui/visual-quality");
+
+    fireEvent.click(screen.getByRole("button", { name: /back/i }));
+    expect(screen.getByTestId("fallback")).toBeVisible();
+  });
+
+  it("renders a passed visual-parity summary status", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: "passed",
+            mode: "warn",
+            baselinePath: "/tmp/baseline.png",
+            runtimePreviewUrl: "http://127.0.0.1:19835/workspace/repros/job-1/",
+            maxDiffPixelRatio: 0.07,
+            details: "Generated preview matches baseline within threshold.",
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-parity-report.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("visual-parity-summary")).toBeVisible();
+    });
+    expect(screen.getByTestId("visual-parity-summary")).toHaveTextContent(
+      /Passed/,
+    );
+  });
+
+  it("clears report and filter params when resetting after URL load", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            status: "completed",
+            referenceSource: "frozen_fixture",
+            capturedAt: "2026-04-11T00:00:00.000Z",
+            overallScore: 97.2,
+            interpretation: "Good parity",
+            dimensions: [],
+            hotspots: [],
+          }),
+          {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          },
+        ),
+      ),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json&sort=score-asc&minScore=50&q=header",
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId("score-dashboard")).toBeVisible();
+    });
+
+    fireEvent.click(screen.getByTestId("visual-quality-reset"));
+
+    await waitFor(() => {
+      const search = screen.getByTestId("location-search").textContent ?? "";
+      expect(search).not.toContain("report=");
+      expect(search).not.toContain("sort=");
+      expect(search).not.toContain("minScore=");
+      expect(search).not.toContain("q=");
+    });
+    expect(screen.getByTestId("visual-quality-empty-state")).toBeVisible();
+  });
+
+  it("recovers from URL load failure when loading a sample manually", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(null, { status: 404 })),
+    );
+
+    renderPage(
+      "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fmissing%2Ffiles%2Fvisual-quality%2Freport.json",
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toHaveTextContent(
+        /Failed to fetch report .* HTTP 404/i,
+      );
+    });
+
+    fireEvent.click(screen.getByTestId("visual-quality-load-sample"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("score-dashboard")).toBeVisible();
+    });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

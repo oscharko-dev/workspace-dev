@@ -812,6 +812,35 @@ function fieldLabel(field: InspectorOverrideField): string {
   }
 }
 
+const inspectorPanelTestOnly = {
+  isRecord,
+  isFilesPayload,
+  isDesignIrPayload,
+  isComponentManifestPayload,
+  isGenerationMetricsPayload,
+  isLocalSyncFilePlanEntry,
+  isLocalSyncSummary,
+  isLocalSyncDryRunPayload,
+  isLocalSyncApplyPayload,
+  canWriteLocalSyncEntry,
+  isAttentionSyncEntry,
+  toLocalSyncStatusLabel,
+  toLocalSyncActionLabel,
+  getLocalSyncStatusClasses,
+  createLocalSyncDecisionMap,
+  toEndpointError,
+  getStatusBadgeClasses,
+  loadBoundariesEnabledPreference,
+  toBoundariesForFile,
+  findIrElementNode,
+  irScreensToTreeNodes,
+  findManifestEntry,
+  toScalarControlInputValue,
+  toPaddingControlInputValue,
+  toLayoutControlInputValue,
+  fieldLabel,
+};
+
 // ---------------------------------------------------------------------------
 // InspectorPanel
 // ---------------------------------------------------------------------------
@@ -5087,3 +5116,9 @@ export function InspectorPanel({
     </div>
   );
 }
+
+(
+  InspectorPanel as typeof InspectorPanel & {
+    __TEST_ONLY__: typeof inspectorPanelTestOnly;
+  }
+).__TEST_ONLY__ = inspectorPanelTestOnly;
