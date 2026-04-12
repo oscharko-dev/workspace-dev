@@ -51,6 +51,7 @@ export interface VisualScoreInput {
   overallScore: number;
   ranAt: string;
   source: string;
+  warning?: string;
 }
 
 export type CompositeQualityDimension = "visual" | "performance";
@@ -367,7 +368,9 @@ const extractPerformanceCategoryScore = (lhr: unknown): number | null => {
   return roundTo(score * 100, 2);
 };
 
-const resolveLighthouseRoot = (value: unknown): Record<string, unknown> | null => {
+const resolveLighthouseRoot = (
+  value: unknown,
+): Record<string, unknown> | null => {
   if (!isPlainRecord(value)) {
     return null;
   }
@@ -610,6 +613,26 @@ export const loadVisualBenchmarkScoreFromLastRun = async (
     throw new Error(
       `composite-quality: visual last-run JSON at ${lastRunPath} does not contain a usable score.`,
     );
+  }
+  const failedFixtures = parsed["failedFixtures"];
+  if (Array.isArray(failedFixtures) && failedFixtures.length > 0) {
+    const failedCount = failedFixtures.length;
+    const scores = parsed["scores"];
+    const passedCount = Array.isArray(scores) ? scores.length : 0;
+    if (passedCount === 0) {
+      throw new Error(
+        `composite-quality: visual last-run at ${lastRunPath} has ${String(failedCount)} failed fixture(s) and no passing scores — refusing to produce a composite score from a fully failed visual benchmark.`,
+      );
+    }
+    // Partial failure (some fixtures passed, some failed): allow the score
+    // but the composite-quality downstream will see the reduced overallCurrent.
+    assertInRange0to100(resolvedScore, "visual overall score");
+    return {
+      overallScore: roundTo(resolvedScore, 2),
+      ranAt: ranAtRaw,
+      source: lastRunPath,
+      warning: `${String(failedCount)} of ${String(failedCount + passedCount)} visual benchmark fixture(s) failed — score is based on ${String(passedCount)} passing fixture(s) only.`,
+    };
   }
   assertInRange0to100(resolvedScore, "visual overall score");
   return {

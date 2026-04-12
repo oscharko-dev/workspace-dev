@@ -9,18 +9,18 @@ import type {
   WorkspaceVisualAuditResult,
   WorkspaceVisualQualityFrozenReference,
   WorkspaceVisualQualityReferenceMode,
-  WorkspaceVisualQualityReport
+  WorkspaceVisualQualityReport,
 } from "../../contracts/index.js";
 import {
   prepareGenerationDiff,
   saveCurrentSnapshot,
   type GenerationDiffContext,
-  writeGenerationDiffReport
+  writeGenerationDiffReport,
 } from "../generation-diff.js";
 import {
   getUiGateReportPaths,
   runProjectValidation,
-  type ProjectValidationResult
+  type ProjectValidationResult,
 } from "../validation.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
@@ -33,13 +33,13 @@ import {
   type CustomerProfileStyleValidationSummary,
   validateGeneratedProjectCustomerProfile,
   validateGeneratedProjectStorybookStyles,
-  type CustomerProfileValidationSummary
+  type CustomerProfileValidationSummary,
 } from "../../customer-profile-validation.js";
 import {
   type ComponentMatchReportArtifact,
   type StorybookEvidenceArtifact,
   type StorybookPublicThemesArtifact,
-  type StorybookPublicTokensArtifact
+  type StorybookPublicTokensArtifact,
 } from "../../storybook/types.js";
 import {
   parseStorybookCatalogArtifact,
@@ -47,12 +47,15 @@ import {
   parseStorybookComponentsArtifact,
   parseStorybookEvidenceArtifact,
   parseStorybookThemesArtifact,
-  parseStorybookTokensArtifact
+  parseStorybookTokensArtifact,
 } from "../../storybook/artifact-validation.js";
 import { isWithinRoot } from "../preview.js";
 import { captureFromProject } from "../visual-capture.js";
 import { comparePngBuffers, writeDiffImage } from "../visual-diff.js";
-import { computeVisualQualityReport, type VisualQualityReport } from "../visual-scoring.js";
+import {
+  computeVisualQualityReport,
+  type VisualQualityReport,
+} from "../visual-scoring.js";
 import {
   computeCrossBrowserConsistencyScore,
   normalizeVisualBrowserNames,
@@ -62,16 +65,23 @@ import {
   findVisualQualityFixtureManifest,
   loadFrozenVisualReference,
   resolveVisualQualityFrozenReferencePaths,
-  selectVisualQualityReferenceNode
+  selectVisualQualityReferenceNode,
 } from "../visual-quality-reference.js";
 
 const isPerfValidationEnabled = (): boolean => {
-  const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
+  const raw =
+    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
+    process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
   if (!raw) {
     return false;
   }
   const normalized = raw.trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+  return (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
 };
 
 const isLintAutofixEnabled = (): boolean => {
@@ -80,10 +90,20 @@ const isLintAutofixEnabled = (): boolean => {
     return true;
   }
   const normalized = raw.trim().toLowerCase();
-  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+  if (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "yes" ||
+    normalized === "on"
+  ) {
     return true;
   }
-  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+  if (
+    normalized === "0" ||
+    normalized === "false" ||
+    normalized === "no" ||
+    normalized === "off"
+  ) {
     return false;
   }
   return true;
@@ -100,7 +120,13 @@ interface ValidateProjectServiceDeps {
   isPerfValidationEnabledFn: () => boolean;
 }
 
-type ValidationGateStatus = "ok" | "warn" | "failed" | "partial" | "not_available" | "not_requested";
+type ValidationGateStatus =
+  | "ok"
+  | "warn"
+  | "failed"
+  | "partial"
+  | "not_available"
+  | "not_requested";
 
 interface ValidationArtifactStatusSummary {
   status: "ok" | "not_available" | "missing" | "invalid";
@@ -261,7 +287,7 @@ interface ValidationSummaryArtifact {
       }
     | {
         status: "not_available";
-  };
+      };
 }
 
 type StorybookArtifactKey = keyof ValidationStorybookArtifactSet;
@@ -274,42 +300,52 @@ type StorybookArtifactDescriptor = {
 const STORYBOOK_ARTIFACT_DESCRIPTORS: StorybookArtifactDescriptor[] = [
   {
     key: "catalog",
-    label: "storybook.catalog"
+    label: "storybook.catalog",
   },
   {
     key: "evidence",
-    label: "storybook.evidence"
+    label: "storybook.evidence",
   },
   {
     key: "tokens",
-    label: "storybook.tokens"
+    label: "storybook.tokens",
   },
   {
     key: "themes",
-    label: "storybook.themes"
+    label: "storybook.themes",
   },
   {
     key: "components",
-    label: "storybook.components"
+    label: "storybook.components",
   },
   {
     key: "componentVisualCatalog",
-    label: "storybook.component-visual-catalog"
-  }
+    label: "storybook.component-visual-catalog",
+  },
 ];
 
 const isFailedValidationArtifactStatus = (
-  status: ValidationArtifactStatusSummary["status"]
+  status: ValidationArtifactStatusSummary["status"],
 ): status is "missing" | "invalid" => {
   return status === "missing" || status === "invalid";
 };
 
 const listFailedStorybookArtifacts = ({
-  artifacts
+  artifacts,
 }: {
   artifacts: ValidationStorybookArtifactSet;
-}): Array<StorybookArtifactDescriptor & { status: "missing" | "invalid"; filePath?: string }> => {
-  const failedArtifacts: Array<StorybookArtifactDescriptor & { status: "missing" | "invalid"; filePath?: string }> = [];
+}): Array<
+  StorybookArtifactDescriptor & {
+    status: "missing" | "invalid";
+    filePath?: string;
+  }
+> => {
+  const failedArtifacts: Array<
+    StorybookArtifactDescriptor & {
+      status: "missing" | "invalid";
+      filePath?: string;
+    }
+  > = [];
   for (const descriptor of STORYBOOK_ARTIFACT_DESCRIPTORS) {
     const artifact = artifacts[descriptor.key];
     if (!isFailedValidationArtifactStatus(artifact.status)) {
@@ -319,28 +355,37 @@ const listFailedStorybookArtifacts = ({
     failedArtifacts.push({
       ...descriptor,
       status,
-      ...(artifact.filePath ? { filePath: artifact.filePath } : {})
+      ...(artifact.filePath ? { filePath: artifact.filePath } : {}),
     });
   }
   return failedArtifacts;
 };
 
 const buildStorybookGateMessage = ({
-  artifacts
+  artifacts,
 }: {
-  artifacts: Array<StorybookArtifactDescriptor & { status: "missing" | "invalid" }>;
+  artifacts: Array<
+    StorybookArtifactDescriptor & { status: "missing" | "invalid" }
+  >;
 }): string => {
   return (
     "Storybook validation gate failed because required artifacts are missing or invalid: " +
-    artifacts.map((artifact) => `${artifact.label} (${artifact.status})`).join(", ") +
+    artifacts
+      .map((artifact) => `${artifact.label} (${artifact.status})`)
+      .join(", ") +
     "."
   );
 };
 
 const buildStorybookGateDiagnostics = ({
-  artifacts
+  artifacts,
 }: {
-  artifacts: Array<StorybookArtifactDescriptor & { status: "missing" | "invalid"; filePath?: string }>;
+  artifacts: Array<
+    StorybookArtifactDescriptor & {
+      status: "missing" | "invalid";
+      filePath?: string;
+    }
+  >;
 }) => {
   return artifacts.map((artifact) => ({
     code:
@@ -357,13 +402,13 @@ const buildStorybookGateDiagnostics = ({
     severity: "error" as const,
     details: {
       artifactKey: artifact.label,
-      ...(artifact.filePath ? { filePath: artifact.filePath } : {})
-    }
+      ...(artifact.filePath ? { filePath: artifact.filePath } : {}),
+    },
   }));
 };
 
 const buildStorybookCompositionCoverage = ({
-  artifact
+  artifact,
 }: {
   artifact: ComponentMatchReportArtifact;
 }): ValidationStorybookCompositionCoverage => {
@@ -373,7 +418,7 @@ const buildStorybookCompositionCoverage = ({
       continue;
     }
     const hasAuthoritativeEvidence = entry.usedEvidence.some(
-      (evidence) => evidence.reliability === "authoritative"
+      (evidence) => evidence.reliability === "authoritative",
     );
     if (!hasAuthoritativeEvidence && entry.usedEvidence.length > 0) {
       docsOnlyFamilyNames.push(entry.figma.familyName);
@@ -386,7 +431,7 @@ const buildStorybookCompositionCoverage = ({
     ambiguous: artifact.summary.ambiguous,
     unmatched: artifact.summary.unmatched,
     docsOnlyReferenceCount: docsOnlyFamilyNames.length,
-    docsOnlyFamilyNames: docsOnlyFamilyNames.sort((a, b) => a.localeCompare(b))
+    docsOnlyFamilyNames: docsOnlyFamilyNames.sort((a, b) => a.localeCompare(b)),
   };
 };
 
@@ -394,45 +439,51 @@ const toJsonFileContent = (value: unknown): string => {
   return `${JSON.stringify(value, null, 2)}\n`;
 };
 
-const cloneVisualAuditResult = (value: WorkspaceVisualAuditResult): WorkspaceVisualAuditResult => {
+const cloneVisualAuditResult = (
+  value: WorkspaceVisualAuditResult,
+): WorkspaceVisualAuditResult => {
   return {
     ...value,
     ...(value.regions
       ? {
-          regions: value.regions.map((region) => ({ ...region }))
+          regions: value.regions.map((region) => ({ ...region })),
         }
       : {}),
-    ...(value.warnings ? { warnings: [...value.warnings] } : {})
+    ...(value.warnings ? { warnings: [...value.warnings] } : {}),
   };
 };
 
-const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): WorkspaceVisualQualityReport => {
+const cloneVisualQualityReport = (
+  value: WorkspaceVisualQualityReport,
+): WorkspaceVisualQualityReport => {
   return {
     ...value,
     ...(value.dimensions
       ? {
-          dimensions: value.dimensions.map((dimension) => ({ ...dimension }))
+          dimensions: value.dimensions.map((dimension) => ({ ...dimension })),
         }
       : {}),
     ...(value.hotspots
       ? {
-          hotspots: value.hotspots.map((hotspot) => ({ ...hotspot }))
+          hotspots: value.hotspots.map((hotspot) => ({ ...hotspot })),
         }
       : {}),
     ...(value.componentCoverage
       ? {
           componentCoverage: {
             ...value.componentCoverage,
-            bySkipReason: { ...value.componentCoverage.bySkipReason }
-          }
+            bySkipReason: { ...value.componentCoverage.bySkipReason },
+          },
         }
       : {}),
     ...(value.components
       ? {
           components: value.components.map((component) => ({
             ...component,
-            ...(component.warnings ? { warnings: [...component.warnings] } : {})
-          }))
+            ...(component.warnings
+              ? { warnings: [...component.warnings] }
+              : {}),
+          })),
         }
       : {}),
     ...(value.metadata
@@ -441,13 +492,13 @@ const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): Workspac
             ...value.metadata,
             configuredWeights: { ...value.metadata.configuredWeights },
             viewport: { ...value.metadata.viewport },
-            versions: { ...value.metadata.versions }
-          }
+            versions: { ...value.metadata.versions },
+          },
         }
       : {}),
     ...(value.browserBreakdown
       ? {
-          browserBreakdown: { ...value.browserBreakdown }
+          browserBreakdown: { ...value.browserBreakdown },
         }
       : {}),
     ...(value.crossBrowserConsistency
@@ -455,26 +506,30 @@ const cloneVisualQualityReport = (value: WorkspaceVisualQualityReport): Workspac
           crossBrowserConsistency: {
             ...value.crossBrowserConsistency,
             browsers: [...value.crossBrowserConsistency.browsers],
-            pairwiseDiffs: value.crossBrowserConsistency.pairwiseDiffs.map((pair) => ({ ...pair })),
+            pairwiseDiffs: value.crossBrowserConsistency.pairwiseDiffs.map(
+              (pair) => ({ ...pair }),
+            ),
             ...(value.crossBrowserConsistency.warnings
               ? { warnings: [...value.crossBrowserConsistency.warnings] }
-              : {})
-          }
+              : {}),
+          },
         }
       : {}),
     ...(value.perBrowser
       ? {
           perBrowser: value.perBrowser.map((entry) => ({
             ...entry,
-            ...(entry.warnings ? { warnings: [...entry.warnings] } : {})
-          }))
+            ...(entry.warnings ? { warnings: [...entry.warnings] } : {}),
+          })),
         }
       : {}),
-    ...(value.warnings ? { warnings: [...value.warnings] } : {})
+    ...(value.warnings ? { warnings: [...value.warnings] } : {}),
   };
 };
 
-const cloneCompositeQualityReport = (value: WorkspaceCompositeQualityReport): WorkspaceCompositeQualityReport => {
+const cloneCompositeQualityReport = (
+  value: WorkspaceCompositeQualityReport,
+): WorkspaceCompositeQualityReport => {
   return {
     ...value,
     ...(value.weights ? { weights: { ...value.weights } } : {}),
@@ -485,35 +540,37 @@ const cloneCompositeQualityReport = (value: WorkspaceCompositeQualityReport): Wo
             ...value.performance,
             samples: value.performance.samples.map((sample) => ({ ...sample })),
             aggregateMetrics: { ...value.performance.aggregateMetrics },
-            warnings: [...value.performance.warnings]
-          }
+            warnings: [...value.performance.warnings],
+          },
         }
       : {}),
     ...(value.composite
       ? {
           composite: {
             ...value.composite,
-            includedDimensions: [...value.composite.includedDimensions]
-          }
+            includedDimensions: [...value.composite.includedDimensions],
+          },
         }
       : {}),
-    ...(value.warnings ? { warnings: [...value.warnings] } : {})
+    ...(value.warnings ? { warnings: [...value.warnings] } : {}),
   };
 };
 
-const createNotRequestedVisualQualityReport = (): WorkspaceVisualQualityReport => ({
-  status: "not_requested"
-});
+const createNotRequestedVisualQualityReport =
+  (): WorkspaceVisualQualityReport => ({
+    status: "not_requested",
+  });
 
-const createNotRequestedCompositeQualityReport = (): WorkspaceCompositeQualityReport => ({
-  status: "not_requested"
-});
+const createNotRequestedCompositeQualityReport =
+  (): WorkspaceCompositeQualityReport => ({
+    status: "not_requested",
+  });
 
 const createFailedCompositeQualityReport = ({
   weights,
   generatedAt,
   message,
-  warnings
+  warnings,
 }: {
   weights: WorkspaceCompositeQualityWeights;
   generatedAt: string;
@@ -525,7 +582,7 @@ const createFailedCompositeQualityReport = ({
     generatedAt,
     weights: { ...weights },
     message,
-    ...(warnings && warnings.length > 0 ? { warnings: [...warnings] } : {})
+    ...(warnings && warnings.length > 0 ? { warnings: [...warnings] } : {}),
   };
 };
 
@@ -533,7 +590,7 @@ const createFailedVisualQualityReport = ({
   referenceSource,
   capturedAt,
   message,
-  warnings
+  warnings,
 }: {
   referenceSource: WorkspaceVisualQualityReferenceMode;
   capturedAt: string;
@@ -545,7 +602,7 @@ const createFailedVisualQualityReport = ({
     referenceSource,
     capturedAt,
     message,
-    ...(warnings && warnings.length > 0 ? { warnings } : {})
+    ...(warnings && warnings.length > 0 ? { warnings } : {}),
   };
 };
 
@@ -556,7 +613,7 @@ const createCompletedVisualQualityReport = ({
   browserBreakdown,
   crossBrowserConsistency,
   perBrowser,
-  warnings
+  warnings,
 }: {
   referenceSource: WorkspaceVisualQualityReferenceMode;
   capturedAt: string;
@@ -579,7 +636,7 @@ const createCompletedVisualQualityReport = ({
       ...report.metadata,
       configuredWeights: { ...report.metadata.configuredWeights },
       viewport: { ...report.metadata.viewport },
-      versions: { ...report.metadata.versions }
+      versions: { ...report.metadata.versions },
     },
     ...(browserBreakdown ? { browserBreakdown: { ...browserBreakdown } } : {}),
     ...(crossBrowserConsistency
@@ -587,28 +644,30 @@ const createCompletedVisualQualityReport = ({
           crossBrowserConsistency: {
             ...crossBrowserConsistency,
             browsers: [...crossBrowserConsistency.browsers],
-            pairwiseDiffs: crossBrowserConsistency.pairwiseDiffs.map((pair) => ({ ...pair })),
+            pairwiseDiffs: crossBrowserConsistency.pairwiseDiffs.map(
+              (pair) => ({ ...pair }),
+            ),
             ...(crossBrowserConsistency.warnings
               ? { warnings: [...crossBrowserConsistency.warnings] }
-              : {})
-          }
+              : {}),
+          },
         }
       : {}),
     ...(perBrowser
       ? {
           perBrowser: perBrowser.map((entry) => ({
             ...entry,
-            ...(entry.warnings ? { warnings: [...entry.warnings] } : {})
-          }))
+            ...(entry.warnings ? { warnings: [...entry.warnings] } : {}),
+          })),
         }
       : {}),
-    ...(warnings && warnings.length > 0 ? { warnings: [...warnings] } : {})
+    ...(warnings && warnings.length > 0 ? { warnings: [...warnings] } : {}),
   };
 };
 
 const DEFAULT_COMPOSITE_QUALITY_WEIGHTS: WorkspaceCompositeQualityWeights = {
   visual: 0.6,
-  performance: 0.4
+  performance: 0.4,
 };
 
 const roundCompositeMetric = (value: number, decimals: number): number => {
@@ -617,7 +676,7 @@ const roundCompositeMetric = (value: number, decimals: number): number => {
 };
 
 const resolveCompositeQualityWeights = (
-  input?: { visual?: number; performance?: number } | null
+  input?: { visual?: number; performance?: number } | null,
 ): WorkspaceCompositeQualityWeights => {
   if (input === undefined || input === null) {
     return { ...DEFAULT_COMPOSITE_QUALITY_WEIGHTS };
@@ -653,14 +712,14 @@ const resolveCompositeQualityWeights = (
 
   return {
     visual: roundCompositeMetric((visual ?? 0) / total, 4),
-    performance: roundCompositeMetric((performance ?? 0) / total, 4)
+    performance: roundCompositeMetric((performance ?? 0) / total, 4),
   };
 };
 
 const computeCompositeScore = ({
   visualScore,
   performanceScore,
-  weights
+  weights,
 }: {
   visualScore: number | null;
   performanceScore: number | null;
@@ -670,51 +729,56 @@ const computeCompositeScore = ({
     return {
       score: null,
       includedDimensions: [],
-      explanation: "no scores available"
+      explanation: "no scores available",
     };
   }
   if (visualScore !== null && performanceScore === null) {
     return {
       score: roundCompositeMetric(visualScore, 2),
       includedDimensions: ["visual"],
-      explanation: `visual-only fallback: ${String(roundCompositeMetric(visualScore, 2))}`
+      explanation: `visual-only fallback: ${String(roundCompositeMetric(visualScore, 2))}`,
     };
   }
   if (visualScore === null && performanceScore !== null) {
     return {
       score: roundCompositeMetric(performanceScore, 2),
       includedDimensions: ["performance"],
-      explanation: `performance-only fallback: ${String(roundCompositeMetric(performanceScore, 2))}`
+      explanation: `performance-only fallback: ${String(roundCompositeMetric(performanceScore, 2))}`,
     };
   }
   const resolvedVisual = visualScore ?? 0;
   const resolvedPerformance = performanceScore ?? 0;
   const score = roundCompositeMetric(
     weights.visual * resolvedVisual + weights.performance * resolvedPerformance,
-    2
+    2,
   );
   return {
     score,
     includedDimensions: ["visual", "performance"],
-    explanation: `${String(weights.visual)} * ${String(resolvedVisual)} + ${String(weights.performance)} * ${String(resolvedPerformance)} = ${String(score)}`
+    explanation: `${String(weights.visual)} * ${String(resolvedVisual)} + ${String(weights.performance)} * ${String(resolvedPerformance)} = ${String(score)}`,
   };
 };
 
-const meanCompositeMetricOrNull = (values: readonly number[]): number | null => {
+const meanCompositeMetricOrNull = (
+  values: readonly number[],
+): number | null => {
   if (values.length === 0) {
     return null;
   }
-  return roundCompositeMetric(values.reduce((sum, value) => sum + value, 0) / values.length, 2);
+  return roundCompositeMetric(
+    values.reduce((sum, value) => sum + value, 0) / values.length,
+    2,
+  );
 };
 
 const loadCompositePerformanceBreakdown = async ({
-  artifactDir
+  artifactDir,
 }: {
   artifactDir: string;
 }): Promise<WorkspaceCompositeQualityPerformanceBreakdown> => {
   const candidatePaths = [
     path.join(artifactDir, "perf-assert-report.json"),
-    path.join(artifactDir, "perf-baseline.json")
+    path.join(artifactDir, "perf-baseline.json"),
   ];
   let sourcePath: string | undefined;
   let rawContent: string | undefined;
@@ -742,9 +806,11 @@ const loadCompositePerformanceBreakdown = async ({
         lcp_ms: null,
         cls: null,
         tbt_ms: null,
-        speed_index_ms: null
+        speed_index_ms: null,
       },
-      warnings: [`performance report not found (looked for ${candidatePaths.join(", ")})`]
+      warnings: [
+        `performance report not found (looked for ${candidatePaths.join(", ")})`,
+      ],
     };
   }
 
@@ -763,9 +829,9 @@ const loadCompositePerformanceBreakdown = async ({
         lcp_ms: null,
         cls: null,
         tbt_ms: null,
-        speed_index_ms: null
+        speed_index_ms: null,
       },
-      warnings: [`performance report is not valid JSON: ${message}`]
+      warnings: [`performance report is not valid JSON: ${message}`],
     };
   }
 
@@ -780,9 +846,9 @@ const loadCompositePerformanceBreakdown = async ({
         lcp_ms: null,
         cls: null,
         tbt_ms: null,
-        speed_index_ms: null
+        speed_index_ms: null,
       },
-      warnings: ["performance report missing samples[] array"]
+      warnings: ["performance report missing samples[] array"],
     };
   }
 
@@ -794,7 +860,9 @@ const loadCompositePerformanceBreakdown = async ({
   const tbtValues: number[] = [];
   const speedIndexValues: number[] = [];
 
-  const resolveLighthouseRoot = (value: unknown): Record<string, unknown> | null => {
+  const resolveLighthouseRoot = (
+    value: unknown,
+  ): Record<string, unknown> | null => {
     if (!isRecord(value)) {
       return null;
     }
@@ -812,34 +880,47 @@ const loadCompositePerformanceBreakdown = async ({
       return null;
     }
     const numericValue = audits[key].numericValue;
-    return typeof numericValue === "number" && Number.isFinite(numericValue) ? numericValue : null;
+    return typeof numericValue === "number" && Number.isFinite(numericValue)
+      ? numericValue
+      : null;
   };
   const extractPerformanceScore = (lhrRoot: unknown): number | null => {
-    if (!isRecord(lhrRoot) || !isRecord(lhrRoot.categories) || !isRecord(lhrRoot.categories.performance)) {
+    if (
+      !isRecord(lhrRoot) ||
+      !isRecord(lhrRoot.categories) ||
+      !isRecord(lhrRoot.categories.performance)
+    ) {
       return null;
     }
     const score = lhrRoot.categories.performance.score;
-    return typeof score === "number" && Number.isFinite(score) ? roundCompositeMetric(score * 100, 2) : null;
+    return typeof score === "number" && Number.isFinite(score)
+      ? roundCompositeMetric(score * 100, 2)
+      : null;
   };
 
   for (let index = 0; index < parsed.samples.length; index += 1) {
-    const sample = parsed.samples[index];
+    const sample: unknown = (parsed.samples as unknown[])[index];
     if (!isRecord(sample)) {
       warnings.push(`sample[${String(index)}]: not an object, skipping`);
       continue;
     }
     const profile = sample.profile;
     if (profile !== "mobile" && profile !== "desktop") {
-      warnings.push(`sample[${String(index)}]: unsupported lighthouse profile (${String(profile)})`);
+      warnings.push(
+        `sample[${String(index)}]: unsupported lighthouse profile (${String(profile)})`,
+      );
       continue;
     }
     const route = typeof sample.route === "string" ? sample.route : "(unknown)";
     const lighthouseReportRaw =
-      isRecord(sample.artifacts) && typeof sample.artifacts.lighthouseReport === "string"
+      isRecord(sample.artifacts) &&
+      typeof sample.artifacts.lighthouseReport === "string"
         ? sample.artifacts.lighthouseReport
         : undefined;
     if (!lighthouseReportRaw) {
-      warnings.push(`sample[${String(index)}] ${profile} ${route}: missing artifacts.lighthouseReport path`);
+      warnings.push(
+        `sample[${String(index)}] ${profile} ${route}: missing artifacts.lighthouseReport path`,
+      );
       continue;
     }
     const lighthouseReportPath = path.isAbsolute(lighthouseReportRaw)
@@ -850,7 +931,9 @@ const loadCompositePerformanceBreakdown = async ({
       lighthouseReportContent = await readFile(lighthouseReportPath, "utf8");
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      warnings.push(`sample[${String(index)}] ${profile} ${route}: failed to read ${lighthouseReportPath} (${message})`);
+      warnings.push(
+        `sample[${String(index)}] ${profile} ${route}: failed to read ${lighthouseReportPath} (${message})`,
+      );
       continue;
     }
     let lighthouseReportParsed: unknown;
@@ -858,7 +941,9 @@ const loadCompositePerformanceBreakdown = async ({
       lighthouseReportParsed = JSON.parse(lighthouseReportContent);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      warnings.push(`sample[${String(index)}] ${profile} ${route}: malformed lighthouse report (${message})`);
+      warnings.push(
+        `sample[${String(index)}] ${profile} ${route}: malformed lighthouse report (${message})`,
+      );
       continue;
     }
 
@@ -873,7 +958,7 @@ const loadCompositePerformanceBreakdown = async ({
       lcp_ms: extractAuditMetric(audits, "largest-contentful-paint"),
       cls: extractAuditMetric(audits, "cumulative-layout-shift"),
       tbt_ms: extractAuditMetric(audits, "total-blocking-time"),
-      speed_index_ms: extractAuditMetric(audits, "speed-index")
+      speed_index_ms: extractAuditMetric(audits, "speed-index"),
     };
     samples.push(loadedSample);
 
@@ -920,9 +1005,9 @@ const loadCompositePerformanceBreakdown = async ({
       lcp_ms: meanCompositeMetricOrNull(lcpValues),
       cls: meanCompositeMetricOrNull(clsValues),
       tbt_ms: meanCompositeMetricOrNull(tbtValues),
-      speed_index_ms: meanCompositeMetricOrNull(speedIndexValues)
+      speed_index_ms: meanCompositeMetricOrNull(speedIndexValues),
     },
-    warnings
+    warnings,
   };
 };
 
@@ -931,17 +1016,20 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 const resolveRequestedVisualQualityFrozenReference = ({
-  context
+  context,
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
 }): WorkspaceVisualQualityFrozenReference | undefined => {
-  return context.input?.visualQualityFrozenReference ?? context.job.request.visualQualityFrozenReference;
+  return (
+    context.input?.visualQualityFrozenReference ??
+    context.job.request.visualQualityFrozenReference
+  );
 };
 
 const toUiA11yWarnSummary = ({
   reportPath,
   summary,
-  diagnostics
+  diagnostics,
 }: {
   reportPath: string;
   summary: string;
@@ -956,12 +1044,12 @@ const toUiA11yWarnSummary = ({
     checks: [],
     artifacts: [],
     summary,
-    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {})
+    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
   };
 };
 
 const parseUiA11yCheckSummary = ({
-  input
+  input,
 }: {
   input: unknown;
 }): ValidationUiA11yCheckSummary | undefined => {
@@ -974,23 +1062,29 @@ const parseUiA11yCheckSummary = ({
     return undefined;
   }
 
-  const statusRaw = typeof input.status === "string" ? input.status.trim().toLowerCase() : "";
+  const statusRaw =
+    typeof input.status === "string" ? input.status.trim().toLowerCase() : "";
   if (statusRaw !== "passed" && statusRaw !== "failed") {
     return undefined;
   }
 
-  const count = typeof input.count === "number" && Number.isFinite(input.count) ? Math.max(0, Math.trunc(input.count)) : 0;
+  const count =
+    typeof input.count === "number" && Number.isFinite(input.count)
+      ? Math.max(0, Math.trunc(input.count))
+      : 0;
   return {
     name,
     status: statusRaw,
     count,
-    ...(typeof input.details === "string" && input.details.trim().length > 0 ? { details: input.details.trim() } : {})
+    ...(typeof input.details === "string" && input.details.trim().length > 0
+      ? { details: input.details.trim() }
+      : {}),
   };
 };
 
 const parseUiA11yReportSummary = ({
   input,
-  reportPath
+  reportPath,
 }: {
   input: string;
   reportPath: string;
@@ -1003,7 +1097,7 @@ const parseUiA11yReportSummary = ({
   const diagnostics: string[] = [];
   const toViolationCount = ({
     key,
-    value
+    value,
   }: {
     key: "visualDiffCount" | "a11yViolationCount" | "interactionViolationCount";
     value: unknown;
@@ -1017,42 +1111,51 @@ const parseUiA11yReportSummary = ({
 
   const visualDiffCount = toViolationCount({
     key: "visualDiffCount",
-    value: parsed.visualDiffCount
+    value: parsed.visualDiffCount,
   });
   const a11yViolationCount = toViolationCount({
     key: "a11yViolationCount",
-    value: parsed.a11yViolationCount
+    value: parsed.a11yViolationCount,
   });
   const interactionViolationCount = toViolationCount({
     key: "interactionViolationCount",
-    value: parsed.interactionViolationCount
+    value: parsed.interactionViolationCount,
   });
 
   const checks = Array.isArray(parsed.checks)
     ? parsed.checks
         .map((entry) => parseUiA11yCheckSummary({ input: entry }))
-        .filter((entry): entry is ValidationUiA11yCheckSummary => entry !== undefined)
+        .filter(
+          (entry): entry is ValidationUiA11yCheckSummary => entry !== undefined,
+        )
     : [];
   if (!Array.isArray(parsed.checks)) {
     diagnostics.push("Expected 'checks' to be an array.");
   }
 
   const artifacts = Array.isArray(parsed.artifacts)
-    ? [...new Set(
-        parsed.artifacts
-          .filter((entry): entry is string => typeof entry === "string")
-          .map((entry) => entry.trim())
-          .filter((entry) => entry.length > 0)
-      )]
+    ? [
+        ...new Set(
+          parsed.artifacts
+            .filter((entry): entry is string => typeof entry === "string")
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0),
+        ),
+      ]
     : [];
   if (!Array.isArray(parsed.artifacts)) {
     diagnostics.push("Expected 'artifacts' to be an array.");
   }
 
   const hasFailedChecks = checks.some((entry) => entry.status === "failed");
-  const hasViolationCounts = visualDiffCount > 0 || a11yViolationCount > 0 || interactionViolationCount > 0;
+  const hasViolationCounts =
+    visualDiffCount > 0 ||
+    a11yViolationCount > 0 ||
+    interactionViolationCount > 0;
   const status: ValidationUiA11yReportSummary["status"] =
-    hasFailedChecks || hasViolationCounts || diagnostics.length > 0 ? "warn" : "ok";
+    hasFailedChecks || hasViolationCounts || diagnostics.length > 0
+      ? "warn"
+      : "ok";
 
   return {
     status,
@@ -1062,32 +1165,35 @@ const parseUiA11yReportSummary = ({
     interactionViolationCount,
     checks,
     artifacts,
-    ...(typeof parsed.summary === "string" && parsed.summary.trim().length > 0 ? { summary: parsed.summary.trim() } : {}),
-    ...(diagnostics.length > 0 ? { diagnostics } : {})
+    ...(typeof parsed.summary === "string" && parsed.summary.trim().length > 0
+      ? { summary: parsed.summary.trim() }
+      : {}),
+    ...(diagnostics.length > 0 ? { diagnostics } : {}),
   };
 };
 
 const buildUiA11ySummary = async ({
   context,
-  validationResult
+  validationResult,
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validationResult?: ProjectValidationResult;
 }): Promise<ValidationUiA11ySummary> => {
   if (!context.runtime.enableUiValidation) {
     return {
-      status: "not_requested"
+      status: "not_requested",
     };
   }
 
   const { reportPath } = getUiGateReportPaths({
-    jobDir: context.paths.jobDir
+    jobDir: context.paths.jobDir,
   });
   if (!validationResult?.validateUi) {
     return {
       status: "not_available",
       reportPath,
-      summary: "UI/A11y validation did not run; ui-gate report is not available."
+      summary:
+        "UI/A11y validation did not run; ui-gate report is not available.",
     };
   }
 
@@ -1098,28 +1204,29 @@ const buildUiA11ySummary = async ({
     const message = error instanceof Error ? error.message : String(error);
     return toUiA11yWarnSummary({
       reportPath,
-      summary: "UI/A11y validation ran but ui-gate report is missing or unreadable.",
-      diagnostics: [message]
+      summary:
+        "UI/A11y validation ran but ui-gate report is missing or unreadable.",
+      diagnostics: [message],
     });
   }
 
   try {
     return parseUiA11yReportSummary({
       input: reportInput,
-      reportPath
+      reportPath,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return toUiA11yWarnSummary({
       reportPath,
       summary: "UI/A11y validation produced a malformed ui-gate report.",
-      diagnostics: [message]
+      diagnostics: [message],
     });
   }
 };
 
 const parseComponentMatchReportArtifact = ({
-  input
+  input,
 }: {
   input: string;
 }): ComponentMatchReportArtifact => {
@@ -1131,24 +1238,39 @@ const parseComponentMatchReportArtifact = ({
     (parsed as Record<string, unknown>).artifact !== "component.match_report" ||
     !Array.isArray((parsed as Record<string, unknown>).entries)
   ) {
-    throw new Error("Expected a component.match_report artifact with an entries array.");
+    throw new Error(
+      "Expected a component.match_report artifact with an entries array.",
+    );
   }
   return parsed as ComponentMatchReportArtifact;
 };
 
 const parseFigmaLibraryResolutionSummary = ({
-  input
+  input,
 }: {
   input: string;
 }): ValidationFigmaLibraryResolutionSummary => {
   const parsed: unknown = JSON.parse(input);
-  if (!isRecord(parsed) || parsed.artifact !== "figma.library_resolution" || !Array.isArray(parsed.entries) || !isRecord(parsed.summary)) {
-    throw new Error("Expected a figma.library_resolution artifact with entries and summary.");
+  if (
+    !isRecord(parsed) ||
+    parsed.artifact !== "figma.library_resolution" ||
+    !Array.isArray(parsed.entries) ||
+    !isRecord(parsed.summary)
+  ) {
+    throw new Error(
+      "Expected a figma.library_resolution artifact with entries and summary.",
+    );
   }
   const summary = parsed.summary;
 
   const numericField = (
-    key: "total" | "resolved" | "partial" | "error" | "cacheHit" | "offlineReused"
+    key:
+      | "total"
+      | "resolved"
+      | "partial"
+      | "error"
+      | "cacheHit"
+      | "offlineReused",
   ): number => {
     const value = summary[key];
     return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -1162,7 +1284,8 @@ const parseFigmaLibraryResolutionSummary = ({
     if (!isRecord(entry)) {
       continue;
     }
-    const resolutionSource = typeof entry.resolutionSource === "string" ? entry.resolutionSource : "";
+    const resolutionSource =
+      typeof entry.resolutionSource === "string" ? entry.resolutionSource : "";
     if (resolutionSource === "live") {
       live += 1;
     } else if (resolutionSource === "cache") {
@@ -1170,7 +1293,10 @@ const parseFigmaLibraryResolutionSummary = ({
     } else if (resolutionSource === "local_catalog") {
       localCatalog += 1;
     }
-    if (typeof entry.originFileKey === "string" && entry.originFileKey.trim().length > 0) {
+    if (
+      typeof entry.originFileKey === "string" &&
+      entry.originFileKey.trim().length > 0
+    ) {
       entriesWithOriginFileKey += 1;
     }
   }
@@ -1185,9 +1311,9 @@ const parseFigmaLibraryResolutionSummary = ({
     bySource: {
       live,
       cache,
-      localCatalog
+      localCatalog,
     },
-    entriesWithOriginFileKey
+    entriesWithOriginFileKey,
   };
 };
 
@@ -1222,7 +1348,7 @@ const resolveSummaryStatus = ({
   storybook,
   mapping,
   style,
-  importSummary
+  importSummary,
 }: {
   generatedApp: ValidationSummaryArtifact["generatedApp"];
   uiA11y: ValidationSummaryArtifact["uiA11y"];
@@ -1236,7 +1362,8 @@ const resolveSummaryStatus = ({
   const compositeQualityStatus: ValidationGateStatus =
     compositeQuality.status === "failed"
       ? "failed"
-      : compositeQuality.status === "completed" && (compositeQuality.warnings?.length ?? 0) > 0
+      : compositeQuality.status === "completed" &&
+          (compositeQuality.warnings?.length ?? 0) > 0
         ? "warn"
         : compositeQuality.status === "completed"
           ? "ok"
@@ -1249,7 +1376,7 @@ const resolveSummaryStatus = ({
     storybook.status,
     mapping.status,
     style.status,
-    importSummary.status
+    importSummary.status,
   ];
   if (gateStatuses.includes("failed")) {
     return "failed";
@@ -1260,25 +1387,27 @@ const resolveSummaryStatus = ({
   return "ok";
 };
 
-const toArtifactStatusSummary = (filePath: string | undefined): ValidationArtifactStatusSummary => {
+const toArtifactStatusSummary = (
+  filePath: string | undefined,
+): ValidationArtifactStatusSummary => {
   return filePath
     ? {
         status: "ok",
-        filePath
+        filePath,
       }
     : {
-        status: "not_available"
-    };
+        status: "not_available",
+      };
 };
 
 const toFigmaLibraryResolutionStatusSummary = async ({
-  filePath
+  filePath,
 }: {
   filePath: string | undefined;
 }): Promise<ValidationFigmaLibraryResolutionStatusSummary> => {
   if (!filePath) {
     return {
-      status: "not_available"
+      status: "not_available",
     };
   }
 
@@ -1287,7 +1416,7 @@ const toFigmaLibraryResolutionStatusSummary = async ({
     input = await readFile(filePath, "utf8");
   } catch {
     return {
-      status: "missing"
+      status: "missing",
     };
   }
 
@@ -1296,35 +1425,42 @@ const toFigmaLibraryResolutionStatusSummary = async ({
       status: "ok",
       filePath,
       summary: parseFigmaLibraryResolutionSummary({
-        input
-      })
+        input,
+      }),
     };
   } catch {
     return {
       status: "ok",
-      filePath
+      filePath,
     };
   }
 };
 
 const persistValidationSummaryArtifacts = async ({
   context,
-  summary
+  summary,
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   summary: ValidationSummaryArtifact;
 }): Promise<string> => {
-  const validationSummaryFilePath = path.join(context.paths.jobDir, "validation-summary.json");
-  await writeFile(validationSummaryFilePath, toJsonFileContent(summary), "utf8");
+  const validationSummaryFilePath = path.join(
+    context.paths.jobDir,
+    "validation-summary.json",
+  );
+  await writeFile(
+    validationSummaryFilePath,
+    toJsonFileContent(summary),
+    "utf8",
+  );
   await context.artifactStore.setValue({
     key: STAGE_ARTIFACT_KEYS.validationSummary,
     stage: "validate.project",
-    value: summary
+    value: summary,
   });
   await context.artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.validationSummaryFile,
     stage: "validate.project",
-    absolutePath: validationSummaryFilePath
+    absolutePath: validationSummaryFilePath,
   });
   return validationSummaryFilePath;
 };
@@ -1342,7 +1478,7 @@ const buildValidationSummaryArtifact = async ({
   storybookArtifactStatusOverrides,
   visualAuditResult,
   visualQualityReport,
-  compositeQualityReport
+  compositeQualityReport,
 }: {
   context: Parameters<StageService<void>["execute"]>[1];
   validatedAt: string;
@@ -1353,29 +1489,47 @@ const buildValidationSummaryArtifact = async ({
   customerProfileComponentApiSummary?: CustomerProfileComponentApiValidationSummary;
   customerProfileStyleSummary?: CustomerProfileStyleValidationSummary;
   componentMatchReportArtifact?: ComponentMatchReportArtifact;
-  storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
+  storybookArtifactStatusOverrides?: Partial<
+    Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>
+  >;
   visualAuditResult?: WorkspaceVisualAuditResult;
   visualQualityReport?: WorkspaceVisualQualityReport;
   compositeQualityReport?: WorkspaceCompositeQualityReport;
 }): Promise<ValidationSummaryArtifact> => {
-  const storybookCatalogFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
-  const storybookEvidenceFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
-  const storybookTokensFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens);
-  const storybookThemesFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes);
-  const storybookComponentsFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookComponents);
-  const storybookComponentVisualCatalogFile = await context.artifactStore.getPath(
-    STAGE_ARTIFACT_KEYS.componentVisualCatalog
+  const storybookCatalogFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.storybookCatalog,
   );
-  const figmaLibraryResolutionFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaLibraryResolution);
-  const componentMatchReportFile = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
-  const figmaLibraryResolutionSummary = await toFigmaLibraryResolutionStatusSummary({
-    filePath: figmaLibraryResolutionFile
-  });
+  const storybookEvidenceFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.storybookEvidence,
+  );
+  const storybookTokensFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.storybookTokens,
+  );
+  const storybookThemesFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.storybookThemes,
+  );
+  const storybookComponentsFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.storybookComponents,
+  );
+  const storybookComponentVisualCatalogFile =
+    await context.artifactStore.getPath(
+      STAGE_ARTIFACT_KEYS.componentVisualCatalog,
+    );
+  const figmaLibraryResolutionFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+  );
+  const componentMatchReportFile = await context.artifactStore.getPath(
+    STAGE_ARTIFACT_KEYS.componentMatchReport,
+  );
+  const figmaLibraryResolutionSummary =
+    await toFigmaLibraryResolutionStatusSummary({
+      filePath: figmaLibraryResolutionFile,
+    });
 
   const requestedStorybookStaticDir = context.requestedStorybookStaticDir;
   const toRequiredStorybookArtifactStatus = ({
     filePath,
-    overrideStatus
+    overrideStatus,
   }: {
     filePath: string | undefined;
     overrideStatus?: ValidationArtifactStatusSummary["status"];
@@ -1383,85 +1537,112 @@ const buildValidationSummaryArtifact = async ({
     if (overrideStatus) {
       return {
         status: overrideStatus,
-        ...(filePath ? { filePath } : {})
+        ...(filePath ? { filePath } : {}),
       };
     }
     return filePath
       ? {
           status: "ok",
-          filePath
+          filePath,
         }
       : {
-          status: "missing"
+          status: "missing",
         };
   };
   const storybookArtifacts: ValidationStorybookArtifactSet = {
     catalog: toRequiredStorybookArtifactStatus({
       filePath: storybookCatalogFile,
-      ...(storybookArtifactStatusOverrides?.catalog ? { overrideStatus: storybookArtifactStatusOverrides.catalog } : {})
+      ...(storybookArtifactStatusOverrides?.catalog
+        ? { overrideStatus: storybookArtifactStatusOverrides.catalog }
+        : {}),
     }),
     evidence: toRequiredStorybookArtifactStatus({
       filePath: storybookEvidenceFile,
-      ...(storybookArtifactStatusOverrides?.evidence ? { overrideStatus: storybookArtifactStatusOverrides.evidence } : {})
+      ...(storybookArtifactStatusOverrides?.evidence
+        ? { overrideStatus: storybookArtifactStatusOverrides.evidence }
+        : {}),
     }),
     tokens: toRequiredStorybookArtifactStatus({
       filePath: storybookTokensFile,
-      ...(storybookArtifactStatusOverrides?.tokens ? { overrideStatus: storybookArtifactStatusOverrides.tokens } : {})
+      ...(storybookArtifactStatusOverrides?.tokens
+        ? { overrideStatus: storybookArtifactStatusOverrides.tokens }
+        : {}),
     }),
     themes: toRequiredStorybookArtifactStatus({
       filePath: storybookThemesFile,
-      ...(storybookArtifactStatusOverrides?.themes ? { overrideStatus: storybookArtifactStatusOverrides.themes } : {})
+      ...(storybookArtifactStatusOverrides?.themes
+        ? { overrideStatus: storybookArtifactStatusOverrides.themes }
+        : {}),
     }),
     components: toRequiredStorybookArtifactStatus({
       filePath: storybookComponentsFile,
-      ...(storybookArtifactStatusOverrides?.components ? { overrideStatus: storybookArtifactStatusOverrides.components } : {})
+      ...(storybookArtifactStatusOverrides?.components
+        ? { overrideStatus: storybookArtifactStatusOverrides.components }
+        : {}),
     }),
     componentVisualCatalog: toRequiredStorybookArtifactStatus({
       filePath: storybookComponentVisualCatalogFile,
       ...(storybookArtifactStatusOverrides?.componentVisualCatalog
-        ? { overrideStatus: storybookArtifactStatusOverrides.componentVisualCatalog }
-        : {})
-    })
+        ? {
+            overrideStatus:
+              storybookArtifactStatusOverrides.componentVisualCatalog,
+          }
+        : {}),
+    }),
   };
 
   const compositionCoverage = componentMatchReportArtifact
-    ? buildStorybookCompositionCoverage({ artifact: componentMatchReportArtifact })
+    ? buildStorybookCompositionCoverage({
+        artifact: componentMatchReportArtifact,
+      })
     : undefined;
   const styleStorybookArtifacts = requestedStorybookStaticDir
     ? {
         evidence: storybookArtifacts.evidence,
         tokens: storybookArtifacts.tokens,
-        themes: storybookArtifacts.themes
+        themes: storybookArtifacts.themes,
       }
     : {
         evidence: toArtifactStatusSummary(storybookEvidenceFile),
         tokens: toArtifactStatusSummary(storybookTokensFile),
-        themes: toArtifactStatusSummary(storybookThemesFile)
+        themes: toArtifactStatusSummary(storybookThemesFile),
       };
 
-  const storybookSummary: ValidationSummaryArtifact["storybook"] = requestedStorybookStaticDir
-    ? {
-        status: listFailedStorybookArtifacts({ artifacts: storybookArtifacts }).length === 0 ? "ok" : "failed",
-        requestedPath: requestedStorybookStaticDir,
-        artifacts: storybookArtifacts,
-        ...(compositionCoverage ? { composition: compositionCoverage } : {})
-      }
-    : {
-        status: "not_requested"
-      };
+  const storybookSummary: ValidationSummaryArtifact["storybook"] =
+    requestedStorybookStaticDir
+      ? {
+          status:
+            listFailedStorybookArtifacts({ artifacts: storybookArtifacts })
+              .length === 0
+              ? "ok"
+              : "failed",
+          requestedPath: requestedStorybookStaticDir,
+          artifacts: storybookArtifacts,
+          ...(compositionCoverage ? { composition: compositionCoverage } : {}),
+        }
+      : {
+          status: "not_requested",
+        };
 
   const mappingSummary: ValidationSummaryArtifact["mapping"] = {
-    status: customerProfileMatchSummary || customerProfileComponentApiSummary
-      ? ([customerProfileMatchSummary?.status, customerProfileComponentApiSummary?.status].includes("failed")
+    status:
+      customerProfileMatchSummary || customerProfileComponentApiSummary
+        ? [
+            customerProfileMatchSummary?.status,
+            customerProfileComponentApiSummary?.status,
+          ].includes("failed")
           ? "failed"
-          : [customerProfileMatchSummary?.status, customerProfileComponentApiSummary?.status].includes("warn")
+          : [
+                customerProfileMatchSummary?.status,
+                customerProfileComponentApiSummary?.status,
+              ].includes("warn")
             ? "warn"
-            : "ok")
-      : componentMatchReportFile
-        ? "ok"
-        : figmaLibraryResolutionFile
-          ? "partial"
-          : "not_available",
+            : "ok"
+        : componentMatchReportFile
+          ? "ok"
+          : figmaLibraryResolutionFile
+            ? "partial"
+            : "not_available",
     figmaLibraryResolution: figmaLibraryResolutionSummary,
     componentMatchReport: toArtifactStatusSummary(componentMatchReportFile),
     customerProfileMatch: customerProfileMatchSummary
@@ -1470,21 +1651,21 @@ const buildValidationSummaryArtifact = async ({
           policy: customerProfileMatchSummary.policy,
           issueCount: customerProfileMatchSummary.issueCount,
           counts: customerProfileMatchSummary.counts,
-          issues: customerProfileMatchSummary.issues
+          issues: customerProfileMatchSummary.issues,
         }
       : {
-          status: "not_available"
+          status: "not_available",
         },
     componentApi: customerProfileComponentApiSummary
       ? {
           status: customerProfileComponentApiSummary.status,
           issueCount: customerProfileComponentApiSummary.issueCount,
           counts: customerProfileComponentApiSummary.counts,
-          issues: customerProfileComponentApiSummary.issues
+          issues: customerProfileComponentApiSummary.issues,
         }
       : {
-          status: "not_available"
-        }
+          status: "not_available",
+        },
   };
 
   const styleSummary: ValidationSummaryArtifact["style"] =
@@ -1499,16 +1680,18 @@ const buildValidationSummaryArtifact = async ({
             evidence: styleStorybookArtifacts.evidence,
             tokens: styleStorybookArtifacts.tokens,
             themes: styleStorybookArtifacts.themes,
-            componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
+            componentMatchReport: toArtifactStatusSummary(
+              componentMatchReportFile,
+            ),
           },
           ...(context.resolvedCustomerProfile
             ? {
                 customerProfile: {
                   tokenPolicy: context.resolvedCustomerProfile.strictness.token,
-                  matchPolicy: context.resolvedCustomerProfile.strictness.match
-                }
+                  matchPolicy: context.resolvedCustomerProfile.strictness.match,
+                },
               }
-            : {})
+            : {}),
         }
       : {
           status: "not_available",
@@ -1518,79 +1701,95 @@ const buildValidationSummaryArtifact = async ({
             evidence: {
               authoritativeStylingEvidenceCount: 0,
               referenceOnlyStylingEvidenceCount: 0,
-              referenceOnlyEvidenceTypes: []
+              referenceOnlyEvidenceTypes: [],
             },
             tokens: {
               diagnosticCount: 0,
               errorCount: 0,
-              diagnostics: []
+              diagnostics: [],
             },
             themes: {
               diagnosticCount: 0,
               errorCount: 0,
-              diagnostics: []
+              diagnostics: [],
             },
             componentMatchReport: {
               resolvedCustomerComponentCount: 0,
-              validatedComponentNames: []
-            }
+              validatedComponentNames: [],
+            },
           },
           storybook: {
             evidence: styleStorybookArtifacts.evidence,
             tokens: styleStorybookArtifacts.tokens,
             themes: styleStorybookArtifacts.themes,
-            componentMatchReport: toArtifactStatusSummary(componentMatchReportFile)
+            componentMatchReport: toArtifactStatusSummary(
+              componentMatchReportFile,
+            ),
           },
           ...(context.resolvedCustomerProfile
             ? {
                 customerProfile: {
                   tokenPolicy: context.resolvedCustomerProfile.strictness.token,
-                  matchPolicy: context.resolvedCustomerProfile.strictness.match
-                }
+                  matchPolicy: context.resolvedCustomerProfile.strictness.match,
+                },
               }
-            : {})
+            : {}),
         };
 
-  const importSummary: ValidationSummaryArtifact["import"] = customerProfileImportSummary
-    ? {
-        status: customerProfileImportSummary.status,
-        customerProfile: customerProfileImportSummary
-      }
-    : {
-        status: "not_available"
-      };
-
-  const generatedAppSummary: ValidationSummaryArtifact["generatedApp"] = validationResult
-    ? {
-        status: "ok",
-        attempts: validationResult.attempts,
-        install: validationResult.install,
-        ...(validationResult.lintAutofix ? { lintAutofix: validationResult.lintAutofix } : {}),
-        lint: validationResult.lint,
-        typecheck: validationResult.typecheck,
-        build: validationResult.build,
-        ...(validationResult.test ? { test: validationResult.test } : {}),
-        ...(validationResult.validateUi ? { validateUi: validationResult.validateUi } : {}),
-        ...(validationResult.perfAssert ? { perfAssert: validationResult.perfAssert } : {})
-      }
-    : generatedAppFailure
+  const importSummary: ValidationSummaryArtifact["import"] =
+    customerProfileImportSummary
       ? {
-          status: "failed",
-          failedCommand: generatedAppFailure.failedCommand
+          status: customerProfileImportSummary.status,
+          customerProfile: customerProfileImportSummary,
         }
       : {
-          status: "not_available"
+          status: "not_available",
         };
+
+  const generatedAppSummary: ValidationSummaryArtifact["generatedApp"] =
+    validationResult
+      ? {
+          status: "ok",
+          attempts: validationResult.attempts,
+          install: validationResult.install,
+          ...(validationResult.lintAutofix
+            ? { lintAutofix: validationResult.lintAutofix }
+            : {}),
+          lint: validationResult.lint,
+          typecheck: validationResult.typecheck,
+          build: validationResult.build,
+          ...(validationResult.test ? { test: validationResult.test } : {}),
+          ...(validationResult.validateUi
+            ? { validateUi: validationResult.validateUi }
+            : {}),
+          ...(validationResult.perfAssert
+            ? { perfAssert: validationResult.perfAssert }
+            : {}),
+        }
+      : generatedAppFailure
+        ? {
+            status: "failed",
+            failedCommand: generatedAppFailure.failedCommand,
+          }
+        : {
+            status: "not_available",
+          };
   const uiA11ySummary = await buildUiA11ySummary({
     context,
-    ...(validationResult ? { validationResult } : {})
+    ...(validationResult ? { validationResult } : {}),
   });
-  const resolvedVisualAuditResult = cloneVisualAuditResult(visualAuditResult ?? context.job.visualAudit ?? { status: "not_requested" });
+  const resolvedVisualAuditResult = cloneVisualAuditResult(
+    visualAuditResult ?? context.job.visualAudit ?? { status: "not_requested" },
+  );
   const resolvedVisualQualityReport = cloneVisualQualityReport(
-    visualQualityReport ?? context.job.visualQuality ?? createNotRequestedVisualQualityReport()
+    visualQualityReport ??
+      context.job.visualQuality ??
+      createNotRequestedVisualQualityReport(),
   );
   const resolvedCompositeQualityReport = cloneCompositeQualityReport(
-    compositeQualityReport ?? context.job.compositeQuality ?? createNotRequestedCompositeQualityReport()
+    compositeQualityReport ??
+      context.job.compositeQuality ??
+      createNotRequestedCompositeQualityReport(),
   );
 
   return {
@@ -1602,7 +1801,7 @@ const buildValidationSummaryArtifact = async ({
       storybook: storybookSummary,
       mapping: mappingSummary,
       style: styleSummary,
-      importSummary
+      importSummary,
     }),
     validatedAt,
     generatedApp: generatedAppSummary,
@@ -1613,7 +1812,7 @@ const buildValidationSummaryArtifact = async ({
     storybook: storybookSummary,
     mapping: mappingSummary,
     style: styleSummary,
-    import: importSummary
+    import: importSummary,
   };
 };
 
@@ -1625,21 +1824,31 @@ export const createValidateProjectService = ({
   captureFromProjectFn = captureFromProject,
   comparePngBuffersFn = comparePngBuffers,
   isLintAutofixEnabledFn = isLintAutofixEnabled,
-  isPerfValidationEnabledFn = isPerfValidationEnabled
+  isPerfValidationEnabledFn = isPerfValidationEnabled,
 }: Partial<ValidateProjectServiceDeps> = {}): StageService<void> => {
   return {
     stageName: "validate.project",
     execute: async (_input, context) => {
-      const generatedProjectDir = await context.artifactStore.requirePath(STAGE_ARTIFACT_KEYS.generatedProject);
+      const generatedProjectDir = await context.artifactStore.requirePath(
+        STAGE_ARTIFACT_KEYS.generatedProject,
+      );
       const validatedAt = new Date().toISOString();
 
-      let customerProfileMatchSummary: CustomerProfileMatchValidationSummary | undefined;
-      let customerProfileComponentApiSummary: CustomerProfileComponentApiValidationSummary | undefined;
-      let customerProfileStyleSummary: CustomerProfileStyleValidationSummary | undefined;
+      let customerProfileMatchSummary:
+        | CustomerProfileMatchValidationSummary
+        | undefined;
+      let customerProfileComponentApiSummary:
+        | CustomerProfileComponentApiValidationSummary
+        | undefined;
+      let customerProfileStyleSummary:
+        | CustomerProfileStyleValidationSummary
+        | undefined;
       let customerProfileImportSummary:
         | Awaited<ReturnType<typeof validateGeneratedProjectCustomerProfile>>
         | undefined;
-      let componentMatchReportArtifact: ComponentMatchReportArtifact | undefined;
+      let componentMatchReportArtifact:
+        | ComponentMatchReportArtifact
+        | undefined;
       let storybookEvidenceArtifact: StorybookEvidenceArtifact | undefined;
       let storybookTokensArtifact: StorybookPublicTokensArtifact | undefined;
       let storybookThemesArtifact: StorybookPublicThemesArtifact | undefined;
@@ -1650,10 +1859,12 @@ export const createValidateProjectService = ({
         ? {
             status: "failed",
             baselineImagePath: visualAuditRequest.baselineImagePath,
-            warnings: ["Visual audit did not complete because validate.project exited before the audit step finished."]
+            warnings: [
+              "Visual audit did not complete because validate.project exited before the audit step finished.",
+            ],
           }
         : {
-            status: "not_requested"
+            status: "not_requested",
           };
       if (!visualAuditRequest) {
         context.job.visualAudit = { status: "not_requested" };
@@ -1662,8 +1873,10 @@ export const createValidateProjectService = ({
       let visualAuditActualImagePath: string | undefined;
       let visualAuditDiffImagePath: string | undefined;
       let visualAuditReportPath: string | undefined;
-      const requestedVisualQualityEnabled = context.job.request.enableVisualQualityValidation;
-      const requestedVisualQualityFrozenReference = resolveRequestedVisualQualityFrozenReference({ context });
+      const requestedVisualQualityEnabled =
+        context.job.request.enableVisualQualityValidation;
+      const requestedVisualQualityFrozenReference =
+        resolveRequestedVisualQualityFrozenReference({ context });
       const explicitVisualQualityRequest =
         context.input?.enableVisualQualityValidation !== undefined ||
         context.input?.visualQualityReferenceMode !== undefined ||
@@ -1671,16 +1884,24 @@ export const createValidateProjectService = ({
         context.input?.visualQualityFrozenReference !== undefined ||
         context.job.request.visualQualityFrozenReference !== undefined;
       const standaloneVisualQualityMode =
-        context.job.request.visualQualityReferenceMode ?? context.runtime.visualQualityReferenceMode;
+        context.job.request.visualQualityReferenceMode ??
+        context.runtime.visualQualityReferenceMode;
       const standaloneVisualQualityViewportWidth =
-        context.job.request.visualQualityViewportWidth ?? context.runtime.visualQualityViewportWidth;
+        context.job.request.visualQualityViewportWidth ??
+        context.runtime.visualQualityViewportWidth;
       const standaloneVisualQualityViewportHeight =
-        context.job.request.visualQualityViewportHeight ?? context.runtime.visualQualityViewportHeight;
+        context.job.request.visualQualityViewportHeight ??
+        context.runtime.visualQualityViewportHeight;
       const standaloneVisualQualityDeviceScaleFactor =
-        context.job.request.visualQualityDeviceScaleFactor ?? context.runtime.visualQualityDeviceScaleFactor;
-      const shouldRunStandaloneVisualQuality = requestedVisualQualityEnabled && (!visualAuditRequest || explicitVisualQualityRequest);
-      let resolvedVisualQualityReport: WorkspaceVisualQualityReport = createNotRequestedVisualQualityReport();
-      let resolvedCompositeQualityReport: WorkspaceCompositeQualityReport = createNotRequestedCompositeQualityReport();
+        context.job.request.visualQualityDeviceScaleFactor ??
+        context.runtime.visualQualityDeviceScaleFactor;
+      const shouldRunStandaloneVisualQuality =
+        requestedVisualQualityEnabled &&
+        (!visualAuditRequest || explicitVisualQualityRequest);
+      let resolvedVisualQualityReport: WorkspaceVisualQualityReport =
+        createNotRequestedVisualQualityReport();
+      let resolvedCompositeQualityReport: WorkspaceCompositeQualityReport =
+        createNotRequestedCompositeQualityReport();
       context.job.visualQuality = createNotRequestedVisualQualityReport();
       context.job.compositeQuality = createNotRequestedCompositeQualityReport();
       delete context.job.artifacts.visualQualityReportFile;
@@ -1690,38 +1911,59 @@ export const createValidateProjectService = ({
         generatedAppFailure,
         storybookArtifactStatusOverrides,
         visualQualityReport,
-        compositeQualityReport
+        compositeQualityReport,
       }: {
         generatedAppFailure?: { failedCommand: string };
-        storybookArtifactStatusOverrides?: Partial<Record<StorybookArtifactKey, ValidationArtifactStatusSummary["status"]>>;
+        storybookArtifactStatusOverrides?: Partial<
+          Record<
+            StorybookArtifactKey,
+            ValidationArtifactStatusSummary["status"]
+          >
+        >;
         visualQualityReport?: WorkspaceVisualQualityReport;
         compositeQualityReport?: WorkspaceCompositeQualityReport;
       } = {}): Promise<ValidationSummaryArtifact> => {
         context.job.visualAudit = cloneVisualAuditResult(visualAuditResult);
-        context.job.visualQuality = cloneVisualQualityReport(visualQualityReport ?? resolvedVisualQualityReport);
+        context.job.visualQuality = cloneVisualQualityReport(
+          visualQualityReport ?? resolvedVisualQualityReport,
+        );
         context.job.compositeQuality = cloneCompositeQualityReport(
-          compositeQualityReport ?? resolvedCompositeQualityReport
+          compositeQualityReport ?? resolvedCompositeQualityReport,
         );
         return buildValidationSummaryArtifact({
           context,
           validatedAt,
           ...(validationResult ? { validationResult } : {}),
           ...(generatedAppFailure ? { generatedAppFailure } : {}),
-          ...(customerProfileImportSummary ? { customerProfileImportSummary } : {}),
-          ...(customerProfileMatchSummary ? { customerProfileMatchSummary } : {}),
-          ...(customerProfileComponentApiSummary ? { customerProfileComponentApiSummary } : {}),
-          ...(customerProfileStyleSummary ? { customerProfileStyleSummary } : {}),
-          ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {}),
-          ...(storybookArtifactStatusOverrides ? { storybookArtifactStatusOverrides } : {}),
+          ...(customerProfileImportSummary
+            ? { customerProfileImportSummary }
+            : {}),
+          ...(customerProfileMatchSummary
+            ? { customerProfileMatchSummary }
+            : {}),
+          ...(customerProfileComponentApiSummary
+            ? { customerProfileComponentApiSummary }
+            : {}),
+          ...(customerProfileStyleSummary
+            ? { customerProfileStyleSummary }
+            : {}),
+          ...(componentMatchReportArtifact
+            ? { componentMatchReportArtifact }
+            : {}),
+          ...(storybookArtifactStatusOverrides
+            ? { storybookArtifactStatusOverrides }
+            : {}),
           visualAuditResult,
-          visualQualityReport: visualQualityReport ?? resolvedVisualQualityReport,
-          compositeQualityReport: compositeQualityReport ?? resolvedCompositeQualityReport
+          visualQualityReport:
+            visualQualityReport ?? resolvedVisualQualityReport,
+          compositeQualityReport:
+            compositeQualityReport ?? resolvedCompositeQualityReport,
         });
       };
 
       const setVisualAuditJobArtifactPath = ({
         key,
-        absolutePath
+        absolutePath,
       }: {
         key:
           | typeof STAGE_ARTIFACT_KEYS.visualAuditReferenceImage
@@ -1752,7 +1994,7 @@ export const createValidateProjectService = ({
 
       const persistVisualAuditArtifactPath = async ({
         key,
-        absolutePath
+        absolutePath,
       }: {
         key:
           | typeof STAGE_ARTIFACT_KEYS.visualAuditReferenceImage
@@ -1765,36 +2007,40 @@ export const createValidateProjectService = ({
         await context.artifactStore.setPath({
           key,
           stage: "validate.project",
-          absolutePath
+          absolutePath,
         });
       };
 
-      const persistVisualAuditResult = async (result: WorkspaceVisualAuditResult): Promise<WorkspaceVisualAuditResult> => {
+      const persistVisualAuditResult = async (
+        result: WorkspaceVisualAuditResult,
+      ): Promise<WorkspaceVisualAuditResult> => {
         const clonedResult = cloneVisualAuditResult(result);
         visualAuditResult = clonedResult;
         context.job.visualAudit = cloneVisualAuditResult(clonedResult);
         await context.artifactStore.setValue({
           key: STAGE_ARTIFACT_KEYS.visualAuditResult,
           stage: "validate.project",
-          value: cloneVisualAuditResult(clonedResult)
+          value: cloneVisualAuditResult(clonedResult),
         });
         return clonedResult;
       };
 
-      const persistVisualQualityResult = async (result: WorkspaceVisualQualityReport): Promise<WorkspaceVisualQualityReport> => {
+      const persistVisualQualityResult = async (
+        result: WorkspaceVisualQualityReport,
+      ): Promise<WorkspaceVisualQualityReport> => {
         const clonedResult = cloneVisualQualityReport(result);
         resolvedVisualQualityReport = clonedResult;
         context.job.visualQuality = cloneVisualQualityReport(clonedResult);
         await context.artifactStore.setValue({
           key: STAGE_ARTIFACT_KEYS.visualQualityResult,
           stage: "validate.project",
-          value: cloneVisualQualityReport(clonedResult)
+          value: cloneVisualQualityReport(clonedResult),
         });
         return clonedResult;
       };
 
       const persistVisualQualityReportPath = async ({
-        absolutePath
+        absolutePath,
       }: {
         absolutePath: string;
       }): Promise<void> => {
@@ -1802,26 +2048,27 @@ export const createValidateProjectService = ({
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.visualQualityReport,
           stage: "validate.project",
-          absolutePath
+          absolutePath,
         });
       };
 
       const persistCompositeQualityResult = async (
-        result: WorkspaceCompositeQualityReport
+        result: WorkspaceCompositeQualityReport,
       ): Promise<WorkspaceCompositeQualityReport> => {
         const clonedResult = cloneCompositeQualityReport(result);
         resolvedCompositeQualityReport = clonedResult;
-        context.job.compositeQuality = cloneCompositeQualityReport(clonedResult);
+        context.job.compositeQuality =
+          cloneCompositeQualityReport(clonedResult);
         await context.artifactStore.setValue({
           key: STAGE_ARTIFACT_KEYS.compositeQualityResult,
           stage: "validate.project",
-          value: cloneCompositeQualityReport(clonedResult)
+          value: cloneCompositeQualityReport(clonedResult),
         });
         return clonedResult;
       };
 
       const persistCompositeQualityReportPath = async ({
-        absolutePath
+        absolutePath,
       }: {
         absolutePath: string;
       }): Promise<void> => {
@@ -1829,7 +2076,7 @@ export const createValidateProjectService = ({
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.compositeQualityReport,
           stage: "validate.project",
-          absolutePath
+          absolutePath,
         });
       };
 
@@ -1838,7 +2085,7 @@ export const createValidateProjectService = ({
         message,
         suggestion,
         details,
-        cause
+        cause,
       }: {
         code: string;
         message: string;
@@ -1848,21 +2095,33 @@ export const createValidateProjectService = ({
       }): Promise<never> => {
         const warnings = [
           message,
-          ...(visualAuditResult.warnings ?? []).filter((warning) => warning !== message)
+          ...(visualAuditResult.warnings ?? []).filter(
+            (warning) => warning !== message,
+          ),
         ];
         await persistVisualAuditResult({
           status: "failed",
-          ...(visualAuditRequest ? { baselineImagePath: visualAuditRequest.baselineImagePath } : {}),
-          ...(visualAuditReferenceImagePath ? { referenceImagePath: visualAuditReferenceImagePath } : {}),
-          ...(visualAuditActualImagePath ? { actualImagePath: visualAuditActualImagePath } : {}),
-          ...(visualAuditDiffImagePath ? { diffImagePath: visualAuditDiffImagePath } : {}),
-          ...(visualAuditReportPath ? { reportPath: visualAuditReportPath } : {}),
-          warnings
+          ...(visualAuditRequest
+            ? { baselineImagePath: visualAuditRequest.baselineImagePath }
+            : {}),
+          ...(visualAuditReferenceImagePath
+            ? { referenceImagePath: visualAuditReferenceImagePath }
+            : {}),
+          ...(visualAuditActualImagePath
+            ? { actualImagePath: visualAuditActualImagePath }
+            : {}),
+          ...(visualAuditDiffImagePath
+            ? { diffImagePath: visualAuditDiffImagePath }
+            : {}),
+          ...(visualAuditReportPath
+            ? { reportPath: visualAuditReportPath }
+            : {}),
+          warnings,
         });
         const summary = await buildSummary();
         await persistValidationSummaryArtifacts({
           context,
-          summary
+          summary,
         });
         throw createPipelineError({
           code,
@@ -1877,26 +2136,39 @@ export const createValidateProjectService = ({
               suggestion,
               stage: "validate.project",
               severity: "error",
-              ...(details ? { details } : {})
-            }
-          ]
+              ...(details ? { details } : {}),
+            },
+          ],
         });
       };
 
-      const componentMatchReportPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentMatchReport);
-      const storybookCatalogPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookCatalog);
-      const storybookEvidencePath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookEvidence);
-      const storybookTokensPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookTokens);
-      const storybookThemesPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookThemes);
-      const storybookComponentsPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.storybookComponents);
-      const storybookComponentVisualCatalogPath = await context.artifactStore.getPath(
-        STAGE_ARTIFACT_KEYS.componentVisualCatalog
+      const componentMatchReportPath = await context.artifactStore.getPath(
+        STAGE_ARTIFACT_KEYS.componentMatchReport,
       );
+      const storybookCatalogPath = await context.artifactStore.getPath(
+        STAGE_ARTIFACT_KEYS.storybookCatalog,
+      );
+      const storybookEvidencePath = await context.artifactStore.getPath(
+        STAGE_ARTIFACT_KEYS.storybookEvidence,
+      );
+      const storybookTokensPath = await context.artifactStore.getPath(
+        STAGE_ARTIFACT_KEYS.storybookTokens,
+      );
+      const storybookThemesPath = await context.artifactStore.getPath(
+        STAGE_ARTIFACT_KEYS.storybookThemes,
+      );
+      const storybookComponentsPath = await context.artifactStore.getPath(
+        STAGE_ARTIFACT_KEYS.storybookComponents,
+      );
+      const storybookComponentVisualCatalogPath =
+        await context.artifactStore.getPath(
+          STAGE_ARTIFACT_KEYS.componentVisualCatalog,
+        );
       const isStorybookRequested = Boolean(context.requestedStorybookStaticDir);
       if (componentMatchReportPath) {
         try {
           componentMatchReportArtifact = parseComponentMatchReportArtifact({
-            input: await readFile(componentMatchReportPath, "utf8")
+            input: await readFile(componentMatchReportPath, "utf8"),
           });
         } catch (error) {
           throw createPipelineError({
@@ -1904,24 +2176,25 @@ export const createValidateProjectService = ({
             stage: "validate.project",
             message: "component.match_report is unreadable or malformed.",
             cause: error,
-            limits: context.runtime.pipelineDiagnosticLimits
+            limits: context.runtime.pipelineDiagnosticLimits,
           });
         }
 
-        const compositionCoverage = buildStorybookCompositionCoverage({ artifact: componentMatchReportArtifact });
+        const compositionCoverage = buildStorybookCompositionCoverage({
+          artifact: componentMatchReportArtifact,
+        });
         if (compositionCoverage.unmatched > 0) {
           context.log({
             level: "warn",
             message:
               `Storybook composition: ${compositionCoverage.unmatched} of ${compositionCoverage.totalFigmaFamilies} ` +
-              `Figma familie(s) have no Storybook match.`
+              `Figma familie(s) have no Storybook match.`,
           });
         }
         if (compositionCoverage.ambiguous > 0) {
           context.log({
             level: "warn",
-            message:
-              `Storybook composition: ${compositionCoverage.ambiguous} Figma familie(s) have ambiguous Storybook matches.`
+            message: `Storybook composition: ${compositionCoverage.ambiguous} Figma familie(s) have ambiguous Storybook matches.`,
           });
         }
         if (compositionCoverage.docsOnlyReferenceCount > 0) {
@@ -1929,45 +2202,51 @@ export const createValidateProjectService = ({
             level: "warn",
             message:
               `Storybook composition: ${compositionCoverage.docsOnlyReferenceCount} matched familie(s) rely on ` +
-              `docs-only references without authoritative evidence: ${compositionCoverage.docsOnlyFamilyNames.join(", ")}.`
+              `docs-only references without authoritative evidence: ${compositionCoverage.docsOnlyFamilyNames.join(", ")}.`,
           });
         }
       }
 
       if (isStorybookRequested) {
-        const storybookArtifactPaths: Record<StorybookArtifactKey, string | undefined> = {
+        const storybookArtifactPaths: Record<
+          StorybookArtifactKey,
+          string | undefined
+        > = {
           catalog: storybookCatalogPath,
           evidence: storybookEvidencePath,
           tokens: storybookTokensPath,
           themes: storybookThemesPath,
           components: storybookComponentsPath,
-          componentVisualCatalog: storybookComponentVisualCatalogPath
+          componentVisualCatalog: storybookComponentVisualCatalogPath,
         };
         const persistAndThrowInvalidStorybookArtifact = async ({
           artifactKey,
-          cause
+          cause,
         }: {
           artifactKey: StorybookArtifactKey;
           cause: unknown;
         }): Promise<never> => {
           const summary = await buildSummary({
             storybookArtifactStatusOverrides: {
-              [artifactKey]: "invalid"
-            }
+              [artifactKey]: "invalid",
+            },
           });
           await persistValidationSummaryArtifacts({
             context,
-            summary
+            summary,
           });
           const failedArtifacts = listFailedStorybookArtifacts({
-            artifacts: summary.storybook.status === "not_requested" ? {
-              catalog: { status: "not_available" },
-              evidence: { status: "not_available" },
-              tokens: { status: "not_available" },
-              themes: { status: "not_available" },
-              components: { status: "not_available" },
-              componentVisualCatalog: { status: "not_available" }
-            } : summary.storybook.artifacts
+            artifacts:
+              summary.storybook.status === "not_requested"
+                ? {
+                    catalog: { status: "not_available" },
+                    evidence: { status: "not_available" },
+                    tokens: { status: "not_available" },
+                    themes: { status: "not_available" },
+                    components: { status: "not_available" },
+                    componentVisualCatalog: { status: "not_available" },
+                  }
+                : summary.storybook.artifacts,
           });
           throw createPipelineError({
             code: "E_STORYBOOK_STYLE_ARTIFACT_INVALID",
@@ -1976,14 +2255,14 @@ export const createValidateProjectService = ({
             cause,
             limits: context.runtime.pipelineDiagnosticLimits,
             diagnostics: buildStorybookGateDiagnostics({
-              artifacts: failedArtifacts
-            })
+              artifacts: failedArtifacts,
+            }),
           });
         };
         const parseStorybookArtifact = async <T>({
           artifactKey,
           filePath,
-          parse
+          parse,
         }: {
           artifactKey: StorybookArtifactKey;
           filePath: string | undefined;
@@ -1994,54 +2273,55 @@ export const createValidateProjectService = ({
           }
           try {
             return parse({
-              input: await readFile(filePath, "utf8")
+              input: await readFile(filePath, "utf8"),
             });
           } catch (error) {
             return persistAndThrowInvalidStorybookArtifact({
               artifactKey,
-              cause: error
+              cause: error,
             });
           }
         };
         await parseStorybookArtifact({
           artifactKey: "catalog",
           filePath: storybookCatalogPath,
-          parse: parseStorybookCatalogArtifact
+          parse: parseStorybookCatalogArtifact,
         });
         storybookEvidenceArtifact = await parseStorybookArtifact({
           artifactKey: "evidence",
           filePath: storybookEvidencePath,
-          parse: parseStorybookEvidenceArtifact
+          parse: parseStorybookEvidenceArtifact,
         });
         storybookTokensArtifact = await parseStorybookArtifact({
           artifactKey: "tokens",
           filePath: storybookTokensPath,
-          parse: parseStorybookTokensArtifact
+          parse: parseStorybookTokensArtifact,
         });
         storybookThemesArtifact = await parseStorybookArtifact({
           artifactKey: "themes",
           filePath: storybookThemesPath,
-          parse: parseStorybookThemesArtifact
+          parse: parseStorybookThemesArtifact,
         });
         await parseStorybookArtifact({
           artifactKey: "components",
           filePath: storybookComponentsPath,
-          parse: parseStorybookComponentsArtifact
+          parse: parseStorybookComponentsArtifact,
         });
         await parseStorybookArtifact({
           artifactKey: "componentVisualCatalog",
           filePath: storybookComponentVisualCatalogPath,
-          parse: parseStorybookComponentVisualCatalogArtifact
+          parse: parseStorybookComponentVisualCatalogArtifact,
         });
 
-        const missingRequiredStorybookArtifacts = STORYBOOK_ARTIFACT_DESCRIPTORS.filter(
-          ({ key }) => !storybookArtifactPaths[key]
-        );
+        const missingRequiredStorybookArtifacts =
+          STORYBOOK_ARTIFACT_DESCRIPTORS.filter(
+            ({ key }) => !storybookArtifactPaths[key],
+          );
         if (missingRequiredStorybookArtifacts.length > 0) {
           const summary = await buildSummary();
           await persistValidationSummaryArtifacts({
             context,
-            summary
+            summary,
           });
           throw createPipelineError({
             code: "E_STORYBOOK_VALIDATION_FAILED",
@@ -2049,95 +2329,106 @@ export const createValidateProjectService = ({
             message: buildStorybookGateMessage({
               artifacts: missingRequiredStorybookArtifacts.map((artifact) => ({
                 ...artifact,
-                status: "missing" as const
-              }))
+                status: "missing" as const,
+              })),
             }),
             limits: context.runtime.pipelineDiagnosticLimits,
             diagnostics: buildStorybookGateDiagnostics({
               artifacts: missingRequiredStorybookArtifacts.map((artifact) => ({
                 ...artifact,
-                status: "missing" as const
-              }))
-            })
+                status: "missing" as const,
+              })),
+            }),
           });
         }
       }
 
       if (context.resolvedCustomerProfile && componentMatchReportArtifact) {
-          customerProfileMatchSummary = validateCustomerProfileComponentMatchReport({
+        customerProfileMatchSummary =
+          validateCustomerProfileComponentMatchReport({
             artifact: componentMatchReportArtifact,
-            customerProfile: context.resolvedCustomerProfile
+            customerProfile: context.resolvedCustomerProfile,
           });
-          customerProfileComponentApiSummary = validateCustomerProfileComponentApiComponentMatchReport({
+        customerProfileComponentApiSummary =
+          validateCustomerProfileComponentApiComponentMatchReport({
             artifact: componentMatchReportArtifact,
-            customerProfile: context.resolvedCustomerProfile
+            customerProfile: context.resolvedCustomerProfile,
           });
-          if (customerProfileMatchSummary.issueCount > 0) {
-            const logLevel =
-              customerProfileMatchSummary.policy === "warn"
-                ? "warn"
-                : customerProfileMatchSummary.policy === "error"
-                  ? "error"
-                  : "info";
-            context.log({
-              level: logLevel,
-              message:
-                `Customer profile match policy reported ${customerProfileMatchSummary.issueCount} issue(s) ` +
-                `(policy=${customerProfileMatchSummary.policy}).`
-            });
-          }
-          if (customerProfileComponentApiSummary.issueCount > 0) {
-            const logLevel = customerProfileComponentApiSummary.status === "failed" ? "error" : "warn";
-            context.log({
-              level: logLevel,
-              message:
-                `Customer profile component API gate reported ${customerProfileComponentApiSummary.issueCount} issue(s) ` +
-                `(status=${customerProfileComponentApiSummary.status}).`
-            });
-          }
-          if (customerProfileMatchSummary.status === "failed") {
-            const summary = await buildSummary();
-            await persistValidationSummaryArtifacts({
-              context,
-              summary
-            });
-            throw createPipelineError({
+        if (customerProfileMatchSummary.issueCount > 0) {
+          const logLevel =
+            customerProfileMatchSummary.policy === "warn"
+              ? "warn"
+              : customerProfileMatchSummary.policy === "error"
+                ? "error"
+                : "info";
+          context.log({
+            level: logLevel,
+            message:
+              `Customer profile match policy reported ${customerProfileMatchSummary.issueCount} issue(s) ` +
+              `(policy=${customerProfileMatchSummary.policy}).`,
+          });
+        }
+        if (customerProfileComponentApiSummary.issueCount > 0) {
+          const logLevel =
+            customerProfileComponentApiSummary.status === "failed"
+              ? "error"
+              : "warn";
+          context.log({
+            level: logLevel,
+            message:
+              `Customer profile component API gate reported ${customerProfileComponentApiSummary.issueCount} issue(s) ` +
+              `(status=${customerProfileComponentApiSummary.status}).`,
+          });
+        }
+        if (customerProfileMatchSummary.status === "failed") {
+          const summary = await buildSummary();
+          await persistValidationSummaryArtifacts({
+            context,
+            summary,
+          });
+          throw createPipelineError({
+            code: "E_CUSTOMER_PROFILE_MATCH_POLICY",
+            stage: "validate.project",
+            message: `Customer profile match policy failed with ${customerProfileMatchSummary.issueCount} issue(s).`,
+            limits: context.runtime.pipelineDiagnosticLimits,
+            diagnostics: customerProfileMatchSummary.issues.map((issue) => ({
               code: "E_CUSTOMER_PROFILE_MATCH_POLICY",
+              message: issue.message,
+              suggestion:
+                "Fix the Storybook tier aliases, customer profile component import matrix, or fallback policy so the match report resolves deterministically.",
               stage: "validate.project",
-              message: `Customer profile match policy failed with ${customerProfileMatchSummary.issueCount} issue(s).`,
-              limits: context.runtime.pipelineDiagnosticLimits,
-              diagnostics: customerProfileMatchSummary.issues.map((issue) => ({
-                code: "E_CUSTOMER_PROFILE_MATCH_POLICY",
-                message: issue.message,
-                suggestion:
-                  "Fix the Storybook tier aliases, customer profile component import matrix, or fallback policy so the match report resolves deterministically.",
-                stage: "validate.project",
-                severity: "error",
-                details: {
-                  figmaFamilyKey: issue.figmaFamilyKey,
-                  figmaFamilyName: issue.figmaFamilyName,
-                  status: issue.status,
-                  reason: issue.reason,
-                  ...(issue.componentKey ? { componentKey: issue.componentKey } : {}),
-                  ...(issue.storybookTier ? { storybookTier: issue.storybookTier } : {}),
-                  ...(issue.profileFamily ? { profileFamily: issue.profileFamily } : {})
-                }
-              }))
-            });
-          }
-          if (customerProfileComponentApiSummary.status === "failed") {
-            const summary = await buildSummary();
-            await persistValidationSummaryArtifacts({
-              context,
-              summary
-            });
-            throw createPipelineError({
-              code: "E_CUSTOMER_PROFILE_COMPONENT_API_POLICY",
-              stage: "validate.project",
-              message:
-                `Customer profile component API gate failed with ${customerProfileComponentApiSummary.issueCount} issue(s).`,
-              limits: context.runtime.pipelineDiagnosticLimits,
-              diagnostics: customerProfileComponentApiSummary.issues.map((issue) => ({
+              severity: "error",
+              details: {
+                figmaFamilyKey: issue.figmaFamilyKey,
+                figmaFamilyName: issue.figmaFamilyName,
+                status: issue.status,
+                reason: issue.reason,
+                ...(issue.componentKey
+                  ? { componentKey: issue.componentKey }
+                  : {}),
+                ...(issue.storybookTier
+                  ? { storybookTier: issue.storybookTier }
+                  : {}),
+                ...(issue.profileFamily
+                  ? { profileFamily: issue.profileFamily }
+                  : {}),
+              },
+            })),
+          });
+        }
+        if (customerProfileComponentApiSummary.status === "failed") {
+          const summary = await buildSummary();
+          await persistValidationSummaryArtifacts({
+            context,
+            summary,
+          });
+          throw createPipelineError({
+            code: "E_CUSTOMER_PROFILE_COMPONENT_API_POLICY",
+            stage: "validate.project",
+            message: `Customer profile component API gate failed with ${customerProfileComponentApiSummary.issueCount} issue(s).`,
+            limits: context.runtime.pipelineDiagnosticLimits,
+            diagnostics: customerProfileComponentApiSummary.issues.map(
+              (issue) => ({
                 code: issue.code,
                 message: issue.message,
                 suggestion:
@@ -2147,13 +2438,16 @@ export const createValidateProjectService = ({
                 details: {
                   figmaFamilyKey: issue.figmaFamilyKey,
                   figmaFamilyName: issue.figmaFamilyName,
-                  ...(issue.componentKey ? { componentKey: issue.componentKey } : {}),
+                  ...(issue.componentKey
+                    ? { componentKey: issue.componentKey }
+                    : {}),
                   ...(issue.sourceProp ? { sourceProp: issue.sourceProp } : {}),
-                  ...(issue.targetProp ? { targetProp: issue.targetProp } : {})
-                }
-              }))
-            });
-          }
+                  ...(issue.targetProp ? { targetProp: issue.targetProp } : {}),
+                },
+              }),
+            ),
+          });
+        }
       }
 
       if (context.resolvedCustomerProfile) {
@@ -2161,7 +2455,7 @@ export const createValidateProjectService = ({
           try {
             storybookEvidenceArtifact = storybookEvidencePath
               ? parseStorybookEvidenceArtifact({
-                  input: await readFile(storybookEvidencePath, "utf8")
+                  input: await readFile(storybookEvidencePath, "utf8"),
                 })
               : undefined;
           } catch (error) {
@@ -2170,7 +2464,7 @@ export const createValidateProjectService = ({
               stage: "validate.project",
               message: "Storybook style artifacts are unreadable or malformed.",
               cause: error,
-              limits: context.runtime.pipelineDiagnosticLimits
+              limits: context.runtime.pipelineDiagnosticLimits,
             });
           }
         }
@@ -2178,7 +2472,7 @@ export const createValidateProjectService = ({
           try {
             storybookTokensArtifact = storybookTokensPath
               ? parseStorybookTokensArtifact({
-                  input: await readFile(storybookTokensPath, "utf8")
+                  input: await readFile(storybookTokensPath, "utf8"),
                 })
               : undefined;
           } catch (error) {
@@ -2187,7 +2481,7 @@ export const createValidateProjectService = ({
               stage: "validate.project",
               message: "Storybook style artifacts are unreadable or malformed.",
               cause: error,
-              limits: context.runtime.pipelineDiagnosticLimits
+              limits: context.runtime.pipelineDiagnosticLimits,
             });
           }
         }
@@ -2195,7 +2489,7 @@ export const createValidateProjectService = ({
           try {
             storybookThemesArtifact = storybookThemesPath
               ? parseStorybookThemesArtifact({
-                  input: await readFile(storybookThemesPath, "utf8")
+                  input: await readFile(storybookThemesPath, "utf8"),
                 })
               : undefined;
           } catch (error) {
@@ -2204,19 +2498,25 @@ export const createValidateProjectService = ({
               stage: "validate.project",
               message: "Storybook style artifacts are unreadable or malformed.",
               cause: error,
-              limits: context.runtime.pipelineDiagnosticLimits
+              limits: context.runtime.pipelineDiagnosticLimits,
             });
           }
         }
-        customerProfileStyleSummary = await validateGeneratedProjectStorybookStyles({
-          generatedProjectDir,
-          customerProfile: context.resolvedCustomerProfile,
-          isStorybookFirstRequested: Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir),
-          ...(storybookEvidenceArtifact ? { storybookEvidenceArtifact } : {}),
-          ...(storybookTokensArtifact ? { storybookTokensArtifact } : {}),
-          ...(storybookThemesArtifact ? { storybookThemesArtifact } : {}),
-          ...(componentMatchReportArtifact ? { componentMatchReportArtifact } : {})
-        });
+        customerProfileStyleSummary =
+          await validateGeneratedProjectStorybookStyles({
+            generatedProjectDir,
+            customerProfile: context.resolvedCustomerProfile,
+            isStorybookFirstRequested: Boolean(
+              context.requestedStorybookStaticDir ??
+              context.resolvedStorybookStaticDir,
+            ),
+            ...(storybookEvidenceArtifact ? { storybookEvidenceArtifact } : {}),
+            ...(storybookTokensArtifact ? { storybookTokensArtifact } : {}),
+            ...(storybookThemesArtifact ? { storybookThemesArtifact } : {}),
+            ...(componentMatchReportArtifact
+              ? { componentMatchReportArtifact }
+              : {}),
+          });
         if (customerProfileStyleSummary.issueCount > 0) {
           const logLevel =
             customerProfileStyleSummary.status === "failed"
@@ -2228,20 +2528,19 @@ export const createValidateProjectService = ({
             level: logLevel,
             message:
               `Storybook-first style guard reported ${customerProfileStyleSummary.issueCount} issue(s) ` +
-              `(policy=${customerProfileStyleSummary.policy}, status=${customerProfileStyleSummary.status}).`
+              `(policy=${customerProfileStyleSummary.policy}, status=${customerProfileStyleSummary.status}).`,
           });
         }
         if (customerProfileStyleSummary.status === "failed") {
           const summary = await buildSummary();
           await persistValidationSummaryArtifacts({
             context,
-            summary
+            summary,
           });
           throw createPipelineError({
             code: "E_CUSTOMER_PROFILE_STYLE_POLICY",
             stage: "validate.project",
-            message:
-              `Storybook-first style guard failed with ${customerProfileStyleSummary.issueCount} issue(s).`,
+            message: `Storybook-first style guard failed with ${customerProfileStyleSummary.issueCount} issue(s).`,
             limits: context.runtime.pipelineDiagnosticLimits,
             diagnostics: customerProfileStyleSummary.issues.map((issue) => ({
               code: issue.diagnosticCode ?? issue.category,
@@ -2255,23 +2554,28 @@ export const createValidateProjectService = ({
                 ...(issue.filePath ? { filePath: issue.filePath } : {}),
                 ...(issue.line ? { line: issue.line } : {}),
                 ...(issue.column ? { column: issue.column } : {}),
-                ...(issue.componentName ? { componentName: issue.componentName } : {}),
+                ...(issue.componentName
+                  ? { componentName: issue.componentName }
+                  : {}),
                 ...(issue.propName ? { propName: issue.propName } : {}),
                 ...(issue.themeId ? { themeId: issue.themeId } : {}),
                 ...(issue.tokenPath ? { tokenPath: issue.tokenPath } : {}),
                 ...(issue.artifact ? { artifact: issue.artifact } : {}),
-                ...(issue.evidenceTypes ? { evidenceTypes: issue.evidenceTypes } : {})
-              }
-            }))
+                ...(issue.evidenceTypes
+                  ? { evidenceTypes: issue.evidenceTypes }
+                  : {}),
+              },
+            })),
           });
         }
       }
 
       if (context.resolvedCustomerProfile) {
-        customerProfileImportSummary = await validateGeneratedProjectCustomerProfile({
-          generatedProjectDir,
-          customerProfile: context.resolvedCustomerProfile
-        });
+        customerProfileImportSummary =
+          await validateGeneratedProjectCustomerProfile({
+            generatedProjectDir,
+            customerProfile: context.resolvedCustomerProfile,
+          });
         if (customerProfileImportSummary.import.issueCount > 0) {
           const logLevel =
             customerProfileImportSummary.import.policy === "warn"
@@ -2283,38 +2587,43 @@ export const createValidateProjectService = ({
             level: logLevel,
             message:
               `Customer profile import policy reported ${customerProfileImportSummary.import.issueCount} issue(s) ` +
-              `(policy=${customerProfileImportSummary.import.policy}).`
+              `(policy=${customerProfileImportSummary.import.policy}).`,
           });
         }
         if (customerProfileImportSummary.status === "failed") {
           const summary = await buildSummary();
           await persistValidationSummaryArtifacts({
             context,
-            summary
+            summary,
           });
           throw createPipelineError({
             code: "E_CUSTOMER_PROFILE_IMPORT_POLICY",
             stage: "validate.project",
             message: `Customer profile import policy failed with ${customerProfileImportSummary.import.issueCount} issue(s).`,
             limits: context.runtime.pipelineDiagnosticLimits,
-            diagnostics: customerProfileImportSummary.import.issues.map((issue) => ({
-              code: issue.code,
-              message: issue.message,
-              suggestion: "Update the customer profile import matrix, template config, or generated imports so they agree.",
-              stage: "validate.project",
-              severity: "error",
-              details: {
-                ...(issue.filePath ? { filePath: issue.filePath } : {}),
-                ...(issue.modulePath ? { modulePath: issue.modulePath } : {})
-              }
-            }))
+            diagnostics: customerProfileImportSummary.import.issues.map(
+              (issue) => ({
+                code: issue.code,
+                message: issue.message,
+                suggestion:
+                  "Update the customer profile import matrix, template config, or generated imports so they agree.",
+                stage: "validate.project",
+                severity: "error",
+                details: {
+                  ...(issue.filePath ? { filePath: issue.filePath } : {}),
+                  ...(issue.modulePath ? { modulePath: issue.modulePath } : {}),
+                },
+              }),
+            ),
           });
         }
       }
 
       const hasCustomerProfileDeps = context.resolvedCustomerProfile
-        ? Object.keys(context.resolvedCustomerProfile.template.dependencies).length > 0 ||
-          Object.keys(context.resolvedCustomerProfile.template.devDependencies).length > 0
+        ? Object.keys(context.resolvedCustomerProfile.template.dependencies)
+            .length > 0 ||
+          Object.keys(context.resolvedCustomerProfile.template.devDependencies)
+            .length > 0
         : false;
 
       try {
@@ -2333,14 +2642,17 @@ export const createValidateProjectService = ({
           skipInstall: context.runtime.skipInstall,
           lockfileMutable: hasCustomerProfileDeps,
           pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
-          seedNodeModulesDir: path.join(context.paths.templateRoot, "node_modules"),
+          seedNodeModulesDir: path.join(
+            context.paths.templateRoot,
+            "node_modules",
+          ),
           abortSignal: context.abortSignal,
           onLog: (message) => {
             context.log({
               level: "info",
-              message
+              message,
             });
-          }
+          },
         });
       } catch (error) {
         const failedCommand = extractFailedCommandFromPipelineError(error);
@@ -2349,39 +2661,46 @@ export const createValidateProjectService = ({
           ...(visualAuditRequest
             ? {
                 baselineImagePath: visualAuditRequest.baselineImagePath,
-                warnings: ["Visual audit did not run because generated-project validation failed before the audit step."]
+                warnings: [
+                  "Visual audit did not run because generated-project validation failed before the audit step.",
+                ],
               }
-            : {})
+            : {}),
         });
         const failureSummary = await buildSummary({
-          generatedAppFailure: { failedCommand }
+          generatedAppFailure: { failedCommand },
         });
         await persistValidationSummaryArtifacts({
           context,
-          summary: failureSummary
+          summary: failureSummary,
         });
         throw error;
       }
       if (!visualAuditRequest) {
         await persistVisualAuditResult({
-          status: "not_requested"
+          status: "not_requested",
         });
       } else {
         const resolvedBaselineSourcePath = path.resolve(
           context.resolvedWorkspaceRoot,
-          visualAuditRequest.baselineImagePath
+          visualAuditRequest.baselineImagePath,
         );
-        if (!isWithinRoot({ candidatePath: resolvedBaselineSourcePath, rootPath: context.resolvedWorkspaceRoot })) {
+        if (
+          !isWithinRoot({
+            candidatePath: resolvedBaselineSourcePath,
+            rootPath: context.resolvedWorkspaceRoot,
+          })
+        ) {
           await failVisualAudit({
             code: "E_VISUAL_AUDIT_BASELINE_PATH_INVALID",
-            message:
-              `Visual audit baseline '${visualAuditRequest.baselineImagePath}' resolves outside the workspace root.`,
-            suggestion: "Provide a baseline image path that stays inside the workspace root.",
+            message: `Visual audit baseline '${visualAuditRequest.baselineImagePath}' resolves outside the workspace root.`,
+            suggestion:
+              "Provide a baseline image path that stays inside the workspace root.",
             details: {
               baselineImagePath: visualAuditRequest.baselineImagePath,
               resolvedBaselinePath: resolvedBaselineSourcePath,
-              workspaceRoot: context.resolvedWorkspaceRoot
-            }
+              workspaceRoot: context.resolvedWorkspaceRoot,
+            },
           });
         }
 
@@ -2392,12 +2711,13 @@ export const createValidateProjectService = ({
             return failVisualAudit({
               code: "E_VISUAL_AUDIT_BASELINE_MISSING",
               message: `Visual audit baseline '${visualAuditRequest.baselineImagePath}' is missing or unreadable.`,
-              suggestion: "Add the baseline PNG inside the workspace root before running validate.project.",
+              suggestion:
+                "Add the baseline PNG inside the workspace root before running validate.project.",
               details: {
                 baselineImagePath: visualAuditRequest.baselineImagePath,
-                resolvedBaselinePath: resolvedBaselineSourcePath
+                resolvedBaselinePath: resolvedBaselineSourcePath,
               },
-              cause: error
+              cause: error,
             });
           }
         })();
@@ -2409,11 +2729,12 @@ export const createValidateProjectService = ({
           await failVisualAudit({
             code: "E_VISUAL_AUDIT_ARTIFACT_DIR_FAILED",
             message: "Visual audit artifact directory could not be created.",
-            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            suggestion:
+              "Ensure the job output directory is writable before running validate.project.",
             details: {
-              visualAuditDir
+              visualAuditDir,
             },
-            cause: error
+            cause: error,
           });
         }
 
@@ -2422,18 +2743,19 @@ export const createValidateProjectService = ({
           await writeFile(referenceImagePath, referenceBuffer);
           await persistVisualAuditArtifactPath({
             key: STAGE_ARTIFACT_KEYS.visualAuditReferenceImage,
-            absolutePath: referenceImagePath
+            absolutePath: referenceImagePath,
           });
         } catch (error) {
           await failVisualAudit({
             code: "E_VISUAL_AUDIT_REFERENCE_WRITE_FAILED",
             message: "Visual audit reference image could not be written.",
-            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            suggestion:
+              "Ensure the job output directory is writable before running validate.project.",
             details: {
               referenceImagePath,
-              resolvedBaselinePath: resolvedBaselineSourcePath
+              resolvedBaselinePath: resolvedBaselineSourcePath,
             },
-            cause: error
+            cause: error,
           });
         }
 
@@ -2444,19 +2766,25 @@ export const createValidateProjectService = ({
         } catch (error) {
           await failVisualAudit({
             code: "E_VISUAL_AUDIT_BUILD_OUTPUT_MISSING",
-            message: "Visual audit requires build output at 'dist/index.html', but that file is missing.",
-            suggestion: "Make sure the generated project build writes a static dist bundle before the visual audit runs.",
+            message:
+              "Visual audit requires build output at 'dist/index.html', but that file is missing.",
+            suggestion:
+              "Make sure the generated project build writes a static dist bundle before the visual audit runs.",
             details: {
               distDir,
               distIndexPath,
-              generatedProjectDir
+              generatedProjectDir,
             },
-            cause: error
+            cause: error,
           });
         }
 
-        const captureConfig = visualAuditRequest.capture as Parameters<typeof captureFromProjectFn>[0]["config"] | undefined;
-        const captureResult = await (async (): Promise<Awaited<ReturnType<typeof captureFromProjectFn>>> => {
+        const captureConfig = visualAuditRequest.capture as
+          | Parameters<typeof captureFromProjectFn>[0]["config"]
+          | undefined;
+        const captureResult = await (async (): Promise<
+          Awaited<ReturnType<typeof captureFromProjectFn>>
+        > => {
           try {
             return await captureFromProjectFn({
               projectDir: distDir,
@@ -2464,20 +2792,22 @@ export const createValidateProjectService = ({
               onLog: (message) => {
                 context.log({
                   level: "info",
-                  message: `Visual audit capture: ${message}`
+                  message: `Visual audit capture: ${message}`,
                 });
-              }
+              },
             });
           } catch (error) {
             return failVisualAudit({
               code: "E_VISUAL_AUDIT_CAPTURE_FAILED",
-              message: "Visual audit could not capture the generated dist bundle.",
-              suggestion: "Inspect the built dist bundle and capture settings, then rerun validate.project.",
+              message:
+                "Visual audit could not capture the generated dist bundle.",
+              suggestion:
+                "Inspect the built dist bundle and capture settings, then rerun validate.project.",
               details: {
                 distDir,
-                distIndexPath
+                distIndexPath,
               },
-              cause: error
+              cause: error,
             });
           }
         })();
@@ -2487,41 +2817,51 @@ export const createValidateProjectService = ({
           await writeFile(actualImagePath, captureResult.screenshotBuffer);
           await persistVisualAuditArtifactPath({
             key: STAGE_ARTIFACT_KEYS.visualAuditActualImage,
-            absolutePath: actualImagePath
+            absolutePath: actualImagePath,
           });
         } catch (error) {
           await failVisualAudit({
             code: "E_VISUAL_AUDIT_ACTUAL_WRITE_FAILED",
-            message: "Visual audit captured a screenshot but could not persist it.",
-            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            message:
+              "Visual audit captured a screenshot but could not persist it.",
+            suggestion:
+              "Ensure the job output directory is writable before running validate.project.",
             details: {
-              actualImagePath
+              actualImagePath,
             },
-            cause: error
+            cause: error,
           });
         }
 
-        const compareConfig = visualAuditRequest.diff as Parameters<typeof comparePngBuffersFn>[0]["config"] | undefined;
-        const compareRegions = visualAuditRequest.regions as Parameters<typeof comparePngBuffersFn>[0]["regions"] | undefined;
-        const diffResult = await (async (): Promise<ReturnType<typeof comparePngBuffersFn>> => {
+        const compareConfig = visualAuditRequest.diff as
+          | Parameters<typeof comparePngBuffersFn>[0]["config"]
+          | undefined;
+        const compareRegions = visualAuditRequest.regions as
+          | Parameters<typeof comparePngBuffersFn>[0]["regions"]
+          | undefined;
+        const diffResult = await (async (): Promise<
+          ReturnType<typeof comparePngBuffersFn>
+        > => {
           try {
             return comparePngBuffersFn({
               referenceBuffer,
               testBuffer: captureResult.screenshotBuffer,
               ...(compareConfig ? { config: compareConfig } : {}),
-              ...(compareRegions ? { regions: compareRegions } : {})
+              ...(compareRegions ? { regions: compareRegions } : {}),
             });
           } catch (error) {
             return failVisualAudit({
               code: "E_VISUAL_AUDIT_COMPARE_FAILED",
-              message: "Visual audit could not compare the baseline and captured screenshots.",
-              suggestion: "Align the baseline image and capture configuration so both images are comparable.",
+              message:
+                "Visual audit could not compare the baseline and captured screenshots.",
+              suggestion:
+                "Align the baseline image and capture configuration so both images are comparable.",
               details: {
                 baselineImagePath: visualAuditRequest.baselineImagePath,
                 referenceImagePath,
-                actualImagePath
+                actualImagePath,
               },
-              cause: error
+              cause: error,
             });
           }
         })();
@@ -2530,21 +2870,23 @@ export const createValidateProjectService = ({
         try {
           await writeDiffImage({
             diffImageBuffer: diffResult.diffImageBuffer,
-            outputPath: diffImagePath
+            outputPath: diffImagePath,
           });
           await persistVisualAuditArtifactPath({
             key: STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
-            absolutePath: diffImagePath
+            absolutePath: diffImagePath,
           });
         } catch (error) {
           await failVisualAudit({
             code: "E_VISUAL_AUDIT_DIFF_WRITE_FAILED",
-            message: "Visual audit computed a diff image but could not persist it.",
-            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            message:
+              "Visual audit computed a diff image but could not persist it.",
+            suggestion:
+              "Ensure the job output directory is writable before running validate.project.",
             details: {
-              diffImagePath
+              diffImagePath,
             },
-            cause: error
+            cause: error,
           });
         }
 
@@ -2561,10 +2903,10 @@ export const createValidateProjectService = ({
           ...(diffResult.diffPixelCount > 0
             ? {
                 warnings: [
-                  `Visual audit detected ${String(diffResult.diffPixelCount)} differing pixel(s) across ${String(diffResult.totalPixels)} total pixel(s).`
-                ]
+                  `Visual audit detected ${String(diffResult.diffPixelCount)} differing pixel(s) across ${String(diffResult.totalPixels)} total pixel(s).`,
+                ],
               }
-            : {})
+            : {}),
         });
 
         const reportPath = path.join(visualAuditDir, "report.json");
@@ -2574,37 +2916,45 @@ export const createValidateProjectService = ({
               diffResult,
               comparedAt: validatedAt,
               diffImagePath,
-              viewport: captureResult.viewport
+              viewport: captureResult.viewport,
             });
           } catch (error) {
             return failVisualAudit({
               code: "E_VISUAL_AUDIT_REPORT_BUILD_FAILED",
-              message: "Visual audit completed, but the structured quality report could not be generated.",
-              suggestion: "Inspect the visual scoring configuration and report metadata inputs, then rerun validate.project.",
+              message:
+                "Visual audit completed, but the structured quality report could not be generated.",
+              suggestion:
+                "Inspect the visual scoring configuration and report metadata inputs, then rerun validate.project.",
               details: {
                 diffImagePath,
                 actualImagePath,
-                referenceImagePath
+                referenceImagePath,
               },
-              cause: error
+              cause: error,
             });
           }
         })();
         try {
-          await writeFile(reportPath, toJsonFileContent(await visualQualityScoringReport), "utf8");
+          await writeFile(
+            reportPath,
+            toJsonFileContent(await visualQualityScoringReport),
+            "utf8",
+          );
           await persistVisualAuditArtifactPath({
             key: STAGE_ARTIFACT_KEYS.visualAuditReport,
-            absolutePath: reportPath
+            absolutePath: reportPath,
           });
         } catch (error) {
           await failVisualAudit({
             code: "E_VISUAL_AUDIT_REPORT_WRITE_FAILED",
-            message: "Visual audit completed but could not persist the JSON report.",
-            suggestion: "Ensure the job output directory is writable before running validate.project.",
+            message:
+              "Visual audit completed but could not persist the JSON report.",
+            suggestion:
+              "Ensure the job output directory is writable before running validate.project.",
             details: {
-              reportPath
+              reportPath,
             },
-            cause: error
+            cause: error,
           });
         }
 
@@ -2615,11 +2965,11 @@ export const createValidateProjectService = ({
             createCompletedVisualQualityReport({
               referenceSource: standaloneVisualQualityMode,
               capturedAt: validatedAt,
-              report: visualQualityScoringReport as VisualQualityReport
-            })
+              report: visualQualityScoringReport as VisualQualityReport,
+            }),
           );
           await persistVisualQualityReportPath({
-            absolutePath: reportPath
+            absolutePath: reportPath,
           });
         }
         context.log({
@@ -2627,7 +2977,7 @@ export const createValidateProjectService = ({
           message:
             finalizedVisualAuditResult.status === "warn"
               ? `Visual audit detected ${String(diffResult.diffPixelCount)} differing pixel(s).`
-              : "Visual audit completed without detected pixel differences."
+              : "Visual audit completed without detected pixel differences.",
         });
       }
       if (shouldRunStandaloneVisualQuality) {
@@ -2636,7 +2986,10 @@ export const createValidateProjectService = ({
           const distIndexPath = path.join(distDir, "index.html");
           await access(distIndexPath);
 
-          const visualQualityDir = path.join(context.paths.jobDir, "visual-quality");
+          const visualQualityDir = path.join(
+            context.paths.jobDir,
+            "visual-quality",
+          );
           await mkdir(visualQualityDir, { recursive: true });
 
           const referenceResult =
@@ -2644,22 +2997,36 @@ export const createValidateProjectService = ({
               ? await (async () => {
                   const figmaFileKey = context.job.request.figmaFileKey;
                   if (!figmaFileKey) {
-                    throw new Error("Visual quality validation requires figmaFileKey for figma_api mode.");
+                    throw new Error(
+                      "Visual quality validation requires figmaFileKey for figma_api mode.",
+                    );
                   }
-                  const figmaAccessToken = context.input?.figmaAccessToken?.trim();
+                  const figmaAccessToken =
+                    context.input?.figmaAccessToken?.trim();
                   if (!figmaAccessToken) {
-                    throw new Error("Visual quality validation requires figmaAccessToken for figma_api mode.");
+                    throw new Error(
+                      "Visual quality validation requires figmaAccessToken for figma_api mode.",
+                    );
                   }
-                  const figmaJsonPath = await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaCleaned);
+                  const figmaJsonPath = await context.artifactStore.getPath(
+                    STAGE_ARTIFACT_KEYS.figmaCleaned,
+                  );
                   if (!figmaJsonPath) {
-                    throw new Error("Visual quality validation requires a cleaned figma.json artifact for figma_api mode.");
+                    throw new Error(
+                      "Visual quality validation requires a cleaned figma.json artifact for figma_api mode.",
+                    );
                   }
-                  const cleanedFigma = JSON.parse(await readFile(figmaJsonPath, "utf8")) as unknown;
+                  const cleanedFigma = JSON.parse(
+                    await readFile(figmaJsonPath, "utf8"),
+                  ) as unknown;
                   const selectedNode = selectVisualQualityReferenceNode({
                     file: cleanedFigma,
                     ...(context.runtime.figmaScreenNamePattern
-                      ? { preferredNamePattern: context.runtime.figmaScreenNamePattern }
-                      : {})
+                      ? {
+                          preferredNamePattern:
+                            context.runtime.figmaScreenNamePattern,
+                        }
+                      : {}),
                   });
                   const liveReference = await fetchFigmaVisualReference({
                     fileKey: figmaFileKey,
@@ -2671,52 +3038,72 @@ export const createValidateProjectService = ({
                     onLog: (message) => {
                       context.log({
                         level: "info",
-                        message: `Visual quality reference: ${message}`
+                        message: `Visual quality reference: ${message}`,
                       });
-                    }
+                    },
                   });
                   return {
                     buffer: liveReference.buffer,
-                    metadata: liveReference.metadata
+                    metadata: liveReference.metadata,
                   };
                 })()
               : await (async () => {
-                  const fixtureManifest = await findVisualQualityFixtureManifest({
-                    workspaceRoot: context.resolvedWorkspaceRoot,
-                    inputPaths: [
-                      context.job.request.customerProfilePath,
-                      context.job.request.figmaJsonPath
-                    ].filter((value): value is string => typeof value === "string" && value.trim().length > 0)
-                  });
+                  const fixtureManifest =
+                    await findVisualQualityFixtureManifest({
+                      workspaceRoot: context.resolvedWorkspaceRoot,
+                      inputPaths: [
+                        context.job.request.customerProfilePath,
+                        context.job.request.figmaJsonPath,
+                      ].filter(
+                        (value): value is string =>
+                          typeof value === "string" && value.trim().length > 0,
+                      ),
+                    });
                   if (!fixtureManifest) {
-                    throw new Error("Visual quality validation could not locate a frozen fixture manifest for the current job.");
+                    throw new Error(
+                      "Visual quality validation could not locate a frozen fixture manifest for the current job.",
+                    );
                   }
-                  const frozenReferencePaths = requestedVisualQualityFrozenReference
-                    ? resolveVisualQualityFrozenReferencePaths({
-                        fixtureRoot: fixtureManifest.fixtureRoot,
-                        frozenReference: requestedVisualQualityFrozenReference
-                      })
-                    : {
-                        imagePath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceImage),
-                        metadataPath: path.join(fixtureManifest.fixtureRoot, fixtureManifest.frozenReferenceMetadata)
-                      };
+                  const frozenReferencePaths =
+                    requestedVisualQualityFrozenReference
+                      ? resolveVisualQualityFrozenReferencePaths({
+                          fixtureRoot: fixtureManifest.fixtureRoot,
+                          frozenReference:
+                            requestedVisualQualityFrozenReference,
+                        })
+                      : {
+                          imagePath: path.join(
+                            fixtureManifest.fixtureRoot,
+                            fixtureManifest.frozenReferenceImage,
+                          ),
+                          metadataPath: path.join(
+                            fixtureManifest.fixtureRoot,
+                            fixtureManifest.frozenReferenceMetadata,
+                          ),
+                        };
                   const frozenReference = await loadFrozenVisualReference({
                     imagePath: frozenReferencePaths.imagePath,
-                    metadataPath: frozenReferencePaths.metadataPath
+                    metadataPath: frozenReferencePaths.metadataPath,
                   });
                   return {
                     buffer: frozenReference.buffer,
-                    metadata: frozenReference.metadata
+                    metadata: frozenReference.metadata,
                   };
                 })();
 
-          if (referenceResult.metadata.viewport.width !== standaloneVisualQualityViewportWidth) {
+          if (
+            referenceResult.metadata.viewport.width !==
+            standaloneVisualQualityViewportWidth
+          ) {
             throw new Error(
-              `Visual quality reference width ${String(referenceResult.metadata.viewport.width)} does not match requested viewport width ${String(standaloneVisualQualityViewportWidth)}.`
+              `Visual quality reference width ${String(referenceResult.metadata.viewport.width)} does not match requested viewport width ${String(standaloneVisualQualityViewportWidth)}.`,
             );
           }
 
-          const referenceImagePath = path.join(visualQualityDir, "reference.png");
+          const referenceImagePath = path.join(
+            visualQualityDir,
+            "reference.png",
+          );
           await writeFile(referenceImagePath, referenceResult.buffer);
           const browsers = normalizeVisualBrowserNames(
             context.job.request.visualQualityBrowsers,
@@ -2742,20 +3129,20 @@ export const createValidateProjectService = ({
                 viewport: {
                   width: standaloneVisualQualityViewportWidth,
                   height: standaloneVisualQualityViewportHeight,
-                  deviceScaleFactor: standaloneVisualQualityDeviceScaleFactor
+                  deviceScaleFactor: standaloneVisualQualityDeviceScaleFactor,
                 },
                 waitForNetworkIdle: true,
                 waitForFonts: true,
                 waitForAnimations: true,
                 timeoutMs: 30_000,
-                fullPage: false
+                fullPage: false,
               },
               onLog: (message) => {
                 context.log({
                   level: "info",
-                  message: `Visual quality capture [${browser}]: ${message}`
+                  message: `Visual quality capture [${browser}]: ${message}`,
                 });
-              }
+              },
             });
 
             const actualImagePath = path.join(browserDir, "actual.png");
@@ -2763,27 +3150,31 @@ export const createValidateProjectService = ({
 
             const diffResult = comparePngBuffersFn({
               referenceBuffer: referenceResult.buffer,
-              testBuffer: captureResult.screenshotBuffer
+              testBuffer: captureResult.screenshotBuffer,
             });
             const diffImagePath = path.join(browserDir, "diff.png");
             await writeDiffImage({
               diffImageBuffer: diffResult.diffImageBuffer,
-              outputPath: diffImagePath
+              outputPath: diffImagePath,
             });
 
             const scoringReport = computeVisualQualityReport({
               diffResult,
               comparedAt: validatedAt,
               diffImagePath,
-              viewport: captureResult.viewport
+              viewport: captureResult.viewport,
             });
             const completedReport = createCompletedVisualQualityReport({
               referenceSource: standaloneVisualQualityMode,
               capturedAt: referenceResult.metadata.capturedAt,
-              report: scoringReport
+              report: scoringReport,
             });
             const reportPath = path.join(browserDir, "report.json");
-            await writeFile(reportPath, toJsonFileContent(completedReport), "utf8");
+            await writeFile(
+              reportPath,
+              toJsonFileContent(completedReport),
+              "utf8",
+            );
             browserArtifacts.push({
               browser,
               captureResult,
@@ -2791,28 +3182,36 @@ export const createValidateProjectService = ({
               completedReport,
               actualImagePath,
               diffImagePath,
-              reportPath
+              reportPath,
             });
           }
 
           const primaryBrowserArtifact = browserArtifacts[0];
           if (!primaryBrowserArtifact) {
-            throw new Error("Visual quality validation did not capture any browser artifacts.");
+            throw new Error(
+              "Visual quality validation did not capture any browser artifacts.",
+            );
           }
 
           const actualImagePath = path.join(visualQualityDir, "actual.png");
-          await writeFile(actualImagePath, primaryBrowserArtifact.captureResult.screenshotBuffer);
+          await writeFile(
+            actualImagePath,
+            primaryBrowserArtifact.captureResult.screenshotBuffer,
+          );
 
           const diffImagePath = path.join(visualQualityDir, "diff.png");
           await writeDiffImage({
-            diffImageBuffer: await readFile(primaryBrowserArtifact.diffImagePath),
-            outputPath: diffImagePath
+            diffImageBuffer: await readFile(
+              primaryBrowserArtifact.diffImagePath,
+            ),
+            outputPath: diffImagePath,
           });
 
           const browserBreakdown = browserArtifacts.reduce<
             NonNullable<WorkspaceVisualQualityReport["browserBreakdown"]>
           >((accumulator, artifact) => {
-            accumulator[artifact.browser] = artifact.completedReport.overallScore ?? 100;
+            accumulator[artifact.browser] =
+              artifact.completedReport.overallScore ?? 100;
             return accumulator;
           }, {});
 
@@ -2822,29 +3221,35 @@ export const createValidateProjectService = ({
                   const consistency = computeCrossBrowserConsistencyScore(
                     browserArtifacts.map((artifact) => ({
                       browser: artifact.browser,
-                      screenshotBuffer: artifact.captureResult.screenshotBuffer
+                      screenshotBuffer: artifact.captureResult.screenshotBuffer,
                     })),
                   );
                   const pairwiseDir = path.join(visualQualityDir, "pairwise");
                   return {
                     consistency,
-                    pairwiseDir
+                    pairwiseDir,
                   };
                 })()
               : undefined;
 
           let crossBrowserReport: WorkspaceVisualQualityReport["crossBrowserConsistency"];
           if (crossBrowserConsistency) {
-            await mkdir(crossBrowserConsistency.pairwiseDir, { recursive: true });
+            await mkdir(crossBrowserConsistency.pairwiseDir, {
+              recursive: true,
+            });
             crossBrowserReport = {
               browsers: [...crossBrowserConsistency.consistency.browsers],
-              consistencyScore: crossBrowserConsistency.consistency.consistencyScore,
+              consistencyScore:
+                crossBrowserConsistency.consistency.consistencyScore,
               pairwiseDiffs: [],
               ...(crossBrowserConsistency.consistency.warnings.length > 0
-                ? { warnings: [...crossBrowserConsistency.consistency.warnings] }
-                : {})
+                ? {
+                    warnings: [...crossBrowserConsistency.consistency.warnings],
+                  }
+                : {}),
             };
-            for (const pair of crossBrowserConsistency.consistency.pairwiseDiffs) {
+            for (const pair of crossBrowserConsistency.consistency
+              .pairwiseDiffs) {
               const pairwiseDiffPath = path.join(
                 crossBrowserConsistency.pairwiseDir,
                 `${pair.browserA}-vs-${pair.browserB}.png`,
@@ -2852,95 +3257,118 @@ export const createValidateProjectService = ({
               if (pair.diffBuffer !== null) {
                 await writeDiffImage({
                   diffImageBuffer: pair.diffBuffer,
-                  outputPath: pairwiseDiffPath
+                  outputPath: pairwiseDiffPath,
                 });
               }
               crossBrowserReport.pairwiseDiffs.push({
                 browserA: pair.browserA,
                 browserB: pair.browserB,
                 diffPercent: pair.diffPercent,
-                ...(pair.diffBuffer !== null ? { diffImagePath: pairwiseDiffPath } : {})
+                ...(pair.diffBuffer !== null
+                  ? { diffImagePath: pairwiseDiffPath }
+                  : {}),
               });
             }
           }
 
           const topLevelWarnings = [
             ...(primaryBrowserArtifact.completedReport.warnings ?? []),
-            ...(crossBrowserReport?.warnings ?? [])
+            ...(crossBrowserReport?.warnings ?? []),
           ];
           const completedReport = createCompletedVisualQualityReport({
             referenceSource: standaloneVisualQualityMode,
             capturedAt: referenceResult.metadata.capturedAt,
             report: {
               ...primaryBrowserArtifact.scoringReport,
-              diffImagePath
+              diffImagePath,
             },
             browserBreakdown,
-            ...(crossBrowserReport ? { crossBrowserConsistency: crossBrowserReport } : {}),
+            ...(crossBrowserReport
+              ? { crossBrowserConsistency: crossBrowserReport }
+              : {}),
             perBrowser: browserArtifacts.map((artifact) => ({
               browser: artifact.browser,
               overallScore: artifact.completedReport.overallScore ?? 100,
               actualImagePath: artifact.actualImagePath,
               diffImagePath: artifact.diffImagePath,
               reportPath: artifact.reportPath,
-              ...(artifact.completedReport.warnings && artifact.completedReport.warnings.length > 0
+              ...(artifact.completedReport.warnings &&
+              artifact.completedReport.warnings.length > 0
                 ? { warnings: [...artifact.completedReport.warnings] }
-                : {})
+                : {}),
             })),
             ...(topLevelWarnings.length > 0
               ? { warnings: [...new Set(topLevelWarnings)] }
-              : {})
+              : {}),
           });
           const reportPath = path.join(visualQualityDir, "report.json");
-          await writeFile(reportPath, toJsonFileContent(completedReport), "utf8");
+          await writeFile(
+            reportPath,
+            toJsonFileContent(completedReport),
+            "utf8",
+          );
           await persistVisualQualityResult(completedReport);
           await persistVisualQualityReportPath({
-            absolutePath: reportPath
+            absolutePath: reportPath,
           });
           context.log({
-            level: completedReport.overallScore !== undefined && completedReport.overallScore < 100 ? "warn" : "info",
-            message: `Visual quality validation completed via ${standaloneVisualQualityMode} across ${browsers.join(", ")}.`
+            level:
+              completedReport.overallScore !== undefined &&
+              completedReport.overallScore < 100
+                ? "warn"
+                : "info",
+            message: `Visual quality validation completed via ${standaloneVisualQualityMode} across ${browsers.join(", ")}.`,
           });
         };
 
         try {
           await runStandaloneVisualQuality();
         } catch (error) {
-          const message = error instanceof Error ? error.message : "Visual quality validation failed.";
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Visual quality validation failed.";
           await persistVisualQualityResult(
             createFailedVisualQualityReport({
               referenceSource: standaloneVisualQualityMode,
               capturedAt: new Date().toISOString(),
               message,
-              warnings: [message]
-            })
+              warnings: [message],
+            }),
           );
           context.log({
             level: "warn",
-            message: `Visual quality validation failed without blocking the pipeline: ${message}`
+            message: `Visual quality validation failed without blocking the pipeline: ${message}`,
           });
         }
       }
-      const resolveCompositeQualityWeightOverrides = (): WorkspaceCompositeQualityWeights => {
-        return resolveCompositeQualityWeights(
-          context.input?.compositeQualityWeights ??
-            context.job.request.compositeQualityWeights ??
-            context.runtime.compositeQualityWeights
-        );
-      };
+      const resolveCompositeQualityWeightOverrides =
+        (): WorkspaceCompositeQualityWeights => {
+          return resolveCompositeQualityWeights(
+            context.input?.compositeQualityWeights ??
+              context.job.request.compositeQualityWeights ??
+              context.runtime.compositeQualityWeights,
+          );
+        };
 
       const buildCompositeQualityForValidation = async (): Promise<void> => {
         const weights = resolveCompositeQualityWeightOverrides();
         const generatedAt = new Date().toISOString();
         const visualQualityReportPath =
           context.job.artifacts.visualQualityReportFile ??
-          (await context.artifactStore.getPath(STAGE_ARTIFACT_KEYS.visualQualityReport)) ??
+          (await context.artifactStore.getPath(
+            STAGE_ARTIFACT_KEYS.visualQualityReport,
+          )) ??
           path.join(context.paths.jobDir, "visual-quality", "report.json");
-        const perfArtifactDir = path.join(generatedProjectDir, ".figmapipe", "performance");
+        const perfArtifactDir = path.join(
+          generatedProjectDir,
+          ".figmapipe",
+          "performance",
+        );
 
         try {
           const performanceBreakdown = await loadCompositePerformanceBreakdown({
-            artifactDir: perfArtifactDir
+            artifactDir: perfArtifactDir,
           });
 
           const visualInput =
@@ -2949,25 +3377,30 @@ export const createValidateProjectService = ({
               ? {
                   score: resolvedVisualQualityReport.overallScore,
                   ranAt: resolvedVisualQualityReport.capturedAt ?? generatedAt,
-                  source: visualQualityReportPath
+                  source: visualQualityReportPath,
                 }
               : null;
           const visualWarnings =
             resolvedVisualQualityReport.status === "failed"
               ? [
-                  ...(resolvedVisualQualityReport.message ? [resolvedVisualQualityReport.message] : []),
-                  ...(resolvedVisualQualityReport.warnings ?? [])
+                  ...(resolvedVisualQualityReport.message
+                    ? [resolvedVisualQualityReport.message]
+                    : []),
+                  ...(resolvedVisualQualityReport.warnings ?? []),
                 ].map((warning) => `visual: ${warning}`)
               : [];
           const hasPerformanceSignal =
-            performanceBreakdown.sampleCount > 0 || performanceBreakdown.score !== null;
+            performanceBreakdown.sampleCount > 0 ||
+            performanceBreakdown.score !== null;
 
           if (visualInput === null && !hasPerformanceSignal) {
             await persistCompositeQualityResult({
               status: "not_requested",
               generatedAt,
               weights: { ...weights },
-              ...(visualWarnings.length > 0 ? { warnings: [...new Set(visualWarnings)] } : {})
+              ...(visualWarnings.length > 0
+                ? { warnings: [...new Set(visualWarnings)] }
+                : {}),
             });
             return;
           }
@@ -2975,12 +3408,14 @@ export const createValidateProjectService = ({
           const composite = computeCompositeScore({
             visualScore: visualInput?.score ?? null,
             performanceScore: performanceBreakdown.score,
-            weights
+            weights,
           });
           const warnings = [
             ...(visualInput === null ? ["visual score missing"] : []),
-            ...performanceBreakdown.warnings.map((warning) => `performance: ${warning}`),
-            ...visualWarnings
+            ...performanceBreakdown.warnings.map(
+              (warning) => `performance: ${warning}`,
+            ),
+            ...visualWarnings,
           ];
           const normalizedReport: WorkspaceCompositeQualityReport = {
             status: "completed",
@@ -2988,37 +3423,54 @@ export const createValidateProjectService = ({
             weights: { ...weights },
             visual: visualInput ? { ...visualInput } : null,
             performance: {
-              ...(performanceBreakdown.sourcePath ? { sourcePath: performanceBreakdown.sourcePath } : {}),
+              ...(performanceBreakdown.sourcePath
+                ? { sourcePath: performanceBreakdown.sourcePath }
+                : {}),
               score: performanceBreakdown.score,
               sampleCount: performanceBreakdown.sampleCount,
-              samples: performanceBreakdown.samples.map((sample) => ({ ...sample })),
+              samples: performanceBreakdown.samples.map((sample) => ({
+                ...sample,
+              })),
               aggregateMetrics: { ...performanceBreakdown.aggregateMetrics },
-              warnings: [...performanceBreakdown.warnings]
+              warnings: [...performanceBreakdown.warnings],
             },
             composite,
-            warnings: [...new Set(warnings)]
+            warnings: [...new Set(warnings)],
           };
-          const compositeQualityDir = path.join(context.paths.jobDir, "composite-quality");
+          const compositeQualityDir = path.join(
+            context.paths.jobDir,
+            "composite-quality",
+          );
           await mkdir(compositeQualityDir, { recursive: true });
-          const compositeQualityReportPath = path.join(compositeQualityDir, "report.json");
-          await writeFile(compositeQualityReportPath, toJsonFileContent(normalizedReport), "utf8");
+          const compositeQualityReportPath = path.join(
+            compositeQualityDir,
+            "report.json",
+          );
+          await writeFile(
+            compositeQualityReportPath,
+            toJsonFileContent(normalizedReport),
+            "utf8",
+          );
           await persistCompositeQualityResult(normalizedReport);
           await persistCompositeQualityReportPath({
-            absolutePath: compositeQualityReportPath
+            absolutePath: compositeQualityReportPath,
           });
         } catch (error) {
-          const message = error instanceof Error ? error.message : "Composite quality report generation failed.";
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Composite quality report generation failed.";
           await persistCompositeQualityResult(
             createFailedCompositeQualityReport({
               weights,
               generatedAt,
               message,
-              warnings: [message]
-            })
+              warnings: [message],
+            }),
           );
           context.log({
             level: "warn",
-            message: `Composite quality report generation failed without blocking validate.project: ${message}`
+            message: `Composite quality report generation failed without blocking validate.project: ${message}`,
           });
         }
       };
@@ -3026,16 +3478,16 @@ export const createValidateProjectService = ({
       await buildCompositeQualityForValidation();
       const summary = await buildSummary({
         visualQualityReport: resolvedVisualQualityReport,
-        compositeQualityReport: resolvedCompositeQualityReport
+        compositeQualityReport: resolvedCompositeQualityReport,
       });
       await persistValidationSummaryArtifacts({
         context,
-        summary
+        summary,
       });
       const failedStorybookArtifacts =
         summary.storybook.status === "failed"
           ? listFailedStorybookArtifacts({
-              artifacts: summary.storybook.artifacts
+              artifacts: summary.storybook.artifacts,
             })
           : [];
       if (failedStorybookArtifacts.length > 0) {
@@ -3043,48 +3495,50 @@ export const createValidateProjectService = ({
           code: "E_STORYBOOK_VALIDATION_FAILED",
           stage: "validate.project",
           message: buildStorybookGateMessage({
-            artifacts: failedStorybookArtifacts
+            artifacts: failedStorybookArtifacts,
           }),
           limits: context.runtime.pipelineDiagnosticLimits,
           diagnostics: buildStorybookGateDiagnostics({
-            artifacts: failedStorybookArtifacts
-          })
+            artifacts: failedStorybookArtifacts,
+          }),
         });
       }
 
-      const diffContext = await context.artifactStore.requireValue<GenerationDiffContext>(
-        STAGE_ARTIFACT_KEYS.generationDiffContext
-      );
+      const diffContext =
+        await context.artifactStore.requireValue<GenerationDiffContext>(
+          STAGE_ARTIFACT_KEYS.generationDiffContext,
+        );
       const preparedDiff = await prepareGenerationDiffFn({
         generatedProjectDir,
         outputRoot: context.resolvedPaths.outputRoot,
         boardKey: diffContext.boardKey,
-        jobId: context.jobId
+        jobId: context.jobId,
       });
       const diffReportPath = await writeGenerationDiffReportFn({
         jobDir: context.paths.jobDir,
-        report: preparedDiff.report
+        report: preparedDiff.report,
       });
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.generationDiff,
         stage: "validate.project",
-        value: preparedDiff.report
+        value: preparedDiff.report,
       });
       await context.artifactStore.setPath({
         key: STAGE_ARTIFACT_KEYS.generationDiffFile,
         stage: "validate.project",
-        absolutePath: diffReportPath
+        absolutePath: diffReportPath,
       });
       await saveCurrentSnapshotFn({
         outputRoot: context.resolvedPaths.outputRoot,
-        snapshot: preparedDiff.snapshot
+        snapshot: preparedDiff.snapshot,
       });
       context.log({
         level: "info",
-        message: `Post-validation generation diff: ${preparedDiff.report.summary}`
+        message: `Post-validation generation diff: ${preparedDiff.report.summary}`,
       });
-    }
+    },
   };
 };
 
-export const ValidateProjectService: StageService<void> = createValidateProjectService();
+export const ValidateProjectService: StageService<void> =
+  createValidateProjectService();
