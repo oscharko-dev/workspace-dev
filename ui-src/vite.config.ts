@@ -91,6 +91,9 @@ export default defineConfig({
             "src/features/workspace/inspector-page.tsx": {
               branches: 75,
             },
+            "src/features/workspace/inspector/InspectorScopeContext.tsx": {
+              branches: 75,
+            },
             "src/features/workspace/workspace-page.tsx": {
               branches: 75,
             },
