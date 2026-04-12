@@ -10,6 +10,7 @@ import {
   VisualDiffCorruptPngError,
   VisualDiffDimensionMismatchError,
   VisualDiffReferenceMissingError,
+  VisualDiffTestMissingError,
   writeDiffImage,
 } from "./visual-diff.js";
 
@@ -328,6 +329,28 @@ test("comparePngFiles rejects with VisualDiffReferenceMissingError when referenc
       assert.ok(error instanceof VisualDiffReferenceMissingError);
       assert.equal(error.code, "E_VISUAL_DIFF_REFERENCE_MISSING");
       assert.ok(error.message.includes(refPath));
+      return true;
+    },
+  );
+});
+
+test("comparePngFiles rejects with VisualDiffTestMissingError when test path does not exist", async () => {
+  const tmpDir = await mkdtemp(path.join(os.tmpdir(), "visual-diff-missing-"));
+  const refPath = path.join(tmpDir, "reference.png");
+  const testPath = path.join(tmpDir, "does-not-exist.png");
+
+  await writeFile(refPath, createSolidPng(40, 40, 255, 0, 0));
+
+  await assert.rejects(
+    () =>
+      comparePngFiles({
+        referencePath: refPath,
+        testPath: testPath,
+      }),
+    (error: unknown) => {
+      assert.ok(error instanceof VisualDiffTestMissingError);
+      assert.equal(error.code, "E_VISUAL_DIFF_TEST_MISSING");
+      assert.ok(error.message.includes(testPath));
       return true;
     },
   );

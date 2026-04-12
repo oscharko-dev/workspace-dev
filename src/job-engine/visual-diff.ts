@@ -14,6 +14,17 @@ export class VisualDiffReferenceMissingError extends Error {
   }
 }
 
+export class VisualDiffTestMissingError extends Error {
+  readonly code = "E_VISUAL_DIFF_TEST_MISSING" as const;
+  constructor(filePath: string, cause?: unknown) {
+    super(`Test image not found at '${filePath}'`);
+    this.name = "VisualDiffTestMissingError";
+    if (cause !== undefined) {
+      (this as { cause?: unknown }).cause = cause;
+    }
+  }
+}
+
 export class VisualDiffCorruptPngError extends Error {
   readonly code = "E_VISUAL_DIFF_CORRUPT_PNG" as const;
   constructor(which: "reference" | "test", cause?: unknown) {
@@ -397,7 +408,10 @@ export const comparePngFiles = async (input: {
   config?: Partial<VisualDiffConfig>;
   regions?: VisualDiffRegionInput[];
 }): Promise<VisualDiffResult> => {
-  const readOrThrow = async (filePath: string): Promise<Buffer> => {
+  const readOrThrow = async (
+    filePath: string,
+    which: "reference" | "test",
+  ): Promise<Buffer> => {
     try {
       return await readFile(filePath);
     } catch (error: unknown) {
@@ -406,15 +420,17 @@ export const comparePngFiles = async (input: {
           ? (error as NodeJS.ErrnoException).code
           : undefined;
       if (code === "ENOENT") {
-        throw new VisualDiffReferenceMissingError(filePath, error);
+        throw which === "reference"
+          ? new VisualDiffReferenceMissingError(filePath, error)
+          : new VisualDiffTestMissingError(filePath, error);
       }
       throw error;
     }
   };
 
   const [referenceBuffer, testBuffer] = await Promise.all([
-    readOrThrow(input.referencePath),
-    readOrThrow(input.testPath),
+    readOrThrow(input.referencePath, "reference"),
+    readOrThrow(input.testPath, "test"),
   ]);
 
   const args: {
