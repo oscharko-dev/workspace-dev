@@ -317,7 +317,10 @@ test("loadCompositeQualityHistory falls back to the legacy history filename", as
 
   try {
     const historyPath = resolveCompositeQualityHistoryPath(root);
-    const legacyHistoryPath = path.join(path.dirname(historyPath), "history.json");
+    const legacyHistoryPath = path.join(
+      path.dirname(historyPath),
+      "history.json",
+    );
 
     await mkdir(path.dirname(legacyHistoryPath), { recursive: true });
     await writeJson(legacyHistoryPath, {
@@ -672,10 +675,86 @@ test("loadVisualBenchmarkScoreFromLastRun throws when no score extractable", asy
   }
 });
 
+test("loadVisualBenchmarkScoreFromLastRun throws when all fixtures failed", async () => {
+  const root = await createTempRoot();
+  try {
+    const lastRunPath = path.join(root, "last-run.json");
+    await writeJson(lastRunPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      overallCurrent: 0,
+      scores: [],
+      failedFixtures: [
+        { fixtureId: "hero", error: "screenshot mismatch" },
+        { fixtureId: "footer", error: "element not found" },
+      ],
+    });
+    await assert.rejects(
+      () => loadVisualBenchmarkScoreFromLastRun(lastRunPath),
+      /fully failed visual benchmark/,
+    );
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loadVisualBenchmarkScoreFromLastRun returns warning on partial failure", async () => {
+  const root = await createTempRoot();
+  try {
+    const lastRunPath = path.join(root, "last-run.json");
+    await writeJson(lastRunPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      overallCurrent: 78.5,
+      scores: [{ fixtureId: "hero", score: 78.5 }],
+      failedFixtures: [{ fixtureId: "footer", error: "element not found" }],
+    });
+    const result = await loadVisualBenchmarkScoreFromLastRun(lastRunPath);
+    assert.ok(result !== null);
+    assert.equal(result.overallScore, 78.5);
+    assert.equal(typeof result.warning, "string");
+    assert.match(result.warning!, /1 of 2/);
+    assert.match(result.warning!, /1 passing fixture/);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("loadVisualBenchmarkScoreFromLastRun no warning when failedFixtures absent or empty", async () => {
+  const root = await createTempRoot();
+  try {
+    const lastRunPath = path.join(root, "last-run.json");
+    await writeJson(lastRunPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      overallCurrent: 91.5,
+      scores: [{ fixtureId: "hero", score: 91.5 }],
+    });
+    const resultAbsent = await loadVisualBenchmarkScoreFromLastRun(lastRunPath);
+    assert.ok(resultAbsent !== null);
+    assert.equal(resultAbsent.warning, undefined);
+
+    await writeJson(lastRunPath, {
+      version: 1,
+      ranAt: "2026-04-10T10:00:00.000Z",
+      overallCurrent: 91.5,
+      scores: [{ fixtureId: "hero", score: 91.5 }],
+      failedFixtures: [],
+    });
+    const resultEmpty = await loadVisualBenchmarkScoreFromLastRun(lastRunPath);
+    assert.ok(resultEmpty !== null);
+    assert.equal(resultEmpty.warning, undefined);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 test("history round-trip: save, load, append, trim", async () => {
   const root = await createTempRoot();
   try {
-    const historyPath = resolveCompositeQualityHistoryPath(path.join(root, "artifacts"));
+    const historyPath = resolveCompositeQualityHistoryPath(
+      path.join(root, "artifacts"),
+    );
     assert.equal(path.basename(historyPath), "composite-quality-history.json");
     assert.match(
       historyPath,
