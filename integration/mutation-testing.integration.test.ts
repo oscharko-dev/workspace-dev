@@ -25,6 +25,9 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   const changesetsReleaseWorkflow = await readRepoFile(
     ".github/workflows/changesets-release.yml",
   );
+  const mutationSummaryScript = await readRepoFile(
+    "scripts/print-mutation-report-summary.mjs",
+  );
   const strykerConfigModule = (await import(
     pathToFileURL(path.resolve(packageRoot, "stryker.config.mjs")).href
   )) as {
@@ -70,6 +73,10 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   assert.match(contributingDoc, /artifacts\/testing\/mutation/);
   assert.match(contributingDoc, /warn-only CI signal/i);
   assert.match(contributingDoc, /Current baseline mutation score:/i);
+  assert.match(
+    mutationSummaryScript,
+    /"src\/job-engine\/visual-scoring\.ts"/,
+  );
 
   for (const workflow of [
     devQualityWorkflow,

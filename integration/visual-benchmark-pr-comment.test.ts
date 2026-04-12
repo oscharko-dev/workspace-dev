@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+const TEST_SHELL = process.env.SHELL ?? "bash";
+
 const writeJson = async (filePath: string, value: unknown): Promise<void> => {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 };
@@ -529,7 +531,7 @@ test("print-visual-benchmark-pr-comment CLI writes JSON payload", async () => {
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);
 
-    await execFileAsync("zsh", ["-lc", command], {
+    await execFileAsync(TEST_SHELL, ["-lc", command], {
       cwd: process.cwd(),
     });
 
@@ -544,7 +546,7 @@ test("print-visual-benchmark-pr-comment CLI writes JSON payload", async () => {
     // Running without --output should fail
     await assert.rejects(() =>
       execFileAsync(
-        "zsh",
+        TEST_SHELL,
         [
           "-lc",
           `node scripts/print-visual-benchmark-pr-comment.mjs ${JSON.stringify(reportPath)}`,
@@ -1275,7 +1277,7 @@ test("print-visual-benchmark-pr-comment CLI writes fallback payload when report 
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);
 
-    await execFileAsync("zsh", ["-lc", command], {
+    await execFileAsync(TEST_SHELL, ["-lc", command], {
       cwd: process.cwd(),
     });
 

@@ -181,13 +181,16 @@ test("PipelineOrchestrator rejects duplicate stages before execution starts", as
     async () => {
       await orchestrator.execute({ context, plan });
     },
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      "stage" in error &&
-      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
-      (error as WorkspacePipelineError).stage === "template.prepare" &&
-      error.message.includes("duplicates stage 'ir.derive'")
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_PLAN_INVALID");
+      assert.equal((error as WorkspacePipelineError).stage, "template.prepare");
+      assert.equal(
+        error.message,
+        "Pipeline plan duplicates stage 'ir.derive' at position 3; expected 'template.prepare'.",
+      );
+      return true;
+    }
   );
 });
 
@@ -207,13 +210,16 @@ test("PipelineOrchestrator rejects out-of-order stage plans before execution sta
     async () => {
       await orchestrator.execute({ context, plan });
     },
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      "stage" in error &&
-      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
-      (error as WorkspacePipelineError).stage === "template.prepare" &&
-      error.message.includes("out of canonical order")
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_PLAN_INVALID");
+      assert.equal((error as WorkspacePipelineError).stage, "template.prepare");
+      assert.equal(
+        error.message,
+        "Pipeline plan is out of canonical order at position 3; expected 'template.prepare' but received 'codegen.generate'.",
+      );
+      return true;
+    }
   );
 });
 
@@ -232,13 +238,16 @@ test("PipelineOrchestrator rejects invalid stage names before execution starts",
     async () => {
       await orchestrator.execute({ context, plan });
     },
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      "stage" in error &&
-      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
-      (error as WorkspacePipelineError).stage === "ir.derive" &&
-      error.message.includes("invalid stage 'invalid.stage'")
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_PLAN_INVALID");
+      assert.equal((error as WorkspacePipelineError).stage, "ir.derive");
+      assert.equal(
+        error.message,
+        "Pipeline plan contains invalid stage 'invalid.stage' at position 2; expected 'ir.derive'.",
+      );
+      return true;
+    }
   );
 });
 
@@ -252,13 +261,16 @@ test("PipelineOrchestrator rejects missing canonical stages before execution sta
     async () => {
       await orchestrator.execute({ context, plan });
     },
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      "stage" in error &&
-      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
-      (error as WorkspacePipelineError).stage === "git.pr" &&
-      error.message.includes("missing canonical stage 'git.pr'")
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_PLAN_INVALID");
+      assert.equal((error as WorkspacePipelineError).stage, "git.pr");
+      assert.equal(
+        error.message,
+        "Pipeline plan is missing canonical stage 'git.pr' at position 7.",
+      );
+      return true;
+    }
   );
 });
 
@@ -277,13 +289,44 @@ test("PipelineOrchestrator rejects unexpected extra stages before execution star
     async () => {
       await orchestrator.execute({ context, plan });
     },
-    (error: unknown) =>
-      error instanceof Error &&
-      "code" in error &&
-      "stage" in error &&
-      (error as WorkspacePipelineError).code === "E_PIPELINE_PLAN_INVALID" &&
-      (error as WorkspacePipelineError).stage === "git.pr" &&
-      error.message.includes("unexpected extra stage 'git.pr'")
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_PLAN_INVALID");
+      assert.equal((error as WorkspacePipelineError).stage, "git.pr");
+      assert.equal(
+        error.message,
+        "Pipeline plan contains unexpected extra stage 'git.pr' after canonical plan end.",
+      );
+      return true;
+    }
+  );
+});
+
+test("PipelineOrchestrator rejects invalid extra stages after canonical plan end using the last canonical stage", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  const plan = createCanonicalPlan();
+  plan.push({
+    service: {
+      stageName: "invalid.extra" as unknown as (typeof STAGE_ORDER)[number],
+      execute: async () => {}
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({ context, plan });
+    },
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_PLAN_INVALID");
+      assert.equal((error as WorkspacePipelineError).stage, "git.pr");
+      assert.equal(
+        error.message,
+        "Pipeline plan contains invalid stage 'invalid.extra' after canonical plan end.",
+      );
+      return true;
+    }
   );
 });
 
@@ -375,6 +418,37 @@ test("PipelineOrchestrator rejects missing required read artifacts before stage 
   );
 
   assert.equal(executed, false);
+});
+
+test("PipelineOrchestrator executes stages when required read artifacts are already persisted", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  let executed = false;
+
+  await context.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    value: { schemaVersion: 1 }
+  });
+
+  await orchestrator.execute({
+    context,
+    plan: createCanonicalPlan({
+      "codegen.generate": {
+        execute: async () => {
+          executed = true;
+        },
+        artifacts: {
+          reads: [STAGE_ARTIFACT_KEYS.designIr]
+        }
+      }
+    })
+  });
+
+  assert.equal(executed, true);
+  assert.equal(context.job.stages.find((stage) => stage.name === "codegen.generate")?.status, "completed");
+  assert.equal(context.job.logs.some((entry) => entry.message === "Starting stage 'codegen.generate'."), true);
+  assert.equal(context.job.logs.some((entry) => entry.message === "Completed stage 'codegen.generate'."), true);
 });
 
 test("PipelineOrchestrator rejects missing dynamically required read artifacts before stage execution", async () => {
@@ -645,6 +719,38 @@ test("PipelineOrchestrator raises cancellation when stage is canceled before exe
   );
 });
 
+test("PipelineOrchestrator falls back to the default cancellation reason when none is provided", async () => {
+  const context = await createContext();
+  context.job.cancellation = {
+    requestedAt: nowIso(),
+    requestedBy: "api"
+  };
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "figma.source": {
+            execute: async () => {
+              // no-op
+            }
+          }
+        })
+      });
+    },
+    (error: unknown) => {
+      assert.ok(error instanceof PipelineCancellationError);
+      assert.equal(error.stage, "figma.source");
+      assert.equal(error.message, "Cancellation requested.");
+      assert.equal(error.code, "E_JOB_CANCELED");
+      assert.equal(error.name, "PipelineCancellationError");
+      return true;
+    }
+  );
+});
+
 test("PipelineOrchestrator converts in-flight abort-like errors into pipeline cancellation", async () => {
   const context = await createContext();
   const orchestrator = createOrchestrator();
@@ -672,6 +778,37 @@ test("PipelineOrchestrator converts in-flight abort-like errors into pipeline ca
       error.stage === "validate.project" &&
       error.message.includes("abort requested during validation")
   );
+});
+
+test("PipelineOrchestrator leaves abort-like errors as regular stage failures when no cancellation was requested", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "validate.project": {
+            execute: async () => {
+              throw new DOMException("aborted upstream", "AbortError");
+            }
+          }
+        })
+      });
+    },
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_UNKNOWN");
+      assert.equal((error as WorkspacePipelineError).stage, "validate.project");
+      assert.equal(error.message, "aborted upstream");
+      return true;
+    }
+  );
+
+  assert.equal(context.job.stages.find((stage) => stage.name === "validate.project")?.status, "failed");
+  assert.equal(context.job.logs.some((entry) => entry.message === "E_PIPELINE_UNKNOWN: aborted upstream"), true);
+  assert.equal(context.job.logs.some((entry) => entry.message.startsWith("E_JOB_CANCELED:")), false);
 });
 
 test("PipelineOrchestrator preserves explicit service-thrown cancellation errors", async () => {

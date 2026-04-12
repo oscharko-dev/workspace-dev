@@ -782,6 +782,76 @@ test("schema: sync dry_run parses with optional targetPath", () => {
   assert.equal(result.success, true);
 });
 
+test("schema: sync request rejects non-object bodies at the root", () => {
+  const result = SyncRequestSchema.safeParse(null);
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: [],
+        message: "Expected an object body."
+      }
+    ]);
+  }
+});
+
+test("schema: sync request rejects unsupported modes with an exact mode issue", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "preview"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["mode"],
+        message: "mode must be one of: dry_run, apply."
+      }
+    ]);
+  }
+});
+
+test("schema: sync dry_run preserves a non-empty targetPath verbatim", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "dry_run",
+    targetPath: "  apps/generated  "
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.mode, "dry_run");
+    assert.equal(result.data.targetPath, "  apps/generated  ");
+  }
+});
+
+test("schema: sync dry_run rejects blank and non-string targetPath values", () => {
+  const blank = SyncRequestSchema.safeParse({
+    mode: "dry_run",
+    targetPath: "   "
+  });
+  assert.equal(blank.success, false);
+  if (!blank.success) {
+    assert.deepEqual(blank.error.issues, [
+      {
+        path: ["targetPath"],
+        message: "targetPath must be a non-empty string when provided."
+      }
+    ]);
+  }
+
+  const nonString = SyncRequestSchema.safeParse({
+    mode: "dry_run",
+    targetPath: 123
+  });
+  assert.equal(nonString.success, false);
+  if (!nonString.success) {
+    assert.deepEqual(nonString.error.issues, [
+      {
+        path: ["targetPath"],
+        message: "targetPath must be a non-empty string when provided."
+      }
+    ]);
+  }
+});
+
 test("schema: sync apply requires token and explicit confirmation", () => {
   const invalid = SyncRequestSchema.safeParse({
     mode: "apply",
@@ -805,6 +875,38 @@ test("schema: sync apply requires token and explicit confirmation", () => {
   assert.equal(valid.success, true);
 });
 
+test("schema: sync apply trims confirmationToken and file decision paths", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "  token-123  ",
+    confirmOverwrite: true,
+    fileDecisions: [
+      {
+        path: "  src/App.tsx  ",
+        decision: "write"
+      },
+      {
+        path: "\tsrc/Skip.tsx\t",
+        decision: "skip"
+      }
+    ]
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.confirmationToken, "token-123");
+    assert.deepEqual(result.data.fileDecisions, [
+      {
+        path: "src/App.tsx",
+        decision: "write"
+      },
+      {
+        path: "src/Skip.tsx",
+        decision: "skip"
+      }
+    ]);
+  }
+});
+
 test("schema: sync apply reports exact token, overwrite, and file decision issues", () => {
   const result = SyncRequestSchema.safeParse({
     mode: "apply",
@@ -826,6 +928,65 @@ test("schema: sync apply reports exact token, overwrite, and file decision issue
       {
         path: ["fileDecisions"],
         message: "fileDecisions must be a non-empty array."
+      }
+    ]);
+  }
+});
+
+test("schema: sync apply rejects malformed fileDecisions entries with exact field issues", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "token-123",
+    confirmOverwrite: true,
+    fileDecisions: [
+      null,
+      {
+        path: "   ",
+        decision: "overwrite"
+      }
+    ]
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["fileDecisions", 0],
+        message: "Each fileDecisions entry must be an object."
+      },
+      {
+        path: ["fileDecisions", 1, "path"],
+        message: "path must be a non-empty string."
+      },
+      {
+        path: ["fileDecisions", 1, "decision"],
+        message: "decision must be one of: write, skip."
+      }
+    ]);
+  }
+});
+
+test("schema: sync apply rejects duplicate decisions after trimming paths", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "token-123",
+    confirmOverwrite: true,
+    fileDecisions: [
+      {
+        path: "src/App.tsx",
+        decision: "write"
+      },
+      {
+        path: "  src/App.tsx  ",
+        decision: "skip"
+      }
+    ]
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["fileDecisions", 1, "path"],
+        message: "Duplicate decision for 'src/App.tsx'."
       }
     ]);
   }
@@ -889,6 +1050,34 @@ test("schema: create-pr requires repoUrl and repoToken", () => {
   assert.equal(emptyToken.success, false);
 });
 
+test("schema: create-pr rejects non-object bodies and reports exact required-field issues", () => {
+  const notObject = CreatePrRequestSchema.safeParse("bad-body");
+  assert.equal(notObject.success, false);
+  if (!notObject.success) {
+    assert.deepEqual(notObject.error.issues, [
+      {
+        path: [],
+        message: "Expected an object body."
+      }
+    ]);
+  }
+
+  const missing = CreatePrRequestSchema.safeParse({});
+  assert.equal(missing.success, false);
+  if (!missing.success) {
+    assert.deepEqual(missing.error.issues, [
+      {
+        path: ["repoUrl"],
+        message: "repoUrl must be a non-empty string."
+      },
+      {
+        path: ["repoToken"],
+        message: "repoToken must be a non-empty string."
+      }
+    ]);
+  }
+});
+
 test("schema: create-pr parses valid input with optional targetPath", () => {
   const result = CreatePrRequestSchema.safeParse({
     repoUrl: "https://github.com/acme/repo",
@@ -909,6 +1098,33 @@ test("schema: create-pr parses valid input with optional targetPath", () => {
   assert.equal(withTarget.success, true);
   if (withTarget.success) {
     assert.equal(withTarget.data.targetPath, "generated");
+  }
+});
+
+test("schema: create-pr targetPath preserves non-empty strings and rejects blank ones", () => {
+  const preserved = CreatePrRequestSchema.safeParse({
+    repoUrl: "https://github.com/acme/repo",
+    repoToken: "ghp_abc123",
+    targetPath: "  generated/subdir  "
+  });
+  assert.equal(preserved.success, true);
+  if (preserved.success) {
+    assert.equal(preserved.data.targetPath, "  generated/subdir  ");
+  }
+
+  const blank = CreatePrRequestSchema.safeParse({
+    repoUrl: "https://github.com/acme/repo",
+    repoToken: "ghp_abc123",
+    targetPath: "   "
+  });
+  assert.equal(blank.success, false);
+  if (!blank.success) {
+    assert.deepEqual(blank.error.issues, [
+      {
+        path: ["targetPath"],
+        message: "targetPath must be a non-empty string when provided."
+      }
+    ]);
   }
 });
 

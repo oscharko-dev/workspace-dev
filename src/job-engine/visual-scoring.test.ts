@@ -56,6 +56,15 @@ const createHalfRedHalfBluePng = (width: number, height: number): Buffer => {
 
 const FIXED_TIMESTAMP = "2026-04-09T00:00:00.000Z";
 
+const getDimension = (
+  report: ReturnType<typeof computeVisualQualityReport>,
+  name: string,
+) => {
+  const dimension = report.dimensions.find((entry) => entry.name === name);
+  assert.ok(dimension, `Expected dimension '${name}' to exist`);
+  return dimension;
+};
+
 test("computeVisualQualityReport returns score 100 for identical images", () => {
   const red = createSolidPng(90, 100, 255, 0, 0);
   const diffResult = comparePngBuffers({
@@ -302,6 +311,26 @@ test("computeVisualQualityReport handles empty regions gracefully", () => {
   for (const dim of report.dimensions) {
     assert.equal(dim.score, 75, `Dimension ${dim.name} should fall back to 75`);
   }
+  assert.equal(
+    getDimension(report, "Layout Accuracy").details,
+    "No regions available — used overall similarity",
+  );
+  assert.equal(
+    getDimension(report, "Color Fidelity").details,
+    "Overall pixel similarity score: 75%",
+  );
+  assert.equal(
+    getDimension(report, "Typography").details,
+    "No content regions — used overall similarity",
+  );
+  assert.equal(
+    getDimension(report, "Component Structure").details,
+    "Insufficient regions for variance — used overall similarity",
+  );
+  assert.equal(
+    getDimension(report, "Spacing & Alignment").details,
+    "No header/footer regions — used overall similarity",
+  );
 });
 
 test("resolveScoringConfig rejects weights that do not sum to 1", () => {
@@ -414,6 +443,42 @@ test("resolveScoringConfig rejects invalid hotspotCount values", () => {
   }
 });
 
+test("resolveScoringConfig accepts hotspotCount 0 and rejects non-numeric scalar values with exact diagnostics", () => {
+  const red = createSolidPng(10, 10, 255, 0, 0);
+  const blue = createSolidPng(10, 10, 0, 0, 255);
+  const diffResult = comparePngBuffers({
+    referenceBuffer: red,
+    testBuffer: blue,
+  });
+
+  const noHotspots = computeVisualQualityReport({
+    diffResult,
+    config: { hotspotCount: 0 },
+    comparedAt: FIXED_TIMESTAMP,
+  });
+  assert.equal(noHotspots.hotspots.length, 0);
+
+  for (const [hotspotCount, expected] of [
+    ["5", "hotspotCount must be a finite integer greater than or equal to 0. Received 5."],
+    [true, "hotspotCount must be a finite integer greater than or equal to 0. Received true."],
+    [null, "hotspotCount must be a finite integer greater than or equal to 0. Received null."],
+    [{ invalid: true }, "hotspotCount must be a finite integer greater than or equal to 0. Received object."],
+  ] as const) {
+    assert.throws(
+      () =>
+        computeVisualQualityReport({
+          diffResult,
+          config: { hotspotCount },
+        }),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.message, expected);
+        return true;
+      },
+    );
+  }
+});
+
 test("DEFAULT_SCORING_WEIGHTS and DEFAULT_SCORING_CONFIG have expected values", () => {
   assert.deepEqual(DEFAULT_SCORING_WEIGHTS, {
     layoutAccuracy: 0.3,
@@ -443,6 +508,180 @@ test("DEFAULT_SCORING_WEIGHTS and DEFAULT_SCORING_CONFIG have expected values", 
   assert.ok(
     Math.abs(sum - 1.0) < 0.001,
     `Weights should sum to 1.0, got ${String(sum)}`,
+  );
+});
+
+test("computeVisualQualityReport falls back for zero-pixel layout and typography regions while preserving detail semantics", () => {
+  const diffResult: VisualDiffResult = {
+    diffImageBuffer: Buffer.alloc(0),
+    similarityScore: 77,
+    diffPixelCount: 123,
+    totalPixels: 1000,
+    width: 100,
+    height: 20,
+    regions: [
+      {
+        name: "content-left",
+        x: 0,
+        y: 0,
+        width: 50,
+        height: 20,
+        diffPixelCount: 10,
+        totalPixels: 0,
+        deviationPercent: 99,
+      },
+    ],
+  };
+
+  const report = computeVisualQualityReport({
+    diffResult,
+    comparedAt: FIXED_TIMESTAMP,
+  });
+
+  assert.equal(getDimension(report, "Layout Accuracy").score, 77);
+  assert.equal(getDimension(report, "Layout Accuracy").details, "Area-weighted average of 1 region scores");
+  assert.equal(getDimension(report, "Typography").score, 77);
+  assert.equal(getDimension(report, "Typography").details, "Weighted average of content region scores");
+  assert.equal(getDimension(report, "Component Structure").score, 77);
+  assert.equal(
+    getDimension(report, "Component Structure").details,
+    "Insufficient regions for variance — used overall similarity",
+  );
+});
+
+test("computeVisualQualityReport selects only content regions for typography and only edge regions for spacing", () => {
+  const diffResult: VisualDiffResult = {
+    diffImageBuffer: Buffer.alloc(0),
+    similarityScore: 55,
+    diffPixelCount: 450,
+    totalPixels: 5000,
+    width: 100,
+    height: 50,
+    regions: [
+      {
+        name: "header",
+        x: 0,
+        y: 0,
+        width: 100,
+        height: 10,
+        diffPixelCount: 100,
+        totalPixels: 1000,
+        deviationPercent: 50,
+      },
+      {
+        name: "content-right",
+        x: 0,
+        y: 10,
+        width: 100,
+        height: 30,
+        diffPixelCount: 20,
+        totalPixels: 400,
+        deviationPercent: 25,
+      },
+      {
+        name: "sidebar",
+        x: 0,
+        y: 10,
+        width: 20,
+        height: 30,
+        diffPixelCount: 120,
+        totalPixels: 1000,
+        deviationPercent: 90,
+      },
+      {
+        name: "footer",
+        x: 0,
+        y: 40,
+        width: 100,
+        height: 10,
+        diffPixelCount: 20,
+        totalPixels: 1000,
+        deviationPercent: 10,
+      },
+    ],
+  };
+
+  const report = computeVisualQualityReport({
+    diffResult,
+    comparedAt: FIXED_TIMESTAMP,
+  });
+
+  assert.equal(getDimension(report, "Typography").score, 75);
+  assert.equal(getDimension(report, "Typography").details, "Weighted average of content region scores");
+  assert.equal(getDimension(report, "Spacing & Alignment").score, 70);
+  assert.equal(getDimension(report, "Spacing & Alignment").details, "Average of header and footer region scores");
+});
+
+test("computeVisualQualityReport calculates component variance and truncates hotspots to hotspotCount", () => {
+  const diffResult: VisualDiffResult = {
+    diffImageBuffer: Buffer.alloc(0),
+    similarityScore: 40,
+    diffPixelCount: 600,
+    totalPixels: 3000,
+    width: 90,
+    height: 30,
+    regions: [
+      {
+        name: "header",
+        x: 0,
+        y: 0,
+        width: 90,
+        height: 10,
+        diffPixelCount: 50,
+        totalPixels: 1000,
+        deviationPercent: 0,
+      },
+      {
+        name: "content-left",
+        x: 0,
+        y: 10,
+        width: 30,
+        height: 10,
+        diffPixelCount: 200,
+        totalPixels: 1000,
+        deviationPercent: 50,
+      },
+      {
+        name: "sidebar",
+        x: 30,
+        y: 10,
+        width: 30,
+        height: 10,
+        diffPixelCount: 400,
+        totalPixels: 1000,
+        deviationPercent: 100,
+      },
+      {
+        name: "footer",
+        x: 60,
+        y: 10,
+        width: 30,
+        height: 10,
+        diffPixelCount: 100,
+        totalPixels: 1000,
+        deviationPercent: 20,
+      },
+    ],
+  };
+
+  const report = computeVisualQualityReport({
+    diffResult,
+    config: { hotspotCount: 2 },
+    comparedAt: FIXED_TIMESTAMP,
+  });
+
+  assert.equal(getDimension(report, "Component Structure").score, 24.67);
+  assert.equal(
+    getDimension(report, "Component Structure").details,
+    "Cross-region deviation consistency measure",
+  );
+  assert.deepEqual(
+    report.hotspots.map((hotspot) => hotspot.region),
+    ["sidebar", "content-left"],
+  );
+  assert.deepEqual(
+    report.hotspots.map((hotspot) => hotspot.rank),
+    [1, 2],
   );
 });
 

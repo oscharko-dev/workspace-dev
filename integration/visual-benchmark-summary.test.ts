@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 
+const TEST_SHELL = process.env.SHELL ?? "bash";
+
 const writeJson = async (filePath: string, value: unknown): Promise<void> => {
   await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 };
@@ -96,7 +98,7 @@ test("print-visual-benchmark-summary writes check output and degrades gracefully
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);
 
-    await execFileAsync("zsh", ["-lc", command], {
+    await execFileAsync(TEST_SHELL, ["-lc", command], {
       cwd: process.cwd(),
     });
 
@@ -117,7 +119,7 @@ test("print-visual-benchmark-summary writes check output and degrades gracefully
       "check-output-malformed.json",
     );
     const malformedCommand = `node scripts/print-visual-benchmark-summary.mjs ${JSON.stringify(path.join(artifactRoot, "last-run.json"))} --check-output ${JSON.stringify(malformedOutputPath)}`;
-    await execFileAsync("zsh", ["-lc", malformedCommand], {
+    await execFileAsync(TEST_SHELL, ["-lc", malformedCommand], {
       cwd: process.cwd(),
     });
 
