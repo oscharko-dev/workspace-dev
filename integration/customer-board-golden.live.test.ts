@@ -7,6 +7,7 @@ import { createJobEngine } from "../src/job-engine.js";
 import { STAGE_ARTIFACT_KEYS } from "../src/job-engine/pipeline/artifact-keys.js";
 import { StageArtifactStore } from "../src/job-engine/pipeline/artifact-store.js";
 import {
+  assertCustomerBoardBundlesEqual,
   assertCustomerBoardPublicArtifactSanitized,
   buildCustomerBoardGoldenBundleFromFigmaInput,
   createCustomerBoardHybridLiveRuntimeSettings,
@@ -66,7 +67,7 @@ const resolveLiveEnvironment = async (): Promise<
   };
 };
 
-test("customer-board golden live parity reproduces the committed fixture bundle and passes a real submission smoke", async (t) => {
+test("customer-board golden live parity enforces committed-bundle equivalence on canonical board keys and always validates the artifact contract", async (t) => {
   const liveEnvironment = await resolveLiveEnvironment();
   if (!liveEnvironment) {
     t.skip("Customer-board live parity requires FIGMA_FILE_KEY, FIGMA_ACCESS_TOKEN, and storybook-static/storybook-static/index.json.");
@@ -74,7 +75,22 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
   }
 
   const manifest = await loadCustomerBoardGoldenManifest();
-  await readCommittedCustomerBoardGoldenBundle();
+  const committedBundle = await readCommittedCustomerBoardGoldenBundle();
+  const committedFigmaInputEntry = committedBundle.files.get(manifest.inputs.figma);
+  assert.ok(
+    committedFigmaInputEntry && committedFigmaInputEntry.kind === "json",
+    `Committed bundle must include JSON input '${manifest.inputs.figma}'.`,
+  );
+  const committedFigmaInput = JSON.parse(
+    committedFigmaInputEntry.content,
+  ) as { fileKey?: unknown };
+  const committedFigmaFileKey =
+    typeof committedFigmaInput.fileKey === "string"
+      ? committedFigmaInput.fileKey
+      : undefined;
+  const strictGoldenParity =
+    committedFigmaFileKey !== undefined &&
+    committedFigmaFileKey === liveEnvironment.figmaFileKey;
 
   const sidecarTargets = [
     {
@@ -174,6 +190,16 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
       accessToken: liveEnvironment.figmaAccessToken
     }
   });
+  if (strictGoldenParity) {
+    await assertCustomerBoardBundlesEqual({
+      actual: actualBundle,
+      expected: committedBundle,
+    });
+  } else {
+    t.diagnostic(
+      `Skipping strict bundle-equality check because FIGMA_FILE_KEY '${liveEnvironment.figmaFileKey}' does not match canonical fixture key '${committedFigmaFileKey ?? "unknown"}'. Running artifact-contract validation only.`,
+    );
+  }
   const requiredBundleEntries = [
     manifest.inputs.figma,
     manifest.inputs.customerProfile,
@@ -275,10 +301,18 @@ test("customer-board golden live parity reproduces the committed fixture bundle 
   assert.notEqual(validationSummary.import?.status, "not_available");
   assert.ok(validationSummary.visualQuality, "validation-summary.visualQuality must be present");
   const visualQualityStatus = validationSummary.visualQuality?.status;
-  assert.ok(
-    visualQualityStatus === "completed" || visualQualityStatus === "failed",
-    `validation-summary.visualQuality.status must be 'completed' or 'failed', got '${String(visualQualityStatus)}'`
-  );
+  if (strictGoldenParity) {
+    assert.equal(
+      visualQualityStatus,
+      "completed",
+      `validation-summary.visualQuality.status must be 'completed' for canonical parity runs, got '${String(visualQualityStatus)}'`,
+    );
+  } else {
+    assert.ok(
+      visualQualityStatus === "completed" || visualQualityStatus === "failed",
+      `validation-summary.visualQuality.status must be 'completed' or 'failed' for non-canonical board runs, got '${String(visualQualityStatus)}'`,
+    );
+  }
   assert.equal(validationSummary.visualQuality?.referenceSource, "frozen_fixture");
 
   const sanitizedArtifactPaths = [

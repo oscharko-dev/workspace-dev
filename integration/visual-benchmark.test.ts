@@ -680,7 +680,7 @@ test("resolveVisualBenchmarkMaintenanceMode accepts exactly one maintenance flag
   );
 });
 
-test("runVisualBenchmarkMaintenance forwards incomplete-mode execution when updating baseline", async () => {
+test("runVisualBenchmarkMaintenance keeps strict visual-quality execution when updating baseline", async () => {
   const fixtureRoot = await createFixtureRoot();
   const receivedExecutionOptions: Array<{
     allowIncompleteVisualQuality?: boolean;
@@ -731,7 +731,7 @@ test("runVisualBenchmarkMaintenance forwards incomplete-mode execution when upda
     assert.equal(receivedExecutionOptions.length, 1);
     assert.equal(
       receivedExecutionOptions[0]?.allowIncompleteVisualQuality,
-      true,
+      undefined,
     );
     assert.deepEqual(receivedExecutionOptions[0]?.qualityConfig, qualityConfig);
   } finally {
@@ -1941,7 +1941,23 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
     workflow,
     /pnpm exec tsx --test integration\/mutation-testing\.integration\.test\.ts integration\/visual-benchmark\.cli\.test\.ts integration\/visual-benchmark-summary\.test\.ts/,
   );
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test src\/parity\/classification-engine\.e2e\.test\.ts src\/parity\/ir-screen-variants\.live\.e2e\.test\.ts src\/parity\/ir-tree\.test\.ts/,
+  );
+  assert.match(
+    workflow,
+    /pnpm exec vitest run --config ui-src\/vite\.config\.ts ui-src\/src\/features\/visual-quality\/data\/report-schema\.test\.ts ui-src\/src\/features\/visual-quality\/data\/file-source\.test\.ts/,
+  );
   assert.match(workflow, /pnpm benchmark:visual -- --ci --enforce-thresholds/);
+  assert.match(
+    workflow,
+    /--storybook-component-catalog integration\/fixtures\/customer-board-golden\/derived\/storybook\.component-visual-catalog\.json/,
+  );
+  assert.match(
+    workflow,
+    /--storybook-static-dir storybook-static\/storybook-static/,
+  );
   assert.doesNotMatch(workflow, /FIGMA_ACCESS_TOKEN/);
   assert.doesNotMatch(workflow, /FIGMA_FILE_KEY/);
   assert.match(workflow, /actions\/github-script@v8/);
@@ -2376,18 +2392,22 @@ test("committed integration/fixtures/visual-benchmark/history.json parses as val
 // Issue #837 — Multi-Screen Visual Comparison
 // ---------------------------------------------------------------------------
 
-test("committed integration/fixtures/visual-benchmark/baseline.json is unchanged v3 with 15 viewport entries", async () => {
-  // Baseline is expected to contain 5 fixtures x 3 canonical viewports.
+test("committed integration/fixtures/visual-benchmark/baseline.json remains v3 and covers the canonical benchmark views without hard-coding an exact fixture count", async () => {
   const baseline = await loadVisualBenchmarkBaseline();
+  const viewCatalog = await loadVisualBenchmarkViewCatalog();
   assert.ok(baseline !== null, "baseline.json should be committed");
   assert.equal(baseline.version, 3);
-  assert.equal(baseline.scores.length, 15);
+  assert.ok(
+    baseline.scores.length >= viewCatalog.views.length,
+    `baseline should contain at least one score per canonical benchmark view (expected >= ${String(viewCatalog.views.length)}, got ${String(baseline.scores.length)})`,
+  );
   const fixtureIds = baseline.scores.map((entry) => entry.fixtureId);
-  assert.ok(fixtureIds.includes("simple-form"));
-  assert.ok(fixtureIds.includes("complex-dashboard"));
-  assert.ok(fixtureIds.includes("data-table"));
-  assert.ok(fixtureIds.includes("navigation-sidebar"));
-  assert.ok(fixtureIds.includes("design-system-showcase"));
+  for (const view of viewCatalog.views) {
+    assert.ok(
+      fixtureIds.includes(view.fixtureId),
+      `baseline should include canonical fixture '${view.fixtureId}'.`,
+    );
+  }
   const viewportIds = baseline.scores.map((entry) => entry.viewportId);
   assert.ok(viewportIds.includes("desktop"));
   assert.ok(viewportIds.includes("tablet"));

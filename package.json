@@ -83,7 +83,7 @@
   "benchmark:visual:live": "pnpm run benchmark:visual -- --live",
   "benchmark:visual:update-baseline": "pnpm run benchmark:visual -- --update-baseline",
   "benchmark:visual:protocol": "tsx integration/visual-benchmark-measurement-protocol.ts",
-  "benchmark:visual:report": "pnpm run benchmark:visual -- --ci --browsers chromium && pnpm run benchmark:visual:protocol",
+  "benchmark:visual:report": "pnpm run benchmark:visual -- --ci --browsers chromium --storybook-component-catalog integration/fixtures/customer-board-golden/derived/storybook.component-visual-catalog.json --storybook-static-dir storybook-static/storybook-static && pnpm run benchmark:visual:protocol",
   "visual:baseline": "tsx integration/visual-baseline.cli.ts",
     "visual:audit": "tsx integration/visual-audit.cli.ts",
     "template:install": "pnpm --dir template/react-mui-app install --frozen-lockfile",

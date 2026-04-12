@@ -119,6 +119,27 @@ const formatLiveFixtureUnavailableMessage = (details: LiveFixtureUnavailableDeta
   return `Live board ${boardLabel} is incompatible with Issue #704 fixture: target family '${details.expectedFamilyId}' not found. Available families: ${availableFamilies}.`;
 };
 
+const assertLiveFixtureUnavailableDetails = (
+  details: LiveFixtureUnavailableDetails,
+): void => {
+  if (details.reason === "missing-frame-documents") {
+    assert.ok(
+      details.missingScreenIds.length > 0,
+      "unavailable details should include at least one missing screen id.",
+    );
+    assert.ok(
+      details.expectedScreenIds.length >= details.missingScreenIds.length,
+      "expected screen id list should be present when frame documents are missing.",
+    );
+    return;
+  }
+  assert.equal(details.expectedFamilyId, TARGET_FAMILY_ID);
+  assert.ok(
+    Array.isArray(details.availableFamilyIds),
+    "availableFamilyIds should be present when target family is missing.",
+  );
+};
+
 const loadLiveVariantFixtureContext = async (): Promise<LiveVariantFixtureResolution> => {
   try {
     return {
@@ -266,6 +287,7 @@ test("live E2E: stateful screen variants derive one emitted family target with a
   if (resolution.kind === "unavailable") {
     const diagnostic = formatLiveFixtureUnavailableMessage(resolution.details);
     assert.equal(diagnostic.includes("incompatible with Issue #704 fixture"), true);
+    assertLiveFixtureUnavailableDetails(resolution.details);
     return;
   }
   const { family, emitted } = resolution.context;
@@ -287,6 +309,7 @@ test("live E2E: stateful screen variant codegen is byte-stable across two runs",
   if (resolution.kind === "unavailable") {
     const diagnostic = formatLiveFixtureUnavailableMessage(resolution.details);
     assert.equal(diagnostic.includes("incompatible with Issue #704 fixture"), true);
+    assertLiveFixtureUnavailableDetails(resolution.details);
     return;
   }
   const { ir, emitted, family } = resolution.context;

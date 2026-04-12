@@ -816,7 +816,6 @@ export const runVisualBenchmarkMaintenance = async (
         executeFixture(fixtureId, {
           ...options,
           qualityConfig,
-          allowIncompleteVisualQuality: true,
         }),
       log,
     });
