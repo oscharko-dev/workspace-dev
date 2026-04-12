@@ -61,6 +61,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Validate browser list
+        run: |
+          input="$VISUAL_BENCHMARK_BROWSERS"
+          normalized=$(echo "$input" | tr ',' '\n' | sort -u | paste -sd, -)
+          for browser in $(echo "$normalized" | tr ',' ' '); do
+            case "$browser" in
+              chromium|firefox|webkit) ;;
+              *) echo "::error::Unknown browser '$browser' in VISUAL_BENCHMARK_BROWSERS"; exit 1 ;;
+            esac
+          done
+          echo "VISUAL_BENCHMARK_BROWSERS=$normalized" >> "$GITHUB_ENV"
+
       - name: Get Playwright version
         id: playwright-version
         run: echo "version=$(node -p "require('./node_modules/@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
