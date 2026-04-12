@@ -43,7 +43,7 @@ const browserBreakdownSchema = z
 const lastRunSchema = z.object({
   version: z.literal(2),
   ranAt: z.string().min(1),
-  overallScore: z.number(),
+  overallScore: z.number().optional(),
   overallBaseline: z.number().optional(),
   overallCurrent: z.number().optional(),
   overallDelta: z.number().optional(),
@@ -228,7 +228,22 @@ export function parseLastRun(input: unknown): LastRunAggregate {
       `Invalid last-run.json: ${result.error.issues.map((i) => `${i.path.join(".")} ${i.message}`).join("; ")}`,
     );
   }
-  return stripUndefinedDeep(result.data) as LastRunAggregate;
+  const normalized = stripUndefinedDeep(result.data) as Omit<
+    LastRunAggregate,
+    "overallScore"
+  > & { overallScore?: number };
+
+  if (typeof normalized.overallScore !== "number") {
+    if (normalized.scores.length === 0) {
+      throw new Error(
+        "Invalid last-run.json: overallScore is missing and cannot be derived from an empty scores array.",
+      );
+    }
+    const scoreSum = normalized.scores.reduce((sum, score) => sum + score.score, 0);
+    normalized.overallScore = scoreSum / normalized.scores.length;
+  }
+
+  return normalized as LastRunAggregate;
 }
 
 /**

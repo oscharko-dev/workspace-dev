@@ -56,6 +56,16 @@ interface LiveVariantFixtureContext {
   family: LiveVariantFamily;
 }
 
+type LiveVariantFixtureResolution =
+  | {
+      kind: "available";
+      context: LiveVariantFixtureContext;
+    }
+  | {
+      kind: "unavailable";
+      details: LiveFixtureUnavailableDetails;
+    };
+
 let cachedContext: Promise<LiveVariantFixtureContext> | undefined;
 
 interface LiveFrameDocumentFetchResult {
@@ -109,30 +119,39 @@ const formatLiveFixtureUnavailableMessage = (details: LiveFixtureUnavailableDeta
   return `Live board ${boardLabel} is incompatible with Issue #704 fixture: target family '${details.expectedFamilyId}' not found. Available families: ${availableFamilies}.`;
 };
 
-const skipWhenLiveFixtureUnavailable = ({
-  error,
-  testContext
-}: {
-  error: unknown;
-  testContext: Pick<Parameters<Parameters<typeof test>[2]>[0], "skip">;
-}): boolean => {
-  if (!(error instanceof LiveFixtureUnavailableError)) {
-    return false;
+const assertLiveFixtureUnavailableDetails = (
+  details: LiveFixtureUnavailableDetails,
+): void => {
+  if (details.reason === "missing-frame-documents") {
+    assert.ok(
+      details.missingScreenIds.length > 0,
+      "unavailable details should include at least one missing screen id.",
+    );
+    assert.ok(
+      details.expectedScreenIds.length >= details.missingScreenIds.length,
+      "expected screen id list should be present when frame documents are missing.",
+    );
+    return;
   }
-  testContext.skip(formatLiveFixtureUnavailableMessage(error.details));
-  return true;
+  assert.equal(details.expectedFamilyId, TARGET_FAMILY_ID);
+  assert.ok(
+    Array.isArray(details.availableFamilyIds),
+    "availableFamilyIds should be present when target family is missing.",
+  );
 };
 
-const loadLiveVariantFixtureContext = async ({
-  testContext
-}: {
-  testContext: Pick<Parameters<Parameters<typeof test>[2]>[0], "skip">;
-}): Promise<LiveVariantFixtureContext | undefined> => {
+const loadLiveVariantFixtureContext = async (): Promise<LiveVariantFixtureResolution> => {
   try {
-    return await fetchLiveVariantFixtureContext();
+    return {
+      kind: "available",
+      context: await fetchLiveVariantFixtureContext()
+    };
   } catch (error) {
-    if (skipWhenLiveFixtureUnavailable({ error, testContext })) {
-      return undefined;
+    if (error instanceof LiveFixtureUnavailableError) {
+      return {
+        kind: "unavailable",
+        details: error.details
+      };
     }
     throw error;
   }
@@ -252,33 +271,26 @@ const collectGeneratedSnapshot = async ({
   return snapshot;
 };
 
-test("skipWhenLiveFixtureUnavailable emits a deterministic skip message", () => {
-  let skipMessage = "";
-  const didSkip = skipWhenLiveFixtureUnavailable({
-    error: new LiveFixtureUnavailableError({
-      reason: "missing-frame-documents",
-      boardName: "Simple-Test-Board",
-      missingScreenIds: ["1:63230", "1:64644"],
-      expectedScreenIds: TARGET_MEMBER_SCREEN_IDS
-    }),
-    testContext: {
-      skip: (message) => {
-        skipMessage = message ?? "";
-      }
-    }
+test("formatLiveFixtureUnavailableMessage emits a deterministic diagnostic", () => {
+  const unavailableMessage = formatLiveFixtureUnavailableMessage({
+    reason: "missing-frame-documents",
+    boardName: "Simple-Test-Board",
+    missingScreenIds: ["1:63230", "1:64644"],
+    expectedScreenIds: TARGET_MEMBER_SCREEN_IDS
   });
-
-  assert.equal(didSkip, true);
-  assert.equal(skipMessage.includes("Simple-Test-Board"), true);
-  assert.equal(skipMessage.includes("1:63230, 1:64644"), true);
+  assert.equal(unavailableMessage.includes("Simple-Test-Board"), true);
+  assert.equal(unavailableMessage.includes("1:63230, 1:64644"), true);
 });
 
-test("live E2E: stateful screen variants derive one emitted family target with alias routes", { skip: skipReason }, async (t) => {
-  const context = await loadLiveVariantFixtureContext({ testContext: t });
-  if (!context) {
+test("live E2E: stateful screen variants derive one emitted family target with alias routes", { skip: skipReason }, async () => {
+  const resolution = await loadLiveVariantFixtureContext();
+  if (resolution.kind === "unavailable") {
+    const diagnostic = formatLiveFixtureUnavailableMessage(resolution.details);
+    assert.equal(diagnostic.includes("incompatible with Issue #704 fixture"), true);
+    assertLiveFixtureUnavailableDetails(resolution.details);
     return;
   }
-  const { family, emitted } = context;
+  const { family, emitted } = resolution.context;
   assert.equal(family.canonicalScreenId, TARGET_CANONICAL_SCREEN_ID);
   assert.equal(family.memberScreenIds.length, 5);
   assert.equal(family.scenarios.length, 5);
@@ -292,12 +304,15 @@ test("live E2E: stateful screen variants derive one emitted family target with a
   assert.equal(familyRoutes.filter((entry) => entry.initialVariantId !== undefined).length, 4);
 });
 
-test("live E2E: stateful screen variant codegen is byte-stable across two runs", { skip: skipReason }, async (t) => {
-  const context = await loadLiveVariantFixtureContext({ testContext: t });
-  if (!context) {
+test("live E2E: stateful screen variant codegen is byte-stable across two runs", { skip: skipReason }, async () => {
+  const resolution = await loadLiveVariantFixtureContext();
+  if (resolution.kind === "unavailable") {
+    const diagnostic = formatLiveFixtureUnavailableMessage(resolution.details);
+    assert.equal(diagnostic.includes("incompatible with Issue #704 fixture"), true);
+    assertLiveFixtureUnavailableDetails(resolution.details);
     return;
   }
-  const { ir, emitted, family } = context;
+  const { ir, emitted, family } = resolution.context;
 
   const canonicalIdentity = emitted.rawIdentitiesByScreenId.get(TARGET_CANONICAL_SCREEN_ID);
   assert.ok(canonicalIdentity, `Missing canonical identity for '${TARGET_CANONICAL_SCREEN_ID}'.`);

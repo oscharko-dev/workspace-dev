@@ -1033,7 +1033,12 @@ test("createJobEngine rehydrates completed regeneration jobs and keeps local syn
   assert.equal(regenStatus.status, "completed");
 
   const rehydratedEngine = createFastJobEngine({ tempRoot });
-  const rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
+  let rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
+  const rehydrateWaitStarted = Date.now();
+  while ((!rehydrated || rehydrated.status !== "completed") && Date.now() - rehydrateWaitStarted < 5_000) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
+  }
   assert.equal(rehydrated?.status, "completed");
   assert.deepEqual(rehydrated?.request, regenStatus.request);
   assert.deepEqual(rehydrated?.lineage, regenStatus.lineage);

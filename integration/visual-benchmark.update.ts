@@ -22,6 +22,10 @@ import {
 } from "./visual-benchmark.helpers.js";
 import { updateVisualBaselines } from "./visual-baseline.js";
 import {
+  loadVisualQualityConfig,
+  type VisualQualityConfig,
+} from "./visual-quality-config.js";
+import {
   executeVisualBenchmarkFixture,
   type VisualBenchmarkExecutionOptions,
   type VisualBenchmarkFixtureRunResult,
@@ -40,6 +44,7 @@ export interface VisualBenchmarkUpdateDependencies extends VisualBenchmarkFixtur
     fixtureId: string,
     options?: VisualBenchmarkExecutionOptions,
   ) => Promise<VisualBenchmarkFixtureRunResult>;
+  qualityConfig?: VisualQualityConfig;
   log?: (message: string) => void;
   now?: () => string;
   sleepImpl?: (ms: number) => Promise<void>;
@@ -74,6 +79,32 @@ const defaultSleep = (ms: number): Promise<void> => {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+};
+
+const REPRESENTATIVE_VIEWPORT_PRIORITY = [
+  "desktop",
+  "tablet",
+  "mobile",
+  "default",
+] as const;
+
+const selectRepresentativeViewportArtifact = <
+  T extends {
+    viewportId?: string;
+  },
+>(
+  artifacts: readonly T[],
+): T | undefined => {
+  if (artifacts.length === 0) {
+    return undefined;
+  }
+  for (const id of REPRESENTATIVE_VIEWPORT_PRIORITY) {
+    const match = artifacts.find((artifact) => artifact.viewportId === id);
+    if (match !== undefined) {
+      return match;
+    }
+  }
+  return artifacts[0];
 };
 
 const MAX_RETRY_DELAY_MS = 60_000;
@@ -268,7 +299,7 @@ const extractNodeSnapshot = (
 const buildNodeUrl = (fileKey: string, nodeId: string): string => {
   const params = new URLSearchParams({
     ids: nodeId,
-    geometry: "paths",
+    depth: "8",
   });
   return `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?${params.toString()}`;
 };
@@ -437,6 +468,9 @@ export const updateVisualBenchmarkReferences = async (
   const now = dependencies?.now ?? (() => new Date().toISOString());
   const executeFixture =
     dependencies?.executeFixture ?? executeVisualBenchmarkFixture;
+  const qualityConfig =
+    dependencies?.qualityConfig ??
+    (await loadVisualQualityConfig(dependencies));
   const fixtureIds = await listVisualBenchmarkFixtureIds(dependencies);
 
   log(`Updating references for ${fixtureIds.length} fixture(s)...`);
@@ -447,6 +481,7 @@ export const updateVisualBenchmarkReferences = async (
     );
     const renderedReference = await executeFixture(fixtureId, {
       ...dependencies,
+      qualityConfig,
       allowIncompleteVisualQuality: true,
     });
     const firstScreenArtifact = renderedReference.screens[0];
@@ -455,25 +490,27 @@ export const updateVisualBenchmarkReferences = async (
         `Benchmark fixture '${fixtureId}' did not produce any screen artifacts.`,
       );
     }
-    const firstViewportArtifact =
-      firstScreenArtifact.viewports?.[0] ?? firstScreenArtifact;
-    if (!isValidPngBuffer(firstViewportArtifact.screenshotBuffer)) {
+    const firstScreenViewportArtifacts =
+      firstScreenArtifact.viewports !== undefined &&
+      firstScreenArtifact.viewports.length > 0
+        ? firstScreenArtifact.viewports
+        : [firstScreenArtifact];
+    const representativeFixtureViewport = selectRepresentativeViewportArtifact(
+      firstScreenViewportArtifacts,
+    );
+    if (
+      representativeFixtureViewport === undefined ||
+      !isValidPngBuffer(representativeFixtureViewport.screenshotBuffer)
+    ) {
       throw new Error(
         `Benchmark fixture '${fixtureId}' produced an invalid representative PNG.`,
       );
     }
-    const updatedMetadata: VisualBenchmarkFixtureMetadata = {
-      ...metadata,
-      capturedAt: now(),
-      viewport: {
-        width: firstViewportArtifact.viewport.width,
-        height: firstViewportArtifact.viewport.height,
-        deviceScaleFactor:
-          firstViewportArtifact.viewport.deviceScaleFactor ??
-          metadata.viewport.deviceScaleFactor ??
-          1,
-      },
-    };
+    const representativeFixtureViewportId =
+      typeof representativeFixtureViewport.viewportId === "string" &&
+      representativeFixtureViewport.viewportId.trim().length > 0
+        ? representativeFixtureViewport.viewportId.trim()
+        : "default";
 
     const declaredScreensById = new Map(
       enumerateFixtureScreens(metadata).map((screen) => [
@@ -481,6 +518,28 @@ export const updateVisualBenchmarkReferences = async (
         screen,
       ]),
     );
+    const representativeDeclaredScreen = declaredScreensById.get(
+      firstScreenArtifact.screenId,
+    );
+    const representativeDeclaredViewportSpec =
+      representativeDeclaredScreen?.viewports?.find(
+        (viewport) => viewport.id === representativeFixtureViewportId,
+      );
+    const representativeDeviceScaleFactor =
+      representativeFixtureViewport.viewport.deviceScaleFactor ??
+      representativeDeclaredViewportSpec?.deviceScaleFactor ??
+      metadata.viewport.deviceScaleFactor ??
+      1;
+
+    const updatedMetadata: VisualBenchmarkFixtureMetadata = {
+      ...metadata,
+      capturedAt: now(),
+      viewport: {
+        width: representativeFixtureViewport.viewport.width,
+        height: representativeFixtureViewport.viewport.height,
+        deviceScaleFactor: representativeDeviceScaleFactor,
+      },
+    };
 
     for (const renderedScreen of renderedReference.screens) {
       const viewportArtifacts =
@@ -493,7 +552,8 @@ export const updateVisualBenchmarkReferences = async (
                 screenshotBuffer: renderedScreen.screenshotBuffer,
               },
             ];
-      const representativeScreenViewport = viewportArtifacts[0];
+      const representativeScreenViewport =
+        selectRepresentativeViewportArtifact(viewportArtifacts);
       if (
         representativeScreenViewport !== undefined &&
         isValidPngBuffer(representativeScreenViewport.screenshotBuffer)
@@ -542,7 +602,7 @@ export const updateVisualBenchmarkReferences = async (
 
     await writeVisualBenchmarkReference(
       fixtureId,
-      firstViewportArtifact.screenshotBuffer,
+      representativeFixtureViewport.screenshotBuffer,
       dependencies,
     );
     await writeVisualBenchmarkFixtureMetadata(
@@ -743,9 +803,20 @@ export const runVisualBenchmarkMaintenance = async (
     return;
   }
   if (mode === "update-baseline") {
+    const executeFixture =
+      dependencies?.executeFixture ?? executeVisualBenchmarkFixture;
+    const qualityConfig =
+      dependencies?.qualityConfig ??
+      (await loadVisualQualityConfig(dependencies));
     await updateVisualBaselines({
       fixtureRoot: dependencies?.fixtureRoot,
       artifactRoot: dependencies?.artifactRoot,
+      qualityConfig,
+      executeFixture: async (fixtureId, options) =>
+        executeFixture(fixtureId, {
+          ...options,
+          qualityConfig,
+        }),
       log,
     });
     return;

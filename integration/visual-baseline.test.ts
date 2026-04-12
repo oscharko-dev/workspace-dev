@@ -345,7 +345,11 @@ test("updateVisualBaselines rewrites references, metadata, artifacts, and baseli
 
     const metadata = await loadVisualBenchmarkFixtureMetadata("simple-form", env);
     assert.equal(metadata.capturedAt, runAt.toISOString());
-    assert.deepEqual(metadata.viewport, { width: 1440, height: 900 });
+    assert.deepEqual(metadata.viewport, {
+      width: 1440,
+      height: 900,
+      deviceScaleFactor: 1,
+    });
 
     const reference = await loadVisualBenchmarkReference("simple-form", env);
     assert.deepEqual(reference, actualBuffer);
@@ -854,7 +858,11 @@ test("approveVisualBaseline updates baseline and committed reference from persis
 
     const metadata = await loadVisualBenchmarkFixtureMetadata("simple-form", env);
     assert.equal(metadata.capturedAt, artifactTime);
-    assert.deepEqual(metadata.viewport, { width: 1366, height: 768 });
+    assert.deepEqual(metadata.viewport, {
+      width: 1366,
+      height: 768,
+      deviceScaleFactor: 1,
+    });
 
     const reference = await loadVisualBenchmarkReference("simple-form", env);
     assert.deepEqual(reference, actualBuffer);

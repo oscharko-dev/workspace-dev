@@ -1,7 +1,24 @@
 # Visual Benchmark
 
-The visual benchmark provides a fixed five-fixture test set for comparing generator output against committed reference screenshots.
+The visual benchmark provides a canonical cross-section set for comparing generator output against committed reference screenshots.
+The committed baseline currently contains five representative fixtures and can be extended with additional fixtures without changing the catalog contract.
 Storage and comparisons are viewport-aware: score records are keyed by `fixtureId + screenId + viewportId`, with optional `screenName` and `viewportLabel` metadata for display and migration. The current committed fixture set still maps one screen to each fixture, but each screen now runs across the committed benchmark viewport set unless a more specific override is configured.
+
+## Canonical benchmark board set
+
+The canonical benchmark mapping is committed in:
+
+- `integration/fixtures/visual-benchmark/benchmark-views.json`
+
+This file is the contract for fixture-to-Figma source mapping and currently includes these five representative views:
+
+| Fixture | Benchmark View | File Key | Node ID |
+| --- | --- | --- | --- |
+| `simple-form` | `Test-View-01` | `DUArQ8VuM3aPMjXFLaQSSH` | `1:65671` |
+| `complex-dashboard` | `Test-View-02` | `E5h5554zKbYsIutW9hEro4` | `2:46031` |
+| `data-table` | `Test-View-03` | `M7FGS79qLfr3O4OXEYbxy0` | `1:63225` |
+| `navigation-sidebar` | `Test-View-04` | `LATywBmBgvfBp1VvwUsGNB` | `1:48176` |
+| `design-system-showcase` | `Test-View-05` | `xr6NfWtzAj4mAk54ZsBs53` | `1:63838` |
 
 Default benchmark runs are offline:
 
@@ -24,6 +41,23 @@ pnpm benchmark:visual
 ```
 
 This command runs the real benchmark runner, not the benchmark test suite.
+
+To produce a measurement protocol artifact from the latest run:
+
+```bash
+pnpm benchmark:visual:protocol
+```
+
+This writes:
+
+- `artifacts/visual-benchmark/measurement-protocol.json`
+- `artifacts/visual-benchmark/measurement-protocol.md`
+
+You can also run benchmark + protocol in one step:
+
+```bash
+pnpm benchmark:visual:report
+```
 
 The default browser set is `chromium`. To override it, pass `--browsers <comma-separated-list>`:
 
@@ -295,7 +329,7 @@ Each benchmark fixture directory under `integration/fixtures/visual-benchmark/<f
 - optional legacy `reference.png`: committed single-viewport screenshot for older fixtures
 - `manifest.json`: fixture-local manifest used by `validate.project` to locate the frozen reference
 
-The committed fixture set contains exactly five benchmark views:
+The committed fixture set currently contains five canonical benchmark views (minimum cross-section):
 
 - `simple-form`
 - `complex-dashboard`

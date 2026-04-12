@@ -101,10 +101,15 @@ jobs:
           pnpm exec tsx --test src/job-engine/visual-capture.test.ts src/job-engine/visual-diff.test.ts src/job-engine/visual-scoring.test.ts src/job-engine/pipeline/orchestrator.test.ts
           pnpm exec tsx --test integration/visual-benchmark.execution.test.ts integration/visual-benchmark.test.ts integration/visual-benchmark-runner.error-isolation.test.ts integration/visual-quality-config.test.ts
           pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts
+          pnpm exec tsx --test src/parity/classification-engine.e2e.test.ts src/parity/ir-screen-variants.live.e2e.test.ts src/parity/ir-tree.test.ts
+          pnpm exec vitest run --config ui-src/vite.config.ts ui-src/src/features/visual-quality/data/report-schema.test.ts ui-src/src/features/visual-quality/data/file-source.test.ts
 
       - name: Run frozen visual benchmark runner
         id: benchmark-run
-        run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
+        run: >-
+          pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$VISUAL_BENCHMARK_BROWSERS"
+          --storybook-component-catalog integration/fixtures/customer-board-golden/derived/storybook.component-visual-catalog.json
+          --storybook-static-dir storybook-static/storybook-static
 
       - name: Build generated app for perf assertions
         if: always()
@@ -238,7 +243,10 @@ jobs:
         run: pnpm exec playwright install-deps ${{ matrix.browser }}
 
       - name: Run frozen visual benchmark runner (${{ matrix.browser }})
-        run: pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "${{ matrix.browser }}"
+        run: >-
+          pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "${{ matrix.browser }}"
+          --storybook-component-catalog integration/fixtures/customer-board-golden/derived/storybook.component-visual-catalog.json
+          --storybook-static-dir storybook-static/storybook-static
 
       - name: Summarize visual quality report
         if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''

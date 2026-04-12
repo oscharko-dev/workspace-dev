@@ -1,20 +1,20 @@
 {
-  "capturedAt": "2026-04-09T16:18:21.244Z",
+  "capturedAt": "2026-04-12T07:46:31.708Z",
   "export": {
     "format": "png",
     "scale": 2
   },
   "fixtureId": "design-system-showcase",
   "source": {
-    "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
-    "lastModified": "2026-03-30T20:59:16Z",
-    "nodeId": "2:10004",
-    "nodeName": "Design System — Buttons, Inputs, Cards, Typography Scale"
+    "fileKey": "xr6NfWtzAj4mAk54ZsBs53",
+    "lastModified": "2026-04-12T06:29:36Z",
+    "nodeId": "1:63838",
+    "nodeName": "NEO Desktop (stationär) ID-001.7_v1"
   },
   "version": 2,
   "viewport": {
-    "deviceScaleFactor": 2,
-    "height": 900,
-    "width": 1440
+    "deviceScaleFactor": 1,
+    "height": 800,
+    "width": 1280
   }
 }

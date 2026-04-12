@@ -9,7 +9,6 @@ import {
 import { screenKey } from "./report-loader";
 
 const repoRoot = process.cwd();
-const artifactRoot = path.join(repoRoot, "artifacts", "visual-benchmark");
 const fixtureRoot = path.join(
   repoRoot,
   "integration",
@@ -63,33 +62,39 @@ describe("loadReportFromFiles", () => {
 
   it("attaches real benchmark reference images from fixture screen assets", async () => {
     const report = await loadReportFromFiles([
-      makeDiskFile(
-        "artifacts/visual-benchmark/last-run.json",
-        path.join(artifactRoot, "last-run.json"),
-        "application/json",
-      ),
-      makeDiskFile(
+      makeJsonFile("artifacts/visual-benchmark/last-run.json", {
+        version: 2,
+        ranAt: "2026-04-11T00:00:00.000Z",
+        overallScore: 92,
+        scores: [
+          {
+            fixtureId: "simple-form",
+            score: 92,
+            screenId: "1:65671",
+            screenName: "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+            viewportId: "desktop",
+            viewportLabel: "Desktop",
+          },
+        ],
+      }),
+      makeJsonFile(
         "artifacts/visual-benchmark/last-run/simple-form/screens/1_65671/desktop/report.json",
-        path.join(
-          artifactRoot,
-          "last-run/simple-form/screens/1_65671/desktop/report.json",
-        ),
-        "application/json",
+        {
+          status: "completed",
+          overallScore: 92,
+          dimensions: [],
+          hotspots: [],
+          metadata: { imageWidth: 1280, imageHeight: 800 },
+        },
       ),
       makeDiskFile(
         "artifacts/visual-benchmark/last-run/simple-form/screens/1_65671/desktop/actual.png",
-        path.join(
-          artifactRoot,
-          "last-run/simple-form/screens/1_65671/desktop/actual.png",
-        ),
+        path.join(fixtureRoot, "simple-form/screens/1_65671/desktop.png"),
         "image/png",
       ),
       makeDiskFile(
         "artifacts/visual-benchmark/last-run/simple-form/screens/1_65671/desktop/diff.png",
-        path.join(
-          artifactRoot,
-          "last-run/simple-form/screens/1_65671/desktop/diff.png",
-        ),
+        path.join(fixtureRoot, "simple-form/screens/1_65671/desktop.png"),
         "image/png",
       ),
       makeDiskFile(
@@ -135,18 +140,12 @@ describe("loadReportFromFiles", () => {
       ),
       makeDiskFile(
         "bench/last-run/alpha/screens/home~uview_1/desktop/actual.png",
-        path.join(
-          artifactRoot,
-          "last-run/simple-form/screens/1_65671/desktop/actual.png",
-        ),
+        path.join(fixtureRoot, "simple-form/screens/1_65671/desktop.png"),
         "image/png",
       ),
       makeDiskFile(
         "bench/last-run/alpha/screens/home~uview_1/desktop/diff.png",
-        path.join(
-          artifactRoot,
-          "last-run/simple-form/screens/1_65671/desktop/diff.png",
-        ),
+        path.join(fixtureRoot, "simple-form/screens/1_65671/desktop.png"),
         "image/png",
       ),
       makeDiskFile(
@@ -186,18 +185,12 @@ describe("loadReportFromFiles", () => {
       ),
       makeDiskFile(
         "jobs/job-1/visual-quality/actual.png",
-        path.join(
-          artifactRoot,
-          "last-run/simple-form/screens/1_65671/desktop/actual.png",
-        ),
+        path.join(fixtureRoot, "simple-form/screens/1_65671/desktop.png"),
         "image/png",
       ),
       makeDiskFile(
         "jobs/job-1/visual-quality/diff.png",
-        path.join(
-          artifactRoot,
-          "last-run/simple-form/screens/1_65671/desktop/diff.png",
-        ),
+        path.join(fixtureRoot, "simple-form/screens/1_65671/desktop.png"),
         "image/png",
       ),
     ]);

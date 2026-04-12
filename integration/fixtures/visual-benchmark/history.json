@@ -139,6 +139,131 @@
           "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
         }
       ]
+    },
+    {
+      "runAt": "2026-04-12T07:46:31.708Z",
+      "scores": [
+        {
+          "fixtureId": "complex-dashboard",
+          "score": 100,
+          "screenId": "2:46031",
+          "screenName": "Frame 1",
+          "viewportId": "desktop",
+          "viewportLabel": "Desktop"
+        },
+        {
+          "fixtureId": "complex-dashboard",
+          "score": 100,
+          "screenId": "2:46031",
+          "screenName": "Frame 1",
+          "viewportId": "mobile",
+          "viewportLabel": "Mobile"
+        },
+        {
+          "fixtureId": "complex-dashboard",
+          "score": 100,
+          "screenId": "2:46031",
+          "screenName": "Frame 1",
+          "viewportId": "tablet",
+          "viewportLabel": "Tablet"
+        },
+        {
+          "fixtureId": "data-table",
+          "score": 100,
+          "screenId": "1:63225",
+          "screenName": "Bedarfsermittlung Investitionskredit Flow ID-003",
+          "viewportId": "desktop",
+          "viewportLabel": "Desktop"
+        },
+        {
+          "fixtureId": "data-table",
+          "score": 100,
+          "screenId": "1:63225",
+          "screenName": "Bedarfsermittlung Investitionskredit Flow ID-003",
+          "viewportId": "mobile",
+          "viewportLabel": "Mobile"
+        },
+        {
+          "fixtureId": "data-table",
+          "score": 100,
+          "screenId": "1:63225",
+          "screenName": "Bedarfsermittlung Investitionskredit Flow ID-003",
+          "viewportId": "tablet",
+          "viewportLabel": "Tablet"
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "score": 100,
+          "screenId": "1:63838",
+          "screenName": "NEO Desktop (stationär) ID-001.7_v1",
+          "viewportId": "desktop",
+          "viewportLabel": "Desktop"
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "score": 100,
+          "screenId": "1:63838",
+          "screenName": "NEO Desktop (stationär) ID-001.7_v1",
+          "viewportId": "mobile",
+          "viewportLabel": "Mobile"
+        },
+        {
+          "fixtureId": "design-system-showcase",
+          "score": 100,
+          "screenId": "1:63838",
+          "screenName": "NEO Desktop (stationär) ID-001.7_v1",
+          "viewportId": "tablet",
+          "viewportLabel": "Tablet"
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "score": 100,
+          "screenId": "1:48176",
+          "screenName": "Empty State ID-001.1_v1",
+          "viewportId": "desktop",
+          "viewportLabel": "Desktop"
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "score": 100,
+          "screenId": "1:48176",
+          "screenName": "Empty State ID-001.1_v1",
+          "viewportId": "mobile",
+          "viewportLabel": "Mobile"
+        },
+        {
+          "fixtureId": "navigation-sidebar",
+          "score": 100,
+          "screenId": "1:48176",
+          "screenName": "Empty State ID-001.1_v1",
+          "viewportId": "tablet",
+          "viewportLabel": "Tablet"
+        },
+        {
+          "fixtureId": "simple-form",
+          "score": 100,
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+          "viewportId": "desktop",
+          "viewportLabel": "Desktop"
+        },
+        {
+          "fixtureId": "simple-form",
+          "score": 100,
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+          "viewportId": "mobile",
+          "viewportLabel": "Mobile"
+        },
+        {
+          "fixtureId": "simple-form",
+          "score": 100,
+          "screenId": "1:65671",
+          "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+          "viewportId": "tablet",
+          "viewportLabel": "Tablet"
+        }
+      ]
     }
   ],
   "version": 2

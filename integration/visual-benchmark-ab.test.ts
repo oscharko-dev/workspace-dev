@@ -1059,6 +1059,9 @@ test("persistVisualBenchmarkAbThreeWayDiffs reports all-inputs-missing when noth
     const persistResult = await persistVisualBenchmarkAbThreeWayDiffs({
       result,
       artifactRoot: tmpRoot,
+      fixtureOptions: {
+        fixtureRoot: path.join(tmpRoot, "fixtures-missing"),
+      },
     });
     assert.equal(persistResult.written.length, 0);
     assert.equal(persistResult.skipped.length, 1);

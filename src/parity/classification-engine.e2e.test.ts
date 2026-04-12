@@ -21,11 +21,6 @@ const skipReason =
     ? "FIGMA_ACCESS_TOKEN not set – skipping real Figma E2E tests"
     : undefined;
 
-const skipBoardFamiliesReason =
-  skipReason ?? (FIGMA_FILE_KEY !== REFERENCE_BOARD_KEY
-    ? `Board-specific family assertions only apply to reference board ${REFERENCE_BOARD_KEY}`
-    : undefined);
-
 const fetchFigmaFileOnce = async (): Promise<unknown> => {
   return await fetchParityFigmaFileOnce({
     fileKey: FIGMA_FILE_KEY,
@@ -128,7 +123,7 @@ test("E2E: real Figma board produces diverse element classifications", { skip: s
   );
 });
 
-test("E2E: real Figma board exposes verified board families through IR classification and semantics", { skip: skipBoardFamiliesReason }, async () => {
+test("E2E: real Figma board exposes verified family-level semantic metadata", { skip: skipReason }, async () => {
   const figmaFile = await fetchFigmaFileOnce();
   const ir = figmaToDesignIrWithOptions(figmaFile);
 
@@ -137,25 +132,37 @@ test("E2E: real Figma board exposes verified board families through IR classific
     allElements.push(...collectAllElements(screen.children));
   }
 
-  assert.equal(
-    allElements.some((element) => element.type === "accordion" && element.semanticType === "Accordion"),
-    true,
-    "Expected at least one accordion element with board semantic metadata."
+  if (FIGMA_FILE_KEY === REFERENCE_BOARD_KEY) {
+    assert.equal(
+      allElements.some((element) => element.type === "accordion" && element.semanticType === "Accordion"),
+      true,
+      "Expected at least one accordion element with board semantic metadata."
+    );
+    assert.equal(
+      allElements.some((element) => element.type === "input" && element.semanticType === "DatePicker"),
+      true,
+      "Expected at least one DatePicker element classified as input with board semantic metadata."
+    );
+    assert.equal(
+      allElements.some((element) => element.type === "text" && element.semanticType === "Typography"),
+      true,
+      "Expected at least one Typography family element classified as text."
+    );
+    assert.equal(
+      allElements.some((element) => element.type === "container" && element.semanticType === "Icon"),
+      true,
+      "Expected at least one Icon family element to remain a container with board semantic metadata."
+    );
+    return;
+  }
+
+  const boardSemanticElements = allElements.filter(
+    (element) => element.semanticSource === "board" && typeof element.semanticType === "string" && element.semanticType.length > 0
   );
   assert.equal(
-    allElements.some((element) => element.type === "input" && element.semanticType === "DatePicker"),
+    boardSemanticElements.length > 0,
     true,
-    "Expected at least one DatePicker element classified as input with board semantic metadata."
-  );
-  assert.equal(
-    allElements.some((element) => element.type === "text" && element.semanticType === "Typography"),
-    true,
-    "Expected at least one Typography family element classified as text."
-  );
-  assert.equal(
-    allElements.some((element) => element.type === "container" && element.semanticType === "Icon"),
-    true,
-    "Expected at least one Icon family element to remain a container with board semantic metadata."
+    `Expected board '${FIGMA_FILE_KEY}' to expose at least one board-level semantic family annotation.`
   );
 });
 

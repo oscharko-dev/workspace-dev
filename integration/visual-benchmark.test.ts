@@ -30,6 +30,7 @@ import {
   fetchVisualBenchmarkNodeSnapshot,
   fetchVisualBenchmarkReferenceImage,
   resolveVisualBenchmarkMaintenanceMode,
+  runVisualBenchmarkMaintenance,
   updateVisualBenchmarkReferences,
   runVisualBenchmarkLiveAudit,
 } from "./visual-benchmark.update.js";
@@ -55,6 +56,10 @@ import {
   type VisualBenchmarkResult,
   type VisualBenchmarkScoreEntry,
 } from "./visual-benchmark-runner.js";
+import {
+  loadVisualBenchmarkViewCatalog,
+  toCatalogViewMapByFixture,
+} from "./visual-benchmark-view-catalog.js";
 
 const createTestPngBuffer = (
   width: number,
@@ -465,7 +470,7 @@ test("fetchVisualBenchmarkNodeSnapshot uses the node-scoped Figma endpoint", asy
   assert.equal(requestedUrls.length, 1);
   assert.match(requestedUrls[0], /\/files\/DUArQ8VuM3aPMjXFLaQSSH\/nodes\?/);
   assert.match(requestedUrls[0], /ids=1%3A65671/);
-  assert.match(requestedUrls[0], /geometry=paths/);
+  assert.match(requestedUrls[0], /depth=8/);
   assert.equal(snapshot.nodeName, "Updated Simple Form");
   assert.equal(snapshot.lastModified, "2026-04-10T09:15:00Z");
   assert.deepEqual(snapshot.viewport, { width: 1440, height: 900 });
@@ -675,6 +680,65 @@ test("resolveVisualBenchmarkMaintenanceMode accepts exactly one maintenance flag
   );
 });
 
+test("runVisualBenchmarkMaintenance keeps strict visual-quality execution when updating baseline", async () => {
+  const fixtureRoot = await createFixtureRoot();
+  const receivedExecutionOptions: Array<{
+    allowIncompleteVisualQuality?: boolean;
+    qualityConfig?: unknown;
+  }> = [];
+
+  try {
+    const qualityConfig = {
+      regression: {
+        historySize: 3,
+      },
+    };
+
+    await runVisualBenchmarkMaintenance(["--update-baseline"], {
+      fixtureRoot,
+      qualityConfig,
+      log: () => {
+        return;
+      },
+      executeFixture: async (fixtureId, options) => {
+        receivedExecutionOptions.push({
+          allowIncompleteVisualQuality: options?.allowIncompleteVisualQuality,
+          qualityConfig: options?.qualityConfig,
+        });
+        return {
+          fixtureId,
+          aggregateScore: 92,
+          screens: [
+            {
+              screenId: simpleFormMetadata.source.nodeId,
+              screenName: simpleFormMetadata.source.nodeName,
+              nodeId: simpleFormMetadata.source.nodeId,
+              score: 92,
+              screenshotBuffer: createTestPngBuffer(8, 8, [255, 255, 255, 255]),
+              diffBuffer: null,
+              report: createCompletedVisualQualityReport(92),
+              viewport: {
+                width: 1280,
+                height: 720,
+                deviceScaleFactor: 1,
+              },
+            },
+          ],
+        };
+      },
+    });
+
+    assert.equal(receivedExecutionOptions.length, 1);
+    assert.equal(
+      receivedExecutionOptions[0]?.allowIncompleteVisualQuality,
+      undefined,
+    );
+    assert.deepEqual(receivedExecutionOptions[0]?.qualityConfig, qualityConfig);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
+});
+
 test("resolveVisualBenchmarkCliResolution routes default mode to benchmark and flags to maintenance", () => {
   const defaultResult = resolveVisualBenchmarkCliResolution([]);
   assert.equal(defaultResult.action, "benchmark");
@@ -764,6 +828,8 @@ test("listVisualBenchmarkFixtureIds returns all 5 fixture IDs", async () => {
 
 test("all 5 fixtures can be loaded (manifest, metadata, figma.json, reference.png)", async () => {
   const ids = await listVisualBenchmarkFixtureIds();
+  const catalog = await loadVisualBenchmarkViewCatalog();
+  const byFixture = toCatalogViewMapByFixture(catalog);
   for (const id of ids) {
     const manifest = await loadVisualBenchmarkFixtureManifest(id);
     const metadata = await loadVisualBenchmarkFixtureMetadata(id);
@@ -775,7 +841,10 @@ test("all 5 fixtures can be loaded (manifest, metadata, figma.json, reference.pn
     );
     assert.equal(metadata.version, 2);
     assert.equal(metadata.fixtureId, id);
-    assert.equal(metadata.source.fileKey, "DUArQ8VuM3aPMjXFLaQSSH");
+    const view = byFixture.get(id);
+    assert.ok(view, `Expected benchmark view catalog entry for '${id}'.`);
+    assert.equal(metadata.source.fileKey, view.fileKey);
+    assert.equal(metadata.source.nodeId, view.nodeId);
     assert.ok(metadata.viewport.width > 0);
     assert.ok(metadata.viewport.height > 0);
 
@@ -1329,7 +1398,7 @@ test("loadVisualBenchmarkBaseline loads the committed baseline file", async () =
   const baseline = await loadVisualBenchmarkBaseline();
   assert.ok(baseline !== null, "Expected baseline to exist.");
   assert.equal(baseline.version, 3);
-  assert.equal(baseline.scores.length, 5);
+  assert.equal(baseline.scores.length, 15);
   for (const entry of baseline.scores) {
     assert.equal(
       typeof entry.score,
@@ -1872,7 +1941,23 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
     workflow,
     /pnpm exec tsx --test integration\/mutation-testing\.integration\.test\.ts integration\/visual-benchmark\.cli\.test\.ts integration\/visual-benchmark-summary\.test\.ts/,
   );
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test src\/parity\/classification-engine\.e2e\.test\.ts src\/parity\/ir-screen-variants\.live\.e2e\.test\.ts src\/parity\/ir-tree\.test\.ts/,
+  );
+  assert.match(
+    workflow,
+    /pnpm exec vitest run --config ui-src\/vite\.config\.ts ui-src\/src\/features\/visual-quality\/data\/report-schema\.test\.ts ui-src\/src\/features\/visual-quality\/data\/file-source\.test\.ts/,
+  );
   assert.match(workflow, /pnpm benchmark:visual -- --ci --enforce-thresholds/);
+  assert.match(
+    workflow,
+    /--storybook-component-catalog integration\/fixtures\/customer-board-golden\/derived\/storybook\.component-visual-catalog\.json/,
+  );
+  assert.match(
+    workflow,
+    /--storybook-static-dir storybook-static\/storybook-static/,
+  );
   assert.doesNotMatch(workflow, /FIGMA_ACCESS_TOKEN/);
   assert.doesNotMatch(workflow, /FIGMA_FILE_KEY/);
   assert.match(workflow, /actions\/github-script@v8/);
@@ -2307,18 +2392,26 @@ test("committed integration/fixtures/visual-benchmark/history.json parses as val
 // Issue #837 — Multi-Screen Visual Comparison
 // ---------------------------------------------------------------------------
 
-test("committed integration/fixtures/visual-benchmark/baseline.json is unchanged v3 with 5 entries", async () => {
-  // Byte-identity invariant: Issue #837 must NOT version-bump or edit committed baseline.
+test("committed integration/fixtures/visual-benchmark/baseline.json remains v3 and covers the canonical benchmark views without hard-coding an exact fixture count", async () => {
   const baseline = await loadVisualBenchmarkBaseline();
+  const viewCatalog = await loadVisualBenchmarkViewCatalog();
   assert.ok(baseline !== null, "baseline.json should be committed");
   assert.equal(baseline.version, 3);
-  assert.equal(baseline.scores.length, 5);
+  assert.ok(
+    baseline.scores.length >= viewCatalog.views.length,
+    `baseline should contain at least one score per canonical benchmark view (expected >= ${String(viewCatalog.views.length)}, got ${String(baseline.scores.length)})`,
+  );
   const fixtureIds = baseline.scores.map((entry) => entry.fixtureId);
-  assert.ok(fixtureIds.includes("simple-form"));
-  assert.ok(fixtureIds.includes("complex-dashboard"));
-  assert.ok(fixtureIds.includes("data-table"));
-  assert.ok(fixtureIds.includes("navigation-sidebar"));
-  assert.ok(fixtureIds.includes("design-system-showcase"));
+  for (const view of viewCatalog.views) {
+    assert.ok(
+      fixtureIds.includes(view.fixtureId),
+      `baseline should include canonical fixture '${view.fixtureId}'.`,
+    );
+  }
+  const viewportIds = baseline.scores.map((entry) => entry.viewportId);
+  assert.ok(viewportIds.includes("desktop"));
+  assert.ok(viewportIds.includes("tablet"));
+  assert.ok(viewportIds.includes("mobile"));
 });
 
 test("runVisualBenchmark processes a 2-screen synthetic v2 fixture with internal fan-out", async () => {
