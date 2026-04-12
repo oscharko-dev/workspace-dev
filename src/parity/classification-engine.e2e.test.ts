@@ -13,12 +13,18 @@ import {
 } from "./ir-classification.js";
 
 const REFERENCE_BOARD_KEY = "xZkvYk9KOezMsi9LmPEFGX";
-const FIGMA_FILE_KEY = process.env["FIGMA_FILE_KEY"] ?? REFERENCE_BOARD_KEY;
-const FIGMA_ACCESS_TOKEN = process.env["FIGMA_ACCESS_TOKEN"] ?? "";
+const FIGMA_FILE_KEY =
+  process.env["FIGMA_FILE_KEY"] ??
+  process.env["WORKSPACEDEV_BOARD_KEY"] ??
+  REFERENCE_BOARD_KEY;
+const FIGMA_ACCESS_TOKEN =
+  process.env["FIGMA_ACCESS_TOKEN"] ??
+  process.env["WORKSPACEDEV_FIGMA_TOKEN"] ??
+  "";
 
 const skipReason =
   FIGMA_ACCESS_TOKEN.length === 0
-    ? "FIGMA_ACCESS_TOKEN not set – skipping real Figma E2E tests"
+    ? "Figma access token not set – skipping real Figma E2E tests"
     : undefined;
 
 const fetchFigmaFileOnce = async (): Promise<unknown> => {

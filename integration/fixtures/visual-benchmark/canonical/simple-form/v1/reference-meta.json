@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-04-12T13:09:02.162Z",
+  "comparison": {
+    "maxDiffPercent": 5,
+    "viewportId": "default"
+  },
+  "export": {
+    "format": "png",
+    "scale": 1
+  },
+  "figmaLastModified": "2026-04-12T06:21:51Z",
+  "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
+  "fixtureId": "simple-form",
+  "label": "Test-View-01",
+  "nodeId": "1:65671",
+  "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+  "referenceVersion": 1,
+  "sha256": "cf7888b1f99d6b5732ac6a29d2d03d7288734cd94f1d414ee4632f0c7d4051b4"
+}

@@ -1,20 +1,63 @@
 {
-  "capturedAt": "2026-04-12T07:46:31.708Z",
+  "capturedAt": "2026-04-12T13:08:53.977Z",
   "export": {
     "format": "png",
-    "scale": 2
+    "scale": 1
   },
   "fixtureId": "complex-dashboard",
+  "mode": "generated_app_screen",
+  "screens": [
+    {
+      "nodeId": "2:46031",
+      "screenId": "2:46031",
+      "screenName": "Frame 1",
+      "viewport": {
+        "deviceScaleFactor": 1,
+        "height": 890,
+        "width": 1336
+      },
+      "viewports": [
+        {
+          "deviceScaleFactor": 1,
+          "height": 890,
+          "id": "default",
+          "label": "Default",
+          "width": 1336
+        },
+        {
+          "deviceScaleFactor": 1,
+          "height": 800,
+          "id": "desktop",
+          "label": "Desktop",
+          "width": 1280
+        },
+        {
+          "deviceScaleFactor": 2,
+          "height": 1024,
+          "id": "tablet",
+          "label": "Tablet",
+          "width": 768
+        },
+        {
+          "deviceScaleFactor": 3,
+          "height": 844,
+          "id": "mobile",
+          "label": "Mobile",
+          "width": 390
+        }
+      ]
+    }
+  ],
   "source": {
     "fileKey": "E5h5554zKbYsIutW9hEro4",
     "lastModified": "2026-04-12T06:25:15Z",
     "nodeId": "2:46031",
     "nodeName": "Frame 1"
   },
-  "version": 2,
+  "version": 4,
   "viewport": {
     "deviceScaleFactor": 1,
-    "height": 800,
-    "width": 1280
+    "height": 890,
+    "width": 1336
   }
 }

@@ -866,8 +866,8 @@ ${indent}  control={control}
 ${indent}  render={({ field: controllerField }) => (
 ${indent}    <DatePicker
 ${indent}      label={${literal(field.label)}}
-${indent}      value={controllerField.value}
-${indent}      onChange={(newValue) => controllerField.onChange(newValue)}
+${indent}      value={controllerField.value ? new Date(controllerField.value) : null}
+${indent}      onChange={(newValue: unknown) => controllerField.onChange(newValue instanceof Date ? newValue.toISOString().slice(0, 10) : "")}
 ${indent}      slotProps={{
 ${indent}        textField: {
 ${indent}          onBlur: controllerField.onBlur,
@@ -881,8 +881,8 @@ ${indent}/>`;
   }
   return `${indent}<DatePicker
 ${indent}  label={${literal(field.label)}}
-${indent}  value={formValues[${literal(field.key)}] ?? null}
-${indent}  onChange={(newValue) => updateFieldValue(${literal(field.key)}, newValue)}
+${indent}  value={formValues[${literal(field.key)}] ? new Date(formValues[${literal(field.key)}]) : null}
+${indent}  onChange={(newValue: unknown) => updateFieldValue(${literal(field.key)}, newValue instanceof Date ? newValue.toISOString().slice(0, 10) : "")}
 ${indent}  slotProps={{
 ${indent}    textField: {
 ${indent}      onBlur: () => handleFieldBlur(${literal(field.key)}),
@@ -1421,8 +1421,12 @@ ${indent}/>`;
     if (usesReactHookForm) {
       const onChangeExpression =
         element.semanticType === "DatePicker"
-          ? `(value) => controllerField.onChange(typeof value === "string" ? value : value ? String(value) : "")`
+          ? `(value: unknown) => controllerField.onChange(value instanceof Date ? value.toISOString().slice(0, 10) : "")`
           : `(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => controllerField.onChange(event.target.value)`;
+      const valueExpression =
+        element.semanticType === "DatePicker"
+          ? `controllerField.value ? new Date(controllerField.value) : null`
+          : "controllerField.value";
       return `${indent}<Controller
 ${indent}  name={${literal(field.key)}}
 ${indent}  control={control}
@@ -1435,7 +1439,7 @@ ${indent}      fieldError: typeof fieldState.error?.message === "string" ? field
 ${indent}    });
 ${indent}    return (
 ${indent}      ${renderMappedComponent({
-  valueExpression: "controllerField.value",
+  valueExpression,
   onChangeExpression,
   onBlurExpression: "controllerField.onBlur",
   errorExpression: "Boolean(helperText)",
@@ -1449,10 +1453,14 @@ ${indent}/>`;
 
     const onChangeExpression =
       element.semanticType === "DatePicker"
-        ? `(value) => updateFieldValue(${literal(field.key)}, typeof value === "string" ? value : value ? String(value) : "")`
+        ? `(value: unknown) => updateFieldValue(${literal(field.key)}, value instanceof Date ? value.toISOString().slice(0, 10) : "")`
         : `(event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => updateFieldValue(${literal(field.key)}, event.target.value)`;
+    const valueExpression =
+      element.semanticType === "DatePicker"
+        ? `formValues[${literal(field.key)}] ? new Date(formValues[${literal(field.key)}]) : null`
+        : `formValues[${literal(field.key)}] ?? ""`;
     return renderMappedComponent({
-      valueExpression: `formValues[${literal(field.key)}] ?? ""`,
+      valueExpression,
       onChangeExpression,
       onBlurExpression: `() => handleFieldBlur(${literal(field.key)})`,
       errorExpression: fieldErrorExpression,

@@ -93,7 +93,7 @@ test("print-visual-benchmark-summary writes check output and degrades gracefully
 
     const outputPath = path.join(artifactRoot, "check-output.json");
     const summaryPath = path.join(root, "step-summary.md");
-    const command = `GITHUB_STEP_SUMMARY=${JSON.stringify(summaryPath)} node scripts/print-visual-benchmark-summary.mjs ${JSON.stringify(path.join(artifactRoot, "last-run.json"))} --check-output ${JSON.stringify(outputPath)}`;
+    const command = `GITHUB_STEP_SUMMARY=${JSON.stringify(summaryPath)} VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY=true node scripts/print-visual-benchmark-summary.mjs ${JSON.stringify(path.join(artifactRoot, "last-run.json"))} --check-output ${JSON.stringify(outputPath)}`;
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);

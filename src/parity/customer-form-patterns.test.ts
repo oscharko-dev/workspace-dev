@@ -156,6 +156,18 @@ describe("DatePicker-Provider wiring (#693 AC-1)", () => {
     const rendered = renderSemanticInput(element, 3, rootParent, context);
     assert.ok(rendered.includes("Controller"), "Expected Controller wrapper for RHF mode");
     assert.ok(rendered.includes("controllerField.onChange"), "Expected onChange binding");
+    assert.ok(
+      rendered.includes(
+        "value={controllerField.value ? new Date(controllerField.value) : null}"
+      ),
+      "Expected RHF DatePicker value conversion from serialized string to Date|null."
+    );
+    assert.ok(
+      rendered.includes(
+        "(newValue: unknown) => controllerField.onChange(newValue instanceof Date ? newValue.toISOString().slice(0, 10) : \"\")"
+      ),
+      "Expected RHF DatePicker onChange conversion from Date to stable yyyy-mm-dd string."
+    );
   });
 
   it("renders DatePicker with direct form state in legacy mode", () => {
@@ -169,6 +181,24 @@ describe("DatePicker-Provider wiring (#693 AC-1)", () => {
     const rendered = renderSemanticInput(element, 3, rootParent, context);
     assert.ok(!rendered.includes("Controller"), "Expected no Controller in legacy mode");
     assert.ok(rendered.includes("updateFieldValue"), "Expected direct state update");
+    assert.ok(
+      rendered.includes("value={formValues[") &&
+        rendered.includes("? new Date(formValues[") &&
+        rendered.includes("]) : null}"),
+      "Expected legacy DatePicker value conversion from serialized string to Date|null."
+    );
+    assert.ok(
+      rendered.includes(
+        '(newValue: unknown) => updateFieldValue('
+      ),
+      "Expected legacy DatePicker onChange conversion from Date to stable yyyy-mm-dd string."
+    );
+    assert.ok(
+      rendered.includes(
+        'newValue instanceof Date ? newValue.toISOString().slice(0, 10) : ""'
+      ),
+      "Expected legacy DatePicker to normalize Date values to yyyy-mm-dd."
+    );
   });
 });
 

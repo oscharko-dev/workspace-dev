@@ -16,6 +16,8 @@ on:
       - ".github/workflows/visual-benchmark.yml"
       - ".github/workflows/visual-benchmark-comment.yml"
       - "scripts/compute-composite-quality.ts"
+      - "scripts/assert-no-skipped-tests.mjs"
+      - "scripts/prepare-visual-benchmark-public-artifacts.mjs"
       - "scripts/print-visual-benchmark-summary.mjs"
       - "scripts/visual-benchmark-summary.mjs"
       - "scripts/print-visual-benchmark-pr-comment.mjs"
@@ -29,6 +31,11 @@ on:
         type: string
       run_browser_matrix:
         description: "Also run the manual per-browser matrix job"
+        required: false
+        default: false
+        type: boolean
+      run_live_drift_audit:
+        description: "Run live Figma drift audit against canonical references"
         required: false
         default: false
         type: boolean
@@ -98,11 +105,16 @@ jobs:
 
       - name: Run visual benchmark verification suites
         run: |
-          pnpm exec tsx --test src/job-engine/visual-capture.test.ts src/job-engine/visual-diff.test.ts src/job-engine/visual-scoring.test.ts src/job-engine/pipeline/orchestrator.test.ts
-          pnpm exec tsx --test integration/visual-benchmark.execution.test.ts integration/visual-benchmark.test.ts integration/visual-benchmark-runner.error-isolation.test.ts integration/visual-quality-config.test.ts
-          pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts
-          pnpm exec tsx --test src/parity/classification-engine.e2e.test.ts src/parity/ir-screen-variants.live.e2e.test.ts src/parity/ir-tree.test.ts
-          pnpm exec vitest run --config ui-src/vite.config.ts ui-src/src/features/visual-quality/data/report-schema.test.ts ui-src/src/features/visual-quality/data/file-source.test.ts
+          set -euo pipefail
+          mkdir -p artifacts/visual-benchmark/logs
+          {
+            pnpm exec tsx --test src/job-engine/visual-capture.test.ts src/job-engine/visual-diff.test.ts src/job-engine/visual-scoring.test.ts src/job-engine/pipeline/orchestrator.test.ts
+            pnpm exec tsx --test integration/visual-benchmark.execution.test.ts integration/visual-benchmark.test.ts integration/visual-benchmark-runner.error-isolation.test.ts integration/visual-quality-config.test.ts
+            pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts
+            pnpm exec tsx --test src/parity/ir-classification.test.ts src/parity/ir-screen-variants.test.ts src/parity/ir.test.ts
+            pnpm exec vitest run --config ui-src/vite.config.ts ui-src/src/features/visual-quality/data/report-schema.test.ts ui-src/src/features/visual-quality/data/file-source.test.ts
+          } 2>&1 | tee artifacts/visual-benchmark/logs/verification-suites.log
+          node scripts/assert-no-skipped-tests.mjs artifacts/visual-benchmark/logs/verification-suites.log
 
       - name: Run frozen visual benchmark runner
         id: benchmark-run
@@ -133,15 +145,23 @@ jobs:
 
       - name: Summarize visual quality report
         if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: ${{ github.event_name != 'pull_request' }}
         run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
 
       - name: Generate visual benchmark PR comment payload
         if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != '' && github.event_name == 'pull_request'
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: "false"
         run: >-
           node scripts/print-visual-benchmark-pr-comment.mjs
           artifacts/visual-benchmark/last-run.json
           --output artifacts/visual-benchmark/pr-comment.json
           --artifact-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Prepare public visual benchmark artifacts
+        if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
+        run: node scripts/prepare-visual-benchmark-public-artifacts.mjs
 
       - name: Update benchmark check output
         if: always() && hashFiles('artifacts/visual-benchmark/check-output.json') != ''
@@ -190,9 +210,17 @@ jobs:
               },
             });
 
-      - name: Upload visual benchmark artifacts
+      - name: Upload visual benchmark artifacts (public PR summary)
         uses: actions/upload-artifact@v7
-        if: always()
+        if: always() && github.event_name == 'pull_request'
+        with:
+          name: workspace-dev-visual-benchmark-${{ github.run_id }}
+          path: artifacts/visual-benchmark/public-summary
+          if-no-files-found: ignore
+
+      - name: Upload visual benchmark artifacts (trusted full bundle)
+        uses: actions/upload-artifact@v7
+        if: always() && github.event_name != 'pull_request'
         with:
           name: workspace-dev-visual-benchmark-${{ github.run_id }}
           path: artifacts/visual-benchmark
@@ -250,6 +278,8 @@ jobs:
 
       - name: Summarize visual quality report
         if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: ${{ github.event_name != 'pull_request' }}
         run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
 
       - name: Upload visual benchmark artifacts (${{ matrix.browser }})
@@ -259,3 +289,28 @@ jobs:
           name: workspace-dev-visual-benchmark-${{ github.run_id }}-${{ matrix.browser }}
           path: artifacts/visual-benchmark
           if-no-files-found: ignore
+
+  benchmark-live-drift-audit:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_live_drift_audit
+    name: benchmark live drift audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 10.30.3
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run live drift audit (read-only)
+        env:
+          WORKSPACEDEV_FIGMA_TOKEN: ${{ secrets.WORKSPACEDEV_FIGMA_TOKEN }}
+        run: pnpm benchmark:visual -- --live

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -890,13 +890,45 @@ export const enumerateFixtureScreenViewports = (
 export const listVisualBenchmarkFixtureIds = async (
   options?: VisualBenchmarkFixtureOptions,
 ): Promise<string[]> => {
-  const entries = await readdir(resolveFixtureRoot(options), {
+  const fixtureRoot = resolveFixtureRoot(options);
+  const entries = await readdir(fixtureRoot, {
     withFileTypes: true,
   });
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
+  const fixtureIds = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const fixtureDir = path.join(fixtureRoot, entry.name);
+        const manifestPath = path.join(
+          fixtureDir,
+          MANIFEST_JSON_FILE_NAME,
+        );
+        const metadataPath = path.join(
+          fixtureDir,
+          METADATA_JSON_FILE_NAME,
+        );
+        try {
+          const [manifestStat, metadataStat] = await Promise.all([
+            stat(manifestPath),
+            stat(metadataPath),
+          ]);
+          if (!manifestStat.isFile() || !metadataStat.isFile()) {
+            return null;
+          }
+          return entry.name;
+        } catch (error: unknown) {
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            (error as NodeJS.ErrnoException).code === "ENOENT"
+          ) {
+            return null;
+          }
+          throw error;
+        }
+      }),
+  );
+  return fixtureIds.filter((value): value is string => value !== null).sort();
 };
 
 export const loadVisualBenchmarkFixtureMetadata = async (

@@ -29,6 +29,12 @@ test("resolveCaptureConfig returns defaults when no config provided", () => {
   assert.equal(config.waitForNetworkIdle, true);
   assert.equal(config.waitForFonts, true);
   assert.equal(config.waitForAnimations, true);
+  assert.deepEqual(config.stabilizeBeforeCapture, {
+    enabled: false,
+    maxAttempts: 5,
+    intervalMs: 100,
+    requireConsecutiveMatches: 2,
+  });
   assert.equal(config.timeoutMs, 30_000);
   assert.equal(config.fullPage, true);
 });
@@ -48,6 +54,12 @@ test("resolveCaptureConfig merges partial capture config", () => {
   assert.equal(config.waitForNetworkIdle, true);
   assert.equal(config.waitForFonts, true);
   assert.equal(config.waitForAnimations, true);
+  assert.deepEqual(config.stabilizeBeforeCapture, {
+    enabled: false,
+    maxAttempts: 5,
+    intervalMs: 100,
+    requireConsecutiveMatches: 2,
+  });
   assert.equal(config.fullPage, true);
   assert.deepEqual(config.viewport, {
     width: 1280,
@@ -62,6 +74,12 @@ test("resolveCaptureConfig handles full override", () => {
     waitForNetworkIdle: false,
     waitForFonts: false,
     waitForAnimations: false,
+    stabilizeBeforeCapture: {
+      enabled: true,
+      maxAttempts: 8,
+      intervalMs: 50,
+      requireConsecutiveMatches: 3,
+    },
     timeoutMs: 5_000,
     fullPage: false,
   });
@@ -72,6 +90,12 @@ test("resolveCaptureConfig handles full override", () => {
   assert.equal(config.waitForNetworkIdle, false);
   assert.equal(config.waitForFonts, false);
   assert.equal(config.waitForAnimations, false);
+  assert.deepEqual(config.stabilizeBeforeCapture, {
+    enabled: true,
+    maxAttempts: 8,
+    intervalMs: 50,
+    requireConsecutiveMatches: 3,
+  });
   assert.equal(config.timeoutMs, 5_000);
   assert.equal(config.fullPage, false);
 });
@@ -157,6 +181,19 @@ test("resolveCaptureConfig rejects invalid capture settings", () => {
       }),
     /timeoutMs/,
   );
+
+  assert.throws(
+    () =>
+      resolveCaptureConfig({
+        stabilizeBeforeCapture: {
+          enabled: true,
+          maxAttempts: 1,
+          intervalMs: 10,
+          requireConsecutiveMatches: 2,
+        },
+      }),
+    /requireConsecutiveMatches/,
+  );
 });
 
 test("DEFAULT_VIEWPORT has expected values", () => {
@@ -174,6 +211,12 @@ test("DEFAULT_CAPTURE_CONFIG has expected values", () => {
   assert.equal(DEFAULT_CAPTURE_CONFIG.waitForNetworkIdle, true);
   assert.equal(DEFAULT_CAPTURE_CONFIG.waitForFonts, true);
   assert.equal(DEFAULT_CAPTURE_CONFIG.waitForAnimations, true);
+  assert.deepEqual(DEFAULT_CAPTURE_CONFIG.stabilizeBeforeCapture, {
+    enabled: false,
+    maxAttempts: 5,
+    intervalMs: 100,
+    requireConsecutiveMatches: 2,
+  });
   assert.equal(DEFAULT_CAPTURE_CONFIG.timeoutMs, 30_000);
   assert.equal(DEFAULT_CAPTURE_CONFIG.fullPage, true);
 });

@@ -59,7 +59,9 @@ const main = async () => {
   await writeFile(output, `${JSON.stringify(result, null, 2)}\n`, "utf8");
 
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
-  if (summaryPath) {
+  const allowStepSummary =
+    process.env.VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY === "true";
+  if (summaryPath && allowStepSummary) {
     await appendFile(summaryPath, `${result.body}\n`, "utf8");
   }
 };

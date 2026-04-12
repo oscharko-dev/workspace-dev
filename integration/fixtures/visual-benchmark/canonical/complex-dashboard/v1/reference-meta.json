@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-04-12T13:08:53.977Z",
+  "comparison": {
+    "maxDiffPercent": 14,
+    "viewportId": "default"
+  },
+  "export": {
+    "format": "png",
+    "scale": 1
+  },
+  "figmaLastModified": "2026-04-12T06:25:15Z",
+  "fileKey": "E5h5554zKbYsIutW9hEro4",
+  "fixtureId": "complex-dashboard",
+  "label": "Test-View-02",
+  "nodeId": "2:46031",
+  "nodeName": "Frame 1",
+  "referenceVersion": 1,
+  "sha256": "f154aec34d184a85cb36cd31cd39d79ebd8efb67636804246595a8ca30da29ec"
+}

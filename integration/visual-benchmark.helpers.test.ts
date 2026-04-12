@@ -10,6 +10,7 @@ import {
   enumerateFixtureScreens,
   enumerateFixtureScreenViewports,
   fromScreenIdToken,
+  listVisualBenchmarkFixtureIds,
   loadVisualBenchmarkFixtureMetadata,
   parseVisualBenchmarkFixtureMetadata,
   resolveVisualBenchmarkScreenPaths,
@@ -155,6 +156,51 @@ test("resolveVisualBenchmarkScreenPaths joins fixtureId/screens/<token>/referenc
   assert.ok(
     paths.screenDir.endsWith(path.join("simple-form", "screens", "2_10001")),
   );
+});
+
+test("listVisualBenchmarkFixtureIds ignores non-fixture directories like canonical/", async () => {
+  const fixtureRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-visual-benchmark-fixtures-"),
+  );
+  try {
+    const fixtureDir = path.join(fixtureRoot, "simple-form");
+    await mkdir(fixtureDir, { recursive: true });
+    await writeFile(
+      path.join(fixtureDir, "manifest.json"),
+      JSON.stringify({
+        version: 1,
+        fixtureId: "simple-form",
+        visualQuality: {
+          frozenReferenceImage: "reference.png",
+          frozenReferenceMetadata: "metadata.json",
+        },
+      }),
+      "utf8",
+    );
+    await writeFile(
+      path.join(fixtureDir, "metadata.json"),
+      JSON.stringify({
+        version: 1,
+        fixtureId: "simple-form",
+        capturedAt: "2026-01-01T00:00:00.000Z",
+        source: {
+          fileKey: "X",
+          nodeId: "1:1",
+          nodeName: "Node",
+          lastModified: "2026-01-01T00:00:00.000Z",
+        },
+        viewport: { width: 100, height: 100, deviceScaleFactor: 1 },
+        export: { format: "png", scale: 2 },
+      }),
+      "utf8",
+    );
+    await mkdir(path.join(fixtureRoot, "canonical"), { recursive: true });
+
+    const fixtureIds = await listVisualBenchmarkFixtureIds({ fixtureRoot });
+    assert.deepEqual(fixtureIds, ["simple-form"]);
+  } finally {
+    await rm(fixtureRoot, { recursive: true, force: true });
+  }
 });
 
 test("computeVisualBenchmarkAggregateScore computes weighted aggregate when any weight is declared", () => {

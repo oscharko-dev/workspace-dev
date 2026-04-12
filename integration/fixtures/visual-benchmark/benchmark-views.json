@@ -1,40 +1,85 @@
 {
-  "version": 1,
+  "version": 2,
   "views": [
     {
       "fixtureId": "simple-form",
       "label": "Test-View-01",
       "fileKey": "DUArQ8VuM3aPMjXFLaQSSH",
       "nodeId": "1:65671",
-      "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1"
+      "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+      "referenceVersion": 1,
+      "export": {
+        "format": "png",
+        "scale": 1
+      },
+      "comparison": {
+        "viewportId": "default",
+        "maxDiffPercent": 5.0
+      }
     },
     {
       "fixtureId": "complex-dashboard",
       "label": "Test-View-02",
       "fileKey": "E5h5554zKbYsIutW9hEro4",
       "nodeId": "2:46031",
-      "nodeName": "Frame 1"
+      "nodeName": "Frame 1",
+      "referenceVersion": 1,
+      "export": {
+        "format": "png",
+        "scale": 1
+      },
+      "comparison": {
+        "viewportId": "default",
+        "maxDiffPercent": 14.0
+      }
     },
     {
       "fixtureId": "data-table",
       "label": "Test-View-03",
       "fileKey": "M7FGS79qLfr3O4OXEYbxy0",
-      "nodeId": "1:63225",
-      "nodeName": "Bedarfsermittlung Investitionskredit Flow ID-003"
+      "nodeId": "4:38304",
+      "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded  ID-003.4_v1",
+      "referenceVersion": 1,
+      "export": {
+        "format": "png",
+        "scale": 1
+      },
+      "comparison": {
+        "viewportId": "default",
+        "maxDiffPercent": 3.5
+      }
     },
     {
       "fixtureId": "navigation-sidebar",
       "label": "Test-View-04",
       "fileKey": "LATywBmBgvfBp1VvwUsGNB",
       "nodeId": "1:48176",
-      "nodeName": "Empty State ID-001.1_v1"
+      "nodeName": "Empty State ID-001.1_v1",
+      "referenceVersion": 1,
+      "export": {
+        "format": "png",
+        "scale": 1
+      },
+      "comparison": {
+        "viewportId": "default",
+        "maxDiffPercent": 6.0
+      }
     },
     {
       "fixtureId": "design-system-showcase",
       "label": "Test-View-05",
       "fileKey": "xr6NfWtzAj4mAk54ZsBs53",
       "nodeId": "1:63838",
-      "nodeName": "NEO Desktop (stationär) ID-001.7_v1"
+      "nodeName": "NEO Desktop (stationär) ID-001.7_v1",
+      "referenceVersion": 1,
+      "export": {
+        "format": "png",
+        "scale": 1
+      },
+      "comparison": {
+        "viewportId": "default",
+        "maxDiffPercent": 4.8
+      }
     }
   ]
 }

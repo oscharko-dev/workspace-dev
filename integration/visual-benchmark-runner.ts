@@ -12,6 +12,9 @@ import {
   fromScreenIdToken,
   getVisualBenchmarkFixtureRoot,
   listVisualBenchmarkFixtureIds,
+  resolveVisualBenchmarkFixturePaths,
+  resolveVisualBenchmarkScreenPaths,
+  resolveVisualBenchmarkScreenViewportPaths,
   toScreenIdToken,
   toStableJsonString,
   writeVisualBenchmarkFixtureInputs,
@@ -64,6 +67,12 @@ import type {
   StorybookComponentVisualCatalogEntry,
 } from "../src/storybook/types.js";
 import { fetchVisualBenchmarkReferenceImage } from "./visual-benchmark.update.js";
+import {
+  loadVisualBenchmarkViewCatalog,
+  resolveVisualBenchmarkCanonicalReferencePaths,
+  toCatalogViewMapByFixture,
+  type VisualBenchmarkViewCatalogEntry,
+} from "./visual-benchmark-view-catalog.js";
 import { PNG } from "pngjs";
 
 const BASELINE_FILE_NAME = "baseline.json";
@@ -71,6 +80,7 @@ const LAST_RUN_FILE_NAME = "last-run.json";
 const LAST_RUN_ARTIFACT_ROOT_NAME = "last-run";
 const LAST_RUN_MANIFEST_FILE_NAME = "manifest.json";
 const LAST_RUN_ACTUAL_FILE_NAME = "actual.png";
+const LAST_RUN_REFERENCE_FILE_NAME = "reference.png";
 const LAST_RUN_DIFF_FILE_NAME = "diff.png";
 const LAST_RUN_REPORT_FILE_NAME = "report.json";
 const DEFAULT_ARTIFACT_ROOT = path.resolve(
@@ -81,6 +91,8 @@ const DEFAULT_ARTIFACT_ROOT = path.resolve(
 const DEFAULT_NEUTRAL_DELTA_TOLERANCE = 1;
 const DEFAULT_HEADLINE_SCREEN_WEIGHT = 0.7;
 const DEFAULT_HEADLINE_COMPONENT_WEIGHT = 0.3;
+const OVERFITTING_CORE_IMPROVEMENT_DELTA = 1;
+const OVERFITTING_COMPONENT_DEGRADATION_DELTA = -1;
 const STORYBOOK_COMPONENT_FIXTURE_ID = "storybook-components";
 
 export interface VisualBenchmarkScoreEntry {
@@ -190,6 +202,7 @@ export interface VisualBenchmarkLastRunArtifactManifest {
     width: number;
     height: number;
   };
+  referenceImagePath?: string;
   thresholdResult?: VisualQualityThresholdResult;
   browserBreakdown?: VisualBenchmarkBrowserBreakdown;
   crossBrowserConsistency?: VisualBenchmarkCrossBrowserConsistency;
@@ -200,6 +213,7 @@ export interface VisualBenchmarkLastRunArtifactPaths {
   fixtureDir: string;
   manifestJsonPath: string;
   actualPngPath: string;
+  referencePngPath: string;
   diffPngPath: string;
   reportJsonPath: string;
 }
@@ -211,6 +225,7 @@ interface VisualBenchmarkArtifactLocation {
 
 export interface VisualBenchmarkLastRunArtifactEntry extends VisualBenchmarkLastRunArtifactManifest {
   actualImagePath: string;
+  referenceImagePath: string | null;
   diffImagePath: string | null;
   reportPath: string | null;
 }
@@ -229,6 +244,7 @@ export interface VisualBenchmarkLastRunArtifactInput {
     height: number;
   };
   actualImageBuffer: Buffer;
+  referenceImageBuffer?: Buffer | null;
   diffImageBuffer?: Buffer | null;
   report?: unknown | null;
   thresholdResult?: VisualQualityThresholdResult;
@@ -289,6 +305,7 @@ export interface VisualBenchmarkRunOptions extends VisualBenchmarkExecutionOptio
   updateBaseline?: boolean;
   qualityConfig?: VisualQualityConfig;
   componentVisualCatalogFile?: string;
+  ci?: boolean;
 }
 
 interface PreparedStorybookComponentFixtures {
@@ -641,7 +658,11 @@ export const prepareStorybookComponentFixtures = async (
   const fixtureId = STORYBOOK_COMPONENT_FIXTURE_ID;
   const now = new Date().toISOString();
   const fetchReferenceImage = dependencies?.fetchReferenceImage;
-  const accessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
+  const ciMode = options?.ci === true;
+  const accessToken = ciMode
+    ? undefined
+    : process.env.WORKSPACEDEV_FIGMA_TOKEN?.trim() ??
+      process.env.FIGMA_ACCESS_TOKEN?.trim();
   const fixtureScreens: Array<Record<string, unknown>> = [];
   let representativeSource:
     | VisualBenchmarkFixtureMetadata["source"]
@@ -688,7 +709,31 @@ export const prepareStorybookComponentFixtures = async (
       export: { format: "png", scale: 1 },
     };
 
-    if (fetchReferenceImage) {
+    const frozenReferencePath = resolveVisualBenchmarkScreenViewportPaths(
+      fixtureId,
+      entry.componentId,
+      "default",
+      {
+        fixtureRoot: mergedFixtureRoot,
+      },
+    ).referencePngPath;
+    try {
+      referenceBuffer = await readFile(frozenReferencePath);
+    } catch (error: unknown) {
+      if (
+        !(
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        )
+      ) {
+        throw error;
+      }
+    }
+
+    if (referenceBuffer !== undefined) {
+      // Reuse frozen, versioned references first to keep CI deterministic.
+    } else if (fetchReferenceImage) {
       referenceBuffer = await fetchReferenceImage(referenceMetadata);
     } else if (accessToken) {
       try {
@@ -705,7 +750,9 @@ export const prepareStorybookComponentFixtures = async (
       }
     } else {
       warnings.push(
-        `Storybook component '${entry.componentId}' could not export a frozen Figma reference because FIGMA_ACCESS_TOKEN is not set.`,
+        ciMode
+          ? `Storybook component '${entry.componentId}' has no frozen reference at '${toWorkspaceRelativePath(frozenReferencePath)}' and live Figma export is disabled in CI mode.`
+          : `Storybook component '${entry.componentId}' could not export a frozen Figma reference because no Figma access token is configured.`,
       );
     }
 
@@ -1568,6 +1615,12 @@ const parseLastRunArtifactManifest = (
     },
     ...(thresholdResult !== undefined ? { thresholdResult } : {}),
   };
+  if (
+    typeof parsed.referenceImagePath === "string" &&
+    parsed.referenceImagePath.trim().length > 0
+  ) {
+    manifest.referenceImagePath = parsed.referenceImagePath.trim();
+  }
   const browserBreakdown = normalizeLastRunBrowserBreakdown(parsed.browserBreakdown);
   if (browserBreakdown) {
     manifest.browserBreakdown = browserBreakdown;
@@ -1619,6 +1672,7 @@ const resolveVisualBenchmarkLastRunArtifactPathsInternal = (
     fixtureDir: artifactDir,
     manifestJsonPath: path.join(artifactDir, LAST_RUN_MANIFEST_FILE_NAME),
     actualPngPath: path.join(artifactDir, LAST_RUN_ACTUAL_FILE_NAME),
+    referencePngPath: path.join(artifactDir, LAST_RUN_REFERENCE_FILE_NAME),
     diffPngPath: path.join(artifactDir, LAST_RUN_DIFF_FILE_NAME),
     reportJsonPath: path.join(artifactDir, LAST_RUN_REPORT_FILE_NAME),
   };
@@ -1651,6 +1705,7 @@ const deleteLegacyRootLastRunArtifacts = async (
   );
   await Promise.all([
     rm(fixtureRootPaths.actualPngPath, { force: true }),
+    rm(fixtureRootPaths.referencePngPath, { force: true }),
     rm(fixtureRootPaths.diffPngPath, { force: true }),
     rm(fixtureRootPaths.manifestJsonPath, { force: true }),
     rm(fixtureRootPaths.reportJsonPath, { force: true }),
@@ -1675,8 +1730,23 @@ const loadVisualBenchmarkLastRunArtifactAtLocation = async (
     const manifest = parseLastRunArtifactManifest(
       await readFile(paths.manifestJsonPath, "utf8"),
     );
+    let referenceImagePath: string | null = null;
     let diffImagePath: string | null = null;
     let reportPath: string | null = null;
+    try {
+      await readFile(paths.referencePngPath);
+      referenceImagePath = toWorkspaceRelativePath(paths.referencePngPath);
+    } catch (error: unknown) {
+      if (
+        !(
+          error instanceof Error &&
+          "code" in error &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        )
+      ) {
+        throw error;
+      }
+    }
     try {
       await readFile(paths.diffPngPath);
       diffImagePath = toWorkspaceRelativePath(paths.diffPngPath);
@@ -1709,6 +1779,7 @@ const loadVisualBenchmarkLastRunArtifactAtLocation = async (
     return {
       ...manifest,
       actualImagePath: toWorkspaceRelativePath(paths.actualPngPath),
+      referenceImagePath,
       diffImagePath,
       reportPath,
     };
@@ -2143,6 +2214,9 @@ export const saveVisualBenchmarkLastRunArtifact = async (
       recursive: true,
       force: true,
     }),
+    input.referenceImageBuffer !== undefined && input.referenceImageBuffer !== null
+      ? Promise.resolve()
+      : rm(paths.referencePngPath, { force: true }),
     input.diffImageBuffer !== undefined && input.diffImageBuffer !== null
       ? Promise.resolve()
       : rm(paths.diffPngPath, { force: true }),
@@ -2152,6 +2226,10 @@ export const saveVisualBenchmarkLastRunArtifact = async (
   ]);
   await mkdir(paths.fixtureDir, { recursive: true });
   await writeFile(paths.actualPngPath, input.actualImageBuffer);
+  if (input.referenceImageBuffer !== undefined && input.referenceImageBuffer !== null) {
+    await writeFile(paths.referencePngPath, input.referenceImageBuffer);
+    manifest.referenceImagePath = toWorkspaceRelativePath(paths.referencePngPath);
+  }
   if (input.diffImageBuffer !== undefined && input.diffImageBuffer !== null) {
     await writeFile(paths.diffPngPath, input.diffImageBuffer);
   }
@@ -2236,6 +2314,11 @@ export const saveVisualBenchmarkLastRunArtifact = async (
   return {
     ...manifest,
     actualImagePath: toWorkspaceRelativePath(paths.actualPngPath),
+    referenceImagePath:
+      input.referenceImageBuffer !== undefined &&
+      input.referenceImageBuffer !== null
+        ? toWorkspaceRelativePath(paths.referencePngPath)
+        : null,
     diffImagePath:
       input.diffImageBuffer !== undefined && input.diffImageBuffer !== null
         ? toWorkspaceRelativePath(paths.diffPngPath)
@@ -2644,6 +2727,245 @@ interface PersistedVisualBenchmarkViewportArtifact {
   crossBrowserConsistency?: VisualBenchmarkFixtureScreenArtifact["crossBrowserConsistency"];
 }
 
+const fileExists = async (targetPath: string): Promise<boolean> => {
+  try {
+    const result = await stat(targetPath);
+    return result.isFile();
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "ENOENT"
+    ) {
+      return false;
+    }
+    throw error;
+  }
+};
+
+const resolveFixtureCatalogPath = async (
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<string | null> => {
+  if (
+    typeof options?.fixtureRoot === "string" &&
+    options.fixtureRoot.trim().length > 0
+  ) {
+    const candidatePath = path.join(
+      path.resolve(options.fixtureRoot),
+      "benchmark-views.json",
+    );
+    if (await fileExists(candidatePath)) {
+      return candidatePath;
+    }
+    return null;
+  }
+  return null;
+};
+
+const loadBenchmarkCatalogByFixture = async (
+  options?: VisualBenchmarkFixtureOptions,
+): Promise<ReadonlyMap<string, VisualBenchmarkViewCatalogEntry>> => {
+  const catalogPath = await resolveFixtureCatalogPath(options);
+  if (
+    catalogPath === null &&
+    typeof options?.fixtureRoot === "string" &&
+    options.fixtureRoot.trim().length > 0
+  ) {
+    return new Map();
+  }
+  const catalog =
+    catalogPath === null
+      ? await loadVisualBenchmarkViewCatalog()
+      : await loadVisualBenchmarkViewCatalog(catalogPath);
+  return toCatalogViewMapByFixture(catalog);
+};
+
+const loadReferenceImageBufferForArtifact = async (input: {
+  fixtureId: string;
+  screenId?: string;
+  viewportId?: string;
+  options?: VisualBenchmarkFixtureOptions;
+  benchmarkView?: VisualBenchmarkViewCatalogEntry;
+}): Promise<Buffer | null> => {
+  if (input.benchmarkView !== undefined) {
+    const comparisonViewportId = input.benchmarkView.comparison.viewportId;
+    const normalizedViewportId =
+      typeof input.viewportId === "string" && input.viewportId.trim().length > 0
+        ? input.viewportId.trim()
+        : "default";
+    if (normalizedViewportId !== comparisonViewportId) {
+      return null;
+    }
+    if (
+      typeof input.screenId === "string" &&
+      input.screenId.trim().length > 0 &&
+      input.screenId.trim() !== input.benchmarkView.nodeId
+    ) {
+      return null;
+    }
+    const canonicalPath = resolveVisualBenchmarkCanonicalReferencePaths(
+      input.benchmarkView,
+      { fixtureRoot: input.options?.fixtureRoot },
+    ).figmaPngPath;
+    try {
+      return await readFile(canonicalPath);
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        throw new Error(
+          `Missing canonical reference for fixture '${input.fixtureId}' at '${canonicalPath}'. Refresh references before running the benchmark.`,
+        );
+      }
+      throw error;
+    }
+  }
+
+  const candidates: string[] = [];
+  if (
+    typeof input.screenId === "string" &&
+    input.screenId.trim().length > 0 &&
+    typeof input.viewportId === "string" &&
+    input.viewportId.trim().length > 0
+  ) {
+    candidates.push(
+      resolveVisualBenchmarkScreenViewportPaths(
+        input.fixtureId,
+        input.screenId,
+        input.viewportId,
+        input.options,
+      ).referencePngPath,
+    );
+  }
+  if (
+    typeof input.screenId === "string" &&
+    input.screenId.trim().length > 0
+  ) {
+    candidates.push(
+      resolveVisualBenchmarkScreenPaths(
+        input.fixtureId,
+        input.screenId,
+        input.options,
+      ).referencePngPath,
+    );
+  }
+  candidates.push(
+    resolveVisualBenchmarkFixturePaths(
+      input.fixtureId,
+      input.options,
+    ).referencePngPath,
+  );
+
+  for (const candidatePath of candidates) {
+    try {
+      return await readFile(candidatePath);
+    } catch (error: unknown) {
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  return null;
+};
+
+const extractDiffPercentFromReport = (report: unknown): number | null => {
+  if (typeof report !== "object" || report === null) {
+    return null;
+  }
+  const candidate = report as {
+    metadata?: {
+      diffPixelCount?: unknown;
+      totalPixels?: unknown;
+    };
+  };
+  const diffPixelCount = candidate.metadata?.diffPixelCount;
+  const totalPixels = candidate.metadata?.totalPixels;
+  if (
+    typeof diffPixelCount !== "number" ||
+    !Number.isFinite(diffPixelCount) ||
+    typeof totalPixels !== "number" ||
+    !Number.isFinite(totalPixels) ||
+    totalPixels <= 0
+  ) {
+    return null;
+  }
+  return Math.round(((diffPixelCount / totalPixels) * 100) * 100) / 100;
+};
+
+const buildCanonicalDiffAlerts = (input: {
+  artifactEntries: readonly VisualBenchmarkLastRunArtifactInput[];
+  benchmarkViewsByFixture: ReadonlyMap<string, VisualBenchmarkViewCatalogEntry>;
+}): KpiAlert[] => {
+  const alerts: KpiAlert[] = [];
+  for (const view of input.benchmarkViewsByFixture.values()) {
+    const matchingArtifact = input.artifactEntries.find((entry) => {
+      if (entry.fixtureId !== view.fixtureId) {
+        return false;
+      }
+      const normalizedViewportId =
+        typeof entry.viewportId === "string" && entry.viewportId.length > 0
+          ? entry.viewportId
+          : "default";
+      if (normalizedViewportId !== view.comparison.viewportId) {
+        return false;
+      }
+      const normalizedScreenId =
+        typeof entry.screenId === "string" && entry.screenId.length > 0
+          ? entry.screenId
+          : entry.fixtureId;
+      return normalizedScreenId === view.nodeId;
+    });
+
+    if (matchingArtifact === undefined) {
+      alerts.push({
+        code: "ALERT_VISUAL_QUALITY_CANONICAL_REFERENCE_MISSING",
+        severity: "warn",
+        message:
+          `No canonical comparison artifact was produced for fixture '${view.fixtureId}' ` +
+          `(screen '${view.nodeId}', viewport '${view.comparison.viewportId}').`,
+        value: 0,
+        threshold: view.comparison.maxDiffPercent,
+      });
+      continue;
+    }
+
+    const diffPercent = extractDiffPercentFromReport(matchingArtifact.report);
+    if (diffPercent === null) {
+      alerts.push({
+        code: "ALERT_VISUAL_QUALITY_CANONICAL_REFERENCE_MISSING",
+        severity: "warn",
+        message:
+          `Canonical comparison report was missing diff metadata for fixture '${view.fixtureId}' ` +
+          `(screen '${view.nodeId}', viewport '${view.comparison.viewportId}').`,
+        value: 0,
+        threshold: view.comparison.maxDiffPercent,
+      });
+      continue;
+    }
+
+    if (diffPercent > view.comparison.maxDiffPercent) {
+      alerts.push({
+        code: "ALERT_VISUAL_QUALITY_CANONICAL_DIFF_EXCEEDED",
+        severity: "warn",
+        message:
+          `Canonical pixel diff ${diffPercent.toFixed(2)}% exceeded ` +
+          `${view.comparison.maxDiffPercent.toFixed(2)}% for fixture '${view.fixtureId}' ` +
+          `(screen '${view.nodeId}', viewport '${view.comparison.viewportId}').`,
+        value: diffPercent,
+        threshold: view.comparison.maxDiffPercent,
+      });
+    }
+  }
+  return alerts;
+};
+
 const resolvePersistedViewportArtifacts = (
   screen: VisualBenchmarkFixtureScreenArtifact,
   qualityConfig?: VisualQualityConfig,
@@ -2829,6 +3151,8 @@ export const runVisualBenchmark = async (
       (async (fixtureOptions?: VisualBenchmarkRunOptions) =>
         prepareStorybookComponentFixtures(fixtureOptions)))(options);
   const effectiveOptions = preparedStorybookComponents.options ?? options;
+  const benchmarkViewsByFixture =
+    await loadBenchmarkCatalogByFixture(effectiveOptions);
   let scores: VisualBenchmarkScoreEntry[];
   const currentScreenAggregateMap = new Map<string, VisualBenchmarkScreenAggregateEntry>();
   const fixtureScreenContexts = new Map<string, VisualQualityScreenContext>();
@@ -2929,9 +3253,28 @@ export const runVisualBenchmark = async (
 
       scores = [];
       for (const fixtureId of fixtureIds) {
+        const benchmarkView = benchmarkViewsByFixture.get(fixtureId);
+        const fixtureExecutionOptions: VisualBenchmarkExecutionOptions =
+          benchmarkView === undefined
+            ? {
+                ...effectiveOptions,
+              }
+            : {
+                ...effectiveOptions,
+                viewportId: benchmarkView.comparison.viewportId,
+                referenceOverridePath:
+                  resolveVisualBenchmarkScreenViewportPaths(
+                    fixtureId,
+                    benchmarkView.nodeId,
+                    benchmarkView.comparison.viewportId,
+                    effectiveOptions,
+                  ).referencePngPath,
+                referenceOverrideViewportId:
+                  benchmarkView.comparison.viewportId,
+              };
         let result: VisualBenchmarkFixtureRunResult;
         try {
-          result = await executeFixture(fixtureId, effectiveOptions);
+          result = await executeFixture(fixtureId, fixtureExecutionOptions);
         } catch (error: unknown) {
           const failure = toFixtureFailure(fixtureId, error);
           failedFixtures.push(failure);
@@ -3052,6 +3395,14 @@ export const runVisualBenchmark = async (
             },
           );
           for (const artifact of persistedViewportArtifacts) {
+            const referenceImageBuffer =
+              await loadReferenceImageBufferForArtifact({
+                fixtureId: result.fixtureId,
+                screenId: screen.screenId,
+                viewportId: artifact.viewportId,
+                options: effectiveOptions,
+                benchmarkView,
+              });
             scores.push({
               fixtureId: result.fixtureId,
               screenId: screen.screenId,
@@ -3079,6 +3430,9 @@ export const runVisualBenchmark = async (
               mode: metadata.mode,
               viewport: artifact.viewport,
               actualImageBuffer: artifact.screenshotBuffer,
+              ...(referenceImageBuffer !== null
+                ? { referenceImageBuffer }
+                : {}),
               diffImageBuffer: artifact.diffBuffer,
               report: artifact.report,
               ...(artifact.browserArtifacts !== undefined
@@ -3347,6 +3701,19 @@ export const runVisualBenchmark = async (
   const baselineComponentAggregateScore = computeAggregateAverage(
     baselineCategorizedAggregates.component,
   );
+  const screenAggregateDelta =
+    currentScreenAggregateScore !== null && baselineScreenAggregateScore !== null
+      ? roundToTwoDecimals(
+          currentScreenAggregateScore - baselineScreenAggregateScore,
+        )
+      : null;
+  const componentAggregateDelta =
+    currentComponentAggregateScore !== null &&
+    baselineComponentAggregateScore !== null
+      ? roundToTwoDecimals(
+          currentComponentAggregateScore - baselineComponentAggregateScore,
+        )
+      : null;
 
   const comparableCurrentScreenAggregateScore =
     baselineScreenAggregateScore !== null ? currentScreenAggregateScore : null;
@@ -3457,6 +3824,39 @@ export const runVisualBenchmark = async (
   });
   if (screenAlerts.length > 0) {
     result.alerts = [...result.alerts, ...screenAlerts];
+  }
+
+  if (
+    screenAggregateDelta !== null &&
+    componentAggregateDelta !== null &&
+    screenAggregateDelta >= OVERFITTING_CORE_IMPROVEMENT_DELTA &&
+    componentAggregateDelta <= OVERFITTING_COMPONENT_DEGRADATION_DELTA
+  ) {
+    result.alerts = [
+      ...result.alerts,
+      {
+        code: "ALERT_VISUAL_QUALITY_OVERFITTING_RISK",
+        severity: "warn",
+        message:
+          "Full-page benchmark quality improved while Storybook component aggregate degraded, indicating potential overfitting to benchmark fixtures.",
+        value: componentAggregateDelta,
+        threshold: OVERFITTING_COMPONENT_DEGRADATION_DELTA,
+      },
+    ];
+    benchmarkWarnings.push(
+      "Potential overfitting detected: core benchmark delta improved while component aggregate regressed.",
+    );
+  }
+
+  const canonicalDiffAlerts = buildCanonicalDiffAlerts({
+    artifactEntries,
+    benchmarkViewsByFixture,
+  });
+  if (canonicalDiffAlerts.length > 0) {
+    result.alerts = [...result.alerts, ...canonicalDiffAlerts];
+    benchmarkWarnings.push(
+      ...canonicalDiffAlerts.map((alert) => alert.message),
+    );
   }
 
   // Apply quality config thresholds if config is present

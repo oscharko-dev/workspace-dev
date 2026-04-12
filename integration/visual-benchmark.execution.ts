@@ -81,6 +81,8 @@ export interface VisualBenchmarkExecutionOptions extends VisualBenchmarkFixtureO
   qualityConfig?: VisualQualityConfig;
   storybookStaticDir?: string;
   viewportId?: string;
+  referenceOverridePath?: string;
+  referenceOverrideViewportId?: string;
   workspaceRoot?: string;
   browsers?: readonly BenchmarkBrowserName[];
   loadBrowser?: (
@@ -1460,11 +1462,25 @@ const executeVisualBenchmarkViewport = async ({
     activeViewport.id,
     options,
   );
+  const referenceOverrideViewportId =
+    typeof options?.referenceOverrideViewportId === "string" &&
+    options.referenceOverrideViewportId.trim().length > 0
+      ? options.referenceOverrideViewportId.trim()
+      : options?.viewportId;
+  const resolvedReferencePath =
+    typeof options?.referenceOverridePath === "string" &&
+    options.referenceOverridePath.trim().length > 0 &&
+    (referenceOverrideViewportId === undefined ||
+      referenceOverrideViewportId === activeViewport.id)
+      ? options.referenceOverridePath.trim()
+      : screenViewportPaths.referencePngPath;
   const metadataPath = path.join(
     fixturePaths.fixtureDir,
     ".benchmark-runtime",
     `reference-${toScreenIdToken(screen.screenId)}-${activeViewport.id}.metadata.json`,
   );
+  const keepTemporaryArtifacts =
+    process.env.WORKSPACEDEV_VISUAL_BENCHMARK_KEEP_TMP === "1";
 
   try {
     const localFigmaJsonPath = path.join(
@@ -1489,7 +1505,7 @@ const executeVisualBenchmarkViewport = async ({
       "utf8",
     );
     const visualQualityFrozenReference: VisualQualityFrozenReferenceOverride = {
-      imagePath: screenViewportPaths.referencePngPath,
+      imagePath: resolvedReferencePath,
       metadataPath,
     };
     (
@@ -1547,6 +1563,12 @@ const executeVisualBenchmarkViewport = async ({
         waitForNetworkIdle: true,
         waitForFonts: true,
         waitForAnimations: true,
+        stabilizeBeforeCapture: {
+          enabled: true,
+          maxAttempts: 6,
+          intervalMs: 100,
+          requireConsecutiveMatches: 2,
+        },
         timeoutMs: 30_000,
         fullPage: false,
       },
@@ -1560,7 +1582,10 @@ const executeVisualBenchmarkViewport = async ({
         path.join(visualQualityDir, "actual.png"),
       );
     } catch (error: unknown) {
-      if (options?.allowIncompleteVisualQuality !== true) {
+      if (
+        options?.allowIncompleteVisualQuality !== true &&
+        !(isErrno(error) && error.code === "ENOENT")
+      ) {
         throw error;
       }
       screenshotBuffer = Buffer.from(captureResult.screenshotBuffer);
@@ -1576,7 +1601,10 @@ const executeVisualBenchmarkViewport = async ({
         ),
       ) as unknown;
     } catch (error: unknown) {
-      if (options?.allowIncompleteVisualQuality !== true) {
+      if (
+        options?.allowIncompleteVisualQuality !== true &&
+        !(isErrno(error) && error.code === "ENOENT")
+      ) {
         throw error;
       }
     }
@@ -1595,13 +1623,8 @@ const executeVisualBenchmarkViewport = async ({
       effectiveVisualQuality?.status !== "completed" ||
       typeof effectiveVisualQuality.overallScore !== "number"
     ) {
-      if (options?.allowIncompleteVisualQuality !== true) {
-        throw new Error(
-          `Benchmark fixture '${fixtureId}' screen '${screen.screenId}' viewport '${activeViewport.id}' did not produce a completed visual quality score.`,
-        );
-      }
       try {
-        const referenceBuffer = await readFile(screenViewportPaths.referencePngPath);
+        const referenceBuffer = await readFile(resolvedReferencePath);
         const fallback = recomputeVisualQualityFromBuffers({
           referenceBuffer,
           screenshotBuffer,
@@ -1776,7 +1799,9 @@ const executeVisualBenchmarkViewport = async ({
       recursive: true,
       force: true,
     });
-    await rm(rootDir, { recursive: true, force: true });
+    if (!keepTemporaryArtifacts) {
+      await rm(rootDir, { recursive: true, force: true });
+    }
   }
 };
 

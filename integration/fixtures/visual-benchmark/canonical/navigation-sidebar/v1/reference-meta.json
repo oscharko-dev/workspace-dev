@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-04-12T13:09:00.459Z",
+  "comparison": {
+    "maxDiffPercent": 6,
+    "viewportId": "default"
+  },
+  "export": {
+    "format": "png",
+    "scale": 1
+  },
+  "figmaLastModified": "2026-04-12T06:27:56Z",
+  "fileKey": "LATywBmBgvfBp1VvwUsGNB",
+  "fixtureId": "navigation-sidebar",
+  "label": "Test-View-04",
+  "nodeId": "1:48176",
+  "nodeName": "Empty State ID-001.1_v1",
+  "referenceVersion": 1,
+  "sha256": "e55103a9592265a61ac5dc28f9e6ae717f7b2d9eb43880f6a737ba1cd27fd5e8"
+}

@@ -1,20 +1,63 @@
 {
-  "capturedAt": "2026-04-12T07:46:31.708Z",
+  "capturedAt": "2026-04-12T13:08:56.545Z",
   "export": {
     "format": "png",
-    "scale": 2
+    "scale": 1
   },
   "fixtureId": "data-table",
+  "mode": "generated_app_screen",
+  "screens": [
+    {
+      "nodeId": "4:38304",
+      "screenId": "4:38304",
+      "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded  ID-003.4_v1",
+      "viewport": {
+        "deviceScaleFactor": 1,
+        "height": 3466,
+        "width": 1336
+      },
+      "viewports": [
+        {
+          "deviceScaleFactor": 1,
+          "height": 3466,
+          "id": "default",
+          "label": "Default",
+          "width": 1336
+        },
+        {
+          "deviceScaleFactor": 1,
+          "height": 800,
+          "id": "desktop",
+          "label": "Desktop",
+          "width": 1280
+        },
+        {
+          "deviceScaleFactor": 2,
+          "height": 1024,
+          "id": "tablet",
+          "label": "Tablet",
+          "width": 768
+        },
+        {
+          "deviceScaleFactor": 3,
+          "height": 844,
+          "id": "mobile",
+          "label": "Mobile",
+          "width": 390
+        }
+      ]
+    }
+  ],
   "source": {
     "fileKey": "M7FGS79qLfr3O4OXEYbxy0",
-    "lastModified": "2026-04-12T06:31:34Z",
-    "nodeId": "1:63225",
-    "nodeName": "Bedarfsermittlung Investitionskredit Flow ID-003"
+    "lastModified": "2026-04-12T11:39:17Z",
+    "nodeId": "4:38304",
+    "nodeName": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded  ID-003.4_v1"
   },
-  "version": 2,
+  "version": 4,
   "viewport": {
     "deviceScaleFactor": 1,
-    "height": 800,
-    "width": 1280
+    "height": 3466,
+    "width": 1336
   }
 }

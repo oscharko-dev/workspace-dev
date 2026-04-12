@@ -172,7 +172,10 @@ const computeComponentStructure = (regions: VisualDiffRegionResult[], fallback: 
   const mean = scores.reduce((acc, s) => acc + s, 0) / scores.length;
   const variance = scores.reduce((acc, s) => acc + (s - mean) ** 2, 0) / scores.length;
   const stdDev = Math.sqrt(variance);
-  return roundToTwoDecimals(100 - Math.min(100, stdDev * 2));
+  const consistency = 100 - Math.min(100, stdDev * 2);
+  // Keep structure fidelity-bounded so uniformly degraded regions cannot score
+  // high purely due to low cross-region variance.
+  return roundToTwoDecimals(Math.min(consistency, mean));
 };
 
 const computeSpacingAlignment = (regions: VisualDiffRegionResult[], fallback: number): number => {
@@ -292,7 +295,7 @@ export const computeVisualQualityReport = (input: {
       score: componentScore,
       details:
         regions.length > 1
-          ? "Cross-region deviation consistency measure"
+          ? "Cross-region consistency constrained by mean fidelity"
           : "Insufficient regions for variance — used overall similarity",
     },
     {

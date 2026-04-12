@@ -27,24 +27,24 @@
     {
       "fixtureId": "data-table",
       "score": 100,
-      "screenId": "1:63225",
-      "screenName": "Bedarfsermittlung Investitionskredit Flow ID-003",
+      "screenId": "4:38304",
+      "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded  ID-003.4_v1",
       "viewportId": "desktop",
       "viewportLabel": "Desktop"
     },
     {
       "fixtureId": "data-table",
       "score": 100,
-      "screenId": "1:63225",
-      "screenName": "Bedarfsermittlung Investitionskredit Flow ID-003",
+      "screenId": "4:38304",
+      "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded  ID-003.4_v1",
       "viewportId": "mobile",
       "viewportLabel": "Mobile"
     },
     {
       "fixtureId": "data-table",
       "score": 100,
-      "screenId": "1:63225",
-      "screenName": "Bedarfsermittlung Investitionskredit Flow ID-003",
+      "screenId": "4:38304",
+      "screenName": "Bedarfsermittlung; Netto + Betriebsmittel; Maximalausprägung: Alle Cluster Expanded  ID-003.4_v1",
       "viewportId": "tablet",
       "viewportLabel": "Tablet"
     },

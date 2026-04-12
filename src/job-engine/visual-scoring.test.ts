@@ -166,17 +166,26 @@ test("computeVisualQualityReport is deterministic for the same input", () => {
 });
 
 test("computeVisualQualityReport respects custom weights", () => {
-  const red = createSolidPng(90, 100, 255, 0, 0);
-  const blue = createSolidPng(90, 100, 0, 0, 255);
-  const diffResult = comparePngBuffers({
-    referenceBuffer: red,
-    testBuffer: blue,
-  });
+  const diffResult: VisualDiffResult = {
+    diffImageBuffer: Buffer.alloc(0),
+    similarityScore: 70,
+    diffPixelCount: 300,
+    totalPixels: 1000,
+    width: 100,
+    height: 10,
+    regions: [
+      { name: "header", x: 0, y: 0, width: 20, height: 10, diffPixelCount: 20, totalPixels: 200, deviationPercent: 10 },
+      { name: "content-left", x: 20, y: 0, width: 20, height: 10, diffPixelCount: 60, totalPixels: 200, deviationPercent: 30 },
+      { name: "content-center", x: 40, y: 0, width: 20, height: 10, diffPixelCount: 100, totalPixels: 200, deviationPercent: 50 },
+      { name: "content-right", x: 60, y: 0, width: 20, height: 10, diffPixelCount: 140, totalPixels: 200, deviationPercent: 70 },
+      { name: "footer", x: 80, y: 0, width: 20, height: 10, diffPixelCount: 40, totalPixels: 200, deviationPercent: 20 },
+    ],
+  };
 
   const customWeights = {
-    layoutAccuracy: 0.5,
+    layoutAccuracy: 0.1,
     colorFidelity: 0.1,
-    typography: 0.1,
+    typography: 0.5,
     componentStructure: 0.2,
     spacingAlignment: 0.1,
   };
@@ -330,6 +339,34 @@ test("computeVisualQualityReport handles empty regions gracefully", () => {
   assert.equal(
     getDimension(report, "Spacing & Alignment").details,
     "No header/footer regions — used overall similarity",
+  );
+});
+
+test("component structure score stays fidelity-anchored for uniformly degraded regions", () => {
+  const lowUniformResult: VisualDiffResult = {
+    diffImageBuffer: Buffer.alloc(0),
+    similarityScore: 20,
+    diffPixelCount: 800,
+    totalPixels: 1000,
+    width: 100,
+    height: 10,
+    regions: [
+      { name: "header", x: 0, y: 0, width: 20, height: 10, diffPixelCount: 160, totalPixels: 200, deviationPercent: 80 },
+      { name: "content-left", x: 20, y: 0, width: 20, height: 10, diffPixelCount: 160, totalPixels: 200, deviationPercent: 80 },
+      { name: "content-center", x: 40, y: 0, width: 20, height: 10, diffPixelCount: 160, totalPixels: 200, deviationPercent: 80 },
+      { name: "content-right", x: 60, y: 0, width: 20, height: 10, diffPixelCount: 160, totalPixels: 200, deviationPercent: 80 },
+      { name: "footer", x: 80, y: 0, width: 20, height: 10, diffPixelCount: 160, totalPixels: 200, deviationPercent: 80 },
+    ],
+  };
+
+  const report = computeVisualQualityReport({
+    diffResult: lowUniformResult,
+    comparedAt: FIXED_TIMESTAMP,
+  });
+  const structure = getDimension(report, "Component Structure");
+  assert.ok(
+    structure.score <= 35,
+    `expected low fidelity to keep structure score bounded, received ${String(structure.score)}`,
   );
 });
 
@@ -673,7 +710,7 @@ test("computeVisualQualityReport calculates component variance and truncates hot
   assert.equal(getDimension(report, "Component Structure").score, 24.67);
   assert.equal(
     getDimension(report, "Component Structure").details,
-    "Cross-region deviation consistency measure",
+    "Cross-region consistency constrained by mean fidelity",
   );
   assert.deepEqual(
     report.hotspots.map((hotspot) => hotspot.region),

@@ -20,6 +20,12 @@ export interface CaptureConfig {
   waitForNetworkIdle: boolean;
   waitForFonts: boolean;
   waitForAnimations: boolean;
+  stabilizeBeforeCapture: {
+    enabled: boolean;
+    maxAttempts: number;
+    intervalMs: number;
+    requireConsecutiveMatches: number;
+  };
   timeoutMs: number;
   fullPage: boolean;
 }
@@ -54,6 +60,12 @@ export const DEFAULT_CAPTURE_CONFIG: CaptureConfig = {
   waitForNetworkIdle: true,
   waitForFonts: true,
   waitForAnimations: true,
+  stabilizeBeforeCapture: {
+    enabled: false,
+    maxAttempts: 5,
+    intervalMs: 100,
+    requireConsecutiveMatches: 2,
+  },
   timeoutMs: 30_000,
   fullPage: true,
 };
@@ -129,6 +141,37 @@ export const resolveCaptureConfig = (
       : {}),
   };
 
+  const stabilizeBeforeCapture = partial.stabilizeBeforeCapture;
+  const stabilization = {
+    enabled:
+      stabilizeBeforeCapture?.enabled ??
+      DEFAULT_CAPTURE_CONFIG.stabilizeBeforeCapture.enabled,
+    maxAttempts: assertPositiveInteger({
+      value:
+        stabilizeBeforeCapture?.maxAttempts ??
+        DEFAULT_CAPTURE_CONFIG.stabilizeBeforeCapture.maxAttempts,
+      fieldName: "stabilizeBeforeCapture.maxAttempts",
+    }),
+    intervalMs: assertPositiveInteger({
+      value:
+        stabilizeBeforeCapture?.intervalMs ??
+        DEFAULT_CAPTURE_CONFIG.stabilizeBeforeCapture.intervalMs,
+      fieldName: "stabilizeBeforeCapture.intervalMs",
+    }),
+    requireConsecutiveMatches: assertPositiveInteger({
+      value:
+        stabilizeBeforeCapture?.requireConsecutiveMatches ??
+        DEFAULT_CAPTURE_CONFIG.stabilizeBeforeCapture.requireConsecutiveMatches,
+      fieldName: "stabilizeBeforeCapture.requireConsecutiveMatches",
+    }),
+  };
+
+  if (stabilization.requireConsecutiveMatches > stabilization.maxAttempts) {
+    throw new Error(
+      "stabilizeBeforeCapture.requireConsecutiveMatches must not exceed stabilizeBeforeCapture.maxAttempts.",
+    );
+  }
+
   return {
     viewport,
     waitForNetworkIdle:
@@ -136,6 +179,7 @@ export const resolveCaptureConfig = (
     waitForFonts: partial.waitForFonts ?? DEFAULT_CAPTURE_CONFIG.waitForFonts,
     waitForAnimations:
       partial.waitForAnimations ?? DEFAULT_CAPTURE_CONFIG.waitForAnimations,
+    stabilizeBeforeCapture: stabilization,
     timeoutMs: assertPositiveInteger({
       value: partial.timeoutMs ?? DEFAULT_CAPTURE_CONFIG.timeoutMs,
       fieldName: "timeoutMs",
@@ -517,6 +561,73 @@ const WAIT_FOR_ANIMATIONS_EXPRESSION = [
   "})",
 ].join("\n");
 
+const waitForDelay = (delayMs: number): Promise<void> => {
+  return new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+};
+
+const captureStabilizedScreenshot = async (input: {
+  page: PlaywrightPage;
+  fullPage: boolean;
+  config: CaptureConfig;
+  onLog: (message: string) => void;
+}): Promise<Buffer> => {
+  if (!input.config.stabilizeBeforeCapture.enabled) {
+    return await input.page.screenshot({
+      fullPage: input.fullPage,
+      type: "png",
+    });
+  }
+
+  const stabilizationConfig = input.config.stabilizeBeforeCapture;
+  const deadline = Date.now() + input.config.timeoutMs;
+  let previousBuffer: Buffer | null = null;
+  let consecutiveMatchCount = 0;
+
+  for (let attempt = 1; attempt <= stabilizationConfig.maxAttempts; attempt++) {
+    if (Date.now() > deadline) {
+      throw new Error(
+        `Capture stabilization timed out after ${input.config.timeoutMs}ms before screenshot convergence.`,
+      );
+    }
+
+    const currentBuffer = Buffer.from(
+      await input.page.screenshot({
+        fullPage: input.fullPage,
+        type: "png",
+      }),
+    );
+    if (
+      previousBuffer !== null &&
+      Buffer.compare(previousBuffer, currentBuffer) === 0
+    ) {
+      consecutiveMatchCount += 1;
+    } else {
+      consecutiveMatchCount = 1;
+    }
+
+    if (
+      consecutiveMatchCount >=
+      stabilizationConfig.requireConsecutiveMatches
+    ) {
+      input.onLog(
+        `Capture stabilization reached after ${String(attempt)} attempt(s) with ${String(consecutiveMatchCount)} consecutive matching screenshots.`,
+      );
+      return currentBuffer;
+    }
+
+    previousBuffer = currentBuffer;
+    if (attempt < stabilizationConfig.maxAttempts) {
+      await waitForDelay(stabilizationConfig.intervalMs);
+    }
+  }
+
+  throw new Error(
+    `Capture stabilization failed after ${String(stabilizationConfig.maxAttempts)} attempts without reaching ${String(stabilizationConfig.requireConsecutiveMatches)} consecutive matching screenshots.`,
+  );
+};
+
 export const captureScreenshot = async (input: {
   url: string;
   config?: Partial<CaptureConfig & { viewport?: Partial<ViewportConfig> }>;
@@ -629,9 +740,11 @@ export const captureScreenshot = async (input: {
     }
 
     log("Capturing screenshot");
-    const screenshotBuffer = await page.screenshot({
+    const screenshotBuffer = await captureStabilizedScreenshot({
+      page,
       fullPage: config.fullPage,
-      type: "png",
+      config,
+      onLog: log,
     });
 
     const pngBuffer = Buffer.from(screenshotBuffer);
