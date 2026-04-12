@@ -62,6 +62,7 @@ flowchart TB
   - [`inspector-page.tsx`](ui-src/src/features/workspace/inspector-page.tsx)
   - [`InspectorScopeContext.tsx`](ui-src/src/features/workspace/inspector/InspectorScopeContext.tsx)
   - [`visual-quality-page.tsx`](ui-src/src/features/visual-quality/visual-quality-page.tsx)
+  - A global `branches: 75` fallback also applies to any file added to the hotspot pass that does not yet have a per-file entry.
 - The only justified UI hotspot exceptions are:
   - [`ui-src/src/features/workspace/inspector/InspectorPanel.tsx`](ui-src/src/features/workspace/inspector/InspectorPanel.tsx)
     - Rationale: the panel still concentrates the broadest remaining branch fan-out in the UI surface, and the new interaction tests now cover its critical edit, sync, navigation, and diagnostics paths without yet making a `>=75%` threshold credible for the whole monolith.
