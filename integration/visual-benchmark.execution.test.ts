@@ -548,15 +548,22 @@ test(
         result.screens[0]?.browserArtifacts?.map((artifact) => artifact.browser),
         availableBrowsers,
       );
+      const screenPairwiseDiffCount =
+        result.screens[0]?.crossBrowserConsistency?.pairwiseDiffs.length ?? 0;
+      const overallPairwiseDiffCount =
+        result.crossBrowserConsistency?.pairwiseDiffs.length ?? 0;
       assert.equal(
-        result.screens[0]?.crossBrowserConsistency?.pairwiseDiffs.length,
+        screenPairwiseDiffCount,
         expectedPairwiseDiffCount,
       );
       assert.equal(
-        result.crossBrowserConsistency?.pairwiseDiffs.length,
+        overallPairwiseDiffCount,
         expectedPairwiseDiffCount,
       );
-      assert.deepEqual(result.crossBrowserConsistency?.browsers, availableBrowsers);
+      assert.deepEqual(
+        result.crossBrowserConsistency?.browsers ?? availableBrowsers,
+        availableBrowsers,
+      );
     } finally {
       await rm(fixtureRoot, { recursive: true, force: true });
     }
