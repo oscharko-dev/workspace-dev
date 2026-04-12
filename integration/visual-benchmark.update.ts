@@ -374,7 +374,11 @@ const updateMetadataFromSnapshot = (
       nodeName: snapshot.nodeName,
       lastModified: snapshot.lastModified,
     },
-    viewport: snapshot.viewport,
+    viewport: {
+      ...snapshot.viewport,
+      deviceScaleFactor:
+        snapshot.viewport.deviceScaleFactor ?? metadata.export.scale,
+    },
   };
 };
 
@@ -461,6 +465,7 @@ export const updateVisualBenchmarkReferences = async (
       viewport: {
         width: firstViewportArtifact.viewport.width,
         height: firstViewportArtifact.viewport.height,
+        deviceScaleFactor: metadata.export.scale,
       },
     };
 
@@ -592,6 +597,8 @@ export const runVisualBenchmarkLiveAudit = async (
         viewport: {
           width: screen.viewport.width,
           height: screen.viewport.height,
+          deviceScaleFactor:
+            screen.viewport.deviceScaleFactor ?? metadata.export.scale,
         },
       };
       const liveScreenReference =
