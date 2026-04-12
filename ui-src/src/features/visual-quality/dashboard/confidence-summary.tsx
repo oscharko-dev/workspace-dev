@@ -1,5 +1,5 @@
 import { type JSX } from "react";
-import { type ConfidenceLevel, type JobConfidence } from "../data/types";
+import { type JobConfidence, type ConfidenceLevel } from "../data/types";
 
 const LEVEL_COLORS: Record<ConfidenceLevel, string> = {
   high: "#22c55e",
@@ -30,109 +30,69 @@ export function ConfidenceSummary({
   const label = LEVEL_LABELS[confidence.level];
 
   return (
-    <div
-      style={{
-        border: `2px solid ${color}`,
-        borderRadius: 8,
-        padding: 16,
-        marginBottom: 16,
-      }}
+    <section
+      data-testid="confidence-summary"
+      className="rounded-md border bg-[#171717] p-3"
+      style={{ borderColor: color }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginBottom: 8,
-        }}
-      >
+      <div className="mb-2 flex items-center gap-2">
         <span
-          style={{
-            display: "inline-block",
-            width: 12,
-            height: 12,
-            borderRadius: "50%",
-            backgroundColor: color,
-          }}
+          className="inline-block h-3 w-3 shrink-0 rounded-full"
+          style={{ backgroundColor: color }}
         />
-        <strong>{label}</strong>
+        <strong className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
+          {label}
+        </strong>
         {confidence.score !== undefined && (
-          <span
-            style={{ marginLeft: "auto", fontVariantNumeric: "tabular-nums" }}
-          >
+          <span className="ml-auto font-mono text-xs tabular-nums text-white/55">
             {confidence.score.toFixed(1)}%
           </span>
         )}
       </div>
-
       {confidence.lowConfidenceSummary &&
         confidence.lowConfidenceSummary.length > 0 && (
-          <ul
-            style={{
-              margin: "8px 0 0 0",
-              paddingLeft: 20,
-              fontSize: 13,
-              color: "#666",
-            }}
-          >
+          <ul className="m-0 list-disc space-y-0.5 pl-4 text-[11px] text-white/55">
             {confidence.lowConfidenceSummary.map((item, i) => (
-              <li key={i}>{item}</li>
+              <li key={`${String(i)}-${item}`}>{item}</li>
             ))}
           </ul>
         )}
-
       {confidence.contributors && confidence.contributors.length > 0 && (
-        <details style={{ marginTop: 8 }}>
-          <summary style={{ cursor: "pointer", fontSize: 13, color: "#888" }}>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[11px] text-white/45">
             Signal breakdown ({confidence.contributors.length} contributors)
           </summary>
-          <table
-            style={{
-              width: "100%",
-              fontSize: 12,
-              marginTop: 4,
-              borderCollapse: "collapse",
-            }}
-          >
+          <table className="mt-1 w-full border-collapse text-[11px]">
             <thead>
-              <tr style={{ textAlign: "left", borderBottom: "1px solid #eee" }}>
-                <th style={{ padding: "4px 8px" }}>Signal</th>
-                <th style={{ padding: "4px 8px" }}>Impact</th>
-                <th style={{ padding: "4px 8px" }}>Weight</th>
-                <th style={{ padding: "4px 8px" }}>Value</th>
+              <tr className="border-b border-white/10 text-left text-white/45">
+                <th className="px-2 py-1 font-medium">Signal</th>
+                <th className="px-2 py-1 font-medium">Impact</th>
+                <th className="px-2 py-1 font-medium">Weight</th>
+                <th className="px-2 py-1 font-medium">Value</th>
               </tr>
             </thead>
             <tbody>
               {confidence.contributors.map((c, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #f5f5f5" }}>
-                  <td style={{ padding: "4px 8px" }}>{c.signal}</td>
+                <tr
+                  key={`${String(i)}-${c.signal}`}
+                  className="border-b border-white/5"
+                >
+                  <td className="px-2 py-1 text-white/80">{c.signal}</td>
                   <td
-                    style={{
-                      padding: "4px 8px",
-                      color:
-                        c.impact === "negative"
-                          ? "#ef4444"
-                          : c.impact === "positive"
-                            ? "#22c55e"
-                            : "#888",
-                    }}
+                    className={`px-2 py-1 ${
+                      c.impact === "negative"
+                        ? "text-rose-400"
+                        : c.impact === "positive"
+                          ? "text-[#4eba87]"
+                          : "text-white/45"
+                    }`}
                   >
                     {c.impact}
                   </td>
-                  <td
-                    style={{
-                      padding: "4px 8px",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
+                  <td className="px-2 py-1 font-mono tabular-nums text-white/55">
                     {c.weight.toFixed(2)}
                   </td>
-                  <td
-                    style={{
-                      padding: "4px 8px",
-                      fontVariantNumeric: "tabular-nums",
-                    }}
-                  >
+                  <td className="px-2 py-1 font-mono tabular-nums text-white/55">
                     {c.value.toFixed(2)}
                   </td>
                 </tr>
@@ -141,6 +101,6 @@ export function ConfidenceSummary({
           </table>
         </details>
       )}
-    </div>
+    </section>
   );
 }

@@ -1,4 +1,4 @@
-import type { ConfidenceLevel } from "../data/types.js";
+import type { ConfidenceLevel } from "../data/types";
 
 export const CONFIDENCE_OVERLAY_COLORS: Record<ConfidenceLevel, string> = {
   high: "rgba(34, 197, 94, 0.2)",
