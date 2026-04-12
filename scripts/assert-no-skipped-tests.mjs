@@ -20,6 +20,13 @@ const extractSkippedCount = (content) => {
     skipped += Number.parseInt(match[1], 10);
   }
 
+  // TAP summary line from Node's test runner:
+  // "# skipped 9"
+  for (const match of content.matchAll(/#\s*skipped\s+(\d+)/gu)) {
+    summaryHits += 1;
+    skipped += Number.parseInt(match[1], 10);
+  }
+
   return { skipped, summaryHits };
 };
 

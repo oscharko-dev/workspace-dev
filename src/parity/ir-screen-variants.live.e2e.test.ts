@@ -12,12 +12,18 @@ import { applyAppShellsToDesignIr } from "./ir-app-shells.js";
 import { applyScreenVariantFamiliesToDesignIr } from "./ir-screen-variants.js";
 import { figmaToDesignIrWithOptions } from "./ir.js";
 
-const FIGMA_FILE_KEY = process.env["FIGMA_FILE_KEY"] ?? "";
-const FIGMA_ACCESS_TOKEN = process.env["FIGMA_ACCESS_TOKEN"] ?? "";
+const FIGMA_FILE_KEY =
+  process.env["FIGMA_FILE_KEY"] ??
+  process.env["WORKSPACEDEV_BOARD_KEY"] ??
+  "";
+const FIGMA_ACCESS_TOKEN =
+  process.env["FIGMA_ACCESS_TOKEN"] ??
+  process.env["WORKSPACEDEV_FIGMA_TOKEN"] ??
+  "";
 
 const skipReason =
   FIGMA_FILE_KEY.length === 0 || FIGMA_ACCESS_TOKEN.length === 0
-    ? "FIGMA_FILE_KEY and FIGMA_ACCESS_TOKEN are required for live screen variant E2E tests."
+    ? "Figma board key and access token are required for live screen variant E2E tests."
     : undefined;
 
 const TARGET_FAMILY_ID = "id-003-1-fehlermeldungen-5";
@@ -78,6 +84,31 @@ const isStringLengthOverflowError = (error: unknown): boolean => {
   return message.includes("Cannot create a string longer");
 };
 
+const MAX_NODE_FETCH_ATTEMPTS = 4;
+const DEFAULT_RATE_LIMIT_BACKOFF_MS = 400;
+const MAX_RATE_LIMIT_BACKOFF_MS = 5_000;
+
+const sleep = async (delayMs: number): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+};
+
+const parseRetryAfterMs = (retryAfterHeader: string | null): number | undefined => {
+  if (!retryAfterHeader) {
+    return undefined;
+  }
+  const retryAfterSeconds = Number.parseFloat(retryAfterHeader);
+  if (Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0) {
+    return Math.round(retryAfterSeconds * 1_000);
+  }
+  const retryAfterTimestamp = Date.parse(retryAfterHeader);
+  if (Number.isNaN(retryAfterTimestamp)) {
+    return undefined;
+  }
+  return Math.max(0, retryAfterTimestamp - Date.now());
+};
+
 const fetchFrameDocument = async ({
   screenId,
   includeGeometry
@@ -86,26 +117,38 @@ const fetchFrameDocument = async ({
   includeGeometry: boolean;
 }): Promise<LiveFrameDocumentFetchResult> => {
   const geometryParam = includeGeometry ? "&geometry=paths" : "";
-  const response = await fetch(
-    `https://api.figma.com/v1/files/${encodeURIComponent(FIGMA_FILE_KEY)}/nodes?ids=${encodeURIComponent(screenId)}${geometryParam}`,
-    {
-      headers: {
-        "X-Figma-Token": FIGMA_ACCESS_TOKEN
+  for (let attempt = 1; attempt <= MAX_NODE_FETCH_ATTEMPTS; attempt += 1) {
+    const response = await fetch(
+      `https://api.figma.com/v1/files/${encodeURIComponent(FIGMA_FILE_KEY)}/nodes?ids=${encodeURIComponent(screenId)}${geometryParam}`,
+      {
+        headers: {
+          "X-Figma-Token": FIGMA_ACCESS_TOKEN
+        },
+        signal: AbortSignal.timeout(30_000)
       }
+    );
+    if (response.ok) {
+      const payload = (await response.json()) as {
+        name?: string;
+        nodes?: Record<string, { document?: unknown }>;
+      };
+      return {
+        document: payload.nodes?.[screenId]?.document,
+        boardName: typeof payload.name === "string" ? payload.name : undefined
+      };
     }
-  );
-  if (!response.ok) {
+
+    if (response.status === 429 && attempt < MAX_NODE_FETCH_ATTEMPTS) {
+      const retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+      const exponentialBackoffMs = DEFAULT_RATE_LIMIT_BACKOFF_MS * (2 ** (attempt - 1));
+      await sleep(Math.min(retryAfterMs ?? exponentialBackoffMs, MAX_RATE_LIMIT_BACKOFF_MS));
+      continue;
+    }
+
     throw new Error(`Figma API responded with status ${response.status} for node '${screenId}'.`);
   }
 
-  const payload = (await response.json()) as {
-    name?: string;
-    nodes?: Record<string, { document?: unknown }>;
-  };
-  return {
-    document: payload.nodes?.[screenId]?.document,
-    boardName: typeof payload.name === "string" ? payload.name : undefined
-  };
+  throw new Error(`Figma API rate limit persisted for node '${screenId}' after ${MAX_NODE_FETCH_ATTEMPTS} attempts.`);
 };
 
 const formatLiveFixtureUnavailableMessage = (details: LiveFixtureUnavailableDetails): string => {

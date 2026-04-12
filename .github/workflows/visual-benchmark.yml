@@ -104,6 +104,9 @@ jobs:
           pnpm exec playwright install-deps $browsers
 
       - name: Run visual benchmark verification suites
+        env:
+          WORKSPACEDEV_BOARD_KEY: DUArQ8VuM3aPMjXFLaQSSH
+          WORKSPACEDEV_FIGMA_TOKEN: ${{ secrets.WORKSPACEDEV_FIGMA_TOKEN }}
         run: |
           set -euo pipefail
           mkdir -p artifacts/visual-benchmark/logs
