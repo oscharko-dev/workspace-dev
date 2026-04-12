@@ -142,7 +142,9 @@ export function sendBuffer({
 
 export async function readJsonBody(
   request: IncomingMessage,
+  options?: { maxBytes?: number },
 ): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+  const maxBytes = options?.maxBytes ?? MAX_REQUEST_BODY_BYTES;
   let body = "";
   let bodyBytes = 0;
 
@@ -154,10 +156,10 @@ export async function readJsonBody(
           ? chunk
           : Buffer.from(String(chunk), "utf8");
     bodyBytes += normalizedChunkBuffer.byteLength;
-    if (bodyBytes > MAX_REQUEST_BODY_BYTES) {
+    if (bodyBytes > maxBytes) {
       return {
         ok: false,
-        error: `Request body exceeds ${Math.round(MAX_REQUEST_BODY_BYTES / (1024 * 1024))} MiB size limit.`,
+        error: `Request body exceeds ${Math.round(maxBytes / (1024 * 1024))} MiB size limit.`,
       };
     }
     const normalizedChunk = normalizedChunkBuffer.toString("utf8");

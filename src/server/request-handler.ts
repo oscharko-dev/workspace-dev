@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type {
@@ -34,7 +41,10 @@ import {
   sendText,
   readJsonBody,
 } from "./http-helpers.js";
-import { WORKSPACE_UI_CONTENT_SECURITY_POLICY } from "./constants.js";
+import {
+  MAX_SUBMIT_BODY_BYTES,
+  WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+} from "./constants.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
 import {
   isWorkspaceProjectRoute,
@@ -1866,7 +1876,9 @@ export function createWorkspaceRequestHandler({
       }
 
       if (method === "POST" && pathname === "/workspace/submit") {
-        const rawBody = await readJsonBody(request);
+        const rawBody = await readJsonBody(request, {
+          maxBytes: MAX_SUBMIT_BODY_BYTES,
+        });
         if (!rawBody.ok) {
           sendValidationError({
             payload: {
@@ -1953,6 +1965,7 @@ export function createWorkspaceRequestHandler({
           figmaSourceMode: resolvedFigmaSourceMode,
           llmCodegenMode: defaults.llmCodegenMode,
         };
+        let pasteTempPathToCleanup: string | undefined;
 
         if (resolvedFigmaSourceMode === "figma_paste") {
           const pastePayload = parsed.data.figmaJsonPayload ?? "";
@@ -1962,6 +1975,7 @@ export function createWorkspaceRequestHandler({
           try {
             await mkdir(pasteTempDir, { recursive: true });
             await writeFile(pasteTempPath, pastePayload, "utf8");
+            pasteTempPathToCleanup = pasteTempPath;
           } catch (error) {
             sendRequestFailure({
               statusCode: 500,
@@ -2039,6 +2053,13 @@ export function createWorkspaceRequestHandler({
           statusCode: 202,
           payload: accepted,
         });
+        if (pasteTempPathToCleanup !== undefined) {
+          scheduleFigmaPasteTempCleanup({
+            jobEngine,
+            jobId: accepted.jobId,
+            filePath: pasteTempPathToCleanup,
+          });
+        }
         return;
       }
 
@@ -2085,6 +2106,41 @@ const LISTING_EXTENSIONS = new Set([
   ".svg",
 ]);
 const LISTING_BLOCKED_DIRS = new Set(["node_modules", "dist"]);
+
+const FIGMA_PASTE_CLEANUP_POLL_MS = 1_000;
+const FIGMA_PASTE_CLEANUP_MAX_WAIT_MS = 10 * 60 * 1_000;
+
+function scheduleFigmaPasteTempCleanup(args: {
+  jobEngine: JobEngine;
+  jobId: string;
+  filePath: string;
+}): void {
+  const { jobEngine, jobId, filePath } = args;
+  const deadline = Date.now() + FIGMA_PASTE_CLEANUP_MAX_WAIT_MS;
+  const removeFile = (): void => {
+    void unlink(filePath).catch(() => {
+      /* best-effort cleanup; ignore ENOENT and other filesystem errors */
+    });
+  };
+  const poll = (): void => {
+    const job = jobEngine.getJob(jobId);
+    if (
+      !job ||
+      job.status === "completed" ||
+      job.status === "failed" ||
+      job.status === "canceled"
+    ) {
+      removeFile();
+      return;
+    }
+    if (Date.now() >= deadline) {
+      removeFile();
+      return;
+    }
+    setTimeout(poll, FIGMA_PASTE_CLEANUP_POLL_MS).unref();
+  };
+  setTimeout(poll, FIGMA_PASTE_CLEANUP_POLL_MS).unref();
+}
 
 async function collectSourceFiles(
   projectDir: string,

@@ -118,12 +118,13 @@ function BootstrapHeader(): JSX.Element {
     <header className="shrink-0 border-b border-[#000000] bg-[#171717]">
       <div className="flex w-full items-center justify-between gap-3 px-4 py-2">
         <div className="flex items-center gap-3">
-          <span
-            aria-disabled="true"
+          <button
+            type="button"
+            disabled
             className="flex cursor-not-allowed items-center gap-1 rounded-md border border-transparent px-2 py-1 text-xs font-medium text-white/30"
           >
             Back
-          </span>
+          </button>
 
           <div className="h-4 w-px bg-[#333333]" />
 

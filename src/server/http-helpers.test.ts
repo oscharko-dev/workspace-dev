@@ -171,7 +171,7 @@ test("readJsonBody parses valid JSON, empty bodies, invalid JSON, and oversize p
     );
     assert.deepEqual(parsed, {
       ok: false,
-      error: "Request body exceeds 4 MiB size limit.",
+      error: "Request body exceeds 1 MiB size limit.",
     });
   });
 });
