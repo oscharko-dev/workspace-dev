@@ -1,14 +1,21 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { DEFAULT_CONTENT_SECURITY_POLICY, MAX_REQUEST_BODY_BYTES } from "./constants.js";
+import {
+  DEFAULT_CONTENT_SECURITY_POLICY,
+  MAX_REQUEST_BODY_BYTES,
+} from "./constants.js";
 
 function appendRequestIdToErrorPayload({
   response,
-  payload
+  payload,
 }: {
   response: ServerResponse;
   payload: unknown;
 }): unknown {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
     return payload;
   }
 
@@ -24,7 +31,7 @@ function appendRequestIdToErrorPayload({
 
   return {
     ...payloadRecord,
-    requestId
+    requestId,
   };
 }
 
@@ -32,7 +39,7 @@ function applySecurityHeaders({
   response,
   allowFrameEmbedding,
   cacheControl,
-  contentSecurityPolicy
+  contentSecurityPolicy,
 }: {
   response: ServerResponse;
   allowFrameEmbedding?: boolean;
@@ -44,7 +51,10 @@ function applySecurityHeaders({
   response.setHeader("cache-control", cacheControl ?? "no-store");
   if (!allowFrameEmbedding) {
     response.setHeader("x-frame-options", "SAMEORIGIN");
-    response.setHeader("content-security-policy", contentSecurityPolicy ?? DEFAULT_CONTENT_SECURITY_POLICY);
+    response.setHeader(
+      "content-security-policy",
+      contentSecurityPolicy ?? DEFAULT_CONTENT_SECURITY_POLICY,
+    );
     return;
   }
 
@@ -56,7 +66,7 @@ export function sendJson({
   response,
   statusCode,
   payload,
-  contentSecurityPolicy
+  contentSecurityPolicy,
 }: {
   response: ServerResponse;
   statusCode: number;
@@ -66,10 +76,12 @@ export function sendJson({
   response.statusCode = statusCode;
   applySecurityHeaders({
     response,
-    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy })
+    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy }),
   });
   response.setHeader("content-type", "application/json; charset=utf-8");
-  response.end(`${JSON.stringify(appendRequestIdToErrorPayload({ response, payload }))}\n`);
+  response.end(
+    `${JSON.stringify(appendRequestIdToErrorPayload({ response, payload }))}\n`,
+  );
 }
 
 export function sendText({
@@ -79,7 +91,7 @@ export function sendText({
   payload,
   cacheControl,
   allowFrameEmbedding,
-  contentSecurityPolicy
+  contentSecurityPolicy,
 }: {
   response: ServerResponse;
   statusCode: number;
@@ -94,7 +106,7 @@ export function sendText({
     response,
     ...(cacheControl === undefined ? {} : { cacheControl }),
     ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding }),
-    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy })
+    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy }),
   });
   response.setHeader("content-type", contentType);
   response.end(payload);
@@ -107,7 +119,7 @@ export function sendBuffer({
   payload,
   cacheControl,
   allowFrameEmbedding,
-  contentSecurityPolicy
+  contentSecurityPolicy,
 }: {
   response: ServerResponse;
   statusCode: number;
@@ -122,24 +134,31 @@ export function sendBuffer({
     response,
     ...(cacheControl === undefined ? {} : { cacheControl }),
     ...(allowFrameEmbedding === undefined ? {} : { allowFrameEmbedding }),
-    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy })
+    ...(contentSecurityPolicy === undefined ? {} : { contentSecurityPolicy }),
   });
   response.setHeader("content-type", contentType);
   response.end(payload);
 }
 
 export async function readJsonBody(
-  request: IncomingMessage
+  request: IncomingMessage,
 ): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
   let body = "";
   let bodyBytes = 0;
 
   for await (const chunk of request) {
     const normalizedChunkBuffer =
-      typeof chunk === "string" ? Buffer.from(chunk, "utf8") : Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+      typeof chunk === "string"
+        ? Buffer.from(chunk, "utf8")
+        : Buffer.isBuffer(chunk)
+          ? chunk
+          : Buffer.from(String(chunk), "utf8");
     bodyBytes += normalizedChunkBuffer.byteLength;
     if (bodyBytes > MAX_REQUEST_BODY_BYTES) {
-      return { ok: false, error: "Request body exceeds 1 MiB size limit." };
+      return {
+        ok: false,
+        error: `Request body exceeds ${Math.round(MAX_REQUEST_BODY_BYTES / (1024 * 1024))} MiB size limit.`,
+      };
     }
     const normalizedChunk = normalizedChunkBuffer.toString("utf8");
     body += normalizedChunk;

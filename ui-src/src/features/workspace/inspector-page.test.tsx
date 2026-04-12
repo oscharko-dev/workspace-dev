@@ -1,8 +1,16 @@
-import type { JSX } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import type { JSX, ReactNode } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InspectorPage } from "./inspector-page";
+import { fetchJson, type JsonResponse } from "../../lib/http";
 
 vi.mock("./inspector/InspectorPanel", () => ({
   InspectorPanel: ({
@@ -23,6 +31,7 @@ vi.mock("./inspector/InspectorPanel", () => ({
     onRegenerationAccepted: (nextJobId: string) => void;
   }): JSX.Element => (
     <div>
+      <div data-testid="inspector-layout">mock-inspector-layout</div>
       <div data-testid="inspector-panel-props">
         {[
           jobId,
@@ -46,44 +55,78 @@ vi.mock("./inspector/InspectorErrorBoundary", () => ({
   InspectorErrorBoundary: ({ children }: { children: JSX.Element }) => children,
 }));
 
+vi.mock("../../lib/http", () => ({
+  fetchJson: vi.fn(),
+}));
+
+const fetchJsonMock = vi.mocked(fetchJson);
+
 function LocationProbe(): JSX.Element {
   const location = useLocation();
-  return <div data-testid="location-probe">{location.pathname}{location.search}</div>;
+  return (
+    <div data-testid="location-probe">
+      {location.pathname}
+      {location.search}
+    </div>
+  );
+}
+
+function makeQueryClient(): QueryClient {
+  return new QueryClient({
+    defaultOptions: {
+      queries: { retry: false, gcTime: Infinity },
+      mutations: { retry: false },
+    },
+  });
+}
+
+function Providers({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <QueryClientProvider client={makeQueryClient()}>
+      {children}
+    </QueryClientProvider>
+  );
 }
 
 function renderPage(initialEntry: string): void {
   render(
-    <MemoryRouter initialEntries={[initialEntry]}>
-      <Routes>
-        <Route
-          path="/workspace/ui/inspector"
-          element={
-            <>
-              <InspectorPage />
-              <LocationProbe />
-            </>
-          }
-        />
-        <Route
-          path="/workspace/ui"
-          element={<LocationProbe />}
-        />
-      </Routes>
-    </MemoryRouter>,
+    <Providers>
+      <MemoryRouter initialEntries={[initialEntry]}>
+        <Routes>
+          <Route
+            path="/workspace/ui/inspector"
+            element={
+              <>
+                <InspectorPage />
+                <LocationProbe />
+              </>
+            }
+          />
+          <Route path="/workspace/ui" element={<LocationProbe />} />
+        </Routes>
+      </MemoryRouter>
+    </Providers>,
   );
 }
 
-describe("InspectorPage", () => {
-  it("shows the missing-job fallback and navigates back to the workspace", () => {
-    renderPage("/workspace/ui/inspector");
+function createJsonResponse<TPayload>({
+  status = 200,
+  ok = true,
+  payload,
+}: {
+  status?: number;
+  ok?: boolean;
+  payload: TPayload;
+}): JsonResponse<TPayload> {
+  return { status, ok, payload };
+}
 
-    expect(screen.getByText("No job data available.")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Back to Workspace" }));
-    expect(screen.getByTestId("location-probe")).toHaveTextContent(
-      "/workspace/ui",
-    );
-  });
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
 
+describe("InspectorPage — deep-link path", () => {
   it("passes search-param state into the inspector panel and updates regeneration job id", () => {
     renderPage(
       "/workspace/ui/inspector?jobId=job-1&previewUrl=http%3A%2F%2F127.0.0.1%3A1983%2Fpreview&previousJobId=job-0&isRegeneration=true",
@@ -93,7 +136,9 @@ describe("InspectorPage", () => {
       "job-1|http://127.0.0.1:1983/preview|job-0|true|",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Accept regeneration" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Accept regeneration" }),
+    );
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-2|http://127.0.0.1:1983/preview|job-0|true|",
     );
@@ -106,6 +151,75 @@ describe("InspectorPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close dialog" }));
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-2|http://127.0.0.1:1983/preview|job-0|true|",
+    );
+  });
+});
+
+describe("InspectorPage — bootstrap path", () => {
+  it("renders InspectorBootstrap when no query params", () => {
+    renderPage("/workspace/ui/inspector");
+
+    expect(screen.getByTestId("inspector-bootstrap")).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-bootstrap-left")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("inspector-bootstrap-center"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("inspector-bootstrap-right")).toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-layout")).not.toBeInTheDocument();
+  });
+
+  it("renders InspectorBootstrap when only one of jobId/previewUrl is provided", () => {
+    renderPage("/workspace/ui/inspector?jobId=job-1");
+
+    expect(screen.getByTestId("inspector-bootstrap")).toBeInTheDocument();
+    expect(screen.queryByTestId("inspector-layout")).not.toBeInTheDocument();
+  });
+
+  it("transitions from bootstrap to panel when bootstrap reaches ready", async () => {
+    let pollCount = 0;
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-bootstrap" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap") {
+        pollCount += 1;
+        if (pollCount < 2) {
+          return createJsonResponse({
+            payload: { jobId: "job-bootstrap", status: "running" },
+          }) as never;
+        }
+        return createJsonResponse({
+          payload: {
+            jobId: "job-bootstrap",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/preview" },
+          },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    renderPage("/workspace/ui/inspector");
+
+    const textarea = screen.getByLabelText(/figma json paste target/i);
+    const clipboardData = {
+      getData: (type: string) =>
+        type === "text" || type === "text/plain" ? '{"document":{}}' : "",
+    } as unknown as DataTransfer;
+    fireEvent.paste(textarea, { clipboardData });
+
+    await waitFor(
+      () => {
+        expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
+      },
+      { timeout: 4000 },
+    );
+
+    expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
+      "job-bootstrap|http://127.0.0.1:1983/preview||false|",
     );
   });
 });

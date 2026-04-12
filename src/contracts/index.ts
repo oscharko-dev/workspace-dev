@@ -10,7 +10,11 @@
  */
 
 /** Allowed Figma source modes for workspace-dev. */
-export type WorkspaceFigmaSourceMode = "rest" | "hybrid" | "local_json";
+export type WorkspaceFigmaSourceMode =
+  | "rest"
+  | "hybrid"
+  | "local_json"
+  | "figma_paste";
 
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode = "deterministic";
@@ -232,6 +236,7 @@ export interface WorkspaceJobInput {
   figmaFileKey?: string;
   figmaAccessToken?: string;
   figmaJsonPath?: string;
+  figmaJsonPayload?: string;
   storybookStaticDir?: string;
   customerProfilePath?: string;
   customerBrandId?: string;

@@ -5,7 +5,6 @@ dist/
 artifacts/
 coverage/
 .workspace-dev/
-.sandbox/
 test-results/
 /.codex/
 /.claude/
@@ -28,3 +27,8 @@ reference/storybook/storybook.evidence.json
 /PR-Wellen.md
 /CODEX.md
 /CLAUDE.md
+/.playwright-mcp/
+/.changeset/
+/sandbox/
+/testdata/
+/.mcp.json

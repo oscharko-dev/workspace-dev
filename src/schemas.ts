@@ -637,6 +637,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "figmaAccessToken",
     "figmaJsonPath",
     "storybookStaticDir",
+    "figmaJsonPayload",
     "customerProfilePath",
     "customerBrandId",
     "componentMappings",
@@ -674,6 +675,12 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   const figmaJsonPath = parseStringField({
     input,
     key: "figmaJsonPath",
+    required: false,
+    issues
+  });
+  const figmaJsonPayload = parseStringField({
+    input,
+    key: "figmaJsonPayload",
     required: false,
     issues
   });
@@ -808,7 +815,8 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     if (
       normalizedFigmaSourceMode === "rest" ||
       normalizedFigmaSourceMode === "hybrid" ||
-      normalizedFigmaSourceMode === "local_json"
+      normalizedFigmaSourceMode === "local_json" ||
+      normalizedFigmaSourceMode === "figma_paste"
     ) {
       return normalizedFigmaSourceMode as WorkspaceFigmaSourceMode;
     }
@@ -851,6 +859,38 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     }
   }
 
+  if (resolvedFigmaSourceMode === "figma_paste") {
+    const DEFAULT_FIGMA_PASTE_MAX_BYTES = 2 * 1024 * 1024;
+    const envMaxBytes = process.env.WORKSPACE_FIGMA_PASTE_MAX_BYTES;
+    const figmaPasteMaxBytes =
+      envMaxBytes !== undefined && /^\d+$/.test(envMaxBytes)
+        ? parseInt(envMaxBytes, 10)
+        : DEFAULT_FIGMA_PASTE_MAX_BYTES;
+    if (!figmaJsonPayload) {
+      pushIssue(issues, ["figmaJsonPayload"], "INVALID_PAYLOAD: figmaJsonPayload is required when figmaSourceMode=figma_paste");
+    } else {
+      const byteLength = Buffer.byteLength(figmaJsonPayload, "utf8");
+      if (byteLength > figmaPasteMaxBytes) {
+        pushIssue(issues, ["figmaJsonPayload"], `TOO_LARGE: figmaJsonPayload exceeds maximum allowed size of ${figmaPasteMaxBytes} bytes`);
+      } else {
+        try {
+          JSON.parse(figmaJsonPayload);
+        } catch {
+          pushIssue(issues, ["figmaJsonPayload"], "SCHEMA_MISMATCH: figmaJsonPayload must be valid JSON");
+        }
+      }
+    }
+    if (figmaFileKey !== undefined) {
+      pushIssue(issues, ["figmaFileKey"], "figmaFileKey must be omitted when figmaSourceMode=figma_paste");
+    }
+    if (figmaAccessToken !== undefined) {
+      pushIssue(issues, ["figmaAccessToken"], "figmaAccessToken must be omitted when figmaSourceMode=figma_paste");
+    }
+    if (figmaJsonPath !== undefined) {
+      pushIssue(issues, ["figmaJsonPath"], "figmaJsonPath must be omitted when figmaSourceMode=figma_paste");
+    }
+  }
+
   if (enableGitPr) {
     if (!repoUrl) {
       pushIssue(issues, ["repoUrl"], "repoUrl is required when enableGitPr=true");
@@ -880,6 +920,9 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
   if (figmaJsonPath !== undefined) {
     data.figmaJsonPath = figmaJsonPath;
+  }
+  if (figmaJsonPayload !== undefined) {
+    data.figmaJsonPayload = figmaJsonPayload;
   }
   if (storybookStaticDir !== undefined) {
     data.storybookStaticDir = storybookStaticDir.trim();
