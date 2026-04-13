@@ -4,6 +4,7 @@ import { InspectorPanel } from "./inspector/InspectorPanel";
 import { InspectorErrorBoundary } from "./inspector/InspectorErrorBoundary";
 import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
+import type { ImportIntent } from "./inspector/paste-input-classifier";
 
 function BackIcon(): JSX.Element {
   return (
@@ -192,8 +193,13 @@ function BootstrapView(): JSX.Element {
   const bootstrap = useInspectorBootstrap();
 
   const handlePaste = useCallback(
-    (text: string): void => {
-      bootstrap.submitPaste(text, { source: "paste-event" });
+    (text: string, clipboardHtml?: string): void => {
+      bootstrap.submitPaste(
+        text,
+        clipboardHtml !== undefined
+          ? { source: "paste-event", clipboardHtml }
+          : { source: "paste-event" },
+      );
     },
     // `bootstrap` is a stable reference to the hook's return object; we re-run
     // when the object identity changes so we always submit via the latest
@@ -219,6 +225,17 @@ function BootstrapView(): JSX.Element {
     bootstrap.retry();
   }, [bootstrap]);
 
+  const handleConfirmIntent = useCallback(
+    (intent: ImportIntent): void => {
+      bootstrap.confirmIntent(intent);
+    },
+    [bootstrap],
+  );
+
+  const handleDismissIntent = useCallback((): void => {
+    bootstrap.dismissIntent();
+  }, [bootstrap]);
+
   if (
     bootstrap.state.kind === "ready" &&
     bootstrap.jobId &&
@@ -241,6 +258,8 @@ function BootstrapView(): JSX.Element {
       onDropFile={handleDropFile}
       onError={handleError}
       onRetry={handleRetry}
+      onConfirmIntent={handleConfirmIntent}
+      onDismissIntent={handleDismissIntent}
     />
   );
 }

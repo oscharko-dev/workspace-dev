@@ -1,14 +1,18 @@
 import { type JSX } from "react";
 import { FIGMA_PASTE_MAX_LABEL } from "../submit-schema";
 import { PasteCapture } from "./PasteCapture";
+import { SmartBanner } from "./SmartBanner";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
+import type { ImportIntent } from "./paste-input-classifier";
 
 export interface InspectorBootstrapProps {
   state: InspectorBootstrapState;
-  onPaste: (text: string) => void;
+  onPaste: (text: string, clipboardHtml?: string) => void;
   onDropFile?: (text: string) => void;
   onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   onRetry: () => void;
+  onConfirmIntent?: (intent: ImportIntent) => void;
+  onDismissIntent?: () => void;
 }
 
 interface ColumnCopy {
@@ -45,6 +49,12 @@ function getColumnCopy(state: InspectorBootstrapState): ColumnCopy {
           "Waiting for import — paste a Figma export in the middle column.",
         right:
           "Waiting for import — paste a Figma export in the middle column.",
+      };
+    case "detected":
+      return {
+        left: "Typ erkannt \u2014 bitte best\u00e4tigen oder korrigieren.",
+        center: "Typ erkannt \u2014 bitte best\u00e4tigen oder korrigieren.",
+        right: "Typ erkannt \u2014 bitte best\u00e4tigen oder korrigieren.",
       };
     case "pasting":
       return {
@@ -94,6 +104,8 @@ function isPasteDisabled(state: InspectorBootstrapState): boolean {
 
 function getHelperHint(state: InspectorBootstrapState): string | undefined {
   switch (state.kind) {
+    case "detected":
+      return "Typ erkannt";
     case "pasting":
       return "Pasting...";
     case "queued":
@@ -223,6 +235,8 @@ export function InspectorBootstrap({
   onDropFile,
   onError,
   onRetry,
+  onConfirmIntent,
+  onDismissIntent,
 }: InspectorBootstrapProps): JSX.Element {
   const copy = getColumnCopy(state);
   const disabled = isPasteDisabled(state);
@@ -254,6 +268,16 @@ export function InspectorBootstrap({
             </h2>
           </div>
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4">
+            {state.kind === "detected" &&
+            onConfirmIntent !== undefined &&
+            onDismissIntent !== undefined ? (
+              <SmartBanner
+                intent={state.intent}
+                confidence={state.confidence}
+                onConfirm={onConfirmIntent}
+                onDismiss={onDismissIntent}
+              />
+            ) : null}
             <PasteCapture
               disabled={disabled}
               onPaste={onPaste}

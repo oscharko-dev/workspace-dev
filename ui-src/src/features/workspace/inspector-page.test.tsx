@@ -211,6 +211,12 @@ describe("InspectorPage — bootstrap path", () => {
     } as unknown as DataTransfer;
     fireEvent.paste(textarea, { clipboardData });
 
+    // submitPaste dispatches intent_detected; SmartBanner appears — confirm to proceed
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Import starten"));
+
     await waitFor(
       () => {
         expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
@@ -266,6 +272,13 @@ describe("InspectorPage — bootstrap path", () => {
       },
     });
 
+    // First paste: detected state — confirm to trigger submission
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Import starten"));
+
+    // Server returns SCHEMA_MISMATCH → failed state with alert
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
     });
@@ -276,6 +289,12 @@ describe("InspectorPage — bootstrap path", () => {
           type === "text" || type === "text/plain" ? '{"document":{}}' : "",
       },
     });
+
+    // Second paste: detected again — confirm to proceed
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Import starten"));
 
     await waitFor(() => {
       expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();

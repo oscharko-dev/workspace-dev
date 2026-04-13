@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { ImportIntent } from "./inspector/paste-input-classifier";
 
 const optionalString = z.string().trim().optional().or(z.literal(""));
 
@@ -115,6 +116,9 @@ export interface InspectorBootstrapPayload {
   figmaJsonPayload: string;
   llmCodegenMode: "deterministic";
   enableGitPr: false;
+  importIntent?: ImportIntent;
+  originalIntent?: ImportIntent;
+  intentCorrected?: boolean;
 }
 
 function toOptionalString({
@@ -198,13 +202,22 @@ export function toWorkspaceSubmitPayload({
 
 export function toInspectorBootstrapPayload({
   figmaJsonPayload,
+  importIntent,
+  originalIntent,
+  intentCorrected,
 }: {
   figmaJsonPayload: string;
+  importIntent?: ImportIntent;
+  originalIntent?: ImportIntent;
+  intentCorrected?: boolean;
 }): InspectorBootstrapPayload {
   return {
     figmaSourceMode: "figma_paste",
     figmaJsonPayload,
     llmCodegenMode: "deterministic",
     enableGitPr: false,
+    ...(importIntent !== undefined ? { importIntent } : {}),
+    ...(originalIntent !== undefined ? { originalIntent } : {}),
+    ...(intentCorrected !== undefined ? { intentCorrected } : {}),
   };
 }

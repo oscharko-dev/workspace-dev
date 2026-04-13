@@ -16,6 +16,13 @@ export type WorkspaceFigmaSourceMode =
   | "local_json"
   | "figma_paste";
 
+/** Import intent detected by the client-side paste classifier. */
+export type WorkspaceImportIntent =
+  | "FIGMA_JSON_NODE_BATCH"
+  | "FIGMA_JSON_DOC"
+  | "RAW_CODE_OR_TEXT"
+  | "UNKNOWN";
+
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode = "deterministic";
 
@@ -261,6 +268,9 @@ export interface WorkspaceJobInput {
   brandTheme?: WorkspaceBrandTheme;
   generationLocale?: string;
   formHandlingMode?: WorkspaceFormHandlingMode;
+  importIntent?: WorkspaceImportIntent;
+  originalIntent?: WorkspaceImportIntent;
+  intentCorrected?: boolean;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
@@ -290,6 +300,9 @@ export interface WorkspaceJobRequestMetadata {
   brandTheme: WorkspaceBrandTheme;
   generationLocale: string;
   formHandlingMode: WorkspaceFormHandlingMode;
+  importIntent?: WorkspaceImportIntent;
+  originalIntent?: WorkspaceImportIntent;
+  intentCorrected?: boolean;
 }
 
 /** Submit response for accepted jobs. */
@@ -300,6 +313,7 @@ export interface WorkspaceSubmitAccepted {
     figmaSourceMode: WorkspaceFigmaSourceMode;
     llmCodegenMode: WorkspaceLlmCodegenMode;
   };
+  importIntent?: WorkspaceImportIntent;
 }
 
 /** Stage details for each job stage. */

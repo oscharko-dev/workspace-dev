@@ -22,6 +22,7 @@ import type {
   WorkspaceCreatePrInput,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
+  WorkspaceImportIntent,
   WorkspaceJobInput,
   WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
@@ -851,6 +852,9 @@ function parseSubmitRequest(
     "generationLocale",
     "formHandlingMode",
     "visualAudit",
+    "importIntent",
+    "originalIntent",
+    "intentCorrected",
   ]);
 
   for (const key of Object.keys(input)) {
@@ -975,6 +979,18 @@ function parseSubmitRequest(
     required: false,
     issues,
   });
+  const rawImportIntent = parseStringField({
+    input,
+    key: "importIntent",
+    required: false,
+    issues,
+  });
+  const rawOriginalIntent = parseStringField({
+    input,
+    key: "originalIntent" as keyof WorkspaceJobInput,
+    required: false,
+    issues,
+  });
   const brandTheme = (() => {
     if (rawBrandTheme === undefined) {
       return undefined;
@@ -1005,6 +1021,60 @@ function parseSubmitRequest(
     );
     return undefined;
   })();
+  const importIntent = (() => {
+    if (rawImportIntent === undefined) {
+      return undefined;
+    }
+    const normalized = rawImportIntent.trim().toUpperCase();
+    if (
+      normalized === "FIGMA_JSON_NODE_BATCH" ||
+      normalized === "FIGMA_JSON_DOC" ||
+      normalized === "RAW_CODE_OR_TEXT" ||
+      normalized === "UNKNOWN"
+    ) {
+      return normalized as WorkspaceImportIntent;
+    }
+    pushIssue(
+      issues,
+      ["importIntent"],
+      "importIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, RAW_CODE_OR_TEXT, UNKNOWN",
+    );
+    return undefined;
+  })();
+  const originalIntent = (() => {
+    if (rawOriginalIntent === undefined) {
+      return undefined;
+    }
+    const normalized = rawOriginalIntent.trim().toUpperCase();
+    if (
+      normalized === "FIGMA_JSON_NODE_BATCH" ||
+      normalized === "FIGMA_JSON_DOC" ||
+      normalized === "RAW_CODE_OR_TEXT" ||
+      normalized === "UNKNOWN"
+    ) {
+      return normalized as WorkspaceImportIntent;
+    }
+    pushIssue(
+      issues,
+      ["originalIntent"],
+      "originalIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, RAW_CODE_OR_TEXT, UNKNOWN",
+    );
+    return undefined;
+  })();
+  const rawIntentCorrected = input.intentCorrected;
+  const intentCorrected =
+    rawIntentCorrected === undefined
+      ? undefined
+      : typeof rawIntentCorrected === "boolean"
+        ? rawIntentCorrected
+        : (() => {
+            pushIssue(
+              issues,
+              ["intentCorrected"],
+              "intentCorrected must be a boolean",
+            );
+            return undefined;
+          })();
   const llmCodegenMode = parseSubmitLlmCodegenMode({
     value: rawLlmCodegenMode,
     issues,
@@ -1232,6 +1302,15 @@ function parseSubmitRequest(
   }
   if (formHandlingMode !== undefined) {
     data.formHandlingMode = formHandlingMode;
+  }
+  if (importIntent !== undefined) {
+    data.importIntent = importIntent;
+  }
+  if (originalIntent !== undefined) {
+    data.originalIntent = originalIntent;
+  }
+  if (intentCorrected !== undefined) {
+    data.intentCorrected = intentCorrected;
   }
 
   return {

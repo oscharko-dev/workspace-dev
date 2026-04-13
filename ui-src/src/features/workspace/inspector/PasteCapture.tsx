@@ -11,7 +11,7 @@ import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 
 export interface PasteCaptureProps {
   disabled: boolean;
-  onPaste: (text: string) => void;
+  onPaste: (text: string, clipboardHtml?: string) => void;
   onDropFile?: (text: string) => void;
   onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   errorMessage?: string;
@@ -77,7 +77,12 @@ export function PasteCapture({
         return;
       }
       event.preventDefault();
-      onPaste(text);
+      const html = event.clipboardData.getData("text/html");
+      if (html.length > 0) {
+        onPaste(text, html);
+      } else {
+        onPaste(text);
+      }
     },
     [interactionDisabled, onPaste],
   );

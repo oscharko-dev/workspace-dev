@@ -1,8 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   classifyPasteInput,
+  classifyPasteIntent,
   isSecureContextAvailable,
 } from "./paste-input-classifier";
+
+vi.mock("./figma-clipboard-parser", () => ({
+  isFigmaClipboard: (html: string) => html.includes("FIGMA_MARKER"),
+}));
 
 describe("classifyPasteInput — empty / whitespace", () => {
   it("empty string → unknown / empty", () => {
@@ -91,5 +96,140 @@ describe("isSecureContextAvailable", () => {
   it("returns a boolean", () => {
     const result = isSecureContextAvailable();
     expect(typeof result).toBe("boolean");
+  });
+});
+
+describe("classifyPasteIntent — empty / whitespace", () => {
+  it("empty string → UNKNOWN confidence 1.0", () => {
+    const result = classifyPasteIntent("");
+    expect(result.intent).toBe("UNKNOWN");
+    expect(result.confidence).toBe(1.0);
+    expect(result.suggestedJobSource).toBe("manual_text");
+    expect(result.rawText).toBe("");
+    expect(result.parsedJson).toBeUndefined();
+  });
+
+  it("whitespace-only → UNKNOWN confidence 1.0", () => {
+    const result = classifyPasteIntent("   \n\t  ");
+    expect(result.intent).toBe("UNKNOWN");
+    expect(result.confidence).toBe(1.0);
+    expect(result.rawText).toBe("");
+  });
+});
+
+describe("classifyPasteIntent — Figma clipboard HTML", () => {
+  it("clipboardHtml with figma marker → FIGMA_JSON_NODE_BATCH confidence 0.95 figma_paste", () => {
+    const result = classifyPasteIntent("{}", "FIGMA_MARKER");
+    expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
+    expect(result.confidence).toBe(0.95);
+    expect(result.suggestedJobSource).toBe("figma_paste");
+  });
+
+  it("non-figma clipboardHtml → falls through to JSON classification", () => {
+    const payload = JSON.stringify({ document: { id: "0:0" } });
+    const result = classifyPasteIntent(payload, "not-figma-html");
+    expect(result.intent).toBe("FIGMA_JSON_DOC");
+  });
+});
+
+describe("classifyPasteIntent — non-JSON text", () => {
+  it("plain text → RAW_CODE_OR_TEXT confidence 1.0 manual_text", () => {
+    const result = classifyPasteIntent("hello world");
+    expect(result.intent).toBe("RAW_CODE_OR_TEXT");
+    expect(result.confidence).toBe(1.0);
+    expect(result.suggestedJobSource).toBe("manual_text");
+    expect(result.rawText).toBe("hello world");
+  });
+});
+
+describe("classifyPasteIntent — malformed JSON", () => {
+  it("'{foo' → RAW_CODE_OR_TEXT confidence 0.6 reason malformed_json", () => {
+    const result = classifyPasteIntent("{foo");
+    expect(result.intent).toBe("RAW_CODE_OR_TEXT");
+    expect(result.confidence).toBe(0.6);
+    expect(result.suggestedJobSource).toBe("manual_text");
+    expect(result.reason).toBe("malformed_json");
+    expect(result.parsedJson).toBeUndefined();
+  });
+});
+
+describe("classifyPasteIntent — FIGMA_JSON_DOC", () => {
+  it("object with document key → FIGMA_JSON_DOC confidence 0.9 figma_paste", () => {
+    const payload = JSON.stringify({ document: { id: "0:0", children: [] } });
+    const result = classifyPasteIntent(payload);
+    expect(result.intent).toBe("FIGMA_JSON_DOC");
+    expect(result.confidence).toBe(0.9);
+    expect(result.suggestedJobSource).toBe("figma_paste");
+    expect(result.parsedJson).toEqual({
+      document: { id: "0:0", children: [] },
+    });
+  });
+});
+
+describe("classifyPasteIntent — FIGMA_JSON_NODE_BATCH plugin signals", () => {
+  it("type === PLUGIN_EXPORT → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_plugin", () => {
+    const result = classifyPasteIntent('{"type":"PLUGIN_EXPORT","nodes":[]}');
+    expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
+    expect(result.confidence).toBe(0.85);
+    expect(result.suggestedJobSource).toBe("figma_plugin");
+  });
+
+  it("figmaSourceMode field → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_plugin", () => {
+    const result = classifyPasteIntent(
+      '{"figmaSourceMode":"figma_paste","data":{}}',
+    );
+    expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
+    expect(result.confidence).toBe(0.85);
+    expect(result.suggestedJobSource).toBe("figma_plugin");
+  });
+
+  it("plugin field → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_plugin", () => {
+    const result = classifyPasteIntent('{"plugin":"my-plugin","version":1}');
+    expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
+    expect(result.confidence).toBe(0.85);
+    expect(result.suggestedJobSource).toBe("figma_plugin");
+  });
+});
+
+describe("classifyPasteIntent — FIGMA_JSON_NODE_BATCH node object", () => {
+  it("object with type and children → FIGMA_JSON_NODE_BATCH confidence 0.8 figma_paste", () => {
+    const payload = JSON.stringify({
+      type: "FRAME",
+      children: [{ type: "TEXT", name: "Label" }],
+    });
+    const result = classifyPasteIntent(payload);
+    expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
+    expect(result.confidence).toBe(0.8);
+    expect(result.suggestedJobSource).toBe("figma_paste");
+  });
+});
+
+describe("classifyPasteIntent — FIGMA_JSON_NODE_BATCH array of nodes", () => {
+  it("array of objects with type and name → FIGMA_JSON_NODE_BATCH confidence 0.8 figma_paste", () => {
+    const payload = JSON.stringify([
+      { type: "FRAME", name: "Card" },
+      { type: "TEXT", name: "Label" },
+    ]);
+    const result = classifyPasteIntent(payload);
+    expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
+    expect(result.confidence).toBe(0.8);
+    expect(result.suggestedJobSource).toBe("figma_paste");
+  });
+
+  it("array of objects without type/name → RAW_CODE_OR_TEXT confidence 0.7", () => {
+    const result = classifyPasteIntent('[{"id":1},{"id":2}]');
+    expect(result.intent).toBe("RAW_CODE_OR_TEXT");
+    expect(result.confidence).toBe(0.7);
+    expect(result.suggestedJobSource).toBe("manual_text");
+  });
+});
+
+describe("classifyPasteIntent — RAW_CODE_OR_TEXT valid non-Figma JSON", () => {
+  it("valid JSON object with no Figma fields → RAW_CODE_OR_TEXT confidence 0.7 manual_text", () => {
+    const result = classifyPasteIntent('{"schemaVersion":"v1"}');
+    expect(result.intent).toBe("RAW_CODE_OR_TEXT");
+    expect(result.confidence).toBe(0.7);
+    expect(result.suggestedJobSource).toBe("manual_text");
+    expect(result.parsedJson).toEqual({ schemaVersion: "v1" });
   });
 });

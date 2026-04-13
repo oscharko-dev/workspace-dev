@@ -9,8 +9,9 @@ import {
 } from "./inspector-bootstrap-state";
 import { isJobPayload, isRecord } from "../workspace-page.helpers";
 import {
-  classifyPasteInput,
+  classifyPasteIntent,
   isSecureContextAvailable,
+  type ImportIntent,
 } from "./paste-input-classifier";
 import type { JsonResponse } from "../../../lib/http";
 
@@ -31,12 +32,18 @@ export interface UseInspectorBootstrapOptions {
 export interface UseInspectorBootstrapResult {
   state: InspectorBootstrapState;
   submit(input: { figmaJsonPayload: string }): void;
-  submitPaste(text: string, options?: { source?: PasteSource }): void;
+  submitPaste(
+    text: string,
+    options?: { source?: PasteSource; clipboardHtml?: string },
+  ): void;
+  confirmIntent(intent: ImportIntent): void;
+  dismissIntent(): void;
   retry(): void;
   reset(): void;
   reportInputError(code: string): void;
   jobId: string | null;
   previewUrl: string | null;
+  detectedIntent: { intent: ImportIntent; confidence: number } | null;
 }
 
 function extractJobId(state: InspectorBootstrapState): string | null {
@@ -92,10 +99,29 @@ export function useInspectorBootstrap(
   const submitMutation = useMutation<
     { jobId: string },
     Error,
-    { figmaJsonPayload: string }
+    {
+      figmaJsonPayload: string;
+      importIntent?: ImportIntent;
+      originalIntent?: ImportIntent;
+      intentCorrected?: boolean;
+    }
   >({
-    mutationFn: async ({ figmaJsonPayload }) => {
-      const payload = toInspectorBootstrapPayload({ figmaJsonPayload });
+    mutationFn: async ({
+      figmaJsonPayload,
+      importIntent,
+      originalIntent,
+      intentCorrected,
+    }) => {
+      const payload = toInspectorBootstrapPayload(
+        importIntent !== undefined
+          ? {
+              figmaJsonPayload,
+              importIntent,
+              ...(originalIntent !== undefined ? { originalIntent } : {}),
+              ...(intentCorrected !== undefined ? { intentCorrected } : {}),
+            }
+          : { figmaJsonPayload },
+      );
       const response = await fetchJson<{ jobId?: string; error?: string }>({
         url: endpoints.submit,
         init: {
@@ -228,7 +254,10 @@ export function useInspectorBootstrap(
     });
   }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
 
-  function submitPaste(text: string, options?: { source?: PasteSource }): void {
+  function submitPaste(
+    text: string,
+    options?: { source?: PasteSource; clipboardHtml?: string },
+  ): void {
     const source = options?.source ?? "paste-event";
     if (source === "clipboard-api" && !isSecureContextAvailable()) {
       dispatch({
@@ -239,26 +268,57 @@ export function useInspectorBootstrap(
       return;
     }
 
-    const classification = classifyPasteInput(text);
-    if (classification.kind === "unknown") {
-      if (classification.reason === "malformed_json") {
-        dispatch({ type: "paste_started" });
-        submitMutation.mutate({ figmaJsonPayload: text });
-        return;
-      }
-      const reason =
-        classification.reason === "empty" ? "EMPTY_INPUT" : "INVALID_PAYLOAD";
-      dispatch({ type: "submit_failed", reason, retryable: true });
+    const intentClassification = classifyPasteIntent(
+      text,
+      options?.clipboardHtml,
+    );
+
+    if (intentClassification.intent === "UNKNOWN") {
+      dispatch({
+        type: "submit_failed",
+        reason: "EMPTY_INPUT",
+        retryable: true,
+      });
       return;
     }
 
+    dispatch({
+      type: "intent_detected",
+      intent: intentClassification.intent,
+      confidence: intentClassification.confidence,
+      rawText: text,
+      suggestedJobSource: intentClassification.suggestedJobSource,
+    });
+  }
+
+  function confirmIntent(intent: ImportIntent): void {
+    if (state.kind !== "detected") {
+      return;
+    }
+    const rawText = state.rawText;
+    const corrected = intent !== state.intent;
+    dispatch({ type: "intent_confirmed", intent });
     dispatch({ type: "paste_started" });
-    submitMutation.mutate({ figmaJsonPayload: text });
+    submitMutation.mutate({
+      figmaJsonPayload: rawText,
+      importIntent: intent,
+      originalIntent: state.intent,
+      intentCorrected: corrected,
+    });
+  }
+
+  function dismissIntent(): void {
+    dispatch({ type: "intent_dismissed" });
   }
 
   function reportInputError(code: string): void {
     dispatch({ type: "submit_failed", reason: code, retryable: true });
   }
+
+  const detectedIntent =
+    state.kind === "detected"
+      ? { intent: state.intent, confidence: state.confidence }
+      : null;
 
   return {
     state,
@@ -267,6 +327,8 @@ export function useInspectorBootstrap(
       submitMutation.mutate({ figmaJsonPayload });
     },
     submitPaste,
+    confirmIntent,
+    dismissIntent,
     retry() {
       if (state.kind === "failed" && state.retryable) {
         dispatch({ type: "reset" });
@@ -278,5 +340,6 @@ export function useInspectorBootstrap(
     reportInputError,
     jobId,
     previewUrl,
+    detectedIntent,
   };
 }
