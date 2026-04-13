@@ -45,6 +45,7 @@ import {
   MAX_SUBMIT_BODY_BYTES,
   WORKSPACE_UI_CONTENT_SECURITY_POLICY,
 } from "./constants.js";
+import { ErrorCode } from "./error-codes.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
 import {
   isWorkspaceProjectRoute,
@@ -1880,14 +1881,25 @@ export function createWorkspaceRequestHandler({
           maxBytes: MAX_SUBMIT_BODY_BYTES,
         });
         if (!rawBody.ok) {
-          sendValidationError({
-            payload: {
-              error: "VALIDATION_ERROR",
-              message: "Request validation failed.",
-              issues: [{ path: "(root)", message: rawBody.error }],
-            },
-            fallbackMessage: "Submit request validation failed.",
-          });
+          if (rawBody.reason === "OVERSIZE") {
+            sendRequestFailure({
+              statusCode: 413,
+              payload: {
+                error: ErrorCode.TOO_LARGE,
+                message: rawBody.error,
+                maxBytes: rawBody.maxBytes,
+              },
+              fallbackMessage: "Submit request body too large.",
+            });
+          } else {
+            sendValidationError({
+              payload: {
+                error: ErrorCode.INVALID_PAYLOAD,
+                message: rawBody.error,
+              },
+              fallbackMessage: "Submit request validation failed.",
+            });
+          }
           return;
         }
 

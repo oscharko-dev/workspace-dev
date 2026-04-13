@@ -12,7 +12,11 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { toDeterministicScreenPath } from "./parity/generator-artifacts.js";
-import { WORKSPACE_UI_CONTENT_SECURITY_POLICY } from "./server/constants.js";
+import {
+  DEFAULT_FIGMA_PASTE_MAX_BYTES,
+  MAX_SUBMIT_BODY_BYTES,
+  WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+} from "./server/constants.js";
 import { createWorkspaceServer } from "./server.js";
 
 const MODULE_DIR =
@@ -627,7 +631,7 @@ test("workspace server propagates request IDs on success and error responses", a
     assert.equal(errorResponse.statusCode, 400);
     assert.equal(errorResponse.headers["x-request-id"], "req-server-error-1");
     const errorBody = errorResponse.json<Record<string, unknown>>();
-    assert.equal(errorBody.error, "VALIDATION_ERROR");
+    assert.equal(errorBody.error, "INVALID_PAYLOAD");
     assert.equal(errorBody.requestId, "req-server-error-1");
   } finally {
     await server.app.close();
@@ -948,12 +952,8 @@ test("workspace server rejects invalid JSON payloads", async () => {
 
     assert.equal(response.statusCode, 400);
     const body = response.json<Record<string, unknown>>();
-    assert.equal(body.error, "VALIDATION_ERROR");
-    assert.equal(Array.isArray(body.issues), true);
-    assert.match(
-      String((body.issues as Array<{ message: string }>)[0]!.message),
-      /Invalid JSON payload/i,
-    );
+    assert.equal(body.error, "INVALID_PAYLOAD");
+    assert.match(String(body.message), /Invalid JSON payload/i);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
@@ -1796,7 +1796,9 @@ test("workspace server returns 400 TOO_LARGE on figma_paste with oversize payloa
   });
 
   try {
-    const oversizePayload = "x".repeat(3 * 1024 * 1024);
+    // Between the 6 MiB figma-paste cap and the 8 MiB transport cap → schema
+    // rejects with TOO_LARGE (HTTP 400).
+    const oversizePayload = "x".repeat(DEFAULT_FIGMA_PASTE_MAX_BYTES + 1);
     const response = await server.app.inject({
       method: "POST",
       url: "/workspace/submit",
@@ -1810,6 +1812,75 @@ test("workspace server returns 400 TOO_LARGE on figma_paste with oversize payloa
     assert.equal(response.statusCode, 400);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "TOO_LARGE");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server returns 413 TOO_LARGE when submit body exceeds transport cap", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    // Build a raw body that exceeds MAX_SUBMIT_BODY_BYTES (8 MiB).
+    const filler = "x".repeat(MAX_SUBMIT_BODY_BYTES + 1024);
+    const rawPayload = JSON.stringify({
+      figmaSourceMode: "figma_paste",
+      figmaJsonPayload: filler,
+    });
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-oversize-body",
+      },
+      payload: rawPayload,
+    });
+
+    assert.equal(response.statusCode, 413);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "TOO_LARGE");
+    assert.equal(body.maxBytes, MAX_SUBMIT_BODY_BYTES);
+    assert.equal(body.requestId, "req-oversize-body");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server preserves 1 MiB body cap on non-submit write routes", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    // 1.5 MiB body on a non-submit write route must still be rejected
+    // with the legacy VALIDATION_ERROR/400 envelope (regression guard for #998).
+    const filler = "x".repeat(1_500_000);
+    const rawPayload = JSON.stringify({ draftNodeIds: [filler] });
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/jobs/job-does-not-exist/stale-check",
+      headers: { "content-type": "application/json" },
+      payload: rawPayload,
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "VALIDATION_ERROR");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

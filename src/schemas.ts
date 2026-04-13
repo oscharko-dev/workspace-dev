@@ -27,11 +27,12 @@ import type {
   WorkspaceLocalSyncRequest,
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus,
-  WorkspaceVisualAuditInput
+  WorkspaceVisualAuditInput,
 } from "./contracts/index.js";
 import { validateComponentMappingRule } from "./component-mapping-rules.js";
 import { normalizeGenerationLocale } from "./generation-locale.js";
 import { validateRegenerationOverrideEntry } from "./job-engine/ir-override-validation.js";
+import { resolveFigmaPasteMaxBytes } from "./server/constants.js";
 
 type PathSegment = string | number;
 
@@ -55,7 +56,8 @@ interface ValidationFailureResult {
 }
 
 type ValidationResult<T> = ValidationSuccess<T> | ValidationFailureResult;
-type ParsedLocalSyncFileDecision = WorkspaceLocalSyncApplyRequest["fileDecisions"][number];
+type ParsedLocalSyncFileDecision =
+  WorkspaceLocalSyncApplyRequest["fileDecisions"][number];
 
 interface RuntimeSchema<T> {
   safeParse(input: unknown): ValidationResult<T>;
@@ -71,7 +73,11 @@ function isRecord(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input);
 }
 
-function pushIssue(issues: ValidationIssue[], path: PathSegment[], message: string): void {
+function pushIssue(
+  issues: ValidationIssue[],
+  path: PathSegment[],
+  message: string,
+): void {
   issues.push({ path, message });
 }
 
@@ -80,7 +86,7 @@ function parseStringField({
   key,
   required,
   issues,
-  minLength = 1
+  minLength = 1,
 }: {
   input: Record<string, unknown>;
   key: keyof WorkspaceJobInput;
@@ -112,7 +118,7 @@ function parseStringField({
 
 function parseSubmitLlmCodegenMode({
   value,
-  issues
+  issues,
 }: {
   value: string | undefined;
   issues: ValidationIssue[];
@@ -123,7 +129,11 @@ function parseSubmitLlmCodegenMode({
 
   const normalized = value.trim().toLowerCase();
   if (normalized !== "deterministic") {
-    pushIssue(issues, ["llmCodegenMode"], "llmCodegenMode must equal 'deterministic'");
+    pushIssue(
+      issues,
+      ["llmCodegenMode"],
+      "llmCodegenMode must equal 'deterministic'",
+    );
     return undefined;
   }
 
@@ -132,7 +142,7 @@ function parseSubmitLlmCodegenMode({
 
 function parseSubmitGenerationLocale({
   value,
-  issues
+  issues,
 }: {
   value: string | undefined;
   issues: ValidationIssue[];
@@ -143,7 +153,11 @@ function parseSubmitGenerationLocale({
 
   const normalized = normalizeGenerationLocale(value);
   if (!normalized) {
-    pushIssue(issues, ["generationLocale"], "generationLocale must be a valid supported locale");
+    pushIssue(
+      issues,
+      ["generationLocale"],
+      "generationLocale must be a valid supported locale",
+    );
     return undefined;
   }
 
@@ -152,7 +166,7 @@ function parseSubmitGenerationLocale({
 
 function parseComponentMappingRuleEntry({
   entry,
-  path
+  path,
 }: {
   entry: unknown;
   path: PathSegment[];
@@ -179,7 +193,7 @@ function parseComponentMappingRuleEntry({
     "source",
     "enabled",
     "createdAt",
-    "updatedAt"
+    "updatedAt",
   ]);
   for (const key of Object.keys(entry)) {
     if (!allowedKeys.has(key)) {
@@ -187,13 +201,19 @@ function parseComponentMappingRuleEntry({
     }
   }
 
-  const parseOptionalNonEmptyString = (key: keyof WorkspaceComponentMappingRule): string | undefined => {
+  const parseOptionalNonEmptyString = (
+    key: keyof WorkspaceComponentMappingRule,
+  ): string | undefined => {
     const value = entry[key];
     if (value === undefined) {
       return undefined;
     }
     if (typeof value !== "string" || value.trim().length === 0) {
-      pushIssue(issues, [...path, key], `${key} must be a non-empty string when provided.`);
+      pushIssue(
+        issues,
+        [...path, key],
+        `${key} must be a non-empty string when provided.`,
+      );
       return undefined;
     }
     return value.trim();
@@ -202,7 +222,9 @@ function parseComponentMappingRuleEntry({
   const boardKey = parseOptionalNonEmptyString("boardKey");
   const nodeId = parseOptionalNonEmptyString("nodeId");
   const nodeNamePattern = parseOptionalNonEmptyString("nodeNamePattern");
-  const canonicalComponentName = parseOptionalNonEmptyString("canonicalComponentName");
+  const canonicalComponentName = parseOptionalNonEmptyString(
+    "canonicalComponentName",
+  );
   const storybookTier = parseOptionalNonEmptyString("storybookTier");
   const figmaLibrary = parseOptionalNonEmptyString("figmaLibrary");
   const semanticType = parseOptionalNonEmptyString("semanticType");
@@ -217,7 +239,11 @@ function parseComponentMappingRuleEntry({
       return undefined;
     }
     if (typeof value !== "number" || !Number.isInteger(value)) {
-      pushIssue(issues, [...path, "id"], "id must be an integer when provided.");
+      pushIssue(
+        issues,
+        [...path, "id"],
+        "id must be an integer when provided.",
+      );
       return undefined;
     }
     return value;
@@ -226,7 +252,11 @@ function parseComponentMappingRuleEntry({
   const priority = (() => {
     const value = entry.priority;
     if (typeof value !== "number" || !Number.isFinite(value)) {
-      pushIssue(issues, [...path, "priority"], "priority must be a finite number.");
+      pushIssue(
+        issues,
+        [...path, "priority"],
+        "priority must be a finite number.",
+      );
       return undefined;
     }
     return value;
@@ -235,7 +265,11 @@ function parseComponentMappingRuleEntry({
   const source = (() => {
     const value = entry.source;
     if (value !== "local_override" && value !== "code_connect_import") {
-      pushIssue(issues, [...path, "source"], "source must be either 'local_override' or 'code_connect_import'.");
+      pushIssue(
+        issues,
+        [...path, "source"],
+        "source must be either 'local_override' or 'code_connect_import'.",
+      );
       return undefined;
     }
     return value;
@@ -256,7 +290,11 @@ function parseComponentMappingRuleEntry({
       return undefined;
     }
     if (!isRecord(value)) {
-      pushIssue(issues, [...path, "propContract"], "propContract must be an object when provided.");
+      pushIssue(
+        issues,
+        [...path, "propContract"],
+        "propContract must be an object when provided.",
+      );
       return undefined;
     }
     return value;
@@ -282,7 +320,7 @@ function parseComponentMappingRuleEntry({
     ...(semanticType ? { semanticType } : {}),
     ...(propContract ? { propContract } : {}),
     ...(createdAt ? { createdAt } : {}),
-    ...(updatedAt ? { updatedAt } : {})
+    ...(updatedAt ? { updatedAt } : {}),
   };
 
   const validation = validateComponentMappingRule({ rule });
@@ -296,14 +334,14 @@ function parseComponentMappingRuleEntry({
 
   return {
     success: true,
-    data: validation.normalizedRule
+    data: validation.normalizedRule,
   };
 }
 
 function parseOptionalComponentMappingsField({
   input,
   key,
-  issues
+  issues,
 }: {
   input: Record<string, unknown>;
   key: "componentMappings";
@@ -314,7 +352,11 @@ function parseOptionalComponentMappingsField({
     return undefined;
   }
   if (!Array.isArray(value)) {
-    pushIssue(issues, [key], "componentMappings must be an array when provided.");
+    pushIssue(
+      issues,
+      [key],
+      "componentMappings must be an array when provided.",
+    );
     return undefined;
   }
 
@@ -322,7 +364,7 @@ function parseOptionalComponentMappingsField({
   value.forEach((entry, index) => {
     const parsed = parseComponentMappingRuleEntry({
       entry,
-      path: [key, index]
+      path: [key, index],
     });
     if (!parsed.success) {
       issues.push(...parsed.error.issues);
@@ -337,7 +379,7 @@ function parseOptionalComponentMappingsField({
 function parseOptionalVisualAuditField({
   input,
   key,
-  issues
+  issues,
 }: {
   input: Record<string, unknown>;
   key: "visualAudit";
@@ -352,17 +394,30 @@ function parseOptionalVisualAuditField({
     return undefined;
   }
 
-  const allowedKeys = new Set(["baselineImagePath", "capture", "diff", "regions"]);
+  const allowedKeys = new Set([
+    "baselineImagePath",
+    "capture",
+    "diff",
+    "regions",
+  ]);
   for (const candidateKey of Object.keys(value)) {
     if (!allowedKeys.has(candidateKey)) {
-      pushIssue(issues, [key, candidateKey], `Unexpected property '${candidateKey}'.`);
+      pushIssue(
+        issues,
+        [key, candidateKey],
+        `Unexpected property '${candidateKey}'.`,
+      );
     }
   }
 
   const baselineImagePath = (() => {
     const raw = value.baselineImagePath;
     if (typeof raw !== "string" || raw.trim().length === 0) {
-      pushIssue(issues, [key, "baselineImagePath"], "baselineImagePath must be a non-empty string.");
+      pushIssue(
+        issues,
+        [key, "baselineImagePath"],
+        "baselineImagePath must be a non-empty string.",
+      );
       return undefined;
     }
     return raw.trim();
@@ -374,7 +429,11 @@ function parseOptionalVisualAuditField({
       return undefined;
     }
     if (!isRecord(raw)) {
-      pushIssue(issues, [key, "capture"], "visualAudit.capture must be an object when provided.");
+      pushIssue(
+        issues,
+        [key, "capture"],
+        "visualAudit.capture must be an object when provided.",
+      );
       return undefined;
     }
 
@@ -384,11 +443,15 @@ function parseOptionalVisualAuditField({
       "waitForFonts",
       "waitForAnimations",
       "timeoutMs",
-      "fullPage"
+      "fullPage",
     ]);
     for (const captureKey of Object.keys(raw)) {
       if (!allowedCaptureKeys.has(captureKey)) {
-        pushIssue(issues, [key, "capture", captureKey], `Unexpected property '${captureKey}'.`);
+        pushIssue(
+          issues,
+          [key, "capture", captureKey],
+          `Unexpected property '${captureKey}'.`,
+        );
       }
     }
 
@@ -398,7 +461,11 @@ function parseOptionalVisualAuditField({
         return undefined;
       }
       if (typeof candidate !== "boolean") {
-        pushIssue(issues, [key, "capture", field], `${field} must be a boolean when provided.`);
+        pushIssue(
+          issues,
+          [key, "capture", field],
+          `${field} must be a boolean when provided.`,
+        );
         return undefined;
       }
       return candidate;
@@ -406,7 +473,7 @@ function parseOptionalVisualAuditField({
 
     const parseOptionalPositiveNumber = ({
       field,
-      integer = false
+      integer = false,
     }: {
       field: string;
       integer?: boolean;
@@ -415,16 +482,24 @@ function parseOptionalVisualAuditField({
       if (candidate === undefined) {
         return undefined;
       }
-      if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate <= 0) {
+      if (
+        typeof candidate !== "number" ||
+        !Number.isFinite(candidate) ||
+        candidate <= 0
+      ) {
         pushIssue(
           issues,
           [key, "capture", field],
-          `${field} must be a finite number greater than 0 when provided.`
+          `${field} must be a finite number greater than 0 when provided.`,
         );
         return undefined;
       }
       if (integer && !Number.isInteger(candidate)) {
-        pushIssue(issues, [key, "capture", field], `${field} must be an integer when provided.`);
+        pushIssue(
+          issues,
+          [key, "capture", field],
+          `${field} must be an integer when provided.`,
+        );
         return undefined;
       }
       return candidate;
@@ -436,19 +511,31 @@ function parseOptionalVisualAuditField({
         return undefined;
       }
       if (!isRecord(viewportRaw)) {
-        pushIssue(issues, [key, "capture", "viewport"], "viewport must be an object when provided.");
+        pushIssue(
+          issues,
+          [key, "capture", "viewport"],
+          "viewport must be an object when provided.",
+        );
         return undefined;
       }
-      const allowedViewportKeys = new Set(["width", "height", "deviceScaleFactor"]);
+      const allowedViewportKeys = new Set([
+        "width",
+        "height",
+        "deviceScaleFactor",
+      ]);
       for (const viewportKey of Object.keys(viewportRaw)) {
         if (!allowedViewportKeys.has(viewportKey)) {
-          pushIssue(issues, [key, "capture", "viewport", viewportKey], `Unexpected property '${viewportKey}'.`);
+          pushIssue(
+            issues,
+            [key, "capture", "viewport", viewportKey],
+            `Unexpected property '${viewportKey}'.`,
+          );
         }
       }
 
       const parseViewportNumber = ({
         field,
-        integer = false
+        integer = false,
       }: {
         field: "width" | "height" | "deviceScaleFactor";
         integer?: boolean;
@@ -457,16 +544,24 @@ function parseOptionalVisualAuditField({
         if (candidate === undefined) {
           return undefined;
         }
-        if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate <= 0) {
+        if (
+          typeof candidate !== "number" ||
+          !Number.isFinite(candidate) ||
+          candidate <= 0
+        ) {
           pushIssue(
             issues,
             [key, "capture", "viewport", field],
-            `${field} must be a finite number greater than 0 when provided.`
+            `${field} must be a finite number greater than 0 when provided.`,
           );
           return undefined;
         }
         if (integer && !Number.isInteger(candidate)) {
-          pushIssue(issues, [key, "capture", "viewport", field], `${field} must be an integer when provided.`);
+          pushIssue(
+            issues,
+            [key, "capture", "viewport", field],
+            `${field} must be an integer when provided.`,
+          );
           return undefined;
         }
         return candidate;
@@ -474,20 +569,29 @@ function parseOptionalVisualAuditField({
 
       const width = parseViewportNumber({ field: "width", integer: true });
       const height = parseViewportNumber({ field: "height", integer: true });
-      const deviceScaleFactor = parseViewportNumber({ field: "deviceScaleFactor" });
+      const deviceScaleFactor = parseViewportNumber({
+        field: "deviceScaleFactor",
+      });
 
-      if (width === undefined && height === undefined && deviceScaleFactor === undefined) {
+      if (
+        width === undefined &&
+        height === undefined &&
+        deviceScaleFactor === undefined
+      ) {
         return undefined;
       }
 
       return {
         ...(width !== undefined ? { width } : {}),
         ...(height !== undefined ? { height } : {}),
-        ...(deviceScaleFactor !== undefined ? { deviceScaleFactor } : {})
+        ...(deviceScaleFactor !== undefined ? { deviceScaleFactor } : {}),
       };
     })();
 
-    const timeoutMs = parseOptionalPositiveNumber({ field: "timeoutMs", integer: true });
+    const timeoutMs = parseOptionalPositiveNumber({
+      field: "timeoutMs",
+      integer: true,
+    });
     const waitForNetworkIdle = parseOptionalBoolean("waitForNetworkIdle");
     const waitForFonts = parseOptionalBoolean("waitForFonts");
     const waitForAnimations = parseOptionalBoolean("waitForAnimations");
@@ -499,7 +603,7 @@ function parseOptionalVisualAuditField({
       ...(waitForFonts !== undefined ? { waitForFonts } : {}),
       ...(waitForAnimations !== undefined ? { waitForAnimations } : {}),
       ...(timeoutMs !== undefined ? { timeoutMs } : {}),
-      ...(fullPage !== undefined ? { fullPage } : {})
+      ...(fullPage !== undefined ? { fullPage } : {}),
     };
   })();
 
@@ -509,23 +613,46 @@ function parseOptionalVisualAuditField({
       return undefined;
     }
     if (!isRecord(raw)) {
-      pushIssue(issues, [key, "diff"], "visualAudit.diff must be an object when provided.");
+      pushIssue(
+        issues,
+        [key, "diff"],
+        "visualAudit.diff must be an object when provided.",
+      );
       return undefined;
     }
-    const allowedDiffKeys = new Set(["threshold", "includeAntialiasing", "alpha"]);
+    const allowedDiffKeys = new Set([
+      "threshold",
+      "includeAntialiasing",
+      "alpha",
+    ]);
     for (const diffKey of Object.keys(raw)) {
       if (!allowedDiffKeys.has(diffKey)) {
-        pushIssue(issues, [key, "diff", diffKey], `Unexpected property '${diffKey}'.`);
+        pushIssue(
+          issues,
+          [key, "diff", diffKey],
+          `Unexpected property '${diffKey}'.`,
+        );
       }
     }
 
-    const parseOptionalRatio = (field: "threshold" | "alpha"): number | undefined => {
+    const parseOptionalRatio = (
+      field: "threshold" | "alpha",
+    ): number | undefined => {
       const candidate = raw[field];
       if (candidate === undefined) {
         return undefined;
       }
-      if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate < 0 || candidate > 1) {
-        pushIssue(issues, [key, "diff", field], `${field} must be a number between 0 and 1 when provided.`);
+      if (
+        typeof candidate !== "number" ||
+        !Number.isFinite(candidate) ||
+        candidate < 0 ||
+        candidate > 1
+      ) {
+        pushIssue(
+          issues,
+          [key, "diff", field],
+          `${field} must be a number between 0 and 1 when provided.`,
+        );
         return undefined;
       }
       return candidate;
@@ -537,7 +664,11 @@ function parseOptionalVisualAuditField({
         return undefined;
       }
       if (typeof candidate !== "boolean") {
-        pushIssue(issues, [key, "diff", "includeAntialiasing"], "includeAntialiasing must be a boolean when provided.");
+        pushIssue(
+          issues,
+          [key, "diff", "includeAntialiasing"],
+          "includeAntialiasing must be a boolean when provided.",
+        );
         return undefined;
       }
       return candidate;
@@ -549,7 +680,7 @@ function parseOptionalVisualAuditField({
     return {
       ...(threshold !== undefined ? { threshold } : {}),
       ...(includeAntialiasing !== undefined ? { includeAntialiasing } : {}),
-      ...(alpha !== undefined ? { alpha } : {})
+      ...(alpha !== undefined ? { alpha } : {}),
     };
   })();
 
@@ -559,41 +690,78 @@ function parseOptionalVisualAuditField({
       return undefined;
     }
     if (!Array.isArray(raw)) {
-      pushIssue(issues, [key, "regions"], "visualAudit.regions must be an array when provided.");
+      pushIssue(
+        issues,
+        [key, "regions"],
+        "visualAudit.regions must be an array when provided.",
+      );
       return undefined;
     }
 
     return raw.flatMap((entry, index) => {
       const regionPath: PathSegment[] = [key, "regions", index];
       if (!isRecord(entry)) {
-        pushIssue(issues, regionPath, "Each visualAudit region must be an object.");
+        pushIssue(
+          issues,
+          regionPath,
+          "Each visualAudit region must be an object.",
+        );
         return [];
       }
 
       const allowedRegionKeys = new Set(["name", "x", "y", "width", "height"]);
       for (const regionKey of Object.keys(entry)) {
         if (!allowedRegionKeys.has(regionKey)) {
-          pushIssue(issues, [...regionPath, regionKey], `Unexpected property '${regionKey}'.`);
+          pushIssue(
+            issues,
+            [...regionPath, regionKey],
+            `Unexpected property '${regionKey}'.`,
+          );
         }
       }
 
-      const name = typeof entry.name === "string" && entry.name.trim().length > 0 ? entry.name.trim() : undefined;
+      const name =
+        typeof entry.name === "string" && entry.name.trim().length > 0
+          ? entry.name.trim()
+          : undefined;
       if (!name) {
-        pushIssue(issues, [...regionPath, "name"], "name must be a non-empty string.");
+        pushIssue(
+          issues,
+          [...regionPath, "name"],
+          "name must be a non-empty string.",
+        );
       }
 
-      const parseInteger = (field: "x" | "y" | "width" | "height"): number | undefined => {
+      const parseInteger = (
+        field: "x" | "y" | "width" | "height",
+      ): number | undefined => {
         const candidate = entry[field];
-        if (typeof candidate !== "number" || !Number.isFinite(candidate) || !Number.isInteger(candidate)) {
-          pushIssue(issues, [...regionPath, field], `${field} must be an integer.`);
+        if (
+          typeof candidate !== "number" ||
+          !Number.isFinite(candidate) ||
+          !Number.isInteger(candidate)
+        ) {
+          pushIssue(
+            issues,
+            [...regionPath, field],
+            `${field} must be an integer.`,
+          );
           return undefined;
         }
         if ((field === "width" || field === "height") && candidate <= 0) {
-          pushIssue(issues, [...regionPath, field], `${field} must be greater than 0.`);
+          pushIssue(
+            issues,
+            [...regionPath, field],
+            `${field} must be greater than 0.`,
+          );
           return undefined;
         }
         if ((field === "x" || field === "y") && candidate < 0) {
-          pushIssue(issues, [...regionPath, field], `${field} must be greater than or equal to 0.`);
+          pushIssue(
+            issues,
+            [...regionPath, field],
+            `${field} must be greater than or equal to 0.`,
+          );
           return undefined;
         }
         return candidate;
@@ -604,7 +772,13 @@ function parseOptionalVisualAuditField({
       const width = parseInteger("width");
       const height = parseInteger("height");
 
-      if (!name || x === undefined || y === undefined || width === undefined || height === undefined) {
+      if (
+        !name ||
+        x === undefined ||
+        y === undefined ||
+        width === undefined ||
+        height === undefined
+      ) {
         return [];
       }
 
@@ -620,11 +794,13 @@ function parseOptionalVisualAuditField({
     baselineImagePath,
     ...(capture && Object.keys(capture).length > 0 ? { capture } : {}),
     ...(diff && Object.keys(diff).length > 0 ? { diff } : {}),
-    ...(regions ? { regions } : {})
+    ...(regions ? { regions } : {}),
   };
 }
 
-function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput> {
+function parseSubmitRequest(
+  input: unknown,
+): ValidationResult<WorkspaceJobInput> {
   const issues: ValidationIssue[] = [];
 
   if (!isRecord(input)) {
@@ -651,7 +827,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     "brandTheme",
     "generationLocale",
     "formHandlingMode",
-    "visualAudit"
+    "visualAudit",
   ]);
 
   for (const key of Object.keys(input)) {
@@ -664,65 +840,65 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     input,
     key: "figmaFileKey",
     required: false,
-    issues
+    issues,
   });
   const figmaAccessToken = parseStringField({
     input,
     key: "figmaAccessToken",
     required: false,
-    issues
+    issues,
   });
   const figmaJsonPath = parseStringField({
     input,
     key: "figmaJsonPath",
     required: false,
-    issues
+    issues,
   });
   const figmaJsonPayload = parseStringField({
     input,
     key: "figmaJsonPayload",
     required: false,
-    issues
+    issues,
   });
   const storybookStaticDir = parseStringField({
     input,
     key: "storybookStaticDir",
     required: false,
-    issues
+    issues,
   });
   const customerProfilePath = parseStringField({
     input,
     key: "customerProfilePath",
     required: false,
-    issues
+    issues,
   });
   const customerBrandId = parseStringField({
     input,
     key: "customerBrandId",
     required: false,
-    issues
+    issues,
   });
   const componentMappings = parseOptionalComponentMappingsField({
     input,
     key: "componentMappings",
-    issues
+    issues,
   });
   const visualAudit = parseOptionalVisualAuditField({
     input,
     key: "visualAudit",
-    issues
+    issues,
   });
   const repoUrl = parseStringField({
     input,
     key: "repoUrl",
     required: false,
-    issues
+    issues,
   });
   const repoToken = parseStringField({
     input,
     key: "repoToken",
     required: false,
-    issues
+    issues,
   });
   const rawEnableGitPr = input.enableGitPr;
   const enableGitPr =
@@ -738,43 +914,43 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     input,
     key: "figmaSourceMode",
     required: false,
-    issues
+    issues,
   });
   const rawLlmCodegenMode = parseStringField({
     input,
     key: "llmCodegenMode",
     required: false,
-    issues
+    issues,
   });
   const projectName = parseStringField({
     input,
     key: "projectName",
     required: false,
-    issues
+    issues,
   });
   const targetPath = parseStringField({
     input,
     key: "targetPath",
     required: false,
-    issues
+    issues,
   });
   const rawBrandTheme = parseStringField({
     input,
     key: "brandTheme",
     required: false,
-    issues
+    issues,
   });
   const rawGenerationLocale = parseStringField({
     input,
     key: "generationLocale",
     required: false,
-    issues
+    issues,
   });
   const rawFormHandlingMode = parseStringField({
     input,
     key: "formHandlingMode",
     required: false,
-    issues
+    issues,
   });
   const brandTheme = (() => {
     if (rawBrandTheme === undefined) {
@@ -784,7 +960,11 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     if (normalized === "derived" || normalized === "sparkasse") {
       return normalized as WorkspaceBrandTheme;
     }
-    pushIssue(issues, ["brandTheme"], "brandTheme must be one of: derived, sparkasse");
+    pushIssue(
+      issues,
+      ["brandTheme"],
+      "brandTheme must be one of: derived, sparkasse",
+    );
     return undefined;
   })();
   const formHandlingMode = (() => {
@@ -795,16 +975,20 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     if (normalized === "react_hook_form" || normalized === "legacy_use_state") {
       return normalized as WorkspaceFormHandlingMode;
     }
-    pushIssue(issues, ["formHandlingMode"], "formHandlingMode must be one of: react_hook_form, legacy_use_state");
+    pushIssue(
+      issues,
+      ["formHandlingMode"],
+      "formHandlingMode must be one of: react_hook_form, legacy_use_state",
+    );
     return undefined;
   })();
   const llmCodegenMode = parseSubmitLlmCodegenMode({
     value: rawLlmCodegenMode,
-    issues
+    issues,
   });
   const generationLocale = parseSubmitGenerationLocale({
     value: rawGenerationLocale,
-    issues
+    issues,
   });
 
   const normalizedFigmaSourceMode = figmaSourceMode?.trim().toLowerCase();
@@ -823,80 +1007,122 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
     return undefined;
   })();
 
-  if (resolvedFigmaSourceMode === "rest" || resolvedFigmaSourceMode === "hybrid") {
+  if (
+    resolvedFigmaSourceMode === "rest" ||
+    resolvedFigmaSourceMode === "hybrid"
+  ) {
     if (!figmaFileKey) {
       pushIssue(
         issues,
         ["figmaFileKey"],
-        `figmaFileKey is required when figmaSourceMode=${resolvedFigmaSourceMode}`
+        `figmaFileKey is required when figmaSourceMode=${resolvedFigmaSourceMode}`,
       );
     }
     if (!figmaAccessToken) {
       pushIssue(
         issues,
         ["figmaAccessToken"],
-        `figmaAccessToken is required when figmaSourceMode=${resolvedFigmaSourceMode}`
+        `figmaAccessToken is required when figmaSourceMode=${resolvedFigmaSourceMode}`,
       );
     }
     if (figmaJsonPath !== undefined) {
       pushIssue(
         issues,
         ["figmaJsonPath"],
-        `figmaJsonPath must be omitted when figmaSourceMode=${resolvedFigmaSourceMode}`
+        `figmaJsonPath must be omitted when figmaSourceMode=${resolvedFigmaSourceMode}`,
       );
     }
   }
 
   if (resolvedFigmaSourceMode === "local_json") {
     if (!figmaJsonPath) {
-      pushIssue(issues, ["figmaJsonPath"], "figmaJsonPath is required when figmaSourceMode=local_json");
+      pushIssue(
+        issues,
+        ["figmaJsonPath"],
+        "figmaJsonPath is required when figmaSourceMode=local_json",
+      );
     }
     if (figmaFileKey !== undefined) {
-      pushIssue(issues, ["figmaFileKey"], "figmaFileKey must be omitted when figmaSourceMode=local_json");
+      pushIssue(
+        issues,
+        ["figmaFileKey"],
+        "figmaFileKey must be omitted when figmaSourceMode=local_json",
+      );
     }
     if (figmaAccessToken !== undefined) {
-      pushIssue(issues, ["figmaAccessToken"], "figmaAccessToken must be omitted when figmaSourceMode=local_json");
+      pushIssue(
+        issues,
+        ["figmaAccessToken"],
+        "figmaAccessToken must be omitted when figmaSourceMode=local_json",
+      );
     }
   }
 
   if (resolvedFigmaSourceMode === "figma_paste") {
-    const DEFAULT_FIGMA_PASTE_MAX_BYTES = 2 * 1024 * 1024;
-    const envMaxBytes = process.env.WORKSPACE_FIGMA_PASTE_MAX_BYTES;
-    const figmaPasteMaxBytes =
-      envMaxBytes !== undefined && /^\d+$/.test(envMaxBytes)
-        ? parseInt(envMaxBytes, 10)
-        : DEFAULT_FIGMA_PASTE_MAX_BYTES;
+    const figmaPasteMaxBytes = resolveFigmaPasteMaxBytes();
     if (!figmaJsonPayload) {
-      pushIssue(issues, ["figmaJsonPayload"], "INVALID_PAYLOAD: figmaJsonPayload is required when figmaSourceMode=figma_paste");
+      pushIssue(
+        issues,
+        ["figmaJsonPayload"],
+        "INVALID_PAYLOAD: figmaJsonPayload is required when figmaSourceMode=figma_paste",
+      );
     } else {
       const byteLength = Buffer.byteLength(figmaJsonPayload, "utf8");
       if (byteLength > figmaPasteMaxBytes) {
-        pushIssue(issues, ["figmaJsonPayload"], `TOO_LARGE: figmaJsonPayload exceeds maximum allowed size of ${figmaPasteMaxBytes} bytes`);
+        pushIssue(
+          issues,
+          ["figmaJsonPayload"],
+          `TOO_LARGE: figmaJsonPayload exceeds maximum allowed size of ${figmaPasteMaxBytes} bytes`,
+        );
       } else {
         try {
           JSON.parse(figmaJsonPayload);
         } catch {
-          pushIssue(issues, ["figmaJsonPayload"], "SCHEMA_MISMATCH: figmaJsonPayload must be valid JSON");
+          pushIssue(
+            issues,
+            ["figmaJsonPayload"],
+            "SCHEMA_MISMATCH: figmaJsonPayload must be valid JSON",
+          );
         }
       }
     }
     if (figmaFileKey !== undefined) {
-      pushIssue(issues, ["figmaFileKey"], "figmaFileKey must be omitted when figmaSourceMode=figma_paste");
+      pushIssue(
+        issues,
+        ["figmaFileKey"],
+        "figmaFileKey must be omitted when figmaSourceMode=figma_paste",
+      );
     }
     if (figmaAccessToken !== undefined) {
-      pushIssue(issues, ["figmaAccessToken"], "figmaAccessToken must be omitted when figmaSourceMode=figma_paste");
+      pushIssue(
+        issues,
+        ["figmaAccessToken"],
+        "figmaAccessToken must be omitted when figmaSourceMode=figma_paste",
+      );
     }
     if (figmaJsonPath !== undefined) {
-      pushIssue(issues, ["figmaJsonPath"], "figmaJsonPath must be omitted when figmaSourceMode=figma_paste");
+      pushIssue(
+        issues,
+        ["figmaJsonPath"],
+        "figmaJsonPath must be omitted when figmaSourceMode=figma_paste",
+      );
     }
   }
 
   if (enableGitPr) {
     if (!repoUrl) {
-      pushIssue(issues, ["repoUrl"], "repoUrl is required when enableGitPr=true");
+      pushIssue(
+        issues,
+        ["repoUrl"],
+        "repoUrl is required when enableGitPr=true",
+      );
     }
     if (!repoToken) {
-      pushIssue(issues, ["repoToken"], "repoToken is required when enableGitPr=true");
+      pushIssue(
+        issues,
+        ["repoToken"],
+        "repoToken is required when enableGitPr=true",
+      );
     }
   }
 
@@ -905,7 +1131,7 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
   }
 
   const data: WorkspaceJobInput = {
-    enableGitPr
+    enableGitPr,
   };
   if (figmaSourceMode !== undefined) {
     data.figmaSourceMode = figmaSourceMode;
@@ -966,11 +1192,13 @@ function parseSubmitRequest(input: unknown): ValidationResult<WorkspaceJobInput>
 
   return {
     success: true,
-    data
+    data,
   };
 }
 
-function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus> {
+function parseWorkspaceStatus(
+  input: unknown,
+): ValidationResult<WorkspaceStatus> {
   const issues: ValidationIssue[] = [];
   if (!isRecord(input)) {
     pushIssue(issues, [], "Expected an object body.");
@@ -987,17 +1215,32 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
   const outputRoot = input.outputRoot;
   const previewEnabled = input.previewEnabled;
 
-  if (typeof running !== "boolean") pushIssue(issues, ["running"], "running must be a boolean");
-  if (typeof url !== "string") pushIssue(issues, ["url"], "url must be a string");
-  if (typeof host !== "string") pushIssue(issues, ["host"], "host must be a string");
+  if (typeof running !== "boolean")
+    pushIssue(issues, ["running"], "running must be a boolean");
+  if (typeof url !== "string")
+    pushIssue(issues, ["url"], "url must be a string");
+  if (typeof host !== "string")
+    pushIssue(issues, ["host"], "host must be a string");
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1) {
     pushIssue(issues, ["port"], "port must be a positive integer");
   }
-  if (figmaSourceMode !== "rest" && figmaSourceMode !== "hybrid" && figmaSourceMode !== "local_json") {
-    pushIssue(issues, ["figmaSourceMode"], "figmaSourceMode must be one of: rest, hybrid, local_json");
+  if (
+    figmaSourceMode !== "rest" &&
+    figmaSourceMode !== "hybrid" &&
+    figmaSourceMode !== "local_json"
+  ) {
+    pushIssue(
+      issues,
+      ["figmaSourceMode"],
+      "figmaSourceMode must be one of: rest, hybrid, local_json",
+    );
   }
   if (llmCodegenMode !== "deterministic") {
-    pushIssue(issues, ["llmCodegenMode"], "llmCodegenMode must equal 'deterministic'");
+    pushIssue(
+      issues,
+      ["llmCodegenMode"],
+      "llmCodegenMode must equal 'deterministic'",
+    );
   }
   if (typeof uptimeMs !== "number" || uptimeMs < 0) {
     pushIssue(issues, ["uptimeMs"], "uptimeMs must be a non-negative number");
@@ -1024,12 +1267,14 @@ function parseWorkspaceStatus(input: unknown): ValidationResult<WorkspaceStatus>
       llmCodegenMode: "deterministic",
       uptimeMs: uptimeMs as number,
       outputRoot: outputRoot as string,
-      previewEnabled: previewEnabled as boolean
-    }
+      previewEnabled: previewEnabled as boolean,
+    },
   };
 }
 
-function parseErrorResponse(input: unknown): ValidationResult<{ error: string; message: string }> {
+function parseErrorResponse(
+  input: unknown,
+): ValidationResult<{ error: string; message: string }> {
   const issues: ValidationIssue[] = [];
   if (!isRecord(input)) {
     pushIssue(issues, [], "Expected an object body.");
@@ -1052,21 +1297,24 @@ function parseErrorResponse(input: unknown): ValidationResult<{ error: string; m
     success: true,
     data: {
       error: input.error as string,
-      message: input.message as string
-    }
+      message: input.message as string,
+    },
   };
 }
 
 export const SubmitRequestSchema: RuntimeSchema<WorkspaceJobInput> = {
-  safeParse: parseSubmitRequest
+  safeParse: parseSubmitRequest,
 };
 
 export const WorkspaceStatusSchema: RuntimeSchema<WorkspaceStatus> = {
-  safeParse: parseWorkspaceStatus
+  safeParse: parseWorkspaceStatus,
 };
 
-export const ErrorResponseSchema: RuntimeSchema<{ error: string; message: string }> = {
-  safeParse: parseErrorResponse
+export const ErrorResponseSchema: RuntimeSchema<{
+  error: string;
+  message: string;
+}> = {
+  safeParse: parseErrorResponse,
 };
 
 interface RegenerationRequestData {
@@ -1077,7 +1325,9 @@ interface RegenerationRequestData {
   componentMappings?: WorkspaceComponentMappingRule[];
 }
 
-function parseRegenerationRequest(input: unknown): ValidationResult<RegenerationRequestData> {
+function parseRegenerationRequest(
+  input: unknown,
+): ValidationResult<RegenerationRequestData> {
   const issues: ValidationIssue[] = [];
 
   if (!isRecord(input)) {
@@ -1085,7 +1335,13 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
     return { success: false, error: { issues } };
   }
 
-  const allowedKeys = new Set(["overrides", "draftId", "baseFingerprint", "customerBrandId", "componentMappings"]);
+  const allowedKeys = new Set([
+    "overrides",
+    "draftId",
+    "baseFingerprint",
+    "customerBrandId",
+    "componentMappings",
+  ]);
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
       pushIssue(issues, [key], `Unexpected property '${key}'.`);
@@ -1101,24 +1357,40 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
   for (let i = 0; i < input.overrides.length; i++) {
     const entry = input.overrides[i] as unknown;
     if (!isRecord(entry)) {
-      pushIssue(issues, ["overrides", i], "Each override entry must be an object.");
+      pushIssue(
+        issues,
+        ["overrides", i],
+        "Each override entry must be an object.",
+      );
       continue;
     }
     if (typeof entry.nodeId !== "string" || entry.nodeId.trim().length === 0) {
-      pushIssue(issues, ["overrides", i, "nodeId"], "nodeId must be a non-empty string.");
+      pushIssue(
+        issues,
+        ["overrides", i, "nodeId"],
+        "nodeId must be a non-empty string.",
+      );
       continue;
     }
     if (typeof entry.field !== "string" || entry.field.trim().length === 0) {
-      pushIssue(issues, ["overrides", i, "field"], "field must be a non-empty string.");
+      pushIssue(
+        issues,
+        ["overrides", i, "field"],
+        "field must be a non-empty string.",
+      );
       continue;
     }
     const validationResult = validateRegenerationOverrideEntry({
       nodeId: entry.nodeId,
       field: entry.field,
-      value: entry.value as WorkspaceRegenerationOverrideEntry["value"]
+      value: entry.value as WorkspaceRegenerationOverrideEntry["value"],
     });
     if (!validationResult.ok) {
-      pushIssue(issues, ["overrides", i, validationResult.path], validationResult.message);
+      pushIssue(
+        issues,
+        ["overrides", i, validationResult.path],
+        validationResult.message,
+      );
       continue;
     }
     overrides.push(validationResult.entry);
@@ -1126,8 +1398,15 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
 
   let draftId: string | undefined;
   if (input.draftId !== undefined) {
-    if (typeof input.draftId !== "string" || input.draftId.trim().length === 0) {
-      pushIssue(issues, ["draftId"], "draftId must be a non-empty string when provided.");
+    if (
+      typeof input.draftId !== "string" ||
+      input.draftId.trim().length === 0
+    ) {
+      pushIssue(
+        issues,
+        ["draftId"],
+        "draftId must be a non-empty string when provided.",
+      );
     } else {
       draftId = input.draftId;
     }
@@ -1135,8 +1414,15 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
 
   let baseFingerprint: string | undefined;
   if (input.baseFingerprint !== undefined) {
-    if (typeof input.baseFingerprint !== "string" || input.baseFingerprint.trim().length === 0) {
-      pushIssue(issues, ["baseFingerprint"], "baseFingerprint must be a non-empty string when provided.");
+    if (
+      typeof input.baseFingerprint !== "string" ||
+      input.baseFingerprint.trim().length === 0
+    ) {
+      pushIssue(
+        issues,
+        ["baseFingerprint"],
+        "baseFingerprint must be a non-empty string when provided.",
+      );
     } else {
       baseFingerprint = input.baseFingerprint;
     }
@@ -1144,8 +1430,15 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
 
   let customerBrandId: string | undefined;
   if (input.customerBrandId !== undefined) {
-    if (typeof input.customerBrandId !== "string" || input.customerBrandId.trim().length === 0) {
-      pushIssue(issues, ["customerBrandId"], "customerBrandId must be a non-empty string when provided.");
+    if (
+      typeof input.customerBrandId !== "string" ||
+      input.customerBrandId.trim().length === 0
+    ) {
+      pushIssue(
+        issues,
+        ["customerBrandId"],
+        "customerBrandId must be a non-empty string when provided.",
+      );
     } else {
       customerBrandId = input.customerBrandId.trim();
     }
@@ -1154,7 +1447,7 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
   const componentMappings = parseOptionalComponentMappingsField({
     input,
     key: "componentMappings",
-    issues
+    issues,
   });
 
   if (issues.length > 0) {
@@ -1178,11 +1471,14 @@ function parseRegenerationRequest(input: unknown): ValidationResult<Regeneration
   return { success: true, data };
 }
 
-export const RegenerationRequestSchema: RuntimeSchema<RegenerationRequestData> = {
-  safeParse: parseRegenerationRequest
-};
+export const RegenerationRequestSchema: RuntimeSchema<RegenerationRequestData> =
+  {
+    safeParse: parseRegenerationRequest,
+  };
 
-function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRequest> {
+function parseSyncRequest(
+  input: unknown,
+): ValidationResult<WorkspaceLocalSyncRequest> {
   const issues: ValidationIssue[] = [];
 
   if (!isRecord(input)) {
@@ -1204,8 +1500,16 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
       }
     }
 
-    if (input.targetPath !== undefined && (typeof input.targetPath !== "string" || input.targetPath.trim().length === 0)) {
-      pushIssue(issues, ["targetPath"], "targetPath must be a non-empty string when provided.");
+    if (
+      input.targetPath !== undefined &&
+      (typeof input.targetPath !== "string" ||
+        input.targetPath.trim().length === 0)
+    ) {
+      pushIssue(
+        issues,
+        ["targetPath"],
+        "targetPath must be a non-empty string when provided.",
+      );
     }
 
     if (issues.length > 0) {
@@ -1216,61 +1520,99 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
       success: true,
       data: {
         mode: "dry_run",
-        ...(typeof input.targetPath === "string" ? { targetPath: input.targetPath } : {})
-      }
+        ...(typeof input.targetPath === "string"
+          ? { targetPath: input.targetPath }
+          : {}),
+      },
     };
   }
 
-  const allowedKeys = new Set(["mode", "confirmationToken", "confirmOverwrite", "fileDecisions"]);
+  const allowedKeys = new Set([
+    "mode",
+    "confirmationToken",
+    "confirmOverwrite",
+    "fileDecisions",
+  ]);
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
       pushIssue(issues, [key], `Unexpected property '${key}'.`);
     }
   }
 
-  const confirmationToken = typeof input.confirmationToken === "string"
-    ? input.confirmationToken.trim()
-    : "";
+  const confirmationToken =
+    typeof input.confirmationToken === "string"
+      ? input.confirmationToken.trim()
+      : "";
   if (confirmationToken.length === 0) {
-    pushIssue(issues, ["confirmationToken"], "confirmationToken must be a non-empty string.");
+    pushIssue(
+      issues,
+      ["confirmationToken"],
+      "confirmationToken must be a non-empty string.",
+    );
   }
   if (input.confirmOverwrite !== true) {
-    pushIssue(issues, ["confirmOverwrite"], "confirmOverwrite must be true for apply mode.");
+    pushIssue(
+      issues,
+      ["confirmOverwrite"],
+      "confirmOverwrite must be true for apply mode.",
+    );
   }
   if (!Array.isArray(input.fileDecisions) || input.fileDecisions.length === 0) {
-    pushIssue(issues, ["fileDecisions"], "fileDecisions must be a non-empty array.");
+    pushIssue(
+      issues,
+      ["fileDecisions"],
+      "fileDecisions must be a non-empty array.",
+    );
   }
 
-  const fileDecisions: readonly unknown[] = Array.isArray(input.fileDecisions) ? input.fileDecisions : [];
+  const fileDecisions: readonly unknown[] = Array.isArray(input.fileDecisions)
+    ? input.fileDecisions
+    : [];
   const seenPaths = new Set<string>();
   const parsedFileDecisions: ParsedLocalSyncFileDecision[] = [];
   for (let index = 0; index < fileDecisions.length; index += 1) {
     const candidate = fileDecisions[index];
     if (!isRecord(candidate)) {
-      pushIssue(issues, ["fileDecisions", index], "Each fileDecisions entry must be an object.");
+      pushIssue(
+        issues,
+        ["fileDecisions", index],
+        "Each fileDecisions entry must be an object.",
+      );
       continue;
     }
 
     const rawPath = candidate.path;
     if (typeof rawPath !== "string" || rawPath.trim().length === 0) {
-      pushIssue(issues, ["fileDecisions", index, "path"], "path must be a non-empty string.");
+      pushIssue(
+        issues,
+        ["fileDecisions", index, "path"],
+        "path must be a non-empty string.",
+      );
     }
 
     const rawDecision = candidate.decision;
     if (rawDecision !== "write" && rawDecision !== "skip") {
-      pushIssue(issues, ["fileDecisions", index, "decision"], "decision must be one of: write, skip.");
+      pushIssue(
+        issues,
+        ["fileDecisions", index, "decision"],
+        "decision must be one of: write, skip.",
+      );
     }
 
     if (typeof rawPath === "string" && rawPath.trim().length > 0) {
       const normalizedPath = rawPath.trim();
       if (seenPaths.has(normalizedPath)) {
-        pushIssue(issues, ["fileDecisions", index, "path"], `Duplicate decision for '${normalizedPath}'.`);
+        pushIssue(
+          issues,
+          ["fileDecisions", index, "path"],
+          `Duplicate decision for '${normalizedPath}'.`,
+        );
       } else {
         seenPaths.add(normalizedPath);
         if (rawDecision === "write" || rawDecision === "skip") {
           parsedFileDecisions.push({
             path: normalizedPath,
-            decision: rawDecision
+            decision: rawDecision,
           });
         }
       }
@@ -1282,21 +1624,23 @@ function parseSyncRequest(input: unknown): ValidationResult<WorkspaceLocalSyncRe
   }
 
   return {
-      success: true,
-      data: {
-        mode: "apply",
-        confirmationToken,
-        confirmOverwrite: true,
-        fileDecisions: parsedFileDecisions
-      }
+    success: true,
+    data: {
+      mode: "apply",
+      confirmationToken,
+      confirmOverwrite: true,
+      fileDecisions: parsedFileDecisions,
+    },
   };
 }
 
 export const SyncRequestSchema: RuntimeSchema<WorkspaceLocalSyncRequest> = {
-  safeParse: parseSyncRequest
+  safeParse: parseSyncRequest,
 };
 
-function parseCreatePrRequest(input: unknown): ValidationResult<WorkspaceCreatePrInput> {
+function parseCreatePrRequest(
+  input: unknown,
+): ValidationResult<WorkspaceCreatePrInput> {
   const issues: ValidationIssue[] = [];
 
   if (!isRecord(input)) {
@@ -1314,13 +1658,23 @@ function parseCreatePrRequest(input: unknown): ValidationResult<WorkspaceCreateP
   if (typeof input.repoUrl !== "string" || input.repoUrl.trim().length === 0) {
     pushIssue(issues, ["repoUrl"], "repoUrl must be a non-empty string.");
   }
-  if (typeof input.repoToken !== "string" || input.repoToken.trim().length === 0) {
+  if (
+    typeof input.repoToken !== "string" ||
+    input.repoToken.trim().length === 0
+  ) {
     pushIssue(issues, ["repoToken"], "repoToken must be a non-empty string.");
   }
 
   if (input.targetPath !== undefined) {
-    if (typeof input.targetPath !== "string" || input.targetPath.trim().length === 0) {
-      pushIssue(issues, ["targetPath"], "targetPath must be a non-empty string when provided.");
+    if (
+      typeof input.targetPath !== "string" ||
+      input.targetPath.trim().length === 0
+    ) {
+      pushIssue(
+        issues,
+        ["targetPath"],
+        "targetPath must be a non-empty string when provided.",
+      );
     }
   }
 
@@ -1330,7 +1684,7 @@ function parseCreatePrRequest(input: unknown): ValidationResult<WorkspaceCreateP
 
   const data: WorkspaceCreatePrInput = {
     repoUrl: input.repoUrl as string,
-    repoToken: input.repoToken as string
+    repoToken: input.repoToken as string,
   };
   if (typeof input.targetPath === "string") {
     data.targetPath = input.targetPath;
@@ -1340,19 +1694,21 @@ function parseCreatePrRequest(input: unknown): ValidationResult<WorkspaceCreateP
 }
 
 export const CreatePrRequestSchema: RuntimeSchema<WorkspaceCreatePrInput> = {
-  safeParse: parseCreatePrRequest
+  safeParse: parseCreatePrRequest,
 };
 
 /**
  * Keeps backward-compatible naming for existing tests and consumers.
  */
-export function formatZodError(validationError: ValidationError): ValidationFailure {
+export function formatZodError(
+  validationError: ValidationError,
+): ValidationFailure {
   return {
     error: "VALIDATION_ERROR",
     message: "Request validation failed.",
     issues: validationError.issues.map((issue) => ({
       path: issue.path.join(".") || "(root)",
-      message: issue.message
-    }))
+      message: issue.message,
+    })),
   };
 }
