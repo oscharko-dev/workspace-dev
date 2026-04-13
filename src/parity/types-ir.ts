@@ -44,7 +44,10 @@ export interface DesignTokenTypographyVariant {
   textTransform?: "none" | "capitalize" | "uppercase" | "lowercase";
 }
 
-export type DesignTokenTypographyScale = Record<DesignTokenTypographyVariantName, DesignTokenTypographyVariant>;
+export type DesignTokenTypographyScale = Record<
+  DesignTokenTypographyVariantName,
+  DesignTokenTypographyVariant
+>;
 
 export type DesignTokenSource = "variables" | "styles" | "clustering";
 
@@ -103,7 +106,14 @@ export type ResponsiveBreakpoint = "xs" | "sm" | "md" | "lg" | "xl";
 export interface VariantMuiProps {
   variant?: "contained" | "outlined" | "text";
   size?: "small" | "medium" | "large";
-  color?: "primary" | "secondary" | "error" | "info" | "success" | "warning" | "inherit";
+  color?:
+    | "primary"
+    | "secondary"
+    | "error"
+    | "info"
+    | "success"
+    | "warning"
+    | "inherit";
   disabled?: boolean;
 }
 
@@ -172,7 +182,10 @@ export interface ScreenResponsiveIR {
   baseBreakpoint: ResponsiveBreakpoint;
   variants: ScreenResponsiveVariantIR[];
   rootLayoutOverrides?: ScreenResponsiveLayoutOverridesByBreakpoint;
-  topLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
+  topLevelLayoutOverrides?: Record<
+    string,
+    ScreenResponsiveLayoutOverridesByBreakpoint
+  >;
 }
 
 export type ScreenElementType =
@@ -209,7 +222,15 @@ export type ScreenElementType =
   | "avatar"
   | "badge"
   | "divider"
-  | "navigation";
+  | "navigation"
+  | "frame"
+  | "component"
+  | "instance"
+  | "shape"
+  | "vector"
+  | "group"
+  | "section"
+  | "componentSet";
 
 export interface ElementSpacingIR {
   top: number;
@@ -223,7 +244,13 @@ export interface ElementPrototypeNavigationIR {
   mode: "push" | "replace" | "overlay";
 }
 
-export type ScreenElementSemanticSource = "board" | "code_connect" | "design_system" | "metadata" | "node_hint" | "heuristic";
+export type ScreenElementSemanticSource =
+  | "board"
+  | "code_connect"
+  | "design_system"
+  | "metadata"
+  | "node_hint"
+  | "heuristic";
 
 export interface ElementCodeConnectMappingIR {
   origin?: "code_connect" | "design_system";
@@ -305,17 +332,23 @@ export interface NonTextElementIR extends BaseElementIR {
 
 export type ScreenElementIR = TextElementIR | NonTextElementIR;
 
-export const isTextElement = (element: ScreenElementIR): element is TextElementIR => {
+export const isTextElement = (
+  element: ScreenElementIR,
+): element is TextElementIR => {
   return element.type === "text";
 };
 
-export const isNonTextElement = (element: ScreenElementIR): element is NonTextElementIR => {
+export const isNonTextElement = (
+  element: ScreenElementIR,
+): element is NonTextElementIR => {
   return element.type !== "text";
 };
 
 type AssertTrue<T extends true> = T;
 export type ScreenElementIRTextRequiresText = AssertTrue<
-  Extract<ScreenElementIR, { type: "text" }> extends { text: string } ? true : false
+  Extract<ScreenElementIR, { type: "text" }> extends { text: string }
+    ? true
+    : false
 >;
 
 /**
@@ -358,7 +391,10 @@ export interface ScreenAppShellIR {
   contentNodeIds: string[];
 }
 
-export type ScreenVariantFamilyAxis = "pricing-mode" | "expansion-state" | "validation-state";
+export type ScreenVariantFamilyAxis =
+  | "pricing-mode"
+  | "expansion-state"
+  | "validation-state";
 
 export interface ScreenVariantFamilyInitialStateIR {
   pricingMode?: "netto" | "brutto";
@@ -384,7 +420,10 @@ export interface ScreenVariantFamilyScenarioIR {
   contentScreenId: string;
   initialState: ScreenVariantFamilyInitialStateIR;
   shellTextOverrides?: Record<string, string>;
-  fieldErrorEvidenceByFieldKey?: Record<string, ScreenVariantFieldErrorEvidenceIR>;
+  fieldErrorEvidenceByFieldKey?: Record<
+    string,
+    ScreenVariantFieldErrorEvidenceIR
+  >;
   screenLevelErrorEvidence?: ScreenVariantScreenLevelErrorEvidenceIR[];
 }
 
@@ -477,7 +516,15 @@ export interface McpCoverageMetric {
     code: string;
     message: string;
     severity: "info" | "warning";
-    source: "loader" | "variables" | "styles" | "code_connect" | "design_system" | "metadata" | "screenshots" | "assets";
+    source:
+      | "loader"
+      | "variables"
+      | "styles"
+      | "code_connect"
+      | "design_system"
+      | "metadata"
+      | "screenshots"
+      | "assets";
   }>;
 }
 
@@ -662,25 +709,34 @@ export type IRValidationResult =
 export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
   const errors: IRValidationError[] = [];
 
-  if (!raw.sourceName || typeof raw.sourceName !== "string" || !raw.sourceName.trim()) {
+  if (
+    !raw.sourceName ||
+    typeof raw.sourceName !== "string" ||
+    !raw.sourceName.trim()
+  ) {
     errors.push({
       code: "IR_MISSING_SOURCE_NAME",
-      message: "DesignIR.sourceName must be a non-empty string."
+      message: "DesignIR.sourceName must be a non-empty string.",
     });
   }
 
   if (!Array.isArray(raw.screens) || raw.screens.length === 0) {
     errors.push({
       code: "IR_EMPTY_SCREENS",
-      message: "DesignIR.screens must be a non-empty array."
+      message: "DesignIR.screens must be a non-empty array.",
     });
   } else {
     for (let i = 0; i < raw.screens.length; i++) {
       const screen = raw.screens[i];
-      if (!screen || !screen.id || !screen.name || !Array.isArray(screen.children)) {
+      if (
+        !screen ||
+        !screen.id ||
+        !screen.name ||
+        !Array.isArray(screen.children)
+      ) {
         errors.push({
           code: "IR_INVALID_SCREEN",
-          message: `DesignIR.screens[${i}] must have id, name, and children array.`
+          message: `DesignIR.screens[${i}] must have id, name, and children array.`,
         });
       }
     }
@@ -695,7 +751,8 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
   ) {
     errors.push({
       code: "IR_MISSING_TOKENS",
-      message: "DesignIR.tokens must include palette (with primary and background) and a non-empty typography scale."
+      message:
+        "DesignIR.tokens must include palette (with primary and background) and a non-empty typography scale.",
     });
   }
 
@@ -728,7 +785,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           code: "IR_INVALID_APP_SHELL",
           message:
             `DesignIR.appShells[${i}] must have id, sourceScreenId, screenIds array, shellNodeIds array, ` +
-            "signalIds array, and numeric slotIndex."
+            "signalIds array, and numeric slotIndex.",
         });
         continue;
       }
@@ -736,7 +793,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       if (seenAppShellIds.has(appShell.id)) {
         errors.push({
           code: "IR_APP_SHELL_DUPLICATE_ID",
-          message: `DesignIR.appShells[${i}].id '${appShell.id}' is duplicated across multiple appShell declarations.`
+          message: `DesignIR.appShells[${i}].id '${appShell.id}' is duplicated across multiple appShell declarations.`,
         });
       } else {
         seenAppShellIds.add(appShell.id);
@@ -746,14 +803,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       if (!screenIdSet.has(appShell.sourceScreenId)) {
         errors.push({
           code: "IR_APP_SHELL_MISSING_SOURCE_SCREEN",
-          message: `DesignIR.appShells[${i}].sourceScreenId '${appShell.sourceScreenId}' does not reference an existing screen.`
+          message: `DesignIR.appShells[${i}].sourceScreenId '${appShell.sourceScreenId}' does not reference an existing screen.`,
         });
       }
 
       if (appShell.screenIds.length === 0) {
         errors.push({
           code: "IR_APP_SHELL_EMPTY_SCREEN_IDS",
-          message: `DesignIR.appShells[${i}].screenIds must include at least one screen id.`
+          message: `DesignIR.appShells[${i}].screenIds must include at least one screen id.`,
         });
       }
 
@@ -761,7 +818,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
         if (!screenIdSet.has(screenId)) {
           errors.push({
             code: "IR_APP_SHELL_MISSING_SCREEN",
-            message: `DesignIR.appShells[${i}].screenIds references '${screenId}' which does not exist in screens.`
+            message: `DesignIR.appShells[${i}].screenIds references '${screenId}' which does not exist in screens.`,
           });
         }
       }
@@ -769,12 +826,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       if (appShell.signalIds.length === 0) {
         errors.push({
           code: "IR_APP_SHELL_EMPTY_SIGNAL_IDS",
-          message: `DesignIR.appShells[${i}].signalIds must include at least one signal id.`
+          message: `DesignIR.appShells[${i}].signalIds must include at least one signal id.`,
         });
-      } else if (new Set(appShell.signalIds).size !== appShell.signalIds.length) {
+      } else if (
+        new Set(appShell.signalIds).size !== appShell.signalIds.length
+      ) {
         errors.push({
           code: "IR_APP_SHELL_DUPLICATE_SIGNAL_IDS",
-          message: `DesignIR.appShells[${i}].signalIds must not contain duplicate signal ids.`
+          message: `DesignIR.appShells[${i}].signalIds must not contain duplicate signal ids.`,
         });
       }
 
@@ -782,20 +841,22 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       if (appShell.shellNodeIds.length === 0) {
         errors.push({
           code: "IR_APP_SHELL_EMPTY_SHELL_NODES",
-          message: `DesignIR.appShells[${i}].shellNodeIds must include at least one top-level source screen node id.`
+          message: `DesignIR.appShells[${i}].shellNodeIds must include at least one top-level source screen node id.`,
         });
         shellNodesValid = false;
       } else {
         const sourceScreen = screenById.get(appShell.sourceScreenId);
         if (sourceScreen) {
-          const sourceTopLevelNodeIds = new Set(sourceScreen.children.map((child) => child.id));
+          const sourceTopLevelNodeIds = new Set(
+            sourceScreen.children.map((child) => child.id),
+          );
           for (const shellNodeId of appShell.shellNodeIds) {
             if (!sourceTopLevelNodeIds.has(shellNodeId)) {
               errors.push({
                 code: "IR_APP_SHELL_INVALID_SHELL_NODE",
                 message:
                   `DesignIR.appShells[${i}].shellNodeIds references '${shellNodeId}' ` +
-                  `which is not a top-level node of source screen '${appShell.sourceScreenId}'.`
+                  `which is not a top-level node of source screen '${appShell.sourceScreenId}'.`,
               });
               shellNodesValid = false;
             }
@@ -810,13 +871,15 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
               .map((child) => child.id);
             const contiguous =
               leadingIds.length === appShell.shellNodeIds.length &&
-              leadingIds.every((id, index) => id === appShell.shellNodeIds[index]);
+              leadingIds.every(
+                (id, index) => id === appShell.shellNodeIds[index],
+              );
             if (!contiguous) {
               errors.push({
                 code: "IR_APP_SHELL_NON_CONTIGUOUS_SHELL_NODES",
                 message:
                   `DesignIR.appShells[${i}].shellNodeIds must equal the first ${appShell.slotIndex} top-level ` +
-                  `children of source screen '${appShell.sourceScreenId}' in order.`
+                  `children of source screen '${appShell.sourceScreenId}' in order.`,
               });
             }
           }
@@ -828,7 +891,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           code: "IR_APP_SHELL_SLOT_INDEX_MISMATCH",
           message:
             `DesignIR.appShells[${i}].slotIndex (${appShell.slotIndex}) must equal shellNodeIds.length ` +
-            `(${appShell.shellNodeIds.length}).`
+            `(${appShell.shellNodeIds.length}).`,
         });
       }
     }
@@ -837,7 +900,12 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
   if (Array.isArray(raw.screens)) {
     for (let i = 0; i < raw.screens.length; i++) {
       const screen = raw.screens[i];
-      if (!screen || !screen.id || !Array.isArray(screen.children) || !screen.appShell) {
+      if (
+        !screen ||
+        !screen.id ||
+        !Array.isArray(screen.children) ||
+        !screen.appShell
+      ) {
         continue;
       }
 
@@ -845,7 +913,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       if (!appShell.id || !Array.isArray(appShell.contentNodeIds)) {
         errors.push({
           code: "IR_INVALID_SCREEN_APP_SHELL",
-          message: `DesignIR.screens[${i}].appShell must have id and contentNodeIds array.`
+          message: `DesignIR.screens[${i}].appShell must have id and contentNodeIds array.`,
         });
         continue;
       }
@@ -854,21 +922,21 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       if (!declaredAppShell) {
         errors.push({
           code: "IR_SCREEN_APP_SHELL_MISSING_DEFINITION",
-          message: `DesignIR.screens[${i}].appShell.id '${appShell.id}' does not reference a declared appShell.`
+          message: `DesignIR.screens[${i}].appShell.id '${appShell.id}' does not reference a declared appShell.`,
         });
       } else if (!declaredAppShell.screenIds.includes(screen.id)) {
         errors.push({
           code: "IR_SCREEN_APP_SHELL_SCREEN_MISMATCH",
           message:
             `DesignIR.screens[${i}].appShell.id '${appShell.id}' does not include screen '${screen.id}' ` +
-            "in its screenIds."
+            "in its screenIds.",
         });
       }
 
       if (appShell.contentNodeIds.length === 0) {
         errors.push({
           code: "IR_SCREEN_APP_SHELL_EMPTY_CONTENT",
-          message: `DesignIR.screens[${i}].appShell.contentNodeIds must include at least one top-level content node id.`
+          message: `DesignIR.screens[${i}].appShell.contentNodeIds must include at least one top-level content node id.`,
         });
         continue;
       }
@@ -881,7 +949,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_SCREEN_APP_SHELL_INVALID_CONTENT_NODE",
             message:
               `DesignIR.screens[${i}].appShell.contentNodeIds references '${contentNodeId}' ` +
-              `which is not a top-level node of screen '${screen.id}'.`
+              `which is not a top-level node of screen '${screen.id}'.`,
           });
           contentNodesValid = false;
         }
@@ -893,14 +961,16 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           .map((child) => child.id);
         const isTrailingContentSegment =
           trailingContentNodeIds.length === appShell.contentNodeIds.length &&
-          trailingContentNodeIds.every((id, index) => id === appShell.contentNodeIds[index]);
+          trailingContentNodeIds.every(
+            (id, index) => id === appShell.contentNodeIds[index],
+          );
 
         if (!isTrailingContentSegment) {
           errors.push({
             code: "IR_SCREEN_APP_SHELL_NON_CONTIGUOUS_CONTENT_NODES",
             message:
               `DesignIR.screens[${i}].appShell.contentNodeIds must equal all top-level children ` +
-              `after slotIndex ${declaredAppShell.slotIndex} for screen '${screen.id}' in order.`
+              `after slotIndex ${declaredAppShell.slotIndex} for screen '${screen.id}' in order.`,
           });
         }
       }
@@ -913,11 +983,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
   if (Array.isArray(raw.appShells)) {
     for (let i = 0; i < raw.appShells.length; i++) {
       const appShell = raw.appShells[i];
-      if (
-        !appShell ||
-        !appShell.id ||
-        !Array.isArray(appShell.screenIds)
-      ) {
+      if (!appShell || !appShell.id || !Array.isArray(appShell.screenIds)) {
         continue;
       }
       for (const screenId of appShell.screenIds) {
@@ -930,7 +996,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_APP_SHELL_SCREEN_NOT_ATTACHED",
             message:
               `DesignIR.appShells[${i}].screenIds references '${screenId}' but that screen is not attached ` +
-              `to appShell '${appShell.id}'.`
+              `to appShell '${appShell.id}'.`,
           });
         }
       }
@@ -952,7 +1018,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           code: "IR_INVALID_SCREEN_VARIANT_FAMILY",
           message:
             `DesignIR.screenVariantFamilies[${i}] must have familyId, canonicalScreenId, memberScreenIds array, axes array, ` +
-            "and scenarios array."
+            "and scenarios array.",
         });
         continue;
       }
@@ -960,15 +1026,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       if (family.axes.length === 0) {
         errors.push({
           code: "IR_SCREEN_VARIANT_FAMILY_EMPTY_AXES",
-          message: `DesignIR.screenVariantFamilies[${i}].axes must contain at least one axis.`
+          message: `DesignIR.screenVariantFamilies[${i}].axes must contain at least one axis.`,
         });
       }
 
       if (!screenIdSet.has(family.canonicalScreenId)) {
         errors.push({
           code: "IR_SCREEN_VARIANT_FAMILY_MISSING_CANONICAL_SCREEN",
-          message:
-            `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' does not reference an existing screen.`
+          message: `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' does not reference an existing screen.`,
         });
       }
 
@@ -979,7 +1044,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_MEMBER",
             message:
               `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
-              "more than once within the same family."
+              "more than once within the same family.",
           });
         }
         memberScreenIdSet.add(memberScreenId);
@@ -988,7 +1053,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_SCREEN_VARIANT_FAMILY_MISSING_MEMBER_SCREEN",
             message:
               `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
-              "which does not exist in screens."
+              "which does not exist in screens.",
           });
         }
       }
@@ -998,12 +1063,16 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           code: "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_MEMBER",
           message:
             `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' ` +
-            "must also be present in memberScreenIds."
+            "must also be present in memberScreenIds.",
         });
       }
 
       const seenScenarioScreenIds = new Set<string>();
-      for (let scenarioIndex = 0; scenarioIndex < family.scenarios.length; scenarioIndex++) {
+      for (
+        let scenarioIndex = 0;
+        scenarioIndex < family.scenarios.length;
+        scenarioIndex++
+      ) {
         const scenario = family.scenarios[scenarioIndex];
         if (
           !scenario ||
@@ -1016,7 +1085,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
             message:
               `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}] must have screenId, contentScreenId, ` +
-              "and initialState."
+              "and initialState.",
           });
           continue;
         }
@@ -1026,31 +1095,38 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_SCREEN_VARIANT_SCENARIO_DUPLICATE",
             message:
               `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenId '${scenario.screenId}' ` +
-              "is duplicated within the family."
+              "is duplicated within the family.",
           });
         }
         seenScenarioScreenIds.add(scenario.screenId);
 
-        if (!memberScreenIdSet.has(scenario.screenId) || !screenIdSet.has(scenario.screenId)) {
+        if (
+          !memberScreenIdSet.has(scenario.screenId) ||
+          !screenIdSet.has(scenario.screenId)
+        ) {
           errors.push({
             code: "IR_SCREEN_VARIANT_SCENARIO_MISSING_SCREEN",
             message:
               `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenId '${scenario.screenId}' ` +
-              "must reference an existing family member screen."
+              "must reference an existing family member screen.",
           });
         }
 
-        if (!memberScreenIdSet.has(scenario.contentScreenId) || !screenIdSet.has(scenario.contentScreenId)) {
+        if (
+          !memberScreenIdSet.has(scenario.contentScreenId) ||
+          !screenIdSet.has(scenario.contentScreenId)
+        ) {
           errors.push({
             code: "IR_SCREEN_VARIANT_SCENARIO_MISSING_CONTENT_SCREEN",
             message:
               `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].contentScreenId '${scenario.contentScreenId}' ` +
-              "must reference an existing family member screen."
+              "must reference an existing family member screen.",
           });
         }
 
         if (scenario.fieldErrorEvidenceByFieldKey !== undefined) {
-          const rawFieldEvidence: unknown = scenario.fieldErrorEvidenceByFieldKey;
+          const rawFieldEvidence: unknown =
+            scenario.fieldErrorEvidenceByFieldKey;
           if (
             typeof rawFieldEvidence !== "object" ||
             rawFieldEvidence === null ||
@@ -1060,10 +1136,12 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
               code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
               message:
                 `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].fieldErrorEvidenceByFieldKey ` +
-                "must be an object when present."
+                "must be an object when present.",
             });
           } else {
-            for (const [fieldKey, evidence] of Object.entries(rawFieldEvidence as Record<string, unknown>)) {
+            for (const [fieldKey, evidence] of Object.entries(
+              rawFieldEvidence as Record<string, unknown>,
+            )) {
               const entry = evidence as Record<string, unknown> | null;
               if (
                 !fieldKey ||
@@ -1073,13 +1151,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 typeof entry.message !== "string" ||
                 typeof entry.visualError !== "boolean" ||
                 (entry.sourceNodeId !== undefined &&
-                  (typeof entry.sourceNodeId !== "string" || entry.sourceNodeId.trim().length === 0))
+                  (typeof entry.sourceNodeId !== "string" ||
+                    entry.sourceNodeId.trim().length === 0))
               ) {
                 errors.push({
                   code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
                   message:
                     `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].fieldErrorEvidenceByFieldKey['${fieldKey}'] ` +
-                    "must contain a string message, boolean visualError, and optional non-empty string sourceNodeId."
+                    "must contain a string message, boolean visualError, and optional non-empty string sourceNodeId.",
                 });
               }
             }
@@ -1092,11 +1171,17 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
               code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
               message:
                 `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenLevelErrorEvidence ` +
-                "must be an array when present."
+                "must be an array when present.",
             });
           } else {
-            for (const [errorIndex, rawEvidence] of scenario.screenLevelErrorEvidence.entries()) {
-              const evidence = rawEvidence as unknown as Record<string, unknown> | null;
+            for (const [
+              errorIndex,
+              rawEvidence,
+            ] of scenario.screenLevelErrorEvidence.entries()) {
+              const evidence = rawEvidence as unknown as Record<
+                string,
+                unknown
+              > | null;
               if (
                 typeof evidence !== "object" ||
                 evidence === null ||
@@ -1104,13 +1189,14 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
                 typeof evidence.message !== "string" ||
                 evidence.severity !== "error" ||
                 (evidence.sourceNodeId !== undefined &&
-                  (typeof evidence.sourceNodeId !== "string" || evidence.sourceNodeId.trim().length === 0))
+                  (typeof evidence.sourceNodeId !== "string" ||
+                    evidence.sourceNodeId.trim().length === 0))
               ) {
                 errors.push({
                   code: "IR_INVALID_SCREEN_VARIANT_SCENARIO",
                   message:
                     `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}].screenLevelErrorEvidence[${errorIndex}] ` +
-                    "must contain a string message, severity='error', and optional non-empty string sourceNodeId."
+                    "must contain a string message, severity='error', and optional non-empty string sourceNodeId.",
                 });
               }
             }
@@ -1129,21 +1215,21 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
               code: "IR_SCREEN_VARIANT_SCENARIO_ERROR_STATE_MISSING_EVIDENCE",
               message:
                 `DesignIR.screenVariantFamilies[${i}].scenarios[${scenarioIndex}] has validationState='error' ` +
-                "but provides neither fieldErrorEvidenceByFieldKey nor screenLevelErrorEvidence."
+                "but provides neither fieldErrorEvidenceByFieldKey nor screenLevelErrorEvidence.",
             });
           }
         }
       }
 
       const hasCanonicalScenario = family.scenarios.some(
-        (candidate) => candidate.screenId === family.canonicalScreenId
+        (candidate) => candidate.screenId === family.canonicalScreenId,
       );
       if (!hasCanonicalScenario) {
         errors.push({
           code: "IR_SCREEN_VARIANT_FAMILY_CANONICAL_NOT_IN_SCENARIOS",
           message:
             `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' ` +
-            "must have a corresponding entry in scenarios."
+            "must have a corresponding entry in scenarios.",
         });
       }
 
@@ -1153,7 +1239,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_SCREEN_VARIANT_FAMILY_MEMBER_NOT_IN_SCENARIOS",
             message:
               `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
-              "which must have a corresponding scenario entry."
+              "which must have a corresponding scenario entry.",
           });
         }
       }
@@ -1164,7 +1250,12 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     const memberToFamilyIndex = new Map<string, number>();
     for (let i = 0; i < raw.screenVariantFamilies.length; i++) {
       const family = raw.screenVariantFamilies[i];
-      if (!family || !family.familyId || !family.canonicalScreenId || !Array.isArray(family.memberScreenIds)) {
+      if (
+        !family ||
+        !family.familyId ||
+        !family.canonicalScreenId ||
+        !Array.isArray(family.memberScreenIds)
+      ) {
         continue;
       }
       const previousFamilyId = familyIdToIndex.get(family.familyId);
@@ -1173,18 +1264,20 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
           code: "IR_SCREEN_VARIANT_FAMILY_DUPLICATE_ID",
           message:
             `DesignIR.screenVariantFamilies[${i}].familyId '${family.familyId}' ` +
-            `is already used by family index ${previousFamilyId}.`
+            `is already used by family index ${previousFamilyId}.`,
         });
       } else {
         familyIdToIndex.set(family.familyId, i);
       }
-      const previousCanonical = canonicalToFamilyIndex.get(family.canonicalScreenId);
+      const previousCanonical = canonicalToFamilyIndex.get(
+        family.canonicalScreenId,
+      );
       if (previousCanonical !== undefined) {
         errors.push({
           code: "IR_SCREEN_VARIANT_FAMILY_CANONICAL_COLLISION",
           message:
             `DesignIR.screenVariantFamilies[${i}].canonicalScreenId '${family.canonicalScreenId}' ` +
-            `is already the canonical screen of family index ${previousCanonical}.`
+            `is already the canonical screen of family index ${previousCanonical}.`,
         });
       } else {
         canonicalToFamilyIndex.set(family.canonicalScreenId, i);
@@ -1196,7 +1289,7 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
             code: "IR_SCREEN_VARIANT_FAMILY_MEMBER_COLLISION",
             message:
               `DesignIR.screenVariantFamilies[${i}].memberScreenIds references '${memberScreenId}' ` +
-              `which already belongs to family index ${previousMember}.`
+              `which already belongs to family index ${previousMember}.`,
           });
         } else {
           memberToFamilyIndex.set(memberScreenId, i);
@@ -1216,13 +1309,20 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
     screenElementCounts: [...(raw.metrics?.screenElementCounts ?? [])],
     truncatedScreens: [...(raw.metrics?.truncatedScreens ?? [])],
     degradedGeometryNodes: [...(raw.metrics?.degradedGeometryNodes ?? [])],
-    ...(raw.metrics?.classificationFallbacks ? { classificationFallbacks: [...raw.metrics.classificationFallbacks] } : {}),
+    ...(raw.metrics?.classificationFallbacks
+      ? { classificationFallbacks: [...raw.metrics.classificationFallbacks] }
+      : {}),
     prototypeNavigationDetected: raw.metrics?.prototypeNavigationDetected ?? 0,
     prototypeNavigationResolved: raw.metrics?.prototypeNavigationResolved ?? 0,
-    prototypeNavigationUnresolved: raw.metrics?.prototypeNavigationUnresolved ?? 0,
+    prototypeNavigationUnresolved:
+      raw.metrics?.prototypeNavigationUnresolved ?? 0,
     prototypeNavigationRendered: 0,
-    ...(raw.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...raw.metrics.nodeDiagnostics] } : {}),
-    ...(raw.metrics?.mcpCoverage ? { mcpCoverage: { ...raw.metrics.mcpCoverage } } : {})
+    ...(raw.metrics?.nodeDiagnostics
+      ? { nodeDiagnostics: [...raw.metrics.nodeDiagnostics] }
+      : {}),
+    ...(raw.metrics?.mcpCoverage
+      ? { mcpCoverage: { ...raw.metrics.mcpCoverage } }
+      : {}),
   };
 
   return {
@@ -1234,7 +1334,9 @@ export const validateDesignIR = (raw: DesignIR): IRValidationResult => {
       metrics,
       ...(raw.themeAnalysis ? { themeAnalysis: raw.themeAnalysis } : {}),
       ...(raw.appShells ? { appShells: raw.appShells } : {}),
-      ...(raw.screenVariantFamilies ? { screenVariantFamilies: raw.screenVariantFamilies } : {})
-    }
+      ...(raw.screenVariantFamilies
+        ? { screenVariantFamilies: raw.screenVariantFamilies }
+        : {}),
+    },
   };
 };
