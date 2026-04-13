@@ -106,6 +106,22 @@ export function bootstrapReducer(
     }
 
     case "detected": {
+      if (event.type === "intent_detected") {
+        return {
+          kind: "detected",
+          intent: event.intent,
+          confidence: event.confidence,
+          rawText: event.rawText,
+          suggestedJobSource: event.suggestedJobSource,
+        };
+      }
+      if (event.type === "submit_failed") {
+        return {
+          kind: "failed",
+          reason: event.reason,
+          retryable: event.retryable,
+        };
+      }
       if (event.type === "intent_confirmed") {
         return { kind: "pasting" };
       }

@@ -465,7 +465,10 @@ test("request handler emits request-scoped audit logs for covered write routes",
       },
       payload: {
         figmaFileKey: "file-key",
-        figmaAccessToken: "token"
+        figmaAccessToken: "token",
+        importIntent: "FIGMA_JSON_DOC",
+        originalIntent: "RAW_CODE_OR_TEXT",
+        intentCorrected: true
       }
     });
     assert.equal(submitResponse.statusCode, 202);
@@ -514,7 +517,8 @@ test("request handler emits request-scoped audit logs for covered write routes",
     const submitLog = capturedLogs.find((entry) => entry.event === "workspace.submit.accepted");
     assert.deepEqual(submitLog, {
       level: "info",
-      message: "Submission accepted as job 'job-accepted'.",
+      message:
+        "Submission accepted as job 'job-accepted'. importIntent=FIGMA_JSON_DOC originalIntent=RAW_CODE_OR_TEXT (user-corrected)",
       requestId: "req-submit-1",
       event: "workspace.submit.accepted",
       method: "POST",

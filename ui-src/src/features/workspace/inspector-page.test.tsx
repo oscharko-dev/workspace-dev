@@ -268,7 +268,7 @@ describe("InspectorPage — bootstrap path", () => {
     fireEvent.paste(textarea, {
       clipboardData: {
         getData: (type: string) =>
-          type === "text" || type === "text/plain" ? '{"bad":"data"}' : "",
+          type === "text" || type === "text/plain" ? '{"document":{}}' : "",
       },
     });
 
@@ -278,7 +278,7 @@ describe("InspectorPage — bootstrap path", () => {
     });
     fireEvent.click(screen.getByText("Import starten"));
 
-    // Server returns SCHEMA_MISMATCH → failed state with alert
+    // First submit returns SCHEMA_MISMATCH → failed state with alert
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
     });
@@ -303,5 +303,32 @@ describe("InspectorPage — bootstrap path", () => {
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-second-paste|http://127.0.0.1:1983/preview||false|",
     );
+    });
   });
-});
+
+  it("uses text/html clipboard metadata to classify a Figma clipboard paste before submit", async () => {
+    renderPage("/workspace/ui/inspector");
+
+    const textarea = screen.getByLabelText(/figma json paste target/i);
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (type: string) => {
+          if (type === "text" || type === "text/plain") {
+            return "Copied from Figma";
+          }
+          if (type === "text/html") {
+            return '<span data-metadata="<!--(figmeta)eyJmaWxlS2V5IjoiYWJjMTIzWFlaIiwicGFzdGVJRCI6NDIsImRhdGFUeXBlIjoic2NlbmUifQ==(/figmeta)-->"></span>';
+          }
+          return "";
+        },
+      } as DataTransfer,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("smart-banner")).toHaveTextContent(
+      "Figma-Node JSON",
+    );
+  });

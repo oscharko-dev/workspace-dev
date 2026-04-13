@@ -607,6 +607,135 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
       expect.objectContaining({ url: "/workspace/submit" }),
     );
   });
+
+  it("a second paste while detected replaces the pending payload before confirm", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-second-detect" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-second-detect") {
+        return createJsonResponse({
+          payload: { jobId: "job-second-detect", status: "queued" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      { wrapper: makeWrapper() },
+    );
+
+    await act(async () => {
+      result.current.submitPaste("hello");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    if (result.current.state.kind === "detected") {
+      expect(result.current.state.intent).toBe("RAW_CODE_OR_TEXT");
+      expect(result.current.state.rawText).toBe("hello");
+    }
+
+    await act(async () => {
+      result.current.submitPaste('{"document":{}}');
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    if (result.current.state.kind === "detected") {
+      expect(result.current.state.intent).toBe("FIGMA_JSON_DOC");
+      expect(result.current.state.rawText).toBe('{"document":{}}');
+    }
+
+    await act(async () => {
+      result.current.confirmIntent("FIGMA_JSON_DOC");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("queued");
+    });
+
+    const submitCall = fetchJsonMock.mock.calls.find(
+      ([request]) => request.url === "/workspace/submit",
+    );
+    expect(submitCall).toBeDefined();
+    const submitRequest = submitCall?.[0];
+    expect(typeof submitRequest?.init?.body).toBe("string");
+    const submitBody = JSON.parse(
+      submitRequest?.init?.body as string,
+    ) as Record<string, unknown>;
+    expect(submitBody).toMatchObject({
+      figmaJsonPayload: '{"document":{}}',
+      figmaSourceMode: "figma_paste",
+      importIntent: "FIGMA_JSON_DOC",
+      originalIntent: "FIGMA_JSON_DOC",
+      intentCorrected: false,
+    });
+  });
+
+  it("confirming RAW_CODE_OR_TEXT shows guidance instead of submitting to figma_paste", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste("hello world");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    await act(async () => {
+      result.current.confirmIntent("RAW_CODE_OR_TEXT");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("UNSUPPORTED_TEXT_PASTE");
+      expect(result.current.state.retryable).toBe(false);
+    }
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("confirming an uncorrected plugin export shows guidance instead of submitting to figma_paste", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste('{"type":"PLUGIN_EXPORT","nodes":[]}');
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    await act(async () => {
+      result.current.confirmIntent("FIGMA_JSON_NODE_BATCH");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("UNSUPPORTED_PLUGIN_EXPORT");
+      expect(result.current.state.retryable).toBe(false);
+    }
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("useInspectorBootstrap — reportInputError", () => {
