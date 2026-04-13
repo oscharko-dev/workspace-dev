@@ -162,9 +162,10 @@ describe("SmartBanner — dropdown options", () => {
 
     expect(options).toContain("FIGMA_JSON_NODE_BATCH");
     expect(options).toContain("FIGMA_JSON_DOC");
+    expect(options).toContain("FIGMA_PLUGIN_ENVELOPE");
     expect(options).toContain("RAW_CODE_OR_TEXT");
     expect(options).toContain("UNKNOWN");
-    expect(options).toHaveLength(4);
+    expect(options).toHaveLength(5);
   });
 
   it("option labels match expected German translations", () => {
@@ -179,6 +180,7 @@ describe("SmartBanner — dropdown options", () => {
 
     expect(labels).toContain("Figma-Node JSON");
     expect(labels).toContain("Figma-Dokument JSON");
+    expect(labels).toContain("Plugin Export");
     expect(labels).toContain("Code / Text");
     expect(labels).toContain("Unbekannt");
   });

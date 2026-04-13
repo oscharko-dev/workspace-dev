@@ -13,6 +13,12 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceStatus,
 } from "../contracts/index.js";
+import {
+  isClipboardEnvelope,
+  normalizeEnvelopeToFigmaFile,
+  validateClipboardEnvelope,
+  summarizeEnvelopeValidationIssues,
+} from "../clipboard-envelope.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
@@ -2007,12 +2013,38 @@ export function createWorkspaceRequestHandler({
             });
             return;
           }
+
+          // Normalize clipboard envelope to pipeline-compatible Figma file JSON.
+          let normalizedPayload = pastePayload;
+          try {
+            const parsedPayload = JSON.parse(pastePayload) as unknown;
+            if (isClipboardEnvelope(parsedPayload)) {
+              const envelopeResult = validateClipboardEnvelope(parsedPayload);
+              if (!envelopeResult.valid) {
+                sendValidationError({
+                  payload: {
+                    error: "SCHEMA_MISMATCH",
+                    message: `Clipboard envelope validation failed: ${summarizeEnvelopeValidationIssues(envelopeResult.issues)}`,
+                  },
+                  fallbackMessage: "Submit request validation failed.",
+                });
+                return;
+              }
+              const normalized = normalizeEnvelopeToFigmaFile(
+                envelopeResult.envelope,
+              );
+              normalizedPayload = JSON.stringify(normalized);
+            }
+          } catch {
+            // JSON parse already validated in schema — fall through with raw payload.
+          }
+
           const pasteUUID = randomUUID();
           const pasteTempDir = path.join(absoluteOutputRoot, "tmp-figma-paste");
           const pasteTempPath = path.join(pasteTempDir, `${pasteUUID}.json`);
           try {
             await mkdir(pasteTempDir, { recursive: true });
-            await writeFile(pasteTempPath, pastePayload, "utf8");
+            await writeFile(pasteTempPath, normalizedPayload, "utf8");
             pasteTempPathToCleanup = pasteTempPath;
           } catch (error) {
             sendRequestFailure({

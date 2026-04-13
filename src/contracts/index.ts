@@ -20,6 +20,7 @@ export type WorkspaceFigmaSourceMode =
 export type WorkspaceImportIntent =
   | "FIGMA_JSON_NODE_BATCH"
   | "FIGMA_JSON_DOC"
+  | "FIGMA_PLUGIN_ENVELOPE"
   | "RAW_CODE_OR_TEXT"
   | "UNKNOWN";
 

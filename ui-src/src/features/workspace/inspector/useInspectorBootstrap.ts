@@ -38,6 +38,10 @@ function toUnsupportedIntentReason({
   if (confirmedIntent === "UNKNOWN") {
     return "UNSUPPORTED_UNKNOWN_PASTE";
   }
+  // Plugin envelope is always supported — it's the primary plugin handoff path.
+  if (confirmedIntent === "FIGMA_PLUGIN_ENVELOPE") {
+    return null;
+  }
   if (
     suggestedJobSource === "figma_plugin" &&
     confirmedIntent === detectedIntent &&

@@ -1832,6 +1832,151 @@ test("schema: figma_paste rejects payloads that exceed the submit transport budg
   }
 });
 
+// ---------------------------------------------------------------------------
+// SubmitRequestSchema — figma_paste mode with clipboard envelope
+// ---------------------------------------------------------------------------
+
+test("schema: figma_paste mode accepts a valid ClipboardEnvelope payload", () => {
+  const envelope = {
+    kind: "workspace-dev/figma-selection@1",
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-04-12T18:00:00.000Z",
+    selections: [
+      {
+        document: { id: "1:2", type: "FRAME", name: "Card" },
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(envelope),
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "figma_paste");
+    assert.ok(typeof result.data.figmaJsonPayload === "string");
+  }
+});
+
+test("schema: figma_paste mode rejects invalid ClipboardEnvelope with SCHEMA_MISMATCH", () => {
+  const badEnvelope = {
+    kind: "workspace-dev/figma-selection@1",
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-04-12T18:00:00.000Z",
+    selections: [],
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(badEnvelope),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) =>
+      i.message.startsWith("SCHEMA_MISMATCH:"),
+    );
+    assert.ok(issue, "Expected a SCHEMA_MISMATCH issue for empty selections");
+  }
+});
+
+test("schema: figma_paste mode rejects unknown envelope kind with SCHEMA_MISMATCH", () => {
+  const unknownEnvelope = {
+    kind: "workspace-dev/figma-selection@99",
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-04-12T18:00:00.000Z",
+    selections: [
+      {
+        document: { id: "1:2", type: "FRAME", name: "Card" },
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  };
+  // Unknown kind is not detected as envelope → falls through to figma payload validation
+  // which rejects it because it has no document root.
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(unknownEnvelope),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) =>
+      i.message.startsWith("SCHEMA_MISMATCH:"),
+    );
+    assert.ok(
+      issue,
+      "Expected a SCHEMA_MISMATCH issue for unknown envelope kind",
+    );
+  }
+});
+
+test("schema: figma_paste mode accepts multi-selection ClipboardEnvelope", () => {
+  const envelope = {
+    kind: "workspace-dev/figma-selection@1",
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-04-12T18:00:00.000Z",
+    selections: [
+      {
+        document: { id: "1:2", type: "FRAME", name: "Card" },
+        components: { "comp:1": { key: "comp:1", name: "Button" } },
+        componentSets: {},
+        styles: {},
+      },
+      {
+        document: { id: "3:4", type: "FRAME", name: "Header" },
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(envelope),
+  });
+  assert.equal(result.success, true);
+});
+
+// ---------------------------------------------------------------------------
+// SubmitRequestSchema — importIntent with FIGMA_PLUGIN_ENVELOPE
+// ---------------------------------------------------------------------------
+
+test("schema: importIntent=FIGMA_PLUGIN_ENVELOPE is accepted", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
+    importIntent: "FIGMA_PLUGIN_ENVELOPE",
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.importIntent, "FIGMA_PLUGIN_ENVELOPE");
+  }
+});
+
+test("schema: originalIntent=FIGMA_PLUGIN_ENVELOPE is accepted", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
+    importIntent: "FIGMA_JSON_DOC",
+    originalIntent: "FIGMA_PLUGIN_ENVELOPE",
+    intentCorrected: true,
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.originalIntent, "FIGMA_PLUGIN_ENVELOPE");
+    assert.equal(result.data.intentCorrected, true);
+  }
+});
+
 test("resolveFigmaPasteMaxBytes: env override, invalid env, default fallback", () => {
   assert.equal(
     resolveFigmaPasteMaxBytes({ WORKSPACE_FIGMA_PASTE_MAX_BYTES: "10485760" }),
