@@ -1101,7 +1101,8 @@ function parseSubmitRequest(
       normalizedFigmaSourceMode === "rest" ||
       normalizedFigmaSourceMode === "hybrid" ||
       normalizedFigmaSourceMode === "local_json" ||
-      normalizedFigmaSourceMode === "figma_paste"
+      normalizedFigmaSourceMode === "figma_paste" ||
+      normalizedFigmaSourceMode === "figma_plugin"
     ) {
       return normalizedFigmaSourceMode as WorkspaceFigmaSourceMode;
     }
@@ -1159,13 +1160,16 @@ function parseSubmitRequest(
     }
   }
 
-  if (resolvedFigmaSourceMode === "figma_paste") {
+  if (
+    resolvedFigmaSourceMode === "figma_paste" ||
+    resolvedFigmaSourceMode === "figma_plugin"
+  ) {
     const figmaPasteMaxBytes = resolveFigmaPasteMaxBytes();
     if (!figmaJsonPayload) {
       pushIssue(
         issues,
         ["figmaJsonPayload"],
-        "INVALID_PAYLOAD: figmaJsonPayload is required when figmaSourceMode=figma_paste",
+        "INVALID_PAYLOAD: figmaJsonPayload is required when figmaSourceMode=figma_paste or figma_plugin",
       );
     } else {
       const byteLength = Buffer.byteLength(figmaJsonPayload, "utf8");
@@ -1229,21 +1233,21 @@ function parseSubmitRequest(
       pushIssue(
         issues,
         ["figmaFileKey"],
-        "figmaFileKey must be omitted when figmaSourceMode=figma_paste",
+        `figmaFileKey must be omitted when figmaSourceMode=${resolvedFigmaSourceMode}`,
       );
     }
     if (figmaAccessToken !== undefined) {
       pushIssue(
         issues,
         ["figmaAccessToken"],
-        "figmaAccessToken must be omitted when figmaSourceMode=figma_paste",
+        `figmaAccessToken must be omitted when figmaSourceMode=${resolvedFigmaSourceMode}`,
       );
     }
     if (figmaJsonPath !== undefined) {
       pushIssue(
         issues,
         ["figmaJsonPath"],
-        "figmaJsonPath must be omitted when figmaSourceMode=figma_paste",
+        `figmaJsonPath must be omitted when figmaSourceMode=${resolvedFigmaSourceMode}`,
       );
     }
   }

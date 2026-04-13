@@ -11,6 +11,7 @@ const ALLOWED_FIGMA_SOURCE_MODES = [
   "hybrid",
   "local_json",
   "figma_paste",
+  "figma_plugin",
 ] as const;
 const ALLOWED_LLM_CODEGEN_MODES = ["deterministic"] as const;
 
@@ -43,12 +44,12 @@ export function validateModeLock(input: {
     if (isKnownBlocked) {
       errors.push(
         `Mode '${figmaMode}' is not available in workspace-dev. ` +
-          `Only 'rest', 'hybrid', 'local_json', and 'figma_paste' are supported. MCP mode requires the full Workspace Dev platform deployment.`,
+          `Only 'rest', 'hybrid', 'local_json', 'figma_paste', and 'figma_plugin' are supported. MCP mode requires the full Workspace Dev platform deployment.`,
       );
     } else {
       errors.push(
         `Unknown figmaSourceMode '${figmaMode}'. ` +
-          `workspace-dev supports only 'rest', 'hybrid', 'local_json', and 'figma_paste'.`,
+          `workspace-dev supports only 'rest', 'hybrid', 'local_json', 'figma_paste', and 'figma_plugin'.`,
       );
     }
   }

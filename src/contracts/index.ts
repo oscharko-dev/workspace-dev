@@ -14,7 +14,8 @@ export type WorkspaceFigmaSourceMode =
   | "rest"
   | "hybrid"
   | "local_json"
-  | "figma_paste";
+  | "figma_paste"
+  | "figma_plugin";
 
 /** Import intent detected by the client-side paste classifier. */
 export type WorkspaceImportIntent =
