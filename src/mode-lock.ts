@@ -1,7 +1,8 @@
 /**
  * Mode-lock enforcement for workspace-dev.
  *
- * Only `figmaSourceMode=rest|hybrid|local_json` and `llmCodegenMode=deterministic` are allowed.
+ * Only `figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin` and
+ * `llmCodegenMode=deterministic` are allowed.
  * All other modes are blocked with explicit error messages.
  */
 

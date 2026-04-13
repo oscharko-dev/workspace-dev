@@ -1755,6 +1755,62 @@ test("workspace server accepts figma_paste submit and returns 202 with jobId", a
   }
 });
 
+test("workspace server accepts figma_plugin submit and returns 202 with jobId", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    const payload = JSON.stringify({
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    });
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: payload,
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    assert.ok(typeof body.jobId === "string" && body.jobId.length > 0);
+    const terminal = await waitForJobTerminalState({
+      server,
+      jobId: String(body.jobId),
+      timeoutMs: 30_000,
+    });
+    assert.equal(terminal.status, "completed");
+    assert.ok(typeof terminal.artifacts?.figmaJsonFile === "string");
+    const figmaJson = await readFile(
+      terminal.artifacts?.figmaJsonFile as string,
+      "utf8",
+    );
+    const parsed = JSON.parse(figmaJson) as Record<string, unknown>;
+    assert.ok(parsed.document !== undefined);
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server accepts a whole-view-sized figma_paste submit under the route caps", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
@@ -1789,6 +1845,52 @@ test("workspace server accepts a whole-view-sized figma_paste submit under the r
       jobId: String(body.jobId),
       timeoutMs: 30_000,
     });
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server returns 400 UNSUPPORTED_FORMAT on figma_plugin with unknown envelope kind", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-plugin-unsupported-format",
+      },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify({
+          kind: "workspace-dev/figma-selection@99",
+          pluginVersion: "0.1.0",
+          copiedAt: "2026-04-12T18:00:00.000Z",
+          selections: [
+            {
+              document: { id: "1:2", type: "FRAME", name: "Card" },
+              components: {},
+              componentSets: {},
+              styles: {},
+            },
+          ],
+        }),
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNSUPPORTED_FORMAT");
+    assert.equal(body.requestId, "req-plugin-unsupported-format");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

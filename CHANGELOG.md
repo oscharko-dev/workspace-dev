@@ -22,6 +22,8 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Changed
 
+- Inspector bootstrap now submits confirmed plugin-envelope imports as `figma_plugin`, and plugin-ingress telemetry logs expose `payload_size`, `node_count`, and `runtime_ms` aliases. (#987)
+- Public docs and compatibility tables now advertise `figma_plugin` anywhere the backend already supports it. (#987)
 - Deterministic app generation now uses route-level lazy loading for non-initial screens (`React.lazy` + `Suspense`).
 - Deterministic generated app shell defaults to `BrowserRouter` and supports runtime router mode override (`--router browser|hash`).
 - Documented BrowserRouter rewrite requirements and hash compatibility mode in README router guidance.

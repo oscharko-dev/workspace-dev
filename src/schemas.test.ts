@@ -939,6 +939,36 @@ test("schema: workspace status allows local_json figmaSourceMode", () => {
   assert.equal(result.success, true);
 });
 
+test("schema: workspace status allows figma_paste figmaSourceMode", () => {
+  const result = WorkspaceStatusSchema.safeParse({
+    running: true,
+    url: "http://127.0.0.1:1983",
+    host: "127.0.0.1",
+    port: 1983,
+    figmaSourceMode: "figma_paste",
+    llmCodegenMode: "deterministic",
+    uptimeMs: 1234,
+    outputRoot: "/tmp/.workspace-dev",
+    previewEnabled: true,
+  });
+  assert.equal(result.success, true);
+});
+
+test("schema: workspace status allows figma_plugin figmaSourceMode", () => {
+  const result = WorkspaceStatusSchema.safeParse({
+    running: true,
+    url: "http://127.0.0.1:1983",
+    host: "127.0.0.1",
+    port: 1983,
+    figmaSourceMode: "figma_plugin",
+    llmCodegenMode: "deterministic",
+    uptimeMs: 1234,
+    outputRoot: "/tmp/.workspace-dev",
+    previewEnabled: true,
+  });
+  assert.equal(result.success, true);
+});
+
 test("schema: workspace status requires outputRoot and previewEnabled", () => {
   const result = WorkspaceStatusSchema.safeParse({
     running: true,
@@ -996,7 +1026,8 @@ test("schema: workspace status rejects non-object and invalid field types with e
       },
       {
         path: ["figmaSourceMode"],
-        message: "figmaSourceMode must be one of: rest, hybrid, local_json",
+        message:
+          "figmaSourceMode must be one of: rest, hybrid, local_json, figma_paste, figma_plugin",
       },
       {
         path: ["llmCodegenMode"],
@@ -1908,6 +1939,33 @@ test("schema: figma_paste mode rejects unknown envelope kind with UNSUPPORTED_CL
       issue,
       "Expected an UNSUPPORTED_CLIPBOARD_KIND issue for unknown envelope kind",
     );
+  }
+});
+
+test("schema: figma_plugin mode rejects unknown envelope kind with UNSUPPORTED_FORMAT", () => {
+  const unknownEnvelope = {
+    kind: "workspace-dev/figma-selection@99",
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-04-12T18:00:00.000Z",
+    selections: [
+      {
+        document: { id: "1:2", type: "FRAME", name: "Card" },
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_plugin",
+    figmaJsonPayload: JSON.stringify(unknownEnvelope),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) =>
+      i.message.startsWith("UNSUPPORTED_FORMAT:"),
+    );
+    assert.ok(issue, "Expected an UNSUPPORTED_FORMAT issue for figma_plugin");
   }
 });
 

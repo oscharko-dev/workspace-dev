@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FIGMA_PASTE_MAX_BYTES,
+  toInspectorBootstrapPayload,
   workspaceSubmitSchema,
   toWorkspaceSubmitPayload,
 } from "./submit-schema";
@@ -184,5 +185,24 @@ describe("workspaceSubmitSchema", () => {
     if (!parsed.success) {
       expect(parsed.error.issues[0]?.message).toMatch(/6 MiB or less/);
     }
+  });
+
+  it("creates figma_plugin bootstrap payloads for plugin envelopes", () => {
+    const payload = toInspectorBootstrapPayload({
+      figmaJsonPayload: '{"kind":"workspace-dev/figma-selection@1"}',
+      importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      originalIntent: "FIGMA_PLUGIN_ENVELOPE",
+      intentCorrected: false,
+    });
+
+    expect(payload).toEqual({
+      figmaSourceMode: "figma_plugin",
+      figmaJsonPayload: '{"kind":"workspace-dev/figma-selection@1"}',
+      llmCodegenMode: "deterministic",
+      enableGitPr: false,
+      importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      originalIntent: "FIGMA_PLUGIN_ENVELOPE",
+      intentCorrected: false,
+    });
   });
 });

@@ -26,6 +26,8 @@ Package version and contract version are intentionally independent, so this sect
 |------|---------------|----------------|
 | `figmaSourceMode=rest` | Supported | Supported |
 | `figmaSourceMode=local_json` | Supported | Supported |
+| `figmaSourceMode=figma_paste` | Supported | Supported |
+| `figmaSourceMode=figma_plugin` | Supported | Supported |
 | `figmaSourceMode=hybrid` | Supported | Supported |
 | `figmaSourceMode=mcp` | Blocked | Supported |
 | `llmCodegenMode=deterministic` | Supported | Supported |
@@ -54,5 +56,5 @@ See [CONTRACT_CHANGELOG.md](../../CONTRACT_CHANGELOG.md) for contract bump rules
 
 1. Install `workspace-dev` as a dev dependency.
 2. Replace API calls with local `workspace-dev start`.
-3. Use mode configuration `rest`, `hybrid`, or `local_json` with `deterministic`.
+3. Use mode configuration `rest`, `hybrid`, `local_json`, `figma_paste`, or `figma_plugin` with `deterministic`.
 4. `workspace-dev` runs autonomous local fetch/IR/codegen/validation/export without Workspace Dev platform API services.

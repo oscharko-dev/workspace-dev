@@ -1916,12 +1916,14 @@ export function createWorkspaceRequestHandler({
             "INVALID_PAYLOAD:",
             "TOO_LARGE:",
             "SCHEMA_MISMATCH:",
+            "UNSUPPORTED_FORMAT:",
             "UNSUPPORTED_CLIPBOARD_KIND:",
           ] as const;
           type FigmaPasteErrorCode =
             | "INVALID_PAYLOAD"
             | "TOO_LARGE"
             | "SCHEMA_MISMATCH"
+            | "UNSUPPORTED_FORMAT"
             | "UNSUPPORTED_CLIPBOARD_KIND";
           const pasteIssue = parsed.error.issues.find((issue) =>
             figmaPasteErrorPrefixes.some((prefix) =>
@@ -2015,15 +2017,15 @@ export function createWorkspaceRequestHandler({
         ) {
           const ingressStartMs = Date.now();
           // Schema has already asserted figmaJsonPayload is a non-empty string
-          // when figmaSourceMode === "figma_paste". Crash fast if that contract
-          // is ever relaxed without this branch being updated.
+          // for figma_paste and figma_plugin. Crash fast if that contract is
+          // ever relaxed without this branch being updated.
           const pastePayload = parsed.data.figmaJsonPayload;
           if (typeof pastePayload !== "string" || pastePayload.length === 0) {
             sendValidationError({
               payload: {
                 error: "INVALID_PAYLOAD",
                 message:
-                  "figmaJsonPayload is required when figmaSourceMode=figma_paste.",
+                  "figmaJsonPayload is required when figmaSourceMode=figma_paste or figma_plugin.",
               },
               fallbackMessage: "Submit request validation failed.",
             });
@@ -2039,7 +2041,9 @@ export function createWorkspaceRequestHandler({
               if (!envelopeResult.valid) {
                 const errorCode = isClipboardEnvelope(parsedPayload)
                   ? "SCHEMA_MISMATCH"
-                  : "UNSUPPORTED_CLIPBOARD_KIND";
+                  : resolvedFigmaSourceMode === "figma_plugin"
+                    ? "UNSUPPORTED_FORMAT"
+                    : "UNSUPPORTED_CLIPBOARD_KIND";
                 sendValidationError({
                   payload: {
                     error: errorCode,
@@ -2147,7 +2151,7 @@ export function createWorkspaceRequestHandler({
           event: "workspace.submit.accepted",
           statusCode: 202,
           jobId: accepted.jobId,
-          message: `Submission accepted as job '${accepted.jobId}'.${submitInput.importIntent !== undefined ? ` importIntent=${submitInput.importIntent}` : ""}${submitInput.originalIntent !== undefined ? ` originalIntent=${submitInput.originalIntent}` : ""}${submitInput.intentCorrected ? " (user-corrected)" : ""}${ingressMetrics !== undefined ? ` ingressPayloadBytes=${ingressMetrics.payloadBytes} ingressNodeCount=${ingressMetrics.nodeCount} ingressNormalizationMs=${ingressMetrics.normalizationMs} ingressPayloadSha256=${ingressMetrics.payloadSha256}` : ""}`,
+          message: `Submission accepted as job '${accepted.jobId}'.${submitInput.importIntent !== undefined ? ` importIntent=${submitInput.importIntent}` : ""}${submitInput.originalIntent !== undefined ? ` originalIntent=${submitInput.originalIntent}` : ""}${submitInput.intentCorrected ? " (user-corrected)" : ""}${ingressMetrics !== undefined ? ` payload_size=${ingressMetrics.payloadBytes} node_count=${ingressMetrics.nodeCount} runtime_ms=${ingressMetrics.normalizationMs} payload_sha256=${ingressMetrics.payloadSha256} ingressPayloadBytes=${ingressMetrics.payloadBytes} ingressNodeCount=${ingressMetrics.nodeCount} ingressNormalizationMs=${ingressMetrics.normalizationMs} ingressPayloadSha256=${ingressMetrics.payloadSha256}` : ""}`,
         });
         sendJson({
           response,
