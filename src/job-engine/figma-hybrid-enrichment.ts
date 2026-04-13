@@ -9,6 +9,10 @@ import {
   resolveFigmaTokens,
   type TokenBridgeConfig,
 } from "./figma-token-bridge.js";
+import {
+  resolveComponentMappings,
+  type ComponentMapperConfig,
+} from "./figma-component-mapper.js";
 import type { FigmaMcpEnrichmentLoaderInput } from "./types.js";
 
 const TOKEN_BRIDGE_VARIABLES_SKIPPED_CODE = "W_TOKEN_BRIDGE_VARIABLES_SKIPPED";
@@ -376,6 +380,75 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
               "Token bridge failed; enrichment proceeds without variable/style data.",
             severity: "warning",
             source: "variables",
+          },
+        ];
+      }
+
+      // --- Component mapper: resolve Figma components to codebase refs ---
+      try {
+        const mapperConfig: ComponentMapperConfig = {
+          fileKey: figmaFileKey,
+          nodeId: primaryNodeId,
+          mcpConfig: {
+            serverUrl: DEFAULT_MCP_SERVER_URL,
+            accessToken: figmaAccessToken,
+            authMode: "desktop",
+            fetchImpl,
+            timeoutMs,
+            maxRetries,
+            onLog: () => {},
+          },
+          ...(enrichment.libraryKeys && enrichment.libraryKeys.length > 0
+            ? { libraryKeys: enrichment.libraryKeys }
+            : {}),
+        };
+
+        const mapperResult = await resolveComponentMappings(mapperConfig);
+
+        if (mapperResult.codeConnectMappings.length > 0) {
+          enrichment.codeConnectMappings = mapperResult.codeConnectMappings;
+        }
+        if (mapperResult.designSystemMappings.length > 0) {
+          enrichment.designSystemMappings = mapperResult.designSystemMappings;
+        }
+
+        const mapperToolNames: string[] = [];
+        if (
+          !mapperResult.diagnostics.some(
+            (entry) => entry.code === "W_COMPONENT_MAPPER_CODE_CONNECT_SKIPPED",
+          )
+        ) {
+          mapperToolNames.push("get_code_connect_map");
+        }
+        if (
+          !mapperResult.diagnostics.some(
+            (entry) => entry.code === "W_COMPONENT_MAPPER_SUGGESTIONS_SKIPPED",
+          )
+        ) {
+          mapperToolNames.push("get_code_connect_suggestions");
+        }
+        if (mapperToolNames.length > 0) {
+          enrichment.toolNames = mergeToolNames({
+            existing: enrichment.toolNames,
+            incoming: mapperToolNames,
+          });
+        }
+
+        if (mapperResult.diagnostics.length > 0) {
+          enrichment.diagnostics = [
+            ...(enrichment.diagnostics ?? []),
+            ...mapperResult.diagnostics,
+          ];
+        }
+      } catch {
+        enrichment.diagnostics = [
+          ...(enrichment.diagnostics ?? []),
+          {
+            code: "W_COMPONENT_MAPPER_SKIPPED",
+            message:
+              "Component mapper failed; enrichment proceeds without component mappings.",
+            severity: "warning",
+            source: "code_connect",
           },
         ];
       }
