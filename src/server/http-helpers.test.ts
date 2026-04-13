@@ -160,7 +160,11 @@ test("readJsonBody parses valid JSON, empty bodies, invalid JSON, and oversize p
 
   await assert.doesNotReject(async () => {
     const parsed = await readJsonBody(toIncomingMessage(['{"broken"']));
-    assert.deepEqual(parsed, { ok: false, error: "Invalid JSON payload." });
+    assert.deepEqual(parsed, {
+      ok: false,
+      reason: "INVALID_JSON",
+      error: "Invalid JSON payload.",
+    });
   });
 
   await assert.doesNotReject(async () => {
@@ -171,7 +175,34 @@ test("readJsonBody parses valid JSON, empty bodies, invalid JSON, and oversize p
     );
     assert.deepEqual(parsed, {
       ok: false,
+      reason: "OVERSIZE",
       error: "Request body exceeds 1 MiB size limit.",
+      maxBytes: MAX_REQUEST_BODY_BYTES,
     });
+  });
+});
+
+test("readJsonBody respects an explicit maxBytes override", async () => {
+  const override = 2 * 1024 * 1024;
+
+  // Body larger than the 1 MiB default but under the 2 MiB override → success.
+  const underOverride = await readJsonBody(
+    toIncomingMessage([
+      Buffer.from(`"${"a".repeat(MAX_REQUEST_BODY_BYTES + 1024)}"`, "utf8"),
+    ]),
+    { maxBytes: override },
+  );
+  assert.equal(underOverride.ok, true);
+
+  // Body over the override → oversize with the override echoed back.
+  const overOverride = await readJsonBody(
+    toIncomingMessage([Buffer.from("a".repeat(override + 1), "utf8")]),
+    { maxBytes: override },
+  );
+  assert.deepEqual(overOverride, {
+    ok: false,
+    reason: "OVERSIZE",
+    error: "Request body exceeds 2 MiB size limit.",
+    maxBytes: override,
   });
 });

@@ -3,7 +3,19 @@ export const DEFAULT_PORT = 1983;
 export const DEFAULT_OUTPUT_ROOT = ".workspace-dev";
 export const DEFAULT_RATE_LIMIT_PER_MINUTE = 10;
 export const MAX_REQUEST_BODY_BYTES = 1_048_576;
-export const MAX_SUBMIT_BODY_BYTES = 4_194_304;
+export const MAX_SUBMIT_BODY_BYTES = 8_388_608;
+export const DEFAULT_FIGMA_PASTE_MAX_BYTES: number = 6 * 1024 * 1024;
+export const FIGMA_PASTE_MAX_BYTES_ENV = "WORKSPACE_FIGMA_PASTE_MAX_BYTES";
+export function resolveFigmaPasteMaxBytes(
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const raw = env[FIGMA_PASTE_MAX_BYTES_ENV];
+  if (raw !== undefined && /^\d+$/.test(raw)) {
+    const parsed = parseInt(raw, 10);
+    if (parsed > 0) return parsed;
+  }
+  return DEFAULT_FIGMA_PASTE_MAX_BYTES;
+}
 export const RATE_LIMIT_WINDOW_MS = 60_000;
 export const DEFAULT_CONTENT_SECURITY_POLICY = "frame-ancestors 'self'";
 export const WORKSPACE_UI_CONTENT_SECURITY_POLICY =

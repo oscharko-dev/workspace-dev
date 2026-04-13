@@ -140,10 +140,15 @@ export function sendBuffer({
   response.end(payload);
 }
 
+export type ReadJsonBodyResult =
+  | { ok: true; value: unknown }
+  | { ok: false; reason: "OVERSIZE"; error: string; maxBytes: number }
+  | { ok: false; reason: "INVALID_JSON"; error: string };
+
 export async function readJsonBody(
   request: IncomingMessage,
   options?: { maxBytes?: number },
-): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+): Promise<ReadJsonBodyResult> {
   const maxBytes = options?.maxBytes ?? MAX_REQUEST_BODY_BYTES;
   let body = "";
   let bodyBytes = 0;
@@ -159,7 +164,9 @@ export async function readJsonBody(
     if (bodyBytes > maxBytes) {
       return {
         ok: false,
+        reason: "OVERSIZE",
         error: `Request body exceeds ${Math.round(maxBytes / (1024 * 1024))} MiB size limit.`,
+        maxBytes,
       };
     }
     const normalizedChunk = normalizedChunkBuffer.toString("utf8");
@@ -173,6 +180,10 @@ export async function readJsonBody(
   try {
     return { ok: true, value: JSON.parse(body) as unknown };
   } catch {
-    return { ok: false, error: "Invalid JSON payload." };
+    return {
+      ok: false,
+      reason: "INVALID_JSON",
+      error: "Invalid JSON payload.",
+    };
   }
 }
