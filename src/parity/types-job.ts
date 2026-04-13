@@ -20,6 +20,7 @@ import type {
   MappingPolicy,
   ComponentMappingRule,
 } from "./types-mapping.js";
+import type { DesignTokens } from "./types-ir.js";
 import type {
   CredentialRef,
   SyncBranchPolicy,
@@ -207,8 +208,11 @@ export interface TokenConflict {
 export interface TokenBridgeResult {
   variables: FigmaMcpVariableDefinition[];
   styleCatalog: FigmaMcpStyleCatalogEntry[];
+  designTokens: DesignTokens;
   cssCustomProperties: string;
   tailwindExtension?: Record<string, Record<string, string>>;
+  libraryKeys: string[];
+  modeAlternatives: Record<string, Record<string, string | number | boolean>>;
   conflicts: TokenConflict[];
   unmappedVariables: string[];
   diagnostics: FigmaMcpEnrichmentDiagnostic[];

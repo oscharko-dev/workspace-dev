@@ -1,10 +1,13 @@
 import type {
+  DesignTokens,
   FigmaMcpEnrichmentDiagnostic,
   FigmaMcpStyleCatalogEntry,
   FigmaMcpVariableDefinition,
   TokenBridgeResult,
   TokenConflict,
 } from "../parity/types.js";
+import type { FigmaFile } from "../parity/ir-helpers.js";
+import { deriveTokens } from "../parity/ir-tokens.js";
 import {
   callMcpTool,
   type McpResolverConfig,
@@ -84,6 +87,8 @@ interface RawDesignSystemStyle {
   letterSpacingPx?: unknown;
   color?: unknown;
 }
+
+type TokenPrimitive = string | number | boolean;
 
 // ---------------------------------------------------------------------------
 // Name normalization
@@ -378,6 +383,15 @@ export const parseDesignSystemResponse = (
   return { styles, libraryKeys };
 };
 
+const EMPTY_FIGMA_FILE: FigmaFile = {
+  name: "Figma token bridge",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    children: [],
+  },
+};
+
 // ---------------------------------------------------------------------------
 // CSS custom properties generation
 // ---------------------------------------------------------------------------
@@ -423,7 +437,12 @@ const formatCssValue = (
   if (category === "color") {
     return String(variable.value);
   }
-  if (category === "spacing" || category === "radius" || category === "size") {
+  if (
+    category === "spacing" ||
+    category === "radius" ||
+    category === "size" ||
+    (category === "typography" && variable.kind === "number")
+  ) {
     return `${String(variable.value)}px`;
   }
   if (category === "opacity") {
@@ -521,28 +540,40 @@ export const mergeVariablesWithExisting = ({
 }): { merged: FigmaMcpVariableDefinition[]; conflicts: TokenConflict[] } => {
   const conflicts: TokenConflict[] = [];
   const merged = new Map<string, FigmaMcpVariableDefinition>();
+  const toVariableKey = (variable: FigmaMcpVariableDefinition): string => {
+    const nameKey = normalizeFigmaVariableName(variable.name);
+    const modeKey = variable.modeName?.trim().toLowerCase() || "default";
+    return `${nameKey}::${modeKey}`;
+  };
+  const toConflictName = (variable: FigmaMcpVariableDefinition): string => {
+    const key = normalizeFigmaVariableName(variable.name);
+    return variable.modeName?.trim()
+      ? `${key} [${variable.modeName.trim()}]`
+      : key;
+  };
 
   // Seed with existing
   for (const variable of existing) {
-    merged.set(normalizeFigmaVariableName(variable.name), variable);
+    merged.set(toVariableKey(variable), variable);
   }
 
   // Overlay with incoming (Figma takes precedence)
   for (const variable of incoming) {
-    const key = normalizeFigmaVariableName(variable.name);
+    const key = toVariableKey(variable);
     const prev = merged.get(key);
     if (prev !== undefined) {
       const prevValue = String(prev.value);
       const newValue = String(variable.value);
       if (prevValue !== newValue) {
+        const conflictName = toConflictName(variable);
         conflicts.push({
-          name: key,
+          name: conflictName,
           figmaValue: newValue,
           existingValue: prevValue,
           resolution: "figma",
         });
         onLog?.(
-          `Token conflict: "${key}" — Figma "${newValue}" overrides existing "${prevValue}"`,
+          `Token conflict: "${conflictName}" — Figma "${newValue}" overrides existing "${prevValue}"`,
         );
       }
     }
@@ -550,6 +581,28 @@ export const mergeVariablesWithExisting = ({
   }
 
   return { merged: [...merged.values()], conflicts };
+};
+
+const fetchFigmaVariablePayload = async ({
+  fileKey,
+  nodeId,
+  config,
+  signal,
+}: {
+  fileKey: string;
+  nodeId: string;
+  config: McpResolverConfig;
+  signal?: AbortSignal;
+}): Promise<unknown> => {
+  const diagnostics: McpResolverDiagnostic[] = [];
+
+  return await callMcpTool({
+    toolName: "get_variable_defs",
+    args: { fileKey, nodeId },
+    config,
+    ...(signal ? { signal } : {}),
+    diagnostics,
+  });
 };
 
 // ---------------------------------------------------------------------------
@@ -570,17 +623,14 @@ export const fetchFigmaVariableDefs = async ({
   config: McpResolverConfig;
   signal?: AbortSignal;
 }): Promise<FigmaMcpVariableDefinition[]> => {
-  const diagnostics: McpResolverDiagnostic[] = [];
-
-  const result = await callMcpTool({
-    toolName: "get_variable_defs",
-    args: { fileKey, nodeId },
-    config,
-    ...(signal ? { signal } : {}),
-    diagnostics,
-  });
-
-  return parseVariableDefsResponse(result);
+  return parseVariableDefsResponse(
+    await fetchFigmaVariablePayload({
+      fileKey,
+      nodeId,
+      config,
+      ...(signal ? { signal } : {}),
+    }),
+  );
 };
 
 /**
@@ -629,6 +679,104 @@ export interface TokenBridgeConfig {
   existingStyles?: readonly FigmaMcpStyleCatalogEntry[];
 }
 
+const MODE_PREFERENCE_PATTERNS = [/^default$/i, /^base$/i, /^light$/i];
+
+const buildDesignSystemSearchQuery = ({
+  variables,
+  styles,
+}: {
+  variables: readonly FigmaMcpVariableDefinition[];
+  styles: readonly FigmaMcpStyleCatalogEntry[];
+}): string => {
+  const fragments: string[] = [];
+  const pushFragment = (value: string): void => {
+    if (!fragments.includes(value)) {
+      fragments.push(value);
+    }
+  };
+
+  const registerLookupValue = (value: string): void => {
+    if (/\b(background|surface|paper)\b/i.test(value)) {
+      pushFragment("background");
+    }
+    if (/\b(primary|brand)\b/i.test(value)) {
+      pushFragment("primary");
+    }
+    if (/\bsecondary|accent\b/i.test(value)) {
+      pushFragment("secondary");
+    }
+    if (/\b(space|spacing|gap)\b/i.test(value)) {
+      pushFragment("space");
+    }
+    if (/\b(radius|corner|rounded)\b/i.test(value)) {
+      pushFragment("radius");
+    }
+    if (/\b(font|text|type|typography)\b/i.test(value)) {
+      pushFragment("font");
+    }
+  };
+
+  for (const variable of variables) {
+    registerLookupValue(variable.name);
+    if (variable.collectionName) {
+      registerLookupValue(variable.collectionName);
+    }
+    if (fragments.length >= 4) {
+      break;
+    }
+  }
+
+  for (const style of styles) {
+    registerLookupValue(style.name);
+    if (fragments.length >= 4) {
+      break;
+    }
+  }
+
+  return fragments.length > 0 ? fragments.join(" ") : "background space radius font";
+};
+
+const collectModeAlternatives = ({
+  variables,
+}: {
+  variables: readonly FigmaMcpVariableDefinition[];
+}): Record<string, Record<string, TokenPrimitive>> => {
+  const grouped = new Map<string, Record<string, TokenPrimitive>>();
+
+  for (const variable of variables) {
+    const key = normalizeFigmaVariableName(variable.name);
+    const modeKey = variable.modeName?.trim() || "default";
+    const entry = grouped.get(key) ?? {};
+    entry[modeKey] = variable.value;
+    grouped.set(key, entry);
+  }
+
+  return [...grouped.entries()].reduce<Record<string, Record<string, TokenPrimitive>>>(
+    (acc, [key, value]) => {
+      if (Object.keys(value).length > 1) {
+        acc[key] = value;
+      }
+      return acc;
+    },
+    {},
+  );
+};
+
+const buildCanonicalDesignTokens = ({
+  variables,
+  styleCatalog,
+}: {
+  variables: readonly FigmaMcpVariableDefinition[];
+  styleCatalog: readonly FigmaMcpStyleCatalogEntry[];
+}): DesignTokens =>
+  deriveTokens(EMPTY_FIGMA_FILE, {
+    sourceMode: "hybrid",
+    toolNames: [],
+    nodeHints: [],
+    variables: [...variables],
+    styleCatalog: [...styleCatalog],
+  });
+
 /**
  * Resolves Figma variables and design system tokens via MCP, maps them
  * into enrichment-ready types, and produces CSS/Tailwind side-outputs.
@@ -648,19 +796,22 @@ export const resolveFigmaTokens = async (
   } = bridgeConfig;
   const diagnostics: FigmaMcpEnrichmentDiagnostic[] = [];
   const unmappedVariables: string[] = [];
+  let selectionStyles: FigmaMcpStyleCatalogEntry[] = [];
 
   // ----- Step 1: Fetch variable definitions -----
   let rawVariables: FigmaMcpVariableDefinition[] = [];
 
   try {
-    rawVariables = await fetchFigmaVariableDefs({
+    const rawPayload = await fetchFigmaVariablePayload({
       fileKey,
       nodeId,
       config: mcpConfig,
       ...(signal ? { signal } : {}),
     });
+    rawVariables = parseVariableDefsResponse(rawPayload);
+    selectionStyles = parseDesignSystemResponse(rawPayload).styles;
     mcpConfig.onLog?.(
-      `Fetched ${String(rawVariables.length)} variable defs from MCP`,
+      `Fetched ${String(rawVariables.length)} variable defs and ${String(selectionStyles.length)} selection styles from MCP`,
     );
   } catch (error: unknown) {
     const message =
@@ -683,7 +834,10 @@ export const resolveFigmaTokens = async (
   try {
     const dsResult = await fetchDesignSystemTokens({
       fileKey,
-      query: "tokens",
+      query: buildDesignSystemSearchQuery({
+        variables: rawVariables,
+        styles: selectionStyles,
+      }),
       config: mcpConfig,
       ...(signal ? { signal } : {}),
     });
@@ -706,6 +860,28 @@ export const resolveFigmaTokens = async (
     mcpConfig.onLog?.(`search_design_system failed: ${message}`);
   }
 
+  const modeAlternatives = collectModeAlternatives({ variables: rawVariables });
+
+  const preferredModeOrder = (variable: FigmaMcpVariableDefinition): number => {
+    const mode = variable.modeName?.trim();
+    if (!mode) {
+      return -1;
+    }
+    const index = MODE_PREFERENCE_PATTERNS.findIndex((pattern) =>
+      pattern.test(mode),
+    );
+    return index === -1 ? MODE_PREFERENCE_PATTERNS.length : index;
+  };
+
+  rawVariables = [...rawVariables].sort((left, right) => {
+    const leftModeOrder = preferredModeOrder(left);
+    const rightModeOrder = preferredModeOrder(right);
+    if (leftModeOrder !== rightModeOrder) {
+      return leftModeOrder - rightModeOrder;
+    }
+    return left.name.localeCompare(right.name);
+  });
+
   // ----- Step 3: Prefer library token names over raw values -----
   if (designSystemStyles.length > 0 && rawVariables.length > 0) {
     rawVariables = preferLibraryTokenNames({
@@ -723,7 +899,7 @@ export const resolveFigmaTokens = async (
 
   // ----- Step 5: Merge style catalogs -----
   const mergedStyles = mergeStyleCatalogs({
-    incoming: designSystemStyles,
+    incoming: [...selectionStyles, ...designSystemStyles],
     existing: [...existingStyles],
   });
 
@@ -746,6 +922,10 @@ export const resolveFigmaTokens = async (
   // ----- Step 7: Generate CSS & Tailwind -----
   const cssCustomProperties = generateCssCustomProperties(mergedVariables);
   const tailwindExtension = generateTailwindExtension(mergedVariables);
+  const designTokens = buildCanonicalDesignTokens({
+    variables: mergedVariables,
+    styleCatalog: mergedStyles,
+  });
 
   if (libraryKeys.length > 0) {
     diagnostics.push({
@@ -759,8 +939,11 @@ export const resolveFigmaTokens = async (
   return {
     variables: mergedVariables,
     styleCatalog: mergedStyles,
+    designTokens,
     cssCustomProperties,
     ...(tailwindExtension ? { tailwindExtension } : {}),
+    libraryKeys,
+    modeAlternatives,
     conflicts,
     unmappedVariables,
     diagnostics,
@@ -816,12 +999,14 @@ const mergeStyleCatalogs = ({
   existing: readonly FigmaMcpStyleCatalogEntry[];
 }): FigmaMcpStyleCatalogEntry[] => {
   const merged = new Map<string, FigmaMcpStyleCatalogEntry>();
+  const toStyleKey = (style: FigmaMcpStyleCatalogEntry): string =>
+    `${style.name.toLowerCase()}::${style.styleType.toUpperCase()}`;
 
   for (const style of existing) {
-    merged.set(style.name.toLowerCase(), style);
+    merged.set(toStyleKey(style), style);
   }
   for (const style of incoming) {
-    merged.set(style.name.toLowerCase(), style);
+    merged.set(toStyleKey(style), style);
   }
 
   return [...merged.values()];
