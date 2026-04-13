@@ -402,24 +402,17 @@ test.describe("inspector bootstrap flow", () => {
   // -------------------------------------------------------------------------
   // TC-6: Unknown envelope version shows clear error (#997)
   // -------------------------------------------------------------------------
-  test("pasting an unknown envelope version falls through to document validation and shows error", async ({
+  test("pasting an unknown envelope version shows client-side guidance and does not submit", async ({
     page,
   }) => {
-    // Mock submit to return 400 (schema validation will reject the unknown envelope)
+    let submitCalls = 0;
     await page.route("**/workspace/submit", async (route) => {
+      submitCalls += 1;
       if (route.request().method() !== "POST") {
         await route.continue();
         return;
       }
-      await route.fulfill({
-        status: 400,
-        contentType: "application/json",
-        body: JSON.stringify({
-          error: "SCHEMA_MISMATCH",
-          message:
-            "figmaJsonPayload does not match expected schema: document must be an object.",
-        }),
-      });
+      await route.fulfill({ status: 500, body: "unexpected submit" });
     });
 
     await gotoInspector(page);
@@ -441,19 +434,21 @@ test.describe("inspector bootstrap flow", () => {
 
     await simulatePaste(page, unknownEnvelope);
 
-    // The unknown kind is not detected as envelope — falls through to
-    // JSON document detection (has no `document` at root level as Figma doc).
-    // The banner shows since it's valid JSON with some structure.
+    // The unknown kind is not recognized as a supported plugin envelope, but
+    // valid JSON still surfaces the SmartBanner so the user can confirm or
+    // correct the detected type.
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
 
-    // Confirm the import — server will reject with SCHEMA_MISMATCH
+    // Confirming the suggested intent should fail locally with guidance rather
+    // than submitting an unsupported payload to /workspace/submit.
     await banner.getByRole("button", { name: "Import starten" }).click();
 
     // Assert — inline error message is displayed
     const errorAlert = page.locator('[role="alert"]').first();
     await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-    await expect(errorAlert).toContainText("schema");
+    await expect(errorAlert).toContainText("not a Figma JSON export");
+    expect(submitCalls).toBe(0);
 
     // Assert — still on bootstrap shell
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
