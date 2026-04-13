@@ -222,4 +222,67 @@ describe("InspectorPage — bootstrap path", () => {
       "job-bootstrap|http://127.0.0.1:1983/preview||false|",
     );
   });
+
+  it("allows a corrected second paste after a non-retryable submit failure", async () => {
+    let submitCount = 0;
+
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        submitCount += 1;
+        if (submitCount === 1) {
+          return createJsonResponse({
+            status: 400,
+            ok: false,
+            payload: { error: "SCHEMA_MISMATCH" },
+          }) as never;
+        }
+
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-second-paste" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-second-paste") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-second-paste",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/preview" },
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    renderPage("/workspace/ui/inspector");
+
+    const textarea = screen.getByLabelText(/figma json paste target/i);
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (type: string) =>
+          type === "text" || type === "text/plain" ? '{"bad":"data"}' : "",
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert")).toBeInTheDocument();
+    });
+
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (type: string) =>
+          type === "text" || type === "text/plain" ? '{"document":{}}' : "",
+      },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
+      "job-second-paste|http://127.0.0.1:1983/preview||false|",
+    );
+  });
 });

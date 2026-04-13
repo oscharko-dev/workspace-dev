@@ -1816,6 +1816,105 @@ test("workspace server returns 400 TOO_LARGE on figma_paste with oversize payloa
   }
 });
 
+test("workspace server cleans up figma_paste temp files when submit hits queue backpressure", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const server = await createWorkspaceServer({
+    port: 0,
+    host: "127.0.0.1",
+    outputRoot,
+    maxConcurrentJobs: 1,
+    maxQueuedJobs: 1,
+    fetchImpl: createNeverEndingCancelableFetch(),
+  });
+
+  try {
+    const firstSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-1",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    });
+    assert.equal(firstSubmit.statusCode, 202);
+    const firstJobId = String(
+      firstSubmit.json<Record<string, unknown>>().jobId,
+    );
+
+    const secondSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaFileKey: "test-key-2",
+        figmaAccessToken: "figd_xxx",
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    });
+    assert.equal(secondSubmit.statusCode, 202);
+    const secondJobId = String(
+      secondSubmit.json<Record<string, unknown>>().jobId,
+    );
+
+    const thirdSubmit = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(createLocalFigmaPayload()),
+      },
+    });
+    assert.equal(thirdSubmit.statusCode, 429);
+    assert.equal(
+      thirdSubmit.json<Record<string, unknown>>().error,
+      "QUEUE_BACKPRESSURE",
+    );
+
+    const pasteTempDir = path.join(outputRoot, "tmp-figma-paste");
+    const tempEntries = await readdir(pasteTempDir).catch(() => []);
+    assert.deepEqual(tempEntries, []);
+
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${firstJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup",
+      },
+    });
+    await server.app.inject({
+      method: "POST",
+      url: `/workspace/jobs/${secondJobId}/cancel`,
+      headers: { "content-type": "application/json" },
+      payload: {
+        reason: "cleanup",
+      },
+    });
+
+    const firstTerminal = await waitForJobTerminalState({
+      server,
+      jobId: firstJobId,
+      timeoutMs: 20_000,
+    });
+    assert.equal(firstTerminal.status, "canceled");
+
+    const secondTerminal = await waitForJobTerminalState({
+      server,
+      jobId: secondJobId,
+      timeoutMs: 20_000,
+    });
+    assert.equal(secondTerminal.status, "canceled");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server existing modes still work after figma_paste addition", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
