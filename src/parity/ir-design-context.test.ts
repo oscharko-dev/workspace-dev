@@ -532,3 +532,180 @@ describe("transformDesignContextToDesignIr", () => {
     assert.equal(result.metrics!.screenElementCounts[0]!.elements, 3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Edge cases from issue #1002
+// ---------------------------------------------------------------------------
+
+describe("edge cases from issue", () => {
+  it("handles nested INSTANCE nodes within COMPONENT", () => {
+    const node = {
+      id: "80:1",
+      name: "Card",
+      type: "COMPONENT",
+      children: [
+        {
+          id: "80:2",
+          name: "Icon",
+          type: "INSTANCE",
+          children: [{ id: "80:3", name: "Star", type: "VECTOR" }],
+        },
+        { id: "80:4", name: "Label", type: "TEXT", characters: "Title" },
+      ],
+    };
+    const element = transformNodeToScreenElement(node);
+    assert.equal(element.type, "component");
+    assert.equal(element.children?.length, 2);
+    assert.equal(element.children![0]!.type, "instance");
+    assert.equal(element.children![0]!.children![0]!.type, "vector");
+    assert.equal(element.children![1]!.type, "text");
+  });
+
+  it("handles COMPONENT_SET with variant children", () => {
+    const node = {
+      id: "81:1",
+      name: "Button",
+      type: "COMPONENT_SET",
+      children: [
+        {
+          id: "81:2",
+          name: "State=Default",
+          type: "COMPONENT",
+          children: [
+            { id: "81:3", name: "Label", type: "TEXT", characters: "Click" },
+          ],
+        },
+        {
+          id: "81:4",
+          name: "State=Hover",
+          type: "COMPONENT",
+          children: [
+            { id: "81:5", name: "Label", type: "TEXT", characters: "Click" },
+          ],
+        },
+      ],
+    };
+    const element = transformNodeToScreenElement(node);
+    assert.equal(element.type, "componentSet");
+    assert.equal(element.children?.length, 2);
+    assert.equal(element.children![0]!.type, "component");
+    assert.equal(element.children![1]!.type, "component");
+  });
+
+  it("handles absolute positioning (FRAME without auto-layout)", () => {
+    const node = {
+      id: "82:1",
+      name: "AbsoluteContainer",
+      type: "FRAME",
+      // No layoutMode — this means absolute positioning
+      absoluteBoundingBox: { x: 100, y: 200, width: 500, height: 600 },
+      children: [
+        {
+          id: "82:2",
+          name: "Positioned",
+          type: "RECTANGLE",
+          absoluteBoundingBox: { x: 150, y: 250, width: 100, height: 50 },
+        },
+      ],
+    };
+    const element = transformNodeToScreenElement(node);
+    assert.equal(element.type, "frame"); // Not "container" — no auto-layout
+    assert.equal(element.width, 500);
+    assert.equal(element.height, 600);
+    assert.equal(element.children![0]!.type, "shape");
+    assert.equal(element.children![0]!.width, 100);
+  });
+
+  it("handles asset/image nodes (RECTANGLE with image fill)", () => {
+    const node = {
+      id: "83:1",
+      name: "Hero Image",
+      type: "RECTANGLE",
+      fills: [{ type: "IMAGE", visible: true, imageRef: "abc123" }],
+      absoluteBoundingBox: { x: 0, y: 0, width: 800, height: 400 },
+    };
+    const element = transformNodeToScreenElement(node);
+    assert.equal(element.type, "shape");
+    assert.equal(element.width, 800);
+    assert.equal(element.height, 400);
+    // IMAGE fills don't produce fillColor (only SOLID paints do)
+    assert.equal(element.fillColor, undefined);
+  });
+
+  it("handles VECTOR / ELLIPSE / STAR / LINE / BOOLEAN_OPERATION as vector", () => {
+    for (const type of [
+      "VECTOR",
+      "ELLIPSE",
+      "STAR",
+      "LINE",
+      "BOOLEAN_OPERATION",
+    ]) {
+      const node = { id: `84:${type}`, name: type, type };
+      const element = transformNodeToScreenElement(node);
+      assert.equal(element.type, "vector", `Expected ${type} to map to vector`);
+    }
+  });
+
+  it("handles large selection with many screens and correct metrics", () => {
+    const subtrees = Array.from({ length: 10 }, (_, i) => ({
+      nodeId: `${i}:1`,
+      document: {
+        id: `${i}:1`,
+        name: `Screen ${i}`,
+        type: "FRAME",
+        layoutMode: "VERTICAL",
+        children: Array.from({ length: 5 }, (_, j) => ({
+          id: `${i}:${j + 2}`,
+          name: `Element ${j}`,
+          type: "TEXT",
+          characters: `Text ${j}`,
+        })),
+      },
+    }));
+    const result = transformDesignContextToDesignIr({
+      authoritativeSubtrees: subtrees,
+    });
+    assert.equal(result.screens.length, 10);
+    assert.equal(result.metrics!.screenElementCounts.length, 10);
+    for (const count of result.metrics!.screenElementCounts) {
+      assert.equal(count.elements, 5);
+    }
+  });
+
+  it("handles GROUP nodes (transparent grouping)", () => {
+    const node = {
+      id: "85:1",
+      name: "Grouped",
+      type: "GROUP",
+      children: [
+        { id: "85:2", name: "A", type: "RECTANGLE" },
+        { id: "85:3", name: "B", type: "ELLIPSE" },
+      ],
+    };
+    const element = transformNodeToScreenElement(node);
+    assert.equal(element.type, "group");
+    assert.equal(element.children?.length, 2);
+    assert.equal(element.children![0]!.type, "shape");
+    assert.equal(element.children![1]!.type, "vector");
+  });
+
+  it("handles SECTION as top-level organizer", () => {
+    const node = {
+      id: "86:1",
+      name: "Feature Section",
+      type: "SECTION",
+      children: [
+        {
+          id: "86:2",
+          name: "Screen",
+          type: "FRAME",
+          layoutMode: "VERTICAL",
+          children: [],
+        },
+      ],
+    };
+    const element = transformNodeToScreenElement(node);
+    assert.equal(element.type, "section");
+    assert.equal(element.children![0]!.type, "container");
+  });
+});
