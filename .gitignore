@@ -1,34 +1,54 @@
-# Local and CI-generated content
-.DS_Store
+# Dependencies
 node_modules/
+.pnpm-store/
+
+# Build, test, and generated artifacts
 dist/
 artifacts/
 coverage/
-.workspace-dev/
+storybook-static/
 test-results/
+playwright-report/
+.nyc_output/
+.next/
+.turbo/
+.cache/
+.vite/
+openvex.json
+*.tgz
+*.tsbuildinfo
+pnpm-debug.log*
+
+# Environment and local runtime state
+.env
+.env.*
+!.env.example
+!.env.sample
+.tmp/
+.workspace-dev/
+/sandbox/
+/testdata/
+
+# Tooling state
 /.codex/
 /.claude/
 /.intent/
-openvex.json
-*.tgz
-pnpm-debug.log*
-.env
+/.playwright-mcp/
 .idea/
+.vscode/
+.DS_Store
+
+# Local-only repo files
 /AGENTS.md
 /mcp.json
+/.mcp.json
 /FIGMA_GUIDE.md
 /FIGMA_LEITFADEN.md
 /FIGMA_LEITFADEN_V2.md
-docs/Checkliste und Anleitung.pdf
 /Glossar.md
-/REUSE.toml
-storybook-static/
-reference/storybook/storybook.evidence.json
 /PR-Wellen.md
 /CODEX.md
 /CLAUDE.md
-/.playwright-mcp/
-/.changeset/
-/sandbox/
-/testdata/
-/.mcp.json
+/REUSE.toml
+docs/Checkliste und Anleitung.pdf
+reference/storybook/storybook.evidence.json
