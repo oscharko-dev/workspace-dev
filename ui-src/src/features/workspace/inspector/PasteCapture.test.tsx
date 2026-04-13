@@ -68,7 +68,10 @@ describe("PasteCapture", () => {
     render(<PasteCapture disabled={false} onPaste={vi.fn()} />);
 
     expect(
-      screen.getByText(/paste your figma export here/i),
+      screen.getByText(/paste, drop, or upload your figma export here/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /upload json file/i }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: /paste area/i }),
@@ -174,7 +177,7 @@ describe("PasteCapture — drag-and-drop", () => {
     });
 
     expect(onDropFile).toHaveBeenCalledTimes(1);
-    expect(onDropFile).toHaveBeenCalledWith(fileContent);
+    expect(onDropFile).toHaveBeenCalledWith(fileContent, "drop");
     expect(onPaste).not.toHaveBeenCalled();
   });
 
@@ -211,7 +214,7 @@ describe("PasteCapture — drag-and-drop", () => {
     });
 
     expect(onDropFile).toHaveBeenCalledTimes(1);
-    expect(onDropFile).toHaveBeenCalledWith(fileContent);
+    expect(onDropFile).toHaveBeenCalledWith(fileContent, "drop");
   });
 
   it("drop of oversized file fires onError('TOO_LARGE') and does NOT fire onDropFile", async () => {
@@ -340,5 +343,107 @@ describe("PasteCapture — drag-and-drop", () => {
 
     expect(onDropFile).not.toHaveBeenCalled();
     expect(onPaste).not.toHaveBeenCalled();
+  });
+});
+
+describe("PasteCapture — file upload", () => {
+  it("clicking upload button triggers hidden file input", () => {
+    const clickSpy = vi.spyOn(HTMLInputElement.prototype, "click");
+    render(<PasteCapture disabled={false} onPaste={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /upload json file/i }));
+
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    clickSpy.mockRestore();
+  });
+
+  it("uploading a valid .json file fires onDropFile with source='upload'", async () => {
+    const onDropFile = vi.fn();
+    render(
+      <PasteCapture
+        disabled={false}
+        onPaste={vi.fn()}
+        onDropFile={onDropFile}
+      />,
+    );
+
+    const fileContent = '{"document":{}}';
+    const file = new File([fileContent], "upload.json", {
+      type: "application/json",
+    });
+    Object.defineProperty(file, "text", {
+      value: () => Promise.resolve(fileContent),
+    });
+
+    const input = screen.getByLabelText(/upload figma json file/i);
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onDropFile).toHaveBeenCalledTimes(1);
+    expect(onDropFile).toHaveBeenCalledWith(fileContent, "upload");
+  });
+
+  it("uploading .txt file fires onError('UNSUPPORTED_FILE')", async () => {
+    const onError = vi.fn();
+    render(
+      <PasteCapture
+        disabled={false}
+        onPaste={vi.fn()}
+        onDropFile={vi.fn()}
+        onError={onError}
+      />,
+    );
+
+    const textFile = new File(['{"document":{}}'], "notes.txt", {
+      type: "text/plain",
+    });
+    const input = screen.getByLabelText(/upload figma json file/i);
+    fireEvent.change(input, { target: { files: [textFile] } });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onError).toHaveBeenCalledWith("UNSUPPORTED_FILE");
+  });
+
+  it("uploading oversized file fires onError('TOO_LARGE')", async () => {
+    const onError = vi.fn();
+    render(
+      <PasteCapture
+        disabled={false}
+        onPaste={vi.fn()}
+        onDropFile={vi.fn()}
+        onError={onError}
+      />,
+    );
+
+    const largeFile = new File(["x"], "large.json", {
+      type: "application/json",
+    });
+    Object.defineProperty(largeFile, "size", {
+      value: FIGMA_PASTE_MAX_BYTES + 1,
+    });
+
+    const input = screen.getByLabelText(/upload figma json file/i);
+    fireEvent.change(input, { target: { files: [largeFile] } });
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onError).toHaveBeenCalledWith("TOO_LARGE");
+  });
+
+  it("disables upload interaction when component is disabled", () => {
+    render(<PasteCapture disabled={true} onPaste={vi.fn()} />);
+
+    expect(
+      screen.getByRole("button", { name: /upload json file/i }),
+    ).toBeDisabled();
+    expect(screen.getByLabelText(/upload figma json file/i)).toBeDisabled();
   });
 });

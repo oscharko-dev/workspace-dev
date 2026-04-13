@@ -455,55 +455,58 @@ describe("useInspectorBootstrap — polling failures", () => {
 });
 
 describe("useInspectorBootstrap — submitPaste secure context", () => {
-  it("submitPaste with source='drop' does NOT short-circuit even when isSecureContext is false", async () => {
-    // Simulate insecure context
-    const originalIsSecureContext = window.isSecureContext;
-    Object.defineProperty(window, "isSecureContext", {
-      value: false,
-      configurable: true,
-    });
+  it.each(["drop", "upload"] as const)(
+    "submitPaste with source='%s' does NOT short-circuit even when isSecureContext is false",
+    async (source) => {
+      // Simulate insecure context
+      const originalIsSecureContext = window.isSecureContext;
+      Object.defineProperty(window, "isSecureContext", {
+        value: false,
+        configurable: true,
+      });
 
-    fetchJsonMock.mockImplementation(async ({ url }) => {
-      if (url === "/workspace/submit") {
-        return createJsonResponse({
-          status: 202,
-          payload: { jobId: "job-drop" },
-        }) as never;
-      }
-      if (url === "/workspace/jobs/job-drop") {
-        return createJsonResponse({
-          payload: { jobId: "job-drop", status: "queued" },
-        }) as never;
-      }
-      throw new Error(`Unexpected url: ${url}`);
-    });
+      fetchJsonMock.mockImplementation(async ({ url }) => {
+        if (url === "/workspace/submit") {
+          return createJsonResponse({
+            status: 202,
+            payload: { jobId: `job-${source}` },
+          }) as never;
+        }
+        if (url === `/workspace/jobs/job-${source}`) {
+          return createJsonResponse({
+            payload: { jobId: `job-${source}`, status: "queued" },
+          }) as never;
+        }
+        throw new Error(`Unexpected url: ${url}`);
+      });
 
-    const { result } = renderHook(
-      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
-      { wrapper: makeWrapper() },
-    );
+      const { result } = renderHook(
+        () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+        { wrapper: makeWrapper() },
+      );
 
-    result.current.submitPaste('{"document":{}}', { source: "drop" });
+      result.current.submitPaste('{"document":{}}', { source });
 
-    // submitPaste now dispatches intent_detected first; confirm to proceed
-    await waitFor(() => {
-      expect(result.current.state.kind).toBe("detected");
-    });
+      // submitPaste now dispatches intent_detected first; confirm to proceed
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("detected");
+      });
 
-    await act(async () => {
-      result.current.confirmIntent("FIGMA_JSON_DOC");
-    });
+      await act(async () => {
+        result.current.confirmIntent("FIGMA_JSON_DOC");
+      });
 
-    await waitFor(() => {
-      expect(result.current.state.kind).toBe("queued");
-    });
+      await waitFor(() => {
+        expect(result.current.state.kind).toBe("queued");
+      });
 
-    // Restore
-    Object.defineProperty(window, "isSecureContext", {
-      value: originalIsSecureContext,
-      configurable: true,
-    });
-  });
+      // Restore
+      Object.defineProperty(window, "isSecureContext", {
+        value: originalIsSecureContext,
+        configurable: true,
+      });
+    },
+  );
 
   it("submitPaste with source='clipboard-api' short-circuits to failed when isSecureContext is false", async () => {
     const originalIsSecureContext = window.isSecureContext;

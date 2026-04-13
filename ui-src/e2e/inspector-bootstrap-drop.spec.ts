@@ -1,7 +1,7 @@
 /**
- * E2E tests for paste/drop import target in the Inspector bootstrap middle column.
+ * E2E tests for paste/drop/upload import target in the Inspector bootstrap middle column.
  *
- * Covers: file drop happy path, unsupported file rejection, oversized file
+ * Covers: file drop/upload happy paths, unsupported file rejection, oversized file
  * rejection, empty paste, non-JSON paste, and drag-over visual state.
  *
  * All tests are fully mocked — no real server is required.
@@ -118,6 +118,22 @@ async function dropFile(
 }
 
 /**
+ * Selects a file via the hidden upload input in PasteCapture.
+ */
+async function uploadFile(
+  page: Page,
+  { name, type, contents }: DropFileOptions,
+): Promise<void> {
+  const uploadInput = page.getByLabel("Upload Figma JSON file");
+  await expect(uploadInput).toBeAttached();
+  await uploadInput.setInputFiles({
+    name,
+    mimeType: type,
+    buffer: Buffer.from(contents, "utf-8"),
+  });
+}
+
+/**
  * Installs route mocks for the submit + job-poll lifecycle.
  *
  * - POST /workspace/submit  → 202 { jobId }
@@ -202,7 +218,7 @@ async function assertSubmitNotCalled(page: Page): Promise<void> {
 // Tests
 // ---------------------------------------------------------------------------
 
-test.describe("inspector bootstrap — paste/drop import target", () => {
+test.describe("inspector bootstrap — paste/drop/upload import target", () => {
   test.describe.configure({ mode: "parallel" });
 
   test.afterEach(async ({ page }) => {
@@ -260,6 +276,47 @@ test.describe("inspector bootstrap — paste/drop import target", () => {
     });
 
     // Assert — bootstrap shell is gone after hydration
+    await expect(page.getByTestId("inspector-bootstrap")).toHaveCount(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // TC-2: Unsupported file drop (.png)
+  // -------------------------------------------------------------------------
+  test("uploading a valid Figma JSON file via the file picker hydrates into the inspector panel", async ({
+    page,
+  }) => {
+    await installBootstrapRoutes(page);
+    await gotoInspector(page);
+
+    const submitResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/workspace/submit"),
+    );
+
+    await uploadFile(page, {
+      name: "figma-export.json",
+      type: "application/json",
+      contents: MINIMAL_FIGMA_JSON,
+    });
+
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+    await banner.getByRole("button", { name: "Import starten" }).click();
+
+    const submitResponse = await submitResponsePromise;
+    expect(submitResponse.status()).toBe(202);
+
+    const submittedBody = submitResponse.request().postDataJSON() as Record<
+      string,
+      unknown
+    >;
+    expect(submittedBody["figmaSourceMode"]).toBe("figma_paste");
+    expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
+
+    await expect(page.getByTestId("inspector-layout")).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(page.getByTestId("inspector-bootstrap")).toHaveCount(0);
   });
 
@@ -331,6 +388,53 @@ test.describe("inspector bootstrap — paste/drop import target", () => {
   // -------------------------------------------------------------------------
   // TC-4: Empty paste (whitespace-only)
   // -------------------------------------------------------------------------
+  test("uploading JSON and receiving UNSUPPORTED_CLIPBOARD_KIND shows the inline envelope error", async ({
+    page,
+  }) => {
+    await page.route("**/workspace/submit", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "UNSUPPORTED_CLIPBOARD_KIND" }),
+      });
+    });
+
+    await gotoInspector(page);
+
+    const submitResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/workspace/submit"),
+    );
+
+    await uploadFile(page, {
+      name: "figma-export.json",
+      type: "application/json",
+      contents: MINIMAL_FIGMA_JSON,
+    });
+
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+    await banner.getByRole("button", { name: "Import starten" }).click();
+
+    const submitResponse = await submitResponsePromise;
+    expect(submitResponse.status()).toBe(400);
+
+    const alert = page.locator('[role="alert"]').first();
+    await expect(alert).toBeVisible({ timeout: 5_000 });
+    await expect(alert).toContainText(
+      /clipboard envelope version is not supported yet/i,
+    );
+    await expect(page.getByTestId("inspector-layout")).toHaveCount(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // TC-4: Empty paste (whitespace-only)
+  // -------------------------------------------------------------------------
   test("pasting whitespace-only text shows the EMPTY_INPUT inline alert and does NOT submit", async ({
     page,
   }) => {
@@ -349,7 +453,7 @@ test.describe("inspector bootstrap — paste/drop import target", () => {
     const alert = page.locator('[role="alert"]').first();
     await expect(alert).toBeVisible({ timeout: 5_000 });
     await expect(alert).toContainText(
-      /please paste or drop a figma json export/i,
+      /please paste, drop, or upload a figma json export/i,
     );
 
     // Assert — POST /workspace/submit was NOT triggered

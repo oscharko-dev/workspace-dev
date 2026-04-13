@@ -52,7 +52,7 @@ function toUnsupportedIntentReason({
   return null;
 }
 
-export type PasteSource = "clipboard-api" | "paste-event" | "drop";
+export type PasteSource = "clipboard-api" | "paste-event" | "drop" | "upload";
 
 export interface UseInspectorBootstrapOptions {
   pollIntervalMs?: number;

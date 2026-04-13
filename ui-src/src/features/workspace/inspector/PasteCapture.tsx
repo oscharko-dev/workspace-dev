@@ -3,8 +3,10 @@ import {
   useId,
   useRef,
   useState,
+  type ChangeEvent as ReactChangeEvent,
   type ClipboardEvent as ReactClipboardEvent,
   type DragEvent as ReactDragEvent,
+  type MouseEvent as ReactMouseEvent,
   type JSX,
 } from "react";
 import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
@@ -12,7 +14,7 @@ import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 export interface PasteCaptureProps {
   disabled: boolean;
   onPaste: (text: string, clipboardHtml?: string) => void;
-  onDropFile?: (text: string) => void;
+  onDropFile?: (text: string, source: "drop" | "upload") => void;
   onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   errorMessage?: string;
   helperHint?: string;
@@ -41,6 +43,7 @@ export function PasteCapture({
   helperHint,
 }: PasteCaptureProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reactId = useId();
   const labelId = `${reactId}-label`;
   const promptId = `${reactId}-prompt`;
@@ -48,8 +51,8 @@ export function PasteCapture({
   const hintId = `${reactId}-hint`;
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [isReadingDropFile, setIsReadingDropFile] = useState(false);
-  const interactionDisabled = disabled || isReadingDropFile;
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const interactionDisabled = disabled || isReadingFile;
 
   const describedByIds = [promptId];
   if (helperHint) {
@@ -65,6 +68,51 @@ export function PasteCapture({
     }
     textareaRef.current?.focus();
   }, [interactionDisabled]);
+
+  const handleUploadButtonClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (interactionDisabled) {
+        return;
+      }
+      if (fileInputRef.current) {
+        // Reset value so selecting the same file again still emits a change event.
+        fileInputRef.current.value = "";
+        fileInputRef.current.click();
+      }
+    },
+    [interactionDisabled],
+  );
+
+  const handleJsonFile = useCallback(
+    (file: File, source: "drop" | "upload"): void => {
+      if (file.size > FIGMA_PASTE_MAX_BYTES) {
+        onError?.("TOO_LARGE");
+        return;
+      }
+
+      if (!isJsonFile(file)) {
+        onError?.("UNSUPPORTED_FILE");
+        return;
+      }
+
+      setIsReadingFile(true);
+      void file
+        .text()
+        .then((text) => {
+          if (onDropFile) {
+            onDropFile(text, source);
+            return;
+          }
+          onPaste(text);
+        })
+        .finally(() => {
+          setIsReadingFile(false);
+        });
+    },
+    [onDropFile, onError, onPaste],
+  );
 
   const handlePaste = useCallback(
     (event: ReactClipboardEvent<HTMLTextAreaElement>): void => {
@@ -126,25 +174,7 @@ export function PasteCapture({
 
       const firstFile = event.dataTransfer.files.item(0);
       if (firstFile !== null) {
-        if (firstFile.size > FIGMA_PASTE_MAX_BYTES) {
-          onError?.("TOO_LARGE");
-          return;
-        }
-
-        if (!isJsonFile(firstFile)) {
-          onError?.("UNSUPPORTED_FILE");
-          return;
-        }
-
-        setIsReadingDropFile(true);
-        void firstFile
-          .text()
-          .then((text) => {
-            (onDropFile ?? onPaste)(text);
-          })
-          .finally(() => {
-            setIsReadingDropFile(false);
-          });
+        handleJsonFile(firstFile, "drop");
         return;
       }
 
@@ -153,7 +183,26 @@ export function PasteCapture({
         onPaste(plainText);
       }
     },
-    [interactionDisabled, onDropFile, onPaste, onError],
+    [handleJsonFile, interactionDisabled, onPaste],
+  );
+
+  const handleFileInputChange = useCallback(
+    (event: ReactChangeEvent<HTMLInputElement>): void => {
+      const files = event.currentTarget.files;
+      const file =
+        files === null
+          ? null
+          : typeof files.item === "function"
+            ? files.item(0)
+            : (files[0] ?? null);
+      // Reset value so users can re-select the same file after failures.
+      event.currentTarget.value = "";
+      if (interactionDisabled || file === null) {
+        return;
+      }
+      handleJsonFile(file, "upload");
+    },
+    [handleJsonFile, interactionDisabled],
   );
 
   return (
@@ -176,13 +225,22 @@ export function PasteCapture({
         Figma JSON paste target
       </label>
 
-      <div className="pointer-events-none flex flex-col items-center gap-2 text-center">
+      <div className="flex flex-col items-center gap-2 text-center">
         <p id={promptId} className="text-sm font-medium text-white/85">
-          Or paste your Figma export here
+          Paste, drop, or upload your Figma export here
         </p>
         <p className="text-xs text-white/50">
-          Click anywhere in this column, then paste your JSON_REST_V1 payload.
+          Click anywhere in this column and paste your JSON_REST_V1 payload, or
+          upload a `.json` file.
         </p>
+        <button
+          type="button"
+          onClick={handleUploadButtonClick}
+          disabled={interactionDisabled}
+          className="rounded border border-white/20 bg-[#181818] px-3 py-1.5 text-xs font-medium text-white/80 transition hover:border-white/35 hover:bg-[#1f1f1f] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111111] disabled:text-white/35"
+        >
+          Upload JSON file
+        </button>
         <pre className="mt-2 max-w-full overflow-hidden rounded border border-[#000000] bg-[#0b0b0b] px-3 py-2 text-left text-[11px] leading-relaxed text-white/45">
           {EXAMPLE_SNIPPET}
         </pre>
@@ -198,6 +256,16 @@ export function PasteCapture({
         onPaste={handlePaste}
         readOnly
         defaultValue=""
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        aria-label="Upload Figma JSON file"
+        className="sr-only"
+        accept=".json,application/json"
+        disabled={interactionDisabled}
+        onChange={handleFileInputChange}
       />
 
       {helperHint ? (

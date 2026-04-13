@@ -208,8 +208,8 @@ function BootstrapView(): JSX.Element {
   );
 
   const handleDropFile = useCallback(
-    (text: string): void => {
-      bootstrap.submitPaste(text, { source: "drop" });
+    (text: string, source: "drop" | "upload"): void => {
+      bootstrap.submitPaste(text, { source });
     },
     [bootstrap],
   );
