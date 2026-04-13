@@ -6,6 +6,8 @@ import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 export interface InspectorBootstrapProps {
   state: InspectorBootstrapState;
   onPaste: (text: string) => void;
+  onDropFile?: (text: string) => void;
+  onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   onRetry: () => void;
 }
 
@@ -13,6 +15,24 @@ interface ColumnCopy {
   left: string;
   center: string;
   right: string;
+}
+
+const EXAMPLE_SNIPPET = `{
+  "document": {
+    "id": "0:0",
+    "name": "Document",
+    "type": "DOCUMENT",
+    "children": [ ... ]
+  },
+  "schemaVersion": "JSON_REST_V1"
+}`;
+
+function PasteExample(): JSX.Element {
+  return (
+    <pre className="mt-2 max-w-full overflow-hidden rounded border border-[#000000] bg-[#0b0b0b] px-3 py-2 text-left text-[11px] leading-relaxed text-white/45">
+      {EXAMPLE_SNIPPET}
+    </pre>
+  );
 }
 
 function getColumnCopy(state: InspectorBootstrapState): ColumnCopy {
@@ -29,20 +49,20 @@ function getColumnCopy(state: InspectorBootstrapState): ColumnCopy {
     case "pasting":
       return {
         left: "Submitting import...",
-        center: "Submitting import...",
+        center: "Pasting\u2026",
         right: "Submitting import...",
       };
     case "queued":
       return {
         left: "Queued — import will start shortly.",
-        center: "Queued — import will start shortly.",
+        center: "Import queued",
         right: "Queued — import will start shortly.",
       };
     case "processing":
       return {
-        left: "Processing — building component tree...",
+        left: "Mapping\u2026",
         center: "Processing — building component tree...",
-        right: "Processing — generating code...",
+        right: "Generating code",
       };
     case "ready":
       return {
@@ -77,7 +97,7 @@ function getHelperHint(state: InspectorBootstrapState): string | undefined {
     case "pasting":
       return "Pasting...";
     case "queued":
-      return "Queued...";
+      return "Import queued";
     case "processing":
       return "Generating...";
     default:
@@ -96,6 +116,10 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
       return `Payload is too large. The limit is ${FIGMA_PASTE_MAX_LABEL}.`;
     case "SCHEMA_MISMATCH":
       return "The payload does not match the expected Figma JSON_REST_V1 schema.";
+    case "SECURE_CONTEXT_MISSING":
+      return "Clipboard access requires a secure (https) context.";
+    case "UNSUPPORTED_FILE":
+      return "Unsupported file. Please drop a .json file with the Figma export.";
     default:
       return "Import failed. Please try again.";
   }
@@ -194,6 +218,8 @@ function ColumnPlaceholder({
 export function InspectorBootstrap({
   state,
   onPaste,
+  onDropFile,
+  onError,
   onRetry,
 }: InspectorBootstrapProps): JSX.Element {
   const copy = getColumnCopy(state);
@@ -229,9 +255,12 @@ export function InspectorBootstrap({
             <PasteCapture
               disabled={disabled}
               onPaste={onPaste}
+              {...(onDropFile !== undefined ? { onDropFile } : {})}
+              {...(onError !== undefined ? { onError } : {})}
               {...(helperHint !== undefined ? { helperHint } : {})}
               {...(errorMessage !== undefined ? { errorMessage } : {})}
             />
+            {state.kind === "failed" ? <PasteExample /> : null}
             {showRetry ? (
               <div className="flex justify-center">
                 <button

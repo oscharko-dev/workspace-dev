@@ -8,6 +8,7 @@ import {
   type InspectorBootstrapState,
 } from "./inspector-bootstrap-state";
 import { isJobPayload, isRecord } from "../workspace-page.helpers";
+import { isSecureContextAvailable } from "./paste-input-classifier";
 import type { JsonResponse } from "../../../lib/http";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_500;
@@ -18,6 +19,8 @@ const endpoints = {
     `/workspace/jobs/${encodeURIComponent(jobId)}`,
 };
 
+export type PasteSource = "clipboard-api" | "paste-event" | "drop";
+
 export interface UseInspectorBootstrapOptions {
   pollIntervalMs?: number;
 }
@@ -25,8 +28,10 @@ export interface UseInspectorBootstrapOptions {
 export interface UseInspectorBootstrapResult {
   state: InspectorBootstrapState;
   submit(input: { figmaJsonPayload: string }): void;
+  submitPaste(text: string, options?: { source?: PasteSource }): void;
   retry(): void;
   reset(): void;
+  reportInputError(code: string): void;
   jobId: string | null;
   previewUrl: string | null;
 }
@@ -220,12 +225,31 @@ export function useInspectorBootstrap(
     });
   }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
 
+  function submitPaste(text: string, options?: { source?: PasteSource }): void {
+    const source = options?.source ?? "paste-event";
+    if (source === "clipboard-api" && !isSecureContextAvailable()) {
+      dispatch({
+        type: "submit_failed",
+        reason: "SECURE_CONTEXT_MISSING",
+        retryable: false,
+      });
+      return;
+    }
+    dispatch({ type: "paste_started" });
+    submitMutation.mutate({ figmaJsonPayload: text });
+  }
+
+  function reportInputError(code: string): void {
+    dispatch({ type: "submit_failed", reason: code, retryable: true });
+  }
+
   return {
     state,
     submit({ figmaJsonPayload }) {
       dispatch({ type: "paste_started" });
       submitMutation.mutate({ figmaJsonPayload });
     },
+    submitPaste,
     retry() {
       if (state.kind === "failed" && state.retryable) {
         dispatch({ type: "reset" });
@@ -234,6 +258,7 @@ export function useInspectorBootstrap(
     reset() {
       dispatch({ type: "reset" });
     },
+    reportInputError,
     jobId,
     previewUrl,
   };

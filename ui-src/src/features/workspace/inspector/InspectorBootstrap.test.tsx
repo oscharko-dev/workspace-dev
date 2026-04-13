@@ -60,18 +60,21 @@ describe("InspectorBootstrap — state-aware copy", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 
-  it("shows pasting copy when pasting", () => {
+  it("shows pasting copy when pasting — center says Pasting, left/right say Submitting", () => {
     renderBootstrap({ state: { kind: "pasting" } });
 
-    expect(
-      screen.getAllByText(/submitting import/i).length,
-    ).toBeGreaterThanOrEqual(2);
+    const center = screen.getByTestId("inspector-bootstrap-center");
+    const left = screen.getByTestId("inspector-bootstrap-left");
+    expect(center).toHaveTextContent(/pasting/i);
+    expect(left).toHaveTextContent(/submitting import/i);
   });
 
-  it("shows queued copy when queued", () => {
+  it("shows queued copy when queued — center says Import queued", () => {
     renderBootstrap({ state: { kind: "queued", jobId: "job-1" } });
 
-    expect(screen.getAllByText(/queued/i).length).toBeGreaterThanOrEqual(2);
+    const center = screen.getByTestId("inspector-bootstrap-center");
+    expect(center).toHaveTextContent(/import queued/i);
+    expect(screen.getAllByText(/queued/i).length).toBeGreaterThanOrEqual(1);
   });
 
   it("shows processing copy when processing, distinct left/right", () => {
@@ -79,7 +82,7 @@ describe("InspectorBootstrap — state-aware copy", () => {
 
     const left = screen.getByTestId("inspector-bootstrap-left");
     const right = screen.getByTestId("inspector-bootstrap-right");
-    expect(left).toHaveTextContent(/building component tree/i);
+    expect(left).toHaveTextContent(/mapping/i);
     expect(right).toHaveTextContent(/generating code/i);
   });
 
@@ -99,6 +102,43 @@ describe("InspectorBootstrap — state-aware copy", () => {
     });
 
     expect(screen.getByText(/limit is 6 MiB/i)).toBeInTheDocument();
+  });
+
+  it("shows SECURE_CONTEXT_MISSING error message", () => {
+    renderBootstrap({
+      state: {
+        kind: "failed",
+        reason: "SECURE_CONTEXT_MISSING",
+        retryable: false,
+      },
+    });
+
+    expect(
+      screen.getByText(/clipboard access requires a secure/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows UNSUPPORTED_FILE error message", () => {
+    renderBootstrap({
+      state: {
+        kind: "failed",
+        reason: "UNSUPPORTED_FILE",
+        retryable: true,
+      },
+    });
+
+    expect(
+      screen.getByText(/unsupported file\. please drop a \.json file/i),
+    ).toBeInTheDocument();
+  });
+
+  it("shows PasteExample snippet in the center column when failed", () => {
+    renderBootstrap({
+      state: { kind: "failed", reason: "INVALID_PAYLOAD", retryable: true },
+    });
+
+    const center = screen.getByTestId("inspector-bootstrap-center");
+    expect(center).toHaveTextContent(/schemaVersion/);
   });
 });
 

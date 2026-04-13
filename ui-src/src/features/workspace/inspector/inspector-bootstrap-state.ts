@@ -42,6 +42,13 @@ export function bootstrapReducer(
       if (event.type === "paste_started") {
         return { kind: "pasting" };
       }
+      if (event.type === "submit_failed") {
+        return {
+          kind: "failed",
+          reason: event.reason,
+          retryable: event.retryable,
+        };
+      }
       return state;
     }
 
@@ -51,6 +58,13 @@ export function bootstrapReducer(
       }
       if (event.type === "paste_started") {
         return { kind: "pasting" };
+      }
+      if (event.type === "submit_failed") {
+        return {
+          kind: "failed",
+          reason: event.reason,
+          retryable: event.retryable,
+        };
       }
       return state;
     }

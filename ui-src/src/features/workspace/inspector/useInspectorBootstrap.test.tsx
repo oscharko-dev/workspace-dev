@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../../lib/http";
 import { useInspectorBootstrap } from "./useInspectorBootstrap";
@@ -185,7 +185,9 @@ describe("useInspectorBootstrap — 400 SCHEMA_MISMATCH", () => {
     });
 
     expect(result.current.jobId).toBe("job-recovered");
-    expect(result.current.previewUrl).toBe("http://localhost/recovered-preview");
+    expect(result.current.previewUrl).toBe(
+      "http://localhost/recovered-preview",
+    );
   });
 });
 
@@ -415,6 +417,104 @@ describe("useInspectorBootstrap — polling failures", () => {
 
     if (result.current.state.kind === "failed") {
       expect(result.current.state.reason).toBe("POLL_FAILED");
+      expect(result.current.state.retryable).toBe(true);
+    }
+  });
+});
+
+describe("useInspectorBootstrap — submitPaste secure context", () => {
+  it("submitPaste with source='drop' does NOT short-circuit even when isSecureContext is false", async () => {
+    // Simulate insecure context
+    const originalIsSecureContext = window.isSecureContext;
+    Object.defineProperty(window, "isSecureContext", {
+      value: false,
+      configurable: true,
+    });
+
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-drop" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-drop") {
+        return createJsonResponse({
+          payload: { jobId: "job-drop", status: "queued" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      { wrapper: makeWrapper() },
+    );
+
+    result.current.submitPaste('{"document":{}}', { source: "drop" });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("queued");
+    });
+
+    // Restore
+    Object.defineProperty(window, "isSecureContext", {
+      value: originalIsSecureContext,
+      configurable: true,
+    });
+  });
+
+  it("submitPaste with source='clipboard-api' short-circuits to failed when isSecureContext is false", async () => {
+    const originalIsSecureContext = window.isSecureContext;
+    Object.defineProperty(window, "isSecureContext", {
+      value: false,
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste('{"document":{}}', {
+        source: "clipboard-api",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("SECURE_CONTEXT_MISSING");
+      expect(result.current.state.retryable).toBe(false);
+    }
+
+    Object.defineProperty(window, "isSecureContext", {
+      value: originalIsSecureContext,
+      configurable: true,
+    });
+  });
+});
+
+describe("useInspectorBootstrap — reportInputError", () => {
+  it("reportInputError('UNSUPPORTED_FILE') transitions to failed with retryable=true", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    expect(result.current.state.kind).toBe("idle");
+
+    await act(async () => {
+      result.current.reportInputError("UNSUPPORTED_FILE");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("UNSUPPORTED_FILE");
       expect(result.current.state.retryable).toBe(true);
     }
   });
