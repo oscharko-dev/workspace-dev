@@ -39,9 +39,9 @@ Added:
 
 - `WorkspaceFigmaSourceMode` union member `"figma_paste"` for inline Figma `JSON_REST_V1` payload submission.
 - `WorkspaceJobInput.figmaJsonPayload?: string` carrying the inline payload when `figmaSourceMode === "figma_paste"`.
-- Submit-time validation surfacing `INVALID_PAYLOAD` / `TOO_LARGE` / `SCHEMA_MISMATCH` error codes for the new source mode.
-- `WORKSPACE_FIGMA_PASTE_MAX_BYTES` env knob (default 2 MiB) for the per-payload cap.
-- `MAX_SUBMIT_BODY_BYTES` constant (4 MiB) scoping the larger body limit to `/workspace/submit`.
+- Submit-time validation surfacing `INVALID_PAYLOAD` / `TOO_LARGE` / `SCHEMA_MISMATCH` error codes for malformed, oversize, or structurally incompatible `figma_paste` payloads before they queue.
+- `WORKSPACE_FIGMA_PASTE_MAX_BYTES` env knob (default 6 MiB) for the per-payload cap, still bounded by the submit transport budget.
+- `MAX_SUBMIT_BODY_BYTES` constant (8 MiB) scoping the larger body limit to `/workspace/submit`.
 
 Changed:
 

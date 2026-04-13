@@ -1,4 +1,5 @@
 import { type JSX } from "react";
+import { FIGMA_PASTE_MAX_LABEL } from "../submit-schema";
 import { PasteCapture } from "./PasteCapture";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 
@@ -92,7 +93,7 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
     case "INVALID_PAYLOAD":
       return "That does not look like a Figma JSON export. Please paste a JSON_REST_V1 payload.";
     case "TOO_LARGE":
-      return "Payload is too large. The limit is 2 MiB.";
+      return `Payload is too large. The limit is ${FIGMA_PASTE_MAX_LABEL}.`;
     case "SCHEMA_MISMATCH":
       return "The payload does not match the expected Figma JSON_REST_V1 schema.";
     default:

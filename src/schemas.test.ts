@@ -11,6 +11,7 @@ import {
 } from "./schemas.js";
 import {
   DEFAULT_FIGMA_PASTE_MAX_BYTES,
+  MAX_SUBMIT_BODY_BYTES,
   resolveFigmaPasteMaxBytes,
 } from "./server/constants.js";
 
@@ -1716,7 +1717,10 @@ test("schema: create-pr rejects unexpected properties", () => {
 test("schema: figma_paste mode accepts a valid JSON payload", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_paste",
-    figmaJsonPayload: JSON.stringify({ name: "Test", document: { id: "0:0" } }),
+    figmaJsonPayload: JSON.stringify({
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
   });
   assert.equal(result.success, true);
   if (result.success) {
@@ -1752,6 +1756,20 @@ test("schema: figma_paste mode rejects malformed JSON payload with SCHEMA_MISMAT
   }
 });
 
+test("schema: figma_paste mode rejects structurally invalid JSON payload with SCHEMA_MISMATCH", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({ name: "bad-payload" }),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) =>
+      i.message.startsWith("SCHEMA_MISMATCH:"),
+    );
+    assert.ok(issue, "Expected a SCHEMA_MISMATCH issue");
+  }
+});
+
 test("schema: figma_paste mode rejects oversize payload with TOO_LARGE", () => {
   const oversizePayload = "x".repeat(DEFAULT_FIGMA_PASTE_MAX_BYTES + 1);
   const result = SubmitRequestSchema.safeParse({
@@ -1770,12 +1788,48 @@ test("schema: figma_paste mode rejects oversize payload with TOO_LARGE", () => {
 test("schema: figma_paste accepts a whole-view-sized payload under the 6 MiB limit", () => {
   // 5 MiB valid JSON string — below the 6 MiB figma-paste cap.
   const filler = "a".repeat(5 * 1024 * 1024);
-  const wholeViewPayload = JSON.stringify({ name: "whole-view", filler });
+  const wholeViewPayload = JSON.stringify({
+    name: "whole-view",
+    document: { id: "0:0", type: "DOCUMENT", children: [] },
+    filler,
+  });
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_paste",
     figmaJsonPayload: wholeViewPayload,
   });
   assert.equal(result.success, true);
+});
+
+test("schema: figma_paste rejects payloads that exceed the submit transport budget", () => {
+  const original = process.env.WORKSPACE_FIGMA_PASTE_MAX_BYTES;
+  process.env.WORKSPACE_FIGMA_PASTE_MAX_BYTES = String(
+    MAX_SUBMIT_BODY_BYTES + 1024,
+  );
+
+  try {
+    const wholeViewPayload = JSON.stringify({
+      name: "whole-view",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+      filler: "x".repeat(MAX_SUBMIT_BODY_BYTES),
+    });
+    const result = SubmitRequestSchema.safeParse({
+      figmaSourceMode: "figma_paste",
+      figmaJsonPayload: wholeViewPayload,
+    });
+    assert.equal(result.success, false);
+    if (!result.success) {
+      const issue = result.error.issues.find((i) =>
+        i.message.startsWith("TOO_LARGE:"),
+      );
+      assert.ok(issue, "Expected a TOO_LARGE issue");
+    }
+  } finally {
+    if (original === undefined) {
+      delete process.env.WORKSPACE_FIGMA_PASTE_MAX_BYTES;
+    } else {
+      process.env.WORKSPACE_FIGMA_PASTE_MAX_BYTES = original;
+    }
+  }
 });
 
 test("resolveFigmaPasteMaxBytes: env override, invalid env, default fallback", () => {

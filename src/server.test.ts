@@ -1755,6 +1755,46 @@ test("workspace server accepts figma_paste submit and returns 202 with jobId", a
   }
 });
 
+test("workspace server accepts a whole-view-sized figma_paste submit under the route caps", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    const payload = JSON.stringify({
+      name: "Whole View",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+      filler: "a".repeat(5 * 1024 * 1024),
+    });
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: payload,
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    assert.ok(typeof body.jobId === "string" && body.jobId.length > 0);
+    await waitForJobTerminalState({
+      server,
+      jobId: String(body.jobId),
+      timeoutMs: 30_000,
+    });
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
 test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with malformed JSON payload", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = 19830 + Math.floor(Math.random() * 1000);
@@ -1769,7 +1809,10 @@ test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with malformed
     const response = await server.app.inject({
       method: "POST",
       url: "/workspace/submit",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-schema-json",
+      },
       payload: {
         figmaSourceMode: "figma_paste",
         figmaJsonPayload: "{ not: valid json }",
@@ -1779,6 +1822,41 @@ test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with malformed
     assert.equal(response.statusCode, 400);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "SCHEMA_MISMATCH");
+    assert.equal(body.requestId, "req-schema-json");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with structurally invalid payload", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = 19830 + Math.floor(Math.random() * 1000);
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    const response = await server.app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-schema-structural",
+      },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify({ name: "bad-payload" }),
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "SCHEMA_MISMATCH");
+    assert.equal(body.requestId, "req-schema-structural");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
@@ -1802,7 +1880,10 @@ test("workspace server returns 400 TOO_LARGE on figma_paste with oversize payloa
     const response = await server.app.inject({
       method: "POST",
       url: "/workspace/submit",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-schema-too-large",
+      },
       payload: {
         figmaSourceMode: "figma_paste",
         figmaJsonPayload: oversizePayload,
@@ -1812,6 +1893,7 @@ test("workspace server returns 400 TOO_LARGE on figma_paste with oversize payloa
     assert.equal(response.statusCode, 400);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "TOO_LARGE");
+    assert.equal(body.requestId, "req-schema-too-large");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { workspaceSubmitSchema, toWorkspaceSubmitPayload } from "./submit-schema";
+import {
+  FIGMA_PASTE_MAX_BYTES,
+  workspaceSubmitSchema,
+  toWorkspaceSubmitPayload,
+} from "./submit-schema";
 
 describe("workspaceSubmitSchema", () => {
   it("requires repo fields when Git/PR is enabled", () => {
@@ -164,6 +168,21 @@ describe("workspaceSubmitSchema", () => {
       const paths = parsed.error.issues.map((issue) => issue.path.join("."));
       expect(paths).toContain("repoUrl");
       expect(paths).toContain("repoToken");
+    }
+  });
+
+  it("rejects figma_paste payloads above the 6 MiB client-side cap", () => {
+    const parsed = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_paste",
+      figmaJsonPayload: "x".repeat(FIGMA_PASTE_MAX_BYTES + 1),
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      expect(parsed.error.issues[0]?.message).toMatch(/6 MiB or less/);
     }
   });
 });

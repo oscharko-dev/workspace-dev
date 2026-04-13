@@ -189,6 +189,36 @@ describe("useInspectorBootstrap — 400 SCHEMA_MISMATCH", () => {
   });
 });
 
+describe("useInspectorBootstrap — 400 TOO_LARGE", () => {
+  it("→ failed, not retryable", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 400,
+          ok: false,
+          payload: { error: "TOO_LARGE" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    result.current.submit({ figmaJsonPayload: '{"document":{}}' });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("TOO_LARGE");
+      expect(result.current.state.retryable).toBe(false);
+    }
+  });
+});
+
 describe("useInspectorBootstrap — 500 server error", () => {
   beforeEach(() => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
