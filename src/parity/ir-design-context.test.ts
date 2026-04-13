@@ -532,6 +532,85 @@ describe("transformDesignContextToDesignIr", () => {
     });
     assert.equal(result.metrics!.screenElementCounts[0]!.elements, 3);
   });
+
+  it("records budget truncation metrics for authoritative screens", () => {
+    const result = transformDesignContextToDesignIr({
+      authoritativeSubtrees: [
+        {
+          nodeId: "2:1",
+          document: {
+            id: "2:1",
+            name: "Budgeted Screen",
+            type: "FRAME",
+            layoutMode: "VERTICAL",
+            children: [
+              { id: "2:2", name: "A", type: "TEXT", characters: "Alpha" },
+              { id: "2:3", name: "B", type: "TEXT", characters: "Beta" },
+              { id: "2:4", name: "C", type: "TEXT", characters: "Gamma" },
+              { id: "2:5", name: "D", type: "TEXT", characters: "Delta" },
+            ],
+          },
+        },
+      ],
+      screenElementBudget: 2,
+    });
+
+    assert.equal(result.metrics!.screenElementCounts[0]!.elements, 4);
+    assert.equal(result.metrics!.truncatedScreens.length, 1);
+    assert.equal(result.metrics!.truncatedScreens[0]!.screenId, "2:1");
+    assert.equal(result.metrics!.truncatedScreens[0]!.budget, 2);
+    assert.equal(result.metrics!.truncatedScreens[0]!.retainedElements, 2);
+    assert.equal(result.screens[0]!.children.length, 2);
+  });
+
+  it("records depth truncation metrics for authoritative screens", () => {
+    const result = transformDesignContextToDesignIr({
+      authoritativeSubtrees: [
+        {
+          nodeId: "3:1",
+          document: {
+            id: "3:1",
+            name: "Deep Screen",
+            type: "FRAME",
+            layoutMode: "VERTICAL",
+            children: [
+              {
+                id: "3:2",
+                name: "Container",
+                type: "FRAME",
+                layoutMode: "VERTICAL",
+                children: [
+                  {
+                    id: "3:3",
+                    name: "Nested",
+                    type: "FRAME",
+                    layoutMode: "VERTICAL",
+                    children: [
+                      {
+                        id: "3:4",
+                        name: "Leaf",
+                        type: "TEXT",
+                        characters: "Too deep",
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+      screenElementBudget: 1,
+      screenElementMaxDepth: 0,
+    });
+
+    assert.equal(result.metrics!.depthTruncatedScreens.length, 1);
+    assert.equal(result.metrics!.depthTruncatedScreens[0]!.screenId, "3:1");
+    assert.equal(result.metrics!.depthTruncatedScreens[0]!.maxDepth, 0);
+    assert.equal(result.metrics!.depthTruncatedScreens[0]!.firstTruncatedDepth, 1);
+    assert.equal(result.metrics!.depthTruncatedScreens[0]!.truncatedBranchCount, 1);
+    assert.equal(result.screens[0]!.children[0]!.children, undefined);
+  });
 });
 
 // ---------------------------------------------------------------------------

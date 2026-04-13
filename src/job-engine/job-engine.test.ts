@@ -748,6 +748,174 @@ test("createJobEngine applies authoritative hybrid subtrees before IR derivation
   assert.equal(designIr.includes("Druckcenter"), true);
 });
 
+test("createJobEngine preserves uncovered screens and enriches authoritative overlay screens", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-hybrid-overlay-"),
+  );
+  const payload = {
+    name: "Hybrid Overlay Board",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "screen-a",
+              type: "FRAME",
+              name: "REST Screen",
+              absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
+              children: [
+                {
+                  id: "screen-a-title",
+                  type: "TEXT",
+                  name: "REST Title",
+                  characters: "Visible from REST",
+                },
+              ],
+            },
+            {
+              id: "screen-b",
+              type: "FRAME",
+              name: "Hybrid Screen",
+              absoluteBoundingBox: { x: 700, y: 0, width: 640, height: 480 },
+              children: [
+                {
+                  id: "action-button",
+                  type: "INSTANCE",
+                  name: "<Button>",
+                  absoluteBoundingBox: { x: 724, y: 32, width: 240, height: 72 },
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+      figmaMcpEnrichmentLoader: async () => ({
+        sourceMode: "hybrid",
+        toolNames: ["figma-mcp"],
+        nodeHints: [
+          {
+            nodeId: "action-button",
+            semanticName: "Primary CTA",
+            semanticType: "button",
+            sourceTools: ["figma-mcp"],
+          },
+        ],
+        assets: [
+          {
+            nodeId: "action-button",
+            source: "/figma/assets/button.svg",
+            kind: "svg",
+            purpose: "render",
+          },
+        ],
+        authoritativeSubtrees: [
+          {
+            nodeId: "screen-b",
+            document: {
+              id: "screen-b",
+              type: "FRAME",
+              name: "Hybrid Screen",
+              absoluteBoundingBox: { x: 700, y: 0, width: 640, height: 480 },
+              children: [
+                {
+                  id: "action-button",
+                  type: "INSTANCE",
+                  name: "<Button>",
+                  absoluteBoundingBox: { x: 724, y: 32, width: 240, height: 72 },
+                  children: [
+                    {
+                      id: "action-label",
+                      type: "TEXT",
+                      name: "Label",
+                      characters: "Hybrid CTA",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
+  });
+  assert.equal(status.status, "completed");
+
+  const designIr = JSON.parse(
+    await readFile(String(status.artifacts.designIrFile), "utf8"),
+  ) as {
+    screens: Array<{
+      id: string;
+      children: Array<{
+        id: string;
+        type: string;
+        semanticSource?: string;
+        text?: string;
+        asset?: { source?: string };
+        children?: Array<{ id: string; text?: string }>;
+      }>;
+    }>;
+    metrics?: {
+      mcpCoverage?: { sourceMode?: string };
+    };
+  };
+
+  assert.deepEqual(
+    designIr.screens.map((screen) => screen.id).sort(),
+    ["screen-a", "screen-b"],
+  );
+  assert.equal(designIr.metrics?.mcpCoverage?.sourceMode, "hybrid");
+
+  const overlayButton = designIr.screens
+    .flatMap((screen) => screen.children)
+    .find((child) => child.id === "action-button");
+  assert.equal(overlayButton?.type, "button");
+  assert.equal(overlayButton?.semanticSource, "node_hint");
+  assert.equal(overlayButton?.asset?.source, "/figma/assets/button.svg");
+
+  const restTitle = designIr.screens
+    .flatMap((screen) => screen.children)
+    .find((child) => child.id === "screen-a-title");
+  assert.equal(restTitle?.text, "Visible from REST");
+});
+
 test("createJobEngine fails low-fidelity rest jobs without authoritative recovery", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-low-fidelity-rest-"));
   const payload = createLowFidelityFigmaPayload();
