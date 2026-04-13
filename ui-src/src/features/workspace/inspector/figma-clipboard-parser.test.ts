@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it, vi } from "vitest";
 import {
   extractFigmaNodeId,
   isFigmaClipboard,
@@ -8,12 +9,9 @@ import {
 } from "./figma-clipboard-parser";
 import type { FigmaMeta } from "./figma-clipboard-parser";
 
-const repoRoot = process.cwd();
-const fixtureRoot = path.join(
-  repoRoot,
-  "integration",
-  "fixtures",
-  "figma-clipboard",
+const fixtureRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../../../../integration/fixtures/figma-clipboard",
 );
 
 function readFixture(name: string): string {
@@ -107,6 +105,12 @@ describe("isFigmaClipboard", () => {
       ),
     ).toBe(false);
   });
+
+  it("returns true for single-quoted metadata attributes", () => {
+    const html =
+      "<span data-metadata='<!--(figmeta)eyJmaWxlS2V5IjoiYWJjMTIzWFlaIiwicGFzdGVJRCI6NDIsImRhdGFUeXBlIjoic2NlbmUifQ==(/figmeta)-->'></span>";
+    expect(isFigmaClipboard(html)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -159,6 +163,43 @@ describe("parseFigmaClipboard — valid Figma HTML", () => {
     const result = parseFigmaClipboard(html);
     expect(result).not.toBeNull();
     expect(result!.hasBuffer).toBe(false);
+  });
+
+  it("parses single-quoted clipboard HTML when DOMParser is unavailable", () => {
+    vi.stubGlobal("DOMParser", undefined);
+
+    try {
+      const html = [
+        "<meta charset='utf-8'>",
+        "<div>",
+        "  <span data-metadata='<!--(figmeta)eyJmaWxlS2V5IjoiYWJjMTIzWFlaIiwicGFzdGVJRCI6NDIsImRhdGFUeXBlIjoic2NlbmUifQ==(/figmeta)-->'></span>",
+        "  <span data-buffer='<!--(figma)ZmlnLi4uL2J1ZmZlci4uLg==(/figma)-->'></span>",
+        "</div>",
+      ].join("\n");
+      const result = parseFigmaClipboard(html);
+      expect(result).not.toBeNull();
+      expect(result!.meta).toEqual(DEFAULT_META);
+      expect(result!.hasBuffer).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("parses encoded wrappers when DOMParser is unavailable", () => {
+    vi.stubGlobal("DOMParser", undefined);
+
+    try {
+      const html = [
+        "<span data-metadata=\"&lt;!--(figmeta)eyJmaWxlS2V5IjoiYWJjMTIzWFlaIiwicGFzdGVJRCI6NDIsImRhdGFUeXBlIjoic2NlbmUifQ==(/figmeta)--&gt;\"></span>",
+        "<span data-buffer=\"&lt;!--(figma)ZmlnLi4uL2J1ZmZlci4uLg==(/figma)--&gt;\"></span>",
+      ].join("\n");
+      const result = parseFigmaClipboard(html);
+      expect(result).not.toBeNull();
+      expect(result!.meta).toEqual(DEFAULT_META);
+      expect(result!.hasBuffer).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
 

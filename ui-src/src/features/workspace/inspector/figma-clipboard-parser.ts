@@ -112,9 +112,9 @@ function extractDataAttribute(html: string, attribute: string): string | null {
 
   // Regex fallback for environments without DOMParser (e.g. Node without jsdom).
   const escaped = attribute.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(`${escaped}="([^"]*)"`, "i");
+  const re = new RegExp(`${escaped}\\s*=\\s*(["'])([\\s\\S]*?)\\1`, "i");
   const match = html.match(re);
-  return match?.[1] ?? null;
+  return match?.[2] ?? null;
 }
 
 /**
