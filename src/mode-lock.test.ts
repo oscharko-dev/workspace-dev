@@ -33,6 +33,15 @@ test("mode-lock allows hybrid + deterministic", () => {
   assert.equal(result.errors.length, 0);
 });
 
+test("mode-lock allows figma_plugin + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "figma_plugin",
+    llmCodegenMode: "deterministic",
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
 test("mode-lock allows empty/undefined modes (defaults apply)", () => {
   const result = validateModeLock({});
   assert.equal(result.valid, true);
@@ -94,7 +103,7 @@ test("enforceModeLock includes full support guidance and bullet formatting", () 
       assert.match(error.message, /Mode-lock violation in workspace-dev:/);
       assert.match(
         error.message,
-        /Only 'rest', 'hybrid', 'local_json', and 'figma_paste' are supported/,
+        /Only 'rest', 'hybrid', 'local_json', 'figma_paste', and 'figma_plugin' are supported/,
       );
       assert.match(error.message, /Only 'deterministic' is supported/);
       assert.match(error.message, /\n  • /);
@@ -119,6 +128,12 @@ test("enforceModeLock does not throw for valid modes", () => {
   assert.doesNotThrow(() =>
     enforceModeLock({
       figmaSourceMode: "hybrid",
+      llmCodegenMode: "deterministic",
+    }),
+  );
+  assert.doesNotThrow(() =>
+    enforceModeLock({
+      figmaSourceMode: "figma_plugin",
       llmCodegenMode: "deterministic",
     }),
   );

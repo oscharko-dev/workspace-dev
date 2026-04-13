@@ -2827,3 +2827,283 @@ test("request handler does not advertise CORS preflight for the removed figma-im
     await close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #987 — figma_plugin source mode & ingress telemetry
+// ---------------------------------------------------------------------------
+
+test("request handler accepts a valid ClipboardEnvelope via figma_plugin and normalizes it", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "envelope-plugin-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify(envelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.jobId, "envelope-plugin-job");
+
+    // figma_plugin is converted to local_json (same as figma_paste)
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    assert.ok(
+      typeof capturedInput.figmaJsonPath === "string",
+      "Expected figmaJsonPath to be a string path",
+    );
+
+    // The written file should contain the normalized Figma document structure
+    const { readFile } = await import("node:fs/promises");
+    const writtenContent = await readFile(
+      capturedInput.figmaJsonPath as string,
+      "utf8",
+    );
+    const parsed = JSON.parse(writtenContent) as Record<string, unknown>;
+    assert.ok(
+      parsed.document !== undefined,
+      "Normalized file should have a document field",
+    );
+    const doc = parsed.document as Record<string, unknown>;
+    assert.equal(doc.type, "DOCUMENT");
+    assert.equal(doc.id, "0:0");
+    assert.ok(Array.isArray(doc.children), "Document should have children");
+    assert.equal((doc.children as unknown[]).length, 1);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler accepts raw Figma document JSON via figma_plugin", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "raw-plugin-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const rawFigmaDoc = {
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        name: "Doc",
+        children: [{ id: "1:1", type: "FRAME", name: "Frame1" }],
+      },
+      components: {},
+      componentSets: {},
+      styles: {},
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify(rawFigmaDoc),
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.jobId, "raw-plugin-job");
+
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    assert.ok(
+      typeof capturedInput.figmaJsonPath === "string",
+      "Expected figmaJsonPath to be a string path",
+    );
+
+    // Raw doc should pass through as-is (not an envelope)
+    const { readFile } = await import("node:fs/promises");
+    const writtenContent = await readFile(
+      capturedInput.figmaJsonPath as string,
+      "utf8",
+    );
+    const parsed = JSON.parse(writtenContent) as Record<string, unknown>;
+    assert.ok(parsed.document !== undefined);
+    const doc = parsed.document as Record<string, unknown>;
+    assert.equal(doc.type, "DOCUMENT");
+    assert.equal(doc.id, "0:0");
+    assert.equal(doc.name, "Doc");
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rejects invalid figma_plugin payload with SCHEMA_MISMATCH", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const badEnvelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify(badEnvelope),
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.ok(
+      body.error === "VALIDATION_ERROR" || body.error === "SCHEMA_MISMATCH",
+      `Expected VALIDATION_ERROR or SCHEMA_MISMATCH but got ${body.error}`,
+    );
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rejects oversized figma_plugin payload with TOO_LARGE", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const oversizedPayload = "x".repeat(6 * 1024 * 1024 + 1);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: oversizedPayload,
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    // Schema validation extracts TOO_LARGE prefix into a first-class error code
+    assert.equal(body.error, "TOO_LARGE");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler ingress metrics code path executes without errors for figma_paste submissions", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "metrics-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(envelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    // Confirms the ingress metrics computation (payloadBytes, nodeCount,
+    // normalizationMs, payloadSha256) executed without throwing.
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.jobId, "metrics-job");
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+  } finally {
+    await close();
+  }
+});

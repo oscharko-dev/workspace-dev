@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   lstat,
   mkdir,
@@ -2000,7 +2000,20 @@ export function createWorkspaceRequestHandler({
           }
         };
 
-        if (resolvedFigmaSourceMode === "figma_paste") {
+        let ingressMetrics:
+          | {
+              payloadBytes: number;
+              nodeCount: number;
+              normalizationMs: number;
+              payloadSha256: string;
+            }
+          | undefined;
+
+        if (
+          resolvedFigmaSourceMode === "figma_paste" ||
+          resolvedFigmaSourceMode === "figma_plugin"
+        ) {
+          const ingressStartMs = Date.now();
           // Schema has already asserted figmaJsonPayload is a non-empty string
           // when figmaSourceMode === "figma_paste". Crash fast if that contract
           // is ever relaxed without this branch being updated.
@@ -2045,6 +2058,10 @@ export function createWorkspaceRequestHandler({
             // JSON parse already validated in schema — fall through with raw payload.
           }
 
+          const payloadChecksum = createHash("sha256")
+            .update(normalizedPayload, "utf8")
+            .digest("hex");
+
           const pasteUUID = randomUUID();
           const pasteTempDir = path.join(absoluteOutputRoot, "tmp-figma-paste");
           const pasteTempPath = path.join(pasteTempDir, `${pasteUUID}.json`);
@@ -2066,6 +2083,12 @@ export function createWorkspaceRequestHandler({
             });
             return;
           }
+          ingressMetrics = {
+            payloadBytes: Buffer.byteLength(pastePayload, "utf8"),
+            nodeCount: countFigmaNodes(normalizedPayload),
+            normalizationMs: Date.now() - ingressStartMs,
+            payloadSha256: payloadChecksum,
+          };
           const { figmaJsonPayload: _discardPayload, ...restSubmitInput } =
             submitInput;
           void _discardPayload;
@@ -2124,7 +2147,7 @@ export function createWorkspaceRequestHandler({
           event: "workspace.submit.accepted",
           statusCode: 202,
           jobId: accepted.jobId,
-          message: `Submission accepted as job '${accepted.jobId}'.${submitInput.importIntent !== undefined ? ` importIntent=${submitInput.importIntent}` : ""}${submitInput.originalIntent !== undefined ? ` originalIntent=${submitInput.originalIntent}` : ""}${submitInput.intentCorrected ? " (user-corrected)" : ""}`,
+          message: `Submission accepted as job '${accepted.jobId}'.${submitInput.importIntent !== undefined ? ` importIntent=${submitInput.importIntent}` : ""}${submitInput.originalIntent !== undefined ? ` originalIntent=${submitInput.originalIntent}` : ""}${submitInput.intentCorrected ? " (user-corrected)" : ""}${ingressMetrics !== undefined ? ` ingressPayloadBytes=${ingressMetrics.payloadBytes} ingressNodeCount=${ingressMetrics.nodeCount} ingressNormalizationMs=${ingressMetrics.normalizationMs} ingressPayloadSha256=${ingressMetrics.payloadSha256}` : ""}`,
         });
         sendJson({
           response,
@@ -2218,6 +2241,26 @@ function scheduleFigmaPasteTempCleanup(args: {
     setTimeout(poll, FIGMA_PASTE_CLEANUP_POLL_MS).unref();
   };
   setTimeout(poll, FIGMA_PASTE_CLEANUP_POLL_MS).unref();
+}
+
+function countFigmaNodes(jsonString: string): number {
+  try {
+    const parsed = JSON.parse(jsonString) as unknown;
+    if (typeof parsed !== "object" || parsed === null) return 0;
+    let count = 0;
+    const walk = (node: unknown): void => {
+      if (typeof node !== "object" || node === null) return;
+      const rec = node as Record<string, unknown>;
+      if (typeof rec.type === "string") count++;
+      if (Array.isArray(rec.children)) {
+        for (const child of rec.children) walk(child);
+      }
+    };
+    walk(parsed);
+    return count;
+  } catch {
+    return 0;
+  }
 }
 
 async function collectSourceFiles(
