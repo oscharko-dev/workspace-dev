@@ -184,6 +184,12 @@ export interface FigmaMcpEnrichment {
   nodeHints: FigmaMcpNodeHint[];
   variables?: FigmaMcpVariableDefinition[];
   styleCatalog?: FigmaMcpStyleCatalogEntry[];
+  cssCustomProperties?: string;
+  tailwindExtension?: Record<string, Record<string, string>>;
+  libraryKeys?: string[];
+  modeAlternatives?: Record<string, Record<string, string | number | boolean>>;
+  conflicts?: TokenConflict[];
+  unmappedVariables?: string[];
   codeConnectMappings?: FigmaMcpCodeConnectMapping[];
   designSystemMappings?: FigmaMcpDesignSystemMapping[];
   metadataHints?: FigmaMcpMetadataHint[];

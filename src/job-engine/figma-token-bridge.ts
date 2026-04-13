@@ -396,6 +396,44 @@ const EMPTY_FIGMA_FILE: FigmaFile = {
 // CSS custom properties generation
 // ---------------------------------------------------------------------------
 
+const getPreferredModeOrder = (
+  variable: FigmaMcpVariableDefinition,
+): number => {
+  const mode = variable.modeName?.trim();
+  if (!mode) {
+    return -1;
+  }
+  const index = MODE_PREFERENCE_PATTERNS.findIndex((pattern) =>
+    pattern.test(mode),
+  );
+  return index === -1 ? MODE_PREFERENCE_PATTERNS.length : index;
+};
+
+const selectCanonicalVariablesForOutput = (
+  variables: readonly FigmaMcpVariableDefinition[],
+): FigmaMcpVariableDefinition[] => {
+  const canonicalVariables = new Map<string, FigmaMcpVariableDefinition>();
+
+  for (const variable of variables) {
+    const key = normalizeFigmaVariableName(variable.name);
+    if (key.length === 0) {
+      continue;
+    }
+
+    const existing = canonicalVariables.get(key);
+    if (!existing) {
+      canonicalVariables.set(key, variable);
+      continue;
+    }
+
+    if (getPreferredModeOrder(variable) < getPreferredModeOrder(existing)) {
+      canonicalVariables.set(key, variable);
+    }
+  }
+
+  return [...canonicalVariables.values()];
+};
+
 /**
  * Generates a CSS custom properties block from resolved variables.
  */
@@ -408,7 +446,7 @@ export const generateCssCustomProperties = (
 
   const lines: string[] = [];
 
-  for (const variable of variables) {
+  for (const variable of selectCanonicalVariablesForOutput(variables)) {
     const category = classifyVariable(variable);
     if (category === "unknown") {
       continue;
@@ -471,7 +509,7 @@ export const generateTailwindExtension = (
   const fontSize: Record<string, string> = {};
   const opacity: Record<string, string> = {};
 
-  for (const variable of variables) {
+  for (const variable of selectCanonicalVariablesForOutput(variables)) {
     const category = classifyVariable(variable);
     const key = normalizeFigmaVariableName(variable.name);
     if (key.length === 0 || category === "unknown") {
@@ -862,20 +900,9 @@ export const resolveFigmaTokens = async (
 
   const modeAlternatives = collectModeAlternatives({ variables: rawVariables });
 
-  const preferredModeOrder = (variable: FigmaMcpVariableDefinition): number => {
-    const mode = variable.modeName?.trim();
-    if (!mode) {
-      return -1;
-    }
-    const index = MODE_PREFERENCE_PATTERNS.findIndex((pattern) =>
-      pattern.test(mode),
-    );
-    return index === -1 ? MODE_PREFERENCE_PATTERNS.length : index;
-  };
-
   rawVariables = [...rawVariables].sort((left, right) => {
-    const leftModeOrder = preferredModeOrder(left);
-    const rightModeOrder = preferredModeOrder(right);
+    const leftModeOrder = getPreferredModeOrder(left);
+    const rightModeOrder = getPreferredModeOrder(right);
     if (leftModeOrder !== rightModeOrder) {
       return leftModeOrder - rightModeOrder;
     }
