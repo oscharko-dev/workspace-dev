@@ -5,7 +5,7 @@ in automated CI. Follow these steps to verify the export flow.
 
 ## Prerequisites
 
-- Figma Desktop (or `figma.com` with developer mode)
+- Figma Desktop or `figma.com`
 - A Figma file with at least one frame/component
 
 ## Steps
@@ -15,16 +15,23 @@ in automated CI. Follow these steps to verify the export flow.
 1. Open a Figma file.
 2. Go to **Plugins > Development > Import plugin from manifest**.
 3. Select `plugin/manifest.json` from this repository.
-4. The plugin UI should appear (320x200 window).
+4. Launch **WorkspaceDev Export** from the development plugins list.
+5. Verify the export UI appears.
+
+### 1a. Dev Mode availability
+
+1. Switch the same file into **Dev Mode**.
+2. Open the Dev Mode plugin list.
+3. Verify **WorkspaceDev Export** is available there as well.
 
 ### 2. Single-selection export
 
 1. Select **one** frame or component on the canvas.
 2. Click **Copy to Clipboard** in the plugin UI.
-3. Verify the status shows "Copied to clipboard!".
+3. Verify the status shows "Copied to clipboard. Paste into WorkspaceDev Inspector.".
 4. Open a text editor and paste — confirm the JSON contains:
    - `"kind": "workspace-dev/figma-selection@1"`
-   - `"pluginVersion": "0.1.0"`
+   - `"pluginVersion": "0.2.0"`
    - `"copiedAt"` with an ISO timestamp
    - `"selections"` array with exactly one entry
    - The entry has `document`, `components`, `componentSets`, `styles`

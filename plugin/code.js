@@ -1,9 +1,8 @@
 /**
- * WorkspaceDev Figma Plugin - clipboard + direct server import.
+ * WorkspaceDev Figma Plugin - clipboard-first export.
  *
  * Exports selected nodes as a versioned clipboard envelope that the
- * Inspector can accept without cross-origin communication, or sends
- * the envelope directly to a running WorkspaceDev server.
+ * Inspector can accept without any cross-origin localhost transport.
  *
  * @see https://github.com/oscharko-dev/WorkspaceDev/issues/985
  * @see https://github.com/oscharko-dev/WorkspaceDev/issues/997
@@ -34,21 +33,18 @@ const ALLOWED_NODE_TYPES = new Set([
   "SHAPE_WITH_TEXT",
 ]);
 
-figma.showUI(__html__, { width: 380, height: 320 });
+figma.showUI(__html__, { width: 380, height: 240 });
 
 figma.ui.onmessage = async (message) => {
   if (message.type === "export-selection") {
-    await exportSelection("clipboard");
-  }
-  if (message.type === "send-to-server") {
-    await exportSelection("server", message.serverUrl);
+    await exportSelection();
   }
   if (message.type === "close") {
     figma.closePlugin();
   }
 };
 
-async function exportSelection(target, serverUrl) {
+async function exportSelection() {
   const selection = [...figma.currentPage.selection].sort(
     compareNodesForExport,
   );
@@ -108,18 +104,10 @@ async function exportSelection(target, serverUrl) {
     selections,
   };
 
-  if (target === "server") {
-    figma.ui.postMessage({
-      type: "send-payload",
-      payload: JSON.stringify(envelope),
-      serverUrl,
-    });
-  } else {
-    figma.ui.postMessage({
-      type: "copy-to-clipboard",
-      payload: JSON.stringify(envelope),
-    });
-  }
+  figma.ui.postMessage({
+    type: "copy-to-clipboard",
+    payload: JSON.stringify(envelope),
+  });
 }
 
 function createSelectionUnit(node, exported) {
