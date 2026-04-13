@@ -125,6 +125,8 @@ Not available:
 `8 MiB` submit transport limit only on `POST /workspace/submit`. The
 `WORKSPACE_FIGMA_PASTE_MAX_BYTES` override is still bounded by the submit
 transport budget.
+This mode is also the offline/firewall handoff path: export JSON from Figma,
+then submit the JSON text as `figmaJsonPayload` (no multipart upload required).
 
 Optional Git/PR input:
 
@@ -354,6 +356,25 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
     "llmCodegenMode":"deterministic"
   }'
 ```
+
+Offline/firewall JSON upload mode (`figma_paste`, same endpoint):
+
+```bash
+curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
+  -H 'content-type: application/json' \
+  -d "$(jq -n --rawfile figma ./fixtures/figma-export.json '{
+    figmaSourceMode: \"figma_paste\",
+    figmaJsonPayload: $figma,
+    enableGitPr: false,
+    llmCodegenMode: \"deterministic\"
+  }')"
+```
+
+Inspector firewall flow:
+
+1. Export JSON from Figma on a machine with Figma access.
+2. Transfer the `.json` file into the firewall-protected WorkspaceDev environment.
+3. In Inspector, use **Upload JSON file** (or paste/drop) and continue with the normal confirm/import flow.
 
 Then poll:
 

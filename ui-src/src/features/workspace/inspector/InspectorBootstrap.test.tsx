@@ -128,7 +128,7 @@ describe("InspectorBootstrap — state-aware copy", () => {
     });
 
     expect(
-      screen.getByText(/unsupported file\. please drop a \.json file/i),
+      screen.getByText(/unsupported file\. please drop or upload a \.json file/i),
     ).toBeInTheDocument();
   });
 
@@ -138,7 +138,7 @@ describe("InspectorBootstrap — state-aware copy", () => {
     });
 
     expect(
-      screen.getByText(/please paste or drop a figma json export/i),
+      screen.getByText(/please paste, drop, or upload a figma json export/i),
     ).toBeInTheDocument();
   });
 

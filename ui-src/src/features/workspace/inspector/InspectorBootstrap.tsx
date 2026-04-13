@@ -8,7 +8,7 @@ import type { ImportIntent } from "./paste-input-classifier";
 export interface InspectorBootstrapProps {
   state: InspectorBootstrapState;
   onPaste: (text: string, clipboardHtml?: string) => void;
-  onDropFile?: (text: string) => void;
+  onDropFile?: (text: string, source: "drop" | "upload") => void;
   onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   onRetry: () => void;
   onConfirmIntent?: (intent: ImportIntent) => void;
@@ -44,11 +44,11 @@ function getColumnCopy(state: InspectorBootstrapState): ColumnCopy {
     case "idle":
     case "focused":
       return {
-        left: "Waiting for import — paste a Figma export in the middle column.",
+        left: "Waiting for import — paste, drop, or upload a Figma export in the middle column.",
         center:
-          "Waiting for import — paste a Figma export in the middle column.",
+          "Waiting for import — paste, drop, or upload a Figma export in the middle column.",
         right:
-          "Waiting for import — paste a Figma export in the middle column.",
+          "Waiting for import — paste, drop, or upload a Figma export in the middle column.",
       };
     case "detected":
       return {
@@ -123,7 +123,7 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
   }
   switch (state.reason) {
     case "EMPTY_INPUT":
-      return "Please paste or drop a Figma JSON export.";
+      return "Please paste, drop, or upload a Figma JSON export.";
     case "INVALID_PAYLOAD":
       return "That does not look like a Figma JSON export. Please paste a JSON_REST_V1 payload.";
     case "TOO_LARGE":
@@ -135,7 +135,7 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
     case "SECURE_CONTEXT_MISSING":
       return "Clipboard access requires a secure (https) context.";
     case "UNSUPPORTED_FILE":
-      return "Unsupported file. Please drop a .json file with the Figma export.";
+      return "Unsupported file. Please drop or upload a .json file with the Figma export.";
     case "UNSUPPORTED_PLUGIN_EXPORT":
       return "Plugin export JSON cannot be imported here yet. Paste a Figma JSON export or correct the detected type before starting the import.";
     case "UNSUPPORTED_TEXT_PASTE":
