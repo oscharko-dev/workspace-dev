@@ -245,6 +245,7 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
     figmaFileKey,
     figmaAccessToken,
     rawFile,
+    workspaceRoot,
     fetchImpl,
   }: FigmaMcpEnrichmentLoaderInput): Promise<FigmaMcpEnrichment> => {
     const authoritativeSubtrees = await fetchAuthoritativeFigmaSubtrees({
@@ -401,6 +402,7 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
           ...(enrichment.libraryKeys && enrichment.libraryKeys.length > 0
             ? { libraryKeys: enrichment.libraryKeys }
             : {}),
+          ...(workspaceRoot ? { workspaceRoot } : {}),
         };
 
         const mapperResult = await resolveComponentMappings(mapperConfig);

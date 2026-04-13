@@ -994,7 +994,8 @@ export const resolveComponentMappings = async (
     for (const mapping of ccMappings) {
       codeConnectMappings.push(mapping);
       mappedNodeIds.add(mapping.nodeId);
-      resultMappings.set(mapping.nodeId, {
+      const mapKey = normalizeComponentName(mapping.componentName);
+      resultMappings.set(mapKey, {
         name: mapping.componentName,
         source: mapping.source,
         confidence: "exact",
@@ -1142,7 +1143,10 @@ export const resolveComponentMappings = async (
             workspaceComponents,
           });
           if (heuristicMatch) {
-            resultMappings.set(entry.irNodeId, heuristicMatch);
+            resultMappings.set(
+              normalizeComponentName(entry.figmaName),
+              heuristicMatch,
+            );
             heuristicCount++;
           } else {
             remainingUnmapped.push(entry);

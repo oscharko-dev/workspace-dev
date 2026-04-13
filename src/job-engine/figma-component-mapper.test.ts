@@ -856,7 +856,7 @@ test("resolveComponentMappings orchestrates all MCP calls", async () => {
   assert.equal(result.stats.exact, 1);
   assert.equal(result.stats.designSystem, 1);
   assert.equal(result.stats.suggested, 1);
-  assert.equal(result.mappings.get("1:2")?.confidence, "exact");
+  assert.equal(result.mappings.get("button")?.confidence, "exact");
 });
 
 test("resolveComponentMappings handles all MCP failures gracefully", async () => {
