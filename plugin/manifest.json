@@ -4,10 +4,7 @@
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",
-  "editorType": ["figma"],
-  "capabilities": [],
-  "permissions": ["clipboard-write"],
-  "networkAccess": {
-    "allowedDomains": ["localhost", "127.0.0.1"]
-  }
+  "editorType": ["figma", "dev"],
+  "capabilities": ["inspect"],
+  "permissions": ["clipboard-write"]
 }
