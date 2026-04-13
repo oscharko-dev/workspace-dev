@@ -1456,6 +1456,9 @@ export const createJobEngine = ({
     if (input.importIntent !== undefined) {
       request.importIntent = input.importIntent;
     }
+    if (input.originalIntent !== undefined) {
+      request.originalIntent = input.originalIntent;
+    }
     if (input.intentCorrected !== undefined) {
       request.intentCorrected = input.intentCorrected;
     }

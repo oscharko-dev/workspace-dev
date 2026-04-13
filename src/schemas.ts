@@ -853,6 +853,7 @@ function parseSubmitRequest(
     "formHandlingMode",
     "visualAudit",
     "importIntent",
+    "originalIntent",
     "intentCorrected",
   ]);
 
@@ -984,6 +985,12 @@ function parseSubmitRequest(
     required: false,
     issues,
   });
+  const rawOriginalIntent = parseStringField({
+    input,
+    key: "originalIntent" as keyof WorkspaceJobInput,
+    required: false,
+    issues,
+  });
   const brandTheme = (() => {
     if (rawBrandTheme === undefined) {
       return undefined;
@@ -1031,6 +1038,26 @@ function parseSubmitRequest(
       issues,
       ["importIntent"],
       "importIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, RAW_CODE_OR_TEXT, UNKNOWN",
+    );
+    return undefined;
+  })();
+  const originalIntent = (() => {
+    if (rawOriginalIntent === undefined) {
+      return undefined;
+    }
+    const normalized = rawOriginalIntent.trim().toUpperCase();
+    if (
+      normalized === "FIGMA_JSON_NODE_BATCH" ||
+      normalized === "FIGMA_JSON_DOC" ||
+      normalized === "RAW_CODE_OR_TEXT" ||
+      normalized === "UNKNOWN"
+    ) {
+      return normalized as WorkspaceImportIntent;
+    }
+    pushIssue(
+      issues,
+      ["originalIntent"],
+      "originalIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, RAW_CODE_OR_TEXT, UNKNOWN",
     );
     return undefined;
   })();
@@ -1278,6 +1305,9 @@ function parseSubmitRequest(
   }
   if (importIntent !== undefined) {
     data.importIntent = importIntent;
+  }
+  if (originalIntent !== undefined) {
+    data.originalIntent = originalIntent;
   }
   if (intentCorrected !== undefined) {
     data.intentCorrected = intentCorrected;

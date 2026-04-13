@@ -9,7 +9,6 @@ import {
 } from "./inspector-bootstrap-state";
 import { isJobPayload, isRecord } from "../workspace-page.helpers";
 import {
-  classifyPasteInput,
   classifyPasteIntent,
   isSecureContextAvailable,
   type ImportIntent,
@@ -103,15 +102,22 @@ export function useInspectorBootstrap(
     {
       figmaJsonPayload: string;
       importIntent?: ImportIntent;
+      originalIntent?: ImportIntent;
       intentCorrected?: boolean;
     }
   >({
-    mutationFn: async ({ figmaJsonPayload, importIntent, intentCorrected }) => {
+    mutationFn: async ({
+      figmaJsonPayload,
+      importIntent,
+      originalIntent,
+      intentCorrected,
+    }) => {
       const payload = toInspectorBootstrapPayload(
         importIntent !== undefined
           ? {
               figmaJsonPayload,
               importIntent,
+              ...(originalIntent !== undefined ? { originalIntent } : {}),
               ...(intentCorrected !== undefined ? { intentCorrected } : {}),
             }
           : { figmaJsonPayload },
@@ -262,23 +268,20 @@ export function useInspectorBootstrap(
       return;
     }
 
-    const classification = classifyPasteInput(text);
-    if (classification.kind === "unknown") {
-      if (classification.reason === "malformed_json") {
-        dispatch({ type: "paste_started" });
-        submitMutation.mutate({ figmaJsonPayload: text });
-        return;
-      }
-      const reason =
-        classification.reason === "empty" ? "EMPTY_INPUT" : "INVALID_PAYLOAD";
-      dispatch({ type: "submit_failed", reason, retryable: true });
-      return;
-    }
-
     const intentClassification = classifyPasteIntent(
       text,
       options?.clipboardHtml,
     );
+
+    if (intentClassification.intent === "UNKNOWN") {
+      dispatch({
+        type: "submit_failed",
+        reason: "EMPTY_INPUT",
+        retryable: true,
+      });
+      return;
+    }
+
     dispatch({
       type: "intent_detected",
       intent: intentClassification.intent,
@@ -299,6 +302,7 @@ export function useInspectorBootstrap(
     submitMutation.mutate({
       figmaJsonPayload: rawText,
       importIntent: intent,
+      originalIntent: state.intent,
       intentCorrected: corrected,
     });
   }

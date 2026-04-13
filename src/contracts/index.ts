@@ -269,6 +269,7 @@ export interface WorkspaceJobInput {
   generationLocale?: string;
   formHandlingMode?: WorkspaceFormHandlingMode;
   importIntent?: WorkspaceImportIntent;
+  originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
 }
 
@@ -300,6 +301,7 @@ export interface WorkspaceJobRequestMetadata {
   generationLocale: string;
   formHandlingMode: WorkspaceFormHandlingMode;
   importIntent?: WorkspaceImportIntent;
+  originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
 }
 

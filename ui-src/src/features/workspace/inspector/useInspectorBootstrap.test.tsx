@@ -527,7 +527,7 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
     expect(fetchJsonMock).not.toHaveBeenCalled();
   });
 
-  it("non-JSON text short-circuits to INVALID_PAYLOAD without calling fetchJson", async () => {
+  it("non-JSON text dispatches intent_detected with RAW_CODE_OR_TEXT without calling fetchJson", async () => {
     const { result } = renderHook(() => useInspectorBootstrap(), {
       wrapper: makeWrapper(),
     });
@@ -537,24 +537,16 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state.kind).toBe("failed");
+      expect(result.current.state.kind).toBe("detected");
     });
 
-    if (result.current.state.kind === "failed") {
-      expect(result.current.state.reason).toBe("INVALID_PAYLOAD");
-      expect(result.current.state.retryable).toBe(true);
+    if (result.current.state.kind === "detected") {
+      expect(result.current.state.intent).toBe("RAW_CODE_OR_TEXT");
     }
     expect(fetchJsonMock).not.toHaveBeenCalled();
   });
 
-  it("malformed JSON still submits so the server can return SCHEMA_MISMATCH", async () => {
-    fetchJsonMock.mockResolvedValue(
-      createJsonResponse({
-        status: 400,
-        payload: { error: "SCHEMA_MISMATCH" },
-      }) as never,
-    );
-
+  it("malformed JSON dispatches intent_detected with RAW_CODE_OR_TEXT without calling fetchJson", async () => {
     const { result } = renderHook(() => useInspectorBootstrap(), {
       wrapper: makeWrapper(),
     });
@@ -564,16 +556,13 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
     });
 
     await waitFor(() => {
-      expect(result.current.state.kind).toBe("failed");
+      expect(result.current.state.kind).toBe("detected");
     });
 
-    if (result.current.state.kind === "failed") {
-      expect(result.current.state.reason).toBe("SCHEMA_MISMATCH");
-      expect(result.current.state.retryable).toBe(false);
+    if (result.current.state.kind === "detected") {
+      expect(result.current.state.intent).toBe("RAW_CODE_OR_TEXT");
     }
-    expect(fetchJsonMock).toHaveBeenCalledWith(
-      expect.objectContaining({ url: "/workspace/submit" }),
-    );
+    expect(fetchJsonMock).not.toHaveBeenCalled();
   });
 
   it("valid JSON dispatches intent_detected then calls fetchJson after confirmIntent", async () => {

@@ -117,6 +117,7 @@ export interface InspectorBootstrapPayload {
   llmCodegenMode: "deterministic";
   enableGitPr: false;
   importIntent?: ImportIntent;
+  originalIntent?: ImportIntent;
   intentCorrected?: boolean;
 }
 
@@ -202,10 +203,12 @@ export function toWorkspaceSubmitPayload({
 export function toInspectorBootstrapPayload({
   figmaJsonPayload,
   importIntent,
+  originalIntent,
   intentCorrected,
 }: {
   figmaJsonPayload: string;
   importIntent?: ImportIntent;
+  originalIntent?: ImportIntent;
   intentCorrected?: boolean;
 }): InspectorBootstrapPayload {
   return {
@@ -214,6 +217,7 @@ export function toInspectorBootstrapPayload({
     llmCodegenMode: "deterministic",
     enableGitPr: false,
     ...(importIntent !== undefined ? { importIntent } : {}),
+    ...(originalIntent !== undefined ? { originalIntent } : {}),
     ...(intentCorrected !== undefined ? { intentCorrected } : {}),
   };
 }

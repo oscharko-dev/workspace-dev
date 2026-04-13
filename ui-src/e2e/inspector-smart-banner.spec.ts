@@ -61,17 +61,16 @@ const PLUGIN_EXPORT_JSON = JSON.stringify({
 
 /**
  * A plain JSON object that has no Figma-specific keys — not a document, not a
- * plugin export, not a node.  classifyPasteInput → "direct_json" (catches all
- * valid JSON objects that do not match the plugin pattern).
+ * plugin export, not a node.
  * classifyPasteIntent → RAW_CODE_OR_TEXT (confidence 0.7 → 70%).
- *
- * NOTE: The task brief mentions pasting "hello world" to trigger "Code / Text".
- * However plain text (non-JSON) is rejected client-side with INVALID_PAYLOAD
- * before it ever reaches intent classification, so the SmartBanner never
- * appears for it.  A valid JSON object that carries no Figma signals is the
- * correct input for triggering the RAW_CODE_OR_TEXT path.
  */
 const PLAIN_JSON_PAYLOAD = JSON.stringify({ greeting: "hello world" });
+
+/**
+ * Plain text (non-JSON) — classifyPasteIntent → RAW_CODE_OR_TEXT
+ * (confidence 1.0 → 100%).
+ */
+const PLAIN_TEXT_PAYLOAD = "hello world — this is plain text, not JSON";
 
 const TEST_JOB_ID = "smart-banner-test-job-id";
 
@@ -262,29 +261,36 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
   });
 
   // -------------------------------------------------------------------------
-  // TC-3: Plain JSON with no Figma signals → banner shows "Code / Text"
-  //
-  // A plain JSON object (e.g. {"greeting": "hello world"}) has no Figma keys
-  // so classifyPasteIntent returns RAW_CODE_OR_TEXT.  Plain non-JSON text
-  // ("hello world") bypasses intent detection entirely and triggers an
-  // INVALID_PAYLOAD error, so it never reaches the SmartBanner.
+  // TC-3a: Plain JSON with no Figma signals → banner shows "Code / Text"
   // -------------------------------------------------------------------------
   test('pasting JSON with no Figma signals shows the SmartBanner with label "Code / Text"', async ({
     page,
   }) => {
-    // Arrange
     await gotoInspector(page);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
-    // Act — paste a JSON payload carrying no Figma-specific structure
     await simulatePaste(page, PLAIN_JSON_PAYLOAD);
 
-    // Assert — SmartBanner is visible with "Code / Text" label
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
     await expect(banner).toContainText("Code / Text");
+    await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
+  });
 
-    // Assert — bootstrap shell remains visible
+  // -------------------------------------------------------------------------
+  // TC-3b: Plain text (non-JSON) → banner shows "Code / Text"
+  // -------------------------------------------------------------------------
+  test('pasting plain non-JSON text shows the SmartBanner with label "Code / Text"', async ({
+    page,
+  }) => {
+    await gotoInspector(page);
+    await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
+
+    await simulatePaste(page, PLAIN_TEXT_PAYLOAD);
+
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+    await expect(banner).toContainText("Code / Text");
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
   });
 
@@ -312,11 +318,9 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     await expect(dropdown).toBeVisible();
     await dropdown.selectOption("FIGMA_JSON_NODE_BATCH");
 
-    // Assert — the label span in the banner now shows "Figma-Node JSON"
-    await expect(banner).toContainText("Figma-Node JSON");
-
-    // Assert — the old label is gone
-    await expect(banner).not.toContainText("Figma-Dokument JSON");
+    // Assert — the display label span (not the dropdown options) shows the new label
+    const displayLabel = banner.locator("span.font-semibold");
+    await expect(displayLabel).toHaveText("Figma-Node JSON");
   });
 
   // -------------------------------------------------------------------------
