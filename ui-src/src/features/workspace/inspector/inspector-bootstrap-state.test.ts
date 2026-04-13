@@ -135,6 +135,16 @@ describe("pasting state", () => {
 describe("queued state", () => {
   const queued: InspectorBootstrapState = { kind: "queued", jobId: "job-1" };
 
+  it("poll_failed → failed retryable", () => {
+    expect(
+      dispatch(queued, {
+        type: "poll_failed",
+        reason: "POLL_FAILED",
+        retryable: true,
+      }),
+    ).toEqual({ kind: "failed", reason: "POLL_FAILED", retryable: true });
+  });
+
   it("poll_updated(running) → processing", () => {
     expect(
       dispatch(queued, {
@@ -214,6 +224,16 @@ describe("processing state", () => {
     kind: "processing",
     jobId: "job-2",
   };
+
+  it("poll_failed → failed retryable", () => {
+    expect(
+      dispatch(processing, {
+        type: "poll_failed",
+        reason: "POLL_FAILED",
+        retryable: true,
+      }),
+    ).toEqual({ kind: "failed", reason: "POLL_FAILED", retryable: true });
+  });
 
   it("poll_updated(completed) with previewUrl → ready", () => {
     expect(
@@ -329,10 +349,15 @@ describe("failed state", () => {
     retryable: false,
   };
 
-  it("all events except reset are no-ops", () => {
+  it("paste_started clears the failed state and restarts the flow", () => {
+    expect(dispatch(failed, { type: "paste_started" })).toEqual({
+      kind: "pasting",
+    });
+  });
+
+  it("other events except reset are no-ops", () => {
     expect(dispatch(failed, { type: "focus" })).toBe(failed);
     expect(dispatch(failed, { type: "blur" })).toBe(failed);
-    expect(dispatch(failed, { type: "paste_started" })).toBe(failed);
     expect(dispatch(failed, { type: "submit_accepted", jobId: "j1" })).toBe(
       failed,
     );
@@ -345,6 +370,13 @@ describe("failed state", () => {
     ).toBe(failed);
     expect(
       dispatch(failed, { type: "poll_updated", status: "queued", jobId: "j1" }),
+    ).toBe(failed);
+    expect(
+      dispatch(failed, {
+        type: "poll_failed",
+        reason: "POLL_FAILED",
+        retryable: true,
+      }),
     ).toBe(failed);
   });
 });

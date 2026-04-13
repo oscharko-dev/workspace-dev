@@ -104,7 +104,7 @@ describe("useInspectorBootstrap — happy path", () => {
 });
 
 describe("useInspectorBootstrap — 400 SCHEMA_MISMATCH", () => {
-  beforeEach(() => {
+  it("→ failed, not retryable", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {
         return createJsonResponse({
@@ -115,9 +115,7 @@ describe("useInspectorBootstrap — 400 SCHEMA_MISMATCH", () => {
       }
       throw new Error(`Unexpected url: ${url}`);
     });
-  });
 
-  it("→ failed, not retryable", async () => {
     const { result } = renderHook(() => useInspectorBootstrap(), {
       wrapper: makeWrapper(),
     });
@@ -132,6 +130,62 @@ describe("useInspectorBootstrap — 400 SCHEMA_MISMATCH", () => {
       expect(result.current.state.reason).toBe("SCHEMA_MISMATCH");
       expect(result.current.state.retryable).toBe(false);
     }
+  });
+
+  it("allows a corrected paste to recover without an explicit retry", async () => {
+    let submitCount = 0;
+
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        submitCount += 1;
+        if (submitCount === 1) {
+          return createJsonResponse({
+            status: 400,
+            ok: false,
+            payload: { error: "SCHEMA_MISMATCH" },
+          }) as never;
+        }
+
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-recovered" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-recovered") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-recovered",
+            status: "completed",
+            preview: { url: "http://localhost/recovered-preview" },
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      {
+        wrapper: makeWrapper(),
+      },
+    );
+
+    result.current.submit({ figmaJsonPayload: '{"bad":"data"}' });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    result.current.submit({ figmaJsonPayload: '{"document":{}}' });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("ready");
+    });
+
+    expect(result.current.jobId).toBe("job-recovered");
+    expect(result.current.previewUrl).toBe("http://localhost/recovered-preview");
   });
 });
 
@@ -220,5 +274,118 @@ describe("useInspectorBootstrap — reset", () => {
     expect(result.current.state.kind).toBe("idle");
     result.current.reset();
     expect(result.current.state.kind).toBe("idle");
+  });
+});
+
+describe("useInspectorBootstrap — polling failures", () => {
+  it("surfaces non-OK polling responses as retryable failures", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-poll-error" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-poll-error") {
+        return createJsonResponse({
+          status: 500,
+          ok: false,
+          payload: { error: "INTERNAL_SERVER_ERROR" },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      {
+        wrapper: makeWrapper(),
+      },
+    );
+
+    result.current.submit({ figmaJsonPayload: '{"document":{}}' });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("INTERNAL_SERVER_ERROR");
+      expect(result.current.state.retryable).toBe(true);
+    }
+  });
+
+  it("surfaces rejected polling requests as retryable failures", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-poll-throws" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-poll-throws") {
+        throw new Error("network down");
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      {
+        wrapper: makeWrapper(),
+      },
+    );
+
+    result.current.submit({ figmaJsonPayload: '{"document":{}}' });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("POLL_FAILED");
+      expect(result.current.state.retryable).toBe(true);
+    }
+  });
+
+  it("surfaces malformed polling payloads as retryable failures", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-poll-malformed" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-poll-malformed") {
+        return createJsonResponse({
+          payload: { unexpected: true },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      {
+        wrapper: makeWrapper(),
+      },
+    );
+
+    result.current.submit({ figmaJsonPayload: '{"document":{}}' });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("POLL_FAILED");
+      expect(result.current.state.retryable).toBe(true);
+    }
   });
 });

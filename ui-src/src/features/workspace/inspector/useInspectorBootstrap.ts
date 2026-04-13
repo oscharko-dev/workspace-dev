@@ -61,6 +61,12 @@ function toFailureReason(payload: Record<string, unknown>): string {
   return "SUBMIT_FAILED";
 }
 
+function toPollingFailureReason(payload: Record<string, unknown>): string {
+  return typeof payload.error === "string" && payload.error.length > 0
+    ? payload.error
+    : "POLL_FAILED";
+}
+
 export function useInspectorBootstrap(
   options?: UseInspectorBootstrapOptions,
 ): UseInspectorBootstrapResult {
@@ -156,7 +162,21 @@ export function useInspectorBootstrap(
     if (!response || response === lastDispatchedDataRef.current) {
       return;
     }
-    if (!response.ok || !isJobPayload(response.payload)) {
+    if (!response.ok) {
+      lastDispatchedDataRef.current = response;
+      const reason = isRecord(response.payload)
+        ? toPollingFailureReason(response.payload)
+        : "POLL_FAILED";
+      dispatch({ type: "poll_failed", reason, retryable: true });
+      return;
+    }
+    if (!isJobPayload(response.payload)) {
+      lastDispatchedDataRef.current = response;
+      dispatch({
+        type: "poll_failed",
+        reason: "POLL_FAILED",
+        retryable: true,
+      });
       return;
     }
 
@@ -187,6 +207,18 @@ export function useInspectorBootstrap(
       );
     }
   }, [jobQuery.data]);
+
+  useEffect(() => {
+    if (!jobQuery.isError) {
+      return;
+    }
+
+    dispatch({
+      type: "poll_failed",
+      reason: "POLL_FAILED",
+      retryable: true,
+    });
+  }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
 
   return {
     state,

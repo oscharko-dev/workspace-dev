@@ -1966,6 +1966,18 @@ export function createWorkspaceRequestHandler({
           llmCodegenMode: defaults.llmCodegenMode,
         };
         let pasteTempPathToCleanup: string | undefined;
+        const cleanupPendingPasteTempFile = async (): Promise<void> => {
+          if (pasteTempPathToCleanup === undefined) {
+            return;
+          }
+          const filePath = pasteTempPathToCleanup;
+          pasteTempPathToCleanup = undefined;
+          try {
+            await unlink(filePath);
+          } catch {
+            /* best-effort cleanup; ignore ENOENT and other filesystem errors */
+          }
+        };
 
         if (resolvedFigmaSourceMode === "figma_paste") {
           // Schema has already asserted figmaJsonPayload is a non-empty string
@@ -2018,6 +2030,7 @@ export function createWorkspaceRequestHandler({
         try {
           accepted = jobEngine.submitJob(submitInput);
         } catch (error) {
+          await cleanupPendingPasteTempFile();
           if (
             error instanceof Error &&
             "code" in error &&

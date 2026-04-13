@@ -13,6 +13,7 @@ export type InspectorBootstrapEvent =
   | { type: "paste_started" }
   | { type: "submit_accepted"; jobId: string }
   | { type: "submit_failed"; reason: string; retryable: boolean }
+  | { type: "poll_failed"; reason: string; retryable: boolean }
   | {
       type: "poll_updated";
       status: "queued" | "running" | "completed" | "failed" | "canceled";
@@ -69,6 +70,13 @@ export function bootstrapReducer(
     }
 
     case "queued": {
+      if (event.type === "poll_failed") {
+        return {
+          kind: "failed",
+          reason: event.reason,
+          retryable: event.retryable,
+        };
+      }
       if (event.type === "poll_updated") {
         if (event.status === "running") {
           return { kind: "processing", jobId: event.jobId };
@@ -95,6 +103,13 @@ export function bootstrapReducer(
     }
 
     case "processing": {
+      if (event.type === "poll_failed") {
+        return {
+          kind: "failed",
+          reason: event.reason,
+          retryable: event.retryable,
+        };
+      }
       if (event.type === "poll_updated") {
         if (event.status === "completed") {
           if (!event.previewUrl) {
@@ -118,7 +133,11 @@ export function bootstrapReducer(
     }
 
     case "ready":
+      return state;
     case "failed": {
+      if (event.type === "paste_started") {
+        return { kind: "pasting" };
+      }
       return state;
     }
 
