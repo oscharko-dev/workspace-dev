@@ -56,6 +56,22 @@ Default runtime URL: `http://127.0.0.1:1983/workspace`
 - UI: `http://127.0.0.1:1983/workspace/ui`
 - Deep link by file key: `http://127.0.0.1:1983/workspace/<figmaFileKey>`
 
+## Repository layout
+
+The published package is intentionally small; this repository is broader because
+it contains the verification surface needed to keep generation deterministic and
+release-ready.
+
+- `src/` - runtime, CLI, contracts, deterministic generator, and backend tests
+- `ui-src/` - inspector/workspace UI source and UI tests
+- `template/` - generated app template that is shipped in the npm package
+- `integration/` - release-gate and end-to-end verification fixtures
+- `docs/` - deeper implementation and operations references
+- `plugin/` - Figma plugin source for clipboard export flows
+
+If you only need the consumable product surface, `package.json.files` defines
+the authoritative publish boundary.
+
 ## Frontend stack
 
 The workspace UI is implemented as a Vite + React + TypeScript + Tailwind app:
