@@ -25,12 +25,17 @@ interface CacheEntry {
 }
 
 const resolverCache = new Map<string, CacheEntry>();
+const inflightResolverCache = new Map<string, Promise<FigmaDesignContext>>();
 
-const getCacheKey = (fileKey: string, nodeId: string): string =>
-  `${fileKey}:${nodeId}`;
+const getCacheKey = (
+  fileKey: string,
+  nodeId: string,
+  version?: string,
+): string => `${fileKey}:${nodeId}:${version?.trim() || "current"}`;
 
 export const clearResolverCache = (): void => {
   resolverCache.clear();
+  inflightResolverCache.clear();
 };
 
 // ---------------------------------------------------------------------------
@@ -40,6 +45,9 @@ export const clearResolverCache = (): void => {
 export interface FigmaMeta {
   fileKey: string;
   nodeId?: string;
+  pasteID?: number;
+  dataType?: string;
+  version?: string;
 }
 
 export interface FigmaDesignContext {
@@ -94,18 +102,56 @@ const toRetryDelay = ({ attempt }: { attempt: number }): number => {
   return base + jitter;
 };
 
-const waitFor = async (delayMs: number): Promise<void> => {
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, delayMs);
+const waitFor = async (
+  delayMs: number,
+  signal?: AbortSignal,
+): Promise<void> => {
+  if (!signal) {
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, delayMs);
+    });
+    return;
+  }
+
+  if (signal.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
+
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, delayMs);
+
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new DOMException("The operation was aborted.", "AbortError"));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
   });
+};
+
+const isAbortError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  if ("name" in error && error.name === "AbortError") {
+    return true;
+  }
+  const message = error.message.toLowerCase();
+  return message.includes("aborted");
 };
 
 const isTimeoutError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
     return false;
   }
-  const message = error.message.toLowerCase();
-  return message.includes("aborted") || message.includes("timeout");
+  if ("name" in error && error.name === "TimeoutError") {
+    return true;
+  }
+  return error.message.toLowerCase().includes("timeout");
 };
 
 const buildSignal = (
@@ -254,11 +300,13 @@ const classifyCatchError = ({
   error,
   toolName,
   timeoutMs,
+  signal,
   limits,
 }: {
   error: unknown;
   toolName: string;
   timeoutMs: number;
+  signal?: AbortSignal;
   limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
 }): { wrapped: Error; retryable: boolean } => {
   if (isPipelineError(error)) {
@@ -266,6 +314,18 @@ const classifyCatchError = ({
     return {
       wrapped: error as Error,
       retryable: isRetryablePipelineCode(code),
+    };
+  }
+  if (signal?.aborted || isAbortError(error)) {
+    return {
+      wrapped: createPipelineError({
+        code: "E_MCP_ABORTED",
+        stage: STAGE,
+        message: `MCP ${toolName} aborted`,
+        cause: error,
+        ...limits,
+      }),
+      retryable: false,
     };
   }
   if (isTimeoutError(error)) {
@@ -368,14 +428,14 @@ const callMcpTool = async ({
             : response.status === 403
               ? " Check your Figma access permissions."
               : "";
+        if (response.status === 429) {
+          diagnostics?.push({
+            code: "W_MCP_RATE_LIMITED",
+            message: `MCP ${toolName} rate limited (attempt ${String(attempt)}/${String(maxRetries)})`,
+            severity: "warning",
+          });
+        }
         if (isRetryableStatus(response.status) && attempt < maxRetries) {
-          if (response.status === 429) {
-            diagnostics?.push({
-              code: "W_MCP_RATE_LIMITED",
-              message: `MCP ${toolName} rate limited (attempt ${String(attempt)}/${String(maxRetries)})`,
-              severity: "warning",
-            });
-          }
           onLog?.(
             `MCP ${toolName} returned ${String(response.status)}, retrying`,
           );
@@ -385,7 +445,7 @@ const callMcpTool = async ({
             message: `MCP ${toolName} returned HTTP ${String(response.status)}${actionHint}`,
             ...limits,
           });
-          await waitFor(toRetryDelay({ attempt }));
+          await waitFor(toRetryDelay({ attempt }), signal);
           continue;
         }
         throw createPipelineError({
@@ -402,13 +462,14 @@ const callMcpTool = async ({
         error,
         toolName,
         timeoutMs,
+        ...(signal ? { signal } : {}),
         limits,
       });
       lastError = classified.wrapped;
       if (!classified.retryable || attempt >= maxRetries) {
         throw classified.wrapped;
       }
-      await waitFor(toRetryDelay({ attempt }));
+      await waitFor(toRetryDelay({ attempt }), signal);
     }
   }
 
@@ -640,28 +701,83 @@ const classifyRestStatus = (status: number): string => {
   return "E_FIGMA_REST_ERROR";
 };
 
+const buildRestNodesUrl = ({
+  fileKey,
+  nodeId,
+  version,
+  maxDepth,
+}: {
+  fileKey: string;
+  nodeId: string;
+  version?: string;
+  maxDepth?: number;
+}): string => {
+  const params = new URLSearchParams({
+    ids: nodeId,
+  });
+  if (version?.trim()) {
+    params.set("version", version.trim());
+  }
+  if (
+    typeof maxDepth === "number" &&
+    Number.isFinite(maxDepth) &&
+    maxDepth > 0
+  ) {
+    params.set("depth", String(Math.trunc(maxDepth)));
+  }
+  return `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?${params.toString()}`;
+};
+
+const buildRestImageUrl = ({
+  fileKey,
+  nodeId,
+  version,
+}: {
+  fileKey: string;
+  nodeId: string;
+  version?: string;
+}): string => {
+  const params = new URLSearchParams({
+    ids: nodeId,
+    format: "png",
+  });
+  if (version?.trim()) {
+    params.set("version", version.trim());
+  }
+  return `https://api.figma.com/v1/images/${encodeURIComponent(fileKey)}?${params.toString()}`;
+};
+
 const fetchDesignContextViaRest = async ({
   fileKey,
   nodeId,
+  version,
   accessToken,
   fetchImpl,
   timeoutMs,
+  maxDepth,
   limits,
   onLog,
   ...rest
 }: {
   fileKey: string;
   nodeId: string;
+  version?: string;
   accessToken: string;
   fetchImpl: typeof fetch;
   timeoutMs: number;
+  maxDepth?: number;
   signal?: AbortSignal;
   limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
   onLog?: (message: string) => void;
 }): Promise<DesignContextResult> => {
   onLog?.("Falling back to Figma REST API");
 
-  const url = `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${encodeURIComponent(nodeId)}`;
+  const url = buildRestNodesUrl({
+    fileKey,
+    nodeId,
+    ...(version ? { version } : {}),
+    ...(maxDepth !== undefined ? { maxDepth } : {}),
+  });
   const combinedSignal = buildSignal(timeoutMs, rest.signal);
 
   let response: Response;
@@ -707,6 +823,76 @@ const fetchDesignContextViaRest = async ({
   };
 };
 
+const fetchScreenshotViaRest = async ({
+  fileKey,
+  nodeId,
+  version,
+  accessToken,
+  fetchImpl,
+  timeoutMs,
+  signal,
+  limits,
+  onLog,
+}: {
+  fileKey: string;
+  nodeId: string;
+  version?: string;
+  accessToken: string;
+  fetchImpl: typeof fetch;
+  timeoutMs: number;
+  signal?: AbortSignal;
+  limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
+  onLog?: (message: string) => void;
+}): Promise<string | undefined> => {
+  onLog?.("Falling back to Figma REST image export for screenshot");
+
+  let response: Response;
+  try {
+    response = await fetchImpl(
+      buildRestImageUrl({
+        fileKey,
+        nodeId,
+        ...(version ? { version } : {}),
+      }),
+      {
+        method: "GET",
+        headers: {
+          "X-Figma-Token": accessToken,
+          Accept: "application/json",
+        },
+        signal: buildSignal(timeoutMs, signal),
+      },
+    );
+  } catch (error: unknown) {
+    throw createPipelineError({
+      code: isTimeoutError(error)
+        ? "E_FIGMA_REST_TIMEOUT"
+        : "E_FIGMA_REST_NETWORK",
+      stage: STAGE,
+      message: `Figma REST screenshot fallback request failed: ${getErrorMessage(error)}`,
+      cause: error,
+      ...limits,
+    });
+  }
+
+  if (!response.ok) {
+    throw createPipelineError({
+      code: classifyRestStatus(response.status),
+      stage: STAGE,
+      message: `Figma REST screenshot fallback failed with HTTP ${String(response.status)}`,
+      ...limits,
+    });
+  }
+
+  const payload = (await response.json()) as {
+    images?: Record<string, string | null>;
+  };
+  const imageUrl = payload.images?.[nodeId];
+  return typeof imageUrl === "string" && imageUrl.length > 0
+    ? imageUrl
+    : undefined;
+};
+
 // ---------------------------------------------------------------------------
 // resolveFigmaDesignContext — main entry point
 // ---------------------------------------------------------------------------
@@ -717,133 +903,190 @@ export const resolveFigmaDesignContext = async (
   options?: ResolverOptions,
 ): Promise<FigmaDesignContext> => {
   const signal = options?.signal;
-  const diagnostics: McpResolverDiagnostic[] = [];
-
-  config.onLog?.(`Resolving design context for fileKey=${meta.fileKey}`);
-
   const resolvedNodeId = await resolveNodeId(meta, config, signal);
+  const cacheKey = getCacheKey(
+    meta.fileKey,
+    resolvedNodeId,
+    meta.version,
+  );
 
-  // Check cache (unless forceRefresh)
-  if (!options?.forceRefresh) {
-    const cacheKey = getCacheKey(meta.fileKey, resolvedNodeId);
-    const cached = resolverCache.get(cacheKey);
-    if (cached && cached.expiresAt > Date.now()) {
-      config.onLog?.("Cache hit — returning cached design context");
-      return cached.context;
+  const executeResolution = async (): Promise<FigmaDesignContext> => {
+    const diagnostics: McpResolverDiagnostic[] = [];
+
+    config.onLog?.(`Resolving design context for fileKey=${meta.fileKey}`);
+
+    if (!options?.forceRefresh) {
+      const cached = resolverCache.get(cacheKey);
+      if (cached && cached.expiresAt > Date.now()) {
+        config.onLog?.("Cache hit — returning cached design context");
+        return cached.context;
+      }
     }
-  }
 
-  config.onLog?.(`Fetching metadata for node ${resolvedNodeId}`);
+    config.onLog?.(`Fetching metadata for node ${resolvedNodeId}`);
 
-  let xml = "";
-  let nodeCount = 0;
-  let rootNodeType = "unknown";
-  let rootNodeName = "unnamed";
+    let xml = "";
+    let nodeCount = 0;
+    let rootNodeType = "unknown";
+    let rootNodeName = "unnamed";
 
-  try {
-    const metaResult = await callMcpTool({
-      toolName: "get_metadata",
-      args: { fileKey: meta.fileKey, nodeId: resolvedNodeId },
-      config,
-      ...(signal ? { signal } : {}),
-      diagnostics,
-    });
-
-    const metadataResult = metaResult as MetadataResult | null | undefined;
-    if (metadataResult?.xml) {
-      xml = metadataResult.xml;
-      nodeCount = estimateNodeCount(xml);
-      const rootInfo = extractRootNodeInfo(xml);
-      rootNodeType = rootInfo.rootNodeType;
-      rootNodeName = rootInfo.rootNodeName;
-      config.onLog?.(
-        `Metadata: ${String(nodeCount)} nodes, root=${rootNodeType}/${rootNodeName}`,
-      );
-    }
-  } catch (error: unknown) {
-    config.onLog?.(
-      `Metadata fetch failed, proceeding with single design context call: ${getErrorMessage(error)}`,
-    );
-  }
-
-  let designContext: DesignContextResult;
-
-  try {
-    designContext = await fetchDesignContextAdaptive(
-      meta.fileKey,
-      resolvedNodeId,
-      xml,
-      nodeCount,
-      config,
-      signal,
-      diagnostics,
-    );
-  } catch (mcpError: unknown) {
-    config.onLog?.(
-      `MCP design context failed: ${getErrorMessage(mcpError)}, attempting REST fallback`,
-    );
-    diagnostics.push({
-      code: "W_MCP_FALLBACK_REST",
-      message: `MCP failed, fell back to Figma REST API: ${getErrorMessage(mcpError)}`,
-      severity: "warning",
-    });
-    designContext = await fetchDesignContextViaRest({
-      fileKey: meta.fileKey,
-      nodeId: resolvedNodeId,
-      accessToken: config.accessToken,
-      fetchImpl: config.fetchImpl,
-      timeoutMs: config.timeoutMs,
-      ...(signal ? { signal } : {}),
-      limits: limitsArg(config.pipelineDiagnosticLimits),
-      ...(config.onLog ? { onLog: config.onLog } : {}),
-    });
-  }
-
-  let screenshotUrl: string | undefined;
-
-  if (!options?.skipScreenshot) {
     try {
-      config.onLog?.("Fetching screenshot");
-      const screenshotResult = await callMcpTool({
-        toolName: "get_screenshot",
+      const metaResult = await callMcpTool({
+        toolName: "get_metadata",
         args: { fileKey: meta.fileKey, nodeId: resolvedNodeId },
         config,
         ...(signal ? { signal } : {}),
         diagnostics,
       });
-      const screenshotData = screenshotResult as
-        | ScreenshotResult
-        | null
-        | undefined;
-      screenshotUrl = screenshotData?.url ?? undefined;
+
+      const metadataResult = metaResult as MetadataResult | null | undefined;
+      if (metadataResult?.xml) {
+        xml = metadataResult.xml;
+        nodeCount = estimateNodeCount(xml);
+        const rootInfo = extractRootNodeInfo(xml);
+        rootNodeType = rootInfo.rootNodeType;
+        rootNodeName = rootInfo.rootNodeName;
+        config.onLog?.(
+          `Metadata: ${String(nodeCount)} nodes, root=${rootNodeType}/${rootNodeName}`,
+        );
+      }
     } catch (error: unknown) {
       config.onLog?.(
-        `Screenshot fetch failed (non-fatal): ${getErrorMessage(error)}`,
+        `Metadata fetch failed, proceeding with single design context call: ${getErrorMessage(error)}`,
       );
+    }
+
+    let designContext: DesignContextResult;
+    let restFallbackUsed = false;
+
+    try {
+      designContext = await fetchDesignContextAdaptive(
+        meta.fileKey,
+        resolvedNodeId,
+        xml,
+        nodeCount,
+        config,
+        signal,
+        diagnostics,
+      );
+    } catch (mcpError: unknown) {
+      config.onLog?.(
+        `MCP design context failed: ${getErrorMessage(mcpError)}, attempting REST fallback`,
+      );
+      diagnostics.push({
+        code: "W_MCP_FALLBACK_REST",
+        message: `MCP failed, fell back to Figma REST API: ${getErrorMessage(mcpError)}`,
+        severity: "warning",
+      });
+      restFallbackUsed = true;
+      designContext = await fetchDesignContextViaRest({
+        fileKey: meta.fileKey,
+        nodeId: resolvedNodeId,
+        ...(meta.version ? { version: meta.version } : {}),
+        accessToken: config.accessToken,
+        fetchImpl: config.fetchImpl,
+        timeoutMs: config.timeoutMs,
+        ...(options?.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
+        ...(signal ? { signal } : {}),
+        limits: limitsArg(config.pipelineDiagnosticLimits),
+        ...(config.onLog ? { onLog: config.onLog } : {}),
+      });
+    }
+
+    let screenshotUrl: string | undefined;
+
+    if (!options?.skipScreenshot) {
+      try {
+        config.onLog?.("Fetching screenshot");
+        const screenshotResult = await callMcpTool({
+          toolName: "get_screenshot",
+          args: { fileKey: meta.fileKey, nodeId: resolvedNodeId },
+          config,
+          ...(signal ? { signal } : {}),
+          diagnostics,
+        });
+        const screenshotData = screenshotResult as
+          | ScreenshotResult
+          | null
+          | undefined;
+        screenshotUrl = screenshotData?.url ?? undefined;
+      } catch (error: unknown) {
+        config.onLog?.(
+          `Screenshot fetch failed (non-fatal): ${getErrorMessage(error)}`,
+        );
+      }
+
+      if (!screenshotUrl && restFallbackUsed) {
+        try {
+          screenshotUrl = await fetchScreenshotViaRest({
+            fileKey: meta.fileKey,
+            nodeId: resolvedNodeId,
+            ...(meta.version ? { version: meta.version } : {}),
+            accessToken: config.accessToken,
+            fetchImpl: config.fetchImpl,
+            timeoutMs: config.timeoutMs,
+            ...(signal ? { signal } : {}),
+            limits: limitsArg(config.pipelineDiagnosticLimits),
+            ...(config.onLog ? { onLog: config.onLog } : {}),
+          });
+          if (screenshotUrl) {
+            diagnostics.push({
+              code: "W_MCP_SCREENSHOT_FALLBACK_REST",
+              message:
+                "MCP screenshot was unavailable, fell back to Figma REST image export.",
+              severity: "warning",
+            });
+          }
+        } catch (error: unknown) {
+          config.onLog?.(
+            `REST screenshot fallback failed (non-fatal): ${getErrorMessage(error)}`,
+          );
+        }
+      }
+    }
+
+    const result: FigmaDesignContext = {
+      code: designContext.code ?? "",
+      assets: designContext.assets ?? {},
+      ...(screenshotUrl ? { screenshot: screenshotUrl } : {}),
+      ...(xml.length > 0
+        ? { metadata: { xml, nodeCount, rootNodeType, rootNodeName } }
+        : {}),
+      fileKey: meta.fileKey,
+      nodeId: resolvedNodeId,
+      resolvedAt: new Date().toISOString(),
+      ...(diagnostics.length > 0 ? { diagnostics } : {}),
+    };
+
+    resolverCache.set(cacheKey, {
+      context: result,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    });
+
+    return result;
+  };
+
+  if (!options?.forceRefresh) {
+    const cached = resolverCache.get(cacheKey);
+    if (cached && cached.expiresAt > Date.now()) {
+      config.onLog?.("Cache hit — returning cached design context");
+      return cached.context;
+    }
+    if (!signal) {
+      const inflight = inflightResolverCache.get(cacheKey);
+      if (inflight) {
+        config.onLog?.("In-flight cache hit — awaiting existing resolution");
+        return inflight;
+      }
+      const pending = executeResolution().finally(() => {
+        inflightResolverCache.delete(cacheKey);
+      });
+      inflightResolverCache.set(cacheKey, pending);
+      return pending;
     }
   }
 
-  const result: FigmaDesignContext = {
-    code: designContext.code ?? "",
-    assets: designContext.assets ?? {},
-    ...(screenshotUrl ? { screenshot: screenshotUrl } : {}),
-    ...(xml.length > 0
-      ? { metadata: { xml, nodeCount, rootNodeType, rootNodeName } }
-      : {}),
-    fileKey: meta.fileKey,
-    nodeId: resolvedNodeId,
-    resolvedAt: new Date().toISOString(),
-    ...(diagnostics.length > 0 ? { diagnostics } : {}),
-  };
-
-  // Store in cache
-  const cacheKey = getCacheKey(meta.fileKey, resolvedNodeId);
-  resolverCache.set(cacheKey, {
-    context: result,
-    expiresAt: Date.now() + CACHE_TTL_MS,
-  });
-
-  return result;
+  return executeResolution();
 };
 
 // ---------------------------------------------------------------------------

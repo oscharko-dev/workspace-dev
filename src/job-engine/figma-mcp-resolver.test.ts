@@ -319,6 +319,85 @@ test("clearResolverCache causes subsequent call to hit fetchImpl again", async (
   );
 });
 
+test("cache key includes version — different versions do not reuse cached context", async () => {
+  clearResolverCache();
+
+  let fetchCount = 0;
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    fetchCount += 1;
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml: SMALL_XML }));
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// versioned code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/versioned-shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const config = createConfig(fetchImpl);
+
+  await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2", version: "v1" },
+    config,
+  );
+  const afterFirst = fetchCount;
+
+  await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2", version: "v2" },
+    config,
+  );
+
+  assert.ok(
+    fetchCount > afterFirst,
+    "Expected a second network fetch for a different version cache key",
+  );
+});
+
+test("in-flight dedupe shares a single resolver request for identical cache keys", async () => {
+  clearResolverCache();
+
+  let fetchCount = 0;
+  let releaseMetadata: (() => void) | undefined;
+  const metadataGate = new Promise<void>((resolve) => {
+    releaseMetadata = resolve;
+  });
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    fetchCount += 1;
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      await metadataGate;
+      return jsonResponse(mcpOk({ xml: SMALL_XML }));
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// deduped", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/deduped-shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const config = createConfig(fetchImpl);
+  const first = resolveFigmaDesignContext({ fileKey: "abc", nodeId: "1:2" }, config);
+  const second = resolveFigmaDesignContext({ fileKey: "abc", nodeId: "1:2" }, config);
+
+  releaseMetadata?.();
+
+  const [firstResult, secondResult] = await Promise.all([first, second]);
+  assert.equal(fetchCount, 3);
+  assert.equal(firstResult.resolvedAt, secondResult.resolvedAt);
+});
+
 // ---------------------------------------------------------------------------
 // Rate Limiting
 // ---------------------------------------------------------------------------
@@ -395,8 +474,50 @@ test("429 exhausted for MCP — falls back to REST — diagnostics contain W_MCP
   assert.ok(result.code.length >= 0);
   const diagnostics = result.diagnostics ?? [];
   assert.ok(
+    diagnostics.some((d) => d.code === "W_MCP_RATE_LIMITED"),
+    `Expected W_MCP_RATE_LIMITED, got: ${JSON.stringify(diagnostics.map((d) => d.code))}`,
+  );
+  assert.ok(
     diagnostics.some((d) => d.code === "W_MCP_FALLBACK_REST"),
     `Expected W_MCP_FALLBACK_REST, got: ${JSON.stringify(diagnostics.map((d) => d.code))}`,
+  );
+});
+
+test("REST screenshot fallback provides preview when MCP falls back to REST", async () => {
+  clearResolverCache();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com") {
+      if (url.includes("/images/")) {
+        return jsonResponse({
+          images: { "1:2": "https://cdn.figma.com/rest-shot.png" },
+        });
+      }
+      return jsonResponse(
+        mcpRestNodes("1:2", { type: "FRAME", name: "Fallback" }),
+      );
+    }
+
+    return new Response("rate limited", { status: 429 });
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    { ...createConfig(fetchImpl), maxRetries: 1 },
+  );
+
+  assert.equal(result.screenshot, "https://cdn.figma.com/rest-shot.png");
+  assert.ok(
+    (result.diagnostics ?? []).some(
+      (entry) => entry.code === "W_MCP_SCREENSHOT_FALLBACK_REST",
+    ),
   );
 });
 
