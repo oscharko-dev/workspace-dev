@@ -11,6 +11,10 @@ import {
 } from "./figma-token-bridge.js";
 import type { FigmaMcpEnrichmentLoaderInput } from "./types.js";
 
+const TOKEN_BRIDGE_VARIABLES_SKIPPED_CODE = "W_TOKEN_BRIDGE_VARIABLES_SKIPPED";
+const TOKEN_BRIDGE_DESIGN_SYSTEM_SKIPPED_CODE =
+  "W_TOKEN_BRIDGE_DESIGN_SYSTEM_SKIPPED";
+
 type RawFigmaNode = {
   id?: unknown;
   type?: unknown;
@@ -165,6 +169,20 @@ const buildEnrichmentFromDesignContext = ({
   };
 };
 
+const mergeToolNames = ({
+  existing,
+  incoming,
+}: {
+  existing: string[];
+  incoming: string[];
+}): string[] => {
+  const merged = new Set(existing);
+  for (const toolName of incoming) {
+    merged.add(toolName);
+  }
+  return [...merged];
+};
+
 export const createDefaultFigmaMcpEnrichmentLoader = ({
   timeoutMs,
   maxRetries,
@@ -271,16 +289,35 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
         if (bridgeResult.styleCatalog.length > 0) {
           enrichment.styleCatalog = bridgeResult.styleCatalog;
         }
+        enrichment.cssCustomProperties = bridgeResult.cssCustomProperties;
+        enrichment.libraryKeys = bridgeResult.libraryKeys;
+        enrichment.modeAlternatives = bridgeResult.modeAlternatives;
+        enrichment.conflicts = bridgeResult.conflicts;
+        enrichment.unmappedVariables = bridgeResult.unmappedVariables;
+        if (bridgeResult.tailwindExtension) {
+          enrichment.tailwindExtension = bridgeResult.tailwindExtension;
+        }
 
         const bridgeToolNames: string[] = [];
-        if (bridgeResult.variables.length > 0) {
+        if (
+          !bridgeResult.diagnostics.some(
+            (entry) => entry.code === TOKEN_BRIDGE_VARIABLES_SKIPPED_CODE,
+          )
+        ) {
           bridgeToolNames.push("get_variable_defs");
         }
-        if (bridgeResult.styleCatalog.length > 0) {
+        if (
+          !bridgeResult.diagnostics.some(
+            (entry) => entry.code === TOKEN_BRIDGE_DESIGN_SYSTEM_SKIPPED_CODE,
+          )
+        ) {
           bridgeToolNames.push("search_design_system");
         }
         if (bridgeToolNames.length > 0) {
-          enrichment.toolNames = [...enrichment.toolNames, ...bridgeToolNames];
+          enrichment.toolNames = mergeToolNames({
+            existing: enrichment.toolNames,
+            incoming: bridgeToolNames,
+          });
         }
 
         if (bridgeResult.diagnostics.length > 0) {

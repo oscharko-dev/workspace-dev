@@ -9,6 +9,40 @@ const jsonResponse = (body: unknown, init?: ResponseInit): Response =>
     ...init,
   });
 
+const demoRawFile = {
+  name: "Demo File",
+  lastModified: "2026-04-13T10:00:00.000Z",
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    name: "Root",
+    children: [
+      {
+        id: "1:1",
+        type: "CANVAS",
+        name: "Page 1",
+        children: [
+          {
+            id: "2:1",
+            type: "FRAME",
+            name: "Checkout",
+            children: [],
+          },
+        ],
+      },
+    ],
+  },
+};
+
+const createLoaderInput = (fetchImpl: typeof fetch) => ({
+  figmaFileKey: "demo-file",
+  figmaAccessToken: "test-token",
+  cleanedFile: demoRawFile,
+  rawFile: demoRawFile,
+  jobDir: "/tmp/workspace-dev-job",
+  fetchImpl,
+});
+
 test("default hybrid loader resolves MCP context into enrichment coverage", async () => {
   const toolCalls: Array<{ tool: string; nodeId?: string }> = [];
 
@@ -79,60 +113,7 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
     maxScreenCandidates: 5,
   });
 
-  const enrichment = await loader({
-    figmaFileKey: "demo-file",
-    figmaAccessToken: "test-token",
-    cleanedFile: {
-      name: "Demo File",
-      lastModified: "2026-04-13T10:00:00.000Z",
-      document: {
-        id: "0:0",
-        type: "DOCUMENT",
-        name: "Root",
-        children: [
-          {
-            id: "1:1",
-            type: "CANVAS",
-            name: "Page 1",
-            children: [
-              {
-                id: "2:1",
-                type: "FRAME",
-                name: "Checkout",
-                children: [],
-              },
-            ],
-          },
-        ],
-      },
-    },
-    rawFile: {
-      name: "Demo File",
-      lastModified: "2026-04-13T10:00:00.000Z",
-      document: {
-        id: "0:0",
-        type: "DOCUMENT",
-        name: "Root",
-        children: [
-          {
-            id: "1:1",
-            type: "CANVAS",
-            name: "Page 1",
-            children: [
-              {
-                id: "2:1",
-                type: "FRAME",
-                name: "Checkout",
-                children: [],
-              },
-            ],
-          },
-        ],
-      },
-    },
-    jobDir: "/tmp/workspace-dev-job",
-    fetchImpl,
-  });
+  const enrichment = await loader(createLoaderInput(fetchImpl));
 
   assert.deepEqual(
     toolCalls.map((entry) => entry.tool),
@@ -165,6 +146,260 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
   assert.equal(
     enrichment.screenshots?.[0]?.url,
     "https://cdn.figma.com/screenshots/checkout.png",
+  );
+  assert.ok(
+    enrichment.cssCustomProperties?.includes("--color-primary: #3B82F6;"),
+  );
+  assert.deepEqual(enrichment.libraryKeys, []);
+  assert.deepEqual(enrichment.modeAlternatives, {});
+  assert.deepEqual(enrichment.conflicts, []);
+  assert.deepEqual(enrichment.unmappedVariables, []);
+});
+
+test("default hybrid loader propagates safe bridge side outputs", async () => {
+  const loader = createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 5,
+  });
+
+  const enrichment = await loader(
+    createLoaderInput(async (input, init) => {
+      const request = new Request(input, init);
+      const url = new URL(request.url);
+
+      if (url.hostname !== "mcp.figma.com") {
+        throw new Error(`Unexpected request: ${request.url}`);
+      }
+
+      const body = (await request.json()) as {
+        params?: { name?: string; arguments?: { nodeId?: string } };
+      };
+      const toolName = body.params?.name;
+
+      if (toolName === "get_metadata") {
+        return jsonResponse({
+          result: {
+            xml: '<FRAME id="2:1" name="Checkout"><TEXT id="2:2" name="Headline"/></FRAME>',
+          },
+        });
+      }
+      if (toolName === "get_design_context") {
+        return jsonResponse({
+          result: {
+            code: "export default function Checkout() {}",
+            assets: {},
+          },
+        });
+      }
+      if (toolName === "get_screenshot") {
+        return jsonResponse({
+          result: { url: "https://cdn.figma.com/screenshots/checkout.png" },
+        });
+      }
+      if (toolName === "get_variable_defs") {
+        return jsonResponse({
+          result: {
+            variables: [
+              {
+                name: "color/primary",
+                resolvedValue: "#3B82F6",
+                type: "COLOR",
+                collection: "Colors",
+                mode: "Light",
+              },
+              {
+                name: "color/primary",
+                resolvedValue: "#111827",
+                type: "COLOR",
+                collection: "Colors",
+                mode: "Dark",
+              },
+              {
+                name: "feature/darkMode",
+                resolvedValue: true,
+                type: "BOOLEAN",
+              },
+            ],
+          },
+        });
+      }
+      if (toolName === "search_design_system") {
+        return jsonResponse({
+          result: {
+            components: [{ libraryKey: "lib-1" }],
+            styles: [],
+            variables: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected tool: ${String(toolName)}`);
+    }),
+  );
+
+  assert.ok(
+    enrichment.cssCustomProperties?.includes("--color-primary: #3B82F6;"),
+  );
+  assert.deepEqual(enrichment.libraryKeys, ["lib-1"]);
+  assert.deepEqual(enrichment.modeAlternatives, {
+    "color-primary": {
+      Dark: "#111827",
+      Light: "#3B82F6",
+    },
+  });
+  assert.ok(enrichment.tailwindExtension);
+  assert.equal(enrichment.tailwindExtension?.colors?.["color-primary"], "#3B82F6");
+  assert.deepEqual(enrichment.conflicts, []);
+  assert.deepEqual(enrichment.unmappedVariables, ["feature/darkMode"]);
+});
+
+test("default hybrid loader records successful bridge tools even when results are empty", async () => {
+  const loader = createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 5,
+  });
+
+  const enrichment = await loader(
+    createLoaderInput(async (input, init) => {
+      const request = new Request(input, init);
+      const url = new URL(request.url);
+
+      if (url.hostname !== "mcp.figma.com") {
+        throw new Error(`Unexpected request: ${request.url}`);
+      }
+
+      const body = (await request.json()) as {
+        params?: { name?: string; arguments?: { nodeId?: string } };
+      };
+      const toolName = body.params?.name;
+
+      if (toolName === "get_metadata") {
+        return jsonResponse({
+          result: {
+            xml: '<FRAME id="2:1" name="Checkout"><TEXT id="2:2" name="Headline"/></FRAME>',
+          },
+        });
+      }
+      if (toolName === "get_design_context") {
+        return jsonResponse({
+          result: {
+            code: "export default function Checkout() {}",
+            assets: {},
+          },
+        });
+      }
+      if (toolName === "get_screenshot") {
+        return jsonResponse({
+          result: { url: "https://cdn.figma.com/screenshots/checkout.png" },
+        });
+      }
+      if (toolName === "get_variable_defs") {
+        return jsonResponse({
+          result: {
+            variables: [],
+          },
+        });
+      }
+      if (toolName === "search_design_system") {
+        return jsonResponse({
+          result: {
+            components: [],
+            styles: [],
+            variables: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected tool: ${String(toolName)}`);
+    }),
+  );
+
+  assert.deepEqual(enrichment.toolNames, [
+    "get_design_context",
+    "get_metadata",
+    "get_screenshot",
+    "get_variable_defs",
+    "search_design_system",
+  ]);
+  assert.equal(enrichment.variables, undefined);
+  assert.equal(enrichment.styleCatalog, undefined);
+  assert.equal(enrichment.cssCustomProperties, "");
+  assert.deepEqual(enrichment.libraryKeys, []);
+  assert.deepEqual(enrichment.modeAlternatives, {});
+  assert.deepEqual(enrichment.conflicts, []);
+  assert.deepEqual(enrichment.unmappedVariables, []);
+});
+
+test("default hybrid loader only marks bridge tools successful when the respective call succeeds", async () => {
+  const loader = createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 5,
+  });
+
+  const enrichment = await loader(
+    createLoaderInput(async (input, init) => {
+      const request = new Request(input, init);
+      const url = new URL(request.url);
+
+      if (url.hostname !== "mcp.figma.com") {
+        throw new Error(`Unexpected request: ${request.url}`);
+      }
+
+      const body = (await request.json()) as {
+        params?: { name?: string; arguments?: { nodeId?: string } };
+      };
+      const toolName = body.params?.name;
+
+      if (toolName === "get_metadata") {
+        return jsonResponse({
+          result: {
+            xml: '<FRAME id="2:1" name="Checkout"><TEXT id="2:2" name="Headline"/></FRAME>',
+          },
+        });
+      }
+      if (toolName === "get_design_context") {
+        return jsonResponse({
+          result: {
+            code: "export default function Checkout() {}",
+            assets: {},
+          },
+        });
+      }
+      if (toolName === "get_screenshot") {
+        return jsonResponse({
+          result: { url: "https://cdn.figma.com/screenshots/checkout.png" },
+        });
+      }
+      if (toolName === "get_variable_defs") {
+        throw new Error("variables unavailable");
+      }
+      if (toolName === "search_design_system") {
+        return jsonResponse({
+          result: {
+            components: [],
+            styles: [],
+            variables: [],
+          },
+        });
+      }
+
+      throw new Error(`Unexpected tool: ${String(toolName)}`);
+    }),
+  );
+
+  assert.deepEqual(enrichment.toolNames, [
+    "get_design_context",
+    "get_metadata",
+    "get_screenshot",
+    "search_design_system",
+  ]);
+  assert.ok(
+    enrichment.diagnostics?.some(
+      (entry) => entry.code === "W_TOKEN_BRIDGE_VARIABLES_SKIPPED",
+    ),
   );
 });
 

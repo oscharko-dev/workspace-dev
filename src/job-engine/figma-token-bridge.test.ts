@@ -380,6 +380,65 @@ test("generateCssCustomProperties — numeric typography values use px units", (
   assert.ok(css.includes("--font-size-lg: 18px;"));
 });
 
+test("generateCssCustomProperties — emits only the preferred mode per normalized token name", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    {
+      name: "color/primary",
+      kind: "color",
+      value: "#60A5FA",
+      modeName: "Dark",
+    },
+    {
+      name: "color/primary",
+      kind: "color",
+      value: "#3B82F6",
+      modeName: "Light",
+    },
+    {
+      name: "spacing/base",
+      kind: "number",
+      value: 12,
+      collectionName: "Spacing",
+      modeName: "Compact",
+    },
+    {
+      name: "spacing/base",
+      kind: "number",
+      value: 8,
+      collectionName: "Spacing",
+      modeName: "Default",
+    },
+  ];
+
+  const css = generateCssCustomProperties(vars);
+
+  assert.ok(css.includes("--color-primary: #3B82F6;"));
+  assert.ok(!css.includes("--color-primary: #60A5FA;"));
+  assert.ok(css.includes("--spacing-base: 8px;"));
+  assert.ok(!css.includes("--spacing-base: 12px;"));
+});
+
+test("generateCssCustomProperties — prefers an exportable token over a non-exportable preferred mode", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    {
+      name: "token/state",
+      kind: "boolean",
+      value: true,
+      modeName: "Default",
+    },
+    {
+      name: "token/state",
+      kind: "color",
+      value: "#3B82F6",
+      modeName: "Light",
+    },
+  ];
+
+  const css = generateCssCustomProperties(vars);
+
+  assert.ok(css.includes("--token-state: #3B82F6;"));
+});
+
 // ---------------------------------------------------------------------------
 // generateTailwindExtension
 // ---------------------------------------------------------------------------
@@ -420,6 +479,65 @@ test("generateTailwindExtension — typography FLOAT values as fontSize", () => 
   const ext = generateTailwindExtension(vars);
   assert.ok(ext);
   assert.deepEqual(ext.fontSize, { "font-size-lg": "18px" });
+});
+
+test("generateTailwindExtension — keeps only the preferred mode per normalized token name", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    {
+      name: "color/primary",
+      kind: "color",
+      value: "#60A5FA",
+      modeName: "Dark",
+    },
+    {
+      name: "color/primary",
+      kind: "color",
+      value: "#3B82F6",
+      modeName: "Light",
+    },
+    {
+      name: "spacing/base",
+      kind: "number",
+      value: 12,
+      collectionName: "Spacing",
+      modeName: "Compact",
+    },
+    {
+      name: "spacing/base",
+      kind: "number",
+      value: 8,
+      collectionName: "Spacing",
+      modeName: "Default",
+    },
+  ];
+
+  const ext = generateTailwindExtension(vars);
+
+  assert.ok(ext);
+  assert.deepEqual(ext.colors, { "color-primary": "#3B82F6" });
+  assert.deepEqual(ext.spacing, { "spacing-base": "8px" });
+});
+
+test("generateTailwindExtension — prefers an exportable token over a non-exportable preferred mode", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    {
+      name: "token/state",
+      kind: "boolean",
+      value: true,
+      modeName: "Default",
+    },
+    {
+      name: "token/state",
+      kind: "color",
+      value: "#3B82F6",
+      modeName: "Light",
+    },
+  ];
+
+  const ext = generateTailwindExtension(vars);
+
+  assert.ok(ext);
+  assert.deepEqual(ext.colors, { "token-state": "#3B82F6" });
 });
 
 // ---------------------------------------------------------------------------
@@ -999,6 +1117,12 @@ test("resolveFigmaTokens — preserves mode alternatives and prefers light/defau
     },
   });
   assert.equal(result.designTokens.palette.primary, "#3B82F6");
+  assert.equal(result.cssCustomProperties, ":root {\n  --color-primary: #3B82F6;\n}");
+  assert.deepEqual(result.tailwindExtension, {
+    colors: {
+      "color-primary": "#3B82F6",
+    },
+  });
 });
 
 // ---------------------------------------------------------------------------
