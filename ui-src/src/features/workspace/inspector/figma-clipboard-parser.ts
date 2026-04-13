@@ -15,10 +15,16 @@
 // ---------------------------------------------------------------------------
 
 /** Regex that matches the `<!--(figmeta)...(/figmeta)-->` wrapper. */
-const FIGMETA_WRAPPER_RE = /<!--\(figmeta\)([\s\S]*?)\(\/figmeta\)-->/;
+const FIGMETA_WRAPPER_RE =
+  /(?:<!--|&lt;!--)\(figmeta\)([\s\S]*?)\(\/figmeta\)(?:-->|--&gt;)/i;
 
-/** Lightweight probe — avoids DOM parsing for the fast-path check. */
-const FIGMETA_PROBE_RE = /\(figmeta\)/;
+/** Lightweight probe for clipboard HTML that actually carries figmeta. */
+const FIGMETA_ATTRIBUTE_RE =
+  /data-metadata\s*=\s*(["'])[\s\S]*?\(figmeta\)[\s\S]*?\(\/figmeta\)[\s\S]*?\1/i;
+
+/** Regex that matches the `<!--(figma)...(/figma)-->` buffer wrapper. */
+const FIGMA_BUFFER_RE =
+  /(?:<!--|&lt;!--)\(figma\)[\s\S]*?\(\/figma\)(?:-->|--&gt;)/i;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,7 +51,7 @@ export interface FigmaClipboardResult {
  * payload marker. Does NOT parse the HTML or decode the payload.
  */
 export function isFigmaClipboard(html: string): boolean {
-  return FIGMETA_PROBE_RE.test(html);
+  return FIGMETA_ATTRIBUTE_RE.test(html);
 }
 
 /**
@@ -81,19 +87,12 @@ export function parseFigmaClipboard(html: string): FigmaClipboardResult | null {
  * Derive the Figma node ID from the clipboard metadata.
  *
  * The `pasteID` alone is not a full node reference — resolving the actual node
- * requires a round-trip via the Figma MCP or REST API using `fileKey`.  This
- * function returns a best-effort colon-formatted ID when the metadata looks
- * like a scene paste, or `null` when derivation is not possible.
+ * requires a round-trip via the Figma MCP or REST API using `fileKey`.
+ * Until that mapping exists, node-id extraction is intentionally conservative.
  */
 export function extractFigmaNodeId(figmeta: FigmaMeta): string | null {
-  if (figmeta.dataType !== "scene" || !Number.isFinite(figmeta.pasteID)) {
-    return null;
-  }
-
-  // Figma node IDs follow the `pageId:nodeId` pattern.  The pasteID from the
-  // clipboard metadata corresponds to the top-level node that was copied, but
-  // without page context we can only return the raw numeric ID as a hint.
-  return `${figmeta.pasteID}:1`;
+  void figmeta;
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -160,6 +159,7 @@ function decodeFigmeta(base64: string): FigmaMeta | null {
     typeof fileKey !== "string" ||
     fileKey.length === 0 ||
     typeof pasteID !== "number" ||
+    !Number.isInteger(pasteID) ||
     typeof dataType !== "string"
   ) {
     return null;
@@ -172,5 +172,10 @@ function decodeFigmeta(base64: string): FigmaMeta | null {
  * Check whether the HTML contains a `data-buffer` span with a `(figma)` payload.
  */
 function hasDataBuffer(html: string): boolean {
-  return html.includes("(figma)");
+  const bufferAttr = extractDataAttribute(html, "data-buffer");
+  if (bufferAttr === null) {
+    return false;
+  }
+
+  return FIGMA_BUFFER_RE.test(bufferAttr);
 }

@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   extractFigmaNodeId,
@@ -6,9 +8,17 @@ import {
 } from "./figma-clipboard-parser";
 import type { FigmaMeta } from "./figma-clipboard-parser";
 
-// ---------------------------------------------------------------------------
-// Fixture helpers
-// ---------------------------------------------------------------------------
+const repoRoot = process.cwd();
+const fixtureRoot = path.join(
+  repoRoot,
+  "integration",
+  "fixtures",
+  "figma-clipboard",
+);
+
+function readFixture(name: string): string {
+  return readFileSync(path.join(fixtureRoot, name), "utf-8");
+}
 
 /** Encode a FigmaMeta object into the base64 figmeta wrapper format. */
 function encodeFigmeta(meta: FigmaMeta): string {
@@ -51,7 +61,8 @@ function buildFigmaClipboardHtml(
   ].join("\n");
 }
 
-const DEFAULT_HTML = buildFigmaClipboardHtml();
+const DEFAULT_HTML = readFixture("scene-copy.html");
+const COMPONENT_SET_HTML = readFixture("component-set-copy.html");
 const DEFAULT_META: FigmaMeta = {
   fileKey: "abc123XYZ",
   pasteID: 42,
@@ -83,8 +94,18 @@ describe("isFigmaClipboard", () => {
     expect(isFigmaClipboard('{"document":{"id":"0:0"}}')).toBe(false);
   });
 
-  it("returns true when figmeta marker is present anywhere", () => {
-    expect(isFigmaClipboard("some prefix (figmeta) some suffix")).toBe(true);
+  it("returns false when figmeta only appears in visible text", () => {
+    expect(
+      isFigmaClipboard('<span style="white-space:pre-wrap;">(figmeta)</span>'),
+    ).toBe(false);
+  });
+
+  it("returns false when only the buffer marker is present", () => {
+    expect(
+      isFigmaClipboard(
+        '<span data-buffer="<!--(figma)ZmlnLi4u(/figma)-->"></span>',
+      ),
+    ).toBe(false);
   });
 });
 
@@ -117,13 +138,7 @@ describe("parseFigmaClipboard — valid Figma HTML", () => {
   });
 
   it("handles non-scene dataType", () => {
-    const meta: FigmaMeta = {
-      fileKey: "file789",
-      pasteID: 100,
-      dataType: "component_set",
-    };
-    const html = buildFigmaClipboardHtml({ meta });
-    const result = parseFigmaClipboard(html);
+    const result = parseFigmaClipboard(COMPONENT_SET_HTML);
     expect(result).not.toBeNull();
     expect(result!.meta.dataType).toBe("component_set");
   });
@@ -137,6 +152,13 @@ describe("parseFigmaClipboard — valid Figma HTML", () => {
     const html = buildFigmaClipboardHtml({ meta });
     const result = parseFigmaClipboard(html);
     expect(result!.meta.fileKey).toBe("a1B2c3D4e5F6g7H8");
+  });
+
+  it("ignores visible text that happens to contain the figma marker", () => {
+    const html = `${buildFigmaClipboardHtml({ includeBuffer: false })}<span>(figma)</span>`;
+    const result = parseFigmaClipboard(html);
+    expect(result).not.toBeNull();
+    expect(result!.hasBuffer).toBe(false);
   });
 });
 
@@ -243,13 +265,13 @@ describe("parseFigmaClipboard — malformed Figma HTML", () => {
 // ---------------------------------------------------------------------------
 
 describe("extractFigmaNodeId", () => {
-  it("returns colon-formatted ID for scene dataType", () => {
+  it("returns null for scene payloads without MCP-backed mapping", () => {
     const result = extractFigmaNodeId({
       fileKey: "abc",
       pasteID: 42,
       dataType: "scene",
     });
-    expect(result).toBe("42:1");
+    expect(result).toBeNull();
   });
 
   it("returns null for non-scene dataType", () => {
@@ -285,7 +307,7 @@ describe("extractFigmaNodeId", () => {
       pasteID: 0,
       dataType: "scene",
     });
-    expect(result).toBe("0:1");
+    expect(result).toBeNull();
   });
 
   it("handles large pasteID", () => {
@@ -294,6 +316,6 @@ describe("extractFigmaNodeId", () => {
       pasteID: 999999999,
       dataType: "scene",
     });
-    expect(result).toBe("999999999:1");
+    expect(result).toBeNull();
   });
 });
