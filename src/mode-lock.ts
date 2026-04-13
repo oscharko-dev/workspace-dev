@@ -6,7 +6,12 @@
  */
 
 const ALLOWED_FIGMA_SOURCE_MODE_DEFAULT = "rest" as const;
-const ALLOWED_FIGMA_SOURCE_MODES = ["rest", "hybrid", "local_json"] as const;
+const ALLOWED_FIGMA_SOURCE_MODES = [
+  "rest",
+  "hybrid",
+  "local_json",
+  "figma_paste",
+] as const;
 const ALLOWED_LLM_CODEGEN_MODES = ["deterministic"] as const;
 
 const BLOCKED_FIGMA_MODES: readonly string[] = ["mcp"];
@@ -17,7 +22,8 @@ export interface ModeLockValidationResult {
   errors: string[];
 }
 
-export type AllowedFigmaSourceMode = (typeof ALLOWED_FIGMA_SOURCE_MODES)[number];
+export type AllowedFigmaSourceMode =
+  (typeof ALLOWED_FIGMA_SOURCE_MODES)[number];
 export type AllowedLlmCodegenMode = (typeof ALLOWED_LLM_CODEGEN_MODES)[number];
 
 export function validateModeLock(input: {
@@ -27,40 +33,48 @@ export function validateModeLock(input: {
   const errors: string[] = [];
 
   const figmaMode = input.figmaSourceMode?.trim().toLowerCase();
-  if (figmaMode && !ALLOWED_FIGMA_SOURCE_MODES.includes(figmaMode as (typeof ALLOWED_FIGMA_SOURCE_MODES)[number])) {
+  if (
+    figmaMode &&
+    !ALLOWED_FIGMA_SOURCE_MODES.includes(
+      figmaMode as (typeof ALLOWED_FIGMA_SOURCE_MODES)[number],
+    )
+  ) {
     const isKnownBlocked = BLOCKED_FIGMA_MODES.includes(figmaMode);
     if (isKnownBlocked) {
       errors.push(
         `Mode '${figmaMode}' is not available in workspace-dev. ` +
-        `Only 'rest', 'hybrid', and 'local_json' are supported. MCP mode requires the full Workspace Dev platform deployment.`
+          `Only 'rest', 'hybrid', 'local_json', and 'figma_paste' are supported. MCP mode requires the full Workspace Dev platform deployment.`,
       );
     } else {
       errors.push(
         `Unknown figmaSourceMode '${figmaMode}'. ` +
-        `workspace-dev supports only 'rest', 'hybrid', and 'local_json'.`
+          `workspace-dev supports only 'rest', 'hybrid', 'local_json', and 'figma_paste'.`,
       );
     }
   }
 
   const codegenMode = input.llmCodegenMode?.trim().toLowerCase();
-  if (codegenMode && !ALLOWED_LLM_CODEGEN_MODES.includes(codegenMode as AllowedLlmCodegenMode)) {
+  if (
+    codegenMode &&
+    !ALLOWED_LLM_CODEGEN_MODES.includes(codegenMode as AllowedLlmCodegenMode)
+  ) {
     const isKnownBlocked = BLOCKED_CODEGEN_MODES.includes(codegenMode);
     if (isKnownBlocked) {
       errors.push(
         `Mode '${codegenMode}' is not available in workspace-dev. ` +
-        `Only 'deterministic' is supported. LLM-based codegen modes require the full Workspace Dev platform deployment.`
+          `Only 'deterministic' is supported. LLM-based codegen modes require the full Workspace Dev platform deployment.`,
       );
     } else {
       errors.push(
         `Unknown llmCodegenMode '${codegenMode}'. ` +
-        `workspace-dev supports only 'deterministic'.`
+          `workspace-dev supports only 'deterministic'.`,
       );
     }
   }
 
   return {
     valid: errors.length === 0,
-    errors
+    errors,
   };
 }
 
@@ -71,7 +85,7 @@ export function enforceModeLock(input: {
   const result = validateModeLock(input);
   if (!result.valid) {
     throw new Error(
-      `Mode-lock violation in workspace-dev:\n${result.errors.map((entry) => `  • ${entry}`).join("\n")}`
+      `Mode-lock violation in workspace-dev:\n${result.errors.map((entry) => `  • ${entry}`).join("\n")}`,
     );
   }
 }
@@ -82,7 +96,7 @@ export function getWorkspaceDefaults(): {
 } {
   return {
     figmaSourceMode: ALLOWED_FIGMA_SOURCE_MODE_DEFAULT,
-    llmCodegenMode: ALLOWED_LLM_CODEGEN_MODES[0]
+    llmCodegenMode: ALLOWED_LLM_CODEGEN_MODES[0],
   };
 }
 

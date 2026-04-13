@@ -2,27 +2,52 @@ import { z } from "zod";
 
 const optionalString = z.string().trim().optional().or(z.literal(""));
 
+const FIGMA_PASTE_MAX_BYTES = 2 * 1024 * 1024;
+
 export const workspaceSubmitSchema = z
   .object({
     figmaFileKey: optionalString,
     figmaAccessToken: optionalString,
     figmaJsonPath: optionalString,
+    figmaJsonPayload: optionalString,
     storybookStaticDir: optionalString,
     customerProfilePath: optionalString,
-    figmaSourceMode: z.enum(["rest", "hybrid", "local_json"]).default("rest"),
+    figmaSourceMode: z
+      .enum(["rest", "hybrid", "local_json", "figma_paste"])
+      .default("rest"),
     enableGitPr: z.boolean(),
     repoUrl: optionalString,
     repoToken: optionalString,
     projectName: optionalString,
-    targetPath: optionalString
+    targetPath: optionalString,
   })
   .superRefine((value, context) => {
+    if (value.figmaSourceMode === "figma_paste") {
+      if (!value.figmaJsonPayload || !value.figmaJsonPayload.trim()) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["figmaJsonPayload"],
+          message: "Figma JSON payload is required for figma_paste mode.",
+        });
+      } else if (
+        new TextEncoder().encode(value.figmaJsonPayload).length >
+        FIGMA_PASTE_MAX_BYTES
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["figmaJsonPayload"],
+          message: "Figma JSON payload must be 2 MiB or less.",
+        });
+      }
+      return;
+    }
+
     if (value.figmaSourceMode === "local_json") {
       if (!value.figmaJsonPath || !value.figmaJsonPath.trim()) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["figmaJsonPath"],
-          message: "Figma JSON path is required for local_json mode."
+          message: "Figma JSON path is required for local_json mode.",
         });
       }
     } else {
@@ -30,7 +55,7 @@ export const workspaceSubmitSchema = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["figmaFileKey"],
-          message: "This field is required."
+          message: "This field is required.",
         });
       }
 
@@ -38,7 +63,7 @@ export const workspaceSubmitSchema = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["figmaAccessToken"],
-          message: "This field is required."
+          message: "This field is required.",
         });
       }
     }
@@ -51,7 +76,7 @@ export const workspaceSubmitSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["repoUrl"],
-        message: "Repo URL is required when Git/PR is enabled."
+        message: "Repo URL is required when Git/PR is enabled.",
       });
     }
 
@@ -59,7 +84,7 @@ export const workspaceSubmitSchema = z
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["repoToken"],
-        message: "Repo token is required when Git/PR is enabled."
+        message: "Repo token is required when Git/PR is enabled.",
       });
     }
   });
@@ -70,6 +95,7 @@ export interface WorkspaceSubmitPayload {
   figmaFileKey?: string | undefined;
   figmaAccessToken?: string | undefined;
   figmaJsonPath?: string | undefined;
+  figmaJsonPayload?: string | undefined;
   storybookStaticDir?: string | undefined;
   customerProfilePath?: string | undefined;
   repoUrl?: string | undefined;
@@ -77,11 +103,22 @@ export interface WorkspaceSubmitPayload {
   enableGitPr: boolean;
   projectName?: string | undefined;
   targetPath?: string | undefined;
-  figmaSourceMode: "rest" | "hybrid" | "local_json";
+  figmaSourceMode: "rest" | "hybrid" | "local_json" | "figma_paste";
   llmCodegenMode: "deterministic";
 }
 
-function toOptionalString({ value }: { value: string | undefined }): string | undefined {
+export interface InspectorBootstrapPayload {
+  figmaSourceMode: "figma_paste";
+  figmaJsonPayload: string;
+  llmCodegenMode: "deterministic";
+  enableGitPr: false;
+}
+
+function toOptionalString({
+  value,
+}: {
+  value: string | undefined;
+}): string | undefined {
   if (!value) {
     return undefined;
   }
@@ -95,24 +132,45 @@ function toOptionalString({ value }: { value: string | undefined }): string | un
 }
 
 export function toWorkspaceSubmitPayload({
-  formData
+  formData,
 }: {
   formData: WorkspaceSubmitFormData;
 }): WorkspaceSubmitPayload {
   const mode = formData.figmaSourceMode ?? "rest";
 
+  if (mode === "figma_paste") {
+    return {
+      figmaSourceMode: "figma_paste",
+      figmaJsonPayload: formData.figmaJsonPayload?.trim(),
+      enableGitPr: false,
+      projectName: toOptionalString({ value: formData.projectName }),
+      targetPath: toOptionalString({ value: formData.targetPath }),
+      storybookStaticDir: toOptionalString({
+        value: formData.storybookStaticDir,
+      }),
+      customerProfilePath: toOptionalString({
+        value: formData.customerProfilePath,
+      }),
+      llmCodegenMode: "deterministic",
+    };
+  }
+
   if (mode === "local_json") {
     return {
       figmaSourceMode: "local_json",
       figmaJsonPath: toOptionalString({ value: formData.figmaJsonPath }),
-      storybookStaticDir: toOptionalString({ value: formData.storybookStaticDir }),
-      customerProfilePath: toOptionalString({ value: formData.customerProfilePath }),
+      storybookStaticDir: toOptionalString({
+        value: formData.storybookStaticDir,
+      }),
+      customerProfilePath: toOptionalString({
+        value: formData.customerProfilePath,
+      }),
       enableGitPr: formData.enableGitPr,
       repoUrl: toOptionalString({ value: formData.repoUrl }),
       repoToken: toOptionalString({ value: formData.repoToken }),
       projectName: toOptionalString({ value: formData.projectName }),
       targetPath: toOptionalString({ value: formData.targetPath }),
-      llmCodegenMode: "deterministic"
+      llmCodegenMode: "deterministic",
     };
   }
 
@@ -120,13 +178,30 @@ export function toWorkspaceSubmitPayload({
     figmaFileKey: toOptionalString({ value: formData.figmaFileKey }),
     figmaAccessToken: toOptionalString({ value: formData.figmaAccessToken }),
     figmaSourceMode: mode,
-    storybookStaticDir: toOptionalString({ value: formData.storybookStaticDir }),
-    customerProfilePath: toOptionalString({ value: formData.customerProfilePath }),
+    storybookStaticDir: toOptionalString({
+      value: formData.storybookStaticDir,
+    }),
+    customerProfilePath: toOptionalString({
+      value: formData.customerProfilePath,
+    }),
     repoUrl: toOptionalString({ value: formData.repoUrl }),
     repoToken: toOptionalString({ value: formData.repoToken }),
     enableGitPr: formData.enableGitPr,
     projectName: toOptionalString({ value: formData.projectName }),
     targetPath: toOptionalString({ value: formData.targetPath }),
-    llmCodegenMode: "deterministic"
+    llmCodegenMode: "deterministic",
+  };
+}
+
+export function toInspectorBootstrapPayload({
+  figmaJsonPayload,
+}: {
+  figmaJsonPayload: string;
+}): InspectorBootstrapPayload {
+  return {
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload,
+    llmCodegenMode: "deterministic",
+    enableGitPr: false,
   };
 }

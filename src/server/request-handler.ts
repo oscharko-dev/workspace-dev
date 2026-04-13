@@ -1,22 +1,60 @@
 import { randomUUID } from "node:crypto";
-import { lstat, readdir, readFile } from "node:fs/promises";
+import {
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { WorkspaceFigmaSourceMode, WorkspaceStatus } from "../contracts/index.js";
+import type {
+  WorkspaceFigmaSourceMode,
+  WorkspaceStatus,
+} from "../contracts/index.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
-import type { WorkspaceRuntimeLogLevel, WorkspaceRuntimeLogger } from "../logging.js";
+import type {
+  WorkspaceRuntimeLogLevel,
+  WorkspaceRuntimeLogger,
+} from "../logging.js";
 import { enforceModeLock, getAllowedFigmaSourceModes } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { ScreenIR } from "../parity/types-ir.js";
-import { CreatePrRequestSchema, RegenerationRequestSchema, SubmitRequestSchema, SyncRequestSchema, formatZodError } from "../schemas.js";
+import {
+  CreatePrRequestSchema,
+  RegenerationRequestSchema,
+  SubmitRequestSchema,
+  SyncRequestSchema,
+  formatZodError,
+} from "../schemas.js";
 import { validateWriteRequest } from "./request-security.js";
-import { createIpRateLimiter, resolveRateLimitClientKey } from "./rate-limit.js";
-import { sendBuffer, sendJson, sendText, readJsonBody } from "./http-helpers.js";
-import { WORKSPACE_UI_CONTENT_SECURITY_POLICY } from "./constants.js";
+import {
+  createIpRateLimiter,
+  resolveRateLimitClientKey,
+} from "./rate-limit.js";
+import {
+  sendBuffer,
+  sendJson,
+  sendText,
+  readJsonBody,
+} from "./http-helpers.js";
+import {
+  MAX_SUBMIT_BODY_BYTES,
+  WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+} from "./constants.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
-import { isWorkspaceProjectRoute, parseJobFilesRoute, parseJobRoute, parseReproRoute, resolveUiAssetPath, shouldFallbackToUiEntrypoint, validateSourceFilePath } from "./routes.js";
+import {
+  isWorkspaceProjectRoute,
+  parseJobFilesRoute,
+  parseJobRoute,
+  parseReproRoute,
+  resolveUiAssetPath,
+  shouldFallbackToUiEntrypoint,
+  validateSourceFilePath,
+} from "./routes.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
 
 /**
@@ -26,7 +64,7 @@ import { getUiAsset, getUiAssets } from "./ui-assets.js";
 function safeDecodeParam(
   value: string,
   paramLabel: string,
-  response: ServerResponse
+  response: ServerResponse,
 ): string | null {
   const decoded = safeDecode(value);
   if (decoded === INVALID_PATH_ENCODING) {
@@ -35,8 +73,8 @@ function safeDecodeParam(
       statusCode: 400,
       payload: {
         error: "INVALID_PATH_ENCODING",
-        message: `Malformed percent-encoding in ${paramLabel}.`
-      }
+        message: `Malformed percent-encoding in ${paramLabel}.`,
+      },
     });
     return null;
   }
@@ -63,7 +101,9 @@ const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
 const MAX_REQUEST_ID_LENGTH = 128;
 const SAFE_REQUEST_ID_PATTERN = /^[\w.:\-/]+$/;
 
-const getHeaderValue = (value: string | string[] | undefined): string | undefined => {
+const getHeaderValue = (
+  value: string | string[] | undefined,
+): string | undefined => {
   if (typeof value === "string") {
     return value;
   }
@@ -88,16 +128,22 @@ const resolveRequestId = (value: string | string[] | undefined): string => {
 
 const resolveAuditMessage = ({
   payload,
-  fallback
+  fallback,
 }: {
   payload: unknown;
   fallback: string;
 }): string => {
-  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload)
+  ) {
     return fallback;
   }
   const message = (payload as { message?: unknown }).message;
-  return typeof message === "string" && message.trim().length > 0 ? message : fallback;
+  return typeof message === "string" && message.trim().length > 0
+    ? message
+    : fallback;
 };
 
 const PROTECTED_POST_ACTIONS = new Set([
@@ -106,14 +152,16 @@ const PROTECTED_POST_ACTIONS = new Set([
   "regenerate",
   "create-pr",
   "stale-check",
-  "remap-suggest"
+  "remap-suggest",
 ]);
 
 interface ProtectedWriteRoute {
   parsedJobRoute?: ReturnType<typeof parseJobRoute>;
 }
 
-function resolveProtectedWriteRoute(pathname: string): ProtectedWriteRoute | null {
+function resolveProtectedWriteRoute(
+  pathname: string,
+): ProtectedWriteRoute | null {
   if (pathname === "/workspace/submit") {
     return {};
   }
@@ -152,21 +200,32 @@ export function createWorkspaceRequestHandler({
   defaults,
   runtime,
   jobEngine,
-  moduleDir
-}: CreateWorkspaceRequestHandlerInput): (request: IncomingMessage, response: ServerResponse) => Promise<void> {
+  moduleDir,
+}: CreateWorkspaceRequestHandlerInput): (
+  request: IncomingMessage,
+  response: ServerResponse,
+) => Promise<void> {
   const rateLimiter = createIpRateLimiter(
-    runtime.rateLimitPerMinute === undefined ? {} : { limitPerWindow: runtime.rateLimitPerMinute }
+    runtime.rateLimitPerMinute === undefined
+      ? {}
+      : { limitPerWindow: runtime.rateLimitPerMinute },
   );
 
-  return async (request: IncomingMessage, response: ServerResponse): Promise<void> => {
+  return async (
+    request: IncomingMessage,
+    response: ServerResponse,
+  ): Promise<void> => {
     const requestId = resolveRequestId(request.headers[REQUEST_ID_HEADER]);
     response.setHeader(REQUEST_ID_HEADER, requestId);
     const requestLogger = runtime.logger ?? {
-      log: () => {}
+      log: () => {},
     };
 
     const method = request.method ?? "GET";
-    const requestUrl = new URL(request.url ?? "/", "http://workspace-dev.local");
+    const requestUrl = new URL(
+      request.url ?? "/",
+      "http://workspace-dev.local",
+    );
     const pathname = requestUrl.pathname;
     const protectedWriteRoute = resolveProtectedWriteRoute(pathname);
     const logAuditEvent = ({
@@ -174,7 +233,7 @@ export function createWorkspaceRequestHandler({
       message,
       level = "info",
       jobId,
-      statusCode
+      statusCode,
     }: {
       event: WorkspaceAuditEvent;
       message: string;
@@ -190,7 +249,7 @@ export function createWorkspaceRequestHandler({
         method,
         path: pathname,
         ...(jobId ? { jobId } : {}),
-        ...(statusCode !== undefined ? { statusCode } : {})
+        ...(statusCode !== undefined ? { statusCode } : {}),
       });
     };
     const sendAuditedError = ({
@@ -199,7 +258,7 @@ export function createWorkspaceRequestHandler({
       event,
       level,
       jobId,
-      fallbackMessage
+      fallbackMessage,
     }: {
       statusCode: number;
       payload: unknown;
@@ -213,7 +272,7 @@ export function createWorkspaceRequestHandler({
         statusCode,
         message: resolveAuditMessage({ payload, fallback: fallbackMessage }),
         ...(level ? { level } : {}),
-        ...(jobId ? { jobId } : {})
+        ...(jobId ? { jobId } : {}),
       });
       sendJson({ response, statusCode, payload });
     };
@@ -221,7 +280,7 @@ export function createWorkspaceRequestHandler({
       statusCode = 400,
       payload,
       jobId,
-      fallbackMessage = "Request validation failed."
+      fallbackMessage = "Request validation failed.",
     }: {
       statusCode?: number;
       payload: unknown;
@@ -234,14 +293,14 @@ export function createWorkspaceRequestHandler({
         event: "workspace.request.validation_failed",
         level: "warn",
         fallbackMessage,
-        ...(jobId ? { jobId } : {})
+        ...(jobId ? { jobId } : {}),
       });
     };
     const sendRequestFailure = ({
       statusCode,
       payload,
       jobId,
-      fallbackMessage = "Request failed."
+      fallbackMessage = "Request failed.",
     }: {
       statusCode: number;
       payload: unknown;
@@ -254,1517 +313,1789 @@ export function createWorkspaceRequestHandler({
         event: "workspace.request.failed",
         level: statusCode >= 500 ? "error" : "warn",
         fallbackMessage,
-        ...(jobId ? { jobId } : {})
+        ...(jobId ? { jobId } : {}),
       });
     };
 
     try {
       if (method === "GET" && pathname === "/workspace") {
-      const resolvedPort = getResolvedPort();
-      const status: WorkspaceStatus = {
-        running: true,
-        url: `http://${host}:${resolvedPort}`,
-        host,
-        port: resolvedPort,
-        figmaSourceMode: defaults.figmaSourceMode,
-        llmCodegenMode: defaults.llmCodegenMode,
-        uptimeMs: Date.now() - startedAt,
-        outputRoot: absoluteOutputRoot,
-        previewEnabled: runtime.previewEnabled
-      };
-      sendJson({ response, statusCode: 200, payload: status });
-      return;
-    }
-
-    if (method === "GET" && pathname === "/healthz") {
-      sendJson({ response, statusCode: 200, payload: { ok: true, service: "workspace-dev" } });
-      return;
-    }
-
-    if (method === "GET") {
-      const parsedJobRoute = parseJobRoute(pathname);
-      if (parsedJobRoute) {
-        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        if (parsedJobRoute.action === "result") {
-          const jobResult = jobEngine.getJobResult(jobId);
-          if (!jobResult) {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "JOB_NOT_FOUND",
-                message: `Unknown job '${jobId}'.`
-              }
-            });
-            return;
-          }
-          sendJson({ response, statusCode: 200, payload: jobResult });
-          return;
-        }
-
-        if (parsedJobRoute.action === "cancel") {
-          sendJson({
-            response,
-            statusCode: 405,
-            payload: {
-              error: "METHOD_NOT_ALLOWED",
-              message: `Use POST for cancellation route '/workspace/jobs/${jobId}/cancel'.`
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "regenerate") {
-          sendJson({
-            response,
-            statusCode: 405,
-            payload: {
-              error: "METHOD_NOT_ALLOWED",
-              message: `Use POST for regeneration route '/workspace/jobs/${jobId}/regenerate'.`
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "sync") {
-          sendJson({
-            response,
-            statusCode: 405,
-            payload: {
-              error: "METHOD_NOT_ALLOWED",
-              message: `Use POST for local sync route '/workspace/jobs/${jobId}/sync'.`
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "create-pr") {
-          sendJson({
-            response,
-            statusCode: 405,
-            payload: {
-              error: "METHOD_NOT_ALLOWED",
-              message: `Use POST for PR creation route '/workspace/jobs/${jobId}/create-pr'.`
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "stale-check") {
-          sendJson({
-            response,
-            statusCode: 405,
-            payload: {
-              error: "METHOD_NOT_ALLOWED",
-              message: `Use POST for stale-check route '/workspace/jobs/${jobId}/stale-check'.`
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "remap-suggest") {
-          sendJson({
-            response,
-            statusCode: 405,
-            payload: {
-              error: "METHOD_NOT_ALLOWED",
-              message: `Use POST for remap-suggest route '/workspace/jobs/${jobId}/remap-suggest'.`
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "design-ir") {
-          const record = jobEngine.getJobRecord(jobId);
-          if (!record) {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "JOB_NOT_FOUND",
-                message: `Unknown job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          if (record.status === "queued" || record.status === "running") {
-            sendJson({
-              response,
-              statusCode: 409,
-              payload: {
-                error: "JOB_NOT_COMPLETED",
-                message: `Job '${jobId}' has status '${record.status}' — design IR is only available after the job finishes.`
-              }
-            });
-            return;
-          }
-
-          const designIrPath = record.artifacts.designIrFile;
-          if (!designIrPath) {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "DESIGN_IR_NOT_FOUND",
-                message: `Design IR artifact not available for job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          let rawIr: unknown;
-          try {
-            const content = await readFile(designIrPath, "utf8");
-            rawIr = JSON.parse(content) as unknown;
-          } catch {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "DESIGN_IR_NOT_FOUND",
-                message: `Design IR file not found on disk for job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          const irData = rawIr as {
-            sourceName?: string;
-            screens?: ScreenIR[];
-            tokens?: unknown;
-          };
-
-          const screens: ScreenIR[] = Array.isArray(irData.screens) ? irData.screens : [];
-          const identities = buildScreenArtifactIdentities(screens);
-
-          const enrichedScreens = screens.map((screen) => {
-            const identity = identities.get(screen.id);
-            return {
-              ...screen,
-              ...(identity ? { generatedFile: identity.filePath } : {})
-            };
-          });
-
-          sendJson({
-            response,
-            statusCode: 200,
-            payload: {
-              jobId,
-              sourceName: irData.sourceName ?? null,
-              screens: enrichedScreens,
-              tokens: irData.tokens ?? null
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "figma-analysis") {
-          const record = jobEngine.getJobRecord(jobId);
-          if (!record) {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "JOB_NOT_FOUND",
-                message: `Unknown job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          if (record.status === "queued" || record.status === "running") {
-            sendJson({
-              response,
-              statusCode: 409,
-              payload: {
-                error: "JOB_NOT_COMPLETED",
-                message: `Job '${jobId}' has status '${record.status}' — figma analysis is only available after the job finishes.`
-              }
-            });
-            return;
-          }
-
-          const figmaAnalysisPath = record.artifacts.figmaAnalysisFile;
-          if (!figmaAnalysisPath) {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "FIGMA_ANALYSIS_NOT_FOUND",
-                message: `Figma analysis artifact not available for job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          let figmaAnalysis: unknown;
-          try {
-            figmaAnalysis = JSON.parse(await readFile(figmaAnalysisPath, "utf8")) as unknown;
-          } catch {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "FIGMA_ANALYSIS_NOT_FOUND",
-                message: `Figma analysis file not found on disk for job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          sendJson({
-            response,
-            statusCode: 200,
-            payload: {
-              ...(figmaAnalysis && typeof figmaAnalysis === "object" ? (figmaAnalysis as Record<string, unknown>) : {}),
-              jobId
-            }
-          });
-          return;
-        }
-
-        if (parsedJobRoute.action === "component-manifest") {
-          const record = jobEngine.getJobRecord(jobId);
-          if (!record) {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "JOB_NOT_FOUND",
-                message: `Unknown job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          if (record.status === "queued" || record.status === "running") {
-            sendJson({
-              response,
-              statusCode: 409,
-              payload: {
-                error: "JOB_NOT_COMPLETED",
-                message: `Job '${jobId}' has status '${record.status}' — component manifest is only available after the job finishes.`
-              }
-            });
-            return;
-          }
-
-          const manifestPath = record.artifacts.componentManifestFile;
-          if (!manifestPath) {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "COMPONENT_MANIFEST_NOT_FOUND",
-                message: `Component manifest artifact not available for job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          let manifestContent: string;
-          try {
-            manifestContent = await readFile(manifestPath, "utf8");
-          } catch {
-            sendJson({
-              response,
-              statusCode: 404,
-              payload: {
-                error: "COMPONENT_MANIFEST_NOT_FOUND",
-                message: `Component manifest file not found on disk for job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          let manifest: unknown;
-          try {
-            manifest = JSON.parse(manifestContent) as unknown;
-          } catch {
-            sendJson({
-              response,
-              statusCode: 500,
-              payload: {
-                error: "INTERNAL_ERROR",
-                message: `Failed to parse component manifest for job '${jobId}'.`
-              }
-            });
-            return;
-          }
-
-          sendJson({
-            response,
-            statusCode: 200,
-            payload: {
-              jobId,
-              ...(manifest as Record<string, unknown>)
-            }
-          });
-          return;
-        }
-
-        const job = jobEngine.getJob(jobId);
-        if (!job) {
-          sendJson({
-            response,
-            statusCode: 404,
-            payload: {
-              error: "JOB_NOT_FOUND",
-              message: `Unknown job '${jobId}'.`
-            }
-          });
-          return;
-        }
-
-        sendJson({ response, statusCode: 200, payload: job });
+        const resolvedPort = getResolvedPort();
+        const status: WorkspaceStatus = {
+          running: true,
+          url: `http://${host}:${resolvedPort}`,
+          host,
+          port: resolvedPort,
+          figmaSourceMode: defaults.figmaSourceMode,
+          llmCodegenMode: defaults.llmCodegenMode,
+          uptimeMs: Date.now() - startedAt,
+          outputRoot: absoluteOutputRoot,
+          previewEnabled: runtime.previewEnabled,
+        };
+        sendJson({ response, statusCode: 200, payload: status });
         return;
       }
 
-      const parsedFilesRoute = parseJobFilesRoute(pathname);
-      if (parsedFilesRoute) {
-        const jobId = safeDecodeParam(parsedFilesRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        const record = jobEngine.getJobRecord(jobId);
+      if (method === "GET" && pathname === "/healthz") {
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: { ok: true, service: "workspace-dev" },
+        });
+        return;
+      }
 
-        if (!record) {
-          sendJson({
+      if (method === "GET") {
+        const parsedJobRoute = parseJobRoute(pathname);
+        if (parsedJobRoute) {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
             response,
-            statusCode: 404,
-            payload: {
-              error: "JOB_NOT_FOUND",
-              message: `Unknown job '${jobId}'.`
-            }
-          });
-          return;
-        }
-
-        if (record.status === "queued" || record.status === "running") {
-          sendJson({
-            response,
-            statusCode: 409,
-            payload: {
-              error: "JOB_NOT_COMPLETED",
-              message: `Job '${jobId}' has status '${record.status}' — files are only available after the job finishes.`
-            }
-          });
-          return;
-        }
-
-        const projectDir = record.artifacts.generatedProjectDir;
-        if (!projectDir) {
-          sendJson({
-            response,
-            statusCode: 404,
-            payload: {
-              error: "FILES_NOT_FOUND",
-              message: `Generated project directory not available for job '${jobId}'.`
-            }
-          });
-          return;
-        }
-
-        // Directory listing
-        if (parsedFilesRoute.filePath === undefined) {
-          const dirFilterParam = requestUrl.searchParams.get("dir");
-          let dirFilter: string | undefined = dirFilterParam !== null ? dirFilterParam : undefined;
-
-          if (dirFilter !== undefined) {
-            const dirValidation = validateSourceFilePath(`${dirFilter}/placeholder.ts`);
-            if (!dirValidation.valid) {
+          );
+          if (jobId === null) return;
+          if (parsedJobRoute.action === "result") {
+            const jobResult = jobEngine.getJobResult(jobId);
+            if (!jobResult) {
               sendJson({
                 response,
-                statusCode: 403,
+                statusCode: 404,
                 payload: {
-                  error: "FORBIDDEN_PATH",
-                  message: dirValidation.reason
-                }
+                  error: "JOB_NOT_FOUND",
+                  message: `Unknown job '${jobId}'.`,
+                },
               });
               return;
             }
-            dirFilter = path.posix.dirname(dirValidation.normalizedPath);
+            sendJson({ response, statusCode: 200, payload: jobResult });
+            return;
           }
 
-          let fileEntries: Array<{ path: string; sizeBytes: number }>;
-          try {
-            fileEntries = await collectSourceFiles(projectDir, dirFilter);
-          } catch {
+          if (parsedJobRoute.action === "cancel") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for cancellation route '/workspace/jobs/${jobId}/cancel'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "regenerate") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for regeneration route '/workspace/jobs/${jobId}/regenerate'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "sync") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for local sync route '/workspace/jobs/${jobId}/sync'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "create-pr") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for PR creation route '/workspace/jobs/${jobId}/create-pr'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "stale-check") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for stale-check route '/workspace/jobs/${jobId}/stale-check'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "remap-suggest") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for remap-suggest route '/workspace/jobs/${jobId}/remap-suggest'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "design-ir") {
+            const record = jobEngine.getJobRecord(jobId);
+            if (!record) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `Unknown job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            if (record.status === "queued" || record.status === "running") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "JOB_NOT_COMPLETED",
+                  message: `Job '${jobId}' has status '${record.status}' — design IR is only available after the job finishes.`,
+                },
+              });
+              return;
+            }
+
+            const designIrPath = record.artifacts.designIrFile;
+            if (!designIrPath) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "DESIGN_IR_NOT_FOUND",
+                  message: `Design IR artifact not available for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            let rawIr: unknown;
+            try {
+              const content = await readFile(designIrPath, "utf8");
+              rawIr = JSON.parse(content) as unknown;
+            } catch {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "DESIGN_IR_NOT_FOUND",
+                  message: `Design IR file not found on disk for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            const irData = rawIr as {
+              sourceName?: string;
+              screens?: ScreenIR[];
+              tokens?: unknown;
+            };
+
+            const screens: ScreenIR[] = Array.isArray(irData.screens)
+              ? irData.screens
+              : [];
+            const identities = buildScreenArtifactIdentities(screens);
+
+            const enrichedScreens = screens.map((screen) => {
+              const identity = identities.get(screen.id);
+              return {
+                ...screen,
+                ...(identity ? { generatedFile: identity.filePath } : {}),
+              };
+            });
+
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: {
+                jobId,
+                sourceName: irData.sourceName ?? null,
+                screens: enrichedScreens,
+                tokens: irData.tokens ?? null,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "figma-analysis") {
+            const record = jobEngine.getJobRecord(jobId);
+            if (!record) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `Unknown job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            if (record.status === "queued" || record.status === "running") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "JOB_NOT_COMPLETED",
+                  message: `Job '${jobId}' has status '${record.status}' — figma analysis is only available after the job finishes.`,
+                },
+              });
+              return;
+            }
+
+            const figmaAnalysisPath = record.artifacts.figmaAnalysisFile;
+            if (!figmaAnalysisPath) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "FIGMA_ANALYSIS_NOT_FOUND",
+                  message: `Figma analysis artifact not available for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            let figmaAnalysis: unknown;
+            try {
+              figmaAnalysis = JSON.parse(
+                await readFile(figmaAnalysisPath, "utf8"),
+              ) as unknown;
+            } catch {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "FIGMA_ANALYSIS_NOT_FOUND",
+                  message: `Figma analysis file not found on disk for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: {
+                ...(figmaAnalysis && typeof figmaAnalysis === "object"
+                  ? (figmaAnalysis as Record<string, unknown>)
+                  : {}),
+                jobId,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "component-manifest") {
+            const record = jobEngine.getJobRecord(jobId);
+            if (!record) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `Unknown job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            if (record.status === "queued" || record.status === "running") {
+              sendJson({
+                response,
+                statusCode: 409,
+                payload: {
+                  error: "JOB_NOT_COMPLETED",
+                  message: `Job '${jobId}' has status '${record.status}' — component manifest is only available after the job finishes.`,
+                },
+              });
+              return;
+            }
+
+            const manifestPath = record.artifacts.componentManifestFile;
+            if (!manifestPath) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "COMPONENT_MANIFEST_NOT_FOUND",
+                  message: `Component manifest artifact not available for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            let manifestContent: string;
+            try {
+              manifestContent = await readFile(manifestPath, "utf8");
+            } catch {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "COMPONENT_MANIFEST_NOT_FOUND",
+                  message: `Component manifest file not found on disk for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            let manifest: unknown;
+            try {
+              manifest = JSON.parse(manifestContent) as unknown;
+            } catch {
+              sendJson({
+                response,
+                statusCode: 500,
+                payload: {
+                  error: "INTERNAL_ERROR",
+                  message: `Failed to parse component manifest for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: {
+                jobId,
+                ...(manifest as Record<string, unknown>),
+              },
+            });
+            return;
+          }
+
+          const job = jobEngine.getJob(jobId);
+          if (!job) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${jobId}'.`,
+              },
+            });
+            return;
+          }
+
+          sendJson({ response, statusCode: 200, payload: job });
+          return;
+        }
+
+        const parsedFilesRoute = parseJobFilesRoute(pathname);
+        if (parsedFilesRoute) {
+          const jobId = safeDecodeParam(
+            parsedFilesRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const record = jobEngine.getJobRecord(jobId);
+
+          if (!record) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${jobId}'.`,
+              },
+            });
+            return;
+          }
+
+          if (record.status === "queued" || record.status === "running") {
+            sendJson({
+              response,
+              statusCode: 409,
+              payload: {
+                error: "JOB_NOT_COMPLETED",
+                message: `Job '${jobId}' has status '${record.status}' — files are only available after the job finishes.`,
+              },
+            });
+            return;
+          }
+
+          const projectDir = record.artifacts.generatedProjectDir;
+          if (!projectDir) {
             sendJson({
               response,
               statusCode: 404,
               payload: {
                 error: "FILES_NOT_FOUND",
-                message: `Generated project directory not found on disk for job '${jobId}'.`
-              }
+                message: `Generated project directory not available for job '${jobId}'.`,
+              },
             });
             return;
           }
 
-          sendJson({
-            response,
-            statusCode: 200,
-            payload: {
-              jobId,
-              files: fileEntries
+          // Directory listing
+          if (parsedFilesRoute.filePath === undefined) {
+            const dirFilterParam = requestUrl.searchParams.get("dir");
+            let dirFilter: string | undefined =
+              dirFilterParam !== null ? dirFilterParam : undefined;
+
+            if (dirFilter !== undefined) {
+              const dirValidation = validateSourceFilePath(
+                `${dirFilter}/placeholder.ts`,
+              );
+              if (!dirValidation.valid) {
+                sendJson({
+                  response,
+                  statusCode: 403,
+                  payload: {
+                    error: "FORBIDDEN_PATH",
+                    message: dirValidation.reason,
+                  },
+                });
+                return;
+              }
+              dirFilter = path.posix.dirname(dirValidation.normalizedPath);
             }
-          });
-          return;
-        }
 
-        // Single file content
-        const filePath = safeDecodeParam(parsedFilesRoute.filePath, "file path", response);
-        if (filePath === null) return;
-        const validation = validateSourceFilePath(filePath);
-        if (!validation.valid) {
-          sendJson({
-            response,
-            statusCode: 403,
-            payload: {
-              error: "FORBIDDEN_PATH",
-              message: validation.reason
+            let fileEntries: Array<{ path: string; sizeBytes: number }>;
+            try {
+              fileEntries = await collectSourceFiles(projectDir, dirFilter);
+            } catch {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "FILES_NOT_FOUND",
+                  message: `Generated project directory not found on disk for job '${jobId}'.`,
+                },
+              });
+              return;
             }
-          });
-          return;
-        }
 
-        const safeFilePath = validation.normalizedPath;
-        const absolutePath = path.join(projectDir, safeFilePath);
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: {
+                jobId,
+                files: fileEntries,
+              },
+            });
+            return;
+          }
 
-        // Ensure resolved path stays within projectDir (belt-and-suspenders)
-        const resolved = path.resolve(absolutePath);
-        const resolvedProjectDir = path.resolve(projectDir);
-        if (!resolved.startsWith(`${resolvedProjectDir}/`)) {
-          sendJson({
+          // Single file content
+          const filePath = safeDecodeParam(
+            parsedFilesRoute.filePath,
+            "file path",
             response,
-            statusCode: 403,
-            payload: {
-              error: "FORBIDDEN_PATH",
-              message: "Path escapes project directory."
-            }
-          });
-          return;
-        }
-
-        // Reject symlinks
-        try {
-          const lstats = await lstat(absolutePath);
-          if (lstats.isSymbolicLink()) {
+          );
+          if (filePath === null) return;
+          const validation = validateSourceFilePath(filePath);
+          if (!validation.valid) {
             sendJson({
               response,
               statusCode: 403,
               payload: {
                 error: "FORBIDDEN_PATH",
-                message: "Symbolic links are not allowed."
-              }
+                message: validation.reason,
+              },
             });
             return;
           }
-        } catch {
-          sendJson({
-            response,
-            statusCode: 404,
-            payload: {
-              error: "FILE_NOT_FOUND",
-              message: `File '${safeFilePath}' not found in job '${jobId}'.`
+
+          const safeFilePath = validation.normalizedPath;
+          const absolutePath = path.join(projectDir, safeFilePath);
+
+          // Ensure resolved path stays within projectDir (belt-and-suspenders)
+          const resolved = path.resolve(absolutePath);
+          const resolvedProjectDir = path.resolve(projectDir);
+          if (!resolved.startsWith(`${resolvedProjectDir}/`)) {
+            sendJson({
+              response,
+              statusCode: 403,
+              payload: {
+                error: "FORBIDDEN_PATH",
+                message: "Path escapes project directory.",
+              },
+            });
+            return;
+          }
+
+          // Reject symlinks
+          try {
+            const lstats = await lstat(absolutePath);
+            if (lstats.isSymbolicLink()) {
+              sendJson({
+                response,
+                statusCode: 403,
+                payload: {
+                  error: "FORBIDDEN_PATH",
+                  message: "Symbolic links are not allowed.",
+                },
+              });
+              return;
             }
-          });
-          return;
-        }
-
-        let content: string;
-        try {
-          content = await readFile(absolutePath, "utf8");
-        } catch {
-          sendJson({
-            response,
-            statusCode: 404,
-            payload: {
-              error: "FILE_NOT_FOUND",
-              message: `File '${safeFilePath}' not found in job '${jobId}'.`
-            }
-          });
-          return;
-        }
-
-        sendText({
-          response,
-          statusCode: 200,
-          contentType: "text/plain; charset=utf-8",
-          payload: content
-        });
-        return;
-      }
-
-      const parsedReproRoute = parseReproRoute(pathname);
-      if (parsedReproRoute) {
-        const reproJobId = safeDecodeParam(parsedReproRoute.jobId, "repro job ID", response);
-        if (reproJobId === null) return;
-        const reproPreviewPath = safeDecodeParam(parsedReproRoute.previewPath, "repro preview path", response);
-        if (reproPreviewPath === null) return;
-        const previewAsset = await jobEngine.resolvePreviewAsset(
-          reproJobId,
-          reproPreviewPath
-        );
-
-        if (!previewAsset) {
-          sendJson({
-            response,
-            statusCode: 404,
-            payload: {
-              error: "PREVIEW_NOT_FOUND",
-              message: `No preview artifact found for '${parsedReproRoute.jobId}'.`
-            }
-          });
-          return;
-        }
-
-        // Inject inspect-bridge script into HTML responses served from the preview
-        if (previewAsset.contentType.startsWith("text/html")) {
-          const html = previewAsset.content.toString("utf8");
-          const injectedHtml = injectInspectBridgeScript(html);
-          sendBuffer({
-            response,
-            statusCode: 200,
-            contentType: previewAsset.contentType,
-            payload: Buffer.from(injectedHtml, "utf8"),
-            cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
-            allowFrameEmbedding: true
-          });
-          return;
-        }
-
-        sendBuffer({
-          response,
-          statusCode: 200,
-          contentType: previewAsset.contentType,
-          payload: previewAsset.content,
-          cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
-          allowFrameEmbedding: true
-        });
-        return;
-      }
-
-      const uiAssetPath = resolveUiAssetPath(pathname);
-      const shouldServeWorkspaceAlias = isWorkspaceProjectRoute(pathname);
-      if (uiAssetPath || shouldServeWorkspaceAlias) {
-        try {
-          const uiAssets = await getUiAssets(moduleDir);
-          const requestedUiAsset = getUiAsset({
-            assets: uiAssets,
-            assetPath: uiAssetPath ?? "index.html"
-          });
-          const shouldServeUiEntrypoint =
-            shouldServeWorkspaceAlias ||
-            uiAssetPath === "index.html" ||
-            (requestedUiAsset === undefined && shouldFallbackToUiEntrypoint(pathname));
-          const uiAsset = shouldServeUiEntrypoint
-            ? getUiAsset({
-                assets: uiAssets,
-                assetPath: "index.html"
-              })
-            : requestedUiAsset;
-
-          if (!uiAsset) {
+          } catch {
             sendJson({
               response,
               statusCode: 404,
               payload: {
-                error: "NOT_FOUND",
-                message: `Unknown route: ${method} ${pathname}`
-              }
+                error: "FILE_NOT_FOUND",
+                message: `File '${safeFilePath}' not found in job '${jobId}'.`,
+              },
             });
             return;
           }
 
-          const isUiDocumentResponse =
-            uiAsset.contentType.startsWith("text/html") &&
-            shouldServeUiEntrypoint;
+          let content: string;
+          try {
+            content = await readFile(absolutePath, "utf8");
+          } catch {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "FILE_NOT_FOUND",
+                message: `File '${safeFilePath}' not found in job '${jobId}'.`,
+              },
+            });
+            return;
+          }
+
+          sendText({
+            response,
+            statusCode: 200,
+            contentType: "text/plain; charset=utf-8",
+            payload: content,
+          });
+          return;
+        }
+
+        const parsedReproRoute = parseReproRoute(pathname);
+        if (parsedReproRoute) {
+          const reproJobId = safeDecodeParam(
+            parsedReproRoute.jobId,
+            "repro job ID",
+            response,
+          );
+          if (reproJobId === null) return;
+          const reproPreviewPath = safeDecodeParam(
+            parsedReproRoute.previewPath,
+            "repro preview path",
+            response,
+          );
+          if (reproPreviewPath === null) return;
+          const previewAsset = await jobEngine.resolvePreviewAsset(
+            reproJobId,
+            reproPreviewPath,
+          );
+
+          if (!previewAsset) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "PREVIEW_NOT_FOUND",
+                message: `No preview artifact found for '${parsedReproRoute.jobId}'.`,
+              },
+            });
+            return;
+          }
+
+          // Inject inspect-bridge script into HTML responses served from the preview
+          if (previewAsset.contentType.startsWith("text/html")) {
+            const html = previewAsset.content.toString("utf8");
+            const injectedHtml = injectInspectBridgeScript(html);
+            sendBuffer({
+              response,
+              statusCode: 200,
+              contentType: previewAsset.contentType,
+              payload: Buffer.from(injectedHtml, "utf8"),
+              cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+              allowFrameEmbedding: true,
+            });
+            return;
+          }
+
           sendBuffer({
             response,
             statusCode: 200,
-            contentType: uiAsset.contentType,
-            payload: uiAsset.content,
+            contentType: previewAsset.contentType,
+            payload: previewAsset.content,
             cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
-            ...(isUiDocumentResponse ? { contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY } : {})
+            allowFrameEmbedding: true,
           });
           return;
-        } catch {
+        }
+
+        const uiAssetPath = resolveUiAssetPath(pathname);
+        const shouldServeWorkspaceAlias = isWorkspaceProjectRoute(pathname);
+        if (uiAssetPath || shouldServeWorkspaceAlias) {
+          try {
+            const uiAssets = await getUiAssets(moduleDir);
+            const requestedUiAsset = getUiAsset({
+              assets: uiAssets,
+              assetPath: uiAssetPath ?? "index.html",
+            });
+            const shouldServeUiEntrypoint =
+              shouldServeWorkspaceAlias ||
+              uiAssetPath === "index.html" ||
+              (requestedUiAsset === undefined &&
+                shouldFallbackToUiEntrypoint(pathname));
+            const uiAsset = shouldServeUiEntrypoint
+              ? getUiAsset({
+                  assets: uiAssets,
+                  assetPath: "index.html",
+                })
+              : requestedUiAsset;
+
+            if (!uiAsset) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "NOT_FOUND",
+                  message: `Unknown route: ${method} ${pathname}`,
+                },
+              });
+              return;
+            }
+
+            const isUiDocumentResponse =
+              uiAsset.contentType.startsWith("text/html") &&
+              shouldServeUiEntrypoint;
+            sendBuffer({
+              response,
+              statusCode: 200,
+              contentType: uiAsset.contentType,
+              payload: uiAsset.content,
+              cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+              ...(isUiDocumentResponse
+                ? {
+                    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+                  }
+                : {}),
+            });
+            return;
+          } catch {
+            sendJson({
+              response,
+              statusCode: 503,
+              payload: {
+                error: "UI_ASSETS_UNAVAILABLE",
+                message:
+                  "workspace-dev UI assets are not available in this runtime.",
+              },
+            });
+            return;
+          }
+        }
+      }
+
+      if (method === "OPTIONS") {
+        if (!protectedWriteRoute) {
           sendJson({
             response,
-            statusCode: 503,
+            statusCode: 404,
             payload: {
-              error: "UI_ASSETS_UNAVAILABLE",
-              message: "workspace-dev UI assets are not available in this runtime."
-            }
+              error: "NOT_FOUND",
+              message: `Unknown route: ${method} ${pathname}`,
+            },
           });
           return;
         }
-      }
-    }
 
-    if (method === "OPTIONS") {
-      if (!protectedWriteRoute) {
+        response.setHeader("allow", "POST");
         sendJson({
           response,
-          statusCode: 404,
+          statusCode: 405,
           payload: {
-            error: "NOT_FOUND",
-            message: `Unknown route: ${method} ${pathname}`
-          }
+            error: "METHOD_NOT_ALLOWED",
+            message: `Write route '${pathname}' only supports POST and does not support cross-origin browser preflight requests.`,
+          },
         });
         return;
       }
 
-      response.setHeader("allow", "POST");
-      sendJson({
-        response,
-        statusCode: 405,
-        payload: {
-          error: "METHOD_NOT_ALLOWED",
-          message: `Write route '${pathname}' only supports POST and does not support cross-origin browser preflight requests.`
+      if (method === "POST") {
+        const parsedJobRoute = protectedWriteRoute?.parsedJobRoute;
+
+        if (!protectedWriteRoute) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "NOT_FOUND",
+              message: `Unknown route: ${method} ${pathname}`,
+            },
+          });
+          return;
         }
-      });
-      return;
-    }
 
-    if (method === "POST") {
-      const parsedJobRoute = protectedWriteRoute?.parsedJobRoute;
-
-      if (!protectedWriteRoute) {
-        sendJson({
-          response,
-          statusCode: 404,
-          payload: {
-            error: "NOT_FOUND",
-            message: `Unknown route: ${method} ${pathname}`
-          }
+        const writeRequestValidation = validateWriteRequest({
+          request,
+          host,
+          port: getResolvedPort(),
         });
-        return;
-      }
-
-      const writeRequestValidation = validateWriteRequest({
-        request,
-        host,
-        port: getResolvedPort()
-      });
-      if (!writeRequestValidation.ok) {
-        sendAuditedError({
-          statusCode: writeRequestValidation.statusCode,
-          payload: writeRequestValidation.payload,
-          event:
-            writeRequestValidation.payload.error === "UNSUPPORTED_MEDIA_TYPE"
-              ? "security.request.unsupported_media_type"
-              : "security.request.rejected_origin",
-          level: "warn",
-          fallbackMessage: "Write request rejected."
-        });
-        return;
-      }
-
-      const isRateLimitedWriteRoute =
-        pathname === "/workspace/submit" || parsedJobRoute?.action === "regenerate";
-      if (isRateLimitedWriteRoute) {
-        const rateLimitResult = rateLimiter.consume(resolveRateLimitClientKey(request));
-        if (!rateLimitResult.allowed) {
-          response.setHeader("retry-after", String(rateLimitResult.retryAfterSeconds));
+        if (!writeRequestValidation.ok) {
           sendAuditedError({
-            statusCode: 429,
-            payload: {
-              error: "RATE_LIMIT_EXCEEDED",
-              message: `Too many job submissions from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`
-            },
-            event: "security.request.rate_limited",
+            statusCode: writeRequestValidation.statusCode,
+            payload: writeRequestValidation.payload,
+            event:
+              writeRequestValidation.payload.error === "UNSUPPORTED_MEDIA_TYPE"
+                ? "security.request.unsupported_media_type"
+                : "security.request.rejected_origin",
             level: "warn",
-            fallbackMessage: "Write request rate limited."
-          });
-          return;
-        }
-      }
-
-      if (parsedJobRoute?.action === "cancel") {
-        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        const rawBody = await readJsonBody(request);
-        if (!rawBody.ok) {
-          sendValidationError({
-            payload: {
-              error: "VALIDATION_ERROR",
-              message: "Request validation failed.",
-              issues: [{ path: "(root)", message: rawBody.error }]
-            },
-            jobId,
-            fallbackMessage: "Cancel request validation failed."
+            fallbackMessage: "Write request rejected.",
           });
           return;
         }
 
-        let reason: string | undefined;
-        if (rawBody.value !== undefined) {
-          if (
-            typeof rawBody.value !== "object" ||
-            rawBody.value === null ||
-            Array.isArray(rawBody.value)
-          ) {
+        const isRateLimitedWriteRoute =
+          pathname === "/workspace/submit" ||
+          parsedJobRoute?.action === "regenerate";
+        if (isRateLimitedWriteRoute) {
+          const rateLimitResult = rateLimiter.consume(
+            resolveRateLimitClientKey(request),
+          );
+          if (!rateLimitResult.allowed) {
+            response.setHeader(
+              "retry-after",
+              String(rateLimitResult.retryAfterSeconds),
+            );
+            sendAuditedError({
+              statusCode: 429,
+              payload: {
+                error: "RATE_LIMIT_EXCEEDED",
+                message: `Too many job submissions from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+              },
+              event: "security.request.rate_limited",
+              level: "warn",
+              fallbackMessage: "Write request rate limited.",
+            });
+            return;
+          }
+        }
+
+        if (parsedJobRoute?.action === "cancel") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
             sendValidationError({
               payload: {
                 error: "VALIDATION_ERROR",
                 message: "Request validation failed.",
-                issues: [{ path: "(root)", message: "Cancel request must be an object when body is provided." }]
+                issues: [{ path: "(root)", message: rawBody.error }],
               },
               jobId,
-              fallbackMessage: "Cancel request validation failed."
+              fallbackMessage: "Cancel request validation failed.",
             });
             return;
           }
 
-          const payload = rawBody.value as Record<string, unknown>;
-          const allowedKeys = new Set(["reason"]);
-          const unknownKey = Object.keys(payload).find((key) => !allowedKeys.has(key));
-          if (unknownKey) {
-            sendValidationError({
-              payload: {
-                error: "VALIDATION_ERROR",
-                message: "Request validation failed.",
-                issues: [{ path: unknownKey, message: `Unexpected property '${unknownKey}'.` }]
-              },
-              jobId,
-              fallbackMessage: "Cancel request validation failed."
-            });
-            return;
-          }
-
-          if (payload.reason !== undefined) {
-            if (typeof payload.reason !== "string" || payload.reason.trim().length === 0) {
+          let reason: string | undefined;
+          if (rawBody.value !== undefined) {
+            if (
+              typeof rawBody.value !== "object" ||
+              rawBody.value === null ||
+              Array.isArray(rawBody.value)
+            ) {
               sendValidationError({
                 payload: {
                   error: "VALIDATION_ERROR",
                   message: "Request validation failed.",
-                  issues: [{ path: "reason", message: "reason must be a non-empty string when provided." }]
+                  issues: [
+                    {
+                      path: "(root)",
+                      message:
+                        "Cancel request must be an object when body is provided.",
+                    },
+                  ],
                 },
                 jobId,
-                fallbackMessage: "Cancel request validation failed."
+                fallbackMessage: "Cancel request validation failed.",
               });
               return;
             }
-            reason = payload.reason.trim();
+
+            const payload = rawBody.value as Record<string, unknown>;
+            const allowedKeys = new Set(["reason"]);
+            const unknownKey = Object.keys(payload).find(
+              (key) => !allowedKeys.has(key),
+            );
+            if (unknownKey) {
+              sendValidationError({
+                payload: {
+                  error: "VALIDATION_ERROR",
+                  message: "Request validation failed.",
+                  issues: [
+                    {
+                      path: unknownKey,
+                      message: `Unexpected property '${unknownKey}'.`,
+                    },
+                  ],
+                },
+                jobId,
+                fallbackMessage: "Cancel request validation failed.",
+              });
+              return;
+            }
+
+            if (payload.reason !== undefined) {
+              if (
+                typeof payload.reason !== "string" ||
+                payload.reason.trim().length === 0
+              ) {
+                sendValidationError({
+                  payload: {
+                    error: "VALIDATION_ERROR",
+                    message: "Request validation failed.",
+                    issues: [
+                      {
+                        path: "reason",
+                        message:
+                          "reason must be a non-empty string when provided.",
+                      },
+                    ],
+                  },
+                  jobId,
+                  fallbackMessage: "Cancel request validation failed.",
+                });
+                return;
+              }
+              reason = payload.reason.trim();
+            }
           }
-        }
 
-        const canceledJob = jobEngine.cancelJob({ jobId, ...(reason ? { reason } : {}) });
-        if (!canceledJob) {
-          sendRequestFailure({
-            statusCode: 404,
-            payload: {
-              error: "JOB_NOT_FOUND",
-              message: `Unknown job '${jobId}'.`
-            },
+          const canceledJob = jobEngine.cancelJob({
             jobId,
-            fallbackMessage: `Cancel request failed for job '${jobId}'.`
+            ...(reason ? { reason } : {}),
           });
-          return;
-        }
-        logAuditEvent({
-          event: "workspace.cancel.accepted",
-          statusCode: 202,
-          jobId,
-          message: `Cancellation accepted for job '${jobId}'.`
-        });
-        sendJson({
-          response,
-          statusCode: 202,
-          payload: canceledJob
-        });
-        return;
-      }
-
-      if (parsedJobRoute?.action === "sync") {
-        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        const rawBody = await readJsonBody(request);
-        if (!rawBody.ok) {
-          sendValidationError({
-            payload: {
-              error: "VALIDATION_ERROR",
-              message: "Request validation failed.",
-              issues: [{ path: "(root)", message: rawBody.error }]
-            },
-            jobId,
-            fallbackMessage: "Sync request validation failed."
-          });
-          return;
-        }
-
-        const parsed = SyncRequestSchema.safeParse(rawBody.value);
-        if (!parsed.success) {
-          sendValidationError({
-            payload: formatZodError(parsed.error),
-            jobId,
-            fallbackMessage: "Sync request validation failed."
-          });
-          return;
-        }
-
-        try {
-          if (parsed.data.mode === "dry_run") {
-            const preview = await jobEngine.previewLocalSync({
+          if (!canceledJob) {
+            sendRequestFailure({
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${jobId}'.`,
+              },
               jobId,
-              ...(parsed.data.targetPath ? { targetPath: parsed.data.targetPath } : {})
+              fallbackMessage: `Cancel request failed for job '${jobId}'.`,
             });
-            logAuditEvent({
-              event: "workspace.sync.previewed",
-              statusCode: 200,
+            return;
+          }
+          logAuditEvent({
+            event: "workspace.cancel.accepted",
+            statusCode: 202,
+            jobId,
+            message: `Cancellation accepted for job '${jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 202,
+            payload: canceledJob,
+          });
+          return;
+        }
+
+        if (parsedJobRoute?.action === "sync") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
               jobId,
-              message: `Local sync preview completed for job '${jobId}'.`
-            });
-            sendJson({
-              response,
-              statusCode: 200,
-              payload: preview
+              fallbackMessage: "Sync request validation failed.",
             });
             return;
           }
 
-          const applied = await jobEngine.applyLocalSync({
-            jobId,
-            confirmationToken: parsed.data.confirmationToken,
-            confirmOverwrite: parsed.data.confirmOverwrite,
-            fileDecisions: parsed.data.fileDecisions
-          });
+          const parsed = SyncRequestSchema.safeParse(rawBody.value);
+          if (!parsed.success) {
+            sendValidationError({
+              payload: formatZodError(parsed.error),
+              jobId,
+              fallbackMessage: "Sync request validation failed.",
+            });
+            return;
+          }
+
+          try {
+            if (parsed.data.mode === "dry_run") {
+              const preview = await jobEngine.previewLocalSync({
+                jobId,
+                ...(parsed.data.targetPath
+                  ? { targetPath: parsed.data.targetPath }
+                  : {}),
+              });
+              logAuditEvent({
+                event: "workspace.sync.previewed",
+                statusCode: 200,
+                jobId,
+                message: `Local sync preview completed for job '${jobId}'.`,
+              });
+              sendJson({
+                response,
+                statusCode: 200,
+                payload: preview,
+              });
+              return;
+            }
+
+            const applied = await jobEngine.applyLocalSync({
+              jobId,
+              confirmationToken: parsed.data.confirmationToken,
+              confirmOverwrite: parsed.data.confirmOverwrite,
+              fileDecisions: parsed.data.fileDecisions,
+            });
+            logAuditEvent({
+              event: "workspace.sync.applied",
+              statusCode: 200,
+              jobId,
+              message: `Local sync applied for job '${jobId}'.`,
+            });
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: applied,
+            });
+            return;
+          } catch (error) {
+            if (error instanceof Error && "code" in error) {
+              const code = (error as { code?: string }).code;
+              if (code === "E_SYNC_JOB_NOT_FOUND") {
+                sendRequestFailure({
+                  statusCode: 404,
+                  payload: {
+                    error: "JOB_NOT_FOUND",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: `Unknown job '${jobId}'.`,
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_SYNC_JOB_NOT_COMPLETED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "SYNC_JOB_NOT_COMPLETED",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "Local sync is only available for completed jobs.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_SYNC_REGEN_REQUIRED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "SYNC_REGEN_REQUIRED",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "Local sync is only available for regeneration jobs.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_SYNC_CONFIRMATION_REQUIRED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "SYNC_CONFIRMATION_REQUIRED",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "Local sync apply requires explicit confirmation.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (
+                code === "E_SYNC_CONFIRMATION_INVALID" ||
+                code === "E_SYNC_CONFIRMATION_EXPIRED"
+              ) {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error:
+                      code === "E_SYNC_CONFIRMATION_EXPIRED"
+                        ? "SYNC_CONFIRMATION_EXPIRED"
+                        : "SYNC_CONFIRMATION_INVALID",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Local sync confirmation token is invalid.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_SYNC_PREVIEW_STALE") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "SYNC_PREVIEW_STALE",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "Local sync preview is stale. Request a new dry-run preview.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+            }
+
+            if (error instanceof LocalSyncError) {
+              if (error.code === "E_SYNC_TARGET_PATH_INVALID") {
+                sendValidationError({
+                  payload: {
+                    error: "INVALID_TARGET_PATH",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "targetPath is invalid.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: "Sync request validation failed.",
+                });
+                return;
+              }
+              if (error.code === "E_SYNC_GENERATED_DIR_MISSING") {
+                sendRequestFailure({
+                  statusCode: 404,
+                  payload: {
+                    error: "SYNC_GENERATED_OUTPUT_NOT_FOUND",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Generated output was not found.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (
+                error.code === "E_SYNC_DESTINATION_UNSAFE" ||
+                error.code === "E_SYNC_DESTINATION_SYMLINK" ||
+                error.code === "E_SYNC_DESTINATION_CONFLICT" ||
+                error.code === "E_SYNC_SOURCE_SYMLINK"
+              ) {
+                sendValidationError({
+                  payload: {
+                    error: "SYNC_DESTINATION_UNSAFE",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Sync destination is not safe for writes.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: "Sync request validation failed.",
+                });
+                return;
+              }
+              if (error.code === "E_SYNC_FILE_DECISIONS_INVALID") {
+                sendValidationError({
+                  payload: {
+                    error: "SYNC_FILE_DECISIONS_INVALID",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Local sync file decisions are invalid.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: "Sync request validation failed.",
+                });
+                return;
+              }
+            }
+
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not perform local sync.",
+                }),
+              },
+              jobId,
+              fallbackMessage: `Sync request failed for job '${jobId}'.`,
+            });
+            return;
+          }
+        }
+
+        if (parsedJobRoute?.action === "regenerate") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              jobId,
+              fallbackMessage: "Regeneration request validation failed.",
+            });
+            return;
+          }
+
+          const parsed = RegenerationRequestSchema.safeParse(rawBody.value);
+          if (!parsed.success) {
+            sendValidationError({
+              payload: formatZodError(parsed.error),
+              jobId,
+              fallbackMessage: "Regeneration request validation failed.",
+            });
+            return;
+          }
+
+          let accepted: ReturnType<JobEngine["submitRegeneration"]>;
+          try {
+            accepted = jobEngine.submitRegeneration({
+              sourceJobId: jobId,
+              overrides: parsed.data.overrides,
+              ...(parsed.data.draftId ? { draftId: parsed.data.draftId } : {}),
+              ...(parsed.data.baseFingerprint
+                ? { baseFingerprint: parsed.data.baseFingerprint }
+                : {}),
+              ...(parsed.data.customerBrandId
+                ? { customerBrandId: parsed.data.customerBrandId }
+                : {}),
+              ...(parsed.data.componentMappings
+                ? { componentMappings: parsed.data.componentMappings }
+                : {}),
+            });
+          } catch (error) {
+            if (error instanceof Error && "code" in error) {
+              const code = (error as { code?: string }).code;
+              if (code === "E_JOB_QUEUE_FULL") {
+                const queueValue = (error as { queue?: unknown }).queue;
+                sendAuditedError({
+                  statusCode: 429,
+                  payload: {
+                    error: "QUEUE_BACKPRESSURE",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Job queue limit reached.",
+                    }),
+                    queue:
+                      typeof queueValue === "object" && queueValue !== null
+                        ? queueValue
+                        : undefined,
+                  },
+                  event: "security.request.rate_limited",
+                  level: "warn",
+                  jobId,
+                  fallbackMessage: `Regeneration request rate limited for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_REGEN_SOURCE_NOT_FOUND") {
+                sendRequestFailure({
+                  statusCode: 404,
+                  payload: {
+                    error: "SOURCE_JOB_NOT_FOUND",
+                    message: `Source job '${jobId}' not found.`,
+                  },
+                  jobId,
+                  fallbackMessage: `Regeneration request failed for source job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_REGEN_SOURCE_NOT_COMPLETED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "SOURCE_JOB_NOT_COMPLETED",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Source job is not completed.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Regeneration request failed for source job '${jobId}'.`,
+                });
+                return;
+              }
+            }
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not submit regeneration job.",
+                }),
+              },
+              jobId,
+              fallbackMessage: `Regeneration request failed for source job '${jobId}'.`,
+            });
+            return;
+          }
+
           logAuditEvent({
-            event: "workspace.sync.applied",
+            event: "workspace.regenerate.accepted",
+            statusCode: 202,
+            jobId: accepted.jobId,
+            message: `Regeneration accepted for source job '${jobId}' as job '${accepted.jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 202,
+            payload: accepted,
+          });
+          return;
+        }
+
+        if (parsedJobRoute?.action === "create-pr") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              jobId,
+              fallbackMessage: "Create PR request validation failed.",
+            });
+            return;
+          }
+
+          const parsed = CreatePrRequestSchema.safeParse(rawBody.value);
+          if (!parsed.success) {
+            sendValidationError({
+              payload: formatZodError(parsed.error),
+              jobId,
+              fallbackMessage: "Create PR request validation failed.",
+            });
+            return;
+          }
+
+          let result: Awaited<ReturnType<JobEngine["createPrFromJob"]>>;
+          try {
+            result = await jobEngine.createPrFromJob({
+              jobId,
+              prInput: parsed.data,
+            });
+          } catch (error) {
+            if (error instanceof Error && "code" in error) {
+              const code = (error as { code?: string }).code;
+              if (code === "E_PR_JOB_NOT_FOUND") {
+                sendRequestFailure({
+                  statusCode: 404,
+                  payload: {
+                    error: "JOB_NOT_FOUND",
+                    message: `Job '${jobId}' not found.`,
+                  },
+                  jobId,
+                  fallbackMessage: `Create PR request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_PR_JOB_NOT_COMPLETED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "JOB_NOT_COMPLETED",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Job is not completed.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Create PR request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_PR_NOT_REGENERATION_JOB") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "NOT_REGENERATION_JOB",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Only regeneration jobs support PR creation.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Create PR request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_PR_NO_GENERATED_PROJECT") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "NO_GENERATED_PROJECT",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Job has no generated project.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Create PR request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+            }
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not create PR.",
+                }),
+              },
+              jobId,
+              fallbackMessage: `Create PR request failed for job '${jobId}'.`,
+            });
+            return;
+          }
+
+          logAuditEvent({
+            event: "workspace.create_pr.completed",
             statusCode: 200,
             jobId,
-            message: `Local sync applied for job '${jobId}'.`
+            message: `Create PR completed for job '${jobId}'.`,
           });
           sendJson({
             response,
             statusCode: 200,
-            payload: applied
+            payload: result,
           });
           return;
-        } catch (error) {
-          if (error instanceof Error && "code" in error) {
-            const code = (error as { code?: string }).code;
-            if (code === "E_SYNC_JOB_NOT_FOUND") {
-              sendRequestFailure({
-                statusCode: 404,
-                payload: {
-                  error: "JOB_NOT_FOUND",
-                  message: sanitizeErrorMessage({ error, fallback: `Unknown job '${jobId}'.` })
-                },
-                jobId,
-                fallbackMessage: `Sync request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_SYNC_JOB_NOT_COMPLETED") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "SYNC_JOB_NOT_COMPLETED",
-                  message: sanitizeErrorMessage({ error, fallback: "Local sync is only available for completed jobs." })
-                },
-                jobId,
-                fallbackMessage: `Sync request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_SYNC_REGEN_REQUIRED") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "SYNC_REGEN_REQUIRED",
-                  message: sanitizeErrorMessage({ error, fallback: "Local sync is only available for regeneration jobs." })
-                },
-                jobId,
-                fallbackMessage: `Sync request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_SYNC_CONFIRMATION_REQUIRED") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "SYNC_CONFIRMATION_REQUIRED",
-                  message: sanitizeErrorMessage({ error, fallback: "Local sync apply requires explicit confirmation." })
-                },
-                jobId,
-                fallbackMessage: `Sync request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_SYNC_CONFIRMATION_INVALID" || code === "E_SYNC_CONFIRMATION_EXPIRED") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: code === "E_SYNC_CONFIRMATION_EXPIRED" ? "SYNC_CONFIRMATION_EXPIRED" : "SYNC_CONFIRMATION_INVALID",
-                  message: sanitizeErrorMessage({ error, fallback: "Local sync confirmation token is invalid." })
-                },
-                jobId,
-                fallbackMessage: `Sync request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_SYNC_PREVIEW_STALE") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "SYNC_PREVIEW_STALE",
-                  message: sanitizeErrorMessage({ error, fallback: "Local sync preview is stale. Request a new dry-run preview." })
-                },
-                jobId,
-                fallbackMessage: `Sync request failed for job '${jobId}'.`
-              });
-              return;
-            }
+        }
+
+        if (parsedJobRoute?.action === "stale-check") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              jobId,
+              fallbackMessage: "Stale-check request validation failed.",
+            });
+            return;
           }
 
-          if (error instanceof LocalSyncError) {
-            if (error.code === "E_SYNC_TARGET_PATH_INVALID") {
-              sendValidationError({
-                payload: {
-                  error: "INVALID_TARGET_PATH",
-                  message: sanitizeErrorMessage({ error, fallback: "targetPath is invalid." })
-                },
-                jobId,
-                fallbackMessage: "Sync request validation failed."
-              });
-              return;
-            }
-            if (error.code === "E_SYNC_GENERATED_DIR_MISSING") {
-              sendRequestFailure({
-                statusCode: 404,
-                payload: {
-                  error: "SYNC_GENERATED_OUTPUT_NOT_FOUND",
-                  message: sanitizeErrorMessage({ error, fallback: "Generated output was not found." })
-                },
-                jobId,
-                fallbackMessage: `Sync request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (
-              error.code === "E_SYNC_DESTINATION_UNSAFE" ||
-              error.code === "E_SYNC_DESTINATION_SYMLINK" ||
-              error.code === "E_SYNC_DESTINATION_CONFLICT" ||
-              error.code === "E_SYNC_SOURCE_SYMLINK"
-            ) {
-              sendValidationError({
-                payload: {
-                  error: "SYNC_DESTINATION_UNSAFE",
-                  message: sanitizeErrorMessage({ error, fallback: "Sync destination is not safe for writes." })
-                },
-                jobId,
-                fallbackMessage: "Sync request validation failed."
-              });
-              return;
-            }
-            if (error.code === "E_SYNC_FILE_DECISIONS_INVALID") {
-              sendValidationError({
-                payload: {
-                  error: "SYNC_FILE_DECISIONS_INVALID",
-                  message: sanitizeErrorMessage({ error, fallback: "Local sync file decisions are invalid." })
-                },
-                jobId,
-                fallbackMessage: "Sync request validation failed."
-              });
-              return;
-            }
+          const body = rawBody.value as { draftNodeIds?: unknown };
+          const draftNodeIds: string[] = Array.isArray(body.draftNodeIds)
+            ? body.draftNodeIds.filter(
+                (v): v is string => typeof v === "string",
+              )
+            : [];
+
+          let checkResult: Awaited<ReturnType<JobEngine["checkStaleDraft"]>>;
+          try {
+            checkResult = await jobEngine.checkStaleDraft({
+              jobId,
+              draftNodeIds,
+            });
+          } catch (error) {
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not check draft staleness.",
+                }),
+              },
+              jobId,
+              fallbackMessage: `Stale-check request failed for job '${jobId}'.`,
+            });
+            return;
           }
 
-          sendRequestFailure({
-            statusCode: 500,
-            payload: {
-              error: "INTERNAL_ERROR",
-              message: sanitizeErrorMessage({ error, fallback: "Could not perform local sync." })
-            },
+          logAuditEvent({
+            event: "workspace.stale_check.completed",
+            statusCode: 200,
             jobId,
-            fallbackMessage: `Sync request failed for job '${jobId}'.`
+            message: `Stale-check completed for job '${jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: checkResult,
+          });
+          return;
+        }
+
+        if (parsedJobRoute?.action === "remap-suggest") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              jobId,
+              fallbackMessage: "Remap-suggest request validation failed.",
+            });
+            return;
+          }
+
+          const body = rawBody.value as {
+            sourceJobId?: unknown;
+            latestJobId?: unknown;
+            unmappedNodeIds?: unknown;
+          };
+
+          const sourceJobId =
+            typeof body.sourceJobId === "string" ? body.sourceJobId : jobId;
+          const latestJobId =
+            typeof body.latestJobId === "string" ? body.latestJobId : "";
+          const unmappedNodeIds: string[] = Array.isArray(body.unmappedNodeIds)
+            ? body.unmappedNodeIds.filter(
+                (v): v is string => typeof v === "string",
+              )
+            : [];
+
+          if (!latestJobId) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "latestJobId is required.",
+              },
+              jobId,
+              fallbackMessage: "Remap-suggest request validation failed.",
+            });
+            return;
+          }
+
+          let remapResult: Awaited<ReturnType<JobEngine["suggestRemaps"]>>;
+          try {
+            remapResult = await jobEngine.suggestRemaps({
+              sourceJobId,
+              latestJobId,
+              unmappedNodeIds,
+            });
+          } catch (error) {
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not generate remap suggestions.",
+                }),
+              },
+              jobId,
+              fallbackMessage: `Remap-suggest request failed for job '${jobId}'.`,
+            });
+            return;
+          }
+
+          logAuditEvent({
+            event: "workspace.remap_suggest.completed",
+            statusCode: 200,
+            jobId,
+            message: `Remap suggestions completed for job '${jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: remapResult,
           });
           return;
         }
       }
 
-      if (parsedJobRoute?.action === "regenerate") {
-        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        const rawBody = await readJsonBody(request);
+      if (method === "POST" && pathname === "/workspace/submit") {
+        const rawBody = await readJsonBody(request, {
+          maxBytes: MAX_SUBMIT_BODY_BYTES,
+        });
         if (!rawBody.ok) {
           sendValidationError({
             payload: {
               error: "VALIDATION_ERROR",
               message: "Request validation failed.",
-              issues: [{ path: "(root)", message: rawBody.error }]
+              issues: [{ path: "(root)", message: rawBody.error }],
             },
-            jobId,
-            fallbackMessage: "Regeneration request validation failed."
+            fallbackMessage: "Submit request validation failed.",
           });
           return;
         }
 
-        const parsed = RegenerationRequestSchema.safeParse(rawBody.value);
+        const parsed = SubmitRequestSchema.safeParse(rawBody.value);
         if (!parsed.success) {
+          const figmaPasteErrorPrefixes = [
+            "INVALID_PAYLOAD:",
+            "TOO_LARGE:",
+            "SCHEMA_MISMATCH:",
+          ] as const;
+          type FigmaPasteErrorCode =
+            | "INVALID_PAYLOAD"
+            | "TOO_LARGE"
+            | "SCHEMA_MISMATCH";
+          const pasteIssue = parsed.error.issues.find((issue) =>
+            figmaPasteErrorPrefixes.some((prefix) =>
+              issue.message.startsWith(prefix),
+            ),
+          );
+          if (pasteIssue) {
+            const errorCode = pasteIssue.message.split(
+              ":",
+            )[0] as FigmaPasteErrorCode;
+            const detail = pasteIssue.message
+              .slice(errorCode.length + 1)
+              .trim();
+            sendValidationError({
+              payload: { error: errorCode, message: detail },
+              fallbackMessage: "Submit request validation failed.",
+            });
+            return;
+          }
           sendValidationError({
             payload: formatZodError(parsed.error),
-            jobId,
-            fallbackMessage: "Regeneration request validation failed."
+            fallbackMessage: "Submit request validation failed.",
           });
           return;
         }
 
-        let accepted: ReturnType<JobEngine["submitRegeneration"]>;
-        try {
-          accepted = jobEngine.submitRegeneration({
-            sourceJobId: jobId,
-            overrides: parsed.data.overrides,
-            ...(parsed.data.draftId ? { draftId: parsed.data.draftId } : {}),
-            ...(parsed.data.baseFingerprint ? { baseFingerprint: parsed.data.baseFingerprint } : {}),
-            ...(parsed.data.customerBrandId ? { customerBrandId: parsed.data.customerBrandId } : {}),
-            ...(parsed.data.componentMappings ? { componentMappings: parsed.data.componentMappings } : {})
-          });
-        } catch (error) {
-          if (error instanceof Error && "code" in error) {
-            const code = (error as { code?: string }).code;
-            if (code === "E_JOB_QUEUE_FULL") {
-              const queueValue = (error as { queue?: unknown }).queue;
-              sendAuditedError({
-                statusCode: 429,
-                payload: {
-                  error: "QUEUE_BACKPRESSURE",
-                  message: sanitizeErrorMessage({ error, fallback: "Job queue limit reached." }),
-                  queue: typeof queueValue === "object" && queueValue !== null ? queueValue : undefined
-                },
-                event: "security.request.rate_limited",
-                level: "warn",
-                jobId,
-                fallbackMessage: `Regeneration request rate limited for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_REGEN_SOURCE_NOT_FOUND") {
-              sendRequestFailure({
-                statusCode: 404,
-                payload: {
-                  error: "SOURCE_JOB_NOT_FOUND",
-                  message: `Source job '${jobId}' not found.`
-                },
-                jobId,
-                fallbackMessage: `Regeneration request failed for source job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_REGEN_SOURCE_NOT_COMPLETED") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "SOURCE_JOB_NOT_COMPLETED",
-                  message: sanitizeErrorMessage({ error, fallback: "Source job is not completed." })
-                },
-                jobId,
-                fallbackMessage: `Regeneration request failed for source job '${jobId}'.`
-              });
-              return;
-            }
-          }
-          sendRequestFailure({
-            statusCode: 500,
-            payload: {
-              error: "INTERNAL_ERROR",
-              message: sanitizeErrorMessage({ error, fallback: "Could not submit regeneration job." })
-            },
-            jobId,
-            fallbackMessage: `Regeneration request failed for source job '${jobId}'.`
-          });
-          return;
-        }
-
-        logAuditEvent({
-          event: "workspace.regenerate.accepted",
-          statusCode: 202,
-          jobId: accepted.jobId,
-          message: `Regeneration accepted for source job '${jobId}' as job '${accepted.jobId}'.`
-        });
-        sendJson({
-          response,
-          statusCode: 202,
-          payload: accepted
-        });
-        return;
-      }
-
-      if (parsedJobRoute?.action === "create-pr") {
-        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        const rawBody = await readJsonBody(request);
-        if (!rawBody.ok) {
-          sendValidationError({
-            payload: {
-              error: "VALIDATION_ERROR",
-              message: "Request validation failed.",
-              issues: [{ path: "(root)", message: rawBody.error }]
-            },
-            jobId,
-            fallbackMessage: "Create PR request validation failed."
-          });
-          return;
-        }
-
-        const parsed = CreatePrRequestSchema.safeParse(rawBody.value);
-        if (!parsed.success) {
-          sendValidationError({
-            payload: formatZodError(parsed.error),
-            jobId,
-            fallbackMessage: "Create PR request validation failed."
-          });
-          return;
-        }
-
-        let result: Awaited<ReturnType<JobEngine["createPrFromJob"]>>;
-        try {
-          result = await jobEngine.createPrFromJob({
-            jobId,
-            prInput: parsed.data
-          });
-        } catch (error) {
-          if (error instanceof Error && "code" in error) {
-            const code = (error as { code?: string }).code;
-            if (code === "E_PR_JOB_NOT_FOUND") {
-              sendRequestFailure({
-                statusCode: 404,
-                payload: {
-                  error: "JOB_NOT_FOUND",
-                  message: `Job '${jobId}' not found.`
-                },
-                jobId,
-                fallbackMessage: `Create PR request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_PR_JOB_NOT_COMPLETED") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "JOB_NOT_COMPLETED",
-                  message: sanitizeErrorMessage({ error, fallback: "Job is not completed." })
-                },
-                jobId,
-                fallbackMessage: `Create PR request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_PR_NOT_REGENERATION_JOB") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "NOT_REGENERATION_JOB",
-                  message: sanitizeErrorMessage({ error, fallback: "Only regeneration jobs support PR creation." })
-                },
-                jobId,
-                fallbackMessage: `Create PR request failed for job '${jobId}'.`
-              });
-              return;
-            }
-            if (code === "E_PR_NO_GENERATED_PROJECT") {
-              sendRequestFailure({
-                statusCode: 409,
-                payload: {
-                  error: "NO_GENERATED_PROJECT",
-                  message: sanitizeErrorMessage({ error, fallback: "Job has no generated project." })
-                },
-                jobId,
-                fallbackMessage: `Create PR request failed for job '${jobId}'.`
-              });
-              return;
-            }
-          }
-          sendRequestFailure({
-            statusCode: 500,
-            payload: {
-              error: "INTERNAL_ERROR",
-              message: sanitizeErrorMessage({ error, fallback: "Could not create PR." })
-            },
-            jobId,
-            fallbackMessage: `Create PR request failed for job '${jobId}'.`
-          });
-          return;
-        }
-
-        logAuditEvent({
-          event: "workspace.create_pr.completed",
-          statusCode: 200,
-          jobId,
-          message: `Create PR completed for job '${jobId}'.`
-        });
-        sendJson({
-          response,
-          statusCode: 200,
-          payload: result
-        });
-        return;
-      }
-
-      if (parsedJobRoute?.action === "stale-check") {
-        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        const rawBody = await readJsonBody(request);
-        if (!rawBody.ok) {
-          sendValidationError({
-            payload: {
-              error: "VALIDATION_ERROR",
-              message: "Request validation failed.",
-              issues: [{ path: "(root)", message: rawBody.error }]
-            },
-            jobId,
-            fallbackMessage: "Stale-check request validation failed."
-          });
-          return;
-        }
-
-        const body = rawBody.value as { draftNodeIds?: unknown };
-        const draftNodeIds: string[] = Array.isArray(body.draftNodeIds)
-          ? body.draftNodeIds.filter((v): v is string => typeof v === "string")
-          : [];
-
-        let checkResult: Awaited<ReturnType<JobEngine["checkStaleDraft"]>>;
-        try {
-          checkResult = await jobEngine.checkStaleDraft({ jobId, draftNodeIds });
-        } catch (error) {
-          sendRequestFailure({
-            statusCode: 500,
-            payload: {
-              error: "INTERNAL_ERROR",
-              message: sanitizeErrorMessage({ error, fallback: "Could not check draft staleness." })
-            },
-            jobId,
-            fallbackMessage: `Stale-check request failed for job '${jobId}'.`
-          });
-          return;
-        }
-
-        logAuditEvent({
-          event: "workspace.stale_check.completed",
-          statusCode: 200,
-          jobId,
-          message: `Stale-check completed for job '${jobId}'.`
-        });
-        sendJson({
-          response,
-          statusCode: 200,
-          payload: checkResult
-        });
-        return;
-      }
-
-      if (parsedJobRoute?.action === "remap-suggest") {
-        const jobId = safeDecodeParam(parsedJobRoute.jobId, "job ID", response);
-        if (jobId === null) return;
-        const rawBody = await readJsonBody(request);
-        if (!rawBody.ok) {
-          sendValidationError({
-            payload: {
-              error: "VALIDATION_ERROR",
-              message: "Request validation failed.",
-              issues: [{ path: "(root)", message: rawBody.error }]
-            },
-            jobId,
-            fallbackMessage: "Remap-suggest request validation failed."
-          });
-          return;
-        }
-
-        const body = rawBody.value as {
-          sourceJobId?: unknown;
-          latestJobId?: unknown;
-          unmappedNodeIds?: unknown;
+        const { figmaSourceMode, llmCodegenMode } = parsed.data;
+        const resolvedFigmaSourceMode =
+          (figmaSourceMode?.trim().toLowerCase() as
+            | WorkspaceFigmaSourceMode
+            | undefined) ?? defaults.figmaSourceMode;
+        const resolvedLlmCodegenMode =
+          llmCodegenMode ?? defaults.llmCodegenMode;
+        const modeLockInput = {
+          figmaSourceMode: resolvedFigmaSourceMode,
+          llmCodegenMode: resolvedLlmCodegenMode,
         };
 
-        const sourceJobId = typeof body.sourceJobId === "string" ? body.sourceJobId : jobId;
-        const latestJobId = typeof body.latestJobId === "string" ? body.latestJobId : "";
-        const unmappedNodeIds: string[] = Array.isArray(body.unmappedNodeIds)
-          ? body.unmappedNodeIds.filter((v): v is string => typeof v === "string")
-          : [];
-
-        if (!latestJobId) {
+        try {
+          enforceModeLock(modeLockInput);
+        } catch (error) {
           sendValidationError({
             payload: {
-              error: "VALIDATION_ERROR",
-              message: "latestJobId is required."
+              error: "MODE_LOCK_VIOLATION",
+              message: sanitizeErrorMessage({
+                error,
+                fallback: "Mode validation failed",
+              }),
+              allowedModes: {
+                figmaSourceMode: defaults.figmaSourceMode,
+                figmaSourceModes: [...getAllowedFigmaSourceModes()],
+                llmCodegenMode: defaults.llmCodegenMode,
+              },
             },
-            jobId,
-            fallbackMessage: "Remap-suggest request validation failed."
+            fallbackMessage: "Submit request validation failed.",
           });
           return;
         }
 
-        let remapResult: Awaited<ReturnType<JobEngine["suggestRemaps"]>>;
+        let submitInput = {
+          ...parsed.data,
+          figmaSourceMode: resolvedFigmaSourceMode,
+          llmCodegenMode: defaults.llmCodegenMode,
+        };
+        let pasteTempPathToCleanup: string | undefined;
+
+        if (resolvedFigmaSourceMode === "figma_paste") {
+          // Schema has already asserted figmaJsonPayload is a non-empty string
+          // when figmaSourceMode === "figma_paste". Crash fast if that contract
+          // is ever relaxed without this branch being updated.
+          const pastePayload = parsed.data.figmaJsonPayload;
+          if (typeof pastePayload !== "string" || pastePayload.length === 0) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_PAYLOAD",
+                message:
+                  "figmaJsonPayload is required when figmaSourceMode=figma_paste.",
+              },
+              fallbackMessage: "Submit request validation failed.",
+            });
+            return;
+          }
+          const pasteUUID = randomUUID();
+          const pasteTempDir = path.join(absoluteOutputRoot, "tmp-figma-paste");
+          const pasteTempPath = path.join(pasteTempDir, `${pasteUUID}.json`);
+          try {
+            await mkdir(pasteTempDir, { recursive: true });
+            await writeFile(pasteTempPath, pastePayload, "utf8");
+            pasteTempPathToCleanup = pasteTempPath;
+          } catch (error) {
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not write figma_paste payload to disk.",
+                }),
+              },
+              fallbackMessage: "Submit request failed.",
+            });
+            return;
+          }
+          const { figmaJsonPayload: _discardPayload, ...restSubmitInput } =
+            submitInput;
+          void _discardPayload;
+          submitInput = {
+            ...restSubmitInput,
+            figmaSourceMode: "local_json",
+            figmaJsonPath: pasteTempPath,
+          };
+        }
+
+        let accepted: ReturnType<JobEngine["submitJob"]>;
         try {
-          remapResult = await jobEngine.suggestRemaps({
-            sourceJobId,
-            latestJobId,
-            unmappedNodeIds
-          });
+          accepted = jobEngine.submitJob(submitInput);
         } catch (error) {
+          if (
+            error instanceof Error &&
+            "code" in error &&
+            (error as { code?: string }).code === "E_JOB_QUEUE_FULL"
+          ) {
+            const queueValue = (error as { queue?: unknown }).queue;
+            sendAuditedError({
+              statusCode: 429,
+              payload: {
+                error: "QUEUE_BACKPRESSURE",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Job queue limit reached.",
+                }),
+                queue:
+                  typeof queueValue === "object" && queueValue !== null
+                    ? queueValue
+                    : undefined,
+              },
+              event: "security.request.rate_limited",
+              level: "warn",
+              fallbackMessage: "Submit request rate limited.",
+            });
+            return;
+          }
           sendRequestFailure({
             statusCode: 500,
             payload: {
               error: "INTERNAL_ERROR",
-              message: sanitizeErrorMessage({ error, fallback: "Could not generate remap suggestions." })
+              message: sanitizeErrorMessage({
+                error,
+                fallback: "Could not submit job.",
+              }),
             },
-            jobId,
-            fallbackMessage: `Remap-suggest request failed for job '${jobId}'.`
+            fallbackMessage: "Submit request failed.",
           });
           return;
         }
 
         logAuditEvent({
-          event: "workspace.remap_suggest.completed",
-          statusCode: 200,
-          jobId,
-          message: `Remap suggestions completed for job '${jobId}'.`
+          event: "workspace.submit.accepted",
+          statusCode: 202,
+          jobId: accepted.jobId,
+          message: `Submission accepted as job '${accepted.jobId}'.`,
         });
         sendJson({
           response,
-          statusCode: 200,
-          payload: remapResult
+          statusCode: 202,
+          payload: accepted,
         });
-        return;
-      }
-    }
-
-    if (method === "POST" && pathname === "/workspace/submit") {
-      const rawBody = await readJsonBody(request);
-      if (!rawBody.ok) {
-        sendValidationError({
-          payload: {
-            error: "VALIDATION_ERROR",
-            message: "Request validation failed.",
-            issues: [{ path: "(root)", message: rawBody.error }]
-          },
-          fallbackMessage: "Submit request validation failed."
-        });
-        return;
-      }
-
-      const parsed = SubmitRequestSchema.safeParse(rawBody.value);
-      if (!parsed.success) {
-        sendValidationError({
-          payload: formatZodError(parsed.error),
-          fallbackMessage: "Submit request validation failed."
-        });
-        return;
-      }
-
-      const { figmaSourceMode, llmCodegenMode } = parsed.data;
-      const resolvedFigmaSourceMode =
-        (figmaSourceMode?.trim().toLowerCase() as WorkspaceFigmaSourceMode | undefined) ?? defaults.figmaSourceMode;
-      const resolvedLlmCodegenMode = llmCodegenMode ?? defaults.llmCodegenMode;
-      const modeLockInput = {
-        figmaSourceMode: resolvedFigmaSourceMode,
-        llmCodegenMode: resolvedLlmCodegenMode
-      };
-
-      try {
-        enforceModeLock(modeLockInput);
-      } catch (error) {
-        sendValidationError({
-          payload: {
-            error: "MODE_LOCK_VIOLATION",
-            message: sanitizeErrorMessage({
-              error,
-              fallback: "Mode validation failed"
-            }),
-            allowedModes: {
-              figmaSourceMode: defaults.figmaSourceMode,
-              figmaSourceModes: [...getAllowedFigmaSourceModes()],
-              llmCodegenMode: defaults.llmCodegenMode
-            }
-          },
-          fallbackMessage: "Submit request validation failed."
-        });
-        return;
-      }
-
-      let accepted: ReturnType<JobEngine["submitJob"]>;
-      try {
-        accepted = jobEngine.submitJob({
-          ...parsed.data,
-          figmaSourceMode: resolvedFigmaSourceMode,
-          llmCodegenMode: defaults.llmCodegenMode
-        });
-      } catch (error) {
-        if (
-          error instanceof Error &&
-          "code" in error &&
-          (error as { code?: string }).code === "E_JOB_QUEUE_FULL"
-        ) {
-          const queueValue = (error as { queue?: unknown }).queue;
-          sendAuditedError({
-            statusCode: 429,
-            payload: {
-              error: "QUEUE_BACKPRESSURE",
-              message: sanitizeErrorMessage({
-                error,
-                fallback: "Job queue limit reached."
-              }),
-              queue:
-                typeof queueValue === "object" &&
-                queueValue !== null
-                  ? queueValue
-                  : undefined
-            },
-            event: "security.request.rate_limited",
-            level: "warn",
-            fallbackMessage: "Submit request rate limited."
+        if (pasteTempPathToCleanup !== undefined) {
+          scheduleFigmaPasteTempCleanup({
+            jobEngine,
+            jobId: accepted.jobId,
+            filePath: pasteTempPathToCleanup,
           });
-          return;
         }
-        sendRequestFailure({
-          statusCode: 500,
-          payload: {
-            error: "INTERNAL_ERROR",
-            message: sanitizeErrorMessage({
-              error,
-              fallback: "Could not submit job."
-            })
-          },
-          fallbackMessage: "Submit request failed."
-        });
         return;
       }
 
-      logAuditEvent({
-        event: "workspace.submit.accepted",
-        statusCode: 202,
-        jobId: accepted.jobId,
-        message: `Submission accepted as job '${accepted.jobId}'.`
-      });
       sendJson({
         response,
-        statusCode: 202,
-        payload: accepted
+        statusCode: 404,
+        payload: {
+          error: "NOT_FOUND",
+          message: `Unknown route: ${method} ${pathname}`,
+        },
       });
-      return;
-    }
-
-    sendJson({
-      response,
-      statusCode: 404,
-      payload: {
-        error: "NOT_FOUND",
-        message: `Unknown route: ${method} ${pathname}`
-      }
-    });
     } catch (error) {
       const sanitizedMessage = sanitizeErrorMessage({
         error,
-        fallback: DEFAULT_REQUEST_FAILURE_MESSAGE
+        fallback: DEFAULT_REQUEST_FAILURE_MESSAGE,
       });
       logAuditEvent({
         event: "workspace.request.failed",
         level: "error",
         statusCode: 500,
-        message: sanitizedMessage
+        message: sanitizedMessage,
       });
       if (!response.writableEnded) {
         sendJson({
@@ -1772,8 +2103,8 @@ export function createWorkspaceRequestHandler({
           statusCode: 500,
           payload: {
             error: "INTERNAL_ERROR",
-            message: sanitizedMessage
-          }
+            message: sanitizedMessage,
+          },
         });
       }
     }
@@ -1781,15 +2112,58 @@ export function createWorkspaceRequestHandler({
 }
 
 /** Allowed extensions for directory listing (matches validateSourceFilePath). */
-const LISTING_EXTENSIONS = new Set([".tsx", ".ts", ".json", ".css", ".html", ".svg"]);
+const LISTING_EXTENSIONS = new Set([
+  ".tsx",
+  ".ts",
+  ".json",
+  ".css",
+  ".html",
+  ".svg",
+]);
 const LISTING_BLOCKED_DIRS = new Set(["node_modules", "dist"]);
+
+const FIGMA_PASTE_CLEANUP_POLL_MS = 1_000;
+const FIGMA_PASTE_CLEANUP_MAX_WAIT_MS = 10 * 60 * 1_000;
+
+function scheduleFigmaPasteTempCleanup(args: {
+  jobEngine: JobEngine;
+  jobId: string;
+  filePath: string;
+}): void {
+  const { jobEngine, jobId, filePath } = args;
+  const deadline = Date.now() + FIGMA_PASTE_CLEANUP_MAX_WAIT_MS;
+  const removeFile = (): void => {
+    void unlink(filePath).catch(() => {
+      /* best-effort cleanup; ignore ENOENT and other filesystem errors */
+    });
+  };
+  const poll = (): void => {
+    const job = jobEngine.getJob(jobId);
+    if (
+      !job ||
+      job.status === "completed" ||
+      job.status === "failed" ||
+      job.status === "canceled"
+    ) {
+      removeFile();
+      return;
+    }
+    if (Date.now() >= deadline) {
+      removeFile();
+      return;
+    }
+    setTimeout(poll, FIGMA_PASTE_CLEANUP_POLL_MS).unref();
+  };
+  setTimeout(poll, FIGMA_PASTE_CLEANUP_POLL_MS).unref();
+}
 
 async function collectSourceFiles(
   projectDir: string,
-  dirFilter?: string
+  dirFilter?: string,
 ): Promise<Array<{ path: string; sizeBytes: number }>> {
   const results: Array<{ path: string; sizeBytes: number }> = [];
-  const baseDir = dirFilter !== undefined ? path.join(projectDir, dirFilter) : projectDir;
+  const baseDir =
+    dirFilter !== undefined ? path.join(projectDir, dirFilter) : projectDir;
 
   const walk = async (dir: string): Promise<void> => {
     let names: string[];

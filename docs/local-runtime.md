@@ -8,7 +8,7 @@
 
 - Start local runtime on localhost
 - Serve reduced workspace UI on `/workspace/ui` and `/workspace/:figmaFileKey`
-- Enforce mode lock (`rest|hybrid|local_json` + `deterministic`)
+- Enforce mode lock (`rest|hybrid|local_json|figma_paste` + `deterministic`)
 - Execute autonomous job lifecycle (`queued -> running -> completed|failed|canceled`)
 - Enforce in-memory queue backpressure caps (`maxConcurrentJobs`, `maxQueuedJobs`)
 - Fetch Figma file over REST
@@ -50,12 +50,12 @@ Notes:
 
 ## Separation from Full Workspace Dev Platform
 
-| Aspect | workspace-dev | Full Workspace Dev Platform |
-| ------ | ------------- | -------------- |
-| Runtime | Local Node.js process | Multi-service runtime |
-| Database | None | PostgreSQL |
-| Queue | In-memory capped queue | Redis/BullMQ |
-| Source modes | REST + Hybrid + local_json | REST + MCP + Hybrid |
-| Codegen modes | Deterministic only | Deterministic + LLM |
-| Preview | Local static export | Full platform preview |
-| Git automation | Optional `git.pr` (opt-in) | Available in full stack |
+| Aspect         | workspace-dev              | Full Workspace Dev Platform |
+| -------------- | -------------------------- | --------------------------- |
+| Runtime        | Local Node.js process      | Multi-service runtime       |
+| Database       | None                       | PostgreSQL                  |
+| Queue          | In-memory capped queue     | Redis/BullMQ                |
+| Source modes   | REST + Hybrid + local_json | REST + MCP + Hybrid         |
+| Codegen modes  | Deterministic only         | Deterministic + LLM         |
+| Preview        | Local static export        | Full platform preview       |
+| Git automation | Optional `git.pr` (opt-in) | Available in full stack     |

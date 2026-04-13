@@ -99,6 +99,7 @@ Golden end-to-end fixtures validate deterministic output from `figma.json -> des
 - `figmaSourceMode=rest`
 - `figmaSourceMode=hybrid`
 - `figmaSourceMode=local_json`
+- `figmaSourceMode=figma_paste`
 - `llmCodegenMode=deterministic`
 
 Not available:

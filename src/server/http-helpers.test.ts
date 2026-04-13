@@ -5,9 +5,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   DEFAULT_CONTENT_SECURITY_POLICY,
   MAX_REQUEST_BODY_BYTES,
-  WORKSPACE_UI_CONTENT_SECURITY_POLICY
+  WORKSPACE_UI_CONTENT_SECURITY_POLICY,
 } from "./constants.js";
-import { readJsonBody, sendBuffer, sendJson, sendText } from "./http-helpers.js";
+import {
+  readJsonBody,
+  sendBuffer,
+  sendJson,
+  sendText,
+} from "./http-helpers.js";
 
 function createMockResponse(): ServerResponse & {
   body?: Buffer | string;
@@ -31,7 +36,7 @@ function createMockResponse(): ServerResponse & {
     end(payload?: string | Buffer) {
       this.body = payload;
       return this;
-    }
+    },
   } as unknown as ServerResponse & {
     body?: Buffer | string;
     headers: Record<string, string>;
@@ -47,16 +52,22 @@ test("sendJson writes JSON content-type, trailing newline, and default security 
   sendJson({
     response,
     statusCode: 202,
-    payload: { ok: true }
+    payload: { ok: true },
   });
 
   assert.equal(response.statusCode, 202);
-  assert.equal(response.headers["content-type"], "application/json; charset=utf-8");
-  assert.equal(response.headers["content-security-policy"], DEFAULT_CONTENT_SECURITY_POLICY);
+  assert.equal(
+    response.headers["content-type"],
+    "application/json; charset=utf-8",
+  );
+  assert.equal(
+    response.headers["content-security-policy"],
+    DEFAULT_CONTENT_SECURITY_POLICY,
+  );
   assert.equal(response.headers["x-frame-options"], "SAMEORIGIN");
   assert.equal(response.headers["x-content-type-options"], "nosniff");
   assert.equal(response.headers["referrer-policy"], "no-referrer");
-  assert.equal(response.body, "{\"ok\":true}\n");
+  assert.equal(response.body, '{"ok":true}\n');
 });
 
 test("sendJson appends x-request-id to JSON error envelopes only", () => {
@@ -67,13 +78,13 @@ test("sendJson appends x-request-id to JSON error envelopes only", () => {
     statusCode: 400,
     payload: {
       error: "VALIDATION_ERROR",
-      message: "Request validation failed."
-    }
+      message: "Request validation failed.",
+    },
   });
 
   assert.equal(
     response.body,
-    "{\"error\":\"VALIDATION_ERROR\",\"message\":\"Request validation failed.\",\"requestId\":\"req-helper-1\"}\n"
+    '{"error":"VALIDATION_ERROR","message":"Request validation failed.","requestId":"req-helper-1"}\n',
   );
 });
 
@@ -85,11 +96,17 @@ test("sendText supports cache control and an explicit UI CSP override", () => {
     contentType: "text/plain; charset=utf-8",
     payload: "hello",
     cacheControl: "no-store",
-    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY
+    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY,
   });
-  assert.equal(textResponse.headers["content-type"], "text/plain; charset=utf-8");
+  assert.equal(
+    textResponse.headers["content-type"],
+    "text/plain; charset=utf-8",
+  );
   assert.equal(textResponse.headers["cache-control"], "no-store");
-  assert.equal(textResponse.headers["content-security-policy"], WORKSPACE_UI_CONTENT_SECURITY_POLICY);
+  assert.equal(
+    textResponse.headers["content-security-policy"],
+    WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+  );
   assert.equal(textResponse.body, "hello");
 });
 
@@ -99,10 +116,16 @@ test("sendBuffer applies the default CSP when frame embedding is not allowed", (
     response: bufferResponse,
     statusCode: 200,
     contentType: "application/octet-stream",
-    payload: Buffer.from("ok", "utf8")
+    payload: Buffer.from("ok", "utf8"),
   });
-  assert.equal(bufferResponse.headers["content-type"], "application/octet-stream");
-  assert.equal(bufferResponse.headers["content-security-policy"], DEFAULT_CONTENT_SECURITY_POLICY);
+  assert.equal(
+    bufferResponse.headers["content-type"],
+    "application/octet-stream",
+  );
+  assert.equal(
+    bufferResponse.headers["content-security-policy"],
+    DEFAULT_CONTENT_SECURITY_POLICY,
+  );
   assert.equal(bufferResponse.headers["x-frame-options"], "SAMEORIGIN");
   assert.deepEqual(bufferResponse.body, Buffer.from("ok", "utf8"));
 });
@@ -115,7 +138,7 @@ test("sendBuffer omits frame-related headers when frame embedding is allowed", (
     contentType: "text/html; charset=utf-8",
     payload: Buffer.from("<html></html>", "utf8"),
     allowFrameEmbedding: true,
-    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY
+    contentSecurityPolicy: WORKSPACE_UI_CONTENT_SECURITY_POLICY,
   });
 
   assert.equal(response.headers["content-security-policy"], undefined);
@@ -141,7 +164,14 @@ test("readJsonBody parses valid JSON, empty bodies, invalid JSON, and oversize p
   });
 
   await assert.doesNotReject(async () => {
-    const parsed = await readJsonBody(toIncomingMessage([Buffer.from("a".repeat(MAX_REQUEST_BODY_BYTES + 1), "utf8")]));
-    assert.deepEqual(parsed, { ok: false, error: "Request body exceeds 1 MiB size limit." });
+    const parsed = await readJsonBody(
+      toIncomingMessage([
+        Buffer.from("a".repeat(MAX_REQUEST_BODY_BYTES + 1), "utf8"),
+      ]),
+    );
+    assert.deepEqual(parsed, {
+      ok: false,
+      error: "Request body exceeds 1 MiB size limit.",
+    });
   });
 });

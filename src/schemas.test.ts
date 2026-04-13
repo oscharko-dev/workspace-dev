@@ -1677,3 +1677,55 @@ test("schema: create-pr rejects unexpected properties", () => {
     ]);
   }
 });
+
+// ---------------------------------------------------------------------------
+// SubmitRequestSchema — figma_paste mode
+// ---------------------------------------------------------------------------
+
+test("schema: figma_paste mode accepts a valid JSON payload", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({ name: "Test", document: { id: "0:0" } })
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "figma_paste");
+    assert.ok(typeof result.data.figmaJsonPayload === "string");
+  }
+});
+
+test("schema: figma_paste mode rejects missing figmaJsonPayload with INVALID_PAYLOAD", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) => i.message.startsWith("INVALID_PAYLOAD:"));
+    assert.ok(issue, "Expected an INVALID_PAYLOAD issue");
+  }
+});
+
+test("schema: figma_paste mode rejects malformed JSON payload with SCHEMA_MISMATCH", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: "{ not valid json }"
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) => i.message.startsWith("SCHEMA_MISMATCH:"));
+    assert.ok(issue, "Expected a SCHEMA_MISMATCH issue");
+  }
+});
+
+test("schema: figma_paste mode rejects oversize payload with TOO_LARGE", () => {
+  const oversizePayload = "x".repeat(3 * 1024 * 1024);
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: oversizePayload
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) => i.message.startsWith("TOO_LARGE:"));
+    assert.ok(issue, "Expected a TOO_LARGE issue");
+  }
+});

@@ -2,6 +2,7 @@
 
 ## Runtime and Platform Matrix
 
+<!-- prettier-ignore -->
 | Capability | Minimum | Supported |
 | --- | --- | --- |
 | Node.js runtime | 22.0.0 | 22.x, 24.x |
@@ -13,11 +14,13 @@
 
 ## Contract and Mode Matrix
 
+<!-- prettier-ignore -->
 | Area | workspace-dev |
 | --- | --- |
-| Contract version | `3.9.0` |
+| Contract version | `3.11.0` |
 | `figmaSourceMode=rest` | Supported |
 | `figmaSourceMode=local_json` | Supported |
+| `figmaSourceMode=figma_paste` | Supported |
 | `figmaSourceMode=mcp` | Blocked |
 | `figmaSourceMode=hybrid` | Supported |
 | `llmCodegenMode=deterministic` | Supported |
