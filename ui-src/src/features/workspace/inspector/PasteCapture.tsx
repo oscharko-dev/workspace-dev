@@ -29,11 +29,7 @@ const EXAMPLE_SNIPPET = `{
 }`;
 
 function isJsonFile(file: File): boolean {
-  return (
-    file.name.endsWith(".json") ||
-    file.type === "application/json" ||
-    file.type === "text/plain"
-  );
+  return file.name.endsWith(".json") || file.type === "application/json";
 }
 
 export function PasteCapture({
@@ -52,6 +48,8 @@ export function PasteCapture({
   const hintId = `${reactId}-hint`;
 
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isReadingDropFile, setIsReadingDropFile] = useState(false);
+  const interactionDisabled = disabled || isReadingDropFile;
 
   const describedByIds = [promptId];
   if (helperHint) {
@@ -62,15 +60,15 @@ export function PasteCapture({
   }
 
   const handleRegionClick = useCallback((): void => {
-    if (disabled) {
+    if (interactionDisabled) {
       return;
     }
     textareaRef.current?.focus();
-  }, [disabled]);
+  }, [interactionDisabled]);
 
   const handlePaste = useCallback(
     (event: ReactClipboardEvent<HTMLTextAreaElement>): void => {
-      if (disabled) {
+      if (interactionDisabled) {
         event.preventDefault();
         return;
       }
@@ -81,12 +79,12 @@ export function PasteCapture({
       event.preventDefault();
       onPaste(text);
     },
-    [disabled, onPaste],
+    [interactionDisabled, onPaste],
   );
 
   const handleDragOver = useCallback(
     (event: ReactDragEvent<HTMLElement>): void => {
-      if (disabled) {
+      if (interactionDisabled) {
         return;
       }
       event.preventDefault();
@@ -96,12 +94,12 @@ export function PasteCapture({
         event.dataTransfer.dropEffect = "copy";
       }
     },
-    [disabled],
+    [interactionDisabled],
   );
 
   const handleDragLeave = useCallback(
     (event: ReactDragEvent<HTMLElement>): void => {
-      if (disabled) {
+      if (interactionDisabled) {
         return;
       }
       const currentTarget = event.currentTarget;
@@ -110,12 +108,12 @@ export function PasteCapture({
         setIsDraggingOver(false);
       }
     },
-    [disabled],
+    [interactionDisabled],
   );
 
   const handleDrop = useCallback(
     (event: ReactDragEvent<HTMLElement>): void => {
-      if (disabled) {
+      if (interactionDisabled) {
         return;
       }
       event.preventDefault();
@@ -133,9 +131,15 @@ export function PasteCapture({
           return;
         }
 
-        void firstFile.text().then((text) => {
-          (onDropFile ?? onPaste)(text);
-        });
+        setIsReadingDropFile(true);
+        void firstFile
+          .text()
+          .then((text) => {
+            (onDropFile ?? onPaste)(text);
+          })
+          .finally(() => {
+            setIsReadingDropFile(false);
+          });
         return;
       }
 
@@ -144,7 +148,7 @@ export function PasteCapture({
         onPaste(plainText);
       }
     },
-    [disabled, onDropFile, onPaste, onError],
+    [interactionDisabled, onDropFile, onPaste, onError],
   );
 
   return (
@@ -158,7 +162,7 @@ export function PasteCapture({
       className={`group relative flex h-full w-full cursor-text flex-col items-center justify-center gap-4 rounded-lg border border-dashed px-6 py-8 transition focus-within:border-[#4eba87] focus-within:ring-2 focus-within:ring-[#4eba87]/40 ${
         isDraggingOver ? "ring-2 ring-[#4eba87]/60" : ""
       } ${
-        disabled
+        interactionDisabled
           ? "pointer-events-none cursor-not-allowed border-white/10 bg-[#0b0b0b] opacity-60"
           : "border-white/15 bg-[#101010] hover:border-white/30"
       }`}
@@ -185,7 +189,7 @@ export function PasteCapture({
         className="sr-only"
         aria-describedby={describedByIds.join(" ")}
         aria-invalid={errorMessage ? true : undefined}
-        disabled={disabled}
+        disabled={interactionDisabled}
         onPaste={handlePaste}
         readOnly
         defaultValue=""

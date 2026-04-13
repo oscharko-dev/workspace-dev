@@ -538,6 +538,35 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
     expect(fetchJsonMock).not.toHaveBeenCalled();
   });
 
+  it("malformed JSON still submits so the server can return SCHEMA_MISMATCH", async () => {
+    fetchJsonMock.mockResolvedValue(
+      createJsonResponse({
+        status: 400,
+        payload: { error: "SCHEMA_MISMATCH" },
+      }) as never,
+    );
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste("{ not valid json }");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("SCHEMA_MISMATCH");
+      expect(result.current.state.retryable).toBe(false);
+    }
+    expect(fetchJsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "/workspace/submit" }),
+    );
+  });
+
   it("valid JSON still calls fetchJson", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {

@@ -241,6 +241,11 @@ export function useInspectorBootstrap(
 
     const classification = classifyPasteInput(text);
     if (classification.kind === "unknown") {
+      if (classification.reason === "malformed_json") {
+        dispatch({ type: "paste_started" });
+        submitMutation.mutate({ figmaJsonPayload: text });
+        return;
+      }
       const reason =
         classification.reason === "empty" ? "EMPTY_INPUT" : "INVALID_PAYLOAD";
       dispatch({ type: "submit_failed", reason, retryable: true });
