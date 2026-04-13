@@ -13,29 +13,45 @@ import type {
   WorkspaceJobResult,
   WorkspaceJobStageName,
   WorkspaceJobStatus,
-  WorkspaceRegenerationInput
+  WorkspaceRegenerationInput,
 } from "./contracts/index.js";
 import { normalizeComponentMappingRules } from "./component-mapping-rules.js";
 import {
   safeParseCustomerProfileConfig,
   toCustomerProfileConfigSnapshot,
   type CustomerProfileConfigSnapshot,
-  type ResolvedCustomerProfile
+  type ResolvedCustomerProfile,
 } from "./customer-profile.js";
 import {
   createPipelineError,
   getErrorMessage,
   mergePipelineDiagnostics,
   type PipelineDiagnosticInput,
-  type PipelineDiagnosticLimits
+  type PipelineDiagnosticLimits,
 } from "./job-engine/errors.js";
 import { resolveAbsoluteOutputRoot } from "./job-engine/fs-helpers.js";
 import { resolveBoardKey } from "./parity/board-key.js";
-import { executePersistedGitPr, toGitPrStageMessage } from "./job-engine/git-pr-persistence.js";
-import { loadRehydratedJobs, writeTerminalJobSnapshot, writeTerminalJobSnapshotSync } from "./job-engine/job-snapshot.js";
-import { getContentType, hasSymlinkInPath, isWithinRoot, normalizePathPart } from "./job-engine/preview.js";
+import {
+  executePersistedGitPr,
+  toGitPrStageMessage,
+} from "./job-engine/git-pr-persistence.js";
+import {
+  loadRehydratedJobs,
+  writeTerminalJobSnapshot,
+  writeTerminalJobSnapshotSync,
+} from "./job-engine/job-snapshot.js";
+import {
+  getContentType,
+  hasSymlinkInPath,
+  isWithinRoot,
+  normalizePathPart,
+} from "./job-engine/preview.js";
 import { resolveRuntimeSettings } from "./job-engine/runtime.js";
-import { DEFAULT_GENERATION_LOCALE, normalizeGenerationLocale, resolveGenerationLocale } from "./generation-locale.js";
+import {
+  DEFAULT_GENERATION_LOCALE,
+  normalizeGenerationLocale,
+  resolveGenerationLocale,
+} from "./generation-locale.js";
 import {
   createInitialStages,
   nowIso,
@@ -44,30 +60,49 @@ import {
   toFileSystemSafe,
   toJobSummary,
   toPublicJob,
-  updateStage
+  updateStage,
 } from "./job-engine/stage-state.js";
 import { createTemplateCopyFilter } from "./job-engine/template-copy-filter.js";
-import type { CreateJobEngineInput, JobEngine, JobRecord, WorkspacePipelineError } from "./job-engine/types.js";
+import type {
+  CreateJobEngineInput,
+  JobEngine,
+  JobRecord,
+  WorkspacePipelineError,
+} from "./job-engine/types.js";
 import { generateRemapSuggestions } from "./job-engine/remap-suggestions.js";
 import {
   applyLocalSyncPlan,
   computeLocalSyncPlanFingerprint,
   LocalSyncError,
   type LocalSyncPlan,
-  planLocalSync
+  planLocalSync,
 } from "./job-engine/local-sync.js";
 import type { DesignIR } from "./parity/types-ir.js";
 import { StageArtifactStore } from "./job-engine/pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./job-engine/pipeline/artifact-keys.js";
-import { PipelineOrchestrator, isPipelineCancellationError } from "./job-engine/pipeline/orchestrator.js";
+import {
+  PipelineOrchestrator,
+  isPipelineCancellationError,
+} from "./job-engine/pipeline/orchestrator.js";
 import type { PipelineExecutionContext } from "./job-engine/pipeline/context.js";
 import { syncPublicJobProjection } from "./job-engine/pipeline/public-job-projection.js";
-import { buildRegenerationPipelinePlan, buildSubmissionPipelinePlan } from "./job-engine/services/pipeline-services.js";
-import { resolveStorybookStaticDir, reuseStorybookArtifactsFromSourceJob } from "./job-engine/storybook-artifacts.js";
+import {
+  buildRegenerationPipelinePlan,
+  buildSubmissionPipelinePlan,
+} from "./job-engine/services/pipeline-services.js";
+import {
+  resolveStorybookStaticDir,
+  reuseStorybookArtifactsFromSourceJob,
+} from "./job-engine/storybook-artifacts.js";
 
-const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const MODULE_DIR =
+  typeof __dirname === "string"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
 const TEMPLATE_ROOT = path.resolve(MODULE_DIR, "../template/react-mui-app");
-const TEMPLATE_COPY_FILTER = createTemplateCopyFilter({ templateRoot: TEMPLATE_ROOT });
+const TEMPLATE_COPY_FILTER = createTemplateCopyFilter({
+  templateRoot: TEMPLATE_ROOT,
+});
 
 const WORKSPACE_JOB_STAGES: WorkspaceJobStageName[] = [
   "figma.source",
@@ -76,9 +111,11 @@ const WORKSPACE_JOB_STAGES: WorkspaceJobStageName[] = [
   "codegen.generate",
   "validate.project",
   "repro.export",
-  "git.pr"
+  "git.pr",
 ];
-const WORKSPACE_JOB_STAGE_SET = new Set<WorkspaceJobStageName>(WORKSPACE_JOB_STAGES);
+const WORKSPACE_JOB_STAGE_SET = new Set<WorkspaceJobStageName>(
+  WORKSPACE_JOB_STAGES,
+);
 const LOCAL_SYNC_CONFIRMATION_TTL_MS = 10 * 60_000;
 
 interface LocalSyncConfirmationRecord {
@@ -102,15 +139,22 @@ interface ResolvedCustomerProfileActivation {
   profile: ResolvedCustomerProfile;
 }
 
-const isWorkspaceJobStageName = (value: unknown): value is WorkspaceJobStageName => {
-  return typeof value === "string" && WORKSPACE_JOB_STAGE_SET.has(value as WorkspaceJobStageName);
+const isWorkspaceJobStageName = (
+  value: unknown,
+): value is WorkspaceJobStageName => {
+  return (
+    typeof value === "string" &&
+    WORKSPACE_JOB_STAGE_SET.has(value as WorkspaceJobStageName)
+  );
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const normalizeOptionalInputString = (value: string | undefined): string | undefined => {
+const normalizeOptionalInputString = (
+  value: string | undefined,
+): string | undefined => {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -120,7 +164,7 @@ const normalizeOptionalInputString = (value: string | undefined): string | undef
 
 const resolveRequestCompositeQualityWeights = ({
   input,
-  fallback
+  fallback,
 }: {
   input: WorkspaceJobInput["compositeQualityWeights"];
   fallback: { visual: number; performance: number };
@@ -134,7 +178,9 @@ const resolveRequestCompositeQualityWeights = ({
       return;
     }
     if (!Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(`submit: composite quality ${label} weight must be within 0..1.`);
+      throw new Error(
+        `submit: composite quality ${label} weight must be within 0..1.`,
+      );
     }
   };
 
@@ -154,32 +200,38 @@ const resolveRequestCompositeQualityWeights = ({
 
   const total = (visual ?? 0) + (performance ?? 0);
   if (!Number.isFinite(total) || total <= 0) {
-    throw new Error("submit: composite quality weights must sum to a positive value.");
+    throw new Error(
+      "submit: composite quality weights must sum to a positive value.",
+    );
   }
 
   return {
     visual: Math.round(((visual ?? 0) / total) * 10_000) / 10_000,
-    performance: Math.round(((performance ?? 0) / total) * 10_000) / 10_000
+    performance: Math.round(((performance ?? 0) / total) * 10_000) / 10_000,
   };
 };
 
-const isStoredCustomerProfileOrigin = (value: unknown): value is StoredCustomerProfileSnapshot["origin"] => {
+const isStoredCustomerProfileOrigin = (
+  value: unknown,
+): value is StoredCustomerProfileSnapshot["origin"] => {
   return value === "request" || value === "runtime";
 };
 
 const formatCustomerProfileParseFailure = ({
   snapshotLabel,
-  issues
+  issues,
 }: {
   snapshotLabel: string;
   issues: Array<{ path: string; message: string }>;
 }): string => {
   const firstIssue = issues[0];
-  return firstIssue ? `${snapshotLabel} (${firstIssue.path}: ${firstIssue.message})` : snapshotLabel;
+  return firstIssue
+    ? `${snapshotLabel} (${firstIssue.path}: ${firstIssue.message})`
+    : snapshotLabel;
 };
 
 const describeCustomerProfileSnapshot = ({
-  snapshot
+  snapshot,
 }: {
   snapshot: StoredCustomerProfileSnapshot;
 }): string => {
@@ -193,21 +245,21 @@ const describeCustomerProfileSnapshot = ({
 };
 
 const toRuntimeCustomerProfileActivation = ({
-  profile
+  profile,
 }: {
   profile: ResolvedCustomerProfile;
 }): ResolvedCustomerProfileActivation => {
   return {
     snapshot: {
       origin: "runtime",
-      profile: toCustomerProfileConfigSnapshot({ profile })
+      profile: toCustomerProfileConfigSnapshot({ profile }),
     },
-    profile
+    profile,
   };
 };
 
 const restoreCustomerProfileActivation = ({
-  snapshot
+  snapshot,
 }: {
   snapshot: unknown;
 }):
@@ -222,7 +274,7 @@ const restoreCustomerProfileActivation = ({
   if (!isRecord(snapshot)) {
     return {
       success: false,
-      message: "stored customer profile snapshot is not an object"
+      message: "stored customer profile snapshot is not an object",
     };
   }
 
@@ -230,20 +282,25 @@ const restoreCustomerProfileActivation = ({
   if (!isStoredCustomerProfileOrigin(origin)) {
     return {
       success: false,
-      message: "stored customer profile snapshot origin is invalid"
+      message: "stored customer profile snapshot origin is invalid",
     };
   }
 
   const submittedPath = normalizeOptionalInputString(
-    typeof snapshot.submittedPath === "string" ? snapshot.submittedPath : undefined
+    typeof snapshot.submittedPath === "string"
+      ? snapshot.submittedPath
+      : undefined,
   );
   const resolvedPath = normalizeOptionalInputString(
-    typeof snapshot.resolvedPath === "string" ? snapshot.resolvedPath : undefined
+    typeof snapshot.resolvedPath === "string"
+      ? snapshot.resolvedPath
+      : undefined,
   );
   if (origin === "request" && (!submittedPath || !resolvedPath)) {
     return {
       success: false,
-      message: "stored customer profile snapshot is missing request path metadata"
+      message:
+        "stored customer profile snapshot is missing request path metadata",
     };
   }
 
@@ -253,8 +310,8 @@ const restoreCustomerProfileActivation = ({
       success: false,
       message: formatCustomerProfileParseFailure({
         snapshotLabel: "stored customer profile snapshot is invalid",
-        issues: parsed.issues
-      })
+        issues: parsed.issues,
+      }),
     };
   }
 
@@ -265,17 +322,17 @@ const restoreCustomerProfileActivation = ({
         origin,
         ...(submittedPath ? { submittedPath } : {}),
         ...(resolvedPath ? { resolvedPath } : {}),
-        profile: toCustomerProfileConfigSnapshot({ profile: parsed.config })
+        profile: toCustomerProfileConfigSnapshot({ profile: parsed.config }),
       },
-      profile: parsed.config
-    }
+      profile: parsed.config,
+    },
   };
 };
 
 const loadCustomerProfileActivationFromRequest = async ({
   customerProfilePath,
   resolvedWorkspaceRoot,
-  limits
+  limits,
 }: {
   customerProfilePath: string;
   resolvedWorkspaceRoot: string;
@@ -286,31 +343,41 @@ const loadCustomerProfileActivationFromRequest = async ({
       code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
       stage: "figma.source",
       message: "Customer profile path contains a null byte.",
-      limits
+      limits,
     });
   }
 
   const resolvedPath = path.resolve(resolvedWorkspaceRoot, customerProfilePath);
 
-  if (!isWithinRoot({ candidatePath: resolvedPath, rootPath: resolvedWorkspaceRoot })) {
+  if (
+    !isWithinRoot({
+      candidatePath: resolvedPath,
+      rootPath: resolvedWorkspaceRoot,
+    })
+  ) {
     throw createPipelineError({
       code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
       stage: "figma.source",
       message:
         `Customer profile path '${customerProfilePath}' resolves outside the workspace root ` +
         `('${resolvedWorkspaceRoot}').`,
-      limits
+      limits,
     });
   }
 
-  if (await hasSymlinkInPath({ candidatePath: resolvedPath, rootPath: resolvedWorkspaceRoot })) {
+  if (
+    await hasSymlinkInPath({
+      candidatePath: resolvedPath,
+      rootPath: resolvedWorkspaceRoot,
+    })
+  ) {
     throw createPipelineError({
       code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
       stage: "figma.source",
       message:
         `Customer profile path '${customerProfilePath}' contains a symbolic link ` +
         `and cannot be loaded.`,
-      limits
+      limits,
     });
   }
 
@@ -325,7 +392,7 @@ const loadCustomerProfileActivationFromRequest = async ({
         `Could not read customer profile '${customerProfilePath}' ` +
         `(resolved '${resolvedPath}'): ${getErrorMessage(error)}`,
       cause: error,
-      limits
+      limits,
     });
   }
 
@@ -340,7 +407,7 @@ const loadCustomerProfileActivationFromRequest = async ({
         `Could not parse customer profile '${customerProfilePath}' ` +
         `(resolved '${resolvedPath}'): ${getErrorMessage(error)}`,
       cause: error,
-      limits
+      limits,
     });
   }
 
@@ -350,11 +417,10 @@ const loadCustomerProfileActivationFromRequest = async ({
       code: "E_CUSTOMER_PROFILE_LOAD_FAILED",
       stage: "figma.source",
       message: formatCustomerProfileParseFailure({
-        snapshotLabel:
-          `Customer profile '${customerProfilePath}' (resolved '${resolvedPath}') is invalid`,
-        issues: parsed.issues
+        snapshotLabel: `Customer profile '${customerProfilePath}' (resolved '${resolvedPath}') is invalid`,
+        issues: parsed.issues,
       }),
-      limits
+      limits,
     });
   }
 
@@ -363,13 +429,15 @@ const loadCustomerProfileActivationFromRequest = async ({
       origin: "request",
       submittedPath: customerProfilePath,
       resolvedPath,
-      profile: toCustomerProfileConfigSnapshot({ profile: parsed.config })
+      profile: toCustomerProfileConfigSnapshot({ profile: parsed.config }),
     },
-    profile: parsed.config
+    profile: parsed.config,
   };
 };
 
-const toDiagnosticInputs = (value: unknown): PipelineDiagnosticInput[] | undefined => {
+const toDiagnosticInputs = (
+  value: unknown,
+): PipelineDiagnosticInput[] | undefined => {
   if (!Array.isArray(value)) {
     return undefined;
   }
@@ -378,20 +446,32 @@ const toDiagnosticInputs = (value: unknown): PipelineDiagnosticInput[] | undefin
     if (!isRecord(candidate)) {
       continue;
     }
-    if (typeof candidate.code !== "string" || typeof candidate.message !== "string" || typeof candidate.suggestion !== "string") {
+    if (
+      typeof candidate.code !== "string" ||
+      typeof candidate.message !== "string" ||
+      typeof candidate.suggestion !== "string"
+    ) {
       continue;
     }
     diagnostics.push({
       code: candidate.code,
       message: candidate.message,
       suggestion: candidate.suggestion,
-      ...(isWorkspaceJobStageName(candidate.stage) ? { stage: candidate.stage } : {}),
-      ...(candidate.severity === "error" || candidate.severity === "warning" || candidate.severity === "info"
+      ...(isWorkspaceJobStageName(candidate.stage)
+        ? { stage: candidate.stage }
+        : {}),
+      ...(candidate.severity === "error" ||
+      candidate.severity === "warning" ||
+      candidate.severity === "info"
         ? { severity: candidate.severity }
         : {}),
-      ...(typeof candidate.figmaNodeId === "string" ? { figmaNodeId: candidate.figmaNodeId } : {}),
-      ...(typeof candidate.figmaUrl === "string" ? { figmaUrl: candidate.figmaUrl } : {}),
-      ...(isRecord(candidate.details) ? { details: candidate.details } : {})
+      ...(typeof candidate.figmaNodeId === "string"
+        ? { figmaNodeId: candidate.figmaNodeId }
+        : {}),
+      ...(typeof candidate.figmaUrl === "string"
+        ? { figmaUrl: candidate.figmaUrl }
+        : {}),
+      ...(isRecord(candidate.details) ? { details: candidate.details } : {}),
     });
   }
   return diagnostics.length > 0 ? diagnostics : undefined;
@@ -400,7 +480,7 @@ const toDiagnosticInputs = (value: unknown): PipelineDiagnosticInput[] | undefin
 const toPipelineError = ({
   error,
   fallbackStage,
-  limits
+  limits,
 }: {
   error: unknown;
   fallbackStage: WorkspaceJobStageName;
@@ -409,7 +489,11 @@ const toPipelineError = ({
   if (isPipelineError(error)) {
     return error;
   }
-  if (error instanceof Error && "code" in error && typeof (error as { code?: unknown }).code === "string") {
+  if (
+    error instanceof Error &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+  ) {
     const candidate = error as Error & {
       code: string;
       stage?: unknown;
@@ -418,11 +502,13 @@ const toPipelineError = ({
     const diagnostics = toDiagnosticInputs(candidate.diagnostics);
     return createPipelineError({
       code: candidate.code,
-      stage: isWorkspaceJobStageName(candidate.stage) ? candidate.stage : fallbackStage,
+      stage: isWorkspaceJobStageName(candidate.stage)
+        ? candidate.stage
+        : fallbackStage,
       message: candidate.message,
       cause: error,
       limits,
-      ...(diagnostics ? { diagnostics } : {})
+      ...(diagnostics ? { diagnostics } : {}),
     });
   }
   return createPipelineError({
@@ -430,7 +516,7 @@ const toPipelineError = ({
     stage: fallbackStage,
     message: getErrorMessage(error),
     cause: error,
-    limits
+    limits,
   });
 };
 
@@ -461,30 +547,35 @@ const isPipelineError = (error: unknown): error is WorkspacePipelineError => {
 
 const resolveJobGenerationLocale = ({
   submitGenerationLocale,
-  runtimeGenerationLocale
+  runtimeGenerationLocale,
 }: {
   submitGenerationLocale: string | undefined;
   runtimeGenerationLocale: string;
 }): { locale: string; warningMessage?: string } => {
   const runtimeLocale = resolveGenerationLocale({
     requestedLocale: runtimeGenerationLocale,
-    fallbackLocale: DEFAULT_GENERATION_LOCALE
+    fallbackLocale: DEFAULT_GENERATION_LOCALE,
   }).locale;
-  const normalizedSubmitLocale = normalizeGenerationLocale(submitGenerationLocale);
+  const normalizedSubmitLocale = normalizeGenerationLocale(
+    submitGenerationLocale,
+  );
   if (normalizedSubmitLocale) {
     return { locale: normalizedSubmitLocale };
   }
-  if (typeof submitGenerationLocale === "string" && submitGenerationLocale.trim().length > 0) {
+  if (
+    typeof submitGenerationLocale === "string" &&
+    submitGenerationLocale.trim().length > 0
+  ) {
     return {
       locale: runtimeLocale,
-      warningMessage: `Invalid generationLocale override '${submitGenerationLocale}' - falling back to '${runtimeLocale}'.`
+      warningMessage: `Invalid generationLocale override '${submitGenerationLocale}' - falling back to '${runtimeLocale}'.`,
     };
   }
   return { locale: runtimeLocale };
 };
 
 const resolveFigmaSourceMode = ({
-  submitFigmaSourceMode
+  submitFigmaSourceMode,
 }: {
   submitFigmaSourceMode: string | undefined;
 }): WorkspaceFigmaSourceMode => {
@@ -499,16 +590,26 @@ const resolveFigmaSourceMode = ({
 };
 
 const resolveFormHandlingMode = ({
-  submitFormHandlingMode
+  submitFormHandlingMode,
 }: {
   submitFormHandlingMode: WorkspaceFormHandlingMode | undefined;
 }): WorkspaceFormHandlingMode => {
-  return submitFormHandlingMode === "legacy_use_state" ? "legacy_use_state" : "react_hook_form";
+  return submitFormHandlingMode === "legacy_use_state"
+    ? "legacy_use_state"
+    : "react_hook_form";
 };
 
-export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEngineInput): JobEngine => {
-  const resolvedPaths = resolveAbsoluteOutputRoot({ outputRoot: paths.outputRoot });
-  const resolvedWorkspaceRoot = path.resolve(paths.workspaceRoot ?? path.resolve(paths.outputRoot, ".."));
+export const createJobEngine = ({
+  resolveBaseUrl,
+  paths,
+  runtime,
+}: CreateJobEngineInput): JobEngine => {
+  const resolvedPaths = resolveAbsoluteOutputRoot({
+    outputRoot: paths.outputRoot,
+  });
+  const resolvedWorkspaceRoot = path.resolve(
+    paths.workspaceRoot ?? path.resolve(paths.outputRoot, ".."),
+  );
   const jobs = new Map<string, JobRecord>();
   const queuedJobIds: string[] = [];
   const queuedJobInputs = new Map<string, WorkspaceJobInput>();
@@ -521,7 +622,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       return false;
     }
     const normalizedMessage = error.message.toLowerCase();
-    return error.name === "AbortError" || normalizedMessage.includes("abort") || normalizedMessage.includes("canceled");
+    return (
+      error.name === "AbortError" ||
+      normalizedMessage.includes("abort") ||
+      normalizedMessage.includes("canceled")
+    );
   };
 
   class JobQueueBackpressureError extends Error {
@@ -530,31 +635,40 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     constructor({ queue }: { queue: WorkspaceJobStatus["queue"] }) {
       super(
-        `Job queue limit reached (running=${queue.runningCount}/${queue.maxConcurrentJobs}, queued=${queue.queuedCount}/${queue.maxQueuedJobs}).`
+        `Job queue limit reached (running=${queue.runningCount}/${queue.maxConcurrentJobs}, queued=${queue.queuedCount}/${queue.maxQueuedJobs}).`,
       );
       this.name = "JobQueueBackpressureError";
       this.queue = queue;
     }
   }
 
-  const toQueueSnapshot = ({ jobId }: { jobId?: string } = {}): WorkspaceJobStatus["queue"] => {
+  const toQueueSnapshot = ({
+    jobId,
+  }: { jobId?: string } = {}): WorkspaceJobStatus["queue"] => {
     const position = jobId ? queuedJobIds.indexOf(jobId) : -1;
     return {
       runningCount: runningJobIds.size,
       queuedCount: queuedJobIds.length,
       maxConcurrentJobs: runtime.maxConcurrentJobs,
       maxQueuedJobs: runtime.maxQueuedJobs,
-      ...(position >= 0 ? { position: position + 1 } : {})
+      ...(position >= 0 ? { position: position + 1 } : {}),
     };
   };
 
-  const toTerminalQueueSnapshot = ({ jobId }: { jobId: string }): WorkspaceJobStatus["queue"] => {
+  const toTerminalQueueSnapshot = ({
+    jobId,
+  }: {
+    jobId: string;
+  }): WorkspaceJobStatus["queue"] => {
     const position = queuedJobIds.indexOf(jobId);
     return {
-      runningCount: Math.max(0, runningJobIds.size - (runningJobIds.has(jobId) ? 1 : 0)),
+      runningCount: Math.max(
+        0,
+        runningJobIds.size - (runningJobIds.has(jobId) ? 1 : 0),
+      ),
       queuedCount: Math.max(0, queuedJobIds.length - (position >= 0 ? 1 : 0)),
       maxConcurrentJobs: runtime.maxConcurrentJobs,
-      maxQueuedJobs: runtime.maxQueuedJobs
+      maxQueuedJobs: runtime.maxQueuedJobs,
     };
   };
 
@@ -566,7 +680,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   const persistTerminalSnapshot = async ({
     job,
-    diagnostics
+    diagnostics,
   }: {
     job: JobRecord;
     diagnostics?: WorkspaceJobDiagnostic[] | undefined;
@@ -577,7 +691,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   const persistTerminalSnapshotSync = ({
     job,
-    diagnostics
+    diagnostics,
   }: {
     job: JobRecord;
     diagnostics?: WorkspaceJobDiagnostic[] | undefined;
@@ -588,7 +702,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   for (const rehydratedJob of loadRehydratedJobs({
     jobsRoot: resolvedPaths.jobsRoot,
-    resolveBaseUrl
+    resolveBaseUrl,
   })) {
     jobs.set(rehydratedJob.jobId, rehydratedJob);
   }
@@ -596,7 +710,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   const createSyncError = ({
     code,
-    message
+    message,
   }: {
     code:
       | "E_SYNC_JOB_NOT_FOUND"
@@ -623,7 +737,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   };
 
   const resolveSyncContext = ({
-    jobId
+    jobId,
   }: {
     jobId: string;
   }): {
@@ -636,51 +750,59 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     if (!job) {
       throw createSyncError({
         code: "E_SYNC_JOB_NOT_FOUND",
-        message: `Unknown job '${jobId}'.`
+        message: `Unknown job '${jobId}'.`,
       });
     }
 
     if (!job.lineage) {
       throw createSyncError({
         code: "E_SYNC_REGEN_REQUIRED",
-        message: `Job '${jobId}' is not a regeneration job; local sync is only available for regenerated output.`
+        message: `Job '${jobId}' is not a regeneration job; local sync is only available for regenerated output.`,
       });
     }
 
     if (job.status !== "completed") {
       throw createSyncError({
         code: "E_SYNC_JOB_NOT_COMPLETED",
-        message: `Job '${jobId}' has status '${job.status}' — local sync is only available for completed jobs.`
+        message: `Job '${jobId}' has status '${job.status}' — local sync is only available for completed jobs.`,
       });
     }
 
     if (!job.artifacts.generatedProjectDir) {
       const missingGeneratedDir = new LocalSyncError(
         "E_SYNC_GENERATED_DIR_MISSING",
-        `Generated project directory not available for job '${jobId}'.`
+        `Generated project directory not available for job '${jobId}'.`,
       );
       throw missingGeneratedDir;
     }
 
-    const boardKeySeed = job.request.figmaFileKey?.trim() || job.request.figmaJsonPath?.trim() || "regeneration";
+    const boardKeySeed =
+      job.request.figmaFileKey?.trim() ||
+      job.request.figmaJsonPath?.trim() ||
+      "regeneration";
     return {
       job,
       sourceJobId: job.lineage.sourceJobId,
       boardKey: resolveBoardKey(boardKeySeed),
-      generatedProjectDir: job.artifacts.generatedProjectDir
+      generatedProjectDir: job.artifacts.generatedProjectDir,
     };
   };
 
   const markQueuedStagesSkippedAfterCancellation = ({
     job,
-    reason
+    reason,
   }: {
     job: JobRecord;
     reason: string;
   }): void => {
     for (const stage of job.stages) {
       if (stage.status === "queued") {
-        updateStage({ job, stage: stage.name, status: "skipped", message: reason });
+        updateStage({
+          job,
+          stage: stage.name,
+          status: "skipped",
+          message: reason,
+        });
       }
     }
   };
@@ -688,7 +810,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const persistCustomerProfileActivation = async ({
     artifactStore,
     stage,
-    activation
+    activation,
   }: {
     artifactStore: StageArtifactStore;
     stage: WorkspaceJobStageName;
@@ -697,37 +819,39 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     await artifactStore.setValue({
       key: STAGE_ARTIFACT_KEYS.customerProfileResolved,
       stage,
-      value: activation.snapshot
+      value: activation.snapshot,
     });
   };
 
   const activateSubmissionCustomerProfile = async ({
     job,
     artifactStore,
-    input
+    input,
   }: {
     job: JobRecord;
     artifactStore: StageArtifactStore;
     input: WorkspaceJobInput;
   }): Promise<ResolvedCustomerProfile | undefined> => {
-    const explicitPath = normalizeOptionalInputString(input.customerProfilePath);
+    const explicitPath = normalizeOptionalInputString(
+      input.customerProfilePath,
+    );
     if (explicitPath) {
       const activation = await loadCustomerProfileActivationFromRequest({
         customerProfilePath: explicitPath,
         resolvedWorkspaceRoot,
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
       await persistCustomerProfileActivation({
         artifactStore,
         stage: "figma.source",
-        activation
+        activation,
       });
       pushRuntimeLog({
         job,
         logger: runtime.logger,
         level: "info",
         stage: "figma.source",
-        message: `Activated customer profile snapshot from ${describeCustomerProfileSnapshot({ snapshot: activation.snapshot })}.`
+        message: `Activated customer profile snapshot from ${describeCustomerProfileSnapshot({ snapshot: activation.snapshot })}.`,
       });
       return activation.profile;
     }
@@ -737,31 +861,38 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
 
     const activation = toRuntimeCustomerProfileActivation({
-      profile: runtime.customerProfile
+      profile: runtime.customerProfile,
     });
     await persistCustomerProfileActivation({
       artifactStore,
       stage: "figma.source",
-      activation
+      activation,
     });
     pushRuntimeLog({
       job,
       logger: runtime.logger,
       level: "info",
       stage: "figma.source",
-      message: `Activated customer profile snapshot from ${describeCustomerProfileSnapshot({ snapshot: activation.snapshot })}.`
+      message: `Activated customer profile snapshot from ${describeCustomerProfileSnapshot({ snapshot: activation.snapshot })}.`,
     });
     return activation.profile;
   };
 
   const activateSubmissionStorybookStaticDir = ({
     job,
-    input
+    input,
   }: {
     job: JobRecord;
     input: WorkspaceJobInput;
-  }): { requestedStorybookStaticDir: string; resolvedStorybookStaticDir: string } | undefined => {
-    const requestedStorybookStaticDir = normalizeOptionalInputString(input.storybookStaticDir);
+  }):
+    | {
+        requestedStorybookStaticDir: string;
+        resolvedStorybookStaticDir: string;
+      }
+    | undefined => {
+    const requestedStorybookStaticDir = normalizeOptionalInputString(
+      input.storybookStaticDir,
+    );
     if (!requestedStorybookStaticDir) {
       return undefined;
     }
@@ -769,7 +900,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const resolvedStorybookStaticDir = resolveStorybookStaticDir({
       storybookStaticDir: requestedStorybookStaticDir,
       resolvedWorkspaceRoot,
-      limits: runtime.pipelineDiagnosticLimits
+      limits: runtime.pipelineDiagnosticLimits,
     });
     pushRuntimeLog({
       job,
@@ -778,26 +909,32 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       stage: "figma.source",
       message:
         `Activated Storybook static dir '${requestedStorybookStaticDir}' ` +
-        `(resolved '${resolvedStorybookStaticDir}').`
+        `(resolved '${resolvedStorybookStaticDir}').`,
     });
     return {
       requestedStorybookStaticDir,
-      resolvedStorybookStaticDir
+      resolvedStorybookStaticDir,
     };
   };
 
   const activateRegenerationCustomerProfile = async ({
     job,
     artifactStore,
-    sourceJob
+    sourceJob,
   }: {
     job: JobRecord;
     artifactStore: StageArtifactStore;
     sourceJob: JobRecord;
   }): Promise<ResolvedCustomerProfile | undefined> => {
-    const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJob.artifacts.jobDir });
-    const sourceSnapshot = await sourceArtifactStore.getValue<unknown>(STAGE_ARTIFACT_KEYS.customerProfileResolved);
-    const sourceDeclaredExplicitProfile = normalizeOptionalInputString(sourceJob.request.customerProfilePath);
+    const sourceArtifactStore = new StageArtifactStore({
+      jobDir: sourceJob.artifacts.jobDir,
+    });
+    const sourceSnapshot = await sourceArtifactStore.getValue<unknown>(
+      STAGE_ARTIFACT_KEYS.customerProfileResolved,
+    );
+    const sourceDeclaredExplicitProfile = normalizeOptionalInputString(
+      sourceJob.request.customerProfilePath,
+    );
 
     if (sourceSnapshot === undefined) {
       if (!sourceDeclaredExplicitProfile) {
@@ -809,26 +946,26 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         message:
           `Source job '${sourceJob.jobId}' declared customerProfilePath '${sourceDeclaredExplicitProfile}' ` +
           "but no resolved customer profile snapshot was persisted.",
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
     }
 
     const restored = restoreCustomerProfileActivation({
-      snapshot: sourceSnapshot
+      snapshot: sourceSnapshot,
     });
     if (!restored.success) {
       throw createPipelineError({
         code: "E_CUSTOMER_PROFILE_SNAPSHOT_MISSING",
         stage: "ir.derive",
         message: `Source job '${sourceJob.jobId}' customer profile snapshot is invalid: ${restored.message}.`,
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
     }
 
     await persistCustomerProfileActivation({
       artifactStore,
       stage: "ir.derive",
-      activation: restored.value
+      activation: restored.value,
     });
     pushRuntimeLog({
       job,
@@ -837,7 +974,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       stage: "ir.derive",
       message:
         `Reused customer profile snapshot from source job '${sourceJob.jobId}' via ` +
-        `${describeCustomerProfileSnapshot({ snapshot: restored.value.snapshot })}.`
+        `${describeCustomerProfileSnapshot({ snapshot: restored.value.snapshot })}.`,
     });
     return restored.value.profile;
   };
@@ -845,18 +982,22 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   const activateRegenerationStorybookArtifacts = async ({
     job,
     artifactStore,
-    sourceJob
+    sourceJob,
   }: {
     job: JobRecord;
     artifactStore: StageArtifactStore;
     sourceJob: JobRecord;
   }): Promise<string | undefined> => {
-    const sourceRequestedStorybookStaticDir = normalizeOptionalInputString(sourceJob.request.storybookStaticDir);
+    const sourceRequestedStorybookStaticDir = normalizeOptionalInputString(
+      sourceJob.request.storybookStaticDir,
+    );
     if (!sourceRequestedStorybookStaticDir) {
       return undefined;
     }
 
-    const sourceArtifactStore = new StageArtifactStore({ jobDir: sourceJob.artifacts.jobDir });
+    const sourceArtifactStore = new StageArtifactStore({
+      jobDir: sourceJob.artifacts.jobDir,
+    });
     try {
       await reuseStorybookArtifactsFromSourceJob({
         sourceArtifactStore,
@@ -864,7 +1005,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         sourceJobId: sourceJob.jobId,
         sourceRequestedStorybookStaticDir,
         targetJobDir: job.artifacts.jobDir,
-        stage: "ir.derive"
+        stage: "ir.derive",
       });
     } catch (error) {
       throw createPipelineError({
@@ -872,7 +1013,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage: "ir.derive",
         message: getErrorMessage(error),
         cause: error,
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
     }
 
@@ -883,13 +1024,16 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       stage: "ir.derive",
       message:
         `Reused Storybook artifacts from source job '${sourceJob.jobId}' ` +
-        `(storybookStaticDir='${sourceRequestedStorybookStaticDir}').`
+        `(storybookStaticDir='${sourceRequestedStorybookStaticDir}').`,
     });
 
     return sourceRequestedStorybookStaticDir;
   };
 
-  const runJob = async (job: JobRecord, input: WorkspaceJobInput): Promise<void> => {
+  const runJob = async (
+    job: JobRecord,
+    input: WorkspaceJobInput,
+  ): Promise<void> => {
     job.status = "running";
     job.startedAt = nowIso();
     const jobAbortController = new AbortController();
@@ -905,22 +1049,29 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           : jobAbortController.signal;
       return await runtime.fetchImpl(resource, {
         ...init,
-        signal: mergedSignal
+        signal: mergedSignal,
       });
     };
-    const resolvedBrandTheme: WorkspaceBrandTheme = input.brandTheme ?? runtime.brandTheme;
-    const resolvedCustomerBrandId = normalizeOptionalInputString(input.customerBrandId);
-    const resolvedFigmaSourceMode = resolveFigmaSourceMode({ submitFigmaSourceMode: input.figmaSourceMode });
+    const resolvedBrandTheme: WorkspaceBrandTheme =
+      input.brandTheme ?? runtime.brandTheme;
+    const resolvedCustomerBrandId = normalizeOptionalInputString(
+      input.customerBrandId,
+    );
+    const resolvedFigmaSourceMode = resolveFigmaSourceMode({
+      submitFigmaSourceMode: input.figmaSourceMode,
+    });
     const resolvedFormHandlingMode = resolveFormHandlingMode({
-      submitFormHandlingMode: input.formHandlingMode
+      submitFormHandlingMode: input.formHandlingMode,
     });
     const generationLocaleResolution = resolveJobGenerationLocale({
       submitGenerationLocale: input.generationLocale,
-      runtimeGenerationLocale: runtime.generationLocale
+      runtimeGenerationLocale: runtime.generationLocale,
     });
     const resolvedGenerationLocale = generationLocaleResolution.locale;
     const figmaFileKeyForDiagnostics =
-      resolvedFigmaSourceMode === "local_json" ? undefined : input.figmaFileKey?.trim();
+      resolvedFigmaSourceMode === "local_json"
+        ? undefined
+        : input.figmaFileKey?.trim();
 
     const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
     const generatedProjectDir = path.join(jobDir, "generated-app");
@@ -930,9 +1081,17 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
-    const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
-    const designSystemFilePath = runtime.designSystemFilePath ?? path.join(resolvedPaths.outputRoot, "design-system.json");
-    const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
+    const iconMapFilePath =
+      runtime.iconMapFilePath ??
+      path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
+    const designSystemFilePath =
+      runtime.designSystemFilePath ??
+      path.join(resolvedPaths.outputRoot, "design-system.json");
+    const irCacheDir = path.join(
+      resolvedPaths.outputRoot,
+      "cache",
+      "ir-derivation",
+    );
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -949,7 +1108,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     const appendDiagnostics = ({
       stage,
-      diagnostics
+      diagnostics,
     }: {
       stage: WorkspaceJobStageName;
       diagnostics: PipelineDiagnosticInput[];
@@ -962,12 +1121,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage,
         message: "Collected pipeline diagnostics.",
         diagnostics,
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       }).diagnostics;
       collectedDiagnostics = mergePipelineDiagnostics({
         ...(collectedDiagnostics ? { first: collectedDiagnostics } : {}),
         ...(normalized ? { second: normalized } : {}),
-        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics,
       });
     };
 
@@ -979,12 +1138,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       const artifactStore = new StageArtifactStore({ jobDir });
       const storybookActivation = activateSubmissionStorybookStaticDir({
         job,
-        input
+        input,
       });
       const resolvedCustomerProfile = await activateSubmissionCustomerProfile({
         job,
         artifactStore,
-        input
+        input,
       });
       const context: PipelineExecutionContext = {
         mode: "submission",
@@ -1009,7 +1168,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           designSystemFilePath,
           irCacheDir,
           templateRoot: TEMPLATE_ROOT,
-          templateCopyFilter: TEMPLATE_COPY_FILTER
+          templateCopyFilter: TEMPLATE_COPY_FILTER,
         },
         artifactStore,
         resolvedBrandTheme,
@@ -1018,8 +1177,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         resolvedFormHandlingMode,
         ...(storybookActivation
           ? {
-              requestedStorybookStaticDir: storybookActivation.requestedStorybookStaticDir,
-              resolvedStorybookStaticDir: storybookActivation.resolvedStorybookStaticDir
+              requestedStorybookStaticDir:
+                storybookActivation.requestedStorybookStaticDir,
+              resolvedStorybookStaticDir:
+                storybookActivation.resolvedStorybookStaticDir,
             }
           : {}),
         ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {}),
@@ -1030,7 +1191,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         syncPublicJobProjection: async () => {
           await syncPublicJobProjection({ job, artifactStore });
         },
-        ...(figmaFileKeyForDiagnostics ? { figmaFileKeyForDiagnostics } : {})
+        ...(figmaFileKeyForDiagnostics ? { figmaFileKeyForDiagnostics } : {}),
       };
 
       const orchestrator = new PipelineOrchestrator({
@@ -1038,30 +1199,32 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           toPipelineError({
             error,
             fallbackStage,
-            limits: runtime.pipelineDiagnosticLimits
+            limits: runtime.pipelineDiagnosticLimits,
           }),
-        isAbortLikeError
+        isAbortLikeError,
       });
       await orchestrator.execute({
         context,
-        plan: buildSubmissionPipelinePlan()
+        plan: buildSubmissionPipelinePlan(),
       });
 
       job.status = "completed";
       job.finishedAt = nowIso();
       delete job.currentStage;
-      const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
+      const generationSummary = await artifactStore.getValue<{
+        generatedPaths?: string[];
+      }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushRuntimeLog({
         job,
         logger: runtime.logger,
         level: "info",
         message:
           `Job completed. Generated output at ${generatedProjectDir} ` +
-          `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`
+          `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`,
       });
       await persistTerminalSnapshot({
         job,
-        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
       });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
@@ -1072,22 +1235,27 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           job.cancellation = {
             requestedAt: nowIso(),
             reason: error.message,
-            requestedBy: "api"
+            requestedBy: "api",
           };
         }
         job.cancellation.completedAt = nowIso();
-        markQueuedStagesSkippedAfterCancellation({ job, reason: error.message });
+        markQueuedStagesSkippedAfterCancellation({
+          job,
+          reason: error.message,
+        });
         pushRuntimeLog({
           job,
           logger: runtime.logger,
           level: "warn",
           stage: error.stage,
-          message: `Job canceled: ${error.message}`
+          message: `Job canceled: ${error.message}`,
         });
         try {
           await persistTerminalSnapshot({
             job,
-            ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+            ...(collectedDiagnostics
+              ? { diagnostics: collectedDiagnostics }
+              : {}),
           });
         } catch {
           // Ignore stage-timing persistence failures during cancellation handling.
@@ -1098,12 +1266,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       const typedError = toPipelineError({
         error,
         fallbackStage: job.currentStage ?? "figma.source",
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
       const mergedDiagnostics = mergePipelineDiagnostics({
         ...(typedError.diagnostics ? { first: typedError.diagnostics } : {}),
         ...(collectedDiagnostics ? { second: collectedDiagnostics } : {}),
-        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics,
       });
       if (mergedDiagnostics) {
         collectedDiagnostics = mergedDiagnostics;
@@ -1115,7 +1283,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         code: typedError.code,
         stage: typedError.stage,
         message: typedError.message,
-        ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {})
+        ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {}),
       };
       job.currentStage = typedError.stage;
       pushRuntimeLog({
@@ -1123,12 +1291,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         logger: runtime.logger,
         level: "error",
         stage: typedError.stage,
-        message: `Job failed: ${typedError.code} ${typedError.message}`
+        message: `Job failed: ${typedError.code} ${typedError.message}`,
       });
       try {
         await persistTerminalSnapshot({
           job,
-          ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+          ...(collectedDiagnostics
+            ? { diagnostics: collectedDiagnostics }
+            : {}),
         });
       } catch {
         // Ignore stage-timing persistence failures during error handling.
@@ -1138,7 +1308,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
   };
 
-  const executeJob = ({ job, input }: { job: JobRecord; input: WorkspaceJobInput }): void => {
+  const executeJob = ({
+    job,
+    input,
+  }: {
+    job: JobRecord;
+    input: WorkspaceJobInput;
+  }): void => {
     if (runningJobIds.has(job.jobId)) {
       return;
     }
@@ -1155,47 +1331,61 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   };
 
   const submitJob = (input: WorkspaceJobInput) => {
-    if (runningJobIds.size >= runtime.maxConcurrentJobs && queuedJobIds.length >= runtime.maxQueuedJobs) {
+    if (
+      runningJobIds.size >= runtime.maxConcurrentJobs &&
+      queuedJobIds.length >= runtime.maxQueuedJobs
+    ) {
       throw new JobQueueBackpressureError({
-        queue: toQueueSnapshot()
+        queue: toQueueSnapshot(),
       });
     }
 
     const jobId = randomUUID();
     const acceptedModes =
-      input.figmaSourceMode === undefined ? toAcceptedModes() : toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
+      input.figmaSourceMode === undefined
+        ? toAcceptedModes()
+        : toAcceptedModes({ figmaSourceMode: input.figmaSourceMode });
     const generationLocaleResolution = resolveJobGenerationLocale({
       submitGenerationLocale: input.generationLocale,
-      runtimeGenerationLocale: runtime.generationLocale
+      runtimeGenerationLocale: runtime.generationLocale,
     });
-    const customerProfilePath = normalizeOptionalInputString(input.customerProfilePath);
+    const customerProfilePath = normalizeOptionalInputString(
+      input.customerProfilePath,
+    );
     const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
-    const storybookStaticDir = normalizeOptionalInputString(input.storybookStaticDir);
+    const storybookStaticDir = normalizeOptionalInputString(
+      input.storybookStaticDir,
+    );
     const componentMappings = input.componentMappings
       ? normalizeComponentMappingRules({
-          rules: input.componentMappings
+          rules: input.componentMappings,
         })
       : undefined;
     const resolvedFormHandlingMode = resolveFormHandlingMode({
-      submitFormHandlingMode: input.formHandlingMode
+      submitFormHandlingMode: input.formHandlingMode,
     });
     const visualQualityCompatibilityEnabled = input.visualAudit !== undefined;
     const resolvedEnableVisualQualityValidation =
       typeof input.enableVisualQualityValidation === "boolean"
         ? input.enableVisualQualityValidation
-        : visualQualityCompatibilityEnabled || runtime.enableVisualQualityValidation;
+        : visualQualityCompatibilityEnabled ||
+          runtime.enableVisualQualityValidation;
     const resolvedVisualQualityReferenceMode =
       input.visualQualityReferenceMode ??
-      (visualQualityCompatibilityEnabled ? "frozen_fixture" : runtime.visualQualityReferenceMode);
+      (visualQualityCompatibilityEnabled
+        ? "frozen_fixture"
+        : runtime.visualQualityReferenceMode);
     const resolvedVisualQualityViewportWidth =
-      typeof input.visualQualityViewportWidth === "number" && Number.isFinite(input.visualQualityViewportWidth)
+      typeof input.visualQualityViewportWidth === "number" &&
+      Number.isFinite(input.visualQualityViewportWidth)
         ? Math.trunc(input.visualQualityViewportWidth)
         : typeof input.visualAudit?.capture?.viewport?.width === "number" &&
             Number.isFinite(input.visualAudit.capture.viewport.width)
           ? Math.trunc(input.visualAudit.capture.viewport.width)
           : runtime.visualQualityViewportWidth;
     const resolvedVisualQualityViewportHeight =
-      typeof input.visualQualityViewportHeight === "number" && Number.isFinite(input.visualQualityViewportHeight)
+      typeof input.visualQualityViewportHeight === "number" &&
+      Number.isFinite(input.visualQualityViewportHeight)
         ? Math.trunc(input.visualQualityViewportHeight)
         : typeof input.visualAudit?.capture?.viewport?.height === "number" &&
             Number.isFinite(input.visualAudit.capture.viewport.height)
@@ -1211,10 +1401,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       input.visualQualityBrowsers.length > 0
         ? input.visualQualityBrowsers
         : runtime.visualQualityBrowsers;
-    const resolvedCompositeQualityWeights = resolveRequestCompositeQualityWeights({
-      input: input.compositeQualityWeights,
-      fallback: runtime.compositeQualityWeights
-    });
+    const resolvedCompositeQualityWeights =
+      resolveRequestCompositeQualityWeights({
+        input: input.compositeQualityWeights,
+        fallback: runtime.compositeQualityWeights,
+      });
     const request: WorkspaceJobStatus["request"] = {
       enableGitPr: input.enableGitPr === true,
       figmaSourceMode: acceptedModes.figmaSourceMode,
@@ -1229,10 +1420,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
             visualQualityReferenceMode: resolvedVisualQualityReferenceMode,
             visualQualityViewportWidth: resolvedVisualQualityViewportWidth,
             visualQualityViewportHeight: resolvedVisualQualityViewportHeight,
-            visualQualityDeviceScaleFactor: resolvedVisualQualityDeviceScaleFactor,
-            visualQualityBrowsers: [...resolvedVisualQualityBrowsers]
+            visualQualityDeviceScaleFactor:
+              resolvedVisualQualityDeviceScaleFactor,
+            visualQualityBrowsers: [...resolvedVisualQualityBrowsers],
           }
-        : {})
+        : {}),
     };
     if (input.figmaFileKey) {
       request.figmaFileKey = input.figmaFileKey;
@@ -1261,6 +1453,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     if (input.targetPath) {
       request.targetPath = input.targetPath;
     }
+    if (input.importIntent !== undefined) {
+      request.importIntent = input.importIntent;
+    }
     if (input.visualAudit) {
       request.visualAudit = {
         ...input.visualAudit,
@@ -1270,18 +1465,22 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
                 ...input.visualAudit.capture,
                 ...(input.visualAudit.capture.viewport
                   ? {
-                      viewport: { ...input.visualAudit.capture.viewport }
+                      viewport: { ...input.visualAudit.capture.viewport },
                     }
-                  : {})
-              }
+                  : {}),
+              },
             }
           : {}),
-        ...(input.visualAudit.diff ? { diff: { ...input.visualAudit.diff } } : {}),
+        ...(input.visualAudit.diff
+          ? { diff: { ...input.visualAudit.diff } }
+          : {}),
         ...(input.visualAudit.regions
           ? {
-              regions: input.visualAudit.regions.map((region) => ({ ...region }))
+              regions: input.visualAudit.regions.map((region) => ({
+                ...region,
+              })),
             }
-          : {})
+          : {}),
       };
     }
 
@@ -1294,12 +1493,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       logs: [],
       artifacts: {
         outputRoot: resolvedPaths.outputRoot,
-        jobDir: path.join(resolvedPaths.jobsRoot, jobId)
+        jobDir: path.join(resolvedPaths.jobsRoot, jobId),
       },
       preview: {
-        enabled: runtime.previewEnabled
+        enabled: runtime.previewEnabled,
       },
-      queue: toQueueSnapshot({ jobId })
+      queue: toQueueSnapshot({ jobId }),
     };
 
     jobs.set(jobId, job);
@@ -1308,7 +1507,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job,
       logger: runtime.logger,
       level: "info",
-      message: "Job accepted by workspace-dev runtime."
+      message: "Job accepted by workspace-dev runtime.",
     });
 
     if (runningJobIds.size < runtime.maxConcurrentJobs) {
@@ -1320,7 +1519,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         logger: runtime.logger,
         level: "info",
-        message: `Job queued with position ${queuedJobIds.length}.`
+        message: `Job queued with position ${queuedJobIds.length}.`,
       });
       refreshQueueSnapshots();
     }
@@ -1328,11 +1527,17 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     return {
       jobId,
       status: "queued" as const,
-      acceptedModes
+      acceptedModes,
+      ...(input.importIntent !== undefined
+        ? { importIntent: input.importIntent }
+        : {}),
     };
   };
 
-  const runRegenerationJob = async (job: JobRecord, regenInput: WorkspaceRegenerationInput): Promise<void> => {
+  const runRegenerationJob = async (
+    job: JobRecord,
+    regenInput: WorkspaceRegenerationInput,
+  ): Promise<void> => {
     job.status = "running";
     job.startedAt = nowIso();
     const jobAbortController = new AbortController();
@@ -1346,9 +1551,17 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
-    const iconMapFilePath = runtime.iconMapFilePath ?? path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
-    const designSystemFilePath = runtime.designSystemFilePath ?? path.join(resolvedPaths.outputRoot, "design-system.json");
-    const irCacheDir = path.join(resolvedPaths.outputRoot, "cache", "ir-derivation");
+    const iconMapFilePath =
+      runtime.iconMapFilePath ??
+      path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
+    const designSystemFilePath =
+      runtime.designSystemFilePath ??
+      path.join(resolvedPaths.outputRoot, "design-system.json");
+    const irCacheDir = path.join(
+      resolvedPaths.outputRoot,
+      "cache",
+      "ir-derivation",
+    );
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -1369,14 +1582,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job.error = {
         code: "E_REGEN_SOURCE_NOT_FOUND",
         stage: "figma.source",
-        message: `Source job '${regenInput.sourceJobId}' not found.`
+        message: `Source job '${regenInput.sourceJobId}' not found.`,
       };
       pushRuntimeLog({
         job,
         logger: runtime.logger,
         level: "error",
         stage: "figma.source",
-        message: `Regeneration job failed: E_REGEN_SOURCE_NOT_FOUND Source job '${regenInput.sourceJobId}' not found.`
+        message: `Regeneration job failed: E_REGEN_SOURCE_NOT_FOUND Source job '${regenInput.sourceJobId}' not found.`,
       });
       await persistTerminalSnapshot({ job });
       return;
@@ -1387,11 +1600,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const resolvedFigmaSourceMode = sourceRecord.request.figmaSourceMode;
     const resolvedBrandTheme = sourceRecord.request.brandTheme;
     const resolvedCustomerBrandId =
-      normalizeOptionalInputString(regenInput.customerBrandId) ?? sourceRecord.request.customerBrandId;
+      normalizeOptionalInputString(regenInput.customerBrandId) ??
+      sourceRecord.request.customerBrandId;
 
     const appendDiagnostics = ({
       stage,
-      diagnostics
+      diagnostics,
     }: {
       stage: WorkspaceJobStageName;
       diagnostics: PipelineDiagnosticInput[];
@@ -1404,12 +1618,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         stage,
         message: "Collected pipeline diagnostics.",
         diagnostics,
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       }).diagnostics;
       collectedDiagnostics = mergePipelineDiagnostics({
         ...(collectedDiagnostics ? { first: collectedDiagnostics } : {}),
         ...(normalized ? { second: normalized } : {}),
-        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics,
       });
     };
 
@@ -1424,24 +1638,27 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         value: {
           sourceJobId: regenInput.sourceJobId,
           sourceIrFile: sourceRecord.artifacts.designIrFile,
-          sourceAnalysisFile: sourceRecord.artifacts.figmaAnalysisFile
-        }
+          sourceAnalysisFile: sourceRecord.artifacts.figmaAnalysisFile,
+        },
       });
       await artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.regenerationOverrides,
         stage: "ir.derive",
-        value: regenInput.overrides
+        value: regenInput.overrides,
       });
-      const requestedStorybookStaticDir = await activateRegenerationStorybookArtifacts({
-        job,
-        artifactStore,
-        sourceJob: sourceRecord
-      });
-      const resolvedCustomerProfile = await activateRegenerationCustomerProfile({
-        job,
-        artifactStore,
-        sourceJob: sourceRecord
-      });
+      const requestedStorybookStaticDir =
+        await activateRegenerationStorybookArtifacts({
+          job,
+          artifactStore,
+          sourceJob: sourceRecord,
+        });
+      const resolvedCustomerProfile = await activateRegenerationCustomerProfile(
+        {
+          job,
+          artifactStore,
+          sourceJob: sourceRecord,
+        },
+      );
       const context: PipelineExecutionContext = {
         mode: "regeneration",
         job,
@@ -1466,7 +1683,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           designSystemFilePath,
           irCacheDir,
           templateRoot: TEMPLATE_ROOT,
-          templateCopyFilter: TEMPLATE_COPY_FILTER
+          templateCopyFilter: TEMPLATE_COPY_FILTER,
         },
         artifactStore,
         resolvedBrandTheme,
@@ -1482,9 +1699,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         syncPublicJobProjection: async () => {
           await syncPublicJobProjection({ job, artifactStore });
         },
-        ...(resolvedFigmaSourceMode === "local_json" || !sourceRecord.request.figmaFileKey?.trim()
+        ...(resolvedFigmaSourceMode === "local_json" ||
+        !sourceRecord.request.figmaFileKey?.trim()
           ? {}
-          : { figmaFileKeyForDiagnostics: sourceRecord.request.figmaFileKey.trim() })
+          : {
+              figmaFileKeyForDiagnostics:
+                sourceRecord.request.figmaFileKey.trim(),
+            }),
       };
 
       const orchestrator = new PipelineOrchestrator({
@@ -1492,30 +1713,32 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           toPipelineError({
             error,
             fallbackStage,
-            limits: runtime.pipelineDiagnosticLimits
+            limits: runtime.pipelineDiagnosticLimits,
           }),
-        isAbortLikeError
+        isAbortLikeError,
       });
       await orchestrator.execute({
         context,
-        plan: buildRegenerationPipelinePlan()
+        plan: buildRegenerationPipelinePlan(),
       });
 
       job.status = "completed";
       job.finishedAt = nowIso();
       delete job.currentStage;
-      const generationSummary = await artifactStore.getValue<{ generatedPaths?: string[] }>(STAGE_ARTIFACT_KEYS.codegenSummary);
+      const generationSummary = await artifactStore.getValue<{
+        generatedPaths?: string[];
+      }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushRuntimeLog({
         job,
         logger: runtime.logger,
         level: "info",
         message:
           `Regeneration job completed. Generated output at ${generatedProjectDir} ` +
-          `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`
+          `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`,
       });
       await persistTerminalSnapshot({
         job,
-        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
       });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
@@ -1526,22 +1749,27 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           job.cancellation = {
             requestedAt: nowIso(),
             reason: error.message,
-            requestedBy: "api"
+            requestedBy: "api",
           };
         }
         job.cancellation.completedAt = nowIso();
-        markQueuedStagesSkippedAfterCancellation({ job, reason: error.message });
+        markQueuedStagesSkippedAfterCancellation({
+          job,
+          reason: error.message,
+        });
         pushRuntimeLog({
           job,
           logger: runtime.logger,
           level: "warn",
           stage: error.stage,
-          message: `Regeneration job canceled: ${error.message}`
+          message: `Regeneration job canceled: ${error.message}`,
         });
         try {
           await persistTerminalSnapshot({
             job,
-            ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+            ...(collectedDiagnostics
+              ? { diagnostics: collectedDiagnostics }
+              : {}),
           });
         } catch {
           // Ignore
@@ -1552,12 +1780,12 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       const typedError = toPipelineError({
         error,
         fallbackStage: job.currentStage ?? "ir.derive",
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
       const mergedDiagnostics = mergePipelineDiagnostics({
         ...(typedError.diagnostics ? { first: typedError.diagnostics } : {}),
         ...(collectedDiagnostics ? { second: collectedDiagnostics } : {}),
-        max: runtime.pipelineDiagnosticLimits.maxDiagnostics
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics,
       });
       if (mergedDiagnostics) {
         collectedDiagnostics = mergedDiagnostics;
@@ -1569,7 +1797,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         code: typedError.code,
         stage: typedError.stage,
         message: typedError.message,
-        ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {})
+        ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {}),
       };
       job.currentStage = typedError.stage;
       pushRuntimeLog({
@@ -1577,12 +1805,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         logger: runtime.logger,
         level: "error",
         stage: typedError.stage,
-        message: `Regeneration job failed: ${typedError.code} ${typedError.message}`
+        message: `Regeneration job failed: ${typedError.code} ${typedError.message}`,
       });
       try {
         await persistTerminalSnapshot({
           job,
-          ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {})
+          ...(collectedDiagnostics
+            ? { diagnostics: collectedDiagnostics }
+            : {}),
         });
       } catch {
         // Ignore
@@ -1592,7 +1822,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     }
   };
 
-  const executeRegenerationJob = ({ job, input }: { job: JobRecord; input: WorkspaceRegenerationInput }): void => {
+  const executeRegenerationJob = ({
+    job,
+    input,
+  }: {
+    job: JobRecord;
+    input: WorkspaceRegenerationInput;
+  }): void => {
     if (runningJobIds.has(job.jobId)) {
       return;
     }
@@ -1609,7 +1845,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
   };
 
   const drainQueuedJobs = (): void => {
-    while (runningJobIds.size < runtime.maxConcurrentJobs && queuedJobIds.length > 0) {
+    while (
+      runningJobIds.size < runtime.maxConcurrentJobs &&
+      queuedJobIds.length > 0
+    ) {
       const nextJobId = queuedJobIds.shift();
       if (!nextJobId) {
         break;
@@ -1648,14 +1887,19 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       throw err;
     }
     if (sourceJob.status !== "completed") {
-      const err = new Error(`Source job '${input.sourceJobId}' has status '${sourceJob.status}' — only completed jobs can be used as regeneration source.`);
+      const err = new Error(
+        `Source job '${input.sourceJobId}' has status '${sourceJob.status}' — only completed jobs can be used as regeneration source.`,
+      );
       (err as Error & { code: string }).code = "E_REGEN_SOURCE_NOT_COMPLETED";
       throw err;
     }
 
-    if (runningJobIds.size >= runtime.maxConcurrentJobs && queuedJobIds.length >= runtime.maxQueuedJobs) {
+    if (
+      runningJobIds.size >= runtime.maxConcurrentJobs &&
+      queuedJobIds.length >= runtime.maxQueuedJobs
+    ) {
       throw new JobQueueBackpressureError({
-        queue: toQueueSnapshot()
+        queue: toQueueSnapshot(),
       });
     }
 
@@ -1663,7 +1907,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     const customerBrandId = normalizeOptionalInputString(input.customerBrandId);
     const componentMappings = input.componentMappings
       ? normalizeComponentMappingRules({
-          rules: input.componentMappings
+          rules: input.componentMappings,
         })
       : undefined;
     const job: JobRecord = {
@@ -1674,24 +1918,26 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         ...sourceJob.request,
         enableGitPr: false,
         ...(customerBrandId ? { customerBrandId } : {}),
-        ...(componentMappings ? { componentMappings } : {})
+        ...(componentMappings ? { componentMappings } : {}),
       },
       stages: createInitialStages(),
       logs: [],
       artifacts: {
         outputRoot: resolvedPaths.outputRoot,
-        jobDir: path.join(resolvedPaths.jobsRoot, jobId)
+        jobDir: path.join(resolvedPaths.jobsRoot, jobId),
       },
       preview: {
-        enabled: runtime.previewEnabled
+        enabled: runtime.previewEnabled,
       },
       queue: toQueueSnapshot({ jobId }),
       lineage: {
         sourceJobId: input.sourceJobId,
         overrideCount: input.overrides.length,
         ...(input.draftId ? { draftId: input.draftId } : {}),
-        ...(input.baseFingerprint ? { baseFingerprint: input.baseFingerprint } : {})
-      }
+        ...(input.baseFingerprint
+          ? { baseFingerprint: input.baseFingerprint }
+          : {}),
+      },
     };
 
     jobs.set(jobId, job);
@@ -1699,7 +1945,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job,
       logger: runtime.logger,
       level: "info",
-      message: `Regeneration job accepted (source=${input.sourceJobId}, overrides=${input.overrides.length}).`
+      message: `Regeneration job accepted (source=${input.sourceJobId}, overrides=${input.overrides.length}).`,
     });
 
     if (runningJobIds.size < runtime.maxConcurrentJobs) {
@@ -1711,7 +1957,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         job,
         logger: runtime.logger,
         level: "info",
-        message: `Regeneration job queued with position ${queuedJobIds.length}.`
+        message: `Regeneration job queued with position ${queuedJobIds.length}.`,
       });
       refreshQueueSnapshots();
     }
@@ -1720,13 +1966,15 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       jobId,
       sourceJobId: input.sourceJobId,
       status: "queued" as const,
-      acceptedModes: toAcceptedModes({ figmaSourceMode: sourceJob.request.figmaSourceMode })
+      acceptedModes: toAcceptedModes({
+        figmaSourceMode: sourceJob.request.figmaSourceMode,
+      }),
     };
   };
 
   const previewLocalSync: JobEngine["previewLocalSync"] = async ({
     jobId,
-    targetPath
+    targetPath,
   }): Promise<WorkspaceLocalSyncDryRunResult> => {
     pruneExpiredSyncConfirmations();
     const syncContext = resolveSyncContext({ jobId });
@@ -1735,7 +1983,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       workspaceRoot: resolvedWorkspaceRoot,
       outputRoot: resolvedPaths.outputRoot,
       targetPath: targetPath ?? syncContext.job.request.targetPath,
-      boardKey: syncContext.boardKey
+      boardKey: syncContext.boardKey,
     });
     const token = randomUUID();
     const expiresAtMs = Date.now() + LOCAL_SYNC_CONFIRMATION_TTL_MS;
@@ -1746,7 +1994,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       sourceJobId: syncContext.sourceJobId,
       expiresAtMs,
       plan,
-      planFingerprint
+      planFingerprint,
     });
 
     return {
@@ -1764,11 +2012,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         decision: entry.decision,
         selectedByDefault: entry.selectedByDefault,
         sizeBytes: entry.sizeBytes,
-        message: entry.message
+        message: entry.message,
       })),
       summary: { ...plan.summary },
       confirmationToken: token,
-      confirmationExpiresAt: new Date(expiresAtMs).toISOString()
+      confirmationExpiresAt: new Date(expiresAtMs).toISOString(),
     };
   };
 
@@ -1776,7 +2024,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     jobId,
     confirmationToken,
     confirmOverwrite,
-    fileDecisions
+    fileDecisions,
   }): Promise<WorkspaceLocalSyncApplyResult> => {
     pruneExpiredSyncConfirmations();
     const syncContext = resolveSyncContext({ jobId });
@@ -1784,7 +2032,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     if (!confirmOverwrite) {
       throw createSyncError({
         code: "E_SYNC_CONFIRMATION_REQUIRED",
-        message: "Local sync apply requires explicit overwrite confirmation."
+        message: "Local sync apply requires explicit overwrite confirmation.",
       });
     }
 
@@ -1792,20 +2040,22 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     if (!confirmation) {
       throw createSyncError({
         code: "E_SYNC_CONFIRMATION_INVALID",
-        message: "Invalid or unknown local sync confirmation token."
+        message: "Invalid or unknown local sync confirmation token.",
       });
     }
     if (confirmation.expiresAtMs <= Date.now()) {
       localSyncConfirmations.delete(confirmationToken);
       throw createSyncError({
         code: "E_SYNC_CONFIRMATION_EXPIRED",
-        message: "Local sync confirmation token expired. Request a new dry-run preview."
+        message:
+          "Local sync confirmation token expired. Request a new dry-run preview.",
       });
     }
     if (confirmation.jobId !== jobId) {
       throw createSyncError({
         code: "E_SYNC_CONFIRMATION_INVALID",
-        message: "Local sync confirmation token does not match the selected job."
+        message:
+          "Local sync confirmation token does not match the selected job.",
       });
     }
 
@@ -1814,14 +2064,17 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       workspaceRoot: resolvedWorkspaceRoot,
       outputRoot: resolvedPaths.outputRoot,
       targetPath: confirmation.plan.targetPath,
-      boardKey: syncContext.boardKey
+      boardKey: syncContext.boardKey,
     });
-    const currentFingerprint = computeLocalSyncPlanFingerprint({ plan: currentPlan });
+    const currentFingerprint = computeLocalSyncPlanFingerprint({
+      plan: currentPlan,
+    });
     if (currentFingerprint !== confirmation.planFingerprint) {
       localSyncConfirmations.delete(confirmationToken);
       throw createSyncError({
         code: "E_SYNC_PREVIEW_STALE",
-        message: "Local sync preview is stale. Request a new dry-run preview before applying."
+        message:
+          "Local sync preview is stale. Request a new dry-run preview before applying.",
       });
     }
 
@@ -1829,7 +2082,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       plan: currentPlan,
       fileDecisions,
       jobId,
-      sourceJobId: syncContext.sourceJobId
+      sourceJobId: syncContext.sourceJobId,
     });
     localSyncConfirmations.delete(confirmationToken);
 
@@ -1848,16 +2101,16 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         decision: entry.decision,
         selectedByDefault: entry.selectedByDefault,
         sizeBytes: entry.sizeBytes,
-        message: entry.message
+        message: entry.message,
       })),
       summary: { ...appliedPlan.summary },
-      appliedAt: nowIso()
+      appliedAt: nowIso(),
     };
   };
 
   const cancelJob = ({
     jobId,
-    reason
+    reason,
   }: {
     jobId: string;
     reason?: string;
@@ -1867,7 +2120,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       return undefined;
     }
 
-    if (job.status === "completed" || job.status === "failed" || job.status === "canceled") {
+    if (
+      job.status === "completed" ||
+      job.status === "failed" ||
+      job.status === "canceled"
+    ) {
       refreshQueueSnapshots();
       return toPublicJob(job);
     }
@@ -1881,7 +2138,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       job.cancellation = {
         requestedAt: nowIso(),
         reason: cancellationReason,
-        requestedBy: "api"
+        requestedBy: "api",
       };
     }
 
@@ -1898,13 +2155,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       delete job.currentStage;
       markQueuedStagesSkippedAfterCancellation({
         job,
-        reason: cancellationReason
+        reason: cancellationReason,
       });
       pushRuntimeLog({
         job,
         logger: runtime.logger,
         level: "warn",
-        message: `Job canceled while queued: ${cancellationReason}`
+        message: `Job canceled while queued: ${cancellationReason}`,
       });
       refreshQueueSnapshots();
       persistTerminalSnapshotSync({ job });
@@ -1916,7 +2173,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       logger: runtime.logger,
       level: "warn",
       ...(job.currentStage ? { stage: job.currentStage } : {}),
-      message: `Cancellation requested: ${cancellationReason}`
+      message: `Cancellation requested: ${cancellationReason}`,
     });
     job.abortController?.abort(cancellationReason);
     refreshQueueSnapshots();
@@ -1943,7 +2200,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       status: job.status,
       summary: toJobSummary(job),
       artifacts: { ...job.artifacts },
-      preview: { ...job.preview }
+      preview: { ...job.preview },
     };
     if (job.lineage) {
       result.lineage = { ...job.lineage };
@@ -1959,9 +2216,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         ...job.visualAudit,
         ...(job.visualAudit.regions
           ? {
-              regions: job.visualAudit.regions.map((region) => ({ ...region }))
+              regions: job.visualAudit.regions.map((region) => ({ ...region })),
             }
-          : {})
+          : {}),
       };
     }
     if (job.visualQuality) {
@@ -1979,7 +2236,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   const resolvePreviewAsset = async (
     jobId: string,
-    previewPath: string
+    previewPath: string,
   ): Promise<{ content: Buffer; contentType: string } | undefined> => {
     const safeJobId = toFileSystemSafe(jobId);
     if (safeJobId !== jobId) {
@@ -1990,7 +2247,8 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     if (normalizedPart === undefined) {
       return undefined;
     }
-    const fallbackPath = normalizedPart.length > 0 ? normalizedPart : "index.html";
+    const fallbackPath =
+      normalizedPart.length > 0 ? normalizedPart : "index.html";
     const previewRoot = path.resolve(resolvedPaths.reprosRoot, safeJobId);
     const candidatePath = path.resolve(previewRoot, fallbackPath);
 
@@ -2005,19 +2263,24 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       const content = await readFile(candidatePath);
       return {
         content,
-        contentType: getContentType(candidatePath)
+        contentType: getContentType(candidatePath),
       };
     } catch {
       if (fallbackPath !== "index.html") {
         const indexPath = path.resolve(previewRoot, "index.html");
-        if (await hasSymlinkInPath({ candidatePath: indexPath, rootPath: previewRoot })) {
+        if (
+          await hasSymlinkInPath({
+            candidatePath: indexPath,
+            rootPath: previewRoot,
+          })
+        ) {
           return undefined;
         }
         try {
           const content = await readFile(indexPath);
           return {
             content,
-            contentType: "text/html; charset=utf-8"
+            contentType: "text/html; charset=utf-8",
           };
         } catch {
           return undefined;
@@ -2035,11 +2298,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     return {
       jobId: job.jobId,
       status: job.status,
-      artifacts: { ...job.artifacts }
+      artifacts: { ...job.artifacts },
     };
   };
 
-  const createPrFromJob: JobEngine["createPrFromJob"] = async ({ jobId, prInput }) => {
+  const createPrFromJob: JobEngine["createPrFromJob"] = async ({
+    jobId,
+    prInput,
+  }) => {
     const job = jobs.get(jobId);
     if (!job) {
       const err = new Error(`Job '${jobId}' not found.`);
@@ -2047,31 +2313,47 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       throw err;
     }
     if (job.status !== "completed") {
-      const err = new Error(`Job '${jobId}' has status '${job.status}' — only completed jobs support PR creation.`);
+      const err = new Error(
+        `Job '${jobId}' has status '${job.status}' — only completed jobs support PR creation.`,
+      );
       (err as Error & { code: string }).code = "E_PR_JOB_NOT_COMPLETED";
       throw err;
     }
     if (!job.lineage) {
-      const err = new Error(`Job '${jobId}' is not a regeneration job — PR creation is only supported for regenerated output.`);
+      const err = new Error(
+        `Job '${jobId}' is not a regeneration job — PR creation is only supported for regenerated output.`,
+      );
       (err as Error & { code: string }).code = "E_PR_NOT_REGENERATION_JOB";
       throw err;
     }
 
-    const artifactStore = new StageArtifactStore({ jobDir: job.artifacts.jobDir });
-    const generatedProjectDir = await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject);
+    const artifactStore = new StageArtifactStore({
+      jobDir: job.artifacts.jobDir,
+    });
+    const generatedProjectDir = await artifactStore.getPath(
+      STAGE_ARTIFACT_KEYS.generatedProject,
+    );
     if (!generatedProjectDir) {
-      const err = new Error(`Job '${jobId}' has no generated project directory.`);
+      const err = new Error(
+        `Job '${jobId}' has no generated project directory.`,
+      );
       (err as Error & { code: string }).code = "E_PR_NO_GENERATED_PROJECT";
       throw err;
     }
-    const generationDiff = await artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff);
+    const generationDiff = await artifactStore.getValue(
+      STAGE_ARTIFACT_KEYS.generationDiff,
+    );
     if (!generationDiff) {
-      const err = new Error(`Job '${jobId}' is missing final generation diff provenance.`);
+      const err = new Error(
+        `Job '${jobId}' is missing final generation diff provenance.`,
+      );
       (err as Error & { code: string }).code = "E_PR_GENERATION_DIFF_MISSING";
       throw err;
     }
     if (!job.generationDiff) {
-      job.generationDiff = generationDiff as NonNullable<JobRecord["generationDiff"]>;
+      job.generationDiff = generationDiff as NonNullable<
+        JobRecord["generationDiff"]
+      >;
     }
 
     const input: WorkspaceJobInput = {
@@ -2079,7 +2361,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       repoUrl: prInput.repoUrl,
       repoToken: prInput.repoToken,
       enableGitPr: true,
-      ...(prInput.targetPath !== undefined ? { targetPath: prInput.targetPath } : {})
+      ...(prInput.targetPath !== undefined
+        ? { targetPath: prInput.targetPath }
+        : {}),
     };
 
     job.gitPr = await executePersistedGitPr({
@@ -2096,27 +2380,30 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           logger: runtime.logger,
           level: "info",
           stage: "git.pr",
-          message
+          message,
         });
-      }
+      },
     });
 
     updateStage({
       job,
       stage: "git.pr",
       status: "completed",
-      message: toGitPrStageMessage({ gitPrStatus: job.gitPr })
+      message: toGitPrStageMessage({ gitPrStatus: job.gitPr }),
     });
     await persistTerminalSnapshot({ job });
 
     return {
       jobId,
       sourceJobId: job.lineage.sourceJobId,
-      gitPr: job.gitPr
+      gitPr: job.gitPr,
     };
   };
 
-  const findLatestCompletedJobForBoardKey = (boardKey: string, excludeJobId: string): JobRecord | undefined => {
+  const findLatestCompletedJobForBoardKey = (
+    boardKey: string,
+    excludeJobId: string,
+  ): JobRecord | undefined => {
     let latest: JobRecord | undefined;
     for (const job of jobs.values()) {
       if (job.status !== "completed") {
@@ -2125,7 +2412,10 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       if (job.jobId === excludeJobId) {
         continue;
       }
-      const seed = job.request.figmaFileKey?.trim() || job.request.figmaJsonPath?.trim() || "";
+      const seed =
+        job.request.figmaFileKey?.trim() ||
+        job.request.figmaJsonPath?.trim() ||
+        "";
       if (!seed) {
         continue;
       }
@@ -2138,7 +2428,11 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       if (candidateBoardKey !== boardKey) {
         continue;
       }
-      if (!latest || (job.finishedAt && (!latest.finishedAt || job.finishedAt > latest.finishedAt))) {
+      if (
+        !latest ||
+        (job.finishedAt &&
+          (!latest.finishedAt || job.finishedAt > latest.finishedAt))
+      ) {
         latest = job;
       }
     }
@@ -2147,7 +2441,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
   const checkStaleDraft: JobEngine["checkStaleDraft"] = async ({
     jobId,
-    draftNodeIds
+    draftNodeIds,
   }) => {
     const job = jobs.get(jobId);
     if (!job) {
@@ -2158,11 +2452,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         boardKey: null,
         carryForwardAvailable: false,
         unmappedNodeIds: [],
-        message: `Job '${jobId}' not found.`
+        message: `Job '${jobId}' not found.`,
       };
     }
 
-    const boardKeySeed = job.request.figmaFileKey?.trim() || job.request.figmaJsonPath?.trim() || "";
+    const boardKeySeed =
+      job.request.figmaFileKey?.trim() ||
+      job.request.figmaJsonPath?.trim() ||
+      "";
     if (!boardKeySeed) {
       return {
         stale: false,
@@ -2171,7 +2468,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         boardKey: null,
         carryForwardAvailable: false,
         unmappedNodeIds: [],
-        message: "Cannot determine board key for this job."
+        message: "Cannot determine board key for this job.",
       };
     }
 
@@ -2186,7 +2483,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         boardKey: null,
         carryForwardAvailable: false,
         unmappedNodeIds: [],
-        message: "Cannot resolve board key for this job."
+        message: "Cannot resolve board key for this job.",
       };
     }
 
@@ -2199,7 +2496,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         boardKey,
         carryForwardAvailable: false,
         unmappedNodeIds: [],
-        message: "Draft is up-to-date — no newer job exists for this board."
+        message: "Draft is up-to-date — no newer job exists for this board.",
       };
     }
 
@@ -2214,7 +2511,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         boardKey,
         carryForwardAvailable: false,
         unmappedNodeIds: [],
-        message: "Draft is up-to-date — no newer job exists for this board."
+        message: "Draft is up-to-date — no newer job exists for this board.",
       };
     }
 
@@ -2224,15 +2521,22 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
 
     if (draftNodeIds.length > 0 && latestJob.artifacts.designIrFile) {
       try {
-        const irContent = await readFile(latestJob.artifacts.designIrFile, "utf8");
-        const irData = JSON.parse(irContent) as { screens?: Array<{ children?: Array<{ id: string }> }> };
+        const irContent = await readFile(
+          latestJob.artifacts.designIrFile,
+          "utf8",
+        );
+        const irData = JSON.parse(irContent) as {
+          screens?: Array<{ children?: Array<{ id: string }> }>;
+        };
         const allNodeIds = new Set<string>();
         if (Array.isArray(irData.screens)) {
           for (const screen of irData.screens) {
             collectNodeIds(screen, allNodeIds);
           }
         }
-        unmappedNodeIds = draftNodeIds.filter((nodeId) => !allNodeIds.has(nodeId));
+        unmappedNodeIds = draftNodeIds.filter(
+          (nodeId) => !allNodeIds.has(nodeId),
+        );
         carryForwardAvailable = unmappedNodeIds.length === 0;
       } catch {
         // If IR is unreadable, carry-forward is not available.
@@ -2252,14 +2556,14 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
         ? `A newer job '${latestJob.jobId}' exists for this board. Carry-forward is available — all draft nodes are present in the latest output.`
         : unmappedNodeIds.length > 0
           ? `A newer job '${latestJob.jobId}' exists for this board. Carry-forward is not available — ${String(unmappedNodeIds.length)} node(s) could not be resolved in the latest output.`
-          : `A newer job '${latestJob.jobId}' exists for this board.`
+          : `A newer job '${latestJob.jobId}' exists for this board.`,
     };
   };
 
   const suggestRemaps: JobEngine["suggestRemaps"] = async ({
     sourceJobId,
     latestJobId,
-    unmappedNodeIds
+    unmappedNodeIds,
   }) => {
     const sourceJob = jobs.get(sourceJobId);
     if (!sourceJob) {
@@ -2271,9 +2575,9 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           sourceNodeId: id,
           sourceNodeName: "(unknown)",
           sourceNodeType: "(unknown)",
-          reason: `Source job '${sourceJobId}' not found.`
+          reason: `Source job '${sourceJobId}' not found.`,
         })),
-        message: `Source job '${sourceJobId}' not found.`
+        message: `Source job '${sourceJobId}' not found.`,
       };
     }
 
@@ -2287,13 +2591,16 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           sourceNodeId: id,
           sourceNodeName: "(unknown)",
           sourceNodeType: "(unknown)",
-          reason: `Latest job '${latestJobId}' not found.`
+          reason: `Latest job '${latestJobId}' not found.`,
         })),
-        message: `Latest job '${latestJobId}' not found.`
+        message: `Latest job '${latestJobId}' not found.`,
       };
     }
 
-    if (!sourceJob.artifacts.designIrFile || !latestJob.artifacts.designIrFile) {
+    if (
+      !sourceJob.artifacts.designIrFile ||
+      !latestJob.artifacts.designIrFile
+    ) {
       return {
         sourceJobId,
         latestJobId,
@@ -2302,24 +2609,31 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
           sourceNodeId: id,
           sourceNodeName: "(unknown)",
           sourceNodeType: "(unknown)",
-          reason: "Design IR not available for one or both jobs."
+          reason: "Design IR not available for one or both jobs.",
         })),
-        message: "Design IR artifacts are missing — cannot generate remap suggestions."
+        message:
+          "Design IR artifacts are missing — cannot generate remap suggestions.",
       };
     }
 
     let sourceIrContent: string;
     let latestIrContent: string;
     try {
-      sourceIrContent = await readFile(sourceJob.artifacts.designIrFile, "utf8");
-      latestIrContent = await readFile(latestJob.artifacts.designIrFile, "utf8");
+      sourceIrContent = await readFile(
+        sourceJob.artifacts.designIrFile,
+        "utf8",
+      );
+      latestIrContent = await readFile(
+        latestJob.artifacts.designIrFile,
+        "utf8",
+      );
     } catch {
       return {
         sourceJobId,
         latestJobId,
         suggestions: [],
         rejections: [],
-        message: "Could not read Design IR files for remap analysis."
+        message: "Could not read Design IR files for remap analysis.",
       };
     }
 
@@ -2331,7 +2645,7 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
       latestIr,
       unmappedNodeIds,
       sourceJobId,
-      latestJobId
+      latestJobId,
     });
   };
 
@@ -2347,9 +2661,13 @@ export const createJobEngine = ({ resolveBaseUrl, paths, runtime }: CreateJobEng
     getJobRecord,
     resolvePreviewAsset,
     checkStaleDraft,
-    suggestRemaps
+    suggestRemaps,
   };
 };
 
 export { resolveRuntimeSettings };
-export type { JobEngine, JobEngineRuntime, JobRecordSnapshot } from "./job-engine/types.js";
+export type {
+  JobEngine,
+  JobEngineRuntime,
+  JobRecordSnapshot,
+} from "./job-engine/types.js";

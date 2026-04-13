@@ -453,6 +453,15 @@ describe("useInspectorBootstrap — submitPaste secure context", () => {
 
     result.current.submitPaste('{"document":{}}', { source: "drop" });
 
+    // submitPaste now dispatches intent_detected first; confirm to proceed
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    await act(async () => {
+      result.current.confirmIntent("FIGMA_JSON_DOC");
+    });
+
     await waitFor(() => {
       expect(result.current.state.kind).toBe("queued");
     });
@@ -567,7 +576,7 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
     );
   });
 
-  it("valid JSON still calls fetchJson", async () => {
+  it("valid JSON dispatches intent_detected then calls fetchJson after confirmIntent", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {
         return createJsonResponse({
@@ -589,6 +598,17 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
     );
 
     result.current.submitPaste('{"document":{}}');
+
+    // submitPaste dispatches intent_detected; fetchJson should not be called yet
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+
+    // Confirm to proceed with submission
+    await act(async () => {
+      result.current.confirmIntent("FIGMA_JSON_DOC");
+    });
 
     await waitFor(() => {
       expect(result.current.state.kind).toBe("queued");

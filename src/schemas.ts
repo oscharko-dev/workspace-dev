@@ -22,6 +22,7 @@ import type {
   WorkspaceCreatePrInput,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
+  WorkspaceImportIntent,
   WorkspaceJobInput,
   WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
@@ -851,6 +852,7 @@ function parseSubmitRequest(
     "generationLocale",
     "formHandlingMode",
     "visualAudit",
+    "importIntent",
   ]);
 
   for (const key of Object.keys(input)) {
@@ -975,6 +977,12 @@ function parseSubmitRequest(
     required: false,
     issues,
   });
+  const rawImportIntent = parseStringField({
+    input,
+    key: "importIntent",
+    required: false,
+    issues,
+  });
   const brandTheme = (() => {
     if (rawBrandTheme === undefined) {
       return undefined;
@@ -1002,6 +1010,26 @@ function parseSubmitRequest(
       issues,
       ["formHandlingMode"],
       "formHandlingMode must be one of: react_hook_form, legacy_use_state",
+    );
+    return undefined;
+  })();
+  const importIntent = (() => {
+    if (rawImportIntent === undefined) {
+      return undefined;
+    }
+    const normalized = rawImportIntent.trim().toUpperCase();
+    if (
+      normalized === "FIGMA_JSON_NODE_BATCH" ||
+      normalized === "FIGMA_JSON_DOC" ||
+      normalized === "RAW_CODE_OR_TEXT" ||
+      normalized === "UNKNOWN"
+    ) {
+      return normalized as WorkspaceImportIntent;
+    }
+    pushIssue(
+      issues,
+      ["importIntent"],
+      "importIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, RAW_CODE_OR_TEXT, UNKNOWN",
     );
     return undefined;
   })();
@@ -1232,6 +1260,9 @@ function parseSubmitRequest(
   }
   if (formHandlingMode !== undefined) {
     data.formHandlingMode = formHandlingMode;
+  }
+  if (importIntent !== undefined) {
+    data.importIntent = importIntent;
   }
 
   return {

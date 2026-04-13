@@ -4,6 +4,7 @@ import { InspectorPanel } from "./inspector/InspectorPanel";
 import { InspectorErrorBoundary } from "./inspector/InspectorErrorBoundary";
 import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
+import type { ImportIntent } from "./inspector/paste-input-classifier";
 
 function BackIcon(): JSX.Element {
   return (
@@ -219,6 +220,17 @@ function BootstrapView(): JSX.Element {
     bootstrap.retry();
   }, [bootstrap]);
 
+  const handleConfirmIntent = useCallback(
+    (intent: ImportIntent): void => {
+      bootstrap.confirmIntent(intent);
+    },
+    [bootstrap],
+  );
+
+  const handleDismissIntent = useCallback((): void => {
+    bootstrap.dismissIntent();
+  }, [bootstrap]);
+
   if (
     bootstrap.state.kind === "ready" &&
     bootstrap.jobId &&
@@ -241,6 +253,8 @@ function BootstrapView(): JSX.Element {
       onDropFile={handleDropFile}
       onError={handleError}
       onRetry={handleRetry}
+      onConfirmIntent={handleConfirmIntent}
+      onDismissIntent={handleDismissIntent}
     />
   );
 }
