@@ -221,6 +221,38 @@ describe("useInspectorBootstrap — 400 TOO_LARGE", () => {
   });
 });
 
+describe("useInspectorBootstrap — 400 UNSUPPORTED_CLIPBOARD_KIND", () => {
+  it("→ failed, not retryable", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 400,
+          ok: false,
+          payload: { error: "UNSUPPORTED_CLIPBOARD_KIND" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    result.current.submit({
+      figmaJsonPayload: '{"kind":"workspace-dev/figma-selection@99"}',
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("UNSUPPORTED_CLIPBOARD_KIND");
+      expect(result.current.state.retryable).toBe(false);
+    }
+  });
+});
+
 describe("useInspectorBootstrap — 500 server error", () => {
   beforeEach(() => {
     fetchJsonMock.mockImplementation(async ({ url }) => {

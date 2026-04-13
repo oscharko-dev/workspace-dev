@@ -104,13 +104,13 @@ describe("classifyPasteInput — plugin_envelope detection", () => {
     expect(result.parsedJson).toBeDefined();
   });
 
-  it("unknown envelope kind → direct_json (not recognized as envelope)", () => {
+  it("unknown envelope kind → plugin_envelope", () => {
     const payload = JSON.stringify({
       kind: "workspace-dev/figma-selection@99",
       selections: [],
     });
     const result = classifyPasteInput(payload);
-    expect(result.kind).toBe("direct_json");
+    expect(result.kind).toBe("plugin_envelope");
   });
 
   it("envelope takes priority over document field detection", () => {
@@ -295,13 +295,14 @@ describe("classifyPasteIntent — FIGMA_PLUGIN_ENVELOPE", () => {
     expect(result.intent).toBe("FIGMA_PLUGIN_ENVELOPE");
   });
 
-  it("unknown envelope kind falls through to other classifiers", () => {
+  it("unknown envelope kind still routes to FIGMA_PLUGIN_ENVELOPE", () => {
     const payload = JSON.stringify({
       kind: "workspace-dev/figma-selection@99",
       document: { id: "0:0", children: [] },
     });
     const result = classifyPasteIntent(payload);
-    expect(result.intent).toBe("FIGMA_JSON_DOC");
+    expect(result.intent).toBe("FIGMA_PLUGIN_ENVELOPE");
+    expect(result.confidence).toBe(0.85);
   });
 });
 

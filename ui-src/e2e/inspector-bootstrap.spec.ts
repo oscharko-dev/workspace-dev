@@ -402,11 +402,12 @@ test.describe("inspector bootstrap flow", () => {
   // -------------------------------------------------------------------------
   // TC-6: Unknown envelope version shows clear error (#997)
   // -------------------------------------------------------------------------
-  test("pasting an unknown envelope version falls through to document validation and shows error", async ({
+  test("pasting an unknown envelope version shows a clear unsupported-version error", async ({
     page,
   }) => {
-    // Mock submit to return 400 (schema validation will reject the unknown envelope)
+    let submitCalls = 0;
     await page.route("**/workspace/submit", async (route) => {
+      submitCalls += 1;
       if (route.request().method() !== "POST") {
         await route.continue();
         return;
@@ -415,9 +416,9 @@ test.describe("inspector bootstrap flow", () => {
         status: 400,
         contentType: "application/json",
         body: JSON.stringify({
-          error: "SCHEMA_MISMATCH",
+          error: "UNSUPPORTED_CLIPBOARD_KIND",
           message:
-            "figmaJsonPayload does not match expected schema: document must be an object.",
+            'Clipboard envelope validation failed: kind: Unknown envelope kind: "workspace-dev/figma-selection@99". Expected one of: workspace-dev/figma-selection@1.',
         }),
       });
     });
@@ -441,19 +442,24 @@ test.describe("inspector bootstrap flow", () => {
 
     await simulatePaste(page, unknownEnvelope);
 
-    // The unknown kind is not detected as envelope — falls through to
-    // JSON document detection (has no `document` at root level as Figma doc).
-    // The banner shows since it's valid JSON with some structure.
+    // Unknown versions still surface as plugin envelopes so the server can
+    // return a dedicated unsupported-version error instead of a generic schema
+    // mismatch.
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
+    await expect(banner).toContainText("Plugin Export");
 
-    // Confirm the import — server will reject with SCHEMA_MISMATCH
+    // Confirm the import — the server should reject the unsupported envelope
+    // version with a dedicated error.
     await banner.getByRole("button", { name: "Import starten" }).click();
 
     // Assert — inline error message is displayed
     const errorAlert = page.locator('[role="alert"]').first();
     await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-    await expect(errorAlert).toContainText("schema");
+    await expect(errorAlert).toContainText(
+      "clipboard envelope version is not supported yet",
+    );
+    expect(submitCalls).toBe(1);
 
     // Assert — still on bootstrap shell
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
