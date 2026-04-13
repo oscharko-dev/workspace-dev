@@ -13,14 +13,18 @@ import type {
   LlmProviderMode,
   RepoAuthSource,
   SyncChangeClass,
-  UiGateMode
+  UiGateMode,
 } from "./types-core.js";
-import type { MappingCoverageMetrics, MappingPolicy, ComponentMappingRule } from "./types-mapping.js";
+import type {
+  MappingCoverageMetrics,
+  MappingPolicy,
+  ComponentMappingRule,
+} from "./types-mapping.js";
 import type {
   CredentialRef,
   SyncBranchPolicy,
   SyncFailPolicy,
-  UiGatePolicy
+  UiGatePolicy,
 } from "./types-sync.js";
 
 export interface RepoConfig {
@@ -87,7 +91,12 @@ export interface FigmaMcpVariableDefinition {
   sourceProperty?: string;
 }
 
-export type FigmaMcpStyleType = "TEXT" | "FILL" | "STROKE" | "EFFECT" | (string & {});
+export type FigmaMcpStyleType =
+  | "TEXT"
+  | "FILL"
+  | "STROKE"
+  | "EFFECT"
+  | (string & {});
 
 export interface FigmaMcpStyleCatalogEntry {
   name: string;
@@ -158,7 +167,15 @@ export interface FigmaMcpEnrichmentDiagnostic {
   code: string;
   message: string;
   severity: "info" | "warning";
-  source: "loader" | "variables" | "styles" | "code_connect" | "design_system" | "metadata" | "screenshots" | "assets";
+  source:
+    | "loader"
+    | "variables"
+    | "styles"
+    | "code_connect"
+    | "design_system"
+    | "metadata"
+    | "screenshots"
+    | "assets";
 }
 
 export interface FigmaMcpEnrichment {
@@ -174,6 +191,27 @@ export interface FigmaMcpEnrichment {
   screenshots?: FigmaMcpScreenshotReference[];
   diagnostics?: FigmaMcpEnrichmentDiagnostic[];
   toolNames: string[];
+}
+
+// ---------------------------------------------------------------------------
+// Token bridge types (Issue #1001)
+// ---------------------------------------------------------------------------
+
+export interface TokenConflict {
+  name: string;
+  figmaValue: string;
+  existingValue: string;
+  resolution: "figma" | "existing";
+}
+
+export interface TokenBridgeResult {
+  variables: FigmaMcpVariableDefinition[];
+  styleCatalog: FigmaMcpStyleCatalogEntry[];
+  cssCustomProperties: string;
+  tailwindExtension?: Record<string, Record<string, string>>;
+  conflicts: TokenConflict[];
+  unmappedVariables: string[];
+  diagnostics: FigmaMcpEnrichmentDiagnostic[];
 }
 
 export interface JobDeltaSummary {

@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  createDefaultFigmaMcpEnrichmentLoader,
-} from "./figma-hybrid-enrichment.js";
+import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
 
 const jsonResponse = (body: unknown, init?: ResponseInit): Response =>
   new Response(JSON.stringify(body), {
@@ -45,6 +43,29 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
       if (body.params?.name === "get_screenshot") {
         return jsonResponse({
           result: { url: "https://cdn.figma.com/screenshots/checkout.png" },
+        });
+      }
+      if (body.params?.name === "get_variable_defs") {
+        return jsonResponse({
+          result: {
+            variables: [
+              {
+                name: "color/primary",
+                resolvedValue: "#3B82F6",
+                type: "COLOR",
+                collection: "Colors",
+              },
+            ],
+          },
+        });
+      }
+      if (body.params?.name === "search_design_system") {
+        return jsonResponse({
+          result: {
+            components: [],
+            styles: [{ name: "Heading/H1", styleType: "TEXT", fontSizePx: 32 }],
+            variables: [],
+          },
         });
       }
     }
@@ -115,22 +136,36 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
 
   assert.deepEqual(
     toolCalls.map((entry) => entry.tool),
-    ["get_metadata", "get_design_context", "get_screenshot"],
+    [
+      "get_metadata",
+      "get_design_context",
+      "get_screenshot",
+      "get_variable_defs",
+      "search_design_system",
+    ],
   );
   assert.deepEqual(
     toolCalls.map((entry) => entry.nodeId),
-    ["2:1", "2:1", "2:1"],
+    ["2:1", "2:1", "2:1", "2:1", undefined],
   );
   assert.equal(enrichment.sourceMode, "hybrid");
   assert.deepEqual(enrichment.toolNames, [
     "get_design_context",
     "get_metadata",
     "get_screenshot",
+    "get_variable_defs",
+    "search_design_system",
   ]);
   assert.equal(enrichment.metadataHints?.[0]?.nodeId, "2:1");
   assert.equal(enrichment.metadataHints?.[0]?.layerName, "Checkout");
-  assert.equal(enrichment.assets?.[0]?.source, "https://cdn.figma.com/assets/hero.png");
-  assert.equal(enrichment.screenshots?.[0]?.url, "https://cdn.figma.com/screenshots/checkout.png");
+  assert.equal(
+    enrichment.assets?.[0]?.source,
+    "https://cdn.figma.com/assets/hero.png",
+  );
+  assert.equal(
+    enrichment.screenshots?.[0]?.url,
+    "https://cdn.figma.com/screenshots/checkout.png",
+  );
 });
 
 test("default hybrid loader falls back to REST-only enrichment when MCP resolution fails", async () => {

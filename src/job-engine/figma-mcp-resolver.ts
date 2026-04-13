@@ -184,24 +184,7 @@ interface McpToolResponse {
 // MCP tool call arguments
 // ---------------------------------------------------------------------------
 
-interface DesignContextArgs {
-  fileKey: string;
-  nodeId: string;
-  clientFrameworks: string;
-  clientLanguages: string;
-}
-
-interface MetadataArgs {
-  fileKey: string;
-  nodeId: string;
-}
-
-interface ScreenshotArgs {
-  fileKey: string;
-  nodeId: string;
-}
-
-type McpToolArgs = DesignContextArgs | MetadataArgs | ScreenshotArgs;
+type McpToolArgs = Record<string, unknown>;
 
 // ---------------------------------------------------------------------------
 // MCP tool result shapes (internal)
@@ -904,11 +887,7 @@ export const resolveFigmaDesignContext = async (
 ): Promise<FigmaDesignContext> => {
   const signal = options?.signal;
   const resolvedNodeId = await resolveNodeId(meta, config, signal);
-  const cacheKey = getCacheKey(
-    meta.fileKey,
-    resolvedNodeId,
-    meta.version,
-  );
+  const cacheKey = getCacheKey(meta.fileKey, resolvedNodeId, meta.version);
 
   const executeResolution = async (): Promise<FigmaDesignContext> => {
     const diagnostics: McpResolverDiagnostic[] = [];
@@ -986,7 +965,9 @@ export const resolveFigmaDesignContext = async (
         accessToken: config.accessToken,
         fetchImpl: config.fetchImpl,
         timeoutMs: config.timeoutMs,
-        ...(options?.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
+        ...(options?.maxDepth !== undefined
+          ? { maxDepth: options.maxDepth }
+          : {}),
         ...(signal ? { signal } : {}),
         limits: limitsArg(config.pipelineDiagnosticLimits),
         ...(config.onLog ? { onLog: config.onLog } : {}),
@@ -1098,4 +1079,5 @@ export {
   ADAPTIVE_NODE_THRESHOLD,
   MAX_SUBTREE_BATCH_SIZE,
   CACHE_TTL_MS,
+  callMcpTool,
 };
