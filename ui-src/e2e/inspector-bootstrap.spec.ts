@@ -337,4 +337,126 @@ test.describe("inspector bootstrap flow", () => {
     // Assert — the bootstrap shell is NOT shown (regression guard)
     await expect(page.getByTestId("inspector-bootstrap")).toHaveCount(0);
   });
+
+  // -------------------------------------------------------------------------
+  // TC-5: Clipboard envelope paste shows banner and hydrates (#997)
+  // -------------------------------------------------------------------------
+  test("pasting a valid ClipboardEnvelope shows plugin-envelope banner, confirms, and hydrates", async ({
+    page,
+  }) => {
+    await installBootstrapRoutes(page);
+    await gotoInspector(page);
+    await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
+
+    const envelope = JSON.stringify({
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    });
+
+    const submitResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/workspace/submit"),
+    );
+
+    await simulatePaste(page, envelope);
+
+    // Assert — the smart banner appears with the detected intent
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+
+    // The banner should show the detected intent label for FIGMA_PLUGIN_ENVELOPE
+    await expect(banner).toContainText("Plugin Export");
+
+    // Confirm the import
+    await banner.getByRole("button", { name: "Import starten" }).click();
+
+    const submitResponse = await submitResponsePromise;
+    expect(submitResponse.status()).toBe(202);
+
+    // Verify the submitted payload carries the correct mode and intent
+    const submittedBody = submitResponse.request().postDataJSON() as Record<
+      string,
+      unknown
+    >;
+    expect(submittedBody["figmaSourceMode"]).toBe("figma_paste");
+    expect(submittedBody["importIntent"]).toBe("FIGMA_PLUGIN_ENVELOPE");
+    expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
+
+    // Assert — panel hydrates once the job reaches completed
+    await expect(page.getByTestId("inspector-layout")).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByTestId("inspector-bootstrap")).toHaveCount(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // TC-6: Unknown envelope version shows clear error (#997)
+  // -------------------------------------------------------------------------
+  test("pasting an unknown envelope version falls through to document validation and shows error", async ({
+    page,
+  }) => {
+    // Mock submit to return 400 (schema validation will reject the unknown envelope)
+    await page.route("**/workspace/submit", async (route) => {
+      if (route.request().method() !== "POST") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "SCHEMA_MISMATCH",
+          message:
+            "figmaJsonPayload does not match expected schema: document must be an object.",
+        }),
+      });
+    });
+
+    await gotoInspector(page);
+    await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
+
+    const unknownEnvelope = JSON.stringify({
+      kind: "workspace-dev/figma-selection@99",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    });
+
+    await simulatePaste(page, unknownEnvelope);
+
+    // The unknown kind is not detected as envelope — falls through to
+    // JSON document detection (has no `document` at root level as Figma doc).
+    // The banner shows since it's valid JSON with some structure.
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+
+    // Confirm the import — server will reject with SCHEMA_MISMATCH
+    await banner.getByRole("button", { name: "Import starten" }).click();
+
+    // Assert — inline error message is displayed
+    const errorAlert = page.locator('[role="alert"]').first();
+    await expect(errorAlert).toBeVisible({ timeout: 10_000 });
+    await expect(errorAlert).toContainText("schema");
+
+    // Assert — still on bootstrap shell
+    await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
+    await expect(page.getByTestId("inspector-layout")).toHaveCount(0);
+  });
 });
