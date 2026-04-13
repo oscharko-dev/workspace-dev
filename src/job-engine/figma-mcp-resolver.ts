@@ -133,6 +133,25 @@ const waitFor = async (
   });
 };
 
+const parseRetryAfterMs = (value: string | null): number | undefined => {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  const asSeconds = Number(trimmed);
+  if (Number.isFinite(asSeconds) && asSeconds >= 0) {
+    return Math.max(0, Math.trunc(asSeconds * 1_000));
+  }
+  const asDate = Date.parse(trimmed);
+  if (Number.isNaN(asDate)) {
+    return undefined;
+  }
+  return Math.max(0, asDate - Date.now());
+};
+
 const isAbortError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
     return false;
@@ -152,6 +171,12 @@ const isTimeoutError = (error: unknown): boolean => {
     return true;
   }
   return error.message.toLowerCase().includes("timeout");
+};
+
+const throwIfAborted = (signal: AbortSignal | undefined): void => {
+  if (signal?.aborted) {
+    throw new DOMException("The operation was aborted.", "AbortError");
+  }
 };
 
 const buildSignal = (
@@ -201,6 +226,12 @@ interface MetadataResult {
 
 interface ScreenshotResult {
   url?: string;
+}
+
+interface MetadataNodeCandidate {
+  id: string;
+  type: string;
+  name?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -524,6 +555,130 @@ const extractChildSubtreeIds = (xml: string): string[] => {
   return ids;
 };
 
+const extractMetadataNodeCandidates = (
+  xml: string,
+): MetadataNodeCandidate[] => {
+  const candidates: MetadataNodeCandidate[] = [];
+  const pattern = /<([A-Z_]+)\s([^>]*)>/gi;
+  let match = pattern.exec(xml);
+  while (match !== null) {
+    const type = match[1]?.trim();
+    const attributes = match[2] ?? "";
+    const idMatch = /\bid="([^"]+)"/i.exec(attributes);
+    if (!type || !idMatch?.[1]) {
+      match = pattern.exec(xml);
+      continue;
+    }
+    const nameMatch = /\bname="([^"]*)"/i.exec(attributes);
+    candidates.push({
+      id: idMatch[1],
+      type,
+      ...(nameMatch?.[1] !== undefined ? { name: nameMatch[1] } : {}),
+    });
+    match = pattern.exec(xml);
+  }
+  return candidates;
+};
+
+const normalizeMetadataComparable = (value: string): string =>
+  value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+
+const isPrimaryMcpNodeType = (value: unknown): boolean =>
+  value === "FRAME" ||
+  value === "COMPONENT" ||
+  value === "COMPONENT_SET" ||
+  value === "SECTION" ||
+  value === "GROUP";
+
+const resolvePreferredNodeTypes = (
+  dataType: string | undefined,
+): readonly string[] => {
+  const normalized = normalizeMetadataComparable(dataType ?? "");
+  if (normalized === "COMPONENT_SET") {
+    return ["COMPONENT_SET"];
+  }
+  if (normalized === "COMPONENT") {
+    return ["COMPONENT", "INSTANCE"];
+  }
+  if (normalized === "INSTANCE") {
+    return ["INSTANCE", "COMPONENT"];
+  }
+  if (normalized === "SCENE") {
+    return ["FRAME", "SECTION", "GROUP", "COMPONENT", "COMPONENT_SET"];
+  }
+  return [];
+};
+
+const matchesPasteIdHint = ({
+  nodeId,
+  pasteID,
+}: {
+  nodeId: string;
+  pasteID: number | undefined;
+}): boolean => {
+  if (!Number.isInteger(pasteID)) {
+    return false;
+  }
+  const target = String(pasteID);
+  return nodeId
+    .split(/[:-]/)
+    .map((segment) => segment.trim())
+    .some((segment) => segment === target);
+};
+
+const resolveNodeIdFromMetadataCandidates = ({
+  candidates,
+  meta,
+}: {
+  candidates: readonly MetadataNodeCandidate[];
+  meta: FigmaMeta;
+}): { nodeId?: string; reason?: string } => {
+  const primaryCandidates = candidates.filter((candidate) =>
+    isPrimaryMcpNodeType(candidate.type),
+  );
+  const preferredNodeTypes = resolvePreferredNodeTypes(meta.dataType);
+
+  if (meta.pasteID !== undefined) {
+    const pasteMatches = primaryCandidates.filter((candidate) =>
+      matchesPasteIdHint({ nodeId: candidate.id, pasteID: meta.pasteID }),
+    );
+    const preferredPasteMatch =
+      pasteMatches.find((candidate) =>
+        preferredNodeTypes.includes(normalizeMetadataComparable(candidate.type)),
+      ) ?? pasteMatches[0];
+    if (preferredPasteMatch) {
+      return {
+        nodeId: preferredPasteMatch.id,
+        reason:
+          preferredNodeTypes.length > 0
+            ? "metadata pasteID + dataType hint"
+            : "metadata pasteID hint",
+      };
+    }
+  }
+
+  if (preferredNodeTypes.length > 0) {
+    const preferredCandidate = primaryCandidates.find((candidate) =>
+      preferredNodeTypes.includes(normalizeMetadataComparable(candidate.type)),
+    );
+    if (preferredCandidate) {
+      return {
+        nodeId: preferredCandidate.id,
+        reason: "metadata dataType hint",
+      };
+    }
+  }
+
+  if (primaryCandidates[0]) {
+    return {
+      nodeId: primaryCandidates[0].id,
+      reason: "metadata primary-node fallback",
+    };
+  }
+
+  return {};
+};
+
 // ---------------------------------------------------------------------------
 // resolveNodeId
 // ---------------------------------------------------------------------------
@@ -533,6 +688,8 @@ const resolveNodeId = async (
   config: McpResolverConfig,
   signal?: AbortSignal,
 ): Promise<string> => {
+  throwIfAborted(signal);
+
   if (meta.nodeId && meta.nodeId.length > 0) {
     return meta.nodeId;
   }
@@ -549,13 +706,30 @@ const resolveNodeId = async (
 
     const metadataResult = result as MetadataResult | null | undefined;
     if (metadataResult?.xml) {
+      const candidates = extractMetadataNodeCandidates(metadataResult.xml);
+      const resolvedFromMetadata = resolveNodeIdFromMetadataCandidates({
+        candidates,
+        meta,
+      });
+      if (resolvedFromMetadata.nodeId) {
+        config.onLog?.(
+          `Resolved root nodeId from ${resolvedFromMetadata.reason ?? "metadata"}: ${resolvedFromMetadata.nodeId}`,
+        );
+        return resolvedFromMetadata.nodeId;
+      }
+
       const frameNodeId = extractFirstFrameNodeId(metadataResult.xml);
       if (frameNodeId) {
-        config.onLog?.(`Resolved root frame nodeId: ${frameNodeId}`);
+        config.onLog?.(
+          `Resolved root frame nodeId via legacy fallback: ${frameNodeId}`,
+        );
         return frameNodeId;
       }
     }
   } catch (error: unknown) {
+    if (signal?.aborted || isAbortError(error)) {
+      throw error;
+    }
     config.onLog?.(
       `Failed to resolve nodeId from root metadata: ${getErrorMessage(error)}`,
     );
@@ -578,12 +752,7 @@ const fetchDesignContextSingle = async (
 ): Promise<DesignContextResult> => {
   const result = await callMcpTool({
     toolName: "get_design_context",
-    args: {
-      fileKey,
-      nodeId,
-      clientFrameworks: "react",
-      clientLanguages: "typescript",
-    },
+    args: { fileKey, nodeId },
     config,
     ...(signal ? { signal } : {}),
     ...(diagnostics ? { diagnostics } : {}),
@@ -684,6 +853,25 @@ const classifyRestStatus = (status: number): string => {
   return "E_FIGMA_REST_ERROR";
 };
 
+const shouldForwardRestVersion = (version: string | undefined): boolean => {
+  if (!version) {
+    return false;
+  }
+  const trimmed = version.trim();
+  if (trimmed.length === 0) {
+    return false;
+  }
+  return !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(trimmed);
+};
+
+const toRestRetryDelay = ({
+  attempt,
+  retryAfter,
+}: {
+  attempt: number;
+  retryAfter: string | null;
+}): number => parseRetryAfterMs(retryAfter) ?? toRetryDelay({ attempt });
+
 const buildRestNodesUrl = ({
   fileKey,
   nodeId,
@@ -698,8 +886,9 @@ const buildRestNodesUrl = ({
   const params = new URLSearchParams({
     ids: nodeId,
   });
-  if (version?.trim()) {
-    params.set("version", version.trim());
+  const trimmedVersion = version?.trim();
+  if (trimmedVersion && shouldForwardRestVersion(trimmedVersion)) {
+    params.set("version", trimmedVersion);
   }
   if (
     typeof maxDepth === "number" &&
@@ -724,8 +913,9 @@ const buildRestImageUrl = ({
     ids: nodeId,
     format: "png",
   });
-  if (version?.trim()) {
-    params.set("version", version.trim());
+  const trimmedVersion = version?.trim();
+  if (trimmedVersion && shouldForwardRestVersion(trimmedVersion)) {
+    params.set("version", trimmedVersion);
   }
   return `https://api.figma.com/v1/images/${encodeURIComponent(fileKey)}?${params.toString()}`;
 };
@@ -737,9 +927,11 @@ const fetchDesignContextViaRest = async ({
   accessToken,
   fetchImpl,
   timeoutMs,
+  maxRetries,
   maxDepth,
   limits,
   onLog,
+  diagnostics,
   ...rest
 }: {
   fileKey: string;
@@ -748,11 +940,14 @@ const fetchDesignContextViaRest = async ({
   accessToken: string;
   fetchImpl: typeof fetch;
   timeoutMs: number;
+  maxRetries: number;
   maxDepth?: number;
   signal?: AbortSignal;
   limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
   onLog?: (message: string) => void;
+  diagnostics?: McpResolverDiagnostic[];
 }): Promise<DesignContextResult> => {
+  throwIfAborted(rest.signal);
   onLog?.("Falling back to Figma REST API");
 
   const url = buildRestNodesUrl({
@@ -761,49 +956,96 @@ const fetchDesignContextViaRest = async ({
     ...(version ? { version } : {}),
     ...(maxDepth !== undefined ? { maxDepth } : {}),
   });
-  const combinedSignal = buildSignal(timeoutMs, rest.signal);
+  let lastError: unknown;
 
-  let response: Response;
-  try {
-    response = await fetchImpl(url, {
-      method: "GET",
-      headers: {
-        "X-Figma-Token": accessToken,
-        Accept: "application/json",
-      },
-      signal: combinedSignal,
-    });
-  } catch (error: unknown) {
-    throw createPipelineError({
-      code: isTimeoutError(error)
-        ? "E_FIGMA_REST_TIMEOUT"
-        : "E_FIGMA_REST_NETWORK",
-      stage: STAGE,
-      message: `Figma REST fallback request failed: ${getErrorMessage(error)}`,
-      cause: error,
-      ...limits,
-    });
+  for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
+        method: "GET",
+        headers: {
+          "X-Figma-Token": accessToken,
+          Accept: "application/json",
+        },
+        signal: buildSignal(timeoutMs, rest.signal),
+      });
+    } catch (error: unknown) {
+      if (rest.signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
+      lastError = createPipelineError({
+        code: isTimeoutError(error)
+          ? "E_FIGMA_REST_TIMEOUT"
+          : "E_FIGMA_REST_NETWORK",
+        stage: STAGE,
+        message: `Figma REST fallback request failed: ${getErrorMessage(error)}`,
+        cause: error,
+        ...limits,
+      });
+      if (attempt >= maxRetries) {
+        throw lastError;
+      }
+      await waitFor(toRetryDelay({ attempt }), rest.signal);
+      continue;
+    }
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        diagnostics?.push({
+          code: "W_FIGMA_REST_RATE_LIMITED",
+          message: `Figma REST fallback rate limited (attempt ${String(attempt)}/${String(maxRetries)})`,
+          severity: "warning",
+        });
+      }
+      lastError = createPipelineError({
+        code: classifyRestStatus(response.status),
+        stage: STAGE,
+        message: `Figma REST fallback failed with HTTP ${String(response.status)}`,
+        ...limits,
+      });
+      if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
+        await waitFor(
+          toRestRetryDelay({
+            attempt,
+            retryAfter: response.headers.get("retry-after"),
+          }),
+          rest.signal,
+        );
+        continue;
+      }
+      throw lastError;
+    }
+
+    const data = (await response.json()) as Record<string, unknown>;
+    const nodes = data.nodes as Record<string, unknown> | undefined;
+    const nodeData = nodes?.[nodeId];
+    if (!nodeData || typeof nodeData !== "object") {
+      throw createPipelineError({
+        code: "E_FIGMA_REST_NOT_FOUND",
+        stage: STAGE,
+        message: `Figma REST fallback did not return a document for node '${nodeId}'`,
+        ...limits,
+      });
+    }
+
+    return {
+      code: JSON.stringify(
+        ((nodeData as Record<string, unknown>).document as Record<string, unknown> | undefined) ?? {},
+        null,
+        2,
+      ),
+      assets: {},
+    };
   }
 
-  if (!response.ok) {
-    throw createPipelineError({
-      code: classifyRestStatus(response.status),
-      stage: STAGE,
-      message: `Figma REST fallback failed with HTTP ${String(response.status)}`,
-      ...limits,
-    });
-  }
-
-  const data = (await response.json()) as Record<string, unknown>;
-  const nodes = data.nodes as
-    | Record<string, Record<string, unknown>>
-    | undefined;
-  const nodeData = nodes?.[nodeId];
-
-  return {
-    code: JSON.stringify(nodeData?.document ?? {}, null, 2),
-    assets: {},
-  };
+  throw lastError instanceof Error
+    ? lastError
+    : createPipelineError({
+        code: "E_FIGMA_REST_ERROR",
+        stage: STAGE,
+        message: "Figma REST fallback failed after retries",
+        ...limits,
+      });
 };
 
 const fetchScreenshotViaRest = async ({
@@ -813,9 +1055,11 @@ const fetchScreenshotViaRest = async ({
   accessToken,
   fetchImpl,
   timeoutMs,
+  maxRetries,
   signal,
   limits,
   onLog,
+  diagnostics,
 }: {
   fileKey: string;
   nodeId: string;
@@ -823,57 +1067,97 @@ const fetchScreenshotViaRest = async ({
   accessToken: string;
   fetchImpl: typeof fetch;
   timeoutMs: number;
+  maxRetries: number;
   signal?: AbortSignal;
   limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
   onLog?: (message: string) => void;
+  diagnostics?: McpResolverDiagnostic[];
 }): Promise<string | undefined> => {
+  throwIfAborted(signal);
   onLog?.("Falling back to Figma REST image export for screenshot");
 
-  let response: Response;
-  try {
-    response = await fetchImpl(
-      buildRestImageUrl({
-        fileKey,
-        nodeId,
-        ...(version ? { version } : {}),
-      }),
-      {
+  const url = buildRestImageUrl({
+    fileKey,
+    nodeId,
+    ...(version ? { version } : {}),
+  });
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt += 1) {
+    let response: Response;
+    try {
+      response = await fetchImpl(url, {
         method: "GET",
         headers: {
           "X-Figma-Token": accessToken,
           Accept: "application/json",
         },
         signal: buildSignal(timeoutMs, signal),
-      },
-    );
-  } catch (error: unknown) {
-    throw createPipelineError({
-      code: isTimeoutError(error)
-        ? "E_FIGMA_REST_TIMEOUT"
-        : "E_FIGMA_REST_NETWORK",
-      stage: STAGE,
-      message: `Figma REST screenshot fallback request failed: ${getErrorMessage(error)}`,
-      cause: error,
-      ...limits,
-    });
+      });
+    } catch (error: unknown) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
+      lastError = createPipelineError({
+        code: isTimeoutError(error)
+          ? "E_FIGMA_REST_TIMEOUT"
+          : "E_FIGMA_REST_NETWORK",
+        stage: STAGE,
+        message: `Figma REST screenshot fallback request failed: ${getErrorMessage(error)}`,
+        cause: error,
+        ...limits,
+      });
+      if (attempt >= maxRetries) {
+        throw lastError;
+      }
+      await waitFor(toRetryDelay({ attempt }), signal);
+      continue;
+    }
+
+    if (!response.ok) {
+      if (response.status === 429) {
+        diagnostics?.push({
+          code: "W_FIGMA_REST_RATE_LIMITED",
+          message: `Figma REST screenshot fallback rate limited (attempt ${String(attempt)}/${String(maxRetries)})`,
+          severity: "warning",
+        });
+      }
+      lastError = createPipelineError({
+        code: classifyRestStatus(response.status),
+        stage: STAGE,
+        message: `Figma REST screenshot fallback failed with HTTP ${String(response.status)}`,
+        ...limits,
+      });
+      if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
+        await waitFor(
+          toRestRetryDelay({
+            attempt,
+            retryAfter: response.headers.get("retry-after"),
+          }),
+          signal,
+        );
+        continue;
+      }
+      throw lastError;
+    }
+
+    const payload = (await response.json()) as {
+      images?: Record<string, string | null>;
+    };
+    const imageUrl = payload.images?.[nodeId];
+    return typeof imageUrl === "string" && imageUrl.length > 0
+      ? imageUrl
+      : undefined;
   }
 
-  if (!response.ok) {
-    throw createPipelineError({
-      code: classifyRestStatus(response.status),
-      stage: STAGE,
-      message: `Figma REST screenshot fallback failed with HTTP ${String(response.status)}`,
-      ...limits,
-    });
-  }
-
-  const payload = (await response.json()) as {
-    images?: Record<string, string | null>;
-  };
-  const imageUrl = payload.images?.[nodeId];
-  return typeof imageUrl === "string" && imageUrl.length > 0
-    ? imageUrl
-    : undefined;
+  throw lastError instanceof Error
+    ? lastError
+    : createPipelineError({
+        code: "E_FIGMA_REST_ERROR",
+        stage: STAGE,
+        message: "Figma REST screenshot fallback failed after retries",
+        ...limits,
+      });
 };
 
 // ---------------------------------------------------------------------------
@@ -886,10 +1170,12 @@ export const resolveFigmaDesignContext = async (
   options?: ResolverOptions,
 ): Promise<FigmaDesignContext> => {
   const signal = options?.signal;
+  throwIfAborted(signal);
   const resolvedNodeId = await resolveNodeId(meta, config, signal);
   const cacheKey = getCacheKey(meta.fileKey, resolvedNodeId, meta.version);
 
   const executeResolution = async (): Promise<FigmaDesignContext> => {
+    throwIfAborted(signal);
     const diagnostics: McpResolverDiagnostic[] = [];
 
     config.onLog?.(`Resolving design context for fileKey=${meta.fileKey}`);
@@ -930,6 +1216,9 @@ export const resolveFigmaDesignContext = async (
         );
       }
     } catch (error: unknown) {
+      if (signal?.aborted || isAbortError(error)) {
+        throw error;
+      }
       config.onLog?.(
         `Metadata fetch failed, proceeding with single design context call: ${getErrorMessage(error)}`,
       );
@@ -949,6 +1238,9 @@ export const resolveFigmaDesignContext = async (
         diagnostics,
       );
     } catch (mcpError: unknown) {
+      if (signal?.aborted || isAbortError(mcpError)) {
+        throw mcpError;
+      }
       config.onLog?.(
         `MCP design context failed: ${getErrorMessage(mcpError)}, attempting REST fallback`,
       );
@@ -965,12 +1257,14 @@ export const resolveFigmaDesignContext = async (
         accessToken: config.accessToken,
         fetchImpl: config.fetchImpl,
         timeoutMs: config.timeoutMs,
+        maxRetries: config.maxRetries,
         ...(options?.maxDepth !== undefined
           ? { maxDepth: options.maxDepth }
           : {}),
         ...(signal ? { signal } : {}),
         limits: limitsArg(config.pipelineDiagnosticLimits),
         ...(config.onLog ? { onLog: config.onLog } : {}),
+        diagnostics,
       });
     }
 
@@ -992,6 +1286,9 @@ export const resolveFigmaDesignContext = async (
           | undefined;
         screenshotUrl = screenshotData?.url ?? undefined;
       } catch (error: unknown) {
+        if (signal?.aborted || isAbortError(error)) {
+          throw error;
+        }
         config.onLog?.(
           `Screenshot fetch failed (non-fatal): ${getErrorMessage(error)}`,
         );
@@ -1006,9 +1303,11 @@ export const resolveFigmaDesignContext = async (
             accessToken: config.accessToken,
             fetchImpl: config.fetchImpl,
             timeoutMs: config.timeoutMs,
+            maxRetries: config.maxRetries,
             ...(signal ? { signal } : {}),
             limits: limitsArg(config.pipelineDiagnosticLimits),
             ...(config.onLog ? { onLog: config.onLog } : {}),
+            diagnostics,
           });
           if (screenshotUrl) {
             diagnostics.push({
@@ -1019,6 +1318,9 @@ export const resolveFigmaDesignContext = async (
             });
           }
         } catch (error: unknown) {
+          if (signal?.aborted || isAbortError(error)) {
+            throw error;
+          }
           config.onLog?.(
             `REST screenshot fallback failed (non-fatal): ${getErrorMessage(error)}`,
           );
