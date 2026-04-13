@@ -414,6 +414,24 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
           enrichment.designSystemMappings = mapperResult.designSystemMappings;
         }
 
+        // Flow heuristic matches into enrichment so ir-derive can annotate
+        if (mapperResult.stats.heuristic > 0) {
+          const heuristicEntries: typeof enrichment.heuristicComponentMappings =
+            [];
+          for (const [, mapping] of mapperResult.mappings) {
+            if (mapping.confidence === "heuristic") {
+              heuristicEntries.push({
+                nodeId: "",
+                componentName: mapping.name,
+                source: mapping.source,
+              });
+            }
+          }
+          if (heuristicEntries.length > 0) {
+            enrichment.heuristicComponentMappings = heuristicEntries;
+          }
+        }
+
         const mapperToolNames: string[] = [];
         if (
           !mapperResult.diagnostics.some(

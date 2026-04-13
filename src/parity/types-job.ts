@@ -192,6 +192,7 @@ export interface FigmaMcpEnrichment {
   unmappedVariables?: string[];
   codeConnectMappings?: FigmaMcpCodeConnectMapping[];
   designSystemMappings?: FigmaMcpDesignSystemMapping[];
+  heuristicComponentMappings?: FigmaMcpCodeConnectMapping[];
   metadataHints?: FigmaMcpMetadataHint[];
   authoritativeSubtrees?: FigmaMcpAuthoritativeSubtree[];
   assets?: FigmaMcpAssetReference[];

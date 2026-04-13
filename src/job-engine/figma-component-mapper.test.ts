@@ -20,6 +20,7 @@ import {
   scanWorkspaceComponents,
   loadPersistedMappings,
   savePersistedMappings,
+  type MappedComponent,
 } from "./figma-component-mapper.js";
 import type { McpResolverConfig } from "./figma-mcp-resolver.js";
 import type { DesignIR, ScreenElementIR } from "../parity/types-ir.js";
@@ -983,4 +984,145 @@ test("mapFigmaComponents enriches IR nodes and returns stats", async () => {
   );
   // Unknown node should not be annotated
   assert.equal(ir.screens[0]?.children[1]?.codeConnect, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// ir-derive integration simulation: enrichment → heuristic → annotate
+// ---------------------------------------------------------------------------
+
+test("ir-derive flow: enrichment heuristic mappings are used for annotation", () => {
+  // Simulates what ir-derive-service does: take enrichment heuristic entries,
+  // build heuristicMappings map, and pass to annotateIrWithMappings
+  const ir = makeIR([
+    makeInstanceNode({ id: "5:1", name: "Tooltip" }),
+    makeInstanceNode({ id: "5:2", name: "Badge" }),
+  ]);
+
+  // Simulate enrichment.heuristicComponentMappings
+  const enrichmentHeuristics = [
+    { nodeId: "", componentName: "Tooltip", source: "src/Tooltip.tsx" },
+  ];
+
+  const heuristicMappings = new Map<string, MappedComponent>();
+  for (const entry of enrichmentHeuristics) {
+    heuristicMappings.set(normalizeComponentName(entry.componentName), {
+      name: entry.componentName,
+      source: entry.source,
+      confidence: "heuristic",
+    });
+  }
+
+  const allNodes: (typeof ir.screens)[0]["children"] = [];
+  for (const screen of ir.screens) {
+    allNodes.push(...screen.children);
+  }
+  const componentSets = consolidateComponentSetVariants({ irNodes: allNodes });
+
+  const { annotated } = annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [],
+    designSystemMappings: [],
+    heuristicMappings,
+    componentSets,
+  });
+
+  assert.equal(annotated, 1);
+  assert.equal(
+    ir.screens[0]?.children[0]?.codeConnect?.componentName,
+    "Tooltip",
+  );
+  assert.equal(
+    ir.screens[0]?.children[0]?.codeConnect?.source,
+    "src/Tooltip.tsx",
+  );
+  // Badge not in heuristic mappings — should remain unannotated
+  assert.equal(ir.screens[0]?.children[1]?.codeConnect, undefined);
+});
+
+test("ir-derive flow: persisted mappings are loaded and used for annotation", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Alert.tsx"),
+    "export const Alert = () => null;",
+    "utf8",
+  );
+
+  // Persist a mapping
+  await savePersistedMappings({
+    workspaceRoot: dir,
+    mappings: new Map([
+      [
+        "alert",
+        {
+          name: "Alert",
+          source: "src/Alert.tsx",
+          confidence: "exact" as const,
+        },
+      ],
+    ]),
+  });
+
+  // Load and verify
+  const persisted = await loadPersistedMappings({ workspaceRoot: dir });
+  assert.equal(persisted.size, 1);
+  assert.equal(persisted.get("alert")?.name, "Alert");
+
+  // Use in annotation (simulating ir-derive path)
+  const ir = makeIR([makeInstanceNode({ id: "8:1", name: "Alert" })]);
+
+  const { annotated } = annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [],
+    designSystemMappings: [],
+    heuristicMappings: persisted,
+    componentSets: new Map(),
+  });
+
+  assert.equal(annotated, 1);
+  assert.equal(ir.screens[0]?.children[0]?.codeConnect?.componentName, "Alert");
+});
+
+test("ir-derive flow: heuristic enrichment results flow through resolveComponentMappings", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Tooltip.tsx"),
+    "export const Tooltip = () => null;",
+    "utf8",
+  );
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system")
+      return jsonResponse(mcpOk({ components: [] }));
+    if (tool === "get_code_connect_suggestions") {
+      return jsonResponse(
+        mcpOk({
+          "9:1": {
+            codeConnectSrc: "suggested/Tooltip.tsx",
+            codeConnectName: "Tooltip",
+          },
+        }),
+      );
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+    workspaceRoot: dir,
+  });
+
+  // Heuristic match should be in mappings with normalized key
+  assert.equal(result.stats.heuristic, 1);
+  const tooltipMapping = result.mappings.get("tooltip");
+  assert.ok(tooltipMapping);
+  assert.equal(tooltipMapping.confidence, "heuristic");
+  assert.equal(tooltipMapping.source, "src/Tooltip.tsx");
 });

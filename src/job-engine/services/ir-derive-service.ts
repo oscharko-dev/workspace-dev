@@ -61,6 +61,7 @@ import {
 import {
   annotateIrWithMappings,
   consolidateComponentSetVariants,
+  loadPersistedMappings,
   savePersistedMappings,
   normalizeComponentName,
   type MappedComponent,
@@ -1225,11 +1226,39 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         const componentSets = consolidateComponentSetVariants({
           irNodes: allNodes,
         });
+
+        // Build heuristic mapping lookup from enrichment + persisted mappings
+        const heuristicMappings = new Map<string, MappedComponent>();
+        for (const entry of hybridMcpEnrichment.heuristicComponentMappings ??
+          []) {
+          heuristicMappings.set(normalizeComponentName(entry.componentName), {
+            name: entry.componentName,
+            source: entry.source,
+            confidence: "heuristic",
+          });
+        }
+
+        // Load persisted mappings from previous runs for reuse
+        if (context.resolvedWorkspaceRoot) {
+          try {
+            const persisted = await loadPersistedMappings({
+              workspaceRoot: context.resolvedWorkspaceRoot,
+            });
+            for (const [key, mapping] of persisted) {
+              if (!heuristicMappings.has(key)) {
+                heuristicMappings.set(key, mapping);
+              }
+            }
+          } catch {
+            // Non-critical — proceed without persisted mappings
+          }
+        }
+
         const { annotated } = annotateIrWithMappings({
           ir: derived,
           codeConnectMappings: hybridMcpEnrichment.codeConnectMappings ?? [],
           designSystemMappings: hybridMcpEnrichment.designSystemMappings ?? [],
-          heuristicMappings: new Map(),
+          heuristicMappings,
           componentSets,
         });
         if (annotated > 0) {
