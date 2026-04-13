@@ -49,6 +49,20 @@ function buildDragOverEvent(types: string[] = ["Files"]): Partial<DragEvent> {
   };
 }
 
+function createDeferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (error?: unknown) => void;
+} {
+  let resolve!: (value: T) => void;
+  let reject!: (error?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("PasteCapture", () => {
   it("renders the paste prompt and example snippet", () => {
     render(<PasteCapture disabled={false} onPaste={vi.fn()} />);
@@ -164,6 +178,42 @@ describe("PasteCapture — drag-and-drop", () => {
     expect(onPaste).not.toHaveBeenCalled();
   });
 
+  it("ignores a second drop while the first dropped file is still being read", async () => {
+    const onDropFile = vi.fn();
+    render(
+      <PasteCapture
+        disabled={false}
+        onPaste={vi.fn()}
+        onDropFile={onDropFile}
+      />,
+    );
+
+    const region = screen.getByRole("region", { name: /paste area/i });
+    const fileContent = '{"document":{}}';
+    const deferred = createDeferred<string>();
+    const file = new File([fileContent], "export.json", {
+      type: "application/json",
+    });
+    const readSpy = vi.fn(() => deferred.promise);
+    Object.defineProperty(file, "text", {
+      value: readSpy,
+    });
+
+    fireEvent.drop(region, buildDropEvent({ files: [file] }));
+    fireEvent.drop(region, buildDropEvent({ files: [file] }));
+
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    expect(onDropFile).not.toHaveBeenCalled();
+
+    await act(async () => {
+      deferred.resolve(fileContent);
+      await deferred.promise;
+    });
+
+    expect(onDropFile).toHaveBeenCalledTimes(1);
+    expect(onDropFile).toHaveBeenCalledWith(fileContent);
+  });
+
   it("drop of oversized file fires onError('TOO_LARGE') and does NOT fire onDropFile", async () => {
     const onDropFile = vi.fn();
     const onError = vi.fn();
@@ -213,6 +263,33 @@ describe("PasteCapture — drag-and-drop", () => {
     const pngFile = new File(["png-data"], "image.png", { type: "image/png" });
     const dropEvent = buildDropEvent({ files: [pngFile] });
     fireEvent.drop(region, dropEvent);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(onError).toHaveBeenCalledWith("UNSUPPORTED_FILE");
+    expect(onDropFile).not.toHaveBeenCalled();
+  });
+
+  it("drop of .txt file fires onError('UNSUPPORTED_FILE')", async () => {
+    const onDropFile = vi.fn();
+    const onError = vi.fn();
+    render(
+      <PasteCapture
+        disabled={false}
+        onPaste={vi.fn()}
+        onDropFile={onDropFile}
+        onError={onError}
+      />,
+    );
+
+    const region = screen.getByRole("region", { name: /paste area/i });
+    const textFile = new File(['{"document":{}}'], "notes.txt", {
+      type: "text/plain",
+    });
+
+    fireEvent.drop(region, buildDropEvent({ files: [textFile] }));
 
     await act(async () => {
       await Promise.resolve();
