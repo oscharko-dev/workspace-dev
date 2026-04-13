@@ -177,6 +177,8 @@ export type {
   FigmaMcpScreenshotReference,
   FigmaMcpStyleCatalogEntry,
   FigmaMcpVariableDefinition,
+  TokenBridgeResult,
+  TokenConflict,
   JobDeltaSummary,
   JobDiffPreview,
   JobEvent,
