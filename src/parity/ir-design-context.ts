@@ -14,6 +14,20 @@ import type {
 import type { FigmaNode, FigmaFile } from "./ir-helpers.js";
 import { resolveFirstVisibleSolidPaint, toHexColor } from "./ir-colors.js";
 import { deriveTokens } from "./ir-tokens.js";
+import {
+  analyzeElementsForBudgeting,
+  ADAPTIVE_BUDGET_MAX_SCALE,
+  resolveAdaptiveBudget,
+  truncateElementsToBudget,
+} from "./ir-screens.js";
+import {
+  analyzeDepthPressure,
+  countSubtreeNodes,
+  DEFAULT_SCREEN_ELEMENT_BUDGET,
+  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
+  shouldTruncateChildrenByDepth,
+  type ScreenDepthBudgetContext,
+} from "./ir-tree.js";
 
 // ---------------------------------------------------------------------------
 // Type narrowing for unknown subtree documents
@@ -132,6 +146,23 @@ const extractLayoutMode = (
 export const transformNodeToScreenElement = (
   document: unknown,
 ): ScreenElementIR => {
+  return transformNodeToScreenElementInternal(document);
+};
+
+interface DesignContextDepthBudgetContext extends ScreenDepthBudgetContext {
+  maxTraversalElements: number;
+  rawBudgetOverflowCount: number;
+}
+
+const transformNodeToScreenElementInternal = (
+  document: unknown,
+  options?: {
+    depth?: number;
+    depthContext?: DesignContextDepthBudgetContext;
+  },
+): ScreenElementIR => {
+  const depth = options?.depth ?? 0;
+  const depthContext = options?.depthContext;
   const node = isFigmaNodeLike(document)
     ? document
     : ({ id: "unknown", type: "FRAME", name: "Unknown" } satisfies FigmaNode);
@@ -148,10 +179,56 @@ export const transformNodeToScreenElement = (
   const padding = extractPadding(node);
   const gap = node.itemSpacing ?? 0;
 
-  const children: ScreenElementIR[] | undefined =
-    Array.isArray(node.children) && node.children.length > 0
-      ? node.children.map(transformNodeToScreenElement)
-      : undefined;
+  if (depthContext) {
+    depthContext.mappedElementCount += 1;
+  }
+
+  let children: ScreenElementIR[] | undefined;
+  if (Array.isArray(node.children) && node.children.length > 0) {
+    const shouldTruncate =
+      depthContext !== undefined
+        ? shouldTruncateChildrenByDepth({
+            node,
+            depth,
+            elementType,
+            context: depthContext,
+          })
+        : false;
+
+    if (shouldTruncate) {
+      depthContext!.truncatedBranchCount += 1;
+      if (depthContext!.firstTruncatedDepth === undefined) {
+        depthContext!.firstTruncatedDepth = depth + 1;
+      }
+    } else {
+      const nextChildren: ScreenElementIR[] = [];
+      for (const child of node.children) {
+        if (!isFigmaNodeLike(child)) {
+          nextChildren.push(transformNodeToScreenElementInternal(child, {
+            depth: depth + 1,
+            ...(depthContext ? { depthContext } : {}),
+          }));
+          continue;
+        }
+
+        if (
+          depthContext &&
+          depthContext.mappedElementCount >= depthContext.maxTraversalElements
+        ) {
+          depthContext.rawBudgetOverflowCount += countSubtreeNodes(child);
+          continue;
+        }
+
+        nextChildren.push(
+          transformNodeToScreenElementInternal(child, {
+            depth: depth + 1,
+            ...(depthContext ? { depthContext } : {}),
+          }),
+        );
+      }
+      children = nextChildren.length > 0 ? nextChildren : undefined;
+    }
+  }
 
   const base = {
     id: node.id,
@@ -217,39 +294,107 @@ export const transformNodeToScreenElement = (
   };
 };
 
-// ---------------------------------------------------------------------------
-// transformDesignContextToScreens
-// ---------------------------------------------------------------------------
+interface DesignContextScreenTransformResult {
+  screen: ScreenIR;
+  originalElements: number;
+  retainedElements: number;
+  truncatedByBudget: boolean;
+  droppedTypeCounts: Record<string, number>;
+  depthTruncatedBranchCount: number;
+  firstTruncatedDepth?: number;
+}
 
-export const transformDesignContextToScreens = ({
-  authoritativeSubtrees,
+const transformDesignContextSubtreeToScreen = ({
+  subtree,
+  screenElementBudget,
+  screenElementMaxDepth,
 }: {
-  authoritativeSubtrees: ReadonlyArray<{
+  subtree: {
     nodeId: string;
     document: unknown;
-  }>;
-}): ScreenIR[] =>
-  authoritativeSubtrees.map((subtree): ScreenIR => {
-    const doc = subtree.document;
-    const node = isFigmaNodeLike(doc)
-      ? doc
-      : ({
-          id: subtree.nodeId,
-          type: "FRAME",
-          name: subtree.nodeId,
-        } satisfies FigmaNode);
+  };
+  screenElementBudget: number;
+  screenElementMaxDepth: number;
+}): DesignContextScreenTransformResult => {
+  const doc = subtree.document;
+  const node = isFigmaNodeLike(doc)
+    ? doc
+    : ({
+        id: subtree.nodeId,
+        type: "FRAME",
+        name: subtree.nodeId,
+      } satisfies FigmaNode);
 
-    const layoutMode = extractLayoutMode(node);
-    const padding = extractPadding(node);
-    const dimensions = extractDimensions(node);
-    const fillColor = extractFillColor(node);
+  const layoutMode = extractLayoutMode(node);
+  const padding = extractPadding(node);
+  const dimensions = extractDimensions(node);
+  const fillColor = extractFillColor(node);
 
-    const children: ScreenElementIR[] =
-      Array.isArray(node.children) && node.children.length > 0
-        ? node.children.map(transformNodeToScreenElement)
-        : [];
+  const depthAnalysis = analyzeDepthPressure(node.children ?? [], (candidate) =>
+    mapFigmaNodeTypeToIrElementType(
+      candidate.type,
+      "layoutMode" in candidate && typeof candidate.layoutMode === "string"
+        ? candidate.layoutMode
+        : undefined,
+    ),
+  );
+  const depthContext: DesignContextDepthBudgetContext = {
+    screenElementBudget,
+    configuredMaxDepth: screenElementMaxDepth,
+    mappedElementCount: 0,
+    nodeCountByDepth: depthAnalysis.nodeCountByDepth,
+    semanticCountByDepth: depthAnalysis.semanticCountByDepth,
+    subtreeHasSemanticById: depthAnalysis.subtreeHasSemanticById,
+    truncatedBranchCount: 0,
+    maxTraversalElements: Math.max(
+      screenElementBudget,
+      Math.ceil(screenElementBudget * ADAPTIVE_BUDGET_MAX_SCALE),
+    ),
+    rawBudgetOverflowCount: 0,
+  };
 
-    return {
+  const mappedChildren: ScreenElementIR[] = [];
+  for (const child of node.children ?? []) {
+    if (
+      isFigmaNodeLike(child) &&
+      depthContext.mappedElementCount >= depthContext.maxTraversalElements
+    ) {
+      depthContext.rawBudgetOverflowCount += countSubtreeNodes(child);
+      continue;
+    }
+
+    mappedChildren.push(
+      transformNodeToScreenElementInternal(child, {
+        depth: 0,
+        depthContext,
+      }),
+    );
+  }
+
+  const mappedElementAnalysis = analyzeElementsForBudgeting(mappedChildren);
+  const originalElements =
+    mappedElementAnalysis.totalCount + depthContext.rawBudgetOverflowCount;
+  const adaptiveBudget = resolveAdaptiveBudget({
+    elements: mappedChildren,
+    originalCount: originalElements,
+    baseBudget: screenElementBudget,
+    interactiveCount: mappedElementAnalysis.interactiveCount,
+  });
+  const { elements: budgetedChildren, retainedCount, droppedTypeCounts } =
+    originalElements > adaptiveBudget
+      ? truncateElementsToBudget({
+          elements: mappedChildren,
+          budget: adaptiveBudget,
+          candidates: mappedElementAnalysis.truncationCandidates,
+        })
+      : {
+          elements: mappedChildren,
+          retainedCount: mappedElementAnalysis.totalCount,
+          droppedTypeCounts: {} as Record<string, number>,
+        };
+
+  return {
+    screen: {
       id: node.id,
       name: node.name ?? subtree.nodeId,
       layoutMode,
@@ -264,9 +409,42 @@ export const transformDesignContextToScreens = ({
       ...(node.counterAxisAlignItems !== undefined
         ? { counterAxisAlignItems: node.counterAxisAlignItems }
         : {}),
-      children,
-    };
-  });
+      children: budgetedChildren,
+    },
+    originalElements,
+    retainedElements: retainedCount,
+    truncatedByBudget: originalElements > adaptiveBudget,
+    droppedTypeCounts,
+    depthTruncatedBranchCount: depthContext.truncatedBranchCount,
+    ...(depthContext.firstTruncatedDepth !== undefined
+      ? { firstTruncatedDepth: depthContext.firstTruncatedDepth }
+      : {}),
+  };
+};
+
+// ---------------------------------------------------------------------------
+// transformDesignContextToScreens
+// ---------------------------------------------------------------------------
+
+export const transformDesignContextToScreens = ({
+  authoritativeSubtrees,
+  screenElementBudget = DEFAULT_SCREEN_ELEMENT_BUDGET,
+  screenElementMaxDepth = DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
+}: {
+  authoritativeSubtrees: ReadonlyArray<{
+    nodeId: string;
+    document: unknown;
+  }>;
+  screenElementBudget?: number;
+  screenElementMaxDepth?: number;
+}): ScreenIR[] =>
+  authoritativeSubtrees.map((subtree): ScreenIR =>
+    transformDesignContextSubtreeToScreen({
+      subtree,
+      screenElementBudget,
+      screenElementMaxDepth,
+    }).screen,
+  );
 
 // ---------------------------------------------------------------------------
 // transformDesignContextToTokens
@@ -289,21 +467,6 @@ export const transformDesignContextToTokens = ({
 }): DesignTokens => deriveTokens(EMPTY_FIGMA_FILE, enrichment);
 
 // ---------------------------------------------------------------------------
-// Element counting
-// ---------------------------------------------------------------------------
-
-const countElements = (elements: ReadonlyArray<ScreenElementIR>): number => {
-  let count = 0;
-  for (const element of elements) {
-    count += 1;
-    if (element.children && element.children.length > 0) {
-      count += countElements(element.children);
-    }
-  }
-  return count;
-};
-
-// ---------------------------------------------------------------------------
 // transformDesignContextToDesignIr
 // ---------------------------------------------------------------------------
 
@@ -311,6 +474,8 @@ export const transformDesignContextToDesignIr = ({
   authoritativeSubtrees,
   enrichment,
   sourceName,
+  screenElementBudget = DEFAULT_SCREEN_ELEMENT_BUDGET,
+  screenElementMaxDepth = DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
 }: {
   authoritativeSubtrees: ReadonlyArray<{
     nodeId: string;
@@ -318,10 +483,17 @@ export const transformDesignContextToDesignIr = ({
   }>;
   enrichment?: FigmaMcpEnrichment;
   sourceName?: string;
+  screenElementBudget?: number;
+  screenElementMaxDepth?: number;
 }): DesignIR => {
-  const screens = transformDesignContextToScreens({
-    authoritativeSubtrees,
-  });
+  const screenResults = authoritativeSubtrees.map((subtree) =>
+    transformDesignContextSubtreeToScreen({
+      subtree,
+      screenElementBudget,
+      screenElementMaxDepth,
+    }),
+  );
+  const screens = screenResults.map((result) => result.screen);
   const tokens = transformDesignContextToTokens(
     enrichment !== undefined ? { enrichment } : {},
   );
@@ -333,16 +505,57 @@ export const transformDesignContextToDesignIr = ({
     prototypeNavigationDetected: 0,
     prototypeNavigationResolved: 0,
     prototypeNavigationUnresolved: 0,
-    screenElementCounts: screens.map((s) => ({
-      screenId: s.id,
-      screenName: s.name,
-      elements: countElements(s.children),
+    screenElementCounts: screenResults.map((result) => ({
+      screenId: result.screen.id,
+      screenName: result.screen.name,
+      elements: result.originalElements,
     })),
-    truncatedScreens: [],
-    depthTruncatedScreens: [],
+    truncatedScreens: screenResults
+      .filter((result) => result.truncatedByBudget)
+      .map((result) => ({
+        screenId: result.screen.id,
+        screenName: result.screen.name,
+        originalElements: result.originalElements,
+        retainedElements: result.retainedElements,
+        budget: screenElementBudget,
+        ...(Object.keys(result.droppedTypeCounts).length > 0
+          ? { droppedTypeCounts: result.droppedTypeCounts }
+          : {}),
+      })),
+    depthTruncatedScreens: screenResults
+      .filter((result) => result.depthTruncatedBranchCount > 0)
+      .map((result) => ({
+        screenId: result.screen.id,
+        screenName: result.screen.name,
+        maxDepth: screenElementMaxDepth,
+        firstTruncatedDepth:
+          result.firstTruncatedDepth ?? screenElementMaxDepth + 1,
+        truncatedBranchCount: result.depthTruncatedBranchCount,
+      })),
     classificationFallbacks: [],
     degradedGeometryNodes: [],
-    nodeDiagnostics: [],
+    nodeDiagnostics: [
+      ...screenResults
+        .filter((result) => result.truncatedByBudget)
+        .map((result) => ({
+          nodeId: result.screen.id,
+          category: "truncated" as const,
+          reason:
+            `Screen exceeded element budget (${String(screenElementBudget)}). ` +
+            `${String(result.originalElements - result.retainedElements)} element(s) dropped.`,
+          screenId: result.screen.id,
+        })),
+      ...screenResults
+        .filter((result) => result.depthTruncatedBranchCount > 0)
+        .map((result) => ({
+          nodeId: result.screen.id,
+          category: "depth-truncated" as const,
+          reason:
+            `${String(result.depthTruncatedBranchCount)} branch(es) truncated at depth ` +
+            `${String(screenElementMaxDepth)}.`,
+          screenId: result.screen.id,
+        })),
+    ],
   };
 
   return {

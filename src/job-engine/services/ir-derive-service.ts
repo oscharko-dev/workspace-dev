@@ -25,8 +25,16 @@ import { applyScreenVariantFamiliesToDesignIr } from "../../parity/ir-screen-var
 import { figmaToDesignIrWithOptions } from "../../parity/ir.js";
 import { transformDesignContextToDesignIr } from "../../parity/ir-design-context.js";
 import type { FigmaFile } from "../../parity/ir-helpers.js";
+import { applyMcpEnrichmentToIr } from "../../parity/ir-tokens.js";
 import { validateDesignIR } from "../../parity/types-ir.js";
-import type { DesignIR, ScreenElementIR } from "../../parity/types-ir.js";
+import type {
+  DepthTruncatedScreenMetric,
+  DesignIR,
+  NodeDiagnosticEntry,
+  ScreenElementCountMetric,
+  ScreenElementIR,
+  TruncatedScreenMetric,
+} from "../../parity/types-ir.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
 import type { CleanFigmaResult } from "../figma-clean.js";
 import type { FigmaMcpEnrichment } from "../../parity/types.js";
@@ -142,6 +150,107 @@ const collectScreenNodeIds = (
     }
   }
   return nodeIds;
+};
+
+const mergeScreenScopedMetrics = <T extends { screenId: string }>(
+  base: readonly T[] | undefined,
+  overlay: readonly T[] | undefined,
+  overlayScreenIds: ReadonlySet<string>,
+): T[] => {
+  const merged = [
+    ...(base ?? []).filter((entry) => !overlayScreenIds.has(entry.screenId)),
+    ...(overlay ?? []),
+  ];
+  return merged;
+};
+
+const mergeNodeDiagnostics = ({
+  base,
+  overlay,
+  overlayScreenIds,
+}: {
+  base: readonly NodeDiagnosticEntry[] | undefined;
+  overlay: readonly NodeDiagnosticEntry[] | undefined;
+  overlayScreenIds: ReadonlySet<string>;
+}): NodeDiagnosticEntry[] => {
+  const baseWithoutOverlayScreenEntries = (base ?? []).filter((entry) => {
+    if (!overlayScreenIds.has(entry.screenId ?? "")) {
+      return true;
+    }
+    return (
+      entry.category !== "truncated" && entry.category !== "depth-truncated"
+    );
+  });
+  const overlayScreenDiagnostics = (overlay ?? []).filter(
+    (entry) =>
+      entry.category === "truncated" || entry.category === "depth-truncated",
+  );
+  return [...baseWithoutOverlayScreenEntries, ...overlayScreenDiagnostics];
+};
+
+const mergeAuthoritativeScreensIntoIr = ({
+  baselineIr,
+  authoritativeIr,
+  authoritativeMetrics,
+}: {
+  baselineIr: DesignIR;
+  authoritativeIr: DesignIR;
+  authoritativeMetrics: DesignIR["metrics"];
+}): DesignIR => {
+  const baselineScreenIds = new Set(
+    baselineIr.screens.map((screen) => screen.id),
+  );
+  const matchedAuthoritativeScreens =
+    baselineIr.screens.length === 0
+      ? authoritativeIr.screens
+      : authoritativeIr.screens.filter((screen) =>
+          baselineScreenIds.has(screen.id),
+        );
+  const overlayByScreenId = new Map(
+    matchedAuthoritativeScreens.map((screen) => [screen.id, screen] as const),
+  );
+  const overlayScreenIds = new Set(overlayByScreenId.keys());
+  const screens = [
+    ...baselineIr.screens.map(
+      (screen) => overlayByScreenId.get(screen.id) ?? screen,
+    ),
+    ...(baselineIr.screens.length === 0 ? matchedAuthoritativeScreens : []),
+  ];
+  const baselineMetrics = baselineIr.metrics;
+
+  let metrics = authoritativeMetrics;
+  if (baselineMetrics) {
+    metrics = {
+      ...baselineMetrics,
+      screenElementCounts: mergeScreenScopedMetrics<ScreenElementCountMetric>(
+        baselineMetrics.screenElementCounts,
+        authoritativeMetrics?.screenElementCounts,
+        overlayScreenIds,
+      ),
+      truncatedScreens: mergeScreenScopedMetrics<TruncatedScreenMetric>(
+        baselineMetrics.truncatedScreens,
+        authoritativeMetrics?.truncatedScreens,
+        overlayScreenIds,
+      ),
+      depthTruncatedScreens:
+        mergeScreenScopedMetrics<DepthTruncatedScreenMetric>(
+          baselineMetrics.depthTruncatedScreens,
+          authoritativeMetrics?.depthTruncatedScreens,
+          overlayScreenIds,
+        ),
+      nodeDiagnostics: mergeNodeDiagnostics({
+        base: baselineMetrics.nodeDiagnostics,
+        overlay: authoritativeMetrics?.nodeDiagnostics,
+        overlayScreenIds,
+      }),
+    };
+  }
+
+  return {
+    ...baselineIr,
+    screens,
+    ...(metrics ? { metrics } : {}),
+  };
 };
 
 const stripAffectedScreenVariantFamilies = ({
@@ -966,39 +1075,9 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
     }
 
     let derived: DesignIR | undefined;
-
-    // Design-context derivation path (Issue #1002): when authoritative subtrees
-    // are available, derive IR directly from the structured Figma node tree.
-    const enrichmentSubtrees = hybridMcpEnrichment?.authoritativeSubtrees;
-    const hasAuthoritativeSubtrees =
-      enrichmentSubtrees !== undefined &&
-      enrichmentSubtrees.length > 0 &&
-      enrichmentSubtrees.some(
-        (s) => s.document !== null && s.document !== undefined,
-      );
-
-    if (hasAuthoritativeSubtrees) {
+    const deriveStandardIr = (): DesignIR => {
       try {
-        derived = transformDesignContextToDesignIr({
-          authoritativeSubtrees: enrichmentSubtrees,
-          ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {}),
-          sourceName: figmaFetch.file.name ?? "Figma Design Context",
-        });
-        context.log({
-          level: "info",
-          message: `Used design-context derivation path (${derived.screens.length} screens from authoritative subtrees).`,
-        });
-      } catch (designContextError) {
-        context.log({
-          level: "warn",
-          message: `Design-context derivation failed, falling back to standard path: ${getErrorMessage(designContextError)}`,
-        });
-      }
-    }
-
-    if (derived === undefined) {
-      try {
-        derived = figmaToDesignIrWithOptions(figmaFetch.file, {
+        return figmaToDesignIrWithOptions(figmaFetch.file, {
           ...irDerivationOptions,
           sourceMetrics: {
             fetchedNodes: figmaFetch.diagnostics.fetchedNodes,
@@ -1026,6 +1105,57 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         }
         throw error;
       }
+    };
+
+    // Design-context derivation path (Issue #1002): when authoritative subtrees
+    // are available, derive authoritative replacement screens from the
+    // structured Figma node tree and merge them into the cleaned-file baseline.
+    const enrichmentSubtrees = hybridMcpEnrichment?.authoritativeSubtrees;
+    const hasAuthoritativeSubtrees =
+      enrichmentSubtrees !== undefined &&
+      enrichmentSubtrees.length > 0 &&
+      enrichmentSubtrees.some(
+        (s) => s.document !== null && s.document !== undefined,
+      );
+
+    if (hasAuthoritativeSubtrees) {
+      const baselineDerived = deriveStandardIr();
+      try {
+        const authoritativeDerived = transformDesignContextToDesignIr({
+          authoritativeSubtrees: enrichmentSubtrees,
+          ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {}),
+          sourceName: figmaFetch.file.name ?? "Figma Design Context",
+          screenElementBudget: context.runtime.figmaScreenElementBudget,
+          screenElementMaxDepth: context.runtime.figmaScreenElementMaxDepth,
+        });
+        const authoritativeMetrics = authoritativeDerived.metrics;
+        const enrichedAuthoritativeDerived = hybridMcpEnrichment
+          ? applyMcpEnrichmentToIr(authoritativeDerived, hybridMcpEnrichment)
+          : authoritativeDerived;
+        derived = mergeAuthoritativeScreensIntoIr({
+          baselineIr: baselineDerived,
+          authoritativeIr: enrichedAuthoritativeDerived,
+          authoritativeMetrics,
+        });
+        context.log({
+          level: "info",
+          message:
+            `Used design-context overlay for ${authoritativeDerived.screens.length} authoritative ` +
+            `screen(s) on top of ${baselineDerived.screens.length} baseline screen(s).`,
+        });
+      } catch (designContextError) {
+        derived = baselineDerived;
+        context.log({
+          level: "warn",
+          message:
+            "Design-context derivation failed, falling back to standard path: " +
+            getErrorMessage(designContextError),
+        });
+      }
+    }
+
+    if (derived === undefined) {
+      derived = deriveStandardIr();
     }
     if (!Array.isArray(derived.screens) || derived.screens.length === 0) {
       throw createPipelineError({
