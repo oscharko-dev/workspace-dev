@@ -2595,8 +2595,47 @@ function injectInspectBridgeScript(html: string): string {
 // ---------------------------------------------------------------------------
 
 /** Maximum payload size for the figma-import endpoint (6 MiB). */
-const FIGMA_IMPORT_MAX_BODY_BYTES = 6 * 1024 * 1024;
+const FIGMA_IMPORT_MAX_BODY_BYTES: number = 6 * 1024 * 1024;
 
+/**
+ * Shared parameter type for the closure helpers created inside
+ * `createWorkspaceRequestHandler`.  Kept here so `handleFigmaImport`
+ * stays in sync with the outer scope's signatures.
+ */
+interface RequestHandlerHelpers {
+  sendValidationError: (opts: {
+    statusCode?: number;
+    payload: unknown;
+    jobId?: string;
+    fallbackMessage?: string;
+  }) => void;
+  sendRequestFailure: (opts: {
+    statusCode: number;
+    payload: unknown;
+    jobId?: string;
+    fallbackMessage?: string;
+  }) => void;
+  logAuditEvent: (opts: {
+    event: WorkspaceAuditEvent;
+    message: string;
+    level?: WorkspaceRuntimeLogLevel;
+    jobId?: string;
+    statusCode?: number;
+  }) => void;
+}
+
+/**
+ * Handle `POST /workspace/figma-import`.
+ *
+ * Accepts a `ClipboardEnvelope` directly from a Figma plugin, validates
+ * and normalizes it, then submits a `local_json` pipeline job.
+ *
+ * **Authentication**: This endpoint intentionally has no token-based auth.
+ * It is designed for local-only use (the server binds to 127.0.0.1 by
+ * default). Production deployments behind a reverse proxy should add
+ * their own auth layer.  Cross-origin access is limited to figma.com
+ * domains via explicit CORS allowlist.
+ */
 async function handleFigmaImport({
   request,
   response,
@@ -2612,24 +2651,7 @@ async function handleFigmaImport({
   requestOrigin: string | undefined;
   absoluteOutputRoot: string;
   jobEngine: JobEngine;
-  sendValidationError: (opts: {
-    statusCode?: number;
-    payload: unknown;
-    fallbackMessage?: string;
-  }) => void;
-  sendRequestFailure: (opts: {
-    statusCode: number;
-    payload: unknown;
-    fallbackMessage?: string;
-  }) => void;
-  logAuditEvent: (opts: {
-    event: WorkspaceAuditEvent;
-    message: string;
-    level?: WorkspaceRuntimeLogLevel;
-    jobId?: string;
-    statusCode?: number;
-  }) => void;
-}): Promise<void> {
+} & RequestHandlerHelpers): Promise<void> {
   const rawBody = await readJsonBody(request, {
     maxBytes: FIGMA_IMPORT_MAX_BODY_BYTES,
   });

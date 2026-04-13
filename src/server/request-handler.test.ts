@@ -3054,3 +3054,154 @@ test("figma-import rejects wrong Content-Type", async () => {
     await close();
   }
 });
+
+test("figma-import returns 413 TOO_LARGE on oversize payload", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    // Build a valid-looking envelope that exceeds the 6 MiB limit.
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: {
+            id: "1:2",
+            type: "FRAME",
+            name: "Oversized",
+            filler: "x".repeat(7 * 1024 * 1024),
+          },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 413);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "TOO_LARGE");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import returns 429 QUEUE_BACKPRESSURE when job queue is full", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw createCodedError("E_JOB_QUEUE_FULL", "queue full", {
+      queue: { runningCount: 1, queuedCount: 2 },
+    });
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 429);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "QUEUE_BACKPRESSURE");
+    assert.equal(submitJob.mock.callCount(), 1);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import rejects non-Figma cross-origin request", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://evil.example.com",
+      },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 403);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "FORBIDDEN_REQUEST_ORIGIN");
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import includes requestId in error responses", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-figma-import-test",
+      },
+      payload: { not: "an envelope" },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "INVALID_PAYLOAD");
+    assert.equal(
+      body.requestId,
+      "req-figma-import-test",
+      "Error response must include the x-request-id from the request",
+    );
+  } finally {
+    await close();
+  }
+});

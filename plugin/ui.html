@@ -225,10 +225,10 @@
           });
           const body = await res.json();
           if (res.ok) {
-            statusEl.innerHTML =
-              "Import accepted! Job ID: <strong>" +
-              escapeHtml(body.jobId) +
-              "</strong> (" +
+            statusEl.textContent =
+              "Import accepted! Job ID: " +
+              body.jobId +
+              " (" +
               body.selections +
               " selection(s))";
             statusEl.className = "status-success";
@@ -259,11 +259,6 @@
         statusEl.className = "status-success";
       }
 
-      function escapeHtml(str) {
-        const div = document.createElement("div");
-        div.textContent = str;
-        return div.innerHTML;
-      }
     </script>
   </body>
 </html>
