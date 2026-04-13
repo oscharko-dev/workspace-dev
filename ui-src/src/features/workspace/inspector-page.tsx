@@ -193,8 +193,13 @@ function BootstrapView(): JSX.Element {
   const bootstrap = useInspectorBootstrap();
 
   const handlePaste = useCallback(
-    (text: string): void => {
-      bootstrap.submitPaste(text, { source: "paste-event" });
+    (text: string, clipboardHtml?: string): void => {
+      bootstrap.submitPaste(
+        text,
+        clipboardHtml !== undefined
+          ? { source: "paste-event", clipboardHtml }
+          : { source: "paste-event" },
+      );
     },
     // `bootstrap` is a stable reference to the hook's return object; we re-run
     // when the object identity changes so we always submit via the latest

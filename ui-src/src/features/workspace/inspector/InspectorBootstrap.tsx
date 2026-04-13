@@ -7,7 +7,7 @@ import type { ImportIntent } from "./paste-input-classifier";
 
 export interface InspectorBootstrapProps {
   state: InspectorBootstrapState;
-  onPaste: (text: string) => void;
+  onPaste: (text: string, clipboardHtml?: string) => void;
   onDropFile?: (text: string) => void;
   onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   onRetry: () => void;

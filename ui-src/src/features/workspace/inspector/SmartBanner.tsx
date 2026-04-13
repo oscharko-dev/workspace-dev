@@ -22,6 +22,12 @@ const ALL_INTENTS: readonly ImportIntent[] = [
   "UNKNOWN",
 ];
 
+const VALID_INTENTS = new Set<string>(ALL_INTENTS);
+
+function isValidImportIntent(value: string): value is ImportIntent {
+  return VALID_INTENTS.has(value);
+}
+
 export function SmartBanner({
   intent,
   confidence,
@@ -54,7 +60,10 @@ export function SmartBanner({
       <select
         value={selected}
         onChange={(e) => {
-          setSelected(e.target.value as ImportIntent);
+          const value = e.target.value;
+          if (isValidImportIntent(value)) {
+            setSelected(value);
+          }
         }}
         className="shrink-0 cursor-pointer rounded border border-[#000000] bg-[#222222] px-2 py-1 text-[11px] text-white/85 focus:outline-none focus:ring-1 focus:ring-[#4eba87]/60"
         aria-label="Erkannten Typ korrigieren"

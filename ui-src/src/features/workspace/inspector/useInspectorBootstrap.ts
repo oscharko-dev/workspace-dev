@@ -33,7 +33,10 @@ export interface UseInspectorBootstrapOptions {
 export interface UseInspectorBootstrapResult {
   state: InspectorBootstrapState;
   submit(input: { figmaJsonPayload: string }): void;
-  submitPaste(text: string, options?: { source?: PasteSource }): void;
+  submitPaste(
+    text: string,
+    options?: { source?: PasteSource; clipboardHtml?: string },
+  ): void;
   confirmIntent(intent: ImportIntent): void;
   dismissIntent(): void;
   retry(): void;
@@ -97,12 +100,20 @@ export function useInspectorBootstrap(
   const submitMutation = useMutation<
     { jobId: string },
     Error,
-    { figmaJsonPayload: string; importIntent?: ImportIntent }
+    {
+      figmaJsonPayload: string;
+      importIntent?: ImportIntent;
+      intentCorrected?: boolean;
+    }
   >({
-    mutationFn: async ({ figmaJsonPayload, importIntent }) => {
+    mutationFn: async ({ figmaJsonPayload, importIntent, intentCorrected }) => {
       const payload = toInspectorBootstrapPayload(
         importIntent !== undefined
-          ? { figmaJsonPayload, importIntent }
+          ? {
+              figmaJsonPayload,
+              importIntent,
+              ...(intentCorrected !== undefined ? { intentCorrected } : {}),
+            }
           : { figmaJsonPayload },
       );
       const response = await fetchJson<{ jobId?: string; error?: string }>({
@@ -237,7 +248,10 @@ export function useInspectorBootstrap(
     });
   }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
 
-  function submitPaste(text: string, options?: { source?: PasteSource }): void {
+  function submitPaste(
+    text: string,
+    options?: { source?: PasteSource; clipboardHtml?: string },
+  ): void {
     const source = options?.source ?? "paste-event";
     if (source === "clipboard-api" && !isSecureContextAvailable()) {
       dispatch({
@@ -261,7 +275,10 @@ export function useInspectorBootstrap(
       return;
     }
 
-    const intentClassification = classifyPasteIntent(text);
+    const intentClassification = classifyPasteIntent(
+      text,
+      options?.clipboardHtml,
+    );
     dispatch({
       type: "intent_detected",
       intent: intentClassification.intent,
@@ -276,9 +293,14 @@ export function useInspectorBootstrap(
       return;
     }
     const rawText = state.rawText;
+    const corrected = intent !== state.intent;
     dispatch({ type: "intent_confirmed", intent });
     dispatch({ type: "paste_started" });
-    submitMutation.mutate({ figmaJsonPayload: rawText, importIntent: intent });
+    submitMutation.mutate({
+      figmaJsonPayload: rawText,
+      importIntent: intent,
+      intentCorrected: corrected,
+    });
   }
 
   function dismissIntent(): void {

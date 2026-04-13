@@ -853,6 +853,7 @@ function parseSubmitRequest(
     "formHandlingMode",
     "visualAudit",
     "importIntent",
+    "intentCorrected",
   ]);
 
   for (const key of Object.keys(input)) {
@@ -1033,6 +1034,20 @@ function parseSubmitRequest(
     );
     return undefined;
   })();
+  const rawIntentCorrected = input.intentCorrected;
+  const intentCorrected =
+    rawIntentCorrected === undefined
+      ? undefined
+      : typeof rawIntentCorrected === "boolean"
+        ? rawIntentCorrected
+        : (() => {
+            pushIssue(
+              issues,
+              ["intentCorrected"],
+              "intentCorrected must be a boolean",
+            );
+            return undefined;
+          })();
   const llmCodegenMode = parseSubmitLlmCodegenMode({
     value: rawLlmCodegenMode,
     issues,
@@ -1263,6 +1278,9 @@ function parseSubmitRequest(
   }
   if (importIntent !== undefined) {
     data.importIntent = importIntent;
+  }
+  if (intentCorrected !== undefined) {
+    data.intentCorrected = intentCorrected;
   }
 
   return {

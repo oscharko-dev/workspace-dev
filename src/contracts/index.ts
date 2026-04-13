@@ -269,6 +269,7 @@ export interface WorkspaceJobInput {
   generationLocale?: string;
   formHandlingMode?: WorkspaceFormHandlingMode;
   importIntent?: WorkspaceImportIntent;
+  intentCorrected?: boolean;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
@@ -299,6 +300,7 @@ export interface WorkspaceJobRequestMetadata {
   generationLocale: string;
   formHandlingMode: WorkspaceFormHandlingMode;
   importIntent?: WorkspaceImportIntent;
+  intentCorrected?: boolean;
 }
 
 /** Submit response for accepted jobs. */

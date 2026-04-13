@@ -2086,7 +2086,7 @@ export function createWorkspaceRequestHandler({
           event: "workspace.submit.accepted",
           statusCode: 202,
           jobId: accepted.jobId,
-          message: `Submission accepted as job '${accepted.jobId}'.${submitInput.importIntent !== undefined ? ` importIntent=${submitInput.importIntent}` : ""}`,
+          message: `Submission accepted as job '${accepted.jobId}'.${submitInput.importIntent !== undefined ? ` importIntent=${submitInput.importIntent}` : ""}${submitInput.intentCorrected ? " (user-corrected)" : ""}`,
         });
         sendJson({
           response,
