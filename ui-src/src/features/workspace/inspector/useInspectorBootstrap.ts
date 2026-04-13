@@ -8,7 +8,10 @@ import {
   type InspectorBootstrapState,
 } from "./inspector-bootstrap-state";
 import { isJobPayload, isRecord } from "../workspace-page.helpers";
-import { isSecureContextAvailable } from "./paste-input-classifier";
+import {
+  classifyPasteInput,
+  isSecureContextAvailable,
+} from "./paste-input-classifier";
 import type { JsonResponse } from "../../../lib/http";
 
 const DEFAULT_POLL_INTERVAL_MS = 1_500;
@@ -235,6 +238,15 @@ export function useInspectorBootstrap(
       });
       return;
     }
+
+    const classification = classifyPasteInput(text);
+    if (classification.kind === "unknown") {
+      const reason =
+        classification.reason === "empty" ? "EMPTY_INPUT" : "INVALID_PAYLOAD";
+      dispatch({ type: "submit_failed", reason, retryable: true });
+      return;
+    }
+
     dispatch({ type: "paste_started" });
     submitMutation.mutate({ figmaJsonPayload: text });
   }

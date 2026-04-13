@@ -132,6 +132,16 @@ describe("InspectorBootstrap — state-aware copy", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows EMPTY_INPUT error message", () => {
+    renderBootstrap({
+      state: { kind: "failed", reason: "EMPTY_INPUT", retryable: true },
+    });
+
+    expect(
+      screen.getByText(/please paste or drop a figma json export/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows PasteExample snippet in the center column when failed", () => {
     renderBootstrap({
       state: { kind: "failed", reason: "INVALID_PAYLOAD", retryable: true },

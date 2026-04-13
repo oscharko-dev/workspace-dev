@@ -110,6 +110,8 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
     return undefined;
   }
   switch (state.reason) {
+    case "EMPTY_INPUT":
+      return "Please paste or drop a Figma JSON export.";
     case "INVALID_PAYLOAD":
       return "That does not look like a Figma JSON export. Please paste a JSON_REST_V1 payload.";
     case "TOO_LARGE":

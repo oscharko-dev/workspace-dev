@@ -497,6 +497,80 @@ describe("useInspectorBootstrap — submitPaste secure context", () => {
   });
 });
 
+describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
+  it("empty string short-circuits to EMPTY_INPUT without calling fetchJson", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste("");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("EMPTY_INPUT");
+      expect(result.current.state.retryable).toBe(true);
+    }
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("non-JSON text short-circuits to INVALID_PAYLOAD without calling fetchJson", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste("hello");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("INVALID_PAYLOAD");
+      expect(result.current.state.retryable).toBe(true);
+    }
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("valid JSON still calls fetchJson", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-classifier" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-classifier") {
+        return createJsonResponse({
+          payload: { jobId: "job-classifier", status: "queued" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      { wrapper: makeWrapper() },
+    );
+
+    result.current.submitPaste('{"document":{}}');
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("queued");
+    });
+
+    expect(fetchJsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "/workspace/submit" }),
+    );
+  });
+});
+
 describe("useInspectorBootstrap — reportInputError", () => {
   it("reportInputError('UNSUPPORTED_FILE') transitions to failed with retryable=true", async () => {
     const { result } = renderHook(() => useInspectorBootstrap(), {
