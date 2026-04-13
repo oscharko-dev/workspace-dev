@@ -8,6 +8,6 @@
   "capabilities": [],
   "permissions": ["clipboard-write"],
   "networkAccess": {
-    "allowedDomains": ["none"]
+    "allowedDomains": ["localhost", "127.0.0.1"]
   }
 }

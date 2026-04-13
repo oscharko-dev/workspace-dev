@@ -20,9 +20,19 @@ export const RATE_LIMIT_WINDOW_MS = 60_000;
 export const DEFAULT_CONTENT_SECURITY_POLICY = "frame-ancestors 'self'";
 export const WORKSPACE_UI_CONTENT_SECURITY_POLICY =
   "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
+export const FIGMA_IMPORT_ROUTE = "/workspace/figma-import";
 export const UI_ROUTE_PREFIX = "/workspace/ui";
 export const JOB_ROUTE_PREFIX = "/workspace/jobs/";
 export const REPRO_ROUTE_PREFIX = "/workspace/repros/";
+
+/**
+ * Origins allowed to call the Figma plugin import endpoint.
+ * Figma plugins run inside iframes on these domains.
+ */
+export const FIGMA_PLUGIN_ALLOWED_ORIGINS: Set<string> = new Set([
+  "https://www.figma.com",
+  "https://figma.com",
+]);
 
 export type UiAssetPath = string;
 

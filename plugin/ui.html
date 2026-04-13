@@ -27,6 +27,24 @@
         color: #666;
         line-height: 1.4;
       }
+      label {
+        font-size: 12px;
+        font-weight: 500;
+        color: #555;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: monospace;
+        margin-top: 4px;
+      }
+      input[type="text"]:focus {
+        outline: none;
+        border-color: #4eba87;
+      }
       button {
         padding: 8px 16px;
         border: none;
@@ -54,9 +72,15 @@
       .btn-secondary:hover {
         background: #e0e0e0;
       }
+      .btn-secondary:disabled {
+        background: #f5f5f5;
+        color: #999;
+        cursor: not-allowed;
+      }
       #status {
         font-size: 12px;
         min-height: 18px;
+        word-break: break-word;
       }
       .status-error {
         color: #d32f2f;
@@ -67,33 +91,60 @@
       .actions {
         display: flex;
         gap: 8px;
+        flex-wrap: wrap;
+      }
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+      }
+      hr {
+        border: none;
+        border-top: 1px solid #eee;
       }
     </style>
   </head>
   <body>
     <h2>WorkspaceDev Export</h2>
     <p>
-      Select layers in Figma, then click <strong>Copy to Clipboard</strong>.
-      Paste the result into the WorkspaceDev Inspector.
+      Select layers in Figma, then <strong>Copy to Clipboard</strong> (paste
+      into Inspector) or <strong>Send to WorkspaceDev</strong> directly.
     </p>
     <div class="actions">
       <button id="export-btn" class="btn-primary">Copy to Clipboard</button>
       <button id="download-btn" class="btn-secondary">Download JSON</button>
     </div>
+    <hr />
+    <div class="field">
+      <label for="server-url">WorkspaceDev Server URL</label>
+      <input
+        id="server-url"
+        type="text"
+        value="http://localhost:1983"
+        placeholder="http://localhost:1983"
+      />
+    </div>
+    <button id="send-btn" class="btn-primary">Send to WorkspaceDev</button>
     <div id="status"></div>
 
     <script>
       const exportBtn = document.getElementById("export-btn");
       const downloadBtn = document.getElementById("download-btn");
+      const sendBtn = document.getElementById("send-btn");
+      const serverUrlInput = document.getElementById("server-url");
       const statusEl = document.getElementById("status");
 
       let lastPayload = null;
 
       exportBtn.addEventListener("click", () => {
         exportBtn.disabled = true;
+        sendBtn.disabled = true;
         statusEl.textContent = "";
         statusEl.className = "";
-        parent.postMessage({ pluginMessage: { type: "export-selection" } }, "*");
+        parent.postMessage(
+          { pluginMessage: { type: "export-selection" } },
+          "*",
+        );
       });
 
       downloadBtn.addEventListener("click", () => {
@@ -103,6 +154,28 @@
           return;
         }
         downloadJson(lastPayload);
+      });
+
+      sendBtn.addEventListener("click", () => {
+        const serverUrl = serverUrlInput.value.trim();
+        if (!serverUrl) {
+          statusEl.textContent = "Please enter a server URL.";
+          statusEl.className = "status-error";
+          return;
+        }
+        exportBtn.disabled = true;
+        sendBtn.disabled = true;
+        statusEl.textContent = "";
+        statusEl.className = "";
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "send-to-server",
+              serverUrl,
+            },
+          },
+          "*",
+        );
       });
 
       window.onmessage = async (event) => {
@@ -116,12 +189,17 @@
             statusEl.textContent = "Copied to clipboard!";
             statusEl.className = "status-success";
           } catch {
-            // Clipboard API may not be available in all contexts.
             statusEl.textContent =
               "Clipboard write failed. Use Download instead.";
             statusEl.className = "status-error";
           }
           exportBtn.disabled = false;
+          sendBtn.disabled = false;
+        }
+
+        if (msg.type === "send-payload") {
+          lastPayload = msg.payload;
+          await sendToServer(msg.payload, msg.serverUrl);
         }
 
         if (msg.type === "status") {
@@ -133,8 +211,41 @@
           statusEl.textContent = msg.message;
           statusEl.className = "status-error";
           exportBtn.disabled = false;
+          sendBtn.disabled = false;
         }
       };
+
+      async function sendToServer(payload, serverUrl) {
+        const importUrl = serverUrl.replace(/\/+$/, "") + "/workspace/figma-import";
+        try {
+          const res = await fetch(importUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: payload,
+          });
+          const body = await res.json();
+          if (res.ok) {
+            statusEl.textContent =
+              "Import accepted! Job ID: " +
+              body.jobId +
+              " (" +
+              body.selections +
+              " selection(s))";
+            statusEl.className = "status-success";
+          } else {
+            const requestId = body.requestId ? " [" + body.requestId + "]" : "";
+            statusEl.textContent =
+              "Server error: " + (body.message || res.statusText) + requestId;
+            statusEl.className = "status-error";
+          }
+        } catch (err) {
+          statusEl.textContent =
+            "Connection failed: " + (err.message || "Could not reach server.");
+          statusEl.className = "status-error";
+        }
+        exportBtn.disabled = false;
+        sendBtn.disabled = false;
+      }
 
       function downloadJson(payload) {
         const blob = new Blob([payload], { type: "application/json" });
@@ -147,6 +258,7 @@
         statusEl.textContent = "Downloaded!";
         statusEl.className = "status-success";
       }
+
     </script>
   </body>
 </html>

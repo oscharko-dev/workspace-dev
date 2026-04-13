@@ -2786,3 +2786,422 @@ test("request handler rejects unknown ClipboardEnvelope version via figma_paste 
     await close();
   }
 });
+
+// ---------------------------------------------------------------------------
+// Figma plugin import endpoint — POST /workspace/figma-import
+// ---------------------------------------------------------------------------
+
+test("figma-import accepts a valid ClipboardEnvelope and returns 202 with jobId", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "import-job-1",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.jobId, "import-job-1");
+    assert.equal(body.selections, 1);
+    assert.ok(
+      typeof body.trackingUrl === "string",
+      "Expected trackingUrl in response",
+    );
+    assert.ok(
+      (body.trackingUrl as string).includes("import-job-1"),
+      "trackingUrl should contain the jobId",
+    );
+
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    assert.ok(
+      typeof capturedInput.figmaJsonPath === "string",
+      "Expected figmaJsonPath to be a string path",
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import accepts multi-selection envelope and returns correct selection count", async () => {
+  const submitJob = test.mock.fn(() => {
+    return {
+      jobId: "import-multi",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+        {
+          document: { id: "3:4", type: "COMPONENT", name: "Button" },
+          components: { "3:4": { name: "Button" } },
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 202);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.selections, 2);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import rejects non-envelope payload with INVALID_PAYLOAD", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: { name: "not an envelope", document: {} },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "INVALID_PAYLOAD");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import rejects envelope with empty selections with SCHEMA_MISMATCH", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const badEnvelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: badEnvelope,
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "SCHEMA_MISMATCH");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import rejects unknown envelope kind with UNSUPPORTED_CLIPBOARD_KIND", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const futureEnvelope = {
+      kind: "workspace-dev/figma-selection@99",
+      pluginVersion: "99.0.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: futureEnvelope,
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNSUPPORTED_CLIPBOARD_KIND");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import CORS preflight returns 204 for figma.com origin", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const response = await app.inject({
+      method: "OPTIONS",
+      url: "/workspace/figma-import",
+      headers: {
+        origin: "https://www.figma.com",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type",
+      },
+    });
+
+    assert.equal(response.statusCode, 204);
+    assert.equal(
+      response.headers["access-control-allow-origin"],
+      "https://www.figma.com",
+    );
+    assert.ok(
+      (response.headers["access-control-allow-methods"] as string).includes(
+        "POST",
+      ),
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import rejects wrong Content-Type", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "text/plain" },
+      payload: "hello",
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "VALIDATION_ERROR");
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import returns 413 TOO_LARGE on oversize payload", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    // Build a valid-looking envelope that exceeds the 6 MiB limit.
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: {
+            id: "1:2",
+            type: "FRAME",
+            name: "Oversized",
+            filler: "x".repeat(7 * 1024 * 1024),
+          },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 413);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "TOO_LARGE");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import returns 429 QUEUE_BACKPRESSURE when job queue is full", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw createCodedError("E_JOB_QUEUE_FULL", "queue full", {
+      queue: { runningCount: 1, queuedCount: 2 },
+    });
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: { "content-type": "application/json" },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 429);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "QUEUE_BACKPRESSURE");
+    assert.equal(submitJob.mock.callCount(), 1);
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import rejects non-Figma cross-origin request", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.2.0",
+      copiedAt: "2026-04-13T10:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: {
+        "content-type": "application/json",
+        origin: "https://evil.example.com",
+      },
+      payload: envelope,
+    });
+
+    assert.equal(response.statusCode, 403);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "FORBIDDEN_REQUEST_ORIGIN");
+  } finally {
+    await close();
+  }
+});
+
+test("figma-import includes requestId in error responses", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/figma-import",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-figma-import-test",
+      },
+      payload: { not: "an envelope" },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "INVALID_PAYLOAD");
+    assert.equal(
+      body.requestId,
+      "req-figma-import-test",
+      "Error response must include the x-request-id from the request",
+    );
+  } finally {
+    await close();
+  }
+});

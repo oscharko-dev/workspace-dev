@@ -1,33 +1,80 @@
 /**
- * WorkspaceDev Figma Plugin - clipboard-first export.
+ * WorkspaceDev Figma Plugin - clipboard + direct server import.
  *
  * Exports selected nodes as a versioned clipboard envelope that the
- * Inspector can accept without cross-origin communication.
+ * Inspector can accept without cross-origin communication, or sends
+ * the envelope directly to a running WorkspaceDev server.
  *
+ * @see https://github.com/oscharko-dev/WorkspaceDev/issues/985
  * @see https://github.com/oscharko-dev/WorkspaceDev/issues/997
  */
 
 const ENVELOPE_KIND = "workspace-dev/figma-selection@1";
-const PLUGIN_VERSION = "0.1.0";
+const PLUGIN_VERSION = "0.2.0";
 
-figma.showUI(__html__, { width: 320, height: 200 });
+/**
+ * Node types that can be meaningfully exported.
+ * Plugin API `type` values: https://developers.figma.com/docs/plugins/api/nodes/
+ */
+const ALLOWED_NODE_TYPES = new Set([
+  "FRAME",
+  "COMPONENT",
+  "COMPONENT_SET",
+  "INSTANCE",
+  "GROUP",
+  "SECTION",
+  "BOOLEAN_OPERATION",
+  "VECTOR",
+  "STAR",
+  "LINE",
+  "ELLIPSE",
+  "POLYGON",
+  "RECTANGLE",
+  "TEXT",
+  "SHAPE_WITH_TEXT",
+]);
+
+figma.showUI(__html__, { width: 380, height: 320 });
 
 figma.ui.onmessage = async (message) => {
   if (message.type === "export-selection") {
-    await exportSelection();
+    await exportSelection("clipboard");
+  }
+  if (message.type === "send-to-server") {
+    await exportSelection("server", message.serverUrl);
   }
   if (message.type === "close") {
     figma.closePlugin();
   }
 };
 
-async function exportSelection() {
-  const selection = [...figma.currentPage.selection].sort(compareNodesForExport);
+async function exportSelection(target, serverUrl) {
+  const selection = [...figma.currentPage.selection].sort(
+    compareNodesForExport,
+  );
 
   if (selection.length === 0) {
     figma.ui.postMessage({
       type: "error",
       message: "No nodes selected. Please select at least one layer.",
+    });
+    return;
+  }
+
+  // Validate node types.
+  const unsupported = selection.filter(
+    (node) => !ALLOWED_NODE_TYPES.has(node.type),
+  );
+  if (unsupported.length > 0) {
+    const names = unsupported
+      .slice(0, 3)
+      .map((n) => `"${n.name}" (${n.type})`)
+      .join(", ");
+    const overflow =
+      unsupported.length > 3 ? ` and ${unsupported.length - 3} more` : "";
+    figma.ui.postMessage({
+      type: "error",
+      message: `Unsupported node type(s): ${names}${overflow}. Supported: ${[...ALLOWED_NODE_TYPES].join(", ")}.`,
     });
     return;
   }
@@ -61,10 +108,18 @@ async function exportSelection() {
     selections,
   };
 
-  figma.ui.postMessage({
-    type: "copy-to-clipboard",
-    payload: JSON.stringify(envelope),
-  });
+  if (target === "server") {
+    figma.ui.postMessage({
+      type: "send-payload",
+      payload: JSON.stringify(envelope),
+      serverUrl,
+    });
+  } else {
+    figma.ui.postMessage({
+      type: "copy-to-clipboard",
+      payload: JSON.stringify(envelope),
+    });
+  }
 }
 
 function createSelectionUnit(node, exported) {
