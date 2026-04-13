@@ -5,31 +5,27 @@
 // See issue #299 for the decomposition rationale.
 // ---------------------------------------------------------------------------
 import type { WorkspaceBrandTheme } from "../contracts/index.js";
-import { safeParseFigmaPayload, summarizeFigmaPayloadValidationError } from "../figma-payload-validation.js";
-import type {
-  DesignIR,
-  DesignTokens
-} from "./types.js";
+import {
+  safeParseFigmaPayload,
+  summarizeFigmaPayloadValidationError,
+} from "../figma-payload-validation.js";
+import type { DesignIR, DesignTokens } from "./types.js";
 import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
 import {
   DEFAULT_SCREEN_ELEMENT_BUDGET,
-  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH
+  DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
 } from "./ir-tree.js";
-import {
-  resolvePlaceholderMatcherConfig
-} from "./ir-variants.js";
+import { resolvePlaceholderMatcherConfig } from "./ir-variants.js";
 import type {
   FigmaFile,
   FigmaToIrOptions,
-  MetricsAccumulator
+  MetricsAccumulator,
 } from "./ir-helpers.js";
-import {
-  extractScreens
-} from "./ir-screens.js";
+import { extractScreens } from "./ir-screens.js";
 import {
   deriveTokens,
   deriveThemeAnalysis,
-  applyMcpEnrichmentToIr
+  applyMcpEnrichmentToIr,
 } from "./ir-tokens.js";
 
 // ── Re-exports from ir-variants.ts (unchanged) ──────────────────────────
@@ -57,12 +53,12 @@ export {
   toSortedVariantProperties,
   toVariantState,
   inferVariantSignalsFromNamePath,
-  GENERIC_PLACEHOLDER_TEXT_PATTERNS
+  GENERIC_PLACEHOLDER_TEXT_PATTERNS,
 } from "./ir-variants.js";
 export type {
   ComponentSetVariantCandidate,
   NormalizedVariantData,
-  PlaceholderMatcherConfig
+  PlaceholderMatcherConfig,
 } from "./ir-variants.js";
 
 // ── Re-exports from ir-tree.ts (unchanged) ──────────────────────────────
@@ -75,46 +71,67 @@ export {
   DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
   DEPTH_SEMANTIC_TYPES,
   DEPTH_SEMANTIC_NAME_HINTS,
-  isDepthSemanticNode
+  isDepthSemanticNode,
 } from "./ir-tree.js";
 export type {
   DepthAnalysis,
   ScreenDepthBudgetContext,
-  TreeFigmaNode
+  TreeFigmaNode,
 } from "./ir-tree.js";
 
-const parseFigmaPayloadOrThrow = ({ figmaJson }: { figmaJson: unknown }): FigmaFile => {
+const parseFigmaPayloadOrThrow = ({
+  figmaJson,
+}: {
+  figmaJson: unknown;
+}): FigmaFile => {
   const parsed = safeParseFigmaPayload({ input: figmaJson });
   if (parsed.success) {
     return parsed.data;
   }
-  throw new Error(`Invalid Figma payload: ${summarizeFigmaPayloadValidationError({ error: parsed.error })}`);
+  throw new Error(
+    `Invalid Figma payload: ${summarizeFigmaPayloadValidationError({ error: parsed.error })}`,
+  );
 };
 
-export const deriveTokensForTesting = (figmaJson: unknown, options?: Pick<FigmaToIrOptions, "mcpEnrichment">): DesignTokens => {
-  return deriveTokens(parseFigmaPayloadOrThrow({ figmaJson }), options?.mcpEnrichment);
+export const deriveTokensForTesting = (
+  figmaJson: unknown,
+  options?: Pick<FigmaToIrOptions, "mcpEnrichment">,
+): DesignTokens => {
+  return deriveTokens(
+    parseFigmaPayloadOrThrow({ figmaJson }),
+    options?.mcpEnrichment,
+  );
 };
 
 export const figmaToDesignIr = (figmaJson: unknown): DesignIR => {
   return figmaToDesignIrWithOptions(figmaJson);
 };
 
-export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaToIrOptions): DesignIR => {
+export const figmaToDesignIrWithOptions = (
+  figmaJson: unknown,
+  options?: FigmaToIrOptions,
+): DesignIR => {
   const parsed = parseFigmaPayloadOrThrow({ figmaJson });
-  const resolvedBrandTheme: WorkspaceBrandTheme = options?.brandTheme === "sparkasse" ? "sparkasse" : "derived";
-  const placeholderMatcherConfig = resolvePlaceholderMatcherConfig(options?.placeholderRules);
+  const resolvedBrandTheme: WorkspaceBrandTheme =
+    options?.brandTheme === "sparkasse" ? "sparkasse" : "derived";
+  const placeholderMatcherConfig = resolvePlaceholderMatcherConfig(
+    options?.placeholderRules,
+  );
   const screenElementBudget =
-    typeof options?.screenElementBudget === "number" && Number.isFinite(options.screenElementBudget)
+    typeof options?.screenElementBudget === "number" &&
+    Number.isFinite(options.screenElementBudget)
       ? Math.max(1, Math.trunc(options.screenElementBudget))
       : DEFAULT_SCREEN_ELEMENT_BUDGET;
   const screenElementMaxDepth =
-    typeof options?.screenElementMaxDepth === "number" && Number.isFinite(options.screenElementMaxDepth)
+    typeof options?.screenElementMaxDepth === "number" &&
+    Number.isFinite(options.screenElementMaxDepth)
       ? Math.max(1, Math.min(64, Math.trunc(options.screenElementMaxDepth)))
       : DEFAULT_SCREEN_ELEMENT_MAX_DEPTH;
 
   const metrics: MetricsAccumulator = {
     fetchedNodes:
-      typeof options?.sourceMetrics?.fetchedNodes === "number" && Number.isFinite(options.sourceMetrics.fetchedNodes)
+      typeof options?.sourceMetrics?.fetchedNodes === "number" &&
+      Number.isFinite(options.sourceMetrics.fetchedNodes)
         ? Math.max(0, Math.trunc(options.sourceMetrics.fetchedNodes))
         : 0,
     skippedHidden: 0,
@@ -126,17 +143,22 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     truncatedScreens: [],
     depthTruncatedScreens: [],
     classificationFallbacks: [],
-    degradedGeometryNodes: [...(options?.sourceMetrics?.degradedGeometryNodes ?? [])]
-      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    degradedGeometryNodes: [
+      ...(options?.sourceMetrics?.degradedGeometryNodes ?? []),
+    ]
+      .filter(
+        (value): value is string =>
+          typeof value === "string" && value.trim().length > 0,
+      )
       .sort((left, right) => left.localeCompare(right)),
-    nodeDiagnostics: []
+    nodeDiagnostics: [],
   };
 
   for (const degradedNodeId of metrics.degradedGeometryNodes) {
     metrics.nodeDiagnostics.push({
       nodeId: degradedNodeId,
       category: "degraded-geometry",
-      reason: "Node geometry was degraded during staged fetch."
+      reason: "Node geometry was degraded during staged fetch.",
     });
   }
 
@@ -145,7 +167,7 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     metrics,
     screenElementBudget,
     screenElementMaxDepth,
-    placeholderMatcherConfig
+    placeholderMatcherConfig,
   });
 
   if (screens.length === 0) {
@@ -153,12 +175,15 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
   }
 
   const derivedTokens = deriveTokens(parsed, options?.mcpEnrichment);
-  const resolvedTokens = resolvedBrandTheme === "sparkasse" ? applySparkasseThemeDefaults(derivedTokens) : derivedTokens;
+  const resolvedTokens =
+    resolvedBrandTheme === "sparkasse"
+      ? applySparkasseThemeDefaults(derivedTokens)
+      : derivedTokens;
   const themeAnalysis = deriveThemeAnalysis({
     file: parsed,
     screens,
     tokens: resolvedTokens,
-    ...(options?.mcpEnrichment ? { enrichment: options.mcpEnrichment } : {})
+    ...(options?.mcpEnrichment ? { enrichment: options.mcpEnrichment } : {}),
   });
   const metricsOutput = {
     ...metrics,
@@ -167,7 +192,7 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
       : {}),
     ...(metrics.nodeDiagnostics.length > 0
       ? { nodeDiagnostics: [...metrics.nodeDiagnostics] }
-      : {})
+      : {}),
   };
 
   const baseIr: DesignIR = {
@@ -175,7 +200,7 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
     screens,
     tokens: resolvedTokens,
     metrics: metricsOutput,
-    themeAnalysis
+    themeAnalysis,
   };
 
   if (!options?.mcpEnrichment) {
@@ -183,3 +208,12 @@ export const figmaToDesignIrWithOptions = (figmaJson: unknown, options?: FigmaTo
   }
   return applyMcpEnrichmentToIr(baseIr, options.mcpEnrichment);
 };
+
+// ── Re-exports from ir-design-context.ts (Issue #1002) ──────────────────
+export {
+  mapFigmaNodeTypeToIrElementType,
+  transformNodeToScreenElement,
+  transformDesignContextToScreens,
+  transformDesignContextToTokens,
+  transformDesignContextToDesignIr,
+} from "./ir-design-context.js";

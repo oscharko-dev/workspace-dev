@@ -1,4 +1,4 @@
-import type { FigmaMcpEnrichment } from "../parity/types.js";
+import type { FigmaMcpEnrichment, FigmaMcpNodeHint } from "../parity/types.js";
 import { fetchAuthoritativeFigmaSubtrees } from "./figma-source.js";
 import {
   DEFAULT_MCP_SERVER_URL,
@@ -108,6 +108,47 @@ const mapResolverDiagnostics = ({
   }));
 };
 
+const collectNodeHints = ({
+  node,
+  hints,
+}: {
+  node: Record<string, unknown>;
+  hints: FigmaMcpNodeHint[];
+}): void => {
+  const id = typeof node["id"] === "string" ? node["id"] : undefined;
+  const type = typeof node["type"] === "string" ? node["type"] : undefined;
+  const name = typeof node["name"] === "string" ? node["name"] : undefined;
+  if (id && type) {
+    hints.push({
+      nodeId: id,
+      semanticName: name ?? id,
+      semanticType: type,
+      sourceTools: ["figma-rest-authoritative-subtrees"],
+    });
+  }
+  const children = node["children"];
+  if (Array.isArray(children)) {
+    for (const child of children) {
+      if (isRecord(child)) {
+        collectNodeHints({ node: child, hints });
+      }
+    }
+  }
+};
+
+const buildNodeHintsFromSubtrees = ({
+  authoritativeSubtrees,
+}: {
+  authoritativeSubtrees: Array<{ nodeId: string; document: unknown }>;
+}): FigmaMcpNodeHint[] => {
+  const hints: FigmaMcpNodeHint[] = [];
+  for (const subtree of authoritativeSubtrees) {
+    if (!isRecord(subtree.document)) continue;
+    collectNodeHints({ node: subtree.document, hints });
+  }
+  return hints;
+};
+
 const buildEnrichmentFromDesignContext = ({
   context,
   authoritativeSubtrees,
@@ -129,7 +170,7 @@ const buildEnrichmentFromDesignContext = ({
 
   return {
     sourceMode: "hybrid",
-    nodeHints: [],
+    nodeHints: buildNodeHintsFromSubtrees({ authoritativeSubtrees }),
     ...(context.metadata
       ? {
           metadataHints: [
