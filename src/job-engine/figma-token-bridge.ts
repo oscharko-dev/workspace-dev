@@ -411,6 +411,11 @@ const getPreferredModeOrder = (
 
 const selectCanonicalVariablesForOutput = (
   variables: readonly FigmaMcpVariableDefinition[],
+  {
+    canEmit,
+  }: {
+    canEmit: (variable: FigmaMcpVariableDefinition) => boolean;
+  },
 ): FigmaMcpVariableDefinition[] => {
   const canonicalVariables = new Map<string, FigmaMcpVariableDefinition>();
 
@@ -426,12 +431,38 @@ const selectCanonicalVariablesForOutput = (
       continue;
     }
 
+    const existingCanEmit = canEmit(existing);
+    const variableCanEmit = canEmit(variable);
+    if (existingCanEmit !== variableCanEmit) {
+      if (variableCanEmit) {
+        canonicalVariables.set(key, variable);
+      }
+      continue;
+    }
+
     if (getPreferredModeOrder(variable) < getPreferredModeOrder(existing)) {
       canonicalVariables.set(key, variable);
     }
   }
 
   return [...canonicalVariables.values()];
+};
+
+const canEmitCssCustomProperty = (
+  variable: FigmaMcpVariableDefinition,
+): boolean => classifyVariable(variable) !== "unknown";
+
+const canEmitTailwindToken = (
+  variable: FigmaMcpVariableDefinition,
+): boolean => {
+  const category = classifyVariable(variable);
+  return (
+    category === "color" ||
+    category === "spacing" ||
+    category === "radius" ||
+    category === "opacity" ||
+    (category === "typography" && variable.kind === "number")
+  );
 };
 
 /**
@@ -446,7 +477,9 @@ export const generateCssCustomProperties = (
 
   const lines: string[] = [];
 
-  for (const variable of selectCanonicalVariablesForOutput(variables)) {
+  for (const variable of selectCanonicalVariablesForOutput(variables, {
+    canEmit: canEmitCssCustomProperty,
+  })) {
     const category = classifyVariable(variable);
     if (category === "unknown") {
       continue;
@@ -509,7 +542,9 @@ export const generateTailwindExtension = (
   const fontSize: Record<string, string> = {};
   const opacity: Record<string, string> = {};
 
-  for (const variable of selectCanonicalVariablesForOutput(variables)) {
+  for (const variable of selectCanonicalVariablesForOutput(variables, {
+    canEmit: canEmitTailwindToken,
+  })) {
     const category = classifyVariable(variable);
     const key = normalizeFigmaVariableName(variable.name);
     if (key.length === 0 || category === "unknown") {

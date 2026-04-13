@@ -418,6 +418,27 @@ test("generateCssCustomProperties — emits only the preferred mode per normaliz
   assert.ok(!css.includes("--spacing-base: 12px;"));
 });
 
+test("generateCssCustomProperties — prefers an exportable token over a non-exportable preferred mode", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    {
+      name: "token/state",
+      kind: "boolean",
+      value: true,
+      modeName: "Default",
+    },
+    {
+      name: "token/state",
+      kind: "color",
+      value: "#3B82F6",
+      modeName: "Light",
+    },
+  ];
+
+  const css = generateCssCustomProperties(vars);
+
+  assert.ok(css.includes("--token-state: #3B82F6;"));
+});
+
 // ---------------------------------------------------------------------------
 // generateTailwindExtension
 // ---------------------------------------------------------------------------
@@ -495,6 +516,28 @@ test("generateTailwindExtension — keeps only the preferred mode per normalized
   assert.ok(ext);
   assert.deepEqual(ext.colors, { "color-primary": "#3B82F6" });
   assert.deepEqual(ext.spacing, { "spacing-base": "8px" });
+});
+
+test("generateTailwindExtension — prefers an exportable token over a non-exportable preferred mode", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    {
+      name: "token/state",
+      kind: "boolean",
+      value: true,
+      modeName: "Default",
+    },
+    {
+      name: "token/state",
+      kind: "color",
+      value: "#3B82F6",
+      modeName: "Light",
+    },
+  ];
+
+  const ext = generateTailwindExtension(vars);
+
+  assert.ok(ext);
+  assert.deepEqual(ext.colors, { "token-state": "#3B82F6" });
 });
 
 // ---------------------------------------------------------------------------
