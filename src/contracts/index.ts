@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.9.0
+ * Contract version: 3.11.1
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -1075,4 +1075,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.11.0" as const;
+export const CONTRACT_VERSION = "3.11.1" as const;

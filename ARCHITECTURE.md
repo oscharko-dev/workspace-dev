@@ -51,6 +51,7 @@ Execution plans:
 The runtime enforces:
 
 - `figmaSourceMode=rest|hybrid|local_json|figma_paste`
+- `figmaSourceMode=figma_plugin`
 - `llmCodegenMode=deterministic`
 
 Blocked modes (`mcp`, `llm_strict`) fail with `MODE_LOCK_VIOLATION`.

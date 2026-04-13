@@ -1198,7 +1198,9 @@ function parseSubmitRequest(
             if (!envelopeResult.valid) {
               const issuePrefix = isClipboardEnvelope(parsedFigmaPayload)
                 ? "SCHEMA_MISMATCH"
-                : "UNSUPPORTED_CLIPBOARD_KIND";
+                : resolvedFigmaSourceMode === "figma_plugin"
+                  ? "UNSUPPORTED_FORMAT"
+                  : "UNSUPPORTED_CLIPBOARD_KIND";
               pushIssue(
                 issues,
                 ["figmaJsonPayload"],
@@ -1379,12 +1381,14 @@ function parseWorkspaceStatus(
   if (
     figmaSourceMode !== "rest" &&
     figmaSourceMode !== "hybrid" &&
-    figmaSourceMode !== "local_json"
+    figmaSourceMode !== "local_json" &&
+    figmaSourceMode !== "figma_paste" &&
+    figmaSourceMode !== "figma_plugin"
   ) {
     pushIssue(
       issues,
       ["figmaSourceMode"],
-      "figmaSourceMode must be one of: rest, hybrid, local_json",
+      "figmaSourceMode must be one of: rest, hybrid, local_json, figma_paste, figma_plugin",
     );
   }
   if (llmCodegenMode !== "deterministic") {

@@ -17,10 +17,11 @@
 <!-- prettier-ignore -->
 | Area | workspace-dev |
 | --- | --- |
-| Contract version | `3.11.0` |
+| Contract version | `3.11.1` |
 | `figmaSourceMode=rest` | Supported |
 | `figmaSourceMode=local_json` | Supported |
 | `figmaSourceMode=figma_paste` | Supported |
+| `figmaSourceMode=figma_plugin` | Supported |
 | `figmaSourceMode=mcp` | Blocked |
 | `figmaSourceMode=hybrid` | Supported |
 | `llmCodegenMode=deterministic` | Supported |

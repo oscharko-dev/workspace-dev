@@ -388,7 +388,7 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
   // -------------------------------------------------------------------------
   // TC-4: Empty paste (whitespace-only)
   // -------------------------------------------------------------------------
-  test("uploading JSON and receiving UNSUPPORTED_CLIPBOARD_KIND shows the inline envelope error", async ({
+  test("uploading JSON and receiving UNSUPPORTED_FORMAT shows the inline envelope error", async ({
     page,
   }) => {
     await page.route("**/workspace/submit", async (route) => {
@@ -399,7 +399,7 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
       await route.fulfill({
         status: 400,
         contentType: "application/json",
-        body: JSON.stringify({ error: "UNSUPPORTED_CLIPBOARD_KIND" }),
+        body: JSON.stringify({ error: "UNSUPPORTED_FORMAT" }),
       });
     });
 

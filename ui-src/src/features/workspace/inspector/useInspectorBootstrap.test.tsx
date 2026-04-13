@@ -221,14 +221,14 @@ describe("useInspectorBootstrap — 400 TOO_LARGE", () => {
   });
 });
 
-describe("useInspectorBootstrap — 400 UNSUPPORTED_CLIPBOARD_KIND", () => {
+describe("useInspectorBootstrap — 400 UNSUPPORTED_FORMAT", () => {
   it("→ failed, not retryable", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {
         return createJsonResponse({
           status: 400,
           ok: false,
-          payload: { error: "UNSUPPORTED_CLIPBOARD_KIND" },
+          payload: { error: "UNSUPPORTED_FORMAT" },
         }) as never;
       }
       throw new Error(`Unexpected url: ${url}`);
@@ -247,7 +247,7 @@ describe("useInspectorBootstrap — 400 UNSUPPORTED_CLIPBOARD_KIND", () => {
     });
 
     if (result.current.state.kind === "failed") {
-      expect(result.current.state.reason).toBe("UNSUPPORTED_CLIPBOARD_KIND");
+      expect(result.current.state.reason).toBe("UNSUPPORTED_FORMAT");
       expect(result.current.state.retryable).toBe(false);
     }
   });
@@ -742,6 +742,50 @@ describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
       expect(result.current.state.retryable).toBe(false);
     }
     expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("confirming FIGMA_PLUGIN_ENVELOPE submits figma_plugin", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste(
+        '{"kind":"workspace-dev/figma-selection@1","pluginVersion":"0.1.0","copiedAt":"2026-04-12T18:00:00.000Z","selections":[{"document":{"id":"1:2","type":"FRAME","name":"Card"},"components":{},"componentSets":{},"styles":{}}]}',
+      );
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    if (result.current.state.kind === "detected") {
+      expect(result.current.state.intent).toBe("FIGMA_PLUGIN_ENVELOPE");
+    }
+
+    await act(async () => {
+      result.current.confirmIntent("FIGMA_PLUGIN_ENVELOPE");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("queued");
+    });
+
+    const submitCall = fetchJsonMock.mock.calls.find(
+      ([request]) => request.url === "/workspace/submit",
+    );
+    expect(submitCall).toBeDefined();
+    const submitRequest = submitCall?.[0];
+    expect(typeof submitRequest?.init?.body).toBe("string");
+    const submitBody = JSON.parse(
+      submitRequest?.init?.body as string,
+    ) as Record<string, unknown>;
+    expect(submitBody).toMatchObject({
+      figmaSourceMode: "figma_plugin",
+      importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      originalIntent: "FIGMA_PLUGIN_ENVELOPE",
+      intentCorrected: false,
+    });
   });
 
   it("confirming an uncorrected plugin export shows guidance instead of submitting to figma_paste", async () => {

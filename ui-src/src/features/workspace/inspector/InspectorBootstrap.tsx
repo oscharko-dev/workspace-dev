@@ -130,6 +130,7 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
       return `Payload is too large. The limit is ${FIGMA_PASTE_MAX_LABEL}.`;
     case "SCHEMA_MISMATCH":
       return "The payload does not match the expected Figma JSON_REST_V1 schema.";
+    case "UNSUPPORTED_FORMAT":
     case "UNSUPPORTED_CLIPBOARD_KIND":
       return "This WorkspaceDev clipboard envelope version is not supported yet. Update the plugin or paste a supported envelope export.";
     case "SECURE_CONTEXT_MISSING":

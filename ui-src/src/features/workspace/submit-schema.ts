@@ -112,7 +112,7 @@ export interface WorkspaceSubmitPayload {
 }
 
 export interface InspectorBootstrapPayload {
-  figmaSourceMode: "figma_paste";
+  figmaSourceMode: "figma_paste" | "figma_plugin";
   figmaJsonPayload: string;
   llmCodegenMode: "deterministic";
   enableGitPr: false;
@@ -211,8 +211,10 @@ export function toInspectorBootstrapPayload({
   originalIntent?: ImportIntent;
   intentCorrected?: boolean;
 }): InspectorBootstrapPayload {
+  const figmaSourceMode =
+    importIntent === "FIGMA_PLUGIN_ENVELOPE" ? "figma_plugin" : "figma_paste";
   return {
-    figmaSourceMode: "figma_paste",
+    figmaSourceMode,
     figmaJsonPayload,
     llmCodegenMode: "deterministic",
     enableGitPr: false,

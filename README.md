@@ -7,7 +7,7 @@
 [![Node >=22](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MIT License](https://img.shields.io/github/license/oscharko-dev/workspace-dev)](https://github.com/oscharko-dev/workspace-dev/blob/dev/LICENSE)
 
-Autonomous local Workspace runtime for deterministic Figma-to-code generation via REST or local JSON input.
+Autonomous local Workspace runtime for deterministic Figma-to-code generation via REST, local JSON, or inline paste/plugin payloads.
 
 `workspace-dev` runs directly in a customer project as a dev dependency and does **not** require the full Workspace Dev platform backend stack.
 
@@ -116,6 +116,7 @@ Golden end-to-end fixtures validate deterministic output from `figma.json -> des
 - `figmaSourceMode=hybrid`
 - `figmaSourceMode=local_json`
 - `figmaSourceMode=figma_paste`
+- `figmaSourceMode=figma_plugin`
 - `llmCodegenMode=deterministic`
 
 Not available:
@@ -134,15 +135,19 @@ Not available:
   - Workspace Dev will attempt authoritative screen-subtree recovery when the direct REST geometry payload is detected as low-fidelity.
 - `figmaSourceMode=figma_paste`:
   - `figmaJsonPayload`
+- `figmaSourceMode=figma_plugin`:
+  - `figmaJsonPayload`
 - `figmaSourceMode=local_json`:
   - `figmaJsonPath` (local filesystem path to exported Figma JSON)
 
-`figma_paste` defaults to a `6 MiB` clipboard payload cap and uses a larger
+`figma_paste` and `figma_plugin` default to a `6 MiB` payload cap and use a larger
 `8 MiB` submit transport limit only on `POST /workspace/submit`. The
 `WORKSPACE_FIGMA_PASTE_MAX_BYTES` override is still bounded by the submit
 transport budget.
 This mode is also the offline/firewall handoff path: export JSON from Figma,
 then submit the JSON text as `figmaJsonPayload` (no multipart upload required).
+For plugin-envelope handoff, confirm the detected plugin import in the inspector
+so the client submits `figmaSourceMode=figma_plugin`.
 
 Optional Git/PR input:
 

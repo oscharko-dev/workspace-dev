@@ -31,6 +31,20 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.11.1] - 2026-04-13
+
+### Plugin ingress contract alignment
+
+Changed:
+
+- Inspector bootstrap submissions now emit `figmaSourceMode="figma_plugin"` for confirmed plugin-envelope imports instead of collapsing them into `figma_paste`.
+- `WorkspaceStatus` schema and public mode documentation now recognize `figma_paste` and `figma_plugin` consistently alongside `rest`, `hybrid`, and `local_json`.
+- `figma_plugin` unknown-envelope validation now surfaces `UNSUPPORTED_FORMAT`, while the clipboard-first `figma_paste` path keeps `UNSUPPORTED_CLIPBOARD_KIND` for legacy envelope-version handling.
+- Submit acceptance audit logs now expose issue-aligned telemetry aliases `payload_size`, `node_count`, and `runtime_ms` in addition to the existing ingress tracing fields.
+- `CONTRACT_VERSION` from `3.11.0` to `3.11.1`.
+
+---
+
 ## [3.11.0] - 2026-04-12
 
 ### Inspector-initiated Figma paste import

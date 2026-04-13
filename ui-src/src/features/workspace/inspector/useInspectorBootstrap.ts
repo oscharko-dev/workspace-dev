@@ -99,6 +99,7 @@ function toFailureReason(payload: Record<string, unknown>): string {
     error === "INVALID_PAYLOAD" ||
     error === "TOO_LARGE" ||
     error === "SCHEMA_MISMATCH" ||
+    error === "UNSUPPORTED_FORMAT" ||
     error === "UNSUPPORTED_CLIPBOARD_KIND"
   ) {
     return error;

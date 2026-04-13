@@ -142,11 +142,11 @@ describe("InspectorBootstrap — state-aware copy", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows UNSUPPORTED_CLIPBOARD_KIND error message", () => {
+  it("shows UNSUPPORTED_FORMAT error message", () => {
     renderBootstrap({
       state: {
         kind: "failed",
-        reason: "UNSUPPORTED_CLIPBOARD_KIND",
+        reason: "UNSUPPORTED_FORMAT",
         retryable: false,
       },
     });

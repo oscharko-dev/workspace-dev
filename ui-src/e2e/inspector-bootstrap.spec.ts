@@ -388,7 +388,7 @@ test.describe("inspector bootstrap flow", () => {
       string,
       unknown
     >;
-    expect(submittedBody["figmaSourceMode"]).toBe("figma_paste");
+    expect(submittedBody["figmaSourceMode"]).toBe("figma_plugin");
     expect(submittedBody["importIntent"]).toBe("FIGMA_PLUGIN_ENVELOPE");
     expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
 
@@ -416,7 +416,7 @@ test.describe("inspector bootstrap flow", () => {
         status: 400,
         contentType: "application/json",
         body: JSON.stringify({
-          error: "UNSUPPORTED_CLIPBOARD_KIND",
+          error: "UNSUPPORTED_FORMAT",
           message:
             'Clipboard envelope validation failed: kind: Unknown envelope kind: "workspace-dev/figma-selection@99". Expected one of: workspace-dev/figma-selection@1.',
         }),

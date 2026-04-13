@@ -1125,7 +1125,7 @@ Capabilities:
   - GET /workspace/repros/:id/     Open generated local preview
 
 Mode lock is always enforced:
-  figmaSourceMode=rest|hybrid|local_json
+  figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin
   llmCodegenMode=deterministic
 `);
 };
@@ -1180,7 +1180,7 @@ const main = async (): Promise<void> => {
   }
 
   logger.log({ level: "info", message: `Starting on http://${options.host}:${options.port}/workspace` });
-  logger.log({ level: "info", message: "Mode lock: figmaSourceMode=rest|hybrid|local_json, llmCodegenMode=deterministic" });
+  logger.log({ level: "info", message: "Mode lock: figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin, llmCodegenMode=deterministic" });
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = options.enableLintAutofix ? "true" : "false";
   process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";
   process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = options.enablePerfValidation ? "true" : "false";

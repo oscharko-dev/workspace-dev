@@ -32,7 +32,8 @@ flowchart TB
 - Two plans are supported:
   - `submission`: all seven stages run in order.
   - `regeneration`: `figma.source` and `git.pr` are skipped by plan-level rules; remaining stages keep canonical order.
-- `figma.source` accepts authenticated Figma REST input, `local_json`, and `hybrid` mode. In `hybrid`, REST fetch remains authoritative and optional MCP enrichment is merged in as artifact-backed hints for downstream derivation.
+- `POST /workspace/submit` accepts authenticated Figma REST input, `local_json`, `figma_paste`, `figma_plugin`, and `hybrid` mode. Inline paste/plugin payloads are normalized into temp `local_json` artifacts before the canonical pipeline starts.
+- `figma.source` consumes authenticated Figma REST input, `local_json`, and `hybrid` mode after submit-time normalization. In `hybrid`, REST fetch remains authoritative and optional MCP enrichment is merged in as artifact-backed hints for downstream derivation.
 - `ir.derive` and `codegen.generate` stay deterministic by design; hybrid mode enriches deterministic derivation with MCP metadata but does not switch the runtime into LLM generation.
 - `template.prepare` always starts from the bundled React 19 + MUI v7 + Vite 8 seed in `template/react-mui-app`.
 - `validate.project` is the release-quality gate for generated output and can optionally run generated-project unit tests, UI validation, and performance assertions.

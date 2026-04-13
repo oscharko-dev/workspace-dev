@@ -2787,6 +2787,50 @@ test("request handler rejects unknown ClipboardEnvelope version via figma_paste 
   }
 });
 
+test("request handler rejects unknown ClipboardEnvelope version via figma_plugin with UNSUPPORTED_FORMAT", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const unknownEnvelope = {
+      kind: "workspace-dev/figma-selection@99",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify(unknownEnvelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNSUPPORTED_FORMAT");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
 test("request handler does not expose the removed figma-import route", async () => {
   const { app, close } = await createRequestHandlerApp();
 
