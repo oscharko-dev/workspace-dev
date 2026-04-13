@@ -30,9 +30,16 @@ import type {
   WorkspaceVisualAuditInput,
 } from "./contracts/index.js";
 import { validateComponentMappingRule } from "./component-mapping-rules.js";
+import {
+  safeParseFigmaPayload,
+  summarizeFigmaPayloadValidationError,
+} from "./figma-payload-validation.js";
 import { normalizeGenerationLocale } from "./generation-locale.js";
 import { validateRegenerationOverrideEntry } from "./job-engine/ir-override-validation.js";
-import { resolveFigmaPasteMaxBytes } from "./server/constants.js";
+import {
+  MAX_SUBMIT_BODY_BYTES,
+  resolveFigmaPasteMaxBytes,
+} from "./server/constants.js";
 
 type PathSegment = string | number;
 
@@ -162,6 +169,22 @@ function parseSubmitGenerationLocale({
   }
 
   return normalized;
+}
+
+function estimateFigmaPasteSubmitTransportBytes({
+  figmaJsonPayload,
+}: {
+  figmaJsonPayload: string;
+}): number {
+  return Buffer.byteLength(
+    JSON.stringify({
+      figmaSourceMode: "figma_paste",
+      figmaJsonPayload,
+      llmCodegenMode: "deterministic",
+      enableGitPr: false,
+    }),
+    "utf8",
+  );
 }
 
 function parseComponentMappingRuleEntry({
@@ -1074,9 +1097,30 @@ function parseSubmitRequest(
           ["figmaJsonPayload"],
           `TOO_LARGE: figmaJsonPayload exceeds maximum allowed size of ${figmaPasteMaxBytes} bytes`,
         );
+      } else if (
+        estimateFigmaPasteSubmitTransportBytes({ figmaJsonPayload }) >
+        MAX_SUBMIT_BODY_BYTES
+      ) {
+        pushIssue(
+          issues,
+          ["figmaJsonPayload"],
+          `TOO_LARGE: figmaJsonPayload exceeds the ${MAX_SUBMIT_BODY_BYTES} byte submit transport budget`,
+        );
       } else {
         try {
-          JSON.parse(figmaJsonPayload);
+          const parsedFigmaPayload = JSON.parse(figmaJsonPayload) as unknown;
+          const validatedFigmaPayload = safeParseFigmaPayload({
+            input: parsedFigmaPayload,
+          });
+          if (!validatedFigmaPayload.success) {
+            pushIssue(
+              issues,
+              ["figmaJsonPayload"],
+              `SCHEMA_MISMATCH: ${summarizeFigmaPayloadValidationError({
+                error: validatedFigmaPayload.error,
+              })}`,
+            );
+          }
         } catch {
           pushIssue(
             issues,

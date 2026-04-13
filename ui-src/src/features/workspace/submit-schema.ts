@@ -2,7 +2,10 @@ import { z } from "zod";
 
 const optionalString = z.string().trim().optional().or(z.literal(""));
 
-const FIGMA_PASTE_MAX_BYTES = 2 * 1024 * 1024;
+export const FIGMA_PASTE_MAX_BYTES = 6 * 1024 * 1024;
+export const FIGMA_PASTE_MAX_LABEL = `${
+  FIGMA_PASTE_MAX_BYTES / (1024 * 1024)
+} MiB`;
 
 export const workspaceSubmitSchema = z
   .object({
@@ -36,7 +39,7 @@ export const workspaceSubmitSchema = z
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["figmaJsonPayload"],
-          message: "Figma JSON payload must be 2 MiB or less.",
+          message: `Figma JSON payload must be ${FIGMA_PASTE_MAX_LABEL} or less.`,
         });
       }
       return;

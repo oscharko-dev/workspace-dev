@@ -92,6 +92,14 @@ describe("InspectorBootstrap — state-aware copy", () => {
       2,
     );
   });
+
+  it("shows the updated size limit when the payload is too large", () => {
+    renderBootstrap({
+      state: { kind: "failed", reason: "TOO_LARGE", retryable: false },
+    });
+
+    expect(screen.getByText(/limit is 6 MiB/i)).toBeInTheDocument();
+  });
 });
 
 describe("InspectorBootstrap — paste wiring", () => {

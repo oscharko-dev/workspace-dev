@@ -116,8 +116,15 @@ Not available:
   - `figmaFileKey`
   - `figmaAccessToken`
   - Workspace Dev will attempt authoritative screen-subtree recovery when the direct REST geometry payload is detected as low-fidelity.
+- `figmaSourceMode=figma_paste`:
+  - `figmaJsonPayload`
 - `figmaSourceMode=local_json`:
   - `figmaJsonPath` (local filesystem path to exported Figma JSON)
+
+`figma_paste` defaults to a `6 MiB` clipboard payload cap and uses a larger
+`8 MiB` submit transport limit only on `POST /workspace/submit`. The
+`WORKSPACE_FIGMA_PASTE_MAX_BYTES` override is still bounded by the submit
+transport budget.
 
 Optional Git/PR input:
 
