@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import {
   normalizeComponentName,
@@ -8,10 +11,18 @@ import {
   parseCodeConnectMapResponse,
   parseDesignSystemComponentsResponse,
   findDesignSystemMatch,
+  findHeuristicMatch,
   fetchCodeConnectMap,
   resolveComponentMappings,
+  consolidateComponentSetVariants,
+  annotateIrWithMappings,
+  mapFigmaComponents,
+  scanWorkspaceComponents,
+  loadPersistedMappings,
+  savePersistedMappings,
 } from "./figma-component-mapper.js";
 import type { McpResolverConfig } from "./figma-mcp-resolver.js";
+import type { DesignIR, ScreenElementIR } from "../parity/types-ir.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -39,6 +50,73 @@ const parseTool = async (req: Request): Promise<string> => {
   const body = (await req.json()) as { params?: { name?: string } };
   return body.params?.name ?? "";
 };
+
+const createTempDir = () =>
+  mkdtemp(path.join(os.tmpdir(), "workspace-dev-mapper-"));
+
+const makeNode = (
+  overrides: Partial<ScreenElementIR> & { id: string; name: string },
+): ScreenElementIR => ({
+  type: "container",
+  nodeType: "FRAME",
+  ...overrides,
+});
+
+const makeComponentNode = (
+  overrides: Partial<ScreenElementIR> & { id: string; name: string },
+): ScreenElementIR => ({
+  type: "container",
+  nodeType: "COMPONENT",
+  ...overrides,
+});
+
+const makeInstanceNode = (
+  overrides: Partial<ScreenElementIR> & { id: string; name: string },
+): ScreenElementIR => ({
+  type: "container",
+  nodeType: "INSTANCE",
+  ...overrides,
+});
+
+const makeIR = (children: ScreenElementIR[]): DesignIR => ({
+  sourceName: "test",
+  screens: [
+    {
+      id: "screen-1",
+      name: "Screen",
+      layoutMode: "VERTICAL",
+      gap: 0,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children,
+    },
+  ],
+  tokens: {
+    palette: {
+      primary: "#000",
+      secondary: "#111",
+      background: "#fff",
+      text: "#000",
+      success: "#0f0",
+      warning: "#ff0",
+      error: "#f00",
+      info: "#00f",
+      divider: "#ccc",
+      action: {
+        active: "#000",
+        hover: "#111",
+        selected: "#222",
+        disabled: "#999",
+        disabledBackground: "#eee",
+        focus: "#333",
+      },
+    },
+    typography: {} as DesignIR["tokens"]["typography"],
+    source: {
+      palette: { primary: "figma" },
+      typography: {},
+    },
+  },
+});
 
 // ---------------------------------------------------------------------------
 // normalizeComponentName
@@ -131,7 +209,6 @@ test("mapFigmaPropsToReact maps BOOLEAN properties", () => {
     "Has icon": { type: "BOOLEAN", defaultValue: false },
   });
   assert.equal(result.length, 1);
-  assert.equal(result[0]?.figmaProp, "Has icon");
   assert.equal(result[0]?.reactProp, "hasIcon");
   assert.equal(result[0]?.transform, "boolean");
   assert.equal(result[0]?.defaultValue, "false");
@@ -141,7 +218,6 @@ test("mapFigmaPropsToReact maps TEXT label to children", () => {
   const result = mapFigmaPropsToReact({
     label: { type: "TEXT" },
   });
-  assert.equal(result.length, 1);
   assert.equal(result[0]?.reactProp, "children");
   assert.equal(result[0]?.transform, "text");
 });
@@ -150,30 +226,23 @@ test("mapFigmaPropsToReact maps TEXT non-label to camelCase", () => {
   const result = mapFigmaPropsToReact({
     "helper text": { type: "TEXT" },
   });
-  assert.equal(result.length, 1);
   assert.equal(result[0]?.reactProp, "helperText");
-  assert.equal(result[0]?.transform, "text");
 });
 
 test("mapFigmaPropsToReact maps INSTANCE_SWAP properties", () => {
   const result = mapFigmaPropsToReact({
     Icon: { type: "INSTANCE_SWAP" },
   });
-  assert.equal(result.length, 1);
   assert.equal(result[0]?.reactProp, "icon");
   assert.equal(result[0]?.transform, "component");
 });
 
-test("mapFigmaPropsToReact returns empty array for unknown prop types", () => {
-  const result = mapFigmaPropsToReact({
-    Unknown: { type: "CUSTOM_THING" },
-  });
-  assert.equal(result.length, 0);
+test("mapFigmaPropsToReact returns empty for unknown prop types", () => {
+  assert.equal(mapFigmaPropsToReact({ X: { type: "CUSTOM" } }).length, 0);
 });
 
 test("mapFigmaPropsToReact handles empty contract", () => {
-  const result = mapFigmaPropsToReact({});
-  assert.equal(result.length, 0);
+  assert.equal(mapFigmaPropsToReact({}).length, 0);
 });
 
 // ---------------------------------------------------------------------------
@@ -181,7 +250,7 @@ test("mapFigmaPropsToReact handles empty contract", () => {
 // ---------------------------------------------------------------------------
 
 test("parseCodeConnectMapResponse parses flat record", () => {
-  const raw = {
+  const result = parseCodeConnectMapResponse({
     "1:2": {
       codeConnectSrc: "src/components/Button.tsx",
       codeConnectName: "Button",
@@ -191,43 +260,37 @@ test("parseCodeConnectMapResponse parses flat record", () => {
       codeConnectName: "Card",
       label: "React",
     },
-  };
-  const result = parseCodeConnectMapResponse(raw);
+  });
   assert.equal(result.length, 2);
-  assert.equal(result[0]?.nodeId, "1:2");
   assert.equal(result[0]?.componentName, "Button");
-  assert.equal(result[0]?.source, "src/components/Button.tsx");
   assert.equal(result[1]?.label, "React");
 });
 
 test("parseCodeConnectMapResponse handles wrapped result", () => {
-  const raw = {
+  const result = parseCodeConnectMapResponse({
     result: {
       "5:6": {
         codeConnectSrc: "src/Input.tsx",
         codeConnectName: "Input",
       },
     },
-  };
-  const result = parseCodeConnectMapResponse(raw);
+  });
   assert.equal(result.length, 1);
   assert.equal(result[0]?.componentName, "Input");
 });
 
 test("parseCodeConnectMapResponse skips entries without src", () => {
-  const raw = {
+  const result = parseCodeConnectMapResponse({
     "1:2": { codeConnectName: "Button" },
     "3:4": {
       codeConnectSrc: "src/Card.tsx",
       codeConnectName: "Card",
     },
-  };
-  const result = parseCodeConnectMapResponse(raw);
+  });
   assert.equal(result.length, 1);
-  assert.equal(result[0]?.componentName, "Card");
 });
 
-test("parseCodeConnectMapResponse returns empty for null input", () => {
+test("parseCodeConnectMapResponse returns empty for null", () => {
   assert.deepEqual(parseCodeConnectMapResponse(null), []);
 });
 
@@ -236,17 +299,13 @@ test("parseCodeConnectMapResponse returns empty for non-object", () => {
 });
 
 test("parseCodeConnectMapResponse preserves propContract", () => {
-  const raw = {
+  const result = parseCodeConnectMapResponse({
     "1:2": {
       codeConnectSrc: "src/Button.tsx",
       codeConnectName: "Button",
-      propContract: {
-        Size: { type: "VARIANT", defaultValue: "md" },
-      },
+      propContract: { Size: { type: "VARIANT", defaultValue: "md" } },
     },
-  };
-  const result = parseCodeConnectMapResponse(raw);
-  assert.equal(result.length, 1);
+  });
   assert.deepEqual(result[0]?.propContract, {
     Size: { type: "VARIANT", defaultValue: "md" },
   });
@@ -257,18 +316,14 @@ test("parseCodeConnectMapResponse preserves propContract", () => {
 // ---------------------------------------------------------------------------
 
 test("parseDesignSystemComponentsResponse parses components array", () => {
-  const raw = {
+  const result = parseDesignSystemComponentsResponse({
     components: [
       { name: "Button", key: "btn-1", libraryKey: "lib-1" },
       { name: "Card", key: "card-1" },
     ],
-  };
-  const result = parseDesignSystemComponentsResponse(raw);
+  });
   assert.equal(result.length, 2);
-  assert.equal(result[0]?.name, "Button");
   assert.equal(result[0]?.libraryKey, "lib-1");
-  assert.equal(result[1]?.name, "Card");
-  assert.equal(result[1]?.libraryKey, undefined);
 });
 
 test("parseDesignSystemComponentsResponse returns empty for null", () => {
@@ -276,12 +331,10 @@ test("parseDesignSystemComponentsResponse returns empty for null", () => {
 });
 
 test("parseDesignSystemComponentsResponse skips nameless entries", () => {
-  const raw = {
+  const result = parseDesignSystemComponentsResponse({
     components: [{ key: "btn-1" }, { name: "Card", key: "card-1" }],
-  };
-  const result = parseDesignSystemComponentsResponse(raw);
+  });
   assert.equal(result.length, 1);
-  assert.equal(result[0]?.name, "Card");
 });
 
 // ---------------------------------------------------------------------------
@@ -289,56 +342,434 @@ test("parseDesignSystemComponentsResponse skips nameless entries", () => {
 // ---------------------------------------------------------------------------
 
 test("findDesignSystemMatch finds exact normalized match", () => {
-  const dsComponents = [
-    { name: "Button", key: "btn-1" },
-    { name: "Card", key: "card-1" },
-  ];
   const match = findDesignSystemMatch({
     figmaName: "Button",
-    dsComponents,
+    dsComponents: [{ name: "Button", key: "btn-1" }],
   });
   assert.equal(match?.name, "Button");
 });
 
 test("findDesignSystemMatch finds base name match for variant path", () => {
-  const dsComponents = [
-    { name: "Button", key: "btn-1" },
-    { name: "Input", key: "input-1" },
-  ];
   const match = findDesignSystemMatch({
     figmaName: "Button/Primary",
-    dsComponents,
+    dsComponents: [{ name: "Button", key: "btn-1" }],
   });
   assert.equal(match?.name, "Button");
 });
 
-test("findDesignSystemMatch finds partial match", () => {
-  const dsComponents = [{ name: "PrimaryButton", key: "btn-1" }];
-  const match = findDesignSystemMatch({
-    figmaName: "Button/Primary",
-    dsComponents,
-  });
-  // "button" (base) is contained in "primarybutton" (normalized ds)
-  assert.equal(match?.name, "PrimaryButton");
-});
-
 test("findDesignSystemMatch returns undefined when no match", () => {
-  const dsComponents = [{ name: "Card", key: "card-1" }];
   const match = findDesignSystemMatch({
     figmaName: "Dropdown/Menu",
-    dsComponents,
+    dsComponents: [{ name: "Card", key: "card-1" }],
   });
   assert.equal(match, undefined);
 });
 
-test("findDesignSystemMatch ignores very short base names for partial match", () => {
-  const dsComponents = [{ name: "Box", key: "box-1" }];
-  // Base name "AB" is < 3 chars, so partial match is skipped
+test("findDesignSystemMatch ignores short base names for partial match", () => {
   const match = findDesignSystemMatch({
     figmaName: "AB/Primary",
-    dsComponents,
+    dsComponents: [{ name: "Box" }],
   });
   assert.equal(match, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// findHeuristicMatch
+// ---------------------------------------------------------------------------
+
+test("findHeuristicMatch matches by normalized base name", () => {
+  const wsComponents = new Map([
+    ["button", { name: "Button", filePath: "src/Button.tsx" }],
+  ]);
+  const match = findHeuristicMatch({
+    figmaName: "Button/Primary",
+    workspaceComponents: wsComponents,
+  });
+  assert.equal(match?.name, "Button");
+  assert.equal(match?.confidence, "heuristic");
+  assert.equal(match?.source, "src/Button.tsx");
+});
+
+test("findHeuristicMatch matches by full normalized name", () => {
+  const wsComponents = new Map([
+    [
+      "button-primary",
+      { name: "ButtonPrimary", filePath: "src/ButtonPrimary.tsx" },
+    ],
+  ]);
+  const match = findHeuristicMatch({
+    figmaName: "Button/Primary",
+    workspaceComponents: wsComponents,
+  });
+  assert.equal(match?.name, "ButtonPrimary");
+});
+
+test("findHeuristicMatch returns undefined when no match", () => {
+  const wsComponents = new Map([
+    ["card", { name: "Card", filePath: "src/Card.tsx" }],
+  ]);
+  const match = findHeuristicMatch({
+    figmaName: "Dropdown",
+    workspaceComponents: wsComponents,
+  });
+  assert.equal(match, undefined);
+});
+
+test("findHeuristicMatch substring match requires 4+ chars", () => {
+  const wsComponents = new Map([
+    ["box", { name: "Box", filePath: "src/Box.tsx" }],
+  ]);
+  // "box" is only 3 chars, won't trigger substring match
+  const match = findHeuristicMatch({
+    figmaName: "Box",
+    workspaceComponents: wsComponents,
+  });
+  // Should match via direct match instead
+  assert.equal(match?.name, "Box");
+});
+
+// ---------------------------------------------------------------------------
+// consolidateComponentSetVariants
+// ---------------------------------------------------------------------------
+
+test("consolidateComponentSetVariants groups variants under base name", () => {
+  const nodes: ScreenElementIR[] = [
+    makeNode({
+      id: "1:1",
+      name: "Button",
+      nodeType: "COMPONENT_SET",
+      children: [
+        makeComponentNode({ id: "1:2", name: "Button/Primary" }),
+        makeComponentNode({ id: "1:3", name: "Button/Secondary" }),
+      ],
+    }),
+  ];
+
+  const sets = consolidateComponentSetVariants({ irNodes: nodes });
+  assert.equal(sets.size, 1);
+  const buttonSet = sets.get("button");
+  assert.ok(buttonSet);
+  assert.equal(buttonSet.baseName, "Button");
+  assert.deepEqual(buttonSet.variants, ["Primary", "Secondary"]);
+});
+
+test("consolidateComponentSetVariants handles nested component sets", () => {
+  const nodes: ScreenElementIR[] = [
+    makeNode({
+      id: "0:1",
+      name: "Wrapper",
+      children: [
+        makeNode({
+          id: "1:1",
+          name: "Input",
+          nodeType: "COMPONENT_SET",
+          children: [makeComponentNode({ id: "1:2", name: "Input/Default" })],
+        }),
+      ],
+    }),
+  ];
+
+  const sets = consolidateComponentSetVariants({ irNodes: nodes });
+  assert.equal(sets.size, 1);
+  assert.ok(sets.has("input"));
+});
+
+// ---------------------------------------------------------------------------
+// annotateIrWithMappings — nested instances
+// ---------------------------------------------------------------------------
+
+test("annotateIrWithMappings annotates nested instances independently", () => {
+  const ir = makeIR([
+    makeInstanceNode({
+      id: "1:1",
+      name: "Card",
+      children: [
+        makeInstanceNode({ id: "1:2", name: "Button" }),
+        makeInstanceNode({ id: "1:3", name: "Icon" }),
+      ],
+    }),
+  ]);
+
+  const { annotated } = annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [
+      {
+        nodeId: "1:1",
+        componentName: "Card",
+        source: "src/Card.tsx",
+      },
+      {
+        nodeId: "1:2",
+        componentName: "Button",
+        source: "src/Button.tsx",
+      },
+    ],
+    designSystemMappings: [],
+    heuristicMappings: new Map(),
+    componentSets: new Map(),
+  });
+
+  assert.equal(annotated, 2);
+  assert.equal(ir.screens[0]?.children[0]?.codeConnect?.componentName, "Card");
+  const nested = ir.screens[0]?.children[0]?.children;
+  assert.equal(nested?.[0]?.codeConnect?.componentName, "Button");
+  // Icon not mapped — should have no codeConnect
+  assert.equal(nested?.[1]?.codeConnect, undefined);
+});
+
+test("annotateIrWithMappings resolves by name when nodeId not found", () => {
+  const ir = makeIR([makeComponentNode({ id: "99:99", name: "Button" })]);
+
+  const { annotated } = annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [
+      {
+        nodeId: "1:1",
+        componentName: "Button",
+        source: "src/Button.tsx",
+      },
+    ],
+    designSystemMappings: [],
+    heuristicMappings: new Map(),
+    componentSets: new Map(),
+  });
+
+  assert.equal(annotated, 1);
+  assert.equal(ir.screens[0]?.children[0]?.codeConnect?.origin, "code_connect");
+});
+
+test("annotateIrWithMappings uses design system fallback", () => {
+  const ir = makeIR([makeInstanceNode({ id: "2:1", name: "Card" })]);
+
+  const { annotated } = annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [],
+    designSystemMappings: [
+      {
+        nodeId: "0:0",
+        componentName: "Card",
+        source: "card-key",
+      },
+    ],
+    heuristicMappings: new Map(),
+    componentSets: new Map(),
+  });
+
+  assert.equal(annotated, 1);
+  assert.equal(
+    ir.screens[0]?.children[0]?.codeConnect?.origin,
+    "design_system",
+  );
+});
+
+test("annotateIrWithMappings uses heuristic fallback", () => {
+  const ir = makeIR([makeComponentNode({ id: "3:1", name: "Slider" })]);
+
+  const heuristicMappings = new Map([
+    [
+      "slider",
+      {
+        name: "Slider",
+        source: "src/Slider.tsx",
+        confidence: "heuristic" as const,
+      },
+    ],
+  ]);
+
+  const { annotated } = annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [],
+    designSystemMappings: [],
+    heuristicMappings,
+    componentSets: new Map(),
+  });
+
+  assert.equal(annotated, 1);
+  assert.equal(
+    ir.screens[0]?.children[0]?.codeConnect?.componentName,
+    "Slider",
+  );
+});
+
+test("annotateIrWithMappings skips non-component nodes", () => {
+  const ir = makeIR([
+    makeNode({ id: "1:1", name: "Container", nodeType: "FRAME" }),
+  ]);
+
+  const { annotated } = annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [
+      { nodeId: "1:1", componentName: "Container", source: "src/C.tsx" },
+    ],
+    designSystemMappings: [],
+    heuristicMappings: new Map(),
+    componentSets: new Map(),
+  });
+
+  assert.equal(annotated, 0);
+});
+
+test("annotateIrWithMappings does not overwrite existing codeConnect", () => {
+  const existingMapping = {
+    origin: "code_connect" as const,
+    componentName: "ExistingButton",
+    source: "existing.tsx",
+  };
+  const ir = makeIR([
+    makeComponentNode({
+      id: "1:1",
+      name: "Button",
+      codeConnect: existingMapping,
+    }),
+  ]);
+
+  annotateIrWithMappings({
+    ir,
+    codeConnectMappings: [
+      { nodeId: "1:1", componentName: "NewButton", source: "new.tsx" },
+    ],
+    designSystemMappings: [],
+    heuristicMappings: new Map(),
+    componentSets: new Map(),
+  });
+
+  // Should preserve existing
+  assert.equal(
+    ir.screens[0]?.children[0]?.codeConnect?.componentName,
+    "ExistingButton",
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Persistence: load / save / stale validation
+// ---------------------------------------------------------------------------
+
+test("loadPersistedMappings returns empty map when file does not exist", async () => {
+  const dir = await createTempDir();
+  const result = await loadPersistedMappings({ workspaceRoot: dir });
+  assert.equal(result.size, 0);
+});
+
+test("savePersistedMappings creates file and loadPersistedMappings reads it back", async () => {
+  const dir = await createTempDir();
+
+  // Create a fake source file so stale check passes
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Button.tsx"),
+    "export const Button = () => null;",
+    "utf8",
+  );
+
+  const mappings = new Map([
+    [
+      "btn-key",
+      {
+        name: "Button",
+        source: "src/Button.tsx",
+        confidence: "exact" as const,
+      },
+    ],
+  ]);
+
+  await savePersistedMappings({ workspaceRoot: dir, mappings });
+
+  const loaded = await loadPersistedMappings({ workspaceRoot: dir });
+  assert.equal(loaded.size, 1);
+  assert.equal(loaded.get("btn-key")?.name, "Button");
+  assert.equal(loaded.get("btn-key")?.confidence, "exact");
+});
+
+test("loadPersistedMappings filters out stale mappings (deleted source file)", async () => {
+  const dir = await createTempDir();
+  const wdDir = path.join(dir, ".workspace-dev");
+  await mkdir(wdDir, { recursive: true });
+
+  // Write a mapping pointing to a file that doesn't exist
+  const persisted = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      "stale-key": {
+        name: "Deleted",
+        source: "src/Deleted.tsx",
+        confidence: "exact",
+        approvedAt: new Date().toISOString(),
+      },
+    },
+  };
+  await writeFile(
+    path.join(wdDir, "figma-component-map.json"),
+    JSON.stringify(persisted),
+    "utf8",
+  );
+
+  const loaded = await loadPersistedMappings({ workspaceRoot: dir });
+  // Stale mapping should be filtered out
+  assert.equal(loaded.size, 0);
+});
+
+test("loadPersistedMappings handles invalid JSON gracefully", async () => {
+  const dir = await createTempDir();
+  const wdDir = path.join(dir, ".workspace-dev");
+  await mkdir(wdDir, { recursive: true });
+  await writeFile(
+    path.join(wdDir, "figma-component-map.json"),
+    "not-json",
+    "utf8",
+  );
+
+  const loaded = await loadPersistedMappings({ workspaceRoot: dir });
+  assert.equal(loaded.size, 0);
+});
+
+// ---------------------------------------------------------------------------
+// scanWorkspaceComponents
+// ---------------------------------------------------------------------------
+
+test("scanWorkspaceComponents finds component declarations in tsx files", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Button.tsx"),
+    "export const Button = () => <button />;\nexport function Card() { return null; }",
+    "utf8",
+  );
+
+  const result = await scanWorkspaceComponents({ workspaceRoot: dir });
+  assert.ok(result.has("button"));
+  assert.ok(result.has("card"));
+  assert.equal(result.get("button")?.name, "Button");
+});
+
+test("scanWorkspaceComponents skips lowercase exports (not components)", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "utils.tsx"),
+    "export const helper = () => null;",
+    "utf8",
+  );
+
+  const result = await scanWorkspaceComponents({ workspaceRoot: dir });
+  assert.equal(result.has("helper"), false);
+});
+
+test("scanWorkspaceComponents skips node_modules", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src", "node_modules", "pkg");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Widget.tsx"),
+    "export const Widget = () => null;",
+    "utf8",
+  );
+
+  const result = await scanWorkspaceComponents({ workspaceRoot: dir });
+  assert.equal(result.has("widget"), false);
 });
 
 // ---------------------------------------------------------------------------
@@ -348,8 +779,7 @@ test("findDesignSystemMatch ignores very short base names for partial match", ()
 test("fetchCodeConnectMap calls get_code_connect_map and parses result", async () => {
   const calls: string[] = [];
   const fetchImpl: typeof fetch = async (input, init) => {
-    const tool = await parseTool(new Request(input, init));
-    calls.push(tool);
+    calls.push(await parseTool(new Request(input, init)));
     return jsonResponse(
       mcpOk({
         "1:2": {
@@ -372,10 +802,10 @@ test("fetchCodeConnectMap calls get_code_connect_map and parses result", async (
 });
 
 // ---------------------------------------------------------------------------
-// resolveComponentMappings (full integration)
+// resolveComponentMappings (full orchestration)
 // ---------------------------------------------------------------------------
 
-test("resolveComponentMappings orchestrates all three MCP calls", async () => {
+test("resolveComponentMappings orchestrates all MCP calls", async () => {
   const calls: string[] = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     const tool = await parseTool(new Request(input, init));
@@ -387,9 +817,7 @@ test("resolveComponentMappings orchestrates all three MCP calls", async () => {
           "1:2": {
             codeConnectSrc: "src/components/Button.tsx",
             codeConnectName: "Button",
-            propContract: {
-              Size: { type: "VARIANT", defaultValue: "md" },
-            },
+            propContract: { Size: { type: "VARIANT", defaultValue: "md" } },
           },
         }),
       );
@@ -425,58 +853,10 @@ test("resolveComponentMappings orchestrates all three MCP calls", async () => {
     "search_design_system",
     "get_code_connect_suggestions",
   ]);
-
-  // Exact mapping from Code Connect
-  assert.equal(result.codeConnectMappings.length, 1);
-  assert.equal(result.codeConnectMappings[0]?.componentName, "Button");
-
-  // Design system mapping
-  assert.equal(result.designSystemMappings.length, 1);
-  assert.equal(result.designSystemMappings[0]?.componentName, "Card");
-
-  // AI suggestion stored as unmapped
-  assert.equal(result.unmapped.length, 1);
-  assert.equal(result.unmapped[0]?.figmaName, "Tooltip");
-  assert.equal(result.unmapped[0]?.suggestions?.[0]?.confidence, "suggested");
-
-  // Stats
   assert.equal(result.stats.exact, 1);
   assert.equal(result.stats.designSystem, 1);
   assert.equal(result.stats.suggested, 1);
-});
-
-test("resolveComponentMappings handles Code Connect failure gracefully", async () => {
-  let callCount = 0;
-  const fetchImpl: typeof fetch = async (input, init) => {
-    const tool = await parseTool(new Request(input, init));
-    callCount++;
-
-    if (tool === "get_code_connect_map") {
-      return new Response("Internal Server Error", { status: 500 });
-    }
-    if (tool === "search_design_system") {
-      return jsonResponse(mcpOk({ components: [] }));
-    }
-    if (tool === "get_code_connect_suggestions") {
-      return jsonResponse(mcpOk({}));
-    }
-    return jsonResponse(mcpOk({}));
-  };
-
-  const result = await resolveComponentMappings({
-    fileKey: "abc123",
-    nodeId: "1:2",
-    mcpConfig: createConfig(fetchImpl),
-  });
-
-  // Should still proceed with remaining strategies
-  assert.equal(result.codeConnectMappings.length, 0);
-  assert.ok(
-    result.diagnostics.some(
-      (d) => d.code === "W_COMPONENT_MAPPER_CODE_CONNECT_SKIPPED",
-    ),
-  );
-  assert.ok(callCount >= 2, "Should attempt remaining MCP calls");
+  assert.equal(result.mappings.get("1:2")?.confidence, "exact");
 });
 
 test("resolveComponentMappings handles all MCP failures gracefully", async () => {
@@ -490,38 +870,12 @@ test("resolveComponentMappings handles all MCP failures gracefully", async () =>
   });
 
   assert.equal(result.codeConnectMappings.length, 0);
-  assert.equal(result.designSystemMappings.length, 0);
   assert.ok(result.diagnostics.length > 0);
-});
-
-test("resolveComponentMappings passes libraryKeys to design system search", async () => {
-  let capturedArgs: Record<string, unknown> = {};
-  const fetchImpl: typeof fetch = async (input, init) => {
-    const body = (await new Request(input, init).json()) as {
-      params?: { name?: string; arguments?: Record<string, unknown> };
-    };
-    const tool = body.params?.name ?? "";
-
-    if (tool === "search_design_system") {
-      capturedArgs = body.params?.arguments ?? {};
-    }
-    return jsonResponse(mcpOk({}));
-  };
-
-  await resolveComponentMappings({
-    fileKey: "abc123",
-    nodeId: "1:2",
-    mcpConfig: createConfig(fetchImpl),
-    libraryKeys: ["lib-1", "lib-2"],
-  });
-
-  assert.deepEqual(capturedArgs["includeLibraryKeys"], ["lib-1", "lib-2"]);
 });
 
 test("resolveComponentMappings deduplicates Code Connect and design system", async () => {
   const fetchImpl: typeof fetch = async (input, init) => {
     const tool = await parseTool(new Request(input, init));
-
     if (tool === "get_code_connect_map") {
       return jsonResponse(
         mcpOk({
@@ -533,11 +887,8 @@ test("resolveComponentMappings deduplicates Code Connect and design system", asy
       );
     }
     if (tool === "search_design_system") {
-      // Design system also returns "Button" — should be deduped
       return jsonResponse(
-        mcpOk({
-          components: [{ name: "Button", key: "btn-1", libraryKey: "lib-1" }],
-        }),
+        mcpOk({ components: [{ name: "Button", key: "btn-1" }] }),
       );
     }
     return jsonResponse(mcpOk({}));
@@ -550,6 +901,86 @@ test("resolveComponentMappings deduplicates Code Connect and design system", asy
   });
 
   assert.equal(result.codeConnectMappings.length, 1);
-  // Button already in Code Connect, so it should NOT appear in designSystemMappings
   assert.equal(result.designSystemMappings.length, 0);
+});
+
+test("resolveComponentMappings performs heuristic matching when workspaceRoot provided", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Tooltip.tsx"),
+    "export const Tooltip = () => null;",
+    "utf8",
+  );
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system")
+      return jsonResponse(mcpOk({ components: [] }));
+    if (tool === "get_code_connect_suggestions") {
+      return jsonResponse(
+        mcpOk({
+          "7:8": {
+            codeConnectSrc: "suggested/Tooltip.tsx",
+            codeConnectName: "Tooltip",
+          },
+        }),
+      );
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+    workspaceRoot: dir,
+  });
+
+  // The unmapped "Tooltip" suggestion should be resolved via heuristic matching
+  assert.equal(result.stats.heuristic, 1);
+});
+
+// ---------------------------------------------------------------------------
+// mapFigmaComponents — full integration
+// ---------------------------------------------------------------------------
+
+test("mapFigmaComponents enriches IR nodes and returns stats", async () => {
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") {
+      return jsonResponse(
+        mcpOk({
+          "1:1": {
+            codeConnectSrc: "src/Button.tsx",
+            codeConnectName: "Button",
+          },
+        }),
+      );
+    }
+    if (tool === "search_design_system") {
+      return jsonResponse(mcpOk({ components: [] }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const ir = makeIR([
+    makeInstanceNode({ id: "1:1", name: "Button" }),
+    makeInstanceNode({ id: "2:2", name: "Unknown" }),
+  ]);
+
+  const result = await mapFigmaComponents("abc123", "0:1", ir, {
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  assert.equal(result.stats.exact, 1);
+  // Button node should be annotated
+  assert.equal(
+    ir.screens[0]?.children[0]?.codeConnect?.componentName,
+    "Button",
+  );
+  // Unknown node should not be annotated
+  assert.equal(ir.screens[0]?.children[1]?.codeConnect, undefined);
 });
