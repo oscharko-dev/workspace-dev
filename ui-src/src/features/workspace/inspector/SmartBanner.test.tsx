@@ -210,6 +210,74 @@ describe("SmartBanner — label updates with dropdown", () => {
     fireEvent.change(select, { target: { value: "FIGMA_JSON_NODE_BATCH" } });
     expect(getDisplayLabelSpan()).toHaveTextContent("Figma-Node JSON");
   });
+
+  it("resyncs the displayed label when a new detected intent is pushed from the parent", () => {
+    const { rerender } = render(
+      <SmartBanner
+        key="first"
+        intent="RAW_CODE_OR_TEXT"
+        confidence={1}
+        onConfirm={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", {
+      name: /erkannten typ korrigieren/i,
+    });
+    fireEvent.change(select, { target: { value: "UNKNOWN" } });
+    expect(getDisplayLabelSpan()).toHaveTextContent("Unbekannt");
+
+    rerender(
+      <SmartBanner
+        key="second"
+        intent="FIGMA_JSON_DOC"
+        confidence={0.9}
+        onConfirm={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const refreshedSelect = screen.getByRole("combobox", {
+      name: /erkannten typ korrigieren/i,
+    });
+    expect(getDisplayLabelSpan()).toHaveTextContent("Figma-Dokument JSON");
+    expect(refreshedSelect).toHaveValue("FIGMA_JSON_DOC");
+  });
+
+  it("resets the dropdown when a new detection arrives with the same intent", () => {
+    const { rerender } = render(
+      <SmartBanner
+        key="first-node-batch"
+        intent="FIGMA_JSON_NODE_BATCH"
+        confidence={0.8}
+        onConfirm={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const select = screen.getByRole("combobox", {
+      name: /erkannten typ korrigieren/i,
+    });
+    fireEvent.change(select, { target: { value: "UNKNOWN" } });
+    expect(getDisplayLabelSpan()).toHaveTextContent("Unbekannt");
+
+    rerender(
+      <SmartBanner
+        key="second-node-batch"
+        intent="FIGMA_JSON_NODE_BATCH"
+        confidence={0.95}
+        onConfirm={vi.fn()}
+        onDismiss={vi.fn()}
+      />,
+    );
+
+    const refreshedSelect = screen.getByRole("combobox", {
+      name: /erkannten typ korrigieren/i,
+    });
+    expect(getDisplayLabelSpan()).toHaveTextContent("Figma-Node JSON");
+    expect(refreshedSelect).toHaveValue("FIGMA_JSON_NODE_BATCH");
+  });
 });
 
 describe("SmartBanner — root element", () => {

@@ -212,7 +212,7 @@ test.describe("inspector bootstrap flow", () => {
   // -------------------------------------------------------------------------
   // TC-2: Paste starts job and hydrates to the inspector panel
   // -------------------------------------------------------------------------
-  test("paste submits job and hydrates into inspector panel when job completes", async ({
+  test("paste shows the banner, confirms import, and hydrates into inspector panel when job completes", async ({
     page,
   }) => {
     // Arrange: mock submit + job poll
@@ -230,6 +230,10 @@ test.describe("inspector bootstrap flow", () => {
     );
 
     await simulatePaste(page, MINIMAL_FIGMA_JSON);
+
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+    await banner.getByRole("button", { name: "Import starten" }).click();
 
     // Wait for submit to complete (confirms the POST was sent with right mode)
     const submitResponse = await submitResponsePromise;
@@ -259,7 +263,7 @@ test.describe("inspector bootstrap flow", () => {
   // -------------------------------------------------------------------------
   // TC-3: 4xx failure shows inline error; no retry button for non-retryable error
   // -------------------------------------------------------------------------
-  test("4xx submit response shows inline error and no retry button", async ({
+  test("4xx submit response after confirm shows inline error and no retry button", async ({
     page,
   }) => {
     // Arrange: mock submit to return 400 SCHEMA_MISMATCH
@@ -281,8 +285,11 @@ test.describe("inspector bootstrap flow", () => {
     await gotoInspector(page);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
-    // Act: paste something (any non-empty string triggers submit)
+    // Act: paste valid JSON and confirm import
     await simulatePaste(page, MINIMAL_FIGMA_JSON);
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+    await banner.getByRole("button", { name: "Import starten" }).click();
 
     // Assert — inline error message is displayed (role="alert" from PasteCapture)
     const errorAlert = page.locator('[role="alert"]').first();

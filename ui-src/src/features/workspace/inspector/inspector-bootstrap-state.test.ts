@@ -95,6 +95,40 @@ describe("focused state", () => {
   });
 });
 
+describe("detected state", () => {
+  const detected: InspectorBootstrapState = {
+    kind: "detected",
+    intent: "RAW_CODE_OR_TEXT",
+    confidence: 1,
+    rawText: "hello",
+    suggestedJobSource: "manual_text",
+  };
+
+  it("intent_detected replaces the stale detection payload", () => {
+    expect(
+      dispatch(detected, {
+        type: "intent_detected",
+        intent: "FIGMA_JSON_DOC",
+        confidence: 0.9,
+        rawText: '{"document":{}}',
+        suggestedJobSource: "figma_paste",
+      }),
+    ).toEqual({
+      kind: "detected",
+      intent: "FIGMA_JSON_DOC",
+      confidence: 0.9,
+      rawText: '{"document":{}}',
+      suggestedJobSource: "figma_paste",
+    });
+  });
+
+  it("intent_dismissed returns to idle", () => {
+    expect(dispatch(detected, { type: "intent_dismissed" })).toEqual({
+      kind: "idle",
+    });
+  });
+});
+
 describe("pasting state", () => {
   const pasting: InspectorBootstrapState = { kind: "pasting" };
 

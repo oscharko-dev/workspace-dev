@@ -215,7 +215,7 @@ test.describe("inspector bootstrap — paste/drop import target", () => {
   // -------------------------------------------------------------------------
   // TC-1: Happy path — valid JSON file drop
   // -------------------------------------------------------------------------
-  test("dropping a valid Figma JSON file submits and hydrates into the inspector panel", async ({
+  test("dropping a valid Figma JSON file shows the banner, confirms import, and hydrates into the inspector panel", async ({
     page,
   }) => {
     // Arrange
@@ -238,6 +238,10 @@ test.describe("inspector bootstrap — paste/drop import target", () => {
       type: "application/json",
       contents: MINIMAL_FIGMA_JSON,
     });
+
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+    await banner.getByRole("button", { name: "Import starten" }).click();
 
     // Assert — submit was sent with figmaSourceMode: "figma_paste"
     const submitResponse = await submitResponsePromise;
@@ -358,7 +362,7 @@ test.describe("inspector bootstrap — paste/drop import target", () => {
   // -------------------------------------------------------------------------
   // TC-5: Non-JSON paste ("hello")
   // -------------------------------------------------------------------------
-  test("pasting a non-JSON string shows the INVALID_PAYLOAD inline alert and does NOT submit", async ({
+  test("pasting a non-JSON string shows the smart banner and does NOT submit", async ({
     page,
   }) => {
     // Arrange
@@ -368,12 +372,9 @@ test.describe("inspector bootstrap — paste/drop import target", () => {
     // Act — paste a plain string that is not JSON
     await simulatePaste(page, "hello");
 
-    // Assert — inline alert with the INVALID_PAYLOAD copy
-    const alert = page.locator('[role="alert"]').first();
-    await expect(alert).toBeVisible({ timeout: 5_000 });
-    await expect(alert).toContainText(
-      /does not look like a figma json export/i,
-    );
+    const banner = page.getByTestId("smart-banner");
+    await expect(banner).toBeVisible({ timeout: 5_000 });
+    await expect(banner).toContainText("Code / Text");
 
     // Assert — POST /workspace/submit was NOT triggered
     await assertSubmitNotCalled(page);

@@ -23,6 +23,31 @@ const endpoints = {
     `/workspace/jobs/${encodeURIComponent(jobId)}`,
 };
 
+function toUnsupportedIntentReason({
+  detectedIntent,
+  confirmedIntent,
+  suggestedJobSource,
+}: {
+  detectedIntent: ImportIntent;
+  confirmedIntent: ImportIntent;
+  suggestedJobSource: string;
+}): string | null {
+  if (confirmedIntent === "RAW_CODE_OR_TEXT") {
+    return "UNSUPPORTED_TEXT_PASTE";
+  }
+  if (confirmedIntent === "UNKNOWN") {
+    return "UNSUPPORTED_UNKNOWN_PASTE";
+  }
+  if (
+    suggestedJobSource === "figma_plugin" &&
+    confirmedIntent === detectedIntent &&
+    detectedIntent === "FIGMA_JSON_NODE_BATCH"
+  ) {
+    return "UNSUPPORTED_PLUGIN_EXPORT";
+  }
+  return null;
+}
+
 export type PasteSource = "clipboard-api" | "paste-event" | "drop";
 
 export interface UseInspectorBootstrapOptions {
@@ -293,6 +318,19 @@ export function useInspectorBootstrap(
 
   function confirmIntent(intent: ImportIntent): void {
     if (state.kind !== "detected") {
+      return;
+    }
+    const unsupportedReason = toUnsupportedIntentReason({
+      detectedIntent: state.intent,
+      confirmedIntent: intent,
+      suggestedJobSource: state.suggestedJobSource,
+    });
+    if (unsupportedReason !== null) {
+      dispatch({
+        type: "submit_failed",
+        reason: unsupportedReason,
+        retryable: false,
+      });
       return;
     }
     const rawText = state.rawText;

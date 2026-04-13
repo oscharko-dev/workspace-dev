@@ -134,6 +134,12 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
       return "Clipboard access requires a secure (https) context.";
     case "UNSUPPORTED_FILE":
       return "Unsupported file. Please drop a .json file with the Figma export.";
+    case "UNSUPPORTED_PLUGIN_EXPORT":
+      return "Plugin export JSON cannot be imported here yet. Paste a Figma JSON export or correct the detected type before starting the import.";
+    case "UNSUPPORTED_TEXT_PASTE":
+      return "This paste looks like code or plain text, not a Figma JSON export. Paste a JSON_REST_V1 export or correct the detected type.";
+    case "UNSUPPORTED_UNKNOWN_PASTE":
+      return "This paste could not be matched to a supported Figma import path. Paste a Figma JSON export or correct the detected type.";
     default:
       return "Import failed. Please try again.";
   }
@@ -272,6 +278,7 @@ export function InspectorBootstrap({
             onConfirmIntent !== undefined &&
             onDismissIntent !== undefined ? (
               <SmartBanner
+                key={state.rawText}
                 intent={state.intent}
                 confidence={state.confidence}
                 onConfirm={onConfirmIntent}
