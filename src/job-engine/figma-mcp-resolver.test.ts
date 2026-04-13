@@ -77,12 +77,15 @@ const parseTool = async (req: Request): Promise<string> => {
 test("small design — three MCP calls: get_metadata, get_design_context, get_screenshot", async () => {
   clearResolverCache();
 
-  const calls: string[] = [];
+  const calls: Array<{ tool: string; args?: Record<string, unknown> }> = [];
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const req = new Request(input, init);
-    const tool = await parseTool(req);
-    calls.push(tool);
+    const body = (await req.json()) as {
+      params?: { name?: string; arguments?: Record<string, unknown> };
+    };
+    const tool = body.params?.name ?? "";
+    calls.push({ tool, args: body.params?.arguments });
 
     if (tool === "get_metadata") {
       return jsonResponse(mcpOk({ xml: SMALL_XML }));
@@ -104,9 +107,16 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
   const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
 
   // The three expected MCP calls (nodeId is provided so no root scan)
-  assert.equal(calls.includes("get_metadata"), true);
-  assert.equal(calls.includes("get_design_context"), true);
-  assert.equal(calls.includes("get_screenshot"), true);
+  assert.equal(calls.some((entry) => entry.tool === "get_metadata"), true);
+  assert.equal(
+    calls.some((entry) => entry.tool === "get_design_context"),
+    true,
+  );
+  assert.equal(calls.some((entry) => entry.tool === "get_screenshot"), true);
+  assert.deepEqual(
+    calls.find((entry) => entry.tool === "get_design_context")?.args,
+    { fileKey: "abc", nodeId: "1:2" },
+  );
 
   // Returned context shape
   assert.ok(typeof result.code === "string" && result.code.length > 0);
@@ -521,6 +531,98 @@ test("REST screenshot fallback provides preview when MCP falls back to REST", as
   );
 });
 
+test("REST fallback does not forward ISO lastModified timestamps as version query params", async () => {
+  clearResolverCache();
+
+  const restUrls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com") {
+      restUrls.push(url);
+      if (url.includes("/images/")) {
+        return jsonResponse({
+          images: { "1:2": "https://cdn.figma.com/rest-shot.png" },
+        });
+      }
+      return jsonResponse(
+        mcpRestNodes("1:2", { type: "FRAME", name: "Fallback" }),
+      );
+    }
+
+    return new Response("rate limited", { status: 429 });
+  };
+
+  await resolveFigmaDesignContext(
+    {
+      fileKey: "abc",
+      nodeId: "1:2",
+      version: "2026-04-13T10:00:00.000Z",
+    },
+    { ...createConfig(fetchImpl), maxRetries: 1 },
+  );
+
+  assert.equal(restUrls.length >= 2, true);
+  assert.equal(
+    restUrls.every((entry) => !new URL(entry).searchParams.has("version")),
+    true,
+  );
+});
+
+test("REST fallback retries 429 using Retry-After guidance and surfaces diagnostics", async () => {
+  clearResolverCache();
+
+  let restNodeCalls = 0;
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com" && !url.includes("/images/")) {
+      restNodeCalls += 1;
+      if (restNodeCalls === 1) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "0" },
+        });
+      }
+      return jsonResponse(
+        mcpRestNodes("1:2", { type: "FRAME", name: "Recovered" }),
+      );
+    }
+
+    if (new URL(url).hostname === "api.figma.com") {
+      return jsonResponse({
+        images: { "1:2": "https://cdn.figma.com/rest-shot.png" },
+      });
+    }
+
+    return new Response("rate limited", { status: 429 });
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    { ...createConfig(fetchImpl), maxRetries: 2 },
+  );
+
+  assert.equal(restNodeCalls, 2);
+  assert.ok(
+    (result.diagnostics ?? []).some(
+      (entry) => entry.code === "W_FIGMA_REST_RATE_LIMITED",
+    ),
+  );
+});
+
 // ---------------------------------------------------------------------------
 // REST Fallback
 // ---------------------------------------------------------------------------
@@ -562,6 +664,42 @@ test("MCP network error — falls back to REST — returns code and W_MCP_FALLBA
   assert.ok(
     diagnostics.some((d) => d.code === "W_MCP_FALLBACK_REST"),
     `Expected W_MCP_FALLBACK_REST diagnostic, got: ${JSON.stringify(diagnostics.map((d) => d.code))}`,
+  );
+});
+
+test("REST fallback treats null node documents as not-found errors", async () => {
+  clearResolverCache();
+
+  const fetchImpl: typeof fetch = async (input) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com") {
+      return jsonResponse({
+        nodes: { "1:2": null },
+      });
+    }
+
+    throw new Error("connection refused");
+  };
+
+  await assert.rejects(
+    () =>
+      resolveFigmaDesignContext(
+        { fileKey: "abc", nodeId: "1:2" },
+        { ...createConfig(fetchImpl), maxRetries: 1 },
+      ),
+    (err: unknown) => {
+      assert.equal(
+        (err as { code?: string }).code,
+        "E_FIGMA_REST_NOT_FOUND",
+      );
+      return true;
+    },
   );
 });
 
@@ -616,6 +754,71 @@ test("aborted signal causes resolveFigmaDesignContext to throw", async () => {
       resolveFigmaDesignContext(meta, config, { signal: controller.signal }),
     (err: unknown) => {
       assert.ok(err instanceof Error, "Expected Error on abort");
+      return true;
+    },
+  );
+});
+
+test("abort during root metadata resolution does not fall back to document root", async () => {
+  clearResolverCache();
+
+  let designContextCalled = false;
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+    if (tool === "get_design_context") {
+      designContextCalled = true;
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  await assert.rejects(
+    () => resolveFigmaDesignContext({ fileKey: "abc" }, createConfig(fetchImpl)),
+    (err: unknown) => {
+      assert.ok(err instanceof Error, "Expected abort error");
+      return true;
+    },
+  );
+
+  assert.equal(
+    designContextCalled,
+    false,
+    "resolveNodeId abort must not fall back to a synthetic 0:1 resolution",
+  );
+});
+
+test("abort during screenshot fetch rejects instead of returning partial context", async () => {
+  clearResolverCache();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml: SMALL_XML }));
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      throw new DOMException("The operation was aborted.", "AbortError");
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  await assert.rejects(
+    () =>
+      resolveFigmaDesignContext(
+        { fileKey: "abc", nodeId: "1:2" },
+        createConfig(fetchImpl),
+      ),
+    (err: unknown) => {
+      assert.ok(err instanceof Error, "Expected abort error");
       return true;
     },
   );
@@ -882,6 +1085,101 @@ test("no nodeId — root metadata scan is called to resolve nodeId", async () =>
 
   // The resolved nodeId should be the frame found in the root scan
   assert.equal(result.nodeId, "2:5");
+});
+
+test("metadata-based node resolution uses dataType hint when nodeId is absent", async () => {
+  clearResolverCache();
+
+  const toolCallArgs: Array<{ tool: string; nodeId?: string }> = [];
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const rawReq = new Request(input, init);
+    const body = (await rawReq.json()) as {
+      params?: { name?: string; arguments?: { nodeId?: string } };
+    };
+    const tool = body.params?.name ?? "";
+    const nodeId = body.params?.arguments?.nodeId;
+    toolCallArgs.push({ tool, nodeId });
+
+    if (tool === "get_metadata") {
+      if (nodeId === "0:1") {
+        return jsonResponse(
+          mcpOk({
+            xml:
+              '<FRAME id="2:1" name="Screen"/><COMPONENT_SET id="9:99" name="Button Variants"/>',
+          }),
+        );
+      }
+      return jsonResponse(
+        mcpOk({
+          xml: '<COMPONENT_SET id="9:99" name="Button Variants"/>',
+        }),
+      );
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", dataType: "component_set" },
+    createConfig(fetchImpl),
+  );
+
+  assert.equal(result.nodeId, "9:99");
+  assert.deepEqual(toolCallArgs[0], { tool: "get_metadata", nodeId: "0:1" });
+  assert.deepEqual(toolCallArgs[1], { tool: "get_metadata", nodeId: "9:99" });
+});
+
+test("metadata-based node resolution prefers pasteID match when available", async () => {
+  clearResolverCache();
+
+  const toolCallArgs: Array<{ tool: string; nodeId?: string }> = [];
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const rawReq = new Request(input, init);
+    const body = (await rawReq.json()) as {
+      params?: { name?: string; arguments?: { nodeId?: string } };
+    };
+    const tool = body.params?.name ?? "";
+    const nodeId = body.params?.arguments?.nodeId;
+    toolCallArgs.push({ tool, nodeId });
+
+    if (tool === "get_metadata") {
+      if (nodeId === "0:1") {
+        return jsonResponse(
+          mcpOk({
+            xml:
+              '<FRAME id="2:7" name="Other Screen"/><FRAME id="8:42" name="Pasted Screen"/><COMPONENT_SET id="9:42" name="Shared Variants"/>',
+          }),
+        );
+      }
+      return jsonResponse(
+        mcpOk({
+          xml: '<FRAME id="8:42" name="Pasted Screen"/>',
+        }),
+      );
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", dataType: "scene", pasteID: 42 },
+    createConfig(fetchImpl),
+  );
+
+  assert.equal(result.nodeId, "8:42");
+  assert.deepEqual(toolCallArgs[1], { tool: "get_metadata", nodeId: "8:42" });
 });
 
 // ---------------------------------------------------------------------------
