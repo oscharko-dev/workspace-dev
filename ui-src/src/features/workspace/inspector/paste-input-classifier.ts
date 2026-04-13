@@ -1,12 +1,20 @@
 import { isFigmaClipboard } from "./figma-clipboard-parser";
 
-export type PasteInputKind = "direct_json" | "plugin_payload_json" | "unknown";
+export type PasteInputKind =
+  | "direct_json"
+  | "plugin_payload_json"
+  | "plugin_envelope"
+  | "unknown";
 
 export type ImportIntent =
   | "FIGMA_JSON_NODE_BATCH"
   | "FIGMA_JSON_DOC"
+  | "FIGMA_PLUGIN_ENVELOPE"
   | "RAW_CODE_OR_TEXT"
   | "UNKNOWN";
+
+/** Known clipboard envelope kind values. */
+const CLIPBOARD_ENVELOPE_KINDS = new Set(["workspace-dev/figma-selection@1"]);
 
 export interface PasteClassification {
   kind: PasteInputKind;
@@ -48,6 +56,13 @@ export function classifyPasteInput(raw: string): PasteClassification {
     !Array.isArray(parsedJson)
   ) {
     const record = parsedJson as Record<string, unknown>;
+
+    if (
+      typeof record["kind"] === "string" &&
+      CLIPBOARD_ENVELOPE_KINDS.has(record["kind"])
+    ) {
+      return { kind: "plugin_envelope", rawText, parsedJson };
+    }
 
     if (record["document"] !== null && typeof record["document"] === "object") {
       return { kind: "direct_json", rawText, parsedJson };
@@ -117,6 +132,19 @@ export function classifyPasteIntent(
     !Array.isArray(parsedJson)
   ) {
     const record = parsedJson as Record<string, unknown>;
+
+    if (
+      typeof record["kind"] === "string" &&
+      CLIPBOARD_ENVELOPE_KINDS.has(record["kind"])
+    ) {
+      return {
+        intent: "FIGMA_PLUGIN_ENVELOPE",
+        confidence: 0.95,
+        suggestedJobSource: "figma_plugin",
+        rawText,
+        parsedJson,
+      };
+    }
 
     if (
       "document" in record &&

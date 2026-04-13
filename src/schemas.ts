@@ -32,6 +32,11 @@ import type {
 } from "./contracts/index.js";
 import { validateComponentMappingRule } from "./component-mapping-rules.js";
 import {
+  isClipboardEnvelope,
+  validateClipboardEnvelope,
+  summarizeEnvelopeValidationIssues,
+} from "./clipboard-envelope.js";
+import {
   safeParseFigmaPayload,
   summarizeFigmaPayloadValidationError,
 } from "./figma-payload-validation.js";
@@ -1029,6 +1034,7 @@ function parseSubmitRequest(
     if (
       normalized === "FIGMA_JSON_NODE_BATCH" ||
       normalized === "FIGMA_JSON_DOC" ||
+      normalized === "FIGMA_PLUGIN_ENVELOPE" ||
       normalized === "RAW_CODE_OR_TEXT" ||
       normalized === "UNKNOWN"
     ) {
@@ -1037,7 +1043,7 @@ function parseSubmitRequest(
     pushIssue(
       issues,
       ["importIntent"],
-      "importIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, RAW_CODE_OR_TEXT, UNKNOWN",
+      "importIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, FIGMA_PLUGIN_ENVELOPE, RAW_CODE_OR_TEXT, UNKNOWN",
     );
     return undefined;
   })();
@@ -1049,6 +1055,7 @@ function parseSubmitRequest(
     if (
       normalized === "FIGMA_JSON_NODE_BATCH" ||
       normalized === "FIGMA_JSON_DOC" ||
+      normalized === "FIGMA_PLUGIN_ENVELOPE" ||
       normalized === "RAW_CODE_OR_TEXT" ||
       normalized === "UNKNOWN"
     ) {
@@ -1057,7 +1064,7 @@ function parseSubmitRequest(
     pushIssue(
       issues,
       ["originalIntent"],
-      "originalIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, RAW_CODE_OR_TEXT, UNKNOWN",
+      "originalIntent must be one of: FIGMA_JSON_NODE_BATCH, FIGMA_JSON_DOC, FIGMA_PLUGIN_ENVELOPE, RAW_CODE_OR_TEXT, UNKNOWN",
     );
     return undefined;
   })();
@@ -1179,17 +1186,31 @@ function parseSubmitRequest(
       } else {
         try {
           const parsedFigmaPayload = JSON.parse(figmaJsonPayload) as unknown;
-          const validatedFigmaPayload = safeParseFigmaPayload({
-            input: parsedFigmaPayload,
-          });
-          if (!validatedFigmaPayload.success) {
-            pushIssue(
-              issues,
-              ["figmaJsonPayload"],
-              `SCHEMA_MISMATCH: ${summarizeFigmaPayloadValidationError({
-                error: validatedFigmaPayload.error,
-              })}`,
-            );
+          if (isClipboardEnvelope(parsedFigmaPayload)) {
+            // Validate as clipboard envelope (plugin handoff format).
+            const envelopeResult =
+              validateClipboardEnvelope(parsedFigmaPayload);
+            if (!envelopeResult.valid) {
+              pushIssue(
+                issues,
+                ["figmaJsonPayload"],
+                `SCHEMA_MISMATCH: ${summarizeEnvelopeValidationIssues(envelopeResult.issues)}`,
+              );
+            }
+          } else {
+            // Validate as full Figma document JSON.
+            const validatedFigmaPayload = safeParseFigmaPayload({
+              input: parsedFigmaPayload,
+            });
+            if (!validatedFigmaPayload.success) {
+              pushIssue(
+                issues,
+                ["figmaJsonPayload"],
+                `SCHEMA_MISMATCH: ${summarizeFigmaPayloadValidationError({
+                  error: validatedFigmaPayload.error,
+                })}`,
+              );
+            }
           }
         } catch {
           pushIssue(

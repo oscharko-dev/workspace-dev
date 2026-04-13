@@ -84,6 +84,46 @@ describe("classifyPasteInput — plugin_payload_json detection", () => {
   });
 });
 
+describe("classifyPasteInput — plugin_envelope detection", () => {
+  it("valid envelope kind → plugin_envelope", () => {
+    const payload = JSON.stringify({
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    });
+    const result = classifyPasteInput(payload);
+    expect(result.kind).toBe("plugin_envelope");
+    expect(result.parsedJson).toBeDefined();
+  });
+
+  it("unknown envelope kind → direct_json (not recognized as envelope)", () => {
+    const payload = JSON.stringify({
+      kind: "workspace-dev/figma-selection@99",
+      selections: [],
+    });
+    const result = classifyPasteInput(payload);
+    expect(result.kind).toBe("direct_json");
+  });
+
+  it("envelope takes priority over document field detection", () => {
+    const payload = JSON.stringify({
+      kind: "workspace-dev/figma-selection@1",
+      document: { id: "0:0" },
+      selections: [],
+    });
+    const result = classifyPasteInput(payload);
+    expect(result.kind).toBe("plugin_envelope");
+  });
+});
+
 describe("classifyPasteInput — array at top level", () => {
   it("array → direct_json (lenient fallback)", () => {
     const result = classifyPasteInput('[{"id":1},{"id":2}]');
@@ -221,6 +261,47 @@ describe("classifyPasteIntent — FIGMA_JSON_NODE_BATCH array of nodes", () => {
     expect(result.intent).toBe("RAW_CODE_OR_TEXT");
     expect(result.confidence).toBe(0.7);
     expect(result.suggestedJobSource).toBe("manual_text");
+  });
+});
+
+describe("classifyPasteIntent — FIGMA_PLUGIN_ENVELOPE", () => {
+  it("valid envelope kind → FIGMA_PLUGIN_ENVELOPE confidence 0.95 figma_plugin", () => {
+    const payload = JSON.stringify({
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    });
+    const result = classifyPasteIntent(payload);
+    expect(result.intent).toBe("FIGMA_PLUGIN_ENVELOPE");
+    expect(result.confidence).toBe(0.95);
+    expect(result.suggestedJobSource).toBe("figma_plugin");
+  });
+
+  it("envelope detection takes priority over document detection", () => {
+    const payload = JSON.stringify({
+      kind: "workspace-dev/figma-selection@1",
+      document: { id: "0:0", children: [] },
+      selections: [],
+    });
+    const result = classifyPasteIntent(payload);
+    expect(result.intent).toBe("FIGMA_PLUGIN_ENVELOPE");
+  });
+
+  it("unknown envelope kind falls through to other classifiers", () => {
+    const payload = JSON.stringify({
+      kind: "workspace-dev/figma-selection@99",
+      document: { id: "0:0", children: [] },
+    });
+    const result = classifyPasteIntent(payload);
+    expect(result.intent).toBe("FIGMA_JSON_DOC");
   });
 });
 

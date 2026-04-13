@@ -11,6 +11,7 @@ export interface SmartBannerProps {
 const INTENT_LABELS: Record<ImportIntent, string> = {
   FIGMA_JSON_NODE_BATCH: "Figma-Node JSON",
   FIGMA_JSON_DOC: "Figma-Dokument JSON",
+  FIGMA_PLUGIN_ENVELOPE: "Plugin Export",
   RAW_CODE_OR_TEXT: "Code / Text",
   UNKNOWN: "Unbekannt",
 };
@@ -18,6 +19,7 @@ const INTENT_LABELS: Record<ImportIntent, string> = {
 const ALL_INTENTS: readonly ImportIntent[] = [
   "FIGMA_JSON_NODE_BATCH",
   "FIGMA_JSON_DOC",
+  "FIGMA_PLUGIN_ENVELOPE",
   "RAW_CODE_OR_TEXT",
   "UNKNOWN",
 ];

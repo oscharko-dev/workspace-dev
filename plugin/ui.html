@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: Inter, system-ui, -apple-system, sans-serif;
+        font-size: 13px;
+        color: #333;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        min-height: 100vh;
+      }
+      h2 {
+        font-size: 14px;
+        font-weight: 600;
+      }
+      p {
+        font-size: 12px;
+        color: #666;
+        line-height: 1.4;
+      }
+      button {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .btn-primary {
+        background: #4eba87;
+        color: #fff;
+      }
+      .btn-primary:hover {
+        background: #3da876;
+      }
+      .btn-primary:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .btn-secondary {
+        background: #f0f0f0;
+        color: #333;
+      }
+      .btn-secondary:hover {
+        background: #e0e0e0;
+      }
+      #status {
+        font-size: 12px;
+        min-height: 18px;
+      }
+      .status-error {
+        color: #d32f2f;
+      }
+      .status-success {
+        color: #4eba87;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <h2>WorkspaceDev Export</h2>
+    <p>
+      Select layers in Figma, then click <strong>Copy to Clipboard</strong>.
+      Paste the result into the WorkspaceDev Inspector.
+    </p>
+    <div class="actions">
+      <button id="export-btn" class="btn-primary">Copy to Clipboard</button>
+      <button id="download-btn" class="btn-secondary">Download JSON</button>
+    </div>
+    <div id="status"></div>
+
+    <script>
+      const exportBtn = document.getElementById("export-btn");
+      const downloadBtn = document.getElementById("download-btn");
+      const statusEl = document.getElementById("status");
+
+      let lastPayload = null;
+
+      exportBtn.addEventListener("click", () => {
+        exportBtn.disabled = true;
+        statusEl.textContent = "";
+        statusEl.className = "";
+        parent.postMessage({ pluginMessage: { type: "export-selection" } }, "*");
+      });
+
+      downloadBtn.addEventListener("click", () => {
+        if (!lastPayload) {
+          statusEl.textContent = "Nothing to download. Export first.";
+          statusEl.className = "status-error";
+          return;
+        }
+        downloadJson(lastPayload);
+      });
+
+      window.onmessage = async (event) => {
+        const msg = event.data.pluginMessage;
+        if (!msg) return;
+
+        if (msg.type === "copy-to-clipboard") {
+          lastPayload = msg.payload;
+          try {
+            await navigator.clipboard.writeText(msg.payload);
+            statusEl.textContent = "Copied to clipboard!";
+            statusEl.className = "status-success";
+          } catch {
+            // Clipboard API may not be available in all contexts.
+            statusEl.textContent =
+              "Clipboard write failed. Use Download instead.";
+            statusEl.className = "status-error";
+          }
+          exportBtn.disabled = false;
+        }
+
+        if (msg.type === "status") {
+          statusEl.textContent = msg.message;
+          statusEl.className = "";
+        }
+
+        if (msg.type === "error") {
+          statusEl.textContent = msg.message;
+          statusEl.className = "status-error";
+          exportBtn.disabled = false;
+        }
+      };
+
+      function downloadJson(payload) {
+        const blob = new Blob([payload], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "workspace-dev-export.json";
+        a.click();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = "Downloaded!";
+        statusEl.className = "status-success";
+      }
+    </script>
+  </body>
+</html>
