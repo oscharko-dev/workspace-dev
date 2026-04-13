@@ -368,6 +368,18 @@ test("generateCssCustomProperties — opacity values have no unit", () => {
   assert.ok(!css.includes("0.38px"));
 });
 
+test("generateCssCustomProperties — numeric typography values use px units", () => {
+  const vars: FigmaMcpVariableDefinition[] = [
+    {
+      name: "font/size/lg",
+      kind: "number",
+      value: 18,
+    },
+  ];
+  const css = generateCssCustomProperties(vars);
+  assert.ok(css.includes("--font-size-lg: 18px;"));
+});
+
 // ---------------------------------------------------------------------------
 // generateTailwindExtension
 // ---------------------------------------------------------------------------
@@ -452,6 +464,32 @@ test("mergeVariablesWithExisting — no conflicts when values match", () => {
   ];
   const { conflicts } = mergeVariablesWithExisting({ incoming, existing });
   assert.equal(conflicts.length, 0);
+});
+
+test("mergeVariablesWithExisting — preserves distinct variable modes", () => {
+  const existing: FigmaMcpVariableDefinition[] = [
+    {
+      name: "color/background/default",
+      kind: "color",
+      value: "#FFFFFF",
+      modeName: "Light",
+    },
+  ];
+  const incoming: FigmaMcpVariableDefinition[] = [
+    {
+      name: "color/background/default",
+      kind: "color",
+      value: "#121212",
+      modeName: "Dark",
+    },
+  ];
+
+  const { merged, conflicts } = mergeVariablesWithExisting({ incoming, existing });
+
+  assert.equal(conflicts.length, 0);
+  assert.equal(merged.length, 2);
+  assert.ok(merged.some((entry) => entry.modeName === "Light"));
+  assert.ok(merged.some((entry) => entry.modeName === "Dark"));
 });
 
 test("mergeVariablesWithExisting — empty inputs return empty", () => {
@@ -604,6 +642,8 @@ test("resolveFigmaTokens — full happy path with variables and design system", 
 
   // Styles resolved
   assert.ok(result.styleCatalog.length >= 1);
+  assert.equal(result.designTokens.palette.primary, "#3B82F6");
+  assert.equal(result.designTokens.spacingBase, 8);
 
   // CSS generated
   assert.ok(
@@ -622,6 +662,7 @@ test("resolveFigmaTokens — full happy path with variables and design system", 
 
   // No conflicts (no existing tokens)
   assert.equal(result.conflicts.length, 0);
+  assert.deepEqual(result.libraryKeys, ["lib-main"]);
 
   // Library key diagnostic
   const libDiag = result.diagnostics.find(
@@ -722,8 +763,11 @@ test("resolveFigmaTokens — no variables returns empty result with valid shape"
 
   assert.deepEqual(result.variables, []);
   assert.deepEqual(result.styleCatalog, []);
+  assert.equal(typeof result.designTokens.palette.primary, "string");
   assert.equal(result.cssCustomProperties, "");
   assert.equal(result.tailwindExtension, undefined);
+  assert.deepEqual(result.libraryKeys, []);
+  assert.deepEqual(result.modeAlternatives, {});
   assert.deepEqual(result.conflicts, []);
   assert.deepEqual(result.unmappedVariables, []);
 });
@@ -811,6 +855,150 @@ test("resolveFigmaTokens — library styles override raw variable names", async 
     renamed.aliases?.includes("raw/color/1"),
     "Original name should be in aliases",
   );
+});
+
+test("resolveFigmaTokens — preserves styles with same name but different style types", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [],
+          styles: [
+            {
+              name: "Shared/Token",
+              styleType: "TEXT",
+              fontSizePx: 18,
+            },
+            {
+              name: "Shared/Token",
+              styleType: "FILL",
+              color: "#3B82F6",
+            },
+          ],
+          variables: [],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  assert.equal(result.styleCatalog.length, 2);
+  assert.ok(
+    result.styleCatalog.some(
+      (entry) => entry.name === "Shared/Token" && entry.styleType === "TEXT",
+    ),
+  );
+  assert.ok(
+    result.styleCatalog.some(
+      (entry) => entry.name === "Shared/Token" && entry.styleType === "FILL",
+    ),
+  );
+});
+
+test("resolveFigmaTokens — includes selection styles returned by get_variable_defs", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            { name: "font/size/body", resolvedValue: 16, type: "FLOAT" },
+          ],
+          styles: [
+            {
+              name: "Body/Large",
+              styleType: "TEXT",
+              fontSizePx: 16,
+              fontWeight: 500,
+              lineHeightPx: 24,
+            },
+          ],
+        }),
+      );
+    }
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(mcpOk({ components: [], styles: [], variables: [] }));
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  assert.ok(
+    result.styleCatalog.some(
+      (entry) => entry.name === "Body/Large" && entry.styleType === "TEXT",
+    ),
+  );
+  assert.equal(result.designTokens.tokenSource?.typography, "styles");
+});
+
+test("resolveFigmaTokens — preserves mode alternatives and prefers light/default tokens for canonical output", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            {
+              name: "color/primary",
+              resolvedValue: "#3B82F6",
+              type: "COLOR",
+              mode: "Light",
+            },
+            {
+              name: "color/primary",
+              resolvedValue: "#60A5FA",
+              type: "COLOR",
+              mode: "Dark",
+            },
+          ],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({ components: [], styles: [], variables: [] }));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  assert.equal(result.variables.length, 2);
+  assert.deepEqual(result.modeAlternatives, {
+    "color-primary": {
+      Light: "#3B82F6",
+      Dark: "#60A5FA",
+    },
+  });
+  assert.equal(result.designTokens.palette.primary, "#3B82F6");
 });
 
 // ---------------------------------------------------------------------------
