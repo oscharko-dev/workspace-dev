@@ -1,6 +1,6 @@
 import type { JSX, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../../lib/http";
 import { useInspectorBootstrap } from "./useInspectorBootstrap";
@@ -185,7 +185,9 @@ describe("useInspectorBootstrap — 400 SCHEMA_MISMATCH", () => {
     });
 
     expect(result.current.jobId).toBe("job-recovered");
-    expect(result.current.previewUrl).toBe("http://localhost/recovered-preview");
+    expect(result.current.previewUrl).toBe(
+      "http://localhost/recovered-preview",
+    );
   });
 });
 
@@ -415,6 +417,178 @@ describe("useInspectorBootstrap — polling failures", () => {
 
     if (result.current.state.kind === "failed") {
       expect(result.current.state.reason).toBe("POLL_FAILED");
+      expect(result.current.state.retryable).toBe(true);
+    }
+  });
+});
+
+describe("useInspectorBootstrap — submitPaste secure context", () => {
+  it("submitPaste with source='drop' does NOT short-circuit even when isSecureContext is false", async () => {
+    // Simulate insecure context
+    const originalIsSecureContext = window.isSecureContext;
+    Object.defineProperty(window, "isSecureContext", {
+      value: false,
+      configurable: true,
+    });
+
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-drop" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-drop") {
+        return createJsonResponse({
+          payload: { jobId: "job-drop", status: "queued" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      { wrapper: makeWrapper() },
+    );
+
+    result.current.submitPaste('{"document":{}}', { source: "drop" });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("queued");
+    });
+
+    // Restore
+    Object.defineProperty(window, "isSecureContext", {
+      value: originalIsSecureContext,
+      configurable: true,
+    });
+  });
+
+  it("submitPaste with source='clipboard-api' short-circuits to failed when isSecureContext is false", async () => {
+    const originalIsSecureContext = window.isSecureContext;
+    Object.defineProperty(window, "isSecureContext", {
+      value: false,
+      configurable: true,
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste('{"document":{}}', {
+        source: "clipboard-api",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("SECURE_CONTEXT_MISSING");
+      expect(result.current.state.retryable).toBe(false);
+    }
+
+    Object.defineProperty(window, "isSecureContext", {
+      value: originalIsSecureContext,
+      configurable: true,
+    });
+  });
+});
+
+describe("useInspectorBootstrap — submitPaste classifier fast-reject", () => {
+  it("empty string short-circuits to EMPTY_INPUT without calling fetchJson", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste("");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("EMPTY_INPUT");
+      expect(result.current.state.retryable).toBe(true);
+    }
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("non-JSON text short-circuits to INVALID_PAYLOAD without calling fetchJson", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.submitPaste("hello");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("INVALID_PAYLOAD");
+      expect(result.current.state.retryable).toBe(true);
+    }
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("valid JSON still calls fetchJson", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-classifier" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-classifier") {
+        return createJsonResponse({
+          payload: { jobId: "job-classifier", status: "queued" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(
+      () => useInspectorBootstrap({ pollIntervalMs: 50 }),
+      { wrapper: makeWrapper() },
+    );
+
+    result.current.submitPaste('{"document":{}}');
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("queued");
+    });
+
+    expect(fetchJsonMock).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "/workspace/submit" }),
+    );
+  });
+});
+
+describe("useInspectorBootstrap — reportInputError", () => {
+  it("reportInputError('UNSUPPORTED_FILE') transitions to failed with retryable=true", async () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    expect(result.current.state.kind).toBe("idle");
+
+    await act(async () => {
+      result.current.reportInputError("UNSUPPORTED_FILE");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    if (result.current.state.kind === "failed") {
+      expect(result.current.state.reason).toBe("UNSUPPORTED_FILE");
       expect(result.current.state.retryable).toBe(true);
     }
   });

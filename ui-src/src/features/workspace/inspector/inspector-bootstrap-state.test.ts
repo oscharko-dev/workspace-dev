@@ -40,14 +40,14 @@ describe("idle state", () => {
     expect(dispatch(idle, { type: "submit_accepted", jobId: "j1" })).toBe(idle);
   });
 
-  it("submit_failed is a no-op", () => {
+  it("submit_failed → failed (supports reportInputError from idle)", () => {
     expect(
       dispatch(idle, {
         type: "submit_failed",
-        reason: "err",
-        retryable: false,
+        reason: "UNSUPPORTED_FILE",
+        retryable: true,
       }),
-    ).toBe(idle);
+    ).toEqual({ kind: "failed", reason: "UNSUPPORTED_FILE", retryable: true });
   });
 
   it("poll_updated is a no-op", () => {
@@ -82,6 +82,16 @@ describe("focused state", () => {
     expect(dispatch(focused, { type: "submit_accepted", jobId: "j1" })).toBe(
       focused,
     );
+  });
+
+  it("submit_failed → failed (supports reportInputError from focused)", () => {
+    expect(
+      dispatch(focused, {
+        type: "submit_failed",
+        reason: "TOO_LARGE",
+        retryable: true,
+      }),
+    ).toEqual({ kind: "failed", reason: "TOO_LARGE", retryable: true });
   });
 });
 

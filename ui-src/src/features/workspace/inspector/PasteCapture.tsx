@@ -2,13 +2,18 @@ import {
   useCallback,
   useId,
   useRef,
+  useState,
   type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type JSX,
 } from "react";
+import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 
 export interface PasteCaptureProps {
   disabled: boolean;
   onPaste: (text: string) => void;
+  onDropFile?: (text: string) => void;
+  onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   errorMessage?: string;
   helperHint?: string;
 }
@@ -23,9 +28,19 @@ const EXAMPLE_SNIPPET = `{
   "schemaVersion": "JSON_REST_V1"
 }`;
 
+function isJsonFile(file: File): boolean {
+  return (
+    file.name.endsWith(".json") ||
+    file.type === "application/json" ||
+    file.type === "text/plain"
+  );
+}
+
 export function PasteCapture({
   disabled,
   onPaste,
+  onDropFile,
+  onError,
   errorMessage,
   helperHint,
 }: PasteCaptureProps): JSX.Element {
@@ -35,6 +50,8 @@ export function PasteCapture({
   const promptId = `${reactId}-prompt`;
   const errorId = `${reactId}-error`;
   const hintId = `${reactId}-hint`;
+
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   const describedByIds = [promptId];
   if (helperHint) {
@@ -67,12 +84,80 @@ export function PasteCapture({
     [disabled, onPaste],
   );
 
+  const handleDragOver = useCallback(
+    (event: ReactDragEvent<HTMLElement>): void => {
+      if (disabled) {
+        return;
+      }
+      event.preventDefault();
+      const types = Array.from(event.dataTransfer.types);
+      if (types.includes("Files") || types.includes("text/plain")) {
+        setIsDraggingOver(true);
+        event.dataTransfer.dropEffect = "copy";
+      }
+    },
+    [disabled],
+  );
+
+  const handleDragLeave = useCallback(
+    (event: ReactDragEvent<HTMLElement>): void => {
+      if (disabled) {
+        return;
+      }
+      const currentTarget = event.currentTarget;
+      const relatedTarget = event.relatedTarget as Node | null;
+      if (!currentTarget.contains(relatedTarget)) {
+        setIsDraggingOver(false);
+      }
+    },
+    [disabled],
+  );
+
+  const handleDrop = useCallback(
+    (event: ReactDragEvent<HTMLElement>): void => {
+      if (disabled) {
+        return;
+      }
+      event.preventDefault();
+      setIsDraggingOver(false);
+
+      const firstFile = event.dataTransfer.files.item(0);
+      if (firstFile !== null) {
+        if (firstFile.size > FIGMA_PASTE_MAX_BYTES) {
+          onError?.("TOO_LARGE");
+          return;
+        }
+
+        if (!isJsonFile(firstFile)) {
+          onError?.("UNSUPPORTED_FILE");
+          return;
+        }
+
+        void firstFile.text().then((text) => {
+          (onDropFile ?? onPaste)(text);
+        });
+        return;
+      }
+
+      const plainText = event.dataTransfer.getData("text/plain");
+      if (plainText.length > 0) {
+        onPaste(plainText);
+      }
+    },
+    [disabled, onDropFile, onPaste, onError],
+  );
+
   return (
     <section
       role="region"
       aria-label="Paste area"
       onClick={handleRegionClick}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={`group relative flex h-full w-full cursor-text flex-col items-center justify-center gap-4 rounded-lg border border-dashed px-6 py-8 transition focus-within:border-[#4eba87] focus-within:ring-2 focus-within:ring-[#4eba87]/40 ${
+        isDraggingOver ? "ring-2 ring-[#4eba87]/60" : ""
+      } ${
         disabled
           ? "pointer-events-none cursor-not-allowed border-white/10 bg-[#0b0b0b] opacity-60"
           : "border-white/15 bg-[#101010] hover:border-white/30"

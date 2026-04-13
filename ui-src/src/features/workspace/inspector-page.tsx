@@ -193,11 +193,25 @@ function BootstrapView(): JSX.Element {
 
   const handlePaste = useCallback(
     (text: string): void => {
-      bootstrap.submit({ figmaJsonPayload: text });
+      bootstrap.submitPaste(text, { source: "paste-event" });
     },
     // `bootstrap` is a stable reference to the hook's return object; we re-run
     // when the object identity changes so we always submit via the latest
     // closure. The listed dep is intentional.
+    [bootstrap],
+  );
+
+  const handleDropFile = useCallback(
+    (text: string): void => {
+      bootstrap.submitPaste(text, { source: "drop" });
+    },
+    [bootstrap],
+  );
+
+  const handleError = useCallback(
+    (code: "TOO_LARGE" | "UNSUPPORTED_FILE"): void => {
+      bootstrap.reportInputError(code);
+    },
     [bootstrap],
   );
 
@@ -224,6 +238,8 @@ function BootstrapView(): JSX.Element {
     <InspectorBootstrap
       state={bootstrap.state}
       onPaste={handlePaste}
+      onDropFile={handleDropFile}
+      onError={handleError}
       onRetry={handleRetry}
     />
   );
