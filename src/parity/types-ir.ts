@@ -223,6 +223,7 @@ export type ScreenElementType =
   | "badge"
   | "divider"
   | "navigation"
+  // Design-context path types (Issue #1002) — only produced by ir-design-context.ts
   | "frame"
   | "component"
   | "instance"

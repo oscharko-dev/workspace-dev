@@ -228,7 +228,6 @@ export const transformDesignContextToScreens = ({
     nodeId: string;
     document: unknown;
   }>;
-  enrichment?: FigmaMcpEnrichment;
 }): ScreenIR[] =>
   authoritativeSubtrees.map((subtree): ScreenIR => {
     const doc = subtree.document;
@@ -322,7 +321,6 @@ export const transformDesignContextToDesignIr = ({
 }): DesignIR => {
   const screens = transformDesignContextToScreens({
     authoritativeSubtrees,
-    ...(enrichment !== undefined ? { enrichment } : {}),
   });
   const tokens = transformDesignContextToTokens(
     enrichment !== undefined ? { enrichment } : {},

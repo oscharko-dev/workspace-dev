@@ -4,6 +4,7 @@ import {
   mapFigmaNodeTypeToIrElementType,
   transformNodeToScreenElement,
   transformDesignContextToScreens,
+  transformDesignContextToTokens,
   transformDesignContextToDesignIr,
 } from "./ir-design-context.js";
 import type { ScreenElementIR, ScreenIR } from "./types.js";
@@ -530,6 +531,46 @@ describe("transformDesignContextToDesignIr", () => {
       ],
     });
     assert.equal(result.metrics!.screenElementCounts[0]!.elements, 3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// transformDesignContextToTokens
+// ---------------------------------------------------------------------------
+
+describe("transformDesignContextToTokens", () => {
+  it("returns DesignTokens with expected structure when called without enrichment", () => {
+    const tokens = transformDesignContextToTokens({});
+    assert.ok(tokens.palette);
+    assert.ok(typeof tokens.palette.primary === "string");
+    assert.ok(typeof tokens.palette.background === "string");
+    assert.ok(typeof tokens.borderRadius === "number");
+    assert.ok(typeof tokens.spacingBase === "number");
+    assert.ok(typeof tokens.fontFamily === "string");
+    assert.ok(typeof tokens.headingSize === "number");
+    assert.ok(typeof tokens.bodySize === "number");
+    assert.ok(tokens.typography);
+  });
+
+  it("returns DesignTokens when called with enrichment containing variables", () => {
+    const tokens = transformDesignContextToTokens({
+      enrichment: {
+        sourceMode: "hybrid",
+        nodeHints: [],
+        variables: [
+          {
+            name: "color/primary",
+            resolvedValue: "#1976D2",
+            collectionName: "colors",
+            modeName: "default",
+          },
+        ],
+        toolNames: ["get_design_context"],
+      },
+    });
+    assert.ok(tokens.palette);
+    assert.ok(typeof tokens.borderRadius === "number");
+    assert.ok(tokens.typography);
   });
 });
 

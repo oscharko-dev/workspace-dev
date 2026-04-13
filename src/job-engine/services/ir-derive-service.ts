@@ -969,18 +969,19 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
 
     // Design-context derivation path (Issue #1002): when authoritative subtrees
     // are available, derive IR directly from the structured Figma node tree.
+    const enrichmentSubtrees = hybridMcpEnrichment?.authoritativeSubtrees;
     const hasAuthoritativeSubtrees =
-      hybridMcpEnrichment?.authoritativeSubtrees !== undefined &&
-      hybridMcpEnrichment.authoritativeSubtrees.length > 0 &&
-      hybridMcpEnrichment.authoritativeSubtrees.some(
+      enrichmentSubtrees !== undefined &&
+      enrichmentSubtrees.length > 0 &&
+      enrichmentSubtrees.some(
         (s) => s.document !== null && s.document !== undefined,
       );
 
     if (hasAuthoritativeSubtrees) {
       try {
         derived = transformDesignContextToDesignIr({
-          authoritativeSubtrees: hybridMcpEnrichment.authoritativeSubtrees!,
-          enrichment: hybridMcpEnrichment,
+          authoritativeSubtrees: enrichmentSubtrees,
+          ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {}),
           sourceName: figmaFetch.file.name ?? "Figma Design Context",
         });
         context.log({
