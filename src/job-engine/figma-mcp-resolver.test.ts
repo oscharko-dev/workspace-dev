@@ -372,7 +372,7 @@ test("429 exhausted for MCP — falls back to REST — diagnostics contain W_MCP
           : (input as Request).url;
 
     // REST fallback (api.figma.com) succeeds
-    if (url.includes("api.figma.com")) {
+    if (new URL(url).hostname === "api.figma.com") {
       return jsonResponse(
         mcpRestNodes("1:2", { type: "FRAME", name: "Fallback" }),
       );
@@ -415,7 +415,7 @@ test("MCP network error — falls back to REST — returns code and W_MCP_FALLBA
           ? input.href
           : (input as Request).url;
 
-    if (url.includes("api.figma.com")) {
+    if (new URL(url).hostname === "api.figma.com") {
       return jsonResponse(
         mcpRestNodes("1:2", { type: "FRAME", name: "RestFrame" }),
       );
@@ -800,7 +800,7 @@ test("MCP error envelope in response body — throws E_MCP_SERVER_ERROR", async 
         : input instanceof URL
           ? input.href
           : (input as Request).url;
-    if (url.includes("api.figma.com")) {
+    if (new URL(url).hostname === "api.figma.com") {
       return jsonResponse(mcpRestNodes("1:2", { type: "FRAME" }));
     }
     return jsonResponse({ error: { message: "internal tool failure" } });
