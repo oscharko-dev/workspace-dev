@@ -15,6 +15,7 @@ import type {
 } from "../contracts/index.js";
 import {
   isClipboardEnvelope,
+  looksLikeClipboardEnvelope,
   normalizeEnvelopeToFigmaFile,
   validateClipboardEnvelope,
   summarizeEnvelopeValidationIssues,
@@ -1915,11 +1916,13 @@ export function createWorkspaceRequestHandler({
             "INVALID_PAYLOAD:",
             "TOO_LARGE:",
             "SCHEMA_MISMATCH:",
+            "UNSUPPORTED_CLIPBOARD_KIND:",
           ] as const;
           type FigmaPasteErrorCode =
             | "INVALID_PAYLOAD"
             | "TOO_LARGE"
-            | "SCHEMA_MISMATCH";
+            | "SCHEMA_MISMATCH"
+            | "UNSUPPORTED_CLIPBOARD_KIND";
           const pasteIssue = parsed.error.issues.find((issue) =>
             figmaPasteErrorPrefixes.some((prefix) =>
               issue.message.startsWith(prefix),
@@ -2018,12 +2021,15 @@ export function createWorkspaceRequestHandler({
           let normalizedPayload = pastePayload;
           try {
             const parsedPayload = JSON.parse(pastePayload) as unknown;
-            if (isClipboardEnvelope(parsedPayload)) {
+            if (looksLikeClipboardEnvelope(parsedPayload)) {
               const envelopeResult = validateClipboardEnvelope(parsedPayload);
               if (!envelopeResult.valid) {
+                const errorCode = isClipboardEnvelope(parsedPayload)
+                  ? "SCHEMA_MISMATCH"
+                  : "UNSUPPORTED_CLIPBOARD_KIND";
                 sendValidationError({
                   payload: {
-                    error: "SCHEMA_MISMATCH",
+                    error: errorCode,
                     message: `Clipboard envelope validation failed: ${summarizeEnvelopeValidationIssues(envelopeResult.issues)}`,
                   },
                   fallbackMessage: "Submit request validation failed.",

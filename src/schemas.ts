@@ -33,6 +33,7 @@ import type {
 import { validateComponentMappingRule } from "./component-mapping-rules.js";
 import {
   isClipboardEnvelope,
+  looksLikeClipboardEnvelope,
   validateClipboardEnvelope,
   summarizeEnvelopeValidationIssues,
 } from "./clipboard-envelope.js";
@@ -1186,15 +1187,18 @@ function parseSubmitRequest(
       } else {
         try {
           const parsedFigmaPayload = JSON.parse(figmaJsonPayload) as unknown;
-          if (isClipboardEnvelope(parsedFigmaPayload)) {
+          if (looksLikeClipboardEnvelope(parsedFigmaPayload)) {
             // Validate as clipboard envelope (plugin handoff format).
             const envelopeResult =
               validateClipboardEnvelope(parsedFigmaPayload);
             if (!envelopeResult.valid) {
+              const issuePrefix = isClipboardEnvelope(parsedFigmaPayload)
+                ? "SCHEMA_MISMATCH"
+                : "UNSUPPORTED_CLIPBOARD_KIND";
               pushIssue(
                 issues,
                 ["figmaJsonPayload"],
-                `SCHEMA_MISMATCH: ${summarizeEnvelopeValidationIssues(envelopeResult.issues)}`,
+                `${issuePrefix}: ${summarizeEnvelopeValidationIssues(envelopeResult.issues)}`,
               );
             }
           } else {

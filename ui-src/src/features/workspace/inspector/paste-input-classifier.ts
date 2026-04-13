@@ -15,6 +15,14 @@ export type ImportIntent =
 
 /** Known clipboard envelope kind values. */
 const CLIPBOARD_ENVELOPE_KINDS = new Set(["workspace-dev/figma-selection@1"]);
+const CLIPBOARD_ENVELOPE_KIND_PREFIX = "workspace-dev/figma-selection@";
+
+function looksLikeClipboardEnvelopeKind(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    value.startsWith(CLIPBOARD_ENVELOPE_KIND_PREFIX)
+  );
+}
 
 export interface PasteClassification {
   kind: PasteInputKind;
@@ -57,10 +65,7 @@ export function classifyPasteInput(raw: string): PasteClassification {
   ) {
     const record = parsedJson as Record<string, unknown>;
 
-    if (
-      typeof record["kind"] === "string" &&
-      CLIPBOARD_ENVELOPE_KINDS.has(record["kind"])
-    ) {
+    if (looksLikeClipboardEnvelopeKind(record["kind"])) {
       return { kind: "plugin_envelope", rawText, parsedJson };
     }
 
@@ -133,13 +138,10 @@ export function classifyPasteIntent(
   ) {
     const record = parsedJson as Record<string, unknown>;
 
-    if (
-      typeof record["kind"] === "string" &&
-      CLIPBOARD_ENVELOPE_KINDS.has(record["kind"])
-    ) {
+    if (looksLikeClipboardEnvelopeKind(record["kind"])) {
       return {
         intent: "FIGMA_PLUGIN_ENVELOPE",
-        confidence: 0.95,
+        confidence: CLIPBOARD_ENVELOPE_KINDS.has(record["kind"]) ? 0.95 : 0.85,
         suggestedJobSource: "figma_plugin",
         rawText,
         parsedJson,

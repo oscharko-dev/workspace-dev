@@ -98,7 +98,8 @@ function toFailureReason(payload: Record<string, unknown>): string {
   if (
     error === "INVALID_PAYLOAD" ||
     error === "TOO_LARGE" ||
-    error === "SCHEMA_MISMATCH"
+    error === "SCHEMA_MISMATCH" ||
+    error === "UNSUPPORTED_CLIPBOARD_KIND"
   ) {
     return error;
   }

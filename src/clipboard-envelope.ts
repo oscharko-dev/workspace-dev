@@ -14,6 +14,7 @@
 
 /** Current envelope kind used by the plugin. */
 export const CLIPBOARD_ENVELOPE_KIND = "workspace-dev/figma-selection@1";
+export const CLIPBOARD_ENVELOPE_KIND_PREFIX = "workspace-dev/figma-selection@";
 
 /**
  * Set of known envelope kinds.  Future versions (`@2`, etc.) are added here
@@ -74,6 +75,21 @@ export function isClipboardEnvelope(input: unknown): boolean {
     return false;
   }
   return typeof input.kind === "string" && KNOWN_ENVELOPE_KINDS.has(input.kind);
+}
+
+/**
+ * Broader probe: returns `true` if `input` carries a WorkspaceDev clipboard
+ * envelope kind prefix, including versions the current runtime does not
+ * support yet.
+ */
+export function looksLikeClipboardEnvelope(input: unknown): boolean {
+  if (!isRecord(input)) {
+    return false;
+  }
+  return (
+    typeof input.kind === "string" &&
+    input.kind.startsWith(CLIPBOARD_ENVELOPE_KIND_PREFIX)
+  );
 }
 
 /**

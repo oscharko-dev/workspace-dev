@@ -402,7 +402,7 @@ test.describe("inspector bootstrap flow", () => {
   // -------------------------------------------------------------------------
   // TC-6: Unknown envelope version shows clear error (#997)
   // -------------------------------------------------------------------------
-  test("pasting an unknown envelope version shows client-side guidance and does not submit", async ({
+  test("pasting an unknown envelope version shows a clear unsupported-version error", async ({
     page,
   }) => {
     let submitCalls = 0;
@@ -412,7 +412,15 @@ test.describe("inspector bootstrap flow", () => {
         await route.continue();
         return;
       }
-      await route.fulfill({ status: 500, body: "unexpected submit" });
+      await route.fulfill({
+        status: 400,
+        contentType: "application/json",
+        body: JSON.stringify({
+          error: "UNSUPPORTED_CLIPBOARD_KIND",
+          message:
+            'Clipboard envelope validation failed: kind: Unknown envelope kind: "workspace-dev/figma-selection@99". Expected one of: workspace-dev/figma-selection@1.',
+        }),
+      });
     });
 
     await gotoInspector(page);
@@ -434,21 +442,24 @@ test.describe("inspector bootstrap flow", () => {
 
     await simulatePaste(page, unknownEnvelope);
 
-    // The unknown kind is not recognized as a supported plugin envelope, but
-    // valid JSON still surfaces the SmartBanner so the user can confirm or
-    // correct the detected type.
+    // Unknown versions still surface as plugin envelopes so the server can
+    // return a dedicated unsupported-version error instead of a generic schema
+    // mismatch.
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
+    await expect(banner).toContainText("Plugin Export");
 
-    // Confirming the suggested intent should fail locally with guidance rather
-    // than submitting an unsupported payload to /workspace/submit.
+    // Confirm the import — the server should reject the unsupported envelope
+    // version with a dedicated error.
     await banner.getByRole("button", { name: "Import starten" }).click();
 
     // Assert — inline error message is displayed
     const errorAlert = page.locator('[role="alert"]').first();
     await expect(errorAlert).toBeVisible({ timeout: 10_000 });
-    await expect(errorAlert).toContainText("not a Figma JSON export");
-    expect(submitCalls).toBe(0);
+    await expect(errorAlert).toContainText(
+      "clipboard envelope version is not supported yet",
+    );
+    expect(submitCalls).toBe(1);
 
     // Assert — still on bootstrap shell
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();

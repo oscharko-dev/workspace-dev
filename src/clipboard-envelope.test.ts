@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   CLIPBOARD_ENVELOPE_KIND,
   isClipboardEnvelope,
+  looksLikeClipboardEnvelope,
   normalizeEnvelopeToFigmaFile,
   summarizeEnvelopeValidationIssues,
   validateClipboardEnvelope,
@@ -75,6 +76,21 @@ test("isClipboardEnvelope returns false for unknown kind", () => {
     isClipboardEnvelope({ kind: "workspace-dev/figma-selection@99" }),
     false,
   );
+});
+
+test("looksLikeClipboardEnvelope returns true for supported kind", () => {
+  assert.equal(looksLikeClipboardEnvelope(createValidEnvelope()), true);
+});
+
+test("looksLikeClipboardEnvelope returns true for unsupported version", () => {
+  assert.equal(
+    looksLikeClipboardEnvelope({ kind: "workspace-dev/figma-selection@99" }),
+    true,
+  );
+});
+
+test("looksLikeClipboardEnvelope returns false for unrelated kind", () => {
+  assert.equal(looksLikeClipboardEnvelope({ kind: "other-envelope@1" }), false);
 });
 
 // ---------------------------------------------------------------------------

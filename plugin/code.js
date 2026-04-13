@@ -22,7 +22,7 @@ figma.ui.onmessage = async (message) => {
 };
 
 async function exportSelection() {
-  const selection = figma.currentPage.selection;
+  const selection = [...figma.currentPage.selection].sort(compareNodesForExport);
 
   if (selection.length === 0) {
     figma.ui.postMessage({
@@ -88,4 +88,10 @@ function createSelectionUnit(node, exported) {
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function compareNodesForExport(left, right) {
+  const leftKey = `${left.id}:${left.name}`;
+  const rightKey = `${right.id}:${right.name}`;
+  return leftKey.localeCompare(rightKey);
 }

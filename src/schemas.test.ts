@@ -1881,7 +1881,7 @@ test("schema: figma_paste mode rejects invalid ClipboardEnvelope with SCHEMA_MIS
   }
 });
 
-test("schema: figma_paste mode rejects unknown envelope kind with SCHEMA_MISMATCH", () => {
+test("schema: figma_paste mode rejects unknown envelope kind with UNSUPPORTED_CLIPBOARD_KIND", () => {
   const unknownEnvelope = {
     kind: "workspace-dev/figma-selection@99",
     pluginVersion: "0.1.0",
@@ -1895,8 +1895,6 @@ test("schema: figma_paste mode rejects unknown envelope kind with SCHEMA_MISMATC
       },
     ],
   };
-  // Unknown kind is not detected as envelope → falls through to figma payload validation
-  // which rejects it because it has no document root.
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_paste",
     figmaJsonPayload: JSON.stringify(unknownEnvelope),
@@ -1904,11 +1902,11 @@ test("schema: figma_paste mode rejects unknown envelope kind with SCHEMA_MISMATC
   assert.equal(result.success, false);
   if (!result.success) {
     const issue = result.error.issues.find((i) =>
-      i.message.startsWith("SCHEMA_MISMATCH:"),
+      i.message.startsWith("UNSUPPORTED_CLIPBOARD_KIND:"),
     );
     assert.ok(
       issue,
-      "Expected a SCHEMA_MISMATCH issue for unknown envelope kind",
+      "Expected an UNSUPPORTED_CLIPBOARD_KIND issue for unknown envelope kind",
     );
   }
 });

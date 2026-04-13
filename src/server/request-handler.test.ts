@@ -2742,3 +2742,47 @@ test("request handler rejects invalid ClipboardEnvelope via figma_paste with SCH
     await close();
   }
 });
+
+test("request handler rejects unknown ClipboardEnvelope version via figma_paste with UNSUPPORTED_CLIPBOARD_KIND", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const unknownEnvelope = {
+      kind: "workspace-dev/figma-selection@99",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(unknownEnvelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNSUPPORTED_CLIPBOARD_KIND");
+    assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});

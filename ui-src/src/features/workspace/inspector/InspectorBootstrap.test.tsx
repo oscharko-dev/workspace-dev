@@ -142,6 +142,20 @@ describe("InspectorBootstrap — state-aware copy", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows UNSUPPORTED_CLIPBOARD_KIND error message", () => {
+    renderBootstrap({
+      state: {
+        kind: "failed",
+        reason: "UNSUPPORTED_CLIPBOARD_KIND",
+        retryable: false,
+      },
+    });
+
+    expect(
+      screen.getByText(/clipboard envelope version is not supported yet/i),
+    ).toBeInTheDocument();
+  });
+
   it("shows PasteExample snippet in the center column when failed", () => {
     renderBootstrap({
       state: { kind: "failed", reason: "INVALID_PAYLOAD", retryable: true },
