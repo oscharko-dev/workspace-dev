@@ -19,6 +19,7 @@ import {
   createInitialPipelineState,
   type PastePipelineState,
 } from "./paste-pipeline";
+import { redactSensitiveData } from "./pipeline-execution-log";
 import { PipelineStatusBar } from "./PipelineStatusBar";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
@@ -1013,7 +1014,7 @@ export function InspectorPanel({
       errors: activePipeline.errors,
       stageProgress: activePipeline.stageProgress,
     };
-    const text = JSON.stringify(report, null, 2);
+    const text = redactSensitiveData(JSON.stringify(report, null, 2));
     void navigator.clipboard.writeText(text);
   }, [
     activePipeline.errors,

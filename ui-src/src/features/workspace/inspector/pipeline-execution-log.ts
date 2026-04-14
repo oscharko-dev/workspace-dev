@@ -40,7 +40,7 @@ const REDACT_PATTERNS: readonly RegExp[] = [
 
 const REDACT_PLACEHOLDER = "[REDACTED]";
 
-function redactSensitiveData(text: string): string {
+export function redactSensitiveData(text: string): string {
   let result = text;
   for (const pattern of REDACT_PATTERNS) {
     result = result.replace(pattern, (match) => {
