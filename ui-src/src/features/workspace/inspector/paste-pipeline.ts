@@ -1,6 +1,11 @@
 import { useEffect, useReducer, useRef } from "react";
 import { fetchJson } from "../../../lib/http";
-import { isJobPayload, isRecord, type JobPayload, type JobStagePayload } from "../workspace-page.helpers";
+import {
+  isJobPayload,
+  isRecord,
+  type JobPayload,
+  type JobStagePayload,
+} from "../workspace-page.helpers";
 import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 
 // ---------------------------------------------------------------------------
@@ -17,7 +22,7 @@ export type PipelineStage =
   | "ready"
   | "error";
 
-type SubmitSourceMode = "figma_paste" | "figma_plugin";
+type SubmitSourceMode = "figma_paste" | "figma_plugin" | "figma_url";
 type JobRuntimeStatus =
   | "queued"
   | "running"
@@ -136,6 +141,7 @@ export type PipelineAction =
   | { type: "design_ir_ready"; designIR: DesignIrPayload }
   | { type: "manifest_ready"; manifest: ComponentManifestPayload }
   | { type: "files_ready"; files: GeneratedFileEntry[] }
+  | { type: "screenshot_ready"; screenshotUrl: string }
   | { type: "cancel_complete" }
   | { type: "complete"; previewUrl: string };
 
@@ -187,6 +193,8 @@ const endpoints = {
     `/workspace/jobs/${encodeURIComponent(jobId)}/component-manifest`,
   files: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/files`,
+  screenshot: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/screenshot`,
 };
 
 // ---------------------------------------------------------------------------
@@ -237,7 +245,9 @@ function toProgress(stageProgress: Record<PipelineStage, StageStatus>): number {
   if (stageProgress.generating.state === "done") {
     return 100;
   }
-  return Math.round((countDoneStages(stageProgress) / ACTIVE_STAGES.length) * 100);
+  return Math.round(
+    (countDoneStages(stageProgress) / ACTIVE_STAGES.length) * 100,
+  );
 }
 
 function markStageDone(
@@ -366,6 +376,10 @@ export function pastePipelineReducer(
       return { ...state, generatedFiles: action.files };
     }
 
+    case "screenshot_ready": {
+      return { ...state, screenshot: action.screenshotUrl };
+    }
+
     case "cancel_complete": {
       return createInitialPipelineState();
     }
@@ -487,7 +501,9 @@ async function postCancel({
   return null;
 }
 
-function validatePipelineRequest(request: PipelineRequest): PipelineError | null {
+function validatePipelineRequest(
+  request: PipelineRequest,
+): PipelineError | null {
   const byteLength = new TextEncoder().encode(request.payload).length;
   if (byteLength > FIGMA_PASTE_MAX_BYTES) {
     return {
@@ -731,7 +747,11 @@ async function fetchFiles({
     url: endpoints.files({ jobId }),
     init: { signal },
   });
-  if (!response.ok || !isRecord(response.payload) || !Array.isArray(response.payload.files)) {
+  if (
+    !response.ok ||
+    !isRecord(response.payload) ||
+    !Array.isArray(response.payload.files)
+  ) {
     return null;
   }
 
@@ -746,6 +766,34 @@ async function fetchFiles({
     }
   }
   return files;
+}
+
+async function fetchScreenshot({
+  jobId,
+  signal,
+}: {
+  jobId: string;
+  signal: AbortSignal;
+}): Promise<string | null> {
+  let response: Awaited<ReturnType<typeof fetchJson<unknown>>>;
+  try {
+    response = await fetchJson<unknown>({
+      url: endpoints.screenshot({ jobId }),
+      init: { signal },
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok || !isRecord(response.payload)) {
+    return null;
+  }
+  const url =
+    typeof response.payload.url === "string" ? response.payload.url : null;
+  const screenshotUrl =
+    typeof response.payload.screenshotUrl === "string"
+      ? response.payload.screenshotUrl
+      : null;
+  return url ?? screenshotUrl;
 }
 
 async function fetchFinalArtifacts({
@@ -888,13 +936,30 @@ async function executePipelineRun({
 
   apply({ type: "job_created", jobId });
 
+  let screenshotFetched = false;
+  const applyMaybeScreenshot = (action: PipelineAction): void => {
+    apply(action);
+    if (
+      !screenshotFetched &&
+      action.type === "stage_done" &&
+      action.stage === "resolving"
+    ) {
+      screenshotFetched = true;
+      void fetchScreenshot({ jobId, signal }).then((screenshotUrl) => {
+        if (screenshotUrl !== null) {
+          apply({ type: "screenshot_ready", screenshotUrl });
+        }
+      });
+    }
+  };
+
   let payload: JobPayload;
   try {
     payload = await pollUntilTerminal({
       jobId,
       signal,
       knownStatuses,
-      apply,
+      apply: applyMaybeScreenshot,
     });
   } catch (error) {
     if (isAbortError(error)) {

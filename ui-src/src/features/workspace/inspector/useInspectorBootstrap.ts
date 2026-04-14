@@ -7,6 +7,7 @@ import {
 import {
   usePastePipeline,
   type PipelineError,
+  type PipelineStage,
 } from "./paste-pipeline";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import { isFigmaClipboard } from "./figma-clipboard-parser";
@@ -65,6 +66,7 @@ export interface UseInspectorBootstrapResult {
     text: string,
     options?: { source?: PasteSource; clipboardHtml?: string },
   ): void;
+  submitUrl(fileKey: string, nodeId: string | null): void;
   confirmIntent(intent: ImportIntent): void;
   dismissIntent(): void;
   retry(): void;
@@ -72,6 +74,8 @@ export interface UseInspectorBootstrapResult {
   reportInputError(code: string): void;
   jobId: string | null;
   previewUrl: string | null;
+  screenshot: string | null;
+  pipelineStage: PipelineStage;
   detectedIntent: { intent: ImportIntent; confidence: number } | null;
 }
 
@@ -167,7 +171,9 @@ export function useInspectorBootstrap(
   void options;
 
   const pipeline = usePastePipeline();
-  const [detectedPaste, setDetectedPaste] = useState<DetectedPaste | null>(null);
+  const [detectedPaste, setDetectedPaste] = useState<DetectedPaste | null>(
+    null,
+  );
   const [localFailure, setLocalFailure] = useState<FailedState | null>(null);
 
   const pipelineError =
@@ -207,11 +213,21 @@ export function useInspectorBootstrap(
 
   return {
     state,
+    screenshot: pipeline.state.screenshot ?? null,
+    pipelineStage: pipeline.state.stage,
 
     submit({ figmaJsonPayload }) {
       setDetectedPaste(null);
       setLocalFailure(null);
       pipeline.start(figmaJsonPayload, { sourceMode: "figma_paste" });
+    },
+
+    submitUrl(fileKey: string, nodeId: string | null): void {
+      setDetectedPaste(null);
+      setLocalFailure(null);
+      pipeline.start(JSON.stringify({ figmaFileKey: fileKey, nodeId }), {
+        sourceMode: "figma_url",
+      });
     },
 
     submitPaste(
