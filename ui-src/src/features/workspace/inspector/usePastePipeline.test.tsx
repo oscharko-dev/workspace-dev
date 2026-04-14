@@ -216,7 +216,9 @@ describe("usePastePipeline", () => {
       { timeout: 5000 },
     );
 
-    expect(result.current.state.previewUrl).toBe("http://127.0.0.1:1983/preview");
+    expect(result.current.state.previewUrl).toBe(
+      "http://127.0.0.1:1983/preview",
+    );
     expect(result.current.state.designIR?.jobId).toBe("job-happy");
     expect(result.current.state.figmaAnalysis?.jobId).toBe("job-happy");
     expect(result.current.state.componentManifest?.jobId).toBe("job-happy");
@@ -229,8 +231,12 @@ describe("usePastePipeline", () => {
       "/workspace/jobs/job-happy",
       secondPollIndex + 1,
     );
-    const completedPollIndex = callOrder.lastIndexOf("/workspace/jobs/job-happy");
-    const designIrIndex = callOrder.indexOf("/workspace/jobs/job-happy/design-ir");
+    const completedPollIndex = callOrder.lastIndexOf(
+      "/workspace/jobs/job-happy",
+    );
+    const designIrIndex = callOrder.indexOf(
+      "/workspace/jobs/job-happy/design-ir",
+    );
     const figmaAnalysisIndex = callOrder.indexOf(
       "/workspace/jobs/job-happy/figma-analysis",
     );
@@ -495,7 +501,10 @@ describe("usePastePipeline", () => {
         return new Promise((_, reject) => {
           init?.signal?.addEventListener(
             "abort",
-            () => reject(new DOMException("The operation was aborted.", "AbortError")),
+            () =>
+              reject(
+                new DOMException("The operation was aborted.", "AbortError"),
+              ),
             { once: true },
           );
         }) as never;
@@ -533,5 +542,96 @@ describe("usePastePipeline", () => {
     await waitFor(() => {
       expect(cancelRequestCount).toBe(1);
     });
+  });
+});
+
+describe("executionLog wiring", () => {
+  it("exposes an empty executionLog on the initial hook result", () => {
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    expect(result.current.executionLog).toBeDefined();
+    expect(result.current.executionLog.entries).toEqual([]);
+  });
+
+  it("records a single failed parsing entry when invalid JSON is submitted", async () => {
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start("not-json");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("error");
+    });
+
+    const entries = result.current.executionLog.entries;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.stage).toBe("parsing");
+    expect(entries[0]?.success).toBe(false);
+    expect(typeof entries[0]?.errorCode).toBe("string");
+    expect(entries[0]?.errorCode).not.toBe("");
+    // No HTTP call should have been made because parsing fails client-side.
+    expect(fetchJsonMock).not.toHaveBeenCalled();
+  });
+
+  it("records parsing success followed by a failed resolving entry when submit returns 500", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 500,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("error");
+    });
+
+    const entries = result.current.executionLog.entries;
+    expect(entries).toHaveLength(2);
+    expect(entries[0]?.stage).toBe("parsing");
+    expect(entries[0]?.success).toBe(true);
+    expect(entries[1]?.stage).toBe("resolving");
+    expect(entries[1]?.success).toBe(false);
+  });
+
+  it("clears the log at the start of each new run (no accumulation across runs)", async () => {
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    // Run 1 — parsing failure records one entry.
+    await act(async () => {
+      result.current.start("not-json");
+    });
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("error");
+    });
+    expect(result.current.executionLog.entries).toHaveLength(1);
+
+    // Run 2 — another parsing failure. If the log were not cleared, we'd
+    // see 2 entries; the clear() at the start of startRun guarantees 1.
+    await act(async () => {
+      result.current.start("not-json");
+    });
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("error");
+    });
+    expect(result.current.executionLog.entries).toHaveLength(1);
   });
 });

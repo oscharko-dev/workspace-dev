@@ -19,6 +19,11 @@ import {
   createInitialPipelineState,
   type PastePipelineState,
 } from "./paste-pipeline";
+import {
+  redactSensitiveData,
+  type PipelineExecutionLog,
+} from "./pipeline-execution-log";
+import { PipelineStatusBar } from "./PipelineStatusBar";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
 import { suggestPairedFile } from "./file-pairing";
@@ -376,6 +381,10 @@ interface InspectorPanelProps {
   onCloseDialog?: () => void;
   /** Paste pipeline state for progressive tree rendering during paste flow. */
   pipeline?: PastePipelineState;
+  /** Callback to retry the pipeline after a partial or full failure. */
+  onPipelineRetry?: () => void;
+  /** In-memory execution log for exporting stage events as JSON. */
+  executionLog?: PipelineExecutionLog;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -906,6 +915,8 @@ export function InspectorPanel({
   openDialog = null,
   onCloseDialog,
   pipeline,
+  onPipelineRetry,
+  executionLog,
 }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [autoSelectedFile, setAutoSelectedFile] = useState<string | null>(null);
@@ -1001,6 +1012,27 @@ export function InspectorPanel({
   const activePipeline =
     pipeline?.jobId === jobId ? pipeline : IDLE_PIPELINE_STATE;
   const pipelineTreeNodes = useStreamingTreeNodes(activePipeline);
+
+  const handleCopyPipelineReport = useCallback((): void => {
+    let text: string;
+    if (executionLog !== undefined) {
+      text = executionLog.exportJson();
+    } else {
+      const report = {
+        exportedAt: new Date().toISOString(),
+        stage: activePipeline.stage,
+        errors: activePipeline.errors,
+        stageProgress: activePipeline.stageProgress,
+      };
+      text = redactSensitiveData(JSON.stringify(report, null, 2));
+    }
+    void navigator.clipboard.writeText(text);
+  }, [
+    executionLog,
+    activePipeline.errors,
+    activePipeline.stage,
+    activePipeline.stageProgress,
+  ]);
 
   // --- Queries ---
 
@@ -1984,7 +2016,8 @@ export function InspectorPanel({
       activePipeline.stage === "ready") &&
       ((activePipeline.componentManifest?.screens.length ?? 0) > 0 ||
         (activePipeline.generatedFiles?.length ?? 0) > 0)) ||
-    activePipeline.stage === "ready";
+    activePipeline.stage === "ready" ||
+    activePipeline.stage === "partial";
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);
@@ -5029,6 +5062,23 @@ export function InspectorPanel({
             file-to-component mappings are unavailable.
           </p>
         </div>
+      ) : null}
+
+      {activePipeline.stage === "partial" ||
+      activePipeline.errors.length > 0 ? (
+        <PipelineStatusBar
+          stage={activePipeline.stage}
+          errors={activePipeline.errors}
+          stageProgress={activePipeline.stageProgress}
+          {...(activePipeline.partialStats !== undefined
+            ? { partialStats: activePipeline.partialStats }
+            : {})}
+          canRetry={activePipeline.canRetry}
+          {...(onPipelineRetry !== undefined
+            ? { onRetry: onPipelineRetry }
+            : {})}
+          onCopyReport={handleCopyPipelineReport}
+        />
       ) : null}
 
       {/* ===== THREE-COLUMN IDE LAYOUT ===== */}

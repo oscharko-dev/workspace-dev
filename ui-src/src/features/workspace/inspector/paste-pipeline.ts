@@ -7,6 +7,11 @@ import {
   type JobStagePayload,
 } from "../workspace-page.helpers";
 import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
+import { getPasteErrorMessage } from "./paste-error-catalog";
+import {
+  createPipelineExecutionLog,
+  type PipelineExecutionLog,
+} from "./pipeline-execution-log";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -20,6 +25,7 @@ export type PipelineStage =
   | "mapping"
   | "generating"
   | "ready"
+  | "partial"
   | "error";
 
 type SubmitSourceMode = "figma_paste" | "figma_plugin" | "figma_url";
@@ -42,6 +48,8 @@ export interface PipelineError {
   code: string;
   message: string;
   retryable: boolean;
+  /** For rate-limited errors: milliseconds until retry is allowed. */
+  retryAfterMs?: number;
 }
 
 interface DesignIrElementNode {
@@ -120,6 +128,15 @@ export interface FigmaAnalysisPayload {
   diagnostics?: FigmaAnalysisDiagnosticEntry[];
 }
 
+export interface PartialImportStats {
+  /** Number of pipeline stages that completed successfully. */
+  resolvedStages: number;
+  /** Total number of active pipeline stages. */
+  totalStages: number;
+  /** Number of stages that failed. */
+  errorCount: number;
+}
+
 export interface PastePipelineState {
   stage: PipelineStage;
   progress: number;
@@ -136,6 +153,8 @@ export interface PastePipelineState {
   errors: PipelineError[];
   canRetry: boolean;
   canCancel: boolean;
+  /** Set when at least one stage succeeded but at least one failed. */
+  partialStats?: PartialImportStats;
 }
 
 export interface PastePipelineController {
@@ -170,6 +189,12 @@ export type PipelineAction =
   | { type: "stage_message"; stage: PipelineStage; message: string }
   | { type: "stage_done"; stage: PipelineStage; durationMs: number }
   | { type: "stage_failed"; stage: PipelineStage; error: PipelineError }
+  /**
+   * Infrastructure for future per-stage retry (requires backend resume endpoint).
+   * Not yet dispatched from any production call site — the current Retry button in
+   * PipelineStatusBar triggers a full pipeline restart via bootstrap.retry().
+   */
+  | { type: "retry_stage"; stage: PipelineStage }
   | { type: "design_ir_ready"; designIR: DesignIrPayload }
   | { type: "figma_analysis_ready"; figmaAnalysis: FigmaAnalysisPayload }
   | { type: "manifest_ready"; manifest: ComponentManifestPayload }
@@ -190,6 +215,14 @@ const ACTIVE_STAGES: readonly PipelineStage[] = [
   "generating",
 ] as const;
 
+/** Backend-only stages used to determine "partial" success. Excludes "parsing" which is always trivial client-side JSON validation. */
+export const BACKEND_STAGES: readonly PipelineStage[] = [
+  "resolving",
+  "transforming",
+  "mapping",
+  "generating",
+] as const;
+
 const ALL_STAGES: readonly PipelineStage[] = [
   "idle",
   "parsing",
@@ -198,6 +231,7 @@ const ALL_STAGES: readonly PipelineStage[] = [
   "mapping",
   "generating",
   "ready",
+  "partial",
   "error",
 ] as const;
 
@@ -283,6 +317,24 @@ function toProgress(stageProgress: Record<PipelineStage, StageStatus>): number {
   return Math.round(
     (countDoneStages(stageProgress) / ACTIVE_STAGES.length) * 100,
   );
+}
+
+function derivePartialStats(
+  stageProgress: Record<PipelineStage, StageStatus>,
+): PartialImportStats | undefined {
+  let resolvedStages = 0;
+  let errorCount = 0;
+  for (const stage of BACKEND_STAGES) {
+    const status = stageProgress[stage].state;
+    if (status === "done") resolvedStages += 1;
+    if (status === "failed") errorCount += 1;
+  }
+  if (errorCount === 0 || resolvedStages === 0) return undefined;
+  return {
+    resolvedStages,
+    totalStages: BACKEND_STAGES.length,
+    errorCount,
+  };
 }
 
 function markStageDone(
@@ -390,16 +442,19 @@ export function pastePipelineReducer(
     }
 
     case "stage_failed": {
+      const stageProgress = setStatus(state, action.stage, {
+        state: "failed",
+        error: action.error,
+      });
+      const partialStats = derivePartialStats(stageProgress);
       return {
         ...state,
-        stage: "error",
-        stageProgress: setStatus(state, action.stage, {
-          state: "failed",
-          error: action.error,
-        }),
+        stage: partialStats !== undefined ? "partial" : "error",
+        stageProgress,
         errors: [...state.errors, action.error],
-        canRetry: action.error.retryable,
+        canRetry: [...state.errors, action.error].some((e) => e.retryable),
         canCancel: false,
+        ...(partialStats !== undefined ? { partialStats } : {}),
       };
     }
 
@@ -441,6 +496,21 @@ export function pastePipelineReducer(
         previewUrl: action.previewUrl,
         canRetry: false,
         canCancel: false,
+      };
+    }
+
+    case "retry_stage": {
+      const previous = state.stageProgress[action.stage];
+      if (previous.state !== "failed") {
+        return state;
+      }
+      return {
+        ...state,
+        stage: action.stage,
+        stageProgress: setStatus(state, action.stage, { state: "running" }),
+        errors: state.errors.filter((e) => e.stage !== action.stage),
+        canRetry: false,
+        canCancel: true,
       };
     }
 
@@ -549,22 +619,24 @@ function validatePipelineRequest(
 ): PipelineError | null {
   const byteLength = new TextEncoder().encode(request.payload).length;
   if (byteLength > FIGMA_PASTE_MAX_BYTES) {
+    const catalogEntry = getPasteErrorMessage("PAYLOAD_TOO_LARGE");
     return {
       stage: "parsing",
       code: "PAYLOAD_TOO_LARGE",
-      message: `Payload exceeds the ${String(FIGMA_PASTE_MAX_BYTES / (1024 * 1024))} MiB limit.`,
-      retryable: false,
+      message: catalogEntry.description,
+      retryable: catalogEntry.retryable,
     };
   }
 
   try {
     JSON.parse(request.payload);
   } catch {
+    const catalogEntry = getPasteErrorMessage("SCHEMA_MISMATCH");
     return {
       stage: "parsing",
       code: "SCHEMA_MISMATCH",
-      message: "Payload must be valid JSON.",
-      retryable: false,
+      message: catalogEntry.description,
+      retryable: catalogEntry.retryable,
     };
   }
 
@@ -648,6 +720,7 @@ function stageTransitionEvents(
   }
 
   if (stage.status === "failed") {
+    const catalogEntry = getPasteErrorMessage("STAGE_FAILED");
     return [
       {
         kind: "failed",
@@ -655,8 +728,8 @@ function stageTransitionEvents(
         error: {
           stage: mappedStage,
           code: "STAGE_FAILED",
-          message: jobPayload.error?.message ?? stage.name,
-          retryable: true,
+          message: jobPayload.error?.message ?? catalogEntry.description,
+          retryable: catalogEntry.retryable,
         },
       },
     ];
@@ -913,7 +986,11 @@ function extractSourceScreensFromPayload(payload: string): SourceScreenHint[] {
   const screens: SourceScreenHint[] = [];
   const seenIds = new Set<string>();
 
-  const pushScreen = (node: { id: string; name?: string; type: string }): void => {
+  const pushScreen = (node: {
+    id: string;
+    name?: string;
+    type: string;
+  }): void => {
     if (seenIds.has(node.id)) {
       return;
     }
@@ -1465,6 +1542,7 @@ export interface UsePastePipelineResult {
   start(payload: string, options?: Omit<PipelineOptions, "signal">): void;
   cancel(): void;
   retry(): void;
+  executionLog: PipelineExecutionLog;
 }
 
 interface HookRuntime {
@@ -1487,10 +1565,12 @@ export function usePastePipeline(): UsePastePipelineResult {
     activeJobId: undefined,
     knownStatuses: new Map(),
   });
+  const logRef = useRef(createPipelineExecutionLog());
 
   const startRun = (request: PipelineRequest): void => {
     const runtime = runtimeRef.current;
     runtime.activeRunId += 1;
+    logRef.current.clear();
     const runId = runtime.activeRunId;
     runtime.activeRunController?.abort();
     runtime.activeRunController = new AbortController();
@@ -1511,11 +1591,34 @@ export function usePastePipeline(): UsePastePipelineResult {
       dispatch(action);
     };
 
+    const loggedApply = (action: PipelineAction): void => {
+      apply(action);
+      const timestamp = new Date().toISOString();
+      if (action.type === "parsing_done") {
+        logRef.current.addEntry({ timestamp, stage: "parsing", success: true });
+      } else if (action.type === "stage_done") {
+        logRef.current.addEntry({
+          timestamp,
+          stage: action.stage,
+          durationMs: action.durationMs,
+          success: true,
+        });
+      } else if (action.type === "stage_failed") {
+        logRef.current.addEntry({
+          timestamp,
+          stage: action.error.stage,
+          success: false,
+          errorCode: action.error.code,
+          errorMessage: action.error.message,
+        });
+      }
+    };
+
     void executePipelineRun({
       request,
       signal: runtime.activeRunController.signal,
       knownStatuses: runtime.knownStatuses,
-      apply,
+      apply: loggedApply,
     }).then(({ jobId }) => {
       if (runtimeRef.current.activeRunId === runId) {
         runtimeRef.current.activeJobId = jobId;
@@ -1577,5 +1680,7 @@ export function usePastePipeline(): UsePastePipelineResult {
       }
       startRun(request);
     },
+
+    executionLog: logRef.current,
   };
 }

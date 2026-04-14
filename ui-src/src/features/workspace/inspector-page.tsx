@@ -7,6 +7,7 @@ import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
 import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
 import type { PastePipelineState } from "./inspector/paste-pipeline";
+import type { PipelineExecutionLog } from "./inspector/pipeline-execution-log";
 
 function BackIcon(): JSX.Element {
   return (
@@ -75,6 +76,8 @@ interface PanelViewProps {
   previousJobId: string | null;
   initialIsRegeneration: boolean;
   pipeline?: PastePipelineState;
+  onPipelineRetry?: () => void;
+  executionLog?: PipelineExecutionLog;
 }
 
 function PanelView({
@@ -83,6 +86,8 @@ function PanelView({
   previousJobId,
   initialIsRegeneration,
   pipeline,
+  onPipelineRetry,
+  executionLog,
 }: PanelViewProps): JSX.Element {
   const navigate = useNavigate();
   const [activeJobId, setActiveJobId] = useState(jobId);
@@ -187,6 +192,8 @@ function PanelView({
               setOpenDialog(null);
             }}
             {...(pipeline !== undefined ? { pipeline } : {})}
+            {...(onPipelineRetry !== undefined ? { onPipelineRetry } : {})}
+            {...(executionLog !== undefined ? { executionLog } : {})}
           />
         </InspectorErrorBoundary>
       </main>
@@ -257,6 +264,8 @@ function BootstrapView(): JSX.Element {
         previousJobId={null}
         initialIsRegeneration={false}
         pipeline={bootstrap.pipelineState}
+        onPipelineRetry={handleRetry}
+        executionLog={bootstrap.executionLog}
       />
     );
   }

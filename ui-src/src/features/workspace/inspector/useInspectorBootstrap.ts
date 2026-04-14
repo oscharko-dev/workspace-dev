@@ -10,6 +10,7 @@ import {
   type PipelineStage,
 } from "./paste-pipeline";
 import type { PastePipelineState } from "./paste-pipeline";
+import type { PipelineExecutionLog } from "./pipeline-execution-log";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import { isFigmaClipboard } from "./figma-clipboard-parser";
 
@@ -78,6 +79,7 @@ export interface UseInspectorBootstrapResult {
   screenshot: string | null;
   pipelineStage: PipelineStage;
   pipelineState: PastePipelineState;
+  executionLog: PipelineExecutionLog;
   detectedIntent: { intent: ImportIntent; confidence: number } | null;
 }
 
@@ -150,6 +152,10 @@ function deriveBootstrapState({
 
   if (pipelineStage === "ready" && jobId && previewUrl) {
     return { kind: "ready", jobId, previewUrl };
+  }
+
+  if (pipelineStage === "partial" && jobId !== null) {
+    return { kind: "ready", jobId, previewUrl: previewUrl ?? "" };
   }
 
   if (jobId && jobStatus === "queued") {
@@ -358,5 +364,6 @@ export function useInspectorBootstrap(
     previewUrl,
     detectedIntent,
     pipelineState: pipeline.state,
+    executionLog: pipeline.executionLog,
   };
 }
