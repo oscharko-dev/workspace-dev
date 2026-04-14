@@ -21,21 +21,6 @@ vi.mock("./InspectOverlay", () => ({
     }),
 }));
 
-vi.mock("./ScreenshotPreview", () => ({
-  ScreenshotPreview: ({
-    screenshotUrl,
-    stageName,
-  }: {
-    screenshotUrl: string;
-    stageName?: string;
-  }) =>
-    createElement("div", {
-      "data-testid": "screenshot-preview",
-      "data-screenshot-url": screenshotUrl,
-      "data-stage-name": stageName ?? "",
-    }),
-}));
-
 afterEach(() => {
   cleanup();
 });
@@ -155,7 +140,7 @@ describe("PreviewPane — pipeline stage modes", () => {
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
   });
 
-  it("shows ScreenshotPreview with stage label when generating and screenshot provided", () => {
+  it("shows Phase 2 srcdoc iframe with screenshot URL when generating and screenshot provided", () => {
     render(
       createElement(PreviewPane, {
         previewUrl: "",
@@ -164,24 +149,26 @@ describe("PreviewPane — pipeline stage modes", () => {
         inspectEnabled: false,
         activeScopeNodeId: null,
         onToggleInspect: () => {
-          // no-op
+          /* no-op */
         },
         onInspectSelect: () => {
-          // no-op
+          /* no-op */
         },
       }),
     );
 
-    const preview = screen.getByTestId("screenshot-preview");
-    expect(preview).toHaveAttribute(
-      "data-screenshot-url",
-      "http://cdn.example.com/screenshot.png",
-    );
-    expect(preview).toHaveAttribute("data-stage-name", "Generating code…");
+    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
+    expect(iframe).toBeInTheDocument();
+    expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+    // The srcdoc must contain the screenshot URL and stage label
+    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).toContain("cdn.example.com/screenshot.png");
+    expect(srcdoc).toContain("Generating code…");
+    // Must NOT render the live-preview iframe
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
   });
 
-  it("shows Generating code spinner when generating but no screenshot", () => {
+  it("shows Phase 2 srcdoc iframe without img when generating and no screenshot", () => {
     render(
       createElement(PreviewPane, {
         previewUrl: "",
@@ -189,19 +176,24 @@ describe("PreviewPane — pipeline stage modes", () => {
         inspectEnabled: false,
         activeScopeNodeId: null,
         onToggleInspect: () => {
-          // no-op
+          /* no-op */
         },
         onInspectSelect: () => {
-          // no-op
+          /* no-op */
         },
       }),
     );
 
-    expect(screen.getByText("Generating code…")).toBeInTheDocument();
-    expect(screen.queryByTestId("screenshot-preview")).not.toBeInTheDocument();
+    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
+    expect(iframe).toBeInTheDocument();
+    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
+    // No img tag when screenshot is absent
+    expect(srcdoc).not.toContain("<img");
+    expect(srcdoc).toContain("Generating code…");
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
   });
 
-  it("shows ScreenshotPreview with resolving label for resolving stage", () => {
+  it("shows Phase 2 srcdoc iframe with resolving stage label for resolving stage", () => {
     render(
       createElement(PreviewPane, {
         previewUrl: "",
@@ -210,17 +202,18 @@ describe("PreviewPane — pipeline stage modes", () => {
         inspectEnabled: false,
         activeScopeNodeId: null,
         onToggleInspect: () => {
-          // no-op
+          /* no-op */
         },
         onInspectSelect: () => {
-          // no-op
+          /* no-op */
         },
       }),
     );
 
-    expect(screen.getByTestId("screenshot-preview")).toHaveAttribute(
-      "data-stage-name",
-      "Resolving design…",
-    );
+    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
+    expect(iframe).toBeInTheDocument();
+    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).toContain("Resolving design…");
+    expect(srcdoc).toContain("cdn.example.com/shot.png");
   });
 });
