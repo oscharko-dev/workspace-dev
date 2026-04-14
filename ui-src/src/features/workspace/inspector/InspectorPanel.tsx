@@ -131,6 +131,10 @@ import {
 } from "./import-quality-score";
 import { deriveTokenSuggestionModel } from "./token-suggestion-model";
 import { deriveA11yNudges } from "./a11y-nudge";
+import {
+  mergeA11yScanInputs,
+  selectA11yScanFiles,
+} from "./a11y-file-selection";
 import { resolveWorkspacePolicy } from "./workspace-policy";
 import {
   deriveInspectorImpactReviewModel,
@@ -1871,19 +1875,9 @@ export function InspectorPanel({
   }, [activePipeline.tokenIntelligence, workspacePolicy.tokens]);
 
   // Collect JSX-like files so we fetch only what the a11y scanner can parse.
-  // The cap bounds worst-case traffic for pathologically large generated
-  // projects; nudges beyond the cap are intentionally omitted.
-  const A11Y_FILE_FETCH_CAP = 25;
-  const A11Y_FILE_SIZE_CAP_BYTES = 1_000_000;
-  const jsxLikeFiles = useMemo(() => {
-    return files
-      .filter(
-        (file) =>
-          /\.(tsx|jsx|html|mdx)$/i.test(file.path) &&
-          file.sizeBytes <= A11Y_FILE_SIZE_CAP_BYTES,
-      )
-      .slice(0, A11Y_FILE_FETCH_CAP);
-  }, [files]);
+  // Filtering rules and caps are extracted into pure helpers so they can be
+  // unit-tested in isolation; see `a11y-file-selection.ts`.
+  const jsxLikeFiles = useMemo(() => selectA11yScanFiles(files), [files]);
 
   const a11yFileContentQueries = useQueries({
     queries: jsxLikeFiles.map((file) => ({
@@ -1901,10 +1895,8 @@ export function InspectorPanel({
   });
 
   const a11yNudgeInputs = useMemo(() => {
-    return jsxLikeFiles.map((file, index) => {
-      const contents = a11yFileContentQueries[index]?.data ?? null;
-      return contents ? { path: file.path, contents } : { path: file.path };
-    });
+    const fetched = a11yFileContentQueries.map((query) => query.data ?? null);
+    return mergeA11yScanInputs(jsxLikeFiles, fetched);
   }, [jsxLikeFiles, a11yFileContentQueries]);
 
   const a11yNudgeModel = useMemo(() => {
