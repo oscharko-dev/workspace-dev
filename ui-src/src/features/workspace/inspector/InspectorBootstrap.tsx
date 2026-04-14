@@ -1,5 +1,7 @@
 import { type JSX } from "react";
 import { FIGMA_PASTE_MAX_LABEL } from "../submit-schema";
+import { ComponentTree } from "./component-tree";
+import type { TreeNode } from "./component-tree";
 import { PasteCapture } from "./PasteCapture";
 import { PasteDropZone } from "./PasteDropZone";
 import { SmartBanner } from "./SmartBanner";
@@ -20,6 +22,7 @@ export interface InspectorBootstrapProps {
   previewUrl?: string | null;
   screenshot?: string | null;
   pipelineStage?: PipelineStage;
+  treeNodes?: TreeNode[];
 }
 
 interface ColumnCopy {
@@ -259,6 +262,7 @@ export function InspectorBootstrap({
   previewUrl,
   screenshot,
   pipelineStage,
+  treeNodes,
 }: InspectorBootstrapProps): JSX.Element {
   const copy = getColumnCopy(state);
   const disabled = isPasteDisabled(state);
@@ -278,11 +282,30 @@ export function InspectorBootstrap({
       <BootstrapHeader />
 
       <main className="flex min-h-0 flex-1 flex-row overflow-hidden">
-        <ColumnPlaceholder
-          testId="inspector-bootstrap-left"
-          heading="Component tree"
-          copy={copy.left}
-        />
+        {treeNodes && treeNodes.length > 0 ? (
+          <div
+            data-testid="inspector-bootstrap-left"
+            className="flex h-full min-h-0 flex-1 flex-col overflow-hidden border-r border-[#000000] bg-[#333333]"
+          >
+            <ComponentTree
+              screens={treeNodes}
+              selectedId={null}
+              onSelect={() => {
+                /* no-op during bootstrap */
+              }}
+              collapsed={false}
+              onToggleCollapsed={() => {
+                /* no-op during bootstrap */
+              }}
+            />
+          </div>
+        ) : (
+          <ColumnPlaceholder
+            testId="inspector-bootstrap-left"
+            heading="Component tree"
+            copy={copy.left}
+          />
+        )}
 
         <div
           data-testid="inspector-bootstrap-center"

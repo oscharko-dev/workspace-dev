@@ -1,8 +1,21 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent, type UIEvent } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent,
+  type UIEvent,
+} from "react";
 import { filterTree } from "./component-tree-utils";
 import { TypeBadge } from "./type-badge-config";
 import { DiagnosticBadge } from "./DiagnosticBadge";
-import { getPrimaryDiagnosticCategory, type NodeDiagnosticsMap } from "./node-diagnostics";
+import {
+  getPrimaryDiagnosticCategory,
+  type NodeDiagnosticsMap,
+} from "./node-diagnostics";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -13,6 +26,10 @@ export interface TreeNode {
   name: string;
   type: string;
   children?: TreeNode[];
+  /** Set during paste pipeline execution. */
+  pipelineStatus?: "resolved" | "generating" | "loading";
+  /** Set after pipeline "mapping" stage when componentManifest is available. */
+  mappingStatus?: "matched" | "new" | "error";
 }
 
 interface ComponentTreeProps {
@@ -78,7 +95,10 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
   return debouncedValue;
 }
 
-function flattenVisibleRows(nodes: TreeNode[], expandedIds: Set<string>): VisibleTreeRow[] {
+function flattenVisibleRows(
+  nodes: TreeNode[],
+  expandedIds: Set<string>,
+): VisibleTreeRow[] {
   const rows: VisibleTreeRow[] = [];
 
   const walk = (list: TreeNode[], depth: number): void => {
@@ -98,7 +118,7 @@ function flattenVisibleRows(nodes: TreeNode[], expandedIds: Set<string>): Visibl
         hasChildren,
         isExpanded,
         siblingIndex,
-        siblingCount
+        siblingCount,
       });
 
       if (isExpanded && node.children) {
@@ -111,7 +131,10 @@ function flattenVisibleRows(nodes: TreeNode[], expandedIds: Set<string>): Visibl
   return rows;
 }
 
-function findParentRow(rows: VisibleTreeRow[], childIndex: number): VisibleTreeRow | null {
+function findParentRow(
+  rows: VisibleTreeRow[],
+  childIndex: number,
+): VisibleTreeRow | null {
   const child = rows[childIndex];
   if (!child || child.depth === 0) {
     return null;
@@ -139,7 +162,7 @@ const TreeRow = memo(function TreeRow({
   onToggleExpand,
   focusedId,
   onFocusNode,
-  diagnosticsMap
+  diagnosticsMap,
 }: TreeRowProps): JSX.Element {
   const isSelected = selectedId === row.node.id;
   const isFocused = focusedId === row.node.id;
@@ -152,8 +175,11 @@ const TreeRow = memo(function TreeRow({
       aria-posinset={row.siblingIndex + 1}
       aria-expanded={row.hasChildren ? row.isExpanded : undefined}
       aria-selected={isSelected}
+      aria-disabled={row.node.type === "skeleton" ? true : undefined}
       tabIndex={isFocused ? 0 : -1}
-      data-testid={row.isScreen ? `tree-screen-${row.node.id}` : `tree-node-${row.node.id}`}
+      data-testid={
+        row.isScreen ? `tree-screen-${row.node.id}` : `tree-node-${row.node.id}`
+      }
       data-node-id={row.node.id}
       className={`flex h-7 cursor-pointer items-center gap-1.5 px-2 py-[3px] text-xs transition-colors select-none ${
         row.isScreen ? "font-semibold" : ""
@@ -163,11 +189,13 @@ const TreeRow = memo(function TreeRow({
           : "text-white/80 hover:bg-[#000000] hover:text-white"
       } ${isFocused ? "outline-2 -outline-offset-2 outline-[#4eba87]" : ""}`}
       onClick={(event) => {
+        if (row.node.type === "skeleton") return;
         onSelect(row.node.id);
         onFocusNode(row.node.id);
         event.currentTarget.focus();
       }}
       onDoubleClick={() => {
+        if (row.node.type === "skeleton") return;
         if (onEnterScope) {
           onEnterScope(row.node.id);
         }
@@ -187,7 +215,9 @@ const TreeRow = memo(function TreeRow({
           tabIndex={-1}
           aria-label={row.isExpanded ? "Collapse" : "Expand"}
           className={`flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 transition ${
-            isSelected ? "text-[#4eba87]/80" : "text-white/45 hover:text-[#4eba87]"
+            isSelected
+              ? "text-[#4eba87]/80"
+              : "text-white/45 hover:text-[#4eba87]"
           }`}
           onClick={(event) => {
             event.stopPropagation();
@@ -207,21 +237,48 @@ const TreeRow = memo(function TreeRow({
       )}
 
       {row.isScreen ? (
-        <svg viewBox="0 0 16 16" className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-[#4eba87]" : "text-[#4eba87]/80"}`} fill="currentColor">
+        <svg
+          viewBox="0 0 16 16"
+          className={`h-3.5 w-3.5 shrink-0 ${isSelected ? "text-[#4eba87]" : "text-[#4eba87]/80"}`}
+          fill="currentColor"
+        >
           <path d="M2 3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V3zm1 0v10h10V3H3z" />
         </svg>
+      ) : row.node.type === "skeleton" ? (
+        <span className="inline-block h-4 w-4 shrink-0" />
       ) : (
         <TypeBadge type={row.node.type} />
       )}
 
-      <span className="min-w-0 truncate">{row.node.name}</span>
-      {diagnosticsMap ? (() => {
-        const diagnostics = diagnosticsMap.get(row.node.id);
-        if (!diagnostics || diagnostics.length === 0) return null;
-        const primary = getPrimaryDiagnosticCategory(diagnostics);
-        if (!primary) return null;
-        return <DiagnosticBadge category={primary} />;
-      })() : null}
+      {row.node.type === "skeleton" ? (
+        <span
+          className="animate-pulse h-2.5 w-24 rounded bg-[#333333]"
+          aria-hidden="true"
+        />
+      ) : (
+        <span className="min-w-0 truncate">{row.node.name}</span>
+      )}
+      {row.node.mappingStatus && row.node.type !== "skeleton" ? (
+        <span
+          aria-label={`Component ${row.node.mappingStatus}`}
+          className={`ml-auto shrink-0 h-2 w-2 rounded-full ${
+            row.node.mappingStatus === "matched"
+              ? "bg-[#4eba87]"
+              : row.node.mappingStatus === "error"
+                ? "bg-rose-500"
+                : "bg-white/25"
+          }`}
+        />
+      ) : null}
+      {diagnosticsMap
+        ? (() => {
+            const diagnostics = diagnosticsMap.get(row.node.id);
+            if (!diagnostics || diagnostics.length === 0) return null;
+            const primary = getPrimaryDiagnosticCategory(diagnostics);
+            if (!primary) return null;
+            return <DiagnosticBadge category={primary} />;
+          })()
+        : null}
     </div>
   );
 });
@@ -237,10 +294,13 @@ export function ComponentTree({
   onEnterScope,
   collapsed,
   onToggleCollapsed,
-  diagnosticsMap
+  diagnosticsMap,
 }: ComponentTreeProps): JSX.Element {
   const [searchQuery, setSearchQuery] = useState("");
-  const debouncedSearchQuery = useDebouncedValue(searchQuery, SEARCH_DEBOUNCE_MS);
+  const debouncedSearchQuery = useDebouncedValue(
+    searchQuery,
+    SEARCH_DEBOUNCE_MS,
+  );
 
   // Expand all screen-level nodes by default
   const [expandedIds, setExpandedIds] = useState<Set<string>>(() => {
@@ -253,7 +313,7 @@ export function ComponentTree({
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [virtualWindow, setVirtualWindow] = useState({
     scrollTop: 0,
-    viewportHeight: DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX
+    viewportHeight: DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX,
   });
   const treeViewportRef = useRef<HTMLDivElement>(null);
 
@@ -298,13 +358,29 @@ export function ComponentTree({
   }, [effectiveFocusedId, flatRows]);
 
   const totalRowCount = flatRows.length;
-  const viewportHeight = Math.max(virtualWindow.viewportHeight, DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
-  const startIndex = Math.max(0, Math.floor(virtualWindow.scrollTop / TREE_ROW_HEIGHT_PX) - TREE_OVERSCAN_ROWS);
-  const visibleRowCount = Math.ceil(viewportHeight / TREE_ROW_HEIGHT_PX) + TREE_OVERSCAN_ROWS * 2;
-  const endIndex = Math.min(totalRowCount - 1, startIndex + visibleRowCount - 1);
-  const virtualRows = totalRowCount > 0 ? flatRows.slice(startIndex, endIndex + 1) : [];
-  const topSpacerHeight = totalRowCount > 0 ? startIndex * TREE_ROW_HEIGHT_PX : 0;
-  const bottomSpacerHeight = totalRowCount > 0 ? Math.max(0, (totalRowCount - endIndex - 1) * TREE_ROW_HEIGHT_PX) : 0;
+  const viewportHeight = Math.max(
+    virtualWindow.viewportHeight,
+    DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX,
+  );
+  const startIndex = Math.max(
+    0,
+    Math.floor(virtualWindow.scrollTop / TREE_ROW_HEIGHT_PX) -
+      TREE_OVERSCAN_ROWS,
+  );
+  const visibleRowCount =
+    Math.ceil(viewportHeight / TREE_ROW_HEIGHT_PX) + TREE_OVERSCAN_ROWS * 2;
+  const endIndex = Math.min(
+    totalRowCount - 1,
+    startIndex + visibleRowCount - 1,
+  );
+  const virtualRows =
+    totalRowCount > 0 ? flatRows.slice(startIndex, endIndex + 1) : [];
+  const topSpacerHeight =
+    totalRowCount > 0 ? startIndex * TREE_ROW_HEIGHT_PX : 0;
+  const bottomSpacerHeight =
+    totalRowCount > 0
+      ? Math.max(0, (totalRowCount - endIndex - 1) * TREE_ROW_HEIGHT_PX)
+      : 0;
 
   const toggleExpand = useCallback((nodeId: string) => {
     setExpandedIds((prev) => {
@@ -324,7 +400,9 @@ export function ComponentTree({
         return;
       }
 
-      const currentIndex = flatRows.findIndex((row) => row.node.id === effectiveFocusedId);
+      const currentIndex = flatRows.findIndex(
+        (row) => row.node.id === effectiveFocusedId,
+      );
       if (currentIndex < 0) {
         return;
       }
@@ -373,16 +451,20 @@ export function ComponentTree({
         onSelect(current.node.id);
       }
     },
-    [effectiveFocusedId, flatRows, onSelect, toggleExpand]
+    [effectiveFocusedId, flatRows, onSelect, toggleExpand],
   );
 
-  const handleTreeScroll = useCallback((event: UIEvent<HTMLDivElement>): void => {
-    const target = event.currentTarget;
-    setVirtualWindow({
-      scrollTop: target.scrollTop,
-      viewportHeight: target.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX
-    });
-  }, []);
+  const handleTreeScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>): void => {
+      const target = event.currentTarget;
+      setVirtualWindow({
+        scrollTop: target.scrollTop,
+        viewportHeight:
+          target.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX,
+      });
+    },
+    [],
+  );
 
   useEffect(() => {
     const viewport = treeViewportRef.current;
@@ -393,14 +475,17 @@ export function ComponentTree({
     const rowTop = focusedIndex * TREE_ROW_HEIGHT_PX;
     const rowBottom = rowTop + TREE_ROW_HEIGHT_PX;
     const viewTop = viewport.scrollTop;
-    const viewBottom = viewTop + (viewport.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
+    const viewBottom =
+      viewTop + (viewport.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
 
     if (rowTop < viewTop) {
       viewport.scrollTop = rowTop;
       return;
     }
     if (rowBottom > viewBottom) {
-      viewport.scrollTop = rowBottom - (viewport.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
+      viewport.scrollTop =
+        rowBottom -
+        (viewport.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX);
     }
   }, [focusedIndex]);
 
@@ -429,7 +514,9 @@ export function ComponentTree({
     >
       {/* Header */}
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#000000] px-4">
-        <span className="text-[11px] font-bold tracking-[0.24em] text-white/70 uppercase">Components</span>
+        <span className="text-[11px] font-bold tracking-[0.24em] text-white/70 uppercase">
+          Components
+        </span>
         <button
           type="button"
           data-testid="tree-collapse-button"
@@ -471,7 +558,9 @@ export function ComponentTree({
         onFocus={(event) => {
           setVirtualWindow({
             scrollTop: event.currentTarget.scrollTop,
-            viewportHeight: event.currentTarget.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX
+            viewportHeight:
+              event.currentTarget.clientHeight ||
+              DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX,
           });
           if (!focusedId && flatRows.length > 0 && flatRows[0]) {
             setFocusedId(flatRows[0].node.id);
@@ -480,7 +569,9 @@ export function ComponentTree({
       >
         {filteredScreens.length === 0 ? (
           <p className="px-3 py-4 text-center text-xs text-white/45">
-            {debouncedSearchQuery.trim() ? "No matching components" : "No components"}
+            {debouncedSearchQuery.trim()
+              ? "No matching components"
+              : "No components"}
           </p>
         ) : (
           <div data-testid="component-tree-virtual-window">

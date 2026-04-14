@@ -7,7 +7,15 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/385
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, within, waitFor, act } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  within,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import { createElement } from "react";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { filterTree } from "./component-tree-utils";
@@ -41,8 +49,8 @@ function makeScreens(): TreeNode[] {
           type: "appbar",
           children: [
             { id: "logo", name: "Logo", type: "image" },
-            { id: "nav-menu", name: "NavMenu", type: "navigation" }
-          ]
+            { id: "nav-menu", name: "NavMenu", type: "navigation" },
+          ],
         },
         {
           id: "price-card",
@@ -50,20 +58,18 @@ function makeScreens(): TreeNode[] {
           type: "card",
           children: [
             { id: "amount", name: "Amount", type: "text" },
-            { id: "label", name: "Label", type: "text" }
-          ]
+            { id: "label", name: "Label", type: "text" },
+          ],
         },
-        { id: "submit-btn", name: "SubmitButton", type: "button" }
-      ]
+        { id: "submit-btn", name: "SubmitButton", type: "button" },
+      ],
     },
     {
       id: "screen-details",
       name: "Details",
       type: "screen",
-      children: [
-        { id: "detail-title", name: "DetailTitle", type: "text" }
-      ]
-    }
+      children: [{ id: "detail-title", name: "DetailTitle", type: "text" }],
+    },
   ];
 }
 
@@ -76,9 +82,9 @@ function makeLargeScreens(nodeCount: number): TreeNode[] {
       children: Array.from({ length: nodeCount }, (_, index) => ({
         id: `large-node-${String(index + 1)}`,
         name: `Leaf ${String(index + 1).padStart(4, "0")}`,
-        type: "text"
-      }))
-    }
+        type: "text",
+      })),
+    },
   ];
 }
 
@@ -166,7 +172,7 @@ describe("ComponentTree", () => {
     selectedId: null,
     onSelect: vi.fn(),
     collapsed: false,
-    onToggleCollapsed: vi.fn()
+    onToggleCollapsed: vi.fn(),
   };
 
   it("renders the component tree with screen nodes", () => {
@@ -192,14 +198,16 @@ describe("ComponentTree", () => {
 
   it("preserves deterministic pre-order row ordering", () => {
     render(createElement(ComponentTree, defaultProps));
-    const orderedIds = screen.getAllByRole("treeitem").map((node) => node.getAttribute("data-node-id"));
+    const orderedIds = screen
+      .getAllByRole("treeitem")
+      .map((node) => node.getAttribute("data-node-id"));
     expect(orderedIds.slice(0, 6)).toEqual([
       "screen-home",
       "header-bar",
       "price-card",
       "submit-btn",
       "screen-details",
-      "detail-title"
+      "detail-title",
     ]);
   });
 
@@ -213,7 +221,12 @@ describe("ComponentTree", () => {
   });
 
   it("highlights selected node", () => {
-    render(createElement(ComponentTree, { ...defaultProps, selectedId: "submit-btn" }));
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selectedId: "submit-btn",
+      }),
+    );
     const node = screen.getByTestId("tree-node-submit-btn");
     expect(node).toHaveAttribute("aria-selected", "true");
   });
@@ -257,7 +270,9 @@ describe("ComponentTree", () => {
 
   it("calls onToggleCollapsed when collapse button is clicked", () => {
     const onToggleCollapsed = vi.fn();
-    render(createElement(ComponentTree, { ...defaultProps, onToggleCollapsed }));
+    render(
+      createElement(ComponentTree, { ...defaultProps, onToggleCollapsed }),
+    );
     fireEvent.click(screen.getByTestId("tree-collapse-button"));
     expect(onToggleCollapsed).toHaveBeenCalledOnce();
   });
@@ -273,7 +288,7 @@ describe("ComponentTree search", () => {
     selectedId: null,
     onSelect: vi.fn(),
     collapsed: false,
-    onToggleCollapsed: vi.fn()
+    onToggleCollapsed: vi.fn(),
   };
 
   it("filters nodes when typing in search input", () => {
@@ -359,7 +374,7 @@ describe("ComponentTree keyboard navigation", () => {
     selectedId: null,
     onSelect: vi.fn(),
     collapsed: false,
-    onToggleCollapsed: vi.fn()
+    onToggleCollapsed: vi.fn(),
   };
 
   it("navigates with ArrowDown and selects with Enter", () => {
@@ -439,11 +454,14 @@ describe("ComponentTree keyboard navigation", () => {
         selectedId: null,
         onSelect,
         collapsed: false,
-        onToggleCollapsed: vi.fn()
-      })
+        onToggleCollapsed: vi.fn(),
+      }),
     );
 
-    const totalCount = Number.parseInt(screen.getByTestId("component-tree-total-count").textContent ?? "0", 10);
+    const totalCount = Number.parseInt(
+      screen.getByTestId("component-tree-total-count").textContent ?? "0",
+      10,
+    );
     expect(totalCount).toBe(1_501);
 
     // Virtualization should keep mounted rows far below total node count.
@@ -458,5 +476,181 @@ describe("ComponentTree keyboard navigation", () => {
     fireEvent.keyDown(tree, { key: "Enter" });
 
     expect(onSelect).toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Progressive streaming — skeleton placeholders & mapping badges (Issue #1005)
+// ---------------------------------------------------------------------------
+
+function makeStreamingScreens(child: TreeNode): TreeNode[] {
+  return [
+    {
+      id: "screen-1",
+      name: "TestScreen",
+      type: "screen",
+      children: [child],
+    },
+  ];
+}
+
+describe("ComponentTree skeleton nodes", () => {
+  const skeletonNode: TreeNode = { id: "skel-1", name: "", type: "skeleton" };
+
+  const defaultProps = {
+    screens: makeStreamingScreens(skeletonNode),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn(),
+  };
+
+  it("renders shimmer placeholder for skeleton-type nodes (no visible name text)", () => {
+    render(createElement(ComponentTree, defaultProps));
+
+    const row = screen.getByTestId("tree-node-skel-1");
+    // Shimmer span is aria-hidden and has an animate-pulse class.
+    const shimmer = row.querySelector("span[aria-hidden='true'].animate-pulse");
+    expect(shimmer).not.toBeNull();
+    // No `name` text should be rendered for the empty skeleton name.
+    // (The screen-level parent label should still be there though.)
+    expect(within(row).queryByText(/./)).toBeNull();
+  });
+
+  it("skeleton nodes have aria-disabled=true", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const row = screen.getByTestId("tree-node-skel-1");
+    expect(row).toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("clicking a skeleton node does NOT call onSelect", () => {
+    const onSelect = vi.fn();
+    render(createElement(ComponentTree, { ...defaultProps, onSelect }));
+    fireEvent.click(screen.getByTestId("tree-node-skel-1"));
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("double-clicking a skeleton node does NOT call onEnterScope", () => {
+    const onEnterScope = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        onEnterScope,
+      }),
+    );
+    fireEvent.doubleClick(screen.getByTestId("tree-node-skel-1"));
+    expect(onEnterScope).not.toHaveBeenCalled();
+  });
+
+  it("skeleton nodes show no TypeBadge", () => {
+    render(createElement(ComponentTree, defaultProps));
+    const row = screen.getByTestId("tree-node-skel-1");
+    // TypeBadge renders a span with a `title` attribute (e.g. title="button").
+    // For a skeleton node, no such TypeBadge should be present.
+    expect(row.querySelector("[title]")).toBeNull();
+    // Defensive second check: the skeleton-type badge must not be present.
+    expect(row.querySelector("[title='skeleton']")).toBeNull();
+  });
+});
+
+describe("ComponentTree mapping badges", () => {
+  const matchedNode: TreeNode = {
+    id: "matched-1",
+    name: "Button",
+    type: "button",
+    mappingStatus: "matched",
+  };
+  const newNode: TreeNode = {
+    id: "new-1",
+    name: "Card",
+    type: "card",
+    mappingStatus: "new",
+  };
+  const errorNode: TreeNode = {
+    id: "error-1",
+    name: "Nav",
+    type: "navigation",
+    mappingStatus: "error",
+  };
+  const plainNode: TreeNode = {
+    id: "plain-1",
+    name: "Plain",
+    type: "text",
+  };
+
+  const baseProps = {
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn(),
+  };
+
+  it("shows green badge for matched mappingStatus", () => {
+    render(
+      createElement(ComponentTree, {
+        ...baseProps,
+        screens: makeStreamingScreens(matchedNode),
+      }),
+    );
+    const row = screen.getByTestId("tree-node-matched-1");
+    const badge = within(row).getByLabelText("Component matched");
+    expect(badge).toBeInTheDocument();
+    // The "matched" variant uses the green accent color.
+    expect(badge.className).toContain("bg-[#4eba87]");
+  });
+
+  it("shows grey badge for new mappingStatus", () => {
+    render(
+      createElement(ComponentTree, {
+        ...baseProps,
+        screens: makeStreamingScreens(newNode),
+      }),
+    );
+    const row = screen.getByTestId("tree-node-new-1");
+    const badge = within(row).getByLabelText("Component new");
+    expect(badge).toBeInTheDocument();
+    // The "new" variant uses the grey/neutral color.
+    expect(badge.className).toContain("bg-white/25");
+  });
+
+  it("shows red badge for error mappingStatus", () => {
+    render(
+      createElement(ComponentTree, {
+        ...baseProps,
+        screens: makeStreamingScreens(errorNode),
+      }),
+    );
+    const row = screen.getByTestId("tree-node-error-1");
+    const badge = within(row).getByLabelText("Component error");
+    expect(badge).toBeInTheDocument();
+    expect(badge.className).toContain("bg-rose-500");
+  });
+
+  it("shows no badge when mappingStatus is undefined", () => {
+    render(
+      createElement(ComponentTree, {
+        ...baseProps,
+        screens: makeStreamingScreens(plainNode),
+      }),
+    );
+    const row = screen.getByTestId("tree-node-plain-1");
+    expect(within(row).queryByLabelText(/Component /)).toBeNull();
+  });
+
+  it("skeleton nodes never show mapping badge even when mappingStatus is set", () => {
+    const skeletonWithStatus: TreeNode = {
+      id: "skel-mapping",
+      name: "",
+      type: "skeleton",
+      mappingStatus: "matched",
+    };
+    render(
+      createElement(ComponentTree, {
+        ...baseProps,
+        screens: makeStreamingScreens(skeletonWithStatus),
+      }),
+    );
+    const row = screen.getByTestId("tree-node-skel-mapping");
+    expect(within(row).queryByLabelText(/Component /)).toBeNull();
   });
 });

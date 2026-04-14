@@ -4,7 +4,9 @@ import { InspectorPanel } from "./inspector/InspectorPanel";
 import { InspectorErrorBoundary } from "./inspector/InspectorErrorBoundary";
 import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
+import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
+import type { PastePipelineState } from "./inspector/paste-pipeline";
 
 function BackIcon(): JSX.Element {
   return (
@@ -72,6 +74,7 @@ interface PanelViewProps {
   previewUrl: string;
   previousJobId: string | null;
   initialIsRegeneration: boolean;
+  pipeline?: PastePipelineState;
 }
 
 function PanelView({
@@ -79,6 +82,7 @@ function PanelView({
   previewUrl,
   previousJobId,
   initialIsRegeneration,
+  pipeline,
 }: PanelViewProps): JSX.Element {
   const navigate = useNavigate();
   const [activeJobId, setActiveJobId] = useState(jobId);
@@ -182,6 +186,7 @@ function PanelView({
             onCloseDialog={() => {
               setOpenDialog(null);
             }}
+            {...(pipeline !== undefined ? { pipeline } : {})}
           />
         </InspectorErrorBoundary>
       </main>
@@ -191,6 +196,7 @@ function PanelView({
 
 function BootstrapView(): JSX.Element {
   const bootstrap = useInspectorBootstrap();
+  const treeNodes = useStreamingTreeNodes(bootstrap.pipelineState);
 
   const handlePaste = useCallback(
     (text: string, clipboardHtml?: string): void => {
@@ -254,6 +260,7 @@ function BootstrapView(): JSX.Element {
         previewUrl={bootstrap.previewUrl}
         previousJobId={null}
         initialIsRegeneration={false}
+        pipeline={bootstrap.pipelineState}
       />
     );
   }
@@ -271,6 +278,7 @@ function BootstrapView(): JSX.Element {
       previewUrl={bootstrap.previewUrl}
       screenshot={bootstrap.screenshot}
       pipelineStage={bootstrap.pipelineStage}
+      treeNodes={treeNodes}
     />
   );
 }

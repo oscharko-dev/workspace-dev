@@ -9,6 +9,7 @@ import {
   type PipelineError,
   type PipelineStage,
 } from "./paste-pipeline";
+import type { PastePipelineState } from "./paste-pipeline";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import { isFigmaClipboard } from "./figma-clipboard-parser";
 
@@ -76,6 +77,7 @@ export interface UseInspectorBootstrapResult {
   previewUrl: string | null;
   screenshot: string | null;
   pipelineStage: PipelineStage;
+  pipelineState: PastePipelineState;
   detectedIntent: { intent: ImportIntent; confidence: number } | null;
 }
 
@@ -355,5 +357,6 @@ export function useInspectorBootstrap(
     jobId,
     previewUrl,
     detectedIntent,
+    pipelineState: pipeline.state,
   };
 }
