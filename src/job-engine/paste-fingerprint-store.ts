@@ -6,14 +6,20 @@
 // so future pastes of the same component can be diffed against the prior
 // manifest. See issue #992.
 // ---------------------------------------------------------------------------
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, rename, stat, unlink, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { CONTRACT_VERSION } from "../contracts/index.js";
+import {
+  CONTRACT_VERSION,
+  type WorkspaceImportMode,
+  type WorkspacePasteDeltaStrategy,
+  type WorkspacePasteDeltaSummary,
+} from "../contracts/index.js";
 
 const DEFAULT_MAX_ENTRIES = 64;
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60_000; // 30 days
 const IDENTITY_KEY_LENGTH = 32;
+const PASTE_DELTA_COMPATIBILITY_VERSION = 1;
 
 export interface PasteFingerprintNode {
   readonly id: string;
@@ -21,6 +27,22 @@ export interface PasteFingerprintNode {
   readonly parentId: string | null;
   readonly subtreeHash: string;
   readonly depth: number;
+}
+
+export interface PasteGeneratedArtifactHash {
+  readonly relativePath: string;
+  readonly sha256: string;
+  readonly sizeBytes: number;
+}
+
+export interface PasteFingerprintExecution {
+  readonly requestedMode: WorkspaceImportMode;
+  readonly effectiveMode: WorkspacePasteDeltaSummary["mode"];
+  readonly strategy: WorkspacePasteDeltaStrategy;
+  readonly changedNodeIds: readonly string[];
+  readonly changedRootNodeIds: readonly string[];
+  readonly compatibilityFingerprint?: string;
+  readonly generatedArtifactHashes?: readonly PasteGeneratedArtifactHash[];
 }
 
 export interface PasteFingerprintManifest {
@@ -31,6 +53,7 @@ export interface PasteFingerprintManifest {
   readonly nodes: readonly PasteFingerprintNode[];
   readonly figmaFileKey?: string;
   readonly sourceJobId?: string;
+  readonly execution?: PasteFingerprintExecution;
 }
 
 export interface PasteFingerprintStoreOptions {
@@ -85,6 +108,52 @@ export const computePasteIdentityKey = (input: {
   return createHash("sha256").update(canonical).digest("hex").slice(0, IDENTITY_KEY_LENGTH);
 };
 
+export const computePasteCompatibilityFingerprint = (input: {
+  readonly figmaSourceMode: string;
+  readonly brandTheme: string;
+  readonly customerBrandId?: string;
+  readonly customerProfileSnapshot?: unknown;
+  readonly componentMappings?: unknown;
+  readonly storybookStaticDir?: string;
+  readonly generationLocale: string;
+  readonly formHandlingMode: string;
+  readonly routerMode: string;
+  readonly screenElementBudget: number;
+  readonly screenElementMaxDepth: number;
+  readonly exportImages: boolean;
+}): string => {
+  const canonical = JSON.stringify(
+    toCanonicalJsonValue({
+      figmaSourceMode: input.figmaSourceMode,
+      brandTheme: input.brandTheme,
+      ...(input.customerBrandId !== undefined
+        ? { customerBrandId: input.customerBrandId }
+        : {}),
+      ...(input.customerProfileSnapshot !== undefined
+        ? { customerProfileSnapshot: input.customerProfileSnapshot }
+        : {}),
+      ...(input.componentMappings !== undefined
+        ? { componentMappings: input.componentMappings }
+        : {}),
+      ...(input.storybookStaticDir !== undefined
+        ? { storybookStaticDir: input.storybookStaticDir }
+        : {}),
+      generationLocale: input.generationLocale,
+      formHandlingMode: input.formHandlingMode,
+      routerMode: input.routerMode,
+      screenElementBudget: input.screenElementBudget,
+      screenElementMaxDepth: input.screenElementMaxDepth,
+      exportImages: input.exportImages,
+      contractVersion: CONTRACT_VERSION,
+      pasteDeltaCompatibilityVersion: PASTE_DELTA_COMPATIBILITY_VERSION,
+    }),
+  );
+  return createHash("sha256")
+    .update(canonical)
+    .digest("hex")
+    .slice(0, IDENTITY_KEY_LENGTH);
+};
+
 const isErrnoException = (error: unknown): error is NodeJS.ErrnoException => {
   return error instanceof Error && "code" in error;
 };
@@ -101,6 +170,58 @@ const isValidNode = (value: unknown): value is PasteFingerprintNode => {
     typeof record.subtreeHash === "string" &&
     typeof record.depth === "number"
   );
+};
+
+const isValidGeneratedArtifactHash = (
+  value: unknown,
+): value is PasteGeneratedArtifactHash => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.relativePath === "string" &&
+    typeof record.sha256 === "string" &&
+    typeof record.sizeBytes === "number"
+  );
+};
+
+const isValidExecution = (
+  value: unknown,
+): value is PasteFingerprintExecution => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.requestedMode !== "string" ||
+    typeof record.effectiveMode !== "string" ||
+    typeof record.strategy !== "string" ||
+    !Array.isArray(record.changedNodeIds) ||
+    !Array.isArray(record.changedRootNodeIds)
+  ) {
+    return false;
+  }
+  if (!record.changedNodeIds.every((entry) => typeof entry === "string")) {
+    return false;
+  }
+  if (!record.changedRootNodeIds.every((entry) => typeof entry === "string")) {
+    return false;
+  }
+  if (
+    record.compatibilityFingerprint !== undefined &&
+    typeof record.compatibilityFingerprint !== "string"
+  ) {
+    return false;
+  }
+  if (
+    record.generatedArtifactHashes !== undefined &&
+    (!Array.isArray(record.generatedArtifactHashes) ||
+      !record.generatedArtifactHashes.every(isValidGeneratedArtifactHash))
+  ) {
+    return false;
+  }
+  return true;
 };
 
 const isValidManifest = (value: unknown): value is PasteFingerprintManifest => {
@@ -127,6 +248,9 @@ const isValidManifest = (value: unknown): value is PasteFingerprintManifest => {
     return false;
   }
   if (record.sourceJobId !== undefined && typeof record.sourceJobId !== "string") {
+    return false;
+  }
+  if (record.execution !== undefined && !isValidExecution(record.execution)) {
     return false;
   }
   return true;
@@ -246,7 +370,7 @@ export const createPasteFingerprintStore = (opts: PasteFingerprintStoreOptions):
   const save = async (manifest: PasteFingerprintManifest): Promise<void> => {
     await mkdir(rootDir, { recursive: true });
     const filePath = manifestFilePath(rootDir, manifest.pasteIdentityKey);
-    const temporaryPath = `${filePath}.tmp`;
+    const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
     await writeFile(temporaryPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
     await rename(temporaryPath, filePath);
     await enforceMaxEntries({ rootDir, maxEntries });

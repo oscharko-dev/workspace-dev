@@ -24,6 +24,7 @@ import type {
   WorkspaceJobRetryTarget,
   WorkspaceJobResult,
   WorkspaceJobRuntimeStatus,
+  WorkspacePasteDeltaSummary,
   WorkspaceRouterMode,
   WorkspaceJobStage,
   WorkspaceJobStageName,
@@ -46,6 +47,7 @@ import type { WorkspaceRuntimeLogger } from "../logging.js";
 import type { FigmaRestCircuitBreaker } from "./figma-rest-circuit-breaker.js";
 import type { PipelineDiagnosticLimits } from "./errors.js";
 import type { ResolvedCustomerProfile } from "../customer-profile.js";
+import type { WorkspacePasteDeltaSeed } from "./paste-delta-execution.js";
 
 export interface FigmaComponentCatalogEntry {
   key?: string;
@@ -102,6 +104,7 @@ export interface JobRecord {
     url?: string;
   };
   queue: WorkspaceJobQueueState;
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
   abortController?: AbortController;
   lineage?: WorkspaceJobLineage;
   cancellation?: WorkspaceJobCancellation;
@@ -114,6 +117,10 @@ export interface JobRecord {
   inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
 }
+
+export type SubmissionJobInput = WorkspaceJobInput & {
+  pasteDeltaSeed?: WorkspacePasteDeltaSeed;
+};
 
 export interface WorkspacePipelineError extends Error {
   code: string;
@@ -254,7 +261,7 @@ export interface JobRecordSnapshot {
 }
 
 export interface JobEngine {
-  submitJob: (input: WorkspaceJobInput) => WorkspaceSubmitAccepted;
+  submitJob: (input: SubmissionJobInput) => WorkspaceSubmitAccepted;
   submitRegeneration: (
     input: WorkspaceRegenerationInput,
   ) => WorkspaceRegenerationAccepted;

@@ -700,3 +700,45 @@ test("syncPublicJobProjection projects completed confidence from artifact store"
   ]);
   assert.equal(job.artifacts.confidenceReportFile, confidencePath);
 });
+
+test("syncPublicJobProjection projects pasteDeltaSummary from authoritative stage artifacts", async () => {
+  const { job, artifactStore } = await createJob();
+
+  await artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+    stage: "figma.source",
+    value: {
+      pasteIdentityKey: "paste-key-1",
+      requestedMode: "auto",
+      summary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "delta",
+        totalNodes: 12,
+        nodesReused: 9,
+        nodesReprocessed: 3,
+        structuralChangeRatio: 0.25,
+        pasteIdentityKey: "paste-key-1",
+        priorManifestMissing: false,
+      },
+      currentFingerprintNodes: [],
+      rootNodeIds: ["screen-1"],
+      changedNodeIds: ["title-1"],
+      changedRootNodeIds: ["screen-1"],
+      eligibleForReuse: true,
+      sourceJobId: "job-prev",
+    },
+  });
+
+  await syncPublicJobProjection({ job, artifactStore });
+
+  assert.deepEqual(job.pasteDeltaSummary, {
+    mode: "auto_resolved_to_delta",
+    strategy: "delta",
+    totalNodes: 12,
+    nodesReused: 9,
+    nodesReprocessed: 3,
+    structuralChangeRatio: 0.25,
+    pasteIdentityKey: "paste-key-1",
+    priorManifestMissing: false,
+  });
+});

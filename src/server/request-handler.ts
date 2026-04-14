@@ -10,7 +10,6 @@ import {
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
-  CONTRACT_VERSION,
   type WorkspaceFigmaSourceMode,
   type WorkspacePasteDeltaSummary,
   type WorkspaceStatus,
@@ -24,18 +23,20 @@ import {
 } from "../clipboard-envelope.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
+import type { SubmissionJobInput } from "../job-engine/types.js";
 import { STAGE_ARTIFACT_KEYS } from "../job-engine/pipeline/artifact-keys.js";
 import { StageArtifactStore } from "../job-engine/pipeline/artifact-store.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
 import {
   computePasteIdentityKey,
   createPasteFingerprintStore,
-  type PasteFingerprintManifest,
 } from "../job-engine/paste-fingerprint-store.js";
+import { diffFigmaPaste } from "../job-engine/paste-tree-diff.js";
 import {
-  diffFigmaPaste,
-  type DiffableFigmaNode,
-} from "../job-engine/paste-tree-diff.js";
+  resolvePasteDeltaSummary,
+  type PasteDeltaSeedCandidate,
+} from "../job-engine/paste-delta-execution.js";
+import { extractDiffablePasteRootsFromJson } from "../job-engine/paste-delta-roots.js";
 import type {
   WorkspaceRuntimeLogLevel,
   WorkspaceRuntimeLogger,
@@ -2660,7 +2661,7 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        let submitInput = {
+        let submitInput: SubmissionJobInput = {
           ...parsed.data,
           figmaSourceMode: resolvedFigmaSourceMode,
           llmCodegenMode: defaults.llmCodegenMode,
@@ -2688,6 +2689,7 @@ export function createWorkspaceRequestHandler({
             }
           | undefined;
         let pasteDeltaSummary: WorkspacePasteDeltaSummary | undefined;
+        let pasteDeltaSeed: PasteDeltaSeedCandidate | undefined;
 
         if (
           resolvedFigmaSourceMode === "figma_paste" ||
@@ -2776,7 +2778,8 @@ export function createWorkspaceRequestHandler({
           // manifest. Any failure here is non-fatal — paste proceeds as full
           // build with no pasteDeltaSummary on the accepted response.
           try {
-            const extractedRoots = extractPasteRoots(normalizedPayload);
+            const extractedRoots =
+              extractDiffablePasteRootsFromJson(normalizedPayload);
             if (extractedRoots.length > 0) {
               const topLevelIds = extractedRoots.map((root) => root.id);
               const figmaFileKey = parsed.data.figmaFileKey;
@@ -2787,64 +2790,51 @@ export function createWorkspaceRequestHandler({
               const store = createPasteFingerprintStore({
                 rootDir: path.join(absoluteOutputRoot, "paste-fingerprints"),
               });
-              const priorManifest = await store.load(identityKey);
+              const priorManifest =
+                typeof figmaFileKey === "string" &&
+                figmaFileKey.trim().length > 0
+                  ? await store.load(identityKey)
+                  : undefined;
               const plan = diffFigmaPaste({
                 priorManifest,
                 currentRoots: extractedRoots,
               });
 
-              const requestedImportMode = parsed.data.importMode;
-              let effectiveMode: WorkspacePasteDeltaSummary["mode"];
-              if (requestedImportMode === "full") {
-                effectiveMode = "full";
-              } else if (requestedImportMode === "delta") {
-                effectiveMode =
-                  plan.strategy === "structural_break" ? "full" : "delta";
-              } else {
-                if (
-                  plan.strategy === "structural_break" ||
-                  plan.strategy === "baseline_created"
-                ) {
-                  effectiveMode = "auto_resolved_to_full";
-                } else {
-                  effectiveMode = "auto_resolved_to_delta";
-                }
-              }
-
-              const newManifest: PasteFingerprintManifest = {
-                contractVersion: CONTRACT_VERSION,
-                pasteIdentityKey: identityKey,
-                createdAt: new Date().toISOString(),
-                rootNodeIds: plan.rootNodeIds,
-                nodes: plan.currentFingerprintNodes,
-                ...(figmaFileKey !== undefined ? { figmaFileKey } : {}),
-              };
-              try {
-                await store.save(newManifest);
-              } catch (error) {
-                logAuditEvent({
-                  event: "workspace.request.failed",
-                  level: "warn",
-                  message: `Paste fingerprint save failed: ${sanitizeErrorMessage({
-                    error,
-                    fallback: "unknown error",
-                  })}`,
-                });
-              }
+              const requestedImportMode = parsed.data.importMode ?? "auto";
+              const reusableSourceJobId = priorManifest?.sourceJobId?.trim();
+              const canAttemptReuse =
+                typeof figmaFileKey === "string" &&
+                figmaFileKey.trim().length > 0 &&
+                typeof reusableSourceJobId === "string" &&
+                reusableSourceJobId.length > 0;
+              const resolvedSummary = resolvePasteDeltaSummary({
+                allowReuse: canAttemptReuse,
+                plan,
+                requestedMode: requestedImportMode,
+              });
 
               pasteDeltaSummary = {
-                mode: effectiveMode,
-                strategy: plan.strategy,
-                totalNodes: plan.totalNodes,
-                nodesReused: plan.reusedNodes,
-                nodesReprocessed: plan.reprocessedNodes,
-                structuralChangeRatio: plan.structuralChangeRatio,
+                ...resolvedSummary,
                 pasteIdentityKey: identityKey,
                 priorManifestMissing: priorManifest === undefined,
+              };
+              pasteDeltaSeed = {
+                pasteIdentityKey: identityKey,
+                requestedMode: requestedImportMode,
+                provisionalSummary: pasteDeltaSummary,
+                ...(canAttemptReuse ? { sourceJobId: reusableSourceJobId } : {}),
+                ...(priorManifest?.execution?.compatibilityFingerprint
+                  ? {
+                      compatibilityFingerprint:
+                        priorManifest.execution.compatibilityFingerprint,
+                    }
+                  : {}),
+                ...(figmaFileKey !== undefined ? { figmaFileKey } : {}),
               };
             }
           } catch (error) {
             pasteDeltaSummary = undefined;
+            pasteDeltaSeed = undefined;
             logAuditEvent({
               event: "workspace.request.failed",
               level: "warn",
@@ -2862,6 +2852,7 @@ export function createWorkspaceRequestHandler({
             ...restSubmitInput,
             figmaSourceMode: "local_json",
             figmaJsonPath: pasteTempPath,
+            ...(pasteDeltaSeed !== undefined ? { pasteDeltaSeed } : {}),
           };
         }
 
@@ -3031,67 +3022,6 @@ function countFigmaNodes(jsonString: string): number {
   } catch {
     return 0;
   }
-}
-
-const ROOT_NODE_TYPES = new Set<string>([
-  "CANVAS",
-  "FRAME",
-  "COMPONENT",
-  "COMPONENT_SET",
-  "INSTANCE",
-]);
-
-function asDiffableFigmaNode(value: unknown): DiffableFigmaNode | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const rec = value as Record<string, unknown>;
-  if (typeof rec.id !== "string" || typeof rec.type !== "string") {
-    return undefined;
-  }
-  return rec as unknown as DiffableFigmaNode;
-}
-
-function extractPasteRoots(jsonString: string): DiffableFigmaNode[] {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonString);
-  } catch {
-    return [];
-  }
-  if (typeof parsed !== "object" || parsed === null) return [];
-  const rec = parsed as Record<string, unknown>;
-
-  const document = rec.document;
-  if (document !== undefined) {
-    const docRec =
-      typeof document === "object" && document !== null
-        ? (document as Record<string, unknown>)
-        : undefined;
-    if (docRec !== undefined && Array.isArray(docRec.children)) {
-      const roots: DiffableFigmaNode[] = [];
-      for (const child of docRec.children) {
-        const node = asDiffableFigmaNode(child);
-        if (node !== undefined && ROOT_NODE_TYPES.has(node.type)) {
-          roots.push(node);
-        }
-      }
-      return roots;
-    }
-  }
-
-  if (typeof rec.nodes === "object" && rec.nodes !== null) {
-    const roots: DiffableFigmaNode[] = [];
-    for (const entry of Object.values(rec.nodes as Record<string, unknown>)) {
-      if (typeof entry !== "object" || entry === null) continue;
-      const inner = (entry as Record<string, unknown>).document;
-      const node = asDiffableFigmaNode(inner);
-      if (node !== undefined) {
-        roots.push(node);
-      }
-    }
-    return roots;
-  }
-
-  return [];
 }
 
 async function collectSourceFiles(

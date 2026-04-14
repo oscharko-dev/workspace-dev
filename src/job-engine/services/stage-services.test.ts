@@ -9,7 +9,6 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
-  WorkspaceJobInput,
   WorkspaceJobStageName
 } from "../../contracts/index.js";
 import { CONTRACT_VERSION } from "../../contracts/index.js";
@@ -26,6 +25,9 @@ import { loadPreviousSnapshot, saveCurrentSnapshot, type GenerationDiffContext }
 import { computeContentHash, computeOptionsHash, saveCachedIr } from "../ir-cache.js";
 import { StageArtifactStore } from "../pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
+import { createPasteFingerprintStore } from "../paste-fingerprint-store.js";
+import { buildFingerprintNodes } from "../paste-tree-diff.js";
+import type { SubmissionJobInput } from "../types.js";
 import { resolveRuntimeSettings } from "../runtime.js";
 import { createInitialStages, nowIso } from "../stage-state.js";
 import type { JobEngineRuntime, JobRecord } from "../types.js";
@@ -1676,7 +1678,7 @@ const createExecutionContext = async ({
   jobId = "job-stage-test"
 }: {
   mode?: "submission" | "regeneration";
-  input?: WorkspaceJobInput;
+  input?: SubmissionJobInput;
   runtimeOverrides?: Partial<Parameters<typeof resolveRuntimeSettings>[0]>;
   requestOverrides?: Partial<JobRecord["request"]>;
   rootDir?: string;
@@ -2775,6 +2777,222 @@ test("TemplatePrepareService maps missing template to E_TEMPLATE_MISSING", async
   );
 });
 
+test("FigmaSourceService keeps summary but disables reuse when figmaFileKey is unavailable", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json",
+      llmCodegenMode: "deterministic",
+      figmaJsonPath: "",
+      pasteDeltaSeed: {
+        pasteIdentityKey: "paste-no-file-key",
+        requestedMode: "auto",
+      },
+    } as SubmissionJobInput,
+  });
+  const payloadPath = path.join(executionContext.paths.jobDir, "payload.json");
+  const payload = createLocalFigmaPayload();
+  await writeFile(payloadPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  executionContext.input = {
+    ...executionContext.input!,
+    figmaJsonPath: payloadPath,
+    pasteDeltaSeed: {
+      ...executionContext.input!.pasteDeltaSeed!,
+      provisionalSummary: {
+        mode: "auto_resolved_to_full",
+        strategy: "baseline_created",
+        totalNodes: 2,
+        nodesReused: 0,
+        nodesReprocessed: 2,
+        structuralChangeRatio: 1,
+        pasteIdentityKey: "paste-no-file-key",
+        priorManifestMissing: false,
+      },
+      sourceJobId: "source-job-1",
+    },
+  };
+  const roots = [payload.document.children[0]! as Record<string, unknown>];
+  const fingerprints = buildFingerprintNodes(roots as never);
+  const store = createPasteFingerprintStore({
+    rootDir: path.join(executionContext.resolvedPaths.outputRoot, "paste-fingerprints"),
+  });
+  await store.save({
+    contractVersion: CONTRACT_VERSION,
+    pasteIdentityKey: "paste-no-file-key",
+    createdAt: "2026-04-14T00:00:00.000Z",
+    rootNodeIds: fingerprints.rootNodeIds,
+    nodes: fingerprints.nodes,
+    sourceJobId: "source-job-1",
+  });
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: payloadPath,
+    },
+    stageContextFor("figma.source"),
+  );
+
+  const deltaExecution = await executionContext.artifactStore.getValue(
+    STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+  );
+  assert.equal(
+    (deltaExecution as { summary: { strategy: string; mode: string } }).summary.strategy,
+    "baseline_created",
+  );
+  assert.equal(
+    (deltaExecution as { summary: { strategy: string; mode: string } }).summary.mode,
+    "auto_resolved_to_full",
+  );
+  assert.equal(
+    (deltaExecution as { eligibleForReuse: boolean }).eligibleForReuse,
+    false,
+  );
+});
+
+test("IrDeriveService reuses source IR for no-change delta executions", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const payloadPath = path.join(executionContext.paths.jobDir, "payload.json");
+  await writeFile(
+    payloadPath,
+    `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`,
+    "utf8",
+  );
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: payloadPath,
+    },
+    stageContextFor("figma.source"),
+  );
+
+  const sourceJobDir = path.join(
+    executionContext.resolvedPaths.jobsRoot,
+    "source-no-change",
+  );
+  await mkdir(sourceJobDir, { recursive: true });
+  const sourceIr = createMinimalIr();
+  const sourceIrPath = path.join(sourceJobDir, "design-ir.json");
+  await writeFile(sourceIrPath, `${JSON.stringify(sourceIr, null, 2)}\n`, "utf8");
+  executionContext.sourceJob = {
+    ...createJobRecord({
+      runtime: executionContext.runtime,
+      jobDir: sourceJobDir,
+    }),
+    jobId: "source-no-change",
+    artifacts: {
+      ...createJobRecord({
+        runtime: executionContext.runtime,
+        jobDir: sourceJobDir,
+      }).artifacts,
+      designIrFile: sourceIrPath,
+    },
+  };
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+    stage: "figma.source",
+    value: {
+      pasteIdentityKey: "paste-1",
+      requestedMode: "auto",
+      summary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "no_changes",
+        totalNodes: 2,
+        nodesReused: 2,
+        nodesReprocessed: 0,
+        structuralChangeRatio: 0,
+        pasteIdentityKey: "paste-1",
+        priorManifestMissing: false,
+      },
+      currentFingerprintNodes: [],
+      rootNodeIds: ["screen-1"],
+      changedNodeIds: [],
+      changedRootNodeIds: [],
+      sourceJobId: "source-no-change",
+      eligibleForReuse: true,
+    },
+  });
+
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const derived = JSON.parse(
+    await readFile(executionContext.paths.designIrFile, "utf8"),
+  ) as DesignIR;
+  assert.deepEqual(derived, sourceIr);
+});
+
+test("TemplatePrepareService seeds the prior generated project for eligible delta reuse", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await mkdir(executionContext.paths.templateRoot, { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.templateRoot, "template-only.txt"),
+    "template\n",
+    "utf8",
+  );
+
+  const sourceJobDir = path.join(
+    executionContext.resolvedPaths.jobsRoot,
+    "source-template-seed",
+  );
+  const sourceGeneratedProjectDir = path.join(sourceJobDir, "generated-app");
+  await mkdir(sourceGeneratedProjectDir, { recursive: true });
+  await writeFile(
+    path.join(sourceGeneratedProjectDir, "seeded.txt"),
+    "seeded\n",
+    "utf8",
+  );
+
+  executionContext.sourceJob = {
+    ...createJobRecord({
+      runtime: executionContext.runtime,
+      jobDir: sourceJobDir,
+    }),
+    jobId: "source-template-seed",
+    artifacts: {
+      ...createJobRecord({
+        runtime: executionContext.runtime,
+        jobDir: sourceJobDir,
+      }).artifacts,
+      generatedProjectDir: sourceGeneratedProjectDir,
+    },
+  };
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+    stage: "figma.source",
+    value: {
+      pasteIdentityKey: "paste-2",
+      requestedMode: "auto",
+      summary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "no_changes",
+        totalNodes: 2,
+        nodesReused: 2,
+        nodesReprocessed: 0,
+        structuralChangeRatio: 0,
+        pasteIdentityKey: "paste-2",
+        priorManifestMissing: false,
+      },
+      currentFingerprintNodes: [],
+      rootNodeIds: ["screen-1"],
+      changedNodeIds: [],
+      changedRootNodeIds: [],
+      sourceJobId: "source-template-seed",
+      eligibleForReuse: true,
+    },
+  });
+
+  await TemplatePrepareService.execute(
+    undefined,
+    stageContextFor("template.prepare"),
+  );
+
+  assert.equal(
+    await readFile(
+      path.join(executionContext.paths.generatedProjectDir, "seeded.txt"),
+      "utf8",
+    ),
+    "seeded\n",
+  );
+});
+
 test("CodegenGenerateService reads design.ir and stores summary, manifest, metrics, and diff context", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   const ir = createMinimalIr();
@@ -2825,6 +3043,225 @@ test("CodegenGenerateService reads design.ir and stores summary, manifest, metri
   });
   assert.equal(await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.generationDiff), undefined);
   assert.equal(await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generationDiffFile), undefined);
+});
+
+test("CodegenGenerateService skips generator work for no-change delta reuse", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  await writeFile(
+    executionContext.paths.designIrFile,
+    `${JSON.stringify(ir, null, 2)}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile,
+  });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "existing.txt"),
+    "existing\n",
+    "utf8",
+  );
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+    stage: "figma.source",
+    value: {
+      pasteIdentityKey: "paste-3",
+      requestedMode: "auto",
+      summary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "no_changes",
+        totalNodes: 2,
+        nodesReused: 2,
+        nodesReprocessed: 0,
+        structuralChangeRatio: 0,
+        pasteIdentityKey: "paste-3",
+        priorManifestMissing: false,
+      },
+      currentFingerprintNodes: [],
+      rootNodeIds: ["screen-1"],
+      changedNodeIds: [],
+      changedRootNodeIds: [],
+      sourceJobId: "source-codegen-no-change",
+      eligibleForReuse: true,
+    },
+  });
+
+  let generatorCalled = false;
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* () {
+      generatorCalled = true;
+      return { generatedPaths: [] };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+      }) as Awaited<
+        ReturnType<
+          typeof import("../../parity/component-manifest.js").buildComponentManifest
+        >
+      >,
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "demo-board",
+    },
+    stageContextFor("codegen.generate"),
+  );
+
+  assert.equal(generatorCalled, false);
+  assert.deepEqual(
+    await executionContext.artifactStore.getValue(
+      STAGE_ARTIFACT_KEYS.codegenSummary,
+    ),
+    {
+      generatedPaths: ["component-manifest.json", "existing.txt"],
+    },
+  );
+});
+
+test("CodegenGenerateService maps changed node ids to affected emitted targets for delta runs", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  ir.screens = [
+    {
+      id: "screen-1",
+      name: "Screen 1",
+      route: "/screen-1",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "title-1",
+          name: "Title 1",
+          type: "text",
+          children: [],
+        } as never,
+      ],
+    },
+    {
+      id: "screen-2",
+      name: "Screen 2",
+      route: "/screen-2",
+      layoutMode: "VERTICAL",
+      gap: 8,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+      children: [
+        {
+          id: "title-2",
+          name: "Title 2",
+          type: "text",
+          children: [],
+        } as never,
+      ],
+    },
+  ];
+  await writeFile(
+    executionContext.paths.designIrFile,
+    `${JSON.stringify(ir, null, 2)}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile,
+  });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "component-manifest.json"),
+    `${JSON.stringify(
+      {
+        screens: [
+          {
+            screenId: "screen-1",
+            screenName: "Screen 1",
+            file: toDeterministicScreenPath("Screen 1"),
+            components: [
+              {
+                irNodeId: "title-1",
+                irNodeName: "Title 1",
+                irNodeType: "TEXT",
+                file: toDeterministicScreenPath("Screen 1"),
+                startLine: 1,
+                endLine: 2,
+              },
+            ],
+          },
+          {
+            screenId: "screen-2",
+            screenName: "Screen 2",
+            file: toDeterministicScreenPath("Screen 2"),
+            components: [
+              {
+                irNodeId: "title-2",
+                irNodeName: "Title 2",
+                irNodeType: "TEXT",
+                file: toDeterministicScreenPath("Screen 2"),
+                startLine: 1,
+                endLine: 2,
+              },
+            ],
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+    stage: "figma.source",
+    value: {
+      pasteIdentityKey: "paste-4",
+      requestedMode: "auto",
+      summary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "delta",
+        totalNodes: 4,
+        nodesReused: 2,
+        nodesReprocessed: 2,
+        structuralChangeRatio: 0.5,
+        pasteIdentityKey: "paste-4",
+        priorManifestMissing: false,
+      },
+      currentFingerprintNodes: [],
+      rootNodeIds: ["screen-1", "screen-2"],
+      changedNodeIds: ["title-1"],
+      changedRootNodeIds: ["screen-1"],
+      sourceJobId: "source-codegen-delta",
+      eligibleForReuse: true,
+    },
+  });
+
+  let generatedScreenIds: string[] = [];
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* ({ ir: generationIr }) {
+      generatedScreenIds = generationIr.screens.map((screen) => screen.id);
+      return { generatedPaths: [] };
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+      }) as Awaited<
+        ReturnType<
+          typeof import("../../parity/component-manifest.js").buildComponentManifest
+        >
+      >,
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "demo-board",
+    },
+    stageContextFor("codegen.generate"),
+  );
+
+  assert.deepEqual(generatedScreenIds, ["screen-1"]);
 });
 
 test("CodegenGenerateService builds the component manifest from emitted canonical screens only", async () => {

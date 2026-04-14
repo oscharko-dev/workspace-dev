@@ -13,6 +13,10 @@ import type {
 import type { JobRecord } from "../types.js";
 import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
 import type { StageArtifactStore } from "./artifact-store.js";
+import {
+  isPasteDeltaExecutionState,
+  type PasteDeltaExecutionState,
+} from "../paste-delta-execution.js";
 
 interface CodegenSummaryLike {
   generatedPaths?: string[];
@@ -128,6 +132,15 @@ export const syncPublicJobProjection = async ({
   );
   if (generatedProjectDir) {
     job.artifacts.generatedProjectDir = generatedProjectDir;
+  }
+
+  const pasteDeltaExecution =
+    await artifactStore.getValue<PasteDeltaExecutionState>(
+      STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+      isPasteDeltaExecutionState,
+    );
+  if (pasteDeltaExecution) {
+    job.pasteDeltaSummary = { ...pasteDeltaExecution.summary };
   }
 
   await syncOptionalArtifactPath({

@@ -2,20 +2,21 @@ import { randomUUID } from "node:crypto";
 import { cp, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type {
-  WorkspaceBrandTheme,
-  WorkspaceFigmaSourceMode,
-  WorkspaceFormHandlingMode,
-  WorkspaceLocalSyncApplyResult,
-  WorkspaceLocalSyncDryRunResult,
-  WorkspaceJobDiagnostic,
-  WorkspaceJobInput,
-  WorkspaceJobRetryStage,
-  WorkspaceJobResult,
-  WorkspaceJobStageName,
-  WorkspaceJobStatus,
-  WorkspaceRegenerationInput,
-  WorkspaceRetryInput,
+import {
+  CONTRACT_VERSION,
+  type WorkspaceBrandTheme,
+  type WorkspaceFigmaSourceMode,
+  type WorkspaceFormHandlingMode,
+  type WorkspaceLocalSyncApplyResult,
+  type WorkspaceLocalSyncDryRunResult,
+  type WorkspaceJobDiagnostic,
+  type WorkspaceJobInput,
+  type WorkspaceJobRetryStage,
+  type WorkspaceJobResult,
+  type WorkspaceJobStageName,
+  type WorkspaceJobStatus,
+  type WorkspaceRegenerationInput,
+  type WorkspaceRetryInput,
 } from "./contracts/index.js";
 import { normalizeComponentMappingRules } from "./component-mapping-rules.js";
 import {
@@ -69,6 +70,7 @@ import type {
   CreateJobEngineInput,
   JobEngine,
   JobRecord,
+  SubmissionJobInput,
   WorkspacePipelineError,
 } from "./job-engine/types.js";
 import { generateRemapSuggestions } from "./job-engine/remap-suggestions.js";
@@ -94,9 +96,19 @@ import {
   buildSubmissionPipelinePlan,
 } from "./job-engine/services/pipeline-services.js";
 import {
+  computePasteCompatibilityFingerprint,
+  createPasteFingerprintStore,
+  type PasteFingerprintManifest,
+} from "./job-engine/paste-fingerprint-store.js";
+import {
+  isPasteDeltaExecutionState,
+  type PasteDeltaExecutionState,
+} from "./job-engine/paste-delta-execution.js";
+import {
   resolveStorybookStaticDir,
   reuseStorybookArtifactsFromSourceJob,
 } from "./job-engine/storybook-artifacts.js";
+import { prepareGenerationDiff } from "./job-engine/generation-diff.js";
 
 const MODULE_DIR =
   typeof __dirname === "string"
@@ -650,7 +662,7 @@ export const createJobEngine = ({
   );
   const jobs = new Map<string, JobRecord>();
   const queuedJobIds: string[] = [];
-  const queuedJobInputs = new Map<string, WorkspaceJobInput>();
+  const queuedJobInputs = new Map<string, SubmissionJobInput>();
   const queuedRegenInputs = new Map<string, WorkspaceRegenerationInput>();
   const queuedRetryInputs = new Map<string, WorkspaceRetryInput>();
   const runningJobIds = new Set<string>();
@@ -1144,6 +1156,118 @@ export const createJobEngine = ({
     };
   };
 
+  const buildPasteCompatibilityFingerprintForJob = async ({
+    artifactStore,
+    customerBrandId,
+    request,
+    storybookStaticDir,
+  }: {
+    artifactStore: StageArtifactStore;
+    customerBrandId?: string;
+    request: WorkspaceJobStatus["request"];
+    storybookStaticDir?: string;
+  }): Promise<string> => {
+    const customerProfileSnapshot = await artifactStore.getValue<unknown>(
+      STAGE_ARTIFACT_KEYS.customerProfileResolved,
+    );
+    return computePasteCompatibilityFingerprint({
+      figmaSourceMode: request.figmaSourceMode,
+      brandTheme: request.brandTheme,
+      ...(customerBrandId ? { customerBrandId } : {}),
+      ...(customerProfileSnapshot !== undefined
+        ? { customerProfileSnapshot }
+        : {}),
+      ...(request.componentMappings !== undefined
+        ? { componentMappings: request.componentMappings }
+        : {}),
+      ...(storybookStaticDir ? { storybookStaticDir } : {}),
+      generationLocale: request.generationLocale,
+      formHandlingMode: request.formHandlingMode,
+      routerMode: runtime.routerMode,
+      screenElementBudget: runtime.figmaScreenElementBudget,
+      screenElementMaxDepth: runtime.figmaScreenElementMaxDepth,
+      exportImages: runtime.exportImages,
+    });
+  };
+
+  const resolveSubmissionPasteDeltaSourceJob = async ({
+    artifactStore,
+    input,
+    job,
+    resolvedCustomerBrandId,
+    storybookActivation,
+  }: {
+    artifactStore: StageArtifactStore;
+    input: SubmissionJobInput;
+    job: JobRecord;
+    resolvedCustomerBrandId?: string;
+    storybookActivation?:
+      | {
+          requestedStorybookStaticDir: string;
+          resolvedStorybookStaticDir: string;
+        }
+      | undefined;
+  }): Promise<{
+    sourceJob?: JobRecord;
+    compatibilityFingerprint?: string;
+  }> => {
+    const seed = input.pasteDeltaSeed;
+    if (!seed || input.importMode === "full") {
+      return {};
+    }
+    const sourceJobId = seed.sourceJobId?.trim();
+    if (!sourceJobId) {
+      return {};
+    }
+    const sourceJob = jobs.get(sourceJobId);
+    if (!sourceJob || sourceJob.status !== "completed") {
+      return {};
+    }
+    if (
+      !sourceJob.artifacts.designIrFile ||
+      !sourceJob.artifacts.generatedProjectDir
+    ) {
+      return {};
+    }
+
+    const currentCompatibilityFingerprint =
+      await buildPasteCompatibilityFingerprintForJob({
+        artifactStore,
+        ...(resolvedCustomerBrandId
+          ? { customerBrandId: resolvedCustomerBrandId }
+          : {}),
+        request: job.request,
+        ...(storybookActivation?.requestedStorybookStaticDir
+          ? { storybookStaticDir: storybookActivation.requestedStorybookStaticDir }
+          : {}),
+      });
+    const sourceArtifactStore = new StageArtifactStore({
+      jobDir: sourceJob.artifacts.jobDir,
+    });
+    const sourceCompatibilityFingerprint =
+      await buildPasteCompatibilityFingerprintForJob({
+        artifactStore: sourceArtifactStore,
+        ...(sourceJob.request.customerBrandId
+          ? { customerBrandId: sourceJob.request.customerBrandId }
+          : {}),
+        request: sourceJob.request,
+        ...(sourceJob.request.storybookStaticDir
+          ? { storybookStaticDir: sourceJob.request.storybookStaticDir }
+          : {}),
+      });
+
+    if (currentCompatibilityFingerprint !== sourceCompatibilityFingerprint) {
+      return {
+        compatibilityFingerprint: currentCompatibilityFingerprint,
+      };
+    }
+
+    return {
+      sourceJob,
+      compatibilityFingerprint: currentCompatibilityFingerprint,
+    };
+  };
+
   const activateRegenerationCustomerProfile = async ({
     job,
     artifactStore,
@@ -1257,9 +1381,70 @@ export const createJobEngine = ({
     return sourceRequestedStorybookStaticDir;
   };
 
+  const persistSubmissionPasteFingerprintManifest = async ({
+    artifactStore,
+    compatibilityFingerprint,
+    job,
+  }: {
+    artifactStore: StageArtifactStore;
+    compatibilityFingerprint?: string;
+    job: JobRecord;
+  }): Promise<void> => {
+    const execution = await artifactStore.getValue<PasteDeltaExecutionState>(
+      STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+      isPasteDeltaExecutionState,
+    );
+    if (!execution) {
+      return;
+    }
+    const generatedProjectDir = await artifactStore.getPath(
+      STAGE_ARTIFACT_KEYS.generatedProject,
+    );
+    if (!generatedProjectDir) {
+      return;
+    }
+    const boardKey = resolveBoardKey(
+      job.request.figmaFileKey?.trim() ||
+        job.request.figmaJsonPath?.trim() ||
+        execution.pasteIdentityKey,
+    );
+    const preparedDiff = await prepareGenerationDiff({
+      generatedProjectDir,
+      outputRoot: resolvedPaths.outputRoot,
+      boardKey,
+      jobId: job.jobId,
+    });
+    const manifest: PasteFingerprintManifest = {
+      contractVersion: CONTRACT_VERSION,
+      pasteIdentityKey: execution.pasteIdentityKey,
+      createdAt: new Date().toISOString(),
+      rootNodeIds: execution.rootNodeIds,
+      nodes: execution.currentFingerprintNodes,
+      ...(execution.figmaFileKey ? { figmaFileKey: execution.figmaFileKey } : {}),
+      sourceJobId: job.jobId,
+      execution: {
+        requestedMode: execution.requestedMode,
+        effectiveMode: execution.summary.mode,
+        strategy: execution.summary.strategy,
+        changedNodeIds: execution.changedNodeIds,
+        changedRootNodeIds: execution.changedRootNodeIds,
+        ...(compatibilityFingerprint
+          ? { compatibilityFingerprint }
+          : execution.compatibilityFingerprint
+            ? { compatibilityFingerprint: execution.compatibilityFingerprint }
+            : {}),
+        generatedArtifactHashes: preparedDiff.snapshot.files,
+      },
+    };
+    const store = createPasteFingerprintStore({
+      rootDir: path.join(resolvedPaths.outputRoot, "paste-fingerprints"),
+    });
+    await store.save(manifest);
+  };
+
   const runJob = async (
     job: JobRecord,
-    input: WorkspaceJobInput,
+    input: SubmissionJobInput,
   ): Promise<void> => {
     job.status = "running";
     job.startedAt = nowIso();
@@ -1372,10 +1557,23 @@ export const createJobEngine = ({
         artifactStore,
         input,
       });
+      const {
+        sourceJob: deltaSourceJob,
+        compatibilityFingerprint: pasteDeltaCompatibilityFingerprint,
+      } = await resolveSubmissionPasteDeltaSourceJob({
+        artifactStore,
+        input,
+        job,
+        ...(resolvedCustomerBrandId
+          ? { resolvedCustomerBrandId }
+          : {}),
+        ...(storybookActivation ? { storybookActivation } : {}),
+      });
       const context: PipelineExecutionContext = {
         mode: "submission",
         job,
         input,
+        ...(deltaSourceJob ? { sourceJob: deltaSourceJob } : {}),
         runtime,
         resolvedPaths,
         resolvedWorkspaceRoot,
@@ -1440,6 +1638,25 @@ export const createJobEngine = ({
       job.finishedAt = nowIso();
       delete job.currentStage;
       await syncPublicJobProjection({ job, artifactStore });
+      if (
+        deltaSourceJob &&
+        job.pasteDeltaSummary &&
+        (job.pasteDeltaSummary.mode === "delta" ||
+          job.pasteDeltaSummary.mode === "auto_resolved_to_delta")
+      ) {
+        job.lineage = {
+          sourceJobId: deltaSourceJob.jobId,
+          kind: "delta",
+          overrideCount: 0,
+        };
+      }
+      await persistSubmissionPasteFingerprintManifest({
+        artifactStore,
+        ...(pasteDeltaCompatibilityFingerprint
+          ? { compatibilityFingerprint: pasteDeltaCompatibilityFingerprint }
+          : {}),
+        job,
+      });
       const generationSummary = await artifactStore.getValue<{
         generatedPaths?: string[];
       }>(STAGE_ARTIFACT_KEYS.codegenSummary);
@@ -1564,7 +1781,7 @@ export const createJobEngine = ({
     input,
   }: {
     job: JobRecord;
-    input: WorkspaceJobInput;
+    input: SubmissionJobInput;
   }): void => {
     if (runningJobIds.has(job.jobId)) {
       return;
@@ -1581,7 +1798,7 @@ export const createJobEngine = ({
     });
   };
 
-  const submitJob = (input: WorkspaceJobInput) => {
+  const submitJob = (input: SubmissionJobInput) => {
     if (
       runningJobIds.size >= runtime.maxConcurrentJobs &&
       queuedJobIds.length >= runtime.maxQueuedJobs
@@ -1666,6 +1883,7 @@ export const createJobEngine = ({
       formHandlingMode: resolvedFormHandlingMode,
       enableVisualQualityValidation: resolvedEnableVisualQualityValidation,
       compositeQualityWeights: resolvedCompositeQualityWeights,
+      ...(input.importMode !== undefined ? { importMode: input.importMode } : {}),
       ...(resolvedEnableVisualQualityValidation
         ? {
             visualQualityReferenceMode: resolvedVisualQualityReferenceMode,
@@ -2917,6 +3135,9 @@ export const createJobEngine = ({
       artifacts: { ...job.artifacts },
       preview: { ...job.preview },
     };
+    if (job.pasteDeltaSummary) {
+      result.pasteDeltaSummary = { ...job.pasteDeltaSummary };
+    }
     if (job.lineage) {
       result.lineage = { ...job.lineage };
     }
@@ -3412,4 +3633,5 @@ export type {
   JobEngine,
   JobEngineRuntime,
   JobRecordSnapshot,
+  SubmissionJobInput,
 } from "./job-engine/types.js";

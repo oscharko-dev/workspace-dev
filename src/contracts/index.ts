@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.12.0
+ * Contract version: 3.13.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -350,6 +350,7 @@ export interface WorkspaceJobRequestMetadata {
   brandTheme: WorkspaceBrandTheme;
   generationLocale: string;
   formHandlingMode: WorkspaceFormHandlingMode;
+  importMode?: WorkspaceImportMode;
   importIntent?: WorkspaceImportIntent;
   originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
@@ -803,6 +804,7 @@ export interface WorkspaceJobStatus {
     url?: string;
   };
   queue: WorkspaceJobQueueState;
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
   cancellation?: WorkspaceJobCancellation;
   lineage?: WorkspaceJobLineage;
   generationDiff?: WorkspaceGenerationDiffReport;
@@ -826,6 +828,7 @@ export interface WorkspaceJobResult {
     enabled: boolean;
     url?: string;
   };
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
   lineage?: WorkspaceJobLineage;
   cancellation?: WorkspaceJobCancellation;
   generationDiff?: WorkspaceGenerationDiffReport;
@@ -906,7 +909,7 @@ export interface WorkspaceRetryAccepted {
 /** Lineage metadata linking a regeneration job to its source. */
 export interface WorkspaceJobLineage {
   sourceJobId: string;
-  kind?: "regeneration" | "retry";
+  kind?: "regeneration" | "retry" | "delta";
   draftId?: string;
   baseFingerprint?: string;
   overrideCount: number;
@@ -1189,4 +1192,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.12.0" as const;
+export const CONTRACT_VERSION = "3.13.0" as const;
