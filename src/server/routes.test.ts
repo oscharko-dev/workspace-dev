@@ -30,6 +30,7 @@ test("isWorkspaceProjectRoute accepts only workspace key routes", () => {
   assert.equal(isWorkspaceProjectRoute("/outside/proj-123"), false);
   assert.equal(isWorkspaceProjectRoute("/workspace/ui"), false);
   assert.equal(isWorkspaceProjectRoute("/workspace/submit"), false);
+  assert.equal(isWorkspaceProjectRoute("/workspace/inspector-policy"), false);
   assert.equal(isWorkspaceProjectRoute("/workspace/jobs"), false);
   assert.equal(isWorkspaceProjectRoute("/workspace/repros"), false);
   assert.equal(isWorkspaceProjectRoute("/workspace/proj-123/nested"), false);

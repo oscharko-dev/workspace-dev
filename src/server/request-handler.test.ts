@@ -112,11 +112,13 @@ async function createRequestHandlerApp({
   moduleDir = path.resolve(import.meta.dirname ?? ".", ".."),
   rateLimitPerMinute = 10,
   logger = createStubLogger(),
+  workspaceRoot,
 }: {
   jobEngine?: JobEngine;
   moduleDir?: string;
   rateLimitPerMinute?: number;
   logger?: WorkspaceRuntimeLogger;
+  workspaceRoot?: string;
 } = {}): Promise<{
   app: WorkspaceServerApp;
   close: () => Promise<void>;
@@ -126,12 +128,14 @@ async function createRequestHandlerApp({
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-request-handler-"),
   );
+  const resolvedWorkspaceRoot = workspaceRoot ?? tempRoot;
   let resolvedPort = 0;
   const handler = createWorkspaceRequestHandler({
     host,
     getResolvedPort: () => resolvedPort,
     startedAt: Date.now(),
     absoluteOutputRoot: tempRoot,
+    workspaceRoot: resolvedWorkspaceRoot,
     defaults: { figmaSourceMode: "rest", llmCodegenMode: "deterministic" },
     runtime: {
       previewEnabled: false,
@@ -193,6 +197,145 @@ test("request handler returns UI_ASSETS_UNAVAILABLE when UI assets cannot be res
   } finally {
     await close();
     await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler returns null inspector policy when the file is absent", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/inspector-policy",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      policy: null,
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler returns the parsed inspector policy when the file is valid", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp();
+
+  try {
+    await writeFile(
+      path.join(tempRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        quality: {
+          maxAcceptableNodes: 8,
+          riskSeverityOverrides: {
+            "large-subtree": "high",
+          },
+        },
+        tokens: {
+          autoAcceptConfidence: 95,
+        },
+        a11y: {
+          wcagLevel: "AAA",
+          disabledRules: ["missing-h1"],
+        },
+      }),
+      "utf8",
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/inspector-policy",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      policy: {
+        quality: {
+          maxAcceptableNodes: 8,
+          riskSeverityOverrides: {
+            "large-subtree": "high",
+          },
+        },
+        tokens: {
+          autoAcceptConfidence: 95,
+        },
+        a11y: {
+          wcagLevel: "AAA",
+          disabledRules: ["missing-h1"],
+        },
+      },
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler soft-fails invalid inspector policy files and logs a warning", async (t) => {
+  const capturedLogs: WorkspaceRuntimeLogInput[] = [];
+  const logger = createStubLogger({
+    log: (input) => {
+      capturedLogs.push(input);
+    },
+  });
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    logger,
+  });
+
+  try {
+    const invalidScenarios = [
+      {
+        name: "invalid json",
+        contents: "{not-valid-json",
+      },
+      {
+        name: "invalid shape",
+        contents: JSON.stringify({
+          quality: {
+            bandThresholds: {
+              excellent: "bad",
+            },
+          },
+        }),
+      },
+    ] as const;
+
+    for (const scenario of invalidScenarios) {
+      await t.test(scenario.name, async () => {
+        capturedLogs.length = 0;
+        await writeFile(
+          path.join(tempRoot, ".workspace-inspector-policy.json"),
+          scenario.contents,
+          "utf8",
+        );
+
+        const response = await app.inject({
+          method: "GET",
+          url: "/workspace/inspector-policy",
+          headers: {
+            "x-request-id": `req-inspector-policy-${scenario.name.replace(/\s+/g, "-")}`,
+          },
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(response.json<Record<string, unknown>>(), {
+          policy: null,
+        });
+
+        const warningLog = capturedLogs.find(
+          (entry) => entry.event === "workspace.inspector_policy.invalid",
+        );
+        assert.equal(warningLog?.level, "warn");
+        assert.equal(warningLog?.method, "GET");
+        assert.equal(warningLog?.path, "/workspace/inspector-policy");
+        assert.equal(warningLog?.statusCode, 200);
+        assert.match(
+          String(warningLog?.message ?? ""),
+          /Inspector policy '.workspace-inspector-policy.json'/,
+        );
+      });
+    }
+  } finally {
+    await close();
   }
 });
 

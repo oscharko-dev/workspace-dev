@@ -194,6 +194,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     getResolvedPort: () => resolvedPort,
     startedAt,
     absoluteOutputRoot,
+    workspaceRoot: path.resolve(workDir),
     defaults,
     runtime: {
       previewEnabled: runtime.previewEnabled,

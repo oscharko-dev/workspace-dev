@@ -165,6 +165,30 @@ Optional customer profile input:
 
 - `customerProfilePath` (optional local filesystem path; relative paths resolve from the workspace root)
 
+Optional inspector policy input:
+
+- `/.workspace-inspector-policy.json` (optional repo-root JSON file for inspector quality, token, and a11y policy overrides)
+
+Example:
+
+```json
+{
+  "quality": {
+    "maxAcceptableNodes": 80,
+    "riskSeverityOverrides": {
+      "large-subtree": "high"
+    }
+  },
+  "tokens": {
+    "autoAcceptConfidence": 95
+  },
+  "a11y": {
+    "wcagLevel": "AAA",
+    "disabledRules": ["missing-h1"]
+  }
+}
+```
+
 Optional token branding input:
 
 - `brandTheme` (optional: `derived` or `sparkasse`; defaults to server runtime setting)
@@ -177,6 +201,7 @@ With `enableGitPr=false`, generation is local-only.
 
 - `GET /workspace` - runtime status
 - `GET /healthz` - health check
+- `GET /workspace/inspector-policy` - resolved repo-backed inspector policy (`{ policy: WorkspacePolicy | null }`)
 - `GET /workspace/:figmaFileKey` - deep-link to workspace UI for a Figma file key
 - `POST /workspace/submit` - start autonomous generation (`202 Accepted`)
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)

@@ -49,7 +49,8 @@ type MockQueryKey =
   | "inspector-manifest"
   | "inspector-design-ir"
   | "inspector-file-content"
-  | "inspector-generation-metrics";
+  | "inspector-generation-metrics"
+  | "inspector-workspace-policy";
 
 interface MockQueryResult {
   data: unknown;
@@ -143,6 +144,17 @@ function createDefaultQueryResults(): Record<MockQueryKey, MockQueryResult> {
       isLoading: false,
       refetch: vi.fn(),
     },
+    "inspector-workspace-policy": {
+      data: {
+        ok: true,
+        status: 200,
+        payload: {
+          policy: null,
+        },
+      },
+      isLoading: false,
+      refetch: vi.fn(),
+    },
   };
 }
 
@@ -173,6 +185,10 @@ function installQueryMock({
       ...base["inspector-generation-metrics"],
       ...(overrides?.["inspector-generation-metrics"] ?? {}),
     },
+    "inspector-workspace-policy": {
+      ...base["inspector-workspace-policy"],
+      ...(overrides?.["inspector-workspace-policy"] ?? {}),
+    },
   } satisfies Record<MockQueryKey, MockQueryResult>;
 
   mockUseQuery.mockImplementation((input: { queryKey?: unknown[] }) => {
@@ -191,6 +207,9 @@ function installQueryMock({
     }
     if (key === "inspector-generation-metrics") {
       return merged["inspector-generation-metrics"];
+    }
+    if (key === "inspector-workspace-policy") {
+      return merged["inspector-workspace-policy"];
     }
 
     return {
@@ -1076,6 +1095,162 @@ describe("InspectorPanel data states", () => {
     expect(
       screen.getByTestId("inspector-summary-omission-unavailable"),
     ).toHaveTextContent("omission counters are unavailable");
+  });
+
+  it("surfaces figma analysis diagnostics in the rendered quality risks", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-manifest": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  screenId: "screen-home",
+                  screenName: "Home",
+                  file: "src/screens/Home.tsx",
+                  components: [
+                    {
+                      irNodeId: "node-hero",
+                      irNodeName: "Hero",
+                      irNodeType: "container",
+                      file: "src/screens/Home.tsx",
+                      startLine: 1,
+                      endLine: 4,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        "inspector-design-ir": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  id: "screen-home",
+                  name: "Home",
+                  generatedFile: "src/screens/Home.tsx",
+                  children: [
+                    {
+                      id: "node-hero",
+                      name: "Hero",
+                      type: "container",
+                      children: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    renderInspectorPanel({
+      pipeline: buildPipelineState({
+        stage: "ready",
+        jobStatus: "completed",
+        errors: [],
+        figmaAnalysis: {
+          jobId: "job-1",
+          diagnostics: [{ severity: "error", sourceNodeId: "node-hero" }],
+        },
+      }),
+    });
+
+    expect(screen.getByTestId("suggestions-quality-score")).toBeInTheDocument();
+    expect(screen.getByTestId("suggestions-risk-list")).toHaveTextContent(
+      "Figma analyzer reported errors",
+    );
+  });
+
+  it("uses fetched workspace inspector policy to change visible quality risks", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-manifest": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  screenId: "screen-home",
+                  screenName: "Home",
+                  file: "src/screens/Home.tsx",
+                  components: [
+                    {
+                      irNodeId: "node-hero",
+                      irNodeName: "Hero",
+                      irNodeType: "container",
+                      file: "src/screens/Home.tsx",
+                      startLine: 1,
+                      endLine: 4,
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        "inspector-design-ir": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              screens: [
+                {
+                  id: "screen-home",
+                  name: "Home",
+                  generatedFile: "src/screens/Home.tsx",
+                  children: [
+                    {
+                      id: "node-hero",
+                      name: "Hero",
+                      type: "container",
+                      children: [],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        "inspector-workspace-policy": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              policy: {
+                quality: {
+                  maxAcceptableDepth: 0,
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    renderInspectorPanel({
+      pipeline: buildPipelineState({
+        stage: "ready",
+        jobStatus: "completed",
+        errors: [],
+      }),
+    });
+
+    expect(screen.getByTestId("suggestions-risk-list")).toHaveTextContent(
+      "Deep nesting detected",
+    );
   });
 
   it("renders loading and empty design-ir states in the tree pane", () => {

@@ -1,0 +1,28 @@
+{
+  "quality": {
+    "bandThresholds": {
+      "excellent": 85,
+      "good": 70,
+      "fair": 50
+    },
+    "weights": {
+      "structure": 0.35,
+      "semantic": 0.4,
+      "codegen": 0.25
+    },
+    "maxAcceptableDepth": 6,
+    "maxAcceptableNodes": 120,
+    "riskSeverityOverrides": {
+      "interaction-no-semantics": "high"
+    }
+  },
+  "tokens": {
+    "autoAcceptConfidence": 90,
+    "maxConflictDelta": 15,
+    "disabled": false
+  },
+  "a11y": {
+    "wcagLevel": "AA",
+    "disabledRules": []
+  }
+}
