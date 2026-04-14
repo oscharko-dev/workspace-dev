@@ -133,6 +133,8 @@ function getErrorMessage(state: InspectorBootstrapState): string | undefined {
     case "UNSUPPORTED_FORMAT":
     case "UNSUPPORTED_CLIPBOARD_KIND":
       return "This WorkspaceDev clipboard envelope version is not supported yet. Update the plugin or paste a supported envelope export.";
+    case "UNSUPPORTED_FIGMA_CLIPBOARD_HTML":
+      return "Direct Figma clipboard HTML is not importable here yet. Paste a JSON export or a supported WorkspaceDev plugin envelope instead.";
     case "SECURE_CONTEXT_MISSING":
       return "Clipboard access requires a secure (https) context.";
     case "UNSUPPORTED_FILE":

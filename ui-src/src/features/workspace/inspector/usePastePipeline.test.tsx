@@ -1,9 +1,9 @@
 import type { JSX, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../../lib/http";
-import { usePastePipeline } from "./paste-pipeline";
+import { startPastePipeline, usePastePipeline } from "./paste-pipeline";
 
 vi.mock("../../../lib/http", () => ({
   fetchJson: vi.fn(),
@@ -38,16 +38,31 @@ function makeWrapper(): ({ children }: { children: ReactNode }) => JSX.Element {
   };
 }
 
-function buildFigmaClipboardHtml(): string {
-  const meta = { fileKey: "abc123XYZ", pasteID: 42, dataType: "scene" };
-  const encoded = btoa(JSON.stringify(meta));
-  return [
-    `<meta charset="utf-8">`,
-    `<div>`,
-    `  <span data-metadata="<!--(figmeta)${encoded}(/figmeta)-->"></span>`,
-    `  <span data-buffer="<!--(figma)ZmlnLi4u(/figma)-->"></span>`,
-    `</div>`,
-  ].join("\n");
+function buildDirectJsonPayload(): string {
+  return JSON.stringify({
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      name: "Document",
+      children: [],
+    },
+  });
+}
+
+function buildPluginEnvelopePayload(): string {
+  return JSON.stringify({
+    kind: "workspace-dev/figma-selection@1",
+    pluginVersion: "0.1.0",
+    copiedAt: "2026-04-14T08:00:00.000Z",
+    selections: [
+      {
+        document: { id: "1:2", type: "FRAME", name: "Card" },
+        components: {},
+        componentSets: {},
+        styles: {},
+      },
+    ],
+  });
 }
 
 afterEach(() => {
@@ -55,102 +70,51 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("usePastePipeline — non-Figma clipboard", () => {
-  it("silently returns to idle without calling fetchJson", async () => {
+describe("usePastePipeline", () => {
+  it("rejects invalid JSON before submitting", async () => {
     const { result } = renderHook(() => usePastePipeline(), {
       wrapper: makeWrapper(),
     });
 
     await act(async () => {
-      result.current.start("<div>not figma</div>");
+      result.current.start("not-json");
     });
 
     await waitFor(() => {
-      expect(result.current.state.stage).toBe("idle");
+      expect(result.current.state.stage).toBe("error");
     });
 
     expect(fetchJsonMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("usePastePipeline — submit failures", () => {
-  it("transitions to error with canRetry=true on 500", async () => {
-    fetchJsonMock.mockImplementation(async ({ url }) => {
-      if (url === "/workspace/submit") {
-        return createJsonResponse({
-          status: 500,
-          ok: false,
-          payload: { error: "SERVER_ERROR" },
-        }) as never;
-      }
-      throw new Error(`Unexpected url: ${url}`);
-    });
-
-    const { result } = renderHook(() => usePastePipeline(), {
-      wrapper: makeWrapper(),
-    });
-
-    await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
-    });
-
-    await waitFor(() => {
-      expect(result.current.state.stage).toBe("error");
-    });
-
-    expect(result.current.state.canRetry).toBe(true);
-    expect(result.current.state.canCancel).toBe(false);
-    expect(result.current.state.errors).toHaveLength(1);
+    expect(result.current.state.errors[0]?.code).toBe("SCHEMA_MISMATCH");
+    expect(result.current.state.canRetry).toBe(false);
   });
 
-  it("transitions to error with canRetry=true and not retryable on 400", async () => {
-    fetchJsonMock.mockImplementation(async ({ url }) => {
-      if (url === "/workspace/submit") {
-        return createJsonResponse({
-          status: 400,
-          ok: false,
-          payload: { error: "INVALID_PAYLOAD" },
-        }) as never;
-      }
-      throw new Error(`Unexpected url: ${url}`);
-    });
-
-    const { result } = renderHook(() => usePastePipeline(), {
-      wrapper: makeWrapper(),
-    });
-
-    await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
-    });
-
-    await waitFor(() => {
-      expect(result.current.state.stage).toBe("error");
-    });
-
-    const error = result.current.state.errors[0];
-    expect(error?.retryable).toBe(false);
-    expect(error?.code).toBe("INVALID_PAYLOAD");
-  });
-});
-
-describe("usePastePipeline — happy path through stages", () => {
-  beforeEach(() => {
+  it("submits supported payloads and reaches ready on canonical backend stages", async () => {
     let pollCount = 0;
-    fetchJsonMock.mockImplementation(async ({ url }) => {
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
       if (url === "/workspace/submit") {
+        expect(init?.body).toBe(
+          JSON.stringify({
+            figmaSourceMode: "figma_paste",
+            figmaJsonPayload: buildDirectJsonPayload(),
+            enableGitPr: false,
+            llmCodegenMode: "deterministic",
+          }),
+        );
         return createJsonResponse({
           status: 202,
           payload: { jobId: "job-happy" },
         }) as never;
       }
+
       if (url === "/workspace/jobs/job-happy") {
         pollCount += 1;
         if (pollCount === 1) {
           return createJsonResponse({
             payload: {
               jobId: "job-happy",
-              status: "running",
-              stages: [{ name: "figma.source", status: "running" }],
+              status: "queued",
             },
           }) as never;
         }
@@ -161,42 +125,68 @@ describe("usePastePipeline — happy path through stages", () => {
               status: "running",
               stages: [
                 { name: "figma.source", status: "completed" },
-                { name: "ir.derive", status: "running" },
+                { name: "ir.derive", status: "completed" },
+                { name: "template.prepare", status: "completed" },
+                { name: "codegen.generate", status: "completed" },
+                { name: "validate.project", status: "running" },
               ],
             },
           }) as never;
         }
+
         return createJsonResponse({
           payload: {
             jobId: "job-happy",
             status: "completed",
+            preview: { url: "http://127.0.0.1:1983/preview" },
             stages: [
               { name: "figma.source", status: "completed" },
               { name: "ir.derive", status: "completed" },
-              { name: "figma.enrich", status: "completed" },
-              { name: "codegen", status: "completed" },
+              { name: "template.prepare", status: "completed" },
+              { name: "codegen.generate", status: "completed" },
+              { name: "validate.project", status: "completed" },
             ],
           },
         }) as never;
       }
-      if (
-        url.startsWith("/workspace/jobs/job-happy/design-ir") ||
-        url.startsWith("/workspace/jobs/job-happy/component-manifest") ||
-        url.startsWith("/workspace/jobs/job-happy/files")
-      ) {
-        return createJsonResponse({ payload: {} }) as never;
+
+      if (url === "/workspace/jobs/job-happy/design-ir") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-happy",
+            screens: [],
+          },
+        }) as never;
       }
+
+      if (url === "/workspace/jobs/job-happy/component-manifest") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-happy",
+            screens: [],
+          },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-happy/files") {
+        return createJsonResponse({
+          payload: {
+            files: [{ path: "src/App.tsx", sizeBytes: 128 }],
+          },
+        }) as never;
+      }
+
       throw new Error(`Unexpected url: ${url}`);
     });
-  });
 
-  it("accepts the job, polls, and reaches the ready stage", async () => {
     const { result } = renderHook(() => usePastePipeline(), {
       wrapper: makeWrapper(),
     });
 
     await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
+      result.current.start(buildDirectJsonPayload(), {
+        sourceMode: "figma_paste",
+      });
     });
 
     await waitFor(
@@ -206,15 +196,149 @@ describe("usePastePipeline — happy path through stages", () => {
       { timeout: 5000 },
     );
 
-    expect(result.current.state.jobId).toBe("job-happy");
-    expect(result.current.state.progress).toBe(100);
-    expect(result.current.state.canCancel).toBe(false);
-    expect(result.current.state.canRetry).toBe(false);
+    expect(result.current.state.previewUrl).toBe("http://127.0.0.1:1983/preview");
+    expect(result.current.state.designIR?.jobId).toBe("job-happy");
+    expect(result.current.state.componentManifest?.jobId).toBe("job-happy");
+    expect(result.current.state.generatedFiles).toEqual([
+      { path: "src/App.tsx", sizeBytes: 128 },
+    ]);
   });
-});
 
-describe("usePastePipeline — cancel", () => {
-  it("cancel() returns state to idle even mid-flight", async () => {
+  it("uses figma_plugin mode for plugin envelope submissions", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace/submit") {
+        expect(init?.body).toBe(
+          JSON.stringify({
+            figmaSourceMode: "figma_plugin",
+            figmaJsonPayload: buildPluginEnvelopePayload(),
+            enableGitPr: false,
+            llmCodegenMode: "deterministic",
+          }),
+        );
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-plugin" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-plugin") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-plugin",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/plugin-preview" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-plugin/design-ir" ||
+        url === "/workspace/jobs/job-plugin/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-plugin", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-plugin/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildPluginEnvelopePayload(), {
+        sourceMode: "figma_plugin",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("ready");
+    });
+  });
+
+  it("retry() restarts the last supported request", async () => {
+    let submitCount = 0;
+
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        submitCount += 1;
+        if (submitCount === 1) {
+          return createJsonResponse({
+            status: 500,
+            ok: false,
+            payload: { error: "SERVER_ERROR" },
+          }) as never;
+        }
+
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-retry" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-retry") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-retry",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/retry-preview" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-retry/design-ir" ||
+        url === "/workspace/jobs/job-retry/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-retry", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-retry/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("error");
+    });
+
+    await act(async () => {
+      result.current.retry();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("ready");
+    });
+
+    expect(submitCount).toBe(2);
+  });
+
+  it("cancel() calls the server cancel endpoint for accepted jobs", async () => {
+    let cancelRequestCount = 0;
+    let polledAfterCancel = false;
+
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {
         return createJsonResponse({
@@ -222,11 +346,36 @@ describe("usePastePipeline — cancel", () => {
           payload: { jobId: "job-cancel" },
         }) as never;
       }
-      if (url === "/workspace/jobs/job-cancel") {
+
+      if (url === "/workspace/jobs/job-cancel/cancel") {
+        cancelRequestCount += 1;
         return createJsonResponse({
-          payload: { jobId: "job-cancel", status: "running", stages: [] },
+          payload: {
+            jobId: "job-cancel",
+            status: "canceled",
+          },
         }) as never;
       }
+
+      if (url === "/workspace/jobs/job-cancel") {
+        if (polledAfterCancel) {
+          return createJsonResponse({
+            payload: {
+              jobId: "job-cancel",
+              status: "canceled",
+            },
+          }) as never;
+        }
+
+        return createJsonResponse({
+          payload: {
+            jobId: "job-cancel",
+            status: "running",
+            stages: [{ name: "figma.source", status: "running" }],
+          },
+        }) as never;
+      }
+
       throw new Error(`Unexpected url: ${url}`);
     });
 
@@ -235,273 +384,89 @@ describe("usePastePipeline — cancel", () => {
     });
 
     await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
+      result.current.start(buildDirectJsonPayload());
     });
 
     await waitFor(() => {
       expect(result.current.state.jobId).toBe("job-cancel");
     });
 
+    polledAfterCancel = true;
+
     await act(async () => {
       result.current.cancel();
     });
 
-    expect(result.current.state.stage).toBe("idle");
-    expect(result.current.state.jobId).toBeUndefined();
-  });
-});
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("idle");
+    });
 
-describe("usePastePipeline — concurrent start() calls", () => {
-  it("second start() resets state and uses new job id", async () => {
-    let submitCount = 0;
-    fetchJsonMock.mockImplementation(async ({ url }) => {
+    await act(async () => {
+      result.current.cancel();
+    });
+
+    expect(
+      fetchJsonMock.mock.calls.some(
+        ([input]) => input.url === "/workspace/jobs/job-cancel/cancel",
+      ),
+    ).toBe(true);
+    expect(cancelRequestCount).toBe(1);
+  });
+
+  it("startPastePipeline does not retain a stale active job after cancellation", async () => {
+    let cancelRequestCount = 0;
+
+    fetchJsonMock.mockImplementation(({ url, init }) => {
       if (url === "/workspace/submit") {
-        submitCount += 1;
-        const jobId = `job-concurrent-${String(submitCount)}`;
-        return createJsonResponse({
-          status: 202,
-          payload: { jobId },
+        return Promise.resolve(
+          createJsonResponse({
+            status: 202,
+            payload: { jobId: "job-controller-cancel" },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-controller-cancel") {
+        return new Promise((_, reject) => {
+          init?.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("The operation was aborted.", "AbortError")),
+            { once: true },
+          );
         }) as never;
       }
-      return createJsonResponse({
-        payload: { jobId: "irrelevant", status: "running", stages: [] },
-      }) as never;
+
+      if (url === "/workspace/jobs/job-controller-cancel/cancel") {
+        cancelRequestCount += 1;
+        return Promise.resolve(
+          createJsonResponse({
+            payload: {
+              jobId: "job-controller-cancel",
+              status: "canceled",
+            },
+          }),
+        ) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
     });
 
-    const { result } = renderHook(() => usePastePipeline(), {
-      wrapper: makeWrapper(),
-    });
-
-    await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
-    });
+    const controller = startPastePipeline(buildDirectJsonPayload());
 
     await waitFor(() => {
-      expect(result.current.state.jobId).toBe("job-concurrent-1");
+      expect(controller.getState().jobId).toBe("job-controller-cancel");
     });
 
-    // Start again before the first job completes
-    await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
-    });
+    controller.cancel();
 
-    // State must have been reset by the second start dispatch
     await waitFor(() => {
-      expect(result.current.state.jobId).toBe("job-concurrent-2");
+      expect(controller.getState().stage).toBe("idle");
     });
 
-    expect(submitCount).toBe(2);
-  });
-});
+    controller.cancel();
 
-describe("usePastePipeline — malformed artifact payloads", () => {
-  it("handles non-DesignIrPayload response without crashing", async () => {
-    fetchJsonMock.mockImplementation(async ({ url }) => {
-      if (url === "/workspace/submit") {
-        return createJsonResponse({
-          status: 202,
-          payload: { jobId: "job-malformed" },
-        }) as never;
-      }
-      if (url === "/workspace/jobs/job-malformed") {
-        return createJsonResponse({
-          payload: {
-            jobId: "job-malformed",
-            status: "completed",
-            stages: [
-              { name: "figma.source", status: "completed" },
-              { name: "ir.derive", status: "completed" },
-              { name: "figma.enrich", status: "completed" },
-              { name: "codegen", status: "completed" },
-            ],
-          },
-        }) as never;
-      }
-      // All artifact endpoints return malformed (missing required fields)
-      return createJsonResponse({ payload: { unexpected: true } }) as never;
-    });
-
-    const { result } = renderHook(() => usePastePipeline(), {
-      wrapper: makeWrapper(),
-    });
-
-    await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
-    });
-
-    // Should still reach ready even if artifact payloads are unrecognised
-    await waitFor(
-      () => {
-        expect(result.current.state.stage).toBe("ready");
-      },
-      { timeout: 5000 },
-    );
-
-    // Artifacts that failed validation remain undefined — no crash
-    expect(result.current.state.designIR).toBeUndefined();
-    expect(result.current.state.componentManifest).toBeUndefined();
-  });
-});
-
-describe("usePastePipeline — network error during artifact fetch", () => {
-  it("does not transition to error state when an artifact fetch throws", async () => {
-    fetchJsonMock.mockImplementation(async ({ url }) => {
-      if (url === "/workspace/submit") {
-        return createJsonResponse({
-          status: 202,
-          payload: { jobId: "job-netfail" },
-        }) as never;
-      }
-      if (url === "/workspace/jobs/job-netfail") {
-        return createJsonResponse({
-          payload: {
-            jobId: "job-netfail",
-            status: "completed",
-            stages: [
-              { name: "ir.derive", status: "completed" },
-              { name: "codegen", status: "completed" },
-            ],
-          },
-        }) as never;
-      }
-      // Artifact endpoints throw network error
-      throw new Error("Network failure");
-    });
-
-    const { result } = renderHook(() => usePastePipeline(), {
-      wrapper: makeWrapper(),
-    });
-
-    await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
-    });
-
-    // Pipeline still reaches ready — artifact fetch failures are non-fatal
-    await waitFor(
-      () => {
-        expect(result.current.state.stage).toBe("ready");
-      },
-      { timeout: 5000 },
-    );
-
-    expect(result.current.state.errors).toHaveLength(0);
-  });
-});
-
-describe("usePastePipeline — oversized clipboard HTML", () => {
-  it("does not POST when clipboard HTML exceeds the 6 MiB limit", async () => {
-    // Build a string just over FIGMA_PASTE_MAX_BYTES in UTF-8 bytes.
-    // We use ASCII so byte count === char count.
-    const FIGMA_PASTE_MAX_BYTES = 6 * 1024 * 1024;
-    const oversize = "x".repeat(FIGMA_PASTE_MAX_BYTES + 1);
-    // Embed in a fake figma clipboard wrapper so isFigmaClipboard passes,
-    // but the full payload is oversized.
-    const meta = btoa(
-      JSON.stringify({ fileKey: "k", pasteID: 1, dataType: "scene" }),
-    );
-    const oversizeHtml = [
-      `<span data-metadata="<!--(figmeta)${meta}(/figmeta)-->"></span>`,
-      oversize,
-    ].join("");
-
-    const { result } = renderHook(() => usePastePipeline(), {
-      wrapper: makeWrapper(),
-    });
-
-    await act(async () => {
-      result.current.start(oversizeHtml);
-    });
-
-    // Size cap is enforced client-side before any POST — hook must transition
-    // to error with PAYLOAD_TOO_LARGE without calling fetchJson at all.
     await waitFor(() => {
-      expect(result.current.state.stage).toBe("error");
+      expect(cancelRequestCount).toBe(1);
     });
-
-    expect(result.current.state.errors).toHaveLength(1);
-    expect(result.current.state.errors[0]?.code).toBe("PAYLOAD_TOO_LARGE");
-    expect(result.current.state.errors[0]?.retryable).toBe(false);
-    expect(fetchJsonMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("usePastePipeline — retry preserves cached outputs", () => {
-  it("cached designIR and screenshot remain in state during retry re-submit", async () => {
-    let submitCount = 0;
-    fetchJsonMock.mockImplementation(async ({ url }) => {
-      if (url === "/workspace/submit") {
-        submitCount += 1;
-        return createJsonResponse({
-          status: 202,
-          payload: { jobId: `job-retry-${String(submitCount)}` },
-        }) as never;
-      }
-      // First job: runs then fails at generating
-      if (url === "/workspace/jobs/job-retry-1") {
-        return createJsonResponse({
-          payload: {
-            jobId: "job-retry-1",
-            status: "failed",
-            error: { message: "codegen failed" },
-            stages: [
-              { name: "figma.source", status: "completed" },
-              { name: "ir.derive", status: "completed" },
-              { name: "figma.enrich", status: "completed" },
-              { name: "codegen", status: "failed" },
-            ],
-          },
-        }) as never;
-      }
-      // Second job (after retry): keeps running
-      if (url === "/workspace/jobs/job-retry-2") {
-        return createJsonResponse({
-          payload: { jobId: "job-retry-2", status: "running", stages: [] },
-        }) as never;
-      }
-      // Artifact endpoints for first job return valid data
-      if (url.startsWith("/workspace/jobs/job-retry-1/design-ir")) {
-        return createJsonResponse({
-          payload: {
-            jobId: "job-retry-1",
-            screens: [{ id: "s1", name: "Home", children: [] }],
-          },
-        }) as never;
-      }
-      return createJsonResponse({ payload: {} }) as never;
-    });
-
-    const { result } = renderHook(() => usePastePipeline(), {
-      wrapper: makeWrapper(),
-    });
-
-    await act(async () => {
-      result.current.start(buildFigmaClipboardHtml());
-    });
-
-    // Wait for the first job to fail
-    await waitFor(() => {
-      expect(result.current.state.stage).toBe("error");
-    });
-
-    // Cached outputs from first run are visible in error state
-    const cachedIR = result.current.state.designIR;
-
-    // Retry — re-submits, creating a second job
-    await act(async () => {
-      result.current.retry();
-    });
-
-    // After retry dispatch, state is no longer in error
-    await waitFor(() => {
-      expect(result.current.state.stage).not.toBe("error");
-    });
-
-    // The cached designIR (if it was fetched) must still be present —
-    // retry re-submits but does NOT wipe cached artifacts from state.
-    if (cachedIR !== undefined) {
-      expect(result.current.state.designIR).toEqual(cachedIR);
-    }
-
-    expect(submitCount).toBe(2);
   });
 });

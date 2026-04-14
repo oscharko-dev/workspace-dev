@@ -71,4 +71,30 @@ describe("PreviewPane", () => {
     expect(screen.getByRole("button", { name: "Disable inspect mode" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-inspect-enabled", "true");
   });
+
+  it("renders a waiting placeholder when the preview URL is not available yet", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: () => {
+          // no-op
+        },
+        onInspectSelect: () => {
+          // no-op
+        }
+      })
+    );
+
+    expect(
+      screen.getByText(
+        "Preview will appear after the generation job produces a runnable repro.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Waiting")).toBeInTheDocument();
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Open preview in new tab" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Loading preview…")).not.toBeInTheDocument();
+  });
 });

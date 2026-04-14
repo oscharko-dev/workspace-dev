@@ -176,7 +176,6 @@ describe("InspectorPage — bootstrap path", () => {
   });
 
   it("transitions from bootstrap to panel when bootstrap reaches ready", async () => {
-    let pollCount = 0;
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {
         return createJsonResponse({
@@ -185,18 +184,31 @@ describe("InspectorPage — bootstrap path", () => {
         }) as never;
       }
       if (url === "/workspace/jobs/job-bootstrap") {
-        pollCount += 1;
-        if (pollCount < 2) {
-          return createJsonResponse({
-            payload: { jobId: "job-bootstrap", status: "running" },
-          }) as never;
-        }
         return createJsonResponse({
           payload: {
             jobId: "job-bootstrap",
             status: "completed",
             preview: { url: "http://127.0.0.1:1983/preview" },
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              { name: "template.prepare", status: "completed" },
+              { name: "codegen.generate", status: "completed" },
+            ],
           },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-bootstrap/design-ir" ||
+        url === "/workspace/jobs/job-bootstrap/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-bootstrap", screens: [] },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap/files") {
+        return createJsonResponse({
+          payload: { files: [] },
         }) as never;
       }
       throw new Error(`Unexpected url: ${url}`);
@@ -224,6 +236,7 @@ describe("InspectorPage — bootstrap path", () => {
       { timeout: 4000 },
     );
 
+    expect(screen.queryByTestId("inspector-bootstrap")).not.toBeInTheDocument();
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-bootstrap|http://127.0.0.1:1983/preview||false|",
     );

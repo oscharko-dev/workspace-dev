@@ -1,27 +1,15 @@
-import { useEffect, useReducer, useRef } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { fetchJson } from "../../../lib/http";
-import { toInspectorBootstrapPayload } from "../submit-schema";
-import {
-  bootstrapReducer,
-  initialBootstrapState,
-  type InspectorBootstrapState,
-} from "./inspector-bootstrap-state";
-import { isJobPayload, isRecord } from "../workspace-page.helpers";
+import { useMemo, useState } from "react";
+import type { ImportIntent } from "./paste-input-classifier";
 import {
   classifyPasteIntent,
   isSecureContextAvailable,
-  type ImportIntent,
 } from "./paste-input-classifier";
-import type { JsonResponse } from "../../../lib/http";
-
-const DEFAULT_POLL_INTERVAL_MS = 1_500;
-
-const endpoints = {
-  submit: "/workspace/submit",
-  job: ({ jobId }: { jobId: string }) =>
-    `/workspace/jobs/${encodeURIComponent(jobId)}`,
-};
+import {
+  usePastePipeline,
+  type PipelineError,
+} from "./paste-pipeline";
+import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
+import { isFigmaClipboard } from "./figma-clipboard-parser";
 
 function toUnsupportedIntentReason({
   detectedIntent,
@@ -38,7 +26,6 @@ function toUnsupportedIntentReason({
   if (confirmedIntent === "UNKNOWN") {
     return "UNSUPPORTED_UNKNOWN_PASTE";
   }
-  // Plugin envelope is always supported — it's the primary plugin handoff path.
   if (confirmedIntent === "FIGMA_PLUGIN_ENVELOPE") {
     return null;
   }
@@ -58,6 +45,19 @@ export interface UseInspectorBootstrapOptions {
   pollIntervalMs?: number;
 }
 
+interface FailedState {
+  reason: string;
+  retryable: boolean;
+}
+
+interface DetectedPaste {
+  intent: ImportIntent;
+  confidence: number;
+  rawText: string;
+  suggestedJobSource: string;
+  clipboardHtml?: string;
+}
+
 export interface UseInspectorBootstrapResult {
   state: InspectorBootstrapState;
   submit(input: { figmaJsonPayload: string }): void;
@@ -75,313 +75,267 @@ export interface UseInspectorBootstrapResult {
   detectedIntent: { intent: ImportIntent; confidence: number } | null;
 }
 
-function extractJobId(state: InspectorBootstrapState): string | null {
-  if (
-    state.kind === "queued" ||
-    state.kind === "processing" ||
-    state.kind === "ready"
-  ) {
-    return state.jobId;
+function isJsonPayload(rawText: string): boolean {
+  const trimmed = rawText.trim();
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+    return false;
   }
-  return null;
+
+  try {
+    JSON.parse(trimmed);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
-function extractPreviewUrl(state: InspectorBootstrapState): string | null {
-  if (state.kind === "ready") {
-    return state.previewUrl;
+function toBootstrapFailure(
+  error: PipelineError | FailedState | null,
+): FailedState | null {
+  if (error === null) {
+    return null;
   }
-  return null;
+
+  if ("code" in error) {
+    return {
+      reason: error.code,
+      retryable: error.retryable,
+    };
+  }
+
+  return error;
 }
 
-function toFailureReason(payload: Record<string, unknown>): string {
-  const error = payload.error;
-  if (
-    error === "INVALID_PAYLOAD" ||
-    error === "TOO_LARGE" ||
-    error === "SCHEMA_MISMATCH" ||
-    error === "UNSUPPORTED_FORMAT" ||
-    error === "UNSUPPORTED_CLIPBOARD_KIND"
-  ) {
-    return error;
+function deriveBootstrapState({
+  pipelineStage,
+  pipelineError,
+  detectedPaste,
+  jobId,
+  jobStatus,
+  previewUrl,
+  localFailure,
+}: {
+  pipelineStage: ReturnType<typeof usePastePipeline>["state"]["stage"];
+  pipelineError: PipelineError | null;
+  detectedPaste: DetectedPaste | null;
+  jobId: string | null;
+  jobStatus: ReturnType<typeof usePastePipeline>["state"]["jobStatus"];
+  previewUrl: string | null;
+  localFailure: FailedState | null;
+}): InspectorBootstrapState {
+  if (detectedPaste !== null) {
+    return {
+      kind: "detected",
+      intent: detectedPaste.intent,
+      confidence: detectedPaste.confidence,
+      rawText: detectedPaste.rawText,
+      suggestedJobSource: detectedPaste.suggestedJobSource,
+    };
   }
-  return "SUBMIT_FAILED";
-}
 
-function toPollingFailureReason(payload: Record<string, unknown>): string {
-  return typeof payload.error === "string" && payload.error.length > 0
-    ? payload.error
-    : "POLL_FAILED";
+  const failure = localFailure ?? toBootstrapFailure(pipelineError);
+  if (failure !== null) {
+    return {
+      kind: "failed",
+      reason: failure.reason,
+      retryable: failure.retryable,
+    };
+  }
+
+  if (pipelineStage === "ready" && jobId && previewUrl) {
+    return { kind: "ready", jobId, previewUrl };
+  }
+
+  if (jobId && jobStatus === "queued") {
+    return { kind: "queued", jobId };
+  }
+
+  if (jobId && jobStatus === "running") {
+    return { kind: "processing", jobId };
+  }
+
+  if (pipelineStage !== "idle") {
+    return { kind: "pasting" };
+  }
+
+  return { kind: "idle" };
 }
 
 export function useInspectorBootstrap(
   options?: UseInspectorBootstrapOptions,
 ): UseInspectorBootstrapResult {
-  const pollIntervalMs = options?.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS;
+  void options;
 
-  const [state, dispatch] = useReducer(
-    bootstrapReducer,
-    undefined,
-    initialBootstrapState,
+  const pipeline = usePastePipeline();
+  const [detectedPaste, setDetectedPaste] = useState<DetectedPaste | null>(null);
+  const [localFailure, setLocalFailure] = useState<FailedState | null>(null);
+
+  const pipelineError =
+    pipeline.state.stage === "error"
+      ? (pipeline.state.errors[pipeline.state.errors.length - 1] ?? null)
+      : null;
+
+  const jobId = pipeline.state.jobId ?? null;
+  const previewUrl = pipeline.state.previewUrl ?? null;
+
+  const state = useMemo(
+    () =>
+      deriveBootstrapState({
+        pipelineStage: pipeline.state.stage,
+        pipelineError,
+        detectedPaste,
+        jobId,
+        jobStatus: pipeline.state.jobStatus,
+        previewUrl,
+        localFailure,
+      }),
+    [
+      detectedPaste,
+      jobId,
+      localFailure,
+      pipeline.state.jobStatus,
+      pipeline.state.stage,
+      pipelineError,
+      previewUrl,
+    ],
   );
-
-  const jobId = extractJobId(state);
-  const previewUrl = extractPreviewUrl(state);
-
-  const submitMutation = useMutation<
-    { jobId: string },
-    Error,
-    {
-      figmaJsonPayload: string;
-      importIntent?: ImportIntent;
-      originalIntent?: ImportIntent;
-      intentCorrected?: boolean;
-    }
-  >({
-    mutationFn: async ({
-      figmaJsonPayload,
-      importIntent,
-      originalIntent,
-      intentCorrected,
-    }) => {
-      const payload = toInspectorBootstrapPayload(
-        importIntent !== undefined
-          ? {
-              figmaJsonPayload,
-              importIntent,
-              ...(originalIntent !== undefined ? { originalIntent } : {}),
-              ...(intentCorrected !== undefined ? { intentCorrected } : {}),
-            }
-          : { figmaJsonPayload },
-      );
-      const response = await fetchJson<{ jobId?: string; error?: string }>({
-        url: endpoints.submit,
-        init: {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify(payload),
-        },
-      });
-
-      if (response.status === 202 && isRecord(response.payload)) {
-        const id = response.payload.jobId;
-        if (typeof id === "string") {
-          return { jobId: id };
-        }
-      }
-
-      if (
-        response.status >= 400 &&
-        response.status < 500 &&
-        isRecord(response.payload)
-      ) {
-        const reason = toFailureReason(response.payload);
-        throw Object.assign(new Error(reason), { retryable: false });
-      }
-
-      throw Object.assign(new Error("SUBMIT_FAILED"), { retryable: true });
-    },
-    onSuccess: ({ jobId: acceptedJobId }) => {
-      dispatch({ type: "submit_accepted", jobId: acceptedJobId });
-    },
-    onError: (error) => {
-      const retryable =
-        (error as Error & { retryable?: boolean }).retryable !== false;
-      dispatch({
-        type: "submit_failed",
-        reason: error.message,
-        retryable,
-      });
-    },
-  });
-
-  const polling = state.kind === "queued" || state.kind === "processing";
-
-  const jobQuery = useQuery({
-    queryKey: ["inspector-bootstrap-job", jobId],
-    enabled: polling,
-    queryFn: async () => {
-      if (!jobId) {
-        throw new Error("Missing job id");
-      }
-      return await fetchJson({ url: endpoints.job({ jobId }) });
-    },
-    refetchInterval: (query) => {
-      const response = query.state.data as JsonResponse<unknown> | undefined;
-      if (!response?.ok || !isJobPayload(response.payload)) {
-        return false;
-      }
-      return response.payload.status === "queued" ||
-        response.payload.status === "running"
-        ? pollIntervalMs
-        : false;
-    },
-  });
-
-  // Track which query data we've already dispatched so we don't double-fire.
-  const lastDispatchedDataRef = useRef<JsonResponse<unknown> | undefined>(
-    undefined,
-  );
-
-  useEffect(() => {
-    const response = jobQuery.data as JsonResponse<unknown> | undefined;
-    if (!response || response === lastDispatchedDataRef.current) {
-      return;
-    }
-    if (!response.ok) {
-      lastDispatchedDataRef.current = response;
-      const reason = isRecord(response.payload)
-        ? toPollingFailureReason(response.payload)
-        : "POLL_FAILED";
-      dispatch({ type: "poll_failed", reason, retryable: true });
-      return;
-    }
-    if (!isJobPayload(response.payload)) {
-      lastDispatchedDataRef.current = response;
-      dispatch({
-        type: "poll_failed",
-        reason: "POLL_FAILED",
-        retryable: true,
-      });
-      return;
-    }
-
-    lastDispatchedDataRef.current = response;
-    const { payload } = response;
-    const status = payload.status;
-
-    if (
-      status === "queued" ||
-      status === "running" ||
-      status === "completed" ||
-      status === "failed" ||
-      status === "canceled"
-    ) {
-      const previewUrlValue =
-        typeof payload.preview?.url === "string"
-          ? payload.preview.url
-          : undefined;
-      dispatch(
-        previewUrlValue !== undefined
-          ? {
-              type: "poll_updated",
-              status,
-              jobId: payload.jobId,
-              previewUrl: previewUrlValue,
-            }
-          : { type: "poll_updated", status, jobId: payload.jobId },
-      );
-    }
-  }, [jobQuery.data]);
-
-  useEffect(() => {
-    if (!jobQuery.isError) {
-      return;
-    }
-
-    dispatch({
-      type: "poll_failed",
-      reason: "POLL_FAILED",
-      retryable: true,
-    });
-  }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
-
-  function submitPaste(
-    text: string,
-    options?: { source?: PasteSource; clipboardHtml?: string },
-  ): void {
-    const source = options?.source ?? "paste-event";
-    if (source === "clipboard-api" && !isSecureContextAvailable()) {
-      dispatch({
-        type: "submit_failed",
-        reason: "SECURE_CONTEXT_MISSING",
-        retryable: false,
-      });
-      return;
-    }
-
-    const intentClassification = classifyPasteIntent(
-      text,
-      options?.clipboardHtml,
-    );
-
-    if (intentClassification.intent === "UNKNOWN") {
-      dispatch({
-        type: "submit_failed",
-        reason: "EMPTY_INPUT",
-        retryable: true,
-      });
-      return;
-    }
-
-    dispatch({
-      type: "intent_detected",
-      intent: intentClassification.intent,
-      confidence: intentClassification.confidence,
-      rawText: text,
-      suggestedJobSource: intentClassification.suggestedJobSource,
-    });
-  }
-
-  function confirmIntent(intent: ImportIntent): void {
-    if (state.kind !== "detected") {
-      return;
-    }
-    const unsupportedReason = toUnsupportedIntentReason({
-      detectedIntent: state.intent,
-      confirmedIntent: intent,
-      suggestedJobSource: state.suggestedJobSource,
-    });
-    if (unsupportedReason !== null) {
-      dispatch({
-        type: "submit_failed",
-        reason: unsupportedReason,
-        retryable: false,
-      });
-      return;
-    }
-    const rawText = state.rawText;
-    const corrected = intent !== state.intent;
-    dispatch({ type: "intent_confirmed", intent });
-    dispatch({ type: "paste_started" });
-    submitMutation.mutate({
-      figmaJsonPayload: rawText,
-      importIntent: intent,
-      originalIntent: state.intent,
-      intentCorrected: corrected,
-    });
-  }
-
-  function dismissIntent(): void {
-    dispatch({ type: "intent_dismissed" });
-  }
-
-  function reportInputError(code: string): void {
-    dispatch({ type: "submit_failed", reason: code, retryable: true });
-  }
 
   const detectedIntent =
-    state.kind === "detected"
-      ? { intent: state.intent, confidence: state.confidence }
+    detectedPaste !== null
+      ? { intent: detectedPaste.intent, confidence: detectedPaste.confidence }
       : null;
 
   return {
     state,
+
     submit({ figmaJsonPayload }) {
-      dispatch({ type: "paste_started" });
-      submitMutation.mutate({ figmaJsonPayload });
+      setDetectedPaste(null);
+      setLocalFailure(null);
+      pipeline.start(figmaJsonPayload, { sourceMode: "figma_paste" });
     },
-    submitPaste,
-    confirmIntent,
-    dismissIntent,
-    retry() {
-      if (state.kind === "failed" && state.retryable) {
-        dispatch({ type: "reset" });
+
+    submitPaste(
+      text: string,
+      options?: { source?: PasteSource; clipboardHtml?: string },
+    ): void {
+      const source = options?.source ?? "paste-event";
+      if (source === "clipboard-api" && !isSecureContextAvailable()) {
+        setDetectedPaste(null);
+        setLocalFailure({
+          reason: "SECURE_CONTEXT_MISSING",
+          retryable: false,
+        });
+        return;
+      }
+
+      const rawText = text.trim();
+      if (
+        rawText.length === 0 &&
+        options?.clipboardHtml !== undefined &&
+        isFigmaClipboard(options.clipboardHtml)
+      ) {
+        setDetectedPaste(null);
+        setLocalFailure({
+          reason: "UNSUPPORTED_FIGMA_CLIPBOARD_HTML",
+          retryable: false,
+        });
+        return;
+      }
+
+      const intentClassification = classifyPasteIntent(
+        text,
+        options?.clipboardHtml,
+      );
+
+      if (intentClassification.intent === "UNKNOWN") {
+        setDetectedPaste(null);
+        setLocalFailure({
+          reason: "EMPTY_INPUT",
+          retryable: true,
+        });
+        return;
+      }
+
+      setLocalFailure(null);
+      setDetectedPaste({
+        intent: intentClassification.intent,
+        confidence: intentClassification.confidence,
+        rawText: intentClassification.rawText,
+        suggestedJobSource: intentClassification.suggestedJobSource,
+        ...(options?.clipboardHtml !== undefined
+          ? { clipboardHtml: options.clipboardHtml }
+          : {}),
+      });
+    },
+
+    confirmIntent(intent: ImportIntent): void {
+      if (detectedPaste === null) {
+        return;
+      }
+
+      const unsupportedReason = toUnsupportedIntentReason({
+        detectedIntent: detectedPaste.intent,
+        confirmedIntent: intent,
+        suggestedJobSource: detectedPaste.suggestedJobSource,
+      });
+      if (unsupportedReason !== null) {
+        setDetectedPaste(null);
+        setLocalFailure({
+          reason: unsupportedReason,
+          retryable: false,
+        });
+        return;
+      }
+
+      if (!isJsonPayload(detectedPaste.rawText)) {
+        setDetectedPaste(null);
+        setLocalFailure({
+          reason:
+            detectedPaste.clipboardHtml !== undefined &&
+            isFigmaClipboard(detectedPaste.clipboardHtml)
+              ? "UNSUPPORTED_FIGMA_CLIPBOARD_HTML"
+              : "SCHEMA_MISMATCH",
+          retryable: false,
+        });
+        return;
+      }
+
+      setDetectedPaste(null);
+      setLocalFailure(null);
+      pipeline.start(detectedPaste.rawText, {
+        sourceMode:
+          intent === "FIGMA_PLUGIN_ENVELOPE" ? "figma_plugin" : "figma_paste",
+      });
+    },
+
+    dismissIntent(): void {
+      setDetectedPaste(null);
+    },
+
+    retry(): void {
+      if (pipeline.state.canRetry) {
+        setDetectedPaste(null);
+        setLocalFailure(null);
+        pipeline.retry();
+        return;
+      }
+
+      if (localFailure?.retryable) {
+        setLocalFailure(null);
       }
     },
-    reset() {
-      dispatch({ type: "reset" });
+
+    reset(): void {
+      setDetectedPaste(null);
+      setLocalFailure(null);
+      pipeline.cancel();
     },
-    reportInputError,
+
+    reportInputError(code: string): void {
+      setDetectedPaste(null);
+      setLocalFailure({ reason: code, retryable: true });
+    },
+
     jobId,
     previewUrl,
     detectedIntent,

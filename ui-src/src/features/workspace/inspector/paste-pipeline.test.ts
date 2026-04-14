@@ -7,15 +7,6 @@ import {
   type PipelineError,
 } from "./paste-pipeline";
 
-function makeError(stage: PipelineError["stage"]): PipelineError {
-  return {
-    stage,
-    code: "ERR_TEST",
-    message: "test failure",
-    retryable: true,
-  };
-}
-
 function dispatch(
   state: PastePipelineState,
   action: PipelineAction,
@@ -23,20 +14,29 @@ function dispatch(
   return pastePipelineReducer(state, action);
 }
 
+function makeError(
+  stage: PipelineError["stage"],
+  retryable = true,
+): PipelineError {
+  return {
+    stage,
+    code: "ERR_TEST",
+    message: "test failure",
+    retryable,
+  };
+}
+
 describe("createInitialPipelineState", () => {
-  it("returns a fully pending idle state", () => {
+  it("starts idle with no retained artifacts or errors", () => {
     const state = createInitialPipelineState();
 
     expect(state.stage).toBe("idle");
     expect(state.progress).toBe(0);
-    expect(state.errors).toEqual([]);
-    expect(state.canRetry).toBe(false);
     expect(state.canCancel).toBe(false);
+    expect(state.canRetry).toBe(false);
+    expect(state.errors).toEqual([]);
     expect(state.jobId).toBeUndefined();
-    expect(state.designIR).toBeUndefined();
-    expect(state.componentManifest).toBeUndefined();
-    expect(state.generatedFiles).toBeUndefined();
-    expect(state.screenshot).toBeUndefined();
+    expect(state.previewUrl).toBeUndefined();
 
     for (const status of Object.values(state.stageProgress)) {
       expect(status.state).toBe("pending");
@@ -44,298 +44,128 @@ describe("createInitialPipelineState", () => {
   });
 });
 
-describe("pastePipelineReducer — start", () => {
-  it("transitions idle → parsing, marks parsing running, enables cancel", () => {
-    const state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
+describe("pastePipelineReducer", () => {
+  it("resets stale state on start", () => {
+    const dirtyState: PastePipelineState = {
+      ...createInitialPipelineState(),
+      stage: "error",
+      progress: 80,
+      jobId: "job-old",
+      previewUrl: "http://old-preview",
+      errors: [makeError("mapping")],
+      canRetry: true,
+      stageProgress: {
+        ...createInitialPipelineState().stageProgress,
+        mapping: { state: "failed", error: makeError("mapping") },
+      },
+    };
+
+    const state = dispatch(dirtyState, { type: "start" });
 
     expect(state.stage).toBe("parsing");
+    expect(state.progress).toBe(0);
+    expect(state.jobId).toBeUndefined();
+    expect(state.previewUrl).toBeUndefined();
+    expect(state.errors).toEqual([]);
     expect(state.stageProgress.parsing.state).toBe("running");
-    expect(state.canCancel).toBe(true);
-    expect(state.canRetry).toBe(false);
   });
-});
 
-describe("pastePipelineReducer — parsing_done", () => {
-  it("marks parsing done and advances to resolving (running)", () => {
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    state = dispatch(state, {
-      type: "parsing_done",
-      figmeta: { fileKey: "k", pasteID: 1, dataType: "scene" },
-    });
+  it("advances from parsing to resolving when parsing completes", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
 
-    expect(state.stageProgress.parsing.state).toBe("done");
     expect(state.stage).toBe("resolving");
+    expect(state.stageProgress.parsing.state).toBe("done");
     expect(state.stageProgress.resolving.state).toBe("running");
   });
-});
 
-describe("pastePipelineReducer — parsing_failed", () => {
-  it("transitions to error, pushes error, sets canRetry and !canCancel", () => {
-    const err = makeError("parsing");
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    state = dispatch(state, { type: "parsing_failed", error: err });
-
-    expect(state.stage).toBe("error");
-    expect(state.stageProgress.parsing.state).toBe("failed");
-    expect(state.errors).toEqual([err]);
-    expect(state.canRetry).toBe(true);
-    expect(state.canCancel).toBe(false);
-  });
-});
-
-describe("pastePipelineReducer — job_created", () => {
-  it("stores jobId without changing stage", () => {
-    const before = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    const after = dispatch(before, { type: "job_created", jobId: "job-42" });
-
-    expect(after.jobId).toBe("job-42");
-    expect(after.stage).toBe(before.stage);
-  });
-});
-
-describe("pastePipelineReducer — stage transitions", () => {
-  it("stage_start marks the stage running with message", () => {
-    const state = dispatch(createInitialPipelineState(), {
-      type: "stage_start",
-      stage: "mapping",
-      message: "starting",
-    });
-    expect(state.stageProgress.mapping.state).toBe("running");
-    expect(state.stageProgress.mapping.message).toBe("starting");
-  });
-
-  it("stage_message updates the message without changing state", () => {
-    let state = dispatch(createInitialPipelineState(), {
-      type: "stage_start",
-      stage: "mapping",
-      message: "starting",
-    });
+  it("tracks accepted jobs and runtime status", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, { type: "job_created", jobId: "job-42" });
     state = dispatch(state, {
-      type: "stage_message",
-      stage: "mapping",
-      message: "progress",
+      type: "job_status_updated",
+      status: "running",
     });
-    expect(state.stageProgress.mapping.state).toBe("running");
-    expect(state.stageProgress.mapping.message).toBe("progress");
+
+    expect(state.jobId).toBe("job-42");
+    expect(state.jobStatus).toBe("running");
   });
 
-  it("stage_done marks the stage done, advances to the next, and adds duration", () => {
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    state = dispatch(state, {
-      type: "parsing_done",
-      figmeta: { fileKey: "k", pasteID: 1, dataType: "scene" },
-    });
+  it("marks intermediate backend stages done and advances progress", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
     state = dispatch(state, {
       type: "stage_done",
       stage: "resolving",
-      durationMs: 123,
+      durationMs: 10,
+    });
+    state = dispatch(state, {
+      type: "stage_done",
+      stage: "transforming",
+      durationMs: 10,
     });
 
+    expect(state.stage).toBe("mapping");
     expect(state.stageProgress.resolving.state).toBe("done");
-    expect(state.stageProgress.resolving.duration).toBe(123);
-    expect(state.stage).toBe("extracting");
-    expect(state.stageProgress.extracting.state).toBe("running");
+    expect(state.stageProgress.transforming.state).toBe("done");
+    expect(state.progress).toBeGreaterThan(0);
   });
 
-  it("stage_failed for an active stage transitions to error and is retryable", () => {
-    const err = makeError("resolving");
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
+  it("stores final artifacts before ready", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "design_ir_ready",
+      designIR: { jobId: "job-1", screens: [] },
     });
     state = dispatch(state, {
-      type: "parsing_done",
-      figmeta: { fileKey: "k", pasteID: 1, dataType: "scene" },
+      type: "manifest_ready",
+      manifest: { jobId: "job-1", screens: [] },
     });
     state = dispatch(state, {
-      type: "stage_failed",
-      stage: "resolving",
-      error: err,
+      type: "files_ready",
+      files: [{ path: "src/App.tsx", sizeBytes: 128 }],
     });
-
-    expect(state.stage).toBe("error");
-    expect(state.stageProgress.resolving.state).toBe("failed");
-    expect(state.errors).toEqual([err]);
-    expect(state.canRetry).toBe(true);
-    expect(state.canCancel).toBe(false);
-  });
-});
-
-describe("pastePipelineReducer — progress accounting", () => {
-  it("increments by floor(100/6) for each active stage completion", () => {
-    const INCREMENT = Math.floor(100 / 6);
-
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    expect(state.progress).toBe(0);
-
     state = dispatch(state, {
-      type: "parsing_done",
-      figmeta: { fileKey: "k", pasteID: 1, dataType: "scene" },
+      type: "complete",
+      previewUrl: "http://127.0.0.1:1983/preview",
     });
-    expect(state.progress).toBe(INCREMENT);
 
-    state = dispatch(state, {
-      type: "stage_done",
-      stage: "resolving",
-      durationMs: 10,
-    });
-    expect(state.progress).toBe(INCREMENT * 2);
-
-    state = dispatch(state, {
-      type: "stage_done",
-      stage: "extracting",
-      durationMs: 10,
-    });
-    expect(state.progress).toBe(INCREMENT * 3);
-  });
-
-  it("complete clamps progress to 100 and marks ready", () => {
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    state = dispatch(state, { type: "complete" });
     expect(state.stage).toBe("ready");
     expect(state.progress).toBe(100);
+    expect(state.previewUrl).toBe("http://127.0.0.1:1983/preview");
+    expect(state.designIR?.jobId).toBe("job-1");
+    expect(state.componentManifest?.jobId).toBe("job-1");
+    expect(state.generatedFiles).toEqual([
+      { path: "src/App.tsx", sizeBytes: 128 },
+    ]);
+  });
+
+  it("surfaces non-retryable failures as terminal errors", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "resolving",
+      error: makeError("resolving", false),
+    });
+
+    expect(state.stage).toBe("error");
     expect(state.canRetry).toBe(false);
     expect(state.canCancel).toBe(false);
+    expect(state.errors[0]?.stage).toBe("resolving");
   });
 
-  it("reaches exactly 100 after all 6 active stage completions (no stall at 96)", () => {
-    const ACTIVE_STAGES = [
-      "parsing",
-      "resolving",
-      "extracting",
-      "transforming",
-      "mapping",
-      "generating",
-    ] as const;
-
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
+  it("returns to idle once cancellation is complete", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
     state = dispatch(state, {
-      type: "parsing_done",
-      figmeta: { fileKey: "k", pasteID: 1, dataType: "scene" },
+      type: "job_created",
+      jobId: "job-cancel",
     });
-    for (const stage of ACTIVE_STAGES.slice(1)) {
-      state = dispatch(state, { type: "stage_done", stage, durationMs: 1 });
-    }
-    expect(state.progress).toBe(100);
-  });
-});
-
-describe("pastePipelineReducer — data accumulators", () => {
-  it("stores screenshot, designIR, manifest, and files", () => {
-    const initial = createInitialPipelineState();
-
-    const withScreenshot = dispatch(initial, {
-      type: "screenshot_ready",
-      screenshot: "data:image/png;base64,abc",
-    });
-    expect(withScreenshot.screenshot).toBe("data:image/png;base64,abc");
-
-    const ir = { jobId: "j1", screens: [] };
-    const withIr = dispatch(initial, { type: "design_ir_ready", designIR: ir });
-    expect(withIr.designIR).toEqual(ir);
-
-    const manifest = { jobId: "j1", screens: [] };
-    const withManifest = dispatch(initial, {
-      type: "manifest_ready",
-      manifest,
-    });
-    expect(withManifest.componentManifest).toEqual(manifest);
-
-    const files = [{ path: "a.ts", sizeBytes: 42 }];
-    const withFiles = dispatch(initial, { type: "files_ready", files });
-    expect(withFiles.generatedFiles).toEqual(files);
-  });
-});
-
-describe("pastePipelineReducer — cancel", () => {
-  it("resets to initial state", () => {
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    state = dispatch(state, { type: "job_created", jobId: "job-1" });
-    state = dispatch(state, { type: "cancel" });
+    state = dispatch(state, { type: "cancel_complete" });
 
     expect(state).toEqual(createInitialPipelineState());
-  });
-});
-
-describe("pastePipelineReducer — retry", () => {
-  it("restarts from the last failed stage while keeping cached outputs", () => {
-    const ir = { jobId: "j1", screens: [] };
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    state = dispatch(state, {
-      type: "parsing_done",
-      figmeta: { fileKey: "k", pasteID: 1, dataType: "scene" },
-    });
-    state = dispatch(state, {
-      type: "stage_done",
-      stage: "resolving",
-      durationMs: 5,
-    });
-    state = dispatch(state, {
-      type: "screenshot_ready",
-      screenshot: "shot",
-    });
-    state = dispatch(state, { type: "design_ir_ready", designIR: ir });
-    state = dispatch(state, {
-      type: "stage_failed",
-      stage: "mapping",
-      error: makeError("mapping"),
-    });
-
-    const retried = dispatch(state, { type: "retry" });
-
-    expect(retried.stage).toBe("mapping");
-    expect(retried.stageProgress.mapping.state).toBe("running");
-    expect(retried.screenshot).toBe("shot");
-    expect(retried.designIR).toEqual(ir);
-    expect(retried.canRetry).toBe(false);
-    expect(retried.canCancel).toBe(true);
-    expect(retried.errors).toEqual([]);
-  });
-
-  it("accepts an explicit fromStage override", () => {
-    let state = dispatch(createInitialPipelineState(), {
-      type: "start",
-      clipboardHtml: "<html>",
-    });
-    state = dispatch(state, {
-      type: "stage_failed",
-      stage: "generating",
-      error: makeError("generating"),
-    });
-
-    const retried = dispatch(state, { type: "retry", fromStage: "resolving" });
-
-    expect(retried.stage).toBe("resolving");
-    expect(retried.stageProgress.resolving.state).toBe("running");
   });
 });
