@@ -1507,6 +1507,23 @@ export function InspectorPanel({
     };
   }, [filesQuery.data, filesQuery.isLoading]);
 
+  // When the paste pipeline has already delivered generated files, treat the
+  // code pane as "ready" regardless of the React Query loading/error state.
+  // This enables the file selector and auto-selects the first file during the
+  // generating stage, rather than showing a disabled selector while files are
+  // already available from the live pipeline. (issue #1006)
+  const effectiveFilesState = useMemo<{
+    status: InspectorSourceStatus;
+    files: FileEntry[];
+    error: EndpointErrorDetails | null;
+  }>(() => {
+    const pipelineFiles = activePipeline.generatedFiles;
+    if ((pipelineFiles?.length ?? 0) > 0 && filesState.status !== "ready") {
+      return { status: "ready", files: pipelineFiles!, error: null };
+    }
+    return filesState;
+  }, [activePipeline.generatedFiles, filesState]);
+
   const manifestState = useMemo<{
     status: InspectorSourceStatus;
     manifest: ComponentManifestPayload | null;
@@ -1665,14 +1682,11 @@ export function InspectorPanel({
     };
   }, [generationMetricsQuery.data, generationMetricsQuery.isLoading]);
 
-  const files =
-    filesState.status === "ready"
-      ? filesState.files
-      : activePipeline.generatedFiles ?? filesState.files;
+  const files = effectiveFilesState.files;
   const manifest =
     manifestState.status === "ready"
       ? manifestState.manifest
-      : activePipeline.componentManifest ?? manifestState.manifest;
+      : (activePipeline.componentManifest ?? manifestState.manifest);
   const queryTreeNodes = designIrState.treeNodes;
   const effectiveTreeNodes =
     designIrState.status === "ready"
@@ -1684,7 +1698,7 @@ export function InspectorPanel({
   const irScreens =
     designIrState.status === "ready"
       ? designIrState.screens
-      : activePipeline.designIR?.screens ?? designIrState.screens;
+      : (activePipeline.designIR?.screens ?? designIrState.screens);
   const selectedIrNode = useMemo<DesignIrElementNode | null>(() => {
     if (!selectedNodeId) {
       return null;
@@ -1958,11 +1972,11 @@ export function InspectorPanel({
       : hasTreePane;
   const treeSelectionEnabled =
     designIrState.status === "ready" ||
-    (((activePipeline.stage === "generating" ||
+    ((activePipeline.stage === "generating" ||
       activePipeline.stage === "ready") &&
       ((activePipeline.componentManifest?.screens.length ?? 0) > 0 ||
         (activePipeline.generatedFiles?.length ?? 0) > 0)) ||
-      activePipeline.stage === "ready");
+    activePipeline.stage === "ready";
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);
@@ -3394,7 +3408,9 @@ export function InspectorPanel({
         }
         return null;
       };
-      return findInTree(effectiveTreeNodes) ?? { name: nodeId, type: "unknown" };
+      return (
+        findInTree(effectiveTreeNodes) ?? { name: nodeId, type: "unknown" }
+      );
     },
     [effectiveTreeNodes],
   );
@@ -3924,7 +3940,7 @@ export function InspectorPanel({
 
   const sourceStatuses = useMemo(() => {
     return [
-      { source: "files", label: "Files", status: filesState.status },
+      { source: "files", label: "Files", status: effectiveFilesState.status },
       { source: "design-ir", label: "Design IR", status: designIrState.status },
       {
         source: "component-manifest",
@@ -3939,8 +3955,8 @@ export function InspectorPanel({
     ] as const;
   }, [
     designIrState.status,
+    effectiveFilesState.status,
     fileContentState.status,
-    filesState.status,
     manifestState.status,
   ]);
 
@@ -3952,11 +3968,11 @@ export function InspectorPanel({
       onRetry: (() => void) | null;
     }> = [];
 
-    if (filesState.error) {
+    if (effectiveFilesState.error) {
       banners.push({
         source: "files",
         title: "Generated files unavailable",
-        details: filesState.error,
+        details: effectiveFilesState.error,
         onRetry: handleRetryFiles,
       });
     }
@@ -3991,8 +4007,8 @@ export function InspectorPanel({
     return banners;
   }, [
     designIrState.error,
+    effectiveFilesState.error,
     fileContentState.error,
-    filesState.error,
     handleRetryDesignIr,
     handleRetryFileContent,
     handleRetryFiles,
@@ -5146,8 +5162,8 @@ export function InspectorPanel({
             files={files}
             selectedFile={effectiveSelectedFile}
             onSelectFile={handleSelectFile}
-            filesState={filesState.status}
-            filesError={filesState.error}
+            filesState={effectiveFilesState.status}
+            filesError={effectiveFilesState.error}
             onRetryFiles={handleRetryFiles}
             fileContent={fileContentState.content}
             fileContentState={fileContentState.status}
