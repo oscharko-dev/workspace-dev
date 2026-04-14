@@ -2,11 +2,11 @@ import { type JSX } from "react";
 import { FIGMA_PASTE_MAX_LABEL } from "../submit-schema";
 import { PasteCapture } from "./PasteCapture";
 import { PasteDropZone } from "./PasteDropZone";
-import { ScreenshotPreview } from "./ScreenshotPreview";
 import { SmartBanner } from "./SmartBanner";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import type { ImportIntent } from "./paste-input-classifier";
 import type { PipelineStage } from "./paste-pipeline";
+import { PreviewPane } from "./PreviewPane";
 
 export interface InspectorBootstrapProps {
   state: InspectorBootstrapState;
@@ -17,6 +17,7 @@ export interface InspectorBootstrapProps {
   onConfirmIntent?: (intent: ImportIntent) => void;
   onDismissIntent?: () => void;
   onFigmaUrl: (fileKey: string, nodeId: string | null) => void;
+  previewUrl?: string | null;
   screenshot?: string | null;
   pipelineStage?: PipelineStage;
 }
@@ -255,15 +256,19 @@ export function InspectorBootstrap({
   onConfirmIntent,
   onDismissIntent,
   onFigmaUrl,
+  previewUrl,
   screenshot,
   pipelineStage,
 }: InspectorBootstrapProps): JSX.Element {
-  void pipelineStage;
   const copy = getColumnCopy(state);
   const disabled = isPasteDisabled(state);
   const helperHint = getHelperHint(state);
   const errorMessage = getErrorMessage(state);
   const showRetry = state.kind === "failed" && state.retryable;
+  const showPreviewPane =
+    pipelineStage === "parsing" ||
+    screenshot != null ||
+    (typeof previewUrl === "string" && previewUrl.trim().length > 0);
 
   return (
     <div
@@ -288,22 +293,54 @@ export function InspectorBootstrap({
               Import
             </h2>
           </div>
-          {(state.kind === "processing" ||
-            state.kind === "queued" ||
-            state.kind === "pasting") &&
-          screenshot != null ? (
-            <div className="min-h-0 flex-1 overflow-hidden">
-              <ScreenshotPreview
-                screenshotUrl={screenshot}
-                badgeText="Figma preview"
-                {...(helperHint !== undefined ? { stageName: helperHint } : {})}
-              />
+          {showPreviewPane ? (
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <PreviewPane
+                  previewUrl={previewUrl ?? ""}
+                  inspectEnabled={false}
+                  activeScopeNodeId={null}
+                  onToggleInspect={() => {
+                    // Inspect mode activates only after the full Inspector loads.
+                  }}
+                  onInspectSelect={() => {
+                    // No-op until the full Inspector is available.
+                  }}
+                  {...(pipelineStage !== undefined ? { pipelineStage } : {})}
+                  {...(screenshot != null ? { screenshot } : {})}
+                />
+              </div>
+              {state.kind === "failed" ? (
+                <div className="shrink-0 border-t border-[#000000] px-4 py-3">
+                  {errorMessage !== undefined ? (
+                    <p
+                      role="alert"
+                      className="rounded border border-rose-500/40 bg-rose-950/30 px-3 py-2 text-xs text-rose-200"
+                    >
+                      {errorMessage}
+                    </p>
+                  ) : null}
+                  {showRetry ? (
+                    <div className="mt-3 flex justify-center">
+                      <button
+                        type="button"
+                        onClick={onRetry}
+                        className="cursor-pointer rounded border border-[#4eba87] bg-[#4eba87]/12 px-4 py-2 text-xs font-medium text-[#4eba87] transition hover:bg-[#4eba87]/18"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : state.kind === "idle" || state.kind === "failed" ? (
             <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4">
               <PasteDropZone
-                disabled={false}
+                disabled={disabled}
                 onPaste={onPaste}
+                {...(onDropFile !== undefined ? { onDropFile } : {})}
+                {...(onError !== undefined ? { onError } : {})}
                 onFigmaUrl={onFigmaUrl}
                 {...(errorMessage !== undefined ? { errorMessage } : {})}
               />

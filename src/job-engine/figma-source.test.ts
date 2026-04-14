@@ -4,6 +4,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { safeParseFigmaPayload } from "../figma-payload-validation.js";
+import { figmaToDesignIrWithOptions } from "../parity/ir.js";
 import { fetchAuthoritativeFigmaSubtrees, fetchFigmaFile } from "./figma-source.js";
 import {
   createFigmaRestCircuitBreaker,
@@ -273,6 +275,181 @@ test("fetchFigmaFile flags low-fidelity direct geometry payloads for instance-he
     (result.diagnostics.lowFidelityReasons ?? []).some((reason) => reason.includes("vector nodes")),
     true
   );
+});
+
+test("fetchFigmaFile scopes direct geometry payloads to the requested node", async () => {
+  const result = await fetchFigmaFile({
+    ...createRequest(async () => {
+      return jsonResponse({
+        name: "Demo",
+        document: {
+          id: "0:0",
+          type: "DOCUMENT",
+          children: [
+            {
+              id: "0:1",
+              type: "CANVAS",
+              children: [
+                {
+                  id: "1:1",
+                  type: "FRAME",
+                  name: "Screen A",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                  children: [
+                    {
+                      id: "1:2",
+                      type: "GROUP",
+                      name: "Scoped Group",
+                      children: []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      });
+    }),
+    nodeId: "1:2"
+  });
+
+  assert.equal((result.file.document as { type?: string }).type, "DOCUMENT");
+  assert.equal(findNodeById(result.file.document, "1:2")?.id, "1:2");
+  assert.equal(safeParseFigmaPayload({ input: result.file }).success, true);
+  assert.doesNotThrow(() => {
+    figmaToDesignIrWithOptions(result.file);
+  });
+  assert.equal(result.diagnostics.sourceMode, "geometry-paths");
+});
+
+test("fetchFigmaFile fetches the requested node directly when staged output does not contain it", async () => {
+  const requests: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.includes("/v1/files/abc?geometry=paths")) {
+      return new Response("request too large", { status: 413 });
+    }
+    if (url.includes("/v1/files/abc?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=1%3A1")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A",
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=9%3A9")) {
+      return jsonResponse({
+        nodes: {
+          "9:9": {
+            document: {
+              id: "9:9",
+              type: "FRAME",
+              name: "Scoped Screen",
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeId: "9:9"
+  });
+
+  assert.equal((result.file.document as { type?: string }).type, "DOCUMENT");
+  assert.equal(findNodeById(result.file.document, "9:9")?.id, "9:9");
+  assert.equal(safeParseFigmaPayload({ input: result.file }).success, true);
+  assert.equal(
+    requests.some((url) => url.includes("/v1/files/abc/nodes?ids=9%3A9&geometry=paths")),
+    true
+  );
+});
+
+test("fetchFigmaFile promotes staged deep-node selections to the containing screen candidate", async () => {
+  const fetchImpl: typeof fetch = async (input) => {
+    const url = String(input);
+    if (url.includes("/v1/files/abc?geometry=paths")) {
+      return new Response("request too large", { status: 413 });
+    }
+    if (url.includes("/v1/files/abc?depth=5")) {
+      return jsonResponse(createBootstrapDocument());
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=1%3A1")) {
+      return jsonResponse({
+        nodes: {
+          "1:1": {
+            document: {
+              id: "1:1",
+              type: "FRAME",
+              name: "Screen A",
+              absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=1%3A2")) {
+      return jsonResponse({
+        nodes: {
+          "1:2": {
+            document: {
+              id: "1:2",
+              type: "FRAME",
+              name: "Screen B",
+              absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    if (url.includes("/v1/files/abc/nodes?ids=9%3A9")) {
+      return jsonResponse({
+        nodes: {
+          "9:9": {
+            document: {
+              id: "9:9",
+              type: "GROUP",
+              name: "Deep Group",
+              absoluteBoundingBox: { x: 480, y: 120, width: 120, height: 64 },
+              children: []
+            }
+          }
+        }
+      });
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+
+  const result = await fetchFigmaFile({
+    ...createRequest(fetchImpl),
+    nodeId: "9:9"
+  });
+
+  const rootChildren = (result.file.document as { children?: Array<{ type?: string }> }).children ?? [];
+  const page = rootChildren[0];
+  const selectedScreen = findNodeById(result.file.document, "1:2");
+  assert.equal((result.file.document as { type?: string }).type, "DOCUMENT");
+  assert.equal(page?.type, "CANVAS");
+  assert.equal(selectedScreen?.type, "FRAME");
+  assert.equal(safeParseFigmaPayload({ input: result.file }).success, true);
+  assert.doesNotThrow(() => {
+    figmaToDesignIrWithOptions(result.file);
+  });
 });
 
 test("fetchAuthoritativeFigmaSubtrees recovers screen subtrees for low-fidelity direct geometry payloads", async () => {

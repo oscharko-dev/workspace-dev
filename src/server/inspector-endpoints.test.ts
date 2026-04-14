@@ -260,6 +260,10 @@ const waitForPendingEndpoint = async ({
       return;
     }
 
+    if (endpoint === "files" && response.status === 200) {
+      return;
+    }
+
     if (response.status === 200) {
       throw new Error(`Expected 409 while job is pending for '${endpoint}', got 200.`);
     }
@@ -345,7 +349,7 @@ test("inspector endpoints: unknown jobs return 404", async () => {
   }
 });
 
-test("inspector endpoints: pending jobs return 409", { timeout: 120_000 }, async () => {
+test("inspector endpoints: pending jobs gate terminal artifacts and may expose running files", { timeout: 120_000 }, async () => {
   const running = await startCliProcess();
 
   try {

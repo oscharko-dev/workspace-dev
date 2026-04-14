@@ -56,6 +56,8 @@ interface FigmaNodeLike {
   name?: string;
   children?: FigmaNodeLike[];
   absoluteBoundingBox?: {
+    x?: number;
+    y?: number;
     width?: number;
     height?: number;
   };
@@ -1278,6 +1280,37 @@ const findNodeById = ({
   return undefined;
 };
 
+const findNodePathById = ({
+  root,
+  targetId
+}: {
+  root: FigmaNodeLike;
+  targetId: string;
+}): FigmaNodeLike[] | undefined => {
+  const stack: Array<{ node: FigmaNodeLike; path: FigmaNodeLike[] }> = [{ node: root, path: [root] }];
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (!current) {
+      continue;
+    }
+    if (current.node.id === targetId) {
+      return current.path;
+    }
+    const children = asNodeArray(current.node.children);
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      const child = children[index];
+      if (!child) {
+        continue;
+      }
+      stack.push({
+        node: child,
+        path: [...current.path, child]
+      });
+    }
+  }
+  return undefined;
+};
+
 const normalizeFidelityNodeName = (value: string | undefined): string => {
   return (value ?? "")
     .replace(/🔥/g, " ")
@@ -1555,6 +1588,321 @@ const buildNodesUrl = ({
   return `https://api.figma.com/v1/files/${encodeURIComponent(fileKey)}/nodes?ids=${idsParam}${geometryParam}`;
 };
 
+const fetchScopedNodeDocument = async ({
+  fileKey,
+  nodeId,
+  accessToken,
+  timeoutMs,
+  maxRetries,
+  fetchImpl,
+  onLog,
+  figmaRestCircuitBreaker,
+  pipelineDiagnosticLimits
+}: {
+  fileKey: string;
+  nodeId: string;
+  accessToken: string;
+  timeoutMs: number;
+  maxRetries: number;
+  fetchImpl: typeof fetch;
+  onLog: (message: string) => void;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
+  pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
+}): Promise<FigmaNodeLike | undefined> => {
+  try {
+    const payload = await executeFigmaRequest({
+      url: buildNodesUrl({ fileKey, ids: [nodeId], includeGeometry: true }),
+      requestLabel: `nodes scoped ${nodeId} geometry=paths`,
+      accessToken,
+      timeoutMs,
+      maxRetries,
+      fetchImpl,
+      onLog,
+      allowTooLargeFallback: true,
+      ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {}),
+      ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {})
+    });
+    return extractNodeDocuments(payload).get(nodeId);
+  } catch (error) {
+    if (!(error instanceof FigmaTooLargeError)) {
+      throw error;
+    }
+    onLog(`Scoped node fetch for '${nodeId}' was too large with geometry=paths; retrying without geometry.`);
+  }
+
+  const payload = await executeFigmaRequest({
+    url: buildNodesUrl({ fileKey, ids: [nodeId], includeGeometry: false }),
+    requestLabel: `nodes scoped ${nodeId} no-geometry`,
+    accessToken,
+    timeoutMs,
+    maxRetries,
+    fetchImpl,
+    onLog,
+    allowTooLargeFallback: false,
+    ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {}),
+    ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {})
+  });
+  return extractNodeDocuments(payload).get(nodeId);
+};
+
+const scopeFigmaFileToNode = async ({
+  file,
+  fileKey,
+  nodeId,
+  accessToken,
+  timeoutMs,
+  maxRetries,
+  fetchImpl,
+  onLog,
+  figmaRestCircuitBreaker,
+  pipelineDiagnosticLimits
+}: {
+  file: FigmaFileResponse;
+  fileKey: string;
+  nodeId: string;
+  accessToken: string;
+  timeoutMs: number;
+  maxRetries: number;
+  fetchImpl: typeof fetch;
+  onLog: (message: string) => void;
+  figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
+  pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
+}): Promise<FigmaFileResponse> => {
+  const normalizedNodeId = nodeId.trim();
+  if (normalizedNodeId.length === 0) {
+    return file;
+  }
+
+  const originalRoot = isRecord(file.document)
+    ? (file.document as FigmaNodeLike)
+    : undefined;
+  const documentId =
+    typeof originalRoot?.id === "string" && originalRoot.id.trim().length > 0
+      ? originalRoot.id.trim()
+      : "0:0";
+  const toScopedDocument = (scopedNode: FigmaNodeLike): FigmaNodeLike => {
+    if (scopedNode.type === "DOCUMENT") {
+      return scopedNode;
+    }
+    if (scopedNode.type === "CANVAS") {
+      return {
+        ...(originalRoot ?? {}),
+        id: documentId,
+        type: "DOCUMENT",
+        children: [scopedNode]
+      };
+    }
+    return {
+      ...(originalRoot ?? {}),
+      id: documentId,
+      type: "DOCUMENT",
+      children: [
+        {
+          id: `${normalizedNodeId}::canvas`,
+          type: "CANVAS",
+          name: typeof scopedNode.name === "string" ? scopedNode.name : "Scoped Selection",
+          children: [scopedNode]
+        }
+      ]
+    };
+  };
+  const isDirectlySupportedScopedNode = (node: FigmaNodeLike): boolean =>
+    node.type === "DOCUMENT" ||
+    node.type === "CANVAS" ||
+    node.type === "SECTION" ||
+    node.type === "FRAME" ||
+    node.type === "COMPONENT";
+  const resolvePromotedAncestorByBounds = (
+    node: FigmaNodeLike,
+  ): FigmaNodeLike | undefined => {
+    if (!originalRoot) {
+      return undefined;
+    }
+    const targetBounds = node.absoluteBoundingBox;
+    if (
+      !targetBounds ||
+      !isFiniteNumber(targetBounds.x) ||
+      !isFiniteNumber(targetBounds.y) ||
+      !isFiniteNumber(targetBounds.width) ||
+      !isFiniteNumber(targetBounds.height)
+    ) {
+      return undefined;
+    }
+
+    const candidates: Array<{ node: FigmaNodeLike; area: number }> = [];
+    const stack: FigmaNodeLike[] = [originalRoot];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (!current) {
+        continue;
+      }
+      if (
+        current.id !== normalizedNodeId &&
+        (current.type === "SECTION" ||
+          current.type === "FRAME" ||
+          current.type === "COMPONENT")
+      ) {
+        const bounds = current.absoluteBoundingBox;
+        if (
+          bounds &&
+          isFiniteNumber(bounds.x) &&
+          isFiniteNumber(bounds.y) &&
+          isFiniteNumber(bounds.width) &&
+          isFiniteNumber(bounds.height) &&
+          targetBounds.x >= bounds.x &&
+          targetBounds.y >= bounds.y &&
+          targetBounds.x + targetBounds.width <= bounds.x + bounds.width &&
+          targetBounds.y + targetBounds.height <= bounds.y + bounds.height
+        ) {
+          candidates.push({
+            node: current,
+            area: bounds.width * bounds.height
+          });
+        }
+      }
+      for (const child of asNodeArray(current.children)) {
+        stack.push(child);
+      }
+    }
+
+    candidates.sort((left, right) => left.area - right.area);
+    const resolved = candidates[0]?.node;
+    if (resolved) {
+      onLog(
+        `Scoped Figma selection '${normalizedNodeId}' inferred supported ancestor '${resolved.id ?? "unknown"}' (${resolved.type}) by bounds.`
+      );
+    }
+    return resolved;
+  };
+  const resolveScopedNode = (node: FigmaNodeLike): FigmaNodeLike | undefined => {
+    if (isDirectlySupportedScopedNode(node)) {
+      return node;
+    }
+    if (!originalRoot) {
+      return undefined;
+    }
+    const nodePath = findNodePathById({
+      root: originalRoot,
+      targetId: normalizedNodeId
+    });
+    if (!nodePath) {
+      return resolvePromotedAncestorByBounds(node);
+    }
+    for (let index = nodePath.length - 2; index >= 0; index -= 1) {
+      const candidate = nodePath[index];
+      if (
+        candidate &&
+        (candidate.type === "SECTION" ||
+          candidate.type === "FRAME" ||
+          candidate.type === "COMPONENT")
+      ) {
+        onLog(
+          `Scoped Figma selection '${normalizedNodeId}' promoted to supported ancestor '${candidate.id ?? "unknown"}' (${candidate.type}).`
+        );
+        return candidate;
+      }
+    }
+    return resolvePromotedAncestorByBounds(node);
+  };
+
+  const existingNode = originalRoot
+    ? findNodeById({ root: originalRoot, targetId: normalizedNodeId })
+    : undefined;
+  if (existingNode) {
+    const resolvedNode = resolveScopedNode(existingNode);
+    if (!resolvedNode) {
+      throw createPipelineError({
+        code: "E_FIGMA_NODE_UNSUPPORTED",
+        stage: "figma.source",
+        message: `Selected Figma node '${normalizedNodeId}' cannot be imported directly because it does not resolve to a supported screen root.`,
+        ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
+        diagnostics: [
+          {
+            code: "E_FIGMA_NODE_UNSUPPORTED",
+            message: `Selected Figma node '${normalizedNodeId}' cannot be imported directly because it does not resolve to a supported screen root.`,
+            suggestion: "Use a Figma URL that points to a frame, component, section, or page, or select a node nested inside one of those supported roots.",
+            stage: "figma.source",
+            severity: "error",
+            figmaNodeId: normalizedNodeId,
+            details: {
+              figmaFileKey: fileKey,
+              selectedNodeType: existingNode.type ?? "unknown"
+            }
+          }
+        ]
+      });
+    }
+    onLog(`Scoped Figma source to selected node '${normalizedNodeId}' from fetched tree.`);
+    return {
+      ...file,
+      document: toScopedDocument(resolvedNode)
+    };
+  }
+
+  const scopedNode = await fetchScopedNodeDocument({
+    fileKey,
+    nodeId: normalizedNodeId,
+    accessToken,
+    timeoutMs,
+    maxRetries,
+    fetchImpl,
+    onLog,
+    ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {}),
+    ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {})
+  });
+  if (!scopedNode) {
+    throw createPipelineError({
+      code: "E_FIGMA_NODE_NOT_FOUND",
+      stage: "figma.source",
+      message: `Selected Figma node '${normalizedNodeId}' was not found in file '${fileKey}'.`,
+      ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
+      diagnostics: [
+        {
+          code: "E_FIGMA_NODE_NOT_FOUND",
+          message: `Selected Figma node '${normalizedNodeId}' was not found in file '${fileKey}'.`,
+          suggestion: "Check that the Figma URL points to an existing frame, section, component, or group and retry.",
+          stage: "figma.source",
+          severity: "error",
+          figmaNodeId: normalizedNodeId,
+          details: {
+            figmaFileKey: fileKey
+          }
+        }
+      ]
+    });
+  }
+
+  const resolvedScopedNode = resolveScopedNode(scopedNode);
+  if (!resolvedScopedNode) {
+    throw createPipelineError({
+      code: "E_FIGMA_NODE_UNSUPPORTED",
+      stage: "figma.source",
+      message: `Selected Figma node '${normalizedNodeId}' cannot be imported directly because it does not resolve to a supported screen root.`,
+      ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
+      diagnostics: [
+        {
+          code: "E_FIGMA_NODE_UNSUPPORTED",
+          message: `Selected Figma node '${normalizedNodeId}' cannot be imported directly because it does not resolve to a supported screen root.`,
+          suggestion: "Use a Figma URL that points to a frame, component, section, or page, or select a node nested inside one of those supported roots.",
+          stage: "figma.source",
+          severity: "error",
+          figmaNodeId: normalizedNodeId,
+          details: {
+            figmaFileKey: fileKey,
+            selectedNodeType: scopedNode.type ?? "unknown"
+          }
+        }
+      ]
+    });
+  }
+
+  onLog(`Scoped Figma source to selected node '${normalizedNodeId}' via targeted node fetch.`);
+  return {
+    ...file,
+    document: toScopedDocument(resolvedScopedNode)
+  };
+};
+
 const fetchBootstrapFile = async ({
   fileKey,
   accessToken,
@@ -1771,6 +2119,7 @@ const resolveStagedIncrementalContext = async ({
 
 export const fetchFigmaFile = async ({
   fileKey,
+  nodeId,
   accessToken,
   timeoutMs,
   maxRetries,
@@ -1789,6 +2138,7 @@ export const fetchFigmaFile = async ({
   pipelineDiagnosticLimits
 }: {
   fileKey: string;
+  nodeId?: string;
   accessToken: string;
   timeoutMs: number;
   maxRetries: number;
@@ -1807,6 +2157,28 @@ export const fetchFigmaFile = async ({
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
 }): Promise<FigmaFetchResult> => {
   const resolvedCacheDir = cacheDir.trim();
+  const normalizedNodeId = nodeId?.trim();
+
+  const finalizeResult = async (result: FigmaFetchResult): Promise<FigmaFetchResult> => {
+    if (!normalizedNodeId) {
+      return result;
+    }
+    return {
+      ...result,
+      file: await scopeFigmaFileToNode({
+        file: result.file,
+        fileKey,
+        nodeId: normalizedNodeId,
+        accessToken,
+        timeoutMs,
+        maxRetries,
+        fetchImpl,
+        onLog,
+        ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {}),
+        ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {})
+      })
+    };
+  };
 
   const fetchFreshFile = async ({
     currentLastModified,
@@ -2323,7 +2695,7 @@ export const fetchFigmaFile = async ({
   if (!cacheEnabled || resolvedCacheDir.length === 0) {
     onLog("Figma cache disabled; fetching fresh data.");
     const freshOutcome = await fetchFreshFile({ allowIncremental: false });
-    return freshOutcome.result;
+    return await finalizeResult(freshOutcome.result);
   }
 
   const resolvedCacheTtlMs = Math.max(1, Math.trunc(cacheTtlMs));
@@ -2355,13 +2727,13 @@ export const fetchFigmaFile = async ({
   } catch (error) {
     onLog(`Figma cache metadata check failed for file '${fileKey}': ${getErrorMessage(error)}.`);
     const freshOutcome = await fetchFreshFile({ allowIncremental: false });
-    return freshOutcome.result;
+    return await finalizeResult(freshOutcome.result);
   }
 
   if (!lastModified) {
     onLog(`Figma cache miss for file '${fileKey}' (missing lastModified metadata).`);
     const freshOutcome = await fetchFreshFile({ allowIncremental: false });
-    return freshOutcome.result;
+    return await finalizeResult(freshOutcome.result);
   }
 
   const cacheFilePath = toFigmaCacheFilePath({
@@ -2378,7 +2750,7 @@ export const fetchFigmaFile = async ({
     onLog
   });
   if (cachedResult) {
-    return cachedResult;
+    return await finalizeResult(cachedResult);
   }
 
   const freshOutcome = await fetchFreshFile({
@@ -2397,5 +2769,5 @@ export const fetchFigmaFile = async ({
     result: freshOutcome.result,
     onLog
   });
-  return freshOutcome.result;
+  return await finalizeResult(freshOutcome.result);
 };

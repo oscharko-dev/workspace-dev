@@ -243,6 +243,7 @@ export interface WorkspaceStatus {
 /** Submission payload accepted by workspace-dev. */
 export interface WorkspaceJobInput {
   figmaFileKey?: string;
+  figmaNodeId?: string;
   figmaAccessToken?: string;
   figmaJsonPath?: string;
   figmaJsonPayload?: string;
@@ -278,6 +279,7 @@ export interface WorkspaceJobInput {
 /** Public subset of request metadata stored for a job (secrets excluded). */
 export interface WorkspaceJobRequestMetadata {
   figmaFileKey?: string;
+  figmaNodeId?: string;
   figmaJsonPath?: string;
   storybookStaticDir?: string;
   customerProfilePath?: string;

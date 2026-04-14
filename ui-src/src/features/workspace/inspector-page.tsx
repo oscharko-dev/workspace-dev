@@ -268,6 +268,7 @@ function BootstrapView(): JSX.Element {
       onConfirmIntent={handleConfirmIntent}
       onDismissIntent={handleDismissIntent}
       onFigmaUrl={handleFigmaUrl}
+      previewUrl={bootstrap.previewUrl}
       screenshot={bootstrap.screenshot}
       pipelineStage={bootstrap.pipelineStage}
     />

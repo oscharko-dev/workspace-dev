@@ -840,6 +840,7 @@ function parseSubmitRequest(
 
   const allowedKeys = new Set([
     "figmaFileKey",
+    "figmaNodeId",
     "figmaAccessToken",
     "figmaJsonPath",
     "storybookStaticDir",
@@ -872,6 +873,12 @@ function parseSubmitRequest(
   const figmaFileKey = parseStringField({
     input,
     key: "figmaFileKey",
+    required: false,
+    issues,
+  });
+  const figmaNodeId = parseStringField({
+    input,
+    key: "figmaNodeId",
     required: false,
     issues,
   });
@@ -1285,6 +1292,9 @@ function parseSubmitRequest(
   }
   if (figmaFileKey !== undefined) {
     data.figmaFileKey = figmaFileKey;
+  }
+  if (figmaNodeId !== undefined) {
+    data.figmaNodeId = figmaNodeId;
   }
   if (figmaAccessToken !== undefined) {
     data.figmaAccessToken = figmaAccessToken;

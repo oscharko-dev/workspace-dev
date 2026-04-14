@@ -856,11 +856,13 @@ async function pollUntilTerminal({
   signal,
   knownStatuses,
   apply,
+  onPayload,
 }: {
   jobId: string;
   signal: AbortSignal;
   knownStatuses: Map<string, string>;
   apply: (action: PipelineAction) => void;
+  onPayload?: (payload: JobPayload) => Promise<void> | void;
 }): Promise<JobPayload> {
   for (;;) {
     const response = await fetchJson<JobPayload>({
@@ -874,6 +876,9 @@ async function pollUntilTerminal({
 
     const payload = response.payload;
     applyJobPayload({ payload, knownStatuses, apply });
+    if (onPayload) {
+      await onPayload(payload);
+    }
 
     if (
       payload.status === "completed" ||
@@ -937,6 +942,31 @@ async function executePipelineRun({
   apply({ type: "job_created", jobId });
 
   let screenshotFetched = false;
+  const maybeFetchRunningFiles = async (payload: JobPayload): Promise<void> => {
+    if (payload.status !== "running") {
+      return;
+    }
+
+    const hasGeneratedFiles =
+      payload.stages?.some((stage) => {
+        return (
+          (stage.name === "codegen.generate" ||
+            stage.name === "validate.project" ||
+            stage.name === "repro.export" ||
+            stage.name === "git.pr") &&
+          (stage.status === "running" || stage.status === "completed")
+        );
+      }) ?? false;
+    if (!hasGeneratedFiles) {
+      return;
+    }
+
+    const files = await fetchFiles({ jobId, signal }).catch(() => null);
+    if (files !== null) {
+      apply({ type: "files_ready", files });
+    }
+  };
+
   const applyMaybeScreenshot = (action: PipelineAction): void => {
     apply(action);
     if (
@@ -960,6 +990,7 @@ async function executePipelineRun({
       signal,
       knownStatuses,
       apply: applyMaybeScreenshot,
+      onPayload: maybeFetchRunningFiles,
     });
   } catch (error) {
     if (isAbortError(error)) {

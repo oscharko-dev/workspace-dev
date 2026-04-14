@@ -1429,6 +1429,9 @@ export const createJobEngine = ({
     if (input.figmaFileKey) {
       request.figmaFileKey = input.figmaFileKey;
     }
+    if (input.figmaNodeId) {
+      request.figmaNodeId = input.figmaNodeId;
+    }
     if (input.figmaJsonPath) {
       request.figmaJsonPath = input.figmaJsonPath;
     }
