@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   FIGMA_PASTE_MAX_BYTES,
+  FIGMA_PASTE_MAX_LABEL,
   toInspectorBootstrapPayload,
   workspaceSubmitSchema,
   toWorkspaceSubmitPayload,
@@ -13,7 +14,7 @@ describe("workspaceSubmitSchema", () => {
       figmaAccessToken: "figd_token",
       enableGitPr: true,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     expect(parsed.success).toBe(false);
@@ -29,7 +30,7 @@ describe("workspaceSubmitSchema", () => {
       repoUrl: "",
       repoToken: "",
       projectName: " demo ",
-      targetPath: " apps/generated "
+      targetPath: " apps/generated ",
     });
 
     const payload = toWorkspaceSubmitPayload({ formData: parsed });
@@ -45,7 +46,7 @@ describe("workspaceSubmitSchema", () => {
       projectName: "demo",
       targetPath: "apps/generated",
       figmaSourceMode: "rest",
-      llmCodegenMode: "deterministic"
+      llmCodegenMode: "deterministic",
     });
   });
 
@@ -56,7 +57,7 @@ describe("workspaceSubmitSchema", () => {
       figmaSourceMode: "hybrid",
       enableGitPr: false,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     const payload = toWorkspaceSubmitPayload({ formData: parsed });
@@ -71,7 +72,7 @@ describe("workspaceSubmitSchema", () => {
       figmaJsonPath: "/path/to/figma-export.json",
       enableGitPr: false,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     expect(parsed.success).toBe(true);
@@ -83,7 +84,7 @@ describe("workspaceSubmitSchema", () => {
       figmaJsonPath: "",
       enableGitPr: false,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     expect(parsed.success).toBe(false);
@@ -101,7 +102,7 @@ describe("workspaceSubmitSchema", () => {
       figmaAccessToken: "",
       enableGitPr: false,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     expect(parsed.success).toBe(true);
@@ -114,7 +115,7 @@ describe("workspaceSubmitSchema", () => {
       figmaAccessToken: "",
       enableGitPr: false,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     expect(parsed.success).toBe(false);
@@ -133,7 +134,7 @@ describe("workspaceSubmitSchema", () => {
       customerProfilePath: " profiles/customer-profile.json ",
       enableGitPr: false,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     const payload = toWorkspaceSubmitPayload({ formData: parsed });
@@ -148,7 +149,7 @@ describe("workspaceSubmitSchema", () => {
       repoToken: undefined,
       projectName: undefined,
       targetPath: undefined,
-      llmCodegenMode: "deterministic"
+      llmCodegenMode: "deterministic",
     });
 
     expect(payload.figmaFileKey).toBeUndefined();
@@ -161,7 +162,7 @@ describe("workspaceSubmitSchema", () => {
       figmaJsonPath: "/data/export.json",
       enableGitPr: true,
       repoUrl: "",
-      repoToken: ""
+      repoToken: "",
     });
 
     expect(parsed.success).toBe(false);
@@ -204,5 +205,61 @@ describe("workspaceSubmitSchema", () => {
       originalIntent: "FIGMA_PLUGIN_ENVELOPE",
       intentCorrected: false,
     });
+  });
+
+  it("accepts figma_clipboard mode with non-empty HTML", () => {
+    const parsed = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_clipboard",
+      figmaClipboardHtml: '<span data-metadata="..."></span>',
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("rejects figma_clipboard mode when figmaClipboardHtml is missing or empty", () => {
+    const missing = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_clipboard",
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+    expect(missing.success).toBe(false);
+    if (!missing.success) {
+      const paths = missing.error.issues.map((issue) => issue.path.join("."));
+      expect(paths).toContain("figmaClipboardHtml");
+    }
+
+    const empty = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_clipboard",
+      figmaClipboardHtml: "   ",
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+    expect(empty.success).toBe(false);
+    if (!empty.success) {
+      const paths = empty.error.issues.map((issue) => issue.path.join("."));
+      expect(paths).toContain("figmaClipboardHtml");
+    }
+  });
+
+  it("rejects figma_clipboard HTML above the client-side size cap", () => {
+    const parsed = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_clipboard",
+      figmaClipboardHtml: "x".repeat(FIGMA_PASTE_MAX_BYTES + 1),
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const issue = parsed.error.issues[0];
+      expect(issue?.path.join(".")).toBe("figmaClipboardHtml");
+      expect(issue?.message).toContain(FIGMA_PASTE_MAX_LABEL);
+    }
   });
 });
