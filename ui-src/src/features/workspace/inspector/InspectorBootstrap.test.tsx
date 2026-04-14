@@ -12,14 +12,21 @@ function renderBootstrap({
   state,
   onPaste = vi.fn(),
   onRetry = vi.fn(),
+  onFigmaUrl = vi.fn(),
 }: {
   state: InspectorBootstrapState;
   onPaste?: (text: string) => void;
   onRetry?: () => void;
+  onFigmaUrl?: (fileKey: string, nodeId: string | null) => void;
 }): void {
   render(
     <MemoryRouter>
-      <InspectorBootstrap state={state} onPaste={onPaste} onRetry={onRetry} />
+      <InspectorBootstrap
+        state={state}
+        onPaste={onPaste}
+        onRetry={onRetry}
+        onFigmaUrl={onFigmaUrl}
+      />
     </MemoryRouter>,
   );
 }

@@ -72,21 +72,23 @@ export function PreviewPane({
   // Derive loading state: loading whenever the current previewUrl hasn't finished loading yet
   const isLoading = hasPreviewUrl && loadedUrl !== previewUrl;
 
-  const generatingStages: readonly PipelineStage[] = [
+  const generatingStagesSet = new Set<PipelineStage>([
     "resolving",
     "transforming",
     "mapping",
     "generating",
-  ];
+  ]);
   const isParsing = pipelineStage === "parsing";
   const isGenerating =
-    pipelineStage !== undefined &&
-    (generatingStages as readonly string[]).includes(pipelineStage);
+    pipelineStage !== undefined && generatingStagesSet.has(pipelineStage);
   const showScreenshot = isGenerating && screenshot !== undefined;
   const showGeneratingSpinner = isGenerating && screenshot === undefined;
-  const stageLabel = isGenerating
-    ? getStageLabel(pipelineStage as PipelineStage)
-    : undefined;
+  // Computed separately so TypeScript sees the pipelineStage !== undefined guard
+  // and narrows the type without a cast.
+  const stageLabel =
+    pipelineStage !== undefined && generatingStagesSet.has(pipelineStage)
+      ? getStageLabel(pipelineStage)
+      : undefined;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#000000] text-white">

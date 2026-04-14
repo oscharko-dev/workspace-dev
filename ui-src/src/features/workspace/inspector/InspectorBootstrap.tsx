@@ -16,7 +16,7 @@ export interface InspectorBootstrapProps {
   onRetry: () => void;
   onConfirmIntent?: (intent: ImportIntent) => void;
   onDismissIntent?: () => void;
-  onFigmaUrl?: (fileKey: string, nodeId: string | null) => void;
+  onFigmaUrl: (fileKey: string, nodeId: string | null) => void;
   screenshot?: string | null;
   pipelineStage?: PipelineStage;
 }
@@ -304,12 +304,7 @@ export function InspectorBootstrap({
               <PasteDropZone
                 disabled={false}
                 onPaste={onPaste}
-                onFigmaUrl={
-                  onFigmaUrl ??
-                  ((): void => {
-                    /* noop when not wired */
-                  })
-                }
+                onFigmaUrl={onFigmaUrl}
                 {...(errorMessage !== undefined ? { errorMessage } : {})}
               />
               {state.kind === "failed" ? <PasteExample /> : null}

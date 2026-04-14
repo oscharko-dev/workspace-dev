@@ -1260,8 +1260,9 @@ export function usePastePipeline(): UsePastePipelineResult {
   };
 
   useEffect(() => {
+    const runtime = runtimeRef.current;
     return () => {
-      runtimeRef.current.activeRunController?.abort();
+      runtime.activeRunController?.abort();
     };
   }, []);
 
