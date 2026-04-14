@@ -38,6 +38,7 @@ export const STAGE_ARTIFACT_KEYS = {
   validationSummary: "validation.summary",
   validationSummaryFile: "validation.summary.file",
   reproPath: "repro.path",
+  codeConnectMap: "code_connect.map",
   gitPrStatus: "git.pr.status",
 } as const;
 

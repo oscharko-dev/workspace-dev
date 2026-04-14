@@ -59,6 +59,14 @@ import {
   type FigmaLibraryResolutionArtifact,
 } from "../figma-library-resolution.js";
 import {
+  annotateIrWithMappings,
+  consolidateComponentSetVariants,
+  loadPersistedMappings,
+  savePersistedMappings,
+  normalizeComponentName,
+  type MappedComponent,
+} from "../figma-component-mapper.js";
+import {
   buildComponentMatchReportArtifact,
   writeComponentMatchReportArtifact,
 } from "../../storybook/component-match-report.js";
@@ -1032,6 +1040,31 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           context,
           validation: validateDesignIR(cachedIrWithFamilies),
         });
+
+        // --- Code Connect component mapping on cached IR (#1003) ---
+        if (hybridMcpEnrichment) {
+          try {
+            const cachedNodes: ScreenElementIR[] = [];
+            for (const screen of cachedIrWithFamilies.screens) {
+              cachedNodes.push(...screen.children);
+            }
+            const cachedSets = consolidateComponentSetVariants({
+              irNodes: cachedNodes,
+            });
+            annotateIrWithMappings({
+              ir: cachedIrWithFamilies,
+              codeConnectMappings:
+                hybridMcpEnrichment.codeConnectMappings ?? [],
+              designSystemMappings:
+                hybridMcpEnrichment.designSystemMappings ?? [],
+              heuristicMappings: new Map(),
+              componentSets: cachedSets,
+            });
+          } catch {
+            // Non-fatal — proceed without annotations on cache path
+          }
+        }
+
         await writeFile(
           context.paths.designIrFile,
           `${JSON.stringify(cachedIrWithFamilies, null, 2)}\n`,
@@ -1182,6 +1215,107 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       context,
       validation: validateDesignIR(derived),
     });
+
+    // --- Code Connect component mapping: annotate IR nodes (#1003) ---
+    if (hybridMcpEnrichment) {
+      try {
+        const allNodes: ScreenElementIR[] = [];
+        for (const screen of derived.screens) {
+          allNodes.push(...screen.children);
+        }
+        const componentSets = consolidateComponentSetVariants({
+          irNodes: allNodes,
+        });
+
+        // Build heuristic mapping lookup from enrichment + persisted mappings
+        const heuristicMappings = new Map<string, MappedComponent>();
+        for (const entry of hybridMcpEnrichment.heuristicComponentMappings ??
+          []) {
+          heuristicMappings.set(normalizeComponentName(entry.componentName), {
+            name: entry.componentName,
+            source: entry.source,
+            confidence: "heuristic",
+          });
+        }
+
+        // Load persisted mappings from previous runs for reuse
+        if (context.resolvedWorkspaceRoot) {
+          try {
+            const persisted = await loadPersistedMappings({
+              workspaceRoot: context.resolvedWorkspaceRoot,
+            });
+            for (const [key, mapping] of persisted) {
+              if (!heuristicMappings.has(key)) {
+                heuristicMappings.set(key, mapping);
+              }
+            }
+          } catch {
+            // Non-critical — proceed without persisted mappings
+          }
+        }
+
+        const { annotated } = annotateIrWithMappings({
+          ir: derived,
+          codeConnectMappings: hybridMcpEnrichment.codeConnectMappings ?? [],
+          designSystemMappings: hybridMcpEnrichment.designSystemMappings ?? [],
+          heuristicMappings,
+          componentSets,
+        });
+        if (annotated > 0) {
+          context.log({
+            level: "info",
+            message: `Code Connect: annotated ${String(annotated)} IR node(s) with component mappings.`,
+          });
+        }
+
+        // Persist approved mappings for future reuse
+        if (context.resolvedWorkspaceRoot) {
+          const approvedMappings = new Map<string, MappedComponent>();
+          for (const mapping of hybridMcpEnrichment.codeConnectMappings ?? []) {
+            approvedMappings.set(
+              normalizeComponentName(mapping.componentName),
+              {
+                name: mapping.componentName,
+                source: mapping.source,
+                confidence: "exact",
+              },
+            );
+          }
+          if (approvedMappings.size > 0) {
+            try {
+              await savePersistedMappings({
+                workspaceRoot: context.resolvedWorkspaceRoot,
+                mappings: approvedMappings,
+              });
+              context.log({
+                level: "info",
+                message: `Code Connect: persisted ${String(approvedMappings.size)} mapping(s) to workspace config.`,
+              });
+            } catch {
+              // Non-critical — mapping works without persistence
+            }
+          }
+        }
+
+        // Store mapping artifact
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.codeConnectMap,
+          stage: "ir.derive",
+          value: {
+            codeConnectMappings: hybridMcpEnrichment.codeConnectMappings ?? [],
+            designSystemMappings:
+              hybridMcpEnrichment.designSystemMappings ?? [],
+            annotatedNodeCount: annotated,
+          },
+        });
+      } catch (error) {
+        context.log({
+          level: "warn",
+          message: `Code Connect IR annotation failed (non-fatal): ${getErrorMessage(error)}`,
+        });
+      }
+    }
+
     await writeFile(
       context.paths.designIrFile,
       `${JSON.stringify(derived, null, 2)}\n`,

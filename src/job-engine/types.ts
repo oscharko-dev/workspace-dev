@@ -179,6 +179,7 @@ export interface FigmaMcpEnrichmentLoaderInput {
   cleanedFile: FigmaFileResponse;
   rawFile: FigmaFileResponse;
   jobDir: string;
+  workspaceRoot?: string;
   fetchImpl: typeof fetch;
 }
 

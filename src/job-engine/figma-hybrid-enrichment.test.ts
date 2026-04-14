@@ -102,6 +102,12 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
           },
         });
       }
+      if (body.params?.name === "get_code_connect_map") {
+        return jsonResponse({ result: {} });
+      }
+      if (body.params?.name === "get_code_connect_suggestions") {
+        return jsonResponse({ result: {} });
+      }
     }
 
     throw new Error(`Unexpected request: ${request.url}`);
@@ -123,11 +129,14 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
       "get_screenshot",
       "get_variable_defs",
       "search_design_system",
+      "get_code_connect_map",
+      "search_design_system",
+      "get_code_connect_suggestions",
     ],
   );
   assert.deepEqual(
     toolCalls.map((entry) => entry.nodeId),
-    ["2:1", "2:1", "2:1", "2:1", undefined],
+    ["2:1", "2:1", "2:1", "2:1", undefined, "2:1", undefined, "2:1"],
   );
   assert.equal(enrichment.sourceMode, "hybrid");
   assert.deepEqual(enrichment.toolNames, [
@@ -136,6 +145,8 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
     "get_screenshot",
     "get_variable_defs",
     "search_design_system",
+    "get_code_connect_map",
+    "get_code_connect_suggestions",
   ]);
   assert.equal(enrichment.metadataHints?.[0]?.nodeId, "2:1");
   assert.equal(enrichment.metadataHints?.[0]?.layerName, "Checkout");
