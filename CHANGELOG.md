@@ -11,6 +11,12 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Incremental delta import scaffolding for Figma paste imports (#992):
+  - Persistent paste-fingerprint store keyed by `{figmaFileKey, rootNodeIds}` under `${outputRoot}/paste-fingerprints/` (LRU + TTL, contract-version gated).
+  - Tree-diff module classifies node changes as `baseline_created`, `no_changes`, `delta`, or `structural_break` with a configurable structural-change threshold (default 0.5).
+  - New submit-time field `WorkspaceJobInput.importMode?: "full" | "delta" | "auto"`; auto mode falls back to full when the diff exceeds the threshold or when no prior manifest exists.
+  - `WorkspaceSubmitAccepted.pasteDeltaSummary` returns mode, strategy, `nodesReused`, `nodesReprocessed`, structural ratio, and paste identity key so clients can render delta insight immediately on accept.
+  - Inspector paste-pipeline now surfaces a "Delta Update" vs "Full Build" badge with an "N/M reused" detail on the pipeline status bar.
 - Template web-performance pipeline:
   - `perf-budget.json` policy
   - `scripts/perf-runner.mjs`

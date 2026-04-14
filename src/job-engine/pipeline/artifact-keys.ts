@@ -40,6 +40,7 @@ export const STAGE_ARTIFACT_KEYS = {
   reproPath: "repro.path",
   codeConnectMap: "code_connect.map",
   gitPrStatus: "git.pr.status",
+  pasteFingerprint: "figma.paste.fingerprint",
 } as const;
 
 export type StageArtifactKey =

@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.11.1
+ * Contract version: 3.12.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -24,6 +24,36 @@ export type WorkspaceImportIntent =
   | "FIGMA_PLUGIN_ENVELOPE"
   | "RAW_CODE_OR_TEXT"
   | "UNKNOWN";
+
+/** Structural classification of a per-paste delta diff. */
+export type WorkspacePasteDeltaStrategy =
+  | "baseline_created"
+  | "no_changes"
+  | "delta"
+  | "structural_break";
+
+/** Import mode for a Figma paste. `"auto"` lets the server pick delta vs full based on diff threshold. */
+export type WorkspaceImportMode = "full" | "delta" | "auto";
+
+/** Summary of the per-paste delta computation. Surfaced on JobResult when Figma paste import is used. */
+export interface WorkspacePasteDeltaSummary {
+  /** Mode ultimately used by the server. `auto_*` variants are returned when the client asked for "auto". */
+  mode: "full" | "delta" | "auto_resolved_to_full" | "auto_resolved_to_delta";
+  /** Structural classification of the tree diff. */
+  strategy: WorkspacePasteDeltaStrategy;
+  /** Total nodes observed in the current paste. */
+  totalNodes: number;
+  /** Nodes whose subtree hash matched the prior manifest (eligible for reuse). */
+  nodesReused: number;
+  /** Nodes that required reprocessing (added + updated + all descendants of updated). */
+  nodesReprocessed: number;
+  /** Diff ratio used to choose mode when `auto`. 0 = identical, 1 = all new. */
+  structuralChangeRatio: number;
+  /** Stable per-component identity key (sha256 prefix). Useful for correlating future pastes. */
+  pasteIdentityKey: string;
+  /** True when the server had no prior manifest for this identity (first paste). */
+  priorManifestMissing: boolean;
+}
 
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode = "deterministic";
@@ -261,6 +291,8 @@ export interface WorkspaceJobInput {
   figmaAccessToken?: string;
   figmaJsonPath?: string;
   figmaJsonPayload?: string;
+  /** Optional import mode for Figma paste. `"auto"` lets the server pick delta vs full based on diff threshold. */
+  importMode?: WorkspaceImportMode;
   storybookStaticDir?: string;
   customerProfilePath?: string;
   customerBrandId?: string;
@@ -332,6 +364,11 @@ export interface WorkspaceSubmitAccepted {
     llmCodegenMode: WorkspaceLlmCodegenMode;
   };
   importIntent?: WorkspaceImportIntent;
+  /**
+   * Per-paste delta summary computed at submit time for Figma paste imports.
+   * Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff succeeded.
+   */
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
 }
 
 /** Stage details for each job stage. */
@@ -1152,4 +1189,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.11.1" as const;
+export const CONTRACT_VERSION = "3.12.0" as const;

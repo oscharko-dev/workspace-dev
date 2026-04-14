@@ -92,6 +92,44 @@ describe("pastePipelineReducer", () => {
     expect(state.jobStatus).toBe("running");
   });
 
+  it("carries pasteDeltaSummary from a job_created action onto state", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "job_created",
+      jobId: "job-delta",
+      pasteDeltaSummary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "delta",
+        totalNodes: 10,
+        nodesReused: 6,
+        nodesReprocessed: 4,
+        structuralChangeRatio: 0.4,
+        pasteIdentityKey: "sha-abc",
+        priorManifestMissing: false,
+      },
+    });
+
+    expect(state.pasteDeltaSummary).toEqual({
+      mode: "auto_resolved_to_delta",
+      strategy: "delta",
+      totalNodes: 10,
+      nodesReused: 6,
+      nodesReprocessed: 4,
+      structuralChangeRatio: 0.4,
+      pasteIdentityKey: "sha-abc",
+      priorManifestMissing: false,
+    });
+  });
+
+  it("leaves pasteDeltaSummary undefined when job_created has no summary", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, { type: "job_created", jobId: "job-no-delta" });
+
+    expect(state.pasteDeltaSummary).toBeUndefined();
+  });
+
   it("marks intermediate backend stages done and advances progress", () => {
     let state = dispatch(createInitialPipelineState(), { type: "start" });
     state = dispatch(state, { type: "parsing_done" });

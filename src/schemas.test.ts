@@ -2033,6 +2033,38 @@ test("schema: originalIntent=FIGMA_PLUGIN_ENVELOPE is accepted", () => {
   }
 });
 
+test("schema: importMode=auto is accepted and invalid importMode is rejected", () => {
+  const accepted = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
+    importMode: "auto",
+  });
+  assert.equal(accepted.success, true);
+  if (accepted.success) {
+    assert.equal(accepted.data.importMode, "auto");
+  }
+
+  const rejected = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
+    importMode: "nonsense",
+  });
+  assert.equal(rejected.success, false);
+  if (!rejected.success) {
+    assert.ok(
+      rejected.error.issues.some(
+        (issue) => issue.path.join(".") === "importMode",
+      ),
+    );
+  }
+});
+
 test("resolveFigmaPasteMaxBytes: env override, invalid env, default fallback", () => {
   assert.equal(
     resolveFigmaPasteMaxBytes({ WORKSPACE_FIGMA_PASTE_MAX_BYTES: "10485760" }),

@@ -180,6 +180,7 @@ export type {
   TokenBridgeResult,
   TokenConflict,
   JobDeltaSummary,
+  PasteDeltaSummary,
   JobDiffPreview,
   JobEvent,
   JobInput,

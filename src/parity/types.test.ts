@@ -119,6 +119,7 @@ const EXPECTED_TYPES_EXPORTS = [
   "NodeDiagnosticEntry",
   "NonTextElementIR",
   "NonTextElementType",
+  "PasteDeltaSummary",
   "PatchPlan",
   "PatchPlanStepDelete",
   "PatchPlanStepWrite",
