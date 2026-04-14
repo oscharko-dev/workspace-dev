@@ -144,17 +144,16 @@ describe("pastePipelineReducer", () => {
 
   it("surfaces non-retryable failures as terminal errors", () => {
     let state = dispatch(createInitialPipelineState(), { type: "start" });
-    state = dispatch(state, { type: "parsing_done" });
     state = dispatch(state, {
       type: "stage_failed",
-      stage: "resolving",
-      error: makeError("resolving", false),
+      stage: "parsing",
+      error: makeError("parsing", false),
     });
 
     expect(state.stage).toBe("error");
     expect(state.canRetry).toBe(false);
     expect(state.canCancel).toBe(false);
-    expect(state.errors[0]?.stage).toBe("resolving");
+    expect(state.errors[0]?.stage).toBe("parsing");
   });
 
   it("returns to idle once cancellation is complete", () => {
@@ -167,5 +166,81 @@ describe("pastePipelineReducer", () => {
     state = dispatch(state, { type: "cancel_complete" });
 
     expect(state).toEqual(createInitialPipelineState());
+  });
+});
+
+describe("partial state derivation", () => {
+  it("enters 'partial' state when some stages done and one fails", () => {
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "stage_done",
+      stage: "resolving",
+      durationMs: 100,
+    });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "transforming",
+      error: makeError("transforming"),
+    });
+    expect(state.stage).toBe("partial");
+    expect(state.partialStats).toBeDefined();
+    expect(state.partialStats?.resolvedStages).toBeGreaterThan(0);
+    expect(state.partialStats?.errorCount).toBe(1);
+  });
+
+  it("enters 'error' state when the very first stage fails (no resolved stages)", () => {
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "parsing",
+      error: makeError("parsing", false),
+    });
+    expect(state.stage).toBe("error");
+    expect(state.partialStats).toBeUndefined();
+  });
+});
+
+describe("retry_stage action", () => {
+  it("resets a failed stage back to running", () => {
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "parsing",
+      error: makeError("parsing"),
+    });
+    state = dispatch(state, { type: "retry_stage", stage: "parsing" });
+    expect(state.stageProgress.parsing.state).toBe("running");
+    expect(state.canCancel).toBe(true);
+    expect(state.errors).toHaveLength(0);
+  });
+
+  it("is a no-op when the stage is not failed", () => {
+    const initial = createInitialPipelineState();
+    const after = dispatch(initial, { type: "retry_stage", stage: "parsing" });
+    expect(after).toEqual(initial);
+  });
+});
+
+describe("PipelineError retryAfterMs", () => {
+  it("propagates retryAfterMs through stage_failed", () => {
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "resolving",
+      error: {
+        stage: "resolving",
+        code: "MCP_RATE_LIMITED",
+        message: "Rate limited",
+        retryable: true,
+        retryAfterMs: 60_000,
+      },
+    });
+    const err = state.errors[0];
+    expect(err?.retryAfterMs).toBe(60_000);
   });
 });

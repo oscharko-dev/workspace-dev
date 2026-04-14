@@ -1267,10 +1267,7 @@ describe("InspectorPanel data states", () => {
       },
     });
     renderInspectorPanel({
-      pipeline: {
-        ...createInitialPipelineState(),
-        generatedFiles: undefined,
-      },
+      pipeline: createInitialPipelineState(),
     });
     // No pipeline files + empty query result → inspector shows empty state, not loading.
     expect(
