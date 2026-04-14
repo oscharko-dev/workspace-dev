@@ -123,6 +123,14 @@ import {
   type RemapDecisionEntry,
   type RemapSuggestResult,
 } from "./RemapReviewPanel";
+import { SuggestionsPanel } from "./SuggestionsPanel";
+import {
+  deriveQualityScore,
+  type QualityScoreElementInput,
+} from "./import-quality-score";
+import { deriveTokenSuggestionModel } from "./token-suggestion-model";
+import { deriveA11yNudges } from "./a11y-nudge";
+import { resolveWorkspacePolicy } from "./workspace-policy";
 import {
   deriveInspectorImpactReviewModel,
   type InspectorImpactReviewManifest,
@@ -1072,7 +1080,9 @@ export function InspectorPanel({
         ...(activePipeline.outcome !== undefined
           ? { outcome: activePipeline.outcome }
           : {}),
-        ...(activePipeline.jobId !== undefined ? { jobId: activePipeline.jobId } : {}),
+        ...(activePipeline.jobId !== undefined
+          ? { jobId: activePipeline.jobId }
+          : {}),
         ...(activePipeline.jobStatus !== undefined
           ? { jobStatus: activePipeline.jobStatus }
           : {}),
@@ -1825,6 +1835,58 @@ export function InspectorPanel({
     }
     return findIrElementNode(irScreens, selectedNodeId);
   }, [irScreens, selectedNodeId]);
+
+  // Issue #993 — quality score + token intelligence + a11y nudges.
+  const workspacePolicy = useMemo(() => resolveWorkspacePolicy(), []);
+  const qualityScoreModel = useMemo(() => {
+    const screens = irScreens.map((screen) => ({
+      id: screen.id,
+      name: screen.name,
+      children: screen.children as QualityScoreElementInput[],
+    }));
+    return deriveQualityScore({
+      screens,
+      errors: activePipeline.errors,
+      ...(manifest ? { manifest } : {}),
+      policy: workspacePolicy.quality,
+    });
+  }, [irScreens, manifest, activePipeline.errors, workspacePolicy.quality]);
+
+  const tokenSuggestionsModel = useMemo(() => {
+    const intelligence = activePipeline.tokenIntelligence;
+    return deriveTokenSuggestionModel({
+      ...(intelligence
+        ? {
+            intelligence: {
+              conflicts: intelligence.conflicts,
+              unmappedVariables: intelligence.unmappedVariables,
+              libraryKeys: intelligence.libraryKeys,
+              cssCustomProperties: intelligence.cssCustomProperties,
+            },
+          }
+        : {}),
+      policy: workspacePolicy.tokens,
+    });
+  }, [activePipeline.tokenIntelligence, workspacePolicy.tokens]);
+
+  const a11yNudgeModel = useMemo(() => {
+    // File contents are loaded lazily in CodePane; surface nudges only when
+    // the viewer supplies content for at least one file. Until then run
+    // against an empty file set so the panel stays empty (no false positives).
+    return deriveA11yNudges({ files: [], policy: workspacePolicy.a11y });
+  }, [workspacePolicy.a11y]);
+
+  const handleApplyTokenDecisions = useCallback(
+    (decisions: {
+      acceptedTokenNames: string[];
+      rejectedTokenNames: string[];
+    }): void => {
+      // Non-invasive placeholder — decisions persist in UI state only. Wiring
+      // to a backend persistence endpoint is deferred (follow-up to #993).
+      void decisions;
+    },
+    [],
+  );
   const selectedIrNodeData = useMemo<
     | (DesignIrElementNode &
         Partial<
@@ -5341,6 +5403,21 @@ export function InspectorPanel({
           className="min-h-[200px] flex-1 lg:min-h-0"
           style={codePaneStyle}
         >
+          {qualityScoreModel.summary.totalNodes > 0 ||
+          tokenSuggestionsModel.available ||
+          a11yNudgeModel.summary.total > 0 ? (
+            <div
+              data-testid="inspector-suggestions-host"
+              className="border-b border-[#000000] bg-[#171717] p-2"
+            >
+              <SuggestionsPanel
+                qualityScore={qualityScoreModel}
+                tokenModel={tokenSuggestionsModel}
+                a11yResult={a11yNudgeModel}
+                onApplyTokenDecisions={handleApplyTokenDecisions}
+              />
+            </div>
+          ) : null}
           {generatingRetryTargets.length > 0 ? (
             <div
               data-testid="inspector-code-recovery-banner"

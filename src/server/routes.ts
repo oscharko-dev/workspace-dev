@@ -1,5 +1,10 @@
 import path from "node:path";
-import { JOB_ROUTE_PREFIX, REPRO_ROUTE_PREFIX, UI_ROUTE_PREFIX, type UiAssetPath } from "./constants.js";
+import {
+  JOB_ROUTE_PREFIX,
+  REPRO_ROUTE_PREFIX,
+  UI_ROUTE_PREFIX,
+  type UiAssetPath,
+} from "./constants.js";
 import { normalizePlatformPath } from "./route-params.js";
 
 export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
@@ -57,10 +62,31 @@ export function isWorkspaceProjectRoute(pathname: string): boolean {
     return false;
   }
 
-  return !withoutPrefix.startsWith("jobs") && !withoutPrefix.startsWith("repros");
+  return (
+    !withoutPrefix.startsWith("jobs") && !withoutPrefix.startsWith("repros")
+  );
 }
 
-export function parseJobRoute(pathname: string): { jobId: string; action: "status" | "result" | "cancel" | "design-ir" | "figma-analysis" | "component-manifest" | "screenshot" | "regenerate" | "retry-stage" | "sync" | "create-pr" | "stale-check" | "remap-suggest" } | undefined {
+export function parseJobRoute(pathname: string):
+  | {
+      jobId: string;
+      action:
+        | "status"
+        | "result"
+        | "cancel"
+        | "design-ir"
+        | "figma-analysis"
+        | "component-manifest"
+        | "screenshot"
+        | "regenerate"
+        | "retry-stage"
+        | "sync"
+        | "create-pr"
+        | "stale-check"
+        | "remap-suggest"
+        | "token-intelligence";
+    }
+  | undefined {
   if (!pathname.startsWith(JOB_ROUTE_PREFIX)) {
     return undefined;
   }
@@ -77,7 +103,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "result"
+      action: "result",
     };
   }
 
@@ -88,7 +114,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "cancel"
+      action: "cancel",
     };
   }
 
@@ -99,7 +125,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "design-ir"
+      action: "design-ir",
     };
   }
 
@@ -110,7 +136,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "figma-analysis"
+      action: "figma-analysis",
     };
   }
 
@@ -121,7 +147,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "component-manifest"
+      action: "component-manifest",
     };
   }
 
@@ -132,7 +158,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "screenshot"
+      action: "screenshot",
     };
   }
 
@@ -143,7 +169,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "regenerate"
+      action: "regenerate",
     };
   }
 
@@ -154,7 +180,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "retry-stage"
+      action: "retry-stage",
     };
   }
 
@@ -165,7 +191,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "create-pr"
+      action: "create-pr",
     };
   }
 
@@ -176,7 +202,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "sync"
+      action: "sync",
     };
   }
 
@@ -187,7 +213,7 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "stale-check"
+      action: "stale-check",
     };
   }
 
@@ -198,7 +224,18 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
     }
     return {
       jobId,
-      action: "remap-suggest"
+      action: "remap-suggest",
+    };
+  }
+
+  if (rest.endsWith("/token-intelligence")) {
+    const jobId = rest.slice(0, -"/token-intelligence".length);
+    if (!jobId || jobId.includes("/")) {
+      return undefined;
+    }
+    return {
+      jobId,
+      action: "token-intelligence",
     };
   }
 
@@ -208,12 +245,12 @@ export function parseJobRoute(pathname: string): { jobId: string; action: "statu
 
   return {
     jobId: rest,
-    action: "status"
+    action: "status",
   };
 }
 
 export function parseJobFilesRoute(
-  pathname: string
+  pathname: string,
 ): { jobId: string; filePath: string | undefined } | undefined {
   if (!pathname.startsWith(JOB_ROUTE_PREFIX)) {
     return undefined;
@@ -256,13 +293,20 @@ export function parseJobFilesRoute(
 }
 
 /** Allowed extensions for generated source file serving. */
-const ALLOWED_FILE_EXTENSIONS = new Set([".tsx", ".ts", ".json", ".css", ".html", ".svg"]);
+const ALLOWED_FILE_EXTENSIONS = new Set([
+  ".tsx",
+  ".ts",
+  ".json",
+  ".css",
+  ".html",
+  ".svg",
+]);
 
 /** Blocked directory prefixes that must never be served. */
 const BLOCKED_PATH_PREFIXES = ["node_modules/", "dist/", ".env"];
 
 export function validateSourceFilePath(
-  filePath: string
+  filePath: string,
 ): { valid: true; normalizedPath: string } | { valid: false; reason: string } {
   if (filePath.length === 0) {
     return { valid: false, reason: "Empty file path." };
@@ -310,7 +354,9 @@ export function validateSourceFilePath(
   return { valid: true, normalizedPath: normalized };
 }
 
-export function parseReproRoute(pathname: string): { jobId: string; previewPath: string } | undefined {
+export function parseReproRoute(
+  pathname: string,
+): { jobId: string; previewPath: string } | undefined {
   if (!pathname.startsWith(REPRO_ROUTE_PREFIX)) {
     return undefined;
   }
@@ -324,7 +370,7 @@ export function parseReproRoute(pathname: string): { jobId: string; previewPath:
   if (firstSlash === -1) {
     return {
       jobId: rest,
-      previewPath: "index.html"
+      previewPath: "index.html",
     };
   }
 
@@ -336,6 +382,6 @@ export function parseReproRoute(pathname: string): { jobId: string; previewPath:
 
   return {
     jobId,
-    previewPath: previewPath || "index.html"
+    previewPath: previewPath || "index.html",
   };
 }

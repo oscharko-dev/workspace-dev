@@ -102,7 +102,9 @@ type FigmaUrlNormalizationResult =
   | { ok: true; value: unknown }
   | { ok: false; statusCode: number; payload: Record<string, unknown> };
 
-function isFigmaUrlSubmitPayload(value: unknown): value is FigmaUrlSubmitPayload {
+function isFigmaUrlSubmitPayload(
+  value: unknown,
+): value is FigmaUrlSubmitPayload {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return false;
   }
@@ -150,8 +152,7 @@ function normalizeFigmaUrlSubmitInput(
       statusCode: 400,
       payload: {
         error: "INVALID_PAYLOAD",
-        message:
-          "figmaJsonPayload is required when figmaSourceMode=figma_url.",
+        message: "figmaJsonPayload is required when figmaSourceMode=figma_url.",
       },
     };
   }
@@ -846,10 +847,9 @@ export function createWorkspaceRequestHandler({
             const artifactStore = new StageArtifactStore({
               jobDir: record.artifacts.jobDir,
             });
-            const enrichment =
-              await artifactStore.getValue<FigmaMcpEnrichment>(
-                STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
-              );
+            const enrichment = await artifactStore.getValue<FigmaMcpEnrichment>(
+              STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+            );
             const screenshotUrl = readScreenshotUrlFromEnrichment(enrichment);
             if (!screenshotUrl) {
               sendJson({
@@ -870,6 +870,71 @@ export function createWorkspaceRequestHandler({
                 jobId,
                 screenshotUrl,
                 url: screenshotUrl,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "token-intelligence") {
+            const record = jobEngine.getJobRecord(jobId);
+            if (!record) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `Unknown job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            const isPending =
+              record.status === "queued" || record.status === "running";
+
+            const artifactStore = new StageArtifactStore({
+              jobDir: record.artifacts.jobDir,
+            });
+            const enrichment = await artifactStore.getValue<FigmaMcpEnrichment>(
+              STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+            );
+
+            if (!enrichment) {
+              sendJson({
+                response,
+                statusCode: isPending ? 409 : 200,
+                payload: isPending
+                  ? {
+                      error: "JOB_NOT_COMPLETED",
+                      message: `Job '${jobId}' has status '${record.status}' — token intelligence is not available yet.`,
+                    }
+                  : {
+                      jobId,
+                      conflicts: [],
+                      unmappedVariables: [],
+                      libraryKeys: [],
+                      cssCustomProperties: null,
+                      codeConnectMappings: [],
+                      designSystemMappings: [],
+                      heuristicComponentMappings: [],
+                    },
+              });
+              return;
+            }
+
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: {
+                jobId,
+                conflicts: enrichment.conflicts ?? [],
+                unmappedVariables: enrichment.unmappedVariables ?? [],
+                libraryKeys: enrichment.libraryKeys ?? [],
+                cssCustomProperties: enrichment.cssCustomProperties ?? null,
+                codeConnectMappings: enrichment.codeConnectMappings ?? [],
+                designSystemMappings: enrichment.designSystemMappings ?? [],
+                heuristicComponentMappings:
+                  enrichment.heuristicComponentMappings ?? [],
               },
             });
             return;
@@ -2267,7 +2332,9 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        const parsed = SubmitRequestSchema.safeParse(normalizedSubmitInput.value);
+        const parsed = SubmitRequestSchema.safeParse(
+          normalizedSubmitInput.value,
+        );
         if (!parsed.success) {
           const figmaPasteErrorPrefixes = [
             "INVALID_PAYLOAD:",

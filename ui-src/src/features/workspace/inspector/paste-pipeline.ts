@@ -141,6 +141,31 @@ export interface FigmaAnalysisDiagnosticEntry {
   sourceNodeId?: string;
 }
 
+export interface TokenIntelligenceConflict {
+  name: string;
+  figmaValue: string;
+  existingValue: string;
+  resolution: "figma" | "existing";
+}
+
+export interface TokenIntelligenceCodeConnectMapping {
+  nodeId: string;
+  componentName: string;
+  source: string;
+  label?: string;
+}
+
+export interface TokenIntelligencePayload {
+  jobId: string;
+  conflicts: TokenIntelligenceConflict[];
+  unmappedVariables: string[];
+  libraryKeys: string[];
+  cssCustomProperties: string | null;
+  codeConnectMappings: TokenIntelligenceCodeConnectMapping[];
+  designSystemMappings: TokenIntelligenceCodeConnectMapping[];
+  heuristicComponentMappings: TokenIntelligenceCodeConnectMapping[];
+}
+
 export interface FigmaAnalysisPayload {
   jobId: string;
   layoutGraph?: {
@@ -181,6 +206,7 @@ export interface PastePipelineState {
   figmaAnalysis?: FigmaAnalysisPayload;
   componentManifest?: ComponentManifestPayload;
   generatedFiles?: GeneratedFileEntry[];
+  tokenIntelligence?: TokenIntelligencePayload;
   screenshot?: string;
   errors: PipelineError[];
   canRetry: boolean;
@@ -228,6 +254,10 @@ export type PipelineAction =
   | { type: "figma_analysis_ready"; figmaAnalysis: FigmaAnalysisPayload }
   | { type: "manifest_ready"; manifest: ComponentManifestPayload }
   | { type: "files_ready"; files: GeneratedFileEntry[] }
+  | {
+      type: "token_intelligence_ready";
+      tokenIntelligence: TokenIntelligencePayload;
+    }
   | { type: "screenshot_ready"; screenshotUrl: string }
   | { type: "cancel_complete" }
   | {
@@ -300,6 +330,8 @@ const endpoints = {
     `/workspace/jobs/${encodeURIComponent(jobId)}/files`,
   screenshot: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/screenshot`,
+  tokenIntelligence: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/token-intelligence`,
 };
 
 const RETRYABLE_STAGE_SET = new Set<PipelineStage>([
@@ -381,7 +413,10 @@ function derivePartialStats(
 }
 
 function withRetryAvailability(error: PipelineError): PipelineError {
-  if (error.retryAfterMs === undefined || error.retryAvailableAtMs !== undefined) {
+  if (
+    error.retryAfterMs === undefined ||
+    error.retryAvailableAtMs !== undefined
+  ) {
     return error;
   }
   return {
@@ -403,7 +438,9 @@ function stageStatusFromError(error: PipelineError): StageStatus {
   };
 }
 
-function toRetryRequest(error: PipelineError): PipelineRetryRequest | undefined {
+function toRetryRequest(
+  error: PipelineError,
+): PipelineRetryRequest | undefined {
   if (!error.retryable || !RETRYABLE_STAGE_SET.has(error.stage)) {
     return undefined;
   }
@@ -564,6 +601,10 @@ export function pastePipelineReducer(
       return { ...state, generatedFiles: action.files };
     }
 
+    case "token_intelligence_ready": {
+      return { ...state, tokenIntelligence: action.tokenIntelligence };
+    }
+
     case "screenshot_ready": {
       return { ...state, screenshot: action.screenshotUrl };
     }
@@ -591,13 +632,17 @@ export function pastePipelineReducer(
         ...(action.previewUrl !== undefined
           ? { previewUrl: action.previewUrl }
           : {}),
-        canRetry: outcome === "partial" && state.errors.some((e) => e.retryable),
+        canRetry:
+          outcome === "partial" && state.errors.some((e) => e.retryable),
         canCancel: false,
         ...(action.fallbackMode !== undefined
           ? { fallbackMode: action.fallbackMode }
           : {}),
         ...(outcome === "partial"
-          ? { partialStats: derivePartialStats(stageProgress) ?? state.partialStats }
+          ? {
+              partialStats:
+                derivePartialStats(stageProgress) ?? state.partialStats,
+            }
           : {}),
       };
     }
@@ -767,7 +812,7 @@ function toRetryTargets(
         ? entry.label
         : typeof entry.name === "string"
           ? entry.name
-          : filePath ?? id;
+          : (filePath ?? id);
     targets.push({
       id,
       label,
@@ -826,7 +871,8 @@ function parsePipelineErrorPayload({
       ? payload.retryable
       : fallbackRetryable;
   const retryAfterMs =
-    typeof payload.retryAfterMs === "number" && Number.isFinite(payload.retryAfterMs)
+    typeof payload.retryAfterMs === "number" &&
+    Number.isFinite(payload.retryAfterMs)
       ? payload.retryAfterMs
       : undefined;
   const fallbackMode =
@@ -1151,13 +1197,19 @@ function collectRuntimeStages(payload: JobPayload): RuntimeStagePayload[] {
 function getInspectorOutcome(
   payload: JobPayload,
 ): JobInspectorPayload["outcome"] | undefined {
-  return isRecord(payload.inspector) && typeof payload.inspector.outcome === "string"
+  return isRecord(payload.inspector) &&
+    typeof payload.inspector.outcome === "string"
     ? payload.inspector.outcome
     : undefined;
 }
 
-function getJobFallbackMode(payload: JobPayload): PipelineFallbackMode | undefined {
-  if (typeof payload.fallbackMode === "string" && payload.fallbackMode.length > 0) {
+function getJobFallbackMode(
+  payload: JobPayload,
+): PipelineFallbackMode | undefined {
+  if (
+    typeof payload.fallbackMode === "string" &&
+    payload.fallbackMode.length > 0
+  ) {
     return payload.fallbackMode as PipelineFallbackMode;
   }
   if (
@@ -1178,10 +1230,15 @@ function getJobFallbackMode(payload: JobPayload): PipelineFallbackMode | undefin
 }
 
 function stateLikePayloadHasPartialOutcome(payload: JobPayload): boolean {
-  if (payload.outcome === "partial" || getInspectorOutcome(payload) === "partial") {
+  if (
+    payload.outcome === "partial" ||
+    getInspectorOutcome(payload) === "partial"
+  ) {
     return true;
   }
-  if (collectRuntimeStages(payload).some((stage) => stage.status === "failed")) {
+  if (
+    collectRuntimeStages(payload).some((stage) => stage.status === "failed")
+  ) {
     return true;
   }
   return (
@@ -1257,7 +1314,7 @@ function stageTransitionEvents(
       fallbackMessage:
         typeof stage.message === "string" && stage.message.length > 0
           ? stage.message
-          : jobPayload.error?.message ?? catalogEntry.description,
+          : (jobPayload.error?.message ?? catalogEntry.description),
       fallbackRetryable:
         typeof stage.retryable === "boolean"
           ? stage.retryable
@@ -1349,7 +1406,8 @@ function applyJobPayload({
     const errorStage = toPipelineStage(payload.error.stage);
     if (
       (errorCode !== undefined || errorStage !== undefined) &&
-      knownStatuses.get(terminalErrorKey) !== `${errorStage ?? "unknown"}:${errorCode ?? "unknown"}`
+      knownStatuses.get(terminalErrorKey) !==
+        `${errorStage ?? "unknown"}:${errorCode ?? "unknown"}`
     ) {
       const stage = errorStage ?? inferFailureStage(knownStatuses);
       knownStatuses.set(
@@ -1362,7 +1420,8 @@ function applyJobPayload({
         error: parsePipelineErrorPayload({
           fallbackStage: stage,
           payload: payload.error,
-          fallbackCode: payload.status === "failed" ? "JOB_FAILED" : "STAGE_FAILED",
+          fallbackCode:
+            payload.status === "failed" ? "JOB_FAILED" : "STAGE_FAILED",
           fallbackMessage:
             typeof payload.error.message === "string"
               ? payload.error.message
@@ -1482,6 +1541,97 @@ async function fetchFiles({
   return files;
 }
 
+function isTokenIntelligenceConflictArray(
+  value: unknown,
+): value is TokenIntelligenceConflict[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.name === "string" &&
+      typeof entry.figmaValue === "string" &&
+      typeof entry.existingValue === "string" &&
+      (entry.resolution === "figma" || entry.resolution === "existing"),
+  );
+}
+
+function isTokenIntelligenceMappingArray(
+  value: unknown,
+): value is TokenIntelligenceCodeConnectMapping[] {
+  if (!Array.isArray(value)) return false;
+  return value.every(
+    (entry) =>
+      isRecord(entry) &&
+      typeof entry.nodeId === "string" &&
+      typeof entry.componentName === "string" &&
+      typeof entry.source === "string",
+  );
+}
+
+async function fetchTokenIntelligence({
+  jobId,
+  signal,
+}: {
+  jobId: string;
+  signal: AbortSignal;
+}): Promise<TokenIntelligencePayload | null> {
+  let response: Awaited<ReturnType<typeof fetchJson<unknown>>>;
+  try {
+    response = await fetchJson<unknown>({
+      url: endpoints.tokenIntelligence({ jobId }),
+      init: { signal },
+    });
+  } catch {
+    return null;
+  }
+  if (!response.ok || !isRecord(response.payload)) return null;
+  const payload = response.payload;
+
+  const conflicts = isTokenIntelligenceConflictArray(payload.conflicts)
+    ? payload.conflicts
+    : [];
+  const unmappedVariables = Array.isArray(payload.unmappedVariables)
+    ? payload.unmappedVariables.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  const libraryKeys = Array.isArray(payload.libraryKeys)
+    ? payload.libraryKeys.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  const cssCustomProperties =
+    typeof payload.cssCustomProperties === "string"
+      ? payload.cssCustomProperties
+      : null;
+  const codeConnectMappings = isTokenIntelligenceMappingArray(
+    payload.codeConnectMappings,
+  )
+    ? payload.codeConnectMappings
+    : [];
+  const designSystemMappings = isTokenIntelligenceMappingArray(
+    payload.designSystemMappings,
+  )
+    ? payload.designSystemMappings
+    : [];
+  const heuristicComponentMappings = isTokenIntelligenceMappingArray(
+    payload.heuristicComponentMappings,
+  )
+    ? payload.heuristicComponentMappings
+    : [];
+
+  return {
+    jobId,
+    conflicts,
+    unmappedVariables,
+    libraryKeys,
+    cssCustomProperties,
+    codeConnectMappings,
+    designSystemMappings,
+    heuristicComponentMappings,
+  };
+}
+
 async function fetchScreenshot({
   jobId,
   signal,
@@ -1519,12 +1669,14 @@ async function fetchFinalArtifacts({
   signal: AbortSignal;
   apply: (action: PipelineAction) => void;
 }): Promise<void> {
-  const [designIR, figmaAnalysis, manifest, files] = await Promise.all([
-    fetchDesignIr({ jobId, signal }).catch(() => null),
-    fetchFigmaAnalysis({ jobId, signal }).catch(() => null),
-    fetchManifest({ jobId, signal }).catch(() => null),
-    fetchFiles({ jobId, signal }).catch(() => null),
-  ]);
+  const [designIR, figmaAnalysis, manifest, files, tokenIntelligence] =
+    await Promise.all([
+      fetchDesignIr({ jobId, signal }).catch(() => null),
+      fetchFigmaAnalysis({ jobId, signal }).catch(() => null),
+      fetchManifest({ jobId, signal }).catch(() => null),
+      fetchFiles({ jobId, signal }).catch(() => null),
+      fetchTokenIntelligence({ jobId, signal }).catch(() => null),
+    ]);
 
   if (designIR !== null) {
     apply({ type: "design_ir_ready", designIR });
@@ -1537,6 +1689,9 @@ async function fetchFinalArtifacts({
   }
   if (files !== null) {
     apply({ type: "files_ready", files });
+  }
+  if (tokenIntelligence !== null) {
+    apply({ type: "token_intelligence_ready", tokenIntelligence });
   }
 }
 
@@ -1792,7 +1947,8 @@ async function executePipelineRun({
       error instanceof SubmitError ? error.retryAfterMs : undefined;
     const fallbackMode =
       error instanceof SubmitError ? error.fallbackMode : undefined;
-    const targetIds = error instanceof SubmitError ? error.targetIds : undefined;
+    const targetIds =
+      error instanceof SubmitError ? error.targetIds : undefined;
     const stage = retryRequest?.stage ?? "resolving";
     apply({
       type: "stage_failed",
@@ -1890,6 +2046,20 @@ async function executePipelineRun({
       );
     }
 
+    if (hasActiveOrCompletedStage(payload, ["figma.source", "ir.derive"])) {
+      tasks.push(
+        fetchTokenIntelligence({ jobId, signal })
+          .then((tokenIntelligence) => {
+            if (tokenIntelligence !== null) {
+              apply({ type: "token_intelligence_ready", tokenIntelligence });
+            }
+          })
+          .catch(() => {
+            // Enrichment artifact may not exist yet; keep polling.
+          }),
+      );
+    }
+
     if (tasks.length > 0) {
       await Promise.all(tasks);
     }
@@ -1964,8 +2134,8 @@ async function executePipelineRun({
   const outcome =
     payload.outcome === "partial" || getInspectorOutcome(payload) === "partial"
       ? "partial"
-      : payload.outcome === "failed"
-        || getInspectorOutcome(payload) === "failed"
+      : payload.outcome === "failed" ||
+          getInspectorOutcome(payload) === "failed"
         ? "failed"
         : stateLikePayloadHasPartialOutcome(payload)
           ? "partial"

@@ -6,14 +6,20 @@ import {
   parseJobRoute,
   parseReproRoute,
   resolveUiAssetPath,
-  validateSourceFilePath
+  validateSourceFilePath,
 } from "./routes.js";
 
 test("resolveUiAssetPath resolves index and nested asset paths", () => {
   assert.equal(resolveUiAssetPath("/workspace/ui"), "index.html");
   assert.equal(resolveUiAssetPath("/workspace/ui/"), "index.html");
-  assert.equal(resolveUiAssetPath("/workspace/ui/assets/main-HASH.js"), "assets/main-HASH.js");
-  assert.equal(resolveUiAssetPath("/workspace/ui/assets/chunks/vendor-HASH.js"), "assets/chunks/vendor-HASH.js");
+  assert.equal(
+    resolveUiAssetPath("/workspace/ui/assets/main-HASH.js"),
+    "assets/main-HASH.js",
+  );
+  assert.equal(
+    resolveUiAssetPath("/workspace/ui/assets/chunks/vendor-HASH.js"),
+    "assets/chunks/vendor-HASH.js",
+  );
   assert.equal(resolveUiAssetPath("/workspace/ui/../index.html"), null);
   assert.equal(resolveUiAssetPath("/other"), null);
 });
@@ -34,52 +40,57 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
   assert.equal(parseJobRoute("/workspace/jobs/"), undefined);
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1"), {
     jobId: "job-1",
-    action: "status"
+    action: "status",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/result"), {
     jobId: "job-1",
-    action: "result"
+    action: "result",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/cancel"), {
     jobId: "job-1",
-    action: "cancel"
+    action: "cancel",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/design-ir"), {
     jobId: "job-1",
-    action: "design-ir"
+    action: "design-ir",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/figma-analysis"), {
     jobId: "job-1",
-    action: "figma-analysis"
+    action: "figma-analysis",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/component-manifest"), {
     jobId: "job-1",
-    action: "component-manifest"
+    action: "component-manifest",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/screenshot"), {
     jobId: "job-1",
-    action: "screenshot"
+    action: "screenshot",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/regenerate"), {
     jobId: "job-1",
-    action: "regenerate"
+    action: "regenerate",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/retry-stage"), {
     jobId: "job-1",
-    action: "retry-stage"
+    action: "retry-stage",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/sync"), {
     jobId: "job-1",
-    action: "sync"
+    action: "sync",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/create-pr"), {
     jobId: "job-1",
-    action: "create-pr"
+    action: "create-pr",
   });
   assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/stale-check"), {
     jobId: "job-1",
-    action: "stale-check"
+    action: "stale-check",
   });
+  assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/token-intelligence"), {
+    jobId: "job-1",
+    action: "token-intelligence",
+  });
+  assert.equal(parseJobRoute("/workspace/jobs//token-intelligence"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs/job-1/extra"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//result"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//cancel"), undefined);
@@ -99,15 +110,15 @@ test("parseReproRoute parses preview paths with safe index fallback", () => {
   assert.equal(parseReproRoute("/workspace/repros/"), undefined);
   assert.deepEqual(parseReproRoute("/workspace/repros/job-9"), {
     jobId: "job-9",
-    previewPath: "index.html"
+    previewPath: "index.html",
   });
   assert.deepEqual(parseReproRoute("/workspace/repros/job-9/"), {
     jobId: "job-9",
-    previewPath: "index.html"
+    previewPath: "index.html",
   });
   assert.deepEqual(parseReproRoute("/workspace/repros/job-9/assets/app.js"), {
     jobId: "job-9",
-    previewPath: "assets/app.js"
+    previewPath: "assets/app.js",
   });
   assert.equal(parseReproRoute("/workspace/repros//assets/app.js"), undefined);
 });
@@ -122,36 +133,66 @@ test("parseJobFilesRoute parses directory listing and file content routes", () =
   // Directory listing
   assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files"), {
     jobId: "job-1",
-    filePath: undefined
+    filePath: undefined,
   });
   assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files/"), {
     jobId: "job-1",
-    filePath: undefined
+    filePath: undefined,
   });
 
   // Single file
-  assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files/src/App.tsx"), {
-    jobId: "job-1",
-    filePath: "src/App.tsx"
-  });
-  assert.deepEqual(parseJobFilesRoute("/workspace/jobs/job-1/files/src/screens/Home.tsx"), {
-    jobId: "job-1",
-    filePath: "src/screens/Home.tsx"
-  });
+  assert.deepEqual(
+    parseJobFilesRoute("/workspace/jobs/job-1/files/src/App.tsx"),
+    {
+      jobId: "job-1",
+      filePath: "src/App.tsx",
+    },
+  );
+  assert.deepEqual(
+    parseJobFilesRoute("/workspace/jobs/job-1/files/src/screens/Home.tsx"),
+    {
+      jobId: "job-1",
+      filePath: "src/screens/Home.tsx",
+    },
+  );
 
   // Empty jobId
   assert.equal(parseJobFilesRoute("/workspace/jobs//files"), undefined);
-  assert.equal(parseJobFilesRoute("/workspace/jobs//files/src/App.tsx"), undefined);
+  assert.equal(
+    parseJobFilesRoute("/workspace/jobs//files/src/App.tsx"),
+    undefined,
+  );
 });
 
 test("validateSourceFilePath allows valid source paths", () => {
-  assert.deepEqual(validateSourceFilePath("src/App.tsx"), { valid: true, normalizedPath: "src/App.tsx" });
-  assert.deepEqual(validateSourceFilePath("src/screens/Home.tsx"), { valid: true, normalizedPath: "src/screens/Home.tsx" });
-  assert.deepEqual(validateSourceFilePath("src/theme/theme.ts"), { valid: true, normalizedPath: "src/theme/theme.ts" });
-  assert.deepEqual(validateSourceFilePath("src/theme/tokens.json"), { valid: true, normalizedPath: "src/theme/tokens.json" });
-  assert.deepEqual(validateSourceFilePath("public/index.html"), { valid: true, normalizedPath: "public/index.html" });
-  assert.deepEqual(validateSourceFilePath("src/styles/main.css"), { valid: true, normalizedPath: "src/styles/main.css" });
-  assert.deepEqual(validateSourceFilePath("public/logo.svg"), { valid: true, normalizedPath: "public/logo.svg" });
+  assert.deepEqual(validateSourceFilePath("src/App.tsx"), {
+    valid: true,
+    normalizedPath: "src/App.tsx",
+  });
+  assert.deepEqual(validateSourceFilePath("src/screens/Home.tsx"), {
+    valid: true,
+    normalizedPath: "src/screens/Home.tsx",
+  });
+  assert.deepEqual(validateSourceFilePath("src/theme/theme.ts"), {
+    valid: true,
+    normalizedPath: "src/theme/theme.ts",
+  });
+  assert.deepEqual(validateSourceFilePath("src/theme/tokens.json"), {
+    valid: true,
+    normalizedPath: "src/theme/tokens.json",
+  });
+  assert.deepEqual(validateSourceFilePath("public/index.html"), {
+    valid: true,
+    normalizedPath: "public/index.html",
+  });
+  assert.deepEqual(validateSourceFilePath("src/styles/main.css"), {
+    valid: true,
+    normalizedPath: "src/styles/main.css",
+  });
+  assert.deepEqual(validateSourceFilePath("public/logo.svg"), {
+    valid: true,
+    normalizedPath: "public/logo.svg",
+  });
 });
 
 test("validateSourceFilePath rejects path traversal attempts", () => {
@@ -210,22 +251,40 @@ test("validateSourceFilePath rejects backslash-based traversal", () => {
 });
 
 test("validateSourceFilePath rejects blocked directories via backslash", () => {
-  assert.equal(validateSourceFilePath("node_modules\\react\\index.ts").valid, false);
+  assert.equal(
+    validateSourceFilePath("node_modules\\react\\index.ts").valid,
+    false,
+  );
   assert.equal(validateSourceFilePath("dist\\bundle.ts").valid, false);
-  assert.equal(validateSourceFilePath("src\\node_modules\\evil.ts").valid, false);
+  assert.equal(
+    validateSourceFilePath("src\\node_modules\\evil.ts").valid,
+    false,
+  );
 });
 
 test("validateSourceFilePath rejects Windows absolute paths", () => {
-  assert.equal(validateSourceFilePath("C:\\Windows\\System32\\cmd.ts").valid, false);
+  assert.equal(
+    validateSourceFilePath("C:\\Windows\\System32\\cmd.ts").valid,
+    false,
+  );
   assert.equal(validateSourceFilePath("c:/Users/evil.ts").valid, false);
 });
 
 test("validateSourceFilePath rejects UNC paths", () => {
-  assert.equal(validateSourceFilePath("\\\\server\\share\\file.ts").valid, false);
+  assert.equal(
+    validateSourceFilePath("\\\\server\\share\\file.ts").valid,
+    false,
+  );
   assert.equal(validateSourceFilePath("//server/share/file.ts").valid, false);
 });
 
 test("validateSourceFilePath normalizes valid backslash paths to POSIX equivalents", () => {
-  assert.deepEqual(validateSourceFilePath("src\\App.tsx"), { valid: true, normalizedPath: "src/App.tsx" });
-  assert.deepEqual(validateSourceFilePath("src\\screens\\Home.tsx"), { valid: true, normalizedPath: "src/screens/Home.tsx" });
+  assert.deepEqual(validateSourceFilePath("src\\App.tsx"), {
+    valid: true,
+    normalizedPath: "src/App.tsx",
+  });
+  assert.deepEqual(validateSourceFilePath("src\\screens\\Home.tsx"), {
+    valid: true,
+    normalizedPath: "src/screens/Home.tsx",
+  });
 });
