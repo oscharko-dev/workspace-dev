@@ -412,27 +412,15 @@ describe("usePastePipeline — oversized clipboard HTML", () => {
       result.current.start(oversizeHtml);
     });
 
-    // The schema validation on the submit side rejects this — the hook
-    // should go to error (submit mutation throws) without a successful POST.
-    // We confirm fetchJson was NOT called with the oversized payload body.
+    // Size cap is enforced client-side before any POST — hook must transition
+    // to error with PAYLOAD_TOO_LARGE without calling fetchJson at all.
     await waitFor(() => {
-      expect(result.current.state.stage).not.toBe("parsing");
+      expect(result.current.state.stage).toBe("error");
     });
 
-    // If fetchJson was called it would only be for submit — ensure the body
-    // wasn't accepted (either not called, or returned an error).
-    const submitCall = fetchJsonMock.mock.calls.find(
-      ([args]) => args?.url === "/workspace/submit",
-    );
-    if (submitCall) {
-      const body = JSON.parse(
-        (submitCall[0] as { init?: { body?: string } }).init?.body ?? "{}",
-      ) as Record<string, unknown>;
-      const html = body.figmaClipboardHtml;
-      expect(
-        typeof html === "string" &&
-          new TextEncoder().encode(html).length > FIGMA_PASTE_MAX_BYTES,
-      ).toBe(false);
-    }
+    expect(result.current.state.errors).toHaveLength(1);
+    expect(result.current.state.errors[0]?.code).toBe("PAYLOAD_TOO_LARGE");
+    expect(result.current.state.errors[0]?.retryable).toBe(false);
+    expect(fetchJsonMock).not.toHaveBeenCalled();
   });
 });
