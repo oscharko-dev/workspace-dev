@@ -118,22 +118,23 @@ describe("VisualQualityPage", () => {
   it("loads standalone visual-quality/report.json from the report query", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            status: "completed",
-            referenceSource: "frozen_fixture",
-            capturedAt: "2026-04-11T00:00:00.000Z",
-            overallScore: 98.8,
-            interpretation: "Excellent parity",
-            dimensions: [],
-            hotspots: [],
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              status: "completed",
+              referenceSource: "frozen_fixture",
+              capturedAt: "2026-04-11T00:00:00.000Z",
+              overallScore: 98.8,
+              interpretation: "Excellent parity",
+              dimensions: [],
+              hotspots: [],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
       ),
     );
 
@@ -145,14 +146,16 @@ describe("VisualQualityPage", () => {
       expect(screen.getByTestId("score-dashboard")).toBeVisible();
     });
     expect(screen.getByTestId("gallery-view")).toBeVisible();
-    expect(screen.queryByTestId("visual-parity-summary")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("visual-parity-summary"),
+    ).not.toBeInTheDocument();
   });
 
   it("hydrates confidence from the job confidence artifact when loading a report URL", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = input instanceof Request ? input.url : String(input);
         if (url.endsWith("/files/visual-quality/report.json")) {
           return new Response(
             JSON.stringify({
@@ -205,16 +208,14 @@ describe("VisualQualityPage", () => {
     await waitFor(() => {
       expect(screen.getByTestId("confidence-summary")).toBeVisible();
     });
-    expect(screen.getByTestId("confidence-summary")).toHaveTextContent(
-      "74.2%",
-    );
+    expect(screen.getByTestId("confidence-summary")).toHaveTextContent("74.2%");
   });
 
   it("renders confidence summary when confidence is available from sibling job endpoints", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input);
+        const url = input instanceof Request ? input.url : String(input);
         if (url.endsWith("/visual-quality/report.json")) {
           return new Response(
             JSON.stringify({
@@ -272,21 +273,23 @@ describe("VisualQualityPage", () => {
   it("loads visual-parity-report.json in summary-only mode", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            status: "warn",
-            mode: "strict",
-            baselinePath: "/tmp/baseline.png",
-            runtimePreviewUrl: "http://127.0.0.1:19835/workspace/repros/job-1/",
-            maxDiffPixelRatio: 0.2,
-            details: "Visual difference exceeded threshold.",
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              status: "warn",
+              mode: "strict",
+              baselinePath: "/tmp/baseline.png",
+              runtimePreviewUrl:
+                "http://127.0.0.1:19835/workspace/repros/job-1/",
+              maxDiffPixelRatio: 0.2,
+              details: "Visual difference exceeded threshold.",
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
       ),
     );
 
@@ -324,11 +327,12 @@ describe("VisualQualityPage", () => {
   it("shows a clear error when the report JSON is malformed", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ status: "bogus" }), {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        }),
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ status: "bogus" }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          }),
       ),
     );
 
@@ -366,7 +370,9 @@ describe("VisualQualityPage", () => {
       "/workspace/ui/visual-quality?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json",
     );
     expect(screen.getByTestId("visual-quality-loading")).toBeVisible();
-    expect(screen.queryByTestId("visual-quality-empty-state")).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("visual-quality-empty-state"),
+    ).not.toBeInTheDocument();
 
     resolveFetch?.(
       new Response(
@@ -401,21 +407,23 @@ describe("VisualQualityPage", () => {
   it("renders a passed visual-parity summary status", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            status: "passed",
-            mode: "warn",
-            baselinePath: "/tmp/baseline.png",
-            runtimePreviewUrl: "http://127.0.0.1:19835/workspace/repros/job-1/",
-            maxDiffPixelRatio: 0.07,
-            details: "Generated preview matches baseline within threshold.",
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              status: "passed",
+              mode: "warn",
+              baselinePath: "/tmp/baseline.png",
+              runtimePreviewUrl:
+                "http://127.0.0.1:19835/workspace/repros/job-1/",
+              maxDiffPixelRatio: 0.07,
+              details: "Generated preview matches baseline within threshold.",
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
       ),
     );
 
@@ -434,22 +442,23 @@ describe("VisualQualityPage", () => {
   it("clears report and filter params when resetting after URL load", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            status: "completed",
-            referenceSource: "frozen_fixture",
-            capturedAt: "2026-04-11T00:00:00.000Z",
-            overallScore: 97.2,
-            interpretation: "Good parity",
-            dimensions: [],
-            hotspots: [],
-          }),
-          {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              status: "completed",
+              referenceSource: "frozen_fixture",
+              capturedAt: "2026-04-11T00:00:00.000Z",
+              overallScore: 97.2,
+              interpretation: "Good parity",
+              dimensions: [],
+              hotspots: [],
+            }),
+            {
+              status: 200,
+              headers: { "content-type": "application/json" },
+            },
+          ),
       ),
     );
 
