@@ -1173,6 +1173,94 @@ describe("InspectorPanel data states", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not override filesState to ready when pipeline generatedFiles is empty", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-files": { data: undefined, isLoading: true },
+      },
+    });
+    renderInspectorPanel({
+      pipeline: {
+        ...createInitialPipelineState(),
+        stage: "generating",
+        progress: 10,
+        jobId: "job-1",
+        generatedFiles: [], // empty — must NOT trigger effectiveFilesState override
+        errors: [],
+        canRetry: false,
+        canCancel: true,
+      },
+    });
+    // With 0 pipeline files, effectiveFilesState must not pretend "ready".
+    // The loading indicator should still be visible.
+    expect(
+      screen.getByTestId("inspector-state-files-loading"),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps filesState empty when pipeline has no generatedFiles and query returns empty", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-files": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: { jobId: "job-1", files: [] },
+          },
+          isLoading: false,
+        },
+      },
+    });
+    renderInspectorPanel({
+      pipeline: {
+        ...createInitialPipelineState(),
+        generatedFiles: undefined,
+      },
+    });
+    // No pipeline files + empty query result → inspector shows empty state, not loading.
+    expect(
+      screen.queryByTestId("inspector-state-files-loading"),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId("inspector-file-selector")).toBeDisabled();
+  });
+
+  it("does not override ready filesState when query already resolved", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-files": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-1",
+              files: [
+                { path: "src/App.tsx", sizeBytes: 100 },
+                { path: "src/screens/Home.tsx", sizeBytes: 200 },
+              ],
+            },
+          },
+          isLoading: false,
+        },
+      },
+    });
+    renderInspectorPanel({
+      pipeline: {
+        ...createInitialPipelineState(),
+        stage: "ready",
+        generatedFiles: [{ path: "src/screens/OldFile.tsx", sizeBytes: 50 }],
+      },
+    });
+    // filesState is "ready" (query resolved), so effectiveFilesState must not
+    // replace it with the stale pipeline files. The selector should be enabled,
+    // showing query-resolved files, not the pipeline list.
+    expect(screen.getByTestId("inspector-file-selector")).not.toBeDisabled();
+    // The pipeline file OldFile.tsx must NOT be the selector value —
+    // the query-resolved App.tsx should take precedence.
+    expect(screen.getByTestId("inspector-file-selector")).not.toHaveValue(
+      "src/screens/OldFile.tsx",
+    );
+  });
+
   it("shows manifest empty warning when manifest payload has no screens", () => {
     installQueryMock({
       overrides: {

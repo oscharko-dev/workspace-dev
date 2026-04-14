@@ -1518,8 +1518,12 @@ export function InspectorPanel({
     error: EndpointErrorDetails | null;
   }>(() => {
     const pipelineFiles = activePipeline.generatedFiles;
-    if ((pipelineFiles?.length ?? 0) > 0 && filesState.status !== "ready") {
-      return { status: "ready", files: pipelineFiles!, error: null };
+    if (
+      pipelineFiles !== undefined &&
+      pipelineFiles.length > 0 &&
+      filesState.status !== "ready"
+    ) {
+      return { status: "ready", files: pipelineFiles, error: null };
     }
     return filesState;
   }, [activePipeline.generatedFiles, filesState]);
