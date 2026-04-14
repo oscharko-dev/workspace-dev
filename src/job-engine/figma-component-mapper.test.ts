@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, mkdir } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -52,8 +52,56 @@ const parseTool = async (req: Request): Promise<string> => {
   return body.params?.name ?? "";
 };
 
+const parseArgs = async (req: Request): Promise<Record<string, unknown>> => {
+  const body = (await req.json()) as { params?: { arguments?: Record<string, unknown> } };
+  return body.params?.arguments ?? {};
+};
+
 const createTempDir = () =>
   mkdtemp(path.join(os.tmpdir(), "workspace-dev-mapper-"));
+
+const makeRawFile = (
+  nodes: Array<{
+    id: string;
+    type: "FRAME" | "INSTANCE" | "COMPONENT" | "COMPONENT_SET";
+    name: string;
+    componentId?: string;
+    componentSetId?: string;
+  }>,
+) => ({
+  document: {
+    id: "0:0",
+    type: "DOCUMENT",
+    name: "Root",
+    children: [
+      {
+        id: "0:1",
+        type: "CANVAS",
+        name: "Page 1",
+        children: nodes.map((node) => ({
+          ...node,
+          children: [],
+        })),
+      },
+    ],
+  },
+  components: Object.fromEntries(
+    nodes
+      .filter((node) => node.type === "COMPONENT" || node.componentId)
+      .map((node) => [
+        node.componentId ?? node.id,
+        { key: `key-${node.componentId ?? node.id}`, name: node.name },
+      ]),
+  ),
+  componentSets: Object.fromEntries(
+    nodes
+      .filter((node) => node.type === "COMPONENT_SET" || node.componentSetId)
+      .map((node) => [
+        node.componentSetId ?? node.id,
+        { key: `set-${node.componentSetId ?? node.id}`, name: node.name },
+      ]),
+  ),
+});
 
 const makeNode = (
   overrides: Partial<ScreenElementIR> & { id: string; name: string },
@@ -277,6 +325,20 @@ test("parseCodeConnectMapResponse handles wrapped result", () => {
     },
   });
   assert.equal(result.length, 1);
+  assert.equal(result[0]?.componentName, "Input");
+});
+
+test("parseCodeConnectMapResponse accepts current source/componentName fields", () => {
+  const result = parseCodeConnectMapResponse({
+    result: {
+      "5:6": {
+        source: "src/Input.tsx",
+        componentName: "Input",
+      },
+    },
+  });
+  assert.equal(result.length, 1);
+  assert.equal(result[0]?.source, "src/Input.tsx");
   assert.equal(result[0]?.componentName, "Input");
 });
 
@@ -518,7 +580,7 @@ test("annotateIrWithMappings annotates nested instances independently", () => {
   assert.equal(nested?.[1]?.codeConnect, undefined);
 });
 
-test("annotateIrWithMappings resolves by name when nodeId not found", () => {
+test("annotateIrWithMappings does not widen exact Code Connect mappings by name", () => {
   const ir = makeIR([makeComponentNode({ id: "99:99", name: "Button" })]);
 
   const { annotated } = annotateIrWithMappings({
@@ -535,8 +597,8 @@ test("annotateIrWithMappings resolves by name when nodeId not found", () => {
     componentSets: new Map(),
   });
 
-  assert.equal(annotated, 1);
-  assert.equal(ir.screens[0]?.children[0]?.codeConnect?.origin, "code_connect");
+  assert.equal(annotated, 0);
+  assert.equal(ir.screens[0]?.children[0]?.codeConnect, undefined);
 });
 
 test("annotateIrWithMappings uses design system fallback", () => {
@@ -547,9 +609,9 @@ test("annotateIrWithMappings uses design system fallback", () => {
     codeConnectMappings: [],
     designSystemMappings: [
       {
-        nodeId: "0:0",
+        nodeId: "2:1",
         componentName: "Card",
-        source: "card-key",
+        source: "src/components/Card.tsx",
       },
     ],
     heuristicMappings: new Map(),
@@ -665,7 +727,7 @@ test("savePersistedMappings creates file and loadPersistedMappings reads it back
 
   const mappings = new Map([
     [
-      "btn-key",
+      "figma-file::node::1:2",
       {
         name: "Button",
         source: "src/Button.tsx",
@@ -676,10 +738,71 @@ test("savePersistedMappings creates file and loadPersistedMappings reads it back
 
   await savePersistedMappings({ workspaceRoot: dir, mappings });
 
+  const rawPersisted = await readFile(
+    path.join(dir, ".workspace-dev", "figma-component-map.json"),
+    "utf8",
+  );
+  assert.deepEqual(JSON.parse(rawPersisted), {
+    "figma-file::node::1:2": {
+      name: "Button",
+      source: "src/Button.tsx",
+      confidence: "exact",
+    },
+  });
+
   const loaded = await loadPersistedMappings({ workspaceRoot: dir });
   assert.equal(loaded.size, 1);
-  assert.equal(loaded.get("btn-key")?.name, "Button");
-  assert.equal(loaded.get("btn-key")?.confidence, "exact");
+  assert.equal(loaded.get("figma-file::node::1:2")?.name, "Button");
+  assert.equal(loaded.get("figma-file::node::1:2")?.confidence, "exact");
+});
+
+test("savePersistedMappings merges with existing persisted entries", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Button.tsx"),
+    "export const Button = () => null;",
+    "utf8",
+  );
+  await writeFile(
+    path.join(srcDir, "Card.tsx"),
+    "export const Card = () => null;",
+    "utf8",
+  );
+
+  await savePersistedMappings({
+    workspaceRoot: dir,
+    mappings: new Map([
+      [
+        "file-a::node::1:2",
+        {
+          name: "Button",
+          source: "src/Button.tsx",
+          confidence: "exact",
+        },
+      ],
+    ]),
+  });
+
+  await savePersistedMappings({
+    workspaceRoot: dir,
+    mappings: new Map([
+      [
+        "file-b::node::2:3",
+        {
+          name: "Card",
+          source: "src/Card.tsx",
+          confidence: "heuristic",
+        },
+      ],
+    ]),
+  });
+
+  const loaded = await loadPersistedMappings({ workspaceRoot: dir });
+  assert.equal(loaded.size, 2);
+  assert.equal(loaded.get("file-a::node::1:2")?.name, "Button");
+  assert.equal(loaded.get("file-b::node::2:3")?.name, "Card");
 });
 
 test("loadPersistedMappings filters out stale mappings (deleted source file)", async () => {
@@ -689,15 +812,10 @@ test("loadPersistedMappings filters out stale mappings (deleted source file)", a
 
   // Write a mapping pointing to a file that doesn't exist
   const persisted = {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    entries: {
-      "stale-key": {
-        name: "Deleted",
-        source: "src/Deleted.tsx",
-        confidence: "exact",
-        approvedAt: new Date().toISOString(),
-      },
+    "stale-key": {
+      name: "Deleted",
+      source: "src/Deleted.tsx",
+      confidence: "exact",
     },
   };
   await writeFile(
@@ -709,6 +827,95 @@ test("loadPersistedMappings filters out stale mappings (deleted source file)", a
   const loaded = await loadPersistedMappings({ workspaceRoot: dir });
   // Stale mapping should be filtered out
   assert.equal(loaded.size, 0);
+});
+
+test("loadPersistedMappings filters to the requested fileKey and supports legacy wrappers", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  const wdDir = path.join(dir, ".workspace-dev");
+  await mkdir(srcDir, { recursive: true });
+  await mkdir(wdDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Button.tsx"),
+    "export const Button = () => null;",
+    "utf8",
+  );
+  await writeFile(
+    path.join(srcDir, "Card.tsx"),
+    "export const Card = () => null;",
+    "utf8",
+  );
+
+  const persisted = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    entries: {
+      "abc123::name::button": {
+        name: "Button",
+        source: "src/Button.tsx",
+        confidence: "exact",
+      },
+      "other-file::node::9:9": {
+        name: "Card",
+        source: "src/Card.tsx",
+        confidence: "heuristic",
+      },
+    },
+  };
+  await writeFile(
+    path.join(wdDir, "figma-component-map.json"),
+    JSON.stringify(persisted),
+    "utf8",
+  );
+
+  const loaded = await loadPersistedMappings({
+    workspaceRoot: dir,
+    fileKey: "abc123",
+  });
+  assert.equal(loaded.size, 1);
+  assert.equal(loaded.get("abc123::name::button")?.name, "Button");
+});
+
+test("loadPersistedMappings ignores unscoped legacy entries when fileKey is provided", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  const wdDir = path.join(dir, ".workspace-dev");
+  await mkdir(srcDir, { recursive: true });
+  await mkdir(wdDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Button.tsx"),
+    "export const Button = () => null;",
+    "utf8",
+  );
+
+  await writeFile(
+    path.join(wdDir, "figma-component-map.json"),
+    JSON.stringify(
+      {
+        button: {
+          name: "Button",
+          source: "src/Button.tsx",
+          confidence: "exact",
+        },
+        "abc123::node::1:2": {
+          name: "Button",
+          source: "src/Button.tsx",
+          confidence: "exact",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const loaded = await loadPersistedMappings({
+    workspaceRoot: dir,
+    fileKey: "abc123",
+  });
+  assert.equal(loaded.size, 1);
+  assert.equal(loaded.has("button"), false);
+  assert.equal(loaded.has("abc123::node::1:2"), true);
 });
 
 test("loadPersistedMappings handles invalid JSON gracefully", async () => {
@@ -845,8 +1052,12 @@ test("resolveComponentMappings orchestrates all MCP calls", async () => {
 
   const result = await resolveComponentMappings({
     fileKey: "abc123",
-    nodeId: "1:2",
+    nodeId: "0:1",
     mcpConfig: createConfig(fetchImpl),
+    rawFile: makeRawFile([
+      { id: "1:2", type: "INSTANCE", name: "Button", componentId: "button" },
+      { id: "2:2", type: "INSTANCE", name: "Card", componentId: "card" },
+    ]),
   });
 
   assert.deepEqual(calls, [
@@ -856,8 +1067,39 @@ test("resolveComponentMappings orchestrates all MCP calls", async () => {
   ]);
   assert.equal(result.stats.exact, 1);
   assert.equal(result.stats.designSystem, 1);
-  assert.equal(result.stats.suggested, 1);
-  assert.equal(result.mappings.get("button")?.confidence, "exact");
+  assert.equal(result.stats.suggested, 0);
+  assert.equal(result.mappings.get("1:2")?.confidence, "exact");
+});
+
+test("resolveComponentMappings searches the design system using candidate component names", async () => {
+  const queries: string[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const tool = await parseTool(request.clone());
+    if (tool === "get_code_connect_map") {
+      return jsonResponse(mcpOk({}));
+    }
+    if (tool === "search_design_system") {
+      const args = await parseArgs(request);
+      queries.push(String(args.query ?? ""));
+      return jsonResponse(mcpOk({ components: [] }));
+    }
+    if (tool === "get_code_connect_suggestions") {
+      return jsonResponse(mcpOk({}));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    ir: makeIR([
+      makeInstanceNode({ id: "2:1", name: "Button/Primary" }),
+    ]),
+  });
+
+  assert.deepEqual(queries, ["Button/Primary", "Button"]);
 });
 
 test("resolveComponentMappings handles all MCP failures gracefully", async () => {
@@ -868,6 +1110,9 @@ test("resolveComponentMappings handles all MCP failures gracefully", async () =>
     fileKey: "abc123",
     nodeId: "1:2",
     mcpConfig: createConfig(fetchImpl),
+    rawFile: makeRawFile([
+      { id: "1:2", type: "INSTANCE", name: "Button", componentId: "button" },
+    ]),
   });
 
   assert.equal(result.codeConnectMappings.length, 0);
@@ -920,14 +1165,41 @@ test("resolveComponentMappings performs heuristic matching when workspaceRoot pr
     if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
     if (tool === "search_design_system")
       return jsonResponse(mcpOk({ components: [] }));
+    if (tool === "get_code_connect_suggestions") return jsonResponse(mcpOk({}));
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+    workspaceRoot: dir,
+    rawFile: makeRawFile([
+      { id: "7:8", type: "INSTANCE", name: "Tooltip", componentId: "tooltip" },
+    ]),
+  });
+
+  assert.equal(result.stats.heuristic, 1);
+  assert.equal(result.mappings.get("7:8")?.source, "src/Tooltip.tsx");
+  assert.equal(result.unmapped.length, 0);
+});
+
+test("resolveComponentMappings keeps suggestions pending instead of auto-applying them", async () => {
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system")
+      return jsonResponse(mcpOk({ components: [] }));
     if (tool === "get_code_connect_suggestions") {
       return jsonResponse(
-        mcpOk({
-          "7:8": {
-            codeConnectSrc: "suggested/Tooltip.tsx",
-            codeConnectName: "Tooltip",
+        mcpOk([
+          {
+            mainComponentNodeId: "7:8",
+            figmaName: "Tooltip",
+            componentName: "Tooltip",
+            source: "src/components/Tooltip.tsx",
           },
-        }),
+        ]),
       );
     }
     return jsonResponse(mcpOk({}));
@@ -937,11 +1209,54 @@ test("resolveComponentMappings performs heuristic matching when workspaceRoot pr
     fileKey: "abc123",
     nodeId: "1:2",
     mcpConfig: createConfig(fetchImpl),
-    workspaceRoot: dir,
+    rawFile: makeRawFile([
+      { id: "7:8", type: "INSTANCE", name: "Tooltip", componentId: "tooltip" },
+    ]),
   });
 
-  // The unmapped "Tooltip" suggestion should be resolved via heuristic matching
-  assert.equal(result.stats.heuristic, 1);
+  assert.equal(result.stats.heuristic, 0);
+  assert.equal(result.mappings.has("7:8"), false);
+  assert.equal(result.unmapped.length, 1);
+  assert.equal(result.unmapped[0]?.suggestions?.[0]?.confidence, "suggested");
+});
+
+test("resolveComponentMappings keeps lightweight suggestions pending for confirmation", async () => {
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system")
+      return jsonResponse(mcpOk({ components: [] }));
+    if (tool === "get_code_connect_suggestions") {
+      return jsonResponse(
+        mcpOk([
+          {
+            mainComponentNodeId: "7:8",
+            figmaName: "Tooltip",
+          },
+        ]),
+      );
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+    rawFile: makeRawFile([
+      { id: "7:8", type: "INSTANCE", name: "Tooltip", componentId: "tooltip" },
+    ]),
+  });
+
+  assert.equal(result.stats.suggested, 1);
+  assert.equal(result.mappings.has("7:8"), false);
+  assert.equal(result.unmapped.length, 1);
+  assert.equal(result.unmapped[0]?.suggestions?.[0]?.name, "Tooltip");
+  assert.equal(
+    result.unmapped[0]?.suggestions?.[0]?.source,
+    "figma-node:7:8",
+  );
+  assert.equal(result.unmapped[0]?.suggestions?.[0]?.confidence, "suggested");
 });
 
 // ---------------------------------------------------------------------------
@@ -1039,7 +1354,7 @@ test("ir-derive flow: enrichment heuristic mappings are used for annotation", ()
   assert.equal(ir.screens[0]?.children[1]?.codeConnect, undefined);
 });
 
-test("ir-derive flow: persisted mappings are loaded and used for annotation", async () => {
+test("resolveComponentMappings reuses persisted file-scoped mappings for the same candidate node", async () => {
   const dir = await createTempDir();
   const srcDir = path.join(dir, "src");
   await mkdir(srcDir, { recursive: true });
@@ -1054,7 +1369,7 @@ test("ir-derive flow: persisted mappings are loaded and used for annotation", as
     workspaceRoot: dir,
     mappings: new Map([
       [
-        "alert",
+        "abc123::component::key-alert",
         {
           name: "Alert",
           source: "src/Alert.tsx",
@@ -1065,23 +1380,34 @@ test("ir-derive flow: persisted mappings are loaded and used for annotation", as
   });
 
   // Load and verify
-  const persisted = await loadPersistedMappings({ workspaceRoot: dir });
+  const persisted = await loadPersistedMappings({
+    workspaceRoot: dir,
+    fileKey: "abc123",
+  });
   assert.equal(persisted.size, 1);
-  assert.equal(persisted.get("alert")?.name, "Alert");
+  assert.equal(persisted.get("abc123::component::key-alert")?.name, "Alert");
 
-  // Use in annotation (simulating ir-derive path)
-  const ir = makeIR([makeInstanceNode({ id: "8:1", name: "Alert" })]);
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system")
+      return jsonResponse(mcpOk({ components: [] }));
+    if (tool === "get_code_connect_suggestions") return jsonResponse(mcpOk({}));
+    return jsonResponse(mcpOk({}));
+  };
 
-  const { annotated } = annotateIrWithMappings({
-    ir,
-    codeConnectMappings: [],
-    designSystemMappings: [],
-    heuristicMappings: persisted,
-    componentSets: new Map(),
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    workspaceRoot: dir,
+    rawFile: makeRawFile([
+      { id: "8:1", type: "INSTANCE", name: "Alert", componentId: "alert" },
+    ]),
   });
 
-  assert.equal(annotated, 1);
-  assert.equal(ir.screens[0]?.children[0]?.codeConnect?.componentName, "Alert");
+  assert.equal(result.stats.exact, 1);
+  assert.equal(result.mappings.get("8:1")?.name, "Alert");
 });
 
 test("ir-derive flow: heuristic enrichment results flow through resolveComponentMappings", async () => {
@@ -1117,11 +1443,13 @@ test("ir-derive flow: heuristic enrichment results flow through resolveComponent
     nodeId: "1:2",
     mcpConfig: createConfig(fetchImpl),
     workspaceRoot: dir,
+    rawFile: makeRawFile([
+      { id: "9:1", type: "INSTANCE", name: "Tooltip", componentId: "tooltip" },
+    ]),
   });
 
-  // Heuristic match should be in mappings with normalized key
   assert.equal(result.stats.heuristic, 1);
-  const tooltipMapping = result.mappings.get("tooltip");
+  const tooltipMapping = result.mappings.get("9:1");
   assert.ok(tooltipMapping);
   assert.equal(tooltipMapping.confidence, "heuristic");
   assert.equal(tooltipMapping.source, "src/Tooltip.tsx");

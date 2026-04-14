@@ -402,13 +402,33 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
           ...(enrichment.libraryKeys && enrichment.libraryKeys.length > 0
             ? { libraryKeys: enrichment.libraryKeys }
             : {}),
+          rawFile,
           ...(workspaceRoot ? { workspaceRoot } : {}),
         };
 
         const mapperResult = await resolveComponentMappings(mapperConfig);
 
-        if (mapperResult.codeConnectMappings.length > 0) {
-          enrichment.codeConnectMappings = mapperResult.codeConnectMappings;
+        const exactMappings = Array.from(mapperResult.mappings.entries())
+          .filter(([, mapping]) => mapping.confidence === "exact")
+          .map(([nodeId, mapping]) => ({
+            nodeId,
+            componentName: mapping.name,
+            source: mapping.source,
+          }));
+        const codeConnectMappings = [
+          ...mapperResult.codeConnectMappings,
+          ...exactMappings.filter(
+            (candidate) =>
+              !mapperResult.codeConnectMappings.some(
+                (mapping) =>
+                  mapping.nodeId === candidate.nodeId &&
+                  mapping.componentName === candidate.componentName &&
+                  mapping.source === candidate.source,
+              ),
+          ),
+        ];
+        if (codeConnectMappings.length > 0) {
+          enrichment.codeConnectMappings = codeConnectMappings;
         }
         if (mapperResult.designSystemMappings.length > 0) {
           enrichment.designSystemMappings = mapperResult.designSystemMappings;
@@ -418,10 +438,10 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
         if (mapperResult.stats.heuristic > 0) {
           const heuristicEntries: typeof enrichment.heuristicComponentMappings =
             [];
-          for (const [, mapping] of mapperResult.mappings) {
+          for (const [irNodeId, mapping] of mapperResult.mappings) {
             if (mapping.confidence === "heuristic") {
               heuristicEntries.push({
-                nodeId: "",
+                nodeId: irNodeId,
                 componentName: mapping.name,
                 source: mapping.source,
               });
