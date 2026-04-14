@@ -24,7 +24,6 @@ import type {
   WorkspaceJobRetryTarget,
   WorkspaceJobResult,
   WorkspaceJobRuntimeStatus,
-  WorkspacePasteDeltaSeed,
   WorkspacePasteDeltaSummary,
   WorkspaceRouterMode,
   WorkspaceJobStage,
@@ -48,6 +47,7 @@ import type { WorkspaceRuntimeLogger } from "../logging.js";
 import type { FigmaRestCircuitBreaker } from "./figma-rest-circuit-breaker.js";
 import type { PipelineDiagnosticLimits } from "./errors.js";
 import type { ResolvedCustomerProfile } from "../customer-profile.js";
+import type { WorkspacePasteDeltaSeed } from "./paste-delta-execution.js";
 
 export interface FigmaComponentCatalogEntry {
   key?: string;

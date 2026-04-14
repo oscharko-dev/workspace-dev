@@ -55,19 +55,6 @@ export interface WorkspacePasteDeltaSummary {
   priorManifestMissing: boolean;
 }
 
-/**
- * Internal delta-import seed injected by the server after request validation.
- * External API clients should not send this field directly.
- */
-export interface WorkspacePasteDeltaSeed {
-  pasteIdentityKey: string;
-  requestedMode: WorkspaceImportMode;
-  provisionalSummary?: WorkspacePasteDeltaSummary;
-  sourceJobId?: string;
-  compatibilityFingerprint?: string;
-  figmaFileKey?: string;
-}
-
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode = "deterministic";
 

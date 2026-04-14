@@ -330,6 +330,10 @@ test("computePasteCompatibilityFingerprint changes when runtime-affecting inputs
     generationLocale: "en-US",
     formHandlingMode: "react_hook_form",
     componentMappings: [{ nodeId: "1:2", componentName: "Button", source: "@/Button.tsx" }],
+    routerMode: "browser",
+    screenElementBudget: 1200,
+    screenElementMaxDepth: 14,
+    exportImages: true,
   });
   const localeChanged = computePasteCompatibilityFingerprint({
     figmaSourceMode: "local_json",
@@ -337,9 +341,25 @@ test("computePasteCompatibilityFingerprint changes when runtime-affecting inputs
     generationLocale: "de-DE",
     formHandlingMode: "react_hook_form",
     componentMappings: [{ nodeId: "1:2", componentName: "Button", source: "@/Button.tsx" }],
+    routerMode: "browser",
+    screenElementBudget: 1200,
+    screenElementMaxDepth: 14,
+    exportImages: true,
+  });
+  const routerChanged = computePasteCompatibilityFingerprint({
+    figmaSourceMode: "local_json",
+    brandTheme: "derived",
+    generationLocale: "en-US",
+    formHandlingMode: "react_hook_form",
+    componentMappings: [{ nodeId: "1:2", componentName: "Button", source: "@/Button.tsx" }],
+    routerMode: "hash",
+    screenElementBudget: 1200,
+    screenElementMaxDepth: 14,
+    exportImages: true,
   });
 
   assert.notEqual(baseline, localeChanged);
+  assert.notEqual(baseline, routerChanged);
 });
 
 test("concurrent saves do not leave temporary manifest files behind", async () => {

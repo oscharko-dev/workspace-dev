@@ -1183,6 +1183,10 @@ export const createJobEngine = ({
       ...(storybookStaticDir ? { storybookStaticDir } : {}),
       generationLocale: request.generationLocale,
       formHandlingMode: request.formHandlingMode,
+      routerMode: runtime.routerMode,
+      screenElementBudget: runtime.figmaScreenElementBudget,
+      screenElementMaxDepth: runtime.figmaScreenElementMaxDepth,
+      exportImages: runtime.exportImages,
     });
   };
 

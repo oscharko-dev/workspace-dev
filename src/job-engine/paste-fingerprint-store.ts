@@ -117,6 +117,10 @@ export const computePasteCompatibilityFingerprint = (input: {
   readonly storybookStaticDir?: string;
   readonly generationLocale: string;
   readonly formHandlingMode: string;
+  readonly routerMode: string;
+  readonly screenElementBudget: number;
+  readonly screenElementMaxDepth: number;
+  readonly exportImages: boolean;
 }): string => {
   const canonical = JSON.stringify(
     toCanonicalJsonValue({
@@ -136,6 +140,10 @@ export const computePasteCompatibilityFingerprint = (input: {
         : {}),
       generationLocale: input.generationLocale,
       formHandlingMode: input.formHandlingMode,
+      routerMode: input.routerMode,
+      screenElementBudget: input.screenElementBudget,
+      screenElementMaxDepth: input.screenElementMaxDepth,
+      exportImages: input.exportImages,
       contractVersion: CONTRACT_VERSION,
       pasteDeltaCompatibilityVersion: PASTE_DELTA_COMPATIBILITY_VERSION,
     }),
