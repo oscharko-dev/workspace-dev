@@ -8,6 +8,7 @@ import {
   parseFigmaClipboard,
   type FigmaMeta,
 } from "./figma-clipboard-parser";
+import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -534,6 +535,28 @@ function stageTransitionEvents(
 }
 
 // ---------------------------------------------------------------------------
+// Artifact type guards
+// ---------------------------------------------------------------------------
+
+function isDesignIrPayload(value: unknown): value is DesignIrPayload {
+  return (
+    isRecord(value) &&
+    typeof value.jobId === "string" &&
+    Array.isArray(value.screens)
+  );
+}
+
+function isComponentManifestPayload(
+  value: unknown,
+): value is ComponentManifestPayload {
+  return (
+    isRecord(value) &&
+    typeof value.jobId === "string" &&
+    Array.isArray(value.screens)
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Artifact fetchers
 // ---------------------------------------------------------------------------
 
@@ -546,28 +569,21 @@ async function fetchDesignIr({
   jobId,
   signal,
 }: ArtifactFetchers): Promise<DesignIrPayload | null> {
-  const response = await fetchJson<DesignIrPayload>({
+  const response = await fetchJson<unknown>({
     url: endpoints.designIr({ jobId }),
     init: { signal },
   });
-  if (!response.ok) {
+  if (!response.ok || !isDesignIrPayload(response.payload)) {
     return null;
   }
-  if (!isRecord(response.payload)) {
-    return null;
-  }
-  const { jobId: payloadJobId, screens } = response.payload;
-  if (typeof payloadJobId !== "string" || !Array.isArray(screens)) {
-    return null;
-  }
-  return response.payload as unknown as DesignIrPayload;
+  return response.payload;
 }
 
 async function fetchScreenshot({
   jobId,
   signal,
 }: ArtifactFetchers): Promise<string | null> {
-  const response = await fetchJson<Record<string, unknown>>({
+  const response = await fetchJson<unknown>({
     url: endpoints.designIr({ jobId }),
     init: { signal },
   });
@@ -582,18 +598,14 @@ async function fetchManifest({
   jobId,
   signal,
 }: ArtifactFetchers): Promise<ComponentManifestPayload | null> {
-  const response = await fetchJson<ComponentManifestPayload>({
+  const response = await fetchJson<unknown>({
     url: endpoints.manifest({ jobId }),
     init: { signal },
   });
-  if (!response.ok || !isRecord(response.payload)) {
+  if (!response.ok || !isComponentManifestPayload(response.payload)) {
     return null;
   }
-  const { jobId: payloadJobId, screens } = response.payload;
-  if (typeof payloadJobId !== "string" || !Array.isArray(screens)) {
-    return null;
-  }
-  return response.payload as unknown as ComponentManifestPayload;
+  return response.payload;
 }
 
 async function fetchFiles({
@@ -1025,39 +1037,41 @@ export function usePastePipeline(): UsePastePipelineResult {
   }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
 
   useEffect(() => {
-    if (polling && state.jobId !== undefined && !skipScreenshotRef.current) {
-      void (async () => {
-        if (state.jobId === undefined) {
-          return;
+    if (!polling || state.jobId === undefined || skipScreenshotRef.current) {
+      return;
+    }
+    const ac = new AbortController();
+    const jobId = state.jobId;
+    void (async () => {
+      const signal = ac.signal;
+      if (
+        state.stageProgress.resolving.state === "done" &&
+        state.screenshot === undefined
+      ) {
+        const shot = await fetchScreenshot({ jobId, signal });
+        if (!ac.signal.aborted && shot !== null) {
+          dispatch({ type: "screenshot_ready", screenshot: shot });
         }
-        const signal = new AbortController().signal;
-        if (
-          state.stageProgress.resolving.state === "done" &&
-          state.screenshot === undefined
-        ) {
-          const shot = await fetchScreenshot({ jobId: state.jobId, signal });
-          if (shot !== null) {
-            dispatch({ type: "screenshot_ready", screenshot: shot });
-          }
+      }
+      if (
+        state.stageProgress.transforming.state === "done" &&
+        state.designIR === undefined
+      ) {
+        const ir = await fetchDesignIr({ jobId, signal });
+        if (!ac.signal.aborted && ir !== null) {
+          dispatch({ type: "design_ir_ready", designIR: ir });
         }
-        if (
-          state.stageProgress.transforming.state === "done" &&
-          state.designIR === undefined
-        ) {
-          const ir = await fetchDesignIr({ jobId: state.jobId, signal });
-          if (ir !== null) {
-            dispatch({ type: "design_ir_ready", designIR: ir });
-          }
-        }
-        if (
-          state.stageProgress.generating.state === "done" &&
-          (state.componentManifest === undefined ||
-            state.generatedFiles === undefined)
-        ) {
-          const [manifest, files] = await Promise.all([
-            fetchManifest({ jobId: state.jobId, signal }),
-            fetchFiles({ jobId: state.jobId, signal }),
-          ]);
+      }
+      if (
+        state.stageProgress.generating.state === "done" &&
+        (state.componentManifest === undefined ||
+          state.generatedFiles === undefined)
+      ) {
+        const [manifest, files] = await Promise.all([
+          fetchManifest({ jobId, signal }),
+          fetchFiles({ jobId, signal }),
+        ]);
+        if (!ac.signal.aborted) {
           if (manifest !== null) {
             dispatch({ type: "manifest_ready", manifest });
           }
@@ -1065,8 +1079,11 @@ export function usePastePipeline(): UsePastePipelineResult {
             dispatch({ type: "files_ready", files });
           }
         }
-      })();
-    }
+      }
+    })();
+    return () => {
+      ac.abort();
+    };
   }, [
     polling,
     state.jobId,
@@ -1089,6 +1106,20 @@ export function usePastePipeline(): UsePastePipelineResult {
 
     if (!isFigmaClipboard(clipboardHtml)) {
       dispatch({ type: "cancel" });
+      return;
+    }
+    if (
+      new TextEncoder().encode(clipboardHtml).length > FIGMA_PASTE_MAX_BYTES
+    ) {
+      dispatch({
+        type: "parsing_failed",
+        error: {
+          stage: "parsing",
+          code: "PAYLOAD_TOO_LARGE",
+          message: `Clipboard HTML exceeds the ${String(FIGMA_PASTE_MAX_BYTES / (1024 * 1024))} MiB limit.`,
+          retryable: false,
+        },
+      });
       return;
     }
     const parsed = parseFigmaClipboard(clipboardHtml);
