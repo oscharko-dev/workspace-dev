@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile } from "node:fs/promises";
+import { cp, mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type {
@@ -10,10 +10,12 @@ import type {
   WorkspaceLocalSyncDryRunResult,
   WorkspaceJobDiagnostic,
   WorkspaceJobInput,
+  WorkspaceJobRetryStage,
   WorkspaceJobResult,
   WorkspaceJobStageName,
   WorkspaceJobStatus,
   WorkspaceRegenerationInput,
+  WorkspaceRetryInput,
 } from "./contracts/index.js";
 import { normalizeComponentMappingRules } from "./component-mapping-rules.js";
 import {
@@ -87,6 +89,7 @@ import {
 import type { PipelineExecutionContext } from "./job-engine/pipeline/context.js";
 import { syncPublicJobProjection } from "./job-engine/pipeline/public-job-projection.js";
 import {
+  buildRetryPipelinePlan,
   buildRegenerationPipelinePlan,
   buildSubmissionPipelinePlan,
 } from "./job-engine/services/pipeline-services.js";
@@ -160,6 +163,22 @@ const normalizeOptionalInputString = (
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const RETRYABLE_STAGE_SET = new Set<WorkspaceJobRetryStage>([
+  "figma.source",
+  "ir.derive",
+  "template.prepare",
+  "codegen.generate",
+]);
+
+const isWorkspaceJobRetryStage = (
+  value: unknown,
+): value is WorkspaceJobRetryStage => {
+  return (
+    typeof value === "string" &&
+    RETRYABLE_STAGE_SET.has(value as WorkspaceJobRetryStage)
+  );
 };
 
 const resolveRequestCompositeQualityWeights = ({
@@ -498,6 +517,10 @@ const toPipelineError = ({
       code: string;
       stage?: unknown;
       diagnostics?: unknown;
+      retryable?: unknown;
+      retryAfterMs?: unknown;
+      fallbackMode?: unknown;
+      retryTargets?: unknown;
     };
     const diagnostics = toDiagnosticInputs(candidate.diagnostics);
     return createPipelineError({
@@ -508,6 +531,21 @@ const toPipelineError = ({
       message: candidate.message,
       cause: error,
       limits,
+      ...(typeof candidate.retryable === "boolean"
+        ? { retryable: candidate.retryable }
+        : {}),
+      ...(typeof candidate.retryAfterMs === "number" &&
+      Number.isFinite(candidate.retryAfterMs)
+        ? { retryAfterMs: Math.max(0, Math.trunc(candidate.retryAfterMs)) }
+        : {}),
+      ...(candidate.fallbackMode === "none" ||
+      candidate.fallbackMode === "rest" ||
+      candidate.fallbackMode === "hybrid_rest"
+        ? { fallbackMode: candidate.fallbackMode }
+        : {}),
+      ...(Array.isArray(candidate.retryTargets)
+        ? { retryTargets: candidate.retryTargets }
+        : {}),
       ...(diagnostics ? { diagnostics } : {}),
     });
   }
@@ -614,6 +652,7 @@ export const createJobEngine = ({
   const queuedJobIds: string[] = [];
   const queuedJobInputs = new Map<string, WorkspaceJobInput>();
   const queuedRegenInputs = new Map<string, WorkspaceRegenerationInput>();
+  const queuedRetryInputs = new Map<string, WorkspaceRetryInput>();
   const runningJobIds = new Set<string>();
   const localSyncConfirmations = new Map<string, LocalSyncConfirmationRecord>();
 
@@ -641,6 +680,34 @@ export const createJobEngine = ({
       this.queue = queue;
     }
   }
+
+  const createQueuedJobRecord = ({
+    jobId,
+    request,
+    lineage,
+  }: {
+    jobId: string;
+    request: WorkspaceJobStatus["request"];
+    lineage?: JobRecord["lineage"];
+  }): JobRecord => {
+    return {
+      jobId,
+      status: "queued",
+      submittedAt: nowIso(),
+      request,
+      stages: createInitialStages(),
+      logs: [],
+      artifacts: {
+        outputRoot: resolvedPaths.outputRoot,
+        jobDir: path.join(resolvedPaths.jobsRoot, jobId),
+      },
+      preview: {
+        enabled: runtime.previewEnabled,
+      },
+      queue: toQueueSnapshot({ jobId }),
+      ...(lineage ? { lineage } : {}),
+    };
+  };
 
   const toQueueSnapshot = ({
     jobId,
@@ -698,6 +765,166 @@ export const createJobEngine = ({
   }): void => {
     job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
     writeTerminalJobSnapshotSync({ job, diagnostics });
+  };
+
+  const determinePartialStatus = async ({
+    stage,
+    artifactStore,
+  }: {
+    stage: WorkspaceJobStageName;
+    artifactStore: StageArtifactStore;
+  }): Promise<boolean> => {
+    if (stage === "figma.source") {
+      return false;
+    }
+    if (stage === "ir.derive") {
+      return (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaCleaned)) !== undefined;
+    }
+    if (stage === "template.prepare") {
+      return (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr)) !== undefined;
+    }
+    if (stage === "codegen.generate") {
+      return (
+        (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject)) !== undefined ||
+        (await artifactStore.getValue(STAGE_ARTIFACT_KEYS.codegenSummary)) !== undefined
+      );
+    }
+    return (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject)) !== undefined;
+  };
+
+  const reconstructRetrySubmissionInput = ({
+    sourceJob,
+  }: {
+    sourceJob: JobRecord;
+  }): WorkspaceJobInput => {
+    const figmaAccessToken =
+      sourceJob.request.figmaSourceMode === "local_json"
+        ? undefined
+        : process.env.FIGMA_ACCESS_TOKEN?.trim();
+    return {
+      ...sourceJob.request,
+      ...(sourceJob.request.figmaFileKey
+        ? { figmaFileKey: sourceJob.request.figmaFileKey }
+        : {}),
+      ...(sourceJob.request.figmaNodeId
+        ? { figmaNodeId: sourceJob.request.figmaNodeId }
+        : {}),
+      ...(sourceJob.request.figmaJsonPath
+        ? { figmaJsonPath: sourceJob.request.figmaJsonPath }
+        : {}),
+      ...(figmaAccessToken ? { figmaAccessToken } : {}),
+    };
+  };
+
+  const seedArtifactReference = async ({
+    sourceArtifactStore,
+    targetArtifactStore,
+    key,
+  }: {
+    sourceArtifactStore: StageArtifactStore;
+    targetArtifactStore: StageArtifactStore;
+    key: (typeof STAGE_ARTIFACT_KEYS)[keyof typeof STAGE_ARTIFACT_KEYS];
+  }): Promise<void> => {
+    const reference = await sourceArtifactStore.getReference(key);
+    if (!reference) {
+      return;
+    }
+    if (reference.kind === "path" && reference.path) {
+      await targetArtifactStore.setPath({
+        key,
+        stage: reference.stage,
+        absolutePath: reference.path,
+      });
+      return;
+    }
+    await targetArtifactStore.setValue({
+      key,
+      stage: reference.stage,
+      value: reference.value,
+    });
+  };
+
+  const seedRetryArtifacts = async ({
+    retryInput,
+    sourceJob,
+    targetArtifactStore,
+    targetGeneratedProjectDir,
+  }: {
+    retryInput: WorkspaceRetryInput;
+    sourceJob: JobRecord;
+    targetArtifactStore: StageArtifactStore;
+    targetGeneratedProjectDir: string;
+  }): Promise<void> => {
+    const sourceArtifactStore = new StageArtifactStore({
+      jobDir: sourceJob.artifacts.jobDir,
+    });
+    const keysByStage: Record<
+      WorkspaceJobRetryStage,
+      Array<(typeof STAGE_ARTIFACT_KEYS)[keyof typeof STAGE_ARTIFACT_KEYS]>
+    > = {
+      "figma.source": [],
+      "ir.derive": [
+        STAGE_ARTIFACT_KEYS.figmaRaw,
+        STAGE_ARTIFACT_KEYS.figmaCleaned,
+        STAGE_ARTIFACT_KEYS.figmaCleanedReport,
+        STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
+        STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+        STAGE_ARTIFACT_KEYS.customerProfileResolved,
+      ],
+      "template.prepare": [
+        STAGE_ARTIFACT_KEYS.designIr,
+        STAGE_ARTIFACT_KEYS.figmaAnalysis,
+        STAGE_ARTIFACT_KEYS.storybookCatalog,
+        STAGE_ARTIFACT_KEYS.storybookEvidence,
+        STAGE_ARTIFACT_KEYS.storybookTokens,
+        STAGE_ARTIFACT_KEYS.storybookThemes,
+        STAGE_ARTIFACT_KEYS.storybookComponents,
+        STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+        STAGE_ARTIFACT_KEYS.componentMatchReport,
+        STAGE_ARTIFACT_KEYS.customerProfileResolved,
+      ],
+      "codegen.generate": [
+        STAGE_ARTIFACT_KEYS.designIr,
+        STAGE_ARTIFACT_KEYS.figmaAnalysis,
+        STAGE_ARTIFACT_KEYS.storybookCatalog,
+        STAGE_ARTIFACT_KEYS.storybookEvidence,
+        STAGE_ARTIFACT_KEYS.storybookTokens,
+        STAGE_ARTIFACT_KEYS.storybookThemes,
+        STAGE_ARTIFACT_KEYS.storybookComponents,
+        STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+        STAGE_ARTIFACT_KEYS.componentMatchReport,
+        STAGE_ARTIFACT_KEYS.customerProfileResolved,
+      ],
+    };
+
+    for (const key of keysByStage[retryInput.retryStage]) {
+      await seedArtifactReference({
+        sourceArtifactStore,
+        targetArtifactStore,
+        key,
+      });
+    }
+
+    if (retryInput.retryStage === "codegen.generate") {
+      const sourceGeneratedProjectDir = sourceJob.artifacts.generatedProjectDir;
+      if (!sourceGeneratedProjectDir) {
+        throw createPipelineError({
+          code: "E_RETRY_SOURCE_ARTIFACT_MISSING",
+          stage: "codegen.generate",
+          message:
+            `Source job '${sourceJob.jobId}' is missing generated project artifacts required for generate-stage retry.`,
+        });
+      }
+      await cp(sourceGeneratedProjectDir, targetGeneratedProjectDir, {
+        recursive: true,
+        force: true,
+      });
+      await targetArtifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.generatedProject,
+        stage: "template.prepare",
+        absolutePath: targetGeneratedProjectDir,
+      });
+    }
   };
 
   for (const rehydratedJob of loadRehydratedJobs({
@@ -1105,6 +1332,7 @@ export const createJobEngine = ({
     }
 
     let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
+    const artifactStore = new StageArtifactStore({ jobDir });
 
     const appendDiagnostics = ({
       stage,
@@ -1135,7 +1363,6 @@ export const createJobEngine = ({
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
-      const artifactStore = new StageArtifactStore({ jobDir });
       const storybookActivation = activateSubmissionStorybookStaticDir({
         job,
         input,
@@ -1209,8 +1436,10 @@ export const createJobEngine = ({
       });
 
       job.status = "completed";
+      job.outcome = "success";
       job.finishedAt = nowIso();
       delete job.currentStage;
+      await syncPublicJobProjection({ job, artifactStore });
       const generationSummary = await artifactStore.getValue<{
         generatedPaths?: string[];
       }>(STAGE_ARTIFACT_KEYS.codegenSummary);
@@ -1277,15 +1506,37 @@ export const createJobEngine = ({
         collectedDiagnostics = mergedDiagnostics;
       }
 
-      job.status = "failed";
+      const shouldMarkPartial = await determinePartialStatus({
+        stage: typedError.stage,
+        artifactStore,
+      });
+      job.status = shouldMarkPartial ? "partial" : "failed";
+      job.outcome = shouldMarkPartial ? "partial" : "failed";
       job.finishedAt = nowIso();
       job.error = {
         code: typedError.code,
         stage: typedError.stage,
         message: typedError.message,
+        ...(typedError.retryable !== undefined
+          ? { retryable: typedError.retryable }
+          : {}),
+        ...(typedError.retryAfterMs !== undefined
+          ? { retryAfterMs: typedError.retryAfterMs }
+          : {}),
+        ...(typedError.fallbackMode !== undefined
+          ? { fallbackMode: typedError.fallbackMode }
+          : {}),
+        ...(typedError.retryTargets
+          ? {
+              retryTargets: typedError.retryTargets.map((target) => ({
+                ...target,
+              })),
+            }
+          : {}),
         ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {}),
       };
       job.currentStage = typedError.stage;
+      await syncPublicJobProjection({ job, artifactStore });
       pushRuntimeLog({
         job,
         logger: runtime.logger,
@@ -1583,10 +1834,12 @@ export const createJobEngine = ({
     }
 
     let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
+    const artifactStore = new StageArtifactStore({ jobDir });
 
     const sourceRecord = jobs.get(regenInput.sourceJobId);
     if (!sourceRecord) {
       job.status = "failed";
+      job.outcome = "failed";
       job.finishedAt = nowIso();
       job.error = {
         code: "E_REGEN_SOURCE_NOT_FOUND",
@@ -1640,7 +1893,6 @@ export const createJobEngine = ({
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
-      const artifactStore = new StageArtifactStore({ jobDir });
       await artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.regenerationSourceIr,
         stage: "ir.derive",
@@ -1732,8 +1984,10 @@ export const createJobEngine = ({
       });
 
       job.status = "completed";
+      job.outcome = "success";
       job.finishedAt = nowIso();
       delete job.currentStage;
+      await syncPublicJobProjection({ job, artifactStore });
       const generationSummary = await artifactStore.getValue<{
         generatedPaths?: string[];
       }>(STAGE_ARTIFACT_KEYS.codegenSummary);
@@ -1800,15 +2054,37 @@ export const createJobEngine = ({
         collectedDiagnostics = mergedDiagnostics;
       }
 
-      job.status = "failed";
+      const shouldMarkPartial = await determinePartialStatus({
+        stage: typedError.stage,
+        artifactStore,
+      });
+      job.status = shouldMarkPartial ? "partial" : "failed";
+      job.outcome = shouldMarkPartial ? "partial" : "failed";
       job.finishedAt = nowIso();
       job.error = {
         code: typedError.code,
         stage: typedError.stage,
         message: typedError.message,
+        ...(typedError.retryable !== undefined
+          ? { retryable: typedError.retryable }
+          : {}),
+        ...(typedError.retryAfterMs !== undefined
+          ? { retryAfterMs: typedError.retryAfterMs }
+          : {}),
+        ...(typedError.fallbackMode !== undefined
+          ? { fallbackMode: typedError.fallbackMode }
+          : {}),
+        ...(typedError.retryTargets
+          ? {
+              retryTargets: typedError.retryTargets.map((target) => ({
+                ...target,
+              })),
+            }
+          : {}),
         ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {}),
       };
       job.currentStage = typedError.stage;
+      await syncPublicJobProjection({ job, artifactStore });
       pushRuntimeLog({
         job,
         logger: runtime.logger,
@@ -1853,6 +2129,321 @@ export const createJobEngine = ({
     });
   };
 
+  const runRetryJob = async (
+    job: JobRecord,
+    retryInput: WorkspaceRetryInput,
+  ): Promise<void> => {
+    const sourceRecord = jobs.get(retryInput.sourceJobId);
+    if (!sourceRecord) {
+      job.status = "failed";
+      job.outcome = "failed";
+      job.finishedAt = nowIso();
+      job.error = {
+        code: "E_RETRY_SOURCE_NOT_FOUND",
+        stage: retryInput.retryStage,
+        message: `Source job '${retryInput.sourceJobId}' not found.`,
+      };
+      await persistTerminalSnapshot({ job });
+      return;
+    }
+
+    if (retryInput.retryStage === "figma.source") {
+      await runJob(job, reconstructRetrySubmissionInput({ sourceJob: sourceRecord }));
+      return;
+    }
+
+    job.status = "running";
+    job.startedAt = nowIso();
+    const jobAbortController = new AbortController();
+    job.abortController = jobAbortController;
+
+    const sourceInput = reconstructRetrySubmissionInput({
+      sourceJob: sourceRecord,
+    });
+    const fetchWithCancellation: typeof fetch = async (resource, init) => {
+      if (jobAbortController.signal.aborted) {
+        throw new DOMException("The operation was aborted.", "AbortError");
+      }
+      const existingSignal = init?.signal;
+      const mergedSignal =
+        existingSignal instanceof AbortSignal
+          ? AbortSignal.any([existingSignal, jobAbortController.signal])
+          : jobAbortController.signal;
+      return await runtime.fetchImpl(resource, {
+        ...init,
+        signal: mergedSignal,
+      });
+    };
+
+    const resolvedBrandTheme = sourceRecord.request.brandTheme;
+    const resolvedFormHandlingMode = sourceRecord.request.formHandlingMode;
+    const resolvedGenerationLocale = sourceRecord.request.generationLocale;
+    const resolvedFigmaSourceMode = sourceRecord.request.figmaSourceMode;
+    const resolvedCustomerBrandId = sourceRecord.request.customerBrandId;
+    const figmaFileKeyForDiagnostics =
+      resolvedFigmaSourceMode === "local_json"
+        ? undefined
+        : sourceRecord.request.figmaFileKey?.trim();
+
+    const jobDir = path.join(resolvedPaths.jobsRoot, job.jobId);
+    const generatedProjectDir = path.join(jobDir, "generated-app");
+    const figmaRawJsonFile = path.join(jobDir, "figma.raw.json");
+    const figmaJsonFile = path.join(jobDir, "figma.json");
+    const designIrFile = path.join(jobDir, "design-ir.json");
+    const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
+    const stageTimingsFile = path.join(jobDir, "stage-timings.json");
+    const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
+    const iconMapFilePath =
+      runtime.iconMapFilePath ??
+      path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
+    const designSystemFilePath =
+      runtime.designSystemFilePath ??
+      path.join(resolvedPaths.outputRoot, "design-system.json");
+    const irCacheDir = path.join(
+      resolvedPaths.outputRoot,
+      "cache",
+      "ir-derivation",
+    );
+
+    job.artifacts.jobDir = jobDir;
+    job.artifacts.generatedProjectDir = generatedProjectDir;
+    job.artifacts.figmaJsonFile = figmaJsonFile;
+    job.artifacts.designIrFile = designIrFile;
+    job.artifacts.figmaAnalysisFile = figmaAnalysisFile;
+    job.artifacts.stageTimingsFile = stageTimingsFile;
+    if (runtime.previewEnabled) {
+      job.artifacts.reproDir = reproDir;
+      job.preview.url = `${resolveBaseUrl()}/workspace/repros/${job.jobId}/`;
+    }
+
+    let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
+    const appendDiagnostics = ({
+      stage,
+      diagnostics,
+    }: {
+      stage: WorkspaceJobStageName;
+      diagnostics: PipelineDiagnosticInput[];
+    }): void => {
+      if (diagnostics.length === 0) {
+        return;
+      }
+      const normalized = createPipelineError({
+        code: "E_PIPELINE_DIAGNOSTICS_INTERNAL",
+        stage,
+        message: "Collected pipeline diagnostics.",
+        diagnostics,
+        limits: runtime.pipelineDiagnosticLimits,
+      }).diagnostics;
+      collectedDiagnostics = mergePipelineDiagnostics({
+        ...(collectedDiagnostics ? { first: collectedDiagnostics } : {}),
+        ...(normalized ? { second: normalized } : {}),
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics,
+      });
+    };
+
+    try {
+      await mkdir(jobDir, { recursive: true });
+      await mkdir(resolvedPaths.reprosRoot, { recursive: true });
+
+      const artifactStore = new StageArtifactStore({ jobDir });
+      await seedRetryArtifacts({
+        retryInput,
+        sourceJob: sourceRecord,
+        targetArtifactStore: artifactStore,
+        targetGeneratedProjectDir: generatedProjectDir,
+      });
+
+      const resolvedCustomerProfile = await activateRegenerationCustomerProfile({
+        job,
+        artifactStore,
+        sourceJob: sourceRecord,
+      });
+      const requestedStorybookStaticDir = normalizeOptionalInputString(
+        sourceRecord.request.storybookStaticDir,
+      );
+
+      const context: PipelineExecutionContext = {
+        mode: "retry",
+        job,
+        input: sourceInput,
+        retryInput,
+        sourceJob: sourceRecord,
+        runtime,
+        resolvedPaths,
+        resolvedWorkspaceRoot,
+        resolveBaseUrl,
+        jobAbortController,
+        fetchWithCancellation,
+        paths: {
+          jobDir,
+          generatedProjectDir,
+          figmaRawJsonFile,
+          figmaJsonFile,
+          designIrFile,
+          figmaAnalysisFile,
+          stageTimingsFile,
+          reproDir,
+          iconMapFilePath,
+          designSystemFilePath,
+          irCacheDir,
+          templateRoot: TEMPLATE_ROOT,
+          templateCopyFilter: TEMPLATE_COPY_FILTER,
+        },
+        artifactStore,
+        resolvedBrandTheme,
+        ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
+        resolvedFigmaSourceMode,
+        resolvedFormHandlingMode,
+        ...(requestedStorybookStaticDir ? { requestedStorybookStaticDir } : {}),
+        ...(resolvedCustomerProfile ? { resolvedCustomerProfile } : {}),
+        generationLocaleResolution: { locale: resolvedGenerationLocale },
+        resolvedGenerationLocale,
+        appendDiagnostics,
+        getCollectedDiagnostics: () => collectedDiagnostics,
+        syncPublicJobProjection: async () => {
+          await syncPublicJobProjection({ job, artifactStore });
+        },
+        ...(figmaFileKeyForDiagnostics ? { figmaFileKeyForDiagnostics } : {}),
+      };
+
+      const orchestrator = new PipelineOrchestrator({
+        toPipelineError: ({ error, fallbackStage }) =>
+          toPipelineError({
+            error,
+            fallbackStage,
+            limits: runtime.pipelineDiagnosticLimits,
+          }),
+        isAbortLikeError,
+      });
+      await orchestrator.execute({
+        context,
+        plan: buildRetryPipelinePlan({ retryStage: retryInput.retryStage }),
+      });
+
+      job.status = "completed";
+      job.outcome = "success";
+      job.finishedAt = nowIso();
+      delete job.currentStage;
+      await syncPublicJobProjection({ job, artifactStore });
+      const generationSummary = await artifactStore.getValue<{
+        generatedPaths?: string[];
+      }>(STAGE_ARTIFACT_KEYS.codegenSummary);
+      pushRuntimeLog({
+        job,
+        logger: runtime.logger,
+        level: "info",
+        message:
+          `Retry job completed. Generated output at ${generatedProjectDir} ` +
+          `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`,
+      });
+      await persistTerminalSnapshot({
+        job,
+        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
+      });
+    } catch (error) {
+      if (isPipelineCancellationError(error)) {
+        job.status = "canceled";
+        job.finishedAt = nowIso();
+        job.currentStage = error.stage;
+        if (!job.cancellation) {
+          job.cancellation = {
+            requestedAt: nowIso(),
+            reason: error.message,
+            requestedBy: "api",
+          };
+        }
+        job.cancellation.completedAt = nowIso();
+        markQueuedStagesSkippedAfterCancellation({
+          job,
+          reason: error.message,
+        });
+        try {
+          await persistTerminalSnapshot({
+            job,
+            ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
+          });
+        } catch {
+          // Ignore
+        }
+        return;
+      }
+
+      const artifactStore = new StageArtifactStore({ jobDir });
+      const typedError = toPipelineError({
+        error,
+        fallbackStage: retryInput.retryStage,
+        limits: runtime.pipelineDiagnosticLimits,
+      });
+      const mergedDiagnostics = mergePipelineDiagnostics({
+        ...(typedError.diagnostics ? { first: typedError.diagnostics } : {}),
+        ...(collectedDiagnostics ? { second: collectedDiagnostics } : {}),
+        max: runtime.pipelineDiagnosticLimits.maxDiagnostics,
+      });
+      if (mergedDiagnostics) {
+        collectedDiagnostics = mergedDiagnostics;
+      }
+      const shouldMarkPartial = await determinePartialStatus({
+        stage: typedError.stage,
+        artifactStore,
+      });
+      job.status = shouldMarkPartial ? "partial" : "failed";
+      job.outcome = shouldMarkPartial ? "partial" : "failed";
+      job.finishedAt = nowIso();
+      job.error = {
+        code: typedError.code,
+        stage: typedError.stage,
+        message: typedError.message,
+        ...(typedError.retryable !== undefined
+          ? { retryable: typedError.retryable }
+          : {}),
+        ...(typedError.retryAfterMs !== undefined
+          ? { retryAfterMs: typedError.retryAfterMs }
+          : {}),
+        ...(typedError.fallbackMode !== undefined
+          ? { fallbackMode: typedError.fallbackMode }
+          : {}),
+        ...(typedError.retryTargets
+          ? {
+              retryTargets: typedError.retryTargets.map((target) => ({
+                ...target,
+              })),
+            }
+          : {}),
+        ...(mergedDiagnostics ? { diagnostics: mergedDiagnostics } : {}),
+      };
+      job.currentStage = typedError.stage;
+      await syncPublicJobProjection({ job, artifactStore });
+      await persistTerminalSnapshot({
+        job,
+        ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
+      });
+    } finally {
+      delete job.abortController;
+    }
+  };
+
+  const executeRetryJob = ({
+    job,
+    input,
+  }: {
+    job: JobRecord;
+    input: WorkspaceRetryInput;
+  }): void => {
+    if (runningJobIds.has(job.jobId)) {
+      return;
+    }
+    runningJobIds.add(job.jobId);
+    refreshQueueSnapshots();
+    queueMicrotask(() => {
+      void runRetryJob(job, input).finally(() => {
+        runningJobIds.delete(job.jobId);
+        refreshQueueSnapshots();
+        drainQueuedJobs();
+        refreshQueueSnapshots();
+      });
+    });
+  };
+
   const drainQueuedJobs = (): void => {
     while (
       runningJobIds.size < runtime.maxConcurrentJobs &&
@@ -1866,10 +2457,12 @@ export const createJobEngine = ({
       const nextJob = jobs.get(nextJobId);
       const nextInput = queuedJobInputs.get(nextJobId);
       const nextRegenInput = queuedRegenInputs.get(nextJobId);
+      const nextRetryInput = queuedRetryInputs.get(nextJobId);
 
       if (!nextJob || nextJob.status !== "queued") {
         queuedJobInputs.delete(nextJobId);
         queuedRegenInputs.delete(nextJobId);
+        queuedRetryInputs.delete(nextJobId);
         continue;
       }
 
@@ -1882,6 +2475,12 @@ export const createJobEngine = ({
       if (nextRegenInput) {
         queuedRegenInputs.delete(nextJobId);
         executeRegenerationJob({ job: nextJob, input: nextRegenInput });
+        continue;
+      }
+
+      if (nextRetryInput) {
+        queuedRetryInputs.delete(nextJobId);
+        executeRetryJob({ job: nextJob, input: nextRetryInput });
         continue;
       }
     }
@@ -1941,6 +2540,7 @@ export const createJobEngine = ({
       queue: toQueueSnapshot({ jobId }),
       lineage: {
         sourceJobId: input.sourceJobId,
+        kind: "regeneration",
         overrideCount: input.overrides.length,
         ...(input.draftId ? { draftId: input.draftId } : {}),
         ...(input.baseFingerprint
@@ -1974,6 +2574,109 @@ export const createJobEngine = ({
     return {
       jobId,
       sourceJobId: input.sourceJobId,
+      status: "queued" as const,
+      acceptedModes: toAcceptedModes({
+        figmaSourceMode: sourceJob.request.figmaSourceMode,
+      }),
+    };
+  };
+
+  const submitRetry = (input: WorkspaceRetryInput) => {
+    const sourceJob = jobs.get(input.sourceJobId);
+    if (!sourceJob) {
+      const err = new Error(`Source job '${input.sourceJobId}' not found.`);
+      (err as Error & { code: string }).code = "E_RETRY_SOURCE_NOT_FOUND";
+      throw err;
+    }
+    if (sourceJob.status !== "failed" && sourceJob.status !== "partial") {
+      const err = new Error(
+        `Source job '${input.sourceJobId}' has status '${sourceJob.status}' — only failed or partial jobs can be retried.`,
+      );
+      (err as Error & { code: string }).code = "E_RETRY_SOURCE_NOT_FAILED";
+      throw err;
+    }
+    if (!isWorkspaceJobRetryStage(input.retryStage)) {
+      const err = new Error(
+        `Retry stage '${String(input.retryStage)}' is not supported.`,
+      );
+      (err as Error & { code: string }).code = "E_RETRY_STAGE_INVALID";
+      throw err;
+    }
+    if (
+      input.retryTargets !== undefined &&
+      input.retryStage !== "codegen.generate"
+    ) {
+      const err = new Error(
+        "retryTargets are only supported when retryStage=codegen.generate.",
+      );
+      (err as Error & { code: string }).code = "E_RETRY_TARGETS_INVALID";
+      throw err;
+    }
+    if (
+      runningJobIds.size >= runtime.maxConcurrentJobs &&
+      queuedJobIds.length >= runtime.maxQueuedJobs
+    ) {
+      throw new JobQueueBackpressureError({
+        queue: toQueueSnapshot(),
+      });
+    }
+
+    const jobId = randomUUID();
+    const retryTargets =
+      input.retryTargets?.map((entry) => entry.trim()).filter(Boolean) ?? [];
+    const job = createQueuedJobRecord({
+      jobId,
+      request: {
+        ...sourceJob.request,
+      },
+      lineage: {
+        sourceJobId: input.sourceJobId,
+        kind: "retry",
+        overrideCount: 0,
+        retryStage: input.retryStage,
+        ...(retryTargets.length > 0 ? { retryTargets } : {}),
+      },
+    });
+
+    jobs.set(jobId, job);
+    pushRuntimeLog({
+      job,
+      logger: runtime.logger,
+      level: "info",
+      message:
+        `Retry job accepted (source=${input.sourceJobId}, stage=${input.retryStage}` +
+        `${retryTargets.length > 0 ? `, targets=${retryTargets.length}` : ""}).`,
+    });
+
+    if (runningJobIds.size < runtime.maxConcurrentJobs) {
+      executeRetryJob({
+        job,
+        input: {
+          sourceJobId: input.sourceJobId,
+          retryStage: input.retryStage,
+          ...(retryTargets.length > 0 ? { retryTargets } : {}),
+        },
+      });
+    } else {
+      queuedJobIds.push(jobId);
+      queuedRetryInputs.set(jobId, {
+        sourceJobId: input.sourceJobId,
+        retryStage: input.retryStage,
+        ...(retryTargets.length > 0 ? { retryTargets } : {}),
+      });
+      pushRuntimeLog({
+        job,
+        logger: runtime.logger,
+        level: "info",
+        message: `Retry job queued with position ${queuedJobIds.length}.`,
+      });
+      refreshQueueSnapshots();
+    }
+
+    return {
+      jobId,
+      sourceJobId: input.sourceJobId,
+      retryStage: input.retryStage,
       status: "queued" as const,
       acceptedModes: toAcceptedModes({
         figmaSourceMode: sourceJob.request.figmaSourceMode,
@@ -2131,6 +2834,7 @@ export const createJobEngine = ({
 
     if (
       job.status === "completed" ||
+      job.status === "partial" ||
       job.status === "failed" ||
       job.status === "canceled"
     ) {
@@ -2158,6 +2862,7 @@ export const createJobEngine = ({
       }
       queuedJobInputs.delete(jobId);
       queuedRegenInputs.delete(jobId);
+      queuedRetryInputs.delete(jobId);
       job.status = "canceled";
       job.finishedAt = nowIso();
       job.cancellation.completedAt = nowIso();
@@ -2207,6 +2912,7 @@ export const createJobEngine = ({
     const result: WorkspaceJobResult = {
       jobId: job.jobId,
       status: job.status,
+      ...(job.outcome ? { outcome: job.outcome } : {}),
       summary: toJobSummary(job),
       artifacts: { ...job.artifacts },
       preview: { ...job.preview },
@@ -2236,8 +2942,34 @@ export const createJobEngine = ({
     if (job.gitPr) {
       result.gitPr = { ...job.gitPr };
     }
+    if (job.inspector) {
+      result.inspector = {
+        ...job.inspector,
+        ...(job.inspector.retryableStages
+          ? { retryableStages: [...job.inspector.retryableStages] }
+          : {}),
+        ...(job.inspector.retryTargets
+          ? {
+              retryTargets: job.inspector.retryTargets.map((target) => ({
+                ...target,
+              })),
+            }
+          : {}),
+        stages: job.inspector.stages.map((stage) => ({
+          ...stage,
+          ...(stage.retryTargets
+            ? { retryTargets: stage.retryTargets.map((target) => ({ ...target })) }
+            : {}),
+        })),
+      };
+    }
     if (job.error) {
-      result.error = { ...job.error };
+      result.error = {
+        ...job.error,
+        ...(job.error.retryTargets
+          ? { retryTargets: job.error.retryTargets.map((target) => ({ ...target })) }
+          : {}),
+      };
     }
 
     return result;
@@ -2661,6 +3393,7 @@ export const createJobEngine = ({
   return {
     submitJob,
     submitRegeneration,
+    submitRetry,
     createPrFromJob,
     previewLocalSync,
     applyLocalSync,

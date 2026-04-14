@@ -16,9 +16,12 @@ import type {
   WorkspaceJobCancellation,
   WorkspaceJobError,
   WorkspaceJobInput,
+  WorkspaceJobInspector,
   WorkspaceJobLineage,
   WorkspaceJobLog,
+  WorkspaceJobOutcome,
   WorkspaceJobQueueState,
+  WorkspaceJobRetryTarget,
   WorkspaceJobResult,
   WorkspaceJobRuntimeStatus,
   WorkspaceRouterMode,
@@ -29,6 +32,8 @@ import type {
   WorkspaceVisualQualityReferenceMode,
   WorkspaceRegenerationAccepted,
   WorkspaceRegenerationInput,
+  WorkspaceRetryAccepted,
+  WorkspaceRetryInput,
   WorkspaceRemapSuggestInput,
   WorkspaceRemapSuggestResult,
   WorkspaceStaleDraftCheckResult,
@@ -83,6 +88,7 @@ export interface FigmaFetchResult {
 export interface JobRecord {
   jobId: string;
   status: WorkspaceJobRuntimeStatus;
+  outcome?: WorkspaceJobOutcome;
   currentStage?: WorkspaceJobStageName;
   submittedAt: string;
   startedAt?: string;
@@ -105,12 +111,17 @@ export interface JobRecord {
   compositeQuality?: WorkspaceCompositeQualityReport;
   confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
+  inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
 }
 
 export interface WorkspacePipelineError extends Error {
   code: string;
   stage: WorkspaceJobStageName;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  fallbackMode?: "none" | "rest" | "hybrid_rest";
+  retryTargets?: WorkspaceJobRetryTarget[];
   diagnostics?: WorkspaceJobDiagnostic[];
 }
 
@@ -247,6 +258,7 @@ export interface JobEngine {
   submitRegeneration: (
     input: WorkspaceRegenerationInput,
   ) => WorkspaceRegenerationAccepted;
+  submitRetry: (input: WorkspaceRetryInput) => WorkspaceRetryAccepted;
   createPrFromJob: (input: {
     jobId: string;
     prInput: WorkspaceCreatePrInput;

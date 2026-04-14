@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { exportImageAssetsFromFigma } from "../image-export.js";
 import { createPipelineError, getErrorMessage } from "../errors.js";
 import type { GenerationDiffContext } from "../generation-diff.js";
@@ -33,6 +33,35 @@ export interface CodegenGenerateStageInput {
   boardKeySeed: string;
   componentMappings?: WorkspaceComponentMappingRule[];
   customerProfileDesignSystemConfigSource?: "storybook_first";
+  retryTargets?: string[];
+}
+
+export interface CodegenFailedTarget {
+  kind: "generated_file";
+  stage: "codegen.generate";
+  targetId: string;
+  displayName: string;
+  filePath: string;
+  emittedScreenId: string;
+}
+
+export interface CodegenGenerateSummary {
+  generatedPaths: string[];
+  failedTargets?: CodegenFailedTarget[];
+  generationMetrics?: Record<string, unknown>;
+  themeApplied?: boolean;
+  screenApplied?: number;
+  screenTotal?: number;
+  screenRejected?: unknown[];
+  llmWarnings?: Array<{ code: string; message: string }>;
+  mappingCoverage?: {
+    usedMappings: number;
+    fallbackNodes: number;
+    totalCandidateNodes: number;
+  };
+  mappingDiagnostics?: Record<string, unknown>;
+  mappingWarnings?: ComponentMappingWarning[];
+  iconWarnings?: Array<{ code?: string; message: string }>;
 }
 
 interface CodegenGenerateServiceDeps {
@@ -232,6 +261,40 @@ const writeManifestAtomically = async ({
   const temporaryPath = `${manifestPath}.tmp`;
   await writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
   await rename(temporaryPath, manifestPath);
+};
+
+const collectGeneratedPaths = async ({
+  projectDir,
+  currentDir = projectDir,
+}: {
+  projectDir: string;
+  currentDir?: string;
+}): Promise<string[]> => {
+  let entries;
+  try {
+    entries = await readdir(currentDir, { withFileTypes: true, encoding: "utf8" });
+  } catch {
+    return [];
+  }
+  const generatedPaths: string[] = [];
+  for (const entry of entries) {
+    const absolutePath = path.join(currentDir, entry.name);
+    if (entry.isDirectory()) {
+      generatedPaths.push(
+        ...(await collectGeneratedPaths({
+          projectDir,
+          currentDir: absolutePath,
+        })),
+      );
+      continue;
+    }
+    if (!entry.isFile()) {
+      continue;
+    }
+    generatedPaths.push(path.relative(projectDir, absolutePath).split(path.sep).join("/"));
+  }
+  generatedPaths.sort((left, right) => left.localeCompare(right));
+  return generatedPaths;
 };
 
 export const createCodegenGenerateService = ({
@@ -520,9 +583,59 @@ export const createCodegenGenerateService = ({
         }
       }
 
+      const fullEmittedScreenResolution = resolveEmittedScreenTargets({ ir });
+      const requestedRetryTargets = input.retryTargets
+        ?.map((value) => value.trim())
+        .filter((value) => value.length > 0);
+      const selectedTargets =
+        requestedRetryTargets && requestedRetryTargets.length > 0
+          ? fullEmittedScreenResolution.emittedTargets.filter((target) => {
+              const identity = fullEmittedScreenResolution.emittedIdentitiesByScreenId.get(
+                target.emittedScreenId
+              );
+              return (
+                requestedRetryTargets.includes(target.emittedScreenId) ||
+                (identity ? requestedRetryTargets.includes(identity.filePath) : false)
+              );
+            })
+          : fullEmittedScreenResolution.emittedTargets;
+
+      if (requestedRetryTargets && requestedRetryTargets.length > 0 && selectedTargets.length === 0) {
+        throw createPipelineError({
+          code: "E_RETRY_TARGETS_INVALID",
+          stage: "codegen.generate",
+          message: "No requested generate-stage retry targets matched the persisted emitted screen targets.",
+          retryable: false,
+          limits: context.runtime.pipelineDiagnosticLimits
+        });
+      }
+
+      const selectedScreenIds = new Set<string>();
+      const selectedFamilyIds = new Set<string>();
+      for (const target of selectedTargets) {
+        selectedScreenIds.add(target.screen.id);
+        if (target.family) {
+          selectedFamilyIds.add(target.family.familyId);
+          for (const memberScreenId of target.family.memberScreenIds) {
+            selectedScreenIds.add(memberScreenId);
+          }
+        }
+      }
+
+      const generationIr =
+        selectedTargets.length === fullEmittedScreenResolution.emittedTargets.length
+          ? ir
+          : {
+              ...ir,
+              screens: ir.screens.filter((screen) => selectedScreenIds.has(screen.id)),
+              screenVariantFamilies: (ir.screenVariantFamilies ?? []).filter((family) =>
+                selectedFamilyIds.has(family.familyId)
+              )
+            };
+
       const generator = generateArtifactsStreamingFn({
         projectDir: context.paths.generatedProjectDir,
-        ir,
+        ir: generationIr,
         ...(resolvedComponentMappings ? { componentMappings: resolvedComponentMappings } : {}),
         iconMapFilePath: context.paths.iconMapFilePath,
         designSystemFilePath: context.paths.designSystemFilePath,
@@ -554,7 +667,7 @@ export const createCodegenGenerateService = ({
           });
         }
       });
-      const emittedScreenResolution = resolveEmittedScreenTargets({ ir });
+      const emittedScreenResolution = resolveEmittedScreenTargets({ ir: generationIr });
       const manifestAssociationNodeIdsByScreenId = buildManifestAssociationNodeIdsByScreenId({
         ir,
         emittedScreenResolution
@@ -667,20 +780,70 @@ export const createCodegenGenerateService = ({
         await context.syncPublicJobProjection();
       };
 
-      let iterResult = await generator.next();
-      while (!iterResult.done) {
-        const event: StreamingArtifactEvent = iterResult.value;
-        if (event.type === "progress") {
-          context.log({
-            level: "info",
-            message: `Screen ${event.screenIndex}/${event.screenCount} completed: '${event.screenName}'`
-          });
+      let generationSummary: CodegenGenerateSummary | undefined;
+      try {
+        let iterResult = await generator.next();
+        while (!iterResult.done) {
+          const event: StreamingArtifactEvent = iterResult.value;
+          if (event.type === "progress") {
+            context.log({
+              level: "info",
+              message: `Screen ${event.screenIndex}/${event.screenCount} completed: '${event.screenName}'`
+            });
+          }
+          await publishStreamingArtifacts({ event });
+          iterResult = await generator.next();
         }
-        await publishStreamingArtifacts({ event });
-        iterResult = await generator.next();
+        generationSummary = iterResult.value as unknown as CodegenGenerateSummary;
+      } catch (error) {
+        const generatedPaths = await collectGeneratedPaths({
+          projectDir: context.paths.generatedProjectDir
+        });
+        if (generatedPaths.length === 0) {
+          throw error;
+        }
+
+        await publishGeneratedProject();
+        const failedTargets: CodegenFailedTarget[] = emittedScreenResolution.emittedTargets
+          .filter((target) => !publishedScreenIds.has(target.screen.id))
+          .flatMap((target) => {
+            const identity = emittedScreenResolution.emittedIdentitiesByScreenId.get(target.emittedScreenId);
+            if (!identity) {
+              return [];
+            }
+            return [
+              {
+                kind: "generated_file" as const,
+                stage: "codegen.generate" as const,
+                targetId: target.emittedScreenId,
+                displayName: target.screen.name,
+                filePath: identity.filePath,
+                emittedScreenId: target.emittedScreenId
+              }
+            ];
+          });
+        generationSummary = {
+          generatedPaths,
+          failedTargets
+        };
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.codegenSummary,
+          stage: "codegen.generate",
+          value: generationSummary
+        });
+        throw createPipelineError({
+          code: "E_CODEGEN_PARTIAL",
+          stage: "codegen.generate",
+          message:
+            `Code generation produced ${generatedPaths.length} file(s) but left ` +
+            `${failedTargets.length} generated target(s) incomplete.`,
+          cause: error,
+          retryable: true,
+          retryTargets: failedTargets,
+          limits: context.runtime.pipelineDiagnosticLimits
+        });
       }
 
-      const generationSummary = iterResult.value;
       await publishGeneratedProject();
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.codegenSummary,
@@ -688,7 +851,7 @@ export const createCodegenGenerateService = ({
         value: generationSummary
       });
 
-      if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
+      if (generationSummary.generatedPaths?.includes("generation-metrics.json")) {
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.generationMetrics,
           stage: "codegen.generate",

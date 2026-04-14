@@ -55,6 +55,7 @@ export interface FigmaDesignContext {
   assets: Record<string, string>;
   screenshot?: string;
   metadata?: FigmaNodeMetadata;
+  fallbackMode?: "none" | "rest";
   fileKey: string;
   nodeId: string;
   resolvedAt: string;
@@ -150,6 +151,13 @@ const parseRetryAfterMs = (value: string | null): number | undefined => {
     return undefined;
   }
   return Math.max(0, asDate - Date.now());
+};
+
+const retryAfterArg = (
+  value: string | null,
+): { retryAfterMs: number } | Record<string, never> => {
+  const retryAfterMs = parseRetryAfterMs(value);
+  return retryAfterMs !== undefined ? { retryAfterMs } : {};
 };
 
 const isAbortError = (error: unknown): boolean => {
@@ -457,15 +465,29 @@ const callMcpTool = async ({
             code: errorCode,
             stage: STAGE,
             message: `MCP ${toolName} returned HTTP ${String(response.status)}${actionHint}`,
+            retryable: true,
+            ...(response.status === 429
+              ? retryAfterArg(response.headers.get("retry-after"))
+              : {}),
             ...limits,
           });
-          await waitFor(toRetryDelay({ attempt }), signal);
+          await waitFor(
+            response.status === 429
+              ? parseRetryAfterMs(response.headers.get("retry-after")) ??
+                  toRetryDelay({ attempt })
+              : toRetryDelay({ attempt }),
+            signal,
+          );
           continue;
         }
         throw createPipelineError({
           code: errorCode,
           stage: STAGE,
           message: `MCP ${toolName} failed with HTTP ${String(response.status)}${actionHint}`,
+          retryable: isRetryableStatus(response.status),
+          ...(response.status === 429
+            ? retryAfterArg(response.headers.get("retry-after"))
+            : {}),
           ...limits,
         });
       }
@@ -980,6 +1002,8 @@ const fetchDesignContextViaRest = async ({
         stage: STAGE,
         message: `Figma REST fallback request failed: ${getErrorMessage(error)}`,
         cause: error,
+        retryable: true,
+        fallbackMode: "rest",
         ...limits,
       });
       if (attempt >= maxRetries) {
@@ -1001,6 +1025,11 @@ const fetchDesignContextViaRest = async ({
         code: classifyRestStatus(response.status),
         stage: STAGE,
         message: `Figma REST fallback failed with HTTP ${String(response.status)}`,
+        retryable: response.status === 429 || response.status >= 500,
+        fallbackMode: "rest",
+        ...(response.status === 429
+          ? retryAfterArg(response.headers.get("retry-after"))
+          : {}),
         ...limits,
       });
       if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
@@ -1024,6 +1053,7 @@ const fetchDesignContextViaRest = async ({
         code: "E_FIGMA_REST_NOT_FOUND",
         stage: STAGE,
         message: `Figma REST fallback did not return a document for node '${nodeId}'`,
+        fallbackMode: "rest",
         ...limits,
       });
     }
@@ -1105,6 +1135,8 @@ const fetchScreenshotViaRest = async ({
         stage: STAGE,
         message: `Figma REST screenshot fallback request failed: ${getErrorMessage(error)}`,
         cause: error,
+        retryable: true,
+        fallbackMode: "rest",
         ...limits,
       });
       if (attempt >= maxRetries) {
@@ -1126,6 +1158,11 @@ const fetchScreenshotViaRest = async ({
         code: classifyRestStatus(response.status),
         stage: STAGE,
         message: `Figma REST screenshot fallback failed with HTTP ${String(response.status)}`,
+        retryable: response.status === 429 || response.status >= 500,
+        fallbackMode: "rest",
+        ...(response.status === 429
+          ? retryAfterArg(response.headers.get("retry-after"))
+          : {}),
         ...limits,
       });
       if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
@@ -1332,6 +1369,7 @@ export const resolveFigmaDesignContext = async (
       code: designContext.code ?? "",
       assets: designContext.assets ?? {},
       ...(screenshotUrl ? { screenshot: screenshotUrl } : {}),
+      fallbackMode: restFallbackUsed ? "rest" : "none",
       ...(xml.length > 0
         ? { metadata: { xml, nodeCount, rootNodeType, rootNodeName } }
         : {}),

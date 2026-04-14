@@ -85,6 +85,7 @@ function getColumnCopy(state: InspectorBootstrapState): ColumnCopy {
         right: "Generating code",
       };
     case "ready":
+    case "partial":
       return {
         left: "Ready — loading Inspector...",
         center: "Ready — loading Inspector...",
@@ -108,7 +109,8 @@ function isPasteDisabled(state: InspectorBootstrapState): boolean {
     state.kind === "pasting" ||
     state.kind === "queued" ||
     state.kind === "processing" ||
-    state.kind === "ready"
+    state.kind === "ready" ||
+    state.kind === "partial"
   );
 }
 

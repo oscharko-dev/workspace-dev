@@ -1,6 +1,7 @@
-import { useState, type JSX } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { BACKEND_STAGES } from "./paste-pipeline";
 import type {
+  PipelineFallbackMode,
   PartialImportStats,
   PipelineError,
   PipelineStage,
@@ -14,7 +15,8 @@ export interface PipelineStatusBarProps {
   stageProgress: Record<PipelineStage, StageStatus>;
   partialStats?: PartialImportStats;
   canRetry: boolean;
-  onRetry?: () => void;
+  fallbackMode?: PipelineFallbackMode;
+  onRetry?: (stage?: PipelineStage, targetIds?: string[]) => void;
   /** Called when the user clicks "Copy Report". Caller provides the report string. */
   onCopyReport?: () => void;
 }
@@ -56,16 +58,56 @@ function StageStatusIcon({
   );
 }
 
+function useRetryCountdown(errors: readonly PipelineError[]): number | undefined {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (
+      !errors.some((error) => {
+        return error.retryAvailableAtMs !== undefined || error.retryAfterMs !== undefined;
+      })
+    ) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      setNow(Date.now());
+    }, 250);
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, [errors]);
+
+  let maxRemainingMs: number | undefined;
+  for (const error of errors) {
+    const remainingMs =
+      error.retryAvailableAtMs !== undefined
+        ? Math.max(0, error.retryAvailableAtMs - now)
+        : error.retryAfterMs;
+    if (remainingMs === undefined) {
+      continue;
+    }
+    if (maxRemainingMs === undefined || remainingMs > maxRemainingMs) {
+      maxRemainingMs = remainingMs;
+    }
+  }
+  return maxRemainingMs;
+}
+
 export function PipelineStatusBar({
   stage,
   errors,
   stageProgress,
   partialStats,
   canRetry,
+  fallbackMode,
   onRetry,
   onCopyReport,
 }: PipelineStatusBarProps): JSX.Element {
   const [expanded, setExpanded] = useState(false);
+  const retryRemainingMs = useRetryCountdown(errors);
+  const retryBlocked =
+    retryRemainingMs !== undefined && retryRemainingMs > 0 && canRetry;
+  const firstRetryableError = errors.find((error) => error.retryable);
 
   const summaryText =
     stage === "partial"
@@ -86,14 +128,44 @@ export function PipelineStatusBar({
           ⚠
         </span>
         <span className="text-amber-400">{summaryText}</span>
+        {fallbackMode === "rest" ? (
+          <span
+            data-testid="pipeline-status-bar-fallback-mode"
+            className="rounded border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300"
+          >
+            Figma REST fallback active
+          </span>
+        ) : null}
+        {retryRemainingMs !== undefined && retryRemainingMs > 0 ? (
+          <span
+            data-testid="pipeline-status-bar-retry-countdown"
+            className="text-[10px] text-white/45"
+          >
+            Retry available in {Math.ceil(retryRemainingMs / 1000)}s
+          </span>
+        ) : null}
 
         <div className="ml-auto flex items-center gap-2">
           {canRetry && onRetry ? (
             <button
               type="button"
               data-testid="pipeline-status-bar-retry"
-              onClick={onRetry}
-              className="cursor-pointer rounded border border-amber-500/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/10"
+              onClick={() => {
+                if (retryBlocked) {
+                  return;
+                }
+                const targetIds = firstRetryableError?.retryTargets
+                  ?.map((target) => target.id)
+                  .filter((id) => id.length > 0);
+                onRetry(
+                  firstRetryableError?.stage,
+                  targetIds !== undefined && targetIds.length > 0
+                    ? targetIds
+                    : undefined,
+                );
+              }}
+              disabled={retryBlocked}
+              className="rounded border border-amber-500/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/10 disabled:cursor-default disabled:opacity-50"
             >
               Retry
             </button>

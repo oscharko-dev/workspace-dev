@@ -7,6 +7,7 @@ import {
 import {
   usePastePipeline,
   type PipelineError,
+  type PipelineRetryRequest,
   type PipelineStage,
 } from "./paste-pipeline";
 import type { PastePipelineState } from "./paste-pipeline";
@@ -71,7 +72,7 @@ export interface UseInspectorBootstrapResult {
   submitUrl(fileKey: string, nodeId: string | null): void;
   confirmIntent(intent: ImportIntent): void;
   dismissIntent(): void;
-  retry(): void;
+  retry(stage?: PipelineStage, targetIds?: string[]): void;
   reset(): void;
   reportInputError(code: string): void;
   jobId: string | null;
@@ -117,6 +118,7 @@ function toBootstrapFailure(
 function deriveBootstrapState({
   pipelineStage,
   pipelineError,
+  pipelineFallbackMode,
   detectedPaste,
   jobId,
   jobStatus,
@@ -125,6 +127,7 @@ function deriveBootstrapState({
 }: {
   pipelineStage: ReturnType<typeof usePastePipeline>["state"]["stage"];
   pipelineError: PipelineError | null;
+  pipelineFallbackMode: PastePipelineState["fallbackMode"];
   detectedPaste: DetectedPaste | null;
   jobId: string | null;
   jobStatus: ReturnType<typeof usePastePipeline>["state"]["jobStatus"];
@@ -141,21 +144,31 @@ function deriveBootstrapState({
     };
   }
 
-  const failure = localFailure ?? toBootstrapFailure(pipelineError);
+  if (pipelineStage === "ready" && jobId && previewUrl) {
+    return { kind: "ready", jobId, previewUrl };
+  }
+
+  if (pipelineStage === "partial" && jobId !== null) {
+    return {
+      kind: "partial",
+      jobId,
+      previewUrl: previewUrl ?? "",
+      ...(pipelineFallbackMode !== undefined
+        ? { fallbackMode: pipelineFallbackMode }
+        : {}),
+    };
+  }
+
+  const failure =
+    pipelineStage === "partial"
+      ? localFailure
+      : localFailure ?? toBootstrapFailure(pipelineError);
   if (failure !== null) {
     return {
       kind: "failed",
       reason: failure.reason,
       retryable: failure.retryable,
     };
-  }
-
-  if (pipelineStage === "ready" && jobId && previewUrl) {
-    return { kind: "ready", jobId, previewUrl };
-  }
-
-  if (pipelineStage === "partial" && jobId !== null) {
-    return { kind: "ready", jobId, previewUrl: previewUrl ?? "" };
   }
 
   if (jobId && jobStatus === "queued") {
@@ -185,7 +198,7 @@ export function useInspectorBootstrap(
   const [localFailure, setLocalFailure] = useState<FailedState | null>(null);
 
   const pipelineError =
-    pipeline.state.stage === "error"
+    pipeline.state.stage === "error" || pipeline.state.stage === "partial"
       ? (pipeline.state.errors[pipeline.state.errors.length - 1] ?? null)
       : null;
 
@@ -197,6 +210,7 @@ export function useInspectorBootstrap(
       deriveBootstrapState({
         pipelineStage: pipeline.state.stage,
         pipelineError,
+        pipelineFallbackMode: pipeline.state.fallbackMode,
         detectedPaste,
         jobId,
         jobStatus: pipeline.state.jobStatus,
@@ -207,6 +221,7 @@ export function useInspectorBootstrap(
       detectedPaste,
       jobId,
       localFailure,
+      pipeline.state.fallbackMode,
       pipeline.state.jobStatus,
       pipeline.state.stage,
       pipelineError,
@@ -336,11 +351,20 @@ export function useInspectorBootstrap(
       setDetectedPaste(null);
     },
 
-    retry(): void {
+    retry(stage?: PipelineStage, targetIds?: string[]): void {
+      const retryRequest: PipelineRetryRequest | undefined =
+        stage !== undefined
+          ? {
+              stage,
+              ...(targetIds !== undefined && targetIds.length > 0
+                ? { targetIds }
+                : {}),
+            }
+          : undefined;
       if (pipeline.state.canRetry) {
         setDetectedPaste(null);
         setLocalFailure(null);
-        pipeline.retry();
+        pipeline.retry(retryRequest);
         return;
       }
 

@@ -321,3 +321,90 @@ describe("PipelineError retryAfterMs", () => {
     expect(err?.retryAfterMs).toBe(60_000);
   });
 });
+
+describe("backend-authored retry metadata", () => {
+  it("stores fallback mode and retry request when a retryable backend stage fails", () => {
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "stage_done",
+      stage: "resolving",
+      durationMs: 12,
+    });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "generating",
+      error: {
+        stage: "generating",
+        code: "CODEGEN_PARTIAL",
+        message: "Some files failed",
+        retryable: true,
+        fallbackMode: "rest",
+        retryTargets: [
+          {
+            id: "src/routes/settings.tsx",
+            label: "settings.tsx",
+            filePath: "src/routes/settings.tsx",
+            stage: "generating",
+          },
+        ],
+      },
+    });
+
+    expect(state.fallbackMode).toBe("rest");
+    expect(state.retryRequest).toEqual({
+      stage: "generating",
+      targetIds: ["src/routes/settings.tsx"],
+    });
+    expect(state.stage).toBe("partial");
+  });
+
+  it("keeps existing artifacts visible while a failed stage is retried", () => {
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "design_ir_ready",
+      designIR: { jobId: "job-1", screens: [] },
+    });
+    state = dispatch(state, {
+      type: "files_ready",
+      files: [{ path: "src/App.tsx", sizeBytes: 128 }],
+    });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "generating",
+      error: {
+        stage: "generating",
+        code: "CODEGEN_PARTIAL",
+        message: "Some files failed",
+        retryable: true,
+        retryTargets: [
+          {
+            id: "src/App.tsx",
+            label: "src/App.tsx",
+            filePath: "src/App.tsx",
+            stage: "generating",
+          },
+        ],
+      },
+    });
+
+    state = dispatch(state, {
+      type: "retry_stage",
+      stage: "generating",
+      targetIds: ["src/App.tsx"],
+    });
+
+    expect(state.stage).toBe("generating");
+    expect(state.designIR?.jobId).toBe("job-1");
+    expect(state.generatedFiles).toEqual([
+      { path: "src/App.tsx", sizeBytes: 128 },
+    ]);
+    expect(state.retryRequest).toEqual({
+      stage: "generating",
+      targetIds: ["src/App.tsx"],
+    });
+  });
+});

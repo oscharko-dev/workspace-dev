@@ -6,7 +6,10 @@ import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
 import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
-import type { PastePipelineState } from "./inspector/paste-pipeline";
+import type {
+  PastePipelineState,
+  PipelineStage,
+} from "./inspector/paste-pipeline";
 import type { PipelineExecutionLog } from "./inspector/pipeline-execution-log";
 
 function BackIcon(): JSX.Element {
@@ -76,7 +79,7 @@ interface PanelViewProps {
   previousJobId: string | null;
   initialIsRegeneration: boolean;
   pipeline?: PastePipelineState;
-  onPipelineRetry?: () => void;
+  onPipelineRetry?: (stage?: PipelineStage, targetIds?: string[]) => void;
   executionLog?: PipelineExecutionLog;
 }
 
@@ -234,9 +237,12 @@ function BootstrapView(): JSX.Element {
     [bootstrap],
   );
 
-  const handleRetry = useCallback((): void => {
-    bootstrap.retry();
-  }, [bootstrap]);
+  const handleRetry = useCallback(
+    (stage?: PipelineStage, targetIds?: string[]): void => {
+      bootstrap.retry(stage, targetIds);
+    },
+    [bootstrap],
+  );
 
   const handleConfirmIntent = useCallback(
     (intent: ImportIntent): void => {

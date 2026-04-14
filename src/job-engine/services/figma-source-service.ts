@@ -51,7 +51,10 @@ const createHybridFallbackEnrichment = ({
 export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
   stageName: "figma.source",
   execute: async (input, context) => {
-    if (context.mode !== "submission") {
+    if (
+      context.mode === "regeneration" ||
+      (context.mode === "retry" && context.retryStage !== "figma.source")
+    ) {
       return;
     }
 

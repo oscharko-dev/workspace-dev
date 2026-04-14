@@ -30,6 +30,45 @@ export interface PipelineExecutionLog {
   clear(): void;
 }
 
+export interface PipelineReportStageStatus {
+  state: string;
+  duration?: number | undefined;
+  message?: string | undefined;
+  code?: string | undefined;
+  retryable?: boolean | undefined;
+  retryAfterMs?: number | undefined;
+  fallbackMode?: string | undefined;
+}
+
+export interface PipelineReportError {
+  stage: string;
+  code: string;
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number | undefined;
+  fallbackMode?: string | undefined;
+  retryTargets?: Array<{
+    id: string;
+    label: string;
+    filePath?: string | undefined;
+  }> | undefined;
+  details?: Record<string, unknown> | undefined;
+}
+
+export interface PipelineReportInput {
+  stage: string;
+  outcome?: string | undefined;
+  jobId?: string | undefined;
+  jobStatus?: string | undefined;
+  fallbackMode?: string | undefined;
+  retryRequest?: {
+    stage: string;
+    targetIds?: string[] | undefined;
+  } | undefined;
+  stageProgress: Record<string, PipelineReportStageStatus>;
+  errors: readonly PipelineReportError[];
+}
+
 // Token-like patterns to redact (Figma PATs start with "figd_").
 const REDACT_PATTERNS: readonly RegExp[] = [
   /figd_[A-Za-z0-9_-]{8,}/g,
@@ -91,4 +130,26 @@ export function createPipelineExecutionLog(): PipelineExecutionLog {
       entries.length = 0;
     },
   };
+}
+
+export function buildSanitizedPipelineReport({
+  pipeline,
+  executionLog,
+}: {
+  pipeline: PipelineReportInput;
+  executionLog?: PipelineExecutionLog | undefined;
+}): string {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    outcome: pipeline.outcome ?? pipeline.stage,
+    stage: pipeline.stage,
+    jobId: pipeline.jobId ?? null,
+    jobStatus: pipeline.jobStatus ?? null,
+    fallbackMode: pipeline.fallbackMode ?? null,
+    retry: pipeline.retryRequest ?? null,
+    stageProgress: pipeline.stageProgress,
+    errors: pipeline.errors,
+    executionLog: executionLog?.entries ?? [],
+  };
+  return redactSensitiveData(JSON.stringify(payload, null, 2));
 }

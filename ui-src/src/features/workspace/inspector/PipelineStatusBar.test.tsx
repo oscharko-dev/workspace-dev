@@ -37,6 +37,7 @@ interface RenderOverrides {
   canRetry?: boolean;
   onRetry?: () => void;
   onCopyReport?: () => void;
+  fallbackMode?: "rest";
 }
 
 function renderBar(overrides: RenderOverrides = {}) {
@@ -48,6 +49,7 @@ function renderBar(overrides: RenderOverrides = {}) {
     canRetry = false,
     onRetry,
     onCopyReport,
+    fallbackMode,
   } = overrides;
 
   return render(
@@ -57,6 +59,7 @@ function renderBar(overrides: RenderOverrides = {}) {
       stageProgress={stageProgress}
       {...(partialStats !== undefined ? { partialStats } : {})}
       canRetry={canRetry}
+      {...(fallbackMode !== undefined ? { fallbackMode } : {})}
       {...(onRetry !== undefined ? { onRetry } : {})}
       {...(onCopyReport !== undefined ? { onCopyReport } : {})}
     />,
@@ -153,6 +156,39 @@ describe("PipelineStatusBar — retry button", () => {
     fireEvent.click(screen.getByTestId("pipeline-status-bar-retry"));
 
     expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a countdown and disables retry while cooldown is active", () => {
+    const onRetry = vi.fn();
+    renderBar({
+      stage: "error",
+      canRetry: true,
+      onRetry,
+      errors: [buildError({ retryAfterMs: 4200 })],
+    });
+
+    const retryButton = screen.getByTestId("pipeline-status-bar-retry");
+    expect(retryButton).toBeDisabled();
+    expect(
+      screen.getByTestId("pipeline-status-bar-retry-countdown"),
+    ).toHaveTextContent("Retry available in 5s");
+
+    fireEvent.click(retryButton);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+});
+
+describe("PipelineStatusBar — fallback mode", () => {
+  it("shows the REST fallback badge when fallbackMode='rest'", () => {
+    renderBar({
+      stage: "partial",
+      fallbackMode: "rest",
+      partialStats: { resolvedStages: 2, totalStages: 4, errorCount: 1 },
+    });
+
+    expect(
+      screen.getByTestId("pipeline-status-bar-fallback-mode"),
+    ).toHaveTextContent("Figma REST fallback active");
   });
 });
 

@@ -24,6 +24,7 @@ import type {
   WorkspaceFormHandlingMode,
   WorkspaceImportIntent,
   WorkspaceJobInput,
+  WorkspaceJobRetryStage,
   WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
   WorkspaceRegenerationOverrideEntry,
@@ -75,6 +76,11 @@ type ParsedLocalSyncFileDecision =
 
 interface RuntimeSchema<T> {
   safeParse(input: unknown): ValidationResult<T>;
+}
+
+interface RetryRequestData {
+  retryStage: WorkspaceJobRetryStage;
+  retryTargets?: string[];
 }
 
 export interface ValidationFailure {
@@ -1641,6 +1647,88 @@ export const RegenerationRequestSchema: RuntimeSchema<RegenerationRequestData> =
   {
     safeParse: parseRegenerationRequest,
   };
+
+function parseRetryRequest(input: unknown): ValidationResult<RetryRequestData> {
+  const issues: ValidationIssue[] = [];
+
+  if (!isRecord(input)) {
+    pushIssue(issues, [], "Expected an object body.");
+    return { success: false, error: { issues } };
+  }
+
+  const allowedKeys = new Set(["retryStage", "retryTargets"]);
+  for (const key of Object.keys(input)) {
+    if (!allowedKeys.has(key)) {
+      pushIssue(issues, [key], `Unexpected property '${key}'.`);
+    }
+  }
+
+  let retryStage: WorkspaceJobRetryStage | undefined;
+  if (
+    input.retryStage === "figma.source" ||
+    input.retryStage === "ir.derive" ||
+    input.retryStage === "template.prepare" ||
+    input.retryStage === "codegen.generate"
+  ) {
+    retryStage = input.retryStage;
+  } else {
+    pushIssue(
+      issues,
+      ["retryStage"],
+      "retryStage must be one of: figma.source, ir.derive, template.prepare, codegen.generate.",
+    );
+  }
+
+  let retryTargets: string[] | undefined;
+  if (input.retryTargets !== undefined) {
+    if (!Array.isArray(input.retryTargets)) {
+      pushIssue(
+        issues,
+        ["retryTargets"],
+        "retryTargets must be an array of non-empty strings when provided.",
+      );
+    } else {
+      const normalizedTargets: string[] = [];
+      for (let index = 0; index < input.retryTargets.length; index += 1) {
+        const entry = input.retryTargets[index];
+        if (typeof entry !== "string" || entry.trim().length === 0) {
+          pushIssue(
+            issues,
+            ["retryTargets", index],
+            "Each retryTargets entry must be a non-empty string.",
+          );
+          continue;
+        }
+        normalizedTargets.push(entry.trim());
+      }
+      retryTargets = normalizedTargets;
+    }
+  }
+
+  if (retryTargets !== undefined && retryStage !== "codegen.generate") {
+    pushIssue(
+      issues,
+      ["retryTargets"],
+      "retryTargets are only allowed when retryStage=codegen.generate.",
+    );
+  }
+
+  if (issues.length > 0 || retryStage === undefined) {
+    return { success: false, error: { issues } };
+  }
+
+  return {
+    success: true,
+    data: {
+      retryStage,
+      ...(retryTargets !== undefined ? { retryTargets } : {}),
+    },
+  };
+}
+
+export const RetryRequestSchema: RuntimeSchema<RetryRequestData> = {
+  safeParse: parseRetryRequest,
+};
 
 function parseSyncRequest(
   input: unknown,

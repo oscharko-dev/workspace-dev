@@ -2,6 +2,8 @@ import type {
   WorkspaceJobDiagnostic,
   WorkspaceJobDiagnosticSeverity,
   WorkspaceJobDiagnosticValue,
+  WorkspaceJobFallbackMode,
+  WorkspaceJobRetryTarget,
   WorkspaceJobStageName
 } from "../contracts/index.js";
 import type { WorkspacePipelineError } from "./types.js";
@@ -233,7 +235,11 @@ export const createPipelineError = ({
   message,
   cause,
   diagnostics,
-  limits
+  limits,
+  retryable,
+  retryAfterMs,
+  fallbackMode,
+  retryTargets
 }: {
   code: string;
   stage: WorkspaceJobStageName;
@@ -241,10 +247,26 @@ export const createPipelineError = ({
   cause?: unknown;
   diagnostics?: PipelineDiagnosticInput[];
   limits?: PipelineDiagnosticLimits;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  fallbackMode?: WorkspaceJobFallbackMode;
+  retryTargets?: WorkspaceJobRetryTarget[];
 }): WorkspacePipelineError => {
   const error = new Error(message) as WorkspacePipelineError;
   error.code = code;
   error.stage = stage;
+  if (retryable !== undefined) {
+    error.retryable = retryable;
+  }
+  if (retryAfterMs !== undefined) {
+    error.retryAfterMs = retryAfterMs;
+  }
+  if (fallbackMode !== undefined) {
+    error.fallbackMode = fallbackMode;
+  }
+  if (retryTargets !== undefined) {
+    error.retryTargets = retryTargets.map((target) => ({ ...target }));
+  }
   const normalizedDiagnostics = normalizePipelineDiagnostics({
     diagnostics,
     fallbackStage: stage,
