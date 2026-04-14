@@ -236,7 +236,8 @@ type WorkspaceAuditEvent =
   | "workspace.retry.accepted"
   | "workspace.create_pr.completed"
   | "workspace.stale_check.completed"
-  | "workspace.remap_suggest.completed";
+  | "workspace.remap_suggest.completed"
+  | "workspace.token_decisions.persisted";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
@@ -296,7 +297,34 @@ const PROTECTED_POST_ACTIONS = new Set([
   "create-pr",
   "stale-check",
   "remap-suggest",
+  "token-decisions",
 ]);
+
+const TOKEN_DECISIONS_FILE_NAME = "token-decisions.json";
+
+interface PersistedTokenDecisions {
+  jobId: string;
+  updatedAt: string;
+  acceptedTokenNames: string[];
+  rejectedTokenNames: string[];
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((v) => typeof v === "string");
+}
+
+function sanitizeTokenNames(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const value of values) {
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || trimmed.length > 256) continue;
+    if (seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    out.push(trimmed);
+  }
+  return out;
+}
 
 interface ProtectedWriteRoute {
   parsedJobRoute?: ReturnType<typeof parseJobRoute>;
@@ -592,6 +620,73 @@ export function createWorkspaceRequestHandler({
               payload: {
                 error: "METHOD_NOT_ALLOWED",
                 message: `Use POST for remap-suggest route '/workspace/jobs/${jobId}/remap-suggest'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "token-decisions") {
+            const record = jobEngine.getJobRecord(jobId);
+            if (!record) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `Unknown job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            const decisionsPath = path.join(
+              record.artifacts.jobDir,
+              TOKEN_DECISIONS_FILE_NAME,
+            );
+            try {
+              const raw = await readFile(decisionsPath, "utf8");
+              const parsed = JSON.parse(raw) as unknown;
+              if (
+                parsed !== null &&
+                typeof parsed === "object" &&
+                isStringArray(
+                  (parsed as { acceptedTokenNames?: unknown })
+                    .acceptedTokenNames,
+                ) &&
+                isStringArray(
+                  (parsed as { rejectedTokenNames?: unknown })
+                    .rejectedTokenNames,
+                )
+              ) {
+                const typed = parsed as PersistedTokenDecisions;
+                sendJson({
+                  response,
+                  statusCode: 200,
+                  payload: {
+                    jobId,
+                    updatedAt:
+                      typeof typed.updatedAt === "string"
+                        ? typed.updatedAt
+                        : null,
+                    acceptedTokenNames: typed.acceptedTokenNames,
+                    rejectedTokenNames: typed.rejectedTokenNames,
+                  },
+                });
+                return;
+              }
+            } catch {
+              // Fall through to the empty-state response so callers can treat
+              // "never persisted" and "persisted empty" identically.
+            }
+
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: {
+                jobId,
+                updatedAt: null,
+                acceptedTokenNames: [],
+                rejectedTokenNames: [],
               },
             });
             return;
@@ -2288,6 +2383,131 @@ export function createWorkspaceRequestHandler({
             response,
             statusCode: 200,
             payload: remapResult,
+          });
+          return;
+        }
+
+        if (parsedJobRoute?.action === "token-decisions") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const record = jobEngine.getJobRecord(jobId);
+          if (!record) {
+            sendRequestFailure({
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${jobId}'.`,
+              },
+              jobId,
+              fallbackMessage: `Token-decisions request failed for unknown job '${jobId}'.`,
+            });
+            return;
+          }
+
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              jobId,
+              fallbackMessage:
+                "Token-decisions request body validation failed.",
+            });
+            return;
+          }
+
+          const body = rawBody.value as {
+            acceptedTokenNames?: unknown;
+            rejectedTokenNames?: unknown;
+          };
+          if (
+            !isStringArray(body.acceptedTokenNames) ||
+            !isStringArray(body.rejectedTokenNames)
+          ) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message:
+                  "acceptedTokenNames and rejectedTokenNames must be string arrays.",
+              },
+              jobId,
+              fallbackMessage:
+                "Token-decisions request body validation failed.",
+            });
+            return;
+          }
+
+          const accepted = sanitizeTokenNames(body.acceptedTokenNames);
+          const rejected = sanitizeTokenNames(body.rejectedTokenNames);
+          const overlap = accepted.filter((name) => rejected.includes(name));
+          if (overlap.length > 0) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message:
+                  "A token cannot appear in both acceptedTokenNames and rejectedTokenNames.",
+                issues: overlap.map((name) => ({
+                  path: name,
+                  message: "Conflicting decision.",
+                })),
+              },
+              jobId,
+              fallbackMessage:
+                "Token-decisions request body validation failed.",
+            });
+            return;
+          }
+
+          const persisted: PersistedTokenDecisions = {
+            jobId,
+            updatedAt: new Date().toISOString(),
+            acceptedTokenNames: accepted,
+            rejectedTokenNames: rejected,
+          };
+          const decisionsPath = path.join(
+            record.artifacts.jobDir,
+            TOKEN_DECISIONS_FILE_NAME,
+          );
+          try {
+            await mkdir(record.artifacts.jobDir, { recursive: true });
+            await writeFile(
+              decisionsPath,
+              JSON.stringify(persisted, null, 2),
+              "utf8",
+            );
+          } catch (error) {
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not persist token decisions.",
+                }),
+              },
+              jobId,
+              fallbackMessage: `Token-decisions persistence failed for job '${jobId}'.`,
+            });
+            return;
+          }
+
+          logAuditEvent({
+            event: "workspace.token_decisions.persisted",
+            statusCode: 200,
+            jobId,
+            message: `Persisted ${String(accepted.length)} accepted and ${String(rejected.length)} rejected token decisions for job '${jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: persisted,
           });
           return;
         }

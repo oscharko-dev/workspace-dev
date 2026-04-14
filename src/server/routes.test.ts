@@ -91,6 +91,11 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
     action: "token-intelligence",
   });
   assert.equal(parseJobRoute("/workspace/jobs//token-intelligence"), undefined);
+  assert.deepEqual(parseJobRoute("/workspace/jobs/job-1/token-decisions"), {
+    jobId: "job-1",
+    action: "token-decisions",
+  });
+  assert.equal(parseJobRoute("/workspace/jobs//token-decisions"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs/job-1/extra"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//result"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//cancel"), undefined);

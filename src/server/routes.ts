@@ -84,7 +84,8 @@ export function parseJobRoute(pathname: string):
         | "create-pr"
         | "stale-check"
         | "remap-suggest"
-        | "token-intelligence";
+        | "token-intelligence"
+        | "token-decisions";
     }
   | undefined {
   if (!pathname.startsWith(JOB_ROUTE_PREFIX)) {
@@ -236,6 +237,17 @@ export function parseJobRoute(pathname: string):
     return {
       jobId,
       action: "token-intelligence",
+    };
+  }
+
+  if (rest.endsWith("/token-decisions")) {
+    const jobId = rest.slice(0, -"/token-decisions".length);
+    if (!jobId || jobId.includes("/")) {
+      return undefined;
+    }
+    return {
+      jobId,
+      action: "token-decisions",
     };
   }
 

@@ -9,7 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { fetchJson } from "../../../lib/http";
 import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
@@ -17,6 +17,7 @@ import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath, useStreamingTreeNodes } from "./component-tree-utils";
 import {
   createInitialPipelineState,
+  postTokenDecisions,
   type PastePipelineState,
   type PipelineStage,
 } from "./paste-pipeline";
@@ -1869,23 +1870,92 @@ export function InspectorPanel({
     });
   }, [activePipeline.tokenIntelligence, workspacePolicy.tokens]);
 
+  // Collect JSX-like files so we fetch only what the a11y scanner can parse.
+  // The cap bounds worst-case traffic for pathologically large generated
+  // projects; nudges beyond the cap are intentionally omitted.
+  const A11Y_FILE_FETCH_CAP = 25;
+  const A11Y_FILE_SIZE_CAP_BYTES = 1_000_000;
+  const jsxLikeFiles = useMemo(() => {
+    return files
+      .filter(
+        (file) =>
+          /\.(tsx|jsx|html|mdx)$/i.test(file.path) &&
+          file.sizeBytes <= A11Y_FILE_SIZE_CAP_BYTES,
+      )
+      .slice(0, A11Y_FILE_FETCH_CAP);
+  }, [files]);
+
+  const a11yFileContentQueries = useQueries({
+    queries: jsxLikeFiles.map((file) => ({
+      queryKey: ["inspector-a11y-file", jobId, file.path] as const,
+      enabled: Boolean(jobId && file.path),
+      staleTime: 30_000,
+      queryFn: async (): Promise<string | null> => {
+        const response = await fetch(
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(file.path)}`,
+        );
+        if (!response.ok) return null;
+        return response.text();
+      },
+    })),
+  });
+
+  const a11yNudgeInputs = useMemo(() => {
+    return jsxLikeFiles.map((file, index) => {
+      const contents = a11yFileContentQueries[index]?.data ?? null;
+      return contents ? { path: file.path, contents } : { path: file.path };
+    });
+  }, [jsxLikeFiles, a11yFileContentQueries]);
+
   const a11yNudgeModel = useMemo(() => {
-    // File contents are loaded lazily in CodePane; surface nudges only when
-    // the viewer supplies content for at least one file. Until then run
-    // against an empty file set so the panel stays empty (no false positives).
-    return deriveA11yNudges({ files: [], policy: workspacePolicy.a11y });
-  }, [workspacePolicy.a11y]);
+    return deriveA11yNudges({
+      files: a11yNudgeInputs,
+      policy: workspacePolicy.a11y,
+    });
+  }, [a11yNudgeInputs, workspacePolicy.a11y]);
+
+  const [tokenDecisionsStatus, setTokenDecisionsStatus] = useState<{
+    state: "idle" | "saving" | "saved" | "error";
+    message?: string;
+    updatedAt?: string | null;
+  }>({ state: "idle" });
 
   const handleApplyTokenDecisions = useCallback(
     (decisions: {
       acceptedTokenNames: string[];
       rejectedTokenNames: string[];
     }): void => {
-      // Non-invasive placeholder — decisions persist in UI state only. Wiring
-      // to a backend persistence endpoint is deferred (follow-up to #993).
-      void decisions;
+      if (!jobId) {
+        setTokenDecisionsStatus({
+          state: "error",
+          message: "Cannot save: job id is missing.",
+        });
+        return;
+      }
+      setTokenDecisionsStatus({ state: "saving" });
+      void (async () => {
+        try {
+          const response = await postTokenDecisions({
+            jobId,
+            acceptedTokenNames: decisions.acceptedTokenNames,
+            rejectedTokenNames: decisions.rejectedTokenNames,
+          });
+          setTokenDecisionsStatus({
+            state: "saved",
+            updatedAt: response.updatedAt,
+          });
+        } catch (error) {
+          setTokenDecisionsStatus({
+            state: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Failed to persist token decisions.",
+          });
+        }
+      })();
     },
-    [],
+    [jobId],
   );
   const selectedIrNodeData = useMemo<
     | (DesignIrElementNode &
@@ -5416,6 +5486,29 @@ export function InspectorPanel({
                 a11yResult={a11yNudgeModel}
                 onApplyTokenDecisions={handleApplyTokenDecisions}
               />
+              {tokenDecisionsStatus.state !== "idle" ? (
+                <p
+                  data-testid="inspector-token-decisions-status"
+                  data-state={tokenDecisionsStatus.state}
+                  className={`mt-1 text-[11px] ${
+                    tokenDecisionsStatus.state === "error"
+                      ? "text-rose-300"
+                      : tokenDecisionsStatus.state === "saved"
+                        ? "text-emerald-300"
+                        : "text-white/60"
+                  }`}
+                >
+                  {tokenDecisionsStatus.state === "saving"
+                    ? "Saving token decisions…"
+                    : tokenDecisionsStatus.state === "saved"
+                      ? `Token decisions saved${
+                          tokenDecisionsStatus.updatedAt
+                            ? ` (${tokenDecisionsStatus.updatedAt})`
+                            : ""
+                        }.`
+                      : `Failed to save token decisions: ${tokenDecisionsStatus.message ?? "Unknown error."}`}
+                </p>
+              ) : null}
             </div>
           ) : null}
           {generatingRetryTargets.length > 0 ? (

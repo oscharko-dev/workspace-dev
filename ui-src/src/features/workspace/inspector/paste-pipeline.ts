@@ -332,6 +332,8 @@ const endpoints = {
     `/workspace/jobs/${encodeURIComponent(jobId)}/screenshot`,
   tokenIntelligence: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/token-intelligence`,
+  tokenDecisions: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/token-decisions`,
 };
 
 const RETRYABLE_STAGE_SET = new Set<PipelineStage>([
@@ -1566,6 +1568,69 @@ function isTokenIntelligenceMappingArray(
       typeof entry.componentName === "string" &&
       typeof entry.source === "string",
   );
+}
+
+export interface TokenDecisionsPayload {
+  jobId: string;
+  updatedAt: string | null;
+  acceptedTokenNames: string[];
+  rejectedTokenNames: string[];
+}
+
+/**
+ * Persist token accept/reject decisions for a paste job. Returns the
+ * server-confirmed snapshot, or throws on validation / network failure so
+ * callers can surface an error.
+ */
+export async function postTokenDecisions({
+  jobId,
+  acceptedTokenNames,
+  rejectedTokenNames,
+  signal,
+}: {
+  jobId: string;
+  acceptedTokenNames: readonly string[];
+  rejectedTokenNames: readonly string[];
+  signal?: AbortSignal;
+}): Promise<TokenDecisionsPayload> {
+  const response = await fetchJson<unknown>({
+    url: endpoints.tokenDecisions({ jobId }),
+    init: {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        acceptedTokenNames: [...acceptedTokenNames],
+        rejectedTokenNames: [...rejectedTokenNames],
+      }),
+      ...(signal ? { signal } : {}),
+    },
+  });
+
+  if (!response.ok || !isRecord(response.payload)) {
+    throw new Error(
+      `Failed to persist token decisions (status ${String(response.status)}).`,
+    );
+  }
+
+  const payload = response.payload;
+  const updatedAt =
+    typeof payload.updatedAt === "string" ? payload.updatedAt : null;
+  const accepted = Array.isArray(payload.acceptedTokenNames)
+    ? payload.acceptedTokenNames.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  const rejected = Array.isArray(payload.rejectedTokenNames)
+    ? payload.rejectedTokenNames.filter(
+        (entry): entry is string => typeof entry === "string",
+      )
+    : [];
+  return {
+    jobId,
+    updatedAt,
+    acceptedTokenNames: accepted,
+    rejectedTokenNames: rejected,
+  };
 }
 
 async function fetchTokenIntelligence({
