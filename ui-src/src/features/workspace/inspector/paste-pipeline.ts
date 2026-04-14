@@ -428,6 +428,15 @@ function buildSubmitBody(clipboardHtml: string): ClipboardSubmitBody {
   };
 }
 
+class SubmitError extends Error {
+  readonly retryable: boolean;
+  constructor(message: string, retryable: boolean) {
+    super(message);
+    this.name = "SubmitError";
+    this.retryable = retryable;
+  }
+}
+
 async function postSubmit(
   clipboardHtml: string,
   signal: AbortSignal | undefined,
@@ -458,10 +467,10 @@ async function postSubmit(
       typeof response.payload.error === "string"
         ? response.payload.error
         : "SUBMIT_FAILED";
-    throw Object.assign(new Error(code), { retryable: false });
+    throw new SubmitError(code, false);
   }
 
-  throw Object.assign(new Error("SUBMIT_FAILED"), { retryable: true });
+  throw new SubmitError("SUBMIT_FAILED", true);
 }
 
 // ---------------------------------------------------------------------------
@@ -651,9 +660,7 @@ interface PipelineRuntime {
 function submitFailureError(error: unknown): PipelineError {
   const message = error instanceof Error ? error.message : "SUBMIT_FAILED";
   const retryable =
-    error instanceof Error
-      ? (error as Error & { retryable?: boolean }).retryable !== false
-      : true;
+    error instanceof SubmitError ? error.retryable : !(error instanceof Error);
   return {
     stage: "resolving",
     code: message,
@@ -922,8 +929,7 @@ export function usePastePipeline(): UsePastePipelineResult {
       dispatch({ type: "job_created", jobId });
     },
     onError: (error) => {
-      const retryable =
-        (error as Error & { retryable?: boolean }).retryable !== false;
+      const retryable = error instanceof SubmitError ? error.retryable : true;
       dispatch(
         toStageFailedAction(
           "resolving",
@@ -964,7 +970,7 @@ export function usePastePipeline(): UsePastePipelineResult {
   });
 
   useEffect(() => {
-    const response = jobQuery.data as JsonResponse<JobPayload> | undefined;
+    const response = jobQuery.data;
     if (!response || response === lastDispatchedDataRef.current) {
       return;
     }
