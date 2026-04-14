@@ -1,4 +1,6 @@
+import { useMemo } from "react";
 import type { TreeNode } from "./component-tree";
+import type { PastePipelineState } from "./paste-pipeline";
 
 export interface BreadcrumbSegment {
   id: string;
@@ -13,7 +15,10 @@ export interface BreadcrumbSegment {
  * from the root screen down to (and including) the target node.
  * Returns an empty array if the target is not found.
  */
-export function findNodePath(nodes: TreeNode[], targetId: string): BreadcrumbSegment[] {
+export function findNodePath(
+  nodes: TreeNode[],
+  targetId: string,
+): BreadcrumbSegment[] {
   const path: BreadcrumbSegment[] = [];
 
   function walk(list: TreeNode[]): boolean {
@@ -70,4 +75,112 @@ export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
   }
 
   return prune(nodes);
+}
+
+const SKELETON_NODE_COUNT = 3;
+
+function makeSkeletonChildren(parentId: string): TreeNode[] {
+  return Array.from({ length: SKELETON_NODE_COUNT }, (_, i) => ({
+    id: `skeleton-${parentId}-${String(i)}`,
+    name: "",
+    type: "skeleton",
+  }));
+}
+
+interface IrElementShape {
+  id: string;
+  name: string;
+  type: string;
+  children?: IrElementShape[];
+}
+
+function irElementToStreamingNode(
+  el: IrElementShape,
+  mappedIds: ReadonlySet<string>,
+  hasMappings: boolean,
+  stage: PastePipelineState["stage"],
+): TreeNode {
+  const node: TreeNode = {
+    id: el.id,
+    name: el.name,
+    type: el.type,
+  };
+
+  if (hasMappings) {
+    node.mappingStatus = mappedIds.has(el.id) ? "matched" : "new";
+  }
+
+  if (stage === "generating" && (!el.children || el.children.length === 0)) {
+    node.pipelineStatus = "generating";
+  }
+
+  if (el.children && el.children.length > 0) {
+    node.children = el.children.map((child) =>
+      irElementToStreamingNode(child, mappedIds, hasMappings, stage),
+    );
+  }
+
+  return node;
+}
+
+/**
+ * Convert a PastePipelineState into TreeNode[] suitable for ComponentTree.
+ *
+ * - Returns [] when no designIR is available.
+ * - Adds skeleton placeholder screens when stage is early (no IR yet).
+ * - Annotates nodes with mappingStatus after the "mapping" stage.
+ * - Marks leaf nodes as "generating" during the generating stage.
+ */
+export function buildTreeFromIR(pipeline: PastePipelineState): TreeNode[] {
+  const { designIR, componentManifest, stage } = pipeline;
+
+  if (!designIR) {
+    return [];
+  }
+
+  // Build set of mapped IR node IDs from the component manifest
+  const mappedIds = new Set<string>();
+  const hasMappings =
+    componentManifest !== undefined &&
+    (stage === "mapping" || stage === "generating" || stage === "ready");
+
+  if (hasMappings) {
+    for (const screen of componentManifest.screens) {
+      for (const entry of screen.components) {
+        mappedIds.add(entry.irNodeId);
+      }
+    }
+  }
+
+  return designIR.screens.map((screen) => {
+    const children: TreeNode[] =
+      screen.children.length > 0
+        ? screen.children.map((el) =>
+            irElementToStreamingNode(el, mappedIds, hasMappings, stage),
+          )
+        : stage !== "ready"
+          ? makeSkeletonChildren(screen.id)
+          : [];
+
+    return {
+      id: screen.id,
+      name: screen.name,
+      type: "screen",
+      children,
+    };
+  });
+}
+
+/**
+ * React hook that converts a PastePipelineState into a stable TreeNode[]
+ * for progressive rendering in ComponentTree.
+ */
+export function useStreamingTreeNodes(
+  pipeline: PastePipelineState,
+): TreeNode[] {
+  return useMemo(
+    () => buildTreeFromIR(pipeline),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pipeline.designIR, pipeline.stage, pipeline.componentManifest],
+  );
 }

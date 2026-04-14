@@ -7,14 +7,18 @@ import {
   useState,
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent,
-  type PointerEvent as ReactPointerEvent
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { fetchJson } from "../../../lib/http";
 import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
 import { ComponentTree, type TreeNode } from "./component-tree";
-import { findNodePath } from "./component-tree-utils";
+import { findNodePath, useStreamingTreeNodes } from "./component-tree-utils";
+import {
+  createInitialPipelineState,
+  type PastePipelineState,
+} from "./paste-pipeline";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
 import { suggestPairedFile } from "./file-pairing";
@@ -22,18 +26,18 @@ import type { CodeBoundaryEntry as GutterBoundaryEntry } from "./code-boundaries
 import {
   deriveInspectabilitySummary,
   type InspectabilityAvailability,
-  type InspectabilityGenerationMetricsPayload
+  type InspectabilityGenerationMetricsPayload,
 } from "./inspectability-summary";
 import {
   deriveNodeDiagnosticsMap,
   getNodeDiagnostics,
   getNodeDiagnosticBadge,
-  type RawNodeDiagnosticEntry
+  type RawNodeDiagnosticEntry,
 } from "./node-diagnostics";
 import {
   resolveNodeDiffMapping,
   nodeDiffUnavailableReason,
-  type ManifestPayload as NodeDiffManifestPayload
+  type ManifestPayload as NodeDiffManifestPayload,
 } from "./node-diff-resolution";
 import {
   DEFAULT_INSPECTOR_PANE_RATIOS,
@@ -46,7 +50,7 @@ import {
   resizeTreePreviewPane,
   saveInspectorPaneRatios,
   toInspectorLayoutStorageKey,
-  type InspectorPaneRatios
+  type InspectorPaneRatios,
 } from "./layout-state";
 import {
   inspectorScopeReducer,
@@ -60,25 +64,25 @@ import {
   selectParentFile,
   selectEditModeActive,
   selectEditCapability,
-  type ManifestMapping
+  type ManifestMapping,
 } from "./inspector-scope-state";
 import {
   detectEditCapability,
-  extractPresentFields
+  extractPresentFields,
 } from "./edit-capability-detection";
 import {
   deriveScalarOverrideFieldSupport,
   isScalarPaddingValue,
   translateScalarOverrideInput,
   type ScalarOverrideField,
-  type ScalarOverrideValueByField
+  type ScalarOverrideValueByField,
 } from "./scalar-override-translators";
 import {
   deriveFormValidationOverrideFieldSupport,
   translateFormValidationOverrideInput,
   SUPPORTED_VALIDATION_TYPES,
   type FormValidationOverrideField,
-  type FormValidationOverrideValueByField
+  type FormValidationOverrideValueByField,
 } from "./form-validation-override-translators";
 import {
   COUNTER_AXIS_ALIGN_ITEMS,
@@ -89,7 +93,7 @@ import {
   translateLayoutOverrideInput,
   type LayoutModeOverrideValue,
   type LayoutOverrideField,
-  type LayoutOverrideValueByField
+  type LayoutOverrideValueByField,
 } from "./layout-override-translators";
 import {
   computeInspectorDraftBaseFingerprint,
@@ -105,17 +109,17 @@ import {
   type InspectorOverrideDraft,
   type InspectorOverrideField,
   type StaleDraftCheckResult,
-  type StaleDraftDecision
+  type StaleDraftDecision,
 } from "./inspector-override-draft";
 import { StaleDraftWarning } from "./StaleDraftWarning";
 import {
   RemapReviewPanel,
   type RemapDecisionEntry,
-  type RemapSuggestResult
+  type RemapSuggestResult,
 } from "./RemapReviewPanel";
 import {
   deriveInspectorImpactReviewModel,
-  type InspectorImpactReviewManifest
+  type InspectorImpactReviewManifest,
 } from "./inspector-impact-review";
 import {
   canRedo,
@@ -124,12 +128,12 @@ import {
   pushEditHistory,
   redoEditHistory,
   undoEditHistory,
-  type InspectorEditHistory
+  type InspectorEditHistory,
 } from "./inspector-edit-history";
 import {
   createDraftSnapshot,
   createDraftSnapshotStore,
-  type DraftSnapshotStore
+  type DraftSnapshotStore,
 } from "./inspector-draft-snapshot";
 
 // ---------------------------------------------------------------------------
@@ -205,7 +209,12 @@ interface GenerationMetricsResponse {
 }
 
 type LocalSyncFileAction = "create" | "overwrite" | "none";
-type LocalSyncFileStatus = "create" | "overwrite" | "conflict" | "untracked" | "unchanged";
+type LocalSyncFileStatus =
+  | "create"
+  | "overwrite"
+  | "conflict"
+  | "untracked"
+  | "unchanged";
 type LocalSyncFileReason =
   | "new_file"
   | "managed_destination_unchanged"
@@ -303,7 +312,9 @@ function isCreatePrPayload(value: unknown): value is CreatePrPayload {
   );
 }
 
-function isRegenerationAcceptedPayload(value: unknown): value is RegenerationAcceptedPayload {
+function isRegenerationAcceptedPayload(
+  value: unknown,
+): value is RegenerationAcceptedPayload {
   if (!isRecord(value)) return false;
   return (
     typeof value.jobId === "string" &&
@@ -344,7 +355,11 @@ class RegenerationMutationError extends Error {
 
 type InspectorSourceStatus = "loading" | "ready" | "empty" | "error";
 
-type ConfigDialogKey = "preApplyReview" | "localSync" | "createPr" | "inspectability";
+type ConfigDialogKey =
+  | "preApplyReview"
+  | "localSync"
+  | "createPr"
+  | "inspectability";
 
 interface InspectorPanelProps {
   jobId: string;
@@ -359,6 +374,8 @@ interface InspectorPanelProps {
   openDialog?: ConfigDialogKey | null;
   /** Close the currently open config dialog. */
   onCloseDialog?: () => void;
+  /** Paste pipeline state for progressive tree rendering during paste flow. */
+  pipeline?: PastePipelineState;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -380,10 +397,15 @@ const KEYBOARD_STEP_LARGE_PX = 72;
 const KEYBOARD_EXTREME_DELTA_PX = 100_000;
 const BOUNDARIES_SESSION_STORAGE_KEY = "workspace-dev:inspector-boundaries:v1";
 const PADDING_SIDES = ["top", "right", "bottom", "left"] as const;
+const IDLE_PIPELINE_STATE = createInitialPipelineState();
 
 type PaddingSide = (typeof PADDING_SIDES)[number];
-type FieldValidationErrors = Partial<Record<InspectorOverrideField, string | null>>;
-type ScalarControlInputState = Partial<Record<Exclude<ScalarOverrideField, "padding">, string>>;
+type FieldValidationErrors = Partial<
+  Record<InspectorOverrideField, string | null>
+>;
+type ScalarControlInputState = Partial<
+  Record<Exclude<ScalarOverrideField, "padding">, string>
+>;
 type PaddingControlInputState = Partial<Record<PaddingSide, string>>;
 type LayoutControlInputState = Partial<Record<LayoutOverrideField, string>>;
 type FormValidationControlInputState = {
@@ -410,22 +432,30 @@ function isDesignIrPayload(value: unknown): value is DesignIrPayload {
   return typeof value.jobId === "string" && Array.isArray(value.screens);
 }
 
-function isComponentManifestPayload(value: unknown): value is ComponentManifestPayload {
+function isComponentManifestPayload(
+  value: unknown,
+): value is ComponentManifestPayload {
   if (!isRecord(value)) return false;
   return typeof value.jobId === "string" && Array.isArray(value.screens);
 }
 
-function isGenerationMetricsPayload(value: unknown): value is InspectabilityGenerationMetricsPayload {
+function isGenerationMetricsPayload(
+  value: unknown,
+): value is InspectabilityGenerationMetricsPayload {
   return isRecord(value);
 }
 
-function isLocalSyncFilePlanEntry(value: unknown): value is LocalSyncFilePlanEntry {
+function isLocalSyncFilePlanEntry(
+  value: unknown,
+): value is LocalSyncFilePlanEntry {
   if (!isRecord(value)) {
     return false;
   }
   return (
     typeof value.path === "string" &&
-    (value.action === "create" || value.action === "overwrite" || value.action === "none") &&
+    (value.action === "create" ||
+      value.action === "overwrite" ||
+      value.action === "none") &&
     (value.status === "create" ||
       value.status === "overwrite" ||
       value.status === "conflict" ||
@@ -456,12 +486,14 @@ function isLocalSyncSummary(value: unknown): value is LocalSyncSummary {
     typeof value.conflictCount === "number" &&
     typeof value.untrackedCount === "number" &&
     typeof value.unchangedCount === "number" &&
-    typeof value.totalBytes === "number"
-    && typeof value.selectedBytes === "number"
+    typeof value.totalBytes === "number" &&
+    typeof value.selectedBytes === "number"
   );
 }
 
-function isLocalSyncDryRunPayload(value: unknown): value is LocalSyncDryRunPayload {
+function isLocalSyncDryRunPayload(
+  value: unknown,
+): value is LocalSyncDryRunPayload {
   if (!isRecord(value) || !Array.isArray(value.files)) {
     return false;
   }
@@ -479,7 +511,9 @@ function isLocalSyncDryRunPayload(value: unknown): value is LocalSyncDryRunPaylo
   );
 }
 
-function isLocalSyncApplyPayload(value: unknown): value is LocalSyncApplyPayload {
+function isLocalSyncApplyPayload(
+  value: unknown,
+): value is LocalSyncApplyPayload {
   if (!isRecord(value) || !Array.isArray(value.files)) {
     return false;
   }
@@ -546,18 +580,23 @@ function getLocalSyncStatusClasses(status: LocalSyncFileStatus): string {
   return "border-slate-300 bg-slate-100 text-slate-700";
 }
 
-function createLocalSyncDecisionMap(files: LocalSyncFilePlanEntry[]): Record<string, LocalSyncFileDecision> {
-  return files.reduce<Record<string, LocalSyncFileDecision>>((accumulator, entry) => {
-    accumulator[entry.path] = entry.decision;
-    return accumulator;
-  }, {});
+function createLocalSyncDecisionMap(
+  files: LocalSyncFilePlanEntry[],
+): Record<string, LocalSyncFileDecision> {
+  return files.reduce<Record<string, LocalSyncFileDecision>>(
+    (accumulator, entry) => {
+      accumulator[entry.path] = entry.decision;
+      return accumulator;
+    },
+    {},
+  );
 }
 
 function toEndpointError({
   status,
   payload,
   fallbackCode,
-  fallbackMessage
+  fallbackMessage,
 }: {
   status: number;
   payload: unknown;
@@ -568,23 +607,25 @@ function toEndpointError({
     return {
       status,
       code: fallbackCode,
-      message: fallbackMessage
+      message: fallbackMessage,
     };
   }
 
-  const payloadCode = typeof payload.error === "string" ? payload.error : fallbackCode;
-  const payloadMessage = typeof payload.message === "string" ? payload.message : fallbackMessage;
+  const payloadCode =
+    typeof payload.error === "string" ? payload.error : fallbackCode;
+  const payloadMessage =
+    typeof payload.message === "string" ? payload.message : fallbackMessage;
 
   return {
     status,
     code: payloadCode,
-    message: payloadMessage
+    message: payloadMessage,
   };
 }
 
 function toSyncErrorDetails({
   error,
-  fallback
+  fallback,
 }: {
   error: unknown;
   fallback: EndpointErrorDetails;
@@ -592,10 +633,14 @@ function toSyncErrorDetails({
   if (error instanceof SyncMutationError) {
     return error.details;
   }
-  if (error instanceof Error && typeof error.message === "string" && error.message.trim().length > 0) {
+  if (
+    error instanceof Error &&
+    typeof error.message === "string" &&
+    error.message.trim().length > 0
+  ) {
     return {
       ...fallback,
-      message: error.message
+      message: error.message,
     };
   }
   return fallback;
@@ -619,7 +664,9 @@ function loadBoundariesEnabledPreference(): boolean {
     return false;
   }
   try {
-    return window.sessionStorage.getItem(BOUNDARIES_SESSION_STORAGE_KEY) === "1";
+    return (
+      window.sessionStorage.getItem(BOUNDARIES_SESSION_STORAGE_KEY) === "1"
+    );
   } catch {
     return false;
   }
@@ -627,7 +674,7 @@ function loadBoundariesEnabledPreference(): boolean {
 
 function toBoundariesForFile({
   manifest,
-  filePath
+  filePath,
 }: {
   manifest: ComponentManifestPayload | null;
   filePath: string | null;
@@ -649,7 +696,7 @@ function toBoundariesForFile({
           irNodeName: entry.irNodeName,
           irNodeType: entry.irNodeType,
           startLine: entry.startLine,
-          endLine: entry.endLine
+          endLine: entry.endLine,
         });
       }
     }
@@ -672,9 +719,11 @@ function toBoundariesForFile({
 
 function findIrElementNode(
   screens: DesignIrScreen[],
-  nodeId: string
+  nodeId: string,
 ): DesignIrElementNode | null {
-  const searchChildren = (nodes: DesignIrElementNode[]): DesignIrElementNode | null => {
+  const searchChildren = (
+    nodes: DesignIrElementNode[],
+  ): DesignIrElementNode | null => {
     for (const node of nodes) {
       if (node.id === nodeId) return node;
       if (node.children) {
@@ -704,7 +753,7 @@ function irElementToTreeNode(el: DesignIrElementNode): TreeNode {
   const node: TreeNode = {
     id: el.id,
     name: el.name,
-    type: el.type
+    type: el.type,
   };
   if (el.children && el.children.length > 0) {
     node.children = el.children.map(irElementToTreeNode);
@@ -717,7 +766,7 @@ function irScreensToTreeNodes(screens: DesignIrScreen[]): TreeNode[] {
     id: s.id,
     name: s.name,
     type: "screen",
-    children: s.children.map(irElementToTreeNode)
+    children: s.children.map(irElementToTreeNode),
   }));
 }
 
@@ -727,8 +776,11 @@ function irScreensToTreeNodes(screens: DesignIrScreen[]): TreeNode[] {
 
 function findManifestEntry(
   nodeId: string,
-  manifest: ComponentManifestPayload
-): { screen: ComponentManifestScreen; entry: ComponentManifestEntry | null } | null {
+  manifest: ComponentManifestPayload,
+): {
+  screen: ComponentManifestScreen;
+  entry: ComponentManifestEntry | null;
+} | null {
   for (const screen of manifest.screens) {
     // Check if it's the screen itself
     if (screen.screenId === nodeId) {
@@ -762,7 +814,7 @@ function toPaddingControlInputValue(value: unknown): PaddingControlInputState {
     top: String(value.top),
     right: String(value.right),
     bottom: String(value.bottom),
-    left: String(value.left)
+    left: String(value.left),
   };
 }
 
@@ -852,11 +904,17 @@ export function InspectorPanel({
   isRegenerationJob = false,
   onRegenerationAccepted,
   openDialog = null,
-  onCloseDialog
+  onCloseDialog,
+  pipeline,
 }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
-  const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(null);
-  const [scopeState, scopeDispatch] = useReducer(inspectorScopeReducer, INITIAL_INSPECTOR_SCOPE_STATE);
+  const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(
+    null,
+  );
+  const [scopeState, scopeDispatch] = useReducer(
+    inspectorScopeReducer,
+    INITIAL_INSPECTOR_SCOPE_STATE,
+  );
   const selectedNodeId = scopeState.selectedNodeId;
   const activeScopeNodeId = selectActiveScope(scopeState)?.nodeId ?? null;
   const hasActiveScope = selectHasActiveScope(scopeState);
@@ -870,30 +928,57 @@ export function InspectorPanel({
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
-  const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(loadBoundariesEnabledPreference);
-  const [paneRatios, setPaneRatios] = useState<InspectorPaneRatios>(DEFAULT_INSPECTOR_PANE_RATIOS);
-  const [overrideDraft, setOverrideDraft] = useState<InspectorOverrideDraft | null>(null);
-  const [, setEditHistory] = useState<InspectorEditHistory>(() => createEditHistory());
-  const [, setSnapshotStore] = useState<DraftSnapshotStore>(() => createDraftSnapshotStore());
-  const [draftRestoreWarning, setDraftRestoreWarning] = useState<string | null>(null);
+  const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(
+    loadBoundariesEnabledPreference,
+  );
+  const [paneRatios, setPaneRatios] = useState<InspectorPaneRatios>(
+    DEFAULT_INSPECTOR_PANE_RATIOS,
+  );
+  const [overrideDraft, setOverrideDraft] =
+    useState<InspectorOverrideDraft | null>(null);
+  const [, setEditHistory] = useState<InspectorEditHistory>(() =>
+    createEditHistory(),
+  );
+  const [, setSnapshotStore] = useState<DraftSnapshotStore>(() =>
+    createDraftSnapshotStore(),
+  );
+  const [draftRestoreWarning, setDraftRestoreWarning] = useState<string | null>(
+    null,
+  );
   const [draftStale, setDraftStale] = useState(false);
-  const [staleDraftCheckResult, setStaleDraftCheckResult] = useState<StaleDraftCheckResult | null>(null);
+  const [staleDraftCheckResult, setStaleDraftCheckResult] =
+    useState<StaleDraftCheckResult | null>(null);
   const [staleDraftCheckPending, setStaleDraftCheckPending] = useState(false);
-  const [remapResult, setRemapResult] = useState<RemapSuggestResult | null>(null);
+  const [remapResult, setRemapResult] = useState<RemapSuggestResult | null>(
+    null,
+  );
   const [remapPending, setRemapPending] = useState(false);
-  const [draftPersistWarning, setDraftPersistWarning] = useState<string | null>(null);
-  const [fieldValidationErrors, setFieldValidationErrors] = useState<FieldValidationErrors>({});
-  const [scalarControlInputs, setScalarControlInputs] = useState<ScalarControlInputState>({});
-  const [paddingControlInputs, setPaddingControlInputs] = useState<PaddingControlInputState>({});
-  const [layoutControlInputs, setLayoutControlInputs] = useState<LayoutControlInputState>({});
-  const [formValidationControlInputs, setFormValidationControlInputs] = useState<FormValidationControlInputState>({});
-  const [regenerationAccepted, setRegenerationAccepted] = useState<RegenerationAcceptedPayload | null>(null);
-  const [regenerationError, setRegenerationError] = useState<EndpointErrorDetails | null>(null);
+  const [draftPersistWarning, setDraftPersistWarning] = useState<string | null>(
+    null,
+  );
+  const [fieldValidationErrors, setFieldValidationErrors] =
+    useState<FieldValidationErrors>({});
+  const [scalarControlInputs, setScalarControlInputs] =
+    useState<ScalarControlInputState>({});
+  const [paddingControlInputs, setPaddingControlInputs] =
+    useState<PaddingControlInputState>({});
+  const [layoutControlInputs, setLayoutControlInputs] =
+    useState<LayoutControlInputState>({});
+  const [formValidationControlInputs, setFormValidationControlInputs] =
+    useState<FormValidationControlInputState>({});
+  const [regenerationAccepted, setRegenerationAccepted] =
+    useState<RegenerationAcceptedPayload | null>(null);
+  const [regenerationError, setRegenerationError] =
+    useState<EndpointErrorDetails | null>(null);
   const [syncTargetPathInput, setSyncTargetPathInput] = useState("");
   const [syncConfirmationChecked, setSyncConfirmationChecked] = useState(false);
-  const [syncFileDecisions, setSyncFileDecisions] = useState<Record<string, LocalSyncFileDecision>>({});
-  const [syncPreviewPlan, setSyncPreviewPlan] = useState<LocalSyncDryRunPayload | null>(null);
-  const [syncApplyResult, setSyncApplyResult] = useState<LocalSyncApplyPayload | null>(null);
+  const [syncFileDecisions, setSyncFileDecisions] = useState<
+    Record<string, LocalSyncFileDecision>
+  >({});
+  const [syncPreviewPlan, setSyncPreviewPlan] =
+    useState<LocalSyncDryRunPayload | null>(null);
+  const [syncApplyResult, setSyncApplyResult] =
+    useState<LocalSyncApplyPayload | null>(null);
   const [syncError, setSyncError] = useState<EndpointErrorDetails | null>(null);
   const [prRepoUrlInput, setPrRepoUrlInput] = useState("");
   const [prRepoTokenInput, setPrRepoTokenInput] = useState("");
@@ -912,36 +997,40 @@ export function InspectorPanel({
   const layoutContainerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<SplitterDragState | null>(null);
 
+  const pipelineTreeNodes = useStreamingTreeNodes(
+    pipeline ?? IDLE_PIPELINE_STATE,
+  );
+
   // --- Queries ---
 
   const filesQuery = useQuery({
     queryKey: ["inspector-files", jobId],
     queryFn: async () => {
       return await fetchJson<FilesPayload>({
-        url: `/workspace/jobs/${encodedJobId}/files`
+        url: `/workspace/jobs/${encodedJobId}/files`,
       });
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const manifestQuery = useQuery({
     queryKey: ["inspector-manifest", jobId],
     queryFn: async () => {
       return await fetchJson<ComponentManifestPayload>({
-        url: `/workspace/jobs/${encodedJobId}/component-manifest`
+        url: `/workspace/jobs/${encodedJobId}/component-manifest`,
       });
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const designIrQuery = useQuery({
     queryKey: ["inspector-design-ir", jobId],
     queryFn: async () => {
       return await fetchJson<DesignIrPayload>({
-        url: `/workspace/jobs/${encodedJobId}/design-ir`
+        url: `/workspace/jobs/${encodedJobId}/design-ir`,
       });
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const generationMetricsQuery = useQuery({
@@ -949,7 +1038,7 @@ export function InspectorPanel({
     queryFn: async (): Promise<GenerationMetricsResponse> => {
       try {
         const response = await fetch(
-          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent("generation-metrics.json")}`
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent("generation-metrics.json")}`,
         );
         const body = await response.text();
 
@@ -967,7 +1056,8 @@ export function InspectorPanel({
             status: response.status,
             payload: parsedPayload,
             fallbackCode: "GENERATION_METRICS_NOT_FOUND",
-            fallbackMessage: "generation-metrics.json is unavailable for this job."
+            fallbackMessage:
+              "generation-metrics.json is unavailable for this job.",
           });
 
           return {
@@ -975,7 +1065,7 @@ export function InspectorPanel({
             status: error.status,
             payload: null,
             error: error.code,
-            message: error.message
+            message: error.message,
           };
         }
 
@@ -988,7 +1078,7 @@ export function InspectorPanel({
             status: response.status,
             payload: null,
             error: "GENERATION_METRICS_INVALID_JSON",
-            message: "generation-metrics.json is not valid JSON."
+            message: "generation-metrics.json is not valid JSON.",
           };
         }
 
@@ -998,7 +1088,7 @@ export function InspectorPanel({
             status: response.status,
             payload: null,
             error: "GENERATION_METRICS_INVALID_PAYLOAD",
-            message: "generation-metrics.json payload is invalid."
+            message: "generation-metrics.json payload is invalid.",
           };
         }
 
@@ -1007,7 +1097,7 @@ export function InspectorPanel({
           status: response.status,
           payload,
           error: null,
-          message: null
+          message: null,
         };
       } catch {
         return {
@@ -1015,11 +1105,11 @@ export function InspectorPanel({
           status: 0,
           payload: null,
           error: "GENERATION_METRICS_FETCH_FAILED",
-          message: "generation-metrics.json could not be loaded."
+          message: "generation-metrics.json could not be loaded.",
         };
       }
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const regenerateMutation = useMutation({
@@ -1028,24 +1118,25 @@ export function InspectorPanel({
         throw new RegenerationMutationError({
           status: 409,
           code: "REGEN_DRAFT_UNAVAILABLE",
-          message: "Override draft is not ready yet."
+          message: "Override draft is not ready yet.",
         });
       }
 
-      const structuredPayload = toStructuredInspectorOverridePayload(overrideDraft);
+      const structuredPayload =
+        toStructuredInspectorOverridePayload(overrideDraft);
       const response = await fetchJson<RegenerationAcceptedPayload>({
         url: `/workspace/jobs/${encodedJobId}/regenerate`,
         init: {
           method: "POST",
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
           },
           body: JSON.stringify({
             overrides: structuredPayload.overrides,
             draftId: structuredPayload.draftId,
-            baseFingerprint: structuredPayload.baseFingerprint
-          })
-        }
+            baseFingerprint: structuredPayload.baseFingerprint,
+          }),
+        },
       });
 
       if (!response.ok) {
@@ -1054,8 +1145,8 @@ export function InspectorPanel({
             status: response.status,
             payload: response.payload,
             fallbackCode: "REGEN_SUBMIT_FAILED",
-            fallbackMessage: "Could not submit regeneration job."
-          })
+            fallbackMessage: "Could not submit regeneration job.",
+          }),
         );
       }
 
@@ -1063,7 +1154,7 @@ export function InspectorPanel({
         throw new RegenerationMutationError({
           status: response.status,
           code: "REGEN_INVALID_PAYLOAD",
-          message: "Regeneration acceptance payload is invalid."
+          message: "Regeneration acceptance payload is invalid.",
         });
       }
 
@@ -1082,14 +1173,17 @@ export function InspectorPanel({
       setRegenerationError({
         status: 500,
         code: "REGEN_SUBMIT_FAILED",
-        message: error instanceof Error ? error.message : "Could not submit regeneration job."
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not submit regeneration job.",
       });
-    }
+    },
   });
 
   const previewSyncMutation = useMutation({
     mutationFn: async ({
-      targetPath
+      targetPath,
     }: {
       targetPath: string;
     }): Promise<LocalSyncDryRunPayload> => {
@@ -1099,13 +1193,15 @@ export function InspectorPanel({
         init: {
           method: "POST",
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
           },
           body: JSON.stringify({
             mode: "dry_run",
-            ...(normalizedTargetPath.length > 0 ? { targetPath: normalizedTargetPath } : {})
-          })
-        }
+            ...(normalizedTargetPath.length > 0
+              ? { targetPath: normalizedTargetPath }
+              : {}),
+          }),
+        },
       });
 
       if (!response.ok) {
@@ -1114,8 +1210,8 @@ export function InspectorPanel({
             status: response.status,
             payload: response.payload,
             fallbackCode: "SYNC_PREVIEW_FAILED",
-            fallbackMessage: "Could not generate sync preview."
-          })
+            fallbackMessage: "Could not generate sync preview.",
+          }),
         );
       }
 
@@ -1123,7 +1219,7 @@ export function InspectorPanel({
         throw new SyncMutationError({
           status: response.status,
           code: "SYNC_PREVIEW_INVALID_PAYLOAD",
-          message: "Local sync preview payload is invalid."
+          message: "Local sync preview payload is invalid.",
         });
       }
 
@@ -1143,11 +1239,11 @@ export function InspectorPanel({
           fallback: {
             status: 500,
             code: "SYNC_PREVIEW_FAILED",
-            message: "Could not generate sync preview."
-          }
-        })
+            message: "Could not generate sync preview.",
+          },
+        }),
       );
-    }
+    },
   });
 
   const applySyncMutation = useMutation({
@@ -1156,29 +1252,30 @@ export function InspectorPanel({
         throw new SyncMutationError({
           status: 409,
           code: "SYNC_PREVIEW_REQUIRED",
-          message: "Preview the sync plan before apply."
+          message: "Preview the sync plan before apply.",
         });
       }
 
-      const fileDecisions: LocalSyncFileDecisionEntry[] = syncPreviewPlan.files.map((entry) => ({
-        path: entry.path,
-        decision: syncFileDecisions[entry.path] ?? entry.decision
-      }));
+      const fileDecisions: LocalSyncFileDecisionEntry[] =
+        syncPreviewPlan.files.map((entry) => ({
+          path: entry.path,
+          decision: syncFileDecisions[entry.path] ?? entry.decision,
+        }));
 
       const response = await fetchJson<LocalSyncApplyPayload>({
         url: `/workspace/jobs/${encodedJobId}/sync`,
         init: {
           method: "POST",
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
           },
           body: JSON.stringify({
             mode: "apply",
             confirmationToken: syncPreviewPlan.confirmationToken,
             confirmOverwrite: true,
-            fileDecisions
-          })
-        }
+            fileDecisions,
+          }),
+        },
       });
 
       if (!response.ok) {
@@ -1187,8 +1284,8 @@ export function InspectorPanel({
             status: response.status,
             payload: response.payload,
             fallbackCode: "SYNC_APPLY_FAILED",
-            fallbackMessage: "Could not apply local sync."
-          })
+            fallbackMessage: "Could not apply local sync.",
+          }),
         );
       }
 
@@ -1196,7 +1293,7 @@ export function InspectorPanel({
         throw new SyncMutationError({
           status: response.status,
           code: "SYNC_APPLY_INVALID_PAYLOAD",
-          message: "Local sync apply payload is invalid."
+          message: "Local sync apply payload is invalid.",
         });
       }
 
@@ -1216,11 +1313,11 @@ export function InspectorPanel({
           fallback: {
             status: 500,
             code: "SYNC_APPLY_FAILED",
-            message: "Could not apply local sync."
-          }
-        })
+            message: "Could not apply local sync.",
+          },
+        }),
       );
-    }
+    },
   });
 
   const effectiveSyncPreviewFiles = useMemo(() => {
@@ -1230,7 +1327,7 @@ export function InspectorPanel({
 
     return syncPreviewPlan.files.map((entry) => ({
       ...entry,
-      decision: syncFileDecisions[entry.path] ?? entry.decision
+      decision: syncFileDecisions[entry.path] ?? entry.decision,
     }));
   }, [syncFileDecisions, syncPreviewPlan]);
 
@@ -1269,8 +1366,8 @@ export function InspectorPanel({
         untrackedCount: 0,
         unchangedCount: 0,
         totalBytes: 0,
-        selectedBytes: 0
-      }
+        selectedBytes: 0,
+      },
     );
   }, [effectiveSyncPreviewFiles, syncPreviewPlan]);
 
@@ -1280,13 +1377,13 @@ export function InspectorPanel({
         throw new PrMutationError({
           status: 0,
           code: "PR_PREREQUISITES_MISSING",
-          message: "Repository URL and token are required to create a PR."
+          message: "Repository URL and token are required to create a PR.",
         });
       }
 
       const body: Record<string, string> = {
         repoUrl: prRepoUrlInput.trim(),
-        repoToken: prRepoTokenInput.trim()
+        repoToken: prRepoTokenInput.trim(),
       };
       if (prTargetPathInput.trim()) {
         body.targetPath = prTargetPathInput.trim();
@@ -1297,8 +1394,8 @@ export function InspectorPanel({
         init: {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body)
-        }
+          body: JSON.stringify(body),
+        },
       });
 
       if (!response.ok) {
@@ -1307,8 +1404,8 @@ export function InspectorPanel({
             status: response.status,
             payload: response.payload,
             fallbackCode: "PR_CREATE_FAILED",
-            fallbackMessage: "Could not create PR."
-          })
+            fallbackMessage: "Could not create PR.",
+          }),
         );
       }
 
@@ -1316,7 +1413,7 @@ export function InspectorPanel({
         throw new PrMutationError({
           status: response.status,
           code: "PR_CREATE_INVALID_PAYLOAD",
-          message: "PR creation payload is invalid."
+          message: "PR creation payload is invalid.",
         });
       }
 
@@ -1333,10 +1430,11 @@ export function InspectorPanel({
         setPrError({
           status: 500,
           code: "PR_CREATE_FAILED",
-          message: error instanceof Error ? error.message : "Could not create PR."
+          message:
+            error instanceof Error ? error.message : "Could not create PR.",
         });
       }
-    }
+    },
   });
 
   useEffect(() => {
@@ -1377,8 +1475,8 @@ export function InspectorPanel({
           status: filesQuery.data.status,
           payload: filesQuery.data.payload,
           fallbackCode: "FILES_FETCH_FAILED",
-          fallbackMessage: "Could not load generated files."
-        })
+          fallbackMessage: "Could not load generated files.",
+        }),
       };
     }
 
@@ -1389,8 +1487,8 @@ export function InspectorPanel({
         error: {
           status: filesQuery.data.status,
           code: "FILES_INVALID_PAYLOAD",
-          message: "Generated files response payload is invalid."
-        }
+          message: "Generated files response payload is invalid.",
+        },
       };
     }
 
@@ -1398,14 +1496,14 @@ export function InspectorPanel({
       return {
         status: "empty",
         files: [],
-        error: null
+        error: null,
       };
     }
 
     return {
       status: "ready",
       files: filesQuery.data.payload.files,
-      error: null
+      error: null,
     };
   }, [filesQuery.data, filesQuery.isLoading]);
 
@@ -1430,8 +1528,8 @@ export function InspectorPanel({
           status: manifestQuery.data.status,
           payload: manifestQuery.data.payload,
           fallbackCode: "MANIFEST_FETCH_FAILED",
-          fallbackMessage: "Could not load component manifest."
-        })
+          fallbackMessage: "Could not load component manifest.",
+        }),
       };
     }
 
@@ -1442,8 +1540,8 @@ export function InspectorPanel({
         error: {
           status: manifestQuery.data.status,
           code: "MANIFEST_INVALID_PAYLOAD",
-          message: "Component manifest payload is invalid."
-        }
+          message: "Component manifest payload is invalid.",
+        },
       };
     }
 
@@ -1451,14 +1549,14 @@ export function InspectorPanel({
       return {
         status: "empty",
         manifest: null,
-        error: null
+        error: null,
       };
     }
 
     return {
       status: "ready",
       manifest: manifestQuery.data.payload,
-      error: null
+      error: null,
     };
   }, [manifestQuery.data, manifestQuery.isLoading]);
 
@@ -1485,8 +1583,8 @@ export function InspectorPanel({
           status: designIrQuery.data.status,
           payload: designIrQuery.data.payload,
           fallbackCode: "DESIGN_IR_FETCH_FAILED",
-          fallbackMessage: "Could not load design IR."
-        })
+          fallbackMessage: "Could not load design IR.",
+        }),
       };
     }
 
@@ -1498,8 +1596,8 @@ export function InspectorPanel({
         error: {
           status: designIrQuery.data.status,
           code: "DESIGN_IR_INVALID_PAYLOAD",
-          message: "Design IR payload is invalid."
-        }
+          message: "Design IR payload is invalid.",
+        },
       };
     }
 
@@ -1508,7 +1606,7 @@ export function InspectorPanel({
         status: "empty",
         screens: [],
         treeNodes: [],
-        error: null
+        error: null,
       };
     }
 
@@ -1516,7 +1614,7 @@ export function InspectorPanel({
       status: "ready",
       screens: designIrQuery.data.payload.screens,
       treeNodes: irScreensToTreeNodes(designIrQuery.data.payload.screens),
-      error: null
+      error: null,
     };
   }, [designIrQuery.data, designIrQuery.isLoading]);
 
@@ -1529,7 +1627,7 @@ export function InspectorPanel({
       return {
         status: "loading",
         metrics: null,
-        error: null
+        error: null,
       };
     }
 
@@ -1537,32 +1635,45 @@ export function InspectorPanel({
       return {
         status: "loading",
         metrics: null,
-        error: null
+        error: null,
       };
     }
 
-    if (!generationMetricsQuery.data.ok || !generationMetricsQuery.data.payload) {
+    if (
+      !generationMetricsQuery.data.ok ||
+      !generationMetricsQuery.data.payload
+    ) {
       return {
         status: "unavailable",
         metrics: null,
         error: {
           status: generationMetricsQuery.data.status,
-          code: generationMetricsQuery.data.error ?? "GENERATION_METRICS_FETCH_FAILED",
-          message: generationMetricsQuery.data.message ?? "generation-metrics.json is unavailable for this job."
-        }
+          code:
+            generationMetricsQuery.data.error ??
+            "GENERATION_METRICS_FETCH_FAILED",
+          message:
+            generationMetricsQuery.data.message ??
+            "generation-metrics.json is unavailable for this job.",
+        },
       };
     }
 
     return {
       status: "ready",
       metrics: generationMetricsQuery.data.payload,
-      error: null
+      error: null,
     };
   }, [generationMetricsQuery.data, generationMetricsQuery.isLoading]);
 
   const files = filesState.files;
   const manifest = manifestState.manifest;
   const treeNodes = designIrState.treeNodes;
+  const effectiveTreeNodes =
+    designIrState.status === "ready"
+      ? treeNodes
+      : pipelineTreeNodes.length > 0
+        ? pipelineTreeNodes
+        : treeNodes;
   const irScreens = designIrState.screens;
   const selectedIrNode = useMemo<DesignIrElementNode | null>(() => {
     if (!selectedNodeId) {
@@ -1571,7 +1682,12 @@ export function InspectorPanel({
     return findIrElementNode(irScreens, selectedNodeId);
   }, [irScreens, selectedNodeId]);
   const selectedIrNodeData = useMemo<
-    | (DesignIrElementNode & Partial<ScalarOverrideValueByField & LayoutOverrideValueByField & FormValidationOverrideValueByField>)
+    | (DesignIrElementNode &
+        Partial<
+          ScalarOverrideValueByField &
+            LayoutOverrideValueByField &
+            FormValidationOverrideValueByField
+        >)
     | null
   >(() => {
     if (!selectedIrNode) {
@@ -1599,12 +1715,15 @@ export function InspectorPanel({
     }
     const overrideValue = overrideDraft
       ? getInspectorOverrideValue({
-        draft: overrideDraft,
-        nodeId: selectedNodeId,
-        field: "layoutMode"
-      })
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field: "layoutMode",
+        })
       : null;
-    return resolveLayoutModeValue(overrideValue ?? selectedIrNodeData.layoutMode) ?? "NONE";
+    return (
+      resolveLayoutModeValue(overrideValue ?? selectedIrNodeData.layoutMode) ??
+      "NONE"
+    );
   }, [overrideDraft, selectedIrNodeData, selectedNodeId]);
   const layoutFieldSupport = useMemo(() => {
     if (!selectedIrNodeData) {
@@ -1612,7 +1731,7 @@ export function InspectorPanel({
     }
     return deriveLayoutOverrideFieldSupport({
       nodeData: selectedIrNodeData,
-      effectiveLayoutMode
+      effectiveLayoutMode,
     });
   }, [effectiveLayoutMode, selectedIrNodeData]);
   const editableLayoutFields = useMemo(() => {
@@ -1625,8 +1744,11 @@ export function InspectorPanel({
       if (entry.supported) {
         return false;
       }
-      if (effectiveLayoutMode === "NONE"
-        && (entry.field === "primaryAxisAlignItems" || entry.field === "counterAxisAlignItems")) {
+      if (
+        effectiveLayoutMode === "NONE" &&
+        (entry.field === "primaryAxisAlignItems" ||
+          entry.field === "counterAxisAlignItems")
+      ) {
         return false;
       }
       return true;
@@ -1653,114 +1775,128 @@ export function InspectorPanel({
     return computeInspectorDraftBaseFingerprint({ screens: irScreens });
   }, [designIrState.status, irScreens]);
 
-  const handleStaleDraftDecision = useCallback((decision: StaleDraftDecision | "remap") => {
-    if (!baseFingerprint) {
-      return;
-    }
-
-    if (decision === "continue") {
-      setStaleDraftCheckResult(null);
-      setDraftStale(false);
-      return;
-    }
-
-    if (decision === "discard") {
-      setStaleDraftCheckResult(null);
-      setDraftStale(false);
-      setDraftRestoreWarning(null);
-      setRemapResult(null);
-      setOverrideDraft(createInspectorOverrideDraft({
-        sourceJobId: jobId,
-        baseFingerprint
-      }));
-      return;
-    }
-
-    if (decision === "carry-forward") {
-      if (!overrideDraft || !staleDraftCheckResult?.latestJobId) {
+  const handleStaleDraftDecision = useCallback(
+    (decision: StaleDraftDecision | "remap") => {
+      if (!baseFingerprint) {
         return;
       }
-      const carried = carryForwardDraft({
-        staleDraft: overrideDraft,
-        newJobId: staleDraftCheckResult.latestJobId,
-        newBaseFingerprint: baseFingerprint
-      });
-      setStaleDraftCheckResult(null);
-      setDraftStale(false);
-      setDraftRestoreWarning(null);
-      setRemapResult(null);
-      setOverrideDraft(carried);
-    }
 
-    if (decision === "remap") {
-      if (!staleDraftCheckResult?.latestJobId || staleDraftCheckResult.unmappedNodeIds.length === 0) {
+      if (decision === "continue") {
+        setStaleDraftCheckResult(null);
+        setDraftStale(false);
         return;
       }
-      setRemapPending(true);
-      const encodedId = encodeURIComponent(jobId);
-      fetch(`/workspace/jobs/${encodedId}/remap-suggest`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sourceJobId: staleDraftCheckResult.sourceJobId,
-          latestJobId: staleDraftCheckResult.latestJobId,
-          unmappedNodeIds: staleDraftCheckResult.unmappedNodeIds
-        })
-      })
-        .then((res) => res.json() as Promise<RemapSuggestResult>)
-        .then((result) => {
-          setRemapResult(result);
-        })
-        .catch(() => {
-          setRemapResult(null);
-        })
-        .finally(() => {
-          setRemapPending(false);
+
+      if (decision === "discard") {
+        setStaleDraftCheckResult(null);
+        setDraftStale(false);
+        setDraftRestoreWarning(null);
+        setRemapResult(null);
+        setOverrideDraft(
+          createInspectorOverrideDraft({
+            sourceJobId: jobId,
+            baseFingerprint,
+          }),
+        );
+        return;
+      }
+
+      if (decision === "carry-forward") {
+        if (!overrideDraft || !staleDraftCheckResult?.latestJobId) {
+          return;
+        }
+        const carried = carryForwardDraft({
+          staleDraft: overrideDraft,
+          newJobId: staleDraftCheckResult.latestJobId,
+          newBaseFingerprint: baseFingerprint,
         });
-    }
-  }, [baseFingerprint, jobId, overrideDraft, staleDraftCheckResult]);
-
-  const handleRemapApply = useCallback((decisions: RemapDecisionEntry[]) => {
-    if (!overrideDraft || !staleDraftCheckResult?.latestJobId || !baseFingerprint) {
-      return;
-    }
-
-    // Build node ID remap map from accepted decisions
-    const remapMap = new Map<string, string>();
-    for (const decision of decisions) {
-      if (decision.accepted && decision.targetNodeId) {
-        remapMap.set(decision.sourceNodeId, decision.targetNodeId);
+        setStaleDraftCheckResult(null);
+        setDraftStale(false);
+        setDraftRestoreWarning(null);
+        setRemapResult(null);
+        setOverrideDraft(carried);
       }
-    }
 
-    // Remap draft entries: update nodeIds for accepted remaps, keep others unchanged
-    const remappedEntries = overrideDraft.entries
-      .map((entry) => {
+      if (decision === "remap") {
+        if (
+          !staleDraftCheckResult?.latestJobId ||
+          staleDraftCheckResult.unmappedNodeIds.length === 0
+        ) {
+          return;
+        }
+        setRemapPending(true);
+        const encodedId = encodeURIComponent(jobId);
+        fetch(`/workspace/jobs/${encodedId}/remap-suggest`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            sourceJobId: staleDraftCheckResult.sourceJobId,
+            latestJobId: staleDraftCheckResult.latestJobId,
+            unmappedNodeIds: staleDraftCheckResult.unmappedNodeIds,
+          }),
+        })
+          .then((res) => res.json() as Promise<RemapSuggestResult>)
+          .then((result) => {
+            setRemapResult(result);
+          })
+          .catch(() => {
+            setRemapResult(null);
+          })
+          .finally(() => {
+            setRemapPending(false);
+          });
+      }
+    },
+    [baseFingerprint, jobId, overrideDraft, staleDraftCheckResult],
+  );
+
+  const handleRemapApply = useCallback(
+    (decisions: RemapDecisionEntry[]) => {
+      if (
+        !overrideDraft ||
+        !staleDraftCheckResult?.latestJobId ||
+        !baseFingerprint
+      ) {
+        return;
+      }
+
+      // Build node ID remap map from accepted decisions
+      const remapMap = new Map<string, string>();
+      for (const decision of decisions) {
+        if (decision.accepted && decision.targetNodeId) {
+          remapMap.set(decision.sourceNodeId, decision.targetNodeId);
+        }
+      }
+
+      // Remap draft entries: update nodeIds for accepted remaps, keep others unchanged
+      const remappedEntries = overrideDraft.entries.map((entry) => {
         const newNodeId = remapMap.get(entry.nodeId);
         if (newNodeId) {
           return {
             ...entry,
             id: `${newNodeId}:${entry.field}`,
             nodeId: newNodeId,
-            updatedAt: new Date().toISOString()
+            updatedAt: new Date().toISOString(),
           };
         }
         return entry;
       });
 
-    // Carry forward the remapped draft to the latest job
-    const carried = carryForwardDraft({
-      staleDraft: { ...overrideDraft, entries: remappedEntries },
-      newJobId: staleDraftCheckResult.latestJobId,
-      newBaseFingerprint: baseFingerprint
-    });
+      // Carry forward the remapped draft to the latest job
+      const carried = carryForwardDraft({
+        staleDraft: { ...overrideDraft, entries: remappedEntries },
+        newJobId: staleDraftCheckResult.latestJobId,
+        newBaseFingerprint: baseFingerprint,
+      });
 
-    setStaleDraftCheckResult(null);
-    setDraftStale(false);
-    setDraftRestoreWarning(null);
-    setRemapResult(null);
-    setOverrideDraft(carried);
-  }, [baseFingerprint, overrideDraft, staleDraftCheckResult]);
+      setStaleDraftCheckResult(null);
+      setDraftStale(false);
+      setDraftRestoreWarning(null);
+      setRemapResult(null);
+      setOverrideDraft(carried);
+    },
+    [baseFingerprint, overrideDraft, staleDraftCheckResult],
+  );
 
   const handleRemapCancel = useCallback(() => {
     setRemapResult(null);
@@ -1773,7 +1909,7 @@ export function InspectorPanel({
       manifestStatus: manifestState.status,
       manifest,
       metricsStatus: generationMetricsState.status,
-      metrics: generationMetricsState.metrics
+      metrics: generationMetricsState.metrics,
     });
   }, [
     designIrState.status,
@@ -1781,78 +1917,94 @@ export function InspectorPanel({
     generationMetricsState.status,
     irScreens,
     manifest,
-    manifestState.status
+    manifestState.status,
   ]);
 
   const nodeDiagnosticsMap = useMemo(() => {
     const metricsPayload = generationMetricsState.metrics as
-      | (InspectabilityGenerationMetricsPayload & { nodeDiagnostics?: RawNodeDiagnosticEntry[] })
+      | (InspectabilityGenerationMetricsPayload & {
+          nodeDiagnostics?: RawNodeDiagnosticEntry[];
+        })
       | null;
     return deriveNodeDiagnosticsMap({
       metricsNodeDiagnostics: metricsPayload?.nodeDiagnostics ?? null,
       designIrStatus: designIrState.status,
       designIrScreens: irScreens,
       manifestStatus: manifestState.status,
-      manifest
+      manifest,
     });
   }, [
     designIrState.status,
     generationMetricsState.metrics,
     irScreens,
     manifest,
-    manifestState.status
+    manifestState.status,
   ]);
 
-  const hasTreePane = designIrState.status !== "ready" || treeNodes.length > 0;
-  const hasExpandedTree = designIrState.status === "ready" ? hasTreePane && !treeCollapsed : hasTreePane;
+  const hasTreePane =
+    designIrState.status !== "ready" ||
+    treeNodes.length > 0 ||
+    effectiveTreeNodes.length > 0;
+  const hasExpandedTree =
+    designIrState.status === "ready"
+      ? hasTreePane && !treeCollapsed
+      : hasTreePane;
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);
   }, [jobId]);
 
   const getLayoutContainerWidth = useCallback((): number => {
-    return getContainerWidthPx(layoutContainerRef.current?.getBoundingClientRect().width);
+    return getContainerWidthPx(
+      layoutContainerRef.current?.getBoundingClientRect().width,
+    );
   }, []);
 
-  const persistPaneLayout = useCallback((nextRatios: InspectorPaneRatios) => {
-    saveInspectorPaneRatios({
-      storageKey: layoutStorageKey,
-      ratios: nextRatios
-    });
-  }, [layoutStorageKey]);
+  const persistPaneLayout = useCallback(
+    (nextRatios: InspectorPaneRatios) => {
+      saveInspectorPaneRatios({
+        storageKey: layoutStorageKey,
+        ratios: nextRatios,
+      });
+    },
+    [layoutStorageKey],
+  );
 
-  const applyResizeDelta = useCallback(({
-    separator,
-    deltaPx,
-    sourceRatios,
-    widthPxOverride
-  }: {
-    separator: PaneSeparator;
-    deltaPx: number;
-    sourceRatios: InspectorPaneRatios;
-    widthPxOverride?: number;
-  }): InspectorPaneRatios => {
-    const widthPx = widthPxOverride ?? getLayoutContainerWidth();
+  const applyResizeDelta = useCallback(
+    ({
+      separator,
+      deltaPx,
+      sourceRatios,
+      widthPxOverride,
+    }: {
+      separator: PaneSeparator;
+      deltaPx: number;
+      sourceRatios: InspectorPaneRatios;
+      widthPxOverride?: number;
+    }): InspectorPaneRatios => {
+      const widthPx = widthPxOverride ?? getLayoutContainerWidth();
 
-    if (separator === "tree-preview") {
-      if (!hasExpandedTree) {
-        return sourceRatios;
+      if (separator === "tree-preview") {
+        if (!hasExpandedTree) {
+          return sourceRatios;
+        }
+
+        return resizeTreePreviewPane({
+          ratios: sourceRatios,
+          widthPx,
+          deltaPx,
+        });
       }
 
-      return resizeTreePreviewPane({
+      return resizePreviewCodePanes({
         ratios: sourceRatios,
         widthPx,
-        deltaPx
+        deltaPx,
+        treeCollapsed: !hasExpandedTree,
       });
-    }
-
-    return resizePreviewCodePanes({
-      ratios: sourceRatios,
-      widthPx,
-      deltaPx,
-      treeCollapsed: !hasExpandedTree
-    });
-  }, [getLayoutContainerWidth, hasExpandedTree]);
+    },
+    [getLayoutContainerWidth, hasExpandedTree],
+  );
 
   const lockDocumentForSplitterDrag = useCallback((): (() => void) => {
     if (typeof document === "undefined") {
@@ -1876,39 +2028,48 @@ export function InspectorPanel({
     };
   }, []);
 
-  const clearActiveSplitterDrag = useCallback(({ releaseCapture }: { releaseCapture: boolean }) => {
-    const state = dragStateRef.current;
-    if (!state) {
-      return;
-    }
-
-    dragStateRef.current = null;
-    state.unlockDocument();
-
-    if (!releaseCapture || typeof state.element.releasePointerCapture !== "function") {
-      return;
-    }
-
-    try {
-      if (
-        typeof state.element.hasPointerCapture !== "function" ||
-        state.element.hasPointerCapture(state.pointerId)
-      ) {
-        state.element.releasePointerCapture(state.pointerId);
+  const clearActiveSplitterDrag = useCallback(
+    ({ releaseCapture }: { releaseCapture: boolean }) => {
+      const state = dragStateRef.current;
+      if (!state) {
+        return;
       }
-    } catch {
-      // The browser may already have released capture; cleanup has already happened.
-    }
-  }, []);
 
-  const resolveDragResizeRatios = useCallback((state: SplitterDragState, clientX: number): InspectorPaneRatios => {
-    return applyResizeDelta({
-      separator: state.separator,
-      deltaPx: clientX - state.startX,
-      sourceRatios: state.startRatios,
-      widthPxOverride: state.startWidthPx
-    });
-  }, [applyResizeDelta]);
+      dragStateRef.current = null;
+      state.unlockDocument();
+
+      if (
+        !releaseCapture ||
+        typeof state.element.releasePointerCapture !== "function"
+      ) {
+        return;
+      }
+
+      try {
+        if (
+          typeof state.element.hasPointerCapture !== "function" ||
+          state.element.hasPointerCapture(state.pointerId)
+        ) {
+          state.element.releasePointerCapture(state.pointerId);
+        }
+      } catch {
+        // The browser may already have released capture; cleanup has already happened.
+      }
+    },
+    [],
+  );
+
+  const resolveDragResizeRatios = useCallback(
+    (state: SplitterDragState, clientX: number): InspectorPaneRatios => {
+      return applyResizeDelta({
+        separator: state.separator,
+        deltaPx: clientX - state.startX,
+        sourceRatios: state.startRatios,
+        widthPxOverride: state.startWidthPx,
+      });
+    },
+    [applyResizeDelta],
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1955,8 +2116,13 @@ export function InspectorPanel({
       return false;
     }
 
-    for (const selector of ["[data-testid='diff-viewer-find-input']", "[data-testid='code-viewer-find-input']"]) {
-      const candidates = Array.from(root.querySelectorAll<HTMLInputElement>(selector));
+    for (const selector of [
+      "[data-testid='diff-viewer-find-input']",
+      "[data-testid='code-viewer-find-input']",
+    ]) {
+      const candidates = Array.from(
+        root.querySelectorAll<HTMLInputElement>(selector),
+      );
       const target = candidates.find((candidate) => {
         return !candidate.disabled && candidate.getClientRects().length > 0;
       });
@@ -1998,16 +2164,18 @@ export function InspectorPanel({
     });
   }, []);
 
-  const handleCreateSnapshot = useCallback((label?: string) => {
-    if (!overrideDraft) {
-      return;
-    }
-    setSnapshotStore((current) => {
-      const result = createDraftSnapshot(current, overrideDraft, label);
-      return result.store;
-    });
-  }, [overrideDraft]);
-
+  const handleCreateSnapshot = useCallback(
+    (label?: string) => {
+      if (!overrideDraft) {
+        return;
+      }
+      setSnapshotStore((current) => {
+        const result = createDraftSnapshot(current, overrideDraft, label);
+        return result.store;
+      });
+    },
+    [overrideDraft],
+  );
 
   // --- Shortcut help: toggle on `?` key (skip when text input is focused) ---
   // --- Edit history shortcuts: Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, Ctrl/Cmd+Shift+S ---
@@ -2018,12 +2186,16 @@ export function InspectorPanel({
     const handleShortcutKey = (event: KeyboardEvent): void => {
       // Do not trigger when a text input, textarea, or contenteditable is focused
       const target = event.target as HTMLElement | null;
-      const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : target;
-      const isTextInput = activeElement != null
-        && typeof activeElement.tagName === "string"
-        && (activeElement.tagName.toLowerCase() === "input"
-          || activeElement.tagName.toLowerCase() === "textarea"
-          || activeElement.isContentEditable);
+      const activeElement =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement
+          : target;
+      const isTextInput =
+        activeElement != null &&
+        typeof activeElement.tagName === "string" &&
+        (activeElement.tagName.toLowerCase() === "input" ||
+          activeElement.tagName.toLowerCase() === "textarea" ||
+          activeElement.isContentEditable);
 
       // `?` toggles shortcut help — only outside text inputs
       if (event.key === "?" && !isTextInput) {
@@ -2039,12 +2211,23 @@ export function InspectorPanel({
       }
 
       const isModKey = event.metaKey || event.ctrlKey;
-      const activeElementNode = activeElement instanceof Node ? activeElement : (target instanceof Node ? target : null);
-      const isFocusInsideInspector = activeElementNode !== null
-        && (activeElementNode === document.body
-          || inspectorPanelRef.current?.contains(activeElementNode));
+      const activeElementNode =
+        activeElement instanceof Node
+          ? activeElement
+          : target instanceof Node
+            ? target
+            : null;
+      const isFocusInsideInspector =
+        activeElementNode !== null &&
+        (activeElementNode === document.body ||
+          inspectorPanelRef.current?.contains(activeElementNode));
 
-      if (isModKey && !event.shiftKey && event.key.toLowerCase() === "f" && isFocusInsideInspector) {
+      if (
+        isModKey &&
+        !event.shiftKey &&
+        event.key.toLowerCase() === "f" &&
+        isFocusInsideInspector
+      ) {
         if (focusInspectorFindInput()) {
           event.preventDefault();
           return;
@@ -2059,14 +2242,22 @@ export function InspectorPanel({
       }
 
       // Ctrl/Cmd+Shift+Z — redo
-      if (isModKey && event.shiftKey && (event.key === "z" || event.key === "Z")) {
+      if (
+        isModKey &&
+        event.shiftKey &&
+        (event.key === "z" || event.key === "Z")
+      ) {
         event.preventDefault();
         handleEditRedo();
         return;
       }
 
       // Ctrl/Cmd+Shift+S — create snapshot
-      if (isModKey && event.shiftKey && (event.key === "s" || event.key === "S")) {
+      if (
+        isModKey &&
+        event.shiftKey &&
+        (event.key === "s" || event.key === "S")
+      ) {
         event.preventDefault();
         handleCreateSnapshot();
         return;
@@ -2074,8 +2265,15 @@ export function InspectorPanel({
     };
 
     window.addEventListener("keydown", handleShortcutKey);
-    return () => { window.removeEventListener("keydown", handleShortcutKey); };
-  }, [focusInspectorFindInput, handleEditUndo, handleEditRedo, handleCreateSnapshot]);
+    return () => {
+      window.removeEventListener("keydown", handleShortcutKey);
+    };
+  }, [
+    focusInspectorFindInput,
+    handleEditUndo,
+    handleEditRedo,
+    handleCreateSnapshot,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2084,7 +2282,7 @@ export function InspectorPanel({
     try {
       window.sessionStorage.setItem(
         BOUNDARIES_SESSION_STORAGE_KEY,
-        boundariesEnabled ? "1" : "0"
+        boundariesEnabled ? "1" : "0",
       );
     } catch {
       // Session storage can be unavailable in restricted browser contexts.
@@ -2107,7 +2305,7 @@ export function InspectorPanel({
 
     const restored = restorePersistedInspectorOverrideDraft({
       jobId,
-      currentBaseFingerprint: baseFingerprint
+      currentBaseFingerprint: baseFingerprint,
     });
     setDraftRestoreWarning(restored.warning);
     setDraftStale(restored.stale);
@@ -2118,7 +2316,9 @@ export function InspectorPanel({
       setOverrideDraft(restored.draft);
 
       // Check server-side for newer jobs even when fingerprint matches
-      const draftNodeIds = [...new Set(restored.draft.entries.map((e) => e.nodeId))];
+      const draftNodeIds = [
+        ...new Set(restored.draft.entries.map((e) => e.nodeId)),
+      ];
       if (draftNodeIds.length > 0) {
         setStaleDraftCheckPending(true);
         const encodedId = encodeURIComponent(jobId);
@@ -2126,7 +2326,7 @@ export function InspectorPanel({
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ draftNodeIds }),
-          signal
+          signal,
         })
           .then((res) => res.json() as Promise<StaleDraftCheckResult>)
           .then((result) => {
@@ -2145,21 +2345,25 @@ export function InspectorPanel({
           });
       }
 
-      return () => { abortController.abort(); };
+      return () => {
+        abortController.abort();
+      };
     }
 
     if (restored.draft && restored.stale) {
       // Draft exists but fingerprint changed — keep stale draft in memory for carry-forward
       setOverrideDraft(restored.draft);
 
-      const draftNodeIds = [...new Set(restored.draft.entries.map((e) => e.nodeId))];
+      const draftNodeIds = [
+        ...new Set(restored.draft.entries.map((e) => e.nodeId)),
+      ];
       setStaleDraftCheckPending(true);
       const encodedId = encodeURIComponent(jobId);
       fetch(`/workspace/jobs/${encodedId}/stale-check`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ draftNodeIds }),
-        signal
+        signal,
       })
         .then((res) => res.json() as Promise<StaleDraftCheckResult>)
         .then((result) => {
@@ -2176,7 +2380,7 @@ export function InspectorPanel({
               boardKey: null,
               carryForwardAvailable: false,
               unmappedNodeIds: [],
-              message: "Could not verify carry-forward availability."
+              message: "Could not verify carry-forward availability.",
             });
           }
         })
@@ -2186,15 +2390,21 @@ export function InspectorPanel({
           }
         });
 
-      return () => { abortController.abort(); };
+      return () => {
+        abortController.abort();
+      };
     }
 
-    setOverrideDraft(createInspectorOverrideDraft({
-      sourceJobId: jobId,
-      baseFingerprint
-    }));
+    setOverrideDraft(
+      createInspectorOverrideDraft({
+        sourceJobId: jobId,
+        baseFingerprint,
+      }),
+    );
 
-    return () => { abortController.abort(); };
+    return () => {
+      abortController.abort();
+    };
   }, [baseFingerprint, jobId]);
 
   // Reset edit history and snapshots when the draft identity changes
@@ -2217,7 +2427,7 @@ export function InspectorPanel({
     }
     const result = persistInspectorOverrideDraft({
       jobId,
-      draft: overrideDraft
+      draft: overrideDraft,
     });
     setDraftPersistWarning(result.error);
   }, [jobId, overrideDraft]);
@@ -2237,20 +2447,22 @@ export function InspectorPanel({
 
     for (const field of editableScalarFields) {
       if (field === "padding") {
-        const value = getInspectorOverrideValue({
-          draft: overrideDraft,
-          nodeId: selectedNodeId,
-          field
-        }) ?? selectedIrNodeData.padding;
+        const value =
+          getInspectorOverrideValue({
+            draft: overrideDraft,
+            nodeId: selectedNodeId,
+            field,
+          }) ?? selectedIrNodeData.padding;
         nextPaddingControlInputs = toPaddingControlInputValue(value);
         continue;
       }
 
-      const value = getInspectorOverrideValue({
-        draft: overrideDraft,
-        nodeId: selectedNodeId,
-        field
-      }) ?? selectedIrNodeData[field];
+      const value =
+        getInspectorOverrideValue({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field,
+        }) ?? selectedIrNodeData[field];
 
       nextScalarControlInputs[field] = toScalarControlInputValue(value);
     }
@@ -2260,12 +2472,15 @@ export function InspectorPanel({
       const overrideValue = getInspectorOverrideValue({
         draft: overrideDraft,
         nodeId: selectedNodeId,
-        field
+        field,
       });
-      const fallbackValue = field === "layoutMode"
-        ? effectiveLayoutMode
-        : selectedIrNodeData[field];
-      nextLayoutControlInputs[field] = toLayoutControlInputValue(overrideValue ?? fallbackValue);
+      const fallbackValue =
+        field === "layoutMode"
+          ? effectiveLayoutMode
+          : selectedIrNodeData[field];
+      nextLayoutControlInputs[field] = toLayoutControlInputValue(
+        overrideValue ?? fallbackValue,
+      );
     }
 
     const nextFormValidationControlInputs: FormValidationControlInputState = {};
@@ -2273,15 +2488,17 @@ export function InspectorPanel({
       const overrideValue = getInspectorOverrideValue({
         draft: overrideDraft,
         nodeId: selectedNodeId,
-        field
+        field,
       });
       const effectiveValue = overrideValue ?? selectedIrNodeData[field];
       if (field === "required") {
         nextFormValidationControlInputs.required = effectiveValue === true;
       } else if (field === "validationType") {
-        nextFormValidationControlInputs.validationType = typeof effectiveValue === "string" ? effectiveValue : "";
+        nextFormValidationControlInputs.validationType =
+          typeof effectiveValue === "string" ? effectiveValue : "";
       } else if (field === "validationMessage") {
-        nextFormValidationControlInputs.validationMessage = typeof effectiveValue === "string" ? effectiveValue : "";
+        nextFormValidationControlInputs.validationMessage =
+          typeof effectiveValue === "string" ? effectiveValue : "";
       }
     }
 
@@ -2297,7 +2514,7 @@ export function InspectorPanel({
     effectiveLayoutMode,
     overrideDraft,
     selectedIrNodeData,
-    selectedNodeId
+    selectedNodeId,
   ]);
 
   // --- Derive default file from manifest/files when none explicitly selected ---
@@ -2310,7 +2527,7 @@ export function InspectorPanel({
     }
 
     const codeFiles = files.filter(
-      (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts")
+      (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts"),
     );
     if (codeFiles.length > 0 && codeFiles[0]) {
       return codeFiles[0].path;
@@ -2323,7 +2540,7 @@ export function InspectorPanel({
   const selectedFileBoundaries = useMemo(() => {
     return toBoundariesForFile({
       manifest,
-      filePath: effectiveSelectedFile
+      filePath: effectiveSelectedFile,
     });
   }, [effectiveSelectedFile, manifest]);
 
@@ -2337,12 +2554,12 @@ export function InspectorPanel({
           status: 0,
           content: null,
           error: "FILE_NOT_SELECTED",
-          message: "No file selected."
+          message: "No file selected.",
         };
       }
       try {
         const response = await fetch(
-          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`,
         );
         const body = await response.text();
         if (response.ok) {
@@ -2351,7 +2568,7 @@ export function InspectorPanel({
             status: response.status,
             content: body,
             error: null,
-            message: null
+            message: null,
           };
         }
 
@@ -2368,7 +2585,7 @@ export function InspectorPanel({
           status: response.status,
           payload: parsedPayload,
           fallbackCode: "FILE_CONTENT_FETCH_FAILED",
-          fallbackMessage: `Could not load file '${effectiveSelectedFile}'.`
+          fallbackMessage: `Could not load file '${effectiveSelectedFile}'.`,
         });
 
         return {
@@ -2376,7 +2593,7 @@ export function InspectorPanel({
           status: error.status,
           content: null,
           error: error.code,
-          message: error.message
+          message: error.message,
         };
       } catch {
         return {
@@ -2384,11 +2601,11 @@ export function InspectorPanel({
           status: 0,
           content: null,
           error: "FILE_CONTENT_FETCH_FAILED",
-          message: `Could not load file '${effectiveSelectedFile}'.`
+          message: `Could not load file '${effectiveSelectedFile}'.`,
         };
       }
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const fileContentState = useMemo<{
@@ -2400,7 +2617,7 @@ export function InspectorPanel({
       return {
         status: "empty",
         content: null,
-        error: null
+        error: null,
       };
     }
 
@@ -2408,7 +2625,7 @@ export function InspectorPanel({
       return {
         status: "loading",
         content: null,
-        error: null
+        error: null,
       };
     }
 
@@ -2416,7 +2633,7 @@ export function InspectorPanel({
       return {
         status: "loading",
         content: null,
-        error: null
+        error: null,
       };
     }
 
@@ -2427,24 +2644,36 @@ export function InspectorPanel({
         error: {
           status: fileContentQuery.data.status,
           code: fileContentQuery.data.error ?? "FILE_CONTENT_FETCH_FAILED",
-          message: fileContentQuery.data.message ?? `Could not load file '${effectiveSelectedFile}'.`
-        }
+          message:
+            fileContentQuery.data.message ??
+            `Could not load file '${effectiveSelectedFile}'.`,
+        },
       };
     }
 
     return {
       status: "ready",
       content: fileContentQuery.data.content,
-      error: null
+      error: null,
     };
-  }, [effectiveSelectedFile, fileContentQuery.data, fileContentQuery.isLoading]);
+  }, [
+    effectiveSelectedFile,
+    fileContentQuery.data,
+    fileContentQuery.isLoading,
+  ]);
 
   // --- Previous file content for diff comparison ---
 
-  const encodedPreviousJobId = previousJobId ? encodeURIComponent(previousJobId) : null;
+  const encodedPreviousJobId = previousJobId
+    ? encodeURIComponent(previousJobId)
+    : null;
 
   const previousFileContentQuery = useQuery({
-    queryKey: ["inspector-prev-file-content", previousJobId, effectiveSelectedFile],
+    queryKey: [
+      "inspector-prev-file-content",
+      previousJobId,
+      effectiveSelectedFile,
+    ],
     enabled: Boolean(previousJobId) && Boolean(effectiveSelectedFile),
     queryFn: async (): Promise<FileContentResponse> => {
       if (!effectiveSelectedFile || !encodedPreviousJobId) {
@@ -2453,12 +2682,12 @@ export function InspectorPanel({
           status: 0,
           content: null,
           error: "NO_PREVIOUS_JOB",
-          message: "No previous job selected."
+          message: "No previous job selected.",
         };
       }
       try {
         const response = await fetch(
-          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`
+          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`,
         );
         const body = await response.text();
         if (response.ok) {
@@ -2467,7 +2696,7 @@ export function InspectorPanel({
             status: response.status,
             content: body,
             error: null,
-            message: null
+            message: null,
           };
         }
 
@@ -2477,7 +2706,7 @@ export function InspectorPanel({
           status: response.status,
           content: "",
           error: null,
-          message: null
+          message: null,
         };
       } catch {
         return {
@@ -2485,11 +2714,11 @@ export function InspectorPanel({
           status: 0,
           content: null,
           error: "PREV_FILE_FETCH_FAILED",
-          message: `Could not load previous version of '${effectiveSelectedFile}'.`
+          message: `Could not load previous version of '${effectiveSelectedFile}'.`,
         };
       }
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const previousFileContent = useMemo<string | null>(() => {
@@ -2499,7 +2728,8 @@ export function InspectorPanel({
     return previousFileContentQuery.data.content;
   }, [previousJobId, effectiveSelectedFile, previousFileContentQuery.data]);
 
-  const previousFileContentLoading = previousFileContentQuery.isLoading && !previousFileContentQuery.data;
+  const previousFileContentLoading =
+    previousFileContentQuery.isLoading && !previousFileContentQuery.data;
 
   // --- Breadcrumb path derivation ---
 
@@ -2522,7 +2752,7 @@ export function InspectorPanel({
   const splitFileBoundaries = useMemo(() => {
     return toBoundariesForFile({
       manifest,
-      filePath: effectiveSplitFile
+      filePath: effectiveSplitFile,
     });
   }, [effectiveSplitFile, manifest]);
 
@@ -2531,22 +2761,46 @@ export function InspectorPanel({
     enabled: Boolean(effectiveSplitFile),
     queryFn: async (): Promise<FileContentResponse> => {
       if (!effectiveSplitFile) {
-        return { ok: false, status: 0, content: null, error: "NO_FILE", message: "No file selected." };
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "NO_FILE",
+          message: "No file selected.",
+        };
       }
       try {
         const response = await fetch(
-          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSplitFile)}`
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(effectiveSplitFile)}`,
         );
         const body = await response.text();
         if (response.ok) {
-          return { ok: true, status: response.status, content: body, error: null, message: null };
+          return {
+            ok: true,
+            status: response.status,
+            content: body,
+            error: null,
+            message: null,
+          };
         }
-        return { ok: false, status: response.status, content: null, error: "FETCH_FAILED", message: `Could not load '${effectiveSplitFile}'.` };
+        return {
+          ok: false,
+          status: response.status,
+          content: null,
+          error: "FETCH_FAILED",
+          message: `Could not load '${effectiveSplitFile}'.`,
+        };
       } catch {
-        return { ok: false, status: 0, content: null, error: "FETCH_FAILED", message: `Could not load '${effectiveSplitFile}'.` };
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "FETCH_FAILED",
+          message: `Could not load '${effectiveSplitFile}'.`,
+        };
       }
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const splitFileContent = useMemo<string | null>(() => {
@@ -2555,7 +2809,8 @@ export function InspectorPanel({
     return splitFileContentQuery.data.content;
   }, [effectiveSplitFile, splitFileContentQuery.data]);
 
-  const splitFileContentLoading = splitFileContentQuery.isLoading && !splitFileContentQuery.data;
+  const splitFileContentLoading =
+    splitFileContentQuery.isLoading && !splitFileContentQuery.data;
 
   const handleSelectSplitFile = useCallback((filePath: string) => {
     setSplitFile(filePath);
@@ -2585,196 +2840,222 @@ export function InspectorPanel({
     void refetchFileContent();
   }, [effectiveSelectedFile, refetchFileContent]);
 
-  const applyScalarOverrideInput = useCallback(({
-    field,
-    rawValue
-  }: {
-    field: ScalarOverrideField;
-    rawValue: unknown;
-  }) => {
-    if (!selectedNodeId) {
-      return;
-    }
-
-    const result = translateScalarOverrideInput({
-      field,
-      rawValue
-    });
-
-    if (!result.ok) {
-      setFieldValidationErrors((current) => ({
-        ...current,
-        [field]: result.error
-      }));
-      return;
-    }
-
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
-
-    if (overrideDraft) {
-      commitDraftEdit(upsertInspectorOverrideEntry({
-        draft: overrideDraft,
-        nodeId: selectedNodeId,
-        field: result.field,
-        value: result.value
-      }));
-    }
-  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
-
-  const handleScalarInputChange = useCallback((field: Exclude<ScalarOverrideField, "padding">, value: string) => {
-    setScalarControlInputs((current) => ({
-      ...current,
-      [field]: value
-    }));
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
-  }, []);
-
-  const handlePaddingInputChange = useCallback((side: PaddingSide, value: string) => {
-    setPaddingControlInputs((current) => ({
-      ...current,
-      [side]: value
-    }));
-    setFieldValidationErrors((current) => ({
-      ...current,
-      padding: null
-    }));
-  }, []);
-
-  const handleResetScalarOverride = useCallback((field: ScalarOverrideField) => {
-    if (!selectedNodeId || !overrideDraft) {
-      return;
-    }
-    commitDraftEdit(removeInspectorOverrideEntry({
-      draft: overrideDraft,
-      nodeId: selectedNodeId,
-      field
-    }));
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
-  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
-
-  const applyLayoutOverrideInput = useCallback(({
-    field,
-    rawValue
-  }: {
-    field: LayoutOverrideField;
-    rawValue: unknown;
-  }) => {
-    if (!selectedNodeId) {
-      return;
-    }
-
-    const result = translateLayoutOverrideInput({
+  const applyScalarOverrideInput = useCallback(
+    ({
       field,
       rawValue,
-      effectiveLayoutMode
-    });
+    }: {
+      field: ScalarOverrideField;
+      rawValue: unknown;
+    }) => {
+      if (!selectedNodeId) {
+        return;
+      }
 
-    if (!result.ok) {
-      setFieldValidationErrors((current) => ({
-        ...current,
-        [field]: result.error
-      }));
-      return;
-    }
-
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
-
-    if (overrideDraft) {
-      let nextDraft = upsertInspectorOverrideEntry({
-        draft: overrideDraft,
-        nodeId: selectedNodeId,
-        field: result.field,
-        value: result.value
+      const result = translateScalarOverrideInput({
+        field,
+        rawValue,
       });
 
-      if (field === "layoutMode" && result.value === "NONE") {
-        nextDraft = removeInspectorOverrideEntry({
-          draft: nextDraft,
-          nodeId: selectedNodeId,
-          field: "primaryAxisAlignItems"
-        });
-        nextDraft = removeInspectorOverrideEntry({
-          draft: nextDraft,
-          nodeId: selectedNodeId,
-          field: "counterAxisAlignItems"
-        });
-        setLayoutControlInputs((current) => ({
-          ...current,
-          primaryAxisAlignItems: "",
-          counterAxisAlignItems: ""
-        }));
+      if (!result.ok) {
         setFieldValidationErrors((current) => ({
           ...current,
-          primaryAxisAlignItems: null,
-          counterAxisAlignItems: null
+          [field]: result.error,
         }));
+        return;
+      }
+
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: null,
+      }));
+
+      if (overrideDraft) {
+        commitDraftEdit(
+          upsertInspectorOverrideEntry({
+            draft: overrideDraft,
+            nodeId: selectedNodeId,
+            field: result.field,
+            value: result.value,
+          }),
+        );
+      }
+    },
+    [selectedNodeId, overrideDraft, commitDraftEdit],
+  );
+
+  const handleScalarInputChange = useCallback(
+    (field: Exclude<ScalarOverrideField, "padding">, value: string) => {
+      setScalarControlInputs((current) => ({
+        ...current,
+        [field]: value,
+      }));
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: null,
+      }));
+    },
+    [],
+  );
+
+  const handlePaddingInputChange = useCallback(
+    (side: PaddingSide, value: string) => {
+      setPaddingControlInputs((current) => ({
+        ...current,
+        [side]: value,
+      }));
+      setFieldValidationErrors((current) => ({
+        ...current,
+        padding: null,
+      }));
+    },
+    [],
+  );
+
+  const handleResetScalarOverride = useCallback(
+    (field: ScalarOverrideField) => {
+      if (!selectedNodeId || !overrideDraft) {
+        return;
+      }
+      commitDraftEdit(
+        removeInspectorOverrideEntry({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field,
+        }),
+      );
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: null,
+      }));
+    },
+    [selectedNodeId, overrideDraft, commitDraftEdit],
+  );
+
+  const applyLayoutOverrideInput = useCallback(
+    ({
+      field,
+      rawValue,
+    }: {
+      field: LayoutOverrideField;
+      rawValue: unknown;
+    }) => {
+      if (!selectedNodeId) {
+        return;
+      }
+
+      const result = translateLayoutOverrideInput({
+        field,
+        rawValue,
+        effectiveLayoutMode,
+      });
+
+      if (!result.ok) {
+        setFieldValidationErrors((current) => ({
+          ...current,
+          [field]: result.error,
+        }));
+        return;
+      }
+
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: null,
+      }));
+
+      if (overrideDraft) {
+        let nextDraft = upsertInspectorOverrideEntry({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field: result.field,
+          value: result.value,
+        });
+
+        if (field === "layoutMode" && result.value === "NONE") {
+          nextDraft = removeInspectorOverrideEntry({
+            draft: nextDraft,
+            nodeId: selectedNodeId,
+            field: "primaryAxisAlignItems",
+          });
+          nextDraft = removeInspectorOverrideEntry({
+            draft: nextDraft,
+            nodeId: selectedNodeId,
+            field: "counterAxisAlignItems",
+          });
+          setLayoutControlInputs((current) => ({
+            ...current,
+            primaryAxisAlignItems: "",
+            counterAxisAlignItems: "",
+          }));
+          setFieldValidationErrors((current) => ({
+            ...current,
+            primaryAxisAlignItems: null,
+            counterAxisAlignItems: null,
+          }));
+        }
+
+        commitDraftEdit(nextDraft);
+      }
+    },
+    [selectedNodeId, effectiveLayoutMode, overrideDraft, commitDraftEdit],
+  );
+
+  const handleLayoutInputChange = useCallback(
+    (field: LayoutOverrideField, value: string) => {
+      setLayoutControlInputs((current) => ({
+        ...current,
+        [field]: value,
+      }));
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: null,
+      }));
+    },
+    [],
+  );
+
+  const handleResetLayoutOverride = useCallback(
+    (field: LayoutOverrideField) => {
+      if (!selectedNodeId || !overrideDraft) {
+        return;
+      }
+
+      let nextDraft = removeInspectorOverrideEntry({
+        draft: overrideDraft,
+        nodeId: selectedNodeId,
+        field,
+      });
+
+      if (field === "layoutMode") {
+        const resetLayoutMode =
+          resolveLayoutModeValue(selectedIrNodeData?.layoutMode) ?? "NONE";
+        if (resetLayoutMode === "NONE") {
+          nextDraft = removeInspectorOverrideEntry({
+            draft: nextDraft,
+            nodeId: selectedNodeId,
+            field: "primaryAxisAlignItems",
+          });
+          nextDraft = removeInspectorOverrideEntry({
+            draft: nextDraft,
+            nodeId: selectedNodeId,
+            field: "counterAxisAlignItems",
+          });
+          setLayoutControlInputs((current) => ({
+            ...current,
+            primaryAxisAlignItems: "",
+            counterAxisAlignItems: "",
+          }));
+        }
       }
 
       commitDraftEdit(nextDraft);
-    }
-  }, [selectedNodeId, effectiveLayoutMode, overrideDraft, commitDraftEdit]);
-
-  const handleLayoutInputChange = useCallback((field: LayoutOverrideField, value: string) => {
-    setLayoutControlInputs((current) => ({
-      ...current,
-      [field]: value
-    }));
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
-  }, []);
-
-  const handleResetLayoutOverride = useCallback((field: LayoutOverrideField) => {
-    if (!selectedNodeId || !overrideDraft) {
-      return;
-    }
-
-    let nextDraft = removeInspectorOverrideEntry({
-      draft: overrideDraft,
-      nodeId: selectedNodeId,
-      field
-    });
-
-    if (field === "layoutMode") {
-      const resetLayoutMode = resolveLayoutModeValue(selectedIrNodeData?.layoutMode) ?? "NONE";
-      if (resetLayoutMode === "NONE") {
-        nextDraft = removeInspectorOverrideEntry({
-          draft: nextDraft,
-          nodeId: selectedNodeId,
-          field: "primaryAxisAlignItems"
-        });
-        nextDraft = removeInspectorOverrideEntry({
-          draft: nextDraft,
-          nodeId: selectedNodeId,
-          field: "counterAxisAlignItems"
-        });
-        setLayoutControlInputs((current) => ({
-          ...current,
-          primaryAxisAlignItems: "",
-          counterAxisAlignItems: ""
-        }));
-      }
-    }
-
-    commitDraftEdit(nextDraft);
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
-  }, [selectedIrNodeData, selectedNodeId, overrideDraft, commitDraftEdit]);
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: null,
+      }));
+    },
+    [selectedIrNodeData, selectedNodeId, overrideDraft, commitDraftEdit],
+  );
 
   const structuredOverridePayload = useMemo(() => {
     if (!overrideDraft) {
@@ -2786,12 +3067,13 @@ export function InspectorPanel({
   const impactReviewModel = useMemo(() => {
     return deriveInspectorImpactReviewModel({
       entries: overrideDraft?.entries ?? [],
-      manifest: (manifest as InspectorImpactReviewManifest | null)
+      manifest: manifest as InspectorImpactReviewManifest | null,
     });
   }, [manifest, overrideDraft]);
 
   const canSubmitRegeneration =
-    impactReviewModel.summary.totalOverrides > 0 && !regenerateMutation.isPending;
+    impactReviewModel.summary.totalOverrides > 0 &&
+    !regenerateMutation.isPending;
 
   const handleSubmitRegeneration = useCallback(() => {
     if (!canSubmitRegeneration) {
@@ -2802,92 +3084,117 @@ export function InspectorPanel({
     regenerateMutation.mutate();
   }, [canSubmitRegeneration, regenerateMutation]);
 
-  const hasScalarFieldOverride = useCallback((field: ScalarOverrideField): boolean => {
-    if (!overrideDraft || !selectedNodeId) {
-      return false;
-    }
-    return Boolean(getInspectorOverrideEntry({
-      draft: overrideDraft,
-      nodeId: selectedNodeId,
-      field
-    }));
-  }, [overrideDraft, selectedNodeId]);
+  const hasScalarFieldOverride = useCallback(
+    (field: ScalarOverrideField): boolean => {
+      if (!overrideDraft || !selectedNodeId) {
+        return false;
+      }
+      return Boolean(
+        getInspectorOverrideEntry({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field,
+        }),
+      );
+    },
+    [overrideDraft, selectedNodeId],
+  );
 
-  const hasLayoutFieldOverride = useCallback((field: LayoutOverrideField): boolean => {
-    if (!overrideDraft || !selectedNodeId) {
-      return false;
-    }
-    return Boolean(getInspectorOverrideEntry({
-      draft: overrideDraft,
-      nodeId: selectedNodeId,
-      field
-    }));
-  }, [overrideDraft, selectedNodeId]);
+  const hasLayoutFieldOverride = useCallback(
+    (field: LayoutOverrideField): boolean => {
+      if (!overrideDraft || !selectedNodeId) {
+        return false;
+      }
+      return Boolean(
+        getInspectorOverrideEntry({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field,
+        }),
+      );
+    },
+    [overrideDraft, selectedNodeId],
+  );
 
-  const applyFormValidationOverrideInput = useCallback(({
-    field,
-    rawValue
-  }: {
-    field: FormValidationOverrideField;
-    rawValue: unknown;
-  }) => {
-    if (!selectedNodeId) {
-      return;
-    }
-
-    const result = translateFormValidationOverrideInput({
+  const applyFormValidationOverrideInput = useCallback(
+    ({
       field,
-      rawValue
-    });
+      rawValue,
+    }: {
+      field: FormValidationOverrideField;
+      rawValue: unknown;
+    }) => {
+      if (!selectedNodeId) {
+        return;
+      }
 
-    if (!result.ok) {
+      const result = translateFormValidationOverrideInput({
+        field,
+        rawValue,
+      });
+
+      if (!result.ok) {
+        setFieldValidationErrors((current) => ({
+          ...current,
+          [field]: result.error,
+        }));
+        return;
+      }
+
       setFieldValidationErrors((current) => ({
         ...current,
-        [field]: result.error
+        [field]: null,
       }));
-      return;
-    }
 
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
+      if (overrideDraft) {
+        commitDraftEdit(
+          upsertInspectorOverrideEntry({
+            draft: overrideDraft,
+            nodeId: selectedNodeId,
+            field: result.field,
+            value: result.value,
+          }),
+        );
+      }
+    },
+    [selectedNodeId, overrideDraft, commitDraftEdit],
+  );
 
-    if (overrideDraft) {
-      commitDraftEdit(upsertInspectorOverrideEntry({
-        draft: overrideDraft,
-        nodeId: selectedNodeId,
-        field: result.field,
-        value: result.value
+  const handleResetFormValidationOverride = useCallback(
+    (field: FormValidationOverrideField) => {
+      if (!selectedNodeId || !overrideDraft) {
+        return;
+      }
+      commitDraftEdit(
+        removeInspectorOverrideEntry({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field,
+        }),
+      );
+      setFieldValidationErrors((current) => ({
+        ...current,
+        [field]: null,
       }));
-    }
-  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
+    },
+    [selectedNodeId, overrideDraft, commitDraftEdit],
+  );
 
-  const handleResetFormValidationOverride = useCallback((field: FormValidationOverrideField) => {
-    if (!selectedNodeId || !overrideDraft) {
-      return;
-    }
-    commitDraftEdit(removeInspectorOverrideEntry({
-      draft: overrideDraft,
-      nodeId: selectedNodeId,
-      field
-    }));
-    setFieldValidationErrors((current) => ({
-      ...current,
-      [field]: null
-    }));
-  }, [selectedNodeId, overrideDraft, commitDraftEdit]);
-
-  const hasFormValidationFieldOverride = useCallback((field: FormValidationOverrideField): boolean => {
-    if (!overrideDraft || !selectedNodeId) {
-      return false;
-    }
-    return Boolean(getInspectorOverrideEntry({
-      draft: overrideDraft,
-      nodeId: selectedNodeId,
-      field
-    }));
-  }, [overrideDraft, selectedNodeId]);
+  const hasFormValidationFieldOverride = useCallback(
+    (field: FormValidationOverrideField): boolean => {
+      if (!overrideDraft || !selectedNodeId) {
+        return false;
+      }
+      return Boolean(
+        getInspectorOverrideEntry({
+          draft: overrideDraft,
+          nodeId: selectedNodeId,
+          field,
+        }),
+      );
+    },
+    [overrideDraft, selectedNodeId],
+  );
 
   // --- Handlers ---
 
@@ -2907,17 +3214,19 @@ export function InspectorPanel({
           file: match.entry.file,
           startLine: match.entry.startLine,
           endLine: match.entry.endLine,
-          ...(match.entry.extractedComponent ? { extractedComponent: true } : {})
+          ...(match.entry.extractedComponent
+            ? { extractedComponent: true }
+            : {}),
         };
       }
       // Screen-level: use the screen file
       return {
         file: match.screen.file,
         startLine: 1,
-        endLine: 1
+        endLine: 1,
       };
     },
-    [manifest]
+    [manifest],
   );
 
   // Derive the active manifest range for the currently selected node
@@ -2938,10 +3247,10 @@ export function InspectorPanel({
         throw new Error("No previous job ID");
       }
       return await fetchJson<ComponentManifestPayload>({
-        url: `/workspace/jobs/${encodedPreviousJobId}/component-manifest`
+        url: `/workspace/jobs/${encodedPreviousJobId}/component-manifest`,
       });
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   const previousManifest = useMemo<NodeDiffManifestPayload | null>(() => {
@@ -2958,7 +3267,7 @@ export function InspectorPanel({
     return resolveNodeDiffMapping(
       selectedNodeId,
       activeManifestRange?.file ?? null,
-      previousManifest
+      previousManifest,
     );
   }, [selectedNodeId, previousJobId, activeManifestRange, previousManifest]);
 
@@ -2968,37 +3277,66 @@ export function InspectorPanel({
     return {
       file: nodeDiffResult.previousMapping.file,
       startLine: nodeDiffResult.previousMapping.startLine,
-      endLine: nodeDiffResult.previousMapping.endLine
+      endLine: nodeDiffResult.previousMapping.endLine,
     };
   }, [nodeDiffResult]);
 
   // If the node moved to a different file in the previous job, fetch that file
   const previousDiffFile = useMemo<string | null>(() => {
-    if (!nodeDiffResult?.fileChanged || !nodeDiffResult.previousMapping) return null;
+    if (!nodeDiffResult?.fileChanged || !nodeDiffResult.previousMapping)
+      return null;
     return nodeDiffResult.previousMapping.file;
   }, [nodeDiffResult]);
 
   const previousDiffFileContentQuery = useQuery({
-    queryKey: ["inspector-prev-diff-file-content", previousJobId, previousDiffFile],
+    queryKey: [
+      "inspector-prev-diff-file-content",
+      previousJobId,
+      previousDiffFile,
+    ],
     enabled: Boolean(previousJobId) && Boolean(previousDiffFile),
     queryFn: async (): Promise<FileContentResponse> => {
       if (!previousDiffFile || !encodedPreviousJobId) {
-        return { ok: false, status: 0, content: null, error: "NO_FILE", message: "No file." };
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "NO_FILE",
+          message: "No file.",
+        };
       }
       try {
         const response = await fetch(
-          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(previousDiffFile)}`
+          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(previousDiffFile)}`,
         );
         const body = await response.text();
         if (response.ok) {
-          return { ok: true, status: response.status, content: body, error: null, message: null };
+          return {
+            ok: true,
+            status: response.status,
+            content: body,
+            error: null,
+            message: null,
+          };
         }
-        return { ok: true, status: response.status, content: "", error: null, message: null };
+        return {
+          ok: true,
+          status: response.status,
+          content: "",
+          error: null,
+          message: null,
+        };
       } catch {
-        return { ok: false, status: 0, content: null, error: "FETCH_FAILED", message: `Could not load '${previousDiffFile}'.` };
+        return {
+          ok: false,
+          status: 0,
+          content: null,
+          error: "FETCH_FAILED",
+          message: `Could not load '${previousDiffFile}'.`,
+        };
       }
     },
-    staleTime: Infinity
+    staleTime: Infinity,
   });
 
   // Effective previous file content: use cross-file content when the node moved files
@@ -3009,10 +3347,16 @@ export function InspectorPanel({
       return previousDiffFileContentQuery.data.content;
     }
     return previousFileContent;
-  }, [nodeDiffResult, previousDiffFile, previousDiffFileContentQuery.data, previousFileContent]);
+  }, [
+    nodeDiffResult,
+    previousDiffFile,
+    previousDiffFileContentQuery.data,
+    previousFileContent,
+  ]);
 
   const effectivePreviousFileContentLoading = nodeDiffResult?.fileChanged
-    ? previousDiffFileContentQuery.isLoading && !previousDiffFileContentQuery.data
+    ? previousDiffFileContentQuery.isLoading &&
+      !previousDiffFileContentQuery.data
     : previousFileContentLoading;
 
   // Node-scoped diff unavailability reason (null when available)
@@ -3024,7 +3368,9 @@ export function InspectorPanel({
   /** Look up the node name and type from the IR tree. */
   const resolveNodeMeta = useCallback(
     (nodeId: string): { name: string; type: string } => {
-      const findInTree = (nodes: TreeNode[]): { name: string; type: string } | null => {
+      const findInTree = (
+        nodes: TreeNode[],
+      ): { name: string; type: string } | null => {
         for (const node of nodes) {
           if (node.id === nodeId) return { name: node.name, type: node.type };
           if (node.children) {
@@ -3036,7 +3382,7 @@ export function InspectorPanel({
       };
       return findInTree(treeNodes) ?? { name: nodeId, type: "unknown" };
     },
-    [treeNodes]
+    [treeNodes],
   );
 
   const computeSelectedNodeEditCapability = useCallback(() => {
@@ -3044,7 +3390,7 @@ export function InspectorPanel({
       return {
         editable: false,
         reason: "No node selected.",
-        editableFields: []
+        editableFields: [],
       };
     }
 
@@ -3061,17 +3407,22 @@ export function InspectorPanel({
       name: nodeName,
       type: nodeType,
       mapped: isMapped,
-      presentFields
+      presentFields,
     });
   }, [irScreens, isNodeMapped, selectedNodeId]);
 
   // --- Edit capability: recompute when selected node changes ---
 
   useEffect(() => {
-    scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability: computeSelectedNodeEditCapability() } });
+    scopeDispatch({
+      type: "SET_EDIT_CAPABILITY",
+      payload: { capability: computeSelectedNodeEditCapability() },
+    });
   }, [computeSelectedNodeEditCapability]);
 
-  const effectiveEditCapability = editCapability ?? (selectedNodeId ? computeSelectedNodeEditCapability() : null);
+  const effectiveEditCapability =
+    editCapability ??
+    (selectedNodeId ? computeSelectedNodeEditCapability() : null);
   const canEnterEditMode = Boolean(effectiveEditCapability?.editable);
 
   const handleEnterEditMode = useCallback(() => {
@@ -3082,11 +3433,17 @@ export function InspectorPanel({
 
   const handleExitEditMode = useCallback(() => {
     scopeDispatch({ type: "EXIT_EDIT_MODE" });
-    scopeDispatch({ type: "SET_EDIT_CAPABILITY", payload: { capability: computeSelectedNodeEditCapability() } });
+    scopeDispatch({
+      type: "SET_EDIT_CAPABILITY",
+      payload: { capability: computeSelectedNodeEditCapability() },
+    });
   }, [computeSelectedNodeEditCapability]);
 
   const applyNavigationVisualState = useCallback(
-    (nextScopeState: { selectedNodeId: string | null; effectiveFileTarget: string | null }) => {
+    (nextScopeState: {
+      selectedNodeId: string | null;
+      effectiveFileTarget: string | null;
+    }) => {
       const nodeId = nextScopeState.selectedNodeId;
 
       if (!nodeId) {
@@ -3104,7 +3461,7 @@ export function InspectorPanel({
           } else {
             setHighlightRange({
               startLine: match.entry.startLine,
-              endLine: match.entry.endLine
+              endLine: match.entry.endLine,
             });
           }
           return;
@@ -3129,7 +3486,7 @@ export function InspectorPanel({
         setHighlightRange(null);
       }
     },
-    [irScreens, manifest]
+    [irScreens, manifest],
   );
 
   const handleSelectTreeNode = useCallback(
@@ -3144,8 +3501,8 @@ export function InspectorPanel({
           nodeId,
           nodeName: meta.name,
           nodeType: meta.type,
-          mapping
-        }
+          mapping,
+        },
       });
 
       if (!manifest) {
@@ -3168,7 +3525,7 @@ export function InspectorPanel({
           setSelectedFile(match.entry.file);
           setHighlightRange({
             startLine: match.entry.startLine,
-            endLine: match.entry.endLine
+            endLine: match.entry.endLine,
           });
         }
       } else {
@@ -3177,7 +3534,7 @@ export function InspectorPanel({
         setHighlightRange(null);
       }
     },
-    [manifest, resolveMapping, resolveNodeMeta]
+    [manifest, resolveMapping, resolveNodeMeta],
   );
 
   // Also check if the node is a screen directly from IR data (for screens without manifest)
@@ -3194,7 +3551,7 @@ export function InspectorPanel({
         }
       }
     },
-    [handleSelectTreeNode, manifest, irScreens]
+    [handleSelectTreeNode, manifest, irScreens],
   );
 
   // Handle inspect:select from the preview iframe overlay
@@ -3202,7 +3559,7 @@ export function InspectorPanel({
     (irNodeId: string) => {
       handleTreeSelect(irNodeId);
     },
-    [handleTreeSelect]
+    [handleTreeSelect],
   );
 
   /** Explicitly enter scope on a node (separate from selection). */
@@ -3217,8 +3574,8 @@ export function InspectorPanel({
           nodeId,
           nodeName: meta.name,
           nodeType: meta.type,
-          mapping
-        }
+          mapping,
+        },
       });
 
       // Also navigate to the node's file if mapped
@@ -3229,16 +3586,18 @@ export function InspectorPanel({
         } else {
           setHighlightRange({
             startLine: mapping.startLine,
-            endLine: mapping.endLine
+            endLine: mapping.endLine,
           });
         }
       }
     },
-    [resolveMapping, resolveNodeMeta]
+    [resolveMapping, resolveNodeMeta],
   );
 
   const handleLevelUp = useCallback(() => {
-    const nextScopeState = inspectorScopeReducer(scopeState, { type: "LEVEL_UP" });
+    const nextScopeState = inspectorScopeReducer(scopeState, {
+      type: "LEVEL_UP",
+    });
     if (nextScopeState === scopeState) {
       return;
     }
@@ -3254,7 +3613,9 @@ export function InspectorPanel({
 
   /** Return to parent file context without unwinding scope. */
   const handleReturnToParentFile = useCallback(() => {
-    const nextScopeState = inspectorScopeReducer(scopeState, { type: "RETURN_TO_PARENT_FILE" });
+    const nextScopeState = inspectorScopeReducer(scopeState, {
+      type: "RETURN_TO_PARENT_FILE",
+    });
     if (nextScopeState === scopeState) {
       return;
     }
@@ -3264,7 +3625,9 @@ export function InspectorPanel({
   }, [applyNavigationVisualState, scopeState]);
 
   const handleNavigateBack = useCallback(() => {
-    const nextScopeState = inspectorScopeReducer(scopeState, { type: "NAVIGATE_BACK" });
+    const nextScopeState = inspectorScopeReducer(scopeState, {
+      type: "NAVIGATE_BACK",
+    });
     if (nextScopeState === scopeState) {
       return;
     }
@@ -3274,7 +3637,9 @@ export function InspectorPanel({
   }, [applyNavigationVisualState, scopeState]);
 
   const handleNavigateForward = useCallback(() => {
-    const nextScopeState = inspectorScopeReducer(scopeState, { type: "NAVIGATE_FORWARD" });
+    const nextScopeState = inspectorScopeReducer(scopeState, {
+      type: "NAVIGATE_FORWARD",
+    });
     if (nextScopeState === scopeState) {
       return;
     }
@@ -3287,70 +3652,87 @@ export function InspectorPanel({
     setInspectEnabled((prev) => !prev);
   }, []);
 
-  const handleSplitterPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const state = dragStateRef.current;
-    if (!state || state.pointerId !== event.pointerId || state.element !== event.currentTarget) {
-      return;
-    }
+  const handleSplitterPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const state = dragStateRef.current;
+      if (
+        !state ||
+        state.pointerId !== event.pointerId ||
+        state.element !== event.currentTarget
+      ) {
+        return;
+      }
 
-    state.lastClientX = event.clientX;
-    setPaneRatios(resolveDragResizeRatios(state, event.clientX));
-  }, [resolveDragResizeRatios]);
+      state.lastClientX = event.clientX;
+      setPaneRatios(resolveDragResizeRatios(state, event.clientX));
+    },
+    [resolveDragResizeRatios],
+  );
 
-  const finalizeSplitterDrag = useCallback(({
-    event,
-    fallbackClientX,
-    releaseCapture
-  }: {
-    event: ReactPointerEvent<HTMLDivElement>;
-    fallbackClientX?: number | undefined;
-    releaseCapture: boolean;
-  }) => {
-    const state = dragStateRef.current;
-    if (!state || state.pointerId !== event.pointerId || state.element !== event.currentTarget) {
-      return;
-    }
+  const finalizeSplitterDrag = useCallback(
+    ({
+      event,
+      fallbackClientX,
+      releaseCapture,
+    }: {
+      event: ReactPointerEvent<HTMLDivElement>;
+      fallbackClientX?: number | undefined;
+      releaseCapture: boolean;
+    }) => {
+      const state = dragStateRef.current;
+      if (
+        !state ||
+        state.pointerId !== event.pointerId ||
+        state.element !== event.currentTarget
+      ) {
+        return;
+      }
 
-    const finalClientX = fallbackClientX ?? (Number.isFinite(event.clientX) ? event.clientX : state.lastClientX);
-    state.lastClientX = finalClientX;
+      const finalClientX =
+        fallbackClientX ??
+        (Number.isFinite(event.clientX) ? event.clientX : state.lastClientX);
+      state.lastClientX = finalClientX;
 
-    const next = resolveDragResizeRatios(state, finalClientX);
-    setPaneRatios(next);
-    persistPaneLayout(next);
-    clearActiveSplitterDrag({ releaseCapture });
-  }, [clearActiveSplitterDrag, persistPaneLayout, resolveDragResizeRatios]);
+      const next = resolveDragResizeRatios(state, finalClientX);
+      setPaneRatios(next);
+      persistPaneLayout(next);
+      clearActiveSplitterDrag({ releaseCapture });
+    },
+    [clearActiveSplitterDrag, persistPaneLayout, resolveDragResizeRatios],
+  );
 
   const handleSplitterPointerDown = useCallback(
-    (separator: PaneSeparator) => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!isDesktopLayout) {
-        return;
-      }
-      if (separator === "tree-preview" && !hasExpandedTree) {
-        return;
-      }
-
-      event.preventDefault();
-      clearActiveSplitterDrag({ releaseCapture: false });
-
-      dragStateRef.current = {
-        element: event.currentTarget,
-        pointerId: event.pointerId,
-        separator,
-        startX: event.clientX,
-        lastClientX: event.clientX,
-        startWidthPx: getLayoutContainerWidth(),
-        startRatios: paneRatios,
-        unlockDocument: lockDocumentForSplitterDrag()
-      };
-
-      if (typeof event.currentTarget.setPointerCapture === "function") {
-        try {
-          event.currentTarget.setPointerCapture(event.pointerId);
-        } catch {
-          // The drag still works when browsers refuse capture for synthetic or stale pointers.
+    (separator: PaneSeparator) =>
+      (event: ReactPointerEvent<HTMLDivElement>) => {
+        if (!isDesktopLayout) {
+          return;
         }
-      }
-    },
+        if (separator === "tree-preview" && !hasExpandedTree) {
+          return;
+        }
+
+        event.preventDefault();
+        clearActiveSplitterDrag({ releaseCapture: false });
+
+        dragStateRef.current = {
+          element: event.currentTarget,
+          pointerId: event.pointerId,
+          separator,
+          startX: event.clientX,
+          lastClientX: event.clientX,
+          startWidthPx: getLayoutContainerWidth(),
+          startRatios: paneRatios,
+          unlockDocument: lockDocumentForSplitterDrag(),
+        };
+
+        if (typeof event.currentTarget.setPointerCapture === "function") {
+          try {
+            event.currentTarget.setPointerCapture(event.pointerId);
+          } catch {
+            // The drag still works when browsers refuse capture for synthetic or stale pointers.
+          }
+        }
+      },
     [
       clearActiveSplitterDrag,
       getLayoutContainerWidth,
@@ -3358,76 +3740,94 @@ export function InspectorPanel({
       isDesktopLayout,
       lockDocumentForSplitterDrag,
       paneRatios,
-    ]
+    ],
   );
 
-  const handleSplitterPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    finalizeSplitterDrag({
-      event,
-      releaseCapture: true
-    });
-  }, [finalizeSplitterDrag]);
+  const handleSplitterPointerUp = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      finalizeSplitterDrag({
+        event,
+        releaseCapture: true,
+      });
+    },
+    [finalizeSplitterDrag],
+  );
 
-  const handleSplitterPointerCancel = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    finalizeSplitterDrag({
-      event,
-      fallbackClientX: dragStateRef.current?.lastClientX,
-      releaseCapture: true
-    });
-  }, [finalizeSplitterDrag]);
+  const handleSplitterPointerCancel = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      finalizeSplitterDrag({
+        event,
+        fallbackClientX: dragStateRef.current?.lastClientX,
+        releaseCapture: true,
+      });
+    },
+    [finalizeSplitterDrag],
+  );
 
-  const handleSplitterLostPointerCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    finalizeSplitterDrag({
-      event,
-      fallbackClientX: dragStateRef.current?.lastClientX,
-      releaseCapture: false
-    });
-  }, [finalizeSplitterDrag]);
+  const handleSplitterLostPointerCapture = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      finalizeSplitterDrag({
+        event,
+        fallbackClientX: dragStateRef.current?.lastClientX,
+        releaseCapture: false,
+      });
+    },
+    [finalizeSplitterDrag],
+  );
 
   const handleSplitterKeyDown = useCallback(
-    (separator: PaneSeparator) => (event: ReactKeyboardEvent<HTMLDivElement>) => {
-      if (!isDesktopLayout) {
-        return;
-      }
-      if (separator === "tree-preview" && !hasExpandedTree) {
-        return;
-      }
+    (separator: PaneSeparator) =>
+      (event: ReactKeyboardEvent<HTMLDivElement>) => {
+        if (!isDesktopLayout) {
+          return;
+        }
+        if (separator === "tree-preview" && !hasExpandedTree) {
+          return;
+        }
 
-      const keyboardStep = event.shiftKey ? KEYBOARD_STEP_LARGE_PX : KEYBOARD_STEP_PX;
-      let deltaPx: number | null = null;
+        const keyboardStep = event.shiftKey
+          ? KEYBOARD_STEP_LARGE_PX
+          : KEYBOARD_STEP_PX;
+        let deltaPx: number | null = null;
 
-      switch (event.key) {
-        case "ArrowLeft":
-          deltaPx = -keyboardStep;
-          break;
-        case "ArrowRight":
-          deltaPx = keyboardStep;
-          break;
-        case "Home":
-          deltaPx = -KEYBOARD_EXTREME_DELTA_PX;
-          break;
-        case "End":
-          deltaPx = KEYBOARD_EXTREME_DELTA_PX;
-          break;
-        default:
-          break;
-      }
+        switch (event.key) {
+          case "ArrowLeft":
+            deltaPx = -keyboardStep;
+            break;
+          case "ArrowRight":
+            deltaPx = keyboardStep;
+            break;
+          case "Home":
+            deltaPx = -KEYBOARD_EXTREME_DELTA_PX;
+            break;
+          case "End":
+            deltaPx = KEYBOARD_EXTREME_DELTA_PX;
+            break;
+          default:
+            break;
+        }
 
-      if (deltaPx === null) {
-        return;
-      }
+        if (deltaPx === null) {
+          return;
+        }
 
-      event.preventDefault();
-      const next = applyResizeDelta({
-        separator,
-        deltaPx,
-        sourceRatios: paneRatios
-      });
+        event.preventDefault();
+        const next = applyResizeDelta({
+          separator,
+          deltaPx,
+          sourceRatios: paneRatios,
+        });
 
-      setPaneRatios(next);
-      persistPaneLayout(next);
-    },
-    [applyResizeDelta, hasExpandedTree, isDesktopLayout, paneRatios, persistPaneLayout]
+        setPaneRatios(next);
+        persistPaneLayout(next);
+      },
+    [
+      applyResizeDelta,
+      hasExpandedTree,
+      isDesktopLayout,
+      paneRatios,
+      persistPaneLayout,
+    ],
   );
 
   const collapsedPreviewShare = useMemo(() => {
@@ -3450,7 +3850,7 @@ export function InspectorPanel({
       flexBasis: "0%",
       flexGrow: paneRatios.tree,
       flexShrink: 1,
-      minWidth: `${String(MIN_TREE_WIDTH_PX)}px`
+      minWidth: `${String(MIN_TREE_WIDTH_PX)}px`,
     };
   }, [hasExpandedTree, isDesktopLayout, paneRatios.tree]);
 
@@ -3464,7 +3864,7 @@ export function InspectorPanel({
         flexBasis: "0%",
         flexGrow: paneRatios.preview,
         flexShrink: 1,
-        minWidth: `${String(MIN_PREVIEW_WIDTH_PX)}px`
+        minWidth: `${String(MIN_PREVIEW_WIDTH_PX)}px`,
       };
     }
 
@@ -3472,9 +3872,14 @@ export function InspectorPanel({
       flexBasis: "0%",
       flexGrow: collapsedPreviewShare,
       flexShrink: 1,
-      minWidth: `${String(MIN_PREVIEW_WIDTH_PX)}px`
+      minWidth: `${String(MIN_PREVIEW_WIDTH_PX)}px`,
     };
-  }, [collapsedPreviewShare, hasExpandedTree, isDesktopLayout, paneRatios.preview]);
+  }, [
+    collapsedPreviewShare,
+    hasExpandedTree,
+    isDesktopLayout,
+    paneRatios.preview,
+  ]);
 
   const codePaneStyle = useMemo(() => {
     if (!isDesktopLayout) {
@@ -3486,7 +3891,7 @@ export function InspectorPanel({
         flexBasis: "0%",
         flexGrow: paneRatios.code,
         flexShrink: 1,
-        minWidth: `${String(MIN_CODE_WIDTH_PX)}px`
+        minWidth: `${String(MIN_CODE_WIDTH_PX)}px`,
       };
     }
 
@@ -3494,18 +3899,36 @@ export function InspectorPanel({
       flexBasis: "0%",
       flexGrow: 1 - collapsedPreviewShare,
       flexShrink: 1,
-      minWidth: `${String(MIN_CODE_WIDTH_PX)}px`
+      minWidth: `${String(MIN_CODE_WIDTH_PX)}px`,
     };
-  }, [collapsedPreviewShare, hasExpandedTree, isDesktopLayout, paneRatios.code]);
+  }, [
+    collapsedPreviewShare,
+    hasExpandedTree,
+    isDesktopLayout,
+    paneRatios.code,
+  ]);
 
   const sourceStatuses = useMemo(() => {
     return [
       { source: "files", label: "Files", status: filesState.status },
       { source: "design-ir", label: "Design IR", status: designIrState.status },
-      { source: "component-manifest", label: "Manifest", status: manifestState.status },
-      { source: "file-content", label: "File content", status: fileContentState.status }
+      {
+        source: "component-manifest",
+        label: "Manifest",
+        status: manifestState.status,
+      },
+      {
+        source: "file-content",
+        label: "File content",
+        status: fileContentState.status,
+      },
     ] as const;
-  }, [designIrState.status, fileContentState.status, filesState.status, manifestState.status]);
+  }, [
+    designIrState.status,
+    fileContentState.status,
+    filesState.status,
+    manifestState.status,
+  ]);
 
   const sourceErrorBanners = useMemo(() => {
     const banners: Array<{
@@ -3520,7 +3943,7 @@ export function InspectorPanel({
         source: "files",
         title: "Generated files unavailable",
         details: filesState.error,
-        onRetry: handleRetryFiles
+        onRetry: handleRetryFiles,
       });
     }
 
@@ -3529,7 +3952,7 @@ export function InspectorPanel({
         source: "design-ir",
         title: "Design IR unavailable",
         details: designIrState.error,
-        onRetry: handleRetryDesignIr
+        onRetry: handleRetryDesignIr,
       });
     }
 
@@ -3538,7 +3961,7 @@ export function InspectorPanel({
         source: "component-manifest",
         title: "Component mapping unavailable",
         details: manifestState.error,
-        onRetry: handleRetryManifest
+        onRetry: handleRetryManifest,
       });
     }
 
@@ -3547,7 +3970,7 @@ export function InspectorPanel({
         source: "file-content",
         title: "Selected file unavailable",
         details: fileContentState.error,
-        onRetry: handleRetryFileContent
+        onRetry: handleRetryFileContent,
       });
     }
 
@@ -3560,7 +3983,7 @@ export function InspectorPanel({
     handleRetryFileContent,
     handleRetryFiles,
     handleRetryManifest,
-    manifestState.error
+    manifestState.error,
   ]);
 
   const handlePreviewLocalSync = useCallback(() => {
@@ -3569,24 +3992,39 @@ export function InspectorPanel({
     }
     setSyncError(null);
     previewSyncMutation.mutate({
-      targetPath: syncTargetPathInput
+      targetPath: syncTargetPathInput,
     });
   }, [isRegenerationJob, previewSyncMutation, syncTargetPathInput]);
 
-  const handleToggleLocalSyncFile = useCallback((path: string, checked: boolean) => {
-    setSyncFileDecisions((current) => ({
-      ...current,
-      [path]: checked ? "write" : "skip"
-    }));
-  }, []);
+  const handleToggleLocalSyncFile = useCallback(
+    (path: string, checked: boolean) => {
+      setSyncFileDecisions((current) => ({
+        ...current,
+        [path]: checked ? "write" : "skip",
+      }));
+    },
+    [],
+  );
 
   const handleApplyLocalSync = useCallback(() => {
-    if (!isRegenerationJob || !syncPreviewPlan || !syncConfirmationChecked || !effectiveSyncSummary || effectiveSyncSummary.selectedFiles === 0) {
+    if (
+      !isRegenerationJob ||
+      !syncPreviewPlan ||
+      !syncConfirmationChecked ||
+      !effectiveSyncSummary ||
+      effectiveSyncSummary.selectedFiles === 0
+    ) {
       return;
     }
     setSyncError(null);
     applySyncMutation.mutate();
-  }, [applySyncMutation, effectiveSyncSummary, isRegenerationJob, syncConfirmationChecked, syncPreviewPlan]);
+  }, [
+    applySyncMutation,
+    effectiveSyncSummary,
+    isRegenerationJob,
+    syncConfirmationChecked,
+    syncPreviewPlan,
+  ]);
 
   const syncPreviewDisabled =
     !isRegenerationJob ||
@@ -3658,7 +4096,9 @@ export function InspectorPanel({
           <button
             type="button"
             data-testid="inspector-shortcut-help-button"
-            onClick={() => { setShortcutHelpOpen((prev) => !prev); }}
+            onClick={() => {
+              setShortcutHelpOpen((prev) => !prev);
+            }}
             className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[11px] font-medium text-white/45 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87]"
             title="Keyboard shortcuts (?)"
             aria-label="Show keyboard shortcuts"
@@ -3683,7 +4123,12 @@ export function InspectorPanel({
               disabled={!canEnterEditMode}
               onClick={handleEnterEditMode}
               className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[11px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
-              title={effectiveEditCapability?.editable ? "Enter edit mode for this node" : (effectiveEditCapability?.reason ?? "Select a node to check edit capability")}
+              title={
+                effectiveEditCapability?.editable
+                  ? "Enter edit mode for this node"
+                  : (effectiveEditCapability?.reason ??
+                    "Select a node to check edit capability")
+              }
               aria-label="Enter edit mode"
             >
               Edit
@@ -3691,7 +4136,10 @@ export function InspectorPanel({
           )}
         </div>
         <div className="h-3 w-px bg-[#333333]" />
-        <div className="flex flex-wrap gap-1" data-testid="inspector-source-statuses">
+        <div
+          className="flex flex-wrap gap-1"
+          data-testid="inspector-source-statuses"
+        >
           {sourceStatuses.map(({ source, label, status }) => (
             <span
               key={source}
@@ -3714,7 +4162,9 @@ export function InspectorPanel({
                 : "border border-white/10 bg-[#262626] text-white/45"
             }`}
           >
-            {effectiveEditCapability.editable ? `Edit: ${effectiveEditCapability.editableFields.length} fields` : "Not editable"}
+            {effectiveEditCapability.editable
+              ? `Edit: ${effectiveEditCapability.editableFields.length} fields`
+              : "Not editable"}
           </span>
         ) : null}
       </div>
@@ -3729,17 +4179,30 @@ export function InspectorPanel({
           <div className="mx-auto max-w-5xl">
             <p className="m-0 font-semibold text-indigo-300">Edit Studio</p>
             <p className="m-0 mt-1 text-slate-400">
-              Structured overrides use exact IR field names in payload output and persist as a single draft.
+              Structured overrides use exact IR field names in payload output
+              and persist as a single draft.
             </p>
-            <p data-testid="inspector-edit-supported-layout-fields" className="m-0 mt-1 text-indigo-900">
-              Supported layout overrides: width, height, layoutMode, primaryAxisAlignItems, counterAxisAlignItems.
+            <p
+              data-testid="inspector-edit-supported-layout-fields"
+              className="m-0 mt-1 text-indigo-900"
+            >
+              Supported layout overrides: width, height, layoutMode,
+              primaryAxisAlignItems, counterAxisAlignItems.
             </p>
-            <p data-testid="inspector-edit-v1-deferred-fields" className="m-0 mt-1 text-indigo-800">
-              Deferred: x, y, minWidth, maxWidth, maxHeight, responsive breakpoints, and screen-root layout editing.
+            <p
+              data-testid="inspector-edit-v1-deferred-fields"
+              className="m-0 mt-1 text-indigo-800"
+            >
+              Deferred: x, y, minWidth, maxWidth, maxHeight, responsive
+              breakpoints, and screen-root layout editing.
             </p>
             {draftRestoreWarning && !staleDraftCheckResult ? (
               <p
-                data-testid={draftStale ? "inspector-edit-draft-stale-warning" : "inspector-edit-draft-restore-warning"}
+                data-testid={
+                  draftStale
+                    ? "inspector-edit-draft-stale-warning"
+                    : "inspector-edit-draft-restore-warning"
+                }
                 className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
               >
                 {draftRestoreWarning}
@@ -3786,7 +4249,10 @@ export function InspectorPanel({
                             className="rounded border border-indigo-200 bg-white px-2 py-1.5"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <label className="font-semibold text-indigo-900" htmlFor="inspector-edit-input-padding-top">
+                              <label
+                                className="font-semibold text-indigo-900"
+                                htmlFor="inspector-edit-input-padding-top"
+                              >
                                 {fieldLabel(field)}
                               </label>
                               {hasScalarFieldOverride(field) ? (
@@ -3804,8 +4270,13 @@ export function InspectorPanel({
                             </div>
                             <div className="mt-1 grid grid-cols-2 gap-1">
                               {PADDING_SIDES.map((side) => (
-                                <label key={side} className="flex flex-col gap-0.5 text-[11px] text-slate-700">
-                                  <span className="font-medium capitalize">{side}</span>
+                                <label
+                                  key={side}
+                                  className="flex flex-col gap-0.5 text-[11px] text-slate-700"
+                                >
+                                  <span className="font-medium capitalize">
+                                    {side}
+                                  </span>
                                   <input
                                     id={`inspector-edit-input-padding-${side}`}
                                     data-testid={`inspector-edit-input-padding-${side}`}
@@ -3814,17 +4285,22 @@ export function InspectorPanel({
                                     step={0.1}
                                     value={paddingControlInputs[side] ?? ""}
                                     onChange={(event) => {
-                                      handlePaddingInputChange(side, event.currentTarget.value);
+                                      handlePaddingInputChange(
+                                        side,
+                                        event.currentTarget.value,
+                                      );
                                     }}
                                     onBlur={() => {
                                       applyScalarOverrideInput({
                                         field,
                                         rawValue: {
                                           top: paddingControlInputs.top ?? "",
-                                          right: paddingControlInputs.right ?? "",
-                                          bottom: paddingControlInputs.bottom ?? "",
-                                          left: paddingControlInputs.left ?? ""
-                                        }
+                                          right:
+                                            paddingControlInputs.right ?? "",
+                                          bottom:
+                                            paddingControlInputs.bottom ?? "",
+                                          left: paddingControlInputs.left ?? "",
+                                        },
                                       });
                                     }}
                                     className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
@@ -3833,7 +4309,10 @@ export function InspectorPanel({
                               ))}
                             </div>
                             {fieldValidationErrors.padding ? (
-                              <p data-testid="inspector-edit-error-padding" className="m-0 mt-1 text-[11px] text-rose-700">
+                              <p
+                                data-testid="inspector-edit-error-padding"
+                                className="m-0 mt-1 text-[11px] text-rose-700"
+                              >
                                 {fieldValidationErrors.padding}
                               </p>
                             ) : null}
@@ -3841,12 +4320,31 @@ export function InspectorPanel({
                         );
                       }
 
-                      const inputType = field === "fontFamily" || field === "fillColor" ? "text" : "number";
-                      const inputStep = field === "opacity" ? 0.01 : (field === "fontWeight" ? 100 : 0.1);
-                      const inputMin = field === "opacity" || field === "cornerRadius" || field === "fontSize" || field === "gap"
-                        ? 0
-                        : (field === "fontWeight" ? 100 : undefined);
-                      const inputMax = field === "opacity" ? 1 : (field === "fontWeight" ? 900 : undefined);
+                      const inputType =
+                        field === "fontFamily" || field === "fillColor"
+                          ? "text"
+                          : "number";
+                      const inputStep =
+                        field === "opacity"
+                          ? 0.01
+                          : field === "fontWeight"
+                            ? 100
+                            : 0.1;
+                      const inputMin =
+                        field === "opacity" ||
+                        field === "cornerRadius" ||
+                        field === "fontSize" ||
+                        field === "gap"
+                          ? 0
+                          : field === "fontWeight"
+                            ? 100
+                            : undefined;
+                      const inputMax =
+                        field === "opacity"
+                          ? 1
+                          : field === "fontWeight"
+                            ? 900
+                            : undefined;
                       return (
                         <div
                           key={field}
@@ -3854,7 +4352,10 @@ export function InspectorPanel({
                           className="rounded border border-indigo-200 bg-white px-2 py-1.5"
                         >
                           <div className="flex items-center justify-between gap-2">
-                            <label className="font-semibold text-indigo-900" htmlFor={`inspector-edit-input-${field}`}>
+                            <label
+                              className="font-semibold text-indigo-900"
+                              htmlFor={`inspector-edit-input-${field}`}
+                            >
                               {fieldLabel(field)}
                             </label>
                             {hasScalarFieldOverride(field) ? (
@@ -3879,12 +4380,15 @@ export function InspectorPanel({
                             max={inputMax}
                             value={scalarControlInputs[field] ?? ""}
                             onChange={(event) => {
-                              handleScalarInputChange(field, event.currentTarget.value);
+                              handleScalarInputChange(
+                                field,
+                                event.currentTarget.value,
+                              );
                             }}
                             onBlur={(event) => {
                               applyScalarOverrideInput({
                                 field,
-                                rawValue: event.currentTarget.value
+                                rawValue: event.currentTarget.value,
                               });
                             }}
                             onKeyDown={(event) => {
@@ -3907,7 +4411,10 @@ export function InspectorPanel({
                     })}
                   </div>
                 ) : (
-                  <p data-testid="inspector-edit-no-supported-fields" className="m-0 mt-2 text-indigo-900">
+                  <p
+                    data-testid="inspector-edit-no-supported-fields"
+                    className="m-0 mt-2 text-indigo-900"
+                  >
                     No scalar overrides are supported for the selected node.
                   </p>
                 )}
@@ -3916,7 +4423,9 @@ export function InspectorPanel({
                     data-testid="inspector-edit-unsupported-fields"
                     className="mt-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-slate-700"
                   >
-                    <p className="m-0 font-semibold text-slate-900">Unsupported scalar properties</p>
+                    <p className="m-0 font-semibold text-slate-900">
+                      Unsupported scalar properties
+                    </p>
                     {unsupportedScalarFields.map((entry) => (
                       <p
                         key={entry.field}
@@ -3935,7 +4444,8 @@ export function InspectorPanel({
                   >
                     <p className="m-0 font-semibold">Layout &amp; Dimensions</p>
                     <p className="m-0 mt-1">
-                      Generator-aware node-level layout controls for base IR regeneration.
+                      Generator-aware node-level layout controls for base IR
+                      regeneration.
                     </p>
                     <div className="mt-2 grid gap-2 md:grid-cols-2">
                       {editableLayoutFields.map((field) => {
@@ -3947,7 +4457,10 @@ export function InspectorPanel({
                               className="rounded border border-cyan-200 bg-white px-2 py-1.5"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <label className="font-semibold text-cyan-900" htmlFor="inspector-edit-input-layoutMode">
+                                <label
+                                  className="font-semibold text-cyan-900"
+                                  htmlFor="inspector-edit-input-layoutMode"
+                                >
                                   {fieldLabel(field)}
                                 </label>
                                 {hasLayoutFieldOverride(field) ? (
@@ -3966,13 +4479,16 @@ export function InspectorPanel({
                               <select
                                 id="inspector-edit-input-layoutMode"
                                 data-testid="inspector-edit-input-layoutMode"
-                                value={layoutControlInputs.layoutMode ?? effectiveLayoutMode}
+                                value={
+                                  layoutControlInputs.layoutMode ??
+                                  effectiveLayoutMode
+                                }
                                 onChange={(event) => {
                                   const value = event.currentTarget.value;
                                   handleLayoutInputChange(field, value);
                                   applyLayoutOverrideInput({
                                     field,
-                                    rawValue: value
+                                    rawValue: value,
                                   });
                                 }}
                                 className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
@@ -3984,7 +4500,10 @@ export function InspectorPanel({
                                 ))}
                               </select>
                               {fieldValidationErrors.layoutMode ? (
-                                <p data-testid="inspector-edit-error-layoutMode" className="m-0 mt-1 text-[11px] text-rose-700">
+                                <p
+                                  data-testid="inspector-edit-error-layoutMode"
+                                  className="m-0 mt-1 text-[11px] text-rose-700"
+                                >
                                   {fieldValidationErrors.layoutMode}
                                 </p>
                               ) : null}
@@ -3992,10 +4511,14 @@ export function InspectorPanel({
                           );
                         }
 
-                        if (field === "primaryAxisAlignItems" || field === "counterAxisAlignItems") {
-                          const values = field === "primaryAxisAlignItems"
-                            ? PRIMARY_AXIS_ALIGN_ITEMS
-                            : COUNTER_AXIS_ALIGN_ITEMS;
+                        if (
+                          field === "primaryAxisAlignItems" ||
+                          field === "counterAxisAlignItems"
+                        ) {
+                          const values =
+                            field === "primaryAxisAlignItems"
+                              ? PRIMARY_AXIS_ALIGN_ITEMS
+                              : COUNTER_AXIS_ALIGN_ITEMS;
                           return (
                             <div
                               key={field}
@@ -4003,7 +4526,10 @@ export function InspectorPanel({
                               className="rounded border border-cyan-200 bg-white px-2 py-1.5"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <label className="font-semibold text-cyan-900" htmlFor={`inspector-edit-input-${field}`}>
+                                <label
+                                  className="font-semibold text-cyan-900"
+                                  htmlFor={`inspector-edit-input-${field}`}
+                                >
                                   {fieldLabel(field)}
                                 </label>
                                 {hasLayoutFieldOverride(field) ? (
@@ -4029,7 +4555,7 @@ export function InspectorPanel({
                                   if (value) {
                                     applyLayoutOverrideInput({
                                       field,
-                                      rawValue: value
+                                      rawValue: value,
                                     });
                                   }
                                 }}
@@ -4043,7 +4569,10 @@ export function InspectorPanel({
                                 ))}
                               </select>
                               {fieldValidationErrors[field] ? (
-                                <p data-testid={`inspector-edit-error-${field}`} className="m-0 mt-1 text-[11px] text-rose-700">
+                                <p
+                                  data-testid={`inspector-edit-error-${field}`}
+                                  className="m-0 mt-1 text-[11px] text-rose-700"
+                                >
                                   {fieldValidationErrors[field]}
                                 </p>
                               ) : null}
@@ -4058,7 +4587,10 @@ export function InspectorPanel({
                             className="rounded border border-cyan-200 bg-white px-2 py-1.5"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <label className="font-semibold text-cyan-900" htmlFor={`inspector-edit-input-${field}`}>
+                              <label
+                                className="font-semibold text-cyan-900"
+                                htmlFor={`inspector-edit-input-${field}`}
+                              >
                                 {fieldLabel(field)}
                               </label>
                               {hasLayoutFieldOverride(field) ? (
@@ -4082,12 +4614,15 @@ export function InspectorPanel({
                               step={1}
                               value={layoutControlInputs[field] ?? ""}
                               onChange={(event) => {
-                                handleLayoutInputChange(field, event.currentTarget.value);
+                                handleLayoutInputChange(
+                                  field,
+                                  event.currentTarget.value,
+                                );
                               }}
                               onBlur={(event) => {
                                 applyLayoutOverrideInput({
                                   field,
-                                  rawValue: event.currentTarget.value
+                                  rawValue: event.currentTarget.value,
                                 });
                               }}
                               onKeyDown={(event) => {
@@ -4098,7 +4633,10 @@ export function InspectorPanel({
                               className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
                             />
                             {fieldValidationErrors[field] ? (
-                              <p data-testid={`inspector-edit-error-${field}`} className="m-0 mt-1 text-[11px] text-rose-700">
+                              <p
+                                data-testid={`inspector-edit-error-${field}`}
+                                className="m-0 mt-1 text-[11px] text-rose-700"
+                              >
                                 {fieldValidationErrors[field]}
                               </p>
                             ) : null}
@@ -4113,7 +4651,9 @@ export function InspectorPanel({
                     data-testid="inspector-edit-unsupported-layout-fields"
                     className="mt-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-slate-700"
                   >
-                    <p className="m-0 font-semibold text-slate-900">Unsupported layout properties</p>
+                    <p className="m-0 font-semibold text-slate-900">
+                      Unsupported layout properties
+                    </p>
                     {unsupportedLayoutFields.map((entry) => (
                       <p
                         key={entry.field}
@@ -4130,9 +4670,12 @@ export function InspectorPanel({
                     data-testid="inspector-edit-form-validation-panel"
                     className="mt-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-950"
                   >
-                    <p className="m-0 font-semibold">Form Validation Settings</p>
+                    <p className="m-0 font-semibold">
+                      Form Validation Settings
+                    </p>
                     <p className="m-0 mt-1">
-                      Per-field validation primitives consumed by the form-generation pipeline.
+                      Per-field validation primitives consumed by the
+                      form-generation pipeline.
                     </p>
                     <div className="mt-2 grid gap-2 md:grid-cols-2">
                       {editableFormValidationFields.map((field) => {
@@ -4144,7 +4687,10 @@ export function InspectorPanel({
                               className="rounded border border-emerald-200 bg-white px-2 py-1.5"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <label className="font-semibold text-emerald-900" htmlFor="inspector-edit-input-required">
+                                <label
+                                  className="font-semibold text-emerald-900"
+                                  htmlFor="inspector-edit-input-required"
+                                >
                                   {fieldLabel(field)}
                                 </label>
                                 {hasFormValidationFieldOverride(field) ? (
@@ -4165,26 +4711,36 @@ export function InspectorPanel({
                                   id="inspector-edit-input-required"
                                   data-testid="inspector-edit-input-required"
                                   type="checkbox"
-                                  checked={formValidationControlInputs.required ?? false}
+                                  checked={
+                                    formValidationControlInputs.required ??
+                                    false
+                                  }
                                   onChange={(event) => {
                                     const checked = event.currentTarget.checked;
-                                    setFormValidationControlInputs((current) => ({
-                                      ...current,
-                                      required: checked
-                                    }));
+                                    setFormValidationControlInputs(
+                                      (current) => ({
+                                        ...current,
+                                        required: checked,
+                                      }),
+                                    );
                                     applyFormValidationOverrideInput({
                                       field: "required",
-                                      rawValue: checked
+                                      rawValue: checked,
                                     });
                                   }}
                                   className="h-4 w-4 rounded border-slate-300"
                                 />
                                 <span className="text-xs text-slate-700">
-                                  {formValidationControlInputs.required ? "Yes" : "No"}
+                                  {formValidationControlInputs.required
+                                    ? "Yes"
+                                    : "No"}
                                 </span>
                               </div>
                               {fieldValidationErrors.required ? (
-                                <p data-testid="inspector-edit-error-required" className="m-0 mt-1 text-[11px] text-rose-700">
+                                <p
+                                  data-testid="inspector-edit-error-required"
+                                  className="m-0 mt-1 text-[11px] text-rose-700"
+                                >
                                   {fieldValidationErrors.required}
                                 </p>
                               ) : null}
@@ -4200,7 +4756,10 @@ export function InspectorPanel({
                               className="rounded border border-emerald-200 bg-white px-2 py-1.5"
                             >
                               <div className="flex items-center justify-between gap-2">
-                                <label className="font-semibold text-emerald-900" htmlFor="inspector-edit-input-validationType">
+                                <label
+                                  className="font-semibold text-emerald-900"
+                                  htmlFor="inspector-edit-input-validationType"
+                                >
                                   {fieldLabel(field)}
                                 </label>
                                 {hasFormValidationFieldOverride(field) ? (
@@ -4219,21 +4778,24 @@ export function InspectorPanel({
                               <select
                                 id="inspector-edit-input-validationType"
                                 data-testid="inspector-edit-input-validationType"
-                                value={formValidationControlInputs.validationType ?? ""}
+                                value={
+                                  formValidationControlInputs.validationType ??
+                                  ""
+                                }
                                 onChange={(event) => {
                                   const value = event.currentTarget.value;
                                   setFormValidationControlInputs((current) => ({
                                     ...current,
-                                    validationType: value
+                                    validationType: value,
                                   }));
                                   setFieldValidationErrors((current) => ({
                                     ...current,
-                                    validationType: null
+                                    validationType: null,
                                   }));
                                   if (value) {
                                     applyFormValidationOverrideInput({
                                       field: "validationType",
-                                      rawValue: value
+                                      rawValue: value,
                                     });
                                   }
                                 }}
@@ -4247,7 +4809,10 @@ export function InspectorPanel({
                                 ))}
                               </select>
                               {fieldValidationErrors.validationType ? (
-                                <p data-testid="inspector-edit-error-validationType" className="m-0 mt-1 text-[11px] text-rose-700">
+                                <p
+                                  data-testid="inspector-edit-error-validationType"
+                                  className="m-0 mt-1 text-[11px] text-rose-700"
+                                >
                                   {fieldValidationErrors.validationType}
                                 </p>
                               ) : null}
@@ -4263,7 +4828,10 @@ export function InspectorPanel({
                             className="rounded border border-emerald-200 bg-white px-2 py-1.5"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <label className="font-semibold text-emerald-900" htmlFor="inspector-edit-input-validationMessage">
+                              <label
+                                className="font-semibold text-emerald-900"
+                                htmlFor="inspector-edit-input-validationMessage"
+                              >
                                 {fieldLabel(field)}
                               </label>
                               {hasFormValidationFieldOverride(field) ? (
@@ -4283,16 +4851,19 @@ export function InspectorPanel({
                               id="inspector-edit-input-validationMessage"
                               data-testid="inspector-edit-input-validationMessage"
                               type="text"
-                              value={formValidationControlInputs.validationMessage ?? ""}
+                              value={
+                                formValidationControlInputs.validationMessage ??
+                                ""
+                              }
                               onChange={(event) => {
                                 const value = event.currentTarget.value;
                                 setFormValidationControlInputs((current) => ({
                                   ...current,
-                                  validationMessage: value
+                                  validationMessage: value,
                                 }));
                                 setFieldValidationErrors((current) => ({
                                   ...current,
-                                  validationMessage: null
+                                  validationMessage: null,
                                 }));
                               }}
                               onBlur={(event) => {
@@ -4300,7 +4871,7 @@ export function InspectorPanel({
                                 if (value) {
                                   applyFormValidationOverrideInput({
                                     field: "validationMessage",
-                                    rawValue: event.currentTarget.value
+                                    rawValue: event.currentTarget.value,
                                   });
                                 }
                               }}
@@ -4313,7 +4884,10 @@ export function InspectorPanel({
                               className="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs text-slate-900"
                             />
                             {fieldValidationErrors.validationMessage ? (
-                              <p data-testid="inspector-edit-error-validationMessage" className="m-0 mt-1 text-[11px] text-rose-700">
+                              <p
+                                data-testid="inspector-edit-error-validationMessage"
+                                className="m-0 mt-1 text-[11px] text-rose-700"
+                              >
                                 {fieldValidationErrors.validationMessage}
                               </p>
                             ) : null}
@@ -4328,7 +4902,9 @@ export function InspectorPanel({
                     data-testid="inspector-edit-unsupported-validation-fields"
                     className="mt-2 rounded border border-slate-300 bg-white px-2 py-1.5 text-slate-700"
                   >
-                    <p className="m-0 font-semibold text-slate-900">Unsupported validation properties</p>
+                    <p className="m-0 font-semibold text-slate-900">
+                      Unsupported validation properties
+                    </p>
                     {unsupportedFormValidationFields.map((entry) => (
                       <p
                         key={entry.field}
@@ -4342,7 +4918,9 @@ export function InspectorPanel({
                 ) : null}
                 {structuredOverridePayload ? (
                   <div className="mt-2">
-                    <p className="m-0 font-semibold text-slate-900">Structured override payload</p>
+                    <p className="m-0 font-semibold text-slate-900">
+                      Structured override payload
+                    </p>
                     <pre
                       data-testid="inspector-edit-payload-preview"
                       className="m-0 mt-1 max-h-48 overflow-auto rounded border border-slate-300 bg-white p-2 text-[11px] text-slate-900"
@@ -4353,7 +4931,10 @@ export function InspectorPanel({
                 ) : null}
               </>
             ) : (
-              <p data-testid="inspector-edit-node-missing" className="m-0 mt-2 text-indigo-400">
+              <p
+                data-testid="inspector-edit-node-missing"
+                className="m-0 mt-2 text-indigo-400"
+              >
                 Selected node details are not available in design IR.
               </p>
             )}
@@ -4363,7 +4944,10 @@ export function InspectorPanel({
 
       {/* Error banners — compact strip */}
       {sourceErrorBanners.length > 0 ? (
-        <div className="flex shrink-0 flex-wrap gap-2 border-b border-[#000000] bg-[#241414] px-4 py-1.5" data-testid="inspector-error-banners">
+        <div
+          className="flex shrink-0 flex-wrap gap-2 border-b border-[#000000] bg-[#241414] px-4 py-1.5"
+          data-testid="inspector-error-banners"
+        >
           {sourceErrorBanners.map((banner) => (
             <div
               key={banner.source}
@@ -4372,7 +4956,8 @@ export function InspectorPanel({
             >
               <span className="font-semibold">{banner.title}</span>
               <span>
-                {banner.details.message} ({banner.details.code}, HTTP {String(banner.details.status)})
+                {banner.details.message} ({banner.details.code}, HTTP{" "}
+                {String(banner.details.status)})
               </span>
               {banner.onRetry ? (
                 <button
@@ -4395,19 +4980,29 @@ export function InspectorPanel({
             data-testid="inspector-manifest-empty-warning"
             className="m-0 text-[11px] text-amber-400"
           >
-            Component manifest is empty. Tree selection still works, but file-to-component mappings are unavailable.
+            Component manifest is empty. Tree selection still works, but
+            file-to-component mappings are unavailable.
           </p>
         </div>
       ) : null}
 
       {/* ===== THREE-COLUMN IDE LAYOUT ===== */}
-      <div ref={layoutContainerRef} className="flex min-h-0 flex-1 flex-col xl:flex-row" data-testid="inspector-layout">
+      <div
+        ref={layoutContainerRef}
+        className="flex min-h-0 flex-1 flex-col xl:flex-row"
+        data-testid="inspector-layout"
+      >
         {/* Left: Component Tree sidebar */}
         {hasTreePane ? (
-          <div data-testid="inspector-pane-tree" className="min-h-[120px] shrink-0 border-r border-[#000000]" style={treePaneStyle}>
-            {designIrState.status === "ready" ? (
+          <div
+            data-testid="inspector-pane-tree"
+            className="min-h-[120px] shrink-0 border-r border-[#000000]"
+            style={treePaneStyle}
+          >
+            {designIrState.status === "ready" ||
+            effectiveTreeNodes.length > 0 ? (
               <ComponentTree
-                screens={treeNodes}
+                screens={effectiveTreeNodes}
                 selectedId={selectedNodeId}
                 onSelect={handleTreeSelect}
                 onEnterScope={handleEnterScope}
@@ -4427,7 +5022,9 @@ export function InspectorPanel({
                     <p className="m-0">Loading design IR…</p>
                   ) : null}
                   {designIrState.status === "empty" ? (
-                    <p className="m-0">No component tree data is available for this job.</p>
+                    <p className="m-0">
+                      No component tree data is available for this job.
+                    </p>
                   ) : null}
                   {designIrState.status === "error" ? (
                     <div className="flex flex-wrap items-center gap-2">
@@ -4476,7 +5073,11 @@ export function InspectorPanel({
         ) : null}
 
         {/* Center: Preview pane */}
-        <div data-testid="inspector-pane-preview" className="relative min-h-[200px] flex-1 border-r border-[#000000] lg:min-h-0" style={previewPaneStyle}>
+        <div
+          data-testid="inspector-pane-preview"
+          className="relative min-h-[200px] flex-1 border-r border-[#000000] lg:min-h-0"
+          style={previewPaneStyle}
+        >
           <PreviewPane
             previewUrl={previewUrl}
             inspectEnabled={inspectEnabled}
@@ -4515,7 +5116,11 @@ export function InspectorPanel({
         </div>
 
         {/* Right: Code pane */}
-        <div data-testid="inspector-pane-code" className="min-h-[200px] flex-1 lg:min-h-0" style={codePaneStyle}>
+        <div
+          data-testid="inspector-pane-code"
+          className="min-h-[200px] flex-1 lg:min-h-0"
+          style={codePaneStyle}
+        >
           <CodePane
             files={files}
             selectedFile={effectiveSelectedFile}
@@ -4551,32 +5156,39 @@ export function InspectorPanel({
             isNodeMapped={isNodeMapped}
             selectedIrNodeId={selectedNodeId}
             parentFile={canReturnToParentFile ? parentFile : null}
-            onReturnToParentFile={canReturnToParentFile ? handleReturnToParentFile : undefined}
+            onReturnToParentFile={
+              canReturnToParentFile ? handleReturnToParentFile : undefined
+            }
           />
         </div>
       </div>
 
       {/* Node diagnostics — shown as status bar at bottom */}
-      {selectedNodeId && getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).length > 0 ? (
+      {selectedNodeId &&
+      getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).length > 0 ? (
         <div
           data-testid="inspector-node-diagnostics-detail"
           className="flex shrink-0 flex-wrap gap-3 border-t border-[#2a2a3d] bg-[#252536] px-4 py-1"
         >
-          {getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).map((diag, idx) => {
-            const badge = getNodeDiagnosticBadge(diag.category);
-            return (
-              <span
-                key={`${diag.category}-${String(idx)}`}
-                data-testid={`inspector-node-diagnostic-${diag.category}`}
-                className="flex items-center gap-1 text-[10px] text-slate-400"
-              >
-                <span className={`inline-flex h-3.5 min-w-[1rem] items-center justify-center rounded px-0.5 text-[8px] font-bold leading-none ${badge.color}`}>
-                  {badge.abbr}
+          {getNodeDiagnostics(nodeDiagnosticsMap, selectedNodeId).map(
+            (diag, idx) => {
+              const badge = getNodeDiagnosticBadge(diag.category);
+              return (
+                <span
+                  key={`${diag.category}-${String(idx)}`}
+                  data-testid={`inspector-node-diagnostic-${diag.category}`}
+                  className="flex items-center gap-1 text-[10px] text-slate-400"
+                >
+                  <span
+                    className={`inline-flex h-3.5 min-w-[1rem] items-center justify-center rounded px-0.5 text-[8px] font-bold leading-none ${badge.color}`}
+                  >
+                    {badge.abbr}
+                  </span>
+                  {diag.reason}
                 </span>
-                {diag.reason}
-              </span>
-            );
-          })}
+              );
+            },
+          )}
         </div>
       ) : null}
 
@@ -4594,17 +5206,23 @@ export function InspectorPanel({
         >
           <p className="m-0 font-semibold">Pre-Apply Review</p>
           <p className="m-0 mt-1">
-            Review grouped file-level blast radius before creating a regeneration job.
+            Review grouped file-level blast radius before creating a
+            regeneration job.
           </p>
-          <p data-testid="inspector-impact-review-diff-guidance" className="m-0 mt-1 text-sky-900">
-            After regeneration, use the existing code pane and diff controls for detailed code review.
+          <p
+            data-testid="inspector-impact-review-diff-guidance"
+            className="m-0 mt-1 text-sky-900"
+          >
+            After regeneration, use the existing code pane and diff controls for
+            detailed code review.
           </p>
           {impactReviewModel.empty ? (
             <p
               data-testid="inspector-impact-review-empty"
               className="m-0 mt-2 rounded border border-sky-200 bg-white px-2 py-1 text-slate-700"
             >
-              No pending overrides. Add overrides in Edit Studio to prepare a regeneration review.
+              No pending overrides. Add overrides in Edit Studio to prepare a
+              regeneration review.
             </p>
           ) : (
             <>
@@ -4612,23 +5230,46 @@ export function InspectorPanel({
                 data-testid="inspector-impact-review-summary"
                 className="mt-2 rounded border border-sky-200 bg-white px-2 py-1.5 text-slate-800"
               >
-                <p className="m-0 font-semibold text-slate-900">Blast radius summary</p>
-                <p data-testid="inspector-impact-review-summary-total" className="m-0 mt-1">
-                  Total overrides: {String(impactReviewModel.summary.totalOverrides)}
+                <p className="m-0 font-semibold text-slate-900">
+                  Blast radius summary
                 </p>
-                <p data-testid="inspector-impact-review-summary-files" className="m-0 mt-1">
-                  Affected files: {String(impactReviewModel.summary.affectedFiles)}
+                <p
+                  data-testid="inspector-impact-review-summary-total"
+                  className="m-0 mt-1"
+                >
+                  Total overrides:{" "}
+                  {String(impactReviewModel.summary.totalOverrides)}
                 </p>
-                <p data-testid="inspector-impact-review-summary-mapped" className="m-0 mt-1">
-                  Mapped overrides: {String(impactReviewModel.summary.mappedOverrides)}
+                <p
+                  data-testid="inspector-impact-review-summary-files"
+                  className="m-0 mt-1"
+                >
+                  Affected files:{" "}
+                  {String(impactReviewModel.summary.affectedFiles)}
                 </p>
-                <p data-testid="inspector-impact-review-summary-unmapped" className="m-0 mt-1">
-                  Unmapped overrides: {String(impactReviewModel.summary.unmappedOverrides)}
+                <p
+                  data-testid="inspector-impact-review-summary-mapped"
+                  className="m-0 mt-1"
+                >
+                  Mapped overrides:{" "}
+                  {String(impactReviewModel.summary.mappedOverrides)}
                 </p>
-                <p data-testid="inspector-impact-review-summary-categories" className="m-0 mt-1">
-                  Categories: {String(impactReviewModel.summary.categories.visual)} visual,{" "}
+                <p
+                  data-testid="inspector-impact-review-summary-unmapped"
+                  className="m-0 mt-1"
+                >
+                  Unmapped overrides:{" "}
+                  {String(impactReviewModel.summary.unmappedOverrides)}
+                </p>
+                <p
+                  data-testid="inspector-impact-review-summary-categories"
+                  className="m-0 mt-1"
+                >
+                  Categories:{" "}
+                  {String(impactReviewModel.summary.categories.visual)} visual,{" "}
                   {String(impactReviewModel.summary.categories.layout)} layout,{" "}
-                  {String(impactReviewModel.summary.categories.validation)} validation,{" "}
+                  {String(impactReviewModel.summary.categories.validation)}{" "}
+                  validation,{" "}
                   {String(impactReviewModel.summary.categories.other)} other
                 </p>
               </div>
@@ -4637,10 +5278,14 @@ export function InspectorPanel({
                   data-testid="inspector-impact-review-layout-risk"
                   className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
                 >
-                  Layout overrides can affect sibling flow, spacing, and wrapping across every mapped file listed below.
+                  Layout overrides can affect sibling flow, spacing, and
+                  wrapping across every mapped file listed below.
                 </p>
               ) : null}
-              <div data-testid="inspector-impact-review-file-list" className="mt-2 grid gap-2">
+              <div
+                data-testid="inspector-impact-review-file-list"
+                className="mt-2 grid gap-2"
+              >
                 {impactReviewModel.files.map((fileReview, index) => (
                   <div
                     key={fileReview.filePath}
@@ -4651,8 +5296,10 @@ export function InspectorPanel({
                       <code>{fileReview.filePath}</code>
                     </p>
                     <p className="m-0 mt-1">
-                      Overrides: {String(fileReview.overrideCount)} ({String(fileReview.categories.visual)} visual,{" "}
-                      {String(fileReview.categories.layout)} layout, {String(fileReview.categories.validation)} validation,{" "}
+                      Overrides: {String(fileReview.overrideCount)} (
+                      {String(fileReview.categories.visual)} visual,{" "}
+                      {String(fileReview.categories.layout)} layout,{" "}
+                      {String(fileReview.categories.validation)} validation,{" "}
                       {String(fileReview.categories.other)} other)
                     </p>
                     <ul className="m-0 mt-1 list-disc pl-4 text-[11px]">
@@ -4661,7 +5308,8 @@ export function InspectorPanel({
                           key={`${entry.nodeId}:${entry.field}`}
                           data-testid={`inspector-impact-review-override-${entry.nodeId}-${entry.field}`}
                         >
-                          {entry.nodeName} ({entry.nodeType}) → {entry.field} [{entry.category}]
+                          {entry.nodeName} ({entry.nodeType}) → {entry.field} [
+                          {entry.category}]
                         </li>
                       ))}
                     </ul>
@@ -4693,7 +5341,9 @@ export function InspectorPanel({
               onClick={handleSubmitRegeneration}
               className="cursor-pointer rounded border border-sky-500 bg-sky-500 px-2 py-1 text-[11px] font-semibold text-sky-950 transition hover:bg-sky-400 disabled:cursor-default disabled:opacity-40"
             >
-              {regenerateMutation.isPending ? "Submitting regeneration..." : "Regenerate From Overrides"}
+              {regenerateMutation.isPending
+                ? "Submitting regeneration..."
+                : "Regenerate From Overrides"}
             </button>
             {!isRegenerationJob ? (
               <span
@@ -4716,8 +5366,9 @@ export function InspectorPanel({
               data-testid="inspector-impact-review-regeneration-accepted"
               className="m-0 mt-2 rounded border border-emerald-300 bg-emerald-100 px-2 py-1 text-emerald-900"
             >
-              Regeneration accepted as job <code>{regenerationAccepted.jobId}</code>. Inspector switches to the new job
-              automatically.
+              Regeneration accepted as job{" "}
+              <code>{regenerationAccepted.jobId}</code>. Inspector switches to
+              the new job automatically.
             </p>
           ) : null}
           {regenerationError ? (
@@ -4725,7 +5376,8 @@ export function InspectorPanel({
               data-testid="inspector-impact-review-regeneration-error"
               className="m-0 mt-2 rounded border border-rose-300 bg-rose-50 px-2 py-1 text-rose-900"
             >
-              [{regenerationError.code}] {regenerationError.message} (HTTP {String(regenerationError.status)})
+              [{regenerationError.code}] {regenerationError.message} (HTTP{" "}
+              {String(regenerationError.status)})
             </p>
           ) : null}
         </div>
@@ -4743,19 +5395,23 @@ export function InspectorPanel({
         >
           <p className="m-0 font-semibold">Local Sync (Regeneration Jobs)</p>
           <p className="m-0 mt-1">
-            Run a dry-run first, review the file-by-file write plan, then explicitly confirm overwrite before applying local sync.
+            Run a dry-run first, review the file-by-file write plan, then
+            explicitly confirm overwrite before applying local sync.
           </p>
           {!isRegenerationJob ? (
             <p
               data-testid="inspector-sync-regeneration-required"
               className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
             >
-              Local sync is disabled for non-regeneration jobs. Create and open a regeneration job first.
+              Local sync is disabled for non-regeneration jobs. Create and open
+              a regeneration job first.
             </p>
           ) : null}
           <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
             <label className="flex min-w-[220px] flex-1 flex-col gap-1">
-              <span className="font-semibold text-emerald-900">Target path override (optional)</span>
+              <span className="font-semibold text-emerald-900">
+                Target path override (optional)
+              </span>
               <input
                 type="text"
                 data-testid="inspector-sync-target-path"
@@ -4774,7 +5430,9 @@ export function InspectorPanel({
               onClick={handlePreviewLocalSync}
               className="cursor-pointer rounded border border-emerald-400 bg-white px-2 py-1 text-[11px] font-semibold text-emerald-900 transition hover:bg-emerald-100 disabled:cursor-default disabled:opacity-40"
             >
-              {previewSyncMutation.isPending ? "Previewing..." : "Preview Sync Plan"}
+              {previewSyncMutation.isPending
+                ? "Previewing..."
+                : "Preview Sync Plan"}
             </button>
           </div>
           {syncPreviewPlan && effectiveSyncSummary ? (
@@ -4782,42 +5440,64 @@ export function InspectorPanel({
               data-testid="inspector-sync-preview-summary"
               className="mt-2 rounded border border-emerald-300 bg-white px-2 py-1.5 text-slate-800"
             >
-              <p className="m-0 font-semibold text-slate-900">Dry-run summary</p>
+              <p className="m-0 font-semibold text-slate-900">
+                Dry-run summary
+              </p>
               <p className="m-0 mt-1">
                 Destination: <code>{syncPreviewPlan.destinationRoot}</code>
               </p>
               <p className="m-0 mt-1">
-                Files: {String(effectiveSyncSummary.totalFiles)} total, {String(effectiveSyncSummary.createCount)} create,{" "}
-                {String(effectiveSyncSummary.overwriteCount)} managed overwrite, {String(effectiveSyncSummary.conflictCount)} conflict,{" "}
-                {String(effectiveSyncSummary.untrackedCount)} untracked, {String(effectiveSyncSummary.unchangedCount)} unchanged
+                Files: {String(effectiveSyncSummary.totalFiles)} total,{" "}
+                {String(effectiveSyncSummary.createCount)} create,{" "}
+                {String(effectiveSyncSummary.overwriteCount)} managed overwrite,{" "}
+                {String(effectiveSyncSummary.conflictCount)} conflict,{" "}
+                {String(effectiveSyncSummary.untrackedCount)} untracked,{" "}
+                {String(effectiveSyncSummary.unchangedCount)} unchanged
               </p>
-              <p className="m-0 mt-1" data-testid="inspector-sync-selected-summary">
-                Selected: {String(effectiveSyncSummary.selectedFiles)} files ({String(effectiveSyncSummary.selectedBytes)} bytes)
+              <p
+                className="m-0 mt-1"
+                data-testid="inspector-sync-selected-summary"
+              >
+                Selected: {String(effectiveSyncSummary.selectedFiles)} files (
+                {String(effectiveSyncSummary.selectedBytes)} bytes)
               </p>
               <p className="m-0 mt-1">
                 Confirmation expires: {syncPreviewPlan.confirmationExpiresAt}
               </p>
             </div>
           ) : null}
-          {effectiveSyncSummary && effectiveSyncSummary.conflictCount + effectiveSyncSummary.untrackedCount > 0 ? (
+          {effectiveSyncSummary &&
+          effectiveSyncSummary.conflictCount +
+            effectiveSyncSummary.untrackedCount >
+            0 ? (
             <p
               data-testid="inspector-sync-attention-banner"
               className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
             >
-              Conflicts and untracked files default to skip until you explicitly choose to write them.
+              Conflicts and untracked files default to skip until you explicitly
+              choose to write them.
             </p>
           ) : null}
           {effectiveSyncPreviewFiles.length > 0 ? (
-            <div data-testid="inspector-sync-file-list" className="mt-2 grid max-h-64 gap-2 overflow-auto">
+            <div
+              data-testid="inspector-sync-file-list"
+              className="mt-2 grid max-h-64 gap-2 overflow-auto"
+            >
               {effectiveSyncPreviewFiles.map((entry, index) => {
                 const checked = entry.decision === "write";
-                const disabled = !canWriteLocalSyncEntry(entry) || previewSyncMutation.isPending || applySyncMutation.isPending || regenerateMutation.isPending;
+                const disabled =
+                  !canWriteLocalSyncEntry(entry) ||
+                  previewSyncMutation.isPending ||
+                  applySyncMutation.isPending ||
+                  regenerateMutation.isPending;
                 return (
                   <div
                     key={entry.path}
                     data-testid={`inspector-sync-file-${String(index)}`}
                     className={`rounded border px-2 py-1.5 ${
-                      isAttentionSyncEntry(entry) ? "border-amber-300 bg-amber-50" : "border-emerald-200 bg-white"
+                      isAttentionSyncEntry(entry)
+                        ? "border-amber-300 bg-amber-50"
+                        : "border-emerald-200 bg-white"
                     }`}
                   >
                     <div className="flex flex-wrap items-start justify-between gap-2">
@@ -4828,7 +5508,10 @@ export function InspectorPanel({
                           checked={checked}
                           disabled={disabled}
                           onChange={(event) => {
-                            handleToggleLocalSyncFile(entry.path, event.currentTarget.checked);
+                            handleToggleLocalSyncFile(
+                              entry.path,
+                              event.currentTarget.checked,
+                            );
                           }}
                           className="mt-0.5 h-4 w-4 rounded border-emerald-400"
                         />
@@ -4851,7 +5534,9 @@ export function InspectorPanel({
                     <p className="m-0 mt-1 text-slate-700">{entry.message}</p>
                     <p className="m-0 mt-1 text-[11px] text-slate-600">
                       Size: {String(entry.sizeBytes)} bytes
-                      {entry.selectedByDefault ? " • default write" : " • default skip"}
+                      {entry.selectedByDefault
+                        ? " • default write"
+                        : " • default skip"}
                     </p>
                   </div>
                 );
@@ -4893,7 +5578,9 @@ export function InspectorPanel({
               data-testid="inspector-sync-success"
               className="m-0 mt-2 rounded border border-emerald-300 bg-emerald-100 px-2 py-1 text-emerald-900"
             >
-              Local sync applied at {syncApplyResult.appliedAt}. Wrote {String(syncApplyResult.summary.selectedFiles)} files to <code>{syncApplyResult.destinationRoot}</code>.
+              Local sync applied at {syncApplyResult.appliedAt}. Wrote{" "}
+              {String(syncApplyResult.summary.selectedFiles)} files to{" "}
+              <code>{syncApplyResult.destinationRoot}</code>.
             </p>
           ) : null}
           {syncError ? (
@@ -4901,7 +5588,8 @@ export function InspectorPanel({
               data-testid="inspector-sync-error"
               className="m-0 mt-2 rounded border border-rose-300 bg-rose-50 px-2 py-1 text-rose-900"
             >
-              [{syncError.code}] {syncError.message} (HTTP {String(syncError.status)})
+              [{syncError.code}] {syncError.message} (HTTP{" "}
+              {String(syncError.status)})
             </p>
           ) : null}
         </div>
@@ -4919,19 +5607,23 @@ export function InspectorPanel({
         >
           <p className="m-0 font-semibold">Create PR (Regeneration Jobs)</p>
           <p className="m-0 mt-1">
-            Create a GitHub Pull Request from regenerated output. Requires a GitHub repository URL and access token.
+            Create a GitHub Pull Request from regenerated output. Requires a
+            GitHub repository URL and access token.
           </p>
           {!isRegenerationJob ? (
             <p
               data-testid="inspector-pr-regeneration-required"
               className="m-0 mt-2 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-amber-900"
             >
-              PR creation is disabled for non-regeneration jobs. Regenerate first from the review panel.
+              PR creation is disabled for non-regeneration jobs. Regenerate
+              first from the review panel.
             </p>
           ) : null}
           <div className="mt-2 flex flex-col gap-2">
             <label className="flex min-w-[220px] flex-1 flex-col gap-1">
-              <span className="font-semibold text-indigo-900">Repository URL</span>
+              <span className="font-semibold text-indigo-900">
+                Repository URL
+              </span>
               <input
                 type="text"
                 data-testid="inspector-pr-repo-url"
@@ -4944,7 +5636,9 @@ export function InspectorPanel({
               />
             </label>
             <label className="flex min-w-[220px] flex-1 flex-col gap-1">
-              <span className="font-semibold text-indigo-900">Access Token</span>
+              <span className="font-semibold text-indigo-900">
+                Access Token
+              </span>
               <input
                 type="password"
                 data-testid="inspector-pr-repo-token"
@@ -4957,7 +5651,9 @@ export function InspectorPanel({
               />
             </label>
             <label className="flex min-w-[220px] flex-1 flex-col gap-1">
-              <span className="font-semibold text-indigo-900">Target path (optional)</span>
+              <span className="font-semibold text-indigo-900">
+                Target path (optional)
+              </span>
               <input
                 type="text"
                 data-testid="inspector-pr-target-path"
@@ -5002,10 +5698,15 @@ export function InspectorPanel({
                 </p>
               ) : null}
               {prResult.gitPr.branchName ? (
-                <p className="m-0 mt-1">Branch: <code>{prResult.gitPr.branchName}</code></p>
+                <p className="m-0 mt-1">
+                  Branch: <code>{prResult.gitPr.branchName}</code>
+                </p>
               ) : null}
-              {prResult.gitPr.changedFiles && prResult.gitPr.changedFiles.length > 0 ? (
-                <p className="m-0 mt-1">Changed files: {String(prResult.gitPr.changedFiles.length)}</p>
+              {prResult.gitPr.changedFiles &&
+              prResult.gitPr.changedFiles.length > 0 ? (
+                <p className="m-0 mt-1">
+                  Changed files: {String(prResult.gitPr.changedFiles.length)}
+                </p>
               ) : null}
             </div>
           ) : null}
@@ -5026,14 +5727,14 @@ export function InspectorPanel({
         onClose={handleCloseDialog}
         title="Inspectability Coverage Summary"
       >
-        <div
-          data-testid="inspector-inspectability-summary"
-          className="text-xs"
-        >
+        <div data-testid="inspector-inspectability-summary" className="text-xs">
           <p className="m-0 text-xs font-semibold uppercase tracking-wide text-slate-700">
             Inspectability Coverage Summary
           </p>
-          <p data-testid="inspector-summary-aggregate-note" className="m-0 mt-1 text-xs text-slate-600">
+          <p
+            data-testid="inspector-summary-aggregate-note"
+            className="m-0 mt-1 text-xs text-slate-600"
+          >
             {nodeDiagnosticsMap.size > 0
               ? "Node-level diagnostics available. Select a node to see details."
               : inspectabilitySummary.aggregateOnlyNote}
@@ -5043,20 +5744,31 @@ export function InspectorPanel({
               data-testid="inspector-summary-manifest-coverage"
               className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
             >
-              <p className="m-0 font-semibold text-slate-900">Manifest coverage</p>
+              <p className="m-0 font-semibold text-slate-900">
+                Manifest coverage
+              </p>
               {inspectabilitySummary.manifestCoverage.status === "ready" ? (
                 <div className="mt-1 flex flex-wrap gap-2">
                   <span data-testid="inspector-summary-mapped-count">
-                    Mapped: {String(inspectabilitySummary.manifestCoverage.mappedNodes)}
+                    Mapped:{" "}
+                    {String(inspectabilitySummary.manifestCoverage.mappedNodes)}
                   </span>
                   <span data-testid="inspector-summary-unmapped-count">
-                    Unmapped: {String(inspectabilitySummary.manifestCoverage.unmappedNodes)}
+                    Unmapped:{" "}
+                    {String(
+                      inspectabilitySummary.manifestCoverage.unmappedNodes,
+                    )}
                   </span>
                   <span data-testid="inspector-summary-total-count">
-                    Total IR nodes: {String(inspectabilitySummary.manifestCoverage.totalNodes)}
+                    Total IR nodes:{" "}
+                    {String(inspectabilitySummary.manifestCoverage.totalNodes)}
                   </span>
                   <span data-testid="inspector-summary-mapped-percent">
-                    Coverage: {String(inspectabilitySummary.manifestCoverage.mappedPercent)}%
+                    Coverage:{" "}
+                    {String(
+                      inspectabilitySummary.manifestCoverage.mappedPercent,
+                    )}
+                    %
                   </span>
                 </div>
               ) : (
@@ -5073,26 +5785,49 @@ export function InspectorPanel({
               data-testid="inspector-summary-design-ir-omissions"
               className="rounded border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-800"
             >
-              <p className="m-0 font-semibold text-slate-900">Design IR cleanup/omission counters</p>
+              <p className="m-0 font-semibold text-slate-900">
+                Design IR cleanup/omission counters
+              </p>
               {inspectabilitySummary.omissionMetrics.status === "ready" ? (
                 <div className="mt-1 grid gap-1">
                   <span data-testid="inspector-summary-omission-skipped-hidden">
-                    Hidden nodes skipped: {String(inspectabilitySummary.omissionMetrics.skippedHidden)}
+                    Hidden nodes skipped:{" "}
+                    {String(
+                      inspectabilitySummary.omissionMetrics.skippedHidden,
+                    )}
                   </span>
                   <span data-testid="inspector-summary-omission-skipped-placeholders">
-                    Placeholder nodes skipped: {String(inspectabilitySummary.omissionMetrics.skippedPlaceholders)}
+                    Placeholder nodes skipped:{" "}
+                    {String(
+                      inspectabilitySummary.omissionMetrics.skippedPlaceholders,
+                    )}
                   </span>
                   <span data-testid="inspector-summary-omission-truncated-by-budget">
-                    Nodes truncated by budget: {String(inspectabilitySummary.omissionMetrics.truncatedByBudget)}
+                    Nodes truncated by budget:{" "}
+                    {String(
+                      inspectabilitySummary.omissionMetrics.truncatedByBudget,
+                    )}
                   </span>
                   <span data-testid="inspector-summary-omission-depth-truncated-branches">
-                    Depth-truncated branches: {String(inspectabilitySummary.omissionMetrics.depthTruncatedBranches)}
+                    Depth-truncated branches:{" "}
+                    {String(
+                      inspectabilitySummary.omissionMetrics
+                        .depthTruncatedBranches,
+                    )}
                   </span>
                   <span data-testid="inspector-summary-omission-classification-fallbacks">
-                    Classification fallbacks: {String(inspectabilitySummary.omissionMetrics.classificationFallbacks)}
+                    Classification fallbacks:{" "}
+                    {String(
+                      inspectabilitySummary.omissionMetrics
+                        .classificationFallbacks,
+                    )}
                   </span>
                   <span data-testid="inspector-summary-omission-degraded-geometry">
-                    Degraded geometry nodes: {String(inspectabilitySummary.omissionMetrics.degradedGeometryNodes)}
+                    Degraded geometry nodes:{" "}
+                    {String(
+                      inspectabilitySummary.omissionMetrics
+                        .degradedGeometryNodes,
+                    )}
                   </span>
                 </div>
               ) : (
@@ -5111,7 +5846,9 @@ export function InspectorPanel({
       {/* Shortcut help overlay */}
       <ShortcutHelp
         open={shortcutHelpOpen}
-        onClose={() => { setShortcutHelpOpen(false); }}
+        onClose={() => {
+          setShortcutHelpOpen(false);
+        }}
       />
     </div>
   );
