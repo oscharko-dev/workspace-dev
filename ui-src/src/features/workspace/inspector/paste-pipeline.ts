@@ -1,13 +1,6 @@
 import { useEffect, useReducer, useRef } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { fetchJson, type JsonResponse } from "../../../lib/http";
-import { isJobPayload, isRecord } from "../workspace-page.helpers";
-import type { JobPayload, JobStagePayload } from "../workspace-page.helpers";
-import {
-  isFigmaClipboard,
-  parseFigmaClipboard,
-  type FigmaMeta,
-} from "./figma-clipboard-parser";
+import { fetchJson } from "../../../lib/http";
+import { isJobPayload, isRecord, type JobPayload, type JobStagePayload } from "../workspace-page.helpers";
 import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 
 // ---------------------------------------------------------------------------
@@ -18,16 +11,22 @@ export type PipelineStage =
   | "idle"
   | "parsing"
   | "resolving"
-  | "extracting"
   | "transforming"
   | "mapping"
   | "generating"
   | "ready"
-  | "error"
-  | "partial";
+  | "error";
+
+type SubmitSourceMode = "figma_paste" | "figma_plugin";
+type JobRuntimeStatus =
+  | "queued"
+  | "running"
+  | "completed"
+  | "failed"
+  | "canceled";
 
 export interface StageStatus {
-  state: "pending" | "running" | "done" | "failed" | "skipped";
+  state: "pending" | "running" | "done" | "failed";
   duration?: number;
   message?: string;
   error?: PipelineError;
@@ -92,6 +91,8 @@ export interface PastePipelineState {
   progress: number;
   stageProgress: Record<PipelineStage, StageStatus>;
   jobId?: string;
+  jobStatus?: JobRuntimeStatus;
+  previewUrl?: string;
   designIR?: DesignIrPayload;
   componentManifest?: ComponentManifestPayload;
   generatedFiles?: GeneratedFileEntry[];
@@ -103,31 +104,40 @@ export interface PastePipelineState {
 
 export interface PastePipelineController {
   cancel(): void;
-  retry(fromStage?: PipelineStage): void;
+  retry(): void;
   getState(): PastePipelineState;
 }
 
 export interface PipelineOptions {
   signal?: AbortSignal;
   skipScreenshot?: boolean;
+  sourceMode?: SubmitSourceMode;
+}
+
+interface PipelineRequest {
+  payload: string;
+  sourceMode: SubmitSourceMode;
+  skipScreenshot: boolean;
 }
 
 export type PipelineAction =
-  | { type: "start"; clipboardHtml: string }
-  | { type: "parsing_done"; figmeta: FigmaMeta }
-  | { type: "parsing_failed"; error: PipelineError }
+  | { type: "start" }
+  | { type: "parsing_done" }
   | { type: "job_created"; jobId: string }
+  | {
+      type: "job_status_updated";
+      status: JobRuntimeStatus;
+      previewUrl?: string;
+    }
   | { type: "stage_start"; stage: PipelineStage; message: string }
   | { type: "stage_message"; stage: PipelineStage; message: string }
   | { type: "stage_done"; stage: PipelineStage; durationMs: number }
   | { type: "stage_failed"; stage: PipelineStage; error: PipelineError }
-  | { type: "screenshot_ready"; screenshot: string }
   | { type: "design_ir_ready"; designIR: DesignIrPayload }
   | { type: "manifest_ready"; manifest: ComponentManifestPayload }
   | { type: "files_ready"; files: GeneratedFileEntry[] }
-  | { type: "cancel" }
-  | { type: "retry"; fromStage?: PipelineStage }
-  | { type: "complete" };
+  | { type: "cancel_complete" }
+  | { type: "complete"; previewUrl: string };
 
 // ---------------------------------------------------------------------------
 // Stage ordering + backend mapping
@@ -136,40 +146,41 @@ export type PipelineAction =
 const ACTIVE_STAGES: readonly PipelineStage[] = [
   "parsing",
   "resolving",
-  "extracting",
   "transforming",
   "mapping",
   "generating",
-];
+] as const;
 
 const ALL_STAGES: readonly PipelineStage[] = [
   "idle",
   "parsing",
   "resolving",
-  "extracting",
   "transforming",
   "mapping",
   "generating",
   "ready",
   "error",
-  "partial",
-];
-
-const PROGRESS_INCREMENT = Math.floor(100 / ACTIVE_STAGES.length);
+] as const;
 
 const BACKEND_TO_PIPELINE_STAGE: Record<string, PipelineStage> = {
   "figma.source": "resolving",
   "ir.derive": "transforming",
-  "figma.enrich": "mapping",
-  codegen: "generating",
+  "template.prepare": "mapping",
+  "codegen.generate": "generating",
+  "validate.project": "generating",
+  "repro.export": "generating",
+  "git.pr": "generating",
 };
 
 const POLL_INTERVAL_MS = 1_500;
+const CANCEL_REASON = "Cancellation requested from inspector paste pipeline.";
 
 const endpoints = {
   submit: "/workspace/submit",
   job: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}`,
+  cancel: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/cancel`,
   designIr: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/design-ir`,
   manifest: ({ jobId }: { jobId: string }) =>
@@ -179,7 +190,7 @@ const endpoints = {
 };
 
 // ---------------------------------------------------------------------------
-// Initial state
+// Initial state + reducer helpers
 // ---------------------------------------------------------------------------
 
 export function createInitialPipelineState(): PastePipelineState {
@@ -198,10 +209,6 @@ export function createInitialPipelineState(): PastePipelineState {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Reducer helpers
-// ---------------------------------------------------------------------------
-
 function setStatus(
   state: PastePipelineState,
   stage: PipelineStage,
@@ -211,24 +218,26 @@ function setStatus(
 }
 
 function nextActiveStage(stage: PipelineStage): PipelineStage {
-  const idx = ACTIVE_STAGES.indexOf(stage);
-  if (idx === -1 || idx === ACTIVE_STAGES.length - 1) {
+  const index = ACTIVE_STAGES.indexOf(stage);
+  if (index === -1 || index === ACTIVE_STAGES.length - 1) {
     return "ready";
   }
-  const next = ACTIVE_STAGES[idx + 1];
-  return next ?? "ready";
+  return ACTIVE_STAGES[index + 1] ?? "ready";
 }
 
-function countDoneActiveStages(
+function countDoneStages(
   stageProgress: Record<PipelineStage, StageStatus>,
 ): number {
-  let count = 0;
-  for (const stage of ACTIVE_STAGES) {
-    if (stageProgress[stage].state === "done") {
-      count += 1;
-    }
+  return ACTIVE_STAGES.reduce((count, stage) => {
+    return count + (stageProgress[stage].state === "done" ? 1 : 0);
+  }, 0);
+}
+
+function toProgress(stageProgress: Record<PipelineStage, StageStatus>): number {
+  if (stageProgress.generating.state === "done") {
+    return 100;
   }
-  return count;
+  return Math.round((countDoneStages(stageProgress) / ACTIVE_STAGES.length) * 100);
 }
 
 function markStageDone(
@@ -240,68 +249,24 @@ function markStageDone(
     state: "done",
     duration: durationMs,
   });
-  const advanceTo = nextActiveStage(stage);
-  const advancedProgress =
-    advanceTo === "ready" || advanceTo === state.stage
+  const nextStage = nextActiveStage(stage);
+  const advancedStageProgress =
+    nextStage === "ready"
       ? stageProgress
       : {
           ...stageProgress,
-          [advanceTo]: { ...stageProgress[advanceTo], state: "running" },
+          [nextStage]: {
+            ...stageProgress[nextStage],
+            state: "running",
+          },
         };
-  const doneCount = countDoneActiveStages(advancedProgress);
-  const progress =
-    doneCount >= ACTIVE_STAGES.length ? 100 : doneCount * PROGRESS_INCREMENT;
+
   return {
     ...state,
-    stage: advanceTo,
-    stageProgress: advancedProgress,
-    progress,
+    stage: nextStage,
+    stageProgress: advancedStageProgress,
+    progress: toProgress(advancedStageProgress),
   };
-}
-
-function markStageFailed(
-  state: PastePipelineState,
-  stage: PipelineStage,
-  error: PipelineError,
-): PastePipelineState {
-  const stageProgress = setStatus(state, stage, { state: "failed", error });
-  return {
-    ...state,
-    stage: "error",
-    stageProgress,
-    errors: [...state.errors, error],
-    canRetry: true,
-    canCancel: false,
-  };
-}
-
-function lastFailedStage(state: PastePipelineState): PipelineStage | null {
-  for (let i = state.errors.length - 1; i >= 0; i -= 1) {
-    const stage = state.errors[i]?.stage;
-    if (stage !== undefined) {
-      return stage;
-    }
-  }
-  return null;
-}
-
-function resetStagesFrom(
-  state: PastePipelineState,
-  fromStage: PipelineStage,
-): Record<PipelineStage, StageStatus> {
-  const idx = ACTIVE_STAGES.indexOf(fromStage);
-  if (idx === -1) {
-    return state.stageProgress;
-  }
-  const next = { ...state.stageProgress };
-  for (let i = idx; i < ACTIVE_STAGES.length; i += 1) {
-    const stage = ACTIVE_STAGES[i];
-    if (stage !== undefined) {
-      next[stage] = { state: "pending" };
-    }
-  }
-  next[fromStage] = { state: "running" };
-  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -314,13 +279,15 @@ export function pastePipelineReducer(
 ): PastePipelineState {
   switch (action.type) {
     case "start": {
-      const stageProgress = setStatus(state, "parsing", { state: "running" });
+      const nextState = createInitialPipelineState();
       return {
-        ...state,
+        ...nextState,
         stage: "parsing",
-        stageProgress,
+        stageProgress: {
+          ...nextState.stageProgress,
+          parsing: { state: "running" },
+        },
         canCancel: true,
-        canRetry: false,
       };
     }
 
@@ -328,12 +295,22 @@ export function pastePipelineReducer(
       return markStageDone(state, "parsing", 0);
     }
 
-    case "parsing_failed": {
-      return markStageFailed(state, "parsing", action.error);
+    case "job_created": {
+      return {
+        ...state,
+        jobId: action.jobId,
+        jobStatus: "queued",
+      };
     }
 
-    case "job_created": {
-      return { ...state, jobId: action.jobId };
+    case "job_status_updated": {
+      return {
+        ...state,
+        jobStatus: action.status,
+        ...(action.previewUrl !== undefined
+          ? { previewUrl: action.previewUrl }
+          : {}),
+      };
     }
 
     case "stage_start": {
@@ -341,16 +318,22 @@ export function pastePipelineReducer(
         state: "running",
         message: action.message,
       });
-      return { ...state, stageProgress };
+      return {
+        ...state,
+        stage: action.stage,
+        stageProgress,
+      };
     }
 
     case "stage_message": {
-      const prev = state.stageProgress[action.stage];
-      const stageProgress = setStatus(state, action.stage, {
-        ...prev,
-        message: action.message,
-      });
-      return { ...state, stageProgress };
+      const previous = state.stageProgress[action.stage];
+      return {
+        ...state,
+        stageProgress: setStatus(state, action.stage, {
+          ...previous,
+          message: action.message,
+        }),
+      };
     }
 
     case "stage_done": {
@@ -358,11 +341,17 @@ export function pastePipelineReducer(
     }
 
     case "stage_failed": {
-      return markStageFailed(state, action.stage, action.error);
-    }
-
-    case "screenshot_ready": {
-      return { ...state, screenshot: action.screenshot };
+      return {
+        ...state,
+        stage: "error",
+        stageProgress: setStatus(state, action.stage, {
+          state: "failed",
+          error: action.error,
+        }),
+        errors: [...state.errors, action.error],
+        canRetry: action.error.retryable,
+        canCancel: false,
+      };
     }
 
     case "design_ir_ready": {
@@ -377,61 +366,57 @@ export function pastePipelineReducer(
       return { ...state, generatedFiles: action.files };
     }
 
-    case "cancel": {
+    case "cancel_complete": {
       return createInitialPipelineState();
     }
 
-    case "retry": {
-      const fromStage = action.fromStage ?? lastFailedStage(state) ?? "parsing";
-      const stageProgress = resetStagesFrom(state, fromStage);
-      return {
-        ...state,
-        stage: fromStage,
-        stageProgress,
-        errors: [],
-        canRetry: false,
-        canCancel: true,
-      };
-    }
-
     case "complete": {
+      const stageProgress = {
+        ...state.stageProgress,
+        generating: { state: "done" as const },
+      };
       return {
         ...state,
         stage: "ready",
+        stageProgress,
         progress: 100,
+        jobStatus: "completed",
+        previewUrl: action.previewUrl,
         canRetry: false,
         canCancel: false,
       };
     }
 
     default: {
-      const _exhaustive: never = action;
-      void _exhaustive;
-      return state;
+      const exhaustive: never = action;
+      return exhaustive;
     }
   }
 }
 
 // ---------------------------------------------------------------------------
-// Submit payload helpers
+// Submit + cancel payload helpers
 // ---------------------------------------------------------------------------
 
-interface ClipboardSubmitBody {
-  figmaSourceMode: "figma_clipboard";
-  figmaClipboardHtml: string;
+interface SubmitBody {
+  figmaSourceMode: SubmitSourceMode;
+  figmaJsonPayload: string;
   enableGitPr: false;
+  llmCodegenMode: "deterministic";
 }
 
-function buildSubmitBody(clipboardHtml: string): ClipboardSubmitBody {
+function buildSubmitBody(request: PipelineRequest): SubmitBody {
   return {
-    figmaSourceMode: "figma_clipboard",
-    figmaClipboardHtml: clipboardHtml,
+    figmaSourceMode: request.sourceMode,
+    figmaJsonPayload: request.payload,
     enableGitPr: false,
+    llmCodegenMode: "deterministic",
   };
 }
 
 class SubmitError extends Error {
   readonly retryable: boolean;
+
   constructor(message: string, retryable: boolean) {
     super(message);
     this.name = "SubmitError";
@@ -439,24 +424,27 @@ class SubmitError extends Error {
   }
 }
 
-async function postSubmit(
-  clipboardHtml: string,
-  signal: AbortSignal | undefined,
-): Promise<string> {
+async function postSubmit({
+  request,
+  signal,
+}: {
+  request: PipelineRequest;
+  signal: AbortSignal;
+}): Promise<string> {
   const response = await fetchJson<{ jobId?: string; error?: string }>({
     url: endpoints.submit,
     init: {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(buildSubmitBody(clipboardHtml)),
-      ...(signal !== undefined ? { signal } : {}),
+      body: JSON.stringify(buildSubmitBody(request)),
+      signal,
     },
   });
 
   if (response.status === 202 && isRecord(response.payload)) {
-    const id = response.payload.jobId;
-    if (typeof id === "string" && id.length > 0) {
-      return id;
+    const jobId = response.payload.jobId;
+    if (typeof jobId === "string" && jobId.length > 0) {
+      return jobId;
     }
   }
 
@@ -475,79 +463,211 @@ async function postSubmit(
   throw new SubmitError("SUBMIT_FAILED", true);
 }
 
+async function postCancel({
+  jobId,
+  signal,
+}: {
+  jobId: string;
+  signal: AbortSignal;
+}): Promise<JobPayload | null> {
+  const response = await fetchJson<JobPayload>({
+    url: endpoints.cancel({ jobId }),
+    init: {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason: CANCEL_REASON }),
+      signal,
+    },
+  });
+
+  if (response.ok && isJobPayload(response.payload)) {
+    return response.payload;
+  }
+
+  return null;
+}
+
+function validatePipelineRequest(request: PipelineRequest): PipelineError | null {
+  const byteLength = new TextEncoder().encode(request.payload).length;
+  if (byteLength > FIGMA_PASTE_MAX_BYTES) {
+    return {
+      stage: "parsing",
+      code: "PAYLOAD_TOO_LARGE",
+      message: `Payload exceeds the ${String(FIGMA_PASTE_MAX_BYTES / (1024 * 1024))} MiB limit.`,
+      retryable: false,
+    };
+  }
+
+  try {
+    JSON.parse(request.payload);
+  } catch {
+    return {
+      stage: "parsing",
+      code: "SCHEMA_MISMATCH",
+      message: "Payload must be valid JSON.",
+      retryable: false,
+    };
+  }
+
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Stage event derivation from backend payload
 // ---------------------------------------------------------------------------
 
 type StageEvent =
   | { kind: "start"; stage: PipelineStage; message: string }
-  | { kind: "done"; stage: PipelineStage; extraDone?: PipelineStage }
+  | { kind: "message"; stage: PipelineStage; message: string }
+  | { kind: "done"; stage: PipelineStage }
   | { kind: "failed"; stage: PipelineStage; error: PipelineError };
 
 function describeStage(name: string, status: string): string {
   return `${name}: ${status}`;
 }
 
-function toStageEvents(
-  payload: JobPayload,
-  knownStatuses: Map<string, string>,
-): StageEvent[] {
-  const events: StageEvent[] = [];
-  const stages = payload.stages ?? [];
-  for (const stage of stages) {
-    const mapped = BACKEND_TO_PIPELINE_STAGE[stage.name];
-    if (mapped === undefined) {
-      continue;
-    }
-    const previous = knownStatuses.get(stage.name);
-    if (previous === stage.status) {
-      continue;
-    }
-    knownStatuses.set(stage.name, stage.status);
-    events.push(...stageTransitionEvents(stage, mapped, payload));
+function inferFailureStage(knownStatuses: Map<string, string>): PipelineStage {
+  if (
+    knownStatuses.has("codegen.generate") ||
+    knownStatuses.has("validate.project") ||
+    knownStatuses.has("repro.export") ||
+    knownStatuses.has("git.pr")
+  ) {
+    return "generating";
   }
-  return events;
+  if (knownStatuses.has("template.prepare")) {
+    return "mapping";
+  }
+  if (knownStatuses.has("ir.derive")) {
+    return "transforming";
+  }
+  return "resolving";
 }
 
 function stageTransitionEvents(
   stage: JobStagePayload,
-  mapped: PipelineStage,
-  payload: JobPayload,
+  knownStatuses: Map<string, string>,
+  jobPayload: JobPayload,
 ): StageEvent[] {
+  const mappedStage = BACKEND_TO_PIPELINE_STAGE[stage.name];
+  if (mappedStage === undefined) {
+    return [];
+  }
+
+  const previousStatus = knownStatuses.get(stage.name);
+  if (previousStatus === stage.status) {
+    return [];
+  }
+  knownStatuses.set(stage.name, stage.status);
+
   if (stage.status === "running") {
     return [
       {
         kind: "start",
-        stage: mapped,
+        stage: mappedStage,
         message: describeStage(stage.name, stage.status),
       },
     ];
   }
+
   if (stage.status === "completed") {
-    if (stage.name === "figma.source") {
-      return [{ kind: "done", stage: mapped, extraDone: "extracting" }];
+    if (
+      stage.name === "figma.source" ||
+      stage.name === "ir.derive" ||
+      stage.name === "template.prepare"
+    ) {
+      return [{ kind: "done", stage: mappedStage }];
     }
-    return [{ kind: "done", stage: mapped }];
+
+    return [
+      {
+        kind: "message",
+        stage: mappedStage,
+        message: describeStage(stage.name, stage.status),
+      },
+    ];
   }
+
   if (stage.status === "failed") {
     return [
       {
         kind: "failed",
-        stage: mapped,
+        stage: mappedStage,
         error: {
-          stage: mapped,
+          stage: mappedStage,
           code: "STAGE_FAILED",
-          message: payload.error?.message ?? stage.name,
+          message: jobPayload.error?.message ?? stage.name,
           retryable: true,
         },
       },
     ];
   }
-  return [];
+
+  return [
+    {
+      kind: "message",
+      stage: mappedStage,
+      message: describeStage(stage.name, stage.status),
+    },
+  ];
+}
+
+function applyJobPayload({
+  payload,
+  knownStatuses,
+  apply,
+}: {
+  payload: JobPayload;
+  knownStatuses: Map<string, string>;
+  apply: (action: PipelineAction) => void;
+}): void {
+  const previewUrl =
+    typeof payload.preview?.url === "string" ? payload.preview.url : undefined;
+  const status = payload.status;
+  if (
+    status === "queued" ||
+    status === "running" ||
+    status === "completed" ||
+    status === "failed" ||
+    status === "canceled"
+  ) {
+    apply({
+      type: "job_status_updated",
+      status,
+      ...(previewUrl !== undefined ? { previewUrl } : {}),
+    });
+  }
+
+  for (const stage of payload.stages ?? []) {
+    const events = stageTransitionEvents(stage, knownStatuses, payload);
+    for (const event of events) {
+      if (event.kind === "start") {
+        apply({
+          type: "stage_start",
+          stage: event.stage,
+          message: event.message,
+        });
+      } else if (event.kind === "message") {
+        apply({
+          type: "stage_message",
+          stage: event.stage,
+          message: event.message,
+        });
+      } else if (event.kind === "done") {
+        apply({ type: "stage_done", stage: event.stage, durationMs: 0 });
+      } else {
+        apply({
+          type: "stage_failed",
+          stage: event.stage,
+          error: event.error,
+        });
+      }
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Artifact type guards
+// Artifact fetchers
 // ---------------------------------------------------------------------------
 
 function isDesignIrPayload(value: unknown): value is DesignIrPayload {
@@ -568,312 +688,439 @@ function isComponentManifestPayload(
   );
 }
 
-// ---------------------------------------------------------------------------
-// Artifact fetchers
-// ---------------------------------------------------------------------------
-
-interface ArtifactFetchers {
-  signal: AbortSignal;
-  jobId: string;
-}
-
 async function fetchDesignIr({
   jobId,
   signal,
-}: ArtifactFetchers): Promise<DesignIrPayload | null> {
+}: {
+  jobId: string;
+  signal: AbortSignal;
+}): Promise<DesignIrPayload | null> {
   const response = await fetchJson<unknown>({
     url: endpoints.designIr({ jobId }),
     init: { signal },
   });
-  if (!response.ok || !isDesignIrPayload(response.payload)) {
-    return null;
-  }
-  return response.payload;
-}
-
-async function fetchScreenshot({
-  jobId,
-  signal,
-}: ArtifactFetchers): Promise<string | null> {
-  const response = await fetchJson<unknown>({
-    url: endpoints.designIr({ jobId }),
-    init: { signal },
-  });
-  if (!response.ok || !isRecord(response.payload)) {
-    return null;
-  }
-  const screenshot = response.payload.screenshot;
-  return typeof screenshot === "string" ? screenshot : null;
+  return response.ok && isDesignIrPayload(response.payload)
+    ? response.payload
+    : null;
 }
 
 async function fetchManifest({
   jobId,
   signal,
-}: ArtifactFetchers): Promise<ComponentManifestPayload | null> {
+}: {
+  jobId: string;
+  signal: AbortSignal;
+}): Promise<ComponentManifestPayload | null> {
   const response = await fetchJson<unknown>({
     url: endpoints.manifest({ jobId }),
     init: { signal },
   });
-  if (!response.ok || !isComponentManifestPayload(response.payload)) {
-    return null;
-  }
-  return response.payload;
+  return response.ok && isComponentManifestPayload(response.payload)
+    ? response.payload
+    : null;
 }
 
 async function fetchFiles({
   jobId,
   signal,
-}: ArtifactFetchers): Promise<GeneratedFileEntry[] | null> {
+}: {
+  jobId: string;
+  signal: AbortSignal;
+}): Promise<GeneratedFileEntry[] | null> {
   const response = await fetchJson<{ files?: unknown }>({
     url: endpoints.files({ jobId }),
     init: { signal },
   });
-  if (!response.ok || !isRecord(response.payload)) {
+  if (!response.ok || !isRecord(response.payload) || !Array.isArray(response.payload.files)) {
     return null;
   }
-  const files = response.payload.files;
-  if (!Array.isArray(files)) {
-    return null;
-  }
-  const entries: GeneratedFileEntry[] = [];
-  for (const item of files) {
+
+  const files: GeneratedFileEntry[] = [];
+  for (const entry of response.payload.files) {
     if (
-      isRecord(item) &&
-      typeof item.path === "string" &&
-      typeof item.sizeBytes === "number"
+      isRecord(entry) &&
+      typeof entry.path === "string" &&
+      typeof entry.sizeBytes === "number"
     ) {
-      entries.push({ path: item.path, sizeBytes: item.sizeBytes });
+      files.push({ path: entry.path, sizeBytes: entry.sizeBytes });
     }
   }
-  return entries;
+  return files;
+}
+
+async function fetchFinalArtifacts({
+  jobId,
+  signal,
+  apply,
+}: {
+  jobId: string;
+  signal: AbortSignal;
+  apply: (action: PipelineAction) => void;
+}): Promise<void> {
+  const [designIR, manifest, files] = await Promise.all([
+    fetchDesignIr({ jobId, signal }).catch(() => null),
+    fetchManifest({ jobId, signal }).catch(() => null),
+    fetchFiles({ jobId, signal }).catch(() => null),
+  ]);
+
+  if (designIR !== null) {
+    apply({ type: "design_ir_ready", designIR });
+  }
+  if (manifest !== null) {
+    apply({ type: "manifest_ready", manifest });
+  }
+  if (files !== null) {
+    apply({ type: "files_ready", files });
+  }
 }
 
 // ---------------------------------------------------------------------------
-// startPastePipeline — imperative controller
+// Shared runtime helpers
 // ---------------------------------------------------------------------------
 
-interface PipelineRuntime {
-  state: PastePipelineState;
+async function waitForNextPoll({
+  signal,
+}: {
+  signal: AbortSignal;
+}): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, POLL_INTERVAL_MS);
+
+    const onAbort = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", onAbort);
+      reject(new DOMException("The operation was aborted.", "AbortError"));
+    };
+
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+async function pollUntilTerminal({
+  jobId,
+  signal,
+  knownStatuses,
+  apply,
+}: {
+  jobId: string;
+  signal: AbortSignal;
   knownStatuses: Map<string, string>;
-  timer: ReturnType<typeof setTimeout> | null;
-  finalized: boolean;
+  apply: (action: PipelineAction) => void;
+}): Promise<JobPayload> {
+  for (;;) {
+    const response = await fetchJson<JobPayload>({
+      url: endpoints.job({ jobId }),
+      init: { signal },
+    });
+
+    if (!response.ok || !isJobPayload(response.payload)) {
+      throw new SubmitError("POLL_FAILED", true);
+    }
+
+    const payload = response.payload;
+    applyJobPayload({ payload, knownStatuses, apply });
+
+    if (
+      payload.status === "completed" ||
+      payload.status === "failed" ||
+      payload.status === "canceled"
+    ) {
+      return payload;
+    }
+
+    await waitForNextPoll({ signal });
+  }
 }
 
-function submitFailureError(error: unknown): PipelineError {
-  const message = error instanceof Error ? error.message : "SUBMIT_FAILED";
-  const retryable =
-    error instanceof SubmitError ? error.retryable : !(error instanceof Error);
-  return {
-    stage: "resolving",
-    code: message,
-    message,
-    retryable,
-  };
+async function executePipelineRun({
+  request,
+  signal,
+  knownStatuses,
+  apply,
+}: {
+  request: PipelineRequest;
+  signal: AbortSignal;
+  knownStatuses: Map<string, string>;
+  apply: (action: PipelineAction) => void;
+}): Promise<{ jobId?: string }> {
+  apply({ type: "start" });
+
+  const requestError = validatePipelineRequest(request);
+  if (requestError !== null) {
+    apply({
+      type: "stage_failed",
+      stage: "parsing",
+      error: requestError,
+    });
+    return {};
+  }
+
+  apply({ type: "parsing_done" });
+
+  let jobId: string;
+  try {
+    jobId = await postSubmit({ request, signal });
+  } catch (error) {
+    if (isAbortError(error)) {
+      return {};
+    }
+    const message = error instanceof Error ? error.message : "SUBMIT_FAILED";
+    const retryable = error instanceof SubmitError ? error.retryable : true;
+    apply({
+      type: "stage_failed",
+      stage: "resolving",
+      error: {
+        stage: "resolving",
+        code: message,
+        message,
+        retryable,
+      },
+    });
+    return {};
+  }
+
+  apply({ type: "job_created", jobId });
+
+  let payload: JobPayload;
+  try {
+    payload = await pollUntilTerminal({
+      jobId,
+      signal,
+      knownStatuses,
+      apply,
+    });
+  } catch (error) {
+    if (isAbortError(error)) {
+      return { jobId };
+    }
+
+    apply({
+      type: "stage_failed",
+      stage: inferFailureStage(knownStatuses),
+      error: {
+        stage: inferFailureStage(knownStatuses),
+        code: error instanceof Error ? error.message : "POLL_FAILED",
+        message: error instanceof Error ? error.message : "POLL_FAILED",
+        retryable: true,
+      },
+    });
+    return { jobId };
+  }
+
+  if (payload.status === "failed") {
+    const stage = inferFailureStage(knownStatuses);
+    apply({
+      type: "stage_failed",
+      stage,
+      error: {
+        stage,
+        code: "JOB_FAILED",
+        message: payload.error?.message ?? "JOB_FAILED",
+        retryable: false,
+      },
+    });
+    return { jobId };
+  }
+
+  if (payload.status === "canceled") {
+    apply({ type: "cancel_complete" });
+    return { jobId };
+  }
+
+  const previewUrl =
+    typeof payload.preview?.url === "string" ? payload.preview.url : undefined;
+  if (!previewUrl) {
+    apply({
+      type: "stage_failed",
+      stage: "generating",
+      error: {
+        stage: "generating",
+        code: "MISSING_PREVIEW_URL",
+        message: "Completed job is missing preview URL.",
+        retryable: true,
+      },
+    });
+    return { jobId };
+  }
+
+  try {
+    await fetchFinalArtifacts({ jobId, signal, apply });
+  } catch (error) {
+    if (!isAbortError(error)) {
+      throw error;
+    }
+  }
+  apply({ type: "complete", previewUrl });
+  return { jobId };
+}
+
+async function executeCancellation({
+  jobId,
+  signal,
+  knownStatuses,
+  apply,
+}: {
+  jobId: string;
+  signal: AbortSignal;
+  knownStatuses: Map<string, string>;
+  apply: (action: PipelineAction) => void;
+}): Promise<void> {
+  let payload: JobPayload | null;
+  try {
+    payload = await postCancel({ jobId, signal });
+  } catch (error) {
+    if (isAbortError(error)) {
+      return;
+    }
+    payload = null;
+  }
+  if (payload === null) {
+    apply({
+      type: "stage_failed",
+      stage: inferFailureStage(knownStatuses),
+      error: {
+        stage: inferFailureStage(knownStatuses),
+        code: "CANCEL_FAILED",
+        message: "Cancellation request failed.",
+        retryable: true,
+      },
+    });
+    return;
+  }
+
+  applyJobPayload({ payload, knownStatuses, apply });
+  if (payload.status === "canceled") {
+    apply({ type: "cancel_complete" });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Imperative controller
+// ---------------------------------------------------------------------------
+
+interface ControllerRuntime {
+  state: PastePipelineState;
+  activeRunId: number;
+  activeRunController?: AbortController;
+  activeJobId: string | undefined;
+  knownStatuses: Map<string, string>;
+  lastRequest?: PipelineRequest;
 }
 
 export function startPastePipeline(
-  clipboardHtml: string,
+  payload: string,
   options?: PipelineOptions,
 ): PastePipelineController {
-  const abortController = new AbortController();
-  if (options?.signal) {
-    if (options.signal.aborted) {
-      abortController.abort();
-    } else {
-      options.signal.addEventListener("abort", () => abortController.abort(), {
-        once: true,
-      });
-    }
-  }
-
-  const runtime: PipelineRuntime = {
+  const runtime: ControllerRuntime = {
     state: createInitialPipelineState(),
+    activeRunId: 0,
+    activeJobId: undefined,
     knownStatuses: new Map(),
-    timer: null,
-    finalized: false,
   };
 
-  const apply = (action: PipelineAction): void => {
-    runtime.state = pastePipelineReducer(runtime.state, action);
-  };
+  const startRun = (request: PipelineRequest): void => {
+    runtime.activeRunId += 1;
+    const runId = runtime.activeRunId;
+    runtime.activeRunController?.abort();
+    runtime.knownStatuses = new Map();
+    runtime.activeJobId = undefined;
+    runtime.lastRequest = request;
 
-  const finalize = (): void => {
-    runtime.finalized = true;
-    if (runtime.timer !== null) {
-      clearTimeout(runtime.timer);
-      runtime.timer = null;
-    }
-  };
+    const controller = new AbortController();
+    runtime.activeRunController = controller;
 
-  const handleArtifacts = async (
-    event: StageEvent,
-    jobId: string,
-  ): Promise<void> => {
-    if (event.kind !== "done") {
-      return;
-    }
-    const fetchers: ArtifactFetchers = {
-      jobId,
-      signal: abortController.signal,
-    };
-    if (event.stage === "resolving" && options?.skipScreenshot !== true) {
-      const screenshot = await fetchScreenshot(fetchers);
-      if (screenshot !== null) {
-        apply({ type: "screenshot_ready", screenshot });
-      }
-    }
-    if (event.stage === "transforming") {
-      const ir = await fetchDesignIr(fetchers);
-      if (ir !== null) {
-        apply({ type: "design_ir_ready", designIR: ir });
-      }
-    }
-    if (event.stage === "generating") {
-      const [manifest, files] = await Promise.all([
-        fetchManifest(fetchers),
-        fetchFiles(fetchers),
-      ]);
-      if (manifest !== null) {
-        apply({ type: "manifest_ready", manifest });
-      }
-      if (files !== null) {
-        apply({ type: "files_ready", files });
-      }
-    }
-  };
-
-  const applyEvent = (event: StageEvent): void => {
-    if (event.kind === "start") {
-      apply({
-        type: "stage_start",
-        stage: event.stage,
-        message: event.message,
-      });
-      return;
-    }
-    if (event.kind === "done") {
-      apply({ type: "stage_done", stage: event.stage, durationMs: 0 });
-      if (event.extraDone !== undefined) {
-        apply({
-          type: "stage_done",
-          stage: event.extraDone,
-          durationMs: 0,
+    if (options?.signal) {
+      if (options.signal.aborted) {
+        controller.abort();
+      } else {
+        options.signal.addEventListener("abort", () => controller.abort(), {
+          once: true,
         });
       }
-      return;
     }
-    apply({ type: "stage_failed", stage: event.stage, error: event.error });
-  };
 
-  const pollOnce = async (jobId: string): Promise<void> => {
-    if (abortController.signal.aborted || runtime.finalized) {
-      return;
-    }
-    const response = await fetchJson<JobPayload>({
-      url: endpoints.job({ jobId }),
-      init: { signal: abortController.signal },
+    const apply = (action: PipelineAction): void => {
+      if (runtime.activeRunId !== runId) {
+        return;
+      }
+      if (action.type === "job_created") {
+        runtime.activeJobId = action.jobId;
+      }
+      if (action.type === "cancel_complete") {
+        runtime.activeJobId = undefined;
+      }
+      runtime.state = pastePipelineReducer(runtime.state, action);
+    };
+
+    void executePipelineRun({
+      request,
+      signal: controller.signal,
+      knownStatuses: runtime.knownStatuses,
+      apply,
+    }).then(({ jobId }) => {
+      if (runtime.activeRunId === runId) {
+        runtime.activeJobId = jobId;
+      }
     });
-    if (!response.ok || !isJobPayload(response.payload)) {
-      apply({
-        type: "stage_failed",
-        stage: "resolving",
-        error: {
-          stage: "resolving",
-          code: "POLL_FAILED",
-          message: "POLL_FAILED",
-          retryable: true,
-        },
-      });
-      finalize();
-      return;
-    }
-
-    const events = toStageEvents(response.payload, runtime.knownStatuses);
-    for (const event of events) {
-      applyEvent(event);
-      await handleArtifacts(event, jobId);
-    }
-
-    const status = response.payload.status;
-    if (status === "completed") {
-      apply({ type: "complete" });
-      finalize();
-      return;
-    }
-    if (status === "failed") {
-      apply({
-        type: "stage_failed",
-        stage:
-          runtime.state.stage === "error" ? "generating" : runtime.state.stage,
-        error: {
-          stage: runtime.state.stage,
-          code: "JOB_FAILED",
-          message: response.payload.error?.message ?? "JOB_FAILED",
-          retryable: false,
-        },
-      });
-      finalize();
-      return;
-    }
-    if (status === "canceled") {
-      apply({ type: "cancel" });
-      finalize();
-      return;
-    }
-
-    runtime.timer = setTimeout(() => {
-      void pollOnce(jobId);
-    }, POLL_INTERVAL_MS);
   };
 
-  const run = async (): Promise<void> => {
-    apply({ type: "start", clipboardHtml });
-
-    if (!isFigmaClipboard(clipboardHtml)) {
-      apply({ type: "cancel" });
-      finalize();
-      return;
-    }
-    const figmeta = parseFigmaClipboard(clipboardHtml);
-    if (figmeta === null) {
-      apply({ type: "cancel" });
-      finalize();
-      return;
-    }
-    apply({ type: "parsing_done", figmeta: figmeta.meta });
-
-    let jobId: string;
-    try {
-      jobId = await postSubmit(clipboardHtml, abortController.signal);
-    } catch (error) {
-      apply({
-        type: "stage_failed",
-        stage: "resolving",
-        error: submitFailureError(error),
-      });
-      finalize();
-      return;
-    }
-
-    apply({ type: "job_created", jobId });
-    await pollOnce(jobId);
-  };
-
-  void run();
+  startRun({
+    payload,
+    sourceMode: options?.sourceMode ?? "figma_paste",
+    skipScreenshot: options?.skipScreenshot === true,
+  });
 
   return {
     cancel(): void {
-      abortController.abort();
-      apply({ type: "cancel" });
-      finalize();
+      const activeJobId = runtime.activeJobId;
+      runtime.activeRunId += 1;
+      const runId = runtime.activeRunId;
+      runtime.activeRunController?.abort();
+      runtime.activeJobId = undefined;
+      if (!activeJobId) {
+        runtime.state = pastePipelineReducer(runtime.state, {
+          type: "cancel_complete",
+        });
+        return;
+      }
+
+      const cancelController = new AbortController();
+      runtime.activeRunController = cancelController;
+      const apply = (action: PipelineAction): void => {
+        if (runtime.activeRunId !== runId) {
+          return;
+        }
+        if (action.type === "job_created") {
+          runtime.activeJobId = action.jobId;
+        }
+        if (action.type === "cancel_complete") {
+          runtime.activeJobId = undefined;
+        }
+        runtime.state = pastePipelineReducer(runtime.state, action);
+      };
+      void executeCancellation({
+        jobId: activeJobId,
+        signal: cancelController.signal,
+        knownStatuses: runtime.knownStatuses,
+        apply,
+      });
     },
-    retry(fromStage?: PipelineStage): void {
-      apply(
-        fromStage !== undefined
-          ? { type: "retry", fromStage }
-          : { type: "retry" },
-      );
+
+    retry(): void {
+      const lastRequest = runtime.lastRequest;
+      if (!lastRequest) {
+        return;
+      }
+      startRun(lastRequest);
     },
+
     getState(): PastePipelineState {
       return runtime.state;
     },
@@ -881,27 +1128,22 @@ export function startPastePipeline(
 }
 
 // ---------------------------------------------------------------------------
-// usePastePipeline — React hook
+// React hook
 // ---------------------------------------------------------------------------
 
 export interface UsePastePipelineResult {
   state: PastePipelineState;
-  start(clipboardHtml: string, options?: PipelineOptions): void;
+  start(payload: string, options?: Omit<PipelineOptions, "signal">): void;
   cancel(): void;
-  retry(fromStage?: PipelineStage): void;
+  retry(): void;
 }
 
-function toStageFailedAction(
-  stage: PipelineStage,
-  code: string,
-  message: string,
-  retryable: boolean,
-): PipelineAction {
-  return {
-    type: "stage_failed",
-    stage,
-    error: { stage, code, message, retryable },
-  };
+interface HookRuntime {
+  activeRunId: number;
+  activeRunController?: AbortController;
+  activeJobId: string | undefined;
+  knownStatuses: Map<string, string>;
+  lastRequest?: PipelineRequest;
 }
 
 export function usePastePipeline(): UsePastePipelineResult {
@@ -911,289 +1153,99 @@ export function usePastePipeline(): UsePastePipelineResult {
     createInitialPipelineState,
   );
 
-  const clipboardHtmlRef = useRef<string | null>(null);
-  const knownStatusesRef = useRef<Map<string, string>>(new Map());
-  const lastDispatchedDataRef = useRef<JsonResponse<unknown> | undefined>(
-    undefined,
-  );
-  const skipScreenshotRef = useRef<boolean>(false);
-  // Tracks the last errorUpdatedAt we handled so rapid TanStack Query retries
-  // don't dispatch multiple POLL_FAILED actions for the same error run.
-  const lastHandledErrorAtRef = useRef<number>(0);
-
-  const submitMutation = useMutation<
-    { jobId: string },
-    Error,
-    { clipboardHtml: string }
-  >({
-    mutationFn: async ({ clipboardHtml }) => {
-      const jobId = await postSubmit(clipboardHtml, undefined);
-      return { jobId };
-    },
-    onSuccess: ({ jobId }) => {
-      dispatch({ type: "job_created", jobId });
-    },
-    onError: (error) => {
-      const retryable = error instanceof SubmitError ? error.retryable : true;
-      dispatch(
-        toStageFailedAction(
-          "resolving",
-          error.message,
-          error.message,
-          retryable,
-        ),
-      );
-    },
+  const runtimeRef = useRef<HookRuntime>({
+    activeRunId: 0,
+    activeJobId: undefined,
+    knownStatuses: new Map(),
   });
 
-  const polling =
-    state.jobId !== undefined &&
-    state.stage !== "ready" &&
-    state.stage !== "error";
+  const startRun = (request: PipelineRequest): void => {
+    const runtime = runtimeRef.current;
+    runtime.activeRunId += 1;
+    const runId = runtime.activeRunId;
+    runtime.activeRunController?.abort();
+    runtime.activeRunController = new AbortController();
+    runtime.activeJobId = undefined;
+    runtime.knownStatuses = new Map();
+    runtime.lastRequest = request;
 
-  const jobQuery = useQuery({
-    queryKey: ["paste-pipeline-job", state.jobId],
-    enabled: polling,
-    queryFn: async () => {
-      if (state.jobId === undefined) {
-        throw new Error("Missing job id");
+    const apply = (action: PipelineAction): void => {
+      if (runtimeRef.current.activeRunId !== runId) {
+        return;
       }
-      return await fetchJson<JobPayload>({
-        url: endpoints.job({ jobId: state.jobId }),
+      if (action.type === "job_created") {
+        runtimeRef.current.activeJobId = action.jobId;
+      }
+      if (action.type === "cancel_complete") {
+        runtimeRef.current.activeJobId = undefined;
+      }
+      dispatch(action);
+    };
+
+    void executePipelineRun({
+      request,
+      signal: runtime.activeRunController.signal,
+      knownStatuses: runtime.knownStatuses,
+      apply,
+    }).then(({ jobId }) => {
+      if (runtimeRef.current.activeRunId === runId) {
+        runtimeRef.current.activeJobId = jobId;
+      }
+    });
+  };
+
+  useEffect(() => {
+    return () => {
+      runtimeRef.current.activeRunController?.abort();
+    };
+  }, []);
+
+  return {
+    state,
+
+    start(payload: string, options?: Omit<PipelineOptions, "signal">): void {
+      startRun({
+        payload,
+        sourceMode: options?.sourceMode ?? "figma_paste",
+        skipScreenshot: options?.skipScreenshot === true,
       });
     },
-    refetchInterval: (query) => {
-      const response = query.state.data as JsonResponse<unknown> | undefined;
-      if (!response?.ok || !isJobPayload(response.payload)) {
-        return false;
+
+    cancel(): void {
+      const runtime = runtimeRef.current;
+      const activeJobId = runtime.activeJobId;
+      runtime.activeRunId += 1;
+      const runId = runtime.activeRunId;
+      runtime.activeRunController?.abort();
+      runtime.activeJobId = undefined;
+      if (!activeJobId) {
+        dispatch({ type: "cancel_complete" });
+        return;
       }
-      const status = response.payload.status;
-      return status === "queued" || status === "running"
-        ? POLL_INTERVAL_MS
-        : false;
-    },
-  });
 
-  useEffect(() => {
-    const response = jobQuery.data;
-    if (!response || response === lastDispatchedDataRef.current) {
-      return;
-    }
-    lastDispatchedDataRef.current = response;
-
-    if (!response.ok || !isJobPayload(response.payload)) {
-      dispatch(
-        toStageFailedAction("resolving", "POLL_FAILED", "POLL_FAILED", true),
-      );
-      return;
-    }
-
-    const payload = response.payload;
-    const events = toStageEvents(payload, knownStatusesRef.current);
-    for (const event of events) {
-      if (event.kind === "start") {
-        dispatch({
-          type: "stage_start",
-          stage: event.stage,
-          message: event.message,
-        });
-      } else if (event.kind === "done") {
-        dispatch({
-          type: "stage_done",
-          stage: event.stage,
-          durationMs: 0,
-        });
-        if (event.extraDone !== undefined) {
-          dispatch({
-            type: "stage_done",
-            stage: event.extraDone,
-            durationMs: 0,
-          });
-        }
-      } else {
-        dispatch({
-          type: "stage_failed",
-          stage: event.stage,
-          error: event.error,
-        });
-      }
-    }
-
-    if (payload.status === "completed") {
-      dispatch({ type: "complete" });
-      return;
-    }
-    if (payload.status === "failed") {
-      dispatch(
-        toStageFailedAction(
-          "generating",
-          "JOB_FAILED",
-          payload.error?.message ?? "JOB_FAILED",
-          false,
-        ),
-      );
-      return;
-    }
-    if (payload.status === "canceled") {
-      dispatch({ type: "cancel" });
-    }
-  }, [jobQuery.data]);
-
-  useEffect(() => {
-    if (
-      !jobQuery.isError ||
-      jobQuery.errorUpdatedAt <= lastHandledErrorAtRef.current
-    ) {
-      return;
-    }
-    lastHandledErrorAtRef.current = jobQuery.errorUpdatedAt;
-    dispatch(
-      toStageFailedAction("resolving", "POLL_FAILED", "POLL_FAILED", true),
-    );
-  }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
-
-  // Each artifact fetch has its own AbortController so an unrelated stage
-  // completion does not abort an in-flight request from a different stage.
-  useEffect(() => {
-    if (
-      !polling ||
-      state.jobId === undefined ||
-      skipScreenshotRef.current ||
-      state.stageProgress.resolving.state !== "done" ||
-      state.screenshot !== undefined
-    ) {
-      return;
-    }
-    const ac = new AbortController();
-    const jobId = state.jobId;
-    void fetchScreenshot({ jobId, signal: ac.signal }).then((shot) => {
-      if (!ac.signal.aborted && shot !== null) {
-        dispatch({ type: "screenshot_ready", screenshot: shot });
-      }
-    });
-    return () => {
-      ac.abort();
-    };
-  }, [
-    polling,
-    state.jobId,
-    state.stageProgress.resolving.state,
-    state.screenshot,
-  ]);
-
-  useEffect(() => {
-    if (
-      !polling ||
-      state.jobId === undefined ||
-      state.stageProgress.transforming.state !== "done" ||
-      state.designIR !== undefined
-    ) {
-      return;
-    }
-    const ac = new AbortController();
-    const jobId = state.jobId;
-    void fetchDesignIr({ jobId, signal: ac.signal }).then((ir) => {
-      if (!ac.signal.aborted && ir !== null) {
-        dispatch({ type: "design_ir_ready", designIR: ir });
-      }
-    });
-    return () => {
-      ac.abort();
-    };
-  }, [
-    polling,
-    state.jobId,
-    state.stageProgress.transforming.state,
-    state.designIR,
-  ]);
-
-  useEffect(() => {
-    if (
-      !polling ||
-      state.jobId === undefined ||
-      state.stageProgress.generating.state !== "done" ||
-      (state.componentManifest !== undefined &&
-        state.generatedFiles !== undefined)
-    ) {
-      return;
-    }
-    const ac = new AbortController();
-    const jobId = state.jobId;
-    void Promise.all([
-      fetchManifest({ jobId, signal: ac.signal }),
-      fetchFiles({ jobId, signal: ac.signal }),
-    ]).then(([manifest, files]) => {
-      if (!ac.signal.aborted) {
-        if (manifest !== null) {
-          dispatch({ type: "manifest_ready", manifest });
-        }
-        if (files !== null) {
-          dispatch({ type: "files_ready", files });
-        }
-      }
-    });
-    return () => {
-      ac.abort();
-    };
-  }, [
-    polling,
-    state.jobId,
-    state.stageProgress.generating.state,
-    state.componentManifest,
-    state.generatedFiles,
-  ]);
-
-  function start(clipboardHtml: string, options?: PipelineOptions): void {
-    clipboardHtmlRef.current = clipboardHtml;
-    knownStatusesRef.current = new Map();
-    lastDispatchedDataRef.current = undefined;
-    skipScreenshotRef.current = options?.skipScreenshot === true;
-
-    dispatch({ type: "start", clipboardHtml });
-
-    if (!isFigmaClipboard(clipboardHtml)) {
-      dispatch({ type: "cancel" });
-      return;
-    }
-    if (
-      new TextEncoder().encode(clipboardHtml).length > FIGMA_PASTE_MAX_BYTES
-    ) {
-      dispatch({
-        type: "parsing_failed",
-        error: {
-          stage: "parsing",
-          code: "PAYLOAD_TOO_LARGE",
-          message: `Clipboard HTML exceeds the ${String(FIGMA_PASTE_MAX_BYTES / (1024 * 1024))} MiB limit.`,
-          retryable: false,
+      const cancelController = new AbortController();
+      runtime.activeRunController = cancelController;
+      void executeCancellation({
+        jobId: activeJobId,
+        signal: cancelController.signal,
+        knownStatuses: runtime.knownStatuses,
+        apply: (action) => {
+          if (runtimeRef.current.activeRunId === runId) {
+            if (action.type === "cancel_complete") {
+              runtimeRef.current.activeJobId = undefined;
+            }
+            dispatch(action);
+          }
         },
       });
-      return;
-    }
-    const parsed = parseFigmaClipboard(clipboardHtml);
-    if (parsed === null) {
-      dispatch({ type: "cancel" });
-      return;
-    }
-    dispatch({ type: "parsing_done", figmeta: parsed.meta });
-    submitMutation.mutate({ clipboardHtml });
-  }
+    },
 
-  function cancel(): void {
-    dispatch({ type: "cancel" });
-  }
-
-  function retry(fromStage?: PipelineStage): void {
-    if (fromStage !== undefined) {
-      dispatch({ type: "retry", fromStage });
-    } else {
-      dispatch({ type: "retry" });
-    }
-    if (clipboardHtmlRef.current !== null) {
-      knownStatusesRef.current = new Map();
-      lastDispatchedDataRef.current = undefined;
-      submitMutation.mutate({ clipboardHtml: clipboardHtmlRef.current });
-    }
-  }
-
-  return { state, start, cancel, retry };
+    retry(): void {
+      const request = runtimeRef.current.lastRequest;
+      if (!request) {
+        return;
+      }
+      startRun(request);
+    },
+  };
 }

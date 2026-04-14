@@ -33,12 +33,13 @@ export function PreviewPane({
   onToggleInspect,
   onInspectSelect
 }: PreviewPaneProps): JSX.Element {
+  const hasPreviewUrl = previewUrl.trim().length > 0;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [iframeLoadVersion, setIframeLoadVersion] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Derive loading state: loading whenever the current previewUrl hasn't finished loading yet
-  const isLoading = loadedUrl !== previewUrl;
+  const isLoading = hasPreviewUrl && loadedUrl !== previewUrl;
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#000000] text-white">
@@ -62,16 +63,23 @@ export function PreviewPane({
           >
             Inspect
           </button>
-          <a
-            href={previewUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Open preview in new tab"
-            className="inline-flex items-center gap-1.5 rounded border border-[#333333] px-2 py-1 text-white/70 no-underline transition hover:border-[#4eba87]/40 hover:text-[#4eba87]"
-          >
-            <ExternalLinkIcon />
-            Open
-          </a>
+          {hasPreviewUrl ? (
+            <a
+              href={previewUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Open preview in new tab"
+              className="inline-flex items-center gap-1.5 rounded border border-[#333333] px-2 py-1 text-white/70 no-underline transition hover:border-[#4eba87]/40 hover:text-[#4eba87]"
+            >
+              <ExternalLinkIcon />
+              Open
+            </a>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 rounded border border-[#333333] px-2 py-1 text-white/40">
+              <ExternalLinkIcon />
+              Waiting
+            </span>
+          )}
         </div>
       </div>
 
@@ -82,17 +90,23 @@ export function PreviewPane({
               <span className="text-sm text-white/55">Loading preview…</span>
             </div>
           ) : null}
-          <iframe
-            ref={iframeRef}
-            src={previewUrl}
-            title="Live preview"
-            className="h-full w-full flex-1 border-0 bg-white"
-            onLoad={() => {
-              setLoadedUrl(previewUrl);
-              setIframeLoadVersion((prev) => prev + 1);
-            }}
-            sandbox="allow-scripts allow-same-origin"
-          />
+          {hasPreviewUrl ? (
+            <iframe
+              ref={iframeRef}
+              src={previewUrl}
+              title="Live preview"
+              className="h-full w-full flex-1 border-0 bg-white"
+              onLoad={() => {
+                setLoadedUrl(previewUrl);
+                setIframeLoadVersion((prev) => prev + 1);
+              }}
+              sandbox="allow-scripts allow-same-origin"
+            />
+          ) : (
+            <div className="flex h-full flex-1 items-center justify-center px-6 text-center text-sm text-white/55">
+              Preview will appear after the generation job produces a runnable repro.
+            </div>
+          )}
           <InspectOverlay
             inspectEnabled={inspectEnabled}
             activeScopeNodeId={activeScopeNodeId}

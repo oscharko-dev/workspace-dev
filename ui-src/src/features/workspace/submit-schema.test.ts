@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   FIGMA_PASTE_MAX_BYTES,
-  FIGMA_PASTE_MAX_LABEL,
   toInspectorBootstrapPayload,
   workspaceSubmitSchema,
   toWorkspaceSubmitPayload,
@@ -207,59 +206,14 @@ describe("workspaceSubmitSchema", () => {
     });
   });
 
-  it("accepts figma_clipboard mode with non-empty HTML", () => {
+  it("rejects unsupported figma_clipboard mode", () => {
     const parsed = workspaceSubmitSchema.safeParse({
       figmaSourceMode: "figma_clipboard",
-      figmaClipboardHtml: '<span data-metadata="..."></span>',
-      enableGitPr: false,
-      repoUrl: "",
-      repoToken: "",
-    });
-
-    expect(parsed.success).toBe(true);
-  });
-
-  it("rejects figma_clipboard mode when figmaClipboardHtml is missing or empty", () => {
-    const missing = workspaceSubmitSchema.safeParse({
-      figmaSourceMode: "figma_clipboard",
-      enableGitPr: false,
-      repoUrl: "",
-      repoToken: "",
-    });
-    expect(missing.success).toBe(false);
-    if (!missing.success) {
-      const paths = missing.error.issues.map((issue) => issue.path.join("."));
-      expect(paths).toContain("figmaClipboardHtml");
-    }
-
-    const empty = workspaceSubmitSchema.safeParse({
-      figmaSourceMode: "figma_clipboard",
-      figmaClipboardHtml: "   ",
-      enableGitPr: false,
-      repoUrl: "",
-      repoToken: "",
-    });
-    expect(empty.success).toBe(false);
-    if (!empty.success) {
-      const paths = empty.error.issues.map((issue) => issue.path.join("."));
-      expect(paths).toContain("figmaClipboardHtml");
-    }
-  });
-
-  it("rejects figma_clipboard HTML above the client-side size cap", () => {
-    const parsed = workspaceSubmitSchema.safeParse({
-      figmaSourceMode: "figma_clipboard",
-      figmaClipboardHtml: "x".repeat(FIGMA_PASTE_MAX_BYTES + 1),
       enableGitPr: false,
       repoUrl: "",
       repoToken: "",
     });
 
     expect(parsed.success).toBe(false);
-    if (!parsed.success) {
-      const issue = parsed.error.issues[0];
-      expect(issue?.path.join(".")).toBe("figmaClipboardHtml");
-      expect(issue?.message).toContain(FIGMA_PASTE_MAX_LABEL);
-    }
   });
 });

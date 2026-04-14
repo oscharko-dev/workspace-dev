@@ -14,11 +14,10 @@ export const workspaceSubmitSchema = z
     figmaAccessToken: optionalString,
     figmaJsonPath: optionalString,
     figmaJsonPayload: optionalString,
-    figmaClipboardHtml: z.string().optional(),
     storybookStaticDir: optionalString,
     customerProfilePath: optionalString,
     figmaSourceMode: z
-      .enum(["rest", "hybrid", "local_json", "figma_paste", "figma_clipboard"])
+      .enum(["rest", "hybrid", "local_json", "figma_paste"])
       .default("rest"),
     enableGitPr: z.boolean(),
     repoUrl: optionalString,
@@ -42,26 +41,6 @@ export const workspaceSubmitSchema = z
           code: z.ZodIssueCode.custom,
           path: ["figmaJsonPayload"],
           message: `Figma JSON payload must be ${FIGMA_PASTE_MAX_LABEL} or less.`,
-        });
-      }
-      return;
-    }
-
-    if (value.figmaSourceMode === "figma_clipboard") {
-      if (!value.figmaClipboardHtml || !value.figmaClipboardHtml.trim()) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["figmaClipboardHtml"],
-          message: "figmaClipboardHtml is required for figma_clipboard mode.",
-        });
-      } else if (
-        new TextEncoder().encode(value.figmaClipboardHtml).length >
-        FIGMA_PASTE_MAX_BYTES
-      ) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["figmaClipboardHtml"],
-          message: `Figma clipboard HTML must be ${FIGMA_PASTE_MAX_LABEL} or less.`,
         });
       }
       return;
@@ -121,7 +100,6 @@ export interface WorkspaceSubmitPayload {
   figmaAccessToken?: string | undefined;
   figmaJsonPath?: string | undefined;
   figmaJsonPayload?: string | undefined;
-  figmaClipboardHtml?: string | undefined;
   storybookStaticDir?: string | undefined;
   customerProfilePath?: string | undefined;
   repoUrl?: string | undefined;
@@ -133,8 +111,7 @@ export interface WorkspaceSubmitPayload {
     | "rest"
     | "hybrid"
     | "local_json"
-    | "figma_paste"
-    | "figma_clipboard";
+    | "figma_paste";
   llmCodegenMode: "deterministic";
 }
 
@@ -176,23 +153,6 @@ export function toWorkspaceSubmitPayload({
     return {
       figmaSourceMode: "figma_paste",
       figmaJsonPayload: formData.figmaJsonPayload?.trim(),
-      enableGitPr: false,
-      projectName: toOptionalString({ value: formData.projectName }),
-      targetPath: toOptionalString({ value: formData.targetPath }),
-      storybookStaticDir: toOptionalString({
-        value: formData.storybookStaticDir,
-      }),
-      customerProfilePath: toOptionalString({
-        value: formData.customerProfilePath,
-      }),
-      llmCodegenMode: "deterministic",
-    };
-  }
-
-  if (mode === "figma_clipboard") {
-    return {
-      figmaSourceMode: "figma_clipboard",
-      figmaClipboardHtml: formData.figmaClipboardHtml,
       enableGitPr: false,
       projectName: toOptionalString({ value: formData.projectName }),
       targetPath: toOptionalString({ value: formData.targetPath }),
