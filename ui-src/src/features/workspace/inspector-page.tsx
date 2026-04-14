@@ -249,15 +249,11 @@ function BootstrapView(): JSX.Element {
     [bootstrap],
   );
 
-  if (
-    bootstrap.state.kind === "ready" &&
-    bootstrap.jobId &&
-    bootstrap.previewUrl
-  ) {
+  if (bootstrap.jobId && bootstrap.state.kind !== "failed") {
     return (
       <PanelView
         jobId={bootstrap.jobId}
-        previewUrl={bootstrap.previewUrl}
+        previewUrl={bootstrap.previewUrl ?? ""}
         previousJobId={null}
         initialIsRegeneration={false}
         pipeline={bootstrap.pipelineState}

@@ -9,6 +9,7 @@ import {
   upsertInspectorOverrideEntry
 } from "./inspector-override-draft";
 import { toInspectorLayoutStorageKey } from "./layout-state";
+import { createInitialPipelineState } from "./paste-pipeline";
 
 const mockUseQuery = vi.fn();
 const mockUseMutation = vi.fn();
@@ -868,6 +869,42 @@ describe("InspectorPanel data states", () => {
     expect(screen.getByTestId("inspector-design-ir-state-empty")).toHaveTextContent(
       "No component tree data is available for this job."
     );
+  });
+
+  it("ignores pipeline fallback nodes when they belong to a different job", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-design-ir": {
+          data: undefined,
+          isLoading: true,
+        },
+      },
+    });
+
+    renderInspectorPanel({
+      pipeline: {
+        stage: "generating",
+        progress: 80,
+        stageProgress: createInitialPipelineState().stageProgress,
+        jobId: "job-other",
+        designIR: {
+          jobId: "job-other",
+          screens: [
+            {
+              id: "screen-other",
+              name: "Other Screen",
+              children: [],
+            },
+          ],
+        },
+        errors: [],
+        canRetry: false,
+        canCancel: true,
+      },
+    });
+
+    expect(screen.getByTestId("inspector-design-ir-state-loading")).toBeInTheDocument();
+    expect(screen.queryByText("Other Screen")).not.toBeInTheDocument();
   });
 
   it("shows manifest empty warning when manifest payload has no screens", () => {

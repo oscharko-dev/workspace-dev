@@ -91,8 +91,10 @@ describe("usePastePipeline", () => {
 
   it("submits supported payloads and reaches ready on canonical backend stages", async () => {
     let pollCount = 0;
+    const callOrder: string[] = [];
 
     fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      callOrder.push(url);
       if (url === "/workspace/submit") {
         expect(init?.body).toBe(
           JSON.stringify({
@@ -210,6 +212,23 @@ describe("usePastePipeline", () => {
     expect(result.current.state.generatedFiles).toEqual([
       { path: "src/App.tsx", sizeBytes: 128 },
     ]);
+
+    const secondPollIndex = callOrder.indexOf("/workspace/jobs/job-happy");
+    const runningPollIndex = callOrder.indexOf(
+      "/workspace/jobs/job-happy",
+      secondPollIndex + 1,
+    );
+    const completedPollIndex = callOrder.lastIndexOf("/workspace/jobs/job-happy");
+    const designIrIndex = callOrder.indexOf("/workspace/jobs/job-happy/design-ir");
+    const manifestIndex = callOrder.indexOf(
+      "/workspace/jobs/job-happy/component-manifest",
+    );
+
+    expect(runningPollIndex).toBeGreaterThan(secondPollIndex);
+    expect(designIrIndex).toBeGreaterThan(runningPollIndex);
+    expect(manifestIndex).toBeGreaterThan(runningPollIndex);
+    expect(designIrIndex).toBeLessThan(completedPollIndex);
+    expect(manifestIndex).toBeLessThan(completedPollIndex);
   });
 
   it("uses figma_plugin mode for plugin envelope submissions", async () => {

@@ -260,18 +260,14 @@ const waitForPendingEndpoint = async ({
       return;
     }
 
-    if (endpoint === "files" && response.status === 200) {
-      return;
-    }
-
     if (response.status === 200) {
-      throw new Error(`Expected 409 while job is pending for '${endpoint}', got 200.`);
+      return;
     }
 
     await sleep(120);
   }
 
-  throw new Error(`Did not observe 409 pending response for endpoint '${endpoint}'.`);
+  throw new Error(`Did not observe an available or pending response for endpoint '${endpoint}'.`);
 };
 
 const fetchDesignIr = async ({ baseUrl, jobId }: { baseUrl: string; jobId: string }): Promise<DesignIrPayload> => {

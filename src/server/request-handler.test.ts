@@ -1213,6 +1213,13 @@ test("request handler serves design IR and component manifest success and missin
       status: "queued",
       artifacts: {},
     } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-design-ir-running-artifact": {
+      jobId: "job-design-ir-running-artifact",
+      status: "running",
+      artifacts: {
+        designIrFile: designIrPath,
+      },
+    } as ReturnType<JobEngine["getJobRecord"]>,
     "job-figma-analysis-ok": {
       jobId: "job-figma-analysis-ok",
       status: "completed",
@@ -1259,6 +1266,13 @@ test("request handler serves design IR and component manifest success and missin
     "job-manifest-ok": {
       jobId: "job-manifest-ok",
       status: "completed",
+      artifacts: {
+        componentManifestFile: manifestPath,
+      },
+    } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-manifest-running-artifact": {
+      jobId: "job-manifest-running-artifact",
+      status: "running",
       artifacts: {
         componentManifestFile: manifestPath,
       },
@@ -1316,6 +1330,22 @@ test("request handler serves design IR and component manifest success and missin
         "JOB_NOT_COMPLETED",
       );
     });
+
+    await t.test(
+      "design-ir running jobs return the artifact once it exists",
+      async () => {
+        const response = await app.inject({
+          method: "GET",
+          url: "/workspace/jobs/job-design-ir-running-artifact/design-ir",
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.equal(
+          response.json<Record<string, unknown>>().jobId,
+          "job-design-ir-running-artifact",
+        );
+      },
+    );
 
     await t.test("design-ir missing artifact returns 404", async () => {
       const response = await app.inject({
@@ -1425,6 +1455,22 @@ test("request handler serves design IR and component manifest success and missin
           jobId: "job-manifest-ok",
           ...manifestPayload,
         });
+      },
+    );
+
+    await t.test(
+      "component manifest running jobs return the artifact once it exists",
+      async () => {
+        const response = await app.inject({
+          method: "GET",
+          url: "/workspace/jobs/job-manifest-running-artifact/component-manifest",
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.equal(
+          response.json<Record<string, unknown>>().jobId,
+          "job-manifest-running-artifact",
+        );
       },
     );
 

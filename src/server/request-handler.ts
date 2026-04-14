@@ -595,26 +595,21 @@ export function createWorkspaceRequestHandler({
               return;
             }
 
-            if (record.status === "queued" || record.status === "running") {
-              sendJson({
-                response,
-                statusCode: 409,
-                payload: {
-                  error: "JOB_NOT_COMPLETED",
-                  message: `Job '${jobId}' has status '${record.status}' — design IR is only available after the job finishes.`,
-                },
-              });
-              return;
-            }
+            const isPending =
+              record.status === "queued" || record.status === "running";
 
             const designIrPath = record.artifacts.designIrFile;
             if (!designIrPath) {
               sendJson({
                 response,
-                statusCode: 404,
+                statusCode: isPending ? 409 : 404,
                 payload: {
-                  error: "DESIGN_IR_NOT_FOUND",
-                  message: `Design IR artifact not available for job '${jobId}'.`,
+                  error: isPending
+                    ? "JOB_NOT_COMPLETED"
+                    : "DESIGN_IR_NOT_FOUND",
+                  message: isPending
+                    ? `Job '${jobId}' has status '${record.status}' — design IR is not available yet.`
+                    : `Design IR artifact not available for job '${jobId}'.`,
                 },
               });
               return;
@@ -627,10 +622,14 @@ export function createWorkspaceRequestHandler({
             } catch {
               sendJson({
                 response,
-                statusCode: 404,
+                statusCode: isPending ? 409 : 404,
                 payload: {
-                  error: "DESIGN_IR_NOT_FOUND",
-                  message: `Design IR file not found on disk for job '${jobId}'.`,
+                  error: isPending
+                    ? "JOB_NOT_COMPLETED"
+                    : "DESIGN_IR_NOT_FOUND",
+                  message: isPending
+                    ? `Job '${jobId}' has status '${record.status}' — design IR is not available yet.`
+                    : `Design IR file not found on disk for job '${jobId}'.`,
                 },
               });
               return;
@@ -751,26 +750,21 @@ export function createWorkspaceRequestHandler({
               return;
             }
 
-            if (record.status === "queued" || record.status === "running") {
-              sendJson({
-                response,
-                statusCode: 409,
-                payload: {
-                  error: "JOB_NOT_COMPLETED",
-                  message: `Job '${jobId}' has status '${record.status}' — component manifest is only available after the job finishes.`,
-                },
-              });
-              return;
-            }
+            const isPending =
+              record.status === "queued" || record.status === "running";
 
             const manifestPath = record.artifacts.componentManifestFile;
             if (!manifestPath) {
               sendJson({
                 response,
-                statusCode: 404,
+                statusCode: isPending ? 409 : 404,
                 payload: {
-                  error: "COMPONENT_MANIFEST_NOT_FOUND",
-                  message: `Component manifest artifact not available for job '${jobId}'.`,
+                  error: isPending
+                    ? "JOB_NOT_COMPLETED"
+                    : "COMPONENT_MANIFEST_NOT_FOUND",
+                  message: isPending
+                    ? `Job '${jobId}' has status '${record.status}' — component manifest is not available yet.`
+                    : `Component manifest artifact not available for job '${jobId}'.`,
                 },
               });
               return;
@@ -782,10 +776,14 @@ export function createWorkspaceRequestHandler({
             } catch {
               sendJson({
                 response,
-                statusCode: 404,
+                statusCode: isPending ? 409 : 404,
                 payload: {
-                  error: "COMPONENT_MANIFEST_NOT_FOUND",
-                  message: `Component manifest file not found on disk for job '${jobId}'.`,
+                  error: isPending
+                    ? "JOB_NOT_COMPLETED"
+                    : "COMPONENT_MANIFEST_NOT_FOUND",
+                  message: isPending
+                    ? `Job '${jobId}' has status '${record.status}' — component manifest is not available yet.`
+                    : `Component manifest file not found on disk for job '${jobId}'.`,
                 },
               });
               return;

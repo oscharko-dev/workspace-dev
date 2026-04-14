@@ -997,9 +997,9 @@ export function InspectorPanel({
   const layoutContainerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<SplitterDragState | null>(null);
 
-  const pipelineTreeNodes = useStreamingTreeNodes(
-    pipeline ?? IDLE_PIPELINE_STATE,
-  );
+  const activePipeline =
+    pipeline?.jobId === jobId ? pipeline : IDLE_PIPELINE_STATE;
+  const pipelineTreeNodes = useStreamingTreeNodes(activePipeline);
 
   // --- Queries ---
 
@@ -1949,6 +1949,10 @@ export function InspectorPanel({
     designIrState.status === "ready"
       ? hasTreePane && !treeCollapsed
       : hasTreePane;
+  const treeSelectionEnabled =
+    designIrState.status === "ready" ||
+    activePipeline.stage === "generating" ||
+    activePipeline.stage === "ready";
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);
@@ -5011,6 +5015,7 @@ export function InspectorPanel({
                   setTreeCollapsed((prev) => !prev);
                 }}
                 diagnosticsMap={nodeDiagnosticsMap}
+                selectionEnabled={treeSelectionEnabled}
               />
             ) : (
               <div className="flex h-full min-h-0 flex-col bg-[#191919] p-3">
@@ -5084,6 +5089,12 @@ export function InspectorPanel({
             activeScopeNodeId={activeScopeNodeId}
             onToggleInspect={handleToggleInspect}
             onInspectSelect={handleInspectSelect}
+            {...(activePipeline.stage !== "idle"
+              ? { pipelineStage: activePipeline.stage }
+              : {})}
+            {...(activePipeline.screenshot
+              ? { screenshot: activePipeline.screenshot }
+              : {})}
           />
         </div>
 

@@ -325,18 +325,18 @@ describe("buildTreeFromIR", () => {
     expect(findNode(tree, "footer")!.mappingStatus).toBe("matched");
   });
 
-  it("sets mappingStatus:new for nodes NOT in the manifest (stage=mapping)", () => {
+  it("sets mappingStatus:unmapped for nodes NOT in the manifest (stage=mapping)", () => {
     const pipeline = makePipeline({
       stage: "mapping",
       designIR: makeDesignIR() as DesignIrPayload,
-      // Only `header` is mapped — `logo` and `footer` should be "new".
+      // Only `header` is mapped — `logo` and `footer` should be "unmapped".
       componentManifest: makeManifest(["header"]) as ComponentManifestPayload,
     });
 
     const tree = buildTreeFromIR(pipeline);
 
-    expect(findNode(tree, "logo")!.mappingStatus).toBe("new");
-    expect(findNode(tree, "footer")!.mappingStatus).toBe("new");
+    expect(findNode(tree, "logo")!.mappingStatus).toBe("unmapped");
+    expect(findNode(tree, "footer")!.mappingStatus).toBe("unmapped");
   });
 
   it("sets pipelineStatus:generating on leaf nodes during generating stage", () => {

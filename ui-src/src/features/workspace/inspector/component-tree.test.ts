@@ -160,6 +160,27 @@ describe("filterTree", () => {
     expect(priceCard.children).toHaveLength(1);
     expect(priceCard.children![0]!.name).toBe("Label");
   });
+
+  it("excludes skeleton descendants from direct parent search matches", () => {
+    const result = filterTree(
+      [
+        {
+          id: "screen-live",
+          name: "Live Screen",
+          type: "screen",
+          children: [
+            { id: "skeleton-1", name: "", type: "skeleton" },
+            { id: "real-1", name: "Header", type: "text" },
+          ],
+        },
+      ],
+      "live",
+    );
+
+    expect(result[0]!.children).toEqual([
+      { id: "real-1", name: "Header", type: "text" },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -542,6 +563,18 @@ describe("ComponentTree skeleton nodes", () => {
     expect(onEnterScope).not.toHaveBeenCalled();
   });
 
+  it("keyboard activation does NOT select skeleton nodes", () => {
+    const onSelect = vi.fn();
+    render(createElement(ComponentTree, { ...defaultProps, onSelect }));
+
+    const tree = screen.getByRole("tree");
+    fireEvent.focus(tree);
+    fireEvent.keyDown(tree, { key: "ArrowDown" });
+    fireEvent.keyDown(tree, { key: "Enter" });
+
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("skeleton nodes show no TypeBadge", () => {
     render(createElement(ComponentTree, defaultProps));
     const row = screen.getByTestId("tree-node-skel-1");
@@ -560,11 +593,17 @@ describe("ComponentTree mapping badges", () => {
     type: "button",
     mappingStatus: "matched",
   };
-  const newNode: TreeNode = {
-    id: "new-1",
+  const suggestedNode: TreeNode = {
+    id: "suggested-1",
+    name: "Tooltip",
+    type: "tooltip",
+    mappingStatus: "suggested",
+  };
+  const unmappedNode: TreeNode = {
+    id: "unmapped-1",
     name: "Card",
     type: "card",
-    mappingStatus: "new",
+    mappingStatus: "unmapped",
   };
   const errorNode: TreeNode = {
     id: "error-1",
@@ -599,17 +638,29 @@ describe("ComponentTree mapping badges", () => {
     expect(badge.className).toContain("bg-[#4eba87]");
   });
 
-  it("shows grey badge for new mappingStatus", () => {
+  it("shows yellow badge for suggested mappingStatus", () => {
     render(
       createElement(ComponentTree, {
         ...baseProps,
-        screens: makeStreamingScreens(newNode),
+        screens: makeStreamingScreens(suggestedNode),
       }),
     );
-    const row = screen.getByTestId("tree-node-new-1");
-    const badge = within(row).getByLabelText("Component new");
+    const row = screen.getByTestId("tree-node-suggested-1");
+    const badge = within(row).getByLabelText("Component suggested");
     expect(badge).toBeInTheDocument();
-    // The "new" variant uses the grey/neutral color.
+    expect(badge.className).toContain("bg-amber-400");
+  });
+
+  it("shows grey badge for unmapped mappingStatus", () => {
+    render(
+      createElement(ComponentTree, {
+        ...baseProps,
+        screens: makeStreamingScreens(unmappedNode),
+      }),
+    );
+    const row = screen.getByTestId("tree-node-unmapped-1");
+    const badge = within(row).getByLabelText("Component unmapped");
+    expect(badge).toBeInTheDocument();
     expect(badge.className).toContain("bg-white/25");
   });
 
@@ -652,5 +703,20 @@ describe("ComponentTree mapping badges", () => {
     );
     const row = screen.getByTestId("tree-node-skel-mapping");
     expect(within(row).queryByLabelText(/Component /)).toBeNull();
+  });
+
+  it("blocks node selection when selectionEnabled is false", () => {
+    const onSelect = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...baseProps,
+        screens: makeStreamingScreens(matchedNode),
+        onSelect,
+        selectionEnabled: false,
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("tree-node-matched-1"));
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

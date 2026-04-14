@@ -851,6 +851,20 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
 }
 
+function hasActiveOrCompletedStage(
+  payload: JobPayload,
+  stageNames: readonly string[],
+): boolean {
+  return (
+    payload.stages?.some((stage) => {
+      return (
+        stageNames.includes(stage.name) &&
+        (stage.status === "running" || stage.status === "completed")
+      );
+    }) ?? false
+  );
+}
+
 async function pollUntilTerminal({
   jobId,
   signal,
@@ -942,28 +956,63 @@ async function executePipelineRun({
   apply({ type: "job_created", jobId });
 
   let screenshotFetched = false;
-  const maybeFetchRunningFiles = async (payload: JobPayload): Promise<void> => {
+  const maybeFetchRunningArtifacts = async (
+    payload: JobPayload,
+  ): Promise<void> => {
     if (payload.status !== "running") {
       return;
     }
 
-    const hasGeneratedFiles =
-      payload.stages?.some((stage) => {
-        return (
-          (stage.name === "codegen.generate" ||
-            stage.name === "validate.project" ||
-            stage.name === "repro.export" ||
-            stage.name === "git.pr") &&
-          (stage.status === "running" || stage.status === "completed")
-        );
-      }) ?? false;
-    if (!hasGeneratedFiles) {
-      return;
+    const tasks: Array<Promise<void>> = [];
+
+    if (hasActiveOrCompletedStage(payload, ["ir.derive"])) {
+      tasks.push(
+        fetchDesignIr({ jobId, signal })
+          .then((designIR) => {
+            if (designIR !== null) {
+              apply({ type: "design_ir_ready", designIR });
+            }
+          })
+          .catch(() => {
+            // Artifact is still pending; keep polling.
+          }),
+      );
     }
 
-    const files = await fetchFiles({ jobId, signal }).catch(() => null);
-    if (files !== null) {
-      apply({ type: "files_ready", files });
+    if (
+      hasActiveOrCompletedStage(payload, [
+        "codegen.generate",
+        "validate.project",
+        "repro.export",
+        "git.pr",
+      ])
+    ) {
+      tasks.push(
+        fetchManifest({ jobId, signal })
+          .then((manifest) => {
+            if (manifest !== null) {
+              apply({ type: "manifest_ready", manifest });
+            }
+          })
+          .catch(() => {
+            // Artifact is still pending; keep polling.
+          }),
+      );
+      tasks.push(
+        fetchFiles({ jobId, signal })
+          .then((files) => {
+            if (files !== null) {
+              apply({ type: "files_ready", files });
+            }
+          })
+          .catch(() => {
+            // Artifact is still pending; keep polling.
+          }),
+      );
+    }
+
+    if (tasks.length > 0) {
+      await Promise.all(tasks);
     }
   };
 
@@ -990,7 +1039,7 @@ async function executePipelineRun({
       signal,
       knownStatuses,
       apply: applyMaybeScreenshot,
-      onPayload: maybeFetchRunningFiles,
+      onPayload: maybeFetchRunningArtifacts,
     });
   } catch (error) {
     if (isAbortError(error)) {

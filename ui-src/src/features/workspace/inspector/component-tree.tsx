@@ -29,7 +29,7 @@ export interface TreeNode {
   /** Set during paste pipeline execution. */
   pipelineStatus?: "resolved" | "generating" | "loading";
   /** Set after pipeline "mapping" stage when componentManifest is available. */
-  mappingStatus?: "matched" | "new" | "error";
+  mappingStatus?: "matched" | "suggested" | "unmapped" | "error";
 }
 
 interface ComponentTreeProps {
@@ -41,6 +41,7 @@ interface ComponentTreeProps {
   collapsed: boolean;
   onToggleCollapsed: () => void;
   diagnosticsMap?: NodeDiagnosticsMap;
+  selectionEnabled?: boolean;
 }
 
 interface VisibleTreeRow {
@@ -62,6 +63,7 @@ interface TreeRowProps {
   focusedId: string | null;
   onFocusNode: (nodeId: string) => void;
   diagnosticsMap?: NodeDiagnosticsMap | undefined;
+  selectionEnabled: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -163,9 +165,11 @@ const TreeRow = memo(function TreeRow({
   focusedId,
   onFocusNode,
   diagnosticsMap,
+  selectionEnabled,
 }: TreeRowProps): JSX.Element {
   const isSelected = selectedId === row.node.id;
   const isFocused = focusedId === row.node.id;
+  const isSelectable = selectionEnabled && row.node.type !== "skeleton";
 
   return (
     <div
@@ -175,27 +179,29 @@ const TreeRow = memo(function TreeRow({
       aria-posinset={row.siblingIndex + 1}
       aria-expanded={row.hasChildren ? row.isExpanded : undefined}
       aria-selected={isSelected}
-      aria-disabled={row.node.type === "skeleton" ? true : undefined}
+      aria-disabled={!isSelectable ? true : undefined}
       tabIndex={isFocused ? 0 : -1}
       data-testid={
         row.isScreen ? `tree-screen-${row.node.id}` : `tree-node-${row.node.id}`
       }
       data-node-id={row.node.id}
-      className={`flex h-7 cursor-pointer items-center gap-1.5 px-2 py-[3px] text-xs transition-colors select-none ${
+      className={`flex h-7 items-center gap-1.5 px-2 py-[3px] text-xs transition-colors select-none ${
         row.isScreen ? "font-semibold" : ""
       } ${
         isSelected
           ? "bg-[#000000] text-[#4eba87]"
           : "text-white/80 hover:bg-[#000000] hover:text-white"
-      } ${isFocused ? "outline-2 -outline-offset-2 outline-[#4eba87]" : ""}`}
+      } ${isSelectable ? "cursor-pointer" : "cursor-default"} ${
+        isFocused ? "outline-2 -outline-offset-2 outline-[#4eba87]" : ""
+      }`}
       onClick={(event) => {
-        if (row.node.type === "skeleton") return;
+        if (!isSelectable) return;
         onSelect(row.node.id);
         onFocusNode(row.node.id);
         event.currentTarget.focus();
       }}
       onDoubleClick={() => {
-        if (row.node.type === "skeleton") return;
+        if (!isSelectable) return;
         if (onEnterScope) {
           onEnterScope(row.node.id);
         }
@@ -264,6 +270,8 @@ const TreeRow = memo(function TreeRow({
           className={`ml-auto shrink-0 h-2 w-2 rounded-full ${
             row.node.mappingStatus === "matched"
               ? "bg-[#4eba87]"
+              : row.node.mappingStatus === "suggested"
+                ? "bg-amber-400"
               : row.node.mappingStatus === "error"
                 ? "bg-rose-500"
                 : "bg-white/25"
@@ -295,6 +303,7 @@ export function ComponentTree({
   collapsed,
   onToggleCollapsed,
   diagnosticsMap,
+  selectionEnabled = true,
 }: ComponentTreeProps): JSX.Element {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(
@@ -316,6 +325,9 @@ export function ComponentTree({
     viewportHeight: DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX,
   });
   const treeViewportRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<{ nodeId: string; offsetPx: number } | null>(
+    null,
+  );
 
   // Filter screens based on debounced search query
   const filteredScreens = useMemo(() => {
@@ -448,23 +460,57 @@ export function ComponentTree({
         }
       } else if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
+        if (!selectionEnabled || current.node.type === "skeleton") {
+          return;
+        }
         onSelect(current.node.id);
       }
     },
-    [effectiveFocusedId, flatRows, onSelect, toggleExpand],
+    [effectiveFocusedId, flatRows, onSelect, selectionEnabled, toggleExpand],
   );
 
   const handleTreeScroll = useCallback(
     (event: UIEvent<HTMLDivElement>): void => {
       const target = event.currentTarget;
+      if (flatRows.length > 0) {
+        const anchorIndex = Math.min(
+          flatRows.length - 1,
+          Math.max(0, Math.floor(target.scrollTop / TREE_ROW_HEIGHT_PX)),
+        );
+        const anchorRow = flatRows[anchorIndex];
+        if (anchorRow) {
+          scrollAnchorRef.current = {
+            nodeId: anchorRow.node.id,
+            offsetPx: target.scrollTop - anchorIndex * TREE_ROW_HEIGHT_PX,
+          };
+        }
+      }
       setVirtualWindow({
         scrollTop: target.scrollTop,
         viewportHeight:
           target.clientHeight || DEFAULT_VIRTUAL_VIEWPORT_HEIGHT_PX,
       });
     },
-    [],
+    [flatRows],
   );
+
+  useEffect(() => {
+    const anchor = scrollAnchorRef.current;
+    const viewport = treeViewportRef.current;
+    if (!anchor || !viewport || flatRows.length === 0) {
+      return;
+    }
+
+    const anchorIndex = flatRows.findIndex((row) => row.node.id === anchor.nodeId);
+    if (anchorIndex < 0) {
+      return;
+    }
+
+    const nextScrollTop = anchorIndex * TREE_ROW_HEIGHT_PX + anchor.offsetPx;
+    if (viewport.scrollTop !== nextScrollTop) {
+      viewport.scrollTop = nextScrollTop;
+    }
+  }, [flatRows]);
 
   useEffect(() => {
     const viewport = treeViewportRef.current;
@@ -587,6 +633,7 @@ export function ComponentTree({
                 focusedId={effectiveFocusedId}
                 onFocusNode={setFocusedId}
                 diagnosticsMap={diagnosticsMap}
+                selectionEnabled={selectionEnabled}
               />
             ))}
             <div style={{ height: bottomSpacerHeight }} />

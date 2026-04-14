@@ -53,6 +53,22 @@ export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
   }
   const lower = query.toLowerCase();
 
+  function pruneLoadedChildren(list: TreeNode[]): TreeNode[] {
+    const kept: TreeNode[] = [];
+    for (const node of list) {
+      if (node.type === "skeleton") {
+        continue;
+      }
+      kept.push({
+        ...node,
+        ...(node.children
+          ? { children: pruneLoadedChildren(node.children) }
+          : {}),
+      });
+    }
+    return kept;
+  }
+
   function matches(node: TreeNode): boolean {
     return node.name.toLowerCase().includes(lower);
   }
@@ -61,8 +77,12 @@ export function filterTree(nodes: TreeNode[], query: string): TreeNode[] {
     const kept: TreeNode[] = [];
     for (const node of list) {
       if (matches(node)) {
-        // Include the node with all its children (matched directly)
-        kept.push(node);
+        kept.push({
+          ...node,
+          ...(node.children
+            ? { children: pruneLoadedChildren(node.children) }
+            : {}),
+        });
       } else if (node.children && node.children.length > 0) {
         // Check if any descendant matches — keep parent path
         const filteredChildren = prune(node.children);
@@ -107,7 +127,7 @@ function irElementToStreamingNode(
   };
 
   if (hasMappings) {
-    node.mappingStatus = mappedIds.has(el.id) ? "matched" : "new";
+    node.mappingStatus = mappedIds.has(el.id) ? "matched" : "unmapped";
   }
 
   if (stage === "generating" && (!el.children || el.children.length === 0)) {
