@@ -2004,7 +2004,8 @@ export function InspectorPanel({
       activePipeline.stage === "ready") &&
       ((activePipeline.componentManifest?.screens.length ?? 0) > 0 ||
         (activePipeline.generatedFiles?.length ?? 0) > 0)) ||
-    activePipeline.stage === "ready";
+    activePipeline.stage === "ready" ||
+    activePipeline.stage === "partial";
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);

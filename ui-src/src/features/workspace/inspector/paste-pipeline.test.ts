@@ -201,6 +201,22 @@ describe("partial state derivation", () => {
     expect(state.stage).toBe("error");
     expect(state.partialStats).toBeUndefined();
   });
+
+  it("enters 'error' (not 'partial') when parsing succeeds but first backend stage fails (BACKEND_STAGES boundary)", () => {
+    // parsing is excluded from BACKEND_STAGES, so resolvedStages=0 when only
+    // parsing is done. A failed resolving with only parsing completed must NOT
+    // produce 'partial' — it must produce 'error'.
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "resolving",
+      error: makeError("resolving", true),
+    });
+    expect(state.stage).toBe("error");
+    expect(state.partialStats).toBeUndefined();
+  });
 });
 
 describe("retry_stage action", () => {

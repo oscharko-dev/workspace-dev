@@ -1,4 +1,5 @@
 import { useState, type JSX } from "react";
+import { BACKEND_STAGES } from "./paste-pipeline";
 import type {
   PartialImportStats,
   PipelineError,
@@ -24,13 +25,6 @@ const BACKEND_STAGE_LABELS: Partial<Record<PipelineStage, string>> = {
   mapping: "Mapping",
   generating: "Generating",
 };
-
-const BACKEND_STAGES: readonly PipelineStage[] = [
-  "resolving",
-  "transforming",
-  "mapping",
-  "generating",
-];
 
 function StageStatusIcon({
   state,
@@ -83,6 +77,8 @@ export function PipelineStatusBar({
   return (
     <div
       data-testid="pipeline-status-bar"
+      role="status"
+      aria-live="polite"
       className="shrink-0 border-b border-[#000000] bg-[#1c1800] px-4 py-1.5"
     >
       <div className="flex items-center gap-3 text-[11px]">
@@ -105,6 +101,8 @@ export function PipelineStatusBar({
           <button
             type="button"
             data-testid="pipeline-status-bar-details-toggle"
+            aria-expanded={expanded}
+            aria-controls="pipeline-status-bar-details"
             onClick={() => {
               setExpanded((prev) => !prev);
             }}
@@ -128,6 +126,9 @@ export function PipelineStatusBar({
       {expanded ? (
         <div
           data-testid="pipeline-status-bar-details"
+          id="pipeline-status-bar-details"
+          role="region"
+          aria-label="Pipeline error details"
           className="mt-2 space-y-2"
         >
           {/* Per-stage status */}

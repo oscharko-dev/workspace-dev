@@ -16,6 +16,7 @@ export function PipelineErrorBanner({
   return (
     <div
       data-testid="pipeline-error-banner"
+      role="alert"
       className="flex flex-wrap items-start gap-2 text-[11px] text-rose-400"
     >
       <div className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -32,6 +33,7 @@ export function PipelineErrorBanner({
         <button
           type="button"
           data-testid="pipeline-error-banner-retry"
+          aria-label={`Retry ${error.stage} stage`}
           onClick={onRetry}
           className="shrink-0 cursor-pointer rounded border border-rose-500/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-rose-400 transition hover:bg-rose-500/10"
         >

@@ -185,6 +185,11 @@ export type PipelineAction =
   | { type: "stage_message"; stage: PipelineStage; message: string }
   | { type: "stage_done"; stage: PipelineStage; durationMs: number }
   | { type: "stage_failed"; stage: PipelineStage; error: PipelineError }
+  /**
+   * Infrastructure for future per-stage retry (requires backend resume endpoint).
+   * Not yet dispatched from any production call site — the current Retry button in
+   * PipelineStatusBar triggers a full pipeline restart via bootstrap.retry().
+   */
   | { type: "retry_stage"; stage: PipelineStage }
   | { type: "design_ir_ready"; designIR: DesignIrPayload }
   | { type: "figma_analysis_ready"; figmaAnalysis: FigmaAnalysisPayload }
@@ -207,7 +212,7 @@ const ACTIVE_STAGES: readonly PipelineStage[] = [
 ] as const;
 
 /** Backend-only stages used to determine "partial" success. Excludes "parsing" which is always trivial client-side JSON validation. */
-const BACKEND_STAGES: readonly PipelineStage[] = [
+export const BACKEND_STAGES: readonly PipelineStage[] = [
   "resolving",
   "transforming",
   "mapping",

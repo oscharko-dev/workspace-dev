@@ -152,6 +152,10 @@ function deriveBootstrapState({
     return { kind: "ready", jobId, previewUrl };
   }
 
+  if (pipelineStage === "partial" && jobId !== null) {
+    return { kind: "ready", jobId, previewUrl: previewUrl ?? "" };
+  }
+
   if (jobId && jobStatus === "queued") {
     return { kind: "queued", jobId };
   }
