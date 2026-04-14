@@ -99,6 +99,7 @@ export interface StageRuntimeContext {
     stage?: WorkspaceJobStageName;
   }) => void;
   getCollectedDiagnostics: () => WorkspaceJobDiagnostic[] | undefined;
+  syncPublicJobProjection: () => Promise<void>;
 }
 
 export const createStageRuntimeContext = ({
@@ -164,6 +165,7 @@ export const createStageRuntimeContext = ({
         })
       });
     },
-    getCollectedDiagnostics: () => executionContext.getCollectedDiagnostics()
+    getCollectedDiagnostics: () => executionContext.getCollectedDiagnostics(),
+    syncPublicJobProjection: () => executionContext.syncPublicJobProjection()
   };
 };

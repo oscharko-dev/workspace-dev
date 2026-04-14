@@ -908,6 +908,7 @@ export function InspectorPanel({
   pipeline,
 }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
+  const [autoSelectedFile, setAutoSelectedFile] = useState<string | null>(null);
   const [highlightRange, setHighlightRange] = useState<HighlightRange | null>(
     null,
   );
@@ -1438,6 +1439,9 @@ export function InspectorPanel({
   });
 
   useEffect(() => {
+    setSelectedFile(null);
+    setAutoSelectedFile(null);
+    setHighlightRange(null);
     setRegenerationAccepted(null);
     setRegenerationError(null);
     setSyncTargetPathInput("");
@@ -2568,7 +2572,14 @@ export function InspectorPanel({
     return null;
   }, [files, manifest]);
 
-  const effectiveSelectedFile = selectedFile ?? defaultFile;
+  useEffect(() => {
+    if (selectedFile || autoSelectedFile || !defaultFile) {
+      return;
+    }
+    setAutoSelectedFile(defaultFile);
+  }, [autoSelectedFile, defaultFile, selectedFile]);
+
+  const effectiveSelectedFile = selectedFile ?? autoSelectedFile ?? defaultFile;
   const selectedFileBoundaries = useMemo(() => {
     return toBoundariesForFile({
       manifest,

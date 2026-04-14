@@ -1146,6 +1146,61 @@ describe("InspectorPanel data states", () => {
     );
   });
 
+  it("keeps the first auto-selected file latched when later streamed files sort earlier", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-files": { data: undefined, isLoading: true },
+        "inspector-manifest": { data: undefined, isLoading: true },
+        "inspector-design-ir": { data: undefined, isLoading: true },
+      },
+    });
+
+    const view = renderInspectorPanel({
+      pipeline: {
+        ...createInitialPipelineState(),
+        stage: "generating",
+        progress: 30,
+        jobId: "job-1",
+        generatedFiles: [
+          { path: "src/screens/Profile.tsx", sizeBytes: 250 },
+          { path: "src/App.tsx", sizeBytes: 120 },
+        ],
+        errors: [],
+        canRetry: false,
+        canCancel: true,
+      },
+    });
+
+    expect(screen.getByTestId("inspector-file-selector")).toHaveValue(
+      "src/screens/Profile.tsx",
+    );
+
+    view.rerender(
+      createElement(InspectorPanel, {
+        jobId: "job-1",
+        previewUrl: "/workspace/repros/job-1/",
+        pipeline: {
+          ...createInitialPipelineState(),
+          stage: "generating",
+          progress: 55,
+          jobId: "job-1",
+          generatedFiles: [
+            { path: "src/screens/Profile.tsx", sizeBytes: 250 },
+            { path: "src/App.tsx", sizeBytes: 120 },
+            { path: "src/components/AaaCard.tsx", sizeBytes: 160 },
+          ],
+          errors: [],
+          canRetry: false,
+          canCancel: true,
+        },
+      }),
+    );
+
+    expect(screen.getByTestId("inspector-file-selector")).toHaveValue(
+      "src/screens/Profile.tsx",
+    );
+  });
+
   it("does not show loading-files indicator when pipeline generatedFiles override filesState", () => {
     installQueryMock({
       overrides: {
