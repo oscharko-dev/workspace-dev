@@ -1,13 +1,13 @@
 import type {
   WorkspaceComponentMappingRule,
   WorkspaceGitPrStatus,
-  WorkspaceJobInput,
   WorkspaceJobRetryStage,
 } from "../../contracts/index.js";
 import type { PipelineStagePlanEntry } from "../pipeline/orchestrator.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import type { PipelineExecutionContext } from "../pipeline/context.js";
 import type { StageArtifactContract } from "../pipeline/stage-service.js";
+import type { SubmissionJobInput } from "../types.js";
 import { CodegenGenerateService } from "./codegen-generate-service.js";
 import type { CodegenGenerateStageInput } from "./codegen-generate-service.js";
 import { FigmaSourceService } from "./figma-source-service.js";
@@ -20,7 +20,9 @@ import { ReproExportService } from "./repro-export-service.js";
 import { TemplatePrepareService } from "./template-prepare-service.js";
 import { ValidateProjectService } from "./validate-project-service.js";
 
-const requireSubmissionInput = (context: PipelineExecutionContext): WorkspaceJobInput => {
+const requireSubmissionInput = (
+  context: PipelineExecutionContext,
+): SubmissionJobInput => {
   if (!context.input) {
     throw new Error("Submission input is missing for pipeline stage resolution.");
   }
@@ -151,7 +153,10 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.figmaCleanedReport,
           STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics
         ],
-        optionalWrites: [STAGE_ARTIFACT_KEYS.figmaHybridEnrichment]
+        optionalWrites: [
+          STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+          STAGE_ARTIFACT_KEYS.pasteDeltaExecution
+        ]
       }
     },
     {
@@ -163,6 +168,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
           STAGE_ARTIFACT_KEYS.figmaCleanedReport
         ],
+        optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
         writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.storybookCatalog,
@@ -178,6 +184,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
     {
       service: TemplatePrepareService,
       artifacts: {
+        optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
         writes: [STAGE_ARTIFACT_KEYS.generatedProject]
       }
     },
@@ -191,6 +198,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
         }),
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.designIr],
+        optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
         writes: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.codegenSummary],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationMetrics,

@@ -3,7 +3,6 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceJobDiagnostic,
-  WorkspaceJobInput,
   WorkspaceJobLog,
   WorkspaceJobRetryStage,
   WorkspaceJobStageName,
@@ -12,7 +11,12 @@ import type {
 } from "../../contracts/index.js";
 import type { PipelineDiagnosticInput } from "../errors.js";
 import { pushRuntimeLog } from "../stage-state.js";
-import type { JobEnginePaths, JobEngineRuntime, JobRecord } from "../types.js";
+import type {
+  JobEnginePaths,
+  JobEngineRuntime,
+  JobRecord,
+  SubmissionJobInput,
+} from "../types.js";
 import type { StageArtifactStore } from "./artifact-store.js";
 import type { ResolvedCustomerProfile } from "../../customer-profile.js";
 
@@ -37,7 +41,7 @@ export interface PipelineResolvedPaths {
 export interface PipelineExecutionContext {
   mode: PipelineExecutionMode;
   job: JobRecord;
-  input?: WorkspaceJobInput;
+  input?: SubmissionJobInput;
   regenerationInput?: WorkspaceRegenerationInput;
   retryInput?: WorkspaceRetryInput;
   sourceJob?: JobRecord;
@@ -71,7 +75,7 @@ export interface StageRuntimeContext {
   readonly mode: PipelineExecutionMode;
   readonly jobId: string;
   readonly job: JobRecord;
-  readonly input?: WorkspaceJobInput;
+  readonly input?: SubmissionJobInput;
   readonly sourceJob?: JobRecord;
   readonly retryInput?: WorkspaceRetryInput;
   readonly retryStage?: WorkspaceJobRetryStage;

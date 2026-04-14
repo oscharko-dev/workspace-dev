@@ -8,6 +8,7 @@
  * payloads.
  */
 import assert from "node:assert/strict";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
 import os from "node:os";
@@ -16,6 +17,9 @@ import test from "node:test";
 import { buildApp, type WorkspaceServerApp } from "./app-inject.js";
 import { createWorkspaceRequestHandler } from "./request-handler.js";
 import type { JobEngine } from "../job-engine.js";
+import { CONTRACT_VERSION } from "../contracts/index.js";
+import { extractDiffablePasteRootsFromJson } from "../job-engine/paste-delta-roots.js";
+import { buildFingerprintNodes } from "../job-engine/paste-tree-diff.js";
 
 interface PasteDeltaSummary {
   mode:
@@ -32,17 +36,55 @@ interface PasteDeltaSummary {
   priorManifestMissing: boolean;
 }
 
-function createStubJobEngine(): JobEngine {
+function createStubJobEngine({
+  outputRoot,
+}: {
+  outputRoot: string;
+}): JobEngine {
+  let nextJobId = 1;
   return {
-    submitJob: () =>
-      ({
-        jobId: "stub-job",
+    submitJob: (input) => {
+      const jobId = `stub-job-${nextJobId++}`;
+      if (input.pasteDeltaSeed && input.figmaJsonPath) {
+        const payload = readFileSync(input.figmaJsonPath, "utf8");
+        const roots = extractDiffablePasteRootsFromJson(payload);
+        if (roots.length > 0) {
+          const fingerprints = buildFingerprintNodes(roots);
+          const manifestsDir = path.join(outputRoot, "paste-fingerprints");
+          mkdirSync(manifestsDir, { recursive: true });
+          writeFileSync(
+            path.join(
+              manifestsDir,
+              `${input.pasteDeltaSeed.pasteIdentityKey}.json`,
+            ),
+            `${JSON.stringify(
+              {
+                contractVersion: CONTRACT_VERSION,
+                pasteIdentityKey: input.pasteDeltaSeed.pasteIdentityKey,
+                createdAt: new Date("2026-04-14T00:00:00.000Z").toISOString(),
+                rootNodeIds: fingerprints.rootNodeIds,
+                nodes: fingerprints.nodes,
+                ...(input.pasteDeltaSeed.figmaFileKey
+                  ? { figmaFileKey: input.pasteDeltaSeed.figmaFileKey }
+                  : {}),
+                sourceJobId: jobId,
+              },
+              null,
+              2,
+            )}\n`,
+            "utf8",
+          );
+        }
+      }
+      return {
+        jobId,
         status: "queued",
         acceptedModes: {
           figmaSourceMode: "local_json",
           llmCodegenMode: "deterministic",
         },
-      }) as ReturnType<JobEngine["submitJob"]>,
+      } as ReturnType<JobEngine["submitJob"]>;
+    },
   } as unknown as JobEngine;
 }
 
@@ -64,7 +106,7 @@ async function createApp(): Promise<{
     workspaceRoot: tempRoot,
     defaults: { figmaSourceMode: "rest", llmCodegenMode: "deterministic" },
     runtime: { previewEnabled: false, rateLimitPerMinute: 100 },
-    jobEngine: createStubJobEngine(),
+    jobEngine: createStubJobEngine({ outputRoot: tempRoot }),
     moduleDir: path.resolve(import.meta.dirname ?? ".", ".."),
   });
 
@@ -134,10 +176,12 @@ const submitPaste = async ({
   app,
   payload,
   importMode,
+  figmaFileKey,
 }: {
   app: WorkspaceServerApp;
   payload: unknown;
   importMode?: "full" | "delta" | "auto";
+  figmaFileKey?: string;
 }): Promise<{ statusCode: number; body: Record<string, unknown> }> => {
   const response = await app.inject({
     method: "POST",
@@ -146,6 +190,7 @@ const submitPaste = async ({
     payload: {
       figmaSourceMode: "figma_plugin",
       figmaJsonPayload: JSON.stringify(payload),
+      ...(figmaFileKey !== undefined ? { figmaFileKey } : {}),
       ...(importMode !== undefined ? { importMode } : {}),
     },
   });
@@ -155,7 +200,29 @@ const submitPaste = async ({
   };
 };
 
-test("paste-delta: first paste creates baseline and persists manifest on disk", async () => {
+const waitForManifestCount = async ({
+  tempRoot,
+  expectedCount,
+}: {
+  tempRoot: string;
+  expectedCount: number;
+}): Promise<string[]> => {
+  const manifestsDir = path.join(tempRoot, "paste-fingerprints");
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      const files = await readdir(manifestsDir);
+      if (files.length === expectedCount) {
+        return files;
+      }
+    } catch {
+      // Keep polling until the stubbed job engine persists its manifest.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  return await readdir(manifestsDir);
+};
+
+test("paste-delta: first paste creates baseline and persists manifest on disk after submit handoff", async () => {
   const { app, tempRoot, close } = await createApp();
   try {
     const payload = makeDoc([
@@ -181,9 +248,13 @@ test("paste-delta: first paste creates baseline and persists manifest on disk", 
     assert.equal(summary.nodesReprocessed, 3);
 
     const manifestsDir = path.join(tempRoot, "paste-fingerprints");
+    await waitForManifestCount({
+      tempRoot,
+      expectedCount: 1,
+    });
     const manifestsStat = await stat(manifestsDir);
     assert.ok(manifestsStat.isDirectory());
-    const files = await readdir(manifestsDir);
+    const files = await waitForManifestCount({ tempRoot, expectedCount: 1 });
     assert.equal(files.length, 1);
     assert.equal(files[0], `${summary.pasteIdentityKey}.json`);
   } finally {
@@ -191,7 +262,7 @@ test("paste-delta: first paste creates baseline and persists manifest on disk", 
   }
 });
 
-test("paste-delta: second identical paste reuses all nodes", async () => {
+test("paste-delta: second identical paste reuses all nodes when figmaFileKey is available", async () => {
   const { app, close } = await createApp();
   try {
     const payload = makeDoc([
@@ -205,10 +276,10 @@ test("paste-delta: second identical paste reuses all nodes", async () => {
       }),
     ]);
 
-    const first = await submitPaste({ app, payload });
+    const first = await submitPaste({ app, payload, figmaFileKey: "file-1" });
     assert.equal(first.statusCode, 202);
 
-    const second = await submitPaste({ app, payload });
+    const second = await submitPaste({ app, payload, figmaFileKey: "file-1" });
     assert.equal(second.statusCode, 202);
     const summary = second.body.pasteDeltaSummary as
       | PasteDeltaSummary
@@ -219,6 +290,34 @@ test("paste-delta: second identical paste reuses all nodes", async () => {
     assert.equal(summary.priorManifestMissing, false);
     assert.equal(summary.nodesReused, summary.totalNodes);
     assert.equal(summary.nodesReprocessed, 0);
+  } finally {
+    await close();
+  }
+});
+
+test("paste-delta: missing figmaFileKey keeps summary but disables reuse", async () => {
+  const { app, close } = await createApp();
+  try {
+    const payload = makeDoc([
+      makeFrame({
+        id: "1:1",
+        name: "Hero",
+        children: [makeText({ id: "1:2", characters: "Welcome" })],
+      }),
+    ]);
+
+    const first = await submitPaste({ app, payload });
+    assert.equal(first.statusCode, 202);
+
+    const second = await submitPaste({ app, payload });
+    assert.equal(second.statusCode, 202);
+    const summary = second.body.pasteDeltaSummary as
+      | PasteDeltaSummary
+      | undefined;
+    assert.ok(summary);
+    assert.equal(summary.strategy, "baseline_created");
+    assert.equal(summary.mode, "auto_resolved_to_full");
+    assert.equal(summary.priorManifestMissing, true);
   } finally {
     await close();
   }
@@ -255,10 +354,18 @@ test("paste-delta: single text-node edit reports a partial delta", async () => {
       }),
     ]);
 
-    const first = await submitPaste({ app, payload: baseline });
+    const first = await submitPaste({
+      app,
+      payload: baseline,
+      figmaFileKey: "file-1",
+    });
     assert.equal(first.statusCode, 202);
 
-    const second = await submitPaste({ app, payload: edited });
+    const second = await submitPaste({
+      app,
+      payload: edited,
+      figmaFileKey: "file-1",
+    });
     assert.equal(second.statusCode, 202);
     const summary = second.body.pasteDeltaSummary as
       | PasteDeltaSummary
@@ -287,10 +394,15 @@ test("paste-delta: explicit importMode=full uses full mode without overriding st
       }),
     ]);
 
-    const first = await submitPaste({ app, payload });
+    const first = await submitPaste({ app, payload, figmaFileKey: "file-1" });
     assert.equal(first.statusCode, 202);
 
-    const second = await submitPaste({ app, payload, importMode: "full" });
+    const second = await submitPaste({
+      app,
+      payload,
+      importMode: "full",
+      figmaFileKey: "file-1",
+    });
     assert.equal(second.statusCode, 202);
     const summary = second.body.pasteDeltaSummary as
       | PasteDeltaSummary
@@ -365,13 +477,18 @@ test("paste-delta: importMode=delta with structural break falls back to full mod
       }),
     ]);
 
-    const first = await submitPaste({ app, payload: baseline });
+    const first = await submitPaste({
+      app,
+      payload: baseline,
+      figmaFileKey: "file-1",
+    });
     assert.equal(first.statusCode, 202);
 
     const second = await submitPaste({
       app,
       payload: restructured,
       importMode: "delta",
+      figmaFileKey: "file-1",
     });
     assert.equal(second.statusCode, 202);
     const summary = second.body.pasteDeltaSummary as

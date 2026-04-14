@@ -1,6 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { WorkspaceJobInput } from "../../contracts/index.js";
+import type {
+  WorkspaceJobInput,
+  WorkspacePasteDeltaSummary,
+} from "../../contracts/index.js";
 import {
   safeParseFigmaPayload,
   summarizeFigmaPayloadValidationError,
@@ -20,6 +23,19 @@ import {
   isFigmaFileResponseShape,
   validatedJsonParse,
 } from "../pipeline/pipeline-schemas.js";
+import {
+  createPasteFingerprintStore,
+  type PasteFingerprintManifest,
+  type PasteFingerprintNode,
+} from "../paste-fingerprint-store.js";
+import { diffFigmaPaste } from "../paste-tree-diff.js";
+import {
+  collectChangedNodeIds,
+  isPasteDeltaExecutionState,
+  resolvePasteDeltaSummary,
+  type PasteDeltaExecutionState,
+} from "../paste-delta-execution.js";
+import { extractDiffablePasteRoots } from "../paste-delta-roots.js";
 
 export type FigmaSourceStageInput = Pick<
   WorkspaceJobInput,
@@ -46,6 +62,77 @@ const createHybridFallbackEnrichment = ({
       },
     ],
   };
+};
+
+const sortedUnique = (values: readonly string[]): string[] =>
+  Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
+
+const buildNodeLookup = (
+  nodes: readonly PasteFingerprintNode[],
+): Map<string, PasteFingerprintNode> =>
+  new Map(nodes.map((node) => [node.id, node] as const));
+
+const resolveRootNodeIdForNode = ({
+  nodeId,
+  nodesById,
+  rootNodeIds,
+}: {
+  nodeId: string;
+  nodesById: ReadonlyMap<string, PasteFingerprintNode>;
+  rootNodeIds: ReadonlySet<string>;
+}): string | undefined => {
+  let current = nodesById.get(nodeId);
+  while (current) {
+    if (rootNodeIds.has(current.id)) {
+      return current.id;
+    }
+    if (current.parentId === null) {
+      break;
+    }
+    current = nodesById.get(current.parentId);
+  }
+  return undefined;
+};
+
+const resolveChangedRootNodeIds = ({
+  changedNodeIds,
+  currentFingerprintNodes,
+  currentRootNodeIds,
+  priorManifest,
+}: {
+  changedNodeIds: readonly string[];
+  currentFingerprintNodes: readonly PasteFingerprintNode[];
+  currentRootNodeIds: readonly string[];
+  priorManifest?: PasteFingerprintManifest;
+}): string[] => {
+  const changedRootIds = new Set<string>();
+  const currentRootIdSet = new Set(currentRootNodeIds);
+  const currentNodesById = buildNodeLookup(currentFingerprintNodes);
+  const priorNodesById = buildNodeLookup(priorManifest?.nodes ?? []);
+  const priorRootIdSet = new Set(priorManifest?.rootNodeIds ?? []);
+
+  for (const nodeId of changedNodeIds) {
+    const currentRootNodeId = resolveRootNodeIdForNode({
+      nodeId,
+      nodesById: currentNodesById,
+      rootNodeIds: currentRootIdSet,
+    });
+    if (currentRootNodeId) {
+      changedRootIds.add(currentRootNodeId);
+      continue;
+    }
+
+    const priorRootNodeId = resolveRootNodeIdForNode({
+      nodeId,
+      nodesById: priorNodesById,
+      rootNodeIds: priorRootIdSet,
+    });
+    if (priorRootNodeId) {
+      changedRootIds.add(priorRootNodeId);
+    }
+  }
+
+  return sortedUnique([...changedRootIds]);
 };
 
 export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
@@ -403,6 +490,154 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       });
     }
 
+    let pasteDeltaExecution: PasteDeltaExecutionState | undefined;
+    if (context.mode === "submission" && context.input?.pasteDeltaSeed) {
+      const deltaSeed = context.input.pasteDeltaSeed;
+      try {
+        const currentRoots = extractDiffablePasteRoots(figmaFetch.file);
+        const store = createPasteFingerprintStore({
+          rootDir: path.join(
+            context.resolvedPaths.outputRoot,
+            "paste-fingerprints",
+          ),
+        });
+        const priorManifest =
+          typeof deltaSeed.figmaFileKey === "string" &&
+          deltaSeed.figmaFileKey.trim().length > 0
+            ? await store.load(deltaSeed.pasteIdentityKey)
+            : undefined;
+        const plan = diffFigmaPaste({
+          priorManifest,
+          currentRoots,
+        });
+
+        let allowReuse =
+          typeof deltaSeed.figmaFileKey === "string" &&
+          deltaSeed.figmaFileKey.trim().length > 0 &&
+          typeof deltaSeed.sourceJobId === "string" &&
+          deltaSeed.sourceJobId.trim().length > 0 &&
+          context.sourceJob?.jobId === deltaSeed.sourceJobId.trim();
+        let fallbackReason: string | undefined;
+
+        if (!allowReuse) {
+          fallbackReason =
+            typeof deltaSeed.figmaFileKey !== "string" ||
+            deltaSeed.figmaFileKey.trim().length === 0
+              ? "missing_figma_file_key"
+              : context.sourceJob
+                ? "source_job_mismatch"
+                : "source_job_unavailable";
+        } else if (plan.strategy === "baseline_created") {
+          allowReuse = false;
+          fallbackReason = "baseline_created";
+        } else if (plan.strategy === "structural_break") {
+          allowReuse = false;
+          fallbackReason = "structural_break";
+        } else if (
+          plan.addedNodes.length > 0 ||
+          plan.removedNodes.length > 0
+        ) {
+          allowReuse = false;
+          fallbackReason = "root_structure_changed";
+        }
+
+        let summary = resolvePasteDeltaSummary({
+          allowReuse,
+          plan,
+          requestedMode: deltaSeed.requestedMode,
+        });
+        const changedNodeIds = collectChangedNodeIds({ plan });
+        let changedRootNodeIds = allowReuse
+          ? resolveChangedRootNodeIds({
+              changedNodeIds,
+              currentFingerprintNodes: plan.currentFingerprintNodes,
+              currentRootNodeIds: plan.rootNodeIds,
+              ...(priorManifest ? { priorManifest } : {}),
+            })
+          : [];
+
+        if (
+          allowReuse &&
+          plan.strategy === "delta" &&
+          changedRootNodeIds.length === 0
+        ) {
+          allowReuse = false;
+          fallbackReason = "changed_roots_unresolved";
+          summary = resolvePasteDeltaSummary({
+            allowReuse,
+            plan,
+            requestedMode: deltaSeed.requestedMode,
+          });
+          changedRootNodeIds = [];
+        }
+
+        summary = {
+          ...summary,
+          pasteIdentityKey: deltaSeed.pasteIdentityKey,
+          priorManifestMissing: priorManifest === undefined,
+        };
+
+        pasteDeltaExecution = {
+          pasteIdentityKey: deltaSeed.pasteIdentityKey,
+          requestedMode: deltaSeed.requestedMode,
+          summary,
+          currentFingerprintNodes: plan.currentFingerprintNodes,
+          rootNodeIds: plan.rootNodeIds,
+          changedNodeIds,
+          changedRootNodeIds,
+          ...(deltaSeed.sourceJobId ? { sourceJobId: deltaSeed.sourceJobId } : {}),
+          ...(deltaSeed.compatibilityFingerprint
+            ? {
+                compatibilityFingerprint: deltaSeed.compatibilityFingerprint,
+              }
+            : {}),
+          ...(deltaSeed.figmaFileKey ? { figmaFileKey: deltaSeed.figmaFileKey } : {}),
+          eligibleForReuse: allowReuse,
+          ...(fallbackReason ? { fallbackReason } : {}),
+        };
+        context.job.pasteDeltaSummary = { ...summary };
+        await context.syncPublicJobProjection();
+      } catch (error) {
+        context.log({
+          level: "warn",
+          message:
+            `Paste delta resolution after cleaning failed; continuing with full execution: ${getErrorMessage(error)}`,
+        });
+        if (deltaSeed.provisionalSummary) {
+          const fallbackSummary: WorkspacePasteDeltaSummary = {
+            ...deltaSeed.provisionalSummary,
+            mode:
+              deltaSeed.requestedMode === "delta" ? "full" : "auto_resolved_to_full",
+            pasteIdentityKey: deltaSeed.pasteIdentityKey,
+          };
+          pasteDeltaExecution = {
+            pasteIdentityKey: deltaSeed.pasteIdentityKey,
+            requestedMode: deltaSeed.requestedMode,
+            summary: fallbackSummary,
+            currentFingerprintNodes: [],
+            rootNodeIds: [],
+            changedNodeIds: [],
+            changedRootNodeIds: [],
+            ...(deltaSeed.sourceJobId
+              ? { sourceJobId: deltaSeed.sourceJobId }
+              : {}),
+            ...(deltaSeed.compatibilityFingerprint
+              ? {
+                  compatibilityFingerprint: deltaSeed.compatibilityFingerprint,
+                }
+              : {}),
+            ...(deltaSeed.figmaFileKey
+              ? { figmaFileKey: deltaSeed.figmaFileKey }
+              : {}),
+            eligibleForReuse: false,
+            fallbackReason: "delta_resolution_failed",
+          };
+          context.job.pasteDeltaSummary = { ...fallbackSummary };
+          await context.syncPublicJobProjection();
+        }
+      }
+    }
+
     await context.artifactStore.setPath({
       key: STAGE_ARTIFACT_KEYS.figmaRaw,
       stage: "figma.source",
@@ -423,6 +658,13 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       stage: "figma.source",
       value: figmaFetch.cleaning,
     });
+    if (pasteDeltaExecution && isPasteDeltaExecutionState(pasteDeltaExecution)) {
+      await context.artifactStore.setValue({
+        key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+        stage: "figma.source",
+        value: pasteDeltaExecution,
+      });
+    }
     if (hybridMcpEnrichment) {
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,

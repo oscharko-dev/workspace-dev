@@ -164,8 +164,11 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
     logs: job.logs.map((entry) => ({ ...entry })),
     artifacts: { ...job.artifacts },
     preview: { ...job.preview },
-    queue: { ...job.queue }
+    queue: { ...job.queue },
   };
+  if (job.pasteDeltaSummary) {
+    status.pasteDeltaSummary = { ...job.pasteDeltaSummary };
+  }
   if (job.currentStage) {
     status.currentStage = job.currentStage;
   }

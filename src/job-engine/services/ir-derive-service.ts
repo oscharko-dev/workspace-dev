@@ -78,6 +78,13 @@ import {
   generateStorybookArtifactsForJob,
   type GeneratedJobStorybookArtifacts,
 } from "../storybook-artifacts.js";
+import type { DiffableFigmaNode } from "../paste-tree-diff.js";
+import {
+  downgradePasteDeltaExecutionToFull,
+  isPasteDeltaExecutionState,
+  type PasteDeltaExecutionState,
+} from "../paste-delta-execution.js";
+import { extractDiffablePasteRoots } from "../paste-delta-roots.js";
 
 interface RegenerationSourceIrSeed {
   sourceJobId: string;
@@ -307,6 +314,16 @@ const stripAffectedScreenVariantFamilies = ({
     ),
   };
 };
+
+const buildAuthoritativeSubtreesFromRoots = ({
+  roots,
+}: {
+  roots: readonly DiffableFigmaNode[];
+}): Array<{ nodeId: string; document: unknown }> =>
+  roots.map((root) => ({
+    nodeId: root.id,
+    document: root,
+  }));
 
 const logPostDerivationValidationWarnings = ({
   context,
@@ -689,6 +706,30 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       cleaning: cleaningReport,
     };
     const figmaAnalysisSource = figmaFetch.file as FigmaFile;
+    const pasteDeltaExecution =
+      await context.artifactStore.getValue<PasteDeltaExecutionState>(
+        STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+        isPasteDeltaExecutionState,
+      );
+    const downgradePasteDeltaExecution = async (
+      fallbackReason: string,
+    ): Promise<PasteDeltaExecutionState | undefined> => {
+      if (!pasteDeltaExecution) {
+        return undefined;
+      }
+      const downgraded = downgradePasteDeltaExecutionToFull({
+        state: pasteDeltaExecution,
+        fallbackReason,
+      });
+      await context.artifactStore.setValue({
+        key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+        stage: "ir.derive",
+        value: downgraded,
+      });
+      context.job.pasteDeltaSummary = { ...downgraded.summary };
+      await context.syncPublicJobProjection();
+      return downgraded;
+    };
 
     const emitIrMetricDiagnostics = ({
       source,
@@ -1010,6 +1051,185 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         message,
       });
     };
+
+    if (
+      context.mode === "submission" &&
+      pasteDeltaExecution?.eligibleForReuse === true &&
+      context.sourceJob?.artifacts.designIrFile
+    ) {
+      try {
+        const sourceIrPath = context.sourceJob.artifacts.designIrFile;
+        const sourceIr = validatedJsonParse({
+          raw: await readFile(sourceIrPath, "utf8"),
+          guard: isDesignIRShape,
+          schema: "DesignIR",
+          filePath: sourceIrPath,
+        });
+        const figmaAnalysis = buildFigmaAnalysis({
+          file: figmaAnalysisSource,
+          ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {}),
+        });
+
+        if (pasteDeltaExecution.summary.strategy === "no_changes") {
+          await writeFile(
+            context.paths.designIrFile,
+            `${JSON.stringify(sourceIr, null, 2)}\n`,
+            "utf8",
+          );
+          await writeFile(
+            context.paths.figmaAnalysisFile,
+            `${JSON.stringify(figmaAnalysis, null, 2)}\n`,
+            "utf8",
+          );
+          const figmaLibraryResolutionArtifact =
+            await persistFigmaLibraryResolutionIfAvailable({
+              figmaAnalysis,
+              file: cleanedFile,
+            });
+          context.log({
+            level: "info",
+            message:
+              `Reused source IR from job '${context.sourceJob.jobId}' without re-derivation ` +
+              `(strategy=no_changes, screens=${sourceIr.screens.length}).`,
+          });
+          emitIrMetricDiagnostics({ source: sourceIr });
+          await context.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.designIr,
+            stage: "ir.derive",
+            absolutePath: context.paths.designIrFile,
+          });
+          await context.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+            stage: "ir.derive",
+            absolutePath: context.paths.figmaAnalysisFile,
+          });
+          const storybookArtifacts =
+            await persistStorybookArtifactsIfRequested();
+          await persistComponentMatchReportIfAvailable({
+            figmaAnalysis,
+            storybookArtifacts,
+            figmaLibraryResolutionArtifact,
+          });
+          return;
+        }
+
+        if (pasteDeltaExecution.summary.strategy === "delta") {
+          const changedRootNodeIds = new Set(
+            pasteDeltaExecution.changedRootNodeIds,
+          );
+          const changedRoots = extractDiffablePasteRoots(figmaFetch.file).filter(
+            (root) => changedRootNodeIds.has(root.id),
+          );
+          if (
+            changedRoots.length > 0 &&
+            changedRoots.length === changedRootNodeIds.size
+          ) {
+            const baselineScreenIds = new Set(
+              sourceIr.screens.map((screen) => screen.id),
+            );
+            const authoritativeDerived = transformDesignContextToDesignIr({
+              authoritativeSubtrees: buildAuthoritativeSubtreesFromRoots({
+                roots: changedRoots,
+              }),
+              ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {}),
+              sourceName: figmaFetch.file.name ?? "Figma Design Context",
+              screenElementBudget: context.runtime.figmaScreenElementBudget,
+              screenElementMaxDepth: context.runtime.figmaScreenElementMaxDepth,
+            });
+            const allScreensResolvable = authoritativeDerived.screens.every(
+              (screen) => baselineScreenIds.has(screen.id),
+            );
+            if (allScreensResolvable) {
+              const authoritativeMetrics = authoritativeDerived.metrics;
+              const enrichedAuthoritativeDerived = hybridMcpEnrichment
+                ? applyMcpEnrichmentToIr(
+                    authoritativeDerived,
+                    hybridMcpEnrichment,
+                  )
+                : authoritativeDerived;
+              let mergedIr = mergeAuthoritativeScreensIntoIr({
+                baselineIr: sourceIr,
+                authoritativeIr: enrichedAuthoritativeDerived,
+                authoritativeMetrics,
+              });
+              mergedIr = applyAppShellsToDesignIr({
+                ir: mergedIr,
+                figmaAnalysis,
+              });
+              mergedIr = applyScreenVariantFamiliesToDesignIr({
+                ir: mergedIr,
+                figmaAnalysis,
+              });
+              logPostDerivationValidationWarnings({
+                context,
+                validation: validateDesignIR(mergedIr),
+              });
+              await writeFile(
+                context.paths.designIrFile,
+                `${JSON.stringify(mergedIr, null, 2)}\n`,
+                "utf8",
+              );
+              await writeFile(
+                context.paths.figmaAnalysisFile,
+                `${JSON.stringify(figmaAnalysis, null, 2)}\n`,
+                "utf8",
+              );
+              const figmaLibraryResolutionArtifact =
+                await persistFigmaLibraryResolutionIfAvailable({
+                  figmaAnalysis,
+                  file: cleanedFile,
+                });
+              context.log({
+                level: "info",
+                message:
+                  `Merged ${changedRoots.length} changed root(s) into source IR from job ` +
+                  `'${context.sourceJob.jobId}' (strategy=delta, screens=${mergedIr.screens.length}).`,
+              });
+              emitIrMetricDiagnostics({ source: mergedIr });
+              await context.artifactStore.setPath({
+                key: STAGE_ARTIFACT_KEYS.designIr,
+                stage: "ir.derive",
+                absolutePath: context.paths.designIrFile,
+              });
+              await context.artifactStore.setPath({
+                key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
+                stage: "ir.derive",
+                absolutePath: context.paths.figmaAnalysisFile,
+              });
+              const storybookArtifacts =
+                await persistStorybookArtifactsIfRequested();
+              await persistComponentMatchReportIfAvailable({
+                figmaAnalysis,
+                storybookArtifacts,
+                figmaLibraryResolutionArtifact,
+              });
+              return;
+            }
+
+            context.log({
+              level: "warn",
+              message:
+                "Delta IR merge downgraded to full derivation because changed roots no longer align with baseline screens.",
+            });
+            await downgradePasteDeltaExecution("ir_merge_alignment_failed");
+          } else {
+            context.log({
+              level: "warn",
+              message:
+                "Delta IR merge downgraded to full derivation because changed roots could not be resolved from the cleaned payload.",
+            });
+            await downgradePasteDeltaExecution("ir_merge_roots_unresolved");
+          }
+        }
+      } catch (error) {
+        context.log({
+          level: "warn",
+          message:
+            `Delta IR reuse failed; falling back to full derivation: ${getErrorMessage(error)}`,
+        });
+        await downgradePasteDeltaExecution("ir_merge_failed");
+      }
+    }
 
     if (context.runtime.irCacheEnabled) {
       const contentHash = computeContentHash(figmaFetch.file);

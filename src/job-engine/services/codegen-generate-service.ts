@@ -7,6 +7,7 @@ import type { WorkspaceComponentMappingRule } from "../../contracts/index.js";
 import { describeComponentMappingRule, resolveComponentMappingRules } from "../../component-mapping-rules.js";
 import { resolveBoardKey } from "../../parity/board-key.js";
 import { buildComponentManifest } from "../../parity/component-manifest.js";
+import type { ComponentManifest } from "../../parity/component-manifest.js";
 import { resolveEmittedScreenTargets } from "../../parity/emitted-screen-targets.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
 import type { StreamingArtifactEvent } from "../../parity/generator-core.js";
@@ -26,6 +27,11 @@ import type { FigmaLibraryResolutionArtifact } from "../figma-library-resolution
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { isDesignIRShape, validatedJsonParse } from "../pipeline/pipeline-schemas.js";
+import {
+  downgradePasteDeltaExecutionToFull,
+  isPasteDeltaExecutionState,
+  type PasteDeltaExecutionState,
+} from "../paste-delta-execution.js";
 
 export interface CodegenGenerateStageInput {
   figmaFileKey?: string;
@@ -210,6 +216,44 @@ const parseFigmaLibraryResolutionArtifact = ({
   return parsed as FigmaLibraryResolutionArtifact;
 };
 
+const parseComponentManifestArtifact = ({
+  input
+}: {
+  input: string;
+}): ComponentManifest => {
+  const parsed: unknown = JSON.parse(input);
+  if (
+    typeof parsed !== "object" ||
+    parsed === null ||
+    !("screens" in parsed) ||
+    !Array.isArray((parsed as Record<string, unknown>).screens)
+  ) {
+    throw new Error("Expected a component manifest with a screens array.");
+  }
+  return parsed as ComponentManifest;
+};
+
+const resolveDeltaTargetIds = ({
+  manifest,
+  changedNodeIds
+}: {
+  manifest: ComponentManifest;
+  changedNodeIds: readonly string[];
+}): string[] => {
+  const changedNodeIdSet = new Set(changedNodeIds);
+  const targetIds = new Set<string>();
+  for (const screen of manifest.screens) {
+    if (changedNodeIdSet.has(screen.screenId)) {
+      targetIds.add(screen.screenId);
+      continue;
+    }
+    if (screen.components.some((component) => changedNodeIdSet.has(component.irNodeId))) {
+      targetIds.add(screen.screenId);
+    }
+  }
+  return Array.from(targetIds).sort((left, right) => left.localeCompare(right));
+};
+
 const rankIconResolutionStatus = (value: ComponentMatchReportIconResolutionRecord["status"]): number => {
   switch (value) {
     case "resolved_import":
@@ -333,6 +377,31 @@ export const createCodegenGenerateService = ({
           message: context.generationLocaleResolution.warningMessage
         });
       }
+
+      const pasteDeltaExecution =
+        await context.artifactStore.getValue<PasteDeltaExecutionState>(
+          STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+          isPasteDeltaExecutionState,
+        );
+      const downgradePasteDeltaExecution = async (
+        fallbackReason: string,
+      ): Promise<PasteDeltaExecutionState | undefined> => {
+        if (!pasteDeltaExecution) {
+          return undefined;
+        }
+        const downgraded = downgradePasteDeltaExecutionToFull({
+          state: pasteDeltaExecution,
+          fallbackReason,
+        });
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+          stage: "codegen.generate",
+          value: downgraded,
+        });
+        context.job.pasteDeltaSummary = { ...downgraded.summary };
+        await context.syncPublicJobProjection();
+        return downgraded;
+      };
 
       let imageAssetMap: Record<string, string> = {};
       if (context.mode === "submission") {
@@ -587,20 +656,78 @@ export const createCodegenGenerateService = ({
       const requestedRetryTargets = input.retryTargets
         ?.map((value) => value.trim())
         .filter((value) => value.length > 0);
+      let requestedTargetIds = requestedRetryTargets;
+      let sourceComponentManifest: ComponentManifest | undefined;
+      const isDeltaNoChanges =
+        context.mode === "submission" &&
+        pasteDeltaExecution?.eligibleForReuse === true &&
+        pasteDeltaExecution.summary.strategy === "no_changes";
+
+      if (
+        !requestedTargetIds &&
+        context.mode === "submission" &&
+        pasteDeltaExecution?.eligibleForReuse === true &&
+        pasteDeltaExecution.summary.strategy === "delta"
+      ) {
+        const sourceManifestPath = path.join(
+          context.paths.generatedProjectDir,
+          "component-manifest.json",
+        );
+        try {
+          sourceComponentManifest = parseComponentManifestArtifact({
+            input: await readFile(sourceManifestPath, "utf8"),
+          });
+          const deltaTargetIds = resolveDeltaTargetIds({
+            manifest: sourceComponentManifest,
+            changedNodeIds: pasteDeltaExecution.changedNodeIds,
+          });
+          if (deltaTargetIds.length === 0) {
+            await downgradePasteDeltaExecution("codegen_target_mapping_failed");
+          } else {
+            const hasPathDrift = deltaTargetIds.some((targetId) => {
+              const previousScreen = sourceComponentManifest?.screens.find(
+                (screen) => screen.screenId === targetId,
+              );
+              const nextIdentity =
+                fullEmittedScreenResolution.emittedIdentitiesByScreenId.get(
+                  targetId,
+                );
+              return (
+                !previousScreen ||
+                !nextIdentity ||
+                previousScreen.file !== nextIdentity.filePath
+              );
+            });
+            if (hasPathDrift) {
+              await downgradePasteDeltaExecution("codegen_target_path_changed");
+            } else {
+              requestedTargetIds = deltaTargetIds;
+            }
+          }
+        } catch (error) {
+          context.log({
+            level: "warn",
+            message:
+              `Delta target resolution failed; regenerating fully instead: ${getErrorMessage(error)}`,
+          });
+          await downgradePasteDeltaExecution("codegen_target_resolution_failed");
+        }
+      }
+
       const selectedTargets =
-        requestedRetryTargets && requestedRetryTargets.length > 0
+        requestedTargetIds && requestedTargetIds.length > 0
           ? fullEmittedScreenResolution.emittedTargets.filter((target) => {
               const identity = fullEmittedScreenResolution.emittedIdentitiesByScreenId.get(
                 target.emittedScreenId
               );
               return (
-                requestedRetryTargets.includes(target.emittedScreenId) ||
-                (identity ? requestedRetryTargets.includes(identity.filePath) : false)
+                requestedTargetIds.includes(target.emittedScreenId) ||
+                (identity ? requestedTargetIds.includes(identity.filePath) : false)
               );
             })
           : fullEmittedScreenResolution.emittedTargets;
 
-      if (requestedRetryTargets && requestedRetryTargets.length > 0 && selectedTargets.length === 0) {
+      if (requestedTargetIds && requestedTargetIds.length > 0 && selectedTargets.length === 0) {
         throw createPipelineError({
           code: "E_RETRY_TARGETS_INVALID",
           stage: "codegen.generate",
@@ -668,6 +795,10 @@ export const createCodegenGenerateService = ({
         }
       });
       const emittedScreenResolution = resolveEmittedScreenTargets({ ir: generationIr });
+      const fullManifestAssociationNodeIdsByScreenId = buildManifestAssociationNodeIdsByScreenId({
+        ir,
+        emittedScreenResolution: fullEmittedScreenResolution
+      });
       const manifestAssociationNodeIdsByScreenId = buildManifestAssociationNodeIdsByScreenId({
         ir,
         emittedScreenResolution
@@ -737,6 +868,58 @@ export const createCodegenGenerateService = ({
           absolutePath: manifestPath
         });
       };
+
+      if (isDeltaNoChanges) {
+        await publishGeneratedProject();
+        try {
+          await publishManifest({
+            screenIds: new Set(
+              emittedScreenResolution.emittedScreens.map((screen) => screen.id),
+            ),
+          });
+        } catch (error) {
+          context.log({
+            level: "warn",
+            message: `Component manifest refresh failed during no-change delta reuse: ${getErrorMessage(error)}`,
+          });
+        }
+
+        const generationSummary: CodegenGenerateSummary = {
+          generatedPaths: await collectGeneratedPaths({
+            projectDir: context.paths.generatedProjectDir,
+          }),
+        };
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.codegenSummary,
+          stage: "codegen.generate",
+          value: generationSummary,
+        });
+        if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
+          await context.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.generationMetrics,
+            stage: "codegen.generate",
+            absolutePath: path.join(
+              context.paths.generatedProjectDir,
+              "generation-metrics.json",
+            ),
+          });
+        }
+        const diffContext: GenerationDiffContext = {
+          boardKey: currentBoardKey,
+        };
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+          stage: "codegen.generate",
+          value: diffContext,
+        });
+        context.log({
+          level: "info",
+          message:
+            `Skipped code generation because delta execution detected no changes ` +
+            `(reused ${generationSummary.generatedPaths.length} generated files).`,
+        });
+        return;
+      }
 
       const publishStreamingArtifacts = async ({
         event
@@ -862,9 +1045,9 @@ export const createCodegenGenerateService = ({
       try {
         const manifest = await buildComponentManifestFn({
           projectDir: context.paths.generatedProjectDir,
-          screens: emittedScreenResolution.emittedScreens,
-          identitiesByScreenId: emittedScreenResolution.emittedIdentitiesByScreenId,
-          associatedNodeIdsByScreenId: manifestAssociationNodeIdsByScreenId
+          screens: fullEmittedScreenResolution.emittedScreens,
+          identitiesByScreenId: fullEmittedScreenResolution.emittedIdentitiesByScreenId,
+          associatedNodeIdsByScreenId: fullManifestAssociationNodeIdsByScreenId
         });
         await writeManifestAtomically({
           manifestPath,

@@ -7,6 +7,7 @@ export const STAGE_ARTIFACT_KEYS = {
   customerProfileResolved: "customer.profile.resolved",
   regenerationSourceIr: "regeneration.source_ir",
   regenerationOverrides: "regeneration.overrides",
+  pasteDeltaExecution: "paste.delta.execution",
   designIr: "design.ir",
   figmaAnalysis: "figma.analysis",
   storybookCatalog: "storybook.catalog",

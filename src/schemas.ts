@@ -1271,13 +1271,6 @@ function parseSubmitRequest(
         }
       }
     }
-    if (figmaFileKey !== undefined) {
-      pushIssue(
-        issues,
-        ["figmaFileKey"],
-        `figmaFileKey must be omitted when figmaSourceMode=${resolvedFigmaSourceMode}`,
-      );
-    }
     if (figmaAccessToken !== undefined) {
       pushIssue(
         issues,

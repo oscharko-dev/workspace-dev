@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import {
+  computePasteCompatibilityFingerprint,
   computePasteIdentityKey,
   createPasteFingerprintStore
 } from "./paste-fingerprint-store.js";
@@ -29,10 +30,15 @@ const createManifest = (overrides: Partial<PasteFingerprintManifest> = {}): Past
     ],
     figmaFileKey
   };
-  if (overrides.sourceJobId !== undefined) {
-    return { ...base, sourceJobId: overrides.sourceJobId };
-  }
-  return base;
+  return {
+    ...base,
+    ...(overrides.sourceJobId !== undefined
+      ? { sourceJobId: overrides.sourceJobId }
+      : {}),
+    ...(overrides.execution !== undefined
+      ? { execution: overrides.execution }
+      : {}),
+  };
 };
 
 // ── computePasteIdentityKey ────────────────────────────────────────────────
@@ -269,4 +275,113 @@ test("re-saving replaces existing file contents fully", async () => {
   assert.ok(loaded);
   assert.equal(loaded.nodes.length, 1);
   assert.equal(loaded.nodes[0]?.subtreeHash, "hash-replaced");
+});
+
+test("save/load round-trips execution metadata and generated artifact hashes", async () => {
+  const rootDir = await createTempDir();
+  const store = createPasteFingerprintStore({ rootDir });
+  const compatibilityFingerprint = computePasteCompatibilityFingerprint({
+    figmaSourceMode: "local_json",
+    brandTheme: "derived",
+    generationLocale: "en-US",
+    formHandlingMode: "react_hook_form",
+  });
+  const manifest = createManifest({
+    sourceJobId: "job-123",
+    execution: {
+      requestedMode: "auto",
+      effectiveMode: "auto_resolved_to_delta",
+      strategy: "delta",
+      changedNodeIds: ["1:2"],
+      changedRootNodeIds: ["1:2"],
+      compatibilityFingerprint,
+      generatedArtifactHashes: [
+        {
+          relativePath: "src/screens/Home.tsx",
+          sha256: "a".repeat(64),
+          sizeBytes: 1234,
+        },
+      ],
+    },
+  });
+
+  await store.save(manifest);
+  const loaded = await store.load(manifest.pasteIdentityKey);
+
+  assert.ok(loaded);
+  assert.equal(loaded.execution?.strategy, "delta");
+  assert.equal(
+    loaded.execution?.compatibilityFingerprint,
+    compatibilityFingerprint,
+  );
+  assert.deepEqual(loaded.execution?.generatedArtifactHashes, [
+    {
+      relativePath: "src/screens/Home.tsx",
+      sha256: "a".repeat(64),
+      sizeBytes: 1234,
+    },
+  ]);
+});
+
+test("computePasteCompatibilityFingerprint changes when runtime-affecting inputs differ", () => {
+  const baseline = computePasteCompatibilityFingerprint({
+    figmaSourceMode: "local_json",
+    brandTheme: "derived",
+    generationLocale: "en-US",
+    formHandlingMode: "react_hook_form",
+    componentMappings: [{ nodeId: "1:2", componentName: "Button", source: "@/Button.tsx" }],
+  });
+  const localeChanged = computePasteCompatibilityFingerprint({
+    figmaSourceMode: "local_json",
+    brandTheme: "derived",
+    generationLocale: "de-DE",
+    formHandlingMode: "react_hook_form",
+    componentMappings: [{ nodeId: "1:2", componentName: "Button", source: "@/Button.tsx" }],
+  });
+
+  assert.notEqual(baseline, localeChanged);
+});
+
+test("concurrent saves do not leave temporary manifest files behind", async () => {
+  const rootDir = await createTempDir();
+  const store = createPasteFingerprintStore({ rootDir });
+  const manifest = createManifest();
+
+  await Promise.all([
+    store.save(manifest),
+    store.save({
+      ...manifest,
+      nodes: [
+        {
+          id: "1:2",
+          type: "FRAME",
+          parentId: null,
+          subtreeHash: "hash-a",
+          depth: 0,
+        },
+      ],
+    }),
+    store.save({
+      ...manifest,
+      nodes: [
+        {
+          id: "1:2",
+          type: "FRAME",
+          parentId: null,
+          subtreeHash: "hash-b",
+          depth: 0,
+        },
+      ],
+    }),
+  ]);
+
+  const entries = await readdir(rootDir);
+  assert.deepEqual(
+    entries.filter((entry) => entry.endsWith(".tmp")),
+    [],
+  );
+  assert.deepEqual(
+    entries.filter((entry) => entry.endsWith(".json")),
+    [`${manifest.pasteIdentityKey}.json`],
+  );
 });

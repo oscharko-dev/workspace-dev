@@ -31,6 +31,19 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.13.0] - 2026-04-14
+
+### Added
+
+- `WorkspaceJobRequestMetadata.importMode` so polling surfaces the requested paste delta mode.
+- `WorkspaceJobStatus.pasteDeltaSummary` and `WorkspaceJobResult.pasteDeltaSummary` so final job polling reflects the authoritative delta/full execution outcome instead of only the submit-accepted response.
+- Internal `WorkspacePasteDeltaSeed` type for server-injected delta execution metadata.
+
+### Changed
+
+- `WorkspaceJobLineage.kind` now also allows `"delta"` for submission jobs that safely reused a prior compatible paste import.
+- `CONTRACT_VERSION` from `3.12.0` to `3.13.0`.
+
 ## [3.12.0] - 2026-04-14
 
 ### Incremental delta import scaffolding (Issue #992)

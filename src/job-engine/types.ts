@@ -24,6 +24,8 @@ import type {
   WorkspaceJobRetryTarget,
   WorkspaceJobResult,
   WorkspaceJobRuntimeStatus,
+  WorkspacePasteDeltaSeed,
+  WorkspacePasteDeltaSummary,
   WorkspaceRouterMode,
   WorkspaceJobStage,
   WorkspaceJobStageName,
@@ -102,6 +104,7 @@ export interface JobRecord {
     url?: string;
   };
   queue: WorkspaceJobQueueState;
+  pasteDeltaSummary?: WorkspacePasteDeltaSummary;
   abortController?: AbortController;
   lineage?: WorkspaceJobLineage;
   cancellation?: WorkspaceJobCancellation;
@@ -114,6 +117,10 @@ export interface JobRecord {
   inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
 }
+
+export type SubmissionJobInput = WorkspaceJobInput & {
+  pasteDeltaSeed?: WorkspacePasteDeltaSeed;
+};
 
 export interface WorkspacePipelineError extends Error {
   code: string;
@@ -254,7 +261,7 @@ export interface JobRecordSnapshot {
 }
 
 export interface JobEngine {
-  submitJob: (input: WorkspaceJobInput) => WorkspaceSubmitAccepted;
+  submitJob: (input: SubmissionJobInput) => WorkspaceSubmitAccepted;
   submitRegeneration: (
     input: WorkspaceRegenerationInput,
   ) => WorkspaceRegenerationAccepted;
