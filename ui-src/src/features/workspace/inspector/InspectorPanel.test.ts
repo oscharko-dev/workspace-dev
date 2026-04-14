@@ -9,6 +9,7 @@ import {
   upsertInspectorOverrideEntry
 } from "./inspector-override-draft";
 import { toInspectorLayoutStorageKey } from "./layout-state";
+import { createInitialPipelineState } from "./paste-pipeline";
 
 const mockUseQuery = vi.fn();
 const mockUseMutation = vi.fn();
@@ -868,6 +869,122 @@ describe("InspectorPanel data states", () => {
     expect(screen.getByTestId("inspector-design-ir-state-empty")).toHaveTextContent(
       "No component tree data is available for this job."
     );
+  });
+
+  it("ignores pipeline fallback nodes when they belong to a different job", () => {
+    installQueryMock({
+      overrides: {
+        "inspector-design-ir": {
+          data: undefined,
+          isLoading: true,
+        },
+      },
+    });
+
+    renderInspectorPanel({
+      pipeline: {
+        stage: "generating",
+        progress: 80,
+        stageProgress: createInitialPipelineState().stageProgress,
+        jobId: "job-other",
+        designIR: {
+          jobId: "job-other",
+          screens: [
+            {
+              id: "screen-other",
+              name: "Other Screen",
+              children: [],
+            },
+          ],
+        },
+        errors: [],
+        canRetry: false,
+        canCancel: true,
+      },
+    });
+
+    expect(screen.getByTestId("inspector-design-ir-state-loading")).toBeInTheDocument();
+    expect(screen.queryByText("Other Screen")).not.toBeInTheDocument();
+  });
+
+  it("uses active pipeline IR, manifest, and files for streamed node selection", async () => {
+    installQueryMock({
+      overrides: {
+        "inspector-files": {
+          data: undefined,
+          isLoading: true,
+        },
+        "inspector-manifest": {
+          data: undefined,
+          isLoading: true,
+        },
+        "inspector-design-ir": {
+          data: undefined,
+          isLoading: true,
+        },
+      },
+    });
+
+    renderInspectorPanel({
+      pipeline: {
+        ...createInitialPipelineState(),
+        stage: "generating",
+        progress: 80,
+        jobId: "job-1",
+        componentManifest: {
+          jobId: "job-1",
+          screens: [
+            {
+              screenId: "screen-stream",
+              screenName: "Streaming Screen",
+              file: "src/screens/StreamingScreen.tsx",
+              components: [
+                {
+                  irNodeId: "node-stream",
+                  irNodeName: "Streaming Card",
+                  irNodeType: "card",
+                  file: "src/components/StreamingCard.tsx",
+                  startLine: 3,
+                  endLine: 12,
+                },
+              ],
+            },
+          ],
+        },
+        designIR: {
+          jobId: "job-1",
+          screens: [
+            {
+              id: "screen-stream",
+              name: "Streaming Screen",
+              generatedFile: "src/screens/StreamingScreen.tsx",
+              children: [
+                {
+                  id: "node-stream",
+                  name: "Streaming Card",
+                  type: "card",
+                },
+              ],
+            },
+          ],
+        },
+        generatedFiles: [
+          { path: "src/screens/StreamingScreen.tsx", sizeBytes: 120 },
+          { path: "src/components/StreamingCard.tsx", sizeBytes: 64 },
+        ],
+        errors: [],
+        canRetry: false,
+        canCancel: true,
+      },
+    });
+
+    fireEvent.click(await screen.findByTestId("tree-node-node-stream"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-file-selector")).toHaveValue(
+        "src/components/StreamingCard.tsx",
+      );
+    });
   });
 
   it("shows manifest empty warning when manifest payload has no screens", () => {

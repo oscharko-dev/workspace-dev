@@ -216,7 +216,7 @@ describe("InspectorPage — bootstrap path", () => {
 
     renderPage("/workspace/ui/inspector");
 
-    const textarea = screen.getByLabelText(/figma json paste target/i);
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
     const clipboardData = {
       getData: (type: string) =>
         type === "text" || type === "text/plain" ? '{"document":{}}' : "",
@@ -239,6 +239,62 @@ describe("InspectorPage — bootstrap path", () => {
     expect(screen.queryByTestId("inspector-bootstrap")).not.toBeInTheDocument();
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-bootstrap|http://127.0.0.1:1983/preview||false|",
+    );
+  });
+
+  it("enters the inspector panel while the pipeline is still processing", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-processing" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-processing") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-processing",
+            status: "running",
+            stages: [{ name: "figma.source", status: "completed" }],
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-processing/design-ir" ||
+        url === "/workspace/jobs/job-processing/component-manifest" ||
+        url === "/workspace/jobs/job-processing/files" ||
+        url === "/workspace/jobs/job-processing/screenshot"
+      ) {
+        return createJsonResponse({
+          status: 409,
+          ok: false,
+          payload: { error: "JOB_NOT_COMPLETED" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    renderPage("/workspace/ui/inspector");
+
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
+    const clipboardData = {
+      getData: (type: string) =>
+        type === "text" || type === "text/plain" ? '{"document":{}}' : "",
+    } as unknown as DataTransfer;
+    fireEvent.paste(textarea, { clipboardData });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Import starten"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId("inspector-bootstrap")).not.toBeInTheDocument();
+    expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
+      "job-processing|||false|",
     );
   });
 
@@ -277,7 +333,7 @@ describe("InspectorPage — bootstrap path", () => {
 
     renderPage("/workspace/ui/inspector");
 
-    const textarea = screen.getByLabelText(/figma json paste target/i);
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
     fireEvent.paste(textarea, {
       clipboardData: {
         getData: (type: string) =>
@@ -296,7 +352,8 @@ describe("InspectorPage — bootstrap path", () => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
     });
 
-    fireEvent.paste(textarea, {
+    const retryTextarea = screen.getByLabelText(/figma clipboard paste target/i);
+    fireEvent.paste(retryTextarea, {
       clipboardData: {
         getData: (type: string) =>
           type === "text" || type === "text/plain" ? '{"document":{}}' : "",
@@ -322,7 +379,7 @@ describe("InspectorPage — bootstrap path", () => {
   it("uses text/html clipboard metadata to classify a Figma clipboard paste before submit", async () => {
     renderPage("/workspace/ui/inspector");
 
-    const textarea = screen.getByLabelText(/figma json paste target/i);
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
     fireEvent.paste(textarea, {
       clipboardData: {
         getData: (type: string) => {

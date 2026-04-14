@@ -91,8 +91,10 @@ describe("usePastePipeline", () => {
 
   it("submits supported payloads and reaches ready on canonical backend stages", async () => {
     let pollCount = 0;
+    const callOrder: string[] = [];
 
     fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      callOrder.push(url);
       if (url === "/workspace/submit") {
         expect(init?.body).toBe(
           JSON.stringify({
@@ -159,6 +161,16 @@ describe("usePastePipeline", () => {
         }) as never;
       }
 
+      if (url === "/workspace/jobs/job-happy/figma-analysis") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-happy",
+            diagnostics: [],
+            layoutGraph: { pages: [], frames: [] },
+          },
+        }) as never;
+      }
+
       if (url === "/workspace/jobs/job-happy/component-manifest") {
         return createJsonResponse({
           payload: {
@@ -206,10 +218,33 @@ describe("usePastePipeline", () => {
 
     expect(result.current.state.previewUrl).toBe("http://127.0.0.1:1983/preview");
     expect(result.current.state.designIR?.jobId).toBe("job-happy");
+    expect(result.current.state.figmaAnalysis?.jobId).toBe("job-happy");
     expect(result.current.state.componentManifest?.jobId).toBe("job-happy");
     expect(result.current.state.generatedFiles).toEqual([
       { path: "src/App.tsx", sizeBytes: 128 },
     ]);
+
+    const secondPollIndex = callOrder.indexOf("/workspace/jobs/job-happy");
+    const runningPollIndex = callOrder.indexOf(
+      "/workspace/jobs/job-happy",
+      secondPollIndex + 1,
+    );
+    const completedPollIndex = callOrder.lastIndexOf("/workspace/jobs/job-happy");
+    const designIrIndex = callOrder.indexOf("/workspace/jobs/job-happy/design-ir");
+    const figmaAnalysisIndex = callOrder.indexOf(
+      "/workspace/jobs/job-happy/figma-analysis",
+    );
+    const manifestIndex = callOrder.indexOf(
+      "/workspace/jobs/job-happy/component-manifest",
+    );
+
+    expect(runningPollIndex).toBeGreaterThan(secondPollIndex);
+    expect(designIrIndex).toBeGreaterThan(runningPollIndex);
+    expect(figmaAnalysisIndex).toBeGreaterThan(runningPollIndex);
+    expect(manifestIndex).toBeGreaterThan(runningPollIndex);
+    expect(designIrIndex).toBeLessThan(completedPollIndex);
+    expect(figmaAnalysisIndex).toBeLessThan(completedPollIndex);
+    expect(manifestIndex).toBeLessThan(completedPollIndex);
   });
 
   it("uses figma_plugin mode for plugin envelope submissions", async () => {
@@ -241,6 +276,7 @@ describe("usePastePipeline", () => {
 
       if (
         url === "/workspace/jobs/job-plugin/design-ir" ||
+        url === "/workspace/jobs/job-plugin/figma-analysis" ||
         url === "/workspace/jobs/job-plugin/component-manifest"
       ) {
         return createJsonResponse({
@@ -278,6 +314,10 @@ describe("usePastePipeline", () => {
     await waitFor(() => {
       expect(result.current.state.stage).toBe("ready");
     });
+
+    expect(result.current.state.sourceScreens).toEqual([
+      { id: "1:2", name: "Card", nodeType: "frame" },
+    ]);
   });
 
   it("retry() restarts the last supported request", async () => {
@@ -312,6 +352,7 @@ describe("usePastePipeline", () => {
 
       if (
         url === "/workspace/jobs/job-retry/design-ir" ||
+        url === "/workspace/jobs/job-retry/figma-analysis" ||
         url === "/workspace/jobs/job-retry/component-manifest"
       ) {
         return createJsonResponse({
