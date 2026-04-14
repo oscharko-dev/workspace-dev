@@ -75,6 +75,7 @@ interface PanelViewProps {
   previousJobId: string | null;
   initialIsRegeneration: boolean;
   pipeline?: PastePipelineState;
+  onPipelineRetry?: () => void;
 }
 
 function PanelView({
@@ -83,6 +84,7 @@ function PanelView({
   previousJobId,
   initialIsRegeneration,
   pipeline,
+  onPipelineRetry,
 }: PanelViewProps): JSX.Element {
   const navigate = useNavigate();
   const [activeJobId, setActiveJobId] = useState(jobId);
@@ -187,6 +189,7 @@ function PanelView({
               setOpenDialog(null);
             }}
             {...(pipeline !== undefined ? { pipeline } : {})}
+            {...(onPipelineRetry !== undefined ? { onPipelineRetry } : {})}
           />
         </InspectorErrorBoundary>
       </main>
@@ -257,6 +260,7 @@ function BootstrapView(): JSX.Element {
         previousJobId={null}
         initialIsRegeneration={false}
         pipeline={bootstrap.pipelineState}
+        onPipelineRetry={handleRetry}
       />
     );
   }
