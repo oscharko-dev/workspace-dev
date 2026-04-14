@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { exportImageAssetsFromFigma } from "../image-export.js";
 import { createPipelineError, getErrorMessage } from "../errors.js";
 import type { GenerationDiffContext } from "../generation-diff.js";
@@ -220,6 +220,18 @@ const buildStorybookFirstIconLookup = ({
     }
   }
   return iconLookup;
+};
+
+const writeManifestAtomically = async ({
+  manifestPath,
+  payload
+}: {
+  manifestPath: string;
+  payload: unknown;
+}): Promise<void> => {
+  const temporaryPath = `${manifestPath}.tmp`;
+  await writeFile(temporaryPath, `${JSON.stringify(payload, null, 2)}\n`, "utf8");
+  await rename(temporaryPath, manifestPath);
 };
 
 export const createCodegenGenerateService = ({
@@ -542,6 +554,119 @@ export const createCodegenGenerateService = ({
           });
         }
       });
+      const emittedScreenResolution = resolveEmittedScreenTargets({ ir });
+      const manifestAssociationNodeIdsByScreenId = buildManifestAssociationNodeIdsByScreenId({
+        ir,
+        emittedScreenResolution
+      });
+      const emittedScreenIdsByFilePath = new Map(
+        Array.from(emittedScreenResolution.emittedIdentitiesByScreenId.entries()).map(([screenId, identity]) => [
+          identity.filePath,
+          screenId
+        ] as const)
+      );
+      const manifestPath = path.join(context.paths.generatedProjectDir, "component-manifest.json");
+      const publishedScreenIds = new Set<string>();
+      let generatedProjectPublished = false;
+
+      const publishGeneratedProject = async (): Promise<void> => {
+        if (generatedProjectPublished) {
+          return;
+        }
+        await context.artifactStore.setPath({
+          key: STAGE_ARTIFACT_KEYS.generatedProject,
+          stage: "codegen.generate",
+          absolutePath: context.paths.generatedProjectDir
+        });
+        generatedProjectPublished = true;
+      };
+
+      const publishManifest = async ({
+        screenIds
+      }: {
+        screenIds: ReadonlySet<string>;
+      }): Promise<void> => {
+        if (screenIds.size === 0) {
+          return;
+        }
+
+        const screens = emittedScreenResolution.emittedScreens.filter((screen) =>
+          screenIds.has(screen.id)
+        );
+        const identitiesByScreenId = new Map(
+          screens.map((screen) => {
+            const identity = emittedScreenResolution.emittedIdentitiesByScreenId.get(screen.id);
+            if (!identity) {
+              throw new Error(`Missing emitted screen identity for '${screen.id}'.`);
+            }
+            return [screen.id, identity] as const;
+          })
+        );
+        const associatedNodeIdsByScreenId = new Map(
+          screens.map((screen) => [
+            screen.id,
+            manifestAssociationNodeIdsByScreenId.get(screen.id) ?? new Set<string>()
+          ] as const)
+        );
+        const manifest = await buildComponentManifestFn({
+          projectDir: context.paths.generatedProjectDir,
+          screens,
+          identitiesByScreenId,
+          associatedNodeIdsByScreenId
+        });
+        await writeManifestAtomically({
+          manifestPath,
+          payload: manifest
+        });
+        await context.artifactStore.setPath({
+          key: STAGE_ARTIFACT_KEYS.componentManifest,
+          stage: "codegen.generate",
+          absolutePath: manifestPath
+        });
+      };
+
+      const publishStreamingArtifacts = async ({
+        event
+      }: {
+        event: StreamingArtifactEvent;
+      }): Promise<void> => {
+        if (event.type === "progress") {
+          return;
+        }
+
+        await publishGeneratedProject();
+
+        if (event.type === "metrics" || (event.type === "app" && event.file.path === "generation-metrics.json")) {
+          await context.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.generationMetrics,
+            stage: "codegen.generate",
+            absolutePath: path.join(context.paths.generatedProjectDir, "generation-metrics.json")
+          });
+        }
+
+        if (event.type === "screen") {
+          for (const file of event.files) {
+            const emittedScreenId = emittedScreenIdsByFilePath.get(file.path);
+            if (emittedScreenId) {
+              publishedScreenIds.add(emittedScreenId);
+            }
+          }
+
+          try {
+            await publishManifest({
+              screenIds: publishedScreenIds
+            });
+          } catch (error) {
+            context.log({
+              level: "warn",
+              message: `Progressive component manifest refresh failed: ${getErrorMessage(error)}`
+            });
+          }
+        }
+
+        await context.syncPublicJobProjection();
+      };
+
       let iterResult = await generator.next();
       while (!iterResult.done) {
         const event: StreamingArtifactEvent = iterResult.value;
@@ -551,15 +676,12 @@ export const createCodegenGenerateService = ({
             message: `Screen ${event.screenIndex}/${event.screenCount} completed: '${event.screenName}'`
           });
         }
+        await publishStreamingArtifacts({ event });
         iterResult = await generator.next();
       }
 
       const generationSummary = iterResult.value;
-      await context.artifactStore.setPath({
-        key: STAGE_ARTIFACT_KEYS.generatedProject,
-        stage: "codegen.generate",
-        absolutePath: context.paths.generatedProjectDir
-      });
+      await publishGeneratedProject();
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.codegenSummary,
         stage: "codegen.generate",
@@ -575,18 +697,16 @@ export const createCodegenGenerateService = ({
       }
 
       try {
-        const emittedScreenResolution = resolveEmittedScreenTargets({ ir });
         const manifest = await buildComponentManifestFn({
           projectDir: context.paths.generatedProjectDir,
           screens: emittedScreenResolution.emittedScreens,
           identitiesByScreenId: emittedScreenResolution.emittedIdentitiesByScreenId,
-          associatedNodeIdsByScreenId: buildManifestAssociationNodeIdsByScreenId({
-            ir,
-            emittedScreenResolution
-          })
+          associatedNodeIdsByScreenId: manifestAssociationNodeIdsByScreenId
         });
-        const manifestPath = path.join(context.paths.generatedProjectDir, "component-manifest.json");
-        await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, "utf8");
+        await writeManifestAtomically({
+          manifestPath,
+          payload: manifest
+        });
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.componentManifest,
           stage: "codegen.generate",

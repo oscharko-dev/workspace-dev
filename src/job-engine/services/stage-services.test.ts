@@ -21,6 +21,7 @@ import { buildTypographyScaleFromAliases } from "../../parity/typography-tokens.
 import type { DesignIR } from "../../parity/types-ir.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../../storybook/types.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
+import { syncPublicJobProjection } from "../pipeline/public-job-projection.js";
 import { loadPreviousSnapshot, saveCurrentSnapshot, type GenerationDiffContext } from "../generation-diff.js";
 import { computeContentHash, computeOptionsHash, saveCachedIr } from "../ir-cache.js";
 import { StageArtifactStore } from "../pipeline/artifact-store.js";
@@ -3018,6 +3019,135 @@ test("CodegenGenerateService accepts all streaming artifact event variants witho
     executionContext.job.logs.some((entry) => entry.message.includes("Screen 1/1 completed: 'Screen 1'")),
     "progress events should still be logged"
   );
+});
+
+test("CodegenGenerateService publishes progressive generated-project and manifest artifacts while streaming is still running", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  await writeFile(executionContext.paths.designIrFile, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+
+  let syncCount = 0;
+  executionContext.syncPublicJobProjection = async () => {
+    syncCount += 1;
+    await syncPublicJobProjection({
+      job: executionContext.job,
+      artifactStore: executionContext.artifactStore
+    });
+  };
+
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* () {
+      const themePath = path.join(executionContext.paths.generatedProjectDir, "src", "theme", "theme.ts");
+      await mkdir(path.dirname(themePath), { recursive: true });
+      await writeFile(themePath, "export const theme = {};\n", "utf8");
+      yield {
+        type: "theme",
+        files: [{ path: "src/theme/theme.ts", content: "export const theme = {};\n" }]
+      } as const;
+
+      assert.equal(
+        await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject),
+        executionContext.paths.generatedProjectDir
+      );
+      assert.equal(executionContext.job.artifacts.generatedProjectDir, executionContext.paths.generatedProjectDir);
+
+      const screenPath = path.join(
+        executionContext.paths.generatedProjectDir,
+        toDeterministicScreenPath("Screen 1")
+      );
+      await mkdir(path.dirname(screenPath), { recursive: true });
+      await writeFile(
+        screenPath,
+        [
+          "export function Screen1() {",
+          "  return (",
+          "    <section>",
+          "      {/* @ir:start title-1 Title TEXT */}",
+          '      <span data-ir-id=\"title-1\">Hello</span>',
+          "      {/* @ir:end title-1 */}",
+          "    </section>",
+          "  );",
+          "}",
+          ""
+        ].join("\n"),
+        "utf8"
+      );
+      yield {
+        type: "screen",
+        screenName: "Screen 1",
+        files: [{ path: toDeterministicScreenPath("Screen 1"), content: await readFile(screenPath, "utf8") }]
+      } as const;
+
+      const componentManifestPath = path.join(
+        executionContext.paths.generatedProjectDir,
+        "component-manifest.json"
+      );
+      assert.equal(
+        await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.componentManifest),
+        componentManifestPath
+      );
+      assert.equal(executionContext.job.artifacts.componentManifestFile, componentManifestPath);
+
+      const manifest = JSON.parse(await readFile(componentManifestPath, "utf8")) as {
+        screens: Array<{ screenId: string; file: string; components: Array<{ irNodeId: string }> }>;
+      };
+      assert.deepEqual(
+        manifest.screens.map((screen) => screen.screenId),
+        ["screen-1"]
+      );
+      assert.deepEqual(
+        manifest.screens[0]?.components.map((component) => component.irNodeId),
+        ["title-1"]
+      );
+
+      return {
+        generatedPaths: ["src/theme/theme.ts", toDeterministicScreenPath("Screen 1")],
+        generationMetrics: {
+          fetchedNodes: 0,
+          skippedHidden: 0,
+          skippedPlaceholders: 0,
+          screenElementCounts: [],
+          truncatedScreens: [],
+          degradedGeometryNodes: [],
+          prototypeNavigationDetected: 0,
+          prototypeNavigationResolved: 0,
+          prototypeNavigationUnresolved: 0,
+          prototypeNavigationRendered: 0
+        },
+        themeApplied: false,
+        screenApplied: 0,
+        screenTotal: 1,
+        screenRejected: [],
+        llmWarnings: [],
+        mappingCoverage: {
+          usedMappings: 0,
+          fallbackNodes: 0,
+          totalCandidateNodes: 0
+        },
+        mappingDiagnostics: {
+          missingMappingCount: 0,
+          contractMismatchCount: 0,
+          disabledMappingCount: 0
+        },
+        mappingWarnings: []
+      };
+    }
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "demo-board"
+    },
+    stageContextFor("codegen.generate")
+  );
+
+  assert.equal(syncCount, 2);
 });
 
 test("CodegenGenerateService resolves and forwards Storybook-first theme payloads", async () => {
