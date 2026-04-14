@@ -33,7 +33,11 @@ function makeJsonFile(relativePath: string, value: unknown): File {
   );
 }
 
-function makeDiskFile(relativePath: string, diskPath: string, type: string): File {
+function makeDiskFile(
+  relativePath: string,
+  diskPath: string,
+  type: string,
+): File {
   return withRelativePath(
     new File([readFileSync(diskPath)], path.basename(relativePath), { type }),
     relativePath,
@@ -71,7 +75,8 @@ describe("loadReportFromFiles", () => {
             fixtureId: "simple-form",
             score: 92,
             screenId: "1:65671",
-            screenName: "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
+            screenName:
+              "Bedarfsermittlung; Netto + Betriebsmittel; alle Cluster eingeklappt  ID-003.1_v1",
             viewportId: "desktop",
             viewportLabel: "Desktop",
           },
@@ -104,7 +109,8 @@ describe("loadReportFromFiles", () => {
       ),
     ]);
 
-    const screen = report.screensByKey[screenKey("simple-form", "1:65671", "desktop")];
+    const screen =
+      report.screensByKey[screenKey("simple-form", "1:65671", "desktop")];
     expect(report.sourceKind).toBe("benchmark");
     expect(screen?.report).not.toBeNull();
     expect(screen?.actualUrl).toContain("actual.png");
@@ -155,9 +161,8 @@ describe("loadReportFromFiles", () => {
       ),
     ]);
 
-    const screen = report.screensByKey[
-      screenKey("alpha", "home_view:1", "desktop")
-    ];
+    const screen =
+      report.screensByKey[screenKey("alpha", "home_view:1", "desktop")];
     expect(screen?.report?.overallScore).toBe(97.3);
     expect(screen?.referenceUrl).toContain("desktop.png");
   });
@@ -195,9 +200,10 @@ describe("loadReportFromFiles", () => {
       ),
     ]);
 
-    const screen = report.screensByKey[
-      screenKey("visual-quality", "visual-quality", "default")
-    ];
+    const screen =
+      report.screensByKey[
+        screenKey("visual-quality", "visual-quality", "default")
+      ];
     expect(report.sourceKind).toBe("visual-quality");
     expect(report.fixtures).toHaveLength(1);
     expect(screen?.report?.referenceSource).toBe("frozen_fixture");
@@ -293,16 +299,24 @@ describe("filesFromDataTransfer", () => {
     } as unknown as DataTransfer);
 
     expect(files).toHaveLength(3);
-    expect(files.map((file) => file.name).sort()).toEqual(["a.txt", "b.txt", "c.txt"]);
+    expect(files.map((file) => file.name).sort()).toEqual([
+      "a.txt",
+      "b.txt",
+      "c.txt",
+    ]);
     expect(
-      (files.find((file) => file.name === "b.txt") as File & {
-        webkitRelativePath?: string;
-      }).webkitRelativePath,
+      (
+        files.find((file) => file.name === "b.txt") as File & {
+          webkitRelativePath?: string;
+        }
+      ).webkitRelativePath,
     ).toBe("root/b.txt");
     expect(
-      (files.find((file) => file.name === "c.txt") as File & {
-        webkitRelativePath?: string;
-      }).webkitRelativePath,
+      (
+        files.find((file) => file.name === "c.txt") as File & {
+          webkitRelativePath?: string;
+        }
+      ).webkitRelativePath,
     ).toBe("root/nested/c.txt");
   });
 });
@@ -314,7 +328,7 @@ describe("loadReportFromUrl", () => {
 
   it("loads a remote visual-quality/report.json and derives sibling asset URLs", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
+      const url = input instanceof Request ? input.url : String(input);
       if (url.endsWith("/visual-quality/report.json")) {
         return new Response(
           JSON.stringify({
@@ -336,9 +350,10 @@ describe("loadReportFromUrl", () => {
       "https://example.test/workspace/jobs/job-1/files/visual-quality/report.json",
     );
 
-    const screen = report.screensByKey[
-      screenKey("visual-quality", "visual-quality", "default")
-    ];
+    const screen =
+      report.screensByKey[
+        screenKey("visual-quality", "visual-quality", "default")
+      ];
     expect(report.sourceKind).toBe("visual-quality");
     expect(screen?.referenceUrl).toBe(
       "https://example.test/workspace/jobs/job-1/files/visual-quality/reference.png",
@@ -353,7 +368,7 @@ describe("loadReportFromUrl", () => {
 
   it("hydrates confidence from sibling job endpoints when loading by report URL", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const url = String(input);
+      const url = input instanceof Request ? input.url : String(input);
       if (url.endsWith("/visual-quality/report.json")) {
         return new Response(
           JSON.stringify({

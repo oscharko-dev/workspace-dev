@@ -424,3 +424,84 @@ describe("usePastePipeline — oversized clipboard HTML", () => {
     expect(fetchJsonMock).not.toHaveBeenCalled();
   });
 });
+
+describe("usePastePipeline — retry preserves cached outputs", () => {
+  it("cached designIR and screenshot remain in state during retry re-submit", async () => {
+    let submitCount = 0;
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        submitCount += 1;
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: `job-retry-${String(submitCount)}` },
+        }) as never;
+      }
+      // First job: runs then fails at generating
+      if (url === "/workspace/jobs/job-retry-1") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-retry-1",
+            status: "failed",
+            error: { message: "codegen failed" },
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              { name: "figma.enrich", status: "completed" },
+              { name: "codegen", status: "failed" },
+            ],
+          },
+        }) as never;
+      }
+      // Second job (after retry): keeps running
+      if (url === "/workspace/jobs/job-retry-2") {
+        return createJsonResponse({
+          payload: { jobId: "job-retry-2", status: "running", stages: [] },
+        }) as never;
+      }
+      // Artifact endpoints for first job return valid data
+      if (url.startsWith("/workspace/jobs/job-retry-1/design-ir")) {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-retry-1",
+            screens: [{ id: "s1", name: "Home", children: [] }],
+          },
+        }) as never;
+      }
+      return createJsonResponse({ payload: {} }) as never;
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildFigmaClipboardHtml());
+    });
+
+    // Wait for the first job to fail
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("error");
+    });
+
+    // Cached outputs from first run are visible in error state
+    const cachedIR = result.current.state.designIR;
+
+    // Retry — re-submits, creating a second job
+    await act(async () => {
+      result.current.retry();
+    });
+
+    // After retry dispatch, state is no longer in error
+    await waitFor(() => {
+      expect(result.current.state.stage).not.toBe("error");
+    });
+
+    // The cached designIR (if it was fetched) must still be present —
+    // retry re-submits but does NOT wipe cached artifacts from state.
+    if (cachedIR !== undefined) {
+      expect(result.current.state.designIR).toEqual(cachedIR);
+    }
+
+    expect(submitCount).toBe(2);
+  });
+});

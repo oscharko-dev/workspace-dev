@@ -218,6 +218,30 @@ describe("pastePipelineReducer — progress accounting", () => {
     expect(state.canRetry).toBe(false);
     expect(state.canCancel).toBe(false);
   });
+
+  it("reaches exactly 100 after all 6 active stage completions (no stall at 96)", () => {
+    const ACTIVE_STAGES = [
+      "parsing",
+      "resolving",
+      "extracting",
+      "transforming",
+      "mapping",
+      "generating",
+    ] as const;
+
+    let state = dispatch(createInitialPipelineState(), {
+      type: "start",
+      clipboardHtml: "<html>",
+    });
+    state = dispatch(state, {
+      type: "parsing_done",
+      figmeta: { fileKey: "k", pasteID: 1, dataType: "scene" },
+    });
+    for (const stage of ACTIVE_STAGES.slice(1)) {
+      state = dispatch(state, { type: "stage_done", stage, durationMs: 1 });
+    }
+    expect(state.progress).toBe(100);
+  });
 });
 
 describe("pastePipelineReducer — data accumulators", () => {

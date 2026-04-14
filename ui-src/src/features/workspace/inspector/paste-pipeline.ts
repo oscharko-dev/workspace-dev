@@ -249,11 +249,13 @@ function markStageDone(
           [advanceTo]: { ...stageProgress[advanceTo], state: "running" },
         };
   const doneCount = countDoneActiveStages(advancedProgress);
+  const progress =
+    doneCount >= ACTIVE_STAGES.length ? 100 : doneCount * PROGRESS_INCREMENT;
   return {
     ...state,
     stage: advanceTo,
     stageProgress: advancedProgress,
-    progress: Math.min(100, doneCount * PROGRESS_INCREMENT),
+    progress,
   };
 }
 
@@ -915,6 +917,9 @@ export function usePastePipeline(): UsePastePipelineResult {
     undefined,
   );
   const skipScreenshotRef = useRef<boolean>(false);
+  // Tracks the last errorUpdatedAt we handled so rapid TanStack Query retries
+  // don't dispatch multiple POLL_FAILED actions for the same error run.
+  const lastHandledErrorAtRef = useRef<number>(0);
 
   const submitMutation = useMutation<
     { jobId: string },
@@ -1035,59 +1040,37 @@ export function usePastePipeline(): UsePastePipelineResult {
   }, [jobQuery.data]);
 
   useEffect(() => {
-    if (!jobQuery.isError) {
+    if (
+      !jobQuery.isError ||
+      jobQuery.errorUpdatedAt <= lastHandledErrorAtRef.current
+    ) {
       return;
     }
+    lastHandledErrorAtRef.current = jobQuery.errorUpdatedAt;
     dispatch(
       toStageFailedAction("resolving", "POLL_FAILED", "POLL_FAILED", true),
     );
   }, [jobQuery.errorUpdatedAt, jobQuery.isError]);
 
+  // Each artifact fetch has its own AbortController so an unrelated stage
+  // completion does not abort an in-flight request from a different stage.
   useEffect(() => {
-    if (!polling || state.jobId === undefined || skipScreenshotRef.current) {
+    if (
+      !polling ||
+      state.jobId === undefined ||
+      skipScreenshotRef.current ||
+      state.stageProgress.resolving.state !== "done" ||
+      state.screenshot !== undefined
+    ) {
       return;
     }
     const ac = new AbortController();
     const jobId = state.jobId;
-    void (async () => {
-      const signal = ac.signal;
-      if (
-        state.stageProgress.resolving.state === "done" &&
-        state.screenshot === undefined
-      ) {
-        const shot = await fetchScreenshot({ jobId, signal });
-        if (!ac.signal.aborted && shot !== null) {
-          dispatch({ type: "screenshot_ready", screenshot: shot });
-        }
+    void fetchScreenshot({ jobId, signal: ac.signal }).then((shot) => {
+      if (!ac.signal.aborted && shot !== null) {
+        dispatch({ type: "screenshot_ready", screenshot: shot });
       }
-      if (
-        state.stageProgress.transforming.state === "done" &&
-        state.designIR === undefined
-      ) {
-        const ir = await fetchDesignIr({ jobId, signal });
-        if (!ac.signal.aborted && ir !== null) {
-          dispatch({ type: "design_ir_ready", designIR: ir });
-        }
-      }
-      if (
-        state.stageProgress.generating.state === "done" &&
-        (state.componentManifest === undefined ||
-          state.generatedFiles === undefined)
-      ) {
-        const [manifest, files] = await Promise.all([
-          fetchManifest({ jobId, signal }),
-          fetchFiles({ jobId, signal }),
-        ]);
-        if (!ac.signal.aborted) {
-          if (manifest !== null) {
-            dispatch({ type: "manifest_ready", manifest });
-          }
-          if (files !== null) {
-            dispatch({ type: "files_ready", files });
-          }
-        }
-      }
-    })();
+    });
     return () => {
       ac.abort();
     };
@@ -1095,10 +1078,67 @@ export function usePastePipeline(): UsePastePipelineResult {
     polling,
     state.jobId,
     state.stageProgress.resolving.state,
-    state.stageProgress.transforming.state,
-    state.stageProgress.generating.state,
     state.screenshot,
+  ]);
+
+  useEffect(() => {
+    if (
+      !polling ||
+      state.jobId === undefined ||
+      state.stageProgress.transforming.state !== "done" ||
+      state.designIR !== undefined
+    ) {
+      return;
+    }
+    const ac = new AbortController();
+    const jobId = state.jobId;
+    void fetchDesignIr({ jobId, signal: ac.signal }).then((ir) => {
+      if (!ac.signal.aborted && ir !== null) {
+        dispatch({ type: "design_ir_ready", designIR: ir });
+      }
+    });
+    return () => {
+      ac.abort();
+    };
+  }, [
+    polling,
+    state.jobId,
+    state.stageProgress.transforming.state,
     state.designIR,
+  ]);
+
+  useEffect(() => {
+    if (
+      !polling ||
+      state.jobId === undefined ||
+      state.stageProgress.generating.state !== "done" ||
+      (state.componentManifest !== undefined &&
+        state.generatedFiles !== undefined)
+    ) {
+      return;
+    }
+    const ac = new AbortController();
+    const jobId = state.jobId;
+    void Promise.all([
+      fetchManifest({ jobId, signal: ac.signal }),
+      fetchFiles({ jobId, signal: ac.signal }),
+    ]).then(([manifest, files]) => {
+      if (!ac.signal.aborted) {
+        if (manifest !== null) {
+          dispatch({ type: "manifest_ready", manifest });
+        }
+        if (files !== null) {
+          dispatch({ type: "files_ready", files });
+        }
+      }
+    });
+    return () => {
+      ac.abort();
+    };
+  }, [
+    polling,
+    state.jobId,
+    state.stageProgress.generating.state,
     state.componentManifest,
     state.generatedFiles,
   ]);
