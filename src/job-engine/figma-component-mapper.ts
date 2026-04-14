@@ -17,6 +17,7 @@ import {
   type McpResolverDiagnostic,
 } from "./figma-mcp-resolver.js";
 import { pathExists } from "./fs-helpers.js";
+import type { FigmaFileResponse } from "./types.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -62,8 +63,10 @@ export interface ComponentMappingResult {
 export interface ComponentMapperConfig {
   fileKey: string;
   nodeId: string;
+  ir?: DesignIR;
   mcpConfig: McpResolverConfig;
   libraryKeys?: string[];
+  rawFile?: FigmaFileResponse;
   workspaceRoot?: string;
   signal?: AbortSignal;
 }
@@ -72,19 +75,13 @@ export interface ComponentMapperConfig {
 // Persistence types
 // ---------------------------------------------------------------------------
 
-interface PersistedComponentMap {
-  version: 1;
-  updatedAt: string;
-  entries: Record<string, PersistedMappingEntry>;
-}
-
 interface PersistedMappingEntry {
   name: string;
   source: string;
   importPath?: string;
   confidence: MappedComponent["confidence"];
   figmaComponentKey?: string;
-  approvedAt: string;
+  nodeId?: string;
 }
 
 const PERSISTENCE_FILENAME = "figma-component-map.json";
@@ -94,6 +91,8 @@ const PERSISTENCE_FILENAME = "figma-component-map.json";
 // ---------------------------------------------------------------------------
 
 interface RawCodeConnectEntry {
+  source?: unknown;
+  componentName?: unknown;
   codeConnectSrc?: unknown;
   codeConnectName?: unknown;
   label?: unknown;
@@ -105,6 +104,35 @@ interface RawDesignSystemComponent {
   key?: unknown;
   libraryKey?: unknown;
   description?: unknown;
+}
+
+interface RawCodeConnectSuggestionEntry {
+  mainComponentNodeId?: unknown;
+  nodeId?: unknown;
+  figmaName?: unknown;
+  mainComponentName?: unknown;
+  name?: unknown;
+  componentName?: unknown;
+  codeConnectName?: unknown;
+  source?: unknown;
+  codeConnectSrc?: unknown;
+}
+
+interface RawFigmaNode {
+  id?: unknown;
+  type?: unknown;
+  name?: unknown;
+  componentId?: unknown;
+  componentSetId?: unknown;
+  children?: unknown;
+}
+
+interface ComponentMappingCandidate {
+  nodeId: string;
+  figmaName: string;
+  figmaComponentKey?: string;
+  persistenceKey: string;
+  legacyPersistenceKeys: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -252,6 +280,25 @@ const isInstanceSwapDescriptor = (
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
+const asNodeArray = (value: unknown): RawFigmaNode[] =>
+  Array.isArray(value)
+    ? value.filter((entry): entry is RawFigmaNode => isRecord(entry))
+    : [];
+
+const resolveCodeConnectSource = (entry: RawCodeConnectEntry): string | undefined =>
+  isNonEmptyString(entry.source)
+    ? entry.source
+    : isNonEmptyString(entry.codeConnectSrc)
+      ? entry.codeConnectSrc
+      : undefined;
+
+const resolveCodeConnectName = (entry: RawCodeConnectEntry): string | undefined =>
+  isNonEmptyString(entry.componentName)
+    ? entry.componentName
+    : isNonEmptyString(entry.codeConnectName)
+      ? entry.codeConnectName
+      : undefined;
+
 /**
  * Parses the raw MCP `get_code_connect_map` response into typed Code Connect
  * mappings.
@@ -274,11 +321,13 @@ export const parseCodeConnectMapResponse = (
       continue;
     }
     const entry = value as unknown as RawCodeConnectEntry;
+    const source = resolveCodeConnectSource(entry);
+    const componentName = resolveCodeConnectName(entry);
 
-    if (!isNonEmptyString(entry.codeConnectSrc)) {
+    if (!source) {
       continue;
     }
-    if (!isNonEmptyString(entry.codeConnectName)) {
+    if (!componentName) {
       continue;
     }
 
@@ -288,8 +337,8 @@ export const parseCodeConnectMapResponse = (
 
     mappings.push({
       nodeId,
-      componentName: entry.codeConnectName,
-      source: entry.codeConnectSrc,
+      componentName,
+      source,
       ...(isNonEmptyString(entry.label) ? { label: entry.label } : {}),
       ...(propContract ? { propContract } : {}),
     });
@@ -330,6 +379,121 @@ export const parseDesignSystemComponentsResponse = (
         ? { libraryKey: comp.libraryKey }
         : {}),
     }));
+};
+
+export const parseCodeConnectSuggestionsResponse = (
+  raw: unknown,
+): Array<{
+  nodeId?: string;
+  mainComponentNodeId?: string;
+  figmaName?: string;
+  componentName?: string;
+  source?: string;
+}> => {
+  if (!raw || typeof raw !== "object") {
+    return [];
+  }
+
+  const record = raw as Record<string, unknown>;
+  const payload = isRecord(record.result) ? record.result : record;
+
+  if (typeof payload === "string") {
+    return [];
+  }
+
+  const parseEntry = (
+    entry: RawCodeConnectSuggestionEntry,
+    fallbackNodeId?: string,
+  ): {
+    nodeId?: string;
+    mainComponentNodeId?: string;
+    figmaName?: string;
+    componentName?: string;
+    source?: string;
+  } | undefined => {
+    const figmaName = isNonEmptyString(entry.figmaName)
+      ? entry.figmaName
+      : isNonEmptyString(entry.mainComponentName)
+        ? entry.mainComponentName
+        : isNonEmptyString(entry.name)
+          ? entry.name
+          : undefined;
+    const componentName = isNonEmptyString(entry.componentName)
+      ? entry.componentName
+      : isNonEmptyString(entry.codeConnectName)
+        ? entry.codeConnectName
+        : figmaName;
+    const source = isNonEmptyString(entry.source)
+      ? entry.source
+      : isNonEmptyString(entry.codeConnectSrc)
+        ? entry.codeConnectSrc
+        : isNonEmptyString(entry.mainComponentNodeId)
+          ? `figma-node:${entry.mainComponentNodeId}`
+          : isNonEmptyString(entry.nodeId)
+            ? `figma-node:${entry.nodeId}`
+            : fallbackNodeId
+              ? `figma-node:${fallbackNodeId}`
+              : undefined;
+    const nodeId = isNonEmptyString(entry.nodeId)
+      ? entry.nodeId
+      : fallbackNodeId;
+    const mainComponentNodeId = isNonEmptyString(entry.mainComponentNodeId)
+      ? entry.mainComponentNodeId
+      : undefined;
+    if (!componentName && !mainComponentNodeId && !nodeId) {
+      if (!figmaName) {
+        return undefined;
+      }
+    }
+    if (!componentName && !mainComponentNodeId && !nodeId && !figmaName) {
+      return undefined;
+    }
+    return {
+      ...(nodeId ? { nodeId } : {}),
+      ...(mainComponentNodeId ? { mainComponentNodeId } : {}),
+      ...(figmaName ? { figmaName } : {}),
+      ...(componentName ? { componentName } : {}),
+      ...(source ? { source } : {}),
+    };
+  };
+
+  if (Array.isArray(payload)) {
+    return payload
+      .filter((entry): entry is RawCodeConnectSuggestionEntry => isRecord(entry))
+      .map((entry) => parseEntry(entry))
+      .filter(
+        (
+          entry,
+        ): entry is {
+          nodeId?: string;
+          mainComponentNodeId?: string;
+          figmaName?: string;
+          componentName?: string;
+          source?: string;
+        } => Boolean(entry),
+      );
+  }
+
+  const parsed: Array<{
+    nodeId?: string;
+    mainComponentNodeId?: string;
+    figmaName?: string;
+    componentName?: string;
+    source?: string;
+  }> = [];
+  for (const [fallbackNodeId, value] of Object.entries(payload)) {
+    if (!isRecord(value)) {
+      continue;
+    }
+    const entry = parseEntry(
+      value as unknown as RawCodeConnectSuggestionEntry,
+      fallbackNodeId,
+    );
+    if (entry) {
+      parsed.push(entry);
+    }
+  }
+  return parsed;
 };
 
 // ---------------------------------------------------------------------------
@@ -420,7 +584,14 @@ export const fetchCodeConnectSuggestions = async ({
   nodeId: string;
   config: McpResolverConfig;
   signal?: AbortSignal;
-}): Promise<FigmaMcpCodeConnectMapping[]> => {
+}): Promise<
+  Array<{
+    nodeId?: string;
+    mainComponentNodeId?: string;
+    componentName?: string;
+    source?: string;
+  }>
+> => {
   const diagnostics: McpResolverDiagnostic[] = [];
 
   const result = await callMcpTool({
@@ -431,8 +602,255 @@ export const fetchCodeConnectSuggestions = async ({
     diagnostics,
   });
 
-  return parseCodeConnectMapResponse(result);
+  return parseCodeConnectSuggestionsResponse(result);
 };
+
+const resolvePersistenceKey = ({
+  fileKey,
+  nodeId,
+  figmaComponentKey,
+}: {
+  fileKey: string;
+  nodeId: string;
+  figmaComponentKey?: string;
+}): string => {
+  if (figmaComponentKey) {
+    return `${fileKey}::component::${figmaComponentKey}`;
+  }
+  return `${fileKey}::node::${nodeId}`;
+};
+
+const buildLegacyPersistenceKey = (figmaName: string): string | undefined => {
+  const normalizedName = normalizeComponentName(figmaName);
+  return normalizedName.length > 0 ? normalizedName : undefined;
+};
+
+const buildScopedLegacyPersistenceKey = ({
+  fileKey,
+  figmaName,
+}: {
+  fileKey: string;
+  figmaName: string;
+}): string | undefined => {
+  const normalizedName = normalizeComponentName(figmaName);
+  return normalizedName.length > 0
+    ? `${fileKey}::name::${normalizedName}`
+    : undefined;
+};
+
+const getLooseStringField = (
+  value: unknown,
+  fieldNames: readonly string[],
+): string | undefined => {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  for (const fieldName of fieldNames) {
+    const candidate = value[fieldName];
+    if (isNonEmptyString(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+};
+
+const isComponentLikeNodeType = (nodeType: string): boolean => {
+  const normalizedType = nodeType.toUpperCase();
+  return (
+    normalizedType === "COMPONENT" ||
+    normalizedType === "INSTANCE" ||
+    normalizedType === "COMPONENT_SET"
+  );
+};
+
+const resolveComponentKeyFromNode = ({
+  node,
+  rawFile,
+}: {
+  node: RawFigmaNode;
+  rawFile?: FigmaFileResponse;
+}): string | undefined => {
+  if (!rawFile) {
+    return undefined;
+  }
+  const nodeId = isNonEmptyString(node.id) ? node.id : undefined;
+  const componentId = isNonEmptyString(node.componentId)
+    ? node.componentId
+    : undefined;
+  const componentSetId = isNonEmptyString(node.componentSetId)
+    ? node.componentSetId
+    : undefined;
+
+  const componentCatalog = rawFile.components ?? {};
+  const componentSetCatalog = rawFile.componentSets ?? {};
+
+  const componentEntry =
+    (componentId ? componentCatalog[componentId] : undefined) ??
+    (nodeId ? componentCatalog[nodeId] : undefined);
+  if (
+    componentEntry &&
+    typeof componentEntry === "object" &&
+    isNonEmptyString(componentEntry.key)
+  ) {
+    return componentEntry.key;
+  }
+
+  const componentSetEntry =
+    (componentSetId ? componentSetCatalog[componentSetId] : undefined) ??
+    (nodeId ? componentSetCatalog[nodeId] : undefined);
+  if (
+    componentSetEntry &&
+    typeof componentSetEntry === "object" &&
+    isNonEmptyString(componentSetEntry.key)
+  ) {
+    return componentSetEntry.key;
+  }
+
+  return undefined;
+};
+
+const findSelectionRoot = ({
+  root,
+  nodeId,
+}: {
+  root?: RawFigmaNode;
+  nodeId: string;
+}): RawFigmaNode | undefined => {
+  if (!root) {
+    return undefined;
+  }
+  const queue: RawFigmaNode[] = [root];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    if (current.id === nodeId) {
+      return current;
+    }
+    queue.push(...asNodeArray(current.children));
+  }
+  return root;
+};
+
+const collectComponentCandidates = ({
+  fileKey,
+  ir,
+  nodeId,
+  rawFile,
+}: {
+  fileKey: string;
+  ir?: DesignIR;
+  nodeId: string;
+  rawFile?: FigmaFileResponse;
+}): ComponentMappingCandidate[] => {
+  const candidates: ComponentMappingCandidate[] = [];
+  const seenNodeIds = new Set<string>();
+  const pushCandidate = ({
+    candidateNodeId,
+    figmaName,
+    figmaComponentKey,
+  }: {
+    candidateNodeId: string;
+    figmaName: string;
+    figmaComponentKey?: string;
+  }): void => {
+    if (seenNodeIds.has(candidateNodeId)) {
+      return;
+    }
+    seenNodeIds.add(candidateNodeId);
+    candidates.push({
+      nodeId: candidateNodeId,
+      figmaName,
+      ...(figmaComponentKey ? { figmaComponentKey } : {}),
+      persistenceKey: resolvePersistenceKey({
+        fileKey,
+        nodeId: candidateNodeId,
+        ...(figmaComponentKey ? { figmaComponentKey } : {}),
+      }),
+      legacyPersistenceKeys: [
+        buildScopedLegacyPersistenceKey({ fileKey, figmaName }),
+        buildLegacyPersistenceKey(figmaName),
+      ].filter((key): key is string => Boolean(key)),
+    });
+  };
+
+  if (ir) {
+    const walkNodes = (nodes: readonly ScreenElementIR[]): void => {
+      for (const node of nodes) {
+        if (isComponentLikeNodeType(node.nodeType)) {
+          const figmaComponentKey = getLooseStringField(node, [
+            "figmaComponentKey",
+            "componentKey",
+            "componentId",
+            "mainComponentNodeId",
+          ]);
+          pushCandidate({
+            candidateNodeId: node.id,
+            figmaName: node.name,
+            ...(figmaComponentKey ? { figmaComponentKey } : {}),
+          });
+        }
+        if (node.children) {
+          walkNodes(node.children);
+        }
+      }
+    };
+
+    for (const screen of ir.screens) {
+      walkNodes(screen.children);
+    }
+  }
+
+  const root = isRecord(rawFile?.document)
+    ? (rawFile.document as RawFigmaNode)
+    : undefined;
+  const selectionRoot = root
+    ? findSelectionRoot({ root, nodeId })
+    : undefined;
+  if (!selectionRoot) {
+    return candidates;
+  }
+
+  const queue: RawFigmaNode[] = [selectionRoot];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) {
+      continue;
+    }
+    queue.push(...asNodeArray(current.children));
+
+    if (!isNonEmptyString(current.id) || !isNonEmptyString(current.name)) {
+      continue;
+    }
+
+    const nodeType = isNonEmptyString(current.type)
+      ? current.type
+      : "";
+    if (!isComponentLikeNodeType(nodeType)) {
+      continue;
+    }
+
+    const figmaComponentKey = rawFile
+      ? resolveComponentKeyFromNode({
+          node: current,
+          rawFile,
+        })
+      : resolveComponentKeyFromNode({
+          node: current,
+        });
+    pushCandidate({
+      candidateNodeId: current.id,
+      figmaName: current.name,
+      ...(figmaComponentKey ? { figmaComponentKey } : {}),
+    });
+  }
+
+  return candidates;
+};
+
+const isLikelyCodeReference = (value: string): boolean =>
+  /[/.@]/.test(value) || /\.(?:[mc]?[jt]sx?)$/i.test(value);
 
 // ---------------------------------------------------------------------------
 // Heuristic matching — workspace file scanning
@@ -690,8 +1108,10 @@ const getPersistencePath = (workspaceRoot: string): string =>
  */
 export const loadPersistedMappings = async ({
   workspaceRoot,
+  fileKey,
 }: {
   workspaceRoot: string;
+  fileKey?: string;
 }): Promise<Map<string, MappedComponent>> => {
   const filePath = getPersistencePath(workspaceRoot);
   const result = new Map<string, MappedComponent>();
@@ -714,19 +1134,19 @@ export const loadPersistedMappings = async ({
     return result;
   }
 
-  if (!isRecord(parsed) || parsed.version !== 1) {
+  if (!isRecord(parsed)) {
     return result;
   }
 
-  const entries = parsed.entries;
-  if (!isRecord(entries)) {
-    return result;
-  }
+  const entries = isRecord(parsed.entries) ? parsed.entries : parsed;
 
   for (const [figmaKey, value] of Object.entries(entries)) {
     if (!isRecord(value)) continue;
     if (!isNonEmptyString(value.name)) continue;
     if (!isNonEmptyString(value.source)) continue;
+    if (fileKey && !figmaKey.startsWith(`${fileKey}::`)) {
+      continue;
+    }
 
     const confidence = value.confidence;
     if (
@@ -770,24 +1190,25 @@ export const savePersistedMappings = async ({
   const filePath = getPersistencePath(workspaceRoot);
   await mkdir(path.dirname(filePath), { recursive: true });
 
+  const existingMappings = await loadPersistedMappings({ workspaceRoot });
   const entries: Record<string, PersistedMappingEntry> = {};
+  for (const [figmaKey, mapping] of existingMappings) {
+    entries[figmaKey] = {
+      name: mapping.name,
+      source: mapping.source,
+      confidence: mapping.confidence,
+      ...(mapping.importPath ? { importPath: mapping.importPath } : {}),
+    };
+  }
   for (const [figmaKey, mapping] of mappings) {
     entries[figmaKey] = {
       name: mapping.name,
       source: mapping.source,
       confidence: mapping.confidence,
       ...(mapping.importPath ? { importPath: mapping.importPath } : {}),
-      approvedAt: new Date().toISOString(),
     };
   }
-
-  const persisted: PersistedComponentMap = {
-    version: 1,
-    updatedAt: new Date().toISOString(),
-    entries,
-  };
-
-  await writeFile(filePath, JSON.stringify(persisted, null, 2) + "\n", "utf8");
+  await writeFile(filePath, JSON.stringify(entries, null, 2) + "\n", "utf8");
 };
 
 // ---------------------------------------------------------------------------
@@ -820,14 +1241,9 @@ export const annotateIrWithMappings = ({
     ccByNodeId.set(mapping.nodeId, mapping);
   }
 
-  const ccByName = new Map<string, FigmaMcpCodeConnectMapping>();
-  for (const mapping of codeConnectMappings) {
-    ccByName.set(normalizeComponentName(mapping.componentName), mapping);
-  }
-
-  const dsByName = new Map<string, FigmaMcpDesignSystemMapping>();
+  const dsByNodeId = new Map<string, FigmaMcpDesignSystemMapping>();
   for (const mapping of designSystemMappings) {
-    dsByName.set(normalizeComponentName(mapping.componentName), mapping);
+    dsByNodeId.set(mapping.nodeId, mapping);
   }
 
   const annotateNode = (node: ScreenElementIR): void => {
@@ -855,7 +1271,6 @@ export const annotateIrWithMappings = ({
           mapping;
         annotated++;
       } else {
-        // Step 2: Check Code Connect by normalized name
         const normalizedName = normalizeComponentName(node.name);
         const baseName = normalizeComponentName(
           extractBaseComponentName(node.name),
@@ -867,25 +1282,22 @@ export const annotateIrWithMappings = ({
           ? normalizeComponentName(setInfo.baseName)
           : normalizedName;
 
-        const ccByNameMatch =
-          ccByName.get(lookupName) ?? ccByName.get(baseName);
-        if (ccByNameMatch) {
+        const heuristicByNodeId = heuristicMappings.get(node.id);
+        if (heuristicByNodeId) {
           const mapping: ElementCodeConnectMappingIR = {
             origin: "code_connect",
-            componentName: ccByNameMatch.componentName,
-            source: ccByNameMatch.source,
-            ...(ccByNameMatch.label ? { label: ccByNameMatch.label } : {}),
-            ...(ccByNameMatch.propContract
-              ? { propContract: ccByNameMatch.propContract }
-              : {}),
+            componentName: heuristicByNodeId.name,
+            source: heuristicByNodeId.source,
           };
           (node as { codeConnect?: ElementCodeConnectMappingIR }).codeConnect =
             mapping;
           annotated++;
         } else {
-          // Step 3: Check design system by name
-          const dsMatch = dsByName.get(lookupName) ?? dsByName.get(baseName);
-          if (dsMatch) {
+          // Step 2: Check design system by name, but only apply directly when
+          // the "source" looks like an actual code reference rather than a
+          // design-system component key.
+          const dsMatch = dsByNodeId.get(node.id);
+          if (dsMatch && isLikelyCodeReference(dsMatch.source)) {
             const mapping: ElementCodeConnectMappingIR = {
               origin: "design_system",
               componentName: dsMatch.componentName,
@@ -897,7 +1309,7 @@ export const annotateIrWithMappings = ({
             ).codeConnect = mapping;
             annotated++;
           } else {
-            // Step 4: Check heuristic workspace match
+            // Step 3: Check heuristic workspace match
             const heuristicMatch =
               heuristicMappings.get(lookupName) ??
               heuristicMappings.get(baseName);
@@ -954,27 +1366,54 @@ export const annotateIrWithMappings = ({
 export const resolveComponentMappings = async (
   mapperConfig: ComponentMapperConfig,
 ): Promise<ComponentMappingResult> => {
-  const { fileKey, nodeId, mcpConfig, libraryKeys, workspaceRoot, signal } =
-    mapperConfig;
+  const {
+    fileKey,
+    nodeId,
+    ir,
+    mcpConfig,
+    libraryKeys,
+    workspaceRoot,
+    signal,
+    rawFile,
+  } = mapperConfig;
   const diagnostics: FigmaMcpEnrichmentDiagnostic[] = [];
   const codeConnectMappings: FigmaMcpCodeConnectMapping[] = [];
   const designSystemMappings: FigmaMcpDesignSystemMapping[] = [];
   const unmapped: UnmappedComponent[] = [];
+  const candidates = collectComponentCandidates({
+    fileKey,
+    ...(ir ? { ir } : {}),
+    nodeId,
+    ...(rawFile ? { rawFile } : {}),
+  });
   const mappedNodeIds = new Set<string>();
   const resultMappings = new Map<string, MappedComponent>();
-  let heuristicCount = 0;
+  const designSystemMatchesByNodeId = new Map<
+    string,
+    { name: string; key?: string; libraryKey?: string }
+  >();
+  const suggestionMatchesByNodeId = new Map<string, MappedComponent[]>();
+  const suggestionMatchesByName = new Map<string, MappedComponent[]>();
 
   // ---- Step 0: Load persisted mappings ----
   let persistedMappings = new Map<string, MappedComponent>();
   if (workspaceRoot) {
     try {
-      persistedMappings = await loadPersistedMappings({ workspaceRoot });
+      persistedMappings = await loadPersistedMappings({ workspaceRoot, fileKey });
       if (persistedMappings.size > 0) {
         mcpConfig.onLog?.(
           `Loaded ${String(persistedMappings.size)} persisted mapping(s)`,
         );
-        for (const [key, mapping] of persistedMappings) {
-          resultMappings.set(key, mapping);
+        for (const candidate of candidates) {
+          const persisted = findPersistedMappingForCandidate({
+            candidate,
+            persistedMappings,
+          });
+          if (!persisted) {
+            continue;
+          }
+          resultMappings.set(candidate.nodeId, persisted);
+          mappedNodeIds.add(candidate.nodeId);
         }
       }
     } catch {
@@ -994,8 +1433,7 @@ export const resolveComponentMappings = async (
     for (const mapping of ccMappings) {
       codeConnectMappings.push(mapping);
       mappedNodeIds.add(mapping.nodeId);
-      const mapKey = normalizeComponentName(mapping.componentName);
-      resultMappings.set(mapKey, {
+      resultMappings.set(mapping.nodeId, {
         name: mapping.componentName,
         source: mapping.source,
         confidence: "exact",
@@ -1023,41 +1461,64 @@ export const resolveComponentMappings = async (
   }
 
   // ---- Step 2: Design system search ----
-  let dsComponents: Array<{
-    name: string;
-    key?: string;
-    libraryKey?: string;
-  }> = [];
-
   try {
-    const searchQuery = buildComponentSearchQuery({ codeConnectMappings });
-    if (searchQuery.length > 0) {
-      dsComponents = await searchDesignSystemComponents({
-        fileKey,
-        query: searchQuery,
-        config: mcpConfig,
-        ...(libraryKeys ? { libraryKeys } : {}),
-        ...(signal ? { signal } : {}),
-      });
+    const searchCache = new Map<
+      string,
+      Array<{ name: string; key?: string; libraryKey?: string }>
+    >();
+    const unresolvedCandidates = candidates.filter(
+      (candidate) => !mappedNodeIds.has(candidate.nodeId),
+    );
+    for (const candidate of unresolvedCandidates) {
+      const queries = [
+        candidate.figmaName,
+        extractBaseComponentName(candidate.figmaName),
+      ].filter((value, index, array) => value.length > 0 && array.indexOf(value) === index);
 
-      for (const dsComp of dsComponents) {
-        const alreadyMapped = codeConnectMappings.some(
-          (cc) =>
-            normalizeComponentName(cc.componentName) ===
-            normalizeComponentName(dsComp.name),
-        );
-        if (!alreadyMapped) {
-          designSystemMappings.push({
-            nodeId,
-            componentName: dsComp.name,
-            source: dsComp.key ?? dsComp.name,
-            ...(dsComp.libraryKey ? { libraryKey: dsComp.libraryKey } : {}),
+      let match:
+        | {
+            name: string;
+            key?: string;
+            libraryKey?: string;
+          }
+        | undefined;
+      for (const query of queries) {
+        let dsComponents = searchCache.get(query);
+        if (!dsComponents) {
+          dsComponents = await searchDesignSystemComponents({
+            fileKey,
+            query,
+            config: mcpConfig,
+            ...(libraryKeys ? { libraryKeys } : {}),
+            ...(signal ? { signal } : {}),
           });
+          searchCache.set(query, dsComponents);
+        }
+        match = findDesignSystemMatch({
+          figmaName: candidate.figmaName,
+          dsComponents,
+        });
+        if (match) {
+          break;
         }
       }
 
+      if (!match) {
+        continue;
+      }
+
+      designSystemMatchesByNodeId.set(candidate.nodeId, match);
+      designSystemMappings.push({
+        nodeId: candidate.nodeId,
+        componentName: match.name,
+        source: match.key ?? match.name,
+        ...(match.libraryKey ? { libraryKey: match.libraryKey } : {}),
+      });
+    }
+
+    if (designSystemMappings.length > 0) {
       mcpConfig.onLog?.(
-        `Design system: ${String(dsComponents.length)} component(s) found, ${String(designSystemMappings.length)} new mapping(s)`,
+        `Design system: ${String(designSystemMappings.length)} candidate mapping(s) found`,
       );
     }
   } catch (error: unknown) {
@@ -1084,23 +1545,48 @@ export const resolveComponentMappings = async (
     });
 
     for (const suggestion of suggestions) {
-      if (mappedNodeIds.has(suggestion.nodeId)) {
+      const matchedCandidate =
+        findSuggestionCandidate({
+          suggestion,
+          candidates,
+        }) ??
+        (suggestion.nodeId ? candidates.find((candidate) => candidate.nodeId === suggestion.nodeId) : undefined);
+      if (!matchedCandidate) {
         continue;
       }
-      unmapped.push({
-        irNodeId: suggestion.nodeId,
-        figmaName: suggestion.componentName,
-        suggestions: [
-          {
+
+      const byNodeId = matchedCandidate.nodeId;
+      if (suggestion.componentName && suggestion.source) {
+        const suggestionMapping: MappedComponent = {
+          name: suggestion.componentName,
+          source: suggestion.source,
+          confidence: "suggested",
+        };
+        const current = suggestionMatchesByNodeId.get(byNodeId) ?? [];
+        current.push(suggestionMapping);
+        suggestionMatchesByNodeId.set(byNodeId, current);
+      }
+
+      if (suggestion.componentName && suggestion.source) {
+        const nameKeys = [
+          normalizeComponentName(suggestion.componentName),
+          normalizeComponentName(
+            extractBaseComponentName(suggestion.componentName),
+          ),
+        ];
+        for (const nameKey of nameKeys) {
+          if (nameKey.length === 0) {
+            continue;
+          }
+          const current = suggestionMatchesByName.get(nameKey) ?? [];
+          current.push({
             name: suggestion.componentName,
             source: suggestion.source,
             confidence: "suggested",
-            ...(suggestion.propContract
-              ? { props: mapFigmaPropsToReact(suggestion.propContract) }
-              : {}),
-          },
-        ],
-      });
+          });
+          suggestionMatchesByName.set(nameKey, current);
+        }
+      }
     }
 
     if (suggestions.length > 0) {
@@ -1135,25 +1621,31 @@ export const resolveComponentMappings = async (
           `Workspace scan: ${String(workspaceComponents.size)} component declaration(s) found`,
         );
 
-        // For each unmapped component, try heuristic matching
-        const remainingUnmapped: UnmappedComponent[] = [];
-        for (const entry of unmapped) {
-          const heuristicMatch = findHeuristicMatch({
-            figmaName: entry.figmaName,
-            workspaceComponents,
-          });
-          if (heuristicMatch) {
-            resultMappings.set(
-              normalizeComponentName(entry.figmaName),
-              heuristicMatch,
-            );
-            heuristicCount++;
-          } else {
-            remainingUnmapped.push(entry);
+        for (const candidate of candidates) {
+          if (mappedNodeIds.has(candidate.nodeId)) {
+            continue;
           }
+
+          const heuristicMatch = findHeuristicMatch({
+            figmaName: candidate.figmaName,
+            workspaceComponents,
+          }) ??
+            (() => {
+              const dsMatch = designSystemMatchesByNodeId.get(candidate.nodeId);
+              if (!dsMatch) {
+                return undefined;
+              }
+              return findHeuristicMatch({
+                figmaName: dsMatch.name,
+                workspaceComponents,
+              });
+            })();
+          if (!heuristicMatch) {
+            continue;
+          }
+          resultMappings.set(candidate.nodeId, heuristicMatch);
+          mappedNodeIds.add(candidate.nodeId);
         }
-        unmapped.length = 0;
-        unmapped.push(...remainingUnmapped);
       }
     } catch (error: unknown) {
       const message =
@@ -1169,21 +1661,57 @@ export const resolveComponentMappings = async (
     }
   }
 
+  for (const candidate of candidates) {
+    if (mappedNodeIds.has(candidate.nodeId)) {
+      continue;
+    }
+    const normalizedName = normalizeComponentName(candidate.figmaName);
+    const baseName = normalizeComponentName(
+      extractBaseComponentName(candidate.figmaName),
+    );
+    const suggestions = [
+      ...(suggestionMatchesByNodeId.get(candidate.nodeId) ?? []),
+      ...(suggestionMatchesByName.get(normalizedName) ?? []),
+      ...(suggestionMatchesByName.get(baseName) ?? []),
+    ].filter(
+      (entry, index, array) =>
+        array.findIndex(
+          (candidateEntry) =>
+            candidateEntry.name === entry.name &&
+            candidateEntry.source === entry.source,
+        ) === index,
+    );
+
+    unmapped.push({
+      irNodeId: candidate.nodeId,
+      figmaName: candidate.figmaName,
+      ...(candidate.figmaComponentKey
+        ? { figmaComponentKey: candidate.figmaComponentKey }
+        : {}),
+      ...(suggestions.length > 0 ? { suggestions } : {}),
+    });
+  }
+
   // ---- Build stats ----
   const stats = {
-    exact: codeConnectMappings.length,
+    exact: [...resultMappings.values()].filter(
+      (mapping) => mapping.confidence === "exact",
+    ).length,
     designSystem: designSystemMappings.length,
     suggested: unmapped.filter((entry) => (entry.suggestions?.length ?? 0) > 0)
       .length,
-    heuristic: heuristicCount,
+    heuristic: [...resultMappings.values()].filter(
+      (mapping) => mapping.confidence === "heuristic",
+    ).length,
     unmapped: unmapped.filter((entry) => (entry.suggestions?.length ?? 0) === 0)
       .length,
   };
 
   if (
-    codeConnectMappings.length > 0 ||
+    stats.exact > 0 ||
     designSystemMappings.length > 0 ||
-    heuristicCount > 0
+    stats.heuristic > 0 ||
+    stats.suggested > 0
   ) {
     diagnostics.push({
       code: "I_COMPONENT_MAPPER_RESOLVED",
@@ -1191,6 +1719,27 @@ export const resolveComponentMappings = async (
       severity: "info",
       source: "code_connect",
     });
+  }
+
+  if (workspaceRoot && candidates.length > 0) {
+    const approvedMappings = new Map<string, MappedComponent>();
+    for (const candidate of candidates) {
+      const mapping = resultMappings.get(candidate.nodeId);
+      if (!mapping || mapping.confidence === "suggested") {
+        continue;
+      }
+      approvedMappings.set(candidate.persistenceKey, mapping);
+    }
+    if (approvedMappings.size > 0) {
+      try {
+        await savePersistedMappings({
+          workspaceRoot,
+          mappings: approvedMappings,
+        });
+      } catch {
+        // Non-critical — proceed without persistence updates
+      }
+    }
   }
 
   return {
@@ -1223,6 +1772,7 @@ export const mapFigmaComponents = async (
     ...config,
     fileKey,
     nodeId,
+    ir,
   });
 
   // Consolidate COMPONENT_SET variants across all screens
@@ -1234,10 +1784,14 @@ export const mapFigmaComponents = async (
 
   // Build heuristic mapping lookup
   const heuristicMappings = new Map<string, MappedComponent>();
-  for (const [key, mapping] of result.mappings) {
+  for (const [irNodeId, mapping] of result.mappings) {
+    heuristicMappings.set(irNodeId, mapping);
     if (mapping.confidence === "heuristic") {
-      heuristicMappings.set(normalizeComponentName(key), mapping);
       heuristicMappings.set(normalizeComponentName(mapping.name), mapping);
+      heuristicMappings.set(
+        normalizeComponentName(extractBaseComponentName(mapping.name)),
+        mapping,
+      );
     }
   }
 
@@ -1256,26 +1810,6 @@ export const mapFigmaComponents = async (
     );
   }
 
-  // Save approved (non-suggested) mappings for persistence
-  if (config.workspaceRoot) {
-    const approvedMappings = new Map<string, MappedComponent>();
-    for (const [key, mapping] of result.mappings) {
-      if (mapping.confidence !== "none") {
-        approvedMappings.set(key, mapping);
-      }
-    }
-    if (approvedMappings.size > 0) {
-      try {
-        await savePersistedMappings({
-          workspaceRoot: config.workspaceRoot,
-          mappings: approvedMappings,
-        });
-      } catch {
-        // Non-critical — mapping works without persistence
-      }
-    }
-  }
-
   return result;
 };
 
@@ -1283,30 +1817,66 @@ export const mapFigmaComponents = async (
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-const buildComponentSearchQuery = ({
-  codeConnectMappings,
+const findPersistedMappingForCandidate = ({
+  candidate,
+  persistedMappings,
 }: {
-  codeConnectMappings: readonly FigmaMcpCodeConnectMapping[];
-}): string => {
-  const fragments: string[] = [];
-  const pushFragment = (value: string): void => {
-    const normalized = value.trim().toLowerCase();
-    if (normalized.length > 0 && !fragments.includes(normalized)) {
-      fragments.push(normalized);
+  candidate: ComponentMappingCandidate;
+  persistedMappings: ReadonlyMap<string, MappedComponent>;
+}): MappedComponent | undefined => {
+  const lookupKeys = [candidate.persistenceKey, ...candidate.legacyPersistenceKeys];
+  for (const lookupKey of lookupKeys) {
+    const mapping = persistedMappings.get(lookupKey);
+    if (mapping) {
+      return mapping;
     }
+  }
+  return undefined;
+};
+
+const findSuggestionCandidate = ({
+  suggestion,
+  candidates,
+}: {
+  suggestion: {
+    nodeId?: string;
+    mainComponentNodeId?: string;
+    figmaName?: string;
+    componentName?: string;
+    source?: string;
   };
-
-  for (const mapping of codeConnectMappings) {
-    const base = extractBaseComponentName(mapping.componentName);
-    pushFragment(base);
-    if (fragments.length >= 6) {
-      break;
+  candidates: readonly ComponentMappingCandidate[];
+}): ComponentMappingCandidate | undefined => {
+  const byNodeId = suggestion.nodeId ?? suggestion.mainComponentNodeId;
+  if (byNodeId) {
+    const nodeMatch = candidates.find((candidate) => candidate.nodeId === byNodeId);
+    if (nodeMatch) {
+      return nodeMatch;
     }
   }
 
-  if (fragments.length === 0) {
-    return "button input card";
+  const nameCandidates = [
+    suggestion.figmaName,
+    suggestion.componentName,
+  ].filter((value): value is string => isNonEmptyString(value));
+
+  if (nameCandidates.length === 0) {
+    return undefined;
   }
 
-  return fragments.join(" ");
+  const normalizedNameCandidates = new Set<string>();
+  for (const value of nameCandidates) {
+    normalizedNameCandidates.add(normalizeComponentName(value));
+    normalizedNameCandidates.add(
+      normalizeComponentName(extractBaseComponentName(value)),
+    );
+  }
+
+  return candidates.find((candidate) => {
+    const candidateKeys = [
+      normalizeComponentName(candidate.figmaName),
+      normalizeComponentName(extractBaseComponentName(candidate.figmaName)),
+    ];
+    return candidateKeys.some((key) => normalizedNameCandidates.has(key));
+  });
 };

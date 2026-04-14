@@ -61,8 +61,6 @@ import {
 import {
   annotateIrWithMappings,
   consolidateComponentSetVariants,
-  loadPersistedMappings,
-  savePersistedMappings,
   normalizeComponentName,
   type MappedComponent,
 } from "../figma-component-mapper.js";
@@ -1051,13 +1049,27 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
             const cachedSets = consolidateComponentSetVariants({
               irNodes: cachedNodes,
             });
+            const cachedHeuristicMappings = new Map<string, MappedComponent>();
+            for (const entry of hybridMcpEnrichment.heuristicComponentMappings ??
+              []) {
+              const mapping: MappedComponent = {
+                name: entry.componentName,
+                source: entry.source,
+                confidence: "heuristic",
+              };
+              cachedHeuristicMappings.set(entry.nodeId, mapping);
+              cachedHeuristicMappings.set(
+                normalizeComponentName(entry.componentName),
+                mapping,
+              );
+            }
             annotateIrWithMappings({
               ir: cachedIrWithFamilies,
               codeConnectMappings:
                 hybridMcpEnrichment.codeConnectMappings ?? [],
               designSystemMappings:
                 hybridMcpEnrichment.designSystemMappings ?? [],
-              heuristicMappings: new Map(),
+              heuristicMappings: cachedHeuristicMappings,
               componentSets: cachedSets,
             });
           } catch {
@@ -1231,27 +1243,15 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         const heuristicMappings = new Map<string, MappedComponent>();
         for (const entry of hybridMcpEnrichment.heuristicComponentMappings ??
           []) {
-          heuristicMappings.set(normalizeComponentName(entry.componentName), {
+          const mapping: MappedComponent = {
             name: entry.componentName,
             source: entry.source,
             confidence: "heuristic",
+          };
+          heuristicMappings.set(entry.nodeId, mapping);
+          heuristicMappings.set(normalizeComponentName(entry.componentName), {
+            ...mapping,
           });
-        }
-
-        // Load persisted mappings from previous runs for reuse
-        if (context.resolvedWorkspaceRoot) {
-          try {
-            const persisted = await loadPersistedMappings({
-              workspaceRoot: context.resolvedWorkspaceRoot,
-            });
-            for (const [key, mapping] of persisted) {
-              if (!heuristicMappings.has(key)) {
-                heuristicMappings.set(key, mapping);
-              }
-            }
-          } catch {
-            // Non-critical — proceed without persisted mappings
-          }
         }
 
         const { annotated } = annotateIrWithMappings({
@@ -1268,35 +1268,6 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           });
         }
 
-        // Persist approved mappings for future reuse
-        if (context.resolvedWorkspaceRoot) {
-          const approvedMappings = new Map<string, MappedComponent>();
-          for (const mapping of hybridMcpEnrichment.codeConnectMappings ?? []) {
-            approvedMappings.set(
-              normalizeComponentName(mapping.componentName),
-              {
-                name: mapping.componentName,
-                source: mapping.source,
-                confidence: "exact",
-              },
-            );
-          }
-          if (approvedMappings.size > 0) {
-            try {
-              await savePersistedMappings({
-                workspaceRoot: context.resolvedWorkspaceRoot,
-                mappings: approvedMappings,
-              });
-              context.log({
-                level: "info",
-                message: `Code Connect: persisted ${String(approvedMappings.size)} mapping(s) to workspace config.`,
-              });
-            } catch {
-              // Non-critical — mapping works without persistence
-            }
-          }
-        }
-
         // Store mapping artifact
         await context.artifactStore.setValue({
           key: STAGE_ARTIFACT_KEYS.codeConnectMap,
@@ -1305,6 +1276,8 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
             codeConnectMappings: hybridMcpEnrichment.codeConnectMappings ?? [],
             designSystemMappings:
               hybridMcpEnrichment.designSystemMappings ?? [],
+            heuristicComponentMappings:
+              hybridMcpEnrichment.heuristicComponentMappings ?? [],
             annotatedNodeCount: annotated,
           },
         });

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
+import type { FigmaFileResponse } from "./types.js";
 
 const jsonResponse = (body: unknown, init?: ResponseInit): Response =>
   new Response(JSON.stringify(body), {
@@ -34,12 +38,21 @@ const demoRawFile = {
   },
 };
 
-const createLoaderInput = (fetchImpl: typeof fetch) => ({
+const createLoaderInput = (
+  fetchImpl: typeof fetch,
+  overrides: Partial<{
+    cleanedFile: FigmaFileResponse;
+    rawFile: FigmaFileResponse;
+    jobDir: string;
+    workspaceRoot: string;
+  }> = {},
+) => ({
   figmaFileKey: "demo-file",
   figmaAccessToken: "test-token",
-  cleanedFile: demoRawFile,
-  rawFile: demoRawFile,
-  jobDir: "/tmp/workspace-dev-job",
+  cleanedFile: overrides.cleanedFile ?? demoRawFile,
+  rawFile: overrides.rawFile ?? demoRawFile,
+  jobDir: overrides.jobDir ?? "/tmp/workspace-dev-job",
+  ...(overrides.workspaceRoot ? { workspaceRoot: overrides.workspaceRoot } : {}),
   fetchImpl,
 });
 
@@ -130,13 +143,12 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
       "get_variable_defs",
       "search_design_system",
       "get_code_connect_map",
-      "search_design_system",
       "get_code_connect_suggestions",
     ],
   );
   assert.deepEqual(
     toolCalls.map((entry) => entry.nodeId),
-    ["2:1", "2:1", "2:1", "2:1", undefined, "2:1", undefined, "2:1"],
+    ["2:1", "2:1", "2:1", "2:1", undefined, "2:1", "2:1"],
   );
   assert.equal(enrichment.sourceMode, "hybrid");
   assert.deepEqual(enrichment.toolNames, [
@@ -266,6 +278,136 @@ test("default hybrid loader propagates safe bridge side outputs", async () => {
   );
   assert.deepEqual(enrichment.conflicts, []);
   assert.deepEqual(enrichment.unmappedVariables, ["feature/darkMode"]);
+});
+
+test("default hybrid loader forwards persisted exact mappings into codeConnectMappings", async () => {
+  const loader = createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 5,
+  });
+
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-hybrid-loader-"),
+  );
+  await mkdir(path.join(workspaceRoot, "src"), { recursive: true });
+  await mkdir(path.join(workspaceRoot, ".workspace-dev"), { recursive: true });
+  await writeFile(
+    path.join(workspaceRoot, "src", "Button.tsx"),
+    "export const Button = () => null;\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(workspaceRoot, ".workspace-dev", "figma-component-map.json"),
+    JSON.stringify(
+      {
+        "demo-file::node::7:8": {
+          name: "Button",
+          source: "src/Button.tsx",
+          confidence: "exact",
+        },
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+
+  const fileWithInstance = {
+    ...demoRawFile,
+    document: {
+      ...demoRawFile.document,
+      children: [
+        {
+          id: "1:1",
+          type: "CANVAS",
+          name: "Page 1",
+          children: [
+            {
+              id: "2:1",
+              type: "FRAME",
+              name: "Checkout",
+              children: [
+                {
+                  id: "7:8",
+                  type: "INSTANCE",
+                  name: "Button",
+                  componentId: "button-component",
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+  };
+
+  const enrichment = await loader(
+    createLoaderInput(
+      async (input, init) => {
+        const request = new Request(input, init);
+        const url = new URL(request.url);
+
+        if (url.hostname !== "mcp.figma.com") {
+          throw new Error(`Unexpected request: ${request.url}`);
+        }
+
+        const body = (await request.json()) as {
+          params?: { name?: string };
+        };
+        const toolName = body.params?.name;
+
+        if (toolName === "get_metadata") {
+          return jsonResponse({
+            result: {
+              xml: '<FRAME id="2:1" name="Checkout"><INSTANCE id="7:8" name="Button"/></FRAME>',
+            },
+          });
+        }
+        if (toolName === "get_design_context") {
+          return jsonResponse({
+            result: {
+              code: "export default function Checkout() {}",
+              assets: {},
+            },
+          });
+        }
+        if (toolName === "get_screenshot") {
+          return jsonResponse({
+            result: { url: "https://cdn.figma.com/screenshots/checkout.png" },
+          });
+        }
+        if (toolName === "get_variable_defs") {
+          return jsonResponse({ result: { variables: [] } });
+        }
+        if (toolName === "search_design_system") {
+          return jsonResponse({ result: { components: [] } });
+        }
+        if (toolName === "get_code_connect_map") {
+          return jsonResponse({ result: {} });
+        }
+        if (toolName === "get_code_connect_suggestions") {
+          return jsonResponse({ result: [] });
+        }
+
+        throw new Error(`Unhandled tool: ${toolName ?? "<unknown>"}`);
+      },
+      {
+        cleanedFile: fileWithInstance,
+        rawFile: fileWithInstance,
+        workspaceRoot,
+      },
+    ),
+  );
+
+  assert.deepEqual(enrichment.codeConnectMappings, [
+    {
+      nodeId: "7:8",
+      componentName: "Button",
+      source: "src/Button.tsx",
+    },
+  ]);
 });
 
 test("default hybrid loader records successful bridge tools even when results are empty", async () => {
