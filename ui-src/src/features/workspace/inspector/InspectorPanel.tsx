@@ -19,6 +19,7 @@ import {
   createInitialPipelineState,
   type PastePipelineState,
 } from "./paste-pipeline";
+import { PipelineStatusBar } from "./PipelineStatusBar";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
 import { suggestPairedFile } from "./file-pairing";
@@ -376,6 +377,8 @@ interface InspectorPanelProps {
   onCloseDialog?: () => void;
   /** Paste pipeline state for progressive tree rendering during paste flow. */
   pipeline?: PastePipelineState;
+  /** Callback to retry the pipeline after a partial or full failure. */
+  onPipelineRetry?: () => void;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -906,6 +909,7 @@ export function InspectorPanel({
   openDialog = null,
   onCloseDialog,
   pipeline,
+  onPipelineRetry,
 }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [autoSelectedFile, setAutoSelectedFile] = useState<string | null>(null);
@@ -1001,6 +1005,21 @@ export function InspectorPanel({
   const activePipeline =
     pipeline?.jobId === jobId ? pipeline : IDLE_PIPELINE_STATE;
   const pipelineTreeNodes = useStreamingTreeNodes(activePipeline);
+
+  const handleCopyPipelineReport = useCallback((): void => {
+    const report = {
+      exportedAt: new Date().toISOString(),
+      stage: activePipeline.stage,
+      errors: activePipeline.errors,
+      stageProgress: activePipeline.stageProgress,
+    };
+    const text = JSON.stringify(report, null, 2);
+    void navigator.clipboard.writeText(text);
+  }, [
+    activePipeline.errors,
+    activePipeline.stage,
+    activePipeline.stageProgress,
+  ]);
 
   // --- Queries ---
 
@@ -5029,6 +5048,23 @@ export function InspectorPanel({
             file-to-component mappings are unavailable.
           </p>
         </div>
+      ) : null}
+
+      {activePipeline.stage === "partial" ||
+      activePipeline.errors.length > 0 ? (
+        <PipelineStatusBar
+          stage={activePipeline.stage}
+          errors={activePipeline.errors}
+          stageProgress={activePipeline.stageProgress}
+          {...(activePipeline.partialStats !== undefined
+            ? { partialStats: activePipeline.partialStats }
+            : {})}
+          canRetry={activePipeline.canRetry}
+          {...(onPipelineRetry !== undefined
+            ? { onRetry: onPipelineRetry }
+            : {})}
+          onCopyReport={handleCopyPipelineReport}
+        />
       ) : null}
 
       {/* ===== THREE-COLUMN IDE LAYOUT ===== */}

@@ -495,9 +495,8 @@ export function pastePipelineReducer(
       if (previous.state !== "failed") {
         return state;
       }
-      const { partialStats: _partialStats, ...rest } = state;
       return {
-        ...rest,
+        ...state,
         stage: action.stage,
         stageProgress: setStatus(state, action.stage, { state: "running" }),
         errors: state.errors.filter((e) => e.stage !== action.stage),

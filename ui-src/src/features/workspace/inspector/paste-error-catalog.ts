@@ -137,7 +137,9 @@ export const PASTE_ERROR_CATALOG: Record<PasteErrorCode, PasteErrorMessage> = {
  * Falls back to STAGE_FAILED for unknown codes.
  */
 export function getPasteErrorMessage(code: string): PasteErrorMessage {
-  const entry = PASTE_ERROR_CATALOG[code as PasteErrorCode];
+  const entry = (
+    PASTE_ERROR_CATALOG as Partial<Record<string, PasteErrorMessage>>
+  )[code];
   return entry ?? PASTE_ERROR_CATALOG.STAGE_FAILED;
 }
 
