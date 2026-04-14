@@ -169,6 +169,67 @@ describe("pastePipelineReducer", () => {
   });
 });
 
+describe("canRetry accumulation across multiple failures", () => {
+  it("stays true when two retryable errors are dispatched in sequence", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "parsing",
+      error: makeError("parsing", true),
+    });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "resolving",
+      error: makeError("resolving", true),
+    });
+
+    expect(state.errors).toHaveLength(2);
+    expect(state.canRetry).toBe(true);
+  });
+
+  it("flips to true when a retryable error follows a non-retryable one", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "parsing",
+      error: makeError("parsing", false),
+    });
+    // canRetry should be false at this point — precondition for the test
+    expect(state.canRetry).toBe(false);
+
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "resolving",
+      error: makeError("resolving", true),
+    });
+
+    expect(state.errors).toHaveLength(2);
+    expect(state.canRetry).toBe(true);
+  });
+
+  it("stays true when a non-retryable error follows a retryable one", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "parsing",
+      error: makeError("parsing", true),
+    });
+    // canRetry should be true here — precondition for the test
+    expect(state.canRetry).toBe(true);
+
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "resolving",
+      error: makeError("resolving", false),
+    });
+
+    expect(state.errors).toHaveLength(2);
+    // The accumulated .some() check means at least one retryable error
+    // from the full error history keeps canRetry true.
+    expect(state.canRetry).toBe(true);
+  });
+});
+
 describe("partial state derivation", () => {
   it("enters 'partial' state when some stages done and one fails", () => {
     let state = createInitialPipelineState();
