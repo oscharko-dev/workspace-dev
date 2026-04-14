@@ -2,6 +2,7 @@ import { useEffect, useState, type JSX } from "react";
 import { BACKEND_STAGES } from "./paste-pipeline";
 import type {
   PipelineFallbackMode,
+  PipelinePasteDeltaSummary,
   PartialImportStats,
   PipelineError,
   PipelineStage,
@@ -16,6 +17,7 @@ export interface PipelineStatusBarProps {
   partialStats?: PartialImportStats;
   canRetry: boolean;
   fallbackMode?: PipelineFallbackMode;
+  pasteDeltaSummary?: PipelinePasteDeltaSummary;
   onRetry?: (stage?: PipelineStage, targetIds?: string[]) => void;
   /** Called when the user clicks "Copy Report". Caller provides the report string. */
   onCopyReport?: () => void;
@@ -93,6 +95,24 @@ function useRetryCountdown(errors: readonly PipelineError[]): number | undefined
   return maxRemainingMs;
 }
 
+function pasteDeltaBadgeConfig(summary: PipelinePasteDeltaSummary): {
+  label: string;
+  className: string;
+} {
+  if (summary.mode === "delta" || summary.mode === "auto_resolved_to_delta") {
+    return {
+      label: "Delta Update",
+      className:
+        "rounded border border-emerald-400/30 bg-emerald-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-300",
+    };
+  }
+  return {
+    label: "Full Build",
+    className:
+      "rounded border border-slate-400/30 bg-slate-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-slate-300",
+  };
+}
+
 export function PipelineStatusBar({
   stage,
   errors,
@@ -100,6 +120,7 @@ export function PipelineStatusBar({
   partialStats,
   canRetry,
   fallbackMode,
+  pasteDeltaSummary,
   onRetry,
   onCopyReport,
 }: PipelineStatusBarProps): JSX.Element {
@@ -135,6 +156,30 @@ export function PipelineStatusBar({
           >
             Figma REST fallback active
           </span>
+        ) : null}
+        {pasteDeltaSummary !== undefined ? (
+          <>
+            <span
+              data-testid="pipeline-status-bar-paste-delta"
+              className={pasteDeltaBadgeConfig(pasteDeltaSummary).className}
+              title={
+                pasteDeltaSummary.totalNodes > 0
+                  ? `${String(pasteDeltaSummary.nodesReused)} of ${String(pasteDeltaSummary.totalNodes)} nodes reused`
+                  : "Paste summary unavailable"
+              }
+            >
+              {pasteDeltaBadgeConfig(pasteDeltaSummary).label}
+            </span>
+            {pasteDeltaSummary.totalNodes > 0 ? (
+              <span
+                data-testid="pipeline-status-bar-paste-delta-detail"
+                className="text-[10px] text-white/45"
+              >
+                {String(pasteDeltaSummary.nodesReused)}/
+                {String(pasteDeltaSummary.totalNodes)} reused
+              </span>
+            ) : null}
+          </>
         ) : null}
         {retryRemainingMs !== undefined && retryRemainingMs > 0 ? (
           <span

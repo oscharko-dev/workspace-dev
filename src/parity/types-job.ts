@@ -236,6 +236,17 @@ export interface JobDeltaSummary {
   baselineSnapshotId?: string;
 }
 
+export interface PasteDeltaSummary {
+  mode: "full" | "delta" | "auto_resolved_to_full" | "auto_resolved_to_delta";
+  strategy: "baseline_created" | "no_changes" | "delta" | "structural_break";
+  totalNodes: number;
+  nodesReused: number;
+  nodesReprocessed: number;
+  structuralChangeRatio: number;
+  pasteIdentityKey: string;
+  priorManifestMissing: boolean;
+}
+
 export interface JobDiffPreview {
   url: string;
   baseRef?: string;
@@ -257,6 +268,7 @@ export interface JobResult {
   diffPreview?: JobDiffPreview;
   reviewEvidenceId?: string;
   reviewEvidenceUrl?: string;
+  pasteDeltaSummary?: PasteDeltaSummary;
 }
 
 export interface JobSourceMeta {

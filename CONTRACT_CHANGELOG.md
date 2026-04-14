@@ -31,6 +31,24 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.12.0] - 2026-04-14
+
+### Incremental delta import scaffolding (Issue #992)
+
+Added:
+
+- `WorkspacePasteDeltaStrategy` union (`baseline_created` | `no_changes` | `delta` | `structural_break`) classifying the tree diff between a prior paste and the current one.
+- `WorkspaceImportMode` union (`full` | `delta` | `auto`) for selecting the paste regeneration strategy.
+- `WorkspacePasteDeltaSummary` surfacing `mode`, `strategy`, `totalNodes`, `nodesReused`, `nodesReprocessed`, `structuralChangeRatio`, `pasteIdentityKey`, `priorManifestMissing`.
+- `WorkspaceJobInput.importMode?: WorkspaceImportMode` for submit-time mode selection.
+- `WorkspaceSubmitAccepted.pasteDeltaSummary?: WorkspacePasteDeltaSummary` returned on accepted Figma paste submissions when diff compute succeeds.
+
+Changed:
+
+- `CONTRACT_VERSION` from `3.11.1` to `3.12.0`.
+
+---
+
 ## [3.11.1] - 2026-04-13
 
 ### Plugin ingress contract alignment

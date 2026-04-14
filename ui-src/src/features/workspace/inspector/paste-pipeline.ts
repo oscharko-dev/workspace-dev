@@ -37,6 +37,25 @@ export type PipelineFallbackMode =
   | "local_json"
   | (string & {});
 
+/**
+ * Mirror of contract `WorkspacePasteDeltaSummary` (contracts 3.12.0).
+ * Returned on a Figma paste submit-accepted response.
+ */
+export interface PipelinePasteDeltaSummary {
+  mode: "full" | "delta" | "auto_resolved_to_full" | "auto_resolved_to_delta";
+  strategy:
+    | "baseline_created"
+    | "no_changes"
+    | "delta"
+    | "structural_break";
+  totalNodes: number;
+  nodesReused: number;
+  nodesReprocessed: number;
+  structuralChangeRatio: number;
+  pasteIdentityKey: string;
+  priorManifestMissing: boolean;
+}
+
 type SubmitSourceMode = "figma_paste" | "figma_plugin" | "figma_url";
 type JobRuntimeStatus =
   | "queued"
@@ -215,6 +234,8 @@ export interface PastePipelineState {
   retryRequest?: PipelineRetryRequest | undefined;
   /** Set when at least one stage succeeded but at least one failed. */
   partialStats?: PartialImportStats;
+  /** Per-paste delta summary surfaced on the submit-accepted response. */
+  pasteDeltaSummary?: PipelinePasteDeltaSummary | undefined;
 }
 
 export interface PastePipelineController {
@@ -239,7 +260,11 @@ export type PipelineAction =
   | { type: "start" }
   | { type: "parsing_done" }
   | { type: "source_screens_ready"; screens: SourceScreenHint[] }
-  | { type: "job_created"; jobId: string }
+  | {
+      type: "job_created";
+      jobId: string;
+      pasteDeltaSummary?: PipelinePasteDeltaSummary;
+    }
   | {
       type: "job_status_updated";
       status: JobRuntimeStatus;
@@ -519,6 +544,9 @@ export function pastePipelineReducer(
         ...state,
         jobId: action.jobId,
         jobStatus: "queued",
+        ...(action.pasteDeltaSummary !== undefined
+          ? { pasteDeltaSummary: action.pasteDeltaSummary }
+          : {}),
       };
     }
 
@@ -716,6 +744,45 @@ interface RetryStageAcceptedPayload {
   jobId?: string;
   sourceJobId?: string;
   status?: string;
+  pasteDeltaSummary?: unknown;
+}
+
+function isPasteDeltaMode(
+  value: unknown,
+): value is PipelinePasteDeltaSummary["mode"] {
+  return (
+    value === "full" ||
+    value === "delta" ||
+    value === "auto_resolved_to_full" ||
+    value === "auto_resolved_to_delta"
+  );
+}
+
+function isPasteDeltaStrategy(
+  value: unknown,
+): value is PipelinePasteDeltaSummary["strategy"] {
+  return (
+    value === "baseline_created" ||
+    value === "no_changes" ||
+    value === "delta" ||
+    value === "structural_break"
+  );
+}
+
+export function isPasteDeltaSummary(
+  input: unknown,
+): input is PipelinePasteDeltaSummary {
+  return (
+    isRecord(input) &&
+    isPasteDeltaMode(input.mode) &&
+    isPasteDeltaStrategy(input.strategy) &&
+    typeof input.totalNodes === "number" &&
+    typeof input.nodesReused === "number" &&
+    typeof input.nodesReprocessed === "number" &&
+    typeof input.structuralChangeRatio === "number" &&
+    typeof input.pasteIdentityKey === "string" &&
+    typeof input.priorManifestMissing === "boolean"
+  );
 }
 
 function buildSubmitBody(request: PipelineRequest): SubmitBody {
@@ -917,7 +984,10 @@ async function postSubmit({
 }: {
   request: PipelineRequest;
   signal: AbortSignal;
-}): Promise<string> {
+}): Promise<{
+  jobId: string;
+  pasteDeltaSummary?: PipelinePasteDeltaSummary;
+}> {
   const response = await fetchJson<RetryStageAcceptedPayload>({
     url: endpoints.submit,
     init: {
@@ -931,7 +1001,15 @@ async function postSubmit({
   if (response.status === 202 && isRecord(response.payload)) {
     const jobId = response.payload.jobId;
     if (typeof jobId === "string" && jobId.length > 0) {
-      return jobId;
+      const pasteDeltaSummary = isPasteDeltaSummary(
+        response.payload.pasteDeltaSummary,
+      )
+        ? response.payload.pasteDeltaSummary
+        : undefined;
+      return {
+        jobId,
+        ...(pasteDeltaSummary !== undefined ? { pasteDeltaSummary } : {}),
+      };
     }
   }
 
@@ -1985,6 +2063,7 @@ async function executePipelineRun({
   }
 
   let jobId: string;
+  let pasteDeltaSummary: PipelinePasteDeltaSummary | undefined;
   try {
     if (retryRequest !== undefined && sourceJobId !== undefined) {
       apply({
@@ -2000,7 +2079,9 @@ async function executePipelineRun({
         signal,
       });
     } else {
-      jobId = await postSubmit({ request, signal });
+      const submitted = await postSubmit({ request, signal });
+      jobId = submitted.jobId;
+      pasteDeltaSummary = submitted.pasteDeltaSummary;
     }
   } catch (error) {
     if (isAbortError(error)) {
@@ -2039,7 +2120,11 @@ async function executePipelineRun({
     return {};
   }
 
-  apply({ type: "job_created", jobId });
+  apply({
+    type: "job_created",
+    jobId,
+    ...(pasteDeltaSummary !== undefined ? { pasteDeltaSummary } : {}),
+  });
 
   let screenshotFetched = false;
   const maybeFetchRunningArtifacts = async (

@@ -5,6 +5,7 @@ import {
   createInitialPipelineState,
   type PartialImportStats,
   type PipelineError,
+  type PipelinePasteDeltaSummary,
   type PipelineStage,
   type StageStatus,
 } from "./paste-pipeline";
@@ -38,6 +39,7 @@ interface RenderOverrides {
   onRetry?: () => void;
   onCopyReport?: () => void;
   fallbackMode?: "rest";
+  pasteDeltaSummary?: PipelinePasteDeltaSummary;
 }
 
 function renderBar(overrides: RenderOverrides = {}) {
@@ -50,6 +52,7 @@ function renderBar(overrides: RenderOverrides = {}) {
     onRetry,
     onCopyReport,
     fallbackMode,
+    pasteDeltaSummary,
   } = overrides;
 
   return render(
@@ -60,10 +63,27 @@ function renderBar(overrides: RenderOverrides = {}) {
       {...(partialStats !== undefined ? { partialStats } : {})}
       canRetry={canRetry}
       {...(fallbackMode !== undefined ? { fallbackMode } : {})}
+      {...(pasteDeltaSummary !== undefined ? { pasteDeltaSummary } : {})}
       {...(onRetry !== undefined ? { onRetry } : {})}
       {...(onCopyReport !== undefined ? { onCopyReport } : {})}
     />,
   );
+}
+
+function buildPasteDeltaSummary(
+  overrides: Partial<PipelinePasteDeltaSummary> = {},
+): PipelinePasteDeltaSummary {
+  return {
+    mode: "auto_resolved_to_delta",
+    strategy: "delta",
+    totalNodes: 10,
+    nodesReused: 3,
+    nodesReprocessed: 7,
+    structuralChangeRatio: 0.25,
+    pasteIdentityKey: "abc123",
+    priorManifestMissing: false,
+    ...overrides,
+  };
 }
 
 describe("PipelineStatusBar — summary text (partial stage)", () => {
@@ -189,6 +209,84 @@ describe("PipelineStatusBar — fallback mode", () => {
     expect(
       screen.getByTestId("pipeline-status-bar-fallback-mode"),
     ).toHaveTextContent("Figma REST fallback active");
+  });
+});
+
+describe("PipelineStatusBar — paste delta summary", () => {
+  it("renders the 'Delta Update' badge and detail text when mode resolves to delta", () => {
+    renderBar({
+      stage: "error",
+      pasteDeltaSummary: buildPasteDeltaSummary({
+        mode: "auto_resolved_to_delta",
+        nodesReused: 3,
+        totalNodes: 10,
+      }),
+    });
+
+    const badge = screen.getByTestId("pipeline-status-bar-paste-delta");
+    expect(badge).toHaveTextContent("Delta Update");
+    expect(
+      screen.getByTestId("pipeline-status-bar-paste-delta-detail"),
+    ).toHaveTextContent("3/10 reused");
+  });
+
+  it("renders the 'Full Build' badge when mode resolves to full", () => {
+    renderBar({
+      stage: "error",
+      pasteDeltaSummary: buildPasteDeltaSummary({
+        mode: "auto_resolved_to_full",
+        strategy: "structural_break",
+      }),
+    });
+
+    expect(
+      screen.getByTestId("pipeline-status-bar-paste-delta"),
+    ).toHaveTextContent("Full Build");
+  });
+
+  it("renders no paste-delta badge when pasteDeltaSummary is undefined", () => {
+    renderBar({ stage: "error" });
+
+    expect(
+      screen.queryByTestId("pipeline-status-bar-paste-delta"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("pipeline-status-bar-paste-delta-detail"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("exposes accessible title '{N} of {M} nodes reused'", () => {
+    renderBar({
+      stage: "error",
+      pasteDeltaSummary: buildPasteDeltaSummary({
+        nodesReused: 3,
+        totalNodes: 10,
+      }),
+    });
+
+    expect(screen.getByTestId("pipeline-status-bar-paste-delta")).toHaveAttribute(
+      "title",
+      "3 of 10 nodes reused",
+    );
+  });
+
+  it("hides detail and falls back to 'Paste summary unavailable' when totalNodes is 0", () => {
+    renderBar({
+      stage: "error",
+      pasteDeltaSummary: buildPasteDeltaSummary({
+        mode: "full",
+        totalNodes: 0,
+        nodesReused: 0,
+        nodesReprocessed: 0,
+      }),
+    });
+
+    expect(
+      screen.queryByTestId("pipeline-status-bar-paste-delta-detail"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByTestId("pipeline-status-bar-paste-delta"),
+    ).toHaveAttribute("title", "Paste summary unavailable");
   });
 });
 

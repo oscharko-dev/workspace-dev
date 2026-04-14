@@ -5318,6 +5318,9 @@ export function InspectorPanel({
           {...(activePipeline.partialStats !== undefined
             ? { partialStats: activePipeline.partialStats }
             : {})}
+          {...(activePipeline.pasteDeltaSummary !== undefined
+            ? { pasteDeltaSummary: activePipeline.pasteDeltaSummary }
+            : {})}
           canRetry={activePipeline.canRetry}
           {...(onPipelineRetry !== undefined
             ? { onRetry: handleRetryCurrentPipeline }

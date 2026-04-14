@@ -23,6 +23,7 @@ import type {
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
   WorkspaceImportIntent,
+  WorkspaceImportMode,
   WorkspaceJobInput,
   WorkspaceJobRetryStage,
   WorkspaceLocalSyncApplyRequest,
@@ -868,6 +869,7 @@ function parseSubmitRequest(
     "importIntent",
     "originalIntent",
     "intentCorrected",
+    "importMode",
   ]);
 
   for (const key of Object.keys(input)) {
@@ -1096,6 +1098,31 @@ function parseSubmitRequest(
             );
             return undefined;
           })();
+  const rawImportMode = parseStringField({
+    input,
+    key: "importMode",
+    required: false,
+    issues,
+  });
+  const importMode = (() => {
+    if (rawImportMode === undefined) {
+      return undefined;
+    }
+    const normalized = rawImportMode.trim().toLowerCase();
+    if (
+      normalized === "full" ||
+      normalized === "delta" ||
+      normalized === "auto"
+    ) {
+      return normalized as WorkspaceImportMode;
+    }
+    pushIssue(
+      issues,
+      ["importMode"],
+      "importMode must be one of: full, delta, auto",
+    );
+    return undefined;
+  })();
   const llmCodegenMode = parseSubmitLlmCodegenMode({
     value: rawLlmCodegenMode,
     issues,
@@ -1358,6 +1385,9 @@ function parseSubmitRequest(
   }
   if (intentCorrected !== undefined) {
     data.intentCorrected = intentCorrected;
+  }
+  if (importMode !== undefined) {
+    data.importMode = importMode;
   }
 
   return {
