@@ -1924,50 +1924,56 @@ test("request handler file listing and file reads enforce filters and path safet
       },
     );
 
-    await t.test("running jobs expose generated files once the project directory exists", async () => {
-      const { app: runningApp, close: closeRunning } = await createRequestHandlerApp({
-        jobEngine: createStubJobEngine({
-          getJobRecord: () =>
-            ({
-              jobId: "job-running",
-              status: "running",
-              artifacts: {
-                generatedProjectDir: projectDir,
+    await t.test(
+      "running jobs expose generated files once the project directory exists",
+      async () => {
+        const { app: runningApp, close: closeRunning } =
+          await createRequestHandlerApp({
+            jobEngine: createStubJobEngine({
+              getJobRecord: () =>
+                ({
+                  jobId: "job-running",
+                  status: "running",
+                  artifacts: {
+                    generatedProjectDir: projectDir,
+                  },
+                }) as ReturnType<JobEngine["getJobRecord"]>,
+            }),
+          });
+
+        try {
+          const response = await runningApp.inject({
+            method: "GET",
+            url: "/workspace/jobs/job-running/files",
+          });
+
+          assert.equal(response.statusCode, 200);
+          assert.deepEqual(
+            response.json<{ files: Array<{ path: string }> }>().files,
+            [
+              {
+                path: "src/App.tsx",
+                sizeBytes: Buffer.byteLength(
+                  "export const App = () => null;\n",
+                ),
               },
-            }) as ReturnType<JobEngine["getJobRecord"]>,
-        }),
-      });
-
-      try {
-        const response = await runningApp.inject({
-          method: "GET",
-          url: "/workspace/jobs/job-running/files",
-        });
-
-        assert.equal(response.statusCode, 200);
-        assert.deepEqual(
-          response.json<{ files: Array<{ path: string }> }>().files,
-          [
-            {
-              path: "src/App.tsx",
-              sizeBytes: Buffer.byteLength("export const App = () => null;\n"),
-            },
-            {
-              path: "src/screens/Home.tsx",
-              sizeBytes: Buffer.byteLength(
-                "export const Home = () => 'home';\n",
-              ),
-            },
-            {
-              path: "styles.css",
-              sizeBytes: Buffer.byteLength("body { margin: 0; }\n"),
-            },
-          ],
-        );
-      } finally {
-        await closeRunning();
-      }
-    });
+              {
+                path: "src/screens/Home.tsx",
+                sizeBytes: Buffer.byteLength(
+                  "export const Home = () => 'home';\n",
+                ),
+              },
+              {
+                path: "styles.css",
+                sizeBytes: Buffer.byteLength("body { margin: 0; }\n"),
+              },
+            ],
+          );
+        } finally {
+          await closeRunning();
+        }
+      },
+    );
   } finally {
     await close();
     await rm(tempRoot, { recursive: true, force: true });
@@ -2916,7 +2922,9 @@ test("backslash-based blocked prefix in directory listing ?dir= returns 403", as
 });
 
 test("request handler serves screenshot artifacts for jobs that captured a Figma preview", async () => {
-  const jobDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-screenshot-"));
+  const jobDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-screenshot-"),
+  );
   await mkdir(path.join(jobDir, ".stage-store"), { recursive: true });
   await writeFile(
     path.join(jobDir, ".stage-store", "index.json"),
@@ -3558,5 +3566,190 @@ test("request handler ingress metrics code path executes without errors for figm
     assert.equal(capturedInput.figmaSourceMode, "local_json");
   } finally {
     await close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Token decisions endpoint (Issue #993)
+// ---------------------------------------------------------------------------
+
+test("token-decisions endpoint persists decisions, normalizes input, and reads them back", async (t) => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-token-decisions-"),
+  );
+  const jobDir = path.join(tempRoot, "job-7");
+  await mkdir(jobDir, { recursive: true });
+
+  const getJobRecord = (jobId: string) =>
+    jobId === "job-7"
+      ? ({
+          jobId,
+          status: "completed",
+          artifacts: {
+            jobDir,
+          },
+        } as ReturnType<JobEngine["getJobRecord"]>)
+      : undefined;
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ getJobRecord }),
+  });
+
+  try {
+    await t.test(
+      "GET on never-written decisions returns an empty snapshot",
+      async () => {
+        const response = await app.inject({
+          method: "GET",
+          url: "/workspace/jobs/job-7/token-decisions",
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.jobId, "job-7");
+        assert.equal(body.updatedAt, null);
+        assert.deepEqual(body.acceptedTokenNames, []);
+        assert.deepEqual(body.rejectedTokenNames, []);
+      },
+    );
+
+    await t.test(
+      "POST persists sanitized decisions and writes token-decisions.json on disk",
+      async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/jobs/job-7/token-decisions",
+          payload: {
+            acceptedTokenNames: [
+              "color/primary",
+              " color/primary ",
+              "spacing/lg",
+              "",
+            ],
+            rejectedTokenNames: ["spacing/xl", "spacing/xl", "radius/sm"],
+          },
+        });
+
+        assert.equal(response.statusCode, 200);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.jobId, "job-7");
+        assert.deepEqual(body.acceptedTokenNames, [
+          "color/primary",
+          "spacing/lg",
+        ]);
+        assert.deepEqual(body.rejectedTokenNames, ["spacing/xl", "radius/sm"]);
+        assert.ok(typeof body.updatedAt === "string");
+
+        const { readFile } = await import("node:fs/promises");
+        const persisted = JSON.parse(
+          await readFile(path.join(jobDir, "token-decisions.json"), "utf8"),
+        ) as Record<string, unknown>;
+        assert.equal(persisted.jobId, "job-7");
+        assert.deepEqual(persisted.acceptedTokenNames, [
+          "color/primary",
+          "spacing/lg",
+        ]);
+      },
+    );
+
+    await t.test("GET returns the persisted snapshot after POST", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-7/token-decisions",
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json<Record<string, unknown>>();
+      assert.deepEqual(body.acceptedTokenNames, [
+        "color/primary",
+        "spacing/lg",
+      ]);
+      assert.deepEqual(body.rejectedTokenNames, ["spacing/xl", "radius/sm"]);
+      assert.ok(typeof body.updatedAt === "string");
+    });
+
+    await t.test(
+      "POST rejects non-array payload fields with VALIDATION_ERROR",
+      async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/jobs/job-7/token-decisions",
+          payload: {
+            acceptedTokenNames: "not-an-array",
+            rejectedTokenNames: [],
+          },
+        });
+        assert.equal(response.statusCode, 400);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "VALIDATION_ERROR",
+        );
+      },
+    );
+
+    await t.test(
+      "POST rejects a token that appears in both accepted and rejected",
+      async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/jobs/job-7/token-decisions",
+          payload: {
+            acceptedTokenNames: ["color/primary"],
+            rejectedTokenNames: ["color/primary"],
+          },
+        });
+        assert.equal(response.statusCode, 400);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.error, "VALIDATION_ERROR");
+        const issues = body.issues as
+          | Array<Record<string, unknown>>
+          | undefined;
+        assert.ok(Array.isArray(issues));
+        assert.equal(issues[0]?.path, "color/primary");
+      },
+    );
+
+    await t.test("POST invalid JSON returns 400", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/jobs/job-7/token-decisions",
+        headers: { "content-type": "application/json" },
+        payload: "{",
+      });
+      assert.equal(response.statusCode, 400);
+      assert.equal(
+        response.json<Record<string, unknown>>().error,
+        "VALIDATION_ERROR",
+      );
+    });
+
+    await t.test("POST to unknown job returns 404", async () => {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/jobs/job-missing/token-decisions",
+        payload: {
+          acceptedTokenNames: [],
+          rejectedTokenNames: [],
+        },
+      });
+      assert.equal(response.statusCode, 404);
+      assert.equal(
+        response.json<Record<string, unknown>>().error,
+        "JOB_NOT_FOUND",
+      );
+    });
+
+    await t.test("GET on unknown job returns 404", async () => {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/jobs/job-missing/token-decisions",
+      });
+      assert.equal(response.statusCode, 404);
+      assert.equal(
+        response.json<Record<string, unknown>>().error,
+        "JOB_NOT_FOUND",
+      );
+    });
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
   }
 });

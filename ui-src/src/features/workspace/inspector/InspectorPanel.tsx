@@ -9,7 +9,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
 import { fetchJson } from "../../../lib/http";
 import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
@@ -17,6 +17,7 @@ import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath, useStreamingTreeNodes } from "./component-tree-utils";
 import {
   createInitialPipelineState,
+  postTokenDecisions,
   type PastePipelineState,
   type PipelineStage,
 } from "./paste-pipeline";
@@ -123,6 +124,18 @@ import {
   type RemapDecisionEntry,
   type RemapSuggestResult,
 } from "./RemapReviewPanel";
+import { SuggestionsPanel } from "./SuggestionsPanel";
+import {
+  deriveQualityScore,
+  type QualityScoreElementInput,
+} from "./import-quality-score";
+import { deriveTokenSuggestionModel } from "./token-suggestion-model";
+import { deriveA11yNudges } from "./a11y-nudge";
+import {
+  mergeA11yScanInputs,
+  selectA11yScanFiles,
+} from "./a11y-file-selection";
+import { resolveWorkspacePolicy } from "./workspace-policy";
 import {
   deriveInspectorImpactReviewModel,
   type InspectorImpactReviewManifest,
@@ -1072,7 +1085,9 @@ export function InspectorPanel({
         ...(activePipeline.outcome !== undefined
           ? { outcome: activePipeline.outcome }
           : {}),
-        ...(activePipeline.jobId !== undefined ? { jobId: activePipeline.jobId } : {}),
+        ...(activePipeline.jobId !== undefined
+          ? { jobId: activePipeline.jobId }
+          : {}),
         ...(activePipeline.jobStatus !== undefined
           ? { jobStatus: activePipeline.jobStatus }
           : {}),
@@ -1825,6 +1840,115 @@ export function InspectorPanel({
     }
     return findIrElementNode(irScreens, selectedNodeId);
   }, [irScreens, selectedNodeId]);
+
+  // Issue #993 — quality score + token intelligence + a11y nudges.
+  const workspacePolicy = useMemo(() => resolveWorkspacePolicy(), []);
+  const qualityScoreModel = useMemo(() => {
+    const screens = irScreens.map((screen) => ({
+      id: screen.id,
+      name: screen.name,
+      children: screen.children as QualityScoreElementInput[],
+    }));
+    return deriveQualityScore({
+      screens,
+      errors: activePipeline.errors,
+      ...(manifest ? { manifest } : {}),
+      policy: workspacePolicy.quality,
+    });
+  }, [irScreens, manifest, activePipeline.errors, workspacePolicy.quality]);
+
+  const tokenSuggestionsModel = useMemo(() => {
+    const intelligence = activePipeline.tokenIntelligence;
+    return deriveTokenSuggestionModel({
+      ...(intelligence
+        ? {
+            intelligence: {
+              conflicts: intelligence.conflicts,
+              unmappedVariables: intelligence.unmappedVariables,
+              libraryKeys: intelligence.libraryKeys,
+              cssCustomProperties: intelligence.cssCustomProperties,
+            },
+          }
+        : {}),
+      policy: workspacePolicy.tokens,
+    });
+  }, [activePipeline.tokenIntelligence, workspacePolicy.tokens]);
+
+  // Collect JSX-like files so we fetch only what the a11y scanner can parse.
+  // Filtering rules and caps are extracted into pure helpers so they can be
+  // unit-tested in isolation; see `a11y-file-selection.ts`.
+  const jsxLikeFiles = useMemo(() => selectA11yScanFiles(files), [files]);
+
+  const a11yFileContentQueries = useQueries({
+    queries: jsxLikeFiles.map((file) => ({
+      queryKey: ["inspector-a11y-file", jobId, file.path] as const,
+      enabled: Boolean(jobId && file.path),
+      staleTime: 30_000,
+      queryFn: async (): Promise<string | null> => {
+        const response = await fetch(
+          `/workspace/jobs/${encodedJobId}/files/${encodeURIComponent(file.path)}`,
+        );
+        if (!response.ok) return null;
+        return response.text();
+      },
+    })),
+  });
+
+  const a11yNudgeInputs = useMemo(() => {
+    const fetched = a11yFileContentQueries.map((query) => query.data ?? null);
+    return mergeA11yScanInputs(jsxLikeFiles, fetched);
+  }, [jsxLikeFiles, a11yFileContentQueries]);
+
+  const a11yNudgeModel = useMemo(() => {
+    return deriveA11yNudges({
+      files: a11yNudgeInputs,
+      policy: workspacePolicy.a11y,
+    });
+  }, [a11yNudgeInputs, workspacePolicy.a11y]);
+
+  const [tokenDecisionsStatus, setTokenDecisionsStatus] = useState<{
+    state: "idle" | "saving" | "saved" | "error";
+    message?: string;
+    updatedAt?: string | null;
+  }>({ state: "idle" });
+
+  const handleApplyTokenDecisions = useCallback(
+    (decisions: {
+      acceptedTokenNames: string[];
+      rejectedTokenNames: string[];
+    }): void => {
+      if (!jobId) {
+        setTokenDecisionsStatus({
+          state: "error",
+          message: "Cannot save: job id is missing.",
+        });
+        return;
+      }
+      setTokenDecisionsStatus({ state: "saving" });
+      void (async () => {
+        try {
+          const response = await postTokenDecisions({
+            jobId,
+            acceptedTokenNames: decisions.acceptedTokenNames,
+            rejectedTokenNames: decisions.rejectedTokenNames,
+          });
+          setTokenDecisionsStatus({
+            state: "saved",
+            updatedAt: response.updatedAt,
+          });
+        } catch (error) {
+          setTokenDecisionsStatus({
+            state: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : "Failed to persist token decisions.",
+          });
+        }
+      })();
+    },
+    [jobId],
+  );
   const selectedIrNodeData = useMemo<
     | (DesignIrElementNode &
         Partial<
@@ -5341,6 +5465,44 @@ export function InspectorPanel({
           className="min-h-[200px] flex-1 lg:min-h-0"
           style={codePaneStyle}
         >
+          {qualityScoreModel.summary.totalNodes > 0 ||
+          tokenSuggestionsModel.available ||
+          a11yNudgeModel.summary.total > 0 ? (
+            <div
+              data-testid="inspector-suggestions-host"
+              className="border-b border-[#000000] bg-[#171717] p-2"
+            >
+              <SuggestionsPanel
+                qualityScore={qualityScoreModel}
+                tokenModel={tokenSuggestionsModel}
+                a11yResult={a11yNudgeModel}
+                onApplyTokenDecisions={handleApplyTokenDecisions}
+              />
+              {tokenDecisionsStatus.state !== "idle" ? (
+                <p
+                  data-testid="inspector-token-decisions-status"
+                  data-state={tokenDecisionsStatus.state}
+                  className={`mt-1 text-[11px] ${
+                    tokenDecisionsStatus.state === "error"
+                      ? "text-rose-300"
+                      : tokenDecisionsStatus.state === "saved"
+                        ? "text-emerald-300"
+                        : "text-white/60"
+                  }`}
+                >
+                  {tokenDecisionsStatus.state === "saving"
+                    ? "Saving token decisions…"
+                    : tokenDecisionsStatus.state === "saved"
+                      ? `Token decisions saved${
+                          tokenDecisionsStatus.updatedAt
+                            ? ` (${tokenDecisionsStatus.updatedAt})`
+                            : ""
+                        }.`
+                      : `Failed to save token decisions: ${tokenDecisionsStatus.message ?? "Unknown error."}`}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {generatingRetryTargets.length > 0 ? (
             <div
               data-testid="inspector-code-recovery-banner"

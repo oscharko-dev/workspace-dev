@@ -36,6 +36,11 @@ vi.mock("@tanstack/react-query", () => {
   return {
     useQuery: (args: unknown) => mockUseQuery(args),
     useMutation: (args: unknown) => mockUseMutation(args),
+    useQueries: ({ queries }: { queries: unknown[] }) =>
+      queries.map(() => ({
+        data: undefined,
+        isLoading: false,
+      })),
   };
 });
 
@@ -762,9 +767,7 @@ describe("InspectorPanel pipeline recovery UI", () => {
     expect(onPipelineRetry).toHaveBeenCalledWith("transforming");
 
     fireEvent.click(
-      screen.getByTestId(
-        "inspector-code-retry-target-src/routes/settings.tsx",
-      ),
+      screen.getByTestId("inspector-code-retry-target-src/routes/settings.tsx"),
     );
     expect(onPipelineRetry).toHaveBeenCalledWith("generating", [
       "src/routes/settings.tsx",
