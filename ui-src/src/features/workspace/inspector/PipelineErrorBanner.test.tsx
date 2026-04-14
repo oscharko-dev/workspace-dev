@@ -101,6 +101,13 @@ describe("PipelineErrorBanner — retry countdown", () => {
     expect(screen.getByText(/Retry available in 5s/)).toBeInTheDocument();
   });
 
+  it("disables the retry button while the cooldown is active", () => {
+    const error = buildError({ retryAfterMs: 5000 });
+    render(<PipelineErrorBanner error={error} onRetry={vi.fn()} />);
+
+    expect(screen.getByTestId("pipeline-error-banner-retry")).toBeDisabled();
+  });
+
   it("does not show the countdown text when retryAfterMs is undefined", () => {
     const error = buildError();
     render(<PipelineErrorBanner error={error} />);

@@ -1,4 +1,9 @@
-import type { WorkspaceComponentMappingRule, WorkspaceJobInput, WorkspaceGitPrStatus } from "../../contracts/index.js";
+import type {
+  WorkspaceComponentMappingRule,
+  WorkspaceGitPrStatus,
+  WorkspaceJobInput,
+  WorkspaceJobRetryStage,
+} from "../../contracts/index.js";
 import type { PipelineStagePlanEntry } from "../pipeline/orchestrator.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import type { PipelineExecutionContext } from "../pipeline/context.js";
@@ -60,12 +65,22 @@ const buildCodegenInput = ({
   context: PipelineExecutionContext;
 }): CodegenGenerateStageInput => {
   const input = context.input;
+  const sourceRequest = context.sourceJob?.request;
   const componentMappings = resolveComponentMappingsFromContext(context);
   return {
     boardKeySeed,
-    ...(input?.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
+    ...(input?.figmaFileKey !== undefined
+      ? { figmaFileKey: input.figmaFileKey }
+      : sourceRequest?.figmaFileKey !== undefined
+        ? { figmaFileKey: sourceRequest.figmaFileKey }
+        : {}),
     ...(input?.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {}),
-    ...(componentMappings !== undefined ? { componentMappings } : {})
+    ...(componentMappings !== undefined ? { componentMappings } : {}),
+    ...(context.retryInput?.retryStage === "codegen.generate" &&
+    context.retryInput.retryTargets &&
+    context.retryInput.retryTargets.length > 0
+      ? { retryTargets: context.retryInput.retryTargets }
+      : {})
   };
 };
 
@@ -105,6 +120,23 @@ const buildGitPrSkipStatus = (reason: string): WorkspaceGitPrStatus => {
     status: "skipped",
     reason
   };
+};
+
+const STAGE_RANK = new Map<WorkspaceJobRetryStage, number>([
+  ["figma.source", 0],
+  ["ir.derive", 1],
+  ["template.prepare", 2],
+  ["codegen.generate", 3],
+]);
+
+const isStageBeforeRetryStage = ({
+  stageName,
+  retryStage,
+}: {
+  stageName: WorkspaceJobRetryStage;
+  retryStage: WorkspaceJobRetryStage;
+}): boolean => {
+  return (STAGE_RANK.get(stageName) ?? 0) < (STAGE_RANK.get(retryStage) ?? 0);
 };
 
 export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
@@ -333,4 +365,32 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       }
     }
   ];
+};
+
+export const buildRetryPipelinePlan = ({
+  retryStage,
+}: {
+  retryStage: WorkspaceJobRetryStage;
+}): PipelineStagePlanEntry[] => {
+  const plan = buildSubmissionPipelinePlan();
+  return plan.map((entry) => {
+    const stageName = entry.service.stageName;
+    if (
+      (stageName === "figma.source" ||
+        stageName === "ir.derive" ||
+        stageName === "template.prepare" ||
+        stageName === "codegen.generate") &&
+      isStageBeforeRetryStage({
+        stageName,
+        retryStage,
+      })
+    ) {
+      return {
+        ...entry,
+        shouldSkip: () =>
+          `Reusing persisted artifacts from retry source before stage '${retryStage}'.`,
+      };
+    }
+    return entry;
+  });
 };

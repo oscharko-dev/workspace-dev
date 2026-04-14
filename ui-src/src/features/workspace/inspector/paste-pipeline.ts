@@ -1,8 +1,9 @@
-import { useEffect, useReducer, useRef } from "react";
+import { useEffect, useReducer, useRef, useState } from "react";
 import { fetchJson } from "../../../lib/http";
 import {
   isJobPayload,
   isRecord,
+  type JobInspectorPayload,
   type JobPayload,
   type JobStagePayload,
 } from "../workspace-page.helpers";
@@ -28,19 +29,45 @@ export type PipelineStage =
   | "partial"
   | "error";
 
+export type PipelineOutcome = "success" | "partial" | "failed";
+export type PipelineFallbackMode =
+  | "rest"
+  | "mcp"
+  | "hybrid"
+  | "local_json"
+  | (string & {});
+
 type SubmitSourceMode = "figma_paste" | "figma_plugin" | "figma_url";
 type JobRuntimeStatus =
   | "queued"
   | "running"
   | "completed"
+  | "partial"
   | "failed"
   | "canceled";
 
 export interface StageStatus {
   state: "pending" | "running" | "done" | "failed";
-  duration?: number;
-  message?: string;
-  error?: PipelineError;
+  duration?: number | undefined;
+  message?: string | undefined;
+  code?: string | undefined;
+  retryable?: boolean | undefined;
+  retryAfterMs?: number | undefined;
+  retryAvailableAtMs?: number | undefined;
+  fallbackMode?: PipelineFallbackMode | undefined;
+  error?: PipelineError | undefined;
+}
+
+export interface PipelineRetryTarget {
+  id: string;
+  label: string;
+  filePath?: string;
+  stage?: PipelineStage;
+}
+
+export interface PipelineRetryRequest {
+  stage: PipelineStage;
+  targetIds?: string[];
 }
 
 export interface PipelineError {
@@ -49,7 +76,11 @@ export interface PipelineError {
   message: string;
   retryable: boolean;
   /** For rate-limited errors: milliseconds until retry is allowed. */
-  retryAfterMs?: number;
+  retryAfterMs?: number | undefined;
+  retryAvailableAtMs?: number | undefined;
+  fallbackMode?: PipelineFallbackMode | undefined;
+  retryTargets?: PipelineRetryTarget[] | undefined;
+  details?: Record<string, unknown> | undefined;
 }
 
 interface DesignIrElementNode {
@@ -139,6 +170,7 @@ export interface PartialImportStats {
 
 export interface PastePipelineState {
   stage: PipelineStage;
+  outcome?: PipelineOutcome | undefined;
   progress: number;
   stageProgress: Record<PipelineStage, StageStatus>;
   jobId?: string;
@@ -153,13 +185,15 @@ export interface PastePipelineState {
   errors: PipelineError[];
   canRetry: boolean;
   canCancel: boolean;
+  fallbackMode?: PipelineFallbackMode | undefined;
+  retryRequest?: PipelineRetryRequest | undefined;
   /** Set when at least one stage succeeded but at least one failed. */
   partialStats?: PartialImportStats;
 }
 
 export interface PastePipelineController {
   cancel(): void;
-  retry(): void;
+  retry(request?: PipelineRetryRequest): void;
   getState(): PastePipelineState;
 }
 
@@ -189,19 +223,19 @@ export type PipelineAction =
   | { type: "stage_message"; stage: PipelineStage; message: string }
   | { type: "stage_done"; stage: PipelineStage; durationMs: number }
   | { type: "stage_failed"; stage: PipelineStage; error: PipelineError }
-  /**
-   * Infrastructure for future per-stage retry (requires backend resume endpoint).
-   * Not yet dispatched from any production call site — the current Retry button in
-   * PipelineStatusBar triggers a full pipeline restart via bootstrap.retry().
-   */
-  | { type: "retry_stage"; stage: PipelineStage }
+  | { type: "retry_stage"; stage: PipelineStage; targetIds?: string[] }
   | { type: "design_ir_ready"; designIR: DesignIrPayload }
   | { type: "figma_analysis_ready"; figmaAnalysis: FigmaAnalysisPayload }
   | { type: "manifest_ready"; manifest: ComponentManifestPayload }
   | { type: "files_ready"; files: GeneratedFileEntry[] }
   | { type: "screenshot_ready"; screenshotUrl: string }
   | { type: "cancel_complete" }
-  | { type: "complete"; previewUrl: string };
+  | {
+      type: "complete";
+      previewUrl?: string;
+      outcome?: PipelineOutcome;
+      fallbackMode?: PipelineFallbackMode;
+    };
 
 // ---------------------------------------------------------------------------
 // Stage ordering + backend mapping
@@ -252,6 +286,8 @@ const endpoints = {
   submit: "/workspace/submit",
   job: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}`,
+  retryStage: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/retry-stage`,
   cancel: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/cancel`,
   designIr: ({ jobId }: { jobId: string }) =>
@@ -265,6 +301,13 @@ const endpoints = {
   screenshot: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/screenshot`,
 };
+
+const RETRYABLE_STAGE_SET = new Set<PipelineStage>([
+  "resolving",
+  "transforming",
+  "mapping",
+  "generating",
+]);
 
 // ---------------------------------------------------------------------------
 // Initial state + reducer helpers
@@ -334,6 +377,42 @@ function derivePartialStats(
     resolvedStages,
     totalStages: BACKEND_STAGES.length,
     errorCount,
+  };
+}
+
+function withRetryAvailability(error: PipelineError): PipelineError {
+  if (error.retryAfterMs === undefined || error.retryAvailableAtMs !== undefined) {
+    return error;
+  }
+  return {
+    ...error,
+    retryAvailableAtMs: Date.now() + error.retryAfterMs,
+  };
+}
+
+function stageStatusFromError(error: PipelineError): StageStatus {
+  return {
+    state: "failed",
+    message: error.message,
+    code: error.code,
+    retryable: error.retryable,
+    retryAfterMs: error.retryAfterMs,
+    retryAvailableAtMs: error.retryAvailableAtMs,
+    fallbackMode: error.fallbackMode,
+    error,
+  };
+}
+
+function toRetryRequest(error: PipelineError): PipelineRetryRequest | undefined {
+  if (!error.retryable || !RETRYABLE_STAGE_SET.has(error.stage)) {
+    return undefined;
+  }
+  const targetIds = error.retryTargets
+    ?.map((target) => target.id)
+    .filter((id) => id.length > 0);
+  return {
+    stage: error.stage,
+    ...(targetIds !== undefined && targetIds.length > 0 ? { targetIds } : {}),
   };
 }
 
@@ -442,18 +521,29 @@ export function pastePipelineReducer(
     }
 
     case "stage_failed": {
-      const stageProgress = setStatus(state, action.stage, {
-        state: "failed",
-        error: action.error,
-      });
+      const error = withRetryAvailability(action.error);
+      const stageProgress = setStatus(
+        state,
+        action.stage,
+        stageStatusFromError(error),
+      );
       const partialStats = derivePartialStats(stageProgress);
+      const nextErrors = [...state.errors, error];
+      const nextRetryRequest = toRetryRequest(error);
       return {
         ...state,
         stage: partialStats !== undefined ? "partial" : "error",
+        outcome: partialStats !== undefined ? "partial" : "failed",
         stageProgress,
-        errors: [...state.errors, action.error],
-        canRetry: [...state.errors, action.error].some((e) => e.retryable),
+        errors: nextErrors,
+        canRetry: nextErrors.some((entry) => entry.retryable),
         canCancel: false,
+        ...(error.fallbackMode !== undefined
+          ? { fallbackMode: error.fallbackMode }
+          : {}),
+        ...(nextRetryRequest !== undefined
+          ? { retryRequest: nextRetryRequest }
+          : {}),
         ...(partialStats !== undefined ? { partialStats } : {}),
       };
     }
@@ -485,17 +575,30 @@ export function pastePipelineReducer(
     case "complete": {
       const stageProgress = {
         ...state.stageProgress,
-        generating: { state: "done" as const },
+        generating:
+          state.stageProgress.generating.state === "failed"
+            ? state.stageProgress.generating
+            : ({ state: "done" } as const),
       };
+      const outcome = action.outcome ?? "success";
       return {
         ...state,
-        stage: "ready",
+        stage: outcome === "partial" ? "partial" : "ready",
+        outcome,
         stageProgress,
         progress: 100,
         jobStatus: "completed",
-        previewUrl: action.previewUrl,
-        canRetry: false,
+        ...(action.previewUrl !== undefined
+          ? { previewUrl: action.previewUrl }
+          : {}),
+        canRetry: outcome === "partial" && state.errors.some((e) => e.retryable),
         canCancel: false,
+        ...(action.fallbackMode !== undefined
+          ? { fallbackMode: action.fallbackMode }
+          : {}),
+        ...(outcome === "partial"
+          ? { partialStats: derivePartialStats(stageProgress) ?? state.partialStats }
+          : {}),
       };
     }
 
@@ -504,13 +607,38 @@ export function pastePipelineReducer(
       if (previous.state !== "failed") {
         return state;
       }
+      const stageProgress = { ...state.stageProgress };
+      stageProgress[action.stage] = {
+        state: "running",
+        message:
+          action.targetIds !== undefined && action.targetIds.length > 0
+            ? `Retrying ${String(action.targetIds.length)} failed target${action.targetIds.length === 1 ? "" : "s"}`
+            : "Retrying stage",
+      };
+      let resetDownstream = false;
+      for (const stage of ACTIVE_STAGES) {
+        if (stage === action.stage) {
+          resetDownstream = true;
+          continue;
+        }
+        if (resetDownstream && stageProgress[stage].state !== "done") {
+          stageProgress[stage] = { state: "pending" };
+        }
+      }
       return {
         ...state,
         stage: action.stage,
-        stageProgress: setStatus(state, action.stage, { state: "running" }),
+        outcome: undefined,
+        stageProgress,
         errors: state.errors.filter((e) => e.stage !== action.stage),
         canRetry: false,
         canCancel: true,
+        retryRequest: {
+          stage: action.stage,
+          ...(action.targetIds !== undefined && action.targetIds.length > 0
+            ? { targetIds: action.targetIds }
+            : {}),
+        },
       };
     }
 
@@ -532,6 +660,17 @@ interface SubmitBody {
   llmCodegenMode: "deterministic";
 }
 
+interface RetryStageBody {
+  stage: PipelineStage;
+  targetIds?: string[];
+}
+
+interface RetryStageAcceptedPayload {
+  jobId?: string;
+  sourceJobId?: string;
+  status?: string;
+}
+
 function buildSubmitBody(request: PipelineRequest): SubmitBody {
   return {
     figmaSourceMode: request.sourceMode,
@@ -543,12 +682,185 @@ function buildSubmitBody(request: PipelineRequest): SubmitBody {
 
 class SubmitError extends Error {
   readonly retryable: boolean;
+  readonly retryAfterMs?: number | undefined;
+  readonly fallbackMode?: PipelineFallbackMode | undefined;
+  readonly targetIds?: string[] | undefined;
+  readonly details?: Record<string, unknown> | undefined;
 
-  constructor(message: string, retryable: boolean) {
+  constructor({
+    message,
+    retryable,
+    retryAfterMs,
+    fallbackMode,
+    targetIds,
+    details,
+  }: {
+    message: string;
+    retryable: boolean;
+    retryAfterMs?: number;
+    fallbackMode?: PipelineFallbackMode;
+    targetIds?: string[];
+    details?: Record<string, unknown>;
+  }) {
     super(message);
     this.name = "SubmitError";
     this.retryable = retryable;
+    this.retryAfterMs = retryAfterMs;
+    this.fallbackMode = fallbackMode;
+    this.targetIds = targetIds;
+    this.details = details;
   }
+}
+
+function toPipelineStage(value: unknown): PipelineStage | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  if (value in BACKEND_TO_PIPELINE_STAGE) {
+    return BACKEND_TO_PIPELINE_STAGE[value];
+  }
+  if (
+    value === "parsing" ||
+    value === "resolving" ||
+    value === "transforming" ||
+    value === "mapping" ||
+    value === "generating"
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function toRetryTargets(
+  value: unknown,
+  stage: PipelineStage,
+): PipelineRetryTarget[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const targets: PipelineRetryTarget[] = [];
+  for (const entry of value) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const id =
+      typeof entry.id === "string"
+        ? entry.id
+        : typeof entry.targetId === "string"
+          ? entry.targetId
+          : typeof entry.file === "string"
+            ? entry.file
+            : typeof entry.path === "string"
+              ? entry.path
+              : undefined;
+    if (id === undefined || id.length === 0) {
+      continue;
+    }
+    const filePath =
+      typeof entry.file === "string"
+        ? entry.file
+        : typeof entry.path === "string"
+          ? entry.path
+          : undefined;
+    const label =
+      typeof entry.label === "string"
+        ? entry.label
+        : typeof entry.name === "string"
+          ? entry.name
+          : filePath ?? id;
+    targets.push({
+      id,
+      label,
+      ...(filePath !== undefined ? { filePath } : {}),
+      stage,
+    });
+  }
+  return targets.length > 0 ? targets : undefined;
+}
+
+function toTargetIds(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const ids = value.filter((entry): entry is string => {
+    return typeof entry === "string" && entry.length > 0;
+  });
+  return ids.length > 0 ? ids : undefined;
+}
+
+function parsePipelineErrorPayload({
+  fallbackStage,
+  payload,
+  fallbackCode,
+  fallbackMessage,
+  fallbackRetryable,
+}: {
+  fallbackStage: PipelineStage;
+  payload: unknown;
+  fallbackCode: string;
+  fallbackMessage: string;
+  fallbackRetryable: boolean;
+}): PipelineError {
+  if (!isRecord(payload)) {
+    return {
+      stage: fallbackStage,
+      code: fallbackCode,
+      message: fallbackMessage,
+      retryable: fallbackRetryable,
+    };
+  }
+
+  const stage = toPipelineStage(payload.stage) ?? fallbackStage;
+  const code =
+    typeof payload.code === "string" && payload.code.length > 0
+      ? payload.code
+      : typeof payload.error === "string" && payload.error.length > 0
+        ? payload.error
+        : fallbackCode;
+  const message =
+    typeof payload.message === "string" && payload.message.length > 0
+      ? payload.message
+      : fallbackMessage;
+  const retryable =
+    typeof payload.retryable === "boolean"
+      ? payload.retryable
+      : fallbackRetryable;
+  const retryAfterMs =
+    typeof payload.retryAfterMs === "number" && Number.isFinite(payload.retryAfterMs)
+      ? payload.retryAfterMs
+      : undefined;
+  const fallbackMode =
+    typeof payload.fallbackMode === "string" && payload.fallbackMode.length > 0
+      ? (payload.fallbackMode as PipelineFallbackMode)
+      : undefined;
+  const retryTargets =
+    toRetryTargets(payload.retryTargets, stage) ??
+    (() => {
+      const targetIds = toTargetIds(payload.targetIds);
+      if (targetIds === undefined) {
+        return undefined;
+      }
+      return targetIds.map((targetId) => ({
+        id: targetId,
+        label: targetId,
+        stage,
+      }));
+    })();
+  const details =
+    isRecord(payload.details) && !Array.isArray(payload.details)
+      ? payload.details
+      : undefined;
+
+  return {
+    stage,
+    code,
+    message,
+    retryable,
+    ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+    ...(fallbackMode !== undefined ? { fallbackMode } : {}),
+    ...(retryTargets !== undefined ? { retryTargets } : {}),
+    ...(details !== undefined ? { details } : {}),
+  };
 }
 
 async function postSubmit({
@@ -558,7 +870,7 @@ async function postSubmit({
   request: PipelineRequest;
   signal: AbortSignal;
 }): Promise<string> {
-  const response = await fetchJson<{ jobId?: string; error?: string }>({
+  const response = await fetchJson<RetryStageAcceptedPayload>({
     url: endpoints.submit,
     init: {
       method: "POST",
@@ -580,14 +892,88 @@ async function postSubmit({
     response.status < 500 &&
     isRecord(response.payload)
   ) {
-    const code =
-      typeof response.payload.error === "string"
-        ? response.payload.error
-        : "SUBMIT_FAILED";
-    throw new SubmitError(code, false);
+    const error = parsePipelineErrorPayload({
+      fallbackStage: "resolving",
+      payload: response.payload,
+      fallbackCode: "SUBMIT_FAILED",
+      fallbackMessage: "Could not start import.",
+      fallbackRetryable: false,
+    });
+    throw new SubmitError({
+      message: error.code,
+      retryable: error.retryable,
+      ...(error.retryAfterMs !== undefined
+        ? { retryAfterMs: error.retryAfterMs }
+        : {}),
+      ...(error.fallbackMode !== undefined
+        ? { fallbackMode: error.fallbackMode }
+        : {}),
+      ...(error.retryTargets !== undefined
+        ? { targetIds: error.retryTargets.map((target) => target.id) }
+        : {}),
+      ...(error.details !== undefined ? { details: error.details } : {}),
+    });
   }
 
-  throw new SubmitError("SUBMIT_FAILED", true);
+  throw new SubmitError({
+    message: "SUBMIT_FAILED",
+    retryable: true,
+  });
+}
+
+async function postRetryStage({
+  jobId,
+  request,
+  signal,
+}: {
+  jobId: string;
+  request: PipelineRetryRequest;
+  signal: AbortSignal;
+}): Promise<string> {
+  const body: RetryStageBody = {
+    stage: request.stage,
+    ...(request.targetIds !== undefined && request.targetIds.length > 0
+      ? { targetIds: request.targetIds }
+      : {}),
+  };
+  const response = await fetchJson<RetryStageAcceptedPayload>({
+    url: endpoints.retryStage({ jobId }),
+    init: {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal,
+    },
+  });
+
+  if (response.status === 202 && isRecord(response.payload)) {
+    const nextJobId = response.payload.jobId;
+    if (typeof nextJobId === "string" && nextJobId.length > 0) {
+      return nextJobId;
+    }
+  }
+
+  const error = parsePipelineErrorPayload({
+    fallbackStage: request.stage,
+    payload: response.payload,
+    fallbackCode: "SUBMIT_FAILED",
+    fallbackMessage: "Could not start retry.",
+    fallbackRetryable: response.status >= 500 || response.status === 429,
+  });
+  throw new SubmitError({
+    message: error.code,
+    retryable: error.retryable,
+    ...(error.retryAfterMs !== undefined
+      ? { retryAfterMs: error.retryAfterMs }
+      : {}),
+    ...(error.fallbackMode !== undefined
+      ? { fallbackMode: error.fallbackMode }
+      : {}),
+    ...(error.retryTargets !== undefined
+      ? { targetIds: error.retryTargets.map((target) => target.id) }
+      : {}),
+    ...(error.details !== undefined ? { details: error.details } : {}),
+  });
 }
 
 async function postCancel({
@@ -653,6 +1039,17 @@ type StageEvent =
   | { kind: "done"; stage: PipelineStage }
   | { kind: "failed"; stage: PipelineStage; error: PipelineError };
 
+interface RuntimeStagePayload extends JobStagePayload {
+  fallbackMode?: string;
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  targetIds?: string[];
+  retryTargets?: unknown;
+  error?: unknown;
+}
+
 function describeStage(name: string, status: string): string {
   return `${name}: ${status}`;
 }
@@ -675,8 +1072,128 @@ function inferFailureStage(knownStatuses: Map<string, string>): PipelineStage {
   return "resolving";
 }
 
+function collectRuntimeStages(payload: JobPayload): RuntimeStagePayload[] {
+  const merged = new Map<string, RuntimeStagePayload>();
+
+  for (const stage of payload.stages ?? []) {
+    if (typeof stage.name !== "string" || stage.name.length === 0) {
+      continue;
+    }
+    merged.set(stage.name, {
+      ...stage,
+      name: stage.name,
+      status: stage.status,
+    });
+  }
+
+  const upsertRuntimeStage = (name: string, value: unknown): void => {
+    if (!isRecord(value)) {
+      return;
+    }
+    const existing = merged.get(name);
+    merged.set(name, {
+      ...(existing ?? { name, status: "pending" }),
+      ...value,
+      name,
+      status:
+        typeof value.status === "string"
+          ? value.status
+          : (existing?.status ?? "pending"),
+    });
+  };
+
+  const stageResults = payload.stageResults;
+  if (Array.isArray(stageResults)) {
+    for (const value of stageResults) {
+      if (!isRecord(value) || typeof value.name !== "string") {
+        continue;
+      }
+      upsertRuntimeStage(value.name, value);
+    }
+  } else if (isRecord(stageResults)) {
+    for (const [name, value] of Object.entries(stageResults)) {
+      upsertRuntimeStage(name, value);
+    }
+  }
+
+  const inspector = payload.inspector;
+  if (isRecord(inspector) && Array.isArray(inspector.stages)) {
+    for (const value of inspector.stages) {
+      if (!isRecord(value) || typeof value.stage !== "string") {
+        continue;
+      }
+      upsertRuntimeStage(value.stage, {
+        name: value.stage,
+        status: value.status,
+        ...(typeof value.code === "string" ? { code: value.code } : {}),
+        ...(typeof value.message === "string"
+          ? { message: value.message }
+          : {}),
+        ...(typeof value.retryable === "boolean"
+          ? { retryable: value.retryable }
+          : {}),
+        ...(typeof value.retryAfterMs === "number"
+          ? { retryAfterMs: value.retryAfterMs }
+          : {}),
+        ...(typeof value.fallbackMode === "string"
+          ? { fallbackMode: value.fallbackMode }
+          : {}),
+        ...(value.retryTargets !== undefined
+          ? { retryTargets: value.retryTargets }
+          : {}),
+      });
+    }
+  }
+
+  return [...merged.values()];
+}
+
+function getInspectorOutcome(
+  payload: JobPayload,
+): JobInspectorPayload["outcome"] | undefined {
+  return isRecord(payload.inspector) && typeof payload.inspector.outcome === "string"
+    ? payload.inspector.outcome
+    : undefined;
+}
+
+function getJobFallbackMode(payload: JobPayload): PipelineFallbackMode | undefined {
+  if (typeof payload.fallbackMode === "string" && payload.fallbackMode.length > 0) {
+    return payload.fallbackMode as PipelineFallbackMode;
+  }
+  if (
+    isRecord(payload.inspector) &&
+    typeof payload.inspector.fallbackMode === "string" &&
+    payload.inspector.fallbackMode.length > 0
+  ) {
+    return payload.inspector.fallbackMode as PipelineFallbackMode;
+  }
+  if (
+    isRecord(payload.error) &&
+    typeof payload.error.fallbackMode === "string" &&
+    payload.error.fallbackMode.length > 0
+  ) {
+    return payload.error.fallbackMode as PipelineFallbackMode;
+  }
+  return undefined;
+}
+
+function stateLikePayloadHasPartialOutcome(payload: JobPayload): boolean {
+  if (payload.outcome === "partial" || getInspectorOutcome(payload) === "partial") {
+    return true;
+  }
+  if (collectRuntimeStages(payload).some((stage) => stage.status === "failed")) {
+    return true;
+  }
+  return (
+    isRecord(payload.error) &&
+    typeof payload.error.code === "string" &&
+    payload.error.code.length > 0 &&
+    payload.status === "completed"
+  );
+}
+
 function stageTransitionEvents(
-  stage: JobStagePayload,
+  stage: RuntimeStagePayload,
   knownStatuses: Map<string, string>,
   jobPayload: JobPayload,
 ): StageEvent[] {
@@ -721,16 +1238,36 @@ function stageTransitionEvents(
 
   if (stage.status === "failed") {
     const catalogEntry = getPasteErrorMessage("STAGE_FAILED");
+    const error = parsePipelineErrorPayload({
+      fallbackStage: mappedStage,
+      payload:
+        isRecord(stage.error) || isRecord(stage)
+          ? {
+              ...((isRecord(stage.error) ? stage.error : {}) as Record<
+                string,
+                unknown
+              >),
+              ...stage,
+            }
+          : jobPayload.error,
+      fallbackCode:
+        typeof stage.code === "string" && stage.code.length > 0
+          ? stage.code
+          : "STAGE_FAILED",
+      fallbackMessage:
+        typeof stage.message === "string" && stage.message.length > 0
+          ? stage.message
+          : jobPayload.error?.message ?? catalogEntry.description,
+      fallbackRetryable:
+        typeof stage.retryable === "boolean"
+          ? stage.retryable
+          : catalogEntry.retryable,
+    });
     return [
       {
         kind: "failed",
         stage: mappedStage,
-        error: {
-          stage: mappedStage,
-          code: "STAGE_FAILED",
-          message: jobPayload.error?.message ?? catalogEntry.description,
-          retryable: catalogEntry.retryable,
-        },
+        error,
       },
     ];
   }
@@ -760,6 +1297,7 @@ function applyJobPayload({
     status === "queued" ||
     status === "running" ||
     status === "completed" ||
+    status === "partial" ||
     status === "failed" ||
     status === "canceled"
   ) {
@@ -770,7 +1308,9 @@ function applyJobPayload({
     });
   }
 
-  for (const stage of payload.stages ?? []) {
+  const runtimeStages = collectRuntimeStages(payload);
+  let emittedFailedEvent = false;
+  for (const stage of runtimeStages) {
     const events = stageTransitionEvents(stage, knownStatuses, payload);
     for (const event of events) {
       if (event.kind === "start") {
@@ -788,12 +1328,50 @@ function applyJobPayload({
       } else if (event.kind === "done") {
         apply({ type: "stage_done", stage: event.stage, durationMs: 0 });
       } else {
+        emittedFailedEvent = true;
         apply({
           type: "stage_failed",
           stage: event.stage,
           error: event.error,
         });
       }
+    }
+  }
+
+  const terminalErrorKey = "__terminal_error__";
+  if (
+    !emittedFailedEvent &&
+    (payload.status === "failed" || payload.outcome === "partial") &&
+    isRecord(payload.error)
+  ) {
+    const errorCode =
+      typeof payload.error.code === "string" ? payload.error.code : undefined;
+    const errorStage = toPipelineStage(payload.error.stage);
+    if (
+      (errorCode !== undefined || errorStage !== undefined) &&
+      knownStatuses.get(terminalErrorKey) !== `${errorStage ?? "unknown"}:${errorCode ?? "unknown"}`
+    ) {
+      const stage = errorStage ?? inferFailureStage(knownStatuses);
+      knownStatuses.set(
+        terminalErrorKey,
+        `${errorStage ?? "unknown"}:${errorCode ?? "unknown"}`,
+      );
+      apply({
+        type: "stage_failed",
+        stage,
+        error: parsePipelineErrorPayload({
+          fallbackStage: stage,
+          payload: payload.error,
+          fallbackCode: payload.status === "failed" ? "JOB_FAILED" : "STAGE_FAILED",
+          fallbackMessage:
+            typeof payload.error.message === "string"
+              ? payload.error.message
+              : payload.status === "failed"
+                ? "Import failed."
+                : "Import completed with partial results.",
+          fallbackRetryable: payload.status !== "failed",
+        }),
+      });
     }
   }
 }
@@ -1098,14 +1676,12 @@ function hasActiveOrCompletedStage(
   payload: JobPayload,
   stageNames: readonly string[],
 ): boolean {
-  return (
-    payload.stages?.some((stage) => {
-      return (
-        stageNames.includes(stage.name) &&
-        (stage.status === "running" || stage.status === "completed")
-      );
-    }) ?? false
-  );
+  return collectRuntimeStages(payload).some((stage) => {
+    return (
+      stageNames.includes(stage.name) &&
+      (stage.status === "running" || stage.status === "completed")
+    );
+  });
 }
 
 async function pollUntilTerminal({
@@ -1128,7 +1704,10 @@ async function pollUntilTerminal({
     });
 
     if (!response.ok || !isJobPayload(response.payload)) {
-      throw new SubmitError("POLL_FAILED", true);
+      throw new SubmitError({
+        message: "POLL_FAILED",
+        retryable: true,
+      });
     }
 
     const payload = response.payload;
@@ -1139,6 +1718,7 @@ async function pollUntilTerminal({
 
     if (
       payload.status === "completed" ||
+      payload.status === "partial" ||
       payload.status === "failed" ||
       payload.status === "canceled"
     ) {
@@ -1151,50 +1731,88 @@ async function pollUntilTerminal({
 
 async function executePipelineRun({
   request,
+  retryRequest,
+  sourceJobId,
   signal,
   knownStatuses,
   apply,
 }: {
   request: PipelineRequest;
+  retryRequest?: PipelineRetryRequest | undefined;
+  sourceJobId?: string | undefined;
   signal: AbortSignal;
   knownStatuses: Map<string, string>;
   apply: (action: PipelineAction) => void;
 }): Promise<{ jobId?: string }> {
-  apply({ type: "start" });
+  if (retryRequest === undefined) {
+    apply({ type: "start" });
 
-  const requestError = validatePipelineRequest(request);
-  if (requestError !== null) {
-    apply({
-      type: "stage_failed",
-      stage: "parsing",
-      error: requestError,
-    });
-    return {};
-  }
+    const requestError = validatePipelineRequest(request);
+    if (requestError !== null) {
+      apply({
+        type: "stage_failed",
+        stage: "parsing",
+        error: requestError,
+      });
+      return {};
+    }
 
-  apply({ type: "parsing_done" });
-  const sourceScreens = extractSourceScreensFromPayload(request.payload);
-  if (sourceScreens.length > 0) {
-    apply({ type: "source_screens_ready", screens: sourceScreens });
+    apply({ type: "parsing_done" });
+    const sourceScreens = extractSourceScreensFromPayload(request.payload);
+    if (sourceScreens.length > 0) {
+      apply({ type: "source_screens_ready", screens: sourceScreens });
+    }
   }
 
   let jobId: string;
   try {
-    jobId = await postSubmit({ request, signal });
+    if (retryRequest !== undefined && sourceJobId !== undefined) {
+      apply({
+        type: "retry_stage",
+        stage: retryRequest.stage,
+        ...(retryRequest.targetIds !== undefined
+          ? { targetIds: retryRequest.targetIds }
+          : {}),
+      });
+      jobId = await postRetryStage({
+        jobId: sourceJobId,
+        request: retryRequest,
+        signal,
+      });
+    } else {
+      jobId = await postSubmit({ request, signal });
+    }
   } catch (error) {
     if (isAbortError(error)) {
       return {};
     }
     const message = error instanceof Error ? error.message : "SUBMIT_FAILED";
     const retryable = error instanceof SubmitError ? error.retryable : true;
+    const retryAfterMs =
+      error instanceof SubmitError ? error.retryAfterMs : undefined;
+    const fallbackMode =
+      error instanceof SubmitError ? error.fallbackMode : undefined;
+    const targetIds = error instanceof SubmitError ? error.targetIds : undefined;
+    const stage = retryRequest?.stage ?? "resolving";
     apply({
       type: "stage_failed",
-      stage: "resolving",
+      stage,
       error: {
-        stage: "resolving",
+        stage,
         code: message,
         message,
         retryable,
+        ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
+        ...(fallbackMode !== undefined ? { fallbackMode } : {}),
+        ...(targetIds !== undefined
+          ? {
+              retryTargets: targetIds.map((targetId) => ({
+                id: targetId,
+                label: targetId,
+                stage,
+              })),
+            }
+          : {}),
       },
     });
     return {};
@@ -1325,12 +1943,13 @@ async function executePipelineRun({
     apply({
       type: "stage_failed",
       stage,
-      error: {
-        stage,
-        code: "JOB_FAILED",
-        message: payload.error?.message ?? "JOB_FAILED",
-        retryable: false,
-      },
+      error: parsePipelineErrorPayload({
+        fallbackStage: stage,
+        payload: payload.error,
+        fallbackCode: "JOB_FAILED",
+        fallbackMessage: payload.error?.message ?? "JOB_FAILED",
+        fallbackRetryable: false,
+      }),
     });
     return { jobId };
   }
@@ -1342,7 +1961,16 @@ async function executePipelineRun({
 
   const previewUrl =
     typeof payload.preview?.url === "string" ? payload.preview.url : undefined;
-  if (!previewUrl) {
+  const outcome =
+    payload.outcome === "partial" || getInspectorOutcome(payload) === "partial"
+      ? "partial"
+      : payload.outcome === "failed"
+        || getInspectorOutcome(payload) === "failed"
+        ? "failed"
+        : stateLikePayloadHasPartialOutcome(payload)
+          ? "partial"
+          : "success";
+  if (!previewUrl && outcome !== "partial") {
     apply({
       type: "stage_failed",
       stage: "generating",
@@ -1363,7 +1991,13 @@ async function executePipelineRun({
       throw error;
     }
   }
-  apply({ type: "complete", previewUrl });
+  const fallbackMode = getJobFallbackMode(payload);
+  apply({
+    type: "complete",
+    ...(previewUrl !== undefined ? { previewUrl } : {}),
+    outcome,
+    ...(fallbackMode !== undefined ? { fallbackMode } : {}),
+  });
   return { jobId };
 }
 
@@ -1431,7 +2065,15 @@ export function startPastePipeline(
     knownStatuses: new Map(),
   };
 
-  const startRun = (request: PipelineRequest): void => {
+  const startRun = ({
+    request,
+    retryRequest,
+    sourceJobId,
+  }: {
+    request: PipelineRequest;
+    retryRequest?: PipelineRetryRequest;
+    sourceJobId?: string;
+  }): void => {
     runtime.activeRunId += 1;
     const runId = runtime.activeRunId;
     runtime.activeRunController?.abort();
@@ -1467,6 +2109,8 @@ export function startPastePipeline(
 
     void executePipelineRun({
       request,
+      retryRequest,
+      sourceJobId,
       signal: controller.signal,
       knownStatuses: runtime.knownStatuses,
       apply,
@@ -1478,9 +2122,11 @@ export function startPastePipeline(
   };
 
   startRun({
-    payload,
-    sourceMode: options?.sourceMode ?? "figma_paste",
-    skipScreenshot: options?.skipScreenshot === true,
+    request: {
+      payload,
+      sourceMode: options?.sourceMode ?? "figma_paste",
+      skipScreenshot: options?.skipScreenshot === true,
+    },
   });
 
   return {
@@ -1519,12 +2165,22 @@ export function startPastePipeline(
       });
     },
 
-    retry(): void {
+    retry(requestOverride?: PipelineRetryRequest): void {
       const lastRequest = runtime.lastRequest;
       if (!lastRequest) {
         return;
       }
-      startRun(lastRequest);
+      const retryRequest = requestOverride ?? runtime.state.retryRequest;
+      const sourceJobId = runtime.state.jobId;
+      if (retryRequest !== undefined && sourceJobId !== undefined) {
+        startRun({
+          request: lastRequest,
+          retryRequest,
+          sourceJobId,
+        });
+        return;
+      }
+      startRun({ request: lastRequest });
     },
 
     getState(): PastePipelineState {
@@ -1541,7 +2197,7 @@ export interface UsePastePipelineResult {
   state: PastePipelineState;
   start(payload: string, options?: Omit<PipelineOptions, "signal">): void;
   cancel(): void;
-  retry(): void;
+  retry(request?: PipelineRetryRequest): void;
   executionLog: PipelineExecutionLog;
 }
 
@@ -1565,12 +2221,20 @@ export function usePastePipeline(): UsePastePipelineResult {
     activeJobId: undefined,
     knownStatuses: new Map(),
   });
-  const logRef = useRef(createPipelineExecutionLog());
+  const [executionLog] = useState(() => createPipelineExecutionLog());
 
-  const startRun = (request: PipelineRequest): void => {
+  const startRun = ({
+    request,
+    retryRequest,
+    sourceJobId,
+  }: {
+    request: PipelineRequest;
+    retryRequest?: PipelineRetryRequest;
+    sourceJobId?: string;
+  }): void => {
     const runtime = runtimeRef.current;
     runtime.activeRunId += 1;
-    logRef.current.clear();
+    executionLog.clear();
     const runId = runtime.activeRunId;
     runtime.activeRunController?.abort();
     runtime.activeRunController = new AbortController();
@@ -1595,16 +2259,16 @@ export function usePastePipeline(): UsePastePipelineResult {
       apply(action);
       const timestamp = new Date().toISOString();
       if (action.type === "parsing_done") {
-        logRef.current.addEntry({ timestamp, stage: "parsing", success: true });
+        executionLog.addEntry({ timestamp, stage: "parsing", success: true });
       } else if (action.type === "stage_done") {
-        logRef.current.addEntry({
+        executionLog.addEntry({
           timestamp,
           stage: action.stage,
           durationMs: action.durationMs,
           success: true,
         });
       } else if (action.type === "stage_failed") {
-        logRef.current.addEntry({
+        executionLog.addEntry({
           timestamp,
           stage: action.error.stage,
           success: false,
@@ -1616,6 +2280,8 @@ export function usePastePipeline(): UsePastePipelineResult {
 
     void executePipelineRun({
       request,
+      retryRequest,
+      sourceJobId,
       signal: runtime.activeRunController.signal,
       knownStatuses: runtime.knownStatuses,
       apply: loggedApply,
@@ -1638,9 +2304,11 @@ export function usePastePipeline(): UsePastePipelineResult {
 
     start(payload: string, options?: Omit<PipelineOptions, "signal">): void {
       startRun({
-        payload,
-        sourceMode: options?.sourceMode ?? "figma_paste",
-        skipScreenshot: options?.skipScreenshot === true,
+        request: {
+          payload,
+          sourceMode: options?.sourceMode ?? "figma_paste",
+          skipScreenshot: options?.skipScreenshot === true,
+        },
       });
     },
 
@@ -1673,14 +2341,24 @@ export function usePastePipeline(): UsePastePipelineResult {
       });
     },
 
-    retry(): void {
+    retry(requestOverride?: PipelineRetryRequest): void {
       const request = runtimeRef.current.lastRequest;
       if (!request) {
         return;
       }
-      startRun(request);
+      const retryRequest = requestOverride ?? state.retryRequest;
+      const sourceJobId = state.jobId;
+      if (retryRequest !== undefined && sourceJobId !== undefined) {
+        startRun({
+          request,
+          retryRequest,
+          sourceJobId,
+        });
+        return;
+      }
+      startRun({ request });
     },
 
-    executionLog: logRef.current,
+    executionLog,
   };
 }

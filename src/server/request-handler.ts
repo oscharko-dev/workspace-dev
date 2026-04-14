@@ -36,6 +36,7 @@ import type { ScreenIR } from "../parity/types-ir.js";
 import {
   CreatePrRequestSchema,
   RegenerationRequestSchema,
+  RetryRequestSchema,
   SubmitRequestSchema,
   SyncRequestSchema,
   formatZodError,
@@ -231,6 +232,7 @@ type WorkspaceAuditEvent =
   | "workspace.sync.previewed"
   | "workspace.sync.applied"
   | "workspace.regenerate.accepted"
+  | "workspace.retry.accepted"
   | "workspace.create_pr.completed"
   | "workspace.stale_check.completed"
   | "workspace.remap_suggest.completed";
@@ -289,6 +291,7 @@ const PROTECTED_POST_ACTIONS = new Set([
   "cancel",
   "sync",
   "regenerate",
+  "retry-stage",
   "create-pr",
   "stale-check",
   "remap-suggest",
@@ -528,6 +531,18 @@ export function createWorkspaceRequestHandler({
               payload: {
                 error: "METHOD_NOT_ALLOWED",
                 message: `Use POST for regeneration route '/workspace/jobs/${jobId}/regenerate'.`,
+              },
+            });
+            return;
+          }
+
+          if (parsedJobRoute.action === "retry-stage") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for retry route '/workspace/jobs/${jobId}/retry-stage'.`,
               },
             });
             return;
@@ -1244,7 +1259,8 @@ export function createWorkspaceRequestHandler({
 
         const isRateLimitedWriteRoute =
           pathname === "/workspace/submit" ||
-          parsedJobRoute?.action === "regenerate";
+          parsedJobRoute?.action === "regenerate" ||
+          parsedJobRoute?.action === "retry-stage";
         if (isRateLimitedWriteRoute) {
           const rateLimitResult = rateLimiter.consume(
             resolveRateLimitClientKey(request),
@@ -1770,6 +1786,161 @@ export function createWorkspaceRequestHandler({
             statusCode: 202,
             jobId: accepted.jobId,
             message: `Regeneration accepted for source job '${jobId}' as job '${accepted.jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 202,
+            payload: accepted,
+          });
+          return;
+        }
+
+        if (parsedJobRoute?.action === "retry-stage") {
+          const jobId = safeDecodeParam(
+            parsedJobRoute.jobId,
+            "job ID",
+            response,
+          );
+          if (jobId === null) return;
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              jobId,
+              fallbackMessage: "Retry request validation failed.",
+            });
+            return;
+          }
+
+          const parsed = RetryRequestSchema.safeParse(rawBody.value);
+          if (!parsed.success) {
+            sendValidationError({
+              payload: formatZodError(parsed.error),
+              jobId,
+              fallbackMessage: "Retry request validation failed.",
+            });
+            return;
+          }
+
+          let accepted: ReturnType<JobEngine["submitRetry"]>;
+          try {
+            accepted = jobEngine.submitRetry({
+              sourceJobId: jobId,
+              retryStage: parsed.data.retryStage,
+              ...(parsed.data.retryTargets
+                ? { retryTargets: parsed.data.retryTargets }
+                : {}),
+            });
+          } catch (error) {
+            if (error instanceof Error && "code" in error) {
+              const code = (error as { code?: string }).code;
+              if (code === "E_JOB_QUEUE_FULL") {
+                const queueValue = (error as { queue?: unknown }).queue;
+                sendAuditedError({
+                  statusCode: 429,
+                  payload: {
+                    error: "QUEUE_BACKPRESSURE",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "Job queue limit reached.",
+                    }),
+                    queue:
+                      typeof queueValue === "object" && queueValue !== null
+                        ? queueValue
+                        : undefined,
+                  },
+                  event: "security.request.rate_limited",
+                  level: "warn",
+                  jobId,
+                  fallbackMessage: `Retry request rate limited for source job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_RETRY_SOURCE_NOT_FOUND") {
+                sendRequestFailure({
+                  statusCode: 404,
+                  payload: {
+                    error: "SOURCE_JOB_NOT_FOUND",
+                    message: `Source job '${jobId}' not found.`,
+                  },
+                  jobId,
+                  fallbackMessage: `Retry request failed for source job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_RETRY_SOURCE_NOT_FAILED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "SOURCE_JOB_NOT_RETRYABLE",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "Source job must be failed or partial before retrying.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Retry request failed for source job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_RETRY_STAGE_INVALID") {
+                sendValidationError({
+                  payload: {
+                    error: "INVALID_RETRY_STAGE",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback: "retryStage is not supported.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: "Retry request validation failed.",
+                });
+                return;
+              }
+              if (code === "E_RETRY_TARGETS_INVALID") {
+                sendValidationError({
+                  payload: {
+                    error: "INVALID_RETRY_TARGETS",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "retryTargets are only supported for code generation retries.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: "Retry request validation failed.",
+                });
+                return;
+              }
+            }
+
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not submit retry job.",
+                }),
+              },
+              jobId,
+              fallbackMessage: `Retry request failed for source job '${jobId}'.`,
+            });
+            return;
+          }
+
+          logAuditEvent({
+            event: "workspace.retry.accepted",
+            statusCode: 202,
+            jobId: accepted.jobId,
+            message:
+              `Retry accepted for source job '${jobId}' at stage '${accepted.retryStage}' ` +
+              `as job '${accepted.jobId}'.`,
           });
           sendJson({
             response,
@@ -2418,6 +2589,7 @@ function scheduleFigmaPasteTempCleanup(args: {
     if (
       !job ||
       job.status === "completed" ||
+      job.status === "partial" ||
       job.status === "failed" ||
       job.status === "canceled"
     ) {

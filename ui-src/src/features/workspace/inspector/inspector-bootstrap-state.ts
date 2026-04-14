@@ -14,6 +14,12 @@ export type InspectorBootstrapState =
   | { kind: "queued"; jobId: string }
   | { kind: "processing"; jobId: string }
   | { kind: "ready"; jobId: string; previewUrl: string }
+  | {
+      kind: "partial";
+      jobId: string;
+      previewUrl: string;
+      fallbackMode?: string;
+    }
   | { kind: "failed"; reason: string; retryable: boolean };
 
 export type InspectorBootstrapEvent =
@@ -212,6 +218,7 @@ export function bootstrapReducer(
     }
 
     case "ready":
+    case "partial":
       return state;
     case "failed": {
       if (event.type === "intent_detected") {

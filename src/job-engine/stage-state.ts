@@ -169,6 +169,9 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   if (job.currentStage) {
     status.currentStage = job.currentStage;
   }
+  if (job.outcome) {
+    status.outcome = job.outcome;
+  }
   if (job.startedAt) {
     status.startedAt = job.startedAt;
   }
@@ -200,8 +203,34 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   if (job.gitPr) {
     status.gitPr = { ...job.gitPr };
   }
+  if (job.inspector) {
+    status.inspector = {
+      ...job.inspector,
+      ...(job.inspector.retryableStages
+        ? { retryableStages: [...job.inspector.retryableStages] }
+        : {}),
+      ...(job.inspector.retryTargets
+        ? {
+            retryTargets: job.inspector.retryTargets.map((target) => ({
+              ...target,
+            })),
+          }
+        : {}),
+      stages: job.inspector.stages.map((stage) => ({
+        ...stage,
+        ...(stage.retryTargets
+          ? { retryTargets: stage.retryTargets.map((target) => ({ ...target })) }
+          : {}),
+      })),
+    };
+  }
   if (job.error) {
-    status.error = { ...job.error };
+    status.error = {
+      ...job.error,
+      ...(job.error.retryTargets
+        ? { retryTargets: job.error.retryTargets.map((target) => ({ ...target })) }
+        : {}),
+    };
   }
 
   return status;
@@ -211,6 +240,10 @@ export const toJobSummary = (job: JobRecord): string => {
   if (job.status === "completed") {
     const count = job.stages.filter((stage) => stage.status === "completed").length;
     return `Job completed successfully. ${count}/${job.stages.length} stages completed.`;
+  }
+  if (job.status === "partial") {
+    const stage = job.error?.stage ?? job.currentStage ?? "unknown";
+    return `Job partially completed. Recovery is available from stage '${stage}'.`;
   }
   if (job.status === "canceled") {
     const reason = job.cancellation?.reason ?? "Cancellation requested.";

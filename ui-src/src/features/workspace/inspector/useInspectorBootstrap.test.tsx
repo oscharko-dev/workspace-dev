@@ -248,6 +248,89 @@ describe("useInspectorBootstrap", () => {
     });
   });
 
+  it("keeps partial jobs in partial bootstrap state instead of collapsing to ready", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-partial" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-partial",
+            status: "partial",
+            outcome: "partial",
+            inspector: {
+              outcome: "partial",
+              fallbackMode: "rest",
+              stages: [
+                { stage: "figma.source", status: "completed" },
+                { stage: "ir.derive", status: "completed" },
+                {
+                  stage: "codegen.generate",
+                  status: "failed",
+                  code: "CODEGEN_PARTIAL",
+                  message: "One file failed to generate.",
+                  retryable: true,
+                },
+              ],
+            },
+            error: {
+              code: "CODEGEN_PARTIAL",
+              stage: "codegen.generate",
+              message: "One file failed to generate.",
+              retryable: true,
+              fallbackMode: "rest",
+            },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-partial/design-ir" ||
+        url === "/workspace/jobs/job-partial/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-partial", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial/files") {
+        return createJsonResponse({
+          payload: { files: [{ path: "src/App.tsx", sizeBytes: 128 }] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial/screenshot") {
+        return createJsonResponse({
+          payload: { screenshotUrl: "http://127.0.0.1:1983/partial-shot.png" },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submit({ figmaJsonPayload: buildDirectJsonPayload() });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("partial");
+    });
+
+    if (result.current.state.kind === "partial") {
+      expect(result.current.state.jobId).toBe("job-partial");
+      expect(result.current.state.fallbackMode).toBe("rest");
+    }
+  });
+
   it("fails fast for raw Figma clipboard HTML without a JSON payload", async () => {
     const { result } = renderHook(() => useInspectorBootstrap(), {
       wrapper: makeWrapper(),
@@ -348,6 +431,86 @@ describe("useInspectorBootstrap", () => {
     });
 
     expect(submitCount).toBe(2);
+  });
+
+  it("preserves partial pipeline state instead of collapsing it to ready", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-partial" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-partial",
+            status: "completed",
+            outcome: "partial",
+            fallbackMode: "rest",
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              {
+                name: "template.prepare",
+                status: "failed",
+                code: "TRANSFORM_PARTIAL",
+                message: "Unsupported nodes were skipped",
+                retryable: false,
+              },
+            ],
+            error: {
+              stage: "mapping",
+              code: "TRANSFORM_PARTIAL",
+              message: "Unsupported nodes were skipped",
+              retryable: false,
+              fallbackMode: "rest",
+            },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-partial/design-ir" ||
+        url === "/workspace/jobs/job-partial/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-partial", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial/screenshot") {
+        return createJsonResponse({
+          payload: { screenshotUrl: "http://127.0.0.1:1983/partial-shot.png" },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submit({ figmaJsonPayload: buildDirectJsonPayload() });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("partial");
+    });
+
+    if (result.current.state.kind === "partial") {
+      expect(result.current.state.jobId).toBe("job-partial");
+      expect(result.current.state.fallbackMode).toBe("rest");
+    }
   });
 
   it("submitUrl sends figma_url source mode with the encoded file key and node id", async () => {

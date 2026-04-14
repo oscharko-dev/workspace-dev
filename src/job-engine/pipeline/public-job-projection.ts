@@ -3,12 +3,73 @@ import type {
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
   WorkspaceJobConfidence,
+  WorkspaceJobFallbackMode,
+  WorkspaceJobInspector,
+  WorkspaceJobOutcome,
+  WorkspaceJobRetryTarget,
   WorkspaceVisualAuditResult,
   WorkspaceVisualQualityReport,
 } from "../../contracts/index.js";
 import type { JobRecord } from "../types.js";
 import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
 import type { StageArtifactStore } from "./artifact-store.js";
+
+interface CodegenSummaryLike {
+  generatedPaths?: string[];
+  failedTargets?: WorkspaceJobRetryTarget[];
+}
+
+interface HybridEnrichmentLike {
+  sourceMode?: string;
+  diagnostics?: Array<{ code?: string }>;
+}
+
+const inferOutcome = ({
+  job,
+}: {
+  job: JobRecord;
+}): WorkspaceJobOutcome | undefined => {
+  if (job.outcome) {
+    return job.outcome;
+  }
+  if (job.status === "completed") {
+    return "success";
+  }
+  if (job.status === "partial") {
+    return "partial";
+  }
+  if (job.status === "failed") {
+    return "failed";
+  }
+  return undefined;
+};
+
+const inferFallbackMode = ({
+  job,
+  hybridEnrichment,
+}: {
+  job: JobRecord;
+  hybridEnrichment: HybridEnrichmentLike | undefined;
+}): WorkspaceJobFallbackMode | undefined => {
+  if (job.error?.fallbackMode) {
+    return job.error.fallbackMode;
+  }
+  if (!hybridEnrichment) {
+    return undefined;
+  }
+  const diagnosticCodes = new Set(
+    (hybridEnrichment.diagnostics ?? [])
+      .map((entry) => entry.code?.trim())
+      .filter((value): value is string => Boolean(value)),
+  );
+  if (
+    diagnosticCodes.has("W_MCP_ENRICHMENT_SKIPPED") ||
+    diagnosticCodes.has("W_MCP_FALLBACK_REST")
+  ) {
+    return hybridEnrichment.sourceMode === "hybrid" ? "hybrid_rest" : "rest";
+  }
+  return undefined;
+};
 
 export const syncPublicJobProjection = async ({
   job,
@@ -284,4 +345,66 @@ export const syncPublicJobProjection = async ({
   } else {
     delete job.gitPr;
   }
+
+  const codegenSummary = await artifactStore.getValue<CodegenSummaryLike>(
+    STAGE_ARTIFACT_KEYS.codegenSummary,
+  );
+  const hybridEnrichment = await artifactStore.getValue<HybridEnrichmentLike>(
+    STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+  );
+  const inspectorOutcome = inferOutcome({ job });
+  const fallbackMode = inferFallbackMode({ job, hybridEnrichment });
+  const retryTargets =
+    job.error?.retryTargets ?? codegenSummary?.failedTargets ?? [];
+  const inspector: WorkspaceJobInspector = {
+    ...(inspectorOutcome ? { outcome: inspectorOutcome } : {}),
+    ...(fallbackMode ? { fallbackMode } : {}),
+    ...(retryTargets.length > 0
+      ? {
+          retryTargets: retryTargets.map((target) => ({
+            ...target,
+          })),
+        }
+      : {}),
+    ...(retryTargets.length > 0 &&
+    retryTargets.every((target) => target.stage !== undefined)
+      ? {
+          retryableStages: [...new Set(retryTargets.map((target) => target.stage))],
+        }
+      : {}),
+    stages: job.stages.map((stage) => {
+      if (stage.name !== job.error?.stage) {
+        return {
+          stage: stage.name,
+          status: stage.status,
+        };
+      }
+      return {
+        stage: stage.name,
+        status: stage.status,
+        ...(job.error?.retryable !== undefined
+          ? { retryable: job.error.retryable }
+          : {}),
+        ...(job.error?.code ? { code: job.error.code } : {}),
+        ...(job.error?.message ? { message: job.error.message } : {}),
+        ...(job.error?.retryAfterMs !== undefined
+          ? { retryAfterMs: job.error.retryAfterMs }
+          : {}),
+        ...(job.error?.fallbackMode ? { fallbackMode: job.error.fallbackMode } : {}),
+        ...(retryTargets.length > 0
+          ? {
+              retryTargets: retryTargets.map((target) => ({
+                ...target,
+              })),
+            }
+          : {}),
+      };
+    }),
+  };
+  if (inspectorOutcome) {
+    job.outcome = inspectorOutcome;
+  } else {
+    delete job.outcome;
+  }
+  job.inspector = inspector;
 };

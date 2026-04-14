@@ -95,6 +95,7 @@ export interface WorkspaceComponentMappingRule {
 export type WorkspaceJobRuntimeStatus =
   | "queued"
   | "running"
+  | "partial"
   | "completed"
   | "failed"
   | "canceled";
@@ -116,6 +117,19 @@ export type WorkspaceJobStageName =
   | "validate.project"
   | "repro.export"
   | "git.pr";
+
+/** Retryable stage boundaries supported by persisted-artifact retry jobs. */
+export type WorkspaceJobRetryStage =
+  | "figma.source"
+  | "ir.derive"
+  | "template.prepare"
+  | "codegen.generate";
+
+/** Inspector-facing terminal outcome for a job. */
+export type WorkspaceJobOutcome = "success" | "partial" | "failed";
+
+/** Backend fallback mode surfaced to the inspector. */
+export type WorkspaceJobFallbackMode = "none" | "rest" | "hybrid_rest";
 
 /** Configuration for starting a workspace-dev server instance. */
 export interface WorkspaceStartOptions {
@@ -360,6 +374,37 @@ export interface WorkspaceJobDiagnostic {
   figmaNodeId?: string;
   figmaUrl?: string;
   details?: Record<string, WorkspaceJobDiagnosticValue>;
+}
+
+/** Retry target surfaced for failed-stage retries and failed generated files. */
+export interface WorkspaceJobRetryTarget {
+  kind: "stage" | "generated_file";
+  stage: WorkspaceJobRetryStage;
+  targetId: string;
+  displayName?: string;
+  filePath?: string;
+  emittedScreenId?: string;
+}
+
+/** Inspector-facing metadata for a single pipeline stage. */
+export interface WorkspaceJobInspectorStage {
+  stage: WorkspaceJobStageName;
+  status: WorkspaceJobStageStatus;
+  retryable?: boolean;
+  code?: string;
+  message?: string;
+  retryAfterMs?: number;
+  fallbackMode?: WorkspaceJobFallbackMode;
+  retryTargets?: WorkspaceJobRetryTarget[];
+}
+
+/** Inspector-facing backend result contract for recovery-aware paste flows. */
+export interface WorkspaceJobInspector {
+  outcome?: WorkspaceJobOutcome;
+  fallbackMode?: WorkspaceJobFallbackMode;
+  retryableStages?: WorkspaceJobRetryStage[];
+  retryTargets?: WorkspaceJobRetryTarget[];
+  stages: WorkspaceJobInspectorStage[];
 }
 
 /** Artifact paths emitted by autonomous job execution. */
@@ -679,6 +724,10 @@ export interface WorkspaceJobError {
   code: string;
   stage: WorkspaceJobStageName;
   message: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  fallbackMode?: WorkspaceJobFallbackMode;
+  retryTargets?: WorkspaceJobRetryTarget[];
   diagnostics?: WorkspaceJobDiagnostic[];
 }
 
@@ -703,6 +752,7 @@ export interface WorkspaceJobCancellation {
 export interface WorkspaceJobStatus {
   jobId: string;
   status: WorkspaceJobRuntimeStatus;
+  outcome?: WorkspaceJobOutcome;
   currentStage?: WorkspaceJobStageName;
   submittedAt: string;
   startedAt?: string;
@@ -724,6 +774,7 @@ export interface WorkspaceJobStatus {
   compositeQuality?: WorkspaceCompositeQualityReport;
   confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
+  inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
 }
 
@@ -731,6 +782,7 @@ export interface WorkspaceJobStatus {
 export interface WorkspaceJobResult {
   jobId: string;
   status: WorkspaceJobRuntimeStatus;
+  outcome?: WorkspaceJobOutcome;
   summary: string;
   artifacts: WorkspaceJobArtifacts;
   preview: {
@@ -745,6 +797,7 @@ export interface WorkspaceJobResult {
   compositeQuality?: WorkspaceCompositeQualityReport;
   confidence?: WorkspaceJobConfidence;
   gitPr?: WorkspaceGitPrStatus;
+  inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
 }
 
@@ -794,12 +847,34 @@ export interface WorkspaceRegenerationAccepted {
   };
 }
 
+/** Submission payload for retrying a failed or partial job from a persisted stage boundary. */
+export interface WorkspaceRetryInput {
+  sourceJobId: string;
+  retryStage: WorkspaceJobRetryStage;
+  retryTargets?: string[];
+}
+
+/** Submit response for accepted retry jobs. */
+export interface WorkspaceRetryAccepted {
+  jobId: string;
+  sourceJobId: string;
+  retryStage: WorkspaceJobRetryStage;
+  status: "queued";
+  acceptedModes: {
+    figmaSourceMode: WorkspaceFigmaSourceMode;
+    llmCodegenMode: WorkspaceLlmCodegenMode;
+  };
+}
+
 /** Lineage metadata linking a regeneration job to its source. */
 export interface WorkspaceJobLineage {
   sourceJobId: string;
+  kind?: "regeneration" | "retry";
   draftId?: string;
   baseFingerprint?: string;
   overrideCount: number;
+  retryStage?: WorkspaceJobRetryStage;
+  retryTargets?: string[];
 }
 
 /** Supported local sync execution modes. */

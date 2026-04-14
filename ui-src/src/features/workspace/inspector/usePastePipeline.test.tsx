@@ -406,6 +406,146 @@ describe("usePastePipeline", () => {
     expect(submitCount).toBe(2);
   });
 
+  it("retry() uses the backend retry-stage endpoint when the failed job exposes retry metadata", async () => {
+    let retryStageCalls = 0;
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-partial" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-partial",
+            status: "failed",
+            outcome: "partial",
+            fallbackMode: "rest",
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              { name: "template.prepare", status: "completed" },
+              {
+                name: "codegen.generate",
+                status: "failed",
+                code: "CODEGEN_PARTIAL",
+                message: "Some files failed",
+                retryable: true,
+                retryTargets: [
+                  {
+                    id: "src/App.tsx",
+                    file: "src/App.tsx",
+                  },
+                ],
+              },
+            ],
+            error: {
+              stage: "generating",
+              code: "CODEGEN_PARTIAL",
+              message: "Some files failed",
+              retryable: true,
+              fallbackMode: "rest",
+              retryTargets: [
+                {
+                  id: "src/App.tsx",
+                  file: "src/App.tsx",
+                },
+              ],
+            },
+          },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial/retry-stage") {
+        retryStageCalls += 1;
+        expect(init?.body).toBe(
+          JSON.stringify({
+            stage: "generating",
+            targetIds: ["src/App.tsx"],
+          }),
+        );
+        return createJsonResponse({
+          status: 202,
+          payload: {
+            jobId: "job-partial-retry",
+            sourceJobId: "job-partial",
+            status: "queued",
+          },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-retry") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-partial-retry",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/retry-preview" },
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              { name: "template.prepare", status: "completed" },
+              { name: "codegen.generate", status: "completed" },
+            ],
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-partial-retry/design-ir" ||
+        url === "/workspace/jobs/job-partial-retry/figma-analysis" ||
+        url === "/workspace/jobs/job-partial-retry/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-partial-retry", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-retry/files") {
+        return createJsonResponse({
+          payload: { files: [{ path: "src/App.tsx", sizeBytes: 128 }] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-retry/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("partial");
+    });
+
+    await act(async () => {
+      result.current.retry();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("ready");
+    });
+
+    expect(retryStageCalls).toBe(1);
+    expect(result.current.state.previewUrl).toBe(
+      "http://127.0.0.1:1983/retry-preview",
+    );
+  });
+
   it("cancel() calls the server cancel endpoint for accepted jobs", async () => {
     let cancelRequestCount = 0;
     let polledAfterCancel = false;

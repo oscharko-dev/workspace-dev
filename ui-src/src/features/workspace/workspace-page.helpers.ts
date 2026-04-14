@@ -5,6 +5,7 @@ export type JobLifecycleStatus =
   | "queued"
   | "running"
   | "completed"
+  | "partial"
   | "failed"
   | "canceled";
 
@@ -23,10 +24,45 @@ export interface RuntimeStatusPayload {
 export interface JobStagePayload {
   name: string;
   status: string;
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  fallbackMode?: string;
+  targetIds?: string[];
+  retryTargets?: unknown;
+  error?: unknown;
+}
+
+export interface JobInspectorStagePayload {
+  stage: string;
+  status: string;
+  code?: string;
+  message?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  fallbackMode?: string;
+  retryTargets?: unknown;
+}
+
+export interface JobInspectorPayload {
+  outcome?: string;
+  fallbackMode?: string;
+  retryableStages?: string[];
+  retryTargets?: unknown;
+  stages?: JobInspectorStagePayload[];
 }
 
 export interface JobErrorPayload {
+  code?: string;
   message?: string;
+  stage?: string;
+  retryable?: boolean;
+  retryAfterMs?: number;
+  fallbackMode?: string;
+  targetIds?: string[];
+  retryTargets?: unknown;
+  details?: unknown;
 }
 
 export interface JobPreviewPayload {
@@ -65,6 +101,10 @@ export interface JobPayload {
   jobId: string;
   status: string;
   stages?: JobStagePayload[];
+  outcome?: string;
+  fallbackMode?: string;
+  stageResults?: Record<string, unknown> | unknown[];
+  inspector?: JobInspectorPayload;
   preview?: JobPreviewPayload;
   queue?: JobQueuePayload;
   cancellation?: JobCancellationPayload;
@@ -119,6 +159,9 @@ export function getJobLifecycleStatus(
   if (payload.status === "completed") {
     return "completed";
   }
+  if (payload.status === "partial") {
+    return "partial";
+  }
   if (payload.status === "failed") {
     return "failed";
   }
@@ -153,6 +196,9 @@ export function getSubmitBadge({
   }
   if (status === "completed") {
     return { text: "COMPLETED", variant: "ok" };
+  }
+  if (status === "partial") {
+    return { text: "PARTIAL", variant: "warn" };
   }
   if (status === "failed") {
     return { text: "FAILED", variant: "error" };

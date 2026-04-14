@@ -23,7 +23,11 @@ import {
   upsertInspectorOverrideEntry,
 } from "./inspector-override-draft";
 import { toInspectorLayoutStorageKey } from "./layout-state";
-import { createInitialPipelineState } from "./paste-pipeline";
+import {
+  createInitialPipelineState,
+  type PastePipelineState,
+} from "./paste-pipeline";
+import { createPipelineExecutionLog } from "./pipeline-execution-log";
 
 const mockUseQuery = vi.fn();
 const mockUseMutation = vi.fn();
@@ -228,6 +232,71 @@ function renderInspectorPanel(
       ...overrides,
     }),
   );
+}
+
+function buildPipelineState(
+  overrides: Partial<PastePipelineState> = {},
+): PastePipelineState {
+  const base = createInitialPipelineState();
+  return {
+    ...base,
+    stage: "partial",
+    jobId: "job-1",
+    jobStatus: "completed",
+    canRetry: true,
+    stageProgress: {
+      ...base.stageProgress,
+      resolving: { state: "done", duration: 12 },
+      transforming: {
+        state: "failed",
+        error: {
+          stage: "transforming",
+          code: "TRANSFORM_PARTIAL",
+          message: "Unsupported nodes were skipped.",
+          retryable: false,
+        },
+      },
+      generating: {
+        state: "failed",
+        error: {
+          stage: "generating",
+          code: "CODEGEN_PARTIAL",
+          message: "Some files failed.",
+          retryable: true,
+        },
+      },
+    },
+    errors: [
+      {
+        stage: "transforming",
+        code: "TRANSFORM_PARTIAL",
+        message: "Unsupported nodes were skipped.",
+        retryable: false,
+      },
+      {
+        stage: "generating",
+        code: "CODEGEN_PARTIAL",
+        message: "Some files failed.",
+        retryable: true,
+        retryTargets: [
+          {
+            id: "src/routes/settings.tsx",
+            label: "settings.tsx",
+            filePath: "src/routes/settings.tsx",
+            stage: "generating",
+          },
+        ],
+      },
+    ],
+    partialStats: { resolvedStages: 2, totalStages: 4, errorCount: 2 },
+    fallbackMode: "rest",
+    retryRequest: {
+      stage: "generating",
+      targetIds: ["src/routes/settings.tsx"],
+    },
+    screenshot: "http://127.0.0.1:1983/partial-shot.png",
+    ...overrides,
+  };
 }
 
 function editableNodeQueryOverrides({
@@ -651,6 +720,91 @@ describe("InspectorPanel navigation stack", () => {
         screen.queryByTestId("breadcrumb-scope-badge"),
       ).not.toBeInTheDocument();
     });
+  });
+});
+
+describe("InspectorPanel pipeline recovery UI", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
+    window.sessionStorage.clear();
+    installQueryMock();
+    installMutationMock();
+  });
+
+  it("shows pane-local recovery banners and failed-file retry actions for partial imports", () => {
+    const onPipelineRetry = vi.fn();
+
+    renderInspectorPanel({
+      previewUrl: "",
+      pipeline: buildPipelineState(),
+      onPipelineRetry,
+    });
+
+    expect(
+      screen.getByTestId("pipeline-status-bar-fallback-mode"),
+    ).toHaveTextContent("Figma REST fallback active");
+    expect(
+      screen.getByTestId("inspector-tree-recovery-banner"),
+    ).toHaveTextContent("Transform partial");
+    expect(
+      screen.getByTestId("inspector-preview-recovery-banner"),
+    ).toHaveTextContent("Showing the captured screenshot instead");
+    expect(
+      screen.getByTestId("inspector-code-recovery-banner"),
+    ).toHaveTextContent("Some generated files failed.");
+
+    fireEvent.click(screen.getByTestId("inspector-tree-recovery-retry"));
+    expect(onPipelineRetry).toHaveBeenCalledWith("transforming");
+
+    fireEvent.click(
+      screen.getByTestId(
+        "inspector-code-retry-target-src/routes/settings.tsx",
+      ),
+    );
+    expect(onPipelineRetry).toHaveBeenCalledWith("generating", [
+      "src/routes/settings.tsx",
+    ]);
+  });
+
+  it("copies the unified sanitized pipeline report", async () => {
+    const executionLog = createPipelineExecutionLog();
+    executionLog.addEntry({
+      timestamp: "2026-04-14T12:00:00.000Z",
+      stage: "generating",
+      success: false,
+      errorCode: "CODEGEN_PARTIAL",
+      errorMessage: "Bearer figd_secret_token",
+    });
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+
+    renderInspectorPanel({
+      previewUrl: "",
+      pipeline: buildPipelineState(),
+      executionLog,
+    });
+
+    fireEvent.click(screen.getByTestId("pipeline-status-bar-copy-report"));
+
+    await waitFor(() => {
+      expect(writeText).toHaveBeenCalledTimes(1);
+    });
+
+    const copied = writeText.mock.calls[0]?.[0] as string;
+    expect(copied).toContain('"outcome": "partial"');
+    expect(copied).toContain('"fallbackMode": "rest"');
+    expect(copied).toContain('"retry": {');
+    expect(copied).toContain('"executionLog": [');
+    expect(copied).toContain("[REDACTED]");
   });
 });
 

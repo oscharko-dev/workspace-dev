@@ -18,9 +18,10 @@ import { findNodePath, useStreamingTreeNodes } from "./component-tree-utils";
 import {
   createInitialPipelineState,
   type PastePipelineState,
+  type PipelineStage,
 } from "./paste-pipeline";
 import {
-  redactSensitiveData,
+  buildSanitizedPipelineReport,
   type PipelineExecutionLog,
 } from "./pipeline-execution-log";
 import { PipelineStatusBar } from "./PipelineStatusBar";
@@ -382,7 +383,7 @@ interface InspectorPanelProps {
   /** Paste pipeline state for progressive tree rendering during paste flow. */
   pipeline?: PastePipelineState;
   /** Callback to retry the pipeline after a partial or full failure. */
-  onPipelineRetry?: () => void;
+  onPipelineRetry?: (stage?: PipelineStage, targetIds?: string[]) => void;
   /** In-memory execution log for exporting stage events as JSON. */
   executionLog?: PipelineExecutionLog;
 }
@@ -1013,26 +1014,105 @@ export function InspectorPanel({
     pipeline?.jobId === jobId ? pipeline : IDLE_PIPELINE_STATE;
   const pipelineTreeNodes = useStreamingTreeNodes(activePipeline);
 
-  const handleCopyPipelineReport = useCallback((): void => {
-    let text: string;
-    if (executionLog !== undefined) {
-      text = executionLog.exportJson();
-    } else {
-      const report = {
-        exportedAt: new Date().toISOString(),
-        stage: activePipeline.stage,
-        errors: activePipeline.errors,
-        stageProgress: activePipeline.stageProgress,
-      };
-      text = redactSensitiveData(JSON.stringify(report, null, 2));
+  const treeRecoveryError = useMemo(() => {
+    for (let index = activePipeline.errors.length - 1; index >= 0; index -= 1) {
+      const error = activePipeline.errors[index];
+      if (
+        error !== undefined &&
+        (error.stage === "resolving" || error.stage === "transforming")
+      ) {
+        return error;
+      }
     }
+    return null;
+  }, [activePipeline.errors]);
+
+  const generatingRecoveryError = useMemo(() => {
+    for (let index = activePipeline.errors.length - 1; index >= 0; index -= 1) {
+      const error = activePipeline.errors[index];
+      if (error !== undefined && error.stage === "generating") {
+        return error;
+      }
+    }
+    return null;
+  }, [activePipeline.errors]);
+
+  const generatingRetryTargets = useMemo(() => {
+    return generatingRecoveryError?.retryTargets ?? [];
+  }, [generatingRecoveryError]);
+
+  const previewRecoveryMessage = useMemo(() => {
+    if (
+      activePipeline.stage !== "partial" &&
+      activePipeline.stage !== "error" &&
+      activePipeline.stage !== "generating"
+    ) {
+      return null;
+    }
+    if (
+      typeof activePipeline.previewUrl === "string" &&
+      activePipeline.previewUrl.trim().length > 0
+    ) {
+      return null;
+    }
+    if (activePipeline.screenshot) {
+      return "Preview is unavailable for this run. Showing the captured screenshot instead.";
+    }
+    return "Preview is unavailable for this run. Retry generation to rebuild the preview.";
+  }, [
+    activePipeline.previewUrl,
+    activePipeline.screenshot,
+    activePipeline.stage,
+  ]);
+
+  const handleCopyPipelineReport = useCallback((): void => {
+    const text = buildSanitizedPipelineReport({
+      pipeline: {
+        stage: activePipeline.stage,
+        ...(activePipeline.outcome !== undefined
+          ? { outcome: activePipeline.outcome }
+          : {}),
+        ...(activePipeline.jobId !== undefined ? { jobId: activePipeline.jobId } : {}),
+        ...(activePipeline.jobStatus !== undefined
+          ? { jobStatus: activePipeline.jobStatus }
+          : {}),
+        ...(activePipeline.fallbackMode !== undefined
+          ? { fallbackMode: activePipeline.fallbackMode }
+          : {}),
+        ...(activePipeline.retryRequest !== undefined
+          ? { retryRequest: activePipeline.retryRequest }
+          : {}),
+        stageProgress: activePipeline.stageProgress,
+        errors: activePipeline.errors,
+      },
+      executionLog,
+    });
     void navigator.clipboard.writeText(text);
   }, [
     executionLog,
     activePipeline.errors,
+    activePipeline.fallbackMode,
+    activePipeline.jobId,
+    activePipeline.jobStatus,
+    activePipeline.outcome,
+    activePipeline.retryRequest,
     activePipeline.stage,
     activePipeline.stageProgress,
   ]);
+
+  const handleRetryCurrentPipeline = useCallback((): void => {
+    onPipelineRetry?.(
+      activePipeline.retryRequest?.stage,
+      activePipeline.retryRequest?.targetIds,
+    );
+  }, [activePipeline.retryRequest, onPipelineRetry]);
+
+  const handleRetryGeneratingTarget = useCallback(
+    (targetId: string): void => {
+      onPipelineRetry?.("generating", [targetId]);
+    },
+    [onPipelineRetry],
+  );
 
   // --- Queries ---
 
@@ -5070,12 +5150,15 @@ export function InspectorPanel({
           stage={activePipeline.stage}
           errors={activePipeline.errors}
           stageProgress={activePipeline.stageProgress}
+          {...(activePipeline.fallbackMode !== undefined
+            ? { fallbackMode: activePipeline.fallbackMode }
+            : {})}
           {...(activePipeline.partialStats !== undefined
             ? { partialStats: activePipeline.partialStats }
             : {})}
           canRetry={activePipeline.canRetry}
           {...(onPipelineRetry !== undefined
-            ? { onRetry: onPipelineRetry }
+            ? { onRetry: handleRetryCurrentPipeline }
             : {})}
           onCopyReport={handleCopyPipelineReport}
         />
@@ -5094,6 +5177,33 @@ export function InspectorPanel({
             className="min-h-[120px] shrink-0 border-r border-[#000000]"
             style={treePaneStyle}
           >
+            {treeRecoveryError ? (
+              <div
+                data-testid="inspector-tree-recovery-banner"
+                className="border-b border-amber-500/20 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">
+                    {treeRecoveryError.stage === "resolving"
+                      ? "Source import degraded"
+                      : "Transform partial"}
+                  </span>
+                  <span>{treeRecoveryError.message}</span>
+                  {onPipelineRetry ? (
+                    <button
+                      type="button"
+                      data-testid="inspector-tree-recovery-retry"
+                      onClick={() => {
+                        onPipelineRetry(treeRecoveryError.stage);
+                      }}
+                      className="cursor-pointer rounded border border-amber-400/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
+                    >
+                      Retry {treeRecoveryError.stage}
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             {designIrState.status === "ready" ||
             effectiveTreeNodes.length > 0 ? (
               <ComponentTree
@@ -5174,6 +5284,14 @@ export function InspectorPanel({
           className="relative min-h-[200px] flex-1 border-r border-[#000000] lg:min-h-0"
           style={previewPaneStyle}
         >
+          {previewRecoveryMessage ? (
+            <div
+              data-testid="inspector-preview-recovery-banner"
+              className="border-b border-sky-500/20 bg-sky-500/10 px-3 py-2 text-[11px] text-sky-100"
+            >
+              {previewRecoveryMessage}
+            </div>
+          ) : null}
           <PreviewPane
             previewUrl={previewUrl}
             inspectEnabled={inspectEnabled}
@@ -5223,6 +5341,38 @@ export function InspectorPanel({
           className="min-h-[200px] flex-1 lg:min-h-0"
           style={codePaneStyle}
         >
+          {generatingRetryTargets.length > 0 ? (
+            <div
+              data-testid="inspector-code-recovery-banner"
+              className="border-b border-rose-500/20 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200"
+            >
+              <div className="flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold">
+                    Some generated files failed.
+                  </span>
+                  <span>
+                    Successfully generated files remain available below.
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {generatingRetryTargets.map((target) => (
+                    <button
+                      key={target.id}
+                      type="button"
+                      data-testid={`inspector-code-retry-target-${target.id}`}
+                      onClick={() => {
+                        handleRetryGeneratingTarget(target.id);
+                      }}
+                      className="cursor-pointer rounded border border-rose-400/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-rose-100 transition hover:bg-rose-400/10"
+                    >
+                      Retry {target.filePath ?? target.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : null}
           <CodePane
             files={files}
             selectedFile={effectiveSelectedFile}

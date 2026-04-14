@@ -6,7 +6,7 @@ import { nowIso, toPublicJob } from "./stage-state.js";
 import type { JobRecord } from "./types.js";
 
 const TERMINAL_SNAPSHOT_VERSION = 1 as const;
-const TERMINAL_STATUSES = new Set<WorkspaceJobRuntimeStatus>(["completed", "failed", "canceled"]);
+const TERMINAL_STATUSES = new Set<WorkspaceJobRuntimeStatus>(["completed", "partial", "failed", "canceled"]);
 
 interface PersistedTerminalJobSnapshot extends WorkspaceJobStatus {
   snapshotVersion: typeof TERMINAL_SNAPSHOT_VERSION;
@@ -134,6 +134,9 @@ const toRehydratedJobRecord = ({
   if (snapshot.currentStage) {
     job.currentStage = snapshot.currentStage;
   }
+  if (snapshot.outcome) {
+    job.outcome = snapshot.outcome;
+  }
   if (snapshot.startedAt) {
     job.startedAt = snapshot.startedAt;
   }
@@ -165,8 +168,34 @@ const toRehydratedJobRecord = ({
   if (snapshot.gitPr) {
     job.gitPr = { ...snapshot.gitPr };
   }
+  if (snapshot.inspector) {
+    job.inspector = {
+      ...snapshot.inspector,
+      ...(snapshot.inspector.retryableStages
+        ? { retryableStages: [...snapshot.inspector.retryableStages] }
+        : {}),
+      ...(snapshot.inspector.retryTargets
+        ? {
+            retryTargets: snapshot.inspector.retryTargets.map((target) => ({
+              ...target,
+            })),
+          }
+        : {}),
+      stages: snapshot.inspector.stages.map((stage) => ({
+        ...stage,
+        ...(stage.retryTargets
+          ? { retryTargets: stage.retryTargets.map((target) => ({ ...target })) }
+          : {}),
+      })),
+    };
+  }
   if (snapshot.error) {
-    job.error = { ...snapshot.error };
+    job.error = {
+      ...snapshot.error,
+      ...(snapshot.error.retryTargets
+        ? { retryTargets: snapshot.error.retryTargets.map((target) => ({ ...target })) }
+        : {}),
+    };
   }
   restorePreview({ job, resolveBaseUrl });
   return job;

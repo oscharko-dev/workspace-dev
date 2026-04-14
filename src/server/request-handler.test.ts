@@ -42,6 +42,17 @@ function createStubJobEngine(overrides: Partial<JobEngine> = {}): JobEngine {
           llmCodegenMode: "deterministic",
         },
       }) as ReturnType<JobEngine["submitRegeneration"]>,
+    submitRetry: () =>
+      ({
+        jobId: "retry-job",
+        sourceJobId: "source-job",
+        retryStage: "codegen.generate",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "rest",
+          llmCodegenMode: "deterministic",
+        },
+      }) as ReturnType<JobEngine["submitRetry"]>,
     createPrFromJob: async () =>
       ({
         status: "executed",
@@ -662,6 +673,61 @@ test("request handler shares the submission rate limit between submit and regene
   }
 });
 
+test("request handler shares the submission rate limit between regenerate and retry-stage routes", async () => {
+  const submitRegeneration = test.mock.fn(() => {
+    return {
+      jobId: "regen-job",
+      sourceJobId: "source-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitRegeneration"]>;
+  });
+  const submitRetry = test.mock.fn(() => {
+    return {
+      jobId: "retry-job",
+      sourceJobId: "source-job",
+      retryStage: "codegen.generate",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitRetry"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitRegeneration, submitRetry }),
+    rateLimitPerMinute: 1,
+  });
+
+  try {
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/source-job/regenerate",
+      payload: { overrides: [] },
+    });
+    assert.equal(accepted.statusCode, 202);
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/source-job/retry-stage",
+      payload: { retryStage: "codegen.generate" },
+    });
+    assert.equal(limited.statusCode, 429);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(
+      limited.json<Record<string, unknown>>().error,
+      "RATE_LIMIT_EXCEEDED",
+    );
+    assert.equal(submitRegeneration.mock.callCount(), 1);
+    assert.equal(submitRetry.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
 test("request handler forwards normalized componentMappings on submit and regenerate", async () => {
   const submitJob = test.mock.fn(() => {
     return {
@@ -760,6 +826,55 @@ test("request handler forwards normalized componentMappings on submit and regene
         },
       ],
     );
+  } finally {
+    await close();
+  }
+});
+
+test("request handler forwards retry-stage requests to jobEngine.submitRetry", async () => {
+  const submitRetry = test.mock.fn(() => {
+    return {
+      jobId: "retry-job",
+      sourceJobId: "source-job",
+      retryStage: "codegen.generate",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitRetry"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitRetry }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/jobs/source-job/retry-stage",
+      payload: {
+        retryStage: "codegen.generate",
+        retryTargets: [" src/App.tsx ", "src/screens/Home.tsx"],
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitRetry.mock.callCount(), 1);
+    assert.deepEqual(submitRetry.mock.calls[0]?.arguments[0], {
+      sourceJobId: "source-job",
+      retryStage: "codegen.generate",
+      retryTargets: ["src/App.tsx", "src/screens/Home.tsx"],
+    });
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      jobId: "retry-job",
+      sourceJobId: "source-job",
+      retryStage: "codegen.generate",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    });
   } finally {
     await close();
   }
@@ -951,6 +1066,69 @@ test("request handler maps regeneration and create-pr job-engine failures", asyn
             overrides: [
               { nodeId: "node-1", field: "fillColor", value: "#ff0000" },
             ],
+          },
+        });
+
+        assert.equal(response.statusCode, scenario.statusCode);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          scenario.error,
+        );
+      } finally {
+        await close();
+      }
+    });
+  }
+
+  const retryScenarios = [
+    {
+      code: "E_JOB_QUEUE_FULL",
+      statusCode: 429,
+      error: "QUEUE_BACKPRESSURE",
+      extra: { queue: { runningCount: 1, queuedCount: 2 } },
+    },
+    {
+      code: "E_RETRY_SOURCE_NOT_FOUND",
+      statusCode: 404,
+      error: "SOURCE_JOB_NOT_FOUND",
+    },
+    {
+      code: "E_RETRY_SOURCE_NOT_FAILED",
+      statusCode: 409,
+      error: "SOURCE_JOB_NOT_RETRYABLE",
+    },
+    {
+      code: "E_RETRY_STAGE_INVALID",
+      statusCode: 400,
+      error: "INVALID_RETRY_STAGE",
+    },
+    {
+      code: "E_RETRY_TARGETS_INVALID",
+      statusCode: 400,
+      error: "INVALID_RETRY_TARGETS",
+    },
+  ] as const;
+
+  for (const scenario of retryScenarios) {
+    await t.test(`retry-stage maps ${scenario.code}`, async () => {
+      const submitRetry = (): never => {
+        throw createCodedError(
+          scenario.code,
+          `${scenario.code} message`,
+          scenario.extra ?? {},
+        );
+      };
+      const { app, close } = await createRequestHandlerApp({
+        jobEngine: createStubJobEngine({ submitRetry }),
+      });
+
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/jobs/source-job/retry-stage",
+          payload: {
+            retryStage: "codegen.generate",
+            retryTargets: ["src/App.tsx"],
           },
         });
 

@@ -5,8 +5,10 @@ import type {
   WorkspaceJobDiagnostic,
   WorkspaceJobInput,
   WorkspaceJobLog,
+  WorkspaceJobRetryStage,
   WorkspaceJobStageName,
-  WorkspaceRegenerationInput
+  WorkspaceRegenerationInput,
+  WorkspaceRetryInput
 } from "../../contracts/index.js";
 import type { PipelineDiagnosticInput } from "../errors.js";
 import { pushRuntimeLog } from "../stage-state.js";
@@ -14,7 +16,7 @@ import type { JobEnginePaths, JobEngineRuntime, JobRecord } from "../types.js";
 import type { StageArtifactStore } from "./artifact-store.js";
 import type { ResolvedCustomerProfile } from "../../customer-profile.js";
 
-export type PipelineExecutionMode = "submission" | "regeneration";
+export type PipelineExecutionMode = "submission" | "regeneration" | "retry";
 
 export interface PipelineResolvedPaths {
   jobDir: string;
@@ -37,6 +39,7 @@ export interface PipelineExecutionContext {
   job: JobRecord;
   input?: WorkspaceJobInput;
   regenerationInput?: WorkspaceRegenerationInput;
+  retryInput?: WorkspaceRetryInput;
   sourceJob?: JobRecord;
   runtime: JobEngineRuntime;
   resolvedPaths: JobEnginePaths;
@@ -69,6 +72,9 @@ export interface StageRuntimeContext {
   readonly jobId: string;
   readonly job: JobRecord;
   readonly input?: WorkspaceJobInput;
+  readonly sourceJob?: JobRecord;
+  readonly retryInput?: WorkspaceRetryInput;
+  readonly retryStage?: WorkspaceJobRetryStage;
   readonly runtime: Readonly<JobEngineRuntime>;
   readonly paths: Readonly<PipelineResolvedPaths>;
   readonly resolvedPaths: Readonly<JobEnginePaths>;
@@ -114,6 +120,11 @@ export const createStageRuntimeContext = ({
     jobId: executionContext.job.jobId,
     job: executionContext.job,
     ...(executionContext.input ? { input: executionContext.input } : {}),
+    ...(executionContext.sourceJob ? { sourceJob: executionContext.sourceJob } : {}),
+    ...(executionContext.retryInput ? { retryInput: executionContext.retryInput } : {}),
+    ...(executionContext.retryInput?.retryStage
+      ? { retryStage: executionContext.retryInput.retryStage }
+      : {}),
     runtime: executionContext.runtime,
     paths: executionContext.paths,
     resolvedPaths: executionContext.resolvedPaths,
