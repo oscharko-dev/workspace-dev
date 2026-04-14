@@ -32,10 +32,12 @@ export interface PipelineExecutionLog {
 
 // Token-like patterns to redact (Figma PATs start with "figd_").
 const REDACT_PATTERNS: readonly RegExp[] = [
-  /figd_[A-Za-z0-9_-]{20,}/g,
-  /figma_[A-Za-z0-9_-]{20,}/g,
-  /\\?"figmaAccessToken\\?"\s*:\s*\\?"[^"\\]+\\?"/g,
-  /\\?"accessToken\\?"\s*:\s*\\?"[^"\\]+\\?"/g,
+  /figd_[A-Za-z0-9_-]{8,}/g,
+  /figma_[A-Za-z0-9_-]{8,}/g,
+  /\\?"figmaAccessToken\\?"\s*:\s*\\?"[^"\\]+\\?"/gi,
+  /\\?"accessToken\\?"\s*:\s*\\?"[^"\\]+\\?"/gi,
+  /Bearer\s+[A-Za-z0-9._-]{8,}/gi,
+  /x-figma-token:\s*[A-Za-z0-9._-]{8,}/gi,
 ];
 
 const REDACT_PLACEHOLDER = "[REDACTED]";
@@ -59,13 +61,18 @@ export function redactSensitiveData(text: string): string {
 
 export function createPipelineExecutionLog(): PipelineExecutionLog {
   const entries: PipelineLogEntry[] = [];
+  let frozenCache: readonly PipelineLogEntry[] | null = null;
 
   return {
     get entries(): readonly PipelineLogEntry[] {
-      return Object.freeze([...entries]);
+      if (frozenCache === null) {
+        frozenCache = Object.freeze([...entries]);
+      }
+      return frozenCache;
     },
 
     addEntry(entry: PipelineLogEntry): void {
+      frozenCache = null;
       entries.push(entry);
     },
 
@@ -80,6 +87,7 @@ export function createPipelineExecutionLog(): PipelineExecutionLog {
     },
 
     clear(): void {
+      frozenCache = null;
       entries.length = 0;
     },
   };

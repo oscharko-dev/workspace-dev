@@ -8,6 +8,10 @@ import {
 } from "../workspace-page.helpers";
 import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 import { getPasteErrorMessage } from "./paste-error-catalog";
+import {
+  createPipelineExecutionLog,
+  type PipelineExecutionLog,
+} from "./pipeline-execution-log";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -448,7 +452,7 @@ export function pastePipelineReducer(
         stage: partialStats !== undefined ? "partial" : "error",
         stageProgress,
         errors: [...state.errors, action.error],
-        canRetry: action.error.retryable,
+        canRetry: [...state.errors, action.error].some((e) => e.retryable),
         canCancel: false,
         ...(partialStats !== undefined ? { partialStats } : {}),
       };
@@ -1538,6 +1542,7 @@ export interface UsePastePipelineResult {
   start(payload: string, options?: Omit<PipelineOptions, "signal">): void;
   cancel(): void;
   retry(): void;
+  executionLog: PipelineExecutionLog;
 }
 
 interface HookRuntime {
@@ -1560,10 +1565,12 @@ export function usePastePipeline(): UsePastePipelineResult {
     activeJobId: undefined,
     knownStatuses: new Map(),
   });
+  const logRef = useRef(createPipelineExecutionLog());
 
   const startRun = (request: PipelineRequest): void => {
     const runtime = runtimeRef.current;
     runtime.activeRunId += 1;
+    logRef.current.clear();
     const runId = runtime.activeRunId;
     runtime.activeRunController?.abort();
     runtime.activeRunController = new AbortController();
@@ -1584,11 +1591,34 @@ export function usePastePipeline(): UsePastePipelineResult {
       dispatch(action);
     };
 
+    const loggedApply = (action: PipelineAction): void => {
+      apply(action);
+      const timestamp = new Date().toISOString();
+      if (action.type === "parsing_done") {
+        logRef.current.addEntry({ timestamp, stage: "parsing", success: true });
+      } else if (action.type === "stage_done") {
+        logRef.current.addEntry({
+          timestamp,
+          stage: action.stage,
+          durationMs: action.durationMs,
+          success: true,
+        });
+      } else if (action.type === "stage_failed") {
+        logRef.current.addEntry({
+          timestamp,
+          stage: action.error.stage,
+          success: false,
+          errorCode: action.error.code,
+          errorMessage: action.error.message,
+        });
+      }
+    };
+
     void executePipelineRun({
       request,
       signal: runtime.activeRunController.signal,
       knownStatuses: runtime.knownStatuses,
-      apply,
+      apply: loggedApply,
     }).then(({ jobId }) => {
       if (runtimeRef.current.activeRunId === runId) {
         runtimeRef.current.activeJobId = jobId;
@@ -1650,5 +1680,7 @@ export function usePastePipeline(): UsePastePipelineResult {
       }
       startRun(request);
     },
+
+    executionLog: logRef.current,
   };
 }

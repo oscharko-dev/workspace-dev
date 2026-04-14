@@ -19,7 +19,10 @@ import {
   createInitialPipelineState,
   type PastePipelineState,
 } from "./paste-pipeline";
-import { redactSensitiveData } from "./pipeline-execution-log";
+import {
+  redactSensitiveData,
+  type PipelineExecutionLog,
+} from "./pipeline-execution-log";
 import { PipelineStatusBar } from "./PipelineStatusBar";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
@@ -380,6 +383,8 @@ interface InspectorPanelProps {
   pipeline?: PastePipelineState;
   /** Callback to retry the pipeline after a partial or full failure. */
   onPipelineRetry?: () => void;
+  /** In-memory execution log for exporting stage events as JSON. */
+  executionLog?: PipelineExecutionLog;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -911,6 +916,7 @@ export function InspectorPanel({
   onCloseDialog,
   pipeline,
   onPipelineRetry,
+  executionLog,
 }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [autoSelectedFile, setAutoSelectedFile] = useState<string | null>(null);
@@ -1008,15 +1014,21 @@ export function InspectorPanel({
   const pipelineTreeNodes = useStreamingTreeNodes(activePipeline);
 
   const handleCopyPipelineReport = useCallback((): void => {
-    const report = {
-      exportedAt: new Date().toISOString(),
-      stage: activePipeline.stage,
-      errors: activePipeline.errors,
-      stageProgress: activePipeline.stageProgress,
-    };
-    const text = redactSensitiveData(JSON.stringify(report, null, 2));
+    let text: string;
+    if (executionLog !== undefined) {
+      text = executionLog.exportJson();
+    } else {
+      const report = {
+        exportedAt: new Date().toISOString(),
+        stage: activePipeline.stage,
+        errors: activePipeline.errors,
+        stageProgress: activePipeline.stageProgress,
+      };
+      text = redactSensitiveData(JSON.stringify(report, null, 2));
+    }
     void navigator.clipboard.writeText(text);
   }, [
+    executionLog,
     activePipeline.errors,
     activePipeline.stage,
     activePipeline.stageProgress,
