@@ -5,15 +5,21 @@ import {
   useState,
   type ChangeEvent as ReactChangeEvent,
   type ClipboardEvent as ReactClipboardEvent,
+  type DragEvent as ReactDragEvent,
   type FormEvent as ReactFormEvent,
+  type MouseEvent as ReactMouseEvent,
   type JSX,
 } from "react";
+import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 import { isFigmaClipboard } from "./figma-clipboard-parser";
 
 export interface PasteDropZoneProps {
   disabled: boolean;
   /** Called when Figma clipboard HTML is pasted (Cmd+V) */
   onPaste: (text: string, clipboardHtml?: string) => void;
+  /** Called when a JSON file is dropped or uploaded */
+  onDropFile?: (text: string, source: "drop" | "upload") => void;
+  onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
   /** Called when a valid Figma URL is submitted */
   onFigmaUrl: (fileKey: string, nodeId: string | null) => void;
   errorMessage?: string;
@@ -66,13 +72,20 @@ function parseFigmaUrl(url: string): FigmaUrlParseResult | null {
   return { fileKey, nodeId };
 }
 
+function isJsonFile(file: File): boolean {
+  return file.name.endsWith(".json") || file.type === "application/json";
+}
+
 export function PasteDropZone({
   disabled,
   onPaste,
+  onDropFile,
+  onError,
   onFigmaUrl,
   errorMessage,
 }: PasteDropZoneProps): JSX.Element {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const reactId = useId();
   const labelId = `${reactId}-label`;
   const promptId = `${reactId}-prompt`;
@@ -82,6 +95,9 @@ export function PasteDropZone({
 
   const [urlValue, setUrlValue] = useState("");
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const interactionDisabled = disabled || isReadingFile;
 
   const describedByIds = [promptId];
   if (errorMessage !== undefined) {
@@ -89,15 +105,15 @@ export function PasteDropZone({
   }
 
   const handleRegionClick = useCallback((): void => {
-    if (disabled) {
+    if (interactionDisabled) {
       return;
     }
     textareaRef.current?.focus();
-  }, [disabled]);
+  }, [interactionDisabled]);
 
   const handlePaste = useCallback(
     (event: ReactClipboardEvent<HTMLTextAreaElement>): void => {
-      if (disabled) {
+      if (interactionDisabled) {
         event.preventDefault();
         return;
       }
@@ -113,7 +129,119 @@ export function PasteDropZone({
       }
       onPaste(text);
     },
-    [disabled, onPaste],
+    [interactionDisabled, onPaste],
+  );
+
+  const handleJsonFile = useCallback(
+    (file: File, source: "drop" | "upload"): void => {
+      if (file.size > FIGMA_PASTE_MAX_BYTES) {
+        onError?.("TOO_LARGE");
+        return;
+      }
+      if (!isJsonFile(file)) {
+        onError?.("UNSUPPORTED_FILE");
+        return;
+      }
+
+      setIsReadingFile(true);
+      void file
+        .text()
+        .then((text) => {
+          if (onDropFile) {
+            onDropFile(text, source);
+            return;
+          }
+          onPaste(text);
+        })
+        .finally(() => {
+          setIsReadingFile(false);
+        });
+    },
+    [onDropFile, onError, onPaste],
+  );
+
+  const handleUploadButtonClick = useCallback(
+    (event: ReactMouseEvent<HTMLButtonElement>): void => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (interactionDisabled) {
+        return;
+      }
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+        fileInputRef.current.click();
+      }
+    },
+    [interactionDisabled],
+  );
+
+  const handleDragOver = useCallback(
+    (event: ReactDragEvent<HTMLElement>): void => {
+      if (interactionDisabled) {
+        return;
+      }
+      event.preventDefault();
+      const types = Array.from(event.dataTransfer.types);
+      if (types.includes("Files") || types.includes("text/plain")) {
+        setIsDraggingOver(true);
+        event.dataTransfer.dropEffect = "copy";
+      }
+    },
+    [interactionDisabled],
+  );
+
+  const handleDragLeave = useCallback(
+    (event: ReactDragEvent<HTMLElement>): void => {
+      if (interactionDisabled) {
+        return;
+      }
+      const currentTarget = event.currentTarget;
+      const relatedTarget = event.relatedTarget as Node | null;
+      if (!currentTarget.contains(relatedTarget)) {
+        setIsDraggingOver(false);
+      }
+    },
+    [interactionDisabled],
+  );
+
+  const handleDrop = useCallback(
+    (event: ReactDragEvent<HTMLElement>): void => {
+      if (interactionDisabled) {
+        return;
+      }
+      event.preventDefault();
+      setIsDraggingOver(false);
+
+      const firstFile = event.dataTransfer.files.item(0);
+      if (firstFile !== null) {
+        handleJsonFile(firstFile, "drop");
+        return;
+      }
+
+      const plainText = event.dataTransfer.getData("text/plain");
+      if (plainText.length > 0) {
+        onPaste(plainText);
+      }
+    },
+    [handleJsonFile, interactionDisabled, onPaste],
+  );
+
+  const handleFileInputChange = useCallback(
+    (event: ReactChangeEvent<HTMLInputElement>): void => {
+      const files = event.currentTarget.files;
+      const file =
+        files === null
+          ? null
+          : typeof files.item === "function"
+            ? files.item(0)
+            : (files[0] ?? null);
+      event.currentTarget.value = "";
+      if (interactionDisabled || file === null) {
+        return;
+      }
+      handleJsonFile(file, "upload");
+    },
+    [handleJsonFile, interactionDisabled],
   );
 
   const handleUrlChange = useCallback(
@@ -129,7 +257,7 @@ export function PasteDropZone({
   const handleUrlSubmit = useCallback(
     (event: ReactFormEvent<HTMLFormElement>): void => {
       event.preventDefault();
-      if (disabled) {
+      if (interactionDisabled) {
         return;
       }
       const trimmed = urlValue.trim();
@@ -145,7 +273,7 @@ export function PasteDropZone({
       setUrlError(null);
       onFigmaUrl(result.fileKey, result.nodeId);
     },
-    [disabled, onFigmaUrl, urlValue],
+    [interactionDisabled, onFigmaUrl, urlValue],
   );
 
   return (
@@ -153,8 +281,13 @@ export function PasteDropZone({
       role="region"
       aria-label="Paste area"
       onClick={handleRegionClick}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
       className={`group relative flex h-full w-full cursor-text flex-col items-center justify-center gap-6 rounded-lg border border-dashed px-6 py-8 transition focus-within:border-[#4eba87]/40 focus-within:ring-2 focus-within:ring-[#4eba87]/40 ${
-        disabled
+        isDraggingOver ? "ring-2 ring-[#4eba87]/60" : ""
+      } ${
+        interactionDisabled
           ? "pointer-events-none cursor-not-allowed border-white/10 bg-[#0b0b0b] opacity-60"
           : "border-white/15 bg-[#101010] hover:border-white/30"
       }`}
@@ -176,6 +309,14 @@ export function PasteDropZone({
           </span>
           (Windows).
         </p>
+        <button
+          type="button"
+          onClick={handleUploadButtonClick}
+          disabled={interactionDisabled}
+          className="rounded border border-white/20 bg-[#181818] px-3 py-1.5 text-xs font-medium text-white/80 transition hover:border-white/35 hover:bg-[#1f1f1f] disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-[#111111] disabled:text-white/35"
+        >
+          Upload JSON file
+        </button>
       </div>
 
       <div
@@ -209,7 +350,7 @@ export function PasteDropZone({
           placeholder="https://figma.com/design/…"
           value={urlValue}
           onChange={handleUrlChange}
-          disabled={disabled}
+          disabled={interactionDisabled}
           aria-label="Figma design URL"
           aria-invalid={urlError !== null ? true : undefined}
           aria-describedby={urlError !== null ? urlErrorId : undefined}
@@ -223,7 +364,7 @@ export function PasteDropZone({
         <div className="flex justify-end">
           <button
             type="submit"
-            disabled={disabled}
+            disabled={interactionDisabled}
             className="cursor-pointer rounded border border-[#4eba87] bg-[#4eba87]/12 px-3 py-1.5 text-xs font-medium text-[#4eba87] transition hover:bg-[#4eba87]/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-transparent disabled:text-white/35"
           >
             Open design
@@ -237,10 +378,20 @@ export function PasteDropZone({
         className="sr-only"
         aria-describedby={describedByIds.join(" ")}
         aria-invalid={errorMessage !== undefined ? true : undefined}
-        disabled={disabled}
+        disabled={interactionDisabled}
         onPaste={handlePaste}
         readOnly
         defaultValue=""
+      />
+
+      <input
+        ref={fileInputRef}
+        type="file"
+        aria-label="Upload Figma JSON file"
+        className="sr-only"
+        accept=".json,application/json"
+        disabled={interactionDisabled}
+        onChange={handleFileInputChange}
       />
 
       {errorMessage !== undefined ? (

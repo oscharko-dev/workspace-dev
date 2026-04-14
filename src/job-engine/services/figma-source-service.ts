@@ -23,7 +23,7 @@ import {
 
 export type FigmaSourceStageInput = Pick<
   WorkspaceJobInput,
-  "figmaFileKey" | "figmaAccessToken" | "figmaJsonPath"
+  "figmaFileKey" | "figmaNodeId" | "figmaAccessToken" | "figmaJsonPath"
 >;
 
 const createHybridFallbackEnrichment = ({
@@ -187,6 +187,9 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       }
       const result = await fetchFigmaFile({
         fileKey,
+        ...(input.figmaNodeId?.trim()
+          ? { nodeId: input.figmaNodeId.trim() }
+          : {}),
         accessToken,
         timeoutMs: context.runtime.figmaTimeoutMs,
         maxRetries: context.runtime.figmaMaxRetries,

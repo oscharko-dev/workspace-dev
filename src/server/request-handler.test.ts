@@ -1674,6 +1674,51 @@ test("request handler file listing and file reads enforce filters and path safet
         );
       },
     );
+
+    await t.test("running jobs expose generated files once the project directory exists", async () => {
+      const { app: runningApp, close: closeRunning } = await createRequestHandlerApp({
+        jobEngine: createStubJobEngine({
+          getJobRecord: () =>
+            ({
+              jobId: "job-running",
+              status: "running",
+              artifacts: {
+                generatedProjectDir: projectDir,
+              },
+            }) as ReturnType<JobEngine["getJobRecord"]>,
+        }),
+      });
+
+      try {
+        const response = await runningApp.inject({
+          method: "GET",
+          url: "/workspace/jobs/job-running/files",
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(
+          response.json<{ files: Array<{ path: string }> }>().files,
+          [
+            {
+              path: "src/App.tsx",
+              sizeBytes: Buffer.byteLength("export const App = () => null;\n"),
+            },
+            {
+              path: "src/screens/Home.tsx",
+              sizeBytes: Buffer.byteLength(
+                "export const Home = () => 'home';\n",
+              ),
+            },
+            {
+              path: "styles.css",
+              sizeBytes: Buffer.byteLength("body { margin: 0; }\n"),
+            },
+          ],
+        );
+      } finally {
+        await closeRunning();
+      }
+    });
   } finally {
     await close();
     await rm(tempRoot, { recursive: true, force: true });
@@ -2618,6 +2663,121 @@ test("backslash-based blocked prefix in directory listing ?dir= returns 403", as
     assert.equal(res.statusCode, 403);
   } finally {
     await close();
+  }
+});
+
+test("request handler serves screenshot artifacts for jobs that captured a Figma preview", async () => {
+  const jobDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-screenshot-"));
+  await mkdir(path.join(jobDir, ".stage-store"), { recursive: true });
+  await writeFile(
+    path.join(jobDir, ".stage-store", "index.json"),
+    `${JSON.stringify(
+      [
+        {
+          key: "figma.hybrid.enrichment",
+          stage: "figma.source",
+          kind: "value",
+          updatedAt: "2026-04-14T08:00:00.000Z",
+          value: {
+            sourceMode: "hybrid",
+            nodeHints: [],
+            toolNames: ["get_screenshot"],
+            screenshots: [
+              {
+                nodeId: "1:2",
+                url: "https://cdn.figma.com/screenshots/card.png",
+              },
+            ],
+          },
+        },
+      ],
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          jobId: "job-1",
+          status: "running",
+          artifacts: {
+            jobDir,
+          },
+        }) as ReturnType<JobEngine["getJobRecord"]>,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/screenshot",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      jobId: "job-1",
+      screenshotUrl: "https://cdn.figma.com/screenshots/card.png",
+      url: "https://cdn.figma.com/screenshots/card.png",
+    });
+  } finally {
+    await close();
+    await rm(jobDir, { recursive: true, force: true });
+  }
+});
+
+test("request handler normalizes figma_url submissions into node-scoped hybrid jobs", async () => {
+  const originalToken = process.env.FIGMA_ACCESS_TOKEN;
+  process.env.FIGMA_ACCESS_TOKEN = "figd_test_token";
+
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "url-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "hybrid",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_url",
+        figmaJsonPayload: JSON.stringify({
+          figmaFileKey: "ABC123fileKey",
+          nodeId: "1-2",
+        }),
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "hybrid");
+    assert.equal(capturedInput.figmaFileKey, "ABC123fileKey");
+    assert.equal(capturedInput.figmaNodeId, "1:2");
+    assert.equal(capturedInput.figmaAccessToken, "figd_test_token");
+    assert.equal(capturedInput.figmaJsonPayload, undefined);
+  } finally {
+    await close();
+    if (originalToken === undefined) {
+      delete process.env.FIGMA_ACCESS_TOKEN;
+    } else {
+      process.env.FIGMA_ACCESS_TOKEN = originalToken;
+    }
   }
 });
 

@@ -22,6 +22,8 @@ import {
 } from "../clipboard-envelope.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
 import type { JobEngine } from "../job-engine.js";
+import { STAGE_ARTIFACT_KEYS } from "../job-engine/pipeline/artifact-keys.js";
+import { StageArtifactStore } from "../job-engine/pipeline/artifact-store.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
 import type {
   WorkspaceRuntimeLogLevel,
@@ -29,6 +31,7 @@ import type {
 } from "../logging.js";
 import { enforceModeLock, getAllowedFigmaSourceModes } from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
+import type { FigmaMcpEnrichment } from "../parity/types.js";
 import type { ScreenIR } from "../parity/types-ir.js";
 import {
   CreatePrRequestSchema,
@@ -87,6 +90,134 @@ function safeDecodeParam(
     return null;
   }
   return decoded;
+}
+
+interface FigmaUrlSubmitPayload {
+  figmaFileKey: string;
+  nodeId: string | null;
+}
+
+type FigmaUrlNormalizationResult =
+  | { ok: true; value: unknown }
+  | { ok: false; statusCode: number; payload: Record<string, unknown> };
+
+function isFigmaUrlSubmitPayload(value: unknown): value is FigmaUrlSubmitPayload {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.figmaFileKey === "string" &&
+    candidate.figmaFileKey.trim().length > 0 &&
+    (typeof candidate.nodeId === "string" ||
+      candidate.nodeId === null ||
+      candidate.nodeId === undefined)
+  );
+}
+
+function normalizeOptionalFigmaNodeId(
+  value: string | null | undefined,
+): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return undefined;
+  }
+  return trimmed.replace(/-/g, ":");
+}
+
+function normalizeFigmaUrlSubmitInput(
+  input: unknown,
+): FigmaUrlNormalizationResult {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { ok: true, value: input };
+  }
+
+  const candidate = input as Record<string, unknown>;
+  if (candidate.figmaSourceMode !== "figma_url") {
+    return { ok: true, value: input };
+  }
+
+  if (
+    typeof candidate.figmaJsonPayload !== "string" ||
+    candidate.figmaJsonPayload.trim().length === 0
+  ) {
+    return {
+      ok: false,
+      statusCode: 400,
+      payload: {
+        error: "INVALID_PAYLOAD",
+        message:
+          "figmaJsonPayload is required when figmaSourceMode=figma_url.",
+      },
+    };
+  }
+
+  let parsedPayload: unknown;
+  try {
+    parsedPayload = JSON.parse(candidate.figmaJsonPayload);
+  } catch {
+    return {
+      ok: false,
+      statusCode: 400,
+      payload: {
+        error: "SCHEMA_MISMATCH",
+        message:
+          "figmaJsonPayload must be valid JSON when figmaSourceMode=figma_url.",
+      },
+    };
+  }
+
+  if (!isFigmaUrlSubmitPayload(parsedPayload)) {
+    return {
+      ok: false,
+      statusCode: 400,
+      payload: {
+        error: "SCHEMA_MISMATCH",
+        message:
+          "figmaJsonPayload for figma_url must include a non-empty figmaFileKey and an optional nodeId.",
+      },
+    };
+  }
+
+  const figmaAccessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
+  if (!figmaAccessToken) {
+    return {
+      ok: false,
+      statusCode: 400,
+      payload: {
+        error: "MISSING_FIGMA_ACCESS_TOKEN",
+        message:
+          "figma_url imports require FIGMA_ACCESS_TOKEN in the workspace-dev environment.",
+      },
+    };
+  }
+
+  const { figmaJsonPayload: _discardPayload, ...rest } = candidate;
+  void _discardPayload;
+  const figmaNodeId = normalizeOptionalFigmaNodeId(parsedPayload.nodeId);
+
+  return {
+    ok: true,
+    value: {
+      ...rest,
+      figmaSourceMode: "hybrid",
+      figmaFileKey: parsedPayload.figmaFileKey.trim(),
+      ...(figmaNodeId !== undefined ? { figmaNodeId } : {}),
+      figmaAccessToken,
+    },
+  };
+}
+
+function readScreenshotUrlFromEnrichment(
+  enrichment: FigmaMcpEnrichment | undefined,
+): string | undefined {
+  const screenshot = enrichment?.screenshots?.find(
+    (entry) => typeof entry.url === "string" && entry.url.trim().length > 0,
+  );
+  return screenshot?.url;
 }
 
 type WorkspaceAuditEvent =
@@ -686,6 +817,52 @@ export function createWorkspaceRequestHandler({
             return;
           }
 
+          if (parsedJobRoute.action === "screenshot") {
+            const record = jobEngine.getJobRecord(jobId);
+            if (!record) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `Unknown job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            const artifactStore = new StageArtifactStore({
+              jobDir: record.artifacts.jobDir,
+            });
+            const enrichment =
+              await artifactStore.getValue<FigmaMcpEnrichment>(
+                STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+              );
+            const screenshotUrl = readScreenshotUrlFromEnrichment(enrichment);
+            if (!screenshotUrl) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "SCREENSHOT_NOT_FOUND",
+                  message: `Screenshot artifact not available for job '${jobId}'.`,
+                },
+              });
+              return;
+            }
+
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: {
+                jobId,
+                screenshotUrl,
+                url: screenshotUrl,
+              },
+            });
+            return;
+          }
+
           const job = jobEngine.getJob(jobId);
           if (!job) {
             sendJson({
@@ -725,13 +902,13 @@ export function createWorkspaceRequestHandler({
             return;
           }
 
-          if (record.status === "queued" || record.status === "running") {
+          if (record.status === "queued") {
             sendJson({
               response,
               statusCode: 409,
               payload: {
                 error: "JOB_NOT_COMPLETED",
-                message: `Job '${jobId}' has status '${record.status}' — files are only available after the job finishes.`,
+                message: `Job '${jobId}' has status '${record.status}' — files are only available after generation starts.`,
               },
             });
             return;
@@ -1910,7 +2087,19 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        const parsed = SubmitRequestSchema.safeParse(rawBody.value);
+        const normalizedSubmitInput = normalizeFigmaUrlSubmitInput(
+          rawBody.value,
+        );
+        if (!normalizedSubmitInput.ok) {
+          sendValidationError({
+            statusCode: normalizedSubmitInput.statusCode,
+            payload: normalizedSubmitInput.payload,
+            fallbackMessage: "Submit request validation failed.",
+          });
+          return;
+        }
+
+        const parsed = SubmitRequestSchema.safeParse(normalizedSubmitInput.value);
         if (!parsed.success) {
           const figmaPasteErrorPrefixes = [
             "INVALID_PAYLOAD:",

@@ -26,6 +26,7 @@ const buildFigmaSourceInput = (context: PipelineExecutionContext): FigmaSourceSt
   const input = requireSubmissionInput(context);
   return {
     ...(input.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
+    ...(input.figmaNodeId !== undefined ? { figmaNodeId: input.figmaNodeId } : {}),
     ...(input.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {}),
     ...(input.figmaJsonPath !== undefined ? { figmaJsonPath: input.figmaJsonPath } : {})
   };

@@ -136,6 +136,14 @@ describe("useInspectorBootstrap", () => {
         }) as never;
       }
 
+      if (url === "/workspace/jobs/job-happy/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
       throw new Error(`Unexpected url: ${url}`);
     });
 
@@ -205,6 +213,14 @@ describe("useInspectorBootstrap", () => {
       if (url === "/workspace/jobs/job-plugin/files") {
         return createJsonResponse({
           payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-plugin/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
         }) as never;
       }
 
@@ -297,6 +313,14 @@ describe("useInspectorBootstrap", () => {
       if (url === "/workspace/jobs/job-retry/files") {
         return createJsonResponse({
           payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-retry/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
         }) as never;
       }
 
