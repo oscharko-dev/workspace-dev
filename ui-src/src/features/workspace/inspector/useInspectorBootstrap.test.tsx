@@ -325,4 +325,82 @@ describe("useInspectorBootstrap", () => {
 
     expect(submitCount).toBe(2);
   });
+
+  it("submitUrl sends figma_url source mode with the encoded file key and node id", async () => {
+    let capturedBody: string | null = null;
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace/submit") {
+        capturedBody = typeof init?.body === "string" ? init.body : null;
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-url" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-url") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-url",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/url-preview" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-url/design-ir" ||
+        url === "/workspace/jobs/job-url/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-url", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-url/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      // screenshot endpoint may fire — return 404-like response
+      if (url === "/workspace/jobs/job-url/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitUrl("ABC123fileKey", "1-2");
+    });
+
+    await waitFor(
+      () => {
+        expect(result.current.state.kind).toBe("ready");
+      },
+      { timeout: 5000 },
+    );
+
+    expect(capturedBody).not.toBeNull();
+    const parsedBody = JSON.parse(capturedBody!) as {
+      figmaSourceMode: string;
+      figmaJsonPayload: string;
+      enableGitPr: boolean;
+      llmCodegenMode: string;
+    };
+    expect(parsedBody.figmaSourceMode).toBe("figma_url");
+    expect(parsedBody.figmaJsonPayload).toBe(
+      JSON.stringify({ figmaFileKey: "ABC123fileKey", nodeId: "1-2" }),
+    );
+    expect(parsedBody.enableGitPr).toBe(false);
+  });
 });

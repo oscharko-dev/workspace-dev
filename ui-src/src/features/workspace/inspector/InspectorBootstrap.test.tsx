@@ -12,14 +12,21 @@ function renderBootstrap({
   state,
   onPaste = vi.fn(),
   onRetry = vi.fn(),
+  onFigmaUrl = vi.fn(),
 }: {
   state: InspectorBootstrapState;
   onPaste?: (text: string) => void;
   onRetry?: () => void;
+  onFigmaUrl?: (fileKey: string, nodeId: string | null) => void;
 }): void {
   render(
     <MemoryRouter>
-      <InspectorBootstrap state={state} onPaste={onPaste} onRetry={onRetry} />
+      <InspectorBootstrap
+        state={state}
+        onPaste={onPaste}
+        onRetry={onRetry}
+        onFigmaUrl={onFigmaUrl}
+      />
     </MemoryRouter>,
   );
 }
@@ -128,7 +135,9 @@ describe("InspectorBootstrap — state-aware copy", () => {
     });
 
     expect(
-      screen.getByText(/unsupported file\. please drop or upload a \.json file/i),
+      screen.getByText(
+        /unsupported file\. please drop or upload a \.json file/i,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -171,7 +180,7 @@ describe("InspectorBootstrap — paste wiring", () => {
     const onPaste = vi.fn();
     renderBootstrap({ state: { kind: "idle" }, onPaste });
 
-    const textarea = screen.getByLabelText(/figma json paste target/i);
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
     const clipboardData = {
       getData: (type: string) =>
         type === "text" || type === "text/plain" ? '{"doc":true}' : "",
@@ -194,6 +203,44 @@ describe("InspectorBootstrap — paste wiring", () => {
       const textarea = screen.getByLabelText(/figma json paste target/i);
       expect(textarea).toBeDisabled();
     }
+  });
+});
+
+describe("InspectorBootstrap — PasteDropZone integration", () => {
+  it("renders PasteDropZone in idle state with Figma URL input", () => {
+    renderBootstrap({ state: { kind: "idle" } });
+
+    expect(
+      screen.getByLabelText(/figma clipboard paste target/i),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/figma design url/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /open design/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("calls onFigmaUrl when a valid Figma URL is submitted", () => {
+    const onFigmaUrl = vi.fn();
+    render(
+      <MemoryRouter>
+        <InspectorBootstrap
+          state={{ kind: "idle" }}
+          onPaste={vi.fn()}
+          onRetry={vi.fn()}
+          onFigmaUrl={onFigmaUrl}
+        />
+      </MemoryRouter>,
+    );
+
+    const input = screen.getByLabelText(/figma design url/i);
+    fireEvent.change(input, {
+      target: {
+        value: "https://figma.com/design/ABC123/My-Design?node-id=1-2",
+      },
+    });
+    fireEvent.submit(input.closest("form")!);
+
+    expect(onFigmaUrl).toHaveBeenCalledWith("ABC123", "1-2");
   });
 });
 

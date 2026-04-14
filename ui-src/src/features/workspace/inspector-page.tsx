@@ -236,6 +236,13 @@ function BootstrapView(): JSX.Element {
     bootstrap.dismissIntent();
   }, [bootstrap]);
 
+  const handleFigmaUrl = useCallback(
+    (fileKey: string, nodeId: string | null): void => {
+      bootstrap.submitUrl(fileKey, nodeId);
+    },
+    [bootstrap],
+  );
+
   if (
     bootstrap.state.kind === "ready" &&
     bootstrap.jobId &&
@@ -260,6 +267,9 @@ function BootstrapView(): JSX.Element {
       onRetry={handleRetry}
       onConfirmIntent={handleConfirmIntent}
       onDismissIntent={handleDismissIntent}
+      onFigmaUrl={handleFigmaUrl}
+      screenshot={bootstrap.screenshot}
+      pipelineStage={bootstrap.pipelineStage}
     />
   );
 }

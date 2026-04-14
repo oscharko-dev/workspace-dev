@@ -1,9 +1,12 @@
 import { type JSX } from "react";
 import { FIGMA_PASTE_MAX_LABEL } from "../submit-schema";
 import { PasteCapture } from "./PasteCapture";
+import { PasteDropZone } from "./PasteDropZone";
+import { ScreenshotPreview } from "./ScreenshotPreview";
 import { SmartBanner } from "./SmartBanner";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import type { ImportIntent } from "./paste-input-classifier";
+import type { PipelineStage } from "./paste-pipeline";
 
 export interface InspectorBootstrapProps {
   state: InspectorBootstrapState;
@@ -13,6 +16,9 @@ export interface InspectorBootstrapProps {
   onRetry: () => void;
   onConfirmIntent?: (intent: ImportIntent) => void;
   onDismissIntent?: () => void;
+  onFigmaUrl: (fileKey: string, nodeId: string | null) => void;
+  screenshot?: string | null;
+  pipelineStage?: PipelineStage;
 }
 
 interface ColumnCopy {
@@ -248,7 +254,11 @@ export function InspectorBootstrap({
   onRetry,
   onConfirmIntent,
   onDismissIntent,
+  onFigmaUrl,
+  screenshot,
+  pipelineStage,
 }: InspectorBootstrapProps): JSX.Element {
+  void pipelineStage;
   const copy = getColumnCopy(state);
   const disabled = isPasteDisabled(state);
   const helperHint = getHelperHint(state);
@@ -278,39 +288,61 @@ export function InspectorBootstrap({
               Import
             </h2>
           </div>
-          <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4">
-            {state.kind === "detected" &&
-            onConfirmIntent !== undefined &&
-            onDismissIntent !== undefined ? (
-              <SmartBanner
-                key={state.rawText}
-                intent={state.intent}
-                confidence={state.confidence}
-                onConfirm={onConfirmIntent}
-                onDismiss={onDismissIntent}
+          {(state.kind === "processing" ||
+            state.kind === "queued" ||
+            state.kind === "pasting") &&
+          screenshot != null ? (
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <ScreenshotPreview
+                screenshotUrl={screenshot}
+                badgeText="Figma preview"
+                {...(helperHint !== undefined ? { stageName: helperHint } : {})}
               />
-            ) : null}
-            <PasteCapture
-              disabled={disabled}
-              onPaste={onPaste}
-              {...(onDropFile !== undefined ? { onDropFile } : {})}
-              {...(onError !== undefined ? { onError } : {})}
-              {...(helperHint !== undefined ? { helperHint } : {})}
-              {...(errorMessage !== undefined ? { errorMessage } : {})}
-            />
-            {state.kind === "failed" ? <PasteExample /> : null}
-            {showRetry ? (
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={onRetry}
-                  className="cursor-pointer rounded border border-[#4eba87] bg-[#4eba87]/12 px-4 py-2 text-xs font-medium text-[#4eba87] transition hover:bg-[#4eba87]/18"
-                >
-                  Try again
-                </button>
-              </div>
-            ) : null}
-          </div>
+            </div>
+          ) : state.kind === "idle" || state.kind === "failed" ? (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4">
+              <PasteDropZone
+                disabled={false}
+                onPaste={onPaste}
+                onFigmaUrl={onFigmaUrl}
+                {...(errorMessage !== undefined ? { errorMessage } : {})}
+              />
+              {state.kind === "failed" ? <PasteExample /> : null}
+              {showRetry ? (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={onRetry}
+                    className="cursor-pointer rounded border border-[#4eba87] bg-[#4eba87]/12 px-4 py-2 text-xs font-medium text-[#4eba87] transition hover:bg-[#4eba87]/18"
+                  >
+                    Try again
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-4">
+              {state.kind === "detected" &&
+              onConfirmIntent !== undefined &&
+              onDismissIntent !== undefined ? (
+                <SmartBanner
+                  key={state.rawText}
+                  intent={state.intent}
+                  confidence={state.confidence}
+                  onConfirm={onConfirmIntent}
+                  onDismiss={onDismissIntent}
+                />
+              ) : null}
+              <PasteCapture
+                disabled={disabled}
+                onPaste={onPaste}
+                {...(onDropFile !== undefined ? { onDropFile } : {})}
+                {...(onError !== undefined ? { onError } : {})}
+                {...(helperHint !== undefined ? { helperHint } : {})}
+                {...(errorMessage !== undefined ? { errorMessage } : {})}
+              />
+            </div>
+          )}
         </div>
 
         <ColumnPlaceholder

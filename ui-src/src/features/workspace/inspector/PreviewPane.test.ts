@@ -7,7 +7,7 @@ vi.mock("./InspectOverlay", () => ({
   InspectOverlay: ({
     activeScopeNodeId,
     iframeLoadVersion,
-    inspectEnabled
+    inspectEnabled,
   }: {
     activeScopeNodeId: string | null;
     iframeLoadVersion: number;
@@ -17,8 +17,8 @@ vi.mock("./InspectOverlay", () => ({
       "data-testid": "inspect-overlay",
       "data-active-scope-node-id": activeScopeNodeId ?? "",
       "data-iframe-load-version": String(iframeLoadVersion),
-      "data-inspect-enabled": String(inspectEnabled)
-    })
+      "data-inspect-enabled": String(inspectEnabled),
+    }),
 }));
 
 afterEach(() => {
@@ -36,21 +36,34 @@ describe("PreviewPane", () => {
         inspectEnabled: false,
         activeScopeNodeId: "node-7",
         onToggleInspect,
-        onInspectSelect
-      })
+        onInspectSelect,
+      }),
     );
 
     expect(screen.getByText("Loading preview…")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Open preview in new tab" })).toHaveAttribute("href", "http://127.0.0.1:4010/preview");
-    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-inspect-enabled", "false");
-    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-active-scope-node-id", "node-7");
+    expect(
+      screen.getByRole("link", { name: "Open preview in new tab" }),
+    ).toHaveAttribute("href", "http://127.0.0.1:4010/preview");
+    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute(
+      "data-inspect-enabled",
+      "false",
+    );
+    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute(
+      "data-active-scope-node-id",
+      "node-7",
+    );
 
-    fireEvent.click(screen.getByRole("button", { name: "Enable inspect mode" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Enable inspect mode" }),
+    );
     expect(onToggleInspect).toHaveBeenCalledTimes(1);
 
     fireEvent.load(screen.getByTitle("Live preview"));
     expect(screen.queryByText("Loading preview…")).not.toBeInTheDocument();
-    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-iframe-load-version", "1");
+    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute(
+      "data-iframe-load-version",
+      "1",
+    );
   });
 
   it("reflects active inspect mode on the toggle button", () => {
@@ -64,12 +77,17 @@ describe("PreviewPane", () => {
         },
         onInspectSelect: () => {
           // no-op
-        }
-      })
+        },
+      }),
     );
 
-    expect(screen.getByRole("button", { name: "Disable inspect mode" })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute("data-inspect-enabled", "true");
+    expect(
+      screen.getByRole("button", { name: "Disable inspect mode" }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("inspect-overlay")).toHaveAttribute(
+      "data-inspect-enabled",
+      "true",
+    );
   });
 
   it("renders a waiting placeholder when the preview URL is not available yet", () => {
@@ -83,8 +101,8 @@ describe("PreviewPane", () => {
         },
         onInspectSelect: () => {
           // no-op
-        }
-      })
+        },
+      }),
     );
 
     expect(
@@ -94,7 +112,108 @@ describe("PreviewPane", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Waiting")).toBeInTheDocument();
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Open preview in new tab" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { name: "Open preview in new tab" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Loading preview…")).not.toBeInTheDocument();
+  });
+});
+
+describe("PreviewPane — pipeline stage modes", () => {
+  it("shows Analyzing design spinner when pipelineStage is parsing", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        pipelineStage: "parsing",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: () => {
+          // no-op
+        },
+        onInspectSelect: () => {
+          // no-op
+        },
+      }),
+    );
+
+    expect(screen.getByText("Analyzing design…")).toBeInTheDocument();
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+  });
+
+  it("shows Phase 2 srcdoc iframe with screenshot URL when generating and screenshot provided", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        pipelineStage: "generating",
+        screenshot: "http://cdn.example.com/screenshot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: () => {
+          /* no-op */
+        },
+        onInspectSelect: () => {
+          /* no-op */
+        },
+      }),
+    );
+
+    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
+    expect(iframe).toBeInTheDocument();
+    expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
+    // The srcdoc must contain the screenshot URL and stage label
+    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).toContain("cdn.example.com/screenshot.png");
+    expect(srcdoc).toContain("Generating code…");
+    // Must NOT render the live-preview iframe
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+  });
+
+  it("shows Phase 2 srcdoc iframe without img when generating and no screenshot", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        pipelineStage: "generating",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: () => {
+          /* no-op */
+        },
+        onInspectSelect: () => {
+          /* no-op */
+        },
+      }),
+    );
+
+    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
+    expect(iframe).toBeInTheDocument();
+    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
+    // No img tag when screenshot is absent
+    expect(srcdoc).not.toContain("<img");
+    expect(srcdoc).toContain("Generating code…");
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+  });
+
+  it("shows Phase 2 srcdoc iframe with resolving stage label for resolving stage", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        pipelineStage: "resolving",
+        screenshot: "http://cdn.example.com/shot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: () => {
+          /* no-op */
+        },
+        onInspectSelect: () => {
+          /* no-op */
+        },
+      }),
+    );
+
+    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
+    expect(iframe).toBeInTheDocument();
+    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
+    expect(srcdoc).toContain("Resolving design…");
+    expect(srcdoc).toContain("cdn.example.com/shot.png");
   });
 });
