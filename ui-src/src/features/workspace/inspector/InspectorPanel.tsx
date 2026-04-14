@@ -1665,16 +1665,26 @@ export function InspectorPanel({
     };
   }, [generationMetricsQuery.data, generationMetricsQuery.isLoading]);
 
-  const files = filesState.files;
-  const manifest = manifestState.manifest;
-  const treeNodes = designIrState.treeNodes;
+  const files =
+    filesState.status === "ready"
+      ? filesState.files
+      : activePipeline.generatedFiles ?? filesState.files;
+  const manifest =
+    manifestState.status === "ready"
+      ? manifestState.manifest
+      : activePipeline.componentManifest ?? manifestState.manifest;
+  const queryTreeNodes = designIrState.treeNodes;
   const effectiveTreeNodes =
     designIrState.status === "ready"
-      ? treeNodes
+      ? queryTreeNodes
       : pipelineTreeNodes.length > 0
         ? pipelineTreeNodes
-        : treeNodes;
-  const irScreens = designIrState.screens;
+        : queryTreeNodes;
+  const treeNodes = effectiveTreeNodes;
+  const irScreens =
+    designIrState.status === "ready"
+      ? designIrState.screens
+      : activePipeline.designIR?.screens ?? designIrState.screens;
   const selectedIrNode = useMemo<DesignIrElementNode | null>(() => {
     if (!selectedNodeId) {
       return null;
@@ -1941,18 +1951,18 @@ export function InspectorPanel({
     manifestState.status,
   ]);
 
-  const hasTreePane =
-    designIrState.status !== "ready" ||
-    treeNodes.length > 0 ||
-    effectiveTreeNodes.length > 0;
+  const hasTreePane = designIrState.status !== "ready" || treeNodes.length > 0;
   const hasExpandedTree =
     designIrState.status === "ready"
       ? hasTreePane && !treeCollapsed
       : hasTreePane;
   const treeSelectionEnabled =
     designIrState.status === "ready" ||
-    activePipeline.stage === "generating" ||
-    activePipeline.stage === "ready";
+    (((activePipeline.stage === "generating" ||
+      activePipeline.stage === "ready") &&
+      ((activePipeline.componentManifest?.screens.length ?? 0) > 0 ||
+        (activePipeline.generatedFiles?.length ?? 0) > 0)) ||
+      activePipeline.stage === "ready");
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);
@@ -3384,9 +3394,9 @@ export function InspectorPanel({
         }
         return null;
       };
-      return findInTree(treeNodes) ?? { name: nodeId, type: "unknown" };
+      return findInTree(effectiveTreeNodes) ?? { name: nodeId, type: "unknown" };
     },
-    [treeNodes],
+    [effectiveTreeNodes],
   );
 
   const computeSelectedNodeEditCapability = useCallback(() => {

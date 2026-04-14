@@ -116,8 +116,8 @@ interface IrElementShape {
 
 function irElementToStreamingNode(
   el: IrElementShape,
-  mappedIds: ReadonlySet<string>,
-  hasMappings: boolean,
+  mappingStatusById: ReadonlyMap<string, TreeNode["mappingStatus"]>,
+  showMappingBadges: boolean,
   stage: PastePipelineState["stage"],
 ): TreeNode {
   const node: TreeNode = {
@@ -126,8 +126,13 @@ function irElementToStreamingNode(
     type: el.type,
   };
 
-  if (hasMappings) {
-    node.mappingStatus = mappedIds.has(el.id) ? "matched" : "unmapped";
+  if (showMappingBadges) {
+    const mappingStatus = mappingStatusById.get(el.id);
+    if (mappingStatus !== undefined) {
+      node.mappingStatus = mappingStatus;
+    } else {
+      node.mappingStatus = "unmapped";
+    }
   }
 
   if (stage === "generating" && (!el.children || el.children.length === 0)) {
@@ -136,47 +141,116 @@ function irElementToStreamingNode(
 
   if (el.children && el.children.length > 0) {
     node.children = el.children.map((child) =>
-      irElementToStreamingNode(child, mappedIds, hasMappings, stage),
+      irElementToStreamingNode(
+        child,
+        mappingStatusById,
+        showMappingBadges,
+        stage,
+      ),
     );
   }
 
   return node;
 }
 
+function buildRootSkeletons(
+  roots: ReadonlyArray<{ id: string; name: string }>,
+): TreeNode[] {
+  return roots.map((root) => ({
+    id: root.id,
+    name: root.name,
+    type: "screen",
+    children: makeSkeletonChildren(root.id),
+  }));
+}
+
+function buildRootsFromFigmaAnalysis(
+  pipeline: PastePipelineState,
+): TreeNode[] {
+  const pages = pipeline.figmaAnalysis?.layoutGraph?.pages ?? [];
+  const frames = pipeline.figmaAnalysis?.layoutGraph?.frames ?? [];
+  if (frames.length === 0) {
+    return [];
+  }
+
+  const framesById = new Map(frames.map((frame) => [frame.id, frame]));
+  const roots: Array<{ id: string; name: string }> = [];
+  const seen = new Set<string>();
+
+  for (const page of pages) {
+    for (const frameId of page.frameIds) {
+      const frame = framesById.get(frameId);
+      if (!frame || frame.parentSectionId !== undefined || seen.has(frame.id)) {
+        continue;
+      }
+      seen.add(frame.id);
+      roots.push({ id: frame.id, name: frame.name });
+    }
+  }
+
+  if (roots.length === 0) {
+    for (const frame of frames) {
+      if (frame.parentSectionId !== undefined || seen.has(frame.id)) {
+        continue;
+      }
+      seen.add(frame.id);
+      roots.push({ id: frame.id, name: frame.name });
+    }
+  }
+
+  return buildRootSkeletons(roots);
+}
+
 /**
  * Convert a PastePipelineState into TreeNode[] suitable for ComponentTree.
  *
- * - Returns [] when no designIR is available.
- * - Adds skeleton placeholder screens when stage is early (no IR yet).
+ * - Uses payload-derived or analysis-derived root hints before designIR exists.
+ * - Adds skeleton placeholder screens when stage is early or children are absent.
  * - Annotates nodes with mappingStatus after the "mapping" stage.
  * - Marks leaf nodes as "generating" during the generating stage.
  */
 export function buildTreeFromIR(pipeline: PastePipelineState): TreeNode[] {
-  const { designIR, componentManifest, stage } = pipeline;
+  const { componentManifest, designIR, stage } = pipeline;
 
   if (!designIR) {
-    return [];
+    if (pipeline.sourceScreens && pipeline.sourceScreens.length > 0) {
+      return buildRootSkeletons(pipeline.sourceScreens);
+    }
+    return buildRootsFromFigmaAnalysis(pipeline);
   }
 
-  // Build set of mapped IR node IDs from the component manifest
-  const mappedIds = new Set<string>();
-  const hasMappings =
-    componentManifest !== undefined &&
-    (stage === "mapping" || stage === "generating" || stage === "ready");
-
-  if (hasMappings) {
+  const mappingStatusById = new Map<string, TreeNode["mappingStatus"]>();
+  if (componentManifest !== undefined) {
     for (const screen of componentManifest.screens) {
       for (const entry of screen.components) {
-        mappedIds.add(entry.irNodeId);
+        mappingStatusById.set(
+          entry.irNodeId,
+          entry.extractedComponent === true ? "suggested" : "matched",
+        );
       }
     }
   }
+  for (const diagnostic of pipeline.figmaAnalysis?.diagnostics ?? []) {
+    if (
+      diagnostic.severity === "error" &&
+      typeof diagnostic.sourceNodeId === "string"
+    ) {
+      mappingStatusById.set(diagnostic.sourceNodeId, "error");
+    }
+  }
+  const showMappingBadges =
+    stage === "mapping" || stage === "generating" || stage === "ready";
 
   return designIR.screens.map((screen) => {
     const children: TreeNode[] =
       screen.children.length > 0
         ? screen.children.map((el) =>
-            irElementToStreamingNode(el, mappedIds, hasMappings, stage),
+            irElementToStreamingNode(
+              el,
+              mappingStatusById,
+              showMappingBadges,
+              stage,
+            ),
           )
         : stage !== "ready"
           ? makeSkeletonChildren(screen.id)
@@ -201,6 +275,12 @@ export function useStreamingTreeNodes(
   return useMemo(
     () => buildTreeFromIR(pipeline),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [pipeline.designIR, pipeline.stage, pipeline.componentManifest],
+    [
+      pipeline.componentManifest,
+      pipeline.designIR,
+      pipeline.figmaAnalysis,
+      pipeline.sourceScreens,
+      pipeline.stage,
+    ],
   );
 }

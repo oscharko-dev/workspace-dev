@@ -681,26 +681,21 @@ export function createWorkspaceRequestHandler({
               return;
             }
 
-            if (record.status === "queued" || record.status === "running") {
-              sendJson({
-                response,
-                statusCode: 409,
-                payload: {
-                  error: "JOB_NOT_COMPLETED",
-                  message: `Job '${jobId}' has status '${record.status}' — figma analysis is only available after the job finishes.`,
-                },
-              });
-              return;
-            }
+            const isPending =
+              record.status === "queued" || record.status === "running";
 
             const figmaAnalysisPath = record.artifacts.figmaAnalysisFile;
             if (!figmaAnalysisPath) {
               sendJson({
                 response,
-                statusCode: 404,
+                statusCode: isPending ? 409 : 404,
                 payload: {
-                  error: "FIGMA_ANALYSIS_NOT_FOUND",
-                  message: `Figma analysis artifact not available for job '${jobId}'.`,
+                  error: isPending
+                    ? "JOB_NOT_COMPLETED"
+                    : "FIGMA_ANALYSIS_NOT_FOUND",
+                  message: isPending
+                    ? `Job '${jobId}' has status '${record.status}' — figma analysis is not ready yet.`
+                    : `Figma analysis artifact not available for job '${jobId}'.`,
                 },
               });
               return;
@@ -714,10 +709,14 @@ export function createWorkspaceRequestHandler({
             } catch {
               sendJson({
                 response,
-                statusCode: 404,
+                statusCode: isPending ? 409 : 404,
                 payload: {
-                  error: "FIGMA_ANALYSIS_NOT_FOUND",
-                  message: `Figma analysis file not found on disk for job '${jobId}'.`,
+                  error: isPending
+                    ? "JOB_NOT_COMPLETED"
+                    : "FIGMA_ANALYSIS_NOT_FOUND",
+                  message: isPending
+                    ? `Job '${jobId}' has status '${record.status}' — figma analysis is not ready yet.`
+                    : `Figma analysis file not found on disk for job '${jobId}'.`,
                 },
               });
               return;

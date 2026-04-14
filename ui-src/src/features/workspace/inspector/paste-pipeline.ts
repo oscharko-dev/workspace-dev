@@ -91,6 +91,35 @@ export interface GeneratedFileEntry {
   sizeBytes: number;
 }
 
+export interface SourceScreenHint {
+  id: string;
+  name: string;
+  nodeType: string;
+}
+
+export interface FigmaAnalysisDiagnosticEntry {
+  severity?: string;
+  sourceNodeId?: string;
+}
+
+export interface FigmaAnalysisPayload {
+  jobId: string;
+  layoutGraph?: {
+    pages?: Array<{
+      id: string;
+      name: string;
+      frameIds: string[];
+    }>;
+    frames?: Array<{
+      id: string;
+      name: string;
+      pageId: string;
+      parentSectionId?: string;
+    }>;
+  };
+  diagnostics?: FigmaAnalysisDiagnosticEntry[];
+}
+
 export interface PastePipelineState {
   stage: PipelineStage;
   progress: number;
@@ -98,7 +127,9 @@ export interface PastePipelineState {
   jobId?: string;
   jobStatus?: JobRuntimeStatus;
   previewUrl?: string;
+  sourceScreens?: SourceScreenHint[];
   designIR?: DesignIrPayload;
+  figmaAnalysis?: FigmaAnalysisPayload;
   componentManifest?: ComponentManifestPayload;
   generatedFiles?: GeneratedFileEntry[];
   screenshot?: string;
@@ -128,6 +159,7 @@ interface PipelineRequest {
 export type PipelineAction =
   | { type: "start" }
   | { type: "parsing_done" }
+  | { type: "source_screens_ready"; screens: SourceScreenHint[] }
   | { type: "job_created"; jobId: string }
   | {
       type: "job_status_updated";
@@ -139,6 +171,7 @@ export type PipelineAction =
   | { type: "stage_done"; stage: PipelineStage; durationMs: number }
   | { type: "stage_failed"; stage: PipelineStage; error: PipelineError }
   | { type: "design_ir_ready"; designIR: DesignIrPayload }
+  | { type: "figma_analysis_ready"; figmaAnalysis: FigmaAnalysisPayload }
   | { type: "manifest_ready"; manifest: ComponentManifestPayload }
   | { type: "files_ready"; files: GeneratedFileEntry[] }
   | { type: "screenshot_ready"; screenshotUrl: string }
@@ -189,6 +222,8 @@ const endpoints = {
     `/workspace/jobs/${encodeURIComponent(jobId)}/cancel`,
   designIr: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/design-ir`,
+  figmaAnalysis: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/figma-analysis`,
   manifest: ({ jobId }: { jobId: string }) =>
     `/workspace/jobs/${encodeURIComponent(jobId)}/component-manifest`,
   files: ({ jobId }: { jobId: string }) =>
@@ -305,6 +340,10 @@ export function pastePipelineReducer(
       return markStageDone(state, "parsing", 0);
     }
 
+    case "source_screens_ready": {
+      return { ...state, sourceScreens: action.screens };
+    }
+
     case "job_created": {
       return {
         ...state,
@@ -366,6 +405,10 @@ export function pastePipelineReducer(
 
     case "design_ir_ready": {
       return { ...state, designIR: action.designIR };
+    }
+
+    case "figma_analysis_ready": {
+      return { ...state, figmaAnalysis: action.figmaAnalysis };
     }
 
     case "manifest_ready": {
@@ -694,6 +737,10 @@ function isDesignIrPayload(value: unknown): value is DesignIrPayload {
   );
 }
 
+function isFigmaAnalysisPayload(value: unknown): value is FigmaAnalysisPayload {
+  return isRecord(value) && typeof value.jobId === "string";
+}
+
 function isComponentManifestPayload(
   value: unknown,
 ): value is ComponentManifestPayload {
@@ -732,6 +779,22 @@ async function fetchManifest({
     init: { signal },
   });
   return response.ok && isComponentManifestPayload(response.payload)
+    ? response.payload
+    : null;
+}
+
+async function fetchFigmaAnalysis({
+  jobId,
+  signal,
+}: {
+  jobId: string;
+  signal: AbortSignal;
+}): Promise<FigmaAnalysisPayload | null> {
+  const response = await fetchJson<unknown>({
+    url: endpoints.figmaAnalysis({ jobId }),
+    init: { signal },
+  });
+  return response.ok && isFigmaAnalysisPayload(response.payload)
     ? response.payload
     : null;
 }
@@ -805,8 +868,9 @@ async function fetchFinalArtifacts({
   signal: AbortSignal;
   apply: (action: PipelineAction) => void;
 }): Promise<void> {
-  const [designIR, manifest, files] = await Promise.all([
+  const [designIR, figmaAnalysis, manifest, files] = await Promise.all([
     fetchDesignIr({ jobId, signal }).catch(() => null),
+    fetchFigmaAnalysis({ jobId, signal }).catch(() => null),
     fetchManifest({ jobId, signal }).catch(() => null),
     fetchFiles({ jobId, signal }).catch(() => null),
   ]);
@@ -814,12 +878,114 @@ async function fetchFinalArtifacts({
   if (designIR !== null) {
     apply({ type: "design_ir_ready", designIR });
   }
+  if (figmaAnalysis !== null) {
+    apply({ type: "figma_analysis_ready", figmaAnalysis });
+  }
   if (manifest !== null) {
     apply({ type: "manifest_ready", manifest });
   }
   if (files !== null) {
     apply({ type: "files_ready", files });
   }
+}
+
+function looksLikeFigmaNode(value: unknown): value is {
+  id: string;
+  name?: string;
+  type: string;
+  children?: unknown[];
+} {
+  return (
+    isRecord(value) &&
+    typeof value.id === "string" &&
+    typeof value.type === "string"
+  );
+}
+
+function extractSourceScreensFromPayload(payload: string): SourceScreenHint[] {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload) as unknown;
+  } catch {
+    return [];
+  }
+
+  const screens: SourceScreenHint[] = [];
+  const seenIds = new Set<string>();
+
+  const pushScreen = (node: { id: string; name?: string; type: string }): void => {
+    if (seenIds.has(node.id)) {
+      return;
+    }
+    seenIds.add(node.id);
+    screens.push({
+      id: node.id,
+      name:
+        typeof node.name === "string" && node.name.trim().length > 0
+          ? node.name.trim()
+          : node.id,
+      nodeType: node.type.toLowerCase(),
+    });
+  };
+
+  const collectFromNode = (node: unknown): void => {
+    if (!looksLikeFigmaNode(node)) {
+      return;
+    }
+
+    if (
+      node.type === "DOCUMENT" ||
+      node.type === "CANVAS" ||
+      node.type === "PAGE" ||
+      node.type === "SECTION"
+    ) {
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+          collectFromNode(child);
+        }
+      }
+      return;
+    }
+
+    pushScreen(node);
+  };
+
+  const collect = (value: unknown): void => {
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        collect(entry);
+      }
+      return;
+    }
+
+    if (!isRecord(value)) {
+      return;
+    }
+
+    if (Array.isArray(value.selections)) {
+      for (const selection of value.selections) {
+        if (isRecord(selection) && "document" in selection) {
+          collectFromNode(selection.document);
+        }
+      }
+      return;
+    }
+
+    if ("document" in value) {
+      collectFromNode(value.document);
+      return;
+    }
+
+    if ("data" in value) {
+      collect(value.data);
+      return;
+    }
+
+    collectFromNode(value);
+  };
+
+  collect(parsed);
+  return screens;
 }
 
 // ---------------------------------------------------------------------------
@@ -930,6 +1096,10 @@ async function executePipelineRun({
   }
 
   apply({ type: "parsing_done" });
+  const sourceScreens = extractSourceScreensFromPayload(request.payload);
+  if (sourceScreens.length > 0) {
+    apply({ type: "source_screens_ready", screens: sourceScreens });
+  }
 
   let jobId: string;
   try {
@@ -964,6 +1134,20 @@ async function executePipelineRun({
     }
 
     const tasks: Array<Promise<void>> = [];
+
+    if (hasActiveOrCompletedStage(payload, ["figma.source", "ir.derive"])) {
+      tasks.push(
+        fetchFigmaAnalysis({ jobId, signal })
+          .then((figmaAnalysis) => {
+            if (figmaAnalysis !== null) {
+              apply({ type: "figma_analysis_ready", figmaAnalysis });
+            }
+          })
+          .catch(() => {
+            // Artifact is still pending; keep polling.
+          }),
+      );
+    }
 
     if (hasActiveOrCompletedStage(payload, ["ir.derive"])) {
       tasks.push(

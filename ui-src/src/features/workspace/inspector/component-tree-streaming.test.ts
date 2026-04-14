@@ -12,8 +12,10 @@ import { describe, it, expect, afterEach } from "vitest";
 import { cleanup, renderHook } from "@testing-library/react";
 import type { TreeNode } from "./component-tree";
 import type {
+  FigmaAnalysisPayload,
   PastePipelineState,
   PipelineStage,
+  SourceScreenHint,
   StageStatus,
 } from "./paste-pipeline";
 import { buildTreeFromIR, useStreamingTreeNodes } from "./component-tree-utils";
@@ -136,11 +138,14 @@ interface ManifestInput {
       file: string;
       startLine: number;
       endLine: number;
+      extractedComponent?: true;
     }>;
   }>;
 }
 
-function makeManifest(irNodeIds: string[]): ManifestInput {
+function makeManifest(
+  irNodeIds: Array<string | { id: string; extractedComponent?: true }>,
+): ManifestInput {
   return {
     jobId: "job-1",
     screens: [
@@ -148,16 +153,52 @@ function makeManifest(irNodeIds: string[]): ManifestInput {
         screenId: "screen-1",
         screenName: "HomeScreen",
         file: "HomeScreen.tsx",
-        components: irNodeIds.map((id) => ({
-          irNodeId: id,
-          irNodeName: id,
+        components: irNodeIds.map((entry) => ({
+          irNodeId: typeof entry === "string" ? entry : entry.id,
+          irNodeName: typeof entry === "string" ? entry : entry.id,
           irNodeType: "container",
           file: "HomeScreen.tsx",
           startLine: 1,
           endLine: 10,
+          ...(typeof entry === "string" || entry.extractedComponent !== true
+            ? {}
+            : { extractedComponent: true }),
         })),
       },
     ],
+  };
+}
+
+function makeSourceScreens(): SourceScreenHint[] {
+  return [
+    { id: "root-1", name: "Dashboard", nodeType: "frame" },
+    { id: "root-2", name: "Settings", nodeType: "frame" },
+  ];
+}
+
+function makeFigmaAnalysis(): FigmaAnalysisPayload {
+  return {
+    jobId: "job-1",
+    layoutGraph: {
+      pages: [
+        {
+          id: "page-1",
+          name: "Page",
+          frameIds: ["root-1", "nested-frame", "root-2"],
+        },
+      ],
+      frames: [
+        { id: "root-1", name: "Dashboard", pageId: "page-1" },
+        {
+          id: "nested-frame",
+          name: "Nested Card",
+          pageId: "page-1",
+          parentSectionId: "section-1",
+        },
+        { id: "root-2", name: "Settings", pageId: "page-1" },
+      ],
+    },
+    diagnostics: [{ severity: "error", sourceNodeId: "footer" }],
   };
 }
 
@@ -185,7 +226,49 @@ function findNode(nodes: TreeNode[], id: string): TreeNode | null {
 // ---------------------------------------------------------------------------
 
 describe("buildTreeFromIR", () => {
-  it("returns [] when designIR is undefined", () => {
+  it("uses source screen hints to render resolving roots before designIR exists", () => {
+    const pipeline = makePipeline({
+      stage: "resolving",
+      sourceScreens: makeSourceScreens(),
+    });
+
+    expect(buildTreeFromIR(pipeline)).toEqual([
+      {
+        id: "root-1",
+        name: "Dashboard",
+        type: "screen",
+        children: [
+          { id: "skeleton-root-1-0", name: "", type: "skeleton" },
+          { id: "skeleton-root-1-1", name: "", type: "skeleton" },
+          { id: "skeleton-root-1-2", name: "", type: "skeleton" },
+        ],
+      },
+      {
+        id: "root-2",
+        name: "Settings",
+        type: "screen",
+        children: [
+          { id: "skeleton-root-2-0", name: "", type: "skeleton" },
+          { id: "skeleton-root-2-1", name: "", type: "skeleton" },
+          { id: "skeleton-root-2-2", name: "", type: "skeleton" },
+        ],
+      },
+    ]);
+  });
+
+  it("falls back to figma analysis roots when designIR is undefined", () => {
+    const pipeline = makePipeline({
+      stage: "transforming",
+      figmaAnalysis: makeFigmaAnalysis(),
+    });
+
+    expect(buildTreeFromIR(pipeline).map((node) => node.id)).toEqual([
+      "root-1",
+      "root-2",
+    ]);
+  });
+
+  it("returns [] when no streaming source is available", () => {
     const pipeline = makePipeline({ stage: "parsing" });
     expect(buildTreeFromIR(pipeline)).toEqual([]);
   });
@@ -276,7 +359,7 @@ describe("buildTreeFromIR", () => {
     expect(findNode(tree, "footer")!.mappingStatus).toBeUndefined();
   });
 
-  it("does NOT set mappingStatus when componentManifest is undefined even after mapping stage", () => {
+  it("defaults to unmapped badges after mapping stage when no manifest is available", () => {
     const pipeline = makePipeline({
       stage: "mapping",
       designIR: makeDesignIR() as DesignIrPayload,
@@ -284,9 +367,9 @@ describe("buildTreeFromIR", () => {
 
     const tree = buildTreeFromIR(pipeline);
 
-    expect(findNode(tree, "header")!.mappingStatus).toBeUndefined();
-    expect(findNode(tree, "logo")!.mappingStatus).toBeUndefined();
-    expect(findNode(tree, "footer")!.mappingStatus).toBeUndefined();
+    expect(findNode(tree, "header")!.mappingStatus).toBe("unmapped");
+    expect(findNode(tree, "logo")!.mappingStatus).toBe("unmapped");
+    expect(findNode(tree, "footer")!.mappingStatus).toBe("unmapped");
   });
 
   it("sets mappingStatus:matched for nodes in the manifest (stage=mapping)", () => {
@@ -323,6 +406,32 @@ describe("buildTreeFromIR", () => {
     const tree = buildTreeFromIR(pipeline);
 
     expect(findNode(tree, "footer")!.mappingStatus).toBe("matched");
+  });
+
+  it("sets mappingStatus:suggested for extracted component entries", () => {
+    const pipeline = makePipeline({
+      stage: "mapping",
+      designIR: makeDesignIR() as DesignIrPayload,
+      componentManifest: makeManifest([
+        { id: "header", extractedComponent: true },
+      ]) as ComponentManifestPayload,
+    });
+
+    const tree = buildTreeFromIR(pipeline);
+
+    expect(findNode(tree, "header")!.mappingStatus).toBe("suggested");
+  });
+
+  it("sets mappingStatus:error when figma analysis carries node diagnostics", () => {
+    const pipeline = makePipeline({
+      stage: "mapping",
+      designIR: makeDesignIR() as DesignIrPayload,
+      figmaAnalysis: makeFigmaAnalysis(),
+    });
+
+    const tree = buildTreeFromIR(pipeline);
+
+    expect(findNode(tree, "footer")!.mappingStatus).toBe("error");
   });
 
   it("sets mappingStatus:unmapped for nodes NOT in the manifest (stage=mapping)", () => {

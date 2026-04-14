@@ -1239,6 +1239,13 @@ test("request handler serves design IR and component manifest success and missin
       status: "queued",
       artifacts: {},
     } as ReturnType<JobEngine["getJobRecord"]>,
+    "job-figma-analysis-running-artifact": {
+      jobId: "job-figma-analysis-running-artifact",
+      status: "running",
+      artifacts: {
+        figmaAnalysisFile: figmaAnalysisPath,
+      },
+    } as ReturnType<JobEngine["getJobRecord"]>,
     "job-figma-analysis-missing-artifact": {
       jobId: "job-figma-analysis-missing-artifact",
       status: "completed",
@@ -1400,6 +1407,24 @@ test("request handler serves design IR and component manifest success and missin
         "JOB_NOT_COMPLETED",
       );
     });
+
+    await t.test(
+      "figma analysis running jobs return the artifact once it exists",
+      async () => {
+        const response = await app.inject({
+          method: "GET",
+          url: "/workspace/jobs/job-figma-analysis-running-artifact/figma-analysis",
+        });
+
+        assert.equal(response.statusCode, 200);
+        assert.deepEqual(response.json<Record<string, unknown>>(), {
+          jobId: "job-figma-analysis-running-artifact",
+          artifactVersion: 1,
+          sourceName: "Board",
+          summary: {},
+        });
+      },
+    );
 
     await t.test("figma analysis missing artifact returns 404", async () => {
       const response = await app.inject({
