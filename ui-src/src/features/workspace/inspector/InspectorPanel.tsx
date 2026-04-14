@@ -135,7 +135,10 @@ import {
   mergeA11yScanInputs,
   selectA11yScanFiles,
 } from "./a11y-file-selection";
-import { resolveWorkspacePolicy } from "./workspace-policy";
+import {
+  resolveWorkspacePolicy,
+  type WorkspacePolicy,
+} from "./workspace-policy";
 import {
   deriveInspectorImpactReviewModel,
   type InspectorImpactReviewManifest,
@@ -225,6 +228,10 @@ interface GenerationMetricsResponse {
   payload: InspectabilityGenerationMetricsPayload | null;
   error: string | null;
   message: string | null;
+}
+
+interface WorkspacePolicyPayload {
+  policy: WorkspacePolicy | null;
 }
 
 type LocalSyncFileAction = "create" | "overwrite" | "none";
@@ -466,6 +473,11 @@ function isGenerationMetricsPayload(
   value: unknown,
 ): value is InspectabilityGenerationMetricsPayload {
   return isRecord(value);
+}
+
+function isWorkspacePolicyPayload(value: unknown): value is WorkspacePolicyPayload {
+  if (!isRecord(value)) return false;
+  return value.policy === null || value.policy === undefined || isRecord(value.policy);
 }
 
 function isLocalSyncFilePlanEntry(
@@ -1240,6 +1252,16 @@ export function InspectorPanel({
     staleTime: Infinity,
   });
 
+  const workspacePolicyQuery = useQuery({
+    queryKey: ["inspector-workspace-policy"],
+    queryFn: async () => {
+      return await fetchJson<WorkspacePolicyPayload>({
+        url: "/workspace/inspector-policy",
+      });
+    },
+    staleTime: Infinity,
+  });
+
   const regenerateMutation = useMutation({
     mutationFn: async (): Promise<RegenerationAcceptedPayload> => {
       if (!overrideDraft) {
@@ -1842,7 +1864,16 @@ export function InspectorPanel({
   }, [irScreens, selectedNodeId]);
 
   // Issue #993 — quality score + token intelligence + a11y nudges.
-  const workspacePolicy = useMemo(() => resolveWorkspacePolicy(), []);
+  const workspacePolicy = useMemo(() => {
+    const payload = workspacePolicyQuery.data?.payload;
+    if (
+      workspacePolicyQuery.data?.ok &&
+      isWorkspacePolicyPayload(payload)
+    ) {
+      return resolveWorkspacePolicy(payload.policy ?? null);
+    }
+    return resolveWorkspacePolicy();
+  }, [workspacePolicyQuery.data]);
   const qualityScoreModel = useMemo(() => {
     const screens = irScreens.map((screen) => ({
       id: screen.id,
@@ -1851,11 +1882,18 @@ export function InspectorPanel({
     }));
     return deriveQualityScore({
       screens,
+      diagnostics: activePipeline.figmaAnalysis?.diagnostics ?? [],
       errors: activePipeline.errors,
       ...(manifest ? { manifest } : {}),
       policy: workspacePolicy.quality,
     });
-  }, [irScreens, manifest, activePipeline.errors, workspacePolicy.quality]);
+  }, [
+    irScreens,
+    manifest,
+    activePipeline.errors,
+    activePipeline.figmaAnalysis?.diagnostics,
+    workspacePolicy.quality,
+  ]);
 
   const tokenSuggestionsModel = useMemo(() => {
     const intelligence = activePipeline.tokenIntelligence;

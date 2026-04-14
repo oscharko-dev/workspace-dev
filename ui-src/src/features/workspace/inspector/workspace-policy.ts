@@ -6,8 +6,8 @@
  * and post-gen accessibility nudges without forcing a schema on them yet.
  *
  * The policy is intentionally conservative: defaults are baked in, and
- * overrides are optional and additive. Server-delivered policies can be
- * plugged in by `resolveWorkspacePolicy()` once a backend endpoint exists.
+ * overrides are optional and additive. Repo-backed or server-delivered
+ * policies can be merged in by `resolveWorkspacePolicy()`.
  */
 
 import type { QualityRiskSeverity } from "./import-quality-score";

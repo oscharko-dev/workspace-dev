@@ -67,6 +67,7 @@ import {
   shouldFallbackToUiEntrypoint,
   validateSourceFilePath,
 } from "./routes.js";
+import { loadInspectorPolicy } from "./inspector-policy.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
 
 /**
@@ -226,6 +227,7 @@ type WorkspaceAuditEvent =
   | "security.request.rejected_origin"
   | "security.request.unsupported_media_type"
   | "security.request.rate_limited"
+  | "workspace.inspector_policy.invalid"
   | "workspace.request.validation_failed"
   | "workspace.request.failed"
   | "workspace.submit.accepted"
@@ -350,6 +352,7 @@ interface CreateWorkspaceRequestHandlerInput {
   getResolvedPort: () => number;
   startedAt: number;
   absoluteOutputRoot: string;
+  workspaceRoot: string;
   defaults: {
     figmaSourceMode: "rest";
     llmCodegenMode: "deterministic";
@@ -368,6 +371,7 @@ export function createWorkspaceRequestHandler({
   getResolvedPort,
   startedAt,
   absoluteOutputRoot,
+  workspaceRoot,
   defaults,
   runtime,
   jobEngine,
@@ -511,6 +515,24 @@ export function createWorkspaceRequestHandler({
           response,
           statusCode: 200,
           payload: { ok: true, service: "workspace-dev" },
+        });
+        return;
+      }
+
+      if (method === "GET" && pathname === "/workspace/inspector-policy") {
+        const result = await loadInspectorPolicy({ workspaceRoot });
+        if (result.warning) {
+          logAuditEvent({
+            event: "workspace.inspector_policy.invalid",
+            level: "warn",
+            statusCode: 200,
+            message: result.warning,
+          });
+        }
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: { policy: result.policy },
         });
         return;
       }

@@ -58,7 +58,11 @@ export function isWorkspaceProjectRoute(pathname: string): boolean {
     return false;
   }
 
-  if (withoutPrefix === "ui" || withoutPrefix === "submit") {
+  if (
+    withoutPrefix === "ui" ||
+    withoutPrefix === "submit" ||
+    withoutPrefix === "inspector-policy"
+  ) {
     return false;
   }
 
