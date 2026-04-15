@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   CreatePrRequestSchema,
   ErrorResponseSchema,
@@ -14,6 +17,17 @@ import {
   MAX_SUBMIT_BODY_BYTES,
   resolveFigmaPasteMaxBytes,
 } from "./server/constants.js";
+
+const pasteFixtureRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../integration/fixtures/figma-paste-pipeline",
+);
+
+function readPasteFixture<T>(relativePath: string): T {
+  return JSON.parse(
+    readFileSync(path.join(pasteFixtureRoot, relativePath), "utf8"),
+  ) as T;
+}
 
 // ---------------------------------------------------------------------------
 // SubmitRequestSchema
@@ -1899,19 +1913,9 @@ test("schema: figma_paste rejects payloads that exceed the submit transport budg
 // ---------------------------------------------------------------------------
 
 test("schema: figma_paste mode accepts a valid ClipboardEnvelope payload", () => {
-  const envelope = {
-    kind: "workspace-dev/figma-selection@1",
-    pluginVersion: "0.1.0",
-    copiedAt: "2026-04-12T18:00:00.000Z",
-    selections: [
-      {
-        document: { id: "1:2", type: "FRAME", name: "Card" },
-        components: {},
-        componentSets: {},
-        styles: {},
-      },
-    ],
-  };
+  const envelope = readPasteFixture<Record<string, unknown>>(
+    "envelopes/single-selection-envelope.json",
+  );
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_paste",
     figmaJsonPayload: JSON.stringify(envelope),
@@ -1924,12 +1928,9 @@ test("schema: figma_paste mode accepts a valid ClipboardEnvelope payload", () =>
 });
 
 test("schema: figma_paste mode rejects invalid ClipboardEnvelope with SCHEMA_MISMATCH", () => {
-  const badEnvelope = {
-    kind: "workspace-dev/figma-selection@1",
-    pluginVersion: "0.1.0",
-    copiedAt: "2026-04-12T18:00:00.000Z",
-    selections: [],
-  };
+  const badEnvelope = readPasteFixture<Record<string, unknown>>(
+    "envelopes/invalid-empty-selections-envelope.json",
+  );
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_paste",
     figmaJsonPayload: JSON.stringify(badEnvelope),
@@ -1944,19 +1945,9 @@ test("schema: figma_paste mode rejects invalid ClipboardEnvelope with SCHEMA_MIS
 });
 
 test("schema: figma_paste mode rejects unknown envelope kind with UNSUPPORTED_CLIPBOARD_KIND", () => {
-  const unknownEnvelope = {
-    kind: "workspace-dev/figma-selection@99",
-    pluginVersion: "0.1.0",
-    copiedAt: "2026-04-12T18:00:00.000Z",
-    selections: [
-      {
-        document: { id: "1:2", type: "FRAME", name: "Card" },
-        components: {},
-        componentSets: {},
-        styles: {},
-      },
-    ],
-  };
+  const unknownEnvelope = readPasteFixture<Record<string, unknown>>(
+    "envelopes/unsupported-version-envelope.json",
+  );
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_paste",
     figmaJsonPayload: JSON.stringify(unknownEnvelope),
@@ -1974,19 +1965,9 @@ test("schema: figma_paste mode rejects unknown envelope kind with UNSUPPORTED_CL
 });
 
 test("schema: figma_plugin mode rejects unknown envelope kind with UNSUPPORTED_FORMAT", () => {
-  const unknownEnvelope = {
-    kind: "workspace-dev/figma-selection@99",
-    pluginVersion: "0.1.0",
-    copiedAt: "2026-04-12T18:00:00.000Z",
-    selections: [
-      {
-        document: { id: "1:2", type: "FRAME", name: "Card" },
-        components: {},
-        componentSets: {},
-        styles: {},
-      },
-    ],
-  };
+  const unknownEnvelope = readPasteFixture<Record<string, unknown>>(
+    "envelopes/unsupported-version-envelope.json",
+  );
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_plugin",
     figmaJsonPayload: JSON.stringify(unknownEnvelope),
@@ -2043,25 +2024,9 @@ test("schema: figma_plugin mode rejects oversize payload with TOO_LARGE", () => 
 });
 
 test("schema: figma_paste mode accepts multi-selection ClipboardEnvelope", () => {
-  const envelope = {
-    kind: "workspace-dev/figma-selection@1",
-    pluginVersion: "0.1.0",
-    copiedAt: "2026-04-12T18:00:00.000Z",
-    selections: [
-      {
-        document: { id: "1:2", type: "FRAME", name: "Card" },
-        components: { "comp:1": { key: "comp:1", name: "Button" } },
-        componentSets: {},
-        styles: {},
-      },
-      {
-        document: { id: "3:4", type: "FRAME", name: "Header" },
-        components: {},
-        componentSets: {},
-        styles: {},
-      },
-    ],
-  };
+  const envelope = readPasteFixture<Record<string, unknown>>(
+    "envelopes/composite-selection-envelope.json",
+  );
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_paste",
     figmaJsonPayload: JSON.stringify(envelope),
@@ -2155,12 +2120,12 @@ test("schema: figma_paste accepts figmaFileKey alongside figmaJsonPayload and pr
 });
 
 test("schema: figma_plugin accepts plain Figma document JSON (not a ClipboardEnvelope)", () => {
+  const rawFigmaDocument = readPasteFixture<Record<string, unknown>>(
+    "envelopes/raw-figma-document.json",
+  );
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "figma_plugin",
-    figmaJsonPayload: JSON.stringify({
-      name: "PluginDoc",
-      document: { id: "0:0", type: "DOCUMENT", children: [] },
-    }),
+    figmaJsonPayload: JSON.stringify(rawFigmaDocument),
   });
   assert.equal(result.success, true);
   if (result.success) {

@@ -1,0 +1,58 @@
+{
+  "screens": [
+    {
+      "screenId": "screen-home",
+      "screenName": "Home",
+      "file": "src/screens/Home.tsx",
+      "components": [
+        {
+          "irNodeId": "home-title",
+          "irNodeName": "Title",
+          "irNodeType": "text",
+          "file": "src/screens/Home.tsx",
+          "startLine": 9,
+          "endLine": 11
+        },
+        {
+          "irNodeId": "nav-button-text",
+          "irNodeName": "Label",
+          "irNodeType": "text",
+          "file": "src/screens/Home.tsx",
+          "startLine": 14,
+          "endLine": 16
+        },
+        {
+          "irNodeId": "nav-button",
+          "irNodeName": "Open Details Button",
+          "irNodeType": "paper",
+          "file": "src/screens/Home.tsx",
+          "startLine": 12,
+          "endLine": 18
+        }
+      ]
+    },
+    {
+      "screenId": "screen-details",
+      "screenName": "Details",
+      "file": "src/screens/Details.tsx",
+      "components": [
+        {
+          "irNodeId": "details-title",
+          "irNodeName": "Title",
+          "irNodeType": "text",
+          "file": "src/screens/Details.tsx",
+          "startLine": 6,
+          "endLine": 8
+        },
+        {
+          "irNodeId": "details-body",
+          "irNodeName": "Body",
+          "irNodeType": "text",
+          "file": "src/screens/Details.tsx",
+          "startLine": 9,
+          "endLine": 11
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { createServer } from "node:net";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +9,7 @@ import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const FIXTURE_PATH = path.join(PACKAGE_ROOT, "src/parity/fixtures/golden/prototype-navigation/figma.json");
+const FIXTURE_PAYLOAD = readFileSync(FIXTURE_PATH, "utf8");
 
 interface RunningCli {
   child: ChildProcessWithoutNullStreams;
@@ -212,6 +214,28 @@ const submitFixtureJob = async ({ baseUrl }: { baseUrl: string }): Promise<strin
   return jobId;
 };
 
+const submitPasteFixtureJob = async ({ baseUrl }: { baseUrl: string }): Promise<string> => {
+  const response = await fetch(`${baseUrl}/workspace/submit`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json"
+    },
+    body: JSON.stringify({
+      figmaSourceMode: "figma_paste",
+      figmaJsonPayload: FIXTURE_PAYLOAD,
+      llmCodegenMode: "deterministic",
+      enableGitPr: false
+    }),
+    signal: AbortSignal.timeout(5_000)
+  });
+
+  assert.equal(response.status, 202, "paste submit must return 202");
+  const payload = (await response.json()) as Record<string, unknown>;
+  const jobId = payload.jobId;
+  assert.equal(typeof jobId, "string", "paste submit payload must include jobId");
+  return jobId;
+};
+
 const pollJobStatus = async ({
   baseUrl,
   jobId,
@@ -327,6 +351,166 @@ const fetchComponentManifest = async ({
   return (await response.json()) as ComponentManifestPayload;
 };
 
+const fetchGeneratedFile = async ({
+  baseUrl,
+  jobId,
+  filePath
+}: {
+  baseUrl: string;
+  jobId: string;
+  filePath: string;
+}): Promise<string> => {
+  const response = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(filePath)}`,
+    {
+      signal: AbortSignal.timeout(5_000)
+    }
+  );
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /text\/plain/i);
+  return await response.text();
+};
+
+const assertCompletedFixtureArtifacts = async ({
+  baseUrl,
+  jobId
+}: {
+  baseUrl: string;
+  jobId: string;
+}): Promise<void> => {
+  const designIr = await fetchDesignIr({ baseUrl, jobId });
+  const figmaAnalysis = await fetchFigmaAnalysis({ baseUrl, jobId });
+  assert.equal(designIr.jobId, jobId);
+  assert.equal(Array.isArray(designIr.screens), true);
+  assert.equal(designIr.screens.length, 2, "prototype-navigation fixture should expose exactly 2 screens");
+  assert.equal(typeof designIr.tokens, "object");
+  assert.equal(figmaAnalysis.jobId, jobId);
+  assert.equal(figmaAnalysis.artifactVersion, 1);
+  assert.equal(typeof figmaAnalysis.sourceName, "string");
+  assert.equal(figmaAnalysis.summary.pageCount >= 1, true);
+  assert.equal(figmaAnalysis.summary.topLevelFrameCount, designIr.screens.length);
+  assert.equal(Array.isArray(figmaAnalysis.frameVariantGroups), true);
+  assert.equal(Array.isArray(figmaAnalysis.appShellSignals), true);
+  assert.equal(Array.isArray(figmaAnalysis.componentDensity.byFrame), true);
+
+  for (const screen of designIr.screens) {
+    assert.equal(typeof screen.id, "string");
+    assert.equal(typeof screen.name, "string");
+    assert.equal(Array.isArray(screen.children), true);
+
+    assert.equal(typeof screen.generatedFile, "string", `screen '${screen.id}' must include generatedFile mapping`);
+    assert.equal(screen.generatedFile?.startsWith("src/screens/"), true);
+    assert.equal(screen.generatedFile?.endsWith(".tsx"), true);
+    assert.equal(screen.generatedFile?.startsWith("/"), false, "generatedFile must not expose absolute paths");
+  }
+
+  const fileList = await fetchFiles({ baseUrl, jobId });
+  assert.equal(fileList.jobId, jobId);
+  assert.equal(fileList.files.length > 0, true);
+
+  const filePaths = fileList.files.map((entry) => entry.path);
+  assert.equal(filePaths.includes("src/App.tsx"), true);
+  assert.equal(filePaths.includes("src/screens/Home.tsx"), true);
+  assert.equal(filePaths.includes("src/screens/Details.tsx"), true);
+  assert.equal(filePaths.some((entry) => /tailwind\.config/.test(entry)), false);
+  assert.equal(filePaths.some((entry) => entry.endsWith(".css") || entry.endsWith(".scss")), false);
+
+  for (const file of fileList.files) {
+    assert.equal(file.path.startsWith("/"), false, "listed files must always be relative paths");
+    assert.equal(file.path.includes("node_modules"), false, "node_modules must be excluded from listing");
+    assert.equal(file.path.startsWith("dist/"), false, "dist directory must be excluded from listing");
+    assert.equal(typeof file.sizeBytes, "number");
+  }
+
+  const screenDirFiles = await fetchFiles({
+    baseUrl,
+    jobId,
+    dir: "src/screens"
+  });
+  assert.equal(screenDirFiles.files.length >= 2, true);
+  for (const file of screenDirFiles.files) {
+    assert.equal(file.path.startsWith("src/screens/"), true);
+  }
+
+  const homeContent = await fetchGeneratedFile({
+    baseUrl,
+    jobId,
+    filePath: "src/screens/Home.tsx"
+  });
+  assert.equal(homeContent.includes("import"), true);
+  assert.equal(homeContent.includes("sx={"), true);
+  assert.equal(/className="[a-zA-Z]+-[a-zA-Z0-9-]+"/.test(homeContent), false);
+
+  const traversalResponse = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/..%2F..%2Fetc%2Fpasswd.ts`,
+    { signal: AbortSignal.timeout(3_000) }
+  );
+  assert.equal(traversalResponse.status, 403);
+  const traversalBody = (await traversalResponse.json()) as Record<string, unknown>;
+  assert.equal(traversalBody.error, "FORBIDDEN_PATH");
+
+  const blockedDirFilterResponse = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files?dir=node_modules`,
+    { signal: AbortSignal.timeout(3_000) }
+  );
+  assert.equal(blockedDirFilterResponse.status, 403);
+  const blockedDirFilterBody = (await blockedDirFilterResponse.json()) as Record<string, unknown>;
+  assert.equal(blockedDirFilterBody.error, "FORBIDDEN_PATH");
+
+  const blockedExtensionResponse = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/script.js`,
+    { signal: AbortSignal.timeout(3_000) }
+  );
+  assert.equal(blockedExtensionResponse.status, 403);
+
+  const missingFileResponse = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/screens/DoesNotExist.tsx`,
+    { signal: AbortSignal.timeout(3_000) }
+  );
+  assert.equal(missingFileResponse.status, 404);
+
+  const manifest = await fetchComponentManifest({ baseUrl, jobId });
+  assert.equal(manifest.jobId, jobId);
+  assert.equal(manifest.screens.length, 2);
+
+  const previewIndexResponse = await fetch(
+    `${baseUrl}/workspace/repros/${encodeURIComponent(jobId)}/`,
+    { signal: AbortSignal.timeout(5_000) }
+  );
+  assert.equal(previewIndexResponse.status, 200);
+  const previewHtml = await previewIndexResponse.text();
+  assert.equal(previewHtml.includes("data-workspace-dev-inspect"), true);
+  assert.equal(previewHtml.includes("sessionToken"), true);
+  assert.equal(previewHtml.includes("allowedParentOrigin"), true);
+  assert.equal(previewHtml.includes("inspect:scope:set"), true);
+  assert.equal(previewHtml.includes("inspect:scope:clear"), true);
+  assert.equal(previewHtml.includes("data-workspace-dev-inspect-scope"), true);
+
+  const designScreenIds = new Set(designIr.screens.map((screen) => screen.id));
+  for (const screen of manifest.screens) {
+    assert.equal(designScreenIds.has(screen.screenId), true, "manifest screen must map to design-ir screen");
+    assert.equal(typeof screen.screenName, "string");
+    assert.equal(typeof screen.file, "string");
+    assert.equal(Array.isArray(screen.components), true);
+    assert.equal(filePaths.includes(screen.file), true, `manifest screen file '${screen.file}' must exist in files list`);
+
+    for (const component of screen.components) {
+      assert.equal(typeof component.irNodeId, "string");
+      assert.equal(typeof component.irNodeName, "string");
+      assert.equal(typeof component.irNodeType, "string");
+      assert.equal(typeof component.file, "string");
+      assert.equal(typeof component.startLine, "number");
+      assert.equal(typeof component.endLine, "number");
+      assert.equal(component.startLine >= 1, true);
+      assert.equal(component.endLine >= component.startLine, true);
+
+      if (component.extractedComponent !== undefined) {
+        assert.equal(component.extractedComponent, true, "extractedComponent must be true when present");
+      }
+    }
+  }
+};
+
 test("inspector endpoints: unknown jobs return 404", async () => {
   const running = await startCliProcess();
 
@@ -378,138 +562,25 @@ test("inspector endpoints: completed jobs expose expected payloads and files sec
       timeoutMs: 120_000
     });
     assert.equal(terminal.status, "completed", "fixture-backed job must complete successfully");
+    await assertCompletedFixtureArtifacts({ baseUrl: running.baseUrl, jobId });
+  } finally {
+    await stopCliProcess(running.child);
+  }
+});
 
-    const designIr = await fetchDesignIr({ baseUrl: running.baseUrl, jobId });
-    const figmaAnalysis = await fetchFigmaAnalysis({ baseUrl: running.baseUrl, jobId });
-    assert.equal(designIr.jobId, jobId);
-    assert.equal(Array.isArray(designIr.screens), true);
-    assert.equal(designIr.screens.length, 2, "prototype-navigation fixture should expose exactly 2 screens");
-    assert.equal(typeof designIr.tokens, "object");
-    assert.equal(figmaAnalysis.jobId, jobId);
-    assert.equal(figmaAnalysis.artifactVersion, 1);
-    assert.equal(typeof figmaAnalysis.sourceName, "string");
-    assert.equal(figmaAnalysis.summary.pageCount >= 1, true);
-    assert.equal(figmaAnalysis.summary.topLevelFrameCount, designIr.screens.length);
-    assert.equal(Array.isArray(figmaAnalysis.frameVariantGroups), true);
-    assert.equal(Array.isArray(figmaAnalysis.appShellSignals), true);
-    assert.equal(Array.isArray(figmaAnalysis.componentDensity.byFrame), true);
+test("inspector endpoints: completed figma_paste jobs expose the same inspector-consumable artifacts", { timeout: 120_000 }, async () => {
+  const running = await startCliProcess();
 
-    for (const screen of designIr.screens) {
-      assert.equal(typeof screen.id, "string");
-      assert.equal(typeof screen.name, "string");
-      assert.equal(Array.isArray(screen.children), true);
-
-      assert.equal(typeof screen.generatedFile, "string", `screen '${screen.id}' must include generatedFile mapping`);
-      assert.equal(screen.generatedFile?.startsWith("src/screens/"), true);
-      assert.equal(screen.generatedFile?.endsWith(".tsx"), true);
-      assert.equal(screen.generatedFile?.startsWith("/"), false, "generatedFile must not expose absolute paths");
-    }
-
-    const fileList = await fetchFiles({ baseUrl: running.baseUrl, jobId });
-    assert.equal(fileList.jobId, jobId);
-    assert.equal(fileList.files.length > 0, true);
-
-    const filePaths = fileList.files.map((entry) => entry.path);
-    assert.equal(filePaths.includes("src/App.tsx"), true);
-    assert.equal(filePaths.includes("src/screens/Home.tsx"), true);
-    assert.equal(filePaths.includes("src/screens/Details.tsx"), true);
-
-    for (const file of fileList.files) {
-      assert.equal(file.path.startsWith("/"), false, "listed files must always be relative paths");
-      assert.equal(file.path.includes("node_modules"), false, "node_modules must be excluded from listing");
-      assert.equal(file.path.startsWith("dist/"), false, "dist directory must be excluded from listing");
-      assert.equal(typeof file.sizeBytes, "number");
-    }
-
-    const screenDirFiles = await fetchFiles({
+  try {
+    const jobId = await submitPasteFixtureJob({ baseUrl: running.baseUrl });
+    const terminal = await pollJobStatus({
       baseUrl: running.baseUrl,
       jobId,
-      dir: "src/screens"
+      timeoutMs: 120_000
     });
-    assert.equal(screenDirFiles.files.length >= 2, true);
-    for (const file of screenDirFiles.files) {
-      assert.equal(file.path.startsWith("src/screens/"), true);
-    }
+    assert.equal(terminal.status, "completed", "paste-backed job must complete successfully");
 
-    const fileResponse = await fetch(
-      `${running.baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent("src/screens/Home.tsx")}`,
-      {
-        signal: AbortSignal.timeout(5_000)
-      }
-    );
-    assert.equal(fileResponse.status, 200);
-    assert.match(fileResponse.headers.get("content-type") ?? "", /text\/plain/i);
-    const fileContent = await fileResponse.text();
-    assert.equal(fileContent.includes("import"), true);
-
-    const traversalResponse = await fetch(
-      `${running.baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/..%2F..%2Fetc%2Fpasswd.ts`,
-      { signal: AbortSignal.timeout(3_000) }
-    );
-    assert.equal(traversalResponse.status, 403);
-    const traversalBody = (await traversalResponse.json()) as Record<string, unknown>;
-    assert.equal(traversalBody.error, "FORBIDDEN_PATH");
-
-    const blockedDirFilterResponse = await fetch(
-      `${running.baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files?dir=node_modules`,
-      { signal: AbortSignal.timeout(3_000) }
-    );
-    assert.equal(blockedDirFilterResponse.status, 403);
-    const blockedDirFilterBody = (await blockedDirFilterResponse.json()) as Record<string, unknown>;
-    assert.equal(blockedDirFilterBody.error, "FORBIDDEN_PATH");
-
-    const blockedExtensionResponse = await fetch(
-      `${running.baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/script.js`,
-      { signal: AbortSignal.timeout(3_000) }
-    );
-    assert.equal(blockedExtensionResponse.status, 403);
-
-    const missingFileResponse = await fetch(
-      `${running.baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/screens/DoesNotExist.tsx`,
-      { signal: AbortSignal.timeout(3_000) }
-    );
-    assert.equal(missingFileResponse.status, 404);
-
-    const manifest = await fetchComponentManifest({ baseUrl: running.baseUrl, jobId });
-    assert.equal(manifest.jobId, jobId);
-    assert.equal(manifest.screens.length, 2);
-
-    const previewIndexResponse = await fetch(
-      `${running.baseUrl}/workspace/repros/${encodeURIComponent(jobId)}/`,
-      { signal: AbortSignal.timeout(5_000) }
-    );
-    assert.equal(previewIndexResponse.status, 200);
-    const previewHtml = await previewIndexResponse.text();
-    assert.equal(previewHtml.includes("data-workspace-dev-inspect"), true);
-    assert.equal(previewHtml.includes("sessionToken"), true);
-    assert.equal(previewHtml.includes("allowedParentOrigin"), true);
-    assert.equal(previewHtml.includes("inspect:scope:set"), true);
-    assert.equal(previewHtml.includes("inspect:scope:clear"), true);
-    assert.equal(previewHtml.includes("data-workspace-dev-inspect-scope"), true);
-
-    const designScreenIds = new Set(designIr.screens.map((screen) => screen.id));
-    for (const screen of manifest.screens) {
-      assert.equal(designScreenIds.has(screen.screenId), true, "manifest screen must map to design-ir screen");
-      assert.equal(typeof screen.screenName, "string");
-      assert.equal(typeof screen.file, "string");
-      assert.equal(Array.isArray(screen.components), true);
-      assert.equal(filePaths.includes(screen.file), true, `manifest screen file '${screen.file}' must exist in files list`);
-
-      for (const component of screen.components) {
-        assert.equal(typeof component.irNodeId, "string");
-        assert.equal(typeof component.irNodeName, "string");
-        assert.equal(typeof component.irNodeType, "string");
-        assert.equal(typeof component.file, "string");
-        assert.equal(typeof component.startLine, "number");
-        assert.equal(typeof component.endLine, "number");
-        assert.equal(component.startLine >= 1, true);
-        assert.equal(component.endLine >= component.startLine, true);
-
-        if (component.extractedComponent !== undefined) {
-          assert.equal(component.extractedComponent, true, "extractedComponent must be true when present");
-        }
-      }
-    }
+    await assertCompletedFixtureArtifacts({ baseUrl: running.baseUrl, jobId });
   } finally {
     await stopCliProcess(running.child);
   }

@@ -7874,6 +7874,341 @@ export default defineConfig({
   assert.equal(summary?.import?.customerProfile?.import?.issueCount, 0);
 });
 
+test("ValidateProjectService keeps storybook-first mapping and token summaries ok when resolved imports and allowed MUI fallbacks coexist (issue #1009)", async () => {
+  const customerProfile = createStorybookMatchCustomerProfileForStageServices({
+    matchPolicy: "error",
+    tokenPolicy: "error",
+    fallbackComponents: {
+      Card: "allow"
+    }
+  });
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    runtimeOverrides: {
+      customerProfile
+    }
+  });
+  await mkdir(path.join(executionContext.paths.generatedProjectDir, "src"), { recursive: true });
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "package.json"),
+    `${JSON.stringify(
+      {
+        name: "generated-app",
+        private: true,
+        dependencies: {},
+        devDependencies: {}
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "tsconfig.json"),
+    `${JSON.stringify(
+      {
+        compilerOptions: {
+          strict: true
+        },
+        include: ["src", "vite.config.ts"]
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "vite.config.ts"),
+    `import { defineConfig } from "vitest/config";
+
+const normalizedBasePath = "./";
+
+export default defineConfig({
+  base: normalizedBasePath,
+  test: {
+    globals: true
+  }
+});
+`,
+    "utf8"
+  );
+  await writeFile(
+    path.join(executionContext.paths.generatedProjectDir, "src", "App.tsx"),
+    `import { Card } from "@mui/material";
+import { PrimaryButton as CustomerButton } from "@customer/components";
+
+export const App = () => (
+  <>
+    <Card />
+    <CustomerButton variant={"primary"}>{"Weiter"}</CustomerButton>
+  </>
+);
+`,
+    "utf8"
+  );
+  await applyCustomerProfileToTemplate({
+    generatedProjectDir: executionContext.paths.generatedProjectDir,
+    customerProfile
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.generatedProject,
+    stage: "template.prepare",
+    absolutePath: executionContext.paths.generatedProjectDir
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+    stage: "codegen.generate",
+    value: {
+      boardKey: "test-board-issue-1009-storybook-first-policy-ok"
+    } satisfies GenerationDiffContext
+  });
+
+  const storybookEvidencePath = path.join(executionContext.paths.jobDir, "storybook.evidence.json");
+  const storybookTokensPath = path.join(executionContext.paths.jobDir, "storybook.tokens.json");
+  const storybookThemesPath = path.join(executionContext.paths.jobDir, "storybook.themes.json");
+  const componentMatchReportPath = path.join(executionContext.paths.jobDir, "component-match-report.json");
+  const componentMatchReportArtifact = {
+    ...createComponentMatchReportArtifactForStageServices(),
+    summary: {
+      totalFigmaFamilies: 2,
+      storybookFamilyCount: 2,
+      storybookEntryCount: 2,
+      matched: 2,
+      ambiguous: 0,
+      unmatched: 0,
+      libraryResolution: {
+        byStatus: {
+          resolved_import: 1,
+          mui_fallback_allowed: 1,
+          mui_fallback_denied: 0,
+          not_applicable: 0
+        },
+        byReason: {
+          profile_import_resolved: 1,
+          profile_import_missing: 1,
+          profile_import_family_mismatch: 0,
+          profile_family_unresolved: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0
+        }
+      },
+      iconResolution: {
+        byStatus: {
+          resolved_import: 0,
+          wrapper_fallback_allowed: 0,
+          wrapper_fallback_denied: 0,
+          unresolved: 0,
+          ambiguous: 0,
+          not_applicable: 2
+        },
+        byReason: {
+          profile_icon_import_resolved: 0,
+          profile_icon_import_missing: 0,
+          profile_icon_wrapper_allowed: 0,
+          profile_icon_wrapper_denied: 0,
+          profile_icon_wrapper_missing: 0,
+          profile_family_unresolved: 0,
+          match_ambiguous: 0,
+          match_unmatched: 0,
+          not_icon_family: 2
+        }
+      }
+    },
+    entries: [
+      createComponentMatchReportArtifactForStageServices().entries[0],
+      {
+        ...createComponentMatchReportArtifactForStageServices().entries[0],
+        figma: {
+          familyKey: "card-family",
+          familyName: "Card",
+          nodeCount: 1,
+          variantProperties: []
+        },
+        libraryResolution: {
+          status: "mui_fallback_allowed",
+          reason: "profile_import_missing",
+          storybookTier: "Components",
+          profileFamily: "Components",
+          componentKey: "Card"
+        },
+        storybookFamily: {
+          familyId: "family-card",
+          title: "Components/Card",
+          name: "Card",
+          tier: "Components",
+          storyCount: 1
+        },
+        storyVariant: {
+          entryId: "card--default",
+          storyName: "Default"
+        },
+        resolvedApi: {
+          status: "not_applicable",
+          allowedProps: [],
+          defaultProps: [],
+          children: {
+            policy: "unknown"
+          },
+          slots: {
+            policy: "not_used",
+            props: []
+          },
+          diagnostics: []
+        },
+        resolvedProps: {
+          status: "not_applicable",
+          props: [],
+          omittedProps: [],
+          omittedDefaults: [],
+          children: {
+            policy: "unknown"
+          },
+          slots: {
+            policy: "not_used",
+            props: []
+          },
+          codegenCompatible: true,
+          diagnostics: []
+        }
+      }
+    ]
+  };
+  await writeFile(
+    storybookEvidencePath,
+    `${JSON.stringify(
+      createStorybookEvidenceArtifactForStageServices({
+        evidence: [
+          {
+            id: "theme-bundle-issue-1009",
+            type: "theme_bundle",
+            reliability: "authoritative",
+            source: {
+              bundlePath: "storybook/theme-bundle.js"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: false,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              themeMarkers: ["createTheme"]
+            }
+          },
+          {
+            id: "story-args-issue-1009",
+            type: "story_args",
+            reliability: "authoritative",
+            source: {
+              entryId: "button--primary",
+              entryType: "story",
+              title: "Components/Button"
+            },
+            usage: {
+              canDriveTokens: true,
+              canDriveProps: true,
+              canDriveImports: false,
+              canDriveStyling: true,
+              canProvideMatchHints: true
+            },
+            summary: {
+              keys: ["appearance"]
+            }
+          }
+        ]
+      }),
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookTokensPath,
+    `${JSON.stringify(createStorybookTokensArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(
+    storybookThemesPath,
+    `${JSON.stringify(createStorybookThemesArtifactForStageServices(), null, 2)}\n`,
+    "utf8"
+  );
+  await writeFile(componentMatchReportPath, `${JSON.stringify(componentMatchReportArtifact, null, 2)}\n`, "utf8");
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookEvidence,
+    stage: "figma.source",
+    absolutePath: storybookEvidencePath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookTokens,
+    stage: "figma.source",
+    absolutePath: storybookTokensPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.storybookThemes,
+    stage: "figma.source",
+    absolutePath: storybookThemesPath
+  });
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.componentMatchReport,
+    stage: "ir.derive",
+    absolutePath: componentMatchReportPath
+  });
+
+  let validationInvoked = false;
+  const service = createValidateProjectService({
+    runProjectValidationFn: async () => {
+      validationInvoked = true;
+      return createSuccessfulValidationResult();
+    }
+  });
+
+  await service.execute(undefined, stageContextFor("validate.project"));
+
+  assert.equal(validationInvoked, true);
+  const summary = await executionContext.artifactStore.getValue<{
+    status?: string;
+    mapping?: {
+      status?: string;
+      customerProfileMatch?: {
+        status?: string;
+        issueCount?: number;
+      };
+    };
+    import?: {
+      status?: string;
+      customerProfile?: {
+        status?: string;
+        import?: {
+          issueCount?: number;
+        };
+      };
+    };
+    style?: {
+      status?: string;
+      issueCount?: number;
+      storybook?: {
+        evidence?: { status?: string };
+        tokens?: { status?: string };
+        themes?: { status?: string };
+        componentMatchReport?: { status?: string };
+      };
+    };
+  }>(STAGE_ARTIFACT_KEYS.validationSummary);
+  assert.equal(summary?.status, "ok");
+  assert.equal(summary?.mapping?.status, "ok");
+  assert.equal(summary?.mapping?.customerProfileMatch?.status, "ok");
+  assert.equal(summary?.mapping?.customerProfileMatch?.issueCount, 0);
+  assert.equal(summary?.import?.status, "ok");
+  assert.equal(summary?.import?.customerProfile?.status, "ok");
+  assert.equal(summary?.import?.customerProfile?.import?.issueCount, 0);
+  assert.equal(summary?.style?.status, "ok");
+  assert.equal(summary?.style?.issueCount, 0);
+  assert.equal(summary?.style?.storybook?.evidence?.status, "ok");
+  assert.equal(summary?.style?.storybook?.tokens?.status, "ok");
+  assert.equal(summary?.style?.storybook?.themes?.status, "ok");
+  assert.equal(summary?.style?.storybook?.componentMatchReport?.status, "ok");
+});
+
 test("ValidateProjectService surfaces unresolved icon mappings in validation.summary", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   executionContext.resolvedCustomerProfile = createStorybookMatchCustomerProfileForStageServices({

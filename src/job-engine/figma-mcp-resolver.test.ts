@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import {
   clearResolverCache,
   resolveFigmaDesignContext,
@@ -10,6 +13,19 @@ import {
   type FigmaMeta,
   type McpResolverConfig,
 } from "./figma-mcp-resolver.js";
+
+const mcpFixtureRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../integration/fixtures/figma-paste-pipeline/mcp",
+);
+
+function readMcpFixture(relativePath: string): string {
+  return readFileSync(path.join(mcpFixtureRoot, relativePath), "utf8").trim();
+}
+
+function readMcpFixtureJson<T>(relativePath: string): T {
+  return JSON.parse(readMcpFixture(relativePath)) as T;
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -35,18 +51,27 @@ const createConfig = (fetchImpl: typeof fetch): McpResolverConfig => ({
 /**
  * XML with 2 small nodes — nodeCount will be 2 (below ADAPTIVE_NODE_THRESHOLD).
  */
-const SMALL_XML =
-  '<FRAME id="1:2" name="MyFrame"><TEXT id="1:3" name="Title"/></FRAME>';
+const SMALL_XML = readMcpFixture("metadata-small.xml");
 
 /**
  * XML with 60 FRAME nodes — nodeCount will be >= ADAPTIVE_NODE_THRESHOLD (50),
  * triggering subtree batching.  Uses self-closing tags so extractChildSubtreeIds
  * extracts valid IDs from every element.
  */
-const LARGE_XML = Array.from(
-  { length: 60 },
-  (_, i) => `<FRAME id="${i}:1" name="Frame${i}"/>`,
-).join("");
+const LARGE_XML = readMcpFixture("metadata-large.xml");
+const DESIGN_CONTEXT_SUCCESS = readMcpFixtureJson<{
+  code: string;
+  assets: Record<string, unknown>;
+}>("design-context-success.json");
+const SCREENSHOT_SUCCESS = readMcpFixtureJson<{ url: string }>(
+  "screenshot-success.json",
+);
+const REST_NODES_SUCCESS = readMcpFixtureJson<{
+  nodes: Record<string, unknown>;
+}>("rest-nodes-success.json");
+const ERROR_ENVELOPE = readMcpFixtureJson<{
+  error: { message: string; code?: number };
+}>("error-envelope.json");
 
 // MCP response envelope helpers
 const mcpOk = (result: unknown) => ({ result });
@@ -91,14 +116,10 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
       return jsonResponse(mcpOk({ xml: SMALL_XML }));
     }
     if (tool === "get_design_context") {
-      return jsonResponse(
-        mcpOk({ code: "export default function MyFrame() {}", assets: {} }),
-      );
+      return jsonResponse(mcpOk(DESIGN_CONTEXT_SUCCESS));
     }
     if (tool === "get_screenshot") {
-      return jsonResponse(
-        mcpOk({ url: "https://cdn.figma.com/screenshot.png" }),
-      );
+      return jsonResponse(mcpOk(SCREENSHOT_SUCCESS));
     }
     return jsonResponse(mcpOk({}));
   };
@@ -121,7 +142,7 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
   // Returned context shape
   assert.ok(typeof result.code === "string" && result.code.length > 0);
   assert.ok(typeof result.assets === "object");
-  assert.equal(result.screenshot, "https://cdn.figma.com/screenshot.png");
+  assert.equal(result.screenshot, SCREENSHOT_SUCCESS.url);
   assert.ok(result.metadata !== undefined);
   assert.equal(result.fileKey, "abc");
   assert.equal(result.nodeId, "1:2");
@@ -462,9 +483,7 @@ test("429 exhausted for MCP — falls back to REST — diagnostics contain W_MCP
 
     // REST fallback (api.figma.com) succeeds
     if (new URL(url).hostname === "api.figma.com") {
-      return jsonResponse(
-        mcpRestNodes("1:2", { type: "FRAME", name: "Fallback" }),
-      );
+      return jsonResponse(REST_NODES_SUCCESS);
     }
 
     // MCP calls always return 429
@@ -1194,10 +1213,7 @@ test("MCP error envelope in response body — throws E_MCP_SERVER_ERROR", async 
     const tool = await parseTool(req);
 
     if (tool === "get_metadata") {
-      // MCP envelope-level error
-      return jsonResponse({
-        error: { message: "internal tool failure", code: 500 },
-      });
+      return jsonResponse(ERROR_ENVELOPE);
     }
     return jsonResponse(mcpOk({}));
   };
@@ -1220,9 +1236,9 @@ test("MCP error envelope in response body — throws E_MCP_SERVER_ERROR", async 
           ? input.href
           : (input as Request).url;
     if (new URL(url).hostname === "api.figma.com") {
-      return jsonResponse(mcpRestNodes("1:2", { type: "FRAME" }));
+      return jsonResponse(REST_NODES_SUCCESS);
     }
-    return jsonResponse({ error: { message: "internal tool failure" } });
+    return jsonResponse(ERROR_ENVELOPE);
   };
 
   const configAll: McpResolverConfig = {

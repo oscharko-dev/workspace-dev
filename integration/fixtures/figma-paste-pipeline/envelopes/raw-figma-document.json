@@ -1,0 +1,17 @@
+{
+  "document": {
+    "id": "0:0",
+    "type": "DOCUMENT",
+    "name": "Raw Doc",
+    "children": [
+      {
+        "id": "2:1",
+        "type": "FRAME",
+        "name": "RawFrame"
+      }
+    ]
+  },
+  "components": {},
+  "componentSets": {},
+  "styles": {}
+}

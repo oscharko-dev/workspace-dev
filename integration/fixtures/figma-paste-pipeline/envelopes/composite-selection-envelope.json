@@ -1,0 +1,59 @@
+{
+  "kind": "workspace-dev/figma-selection@1",
+  "pluginVersion": "0.1.0",
+  "copiedAt": "2026-04-12T18:10:00.000Z",
+  "selections": [
+    {
+      "document": {
+        "id": "10:1",
+        "type": "FRAME",
+        "name": "Frame A"
+      },
+      "components": {
+        "comp:1": {
+          "key": "comp:1",
+          "name": "Button"
+        }
+      },
+      "componentSets": {},
+      "styles": {
+        "style:1": {
+          "name": "Primary"
+        }
+      }
+    },
+    {
+      "document": {
+        "id": "10:2",
+        "type": "FRAME",
+        "name": "Frame B"
+      },
+      "components": {
+        "comp:2": {
+          "key": "comp:2",
+          "name": "Icon"
+        }
+      },
+      "componentSets": {
+        "set:1": {
+          "name": "Icons"
+        }
+      },
+      "styles": {
+        "style:1": {
+          "name": "Ignored duplicate"
+        }
+      }
+    },
+    {
+      "document": {
+        "id": "10:3",
+        "type": "FRAME",
+        "name": "Frame C"
+      },
+      "components": {},
+      "componentSets": {},
+      "styles": {}
+    }
+  ]
+}

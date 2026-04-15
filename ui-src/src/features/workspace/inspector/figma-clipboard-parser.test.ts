@@ -61,6 +61,9 @@ function buildFigmaClipboardHtml(
 
 const DEFAULT_HTML = readFixture("scene-copy.html");
 const COMPONENT_SET_HTML = readFixture("component-set-copy.html");
+const COMPOSITE_SELECTION_HTML = readFixture("composite-selection-copy.html");
+const WHOLE_VIEW_HTML = readFixture("whole-view-copy.html");
+const MALFORMED_METADATA_HTML = readFixture("malformed-metadata-copy.html");
 const DEFAULT_META: FigmaMeta = {
   fileKey: "abc123XYZ",
   pasteID: 42,
@@ -145,6 +148,28 @@ describe("parseFigmaClipboard — valid Figma HTML", () => {
     const result = parseFigmaClipboard(COMPONENT_SET_HTML);
     expect(result).not.toBeNull();
     expect(result!.meta.dataType).toBe("component_set");
+  });
+
+  it("parses the composite-selection fixture contract", () => {
+    const result = parseFigmaClipboard(COMPOSITE_SELECTION_HTML);
+    expect(result).not.toBeNull();
+    expect(result!.meta).toEqual({
+      fileKey: "compSel456",
+      pasteID: 77,
+      dataType: "scene",
+    });
+    expect(result!.hasBuffer).toBe(true);
+  });
+
+  it("parses the whole-view fixture contract", () => {
+    const result = parseFigmaClipboard(WHOLE_VIEW_HTML);
+    expect(result).not.toBeNull();
+    expect(result!.meta).toEqual({
+      fileKey: "wholeView789",
+      pasteID: 108,
+      dataType: "scene",
+    });
+    expect(result!.hasBuffer).toBe(true);
   });
 
   it("handles fileKey with special characters", () => {
@@ -246,6 +271,11 @@ describe("parseFigmaClipboard — malformed Figma HTML", () => {
     const badBase64 = btoa("this is not json");
     const html = `<span data-metadata="<!--(figmeta)${badBase64}(/figmeta)-->"></span>`;
     expect(parseFigmaClipboard(html)).toBeNull();
+  });
+
+  it("malformed metadata fixture is detected but does not parse", () => {
+    expect(isFigmaClipboard(MALFORMED_METADATA_HTML)).toBe(true);
+    expect(parseFigmaClipboard(MALFORMED_METADATA_HTML)).toBeNull();
   });
 
   it("data-metadata with valid JSON but missing fileKey", () => {
