@@ -31,6 +31,33 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.14.0] - 2026-04-15
+
+### Import session governance scaffolding (Issue #994)
+
+Added (additive only — no `CONTRACT_VERSION` bump beyond the prior `3.14.0`):
+
+- `WorkspaceImportSessionStatus` union (`imported` | `reviewing` | `approved` | `applied` | `rejected`) for the review lifecycle of a persisted import session.
+- `WorkspaceImportSessionEventKind` union (`imported` | `review_started` | `approved` | `applied` | `rejected` | `apply_blocked` | `note`) for the audit event taxonomy.
+- `WorkspaceImportSessionEvent` carrying `id`, `sessionId`, `kind`, `at`, optional `actor`, optional `note`, and optional JSON-safe `metadata` map.
+- `WorkspaceImportSessionEventsResponse` returning an ordered `events` list.
+- `WorkspaceImportSession.qualityScore?: number` (integer 0–100) for the persisted Pre-flight Quality Score.
+- `WorkspaceImportSession.status?: WorkspaceImportSessionStatus` for the persisted review state.
+- `WorkspaceImportSession.reviewRequired?: boolean` for the governance-policy-driven review gate at save time.
+
+Backwards compatibility: legacy `import-sessions.json` envelopes without the new fields continue to round-trip unchanged.
+
+### Audit-trail endpoints (Issue #994)
+
+Added (additive only):
+
+- `GET  /workspace/import-sessions/:id/events` returns `WorkspaceImportSessionEventsResponse` with the ordered audit trail. Responds `404` when the session does not exist.
+- `POST /workspace/import-sessions/:id/events` appends one event. Accepts `{ kind, actor?, note?, metadata? }`; the server fills `id` and `at`. Responds `201` on success, `404` when the session does not exist, `422` on malformed bodies (missing `kind`, unknown `kind`, or nested `metadata`), `405` on other verbs.
+
+Events are persisted under `<outputRoot>/import-session-events/<sessionId>.json`, append-only, rotated at 200 entries, with `note` truncated at 1024 characters. Deleting a session via `DELETE /workspace/import-sessions/:id` also purges the corresponding event file.
+
+---
+
 ## [3.13.0] - 2026-04-14
 
 ### Added

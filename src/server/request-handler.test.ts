@@ -112,6 +112,18 @@ function createStubJobEngine(overrides: Partial<JobEngine> = {}): JobEngine {
         deleted: true,
         jobId: "job-accepted",
       }) as Awaited<ReturnType<JobEngine["deleteImportSession"]>>,
+    listImportSessionEvents: async () =>
+      [] as Awaited<ReturnType<JobEngine["listImportSessionEvents"]>>,
+    appendImportSessionEvent: async ({ event }) =>
+      ({
+        id: event.id.length > 0 ? event.id : "generated-event-id",
+        sessionId: event.sessionId,
+        kind: event.kind,
+        at: event.at.length > 0 ? event.at : "2026-04-15T10:00:00.000Z",
+        ...(event.actor !== undefined ? { actor: event.actor } : {}),
+        ...(event.note !== undefined ? { note: event.note } : {}),
+        ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
+      }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
     ...overrides,
   } as unknown as JobEngine;
 }
@@ -289,24 +301,27 @@ test("request handler returns the parsed inspector policy when the file is valid
 });
 
 test("request handler lists persisted import sessions", async () => {
-  const listImportSessions = test.mock.fn(async () => [
-    {
-      id: "session-1",
-      jobId: "job-1",
-      sourceMode: "figma_url",
-      fileKey: "file-key",
-      nodeId: "1:2",
-      nodeName: "Checkout",
-      importedAt: "2026-04-15T10:00:00.000Z",
-      nodeCount: 12,
-      fileCount: 3,
-      selectedNodes: [],
-      scope: "all",
-      componentMappings: 2,
-      pasteIdentityKey: null,
-      replayable: true,
-    },
-  ] as Awaited<ReturnType<JobEngine["listImportSessions"]>>);
+  const listImportSessions = test.mock.fn(
+    async () =>
+      [
+        {
+          id: "session-1",
+          jobId: "job-1",
+          sourceMode: "figma_url",
+          fileKey: "file-key",
+          nodeId: "1:2",
+          nodeName: "Checkout",
+          importedAt: "2026-04-15T10:00:00.000Z",
+          nodeCount: 12,
+          fileCount: 3,
+          selectedNodes: [],
+          scope: "all",
+          componentMappings: 2,
+          pasteIdentityKey: null,
+          replayable: true,
+        },
+      ] as Awaited<ReturnType<JobEngine["listImportSessions"]>>,
+  );
   const { app, close } = await createRequestHandlerApp({
     jobEngine: createStubJobEngine({ listImportSessions }),
   });
@@ -345,16 +360,19 @@ test("request handler lists persisted import sessions", async () => {
 });
 
 test("request handler reimports persisted import sessions via POST", async () => {
-  const reimportImportSession = test.mock.fn(async ({ sessionId }) => ({
-    jobId: "job-reimport",
-    sessionId,
-    sourceJobId: "job-1",
-    status: "queued",
-    acceptedModes: {
-      figmaSourceMode: "hybrid",
-      llmCodegenMode: "deterministic",
-    },
-  }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>);
+  const reimportImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        jobId: "job-reimport",
+        sessionId,
+        sourceJobId: "job-1",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "hybrid",
+          llmCodegenMode: "deterministic",
+        },
+      }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>,
+  );
   const { app, close } = await createRequestHandlerApp({
     jobEngine: createStubJobEngine({ reimportImportSession }),
   });
@@ -378,11 +396,14 @@ test("request handler reimports persisted import sessions via POST", async () =>
 });
 
 test("request handler deletes persisted import sessions via DELETE", async () => {
-  const deleteImportSession = test.mock.fn(async ({ sessionId }) => ({
-    sessionId,
-    deleted: true,
-    jobId: "job-1",
-  }) as Awaited<ReturnType<JobEngine["deleteImportSession"]>>);
+  const deleteImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        sessionId,
+        deleted: true,
+        jobId: "job-1",
+      }) as Awaited<ReturnType<JobEngine["deleteImportSession"]>>,
+  );
   const { app, close } = await createRequestHandlerApp({
     jobEngine: createStubJobEngine({ deleteImportSession }),
   });
@@ -399,6 +420,274 @@ test("request handler deletes persisted import sessions via DELETE", async () =>
     assert.deepEqual(deleteImportSession.mock.calls[0]?.arguments[0], {
       sessionId: "session-1",
     });
+  } finally {
+    await close();
+  }
+});
+
+const makeListedImportSession = (id: string) =>
+  ({
+    id,
+    jobId: "job-1",
+    sourceMode: "figma_url",
+    fileKey: "file-key",
+    nodeId: "1:2",
+    nodeName: "Checkout",
+    importedAt: "2026-04-15T10:00:00.000Z",
+    nodeCount: 12,
+    fileCount: 3,
+    selectedNodes: [],
+    scope: "all",
+    componentMappings: 2,
+    pasteIdentityKey: null,
+    replayable: true,
+  }) as Awaited<ReturnType<JobEngine["listImportSessions"]>>[number];
+
+test("request handler GET /events returns the audit trail for an existing session", async () => {
+  const listImportSessions = test.mock.fn(async () => [
+    makeListedImportSession("session-1"),
+  ]);
+  const listImportSessionEvents = test.mock.fn(
+    async () =>
+      [
+        {
+          id: "event-1",
+          sessionId: "session-1",
+          kind: "imported",
+          at: "2026-04-15T10:00:00.000Z",
+        },
+      ] as Awaited<ReturnType<JobEngine["listImportSessionEvents"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions,
+      listImportSessionEvents,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/import-sessions/session-1/events",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(listImportSessionEvents.mock.callCount(), 1);
+    assert.deepEqual(listImportSessionEvents.mock.calls[0]?.arguments[0], {
+      sessionId: "session-1",
+    });
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      events: [
+        {
+          id: "event-1",
+          sessionId: "session-1",
+          kind: "imported",
+          at: "2026-04-15T10:00:00.000Z",
+        },
+      ],
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler GET /events returns 404 for an unknown session", async () => {
+  const listImportSessionEvents = test.mock.fn(
+    async () => [] as Awaited<ReturnType<JobEngine["listImportSessionEvents"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [],
+      listImportSessionEvents,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/import-sessions/missing-session/events",
+    });
+
+    assert.equal(response.statusCode, 404);
+    assert.equal(listImportSessionEvents.mock.callCount(), 0);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "E_IMPORT_SESSION_NOT_FOUND");
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /events stores well-formed events and returns 201", async () => {
+  const appendImportSessionEvent = test.mock.fn(
+    async ({ event }) =>
+      ({
+        id: "stored-event",
+        sessionId: event.sessionId,
+        kind: event.kind,
+        at: "2026-04-15T10:05:00.000Z",
+        ...(event.actor !== undefined ? { actor: event.actor } : {}),
+        ...(event.note !== undefined ? { note: event.note } : {}),
+        ...(event.metadata !== undefined ? { metadata: event.metadata } : {}),
+      }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      appendImportSessionEvent,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: { "content-type": "application/json" },
+      payload: {
+        kind: "approved",
+        actor: "reviewer@example.com",
+        note: "looks good",
+        metadata: { qualityScore: 90, reason: null, ok: true },
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    assert.equal(appendImportSessionEvent.mock.callCount(), 1);
+    const callArg = appendImportSessionEvent.mock.calls[0]?.arguments[0];
+    assert.equal(callArg?.event.sessionId, "session-1");
+    assert.equal(callArg?.event.kind, "approved");
+    assert.equal(callArg?.event.actor, "reviewer@example.com");
+    assert.equal(callArg?.event.note, "looks good");
+    assert.deepEqual(callArg?.event.metadata, {
+      qualityScore: 90,
+      reason: null,
+      ok: true,
+    });
+
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      id: "stored-event",
+      sessionId: "session-1",
+      kind: "approved",
+      at: "2026-04-15T10:05:00.000Z",
+      actor: "reviewer@example.com",
+      note: "looks good",
+      metadata: { qualityScore: 90, reason: null, ok: true },
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /events rejects invalid bodies with 422", async (t) => {
+  const appendImportSessionEvent = test.mock.fn(
+    async ({ event }) =>
+      ({
+        id: "stored-event",
+        sessionId: event.sessionId,
+        kind: event.kind,
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      appendImportSessionEvent,
+    }),
+  });
+
+  try {
+    const scenarios = [
+      {
+        name: "missing kind",
+        payload: { note: "missing kind" },
+        expectedPath: "kind",
+      },
+      {
+        name: "unknown kind",
+        payload: { kind: "mystery" },
+        expectedPath: "kind",
+      },
+      {
+        name: "nested metadata",
+        payload: {
+          kind: "note",
+          metadata: { nested: { inner: true } },
+        },
+        expectedPath: "metadata",
+      },
+    ] as const;
+
+    for (const scenario of scenarios) {
+      await t.test(scenario.name, async () => {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/import-sessions/session-1/events",
+          headers: { "content-type": "application/json" },
+          payload: scenario.payload,
+        });
+
+        assert.equal(response.statusCode, 422);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.error, "VALIDATION_ERROR");
+        assert.equal(Array.isArray(body.issues), true);
+        assert.equal(
+          (body.issues as Array<Record<string, unknown>>)[0]?.path,
+          scenario.expectedPath,
+        );
+      });
+    }
+
+    assert.equal(appendImportSessionEvent.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /events returns 404 when the engine reports an unknown session", async () => {
+  const appendImportSessionEvent = test.mock.fn(async () => {
+    const error = new Error("Import session 'session-1' not found.");
+    (error as Error & { code: string }).code = "E_IMPORT_SESSION_NOT_FOUND";
+    throw error;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      appendImportSessionEvent,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: { "content-type": "application/json" },
+      payload: { kind: "applied" },
+    });
+
+    assert.equal(response.statusCode, 404);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "E_IMPORT_SESSION_NOT_FOUND");
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rejects DELETE on /events as an unknown write route", async () => {
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: { "content-type": "application/json" },
+    });
+
+    assert.equal(response.statusCode, 404);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "NOT_FOUND");
   } finally {
     await close();
   }

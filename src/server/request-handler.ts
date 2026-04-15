@@ -11,6 +11,8 @@ import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   type WorkspaceFigmaSourceMode,
+  type WorkspaceImportSessionEvent,
+  type WorkspaceImportSessionEventKind,
   type WorkspaceImportSessionSourceMode,
   type WorkspacePasteDeltaSummary,
   type WorkspaceStatus,
@@ -342,6 +344,45 @@ function sanitizeTokenNames(values: readonly string[]): string[] {
   return out;
 }
 
+const IMPORT_SESSION_EVENT_KINDS: ReadonlySet<WorkspaceImportSessionEventKind> =
+  new Set<WorkspaceImportSessionEventKind>([
+    "imported",
+    "review_started",
+    "approved",
+    "applied",
+    "rejected",
+    "apply_blocked",
+    "note",
+  ]);
+
+function isImportSessionEventKind(
+  value: unknown,
+): value is WorkspaceImportSessionEventKind {
+  return (
+    typeof value === "string" &&
+    (IMPORT_SESSION_EVENT_KINDS as ReadonlySet<string>).has(value)
+  );
+}
+
+function isFlatEventMetadata(
+  value: unknown,
+): value is Record<string, string | number | boolean | null> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false;
+  }
+  for (const entry of Object.values(value as Record<string, unknown>)) {
+    if (
+      entry !== null &&
+      typeof entry !== "string" &&
+      typeof entry !== "number" &&
+      typeof entry !== "boolean"
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
 interface ProtectedWriteRoute {
   parsedJobRoute?: ReturnType<typeof parseJobRoute>;
   parsedImportSessionRoute?: ReturnType<typeof parseImportSessionRoute>;
@@ -364,6 +405,7 @@ function resolveProtectedWriteRoute(
   if (
     parsedImportSessionRoute &&
     ((method === "POST" && parsedImportSessionRoute.action === "reimport") ||
+      (method === "POST" && parsedImportSessionRoute.action === "events") ||
       (method === "DELETE" && parsedImportSessionRoute.action === "detail"))
   ) {
     return { parsedImportSessionRoute };
@@ -1122,6 +1164,55 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        if (parsedImportSessionRoute?.action === "events") {
+          const sessionId = safeDecodeParam(
+            parsedImportSessionRoute.sessionId,
+            "import session ID",
+            response,
+          );
+          if (sessionId === null) return;
+
+          const sessions = await jobEngine.listImportSessions();
+          const sessionExists = sessions.some(
+            (entry) => entry.id === sessionId,
+          );
+          if (!sessionExists) {
+            sendRequestFailure({
+              statusCode: 404,
+              payload: {
+                error: "E_IMPORT_SESSION_NOT_FOUND",
+                message: `Import session '${sessionId}' not found.`,
+              },
+              fallbackMessage: "Import session events lookup failed.",
+            });
+            return;
+          }
+
+          try {
+            const events = await jobEngine.listImportSessionEvents({
+              sessionId,
+            });
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: { events },
+            });
+          } catch (error) {
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not list import session events.",
+                }),
+              },
+              fallbackMessage: "Import session events lookup failed.",
+            });
+          }
+          return;
+        }
+
         const parsedFilesRoute = parseJobFilesRoute(pathname);
         if (parsedFilesRoute) {
           const jobId = safeDecodeParam(
@@ -1441,18 +1532,21 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        response.setHeader(
-          "allow",
-          protectedWriteRoute.parsedImportSessionRoute?.action === "detail"
+        const importSessionAction =
+          protectedWriteRoute.parsedImportSessionRoute?.action;
+        const allowedMethods =
+          importSessionAction === "detail"
             ? "DELETE"
-            : "POST",
-        );
+            : importSessionAction === "events"
+              ? "GET, POST"
+              : "POST";
+        response.setHeader("allow", allowedMethods);
         sendJson({
           response,
           statusCode: 405,
           payload: {
             error: "METHOD_NOT_ALLOWED",
-            message: `Write route '${pathname}' only supports ${protectedWriteRoute.parsedImportSessionRoute?.action === "detail" ? "DELETE" : "POST"} and does not support cross-origin browser preflight requests.`,
+            message: `Write route '${pathname}' only supports ${allowedMethods} and does not support cross-origin browser preflight requests.`,
           },
         });
         return;
@@ -1553,8 +1647,7 @@ export function createWorkspaceRequestHandler({
                   : code === "E_IMPORT_SESSION_NOT_REPLAYABLE"
                     ? 409
                     : code === "E_IMPORT_SESSION_INVALID_LOCATOR" ||
-                        code ===
-                          "E_IMPORT_SESSION_MISSING_FIGMA_ACCESS_TOKEN"
+                        code === "E_IMPORT_SESSION_MISSING_FIGMA_ACCESS_TOKEN"
                       ? 400
                       : 500,
               payload: {
@@ -1565,6 +1658,175 @@ export function createWorkspaceRequestHandler({
                 }),
               },
               fallbackMessage: "Re-import request failed.",
+            });
+          }
+          return;
+        }
+
+        if (
+          method === "POST" &&
+          parsedImportSessionRoute?.action === "events"
+        ) {
+          const sessionId = safeDecodeParam(
+            parsedImportSessionRoute.sessionId,
+            "import session ID",
+            response,
+          );
+          if (sessionId === null) return;
+
+          // Re-use `rateLimiter.consume` here if per-POST throttling becomes
+          // necessary — today the audit-event volume per user is bounded by
+          // the stepper UX, so no rate limit is applied.
+
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              fallbackMessage: "Import session event validation failed.",
+            });
+            return;
+          }
+
+          if (
+            typeof rawBody.value !== "object" ||
+            rawBody.value === null ||
+            Array.isArray(rawBody.value)
+          ) {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [
+                  {
+                    path: "(root)",
+                    message: "Event payload must be an object.",
+                  },
+                ],
+              },
+              fallbackMessage: "Import session event validation failed.",
+            });
+            return;
+          }
+
+          const body = rawBody.value as Record<string, unknown>;
+
+          if (!isImportSessionEventKind(body.kind)) {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [
+                  {
+                    path: "kind",
+                    message:
+                      "kind is required and must be a known WorkspaceImportSessionEventKind.",
+                  },
+                ],
+              },
+              fallbackMessage: "Import session event validation failed.",
+            });
+            return;
+          }
+
+          if (body.actor !== undefined && typeof body.actor !== "string") {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [
+                  {
+                    path: "actor",
+                    message: "actor must be a string when provided.",
+                  },
+                ],
+              },
+              fallbackMessage: "Import session event validation failed.",
+            });
+            return;
+          }
+
+          if (body.note !== undefined && typeof body.note !== "string") {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [
+                  {
+                    path: "note",
+                    message: "note must be a string when provided.",
+                  },
+                ],
+              },
+              fallbackMessage: "Import session event validation failed.",
+            });
+            return;
+          }
+
+          if (
+            body.metadata !== undefined &&
+            !isFlatEventMetadata(body.metadata)
+          ) {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [
+                  {
+                    path: "metadata",
+                    message:
+                      "metadata must be a flat record of string, number, boolean, or null values.",
+                  },
+                ],
+              },
+              fallbackMessage: "Import session event validation failed.",
+            });
+            return;
+          }
+
+          const incoming: WorkspaceImportSessionEvent = {
+            id: typeof body.id === "string" ? body.id : "",
+            sessionId,
+            kind: body.kind,
+            at: typeof body.at === "string" ? body.at : "",
+            ...(typeof body.actor === "string" ? { actor: body.actor } : {}),
+            ...(typeof body.note === "string" ? { note: body.note } : {}),
+            ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
+          };
+
+          try {
+            const stored = await jobEngine.appendImportSessionEvent({
+              event: incoming,
+            });
+            sendJson({
+              response,
+              statusCode: 201,
+              payload: stored,
+            });
+          } catch (error) {
+            const code =
+              error instanceof Error && "code" in error
+                ? (error as { code?: string }).code
+                : undefined;
+            sendRequestFailure({
+              statusCode: code === "E_IMPORT_SESSION_NOT_FOUND" ? 404 : 500,
+              payload: {
+                error: code ?? "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not append import session event.",
+                }),
+              },
+              fallbackMessage: "Import session event append failed.",
             });
           }
           return;
@@ -2714,7 +2976,9 @@ export function createWorkspaceRequestHandler({
           }
           const candidate = rawBody.value as { figmaSourceMode?: unknown };
           return typeof candidate.figmaSourceMode === "string"
-            ? (candidate.figmaSourceMode.trim().toLowerCase() as WorkspaceImportSessionSourceMode)
+            ? (candidate.figmaSourceMode
+                .trim()
+                .toLowerCase() as WorkspaceImportSessionSourceMode)
             : undefined;
         })();
 
@@ -2809,9 +3073,7 @@ export function createWorkspaceRequestHandler({
           ...parsed.data,
           figmaSourceMode: resolvedFigmaSourceMode,
           llmCodegenMode: defaults.llmCodegenMode,
-          ...(requestSourceMode !== undefined
-            ? { requestSourceMode }
-            : {}),
+          ...(requestSourceMode !== undefined ? { requestSourceMode } : {}),
         };
         let pasteTempPathToCleanup: string | undefined;
         const cleanupPendingPasteTempFile = async (): Promise<void> => {
@@ -2969,7 +3231,9 @@ export function createWorkspaceRequestHandler({
                 pasteIdentityKey: identityKey,
                 requestedMode: requestedImportMode,
                 provisionalSummary: pasteDeltaSummary,
-                ...(canAttemptReuse ? { sourceJobId: reusableSourceJobId } : {}),
+                ...(canAttemptReuse
+                  ? { sourceJobId: reusableSourceJobId }
+                  : {}),
                 ...(priorManifest?.execution?.compatibilityFingerprint
                   ? {
                       compatibilityFingerprint:

@@ -88,3 +88,18 @@ Default output root is `.workspace-dev` in the current project.
 - Maintainers update `template/react-mui-app/pnpm-lock.yaml` only in this repository when template dependencies or template scripts change, then keep `pnpm run template:install` (`pnpm --dir template/react-mui-app install --frozen-lockfile`) and the release quality gates green.
 - Consumers should treat the bundled template lockfile as package-owned metadata shipped inside the tarball, not as a file to hand-edit under `node_modules`.
 - `pnpm run verify:airgap` validates that the packed tarball installs offline with the bundled template assets, while `pnpm run verify:reproducible-build` separately validates repeatable `dist/` build artifacts across consecutive builds.
+
+## Import session governance (#994)
+
+Every paste-import pipeline can emit `WorkspaceImportSessionEvent` entries whenever the Inspector walks a completed session through its review stages. Events are persisted server-side under `<outputRoot>/import-session-events/<sessionId>.json` (append-only, 200-entry rotation, note truncated at 1024 chars) and exposed via:
+
+- `GET  /workspace/import-sessions/:id/events` — ordered audit trail.
+- `POST /workspace/import-sessions/:id/events` — append one event. Body shape: `{ kind, actor?, note?, metadata? }`. `kind` must be one of `imported`, `review_started`, `approved`, `applied`, `rejected`, `apply_blocked`, `note`; `metadata` is a flat record of string/number/boolean/null.
+
+The Inspector renders `ImportReviewStepper` above the suggestions panel whenever a pipeline reaches `ready` or `partial`. The stepper walks the user through four stages — Import → Review → Approve → Apply — and enforces the workspace governance policy:
+
+- `policy.governance.minQualityScoreToApply` (optional) blocks `Apply` until the derived quality score meets the threshold.
+- `policy.governance.requireNoteOnOverride` forces the reviewer to supply a note when overriding the gate.
+- `policy.governance.securitySensitivePatterns` (reserved for a follow-up) lets repos mark high-risk components that require explicit review even when the score is high.
+
+`createImportGovernanceTransport`, registered once on mount by `workspace-page.tsx`, forwards each dispatched governance event to the server endpoint on a best-effort basis; network failures are swallowed so the Inspector flow is never interrupted. `ImportHistoryPanel` renders the per-session audit trail inline when a row is expanded.

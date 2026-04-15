@@ -135,7 +135,32 @@ test("parseImportSessionRoute parses list, detail, and reimport routes", () => {
     parseImportSessionRoute("/workspace/import-sessions/session-1/extra"),
     undefined,
   );
-  assert.equal(parseImportSessionRoute("/workspace/import-sessions/"), undefined);
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions/"),
+    undefined,
+  );
+});
+
+test("parseImportSessionRoute parses events routes and rejects malformed ones", () => {
+  assert.deepEqual(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/events"),
+    {
+      sessionId: "session-1",
+      action: "events",
+    },
+  );
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions//events"),
+    undefined,
+  );
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/events/foo"),
+    undefined,
+  );
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/events/"),
+    undefined,
+  );
 });
 
 test("parseReproRoute parses preview paths with safe index fallback", () => {

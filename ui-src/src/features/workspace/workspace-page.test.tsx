@@ -1,12 +1,22 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../lib/http";
 import { WorkspacePage } from "./workspace-page";
+import {
+  __resetImportGovernanceListenersForTests,
+  dispatchImportGovernanceEvent,
+} from "./inspector/import-governance-events";
 
 vi.mock("../../lib/http", () => ({
-  fetchJson: vi.fn()
+  fetchJson: vi.fn(),
 }));
 
 const fetchJsonMock = vi.mocked(fetchJson);
@@ -32,13 +42,13 @@ const runtimeStatusPayload: MockRuntimeStatusPayload = {
   llmCodegenMode: "deterministic",
   uptimeMs: 120_000,
   outputRoot: "/tmp/workspace-dev",
-  previewEnabled: true
+  previewEnabled: true,
 };
 
 function createJsonResponse<TPayload>({
   status = 200,
   ok = true,
-  payload
+  payload,
 }: {
   status?: number;
   ok?: boolean;
@@ -47,11 +57,15 @@ function createJsonResponse<TPayload>({
   return {
     status,
     ok,
-    payload
+    payload,
   };
 }
 
-function parseJsonBody({ init }: { init: RequestInit | undefined }): Record<string, unknown> {
+function parseJsonBody({
+  init,
+}: {
+  init: RequestInit | undefined;
+}): Record<string, unknown> {
   if (typeof init?.body !== "string") {
     throw new Error("Expected a JSON request body.");
   }
@@ -71,34 +85,34 @@ function renderWorkspacePage() {
     defaultOptions: {
       queries: {
         retry: false,
-        gcTime: Infinity
+        gcTime: Infinity,
       },
       mutations: {
-        retry: false
-      }
-    }
+        retry: false,
+      },
+    },
   });
 
   const router = createMemoryRouter(
     [
       {
         path: "/workspace/ui",
-        element: <WorkspacePage />
+        element: <WorkspacePage />,
       },
       {
         path: "*",
-        element: <WorkspacePage />
-      }
+        element: <WorkspacePage />,
+      },
     ],
     {
-      initialEntries: ["/workspace/ui"]
-    }
+      initialEntries: ["/workspace/ui"],
+    },
   );
 
   render(
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
-    </QueryClientProvider>
+    </QueryClientProvider>,
   );
 
   return { router };
@@ -123,7 +137,7 @@ describe("WorkspacePage", () => {
         submittedPayloads.push(parseJsonBody({ init }));
         return createJsonResponse({
           status: 202,
-          payload: { jobId: "job-123" }
+          payload: { jobId: "job-123" },
         }) as never;
       }
 
@@ -131,8 +145,8 @@ describe("WorkspacePage", () => {
         return createJsonResponse({
           payload: {
             jobId: "job-123",
-            status: "queued"
-          }
+            status: "queued",
+          },
         }) as never;
       }
 
@@ -143,6 +157,7 @@ describe("WorkspacePage", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
+    __resetImportGovernanceListenersForTests();
   });
 
   it("shows REST fields by default and renders a Local JSON mode chip", () => {
@@ -155,11 +170,54 @@ describe("WorkspacePage", () => {
     expect(screen.getByText("Local JSON mode")).toBeInTheDocument();
   });
 
+  it("registers the import governance transport so audit events flow to the server", async () => {
+    const originalFetch = globalThis.fetch;
+    const fetchCalls: Array<{ url: string; body: string }> = [];
+    globalThis.fetch = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        const body = typeof init?.body === "string" ? init.body : "";
+        fetchCalls.push({ url, body });
+        return new Response("{}", {
+          status: 201,
+          headers: { "content-type": "application/json" },
+        });
+      },
+    ) as typeof fetch;
+    try {
+      renderWorkspacePage();
+      dispatchImportGovernanceEvent({
+        sessionId: "paste-import-transport-check",
+        jobId: "job-transport",
+        fileKey: "FILE-KEY",
+        fileCount: 2,
+        nodeCount: 10,
+        scope: "all",
+        selectedNodes: [],
+        timestamp: "2026-04-15T10:00:00.000Z",
+      });
+      await waitFor(() => {
+        expect(fetchCalls.length).toBeGreaterThan(0);
+      });
+      const call = fetchCalls[0];
+      expect(call?.url).toBe(
+        "/workspace/import-sessions/paste-import-transport-check/events",
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it("shows figmaJsonPath and activates the Local JSON chip when local_json is selected", async () => {
     renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Source mode"), {
-      target: { value: "local_json" }
+      target: { value: "local_json" },
     });
 
     await waitFor(() => {
@@ -167,7 +225,9 @@ describe("WorkspacePage", () => {
     });
 
     expect(screen.queryByLabelText("Figma File Key")).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Figma Access Token")).not.toBeInTheDocument();
+    expect(
+      screen.queryByLabelText("Figma Access Token"),
+    ).not.toBeInTheDocument();
     expect(screen.getByText("Local JSON mode")).toHaveClass("border");
   });
 
@@ -175,7 +235,7 @@ describe("WorkspacePage", () => {
     renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Source mode"), {
-      target: { value: "local_json" }
+      target: { value: "local_json" },
     });
 
     await waitFor(() => {
@@ -183,7 +243,7 @@ describe("WorkspacePage", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Source mode"), {
-      target: { value: "hybrid" }
+      target: { value: "hybrid" },
     });
 
     await waitFor(() => {
@@ -199,13 +259,13 @@ describe("WorkspacePage", () => {
     renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Figma File Key"), {
-      target: { value: "stale-file-key" }
+      target: { value: "stale-file-key" },
     });
     fireEvent.change(screen.getByLabelText("Figma Access Token"), {
-      target: { value: "stale-access-token" }
+      target: { value: "stale-access-token" },
     });
     fireEvent.change(screen.getByLabelText("Source mode"), {
-      target: { value: "local_json" }
+      target: { value: "local_json" },
     });
 
     await waitFor(() => {
@@ -213,14 +273,18 @@ describe("WorkspacePage", () => {
     });
 
     fireEvent.change(screen.getByLabelText("Figma JSON Path"), {
-      target: { value: " /data/figma-export.json " }
+      target: { value: " /data/figma-export.json " },
     });
-    fireEvent.click(screen.getByRole("button", { name: /advanced destination and git \/ pr options/i }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /advanced destination and git \/ pr options/i,
+      }),
+    );
     fireEvent.change(screen.getByLabelText("Storybook static dir"), {
-      target: { value: " storybook-static/customer " }
+      target: { value: " storybook-static/customer " },
     });
     fireEvent.change(screen.getByLabelText("Customer profile path"), {
-      target: { value: " profiles/customer-profile.json " }
+      target: { value: " profiles/customer-profile.json " },
     });
 
     const form = document.getElementById("workspace-submit-form");
@@ -240,7 +304,7 @@ describe("WorkspacePage", () => {
       storybookStaticDir: "storybook-static/customer",
       customerProfilePath: "profiles/customer-profile.json",
       enableGitPr: false,
-      llmCodegenMode: "deterministic"
+      llmCodegenMode: "deterministic",
     });
     expect(submittedPayloads[0]).not.toHaveProperty("figmaFileKey");
     expect(submittedPayloads[0]).not.toHaveProperty("figmaAccessToken");
@@ -260,7 +324,7 @@ describe("WorkspacePage", () => {
         submittedPayloads.push(parseJsonBody({ init }));
         return createJsonResponse({
           status: 202,
-          payload: { jobId: "job-123" }
+          payload: { jobId: "job-123" },
         }) as never;
       }
 
@@ -271,17 +335,17 @@ describe("WorkspacePage", () => {
             status: "completed",
             preview: {
               enabled: true,
-              url: "http://127.0.0.1:1983/preview"
-            }
-          }
+              url: "http://127.0.0.1:1983/preview",
+            },
+          },
         }) as never;
       }
 
       if (url === "/workspace/jobs/job-123/result") {
         return createJsonResponse({
           payload: {
-            files: []
-          }
+            files: [],
+          },
         }) as never;
       }
 
@@ -291,10 +355,10 @@ describe("WorkspacePage", () => {
     const { router } = renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Figma File Key"), {
-      target: { value: "demo-file-key" }
+      target: { value: "demo-file-key" },
     });
     fireEvent.change(screen.getByLabelText("Figma Access Token"), {
-      target: { value: "demo-access-token" }
+      target: { value: "demo-access-token" },
     });
 
     const form = document.getElementById("workspace-submit-form");
@@ -305,15 +369,21 @@ describe("WorkspacePage", () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Open Visual Quality" })).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Open Visual Quality" }),
+      ).toBeVisible();
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Open Visual Quality" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Visual Quality" }),
+    );
 
     await waitFor(() => {
-      expect(router.state.location.pathname).toBe("/workspace/ui/visual-quality");
+      expect(router.state.location.pathname).toBe(
+        "/workspace/ui/visual-quality",
+      );
       expect(router.state.location.search).toBe(
-        "?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json"
+        "?report=%2Fworkspace%2Fjobs%2Fjob-123%2Ffiles%2Fvisual-quality%2Freport.json",
       );
     });
   });
@@ -343,10 +413,10 @@ describe("WorkspacePage", () => {
     renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Figma File Key"), {
-      target: { value: "demo-file-key" }
+      target: { value: "demo-file-key" },
     });
     fireEvent.change(screen.getByLabelText("Figma Access Token"), {
-      target: { value: "demo-access-token" }
+      target: { value: "demo-access-token" },
     });
 
     const form = document.getElementById("workspace-submit-form");
@@ -357,7 +427,9 @@ describe("WorkspacePage", () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: "Open Inspector" })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "Open Inspector" }),
+      ).not.toBeInTheDocument();
       expect(screen.getByTestId("submit-payload")).toHaveTextContent(
         /INVALID_REQUEST/,
       );
@@ -409,7 +481,7 @@ describe("WorkspacePage", () => {
         submittedPayloads.push(parseJsonBody({ init }));
         return createJsonResponse({
           status: 202,
-          payload: { jobId: "job-123" }
+          payload: { jobId: "job-123" },
         }) as never;
       }
 
@@ -421,7 +493,7 @@ describe("WorkspacePage", () => {
             stages: [{ name: "", status: "" }],
             preview: {
               enabled: true,
-              url: "http://127.0.0.1:1983/preview"
+              url: "http://127.0.0.1:1983/preview",
             },
             generationDiff: {
               summary: "2 files changed",
@@ -430,15 +502,15 @@ describe("WorkspacePage", () => {
               removed: ["src/old.ts"],
               unchanged: ["src/same.ts"],
             },
-          }
+          },
         }) as never;
       }
 
       if (url === "/workspace/jobs/job-123/result") {
         return createJsonResponse({
           payload: {
-            files: []
-          }
+            files: [],
+          },
         }) as never;
       }
 
@@ -448,10 +520,10 @@ describe("WorkspacePage", () => {
     renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Figma File Key"), {
-      target: { value: "demo-file-key" }
+      target: { value: "demo-file-key" },
     });
     fireEvent.change(screen.getByLabelText("Figma Access Token"), {
-      target: { value: "demo-access-token" }
+      target: { value: "demo-access-token" },
     });
 
     const form = document.getElementById("workspace-submit-form");
@@ -495,7 +567,7 @@ describe("WorkspacePage", () => {
         submittedPayloads.push(parseJsonBody({ init }));
         return createJsonResponse({
           status: 202,
-          payload: { jobId: "job-123" }
+          payload: { jobId: "job-123" },
         }) as never;
       }
 
@@ -510,7 +582,7 @@ describe("WorkspacePage", () => {
               maxConcurrentJobs: 2,
               maxQueuedJobs: 3,
             },
-          }
+          },
         }) as never;
       }
 
@@ -523,7 +595,7 @@ describe("WorkspacePage", () => {
             cancellation: {
               reason: "Cancellation requested from workspace UI.",
             },
-          }
+          },
         }) as never;
       }
 
@@ -533,10 +605,10 @@ describe("WorkspacePage", () => {
     renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Figma File Key"), {
-      target: { value: "demo-file-key" }
+      target: { value: "demo-file-key" },
     });
     fireEvent.change(screen.getByLabelText("Figma Access Token"), {
-      target: { value: "demo-access-token" }
+      target: { value: "demo-access-token" },
     });
 
     const form = document.getElementById("workspace-submit-form");
@@ -547,9 +619,7 @@ describe("WorkspacePage", () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(
-        screen.getByRole("button", { name: "Cancel Job" }),
-      ).toBeEnabled();
+      expect(screen.getByRole("button", { name: "Cancel Job" })).toBeEnabled();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel Job" }));
@@ -575,7 +645,7 @@ describe("WorkspacePage", () => {
         submittedPayloads.push(parseJsonBody({ init }));
         return createJsonResponse({
           status: 202,
-          payload: { jobId: "job-123" }
+          payload: { jobId: "job-123" },
         }) as never;
       }
 
@@ -586,7 +656,7 @@ describe("WorkspacePage", () => {
             status: "completed",
             preview: {
               enabled: true,
-              url: "http://127.0.0.1:1983/preview"
+              url: "http://127.0.0.1:1983/preview",
             },
             generationDiff: {
               summary: "1 file changed",
@@ -595,15 +665,15 @@ describe("WorkspacePage", () => {
             lineage: {
               sourceJobId: "job-121",
             },
-          }
+          },
         }) as never;
       }
 
       if (url === "/workspace/jobs/job-123/result") {
         return createJsonResponse({
           payload: {
-            files: []
-          }
+            files: [],
+          },
         }) as never;
       }
 
@@ -613,10 +683,10 @@ describe("WorkspacePage", () => {
     const { router } = renderWorkspacePage();
 
     fireEvent.change(screen.getByLabelText("Figma File Key"), {
-      target: { value: "demo-file-key" }
+      target: { value: "demo-file-key" },
     });
     fireEvent.change(screen.getByLabelText("Figma Access Token"), {
-      target: { value: "demo-access-token" }
+      target: { value: "demo-access-token" },
     });
 
     const form = document.getElementById("workspace-submit-form");
@@ -627,7 +697,9 @@ describe("WorkspacePage", () => {
     fireEvent.submit(form);
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: "Open Inspector" })).toBeVisible();
+      expect(
+        screen.getByRole("button", { name: "Open Inspector" }),
+      ).toBeVisible();
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Open Inspector" }));

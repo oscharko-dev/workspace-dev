@@ -10,8 +10,19 @@
 // fields rather than thrown.
 // ---------------------------------------------------------------------------
 
+import type { WorkspaceImportSessionStatus } from "./import-review-state";
+
 export const PASTE_IMPORT_HISTORY_VERSION = 1;
 export const MAX_IMPORT_HISTORY_ENTRIES = 20;
+
+const IMPORT_SESSION_STATUSES: ReadonlySet<WorkspaceImportSessionStatus> =
+  new Set<WorkspaceImportSessionStatus>([
+    "imported",
+    "reviewing",
+    "approved",
+    "applied",
+    "rejected",
+  ]);
 
 const PASTE_IMPORT_HISTORY_STORAGE_VERSION = 1;
 
@@ -59,6 +70,10 @@ export interface PasteImportSession {
   readonly replayable?: boolean;
   /** Optional explanation shown when replay is disabled. */
   readonly replayDisabledReason?: string;
+  /** Persisted quality score (integer 0..100) — optional for backwards compatibility. */
+  readonly qualityScore?: number;
+  /** Persisted review lifecycle status — optional for backwards compatibility. */
+  readonly status?: WorkspaceImportSessionStatus;
 }
 
 export interface PasteImportHistory {
@@ -180,6 +195,29 @@ function isFiniteNonNegativeInteger(value: unknown): value is number {
   );
 }
 
+function isIntegerInRange(
+  value: unknown,
+  min: number,
+  max: number,
+): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= min &&
+    value <= max
+  );
+}
+
+function isWorkspaceImportSessionStatus(
+  value: unknown,
+): value is WorkspaceImportSessionStatus {
+  return (
+    typeof value === "string" &&
+    IMPORT_SESSION_STATUSES.has(value as WorkspaceImportSessionStatus)
+  );
+}
+
 function isPasteImportSession(value: unknown): value is PasteImportSession {
   if (!isRecord(value)) {
     return false;
@@ -219,15 +257,24 @@ function isPasteImportSession(value: unknown): value is PasteImportSession {
   ) {
     return false;
   }
-  if (
-    value.replayable !== undefined &&
-    typeof value.replayable !== "boolean"
-  ) {
+  if (value.replayable !== undefined && typeof value.replayable !== "boolean") {
     return false;
   }
   if (
     value.replayDisabledReason !== undefined &&
     typeof value.replayDisabledReason !== "string"
+  ) {
+    return false;
+  }
+  if (
+    value.qualityScore !== undefined &&
+    !isIntegerInRange(value.qualityScore, 0, 100)
+  ) {
+    return false;
+  }
+  if (
+    value.status !== undefined &&
+    !isWorkspaceImportSessionStatus(value.status)
   ) {
     return false;
   }

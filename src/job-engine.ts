@@ -9,6 +9,7 @@ import {
   type WorkspaceFormHandlingMode,
   type WorkspaceImportSession,
   type WorkspaceImportSessionDeleteResult,
+  type WorkspaceImportSessionEvent,
   type WorkspaceImportSessionReimportAccepted,
   type WorkspaceImportSessionSourceMode,
   type WorkspaceLocalSyncApplyResult,
@@ -113,6 +114,7 @@ import {
   reuseStorybookArtifactsFromSourceJob,
 } from "./job-engine/storybook-artifacts.js";
 import { prepareGenerationDiff } from "./job-engine/generation-diff.js";
+import { createImportSessionEventStore } from "./job-engine/import-session-event-store.js";
 import { createImportSessionStore } from "./job-engine/import-session-store.js";
 
 const MODULE_DIR =
@@ -675,6 +677,9 @@ export const createJobEngine = ({
   const importSessionStore = createImportSessionStore({
     rootDir: path.join(resolvedPaths.outputRoot, "import-sessions"),
   });
+  const importSessionEventStore = createImportSessionEventStore({
+    rootDir: path.join(resolvedPaths.outputRoot, "import-sessions"),
+  });
 
   const isAbortLikeError = (error: unknown): boolean => {
     if (!(error instanceof Error)) {
@@ -787,9 +792,7 @@ export const createJobEngine = ({
     writeTerminalJobSnapshotSync({ job, diagnostics });
   };
 
-  const sumComponentManifestMappings = (
-    manifest: unknown,
-  ): number => {
+  const sumComponentManifestMappings = (manifest: unknown): number => {
     if (
       typeof manifest !== "object" ||
       manifest === null ||
@@ -799,7 +802,9 @@ export const createJobEngine = ({
       return 0;
     }
     let total = 0;
-    for (const screen of (manifest as { screens: Array<{ components?: unknown }> }).screens) {
+    for (const screen of (
+      manifest as { screens: Array<{ components?: unknown }> }
+    ).screens) {
       if (!screen || !Array.isArray(screen.components)) {
         continue;
       }
@@ -837,10 +842,7 @@ export const createJobEngine = ({
     requestSourceMode: WorkspaceImportSessionSourceMode;
     fileKey: string;
     nodeId: string;
-  }): Pick<
-    WorkspaceImportSession,
-    "replayable" | "replayDisabledReason"
-  > => {
+  }): Pick<WorkspaceImportSession, "replayable" | "replayDisabledReason"> => {
     if (requestSourceMode === "figma_url") {
       return {
         replayable: fileKey.length > 0,
@@ -853,7 +855,10 @@ export const createJobEngine = ({
       };
     }
 
-    if (requestSourceMode === "figma_paste" || requestSourceMode === "figma_plugin") {
+    if (
+      requestSourceMode === "figma_paste" ||
+      requestSourceMode === "figma_plugin"
+    ) {
       if (fileKey.length > 0 && nodeId.length > 0) {
         return { replayable: true };
       }
@@ -890,7 +895,9 @@ export const createJobEngine = ({
       return;
     }
 
-    const designIr = await artifactStore.getValue<DesignIR>(STAGE_ARTIFACT_KEYS.designIr);
+    const designIr = await artifactStore.getValue<DesignIR>(
+      STAGE_ARTIFACT_KEYS.designIr,
+    );
     const codegenSummary = await artifactStore.getValue<{
       generatedPaths?: string[];
     }>(STAGE_ARTIFACT_KEYS.codegenSummary);
@@ -945,18 +952,29 @@ export const createJobEngine = ({
       return false;
     }
     if (stage === "ir.derive") {
-      return (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaCleaned)) !== undefined;
+      return (
+        (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaCleaned)) !==
+        undefined
+      );
     }
     if (stage === "template.prepare") {
-      return (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr)) !== undefined;
+      return (
+        (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.designIr)) !==
+        undefined
+      );
     }
     if (stage === "codegen.generate") {
       return (
-        (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject)) !== undefined ||
-        (await artifactStore.getValue(STAGE_ARTIFACT_KEYS.codegenSummary)) !== undefined
+        (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject)) !==
+          undefined ||
+        (await artifactStore.getValue(STAGE_ARTIFACT_KEYS.codegenSummary)) !==
+          undefined
       );
     }
-    return (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject)) !== undefined;
+    return (
+      (await artifactStore.getPath(STAGE_ARTIFACT_KEYS.generatedProject)) !==
+      undefined
+    );
   };
 
   const reconstructRetrySubmissionInput = ({
@@ -1078,8 +1096,7 @@ export const createJobEngine = ({
         throw createPipelineError({
           code: "E_RETRY_SOURCE_ARTIFACT_MISSING",
           stage: "codegen.generate",
-          message:
-            `Source job '${sourceJob.jobId}' is missing generated project artifacts required for generate-stage retry.`,
+          message: `Source job '${sourceJob.jobId}' is missing generated project artifacts required for generate-stage retry.`,
         });
       }
       await cp(sourceGeneratedProjectDir, targetGeneratedProjectDir, {
@@ -1393,7 +1410,10 @@ export const createJobEngine = ({
           : {}),
         request: job.request,
         ...(storybookActivation?.requestedStorybookStaticDir
-          ? { storybookStaticDir: storybookActivation.requestedStorybookStaticDir }
+          ? {
+              storybookStaticDir:
+                storybookActivation.requestedStorybookStaticDir,
+            }
           : {}),
       });
     const sourceArtifactStore = new StageArtifactStore({
@@ -1575,7 +1595,9 @@ export const createJobEngine = ({
       createdAt: new Date().toISOString(),
       rootNodeIds: execution.rootNodeIds,
       nodes: execution.currentFingerprintNodes,
-      ...(execution.figmaFileKey ? { figmaFileKey: execution.figmaFileKey } : {}),
+      ...(execution.figmaFileKey
+        ? { figmaFileKey: execution.figmaFileKey }
+        : {}),
       sourceJobId: job.jobId,
       execution: {
         requestedMode: execution.requestedMode,
@@ -1719,9 +1741,7 @@ export const createJobEngine = ({
         artifactStore,
         input,
         job,
-        ...(resolvedCustomerBrandId
-          ? { resolvedCustomerBrandId }
-          : {}),
+        ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
         ...(storybookActivation ? { storybookActivation } : {}),
       });
       const context: PipelineExecutionContext = {
@@ -2040,7 +2060,9 @@ export const createJobEngine = ({
       formHandlingMode: resolvedFormHandlingMode,
       enableVisualQualityValidation: resolvedEnableVisualQualityValidation,
       compositeQualityWeights: resolvedCompositeQualityWeights,
-      ...(input.importMode !== undefined ? { importMode: input.importMode } : {}),
+      ...(input.importMode !== undefined
+        ? { importMode: input.importMode }
+        : {}),
       ...(input.selectedNodeIds !== undefined
         ? { selectedNodeIds: [...input.selectedNodeIds] }
         : {}),
@@ -2529,7 +2551,10 @@ export const createJobEngine = ({
     }
 
     if (retryInput.retryStage === "figma.source") {
-      await runJob(job, reconstructRetrySubmissionInput({ sourceJob: sourceRecord }));
+      await runJob(
+        job,
+        reconstructRetrySubmissionInput({ sourceJob: sourceRecord }),
+      );
       return;
     }
 
@@ -2634,11 +2659,13 @@ export const createJobEngine = ({
         targetGeneratedProjectDir: generatedProjectDir,
       });
 
-      const resolvedCustomerProfile = await activateRegenerationCustomerProfile({
-        job,
-        artifactStore,
-        sourceJob: sourceRecord,
-      });
+      const resolvedCustomerProfile = await activateRegenerationCustomerProfile(
+        {
+          job,
+          artifactStore,
+          sourceJob: sourceRecord,
+        },
+      );
       const requestedStorybookStaticDir = normalizeOptionalInputString(
         sourceRecord.request.storybookStaticDir,
       );
@@ -2741,7 +2768,9 @@ export const createJobEngine = ({
         try {
           await persistTerminalSnapshot({
             job,
-            ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
+            ...(collectedDiagnostics
+              ? { diagnostics: collectedDiagnostics }
+              : {}),
           });
         } catch {
           // Ignore
@@ -3342,7 +3371,11 @@ export const createJobEngine = ({
         stages: job.inspector.stages.map((stage) => ({
           ...stage,
           ...(stage.retryTargets
-            ? { retryTargets: stage.retryTargets.map((target) => ({ ...target })) }
+            ? {
+                retryTargets: stage.retryTargets.map((target) => ({
+                  ...target,
+                })),
+              }
             : {}),
         })),
       };
@@ -3351,7 +3384,11 @@ export const createJobEngine = ({
       result.error = {
         ...job.error,
         ...(job.error.retryTargets
-          ? { retryTargets: job.error.retryTargets.map((target) => ({ ...target })) }
+          ? {
+              retryTargets: job.error.retryTargets.map((target) => ({
+                ...target,
+              })),
+            }
           : {}),
       };
     }
@@ -3856,9 +3893,12 @@ export const createJobEngine = ({
       refreshQueueSnapshots();
     }
 
-    const jobDir = linkedJob?.artifacts.jobDir ??
+    const jobDir =
+      linkedJob?.artifacts.jobDir ??
       path.join(resolvedPaths.jobsRoot, removed.jobId);
     await rm(jobDir, { recursive: true, force: true });
+
+    await importSessionEventStore.deleteAllForSession(sessionId);
 
     return {
       sessionId,
@@ -3866,6 +3906,32 @@ export const createJobEngine = ({
       jobId: removed.jobId,
     };
   };
+
+  const listImportSessionEvents: JobEngine["listImportSessionEvents"] = async ({
+    sessionId,
+  }): Promise<WorkspaceImportSessionEvent[]> => {
+    return await importSessionEventStore.list(sessionId);
+  };
+
+  const appendImportSessionEvent: JobEngine["appendImportSessionEvent"] =
+    async ({ event }): Promise<WorkspaceImportSessionEvent> => {
+      const sessions = await importSessionStore.list();
+      const session = sessions.find((entry) => entry.id === event.sessionId);
+      if (!session) {
+        const error = new Error(
+          `Import session '${event.sessionId}' not found.`,
+        );
+        (error as Error & { code: string }).code = "E_IMPORT_SESSION_NOT_FOUND";
+        throw error;
+      }
+      const finalized: WorkspaceImportSessionEvent = {
+        ...event,
+        id: event.id.length > 0 ? event.id : randomUUID(),
+        at: event.at.length > 0 ? event.at : nowIso(),
+      };
+      await importSessionEventStore.append(finalized);
+      return finalized;
+    };
 
   return {
     submitJob,
@@ -3884,6 +3950,8 @@ export const createJobEngine = ({
     listImportSessions,
     reimportImportSession,
     deleteImportSession,
+    listImportSessionEvents,
+    appendImportSessionEvent,
   };
 };
 

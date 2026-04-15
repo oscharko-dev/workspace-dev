@@ -29,16 +29,21 @@ import {
   workspaceSubmitSchema,
   toWorkspaceSubmitPayload,
   type WorkspaceSubmitFormData,
-  type WorkspaceSubmitPayload
+  type WorkspaceSubmitPayload,
 } from "./submit-schema";
+import { subscribeToImportGovernanceEvents } from "./inspector/import-governance-events";
+import { createImportGovernanceTransport } from "./inspector/import-governance-transport";
 
 const endpoints = {
   health: "/healthz",
   workspace: "/workspace",
   submit: "/workspace/submit",
-  job: ({ jobId }: { jobId: string }) => `/workspace/jobs/${encodeURIComponent(jobId)}`,
-  result: ({ jobId }: { jobId: string }) => `/workspace/jobs/${encodeURIComponent(jobId)}/result`,
-  cancel: ({ jobId }: { jobId: string }) => `/workspace/jobs/${encodeURIComponent(jobId)}/cancel`
+  job: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}`,
+  result: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/result`,
+  cancel: ({ jobId }: { jobId: string }) =>
+    `/workspace/jobs/${encodeURIComponent(jobId)}/cancel`,
 };
 
 const RUNTIME_POLL_INTERVAL_MS = 5_000;
@@ -49,7 +54,13 @@ interface SubmitAcceptedPayload {
   error?: string;
 }
 
-function StatusBadge({ text, variant }: { text: string; variant: BadgeVariant }): JSX.Element {
+function StatusBadge({
+  text,
+  variant,
+}: {
+  text: string;
+  variant: BadgeVariant;
+}): JSX.Element {
   return (
     <span
       className={`inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium ${getBadgeClasses(variant)}`}
@@ -65,32 +76,70 @@ function FieldHint({ message }: { message: string | undefined }): JSX.Element {
 
 function ChevronDownIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
-      <path fillRule="evenodd" d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z" clipRule="evenodd" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-4"
+    >
+      <path
+        fillRule="evenodd"
+        d="M4.22 6.22a.75.75 0 0 1 1.06 0L8 8.94l2.72-2.72a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.28a.75.75 0 0 1 0-1.06Z"
+        clipRule="evenodd"
+      />
     </svg>
   );
 }
 
 function RefreshIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
-      <path fillRule="evenodd" d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.681.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-.908l.84.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44.908l-.84-.84v1.68a.75.75 0 0 1-1.5 0V9.565a.75.75 0 0 1 .75-.75h3.182a.75.75 0 0 1 0 1.5h-1.37l.84.841a4.5 4.5 0 0 0 7.08-.681.75.75 0 0 1 1.274-.498Z" clipRule="evenodd" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-4"
+    >
+      <path
+        fillRule="evenodd"
+        d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.681.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-.908l.84.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44.908l-.84-.84v1.68a.75.75 0 0 1-1.5 0V9.565a.75.75 0 0 1 .75-.75h3.182a.75.75 0 0 1 0 1.5h-1.37l.84.841a4.5 4.5 0 0 0 7.08-.681.75.75 0 0 1 1.274-.498Z"
+        clipRule="evenodd"
+      />
     </svg>
   );
 }
 
 function CancelIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-4">
-      <path fillRule="evenodd" d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14Zm2.78-4.22a.75.75 0 0 1-1.06 0L8 9.06l-1.72 1.72a.75.75 0 1 1-1.06-1.06L6.94 8 5.22 6.28a.75.75 0 0 1 1.06-1.06L8 6.94l1.72-1.72a.75.75 0 1 1 1.06 1.06L9.06 8l1.72 1.72a.75.75 0 0 1 0 1.06Z" clipRule="evenodd" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-4"
+    >
+      <path
+        fillRule="evenodd"
+        d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14Zm2.78-4.22a.75.75 0 0 1-1.06 0L8 9.06l-1.72 1.72a.75.75 0 1 1-1.06-1.06L6.94 8 5.22 6.28a.75.75 0 0 1 1.06-1.06L8 6.94l1.72-1.72a.75.75 0 1 1 1.06 1.06L9.06 8l1.72 1.72a.75.75 0 0 1 0 1.06Z"
+        clipRule="evenodd"
+      />
     </svg>
   );
 }
 
 function EmptyPreviewIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} className="size-6 text-slate-400">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      className="size-6 text-slate-400"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z"
+      />
     </svg>
   );
 }
@@ -98,12 +147,16 @@ function EmptyPreviewIcon(): JSX.Element {
 export function WorkspacePage(): JSX.Element {
   const routeParams = useParams<{ figmaFileKey?: string }>();
   const routeFigmaKey = getRouteFigmaKey(routeParams.figmaFileKey);
-  const pathnameFigmaKey = getInitialFigmaKeyFromPath({ pathname: window.location.pathname });
+  const pathnameFigmaKey = getInitialFigmaKeyFromPath({
+    pathname: window.location.pathname,
+  });
   const initialFigmaKey = routeFigmaKey || pathnameFigmaKey || "";
   const navigate = useNavigate();
 
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [submitPayloadView, setSubmitPayloadView] = useState<string>(toPrettyJson({}));
+  const [submitPayloadView, setSubmitPayloadView] = useState<string>(
+    toPrettyJson({}),
+  );
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [showRuntimeDiag, setShowRuntimeDiag] = useState(false);
   const [showJobDiag, setShowJobDiag] = useState(false);
@@ -112,7 +165,7 @@ export function WorkspacePage(): JSX.Element {
     register,
     handleSubmit,
     watch,
-    formState: { errors }
+    formState: { errors },
   } = useForm<WorkspaceSubmitFormData>({
     resolver: zodResolver(workspaceSubmitSchema),
     defaultValues: {
@@ -126,8 +179,8 @@ export function WorkspacePage(): JSX.Element {
       repoUrl: "",
       repoToken: "",
       projectName: "",
-      targetPath: ""
-    }
+      targetPath: "",
+    },
   });
 
   const isGitPrEnabled = watch("enableGitPr");
@@ -138,11 +191,11 @@ export function WorkspacePage(): JSX.Element {
     queryFn: async () => {
       const [health, workspace] = await Promise.all([
         fetchJson<Record<string, unknown>>({ url: endpoints.health }),
-        fetchJson<RuntimeStatusPayload>({ url: endpoints.workspace })
+        fetchJson<RuntimeStatusPayload>({ url: endpoints.workspace }),
       ]);
       return { health, workspace };
     },
-    refetchInterval: RUNTIME_POLL_INTERVAL_MS
+    refetchInterval: RUNTIME_POLL_INTERVAL_MS,
   });
 
   const submitMutation = useMutation<
@@ -160,10 +213,10 @@ export function WorkspacePage(): JSX.Element {
         init: {
           method: "POST",
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
           },
-          body: JSON.stringify(requestPayload)
-        }
+          body: JSON.stringify(requestPayload),
+        },
       });
 
       return { requestPayload, response };
@@ -174,14 +227,17 @@ export function WorkspacePage(): JSX.Element {
           request: requestPayload,
           response: {
             status: response.status,
-            payload: response.payload
-          }
-        }
+            payload: response.payload,
+          },
+        },
       });
       setSubmitPayloadView(toPrettyJson(submitSnapshot));
 
       const payload = response.payload;
-      const maybeJobId = isRecord(payload) && typeof payload.jobId === "string" ? payload.jobId : undefined;
+      const maybeJobId =
+        isRecord(payload) && typeof payload.jobId === "string"
+          ? payload.jobId
+          : undefined;
       if (response.status === 202 && maybeJobId) {
         setActiveJobId(maybeJobId);
         return;
@@ -194,11 +250,11 @@ export function WorkspacePage(): JSX.Element {
       setSubmitPayloadView(
         toPrettyJson({
           error: "NETWORK_ERROR",
-          message
-        })
+          message,
+        }),
       );
       setActiveJobId(null);
-    }
+    },
   });
 
   const jobQuery = useQuery({
@@ -209,7 +265,9 @@ export function WorkspacePage(): JSX.Element {
         throw new Error("Missing active job id");
       }
 
-      return await fetchJson<JobPayload>({ url: endpoints.job({ jobId: activeJobId }) });
+      return await fetchJson<JobPayload>({
+        url: endpoints.job({ jobId: activeJobId }),
+      });
     },
     refetchInterval: (query) => {
       const response = query.state.data;
@@ -217,10 +275,11 @@ export function WorkspacePage(): JSX.Element {
         return false;
       }
 
-      return response.payload.status === "queued" || response.payload.status === "running"
+      return response.payload.status === "queued" ||
+        response.payload.status === "running"
         ? JOB_POLL_INTERVAL_MS
         : false;
-    }
+    },
   });
 
   const cancelMutation = useMutation<
@@ -237,12 +296,12 @@ export function WorkspacePage(): JSX.Element {
         init: {
           method: "POST",
           headers: {
-            "content-type": "application/json"
+            "content-type": "application/json",
           },
           body: JSON.stringify({
-            reason: "Cancellation requested from workspace UI."
-          })
-        }
+            reason: "Cancellation requested from workspace UI.",
+          }),
+        },
       });
       return { jobId, response };
     },
@@ -264,14 +323,14 @@ export function WorkspacePage(): JSX.Element {
               ...previousObject,
               cancel: {
                 status: response.status,
-                payload: response.payload
-              }
-            }
-          })
+                payload: response.payload,
+              },
+            },
+          }),
         );
       });
       void jobQuery.refetch();
-    }
+    },
   });
 
   const jobPayload = useMemo(() => {
@@ -291,8 +350,10 @@ export function WorkspacePage(): JSX.Element {
       if (!activeJobId) {
         throw new Error("Missing active job id");
       }
-      return await fetchJson<Record<string, unknown>>({ url: endpoints.result({ jobId: activeJobId }) });
-    }
+      return await fetchJson<Record<string, unknown>>({
+        url: endpoints.result({ jobId: activeJobId }),
+      });
+    },
   });
 
   useEffect(() => {
@@ -315,13 +376,18 @@ export function WorkspacePage(): JSX.Element {
         ...previousObject,
         result: {
           status: jobResultQuery.data.status,
-          payload: jobResultQuery.data.payload
-        }
+          payload: jobResultQuery.data.payload,
+        },
       };
 
       return toPrettyJson(redactSecrets({ value: merged }));
     });
   }, [jobResultQuery.data]);
+
+  useEffect(() => {
+    const transport = createImportGovernanceTransport();
+    return subscribeToImportGovernanceEvents(transport);
+  }, []);
 
   const runtimePayloadView = useMemo(() => {
     if (!runtimeQuery.data) {
@@ -331,12 +397,12 @@ export function WorkspacePage(): JSX.Element {
     return toPrettyJson({
       health: {
         status: runtimeQuery.data.health.status,
-        payload: runtimeQuery.data.health.payload
+        payload: runtimeQuery.data.health.payload,
       },
       workspace: {
         status: runtimeQuery.data.workspace.status,
-        payload: runtimeQuery.data.workspace.payload
-      }
+        payload: runtimeQuery.data.workspace.payload,
+      },
     });
   }, [runtimeQuery.data]);
 
@@ -354,7 +420,8 @@ export function WorkspacePage(): JSX.Element {
 
   const jobStages = Array.isArray(jobPayload?.stages) ? jobPayload.stages : [];
   const previewUrl =
-    jobPayload?.preview?.enabled === true && typeof jobPayload.preview.url === "string"
+    jobPayload?.preview?.enabled === true &&
+    typeof jobPayload.preview.url === "string"
       ? jobPayload.preview.url
       : undefined;
 
@@ -363,7 +430,9 @@ export function WorkspacePage(): JSX.Element {
   const submitBadge = getSubmitBadge({
     isSubmitting: submitMutation.isPending,
     status: jobStatus,
-    isCanceling: Boolean(jobPayload?.cancellation && !jobPayload.cancellation.completedAt)
+    isCanceling: Boolean(
+      jobPayload?.cancellation && !jobPayload.cancellation.completedAt,
+    ),
   });
 
   const runtimeData = runtimeQuery.data?.workspace.ok
@@ -377,11 +446,11 @@ export function WorkspacePage(): JSX.Element {
   const jobSummary = getJobSummary({
     status: jobStatus,
     payload: jobPayload,
-    activeJobId
+    activeJobId,
   });
   const canCancelActiveJob = canCancelJob({
     status: jobStatus,
-    payload: jobPayload
+    payload: jobPayload,
   });
   const queueInfo =
     jobPayload?.queue &&
@@ -393,7 +462,8 @@ export function WorkspacePage(): JSX.Element {
       : undefined;
   const cancelInfo = jobPayload?.cancellation?.reason;
 
-  const canOpenInspector = jobStatus === "completed" && previewUrl && activeJobId;
+  const canOpenInspector =
+    jobStatus === "completed" && previewUrl && activeJobId;
   const visualQualityReportUrl = activeJobId
     ? `/workspace/jobs/${encodeURIComponent(activeJobId)}/files/visual-quality/report.json`
     : null;
@@ -412,8 +482,12 @@ export function WorkspacePage(): JSX.Element {
               />
             </div>
             <div>
-              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Workspace Dev</p>
-              <h1 className="m-0 text-base font-medium tracking-tight text-[#333]">Workspace Dev</h1>
+              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">
+                Workspace Dev
+              </p>
+              <h1 className="m-0 text-base font-medium tracking-tight text-[#333]">
+                Workspace Dev
+              </h1>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -429,7 +503,9 @@ export function WorkspacePage(): JSX.Element {
             </button>
             <button
               type="button"
-              disabled={!activeJobId || !canCancelActiveJob || cancelMutation.isPending}
+              disabled={
+                !activeJobId || !canCancelActiveJob || cancelMutation.isPending
+              }
               onClick={() => {
                 if (!activeJobId) {
                   return;
@@ -455,7 +531,8 @@ export function WorkspacePage(): JSX.Element {
         <div className="flex items-center gap-2 px-6 pb-3 pt-2">
           <span className="font-mono text-xs text-[#666]">Runtime lock</span>
           <code className="rounded bg-[#f5f5f5] px-2 py-1 font-mono text-xs text-[#666]">
-            figmaSourceMode=rest|hybrid|local_json &nbsp; llmCodegenMode=deterministic
+            figmaSourceMode=rest|hybrid|local_json &nbsp;
+            llmCodegenMode=deterministic
           </code>
           {previewUrl ? (
             <a
@@ -475,27 +552,46 @@ export function WorkspacePage(): JSX.Element {
         {/* Left column — cards */}
         <div className="flex min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-6 pr-2">
           {/* Generation Flow Card */}
-          <section data-testid="input-card" className="shrink-0 rounded-xl border border-black/10 bg-white p-px">
+          <section
+            data-testid="input-card"
+            className="shrink-0 rounded-xl border border-black/10 bg-white p-px"
+          >
             <div className="p-6 pb-0">
-              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Generation Flow</p>
+              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">
+                Generation Flow
+              </p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 Generate a local app without the clutter
               </h2>
               <p className="m-0 mt-1 text-sm text-[#666]">
-                Keep the required inputs in front, move advanced destination and Git settings out of the way, and jump straight into the inspector when code is ready.
+                Keep the required inputs in front, move advanced destination and
+                Git settings out of the way, and jump straight into the
+                inspector when code is ready.
               </p>
             </div>
 
             <div className="p-6 pt-4">
               {/* Mode tabs */}
               <div className="flex gap-2 border-b border-black/10 pb-3">
-                <span className={getModeChipClasses({ isActive: selectedFigmaSourceMode === "rest" })}>
+                <span
+                  className={getModeChipClasses({
+                    isActive: selectedFigmaSourceMode === "rest",
+                  })}
+                >
                   REST mode
                 </span>
-                <span className={getModeChipClasses({ isActive: selectedFigmaSourceMode === "hybrid" })}>
+                <span
+                  className={getModeChipClasses({
+                    isActive: selectedFigmaSourceMode === "hybrid",
+                  })}
+                >
                   Hybrid mode
                 </span>
-                <span className={getModeChipClasses({ isActive: selectedFigmaSourceMode === "local_json" })}>
+                <span
+                  className={getModeChipClasses({
+                    isActive: selectedFigmaSourceMode === "local_json",
+                  })}
+                >
                   Local JSON mode
                 </span>
                 <span className="rounded-md px-3 py-1 text-sm font-medium text-[#333]">
@@ -516,7 +612,10 @@ export function WorkspacePage(): JSX.Element {
               >
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
                   <div className="flex flex-col gap-2">
-                    <label htmlFor="figma-source-mode" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                    <label
+                      htmlFor="figma-source-mode"
+                      className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                    >
                       Source mode
                     </label>
                     <select
@@ -541,7 +640,10 @@ export function WorkspacePage(): JSX.Element {
 
                   {selectedFigmaSourceMode === "local_json" ? (
                     <div className="flex flex-col gap-2">
-                      <label htmlFor="figma-json-path" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="figma-json-path"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Figma JSON Path
                       </label>
                       <input
@@ -556,7 +658,10 @@ export function WorkspacePage(): JSX.Element {
                   ) : (
                     <>
                       <div className="flex flex-col gap-2">
-                        <label htmlFor="figma-file-key" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                        <label
+                          htmlFor="figma-file-key"
+                          className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                        >
                           Figma File Key
                         </label>
                         <input
@@ -570,7 +675,10 @@ export function WorkspacePage(): JSX.Element {
                       </div>
 
                       <div className="flex flex-col gap-2">
-                        <label htmlFor="figma-access-token" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                        <label
+                          htmlFor="figma-access-token"
+                          className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                        >
                           Figma Access Token
                         </label>
                         <input
@@ -589,10 +697,14 @@ export function WorkspacePage(): JSX.Element {
                 {/* Collapsible advanced section */}
                 <button
                   type="button"
-                  onClick={() => { setShowAdvanced(!showAdvanced); }}
+                  onClick={() => {
+                    setShowAdvanced(!showAdvanced);
+                  }}
                   className="mt-3 flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium text-[#666] hover:text-[#333]"
                 >
-                  <span className={`inline-block transition ${showAdvanced ? "" : "-rotate-90"}`}>
+                  <span
+                    className={`inline-block transition ${showAdvanced ? "" : "-rotate-90"}`}
+                  >
                     <ChevronDownIcon />
                   </span>
                   Advanced destination and Git / PR options
@@ -601,16 +713,27 @@ export function WorkspacePage(): JSX.Element {
                 {showAdvanced ? (
                   <div className="mt-3 grid grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1">
-                      <label htmlFor="enable-git-pr" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="enable-git-pr"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Enable Git / PR
                       </label>
                       <div className="flex h-10 items-center rounded-md border border-black/10 bg-[#f9f9f9] px-3">
-                        <input id="enable-git-pr" type="checkbox" className="size-4" {...register("enableGitPr")} />
+                        <input
+                          id="enable-git-pr"
+                          type="checkbox"
+                          className="size-4"
+                          {...register("enableGitPr")}
+                        />
                       </div>
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label htmlFor="repo-url" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="repo-url"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Repo URL
                       </label>
                       <input
@@ -625,7 +748,10 @@ export function WorkspacePage(): JSX.Element {
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label htmlFor="repo-token" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="repo-token"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Repo token/key
                       </label>
                       <input
@@ -640,7 +766,10 @@ export function WorkspacePage(): JSX.Element {
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label htmlFor="project-name" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="project-name"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Project name
                       </label>
                       <input
@@ -653,7 +782,10 @@ export function WorkspacePage(): JSX.Element {
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label htmlFor="target-path" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="target-path"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Target path
                       </label>
                       <input
@@ -666,7 +798,10 @@ export function WorkspacePage(): JSX.Element {
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label htmlFor="storybook-static-dir" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="storybook-static-dir"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Storybook static dir
                       </label>
                       <input
@@ -676,11 +811,19 @@ export function WorkspacePage(): JSX.Element {
                         className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
                         {...register("storybookStaticDir")}
                       />
-                      <FieldHint message={errors.storybookStaticDir?.message ?? "Optional. Relative paths resolve from the workspace root."} />
+                      <FieldHint
+                        message={
+                          errors.storybookStaticDir?.message ??
+                          "Optional. Relative paths resolve from the workspace root."
+                        }
+                      />
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label htmlFor="customer-profile-path" className="text-xs font-medium uppercase tracking-wider text-[#666]">
+                      <label
+                        htmlFor="customer-profile-path"
+                        className="text-xs font-medium uppercase tracking-wider text-[#666]"
+                      >
                         Customer profile path
                       </label>
                       <input
@@ -690,7 +833,12 @@ export function WorkspacePage(): JSX.Element {
                         className="rounded-md border border-black/10 bg-[#f9f9f9] px-3 py-2 text-sm text-[#333] outline-none"
                         {...register("customerProfilePath")}
                       />
-                      <FieldHint message={errors.customerProfilePath?.message ?? "Optional. Relative paths resolve from the workspace root."} />
+                      <FieldHint
+                        message={
+                          errors.customerProfilePath?.message ??
+                          "Optional. Relative paths resolve from the workspace root."
+                        }
+                      />
                     </div>
                   </div>
                 ) : null}
@@ -699,14 +847,20 @@ export function WorkspacePage(): JSX.Element {
           </section>
 
           {/* Runtime Card */}
-          <section data-testid="runtime-card" className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-xl border border-black/10 bg-white p-px">
+          <section
+            data-testid="runtime-card"
+            className="flex min-h-[240px] flex-1 flex-col overflow-hidden rounded-xl border border-black/10 bg-white p-px"
+          >
             <div className="p-6 pb-0">
-              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Runtime</p>
+              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">
+                Runtime
+              </p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 Healthy, locked, and ready to generate
               </h2>
               <p className="m-0 mt-1 text-sm text-[#666]">
-                Operational signals stay available, but the UI prioritizes only the details that help you decide whether to proceed.
+                Operational signals stay available, but the UI prioritizes only
+                the details that help you decide whether to proceed.
               </p>
             </div>
 
@@ -715,43 +869,70 @@ export function WorkspacePage(): JSX.Element {
                 {/* Health row */}
                 <div className="flex items-center justify-between border-b border-black/10 py-3">
                   <div>
-                    <p className="m-0 text-sm font-medium text-[#333]">Health</p>
-                    <p className="m-0 text-xs text-[#666]">HTTP {runtimeQuery.data ? runtimeQuery.data.health.status : "---"}</p>
+                    <p className="m-0 text-sm font-medium text-[#333]">
+                      Health
+                    </p>
+                    <p className="m-0 text-xs text-[#666]">
+                      HTTP{" "}
+                      {runtimeQuery.data
+                        ? runtimeQuery.data.health.status
+                        : "---"}
+                    </p>
                   </div>
-                  <StatusBadge text={healthBadge.text} variant={healthBadge.variant} />
+                  <StatusBadge
+                    text={healthBadge.text}
+                    variant={healthBadge.variant}
+                  />
                 </div>
 
                 {/* Workspace row */}
                 <div className="flex items-center justify-between border-b border-black/10 py-3">
                   <div>
-                    <p className="m-0 text-sm font-medium text-[#333]">Workspace</p>
+                    <p className="m-0 text-sm font-medium text-[#333]">
+                      Workspace
+                    </p>
                     <p className="m-0 font-mono text-xs text-[#666]">
                       {runtimeData?.url ?? "---"}
                     </p>
                   </div>
-                  <StatusBadge text={workspaceBadge.text} variant={workspaceBadge.variant} />
+                  <StatusBadge
+                    text={workspaceBadge.text}
+                    variant={workspaceBadge.variant}
+                  />
                 </div>
 
                 {/* Submit row */}
                 <div className="border-b border-black/10 py-3">
                   <div className="flex items-center justify-between">
-                    <p className="m-0 text-sm font-medium text-[#333]">Submit:</p>
-                    <StatusBadge text={submitBadge.text} variant={submitBadge.variant} />
+                    <p className="m-0 text-sm font-medium text-[#333]">
+                      Submit:
+                    </p>
+                    <StatusBadge
+                      text={submitBadge.text}
+                      variant={submitBadge.variant}
+                    />
                   </div>
                   <div className="mt-2 space-y-1">
                     <p className="m-0 text-xs text-[#666]">
                       <span className="text-[#666]">Mode: </span>
                       <span className="text-[#333]">
-                        figmaSourceMode={selectedFigmaSourceMode} &nbsp; llmCodegenMode=deterministic
+                        figmaSourceMode={selectedFigmaSourceMode} &nbsp;
+                        llmCodegenMode=deterministic
                       </span>
                     </p>
                     <p className="m-0 text-xs text-[#666]">
                       <span className="text-[#666]">Preview: </span>
-                      <span className="text-[#333]">{runtimeData?.previewEnabled ? "Enabled" : "Disabled"}</span>
+                      <span className="text-[#333]">
+                        {runtimeData?.previewEnabled ? "Enabled" : "Disabled"}
+                      </span>
                     </p>
                     <p className="m-0 text-xs text-[#666]">
                       <span className="text-[#666]">Uptime: </span>
-                      <span className="text-[#333]">{runtimeData ? formatUptime(runtimeData.uptimeMs) : "---"}</span>
+                      <span className="text-[#333]">
+                        {runtimeData
+                          ? formatUptime(runtimeData.uptimeMs)
+                          : "---"}
+                      </span>
                     </p>
                   </div>
                 </div>
@@ -759,16 +940,23 @@ export function WorkspacePage(): JSX.Element {
                 {/* Runtime diagnostics toggle */}
                 <button
                   type="button"
-                  onClick={() => { setShowRuntimeDiag(!showRuntimeDiag); }}
+                  onClick={() => {
+                    setShowRuntimeDiag(!showRuntimeDiag);
+                  }}
                   className="mt-3 flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium text-[#666] hover:text-[#333]"
                 >
-                  <span className={`inline-block transition ${showRuntimeDiag ? "" : "-rotate-90"}`}>
+                  <span
+                    className={`inline-block transition ${showRuntimeDiag ? "" : "-rotate-90"}`}
+                  >
                     <ChevronDownIcon />
                   </span>
                   Runtime diagnostics
                 </button>
                 {showRuntimeDiag ? (
-                  <pre data-testid="runtime-payload" className="mt-2 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]">
+                  <pre
+                    data-testid="runtime-payload"
+                    className="mt-2 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]"
+                  >
                     {runtimePayloadView}
                   </pre>
                 ) : null}
@@ -777,14 +965,21 @@ export function WorkspacePage(): JSX.Element {
           </section>
 
           {/* Job Status Card */}
-          <section data-testid="job-status-card" className="shrink-0 rounded-xl border border-black/10 bg-white p-px">
+          <section
+            data-testid="job-status-card"
+            className="shrink-0 rounded-xl border border-black/10 bg-white p-px"
+          >
             <div className="p-6 pb-0">
-              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Job Status</p>
+              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">
+                Job Status
+              </p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 Pipeline progress without the noise
               </h2>
               <p className="m-0 mt-1 text-sm text-[#666]">
-                Keep the current job, stage activity, diff summary, and failure context nearby, while deeper JSON stays tucked behind diagnostics.
+                Keep the current job, stage activity, diff summary, and failure
+                context nearby, while deeper JSON stays tucked behind
+                diagnostics.
               </p>
             </div>
 
@@ -797,7 +992,9 @@ export function WorkspacePage(): JSX.Element {
               {/* Awaiting / status */}
               <div className="flex items-center justify-between border-b border-black/10 py-3">
                 <p className="m-0 text-sm font-medium text-[#333]">
-                  {activeJobId ? `Job ${activeJobId.slice(0, 8)}` : "Awaiting submission"}
+                  {activeJobId
+                    ? `Job ${activeJobId.slice(0, 8)}`
+                    : "Awaiting submission"}
                 </p>
                 <StatusBadge
                   text={submitBadge.text}
@@ -805,8 +1002,16 @@ export function WorkspacePage(): JSX.Element {
                 />
               </div>
 
-              {queueInfo ? <p className="m-0 mt-2 text-xs text-[#666]">Queue: {queueInfo}</p> : null}
-              {cancelInfo ? <p className="m-0 mt-1 text-xs text-[#666]">Cancellation: {cancelInfo}</p> : null}
+              {queueInfo ? (
+                <p className="m-0 mt-2 text-xs text-[#666]">
+                  Queue: {queueInfo}
+                </p>
+              ) : null}
+              {cancelInfo ? (
+                <p className="m-0 mt-1 text-xs text-[#666]">
+                  Cancellation: {cancelInfo}
+                </p>
+              ) : null}
 
               {jobStages.length > 0 ? (
                 <ul className="mt-2 grid gap-1">
@@ -817,8 +1022,15 @@ export function WorkspacePage(): JSX.Element {
                         key={`${stage.name}-${stage.status}`}
                         className="flex items-center justify-between rounded-md border border-black/10 bg-white px-2 py-1"
                       >
-                        <span className="text-xs font-medium text-[#333]">{stage.name || "unknown"}</span>
-                        <StatusBadge text={status} variant={toStageBadgeVariant(stage.status || "queued")} />
+                        <span className="text-xs font-medium text-[#333]">
+                          {stage.name || "unknown"}
+                        </span>
+                        <StatusBadge
+                          text={status}
+                          variant={toStageBadgeVariant(
+                            stage.status || "queued",
+                          )}
+                        />
                       </li>
                     );
                   })}
@@ -826,9 +1038,16 @@ export function WorkspacePage(): JSX.Element {
               ) : null}
 
               {jobPayload?.generationDiff?.summary ? (
-                <div data-testid="generation-diff-summary" className="mt-3 rounded-lg border border-black/10 bg-[#f9f9f9] p-3">
-                  <p className="m-0 text-xs font-bold uppercase tracking-wide text-[#666]">Generation Diff</p>
-                  <p className="m-0 mt-1 text-sm text-[#333]">{jobPayload.generationDiff.summary}</p>
+                <div
+                  data-testid="generation-diff-summary"
+                  className="mt-3 rounded-lg border border-black/10 bg-[#f9f9f9] p-3"
+                >
+                  <p className="m-0 text-xs font-bold uppercase tracking-wide text-[#666]">
+                    Generation Diff
+                  </p>
+                  <p className="m-0 mt-1 text-sm text-[#333]">
+                    {jobPayload.generationDiff.summary}
+                  </p>
                   {jobPayload.generationDiff.previousJobId ? (
                     <p className="m-0 mt-1 text-xs text-[#666]">
                       Previous job: {jobPayload.generationDiff.previousJobId}
@@ -862,16 +1081,23 @@ export function WorkspacePage(): JSX.Element {
               {/* Job diagnostics toggle */}
               <button
                 type="button"
-                onClick={() => { setShowJobDiag(!showJobDiag); }}
+                onClick={() => {
+                  setShowJobDiag(!showJobDiag);
+                }}
                 className="mt-3 flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-sm font-medium text-[#666] hover:text-[#333]"
               >
-                <span className={`inline-block transition ${showJobDiag ? "" : "-rotate-90"}`}>
+                <span
+                  className={`inline-block transition ${showJobDiag ? "" : "-rotate-90"}`}
+                >
                   <ChevronDownIcon />
                 </span>
                 Job diagnostics
               </button>
               {showJobDiag ? (
-                <pre data-testid="job-payload" className="mt-2 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]">
+                <pre
+                  data-testid="job-payload"
+                  className="mt-2 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]"
+                >
                   {jobPayloadView}
                 </pre>
               ) : null}
@@ -883,12 +1109,16 @@ export function WorkspacePage(): JSX.Element {
         <div className="flex w-[32%] min-w-[320px] shrink-0 flex-col p-6 pl-2">
           <section className="flex flex-1 flex-col rounded-xl border border-black/10 bg-white p-px">
             <div className="p-6 pb-0">
-              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">Preview</p>
+              <p className="m-0 text-[10px] font-normal uppercase tracking-wider text-[#666]">
+                Preview
+              </p>
               <h2 className="m-0 mt-1 text-lg font-medium tracking-tight text-[#333]">
                 The Inspector takes over after success
               </h2>
               <p className="m-0 mt-1 text-sm text-[#666]">
-                Once generation completes, this panel becomes a dedicated developer workspace with an explorer, preview canvas, syntax-highlighted source, split view, and diff navigation.
+                Once generation completes, this panel becomes a dedicated
+                developer workspace with an explorer, preview canvas,
+                syntax-highlighted source, split view, and diff navigation.
               </p>
             </div>
 
@@ -898,14 +1128,26 @@ export function WorkspacePage(): JSX.Element {
                 {canOpenInspector ? (
                   <div className="flex flex-col items-center gap-4 text-center">
                     <div className="grid size-12 place-items-center rounded-lg bg-emerald-50">
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="size-6 text-emerald-600">
-                        <path fillRule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z" clipRule="evenodd" />
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        className="size-6 text-emerald-600"
+                      >
+                        <path
+                          fillRule="evenodd"
+                          d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12Zm13.36-1.814a.75.75 0 1 0-1.22-.872l-3.236 4.53L9.53 12.22a.75.75 0 0 0-1.06 1.06l2.25 2.25a.75.75 0 0 0 1.14-.094l3.75-5.25Z"
+                          clipRule="evenodd"
+                        />
                       </svg>
                     </div>
                     <div>
-                      <p className="m-0 text-lg font-medium text-[#333]">Generation complete</p>
+                      <p className="m-0 text-lg font-medium text-[#333]">
+                        Generation complete
+                      </p>
                       <p className="m-0 mt-1 text-sm text-[#666]">
-                        Open the Inspector to explore, preview, and review the generated code.
+                        Open the Inspector to explore, preview, and review the
+                        generated code.
                       </p>
                     </div>
                     <div className="flex flex-wrap items-center justify-center gap-2">
@@ -916,7 +1158,7 @@ export function WorkspacePage(): JSX.Element {
                             return;
                           }
                           void navigate(
-                            `/workspace/ui/visual-quality?report=${encodeURIComponent(visualQualityReportUrl)}`
+                            `/workspace/ui/visual-quality?report=${encodeURIComponent(visualQualityReportUrl)}`,
                           );
                         }}
                         className="cursor-pointer rounded-md border border-[#4eba87]/30 bg-white px-4 py-2 text-sm font-medium text-[#247a51] transition hover:border-[#4eba87] hover:bg-emerald-50"
@@ -926,7 +1168,9 @@ export function WorkspacePage(): JSX.Element {
                       <button
                         type="button"
                         onClick={() => {
-                          void navigate(`/workspace/ui/inspector?jobId=${encodeURIComponent(activeJobId)}&previewUrl=${encodeURIComponent(previewUrl)}${jobPayload?.generationDiff?.previousJobId ? `&previousJobId=${encodeURIComponent(jobPayload.generationDiff.previousJobId)}` : ""}${jobPayload?.lineage?.sourceJobId ? "&isRegeneration=true" : ""}`);
+                          void navigate(
+                            `/workspace/ui/inspector?jobId=${encodeURIComponent(activeJobId)}&previewUrl=${encodeURIComponent(previewUrl)}${jobPayload?.generationDiff?.previousJobId ? `&previousJobId=${encodeURIComponent(jobPayload.generationDiff.previousJobId)}` : ""}${jobPayload?.lineage?.sourceJobId ? "&isRegeneration=true" : ""}`,
+                          );
                         }}
                         className="cursor-pointer rounded-md bg-[#4eba87] px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-600"
                       >
@@ -939,9 +1183,13 @@ export function WorkspacePage(): JSX.Element {
                     <div className="grid size-12 place-items-center rounded-lg bg-[#f5f5f5]">
                       <EmptyPreviewIcon />
                     </div>
-                    <p className="m-0 text-lg font-medium text-[#333]">No generated output yet.</p>
+                    <p className="m-0 text-lg font-medium text-[#333]">
+                      No generated output yet.
+                    </p>
                     <p className="m-0 max-w-xs text-sm text-[#666]">
-                      The nodeIsign keeps operational context available while hiding payload-heavy detail until you intentionally open it.
+                      The nodeIsign keeps operational context available while
+                      hiding payload-heavy detail until you intentionally open
+                      it.
                     </p>
                   </div>
                 )}
@@ -949,8 +1197,13 @@ export function WorkspacePage(): JSX.Element {
 
               {/* Submitted payload section */}
               <div className="border-t border-black/10 pt-3">
-                <p className="m-0 text-sm font-medium text-[#333]">Submitted payload and result metadata</p>
-                <pre data-testid="submit-payload" className="mt-2 max-h-32 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]">
+                <p className="m-0 text-sm font-medium text-[#333]">
+                  Submitted payload and result metadata
+                </p>
+                <pre
+                  data-testid="submit-payload"
+                  className="mt-2 max-h-32 overflow-auto rounded-lg border border-black/10 bg-[#f9f9f9] p-3 text-xs text-[#666]"
+                >
                   {submitPayloadView}
                 </pre>
               </div>

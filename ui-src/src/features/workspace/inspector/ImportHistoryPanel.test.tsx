@@ -326,3 +326,107 @@ describe("ImportHistoryPanel — accessibility", () => {
     expect(dialog).toHaveAttribute("data-testid", "import-history-panel");
   });
 });
+
+describe("ImportHistoryPanel — audit trail (#994)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  const session = buildSession({ id: "paste-import-1" });
+
+  it("renders a Log toggle button only when onRowToggle is provided", () => {
+    const { rerender } = render(
+      <ImportHistoryPanel
+        sessions={[session]}
+        onReImport={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(
+      screen.queryByTestId("import-history-toggle-paste-import-1"),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <ImportHistoryPanel
+        sessions={[session]}
+        onReImport={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        onRowToggle={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByTestId("import-history-toggle-paste-import-1"),
+    ).toBeInTheDocument();
+  });
+
+  it("calls onRowToggle with the clicked session", () => {
+    const onRowToggle = vi.fn();
+    render(
+      <ImportHistoryPanel
+        sessions={[session]}
+        onReImport={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        onRowToggle={onRowToggle}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("import-history-toggle-paste-import-1"));
+    expect(onRowToggle).toHaveBeenCalledWith(session);
+  });
+
+  it("renders the audit trail when the row is expanded", () => {
+    render(
+      <ImportHistoryPanel
+        sessions={[session]}
+        onReImport={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        expandedSessionId="paste-import-1"
+        onRowToggle={vi.fn()}
+        getTrail={(sessionId) =>
+          sessionId === "paste-import-1"
+            ? [
+                {
+                  id: "evt-1",
+                  sessionId: "paste-import-1",
+                  kind: "approved",
+                  at: "2026-04-15T11:55:00.000Z",
+                  actor: "user-42",
+                  note: "Looks good",
+                },
+              ]
+            : []
+        }
+      />,
+    );
+
+    expect(
+      screen.getByTestId("import-history-trail-paste-import-1"),
+    ).toBeInTheDocument();
+    expect(screen.getByText("approved")).toBeInTheDocument();
+    expect(screen.getByText("user-42")).toBeInTheDocument();
+    expect(screen.getByText("Looks good")).toBeInTheDocument();
+  });
+
+  it("renders the empty-trail placeholder when getTrail returns no events", () => {
+    render(
+      <ImportHistoryPanel
+        sessions={[session]}
+        onReImport={vi.fn()}
+        onDelete={vi.fn()}
+        onClose={vi.fn()}
+        expandedSessionId="paste-import-1"
+        onRowToggle={vi.fn()}
+        getTrail={() => []}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("import-history-trail-empty-paste-import-1"),
+    ).toBeInTheDocument();
+  });
+});

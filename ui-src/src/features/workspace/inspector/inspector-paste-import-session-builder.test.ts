@@ -427,3 +427,119 @@ describe("buildPasteImportSession — carried fields", () => {
     expect(session?.selectedNodes).toEqual(["a", "b"]);
   });
 });
+
+describe("buildPasteImportSession — qualityScore + status", () => {
+  it("forwards a valid qualityScore to the session", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      qualityScore: 82,
+    });
+    expect(session?.qualityScore).toBe(82);
+  });
+
+  it("accepts boundary values 0 and 100", () => {
+    const pipelineState = makePipelineState();
+    const zero = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      qualityScore: 0,
+    });
+    const hundred = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      qualityScore: 100,
+    });
+    expect(zero?.qualityScore).toBe(0);
+    expect(hundred?.qualityScore).toBe(100);
+  });
+
+  it("drops an out-of-range qualityScore (above 100) without throwing", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      qualityScore: 101,
+    });
+    expect(session?.qualityScore).toBeUndefined();
+  });
+
+  it("drops an out-of-range qualityScore (below 0) without throwing", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      qualityScore: -1,
+    });
+    expect(session?.qualityScore).toBeUndefined();
+  });
+
+  it("drops a non-integer qualityScore without throwing", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      qualityScore: 82.5,
+    });
+    expect(session?.qualityScore).toBeUndefined();
+  });
+
+  it("omits qualityScore when the caller passes null", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      qualityScore: null,
+    });
+    expect(session?.qualityScore).toBeUndefined();
+  });
+
+  it("omits qualityScore when the caller omits the field", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+    });
+    expect(session?.qualityScore).toBeUndefined();
+  });
+
+  it("defaults status to 'imported' when not provided", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+    });
+    expect(session?.status).toBe("imported");
+  });
+
+  it("forwards an explicit status when provided", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+      status: "reviewing",
+    });
+    expect(session?.status).toBe("reviewing");
+  });
+});

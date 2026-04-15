@@ -11,6 +11,7 @@ import type {
   WorkspaceGitPrStatus,
   WorkspaceImportSession,
   WorkspaceImportSessionDeleteResult,
+  WorkspaceImportSessionEvent,
   WorkspaceImportSessionReimportAccepted,
   WorkspaceLocalSyncApplyResult,
   WorkspaceLocalSyncDryRunResult,
@@ -302,10 +303,16 @@ export interface JobEngine {
     input: WorkspaceRemapSuggestInput,
   ) => Promise<WorkspaceRemapSuggestResult>;
   listImportSessions: () => Promise<WorkspaceImportSession[]>;
-  reimportImportSession: (
-    input: { sessionId: string },
-  ) => Promise<WorkspaceImportSessionReimportAccepted>;
-  deleteImportSession: (
-    input: { sessionId: string },
-  ) => Promise<WorkspaceImportSessionDeleteResult>;
+  reimportImportSession: (input: {
+    sessionId: string;
+  }) => Promise<WorkspaceImportSessionReimportAccepted>;
+  deleteImportSession: (input: {
+    sessionId: string;
+  }) => Promise<WorkspaceImportSessionDeleteResult>;
+  listImportSessionEvents: (input: {
+    sessionId: string;
+  }) => Promise<WorkspaceImportSessionEvent[]>;
+  appendImportSessionEvent: (input: {
+    event: WorkspaceImportSessionEvent;
+  }) => Promise<WorkspaceImportSessionEvent>;
 }

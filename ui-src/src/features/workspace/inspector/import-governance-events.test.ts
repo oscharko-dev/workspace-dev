@@ -47,12 +47,30 @@ describe("toImportGovernanceEvent", () => {
       nodeCount: 30,
       jobId: "job-1",
       fileKey: "FILE",
+      sessionId: "paste-import-1",
     });
   });
 
   it("does not include userId when not supplied (transport attaches it)", () => {
     const event = toImportGovernanceEvent(makeSession());
     expect(event.userId).toBeUndefined();
+  });
+
+  it("forwards session.id as sessionId on the emitted event", () => {
+    const event = toImportGovernanceEvent(
+      makeSession({ id: "paste-import-forwarded" }),
+    );
+    expect(event.sessionId).toBe("paste-import-forwarded");
+  });
+
+  it("forwards qualityScore when present on the session", () => {
+    const event = toImportGovernanceEvent(makeSession({ qualityScore: 87 }));
+    expect(event.qualityScore).toBe(87);
+  });
+
+  it("omits qualityScore when the session does not carry one", () => {
+    const event = toImportGovernanceEvent(makeSession());
+    expect(event.qualityScore).toBeUndefined();
   });
 });
 
