@@ -304,3 +304,18 @@ export function selectChangedNodes(
   });
   return { excluded };
 }
+
+/** Select exactly the provided ids inside the visible tree; everything else is excluded. */
+export function selectNodeIds(
+  nodeIds: readonly string[],
+  screens: readonly TreeNode[],
+): NodeSelectionState {
+  const keep = new Set<string>(nodeIds);
+  const excluded = new Set<string>();
+  walkForest(screens, (n) => {
+    if (!keep.has(n.id)) {
+      excluded.add(n.id);
+    }
+  });
+  return { excluded };
+}

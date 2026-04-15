@@ -1,8 +1,6 @@
 import {
   useCallback,
-  useEffect,
   useMemo,
-  useRef,
   useState,
   type JSX,
 } from "react";
@@ -13,13 +11,7 @@ import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
 import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
 import { useImportHistory } from "./inspector/useImportHistory";
-import { buildPasteImportSession } from "./inspector/inspector-paste-import-session-builder";
-import { generateImportSessionId } from "./inspector/paste-import-history";
 import type { PasteImportSession } from "./inspector/paste-import-history";
-import {
-  dispatchImportGovernanceEvent,
-  toImportGovernanceEvent,
-} from "./inspector/import-governance-events";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
 import type {
   PastePipelineState,
@@ -124,10 +116,18 @@ function PanelView({
   onReimportSession,
 }: PanelViewProps): JSX.Element {
   const navigate = useNavigate();
-  const [activeJobId, setActiveJobId] = useState(jobId);
-  const [activeIsRegenerationJob, setActiveIsRegenerationJob] = useState(
-    initialIsRegeneration,
-  );
+  const [acceptedRegeneration, setAcceptedRegeneration] = useState<{
+    sourceJobId: string;
+    nextJobId: string;
+  } | null>(null);
+  const activeJobId =
+    acceptedRegeneration?.sourceJobId === jobId
+      ? acceptedRegeneration.nextJobId
+      : jobId;
+  const activeIsRegenerationJob =
+    acceptedRegeneration?.sourceJobId === jobId
+      ? true
+      : initialIsRegeneration;
   const [openDialog, setOpenDialog] = useState<ConfigDialogKey | null>(null);
 
   const activePreviewUrl = useMemo(() => {
@@ -218,8 +218,10 @@ function PanelView({
             previousJobId={previousJobId}
             isRegenerationJob={activeIsRegenerationJob}
             onRegenerationAccepted={(nextJobId) => {
-              setActiveJobId(nextJobId);
-              setActiveIsRegenerationJob(true);
+              setAcceptedRegeneration({
+                sourceJobId: jobId,
+                nextJobId,
+              });
             }}
             openDialog={openDialog}
             onCloseDialog={() => {
@@ -251,7 +253,12 @@ function BootstrapView(): JSX.Element {
   const bootstrap = useInspectorBootstrap();
   const treeNodes = useStreamingTreeNodes(bootstrap.pipelineState);
   const importHistoryHook = useImportHistory();
-  const recordedJobIdsRef = useRef<Set<string>>(new Set<string>());
+  const [historyReimportJobId, setHistoryReimportJobId] = useState<
+    string | null
+  >(null);
+  const [historyReimportSourceJobId, setHistoryReimportSourceJobId] = useState<
+    string | null
+  >(null);
 
   const previousImportSession = useMemo(() => {
     const pasteIdentityKey = bootstrap.pipelineState.pasteIdentityKey ?? null;
@@ -279,43 +286,6 @@ function BootstrapView(): JSX.Element {
     bootstrap.pipelineState.pasteIdentityKey,
     importHistoryHook,
   ]);
-
-  useEffect(() => {
-    const stage = bootstrap.pipelineState.stage;
-    const jobId = bootstrap.pipelineState.jobId;
-    if (jobId === undefined) {
-      return;
-    }
-    if (stage !== "ready" && stage !== "partial") {
-      return;
-    }
-    if (recordedJobIdsRef.current.has(jobId)) {
-      return;
-    }
-    const pasteIdentityKey = bootstrap.pipelineState.pasteIdentityKey ?? null;
-    const urlContext = bootstrap.lastUrlContext;
-    const existingMatch = importHistoryHook.findPrevious({
-      pasteIdentityKey,
-      ...(urlContext?.fileKey !== undefined
-        ? { fileKey: urlContext.fileKey }
-        : {}),
-      ...(urlContext?.nodeId !== undefined && urlContext.nodeId !== null
-        ? { nodeId: urlContext.nodeId }
-        : {}),
-    });
-    const session = buildPasteImportSession({
-      pipelineState: bootstrap.pipelineState,
-      urlContext,
-      sessionId: existingMatch?.id ?? generateImportSessionId(),
-      completedAt: new Date().toISOString(),
-    });
-    if (session === null) {
-      return;
-    }
-    recordedJobIdsRef.current.add(jobId);
-    importHistoryHook.addSession(session);
-    dispatchImportGovernanceEvent(toImportGovernanceEvent(session));
-  }, [bootstrap.pipelineState, bootstrap.lastUrlContext, importHistoryHook]);
 
   const handlePaste = useCallback(
     (text: string, clipboardHtml?: string): void => {
@@ -392,35 +362,51 @@ function BootstrapView(): JSX.Element {
 
   const handleRemoveImportSession = useCallback(
     (sessionId: string): void => {
-      importHistoryHook.removeSession(sessionId);
+      void importHistoryHook.removeSession(sessionId);
     },
     [importHistoryHook],
   );
 
   const handleReimportSession = useCallback(
     (session: PasteImportSession): void => {
-      if (session.fileKey.length > 0) {
-        bootstrap.submitUrl(
-          session.fileKey,
-          session.nodeId.length > 0 ? session.nodeId : null,
-        );
+      if (session.replayable === false) {
+        return;
       }
+      void importHistoryHook
+        .reimportSession(session.id)
+        .then((accepted) => {
+          setHistoryReimportJobId(accepted.jobId);
+          setHistoryReimportSourceJobId(accepted.sourceJobId);
+        })
+        .catch(() => {
+          // Warning state is surfaced by useImportHistory.
+        });
     },
-    [bootstrap],
+    [importHistoryHook],
   );
 
-  if (bootstrap.jobId && bootstrap.state.kind !== "failed") {
+  const activeJobId =
+    historyReimportJobId ??
+    (bootstrap.state.kind !== "failed" ? bootstrap.jobId : null);
+
+  if (activeJobId) {
     return (
       <PanelView
-        jobId={bootstrap.jobId}
-        previewUrl={bootstrap.previewUrl ?? ""}
-        previousJobId={null}
+        jobId={activeJobId}
+        previewUrl={historyReimportJobId ? "" : (bootstrap.previewUrl ?? "")}
+        previousJobId={historyReimportSourceJobId}
         initialIsRegeneration={false}
-        pipeline={bootstrap.pipelineState}
-        onPipelineRetry={handleRetry}
-        executionLog={bootstrap.executionLog}
+        {...(historyReimportJobId === null
+          ? {
+              pipeline: bootstrap.pipelineState,
+              onPipelineRetry: handleRetry,
+              executionLog: bootstrap.executionLog,
+            }
+          : {})}
         importHistory={importHistoryHook.history.entries}
-        previousImportSession={previousImportSession}
+        previousImportSession={
+          historyReimportJobId === null ? previousImportSession : null
+        }
         onGenerateSelected={handleGenerateSelected}
         onResubmitFresh={handleResubmitFresh}
         onRemoveImportSession={handleRemoveImportSession}

@@ -1,69 +1,188 @@
-// ---------------------------------------------------------------------------
-// React hook wrapping the paste-import-history module (Issue #1010).
-//
-// Seeds state from localStorage on mount, forwards mutations to the pure
-// helpers, and persists the resulting history as a side-effect. Storage
-// errors surface as `warning` so the UI can render a banner while the
-// in-memory history continues to work.
-// ---------------------------------------------------------------------------
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchJson } from "../../../lib/http";
 import {
-  addImportSession,
   createEmptyImportHistory,
   findPreviousImport,
-  persistImportHistory,
-  removeImportSession,
-  restoreImportHistory,
   type FindPreviousImportQuery,
   type PasteImportHistory,
   type PasteImportSession,
 } from "./paste-import-history";
 
+const IMPORT_HISTORY_QUERY_KEY = ["workspace-import-history"] as const;
+
+interface ImportHistoryResponse {
+  sessions?: PasteImportSession[];
+}
+
+interface DeleteImportSessionResponse {
+  sessionId?: string;
+  deleted?: boolean;
+  jobId?: string;
+}
+
+interface ReimportImportSessionResponse {
+  sessionId?: string;
+  jobId?: string;
+  sourceJobId?: string;
+}
+
+export interface ReimportImportSessionResult {
+  sessionId: string;
+  jobId: string;
+  sourceJobId: string | null;
+}
+
 export interface UseImportHistoryResult {
   history: PasteImportHistory;
   warning: string | null;
-  addSession: (session: PasteImportSession) => void;
-  removeSession: (sessionId: string) => void;
+  removeSession: (sessionId: string) => Promise<void>;
+  reimportSession: (
+    sessionId: string,
+  ) => Promise<ReimportImportSessionResult>;
   findPrevious: (query: FindPreviousImportQuery) => PasteImportSession | null;
 }
 
+const toHistory = (payload: unknown): PasteImportHistory => {
+  if (
+    payload &&
+    typeof payload === "object" &&
+    !Array.isArray(payload) &&
+    "sessions" in payload &&
+    Array.isArray((payload as ImportHistoryResponse).sessions)
+  ) {
+    return {
+      entries: (payload as ImportHistoryResponse).sessions ?? [],
+    };
+  }
+  return createEmptyImportHistory();
+};
+
 export function useImportHistory(): UseImportHistoryResult {
-  const [history, setHistory] = useState<PasteImportHistory>(
-    createEmptyImportHistory,
+  const queryClient = useQueryClient();
+
+  const historyQuery = useQuery({
+    queryKey: IMPORT_HISTORY_QUERY_KEY,
+    queryFn: async () => {
+      return await fetchJson<ImportHistoryResponse>({
+        url: "/workspace/import-sessions",
+      });
+    },
+    staleTime: 5_000,
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      return await fetchJson<DeleteImportSessionResponse>({
+        url: `/workspace/import-sessions/${encodeURIComponent(sessionId)}`,
+        init: {
+          method: "DELETE",
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: IMPORT_HISTORY_QUERY_KEY,
+      });
+    },
+  });
+
+  const reimportMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      return await fetchJson<ReimportImportSessionResponse>({
+        url: `/workspace/import-sessions/${encodeURIComponent(sessionId)}/reimport`,
+        init: {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({}),
+        },
+      });
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: IMPORT_HISTORY_QUERY_KEY,
+      });
+    },
+  });
+
+  const history = useMemo<PasteImportHistory>(() => {
+    if (!historyQuery.data?.ok) {
+      return createEmptyImportHistory();
+    }
+    return toHistory(historyQuery.data.payload);
+  }, [historyQuery.data]);
+
+  const warning = useMemo(() => {
+    if (historyQuery.isError) {
+      return historyQuery.error instanceof Error
+        ? historyQuery.error.message
+        : "Could not load import history.";
+    }
+    if (
+      historyQuery.data &&
+      !historyQuery.data.ok &&
+      typeof historyQuery.data.payload === "object" &&
+      "message" in historyQuery.data.payload &&
+      typeof historyQuery.data.payload.message === "string"
+    ) {
+      return historyQuery.data.payload.message;
+    }
+    if (removeMutation.isError) {
+      return removeMutation.error instanceof Error
+        ? removeMutation.error.message
+        : "Could not delete import history entry.";
+    }
+    if (reimportMutation.isError) {
+      return reimportMutation.error instanceof Error
+        ? reimportMutation.error.message
+        : "Could not re-import history entry.";
+    }
+    return null;
+  }, [
+    historyQuery.data,
+    historyQuery.error,
+    historyQuery.isError,
+    removeMutation.error,
+    removeMutation.isError,
+    reimportMutation.error,
+    reimportMutation.isError,
+  ]);
+
+  const removeSession = useCallback(
+    async (sessionId: string): Promise<void> => {
+      await removeMutation.mutateAsync(sessionId);
+    },
+    [removeMutation],
   );
-  const [warning, setWarning] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Restoring on mount (rather than via a lazy `useState` initializer) keeps
-    // `restoreImportHistory()` out of the render path — required because the
-    // function touches `window.localStorage` and must not run during SSR or
-    // the initial client render.
-    const restored = restoreImportHistory();
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- seeding external (localStorage) state on mount
-    setHistory(restored.history);
-    setWarning(restored.warning);
-  }, []);
-
-  const addSession = useCallback((session: PasteImportSession): void => {
-    setHistory((current) => {
-      const next = addImportSession(current, session);
-      const result = persistImportHistory(next);
-      setWarning(result.ok ? null : result.error);
-      return next;
-    });
-  }, []);
-
-  const removeSession = useCallback((sessionId: string): void => {
-    setHistory((current) => {
-      const next = removeImportSession(current, sessionId);
-      if (next === current) {
-        return current;
+  const reimportSession = useCallback(
+    async (sessionId: string): Promise<ReimportImportSessionResult> => {
+      const response = await reimportMutation.mutateAsync(sessionId);
+      const payload = response.payload;
+      if (
+        typeof payload !== "object" ||
+        typeof payload.sessionId !== "string" ||
+        typeof payload.jobId !== "string"
+      ) {
+        throw new Error("Re-import response is missing the accepted job id.");
       }
-      const result = persistImportHistory(next);
-      setWarning(result.ok ? null : result.error);
-      return next;
-    });
-  }, []);
+      return {
+        sessionId: payload.sessionId,
+        jobId: payload.jobId,
+        sourceJobId:
+          typeof payload.sourceJobId === "string" &&
+          payload.sourceJobId.length > 0
+            ? payload.sourceJobId
+            : null,
+      };
+    },
+    [reimportMutation],
+  );
 
   const findPrevious = useCallback(
     (query: FindPreviousImportQuery): PasteImportSession | null =>
@@ -71,5 +190,11 @@ export function useImportHistory(): UseImportHistoryResult {
     [history],
   );
 
-  return { history, warning, addSession, removeSession, findPrevious };
+  return {
+    history,
+    warning,
+    removeSession,
+    reimportSession,
+    findPrevious,
+  };
 }

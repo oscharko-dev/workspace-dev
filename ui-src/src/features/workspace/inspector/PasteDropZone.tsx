@@ -31,6 +31,15 @@ export interface PasteDropZoneProps {
   errorMessage?: string;
 }
 
+function normalizeManualNodeId(value: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+  const normalized = trimmed.replace(/-/g, ":");
+  return /^\d+:\d+$/.test(normalized) ? normalized : null;
+}
+
 function isJsonFile(file: File): boolean {
   return file.name.endsWith(".json") || file.type === "application/json";
 }
@@ -93,8 +102,10 @@ export function PasteDropZone({
   const urlInputId = `${reactId}-url`;
   const urlErrorId = `${reactId}-url-error`;
   const urlHintId = `${reactId}-url-hint`;
+  const frameInputId = `${reactId}-frame`;
 
   const [urlValue, setUrlValue] = useState("");
+  const [frameValue, setFrameValue] = useState("");
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isReadingFile, setIsReadingFile] = useState(false);
   const interactionDisabled = disabled || isReadingFile;
@@ -111,7 +122,26 @@ export function PasteDropZone({
     urlValidation.ok &&
     urlValidation.value.kind === "design" &&
     urlValidation.value.nodeId === null;
-  const submitDisabled = interactionDisabled || showInvalid;
+  const resolvedFrameSelection = useMemo(() => {
+    if (!showFileLevelHint) {
+      return null;
+    }
+    const trimmed = frameValue.trim();
+    if (trimmed.length === 0) {
+      return null;
+    }
+    const parsedFrameUrl = validateFigmaUrl(trimmed);
+    if (
+      parsedFrameUrl.ok &&
+      parsedFrameUrl.value.fileKey === urlValidation.value.fileKey &&
+      parsedFrameUrl.value.nodeId !== null
+    ) {
+      return parsedFrameUrl.value.nodeId;
+    }
+    return normalizeManualNodeId(trimmed);
+  }, [frameValue, showFileLevelHint, urlValidation]);
+  const submitDisabled =
+    interactionDisabled || showInvalid || (showFileLevelHint && resolvedFrameSelection === null);
 
   const describedByIds = [promptId];
   if (errorMessage !== undefined) {
@@ -261,6 +291,14 @@ export function PasteDropZone({
   const handleUrlChange = useCallback(
     (event: ReactChangeEvent<HTMLInputElement>): void => {
       setUrlValue(event.currentTarget.value);
+      setFrameValue("");
+    },
+    [],
+  );
+
+  const handleFrameChange = useCallback(
+    (event: ReactChangeEvent<HTMLInputElement>): void => {
+      setFrameValue(event.currentTarget.value);
     },
     [],
   );
@@ -274,9 +312,12 @@ export function PasteDropZone({
       if (urlValidation === null || !urlValidation.ok) {
         return;
       }
-      onFigmaUrl(urlValidation.value.fileKey, urlValidation.value.nodeId);
+      onFigmaUrl(
+        urlValidation.value.fileKey,
+        showFileLevelHint ? resolvedFrameSelection : urlValidation.value.nodeId,
+      );
     },
-    [interactionDisabled, onFigmaUrl, urlValidation],
+    [interactionDisabled, onFigmaUrl, resolvedFrameSelection, showFileLevelHint, urlValidation],
   );
 
   return (
@@ -392,13 +433,27 @@ export function PasteDropZone({
           </p>
         ) : null}
         {showFileLevelHint ? (
-          <p
-            id={urlHintId}
-            data-testid="paste-drop-zone-url-hint"
-            className="text-xs text-white/45"
-          >
-            No frame selected — the whole file will be imported.
-          </p>
+          <div className="flex flex-col gap-2">
+            <p
+              id={urlHintId}
+              data-testid="paste-drop-zone-url-hint"
+              className="text-xs text-white/45"
+            >
+              Which frame? Paste a frame URL from this file or enter its node ID
+              before starting the import.
+            </p>
+            <input
+              id={frameInputId}
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="Frame URL or node-id (for example 1:2)"
+              value={frameValue}
+              onChange={handleFrameChange}
+              disabled={interactionDisabled}
+              className="w-full rounded border border-white/15 bg-[#0b0b0b] px-3 py-2 text-xs text-white/85 placeholder:text-white/30 focus:border-[#4eba87]/60 focus:outline-none focus:ring-1 focus:ring-[#4eba87]/40 disabled:cursor-not-allowed disabled:opacity-60"
+            />
+          </div>
         ) : null}
         <div className="flex justify-end">
           <button

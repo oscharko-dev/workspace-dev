@@ -40,6 +40,7 @@ import {
   isAllSelected,
   selectAll,
   selectChangedNodes,
+  selectNodeIds,
   selectOnlyNode,
   selectSubtree,
   toggleNode,
@@ -1222,7 +1223,8 @@ export function InspectorPanel({
     staleTime: Infinity,
   });
 
-  const previousDesignIrJobId = previousImportSession?.jobId ?? null;
+  const comparisonJobId = previousJobId ?? previousImportSession?.jobId ?? null;
+  const previousDesignIrJobId = comparisonJobId;
   const previousDesignIrQuery = useQuery({
     queryKey: ["inspector-previous-design-ir", previousDesignIrJobId],
     queryFn: async () => {
@@ -1910,11 +1912,7 @@ export function InspectorPanel({
       : (activePipeline.componentManifest ?? manifestState.manifest);
   const queryTreeNodes = designIrState.treeNodes;
   const effectiveTreeNodes =
-    designIrState.status === "ready"
-      ? queryTreeNodes
-      : pipelineTreeNodes.length > 0
-        ? pipelineTreeNodes
-        : queryTreeNodes;
+    pipelineTreeNodes.length > 0 ? pipelineTreeNodes : queryTreeNodes;
   const treeNodes = effectiveTreeNodes;
   const irScreens =
     designIrState.status === "ready"
@@ -1955,6 +1953,23 @@ export function InspectorPanel({
     }
     return [...irDiffResult.addedNodeIds, ...irDiffResult.modifiedNodeIds];
   }, [irDiffResult]);
+  const removedNodeSummaries = useMemo<
+    Array<{ id: string; name: string }>
+  >(() => {
+    if (!irDiffResult || previousIrScreens === null) {
+      return [];
+    }
+    return irDiffResult.removedNodeIds.map((nodeId) => {
+      const previousNode = findIrElementNode(previousIrScreens, nodeId);
+      return {
+        id: nodeId,
+        name:
+          previousNode?.name && previousNode.name.length > 0
+            ? previousNode.name
+            : nodeId,
+      };
+    });
+  }, [irDiffResult, previousIrScreens]);
 
   const selectedIrNode = useMemo<DesignIrElementNode | null>(() => {
     if (!selectedNodeId) {
@@ -2374,18 +2389,68 @@ export function InspectorPanel({
     [scopeControlsEnabled, nodeSelection, effectiveTreeNodes],
   );
   const selectionAllSelected = isAllSelected(nodeSelection);
+  const currentSelectedNodeIds = useMemo(
+    () =>
+      scopeControlsEnabled
+        ? getSelectedNodeIds(nodeSelection, effectiveTreeNodes)
+        : [],
+    [scopeControlsEnabled, nodeSelection, effectiveTreeNodes],
+  );
   const selectedNodeIdsForGenerate = useMemo(
     () =>
       scopeControlsEnabled && !selectionAllSelected
-        ? getSelectedNodeIds(nodeSelection, effectiveTreeNodes)
+        ? currentSelectedNodeIds
         : [],
     [
       scopeControlsEnabled,
       selectionAllSelected,
-      nodeSelection,
-      effectiveTreeNodes,
+      currentSelectedNodeIds,
     ],
   );
+  const selectedChangedNodeIds = useMemo<readonly string[]>(() => {
+    if (changedNodeIdsForPreset.length === 0) {
+      return [];
+    }
+    const selectedIds = selectionAllSelected
+      ? new Set(changedNodeIdsForPreset)
+      : new Set(currentSelectedNodeIds);
+    return changedNodeIdsForPreset.filter((nodeId) => selectedIds.has(nodeId));
+  }, [
+    changedNodeIdsForPreset,
+    currentSelectedNodeIds,
+    selectionAllSelected,
+  ]);
+  const keepExistingChangedCount = Math.max(
+    0,
+    changedNodeIdsForPreset.length - selectedChangedNodeIds.length,
+  );
+
+  const appliedSelectionScopeKeyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      !scopeControlsEnabled ||
+      effectiveTreeNodes.length === 0 ||
+      activePipeline.jobId !== jobId
+    ) {
+      return;
+    }
+    const scopeKey = `${jobId}:${(activePipeline.selectedNodeIds ?? []).join("\u0000")}`;
+    if (appliedSelectionScopeKeyRef.current === scopeKey) {
+      return;
+    }
+    appliedSelectionScopeKeyRef.current = scopeKey;
+    setNodeSelection(
+      activePipeline.selectedNodeIds && activePipeline.selectedNodeIds.length > 0
+        ? selectNodeIds(activePipeline.selectedNodeIds, effectiveTreeNodes)
+        : selectAll(),
+    );
+  }, [
+    activePipeline.jobId,
+    activePipeline.selectedNodeIds,
+    effectiveTreeNodes,
+    jobId,
+    scopeControlsEnabled,
+  ]);
 
   const handleToggleNodeSelection = useCallback(
     (nodeId: string, nextSelected: boolean): void => {
@@ -2488,12 +2553,24 @@ export function InspectorPanel({
     onGenerateSelected(selectedNodeIdsForGenerate);
   }, [onGenerateSelected, selectedNodeIdsForGenerate, selectionAllSelected]);
 
-  const handleReimportUpdate = useCallback((): void => {
+  const handleReimportRegenerateChanged = useCallback((): void => {
     setReimportBannerDismissed(true);
     if (onGenerateSelected) {
-      onGenerateSelected(selectedNodeIdsForGenerate, { importMode: "delta" });
+      const changedSelection =
+        changedNodeIdsForPreset.length > 0 ? changedNodeIdsForPreset : [];
+      if (changedSelection.length > 0) {
+        setNodeSelection(selectChangedNodes(changedSelection, effectiveTreeNodes));
+      }
+      onGenerateSelected(changedSelection, { importMode: "delta" });
     }
-  }, [onGenerateSelected, selectedNodeIdsForGenerate]);
+  }, [changedNodeIdsForPreset, effectiveTreeNodes, onGenerateSelected]);
+  const handleReimportRegenerateSelected = useCallback((): void => {
+    if (!onGenerateSelected || selectedChangedNodeIds.length === 0) {
+      return;
+    }
+    setReimportBannerDismissed(true);
+    onGenerateSelected(selectedChangedNodeIds, { importMode: "delta" });
+  }, [onGenerateSelected, selectedChangedNodeIds]);
   const handleReimportCreateNew = useCallback((): void => {
     setReimportBannerDismissed(true);
     if (onResubmitFresh) {
@@ -3266,19 +3343,19 @@ export function InspectorPanel({
 
   // --- Previous file content for diff comparison ---
 
-  const encodedPreviousJobId = previousJobId
-    ? encodeURIComponent(previousJobId)
+  const encodedComparisonJobId = comparisonJobId
+    ? encodeURIComponent(comparisonJobId)
     : null;
 
   const previousFileContentQuery = useQuery({
     queryKey: [
       "inspector-prev-file-content",
-      previousJobId,
+      comparisonJobId,
       effectiveSelectedFile,
     ],
-    enabled: Boolean(previousJobId) && Boolean(effectiveSelectedFile),
+    enabled: Boolean(comparisonJobId) && Boolean(effectiveSelectedFile),
     queryFn: async (): Promise<FileContentResponse> => {
-      if (!effectiveSelectedFile || !encodedPreviousJobId) {
+      if (!effectiveSelectedFile || !encodedComparisonJobId) {
         return {
           ok: false,
           status: 0,
@@ -3289,7 +3366,7 @@ export function InspectorPanel({
       }
       try {
         const response = await fetch(
-          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`,
+          `/workspace/jobs/${encodedComparisonJobId}/files/${encodeURIComponent(effectiveSelectedFile)}`,
         );
         const body = await response.text();
         if (response.ok) {
@@ -3324,11 +3401,11 @@ export function InspectorPanel({
   });
 
   const previousFileContent = useMemo<string | null>(() => {
-    if (!previousJobId || !effectiveSelectedFile) return null;
+    if (!comparisonJobId || !effectiveSelectedFile) return null;
     if (!previousFileContentQuery.data) return null;
     if (!previousFileContentQuery.data.ok) return null;
     return previousFileContentQuery.data.content;
-  }, [previousJobId, effectiveSelectedFile, previousFileContentQuery.data]);
+  }, [comparisonJobId, effectiveSelectedFile, previousFileContentQuery.data]);
 
   const previousFileContentLoading =
     previousFileContentQuery.isLoading && !previousFileContentQuery.data;
@@ -3842,36 +3919,36 @@ export function InspectorPanel({
   // --- Previous job manifest for node-scoped diff ---
 
   const previousManifestQuery = useQuery({
-    queryKey: ["inspector-prev-manifest", previousJobId],
-    enabled: Boolean(previousJobId),
+    queryKey: ["inspector-prev-manifest", comparisonJobId],
+    enabled: Boolean(comparisonJobId),
     queryFn: async () => {
-      if (!encodedPreviousJobId) {
+      if (!encodedComparisonJobId) {
         throw new Error("No previous job ID");
       }
       return await fetchJson<ComponentManifestPayload>({
-        url: `/workspace/jobs/${encodedPreviousJobId}/component-manifest`,
+        url: `/workspace/jobs/${encodedComparisonJobId}/component-manifest`,
       });
     },
     staleTime: Infinity,
   });
 
   const previousManifest = useMemo<NodeDiffManifestPayload | null>(() => {
-    if (!previousJobId) return null;
+    if (!comparisonJobId) return null;
     if (!previousManifestQuery.data?.ok) return null;
     const payload = previousManifestQuery.data.payload;
     if (!isComponentManifestPayload(payload)) return null;
-    return { jobId: previousJobId, screens: payload.screens };
-  }, [previousJobId, previousManifestQuery.data]);
+    return { jobId: comparisonJobId, screens: payload.screens };
+  }, [comparisonJobId, previousManifestQuery.data]);
 
   // Resolve the node-scoped diff mapping for the selected node
   const nodeDiffResult = useMemo(() => {
-    if (!selectedNodeId || !previousJobId) return null;
+    if (!selectedNodeId || !comparisonJobId) return null;
     return resolveNodeDiffMapping(
       selectedNodeId,
       activeManifestRange?.file ?? null,
       previousManifest,
     );
-  }, [selectedNodeId, previousJobId, activeManifestRange, previousManifest]);
+  }, [selectedNodeId, comparisonJobId, activeManifestRange, previousManifest]);
 
   // Determine previous manifest range for scoped diff
   const previousManifestRange = useMemo(() => {
@@ -3893,12 +3970,12 @@ export function InspectorPanel({
   const previousDiffFileContentQuery = useQuery({
     queryKey: [
       "inspector-prev-diff-file-content",
-      previousJobId,
+      comparisonJobId,
       previousDiffFile,
     ],
-    enabled: Boolean(previousJobId) && Boolean(previousDiffFile),
+    enabled: Boolean(comparisonJobId) && Boolean(previousDiffFile),
     queryFn: async (): Promise<FileContentResponse> => {
-      if (!previousDiffFile || !encodedPreviousJobId) {
+      if (!previousDiffFile || !encodedComparisonJobId) {
         return {
           ok: false,
           status: 0,
@@ -3909,7 +3986,7 @@ export function InspectorPanel({
       }
       try {
         const response = await fetch(
-          `/workspace/jobs/${encodedPreviousJobId}/files/${encodeURIComponent(previousDiffFile)}`,
+          `/workspace/jobs/${encodedComparisonJobId}/files/${encodeURIComponent(previousDiffFile)}`,
         );
         const body = await response.text();
         if (response.ok) {
@@ -4892,9 +4969,13 @@ export function InspectorPanel({
       {reimportBannerSession ? (
         <ReImportPromptBanner
           previousSession={reimportBannerSession}
-          onUpdate={handleReimportUpdate}
+          onRegenerateChanged={handleReimportRegenerateChanged}
+          onRegenerateSelected={handleReimportRegenerateSelected}
           onCreateNew={handleReimportCreateNew}
           onDismiss={handleReimportDismiss}
+          changedCount={changedNodeIdsForPreset.length}
+          selectedChangedCount={selectedChangedNodeIds.length}
+          keepExistingCount={keepExistingChangedCount}
           deltaSummary={
             activePipeline.pasteDeltaSummary
               ? {
@@ -4906,6 +4987,47 @@ export function InspectorPanel({
               : null
           }
         />
+      ) : null}
+
+      {irDiffResult ? (
+        <section
+          data-testid="inspector-update-diff-panel"
+          className="mb-3 flex flex-col gap-2 rounded border border-[#333333] bg-[#111111] px-3 py-2 text-[11px] text-white/65"
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="text-white/85">Update diff</span>
+            <span className="text-[#4eba87]">
+              Added {String(irDiffResult.addedNodeIds.length)}
+            </span>
+            <span className="text-sky-300">
+              Modified {String(irDiffResult.modifiedNodeIds.length)}
+            </span>
+            <span className="text-amber-300">
+              Removed {String(irDiffResult.removedNodeIds.length)}
+            </span>
+            <span className="text-white/45">
+              Unchanged {String(irDiffResult.unchangedNodeIds.length)}
+            </span>
+          </div>
+          {removedNodeSummaries.length > 0 ? (
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] uppercase tracking-wider text-white/35">
+                Removed components
+              </span>
+              <div className="flex flex-wrap gap-1">
+                {removedNodeSummaries.map((entry) => (
+                  <span
+                    key={entry.id}
+                    className="rounded border border-amber-300/20 bg-amber-300/10 px-1.5 py-0.5 text-[10px] text-amber-200"
+                    title={entry.id}
+                  >
+                    {entry.name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       {/* Edit Studio — slides down below toolbar when active */}

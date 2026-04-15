@@ -49,10 +49,16 @@ export interface PasteImportSession {
    * pipeline state carries it.
    */
   readonly version?: string;
+  /** Source mode persisted by the server for replay and auditability. */
+  readonly sourceMode?: string;
   /** Server-supplied pasteIdentityKey (delta summary) when present \u2014 used for re-import matching. */
   readonly pasteIdentityKey: string | null;
   /** Underlying jobId so callers can re-open the result. */
   readonly jobId: string;
+  /** Whether this session can be re-imported directly from history. */
+  readonly replayable?: boolean;
+  /** Optional explanation shown when replay is disabled. */
+  readonly replayDisabledReason?: string;
 }
 
 export interface PasteImportHistory {
@@ -204,9 +210,24 @@ function isPasteImportSession(value: unknown): value is PasteImportSession {
   if (value.version !== undefined && typeof value.version !== "string") {
     return false;
   }
+  if (value.sourceMode !== undefined && typeof value.sourceMode !== "string") {
+    return false;
+  }
   if (
     value.pasteIdentityKey !== null &&
     typeof value.pasteIdentityKey !== "string"
+  ) {
+    return false;
+  }
+  if (
+    value.replayable !== undefined &&
+    typeof value.replayable !== "boolean"
+  ) {
+    return false;
+  }
+  if (
+    value.replayDisabledReason !== undefined &&
+    typeof value.replayDisabledReason !== "string"
   ) {
     return false;
   }

@@ -9,6 +9,9 @@ import type {
   WorkspaceLogFormat,
   WorkspaceGenerationDiffReport,
   WorkspaceGitPrStatus,
+  WorkspaceImportSession,
+  WorkspaceImportSessionDeleteResult,
+  WorkspaceImportSessionReimportAccepted,
   WorkspaceLocalSyncApplyResult,
   WorkspaceLocalSyncDryRunResult,
   WorkspaceJobDiagnostic,
@@ -298,4 +301,11 @@ export interface JobEngine {
   suggestRemaps: (
     input: WorkspaceRemapSuggestInput,
   ) => Promise<WorkspaceRemapSuggestResult>;
+  listImportSessions: () => Promise<WorkspaceImportSession[]>;
+  reimportImportSession: (
+    input: { sessionId: string },
+  ) => Promise<WorkspaceImportSessionReimportAccepted>;
+  deleteImportSession: (
+    input: { sessionId: string },
+  ) => Promise<WorkspaceImportSessionDeleteResult>;
 }

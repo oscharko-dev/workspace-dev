@@ -166,6 +166,16 @@ describe("pastePipelineReducer", () => {
     expect(state.selectedNodeIds).toBeUndefined();
   });
 
+  it("can start URL imports directly in resolving", () => {
+    const state = dispatch(createInitialPipelineState(), {
+      type: "start_resolving",
+    });
+
+    expect(state.stage).toBe("resolving");
+    expect(state.stageProgress.parsing.state).toBe("done");
+    expect(state.stageProgress.resolving.state).toBe("running");
+  });
+
   it("marks intermediate backend stages done and advances progress", () => {
     let state = dispatch(createInitialPipelineState(), { type: "start" });
     state = dispatch(state, { type: "parsing_done" });

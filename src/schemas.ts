@@ -137,6 +137,54 @@ function parseStringField({
   return value;
 }
 
+function parseOptionalNonEmptyStringArrayField({
+  input,
+  key,
+  issues,
+}: {
+  input: Record<string, unknown>;
+  key: keyof WorkspaceJobInput;
+  issues: ValidationIssue[];
+}): string[] | undefined {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(value)) {
+    pushIssue(issues, [key], `${key} must be an array of non-empty strings`);
+    return undefined;
+  }
+  if (value.length === 0) {
+    pushIssue(issues, [key], `${key} must not be an empty array`);
+    return undefined;
+  }
+
+  const parsed: string[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const entry = value[index];
+    if (typeof entry !== "string") {
+      pushIssue(
+        issues,
+        [key, index],
+        `${key} entries must be non-empty strings`,
+      );
+      continue;
+    }
+    const trimmed = entry.trim();
+    if (trimmed.length === 0) {
+      pushIssue(
+        issues,
+        [key, index],
+        `${key} entries must be non-empty strings`,
+      );
+      continue;
+    }
+    parsed.push(trimmed);
+  }
+
+  return issues.length > 0 ? undefined : parsed;
+}
+
 function parseSubmitLlmCodegenMode({
   value,
   issues,
@@ -870,6 +918,7 @@ function parseSubmitRequest(
     "originalIntent",
     "intentCorrected",
     "importMode",
+    "selectedNodeIds",
   ]);
 
   for (const key of Object.keys(input)) {
@@ -1010,6 +1059,11 @@ function parseSubmitRequest(
     input,
     key: "originalIntent" as keyof WorkspaceJobInput,
     required: false,
+    issues,
+  });
+  const selectedNodeIds = parseOptionalNonEmptyStringArrayField({
+    input,
+    key: "selectedNodeIds",
     issues,
   });
   const brandTheme = (() => {
@@ -1287,6 +1341,26 @@ function parseSubmitRequest(
     }
   }
 
+  if (selectedNodeIds !== undefined) {
+    const importCapableModes = new Set<WorkspaceFigmaSourceMode>([
+      "rest",
+      "hybrid",
+      "local_json",
+      "figma_paste",
+      "figma_plugin",
+    ]);
+    if (
+      resolvedFigmaSourceMode === undefined ||
+      !importCapableModes.has(resolvedFigmaSourceMode)
+    ) {
+      pushIssue(
+        issues,
+        ["selectedNodeIds"],
+        "selectedNodeIds are only supported for import-capable submit modes",
+      );
+    }
+  }
+
   if (enableGitPr) {
     if (!repoUrl) {
       pushIssue(
@@ -1381,6 +1455,9 @@ function parseSubmitRequest(
   }
   if (importMode !== undefined) {
     data.importMode = importMode;
+  }
+  if (selectedNodeIds !== undefined) {
+    data.selectedNodeIds = selectedNodeIds;
   }
 
   return {

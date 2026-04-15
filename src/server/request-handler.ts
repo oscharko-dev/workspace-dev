@@ -11,6 +11,7 @@ import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   type WorkspaceFigmaSourceMode,
+  type WorkspaceImportSessionSourceMode,
   type WorkspacePasteDeltaSummary,
   type WorkspaceStatus,
 } from "../contracts/index.js";
@@ -72,6 +73,7 @@ import { ErrorCode } from "./error-codes.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
 import {
   isWorkspaceProjectRoute,
+  parseImportSessionRoute,
   parseJobFilesRoute,
   parseJobRoute,
   parseReproRoute,
@@ -342,10 +344,12 @@ function sanitizeTokenNames(values: readonly string[]): string[] {
 
 interface ProtectedWriteRoute {
   parsedJobRoute?: ReturnType<typeof parseJobRoute>;
+  parsedImportSessionRoute?: ReturnType<typeof parseImportSessionRoute>;
 }
 
 function resolveProtectedWriteRoute(
   pathname: string,
+  method: string,
 ): ProtectedWriteRoute | null {
   if (pathname === "/workspace/submit") {
     return {};
@@ -354,6 +358,15 @@ function resolveProtectedWriteRoute(
   const parsedJobRoute = parseJobRoute(pathname);
   if (parsedJobRoute && PROTECTED_POST_ACTIONS.has(parsedJobRoute.action)) {
     return { parsedJobRoute };
+  }
+
+  const parsedImportSessionRoute = parseImportSessionRoute(pathname);
+  if (
+    parsedImportSessionRoute &&
+    ((method === "POST" && parsedImportSessionRoute.action === "reimport") ||
+      (method === "DELETE" && parsedImportSessionRoute.action === "detail"))
+  ) {
+    return { parsedImportSessionRoute };
   }
 
   return null;
@@ -414,7 +427,7 @@ export function createWorkspaceRequestHandler({
       "http://workspace-dev.local",
     );
     const pathname = requestUrl.pathname;
-    const protectedWriteRoute = resolveProtectedWriteRoute(pathname);
+    const protectedWriteRoute = resolveProtectedWriteRoute(pathname, method);
     const logAuditEvent = ({
       event,
       message,
@@ -545,6 +558,16 @@ export function createWorkspaceRequestHandler({
           response,
           statusCode: 200,
           payload: { policy: result.policy },
+        });
+        return;
+      }
+
+      if (method === "GET" && pathname === "/workspace/import-sessions") {
+        const sessions = await jobEngine.listImportSessions();
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: { sessions },
         });
         return;
       }
@@ -1086,6 +1109,19 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        const parsedImportSessionRoute = parseImportSessionRoute(pathname);
+        if (parsedImportSessionRoute?.action === "reimport") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for re-import route '${pathname}'.`,
+            },
+          });
+          return;
+        }
+
         const parsedFilesRoute = parseJobFilesRoute(pathname);
         if (parsedFilesRoute) {
           const jobId = safeDecodeParam(
@@ -1405,20 +1441,27 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        response.setHeader("allow", "POST");
+        response.setHeader(
+          "allow",
+          protectedWriteRoute.parsedImportSessionRoute?.action === "detail"
+            ? "DELETE"
+            : "POST",
+        );
         sendJson({
           response,
           statusCode: 405,
           payload: {
             error: "METHOD_NOT_ALLOWED",
-            message: `Write route '${pathname}' only supports POST and does not support cross-origin browser preflight requests.`,
+            message: `Write route '${pathname}' only supports ${protectedWriteRoute.parsedImportSessionRoute?.action === "detail" ? "DELETE" : "POST"} and does not support cross-origin browser preflight requests.`,
           },
         });
         return;
       }
 
-      if (method === "POST") {
+      if (method === "POST" || method === "DELETE") {
         const parsedJobRoute = protectedWriteRoute?.parsedJobRoute;
+        const parsedImportSessionRoute =
+          protectedWriteRoute?.parsedImportSessionRoute;
 
         if (!protectedWriteRoute) {
           sendJson({
@@ -1476,6 +1519,93 @@ export function createWorkspaceRequestHandler({
             });
             return;
           }
+        }
+
+        if (
+          method === "POST" &&
+          parsedImportSessionRoute?.action === "reimport"
+        ) {
+          const sessionId = safeDecodeParam(
+            parsedImportSessionRoute.sessionId,
+            "import session ID",
+            response,
+          );
+          if (sessionId === null) return;
+
+          try {
+            const accepted = await jobEngine.reimportImportSession({
+              sessionId,
+            });
+            sendJson({
+              response,
+              statusCode: 202,
+              payload: accepted,
+            });
+          } catch (error) {
+            const code =
+              error instanceof Error && "code" in error
+                ? (error as { code?: string }).code
+                : undefined;
+            sendRequestFailure({
+              statusCode:
+                code === "E_IMPORT_SESSION_NOT_FOUND"
+                  ? 404
+                  : code === "E_IMPORT_SESSION_NOT_REPLAYABLE"
+                    ? 409
+                    : code === "E_IMPORT_SESSION_INVALID_LOCATOR" ||
+                        code ===
+                          "E_IMPORT_SESSION_MISSING_FIGMA_ACCESS_TOKEN"
+                      ? 400
+                      : 500,
+              payload: {
+                error: code ?? "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not re-import import session.",
+                }),
+              },
+              fallbackMessage: "Re-import request failed.",
+            });
+          }
+          return;
+        }
+
+        if (
+          method === "DELETE" &&
+          parsedImportSessionRoute?.action === "detail"
+        ) {
+          const sessionId = safeDecodeParam(
+            parsedImportSessionRoute.sessionId,
+            "import session ID",
+            response,
+          );
+          if (sessionId === null) return;
+
+          try {
+            const deleted = await jobEngine.deleteImportSession({ sessionId });
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: deleted,
+            });
+          } catch (error) {
+            const code =
+              error instanceof Error && "code" in error
+                ? (error as { code?: string }).code
+                : undefined;
+            sendRequestFailure({
+              statusCode: code === "E_IMPORT_SESSION_NOT_FOUND" ? 404 : 500,
+              payload: {
+                error: code ?? "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not delete import session.",
+                }),
+              },
+              fallbackMessage: "Delete import session failed.",
+            });
+          }
+          return;
         }
 
         if (parsedJobRoute?.action === "cancel") {
@@ -2574,6 +2704,20 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        const requestSourceMode = (() => {
+          if (
+            typeof rawBody.value !== "object" ||
+            rawBody.value === null ||
+            Array.isArray(rawBody.value)
+          ) {
+            return undefined;
+          }
+          const candidate = rawBody.value as { figmaSourceMode?: unknown };
+          return typeof candidate.figmaSourceMode === "string"
+            ? (candidate.figmaSourceMode.trim().toLowerCase() as WorkspaceImportSessionSourceMode)
+            : undefined;
+        })();
+
         const normalizedSubmitInput = normalizeFigmaUrlSubmitInput(
           rawBody.value,
         );
@@ -2665,6 +2809,9 @@ export function createWorkspaceRequestHandler({
           ...parsed.data,
           figmaSourceMode: resolvedFigmaSourceMode,
           llmCodegenMode: defaults.llmCodegenMode,
+          ...(requestSourceMode !== undefined
+            ? { requestSourceMode }
+            : {}),
         };
         let pasteTempPathToCleanup: string | undefined;
         const cleanupPendingPasteTempFile = async (): Promise<void> => {

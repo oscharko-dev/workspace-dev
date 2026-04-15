@@ -140,6 +140,7 @@ export function ImportHistoryPanel({
             const importedAt = new Date(session.importedAt);
             const relative = formatRelativeTime(now, importedAt);
             const showMetrics = session.nodeCount > 0 || session.fileCount > 0;
+            const replayable = session.replayable !== false;
             return (
               <li
                 key={session.id}
@@ -159,16 +160,28 @@ export function ImportHistoryPanel({
                         {session.nodeCount} nodes, {session.fileCount} files
                       </span>
                     ) : null}
+                    {!replayable && session.replayDisabledReason ? (
+                      <span className="text-[10px] text-amber-300/70">
+                        {session.replayDisabledReason}
+                      </span>
+                    ) : null}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <button
                     type="button"
                     data-testid={`import-history-reimport-${session.id}`}
+                    disabled={!replayable}
                     onClick={() => {
                       onReImport(session);
                     }}
-                    className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[10px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87]"
+                    title={
+                      replayable
+                        ? "Re-import this session"
+                        : session.replayDisabledReason ??
+                          "This import cannot be replayed from history."
+                    }
+                    className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[10px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
                   >
                     Re-import
                   </button>

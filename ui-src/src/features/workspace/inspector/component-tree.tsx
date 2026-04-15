@@ -213,6 +213,7 @@ const TreeRow = memo(function TreeRow({
   const isSelectable = selectionEnabled && row.node.type !== "skeleton";
   const isSkeleton = row.node.type === "skeleton";
   const showCheckbox = checkState !== null && !isSkeleton;
+  const isSkipped = checkState === "unchecked";
   const checkboxAriaLabel =
     checkState === "checked"
       ? `Deselect ${row.node.name}`
@@ -248,7 +249,7 @@ const TreeRow = memo(function TreeRow({
           : "text-white/80 hover:bg-[#000000] hover:text-white"
       } ${isSelectable ? "cursor-pointer" : "cursor-default"} ${
         isFocused ? "outline-2 -outline-offset-2 outline-[#4eba87]" : ""
-      }`}
+      } ${!isSelected && isSkipped ? "opacity-55" : ""}`}
       onClick={(event) => {
         if (!isSelectable) return;
         onSelect(row.node.id);
@@ -371,6 +372,14 @@ const TreeRow = memo(function TreeRow({
       ) : (
         <span className="min-w-0 truncate">{row.node.name}</span>
       )}
+      {isSkipped ? (
+        <span
+          data-testid={`tree-skipped-${row.node.id}`}
+          className="shrink-0 rounded border border-white/10 bg-[#222222] px-1 py-[1px] text-[9px] uppercase tracking-wider text-white/45"
+        >
+          Skipped
+        </span>
+      ) : null}
       {row.node.mappingStatus && row.node.type !== "skeleton" ? (
         <span
           aria-label={`Component ${row.node.mappingStatus}`}

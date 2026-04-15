@@ -22,6 +22,12 @@ function getSubmitButton(): HTMLButtonElement {
   }) as HTMLButtonElement;
 }
 
+function getFrameInput(): HTMLInputElement {
+  return screen.getByPlaceholderText(
+    /frame url or node-id/i,
+  ) as HTMLInputElement;
+}
+
 describe("PasteDropZone — URL validation", () => {
   it("renders with the URL input empty and shows no validation indicators", () => {
     render(
@@ -94,7 +100,7 @@ describe("PasteDropZone — URL validation", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("typing a valid design URL without node-id shows the green check and the file-level hint", () => {
+  it("typing a valid design URL without node-id prompts for a frame selection", () => {
     render(
       <PasteDropZone disabled={false} onPaste={vi.fn()} onFigmaUrl={vi.fn()} />,
     );
@@ -108,7 +114,8 @@ describe("PasteDropZone — URL validation", () => {
     ).toBeInTheDocument();
     const hint = screen.getByTestId("paste-drop-zone-url-hint");
     expect(hint).toBeInTheDocument();
-    expect(hint).toHaveTextContent(/no frame selected/i);
+    expect(hint).toHaveTextContent(/which frame/i);
+    expect(getFrameInput()).toBeInTheDocument();
   });
 });
 
@@ -154,7 +161,7 @@ describe("PasteDropZone — submit gating", () => {
     expect(onFigmaUrl).toHaveBeenCalledWith("abc123XYZ", "10-20");
   });
 
-  it("submitting a valid file-level design URL invokes onFigmaUrl(fileKey, null)", () => {
+  it("submitting a valid file-level design URL requires a frame selection", () => {
     const onFigmaUrl = vi.fn();
     render(
       <PasteDropZone
@@ -167,10 +174,15 @@ describe("PasteDropZone — submit gating", () => {
     fireEvent.change(getUrlInput(), {
       target: { value: VALID_DESIGN_URL_FILE_LEVEL },
     });
+    expect(getSubmitButton()).toBeDisabled();
+
+    fireEvent.change(getFrameInput(), {
+      target: { value: "https://figma.com/design/abc123XYZ/My-File?node-id=55-66" },
+    });
     fireEvent.click(getSubmitButton());
 
     expect(onFigmaUrl).toHaveBeenCalledTimes(1);
-    expect(onFigmaUrl).toHaveBeenCalledWith("abc123XYZ", null);
+    expect(onFigmaUrl).toHaveBeenCalledWith("abc123XYZ", "55-66");
   });
 
   it("does not call onFigmaUrl when the URL is invalid even if the form is submitted", () => {
