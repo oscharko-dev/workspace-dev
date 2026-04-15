@@ -54,7 +54,7 @@ in automated CI. Follow these steps to verify the export flow.
 
 1. Deselect everything (click on empty canvas).
 2. Click **Copy to Clipboard**.
-3. Verify the plugin shows an error: "No nodes selected."
+3. Verify the plugin shows an error: "No nodes selected. Please select at least one layer."
 
 ### 6. Inspector acceptance
 
