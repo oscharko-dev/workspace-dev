@@ -1735,24 +1735,6 @@ export function createWorkspaceRequestHandler({
             return;
           }
 
-          if (body.actor !== undefined && typeof body.actor !== "string") {
-            sendValidationError({
-              statusCode: 422,
-              payload: {
-                error: "VALIDATION_ERROR",
-                message: "Request validation failed.",
-                issues: [
-                  {
-                    path: "actor",
-                    message: "actor must be a string when provided.",
-                  },
-                ],
-              },
-              fallbackMessage: "Import session event validation failed.",
-            });
-            return;
-          }
-
           if (body.note !== undefined && typeof body.note !== "string") {
             sendValidationError({
               statusCode: 422,
@@ -1797,8 +1779,7 @@ export function createWorkspaceRequestHandler({
             id: typeof body.id === "string" ? body.id : "",
             sessionId,
             kind: body.kind,
-            at: typeof body.at === "string" ? body.at : "",
-            ...(typeof body.actor === "string" ? { actor: body.actor } : {}),
+            at: "",
             ...(typeof body.note === "string" ? { note: body.note } : {}),
             ...(body.metadata !== undefined ? { metadata: body.metadata } : {}),
           };

@@ -123,15 +123,18 @@ test("createJobEngine persists import sessions with authoritative governance def
     },
   });
 
-  await engine.appendImportSessionEvent({
+  const callerSuppliedTimestamp = "1999-01-01T00:00:00.000Z";
+  const approvedEvent = await engine.appendImportSessionEvent({
     event: {
       id: "",
       sessionId,
       kind: "approved",
-      at: "",
+      at: callerSuppliedTimestamp,
       actor: "reviewer-1",
     },
   });
+  assert.notEqual(approvedEvent.at, callerSuppliedTimestamp);
+  assert.equal(approvedEvent.actor, "reviewer-1");
 
   await engine.appendImportSessionEvent({
     event: {

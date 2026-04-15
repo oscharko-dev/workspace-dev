@@ -540,7 +540,7 @@ test("request handler GET /events returns 404 for an unknown session", async () 
   }
 });
 
-test("request handler POST /events stores well-formed events and returns 201", async () => {
+test("request handler POST /events ignores client actor and timestamp fields", async () => {
   const appendImportSessionEvent = test.mock.fn(
     async ({ event }) =>
       ({
@@ -568,6 +568,7 @@ test("request handler POST /events stores well-formed events and returns 201", a
       payload: {
         kind: "approved",
         actor: "reviewer@example.com",
+        at: "1999-12-31T23:59:59.000Z",
         note: "looks good",
         metadata: { qualityScore: 90, reason: null, ok: true },
       },
@@ -578,7 +579,8 @@ test("request handler POST /events stores well-formed events and returns 201", a
     const callArg = appendImportSessionEvent.mock.calls[0]?.arguments[0];
     assert.equal(callArg?.event.sessionId, "session-1");
     assert.equal(callArg?.event.kind, "approved");
-    assert.equal(callArg?.event.actor, "reviewer@example.com");
+    assert.equal(callArg?.event.actor, undefined);
+    assert.equal(callArg?.event.at, "");
     assert.equal(callArg?.event.note, "looks good");
     assert.deepEqual(callArg?.event.metadata, {
       qualityScore: 90,
@@ -591,7 +593,6 @@ test("request handler POST /events stores well-formed events and returns 201", a
       sessionId: "session-1",
       kind: "approved",
       at: "2026-04-15T10:05:00.000Z",
-      actor: "reviewer@example.com",
       note: "looks good",
       metadata: { qualityScore: 90, reason: null, ok: true },
     });
