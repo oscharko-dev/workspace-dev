@@ -35,12 +35,16 @@ const collectFilesRecursive = async (
   }
 };
 
+interface GoldenManifest {
+  version: number;
+  fixtures: Array<{ id: string }>;
+}
+
 const listGoldenFixtures = async (): Promise<string[]> => {
-  const entries = await readdir(goldenRoot, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort();
+  const manifestPath = path.join(goldenRoot, "manifest.json");
+  const raw = await readFile(manifestPath, "utf8");
+  const manifest = JSON.parse(raw) as GoldenManifest;
+  return manifest.fixtures.map((f) => f.id);
 };
 
 const goldenFixtureNames = await listGoldenFixtures();
