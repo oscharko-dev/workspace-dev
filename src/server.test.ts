@@ -465,6 +465,7 @@ const waitForJobTerminalState = async ({
 
     if (
       body.status === "completed" ||
+      body.status === "partial" ||
       body.status === "failed" ||
       body.status === "canceled"
     ) {
@@ -1299,7 +1300,7 @@ test("workspace server fails validate.project when skipInstall=true and dependen
     });
     const error = finalStatus.error as Record<string, unknown> | undefined;
 
-    assert.equal(finalStatus.status, "failed");
+    assert.equal(finalStatus.status, "partial");
     assert.equal(error?.stage, "validate.project");
     assert.match(
       String(error?.message),
@@ -1727,10 +1728,7 @@ test("workspace server accepts figma_paste submit and returns 202 with jobId", a
   });
 
   try {
-    const payload = JSON.stringify({
-      name: "Paste Test",
-      document: { id: "0:0", type: "DOCUMENT", children: [] },
-    });
+    const payload = JSON.stringify(createLocalFigmaPayload());
     const response = await server.app.inject({
       method: "POST",
       url: "/workspace/submit",
@@ -1744,11 +1742,12 @@ test("workspace server accepts figma_paste submit and returns 202 with jobId", a
     assert.equal(response.statusCode, 202);
     const body = response.json<Record<string, unknown>>();
     assert.ok(typeof body.jobId === "string" && body.jobId.length > 0);
-    await waitForJobTerminalState({
+    const terminal = await waitForJobTerminalState({
       server,
       jobId: String(body.jobId),
       timeoutMs: 30_000,
     });
+    assert.equal(terminal.status, "completed");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });
@@ -1823,8 +1822,8 @@ test("workspace server accepts a whole-view-sized figma_paste submit under the r
 
   try {
     const payload = JSON.stringify({
+      ...createLocalFigmaPayload(),
       name: "Whole View",
-      document: { id: "0:0", type: "DOCUMENT", children: [] },
       filler: "a".repeat(5 * 1024 * 1024),
     });
     const response = await server.app.inject({
@@ -1840,11 +1839,12 @@ test("workspace server accepts a whole-view-sized figma_paste submit under the r
     assert.equal(response.statusCode, 202);
     const body = response.json<Record<string, unknown>>();
     assert.ok(typeof body.jobId === "string" && body.jobId.length > 0);
-    await waitForJobTerminalState({
+    const terminal = await waitForJobTerminalState({
       server,
       jobId: String(body.jobId),
       timeoutMs: 30_000,
     });
+    assert.equal(terminal.status, "completed");
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

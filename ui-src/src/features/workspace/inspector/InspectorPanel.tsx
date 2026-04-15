@@ -2093,9 +2093,7 @@ export function InspectorPanel({
         ...toImportGovernanceEvent(currentImportSession),
         kind,
         timestamp: timestamp ?? new Date().toISOString(),
-        ...(qualityScoreModel.score !== null
-          ? { qualityScore: qualityScoreModel.score }
-          : {}),
+        qualityScore: qualityScoreModel.score,
         ...(currentImportSession.reviewRequired !== undefined
           ? { reviewRequired: currentImportSession.reviewRequired }
           : {}),
@@ -2127,9 +2125,7 @@ export function InspectorPanel({
     importedEventDispatchedForSessionIdRef.current = currentImportSession.id;
     dispatchImportGovernanceEvent({
       ...toImportGovernanceEvent(currentImportSession),
-      ...(qualityScoreModel.score !== null
-        ? { qualityScore: qualityScoreModel.score }
-        : {}),
+      qualityScore: qualityScoreModel.score,
       ...(currentImportSession.reviewRequired !== undefined
         ? { reviewRequired: currentImportSession.reviewRequired }
         : {}),

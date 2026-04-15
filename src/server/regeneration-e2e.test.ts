@@ -388,7 +388,28 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     assert.equal(missingConfirmResult.status, 400);
     assert.equal((missingConfirmResult.body as Record<string, unknown>).error, "VALIDATION_ERROR");
 
-    // 13. Apply sync writes generated output into destination scope
+    // 13. Approve the source import session before applying local sync
+    const listImportSessionsResult = await jsonFetch(`${baseUrl}/workspace/import-sessions`);
+    assert.equal(listImportSessionsResult.status, 200);
+    const importSessions = ((listImportSessionsResult.body as Record<string, unknown>).sessions ??
+      []) as Array<Record<string, unknown>>;
+    const sourceImportSession = importSessions.find((session) => session.jobId === sourceJobId);
+    assert.ok(sourceImportSession);
+
+    const approvalResult = await jsonFetch(
+      `${baseUrl}/workspace/import-sessions/${sourceImportSession.id as string}/events`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          kind: "approved"
+        })
+      }
+    );
+    assert.equal(approvalResult.status, 201);
+    assert.equal((approvalResult.body as Record<string, unknown>).sessionId, sourceImportSession.id);
+    assert.equal((approvalResult.body as Record<string, unknown>).kind, "approved");
+
+    // 14. Apply sync writes generated output into destination scope
     const applyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
       method: "POST",
       body: JSON.stringify({
@@ -411,7 +432,7 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     const syncedContent = await readFile(firstFilePath, "utf8");
     assert.ok(syncedContent.length > 0);
 
-    // 14. Token is one-time use
+    // 15. Token is one-time use
     const replayResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
       method: "POST",
       body: JSON.stringify({
@@ -427,7 +448,7 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     assert.equal(replayResult.status, 409);
     assert.equal((replayResult.body as Record<string, unknown>).error, "SYNC_CONFIRMATION_INVALID");
 
-    // 15. Sync is only available for regeneration jobs
+    // 16. Sync is only available for regeneration jobs
     const sourceSyncResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/sync`, {
       method: "POST",
       body: JSON.stringify({
@@ -437,29 +458,29 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     assert.equal(sourceSyncResult.status, 409);
     assert.equal((sourceSyncResult.body as Record<string, unknown>).error, "SYNC_REGEN_REQUIRED");
 
-    // 16. GET on /sync returns 405
+    // 17. GET on /sync returns 405
     const getSyncResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`);
     assert.equal(getSyncResult.status, 405);
 
-    // 17. Sync validation catches malformed payloads
+    // 18. Sync validation catches malformed payloads
     const badSyncBodyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
       method: "POST",
       body: JSON.stringify({ mode: "unexpected" })
     });
     assert.equal(badSyncBodyResult.status, 400);
 
-    // 18. GET on /regenerate returns 405
+    // 19. GET on /regenerate returns 405
     const getResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/regenerate`);
     assert.equal(getResult.status, 405);
 
-    // 19. Regeneration of non-existent source returns 404
+    // 20. Regeneration of non-existent source returns 404
     const missingResult = await jsonFetch(`${baseUrl}/workspace/jobs/nonexistent-id/regenerate`, {
       method: "POST",
       body: JSON.stringify({ overrides: [] })
     });
     assert.equal(missingResult.status, 404);
 
-    // 20. Regeneration with invalid body returns 400
+    // 21. Regeneration with invalid body returns 400
     const badBodyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${sourceJobId}/regenerate`, {
       method: "POST",
       body: JSON.stringify({ invalid: "payload" })

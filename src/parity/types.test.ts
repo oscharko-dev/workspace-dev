@@ -170,6 +170,8 @@ const EXPECTED_TYPES_EXPORTS = [
   "SyncRunResultStatus",
   "SyncRunStatus",
   "SyncRunSummary",
+  "TokenBridgeResult",
+  "TokenConflict",
   "TextElementIR",
   "TruncatedScreenMetric",
   "UiGateMode",

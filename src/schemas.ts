@@ -160,8 +160,9 @@ function parseOptionalNonEmptyStringArrayField({
   }
 
   const parsed: string[] = [];
-  for (let index = 0; index < value.length; index += 1) {
-    const entry = value[index];
+  const entries: unknown[] = value;
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
     if (typeof entry !== "string") {
       pushIssue(
         issues,
@@ -1789,8 +1790,9 @@ function parseRetryRequest(input: unknown): ValidationResult<RetryRequestData> {
       );
     } else {
       const normalizedTargets: string[] = [];
-      for (let index = 0; index < input.retryTargets.length; index += 1) {
-        const entry = input.retryTargets[index];
+      const retryTargetEntries: unknown[] = input.retryTargets;
+      for (let index = 0; index < retryTargetEntries.length; index += 1) {
+        const entry = retryTargetEntries[index];
         if (typeof entry !== "string" || entry.trim().length === 0) {
           pushIssue(
             issues,

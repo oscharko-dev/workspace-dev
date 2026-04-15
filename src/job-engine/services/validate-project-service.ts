@@ -2127,21 +2127,23 @@ export const createValidateProjectService = ({
             const raw = JSON.parse(
               await readFile(generationMetricsPath, "utf8"),
             ) as Record<string, unknown>;
-            const screenElementCounts =
-              (raw.screenElementCounts as Array<{
-                screenId?: string;
-                screenName?: string;
-                elements?: number;
-              }>) ?? [];
-            const truncatedScreens =
-              (raw.truncatedScreens as Array<{
-                screenId?: string;
-                screenName?: string;
-                originalElements?: number;
-                retainedElements?: number;
-                originalCount?: number;
-                truncatedCount?: number;
-              }>) ?? [];
+            const screenElementCounts = Array.isArray(raw.screenElementCounts)
+              ? (raw.screenElementCounts as Array<{
+                  screenId?: string;
+                  screenName?: string;
+                  elements?: number;
+                }>)
+              : [];
+            const truncatedScreens = Array.isArray(raw.truncatedScreens)
+              ? (raw.truncatedScreens as Array<{
+                  screenId?: string;
+                  screenName?: string;
+                  originalElements?: number;
+                  retainedElements?: number;
+                  originalCount?: number;
+                  truncatedCount?: number;
+                }>)
+              : [];
             const depthTruncated = raw.depthTruncatedScreens as
               | Array<{
                   screenId?: string;
@@ -2160,9 +2162,14 @@ export const createValidateProjectService = ({
                 }>
               | undefined;
             generationMetrics = {
-              fetchedNodes: (raw.fetchedNodes as number) ?? 0,
-              skippedHidden: (raw.skippedHidden as number) ?? 0,
-              skippedPlaceholders: (raw.skippedPlaceholders as number) ?? 0,
+              fetchedNodes:
+                typeof raw.fetchedNodes === "number" ? raw.fetchedNodes : 0,
+              skippedHidden:
+                typeof raw.skippedHidden === "number" ? raw.skippedHidden : 0,
+              skippedPlaceholders:
+                typeof raw.skippedPlaceholders === "number"
+                  ? raw.skippedPlaceholders
+                  : 0,
               screenElementCounts: screenElementCounts
                 .filter(
                   (entry): entry is {
@@ -2221,8 +2228,9 @@ export const createValidateProjectService = ({
                       })),
                   }
                 : {}),
-              degradedGeometryNodes:
-                (raw.degradedGeometryNodes as string[]) ?? [],
+              degradedGeometryNodes: Array.isArray(raw.degradedGeometryNodes)
+                ? (raw.degradedGeometryNodes as string[])
+                : [],
               ...(classificationFb
                 ? { classificationFallbacks: classificationFb }
                 : {}),
@@ -2350,10 +2358,10 @@ export const createValidateProjectService = ({
                 evidenceCount: evidenceArtifact.stats.evidenceCount,
                 byReliability: {
                   authoritative:
-                    evidenceArtifact.stats.byReliability.authoritative ?? 0,
+                    evidenceArtifact.stats.byReliability.authoritative,
                   reference_only:
-                    evidenceArtifact.stats.byReliability.reference_only ?? 0,
-                  derived: evidenceArtifact.stats.byReliability.derived ?? 0,
+                    evidenceArtifact.stats.byReliability.reference_only,
+                  derived: evidenceArtifact.stats.byReliability.derived,
                 },
               }
             : undefined;
@@ -3870,7 +3878,7 @@ export const createValidateProjectService = ({
 
       const jobConfidence = await computeAndPersistConfidence({
         ctx: context,
-        validationPassed: validationResult !== undefined,
+        validationPassed: true,
         matchReport: componentMatchReportArtifact,
         evidenceArtifact: storybookEvidenceArtifact,
         visualReport: resolvedVisualQualityReport,

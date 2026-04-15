@@ -54,19 +54,21 @@ export const TemplatePrepareService: StageService<void> = {
     let seededFromSourceProject = false;
 
     if (shouldSeedSourceProject) {
+      const sourceJob = context.sourceJob;
+      const sourceProjectDir = sourceJob.artifacts.generatedProjectDir!;
       try {
         await copyDir({
-          sourceDir: context.sourceJob!.artifacts.generatedProjectDir!,
+          sourceDir: sourceProjectDir,
           targetDir: context.paths.generatedProjectDir,
         });
         seededFromSourceProject = true;
         context.log({
           level: "info",
           message:
-            `Seeded generated project from source job '${context.sourceJob!.jobId}' ` +
+            `Seeded generated project from source job '${sourceJob.jobId}' ` +
             `for ${pasteDeltaExecution.summary.strategy} delta execution.`,
         });
-      } catch (error) {
+      } catch {
         context.log({
           level: "warn",
           message:

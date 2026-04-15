@@ -2000,6 +2000,48 @@ test("schema: figma_plugin mode rejects unknown envelope kind with UNSUPPORTED_F
   }
 });
 
+test("schema: figma_plugin mode rejects missing figmaJsonPayload with INVALID_PAYLOAD", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_plugin",
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) =>
+      i.message.startsWith("INVALID_PAYLOAD:"),
+    );
+    assert.ok(issue, "Expected an INVALID_PAYLOAD issue for figma_plugin");
+  }
+});
+
+test("schema: figma_plugin mode rejects malformed JSON payload with SCHEMA_MISMATCH", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_plugin",
+    figmaJsonPayload: "{ not valid json }",
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) =>
+      i.message.startsWith("SCHEMA_MISMATCH:"),
+    );
+    assert.ok(issue, "Expected a SCHEMA_MISMATCH issue for figma_plugin");
+  }
+});
+
+test("schema: figma_plugin mode rejects oversize payload with TOO_LARGE", () => {
+  const oversizePayload = "x".repeat(DEFAULT_FIGMA_PASTE_MAX_BYTES + 1);
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_plugin",
+    figmaJsonPayload: oversizePayload,
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((i) =>
+      i.message.startsWith("TOO_LARGE:"),
+    );
+    assert.ok(issue, "Expected a TOO_LARGE issue for figma_plugin");
+  }
+});
+
 test("schema: figma_paste mode accepts multi-selection ClipboardEnvelope", () => {
   const envelope = {
     kind: "workspace-dev/figma-selection@1",

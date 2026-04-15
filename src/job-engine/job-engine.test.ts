@@ -21,7 +21,13 @@ const waitForTerminalStatus = async ({
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
     const status = getStatus(jobId);
-    if (status && (status.status === "completed" || status.status === "failed" || status.status === "canceled")) {
+    if (
+      status &&
+      (status.status === "completed" ||
+        status.status === "partial" ||
+        status.status === "failed" ||
+        status.status === "canceled")
+    ) {
       return status;
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -352,7 +358,7 @@ test("createJobEngine stores a trimmed storybookStaticDir in request metadata", 
     getStatus: engine.getJob,
     jobId: accepted.jobId
   });
-  assert.equal(status.status, "failed");
+  assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_STORYBOOK_ARTIFACTS_FAILED");
 });
 
@@ -374,7 +380,7 @@ test("createJobEngine surfaces E_STORYBOOK_TOKEN_EXTRACTION_INVALID for fatal St
     jobId: accepted.jobId
   });
 
-  assert.equal(status.status, "failed");
+  assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_STORYBOOK_TOKEN_EXTRACTION_INVALID");
   assert.equal(
     Array.isArray(status.error?.diagnostics) && (status.error?.diagnostics?.length ?? 0) > 0,
@@ -1602,6 +1608,7 @@ test("createJobEngine defensively falls back invalid direct-submit generationLoc
   assert.equal(request?.generationLocale, "de-DE");
 
   const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  assert.equal(status.status, "partial");
   assert.equal(
     status.logs.some((entry) =>
       entry.message.includes("Invalid generationLocale override 'invalid_locale' - falling back to 'de-DE'.")
@@ -2010,7 +2017,7 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
 
   const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
   const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId });
-  assert.equal(status.status, "failed");
+  assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_FIGMA_CLEAN_EMPTY");
   assert.equal(status.error?.stage, "ir.derive");
   assert.equal(status.error?.diagnostics?.[0]?.code, "E_FIGMA_CLEAN_EMPTY");
@@ -2101,7 +2108,7 @@ test("createJobEngine surfaces truncation/classification warnings in failure dia
 
   const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
   const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
-  assert.equal(status.status, "failed");
+  assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
   assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK"), true);
   assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_DEPTH_TRUNCATION"), true);
@@ -2179,7 +2186,7 @@ test("createJobEngine surfaces budget truncation diagnostics with figma links", 
 
   const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
   const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
-  assert.equal(status.status, "failed");
+  assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
   assert.equal(
     status.error?.diagnostics?.some((entry) => entry.code === "W_IR_ELEMENT_BUDGET_TRUNCATION"),
@@ -2258,7 +2265,7 @@ test("createJobEngine respects pipelineDiagnosticMaxCount when surfacing job fai
 
   const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
   const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
-  assert.equal(status.status, "failed");
+  assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
   assert.equal(status.error?.diagnostics?.length, 1);
   assert.equal(status.error?.diagnostics?.[0]?.code, "E_VALIDATE_PROJECT");

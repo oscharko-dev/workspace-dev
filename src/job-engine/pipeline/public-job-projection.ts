@@ -6,6 +6,7 @@ import type {
   WorkspaceJobFallbackMode,
   WorkspaceJobInspector,
   WorkspaceJobOutcome,
+  WorkspaceJobRetryStage,
   WorkspaceJobRetryTarget,
   WorkspaceVisualAuditResult,
   WorkspaceVisualQualityReport,
@@ -27,6 +28,22 @@ interface HybridEnrichmentLike {
   sourceMode?: string;
   diagnostics?: Array<{ code?: string }>;
 }
+
+const RETRYABLE_STAGE_SET = new Set<WorkspaceJobRetryStage>([
+  "figma.source",
+  "ir.derive",
+  "template.prepare",
+  "codegen.generate",
+]);
+
+const isWorkspaceJobRetryStage = (
+  value: unknown,
+): value is WorkspaceJobRetryStage => {
+  return (
+    typeof value === "string" &&
+    RETRYABLE_STAGE_SET.has(value as WorkspaceJobRetryStage)
+  );
+};
 
 const inferOutcome = ({
   job,
@@ -369,6 +386,14 @@ export const syncPublicJobProjection = async ({
   const fallbackMode = inferFallbackMode({ job, hybridEnrichment });
   const retryTargets =
     job.error?.retryTargets ?? codegenSummary?.failedTargets ?? [];
+  const retryableStages = [
+    ...new Set(
+      retryTargets
+        .map((target) => target.stage)
+        .filter(isWorkspaceJobRetryStage),
+    ),
+  ];
+  const jobError = job.error;
   const inspector: WorkspaceJobInspector = {
     ...(inspectorOutcome ? { outcome: inspectorOutcome } : {}),
     ...(fallbackMode ? { fallbackMode } : {}),
@@ -379,31 +404,31 @@ export const syncPublicJobProjection = async ({
           })),
         }
       : {}),
-    ...(retryTargets.length > 0 &&
-    retryTargets.every((target) => target.stage !== undefined)
+    ...(retryableStages.length > 0
       ? {
-          retryableStages: [...new Set(retryTargets.map((target) => target.stage))],
+          retryableStages,
         }
       : {}),
     stages: job.stages.map((stage) => {
-      if (stage.name !== job.error?.stage) {
+      if (!jobError || stage.name !== jobError.stage) {
         return {
           stage: stage.name,
           status: stage.status,
         };
       }
+      const error = jobError;
       return {
         stage: stage.name,
         status: stage.status,
-        ...(job.error?.retryable !== undefined
-          ? { retryable: job.error.retryable }
+        ...(error.retryable !== undefined
+          ? { retryable: error.retryable }
           : {}),
-        ...(job.error?.code ? { code: job.error.code } : {}),
-        ...(job.error?.message ? { message: job.error.message } : {}),
-        ...(job.error?.retryAfterMs !== undefined
-          ? { retryAfterMs: job.error.retryAfterMs }
+        ...(error.code ? { code: error.code } : {}),
+        ...(error.message ? { message: error.message } : {}),
+        ...(error.retryAfterMs !== undefined
+          ? { retryAfterMs: error.retryAfterMs }
           : {}),
-        ...(job.error?.fallbackMode ? { fallbackMode: job.error.fallbackMode } : {}),
+        ...(error.fallbackMode ? { fallbackMode: error.fallbackMode } : {}),
         ...(retryTargets.length > 0
           ? {
               retryTargets: retryTargets.map((target) => ({

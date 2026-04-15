@@ -14,7 +14,7 @@ export interface PasteDeltaSeedCandidate {
   figmaFileKey?: string;
 }
 
-export interface WorkspacePasteDeltaSeed extends PasteDeltaSeedCandidate {}
+export type WorkspacePasteDeltaSeed = PasteDeltaSeedCandidate;
 
 export interface PasteDeltaExecutionState {
   pasteIdentityKey: string;
