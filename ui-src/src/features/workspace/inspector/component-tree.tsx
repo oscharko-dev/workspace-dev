@@ -37,6 +37,9 @@ export interface TreeNode {
   mappingStatus?: "matched" | "suggested" | "unmapped" | "error";
 }
 
+/** Visual diff status for re-imports — drives the colored ring on each tree row. */
+export type TreeNodeDiffStatus = "added" | "removed" | "modified" | "unchanged";
+
 interface ComponentTreeProps {
   screens: TreeNode[];
   selectedId: string | null;
@@ -55,6 +58,8 @@ interface ComponentTreeProps {
   onSelectAll?: () => void;
   /** When provided alongside `selection`, renders a "Deselect All" toolbar button. */
   onDeselectAll?: () => void;
+  /** Optional visual diff status per node id; renders a colored marker on the row. */
+  diffStatusByNodeId?: ReadonlyMap<string, TreeNodeDiffStatus>;
 }
 
 interface VisibleTreeRow {
@@ -81,6 +86,7 @@ interface TreeRowProps {
   onToggleSelection?:
     | ((nodeId: string, nextSelected: boolean) => void)
     | undefined;
+  diffStatus?: TreeNodeDiffStatus | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +179,19 @@ function findParentRow(
 // Tree row
 // ---------------------------------------------------------------------------
 
+const DIFF_DOT_CLASSNAME: Record<TreeNodeDiffStatus, string> = {
+  added: "bg-emerald-400",
+  removed: "bg-rose-500",
+  modified: "bg-amber-300",
+  unchanged: "bg-transparent",
+};
+const DIFF_LABEL: Record<TreeNodeDiffStatus, string> = {
+  added: "Added since last import",
+  removed: "Removed since last import",
+  modified: "Modified since last import",
+  unchanged: "Unchanged since last import",
+};
+
 const TreeRow = memo(function TreeRow({
   row,
   selectedId,
@@ -185,6 +204,7 @@ const TreeRow = memo(function TreeRow({
   selectionEnabled,
   selection,
   onToggleSelection,
+  diffStatus,
 }: TreeRowProps): JSX.Element {
   const isSelected = selectedId === row.node.id;
   const isFocused = focusedId === row.node.id;
@@ -247,6 +267,15 @@ const TreeRow = memo(function TreeRow({
             <span key={index} className="w-4 border-l border-[#000000]/70" />
           ))}
         </span>
+      ) : null}
+
+      {diffStatus !== undefined && diffStatus !== "unchanged" && !isSkeleton ? (
+        <span
+          data-testid={`tree-diff-${diffStatus}-${row.node.id}`}
+          aria-label={DIFF_LABEL[diffStatus]}
+          title={DIFF_LABEL[diffStatus]}
+          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${DIFF_DOT_CLASSNAME[diffStatus]}`}
+        />
       ) : null}
 
       {showCheckbox ? (
@@ -385,6 +414,7 @@ export function ComponentTree({
   onToggleSelection,
   onSelectAll,
   onDeselectAll,
+  diffStatusByNodeId,
 }: ComponentTreeProps): JSX.Element {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(
@@ -757,6 +787,7 @@ export function ComponentTree({
                 selectionEnabled={selectionEnabled}
                 selection={selection}
                 onToggleSelection={onToggleSelection}
+                diffStatus={diffStatusByNodeId?.get(row.node.id)}
               />
             ))}
             <div style={{ height: bottomSpacerHeight }} />

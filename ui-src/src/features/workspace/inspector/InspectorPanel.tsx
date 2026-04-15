@@ -39,11 +39,13 @@ import {
   getSelectionCounts,
   isAllSelected,
   selectAll,
+  selectChangedNodes,
   selectOnlyNode,
   selectSubtree,
   toggleNode,
   type NodeSelectionState,
 } from "./node-selection-state";
+import { diffDesignIrTrees, type IrNodeDiffStatus } from "./inspector-ir-diff";
 import { suggestPairedFile } from "./file-pairing";
 import type { CodeBoundaryEntry as GutterBoundaryEntry } from "./code-boundaries";
 import {
@@ -1220,6 +1222,21 @@ export function InspectorPanel({
     staleTime: Infinity,
   });
 
+  const previousDesignIrJobId = previousImportSession?.jobId ?? null;
+  const previousDesignIrQuery = useQuery({
+    queryKey: ["inspector-previous-design-ir", previousDesignIrJobId],
+    queryFn: async () => {
+      if (previousDesignIrJobId === null) {
+        return null;
+      }
+      return await fetchJson<DesignIrPayload>({
+        url: `/workspace/jobs/${encodeURIComponent(previousDesignIrJobId)}/design-ir`,
+      });
+    },
+    enabled: previousDesignIrJobId !== null && previousDesignIrJobId !== jobId,
+    staleTime: Infinity,
+  });
+
   const generationMetricsQuery = useQuery({
     queryKey: ["inspector-generation-metrics", jobId],
     queryFn: async (): Promise<GenerationMetricsResponse> => {
@@ -1903,6 +1920,42 @@ export function InspectorPanel({
     designIrState.status === "ready"
       ? designIrState.screens
       : (activePipeline.designIR?.screens ?? designIrState.screens);
+
+  const previousIrScreens = useMemo<DesignIrScreen[] | null>(() => {
+    const data = previousDesignIrQuery.data;
+    if (
+      data === undefined ||
+      data === null ||
+      typeof data !== "object" ||
+      !("payload" in data) ||
+      !isDesignIrPayload(data.payload)
+    ) {
+      return null;
+    }
+    return data.payload.screens;
+  }, [previousDesignIrQuery.data]);
+  const irDiffResult = useMemo(() => {
+    if (previousIrScreens === null || irScreens.length === 0) {
+      return null;
+    }
+    return diffDesignIrTrees(
+      { screens: irScreens },
+      { screens: previousIrScreens },
+    );
+  }, [irScreens, previousIrScreens]);
+  const treeDiffStatusByNodeId = useMemo<ReadonlyMap<
+    string,
+    IrNodeDiffStatus
+  > | null>(() => {
+    return irDiffResult?.statusByNodeId ?? null;
+  }, [irDiffResult]);
+  const changedNodeIdsForPreset = useMemo<readonly string[]>(() => {
+    if (!irDiffResult) {
+      return [];
+    }
+    return [...irDiffResult.addedNodeIds, ...irDiffResult.modifiedNodeIds];
+  }, [irDiffResult]);
+
   const selectedIrNode = useMemo<DesignIrElementNode | null>(() => {
     if (!selectedNodeId) {
       return null;
@@ -2412,6 +2465,14 @@ export function InspectorPanel({
     }
     setNodeSelection(selectSubtree(node, effectiveTreeNodes));
   }, [findTreeNodeById, effectiveTreeNodes, selectedNodeId]);
+  const handlePresetChanged = useCallback((): void => {
+    if (changedNodeIdsForPreset.length === 0) {
+      return;
+    }
+    setNodeSelection(
+      selectChangedNodes(changedNodeIdsForPreset, effectiveTreeNodes),
+    );
+  }, [changedNodeIdsForPreset, effectiveTreeNodes]);
 
   const handleGenerateSelectedClick = useCallback((): void => {
     if (!onGenerateSelected) {
@@ -4755,6 +4816,23 @@ export function InspectorPanel({
                 >
                   All screens
                 </button>
+                <button
+                  type="button"
+                  data-testid="inspector-scope-preset-changed"
+                  onClick={handlePresetChanged}
+                  disabled={changedNodeIdsForPreset.length === 0}
+                  title={
+                    changedNodeIdsForPreset.length === 0
+                      ? "Available after a re-import detects changes"
+                      : `Scope to ${String(changedNodeIdsForPreset.length)} components changed since last import`
+                  }
+                  className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-white/55 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
+                >
+                  Changed
+                  {changedNodeIdsForPreset.length > 0
+                    ? ` (${String(changedNodeIdsForPreset.length)})`
+                    : ""}
+                </button>
               </div>
             ) : null}
             {scopeControlsEnabled ? (
@@ -5730,6 +5808,9 @@ export function InspectorPanel({
                       onSelectAll: handleSelectAllNodes,
                       onDeselectAll: handleDeselectAllNodes,
                     }
+                  : {})}
+                {...(treeDiffStatusByNodeId !== null
+                  ? { diffStatusByNodeId: treeDiffStatusByNodeId }
                   : {})}
               />
             ) : (

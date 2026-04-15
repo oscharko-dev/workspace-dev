@@ -1054,3 +1054,45 @@ describe("ComponentTree selection count", () => {
     expect(screen.queryByTestId("tree-selection-count")).toBeNull();
   });
 });
+
+describe("ComponentTree visual diff status", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn(),
+  };
+
+  it("renders no diff dots when diffStatusByNodeId is omitted", () => {
+    render(createElement(ComponentTree, defaultProps));
+    expect(document.querySelector('[data-testid^="tree-diff-"]')).toBeNull();
+  });
+
+  it("renders colored dots for added / removed / modified statuses and skips unchanged", () => {
+    const diffStatusByNodeId = new Map<
+      string,
+      "added" | "removed" | "modified" | "unchanged"
+    >([
+      ["screen-home", "modified"],
+      ["submit-btn", "added"],
+      ["header-bar", "unchanged"],
+    ]);
+
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        diffStatusByNodeId,
+      }),
+    );
+
+    expect(
+      screen.getByTestId("tree-diff-modified-screen-home"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("tree-diff-added-submit-btn"),
+    ).toBeInTheDocument();
+    // Unchanged nodes do not render a dot.
+    expect(screen.queryByTestId("tree-diff-unchanged-header-bar")).toBeNull();
+  });
+});
