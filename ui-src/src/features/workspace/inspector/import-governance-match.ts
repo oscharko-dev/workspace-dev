@@ -45,10 +45,8 @@ function collectNodeNames(screens: readonly DesignIrScreen[]): string[] {
     if (typeof next.name === "string" && next.name.trim().length > 0) {
       names.push(next.name);
     }
-    if (Array.isArray(next.children)) {
-      for (const child of next.children) {
-        stack.push(child);
-      }
+    for (const child of next.children ?? []) {
+      stack.push(child);
     }
   }
   return names;

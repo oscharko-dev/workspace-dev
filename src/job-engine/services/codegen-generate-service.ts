@@ -1232,7 +1232,7 @@ export const createCodegenGenerateService = ({
         value: generationSummary
       });
 
-      if (generationSummary.generatedPaths?.includes("generation-metrics.json")) {
+      if (generationSummary.generatedPaths.includes("generation-metrics.json")) {
         await context.artifactStore.setPath({
           key: STAGE_ARTIFACT_KEYS.generationMetrics,
           stage: "codegen.generate",

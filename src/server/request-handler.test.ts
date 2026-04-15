@@ -3766,10 +3766,7 @@ test("request handler rejects invalid ClipboardEnvelope via figma_paste with SCH
 
     assert.equal(response.statusCode, 400);
     const body = response.json<Record<string, unknown>>();
-    assert.ok(
-      body.error === "VALIDATION_ERROR" || body.error === "SCHEMA_MISMATCH",
-      `Expected VALIDATION_ERROR or SCHEMA_MISMATCH but got ${body.error}`,
-    );
+    assert.equal(body.error, "SCHEMA_MISMATCH");
 
     assert.equal(submitJob.mock.callCount(), 0);
   } finally {
@@ -4087,10 +4084,7 @@ test("request handler rejects invalid figma_plugin payload with SCHEMA_MISMATCH"
 
     assert.equal(response.statusCode, 400);
     const body = response.json<Record<string, unknown>>();
-    assert.ok(
-      body.error === "VALIDATION_ERROR" || body.error === "SCHEMA_MISMATCH",
-      `Expected VALIDATION_ERROR or SCHEMA_MISMATCH but got ${body.error}`,
-    );
+    assert.equal(body.error, "SCHEMA_MISMATCH");
     assert.equal(submitJob.mock.callCount(), 0);
   } finally {
     await close();

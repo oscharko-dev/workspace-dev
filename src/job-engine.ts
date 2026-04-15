@@ -16,6 +16,7 @@ import {
   type WorkspaceLocalSyncDryRunResult,
   type WorkspaceJobDiagnostic,
   type WorkspaceJobInput,
+  type WorkspaceJobRetryTarget,
   type WorkspaceJobRetryStage,
   type WorkspaceJobResult,
   type WorkspaceJobStageName,
@@ -111,6 +112,32 @@ import {
   isPasteDeltaExecutionState,
   type PasteDeltaExecutionState,
 } from "./job-engine/paste-delta-execution.js";
+
+const isWorkspaceJobRetryTarget = (
+  value: unknown,
+): value is WorkspaceJobRetryTarget => {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const candidate = value as {
+    kind?: unknown;
+    stage?: unknown;
+    targetId?: unknown;
+    displayName?: unknown;
+    filePath?: unknown;
+    emittedScreenId?: unknown;
+  };
+  return (
+    (candidate.kind === "stage" || candidate.kind === "generated_file") &&
+    isWorkspaceJobRetryStage(candidate.stage) &&
+    typeof candidate.targetId === "string" &&
+    (candidate.displayName === undefined ||
+      typeof candidate.displayName === "string") &&
+    (candidate.filePath === undefined || typeof candidate.filePath === "string") &&
+    (candidate.emittedScreenId === undefined ||
+      typeof candidate.emittedScreenId === "string")
+  );
+};
 import {
   resolveStorybookStaticDir,
   reuseStorybookArtifactsFromSourceJob,
@@ -565,7 +592,8 @@ const toPipelineError = ({
       candidate.fallbackMode === "hybrid_rest"
         ? { fallbackMode: candidate.fallbackMode }
         : {}),
-      ...(Array.isArray(candidate.retryTargets)
+      ...(Array.isArray(candidate.retryTargets) &&
+      candidate.retryTargets.every(isWorkspaceJobRetryTarget)
         ? { retryTargets: candidate.retryTargets }
         : {}),
       ...(diagnostics ? { diagnostics } : {}),
@@ -795,6 +823,33 @@ export const createJobEngine = ({
     writeTerminalJobSnapshotSync({ job, diagnostics });
   };
 
+  const buildCompletedTerminalJob = ({
+    job,
+    finishedAt,
+  }: {
+    job: JobRecord;
+    finishedAt: string;
+  }): JobRecord => {
+    const terminalJob = structuredClone(job);
+    delete terminalJob.abortController;
+    terminalJob.status = "completed";
+    terminalJob.outcome = "success";
+    terminalJob.finishedAt = finishedAt;
+    delete terminalJob.currentStage;
+    return terminalJob;
+  };
+
+  const publishTerminalJob = ({
+    job,
+    terminalJob,
+  }: {
+    job: JobRecord;
+    terminalJob: JobRecord;
+  }): void => {
+    Object.assign(job, terminalJob);
+    delete job.currentStage;
+  };
+
   const sumComponentManifestMappings = (manifest: unknown): number => {
     if (
       typeof manifest !== "object" ||
@@ -805,15 +860,39 @@ export const createJobEngine = ({
       return 0;
     }
     let total = 0;
-    for (const screen of (
-      manifest as { screens: Array<{ components?: unknown }> }
-    ).screens) {
-      if (!screen || !Array.isArray(screen.components)) {
+    for (const screen of (manifest as { screens: unknown[] }).screens) {
+      if (
+        typeof screen !== "object" ||
+        screen === null ||
+        !("components" in screen) ||
+        !Array.isArray((screen as { components?: unknown }).components)
+      ) {
         continue;
       }
-      total += screen.components.length;
+      total += (screen as { components: unknown[] }).components.length;
     }
     return total;
+  };
+
+  const extractFirstScreenName = (designIr: unknown): string => {
+    if (
+      typeof designIr !== "object" ||
+      designIr === null ||
+      !("screens" in designIr) ||
+      !Array.isArray((designIr as { screens?: unknown }).screens)
+    ) {
+      return "";
+    }
+    const firstScreen = (designIr as { screens: unknown[] }).screens[0];
+    if (
+      typeof firstScreen !== "object" ||
+      firstScreen === null ||
+      !("name" in firstScreen)
+    ) {
+      return "";
+    }
+    const name = (firstScreen as { name?: unknown }).name;
+    return typeof name === "string" ? name.trim() : "";
   };
 
   const countDesignIrNodes = (ir: DesignIR): number => {
@@ -867,9 +946,9 @@ export const createJobEngine = ({
   };
 
   const resolveRootSourceJobId = (job: JobRecord): string | null => {
-    let current: JobRecord | undefined = job;
+    let current: JobRecord = job;
     const seen = new Set<string>();
-    while (current?.lineage) {
+    while (current.lineage) {
       if (seen.has(current.jobId)) {
         break;
       }
@@ -880,7 +959,7 @@ export const createJobEngine = ({
       }
       current = next;
     }
-    return current?.jobId ?? null;
+    return current.jobId;
   };
 
   const findImportSessionByJobId = async (
@@ -1094,6 +1173,7 @@ export const createJobEngine = ({
       ...(nodeId.length > 0 ? { nodeId } : {}),
     });
     const selectedNodes = [...(job.request.selectedNodeIds ?? [])];
+    const firstScreenName = extractFirstScreenName(designIr);
 
     const session: WorkspaceImportSession = {
       id: matchedSession?.id ?? randomUUID(),
@@ -1101,10 +1181,7 @@ export const createJobEngine = ({
       sourceMode: requestSourceMode,
       fileKey,
       nodeId,
-      nodeName:
-        designIr?.screens[0]?.name?.trim() ||
-        job.request.projectName?.trim() ||
-        fileKey,
+      nodeName: firstScreenName || job.request.projectName?.trim() || fileKey,
       importedAt: job.finishedAt ?? nowIso(),
       nodeCount: designIr ? countDesignIrNodes(designIr) : 0,
       fileCount: codegenSummary?.generatedPaths?.length ?? 0,
@@ -1991,18 +2068,18 @@ export const createJobEngine = ({
         plan: buildSubmissionPipelinePlan(),
       });
 
-      job.status = "completed";
-      job.outcome = "success";
-      job.finishedAt = nowIso();
-      delete job.currentStage;
-      await syncPublicJobProjection({ job, artifactStore });
+      const terminalJob = buildCompletedTerminalJob({
+        job,
+        finishedAt: nowIso(),
+      });
+      await syncPublicJobProjection({ job: terminalJob, artifactStore });
       if (
         deltaSourceJob &&
-        job.pasteDeltaSummary &&
-        (job.pasteDeltaSummary.mode === "delta" ||
-          job.pasteDeltaSummary.mode === "auto_resolved_to_delta")
+        terminalJob.pasteDeltaSummary &&
+        (terminalJob.pasteDeltaSummary.mode === "delta" ||
+          terminalJob.pasteDeltaSummary.mode === "auto_resolved_to_delta")
       ) {
-        job.lineage = {
+        terminalJob.lineage = {
           sourceJobId: deltaSourceJob.jobId,
           kind: "delta",
           overrideCount: 0,
@@ -2013,14 +2090,14 @@ export const createJobEngine = ({
         ...(pasteDeltaCompatibilityFingerprint
           ? { compatibilityFingerprint: pasteDeltaCompatibilityFingerprint }
           : {}),
-        job,
+        job: terminalJob,
       });
-      await persistImportSessionForJob({ job, artifactStore });
+      await persistImportSessionForJob({ job: terminalJob, artifactStore });
       const generationSummary = await artifactStore.getValue<{
         generatedPaths?: string[];
       }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushRuntimeLog({
-        job,
+        job: terminalJob,
         logger: runtime.logger,
         level: "info",
         message:
@@ -2028,9 +2105,10 @@ export const createJobEngine = ({
           `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`,
       });
       await persistTerminalSnapshot({
-        job,
+        job: terminalJob,
         ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
       });
+      publishTerminalJob({ job, terminalJob });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
         job.status = "canceled";
@@ -2569,16 +2647,16 @@ export const createJobEngine = ({
         plan: buildRegenerationPipelinePlan(),
       });
 
-      job.status = "completed";
-      job.outcome = "success";
-      job.finishedAt = nowIso();
-      delete job.currentStage;
-      await syncPublicJobProjection({ job, artifactStore });
+      const terminalJob = buildCompletedTerminalJob({
+        job,
+        finishedAt: nowIso(),
+      });
+      await syncPublicJobProjection({ job: terminalJob, artifactStore });
       const generationSummary = await artifactStore.getValue<{
         generatedPaths?: string[];
       }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushRuntimeLog({
-        job,
+        job: terminalJob,
         logger: runtime.logger,
         level: "info",
         message:
@@ -2586,9 +2664,10 @@ export const createJobEngine = ({
           `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`,
       });
       await persistTerminalSnapshot({
-        job,
+        job: terminalJob,
         ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
       });
+      publishTerminalJob({ job, terminalJob });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
         job.status = "canceled";
@@ -2911,16 +2990,16 @@ export const createJobEngine = ({
         plan: buildRetryPipelinePlan({ retryStage: retryInput.retryStage }),
       });
 
-      job.status = "completed";
-      job.outcome = "success";
-      job.finishedAt = nowIso();
-      delete job.currentStage;
-      await syncPublicJobProjection({ job, artifactStore });
+      const terminalJob = buildCompletedTerminalJob({
+        job,
+        finishedAt: nowIso(),
+      });
+      await syncPublicJobProjection({ job: terminalJob, artifactStore });
       const generationSummary = await artifactStore.getValue<{
         generatedPaths?: string[];
       }>(STAGE_ARTIFACT_KEYS.codegenSummary);
       pushRuntimeLog({
-        job,
+        job: terminalJob,
         logger: runtime.logger,
         level: "info",
         message:
@@ -2928,9 +3007,10 @@ export const createJobEngine = ({
           `(${generationSummary?.generatedPaths?.length ?? 0} artifacts).`,
       });
       await persistTerminalSnapshot({
-        job,
+        job: terminalJob,
         ...(collectedDiagnostics ? { diagnostics: collectedDiagnostics } : {}),
       });
+      publishTerminalJob({ job, terminalJob });
     } catch (error) {
       if (isPipelineCancellationError(error)) {
         job.status = "canceled";

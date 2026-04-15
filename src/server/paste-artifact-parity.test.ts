@@ -65,12 +65,17 @@ const waitForJobTerminalState = async ({
     });
     assert.equal(response.statusCode, 200);
     const body = response.json<Record<string, unknown>>();
-    if (
-      body.status === "completed" ||
-      body.status === "failed" ||
-      body.status === "canceled"
-    ) {
+    if (body.status === "completed") {
       return body;
+    }
+    if (
+      body.status === "failed" ||
+      body.status === "canceled" ||
+      body.status === "partial"
+    ) {
+      throw new Error(
+        `Job ${jobId} reached unexpected terminal status ${body.status}: ${JSON.stringify(body)}`,
+      );
     }
     await new Promise((resolve) => {
       setTimeout(resolve, 120);
@@ -219,6 +224,28 @@ const fetchFilesListing = async ({
   return body.files;
 };
 
+const fetchGeneratedFileContent = async ({
+  server,
+  jobId,
+  filePath,
+}: {
+  server: WorkspaceServerInstance;
+  jobId: string;
+  filePath: string;
+}): Promise<string> => {
+  const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
+  const response = await server.app.inject({
+    method: "GET",
+    url: `/workspace/jobs/${jobId}/files/${encodedPath}`,
+  });
+  assert.equal(
+    response.statusCode,
+    200,
+    `file ${filePath} expected 200, got ${response.statusCode}: ${response.body}`,
+  );
+  return response.body;
+};
+
 const runParityJobs = async (): Promise<{
   outputRoot: string;
   server: WorkspaceServerInstance;
@@ -261,6 +288,33 @@ const runParityJobs = async (): Promise<{
 
   return { outputRoot, server, localJobId, pasteJobId };
 };
+
+test("waitForJobTerminalState fails fast on partial terminal jobs", async () => {
+  const server: WorkspaceServerInstance = {
+    app: {
+      inject: async () => ({
+        statusCode: 200,
+        json: () =>
+          ({
+            jobId: "job-partial",
+            status: "partial",
+            outcome: "partial",
+          }) as Record<string, unknown>,
+        body: '{"jobId":"job-partial","status":"partial","outcome":"partial"}',
+      }),
+      close: async () => {},
+    },
+  };
+
+  await assert.rejects(
+    waitForJobTerminalState({
+      server,
+      jobId: "job-partial",
+      timeoutMs: 1_000,
+    }),
+    /unexpected terminal status partial/,
+  );
+});
 
 test(
   "figma_paste produces a design-ir equivalent to local_json for prototype-navigation",
@@ -333,7 +387,7 @@ test(
 );
 
 test(
-  "figma_paste produces an identical generated file set as local_json for prototype-navigation",
+  "figma_paste produces identical generated files as local_json for prototype-navigation",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
     const { outputRoot, server, localJobId, pasteJobId } =
@@ -354,6 +408,26 @@ test(
         pastePaths,
         "generated file path sets diverged between local_json and figma_paste modes",
       );
+
+      for (const { path: filePath } of localFiles) {
+        const [localContent, pasteContent] = await Promise.all([
+          fetchGeneratedFileContent({
+            server,
+            jobId: localJobId,
+            filePath,
+          }),
+          fetchGeneratedFileContent({
+            server,
+            jobId: pasteJobId,
+            filePath,
+          }),
+        ]);
+        assert.equal(
+          localContent,
+          pasteContent,
+          `generated file contents diverged for ${filePath}`,
+        );
+      }
     } finally {
       await server.app.close();
       await rm(outputRoot, { recursive: true, force: true });
