@@ -28,6 +28,22 @@ import {
 import { PipelineStatusBar } from "./PipelineStatusBar";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
+import { ImportHistoryPanel } from "./ImportHistoryPanel";
+import { ReImportPromptBanner } from "./ReImportPromptBanner";
+import type { PasteImportSession } from "./paste-import-history";
+import type { PipelineImportMode } from "./paste-pipeline";
+import {
+  EMPTY_SELECTION,
+  deselectAll,
+  getSelectedNodeIds,
+  getSelectionCounts,
+  isAllSelected,
+  selectAll,
+  selectOnlyNode,
+  selectSubtree,
+  toggleNode,
+  type NodeSelectionState,
+} from "./node-selection-state";
 import { suggestPairedFile } from "./file-pairing";
 import type { CodeBoundaryEntry as GutterBoundaryEntry } from "./code-boundaries";
 import {
@@ -406,6 +422,21 @@ interface InspectorPanelProps {
   onPipelineRetry?: (stage?: PipelineStage, targetIds?: string[]) => void;
   /** In-memory execution log for exporting stage events as JSON. */
   executionLog?: PipelineExecutionLog;
+  /** Bounded list of prior paste-import sessions, newest last. */
+  importHistory?: readonly PasteImportSession[];
+  /** Previous matching session when the active import is a re-import; null otherwise. */
+  previousImportSession?: PasteImportSession | null;
+  /** Re-run the pipeline restricted to a node-id whitelist. */
+  onGenerateSelected?: (
+    selectedNodeIds: readonly string[],
+    options?: { importMode?: PipelineImportMode },
+  ) => void;
+  /** Re-submit the most recent payload forcing a fresh (`importMode: "full"`) run. */
+  onResubmitFresh?: () => void;
+  /** Remove an entry from the persisted import history. */
+  onRemoveImportSession?: (sessionId: string) => void;
+  /** Re-import a prior session (typically by re-submitting its source URL). */
+  onReimportSession?: (session: PasteImportSession) => void;
 }
 
 type PaneSeparator = "tree-preview" | "preview-code";
@@ -475,9 +506,15 @@ function isGenerationMetricsPayload(
   return isRecord(value);
 }
 
-function isWorkspacePolicyPayload(value: unknown): value is WorkspacePolicyPayload {
+function isWorkspacePolicyPayload(
+  value: unknown,
+): value is WorkspacePolicyPayload {
   if (!isRecord(value)) return false;
-  return value.policy === null || value.policy === undefined || isRecord(value.policy);
+  return (
+    value.policy === null ||
+    value.policy === undefined ||
+    isRecord(value.policy)
+  );
 }
 
 function isLocalSyncFilePlanEntry(
@@ -943,6 +980,12 @@ export function InspectorPanel({
   pipeline,
   onPipelineRetry,
   executionLog,
+  importHistory,
+  previousImportSession = null,
+  onGenerateSelected,
+  onResubmitFresh,
+  onRemoveImportSession,
+  onReimportSession,
 }: InspectorPanelProps): JSX.Element {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [autoSelectedFile, setAutoSelectedFile] = useState<string | null>(null);
@@ -966,6 +1009,10 @@ export function InspectorPanel({
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const [inspectEnabled, setInspectEnabled] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [nodeSelection, setNodeSelection] =
+    useState<NodeSelectionState>(EMPTY_SELECTION);
+  const [importHistoryOpen, setImportHistoryOpen] = useState(false);
+  const [reimportBannerDismissed, setReimportBannerDismissed] = useState(false);
   const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(
     loadBoundariesEnabledPreference,
   );
@@ -1866,10 +1913,7 @@ export function InspectorPanel({
   // Issue #993 — quality score + token intelligence + a11y nudges.
   const workspacePolicy = useMemo(() => {
     const payload = workspacePolicyQuery.data?.payload;
-    if (
-      workspacePolicyQuery.data?.ok &&
-      isWorkspacePolicyPayload(payload)
-    ) {
+    if (workspacePolicyQuery.data?.ok && isWorkspacePolicyPayload(payload)) {
       return resolveWorkspacePolicy(payload.policy ?? null);
     }
     return resolveWorkspacePolicy();
@@ -2260,6 +2304,185 @@ export function InspectorPanel({
         (activePipeline.generatedFiles?.length ?? 0) > 0)) ||
     activePipeline.stage === "ready" ||
     activePipeline.stage === "partial";
+  const scopeControlsEnabled =
+    onGenerateSelected !== undefined &&
+    effectiveTreeNodes.length > 0 &&
+    (activePipeline.stage === "transforming" ||
+      activePipeline.stage === "mapping" ||
+      activePipeline.stage === "generating" ||
+      activePipeline.stage === "ready" ||
+      activePipeline.stage === "partial" ||
+      designIrState.status === "ready");
+  const selectionCounts = useMemo(
+    () =>
+      scopeControlsEnabled
+        ? getSelectionCounts(nodeSelection, effectiveTreeNodes)
+        : { selected: 0, total: 0 },
+    [scopeControlsEnabled, nodeSelection, effectiveTreeNodes],
+  );
+  const selectionAllSelected = isAllSelected(nodeSelection);
+  const selectedNodeIdsForGenerate = useMemo(
+    () =>
+      scopeControlsEnabled && !selectionAllSelected
+        ? getSelectedNodeIds(nodeSelection, effectiveTreeNodes)
+        : [],
+    [
+      scopeControlsEnabled,
+      selectionAllSelected,
+      nodeSelection,
+      effectiveTreeNodes,
+    ],
+  );
+
+  const handleToggleNodeSelection = useCallback(
+    (nodeId: string, nextSelected: boolean): void => {
+      setNodeSelection((current) => {
+        const findNode = (
+          nodes: readonly TreeNode[],
+          id: string,
+        ): TreeNode | null => {
+          for (const node of nodes) {
+            if (node.id === id) {
+              return node;
+            }
+            if (node.children) {
+              const found = findNode(node.children, id);
+              if (found) {
+                return found;
+              }
+            }
+          }
+          return null;
+        };
+        const node = findNode(effectiveTreeNodes, nodeId);
+        if (node === null) {
+          return current;
+        }
+        return toggleNode(current, node, nextSelected);
+      });
+    },
+    [effectiveTreeNodes],
+  );
+  const handleSelectAllNodes = useCallback((): void => {
+    setNodeSelection(selectAll());
+  }, []);
+  const handleDeselectAllNodes = useCallback((): void => {
+    setNodeSelection(deselectAll(effectiveTreeNodes));
+  }, [effectiveTreeNodes]);
+
+  const findTreeNodeById = useCallback(
+    (id: string): TreeNode | null => {
+      const walk = (nodes: readonly TreeNode[]): TreeNode | null => {
+        for (const node of nodes) {
+          if (node.id === id) {
+            return node;
+          }
+          if (node.children) {
+            const found = walk(node.children);
+            if (found) {
+              return found;
+            }
+          }
+        }
+        return null;
+      };
+      return walk(effectiveTreeNodes);
+    },
+    [effectiveTreeNodes],
+  );
+
+  const handlePresetSingle = useCallback((): void => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const node = findTreeNodeById(selectedNodeId);
+    if (node === null) {
+      return;
+    }
+    setNodeSelection(selectOnlyNode(node, effectiveTreeNodes));
+  }, [findTreeNodeById, effectiveTreeNodes, selectedNodeId]);
+
+  const handlePresetSubtree = useCallback((): void => {
+    if (!selectedNodeId) {
+      return;
+    }
+    const node = findTreeNodeById(selectedNodeId);
+    if (node === null) {
+      return;
+    }
+    setNodeSelection(selectSubtree(node, effectiveTreeNodes));
+  }, [findTreeNodeById, effectiveTreeNodes, selectedNodeId]);
+
+  const handleGenerateSelectedClick = useCallback((): void => {
+    if (!onGenerateSelected) {
+      return;
+    }
+    if (selectionAllSelected) {
+      onGenerateSelected([]);
+      return;
+    }
+    if (selectedNodeIdsForGenerate.length === 0) {
+      return;
+    }
+    onGenerateSelected(selectedNodeIdsForGenerate);
+  }, [onGenerateSelected, selectedNodeIdsForGenerate, selectionAllSelected]);
+
+  const handleReimportUpdate = useCallback((): void => {
+    setReimportBannerDismissed(true);
+    if (onGenerateSelected) {
+      onGenerateSelected(selectedNodeIdsForGenerate, { importMode: "delta" });
+    }
+  }, [onGenerateSelected, selectedNodeIdsForGenerate]);
+  const handleReimportCreateNew = useCallback((): void => {
+    setReimportBannerDismissed(true);
+    if (onResubmitFresh) {
+      onResubmitFresh();
+    }
+  }, [onResubmitFresh]);
+  const handleReimportDismiss = useCallback((): void => {
+    setReimportBannerDismissed(true);
+  }, []);
+
+  const sortedImportHistorySessions = useMemo(() => {
+    if (!importHistory) {
+      return [] as readonly PasteImportSession[];
+    }
+    return [...importHistory].sort((a, b) =>
+      b.importedAt.localeCompare(a.importedAt),
+    );
+  }, [importHistory]);
+
+  const handleImportHistoryToggle = useCallback((): void => {
+    setImportHistoryOpen((prev) => !prev);
+  }, []);
+  const handleImportHistoryClose = useCallback((): void => {
+    setImportHistoryOpen(false);
+  }, []);
+  const handleImportHistoryReImport = useCallback(
+    (session: PasteImportSession): void => {
+      setImportHistoryOpen(false);
+      if (onReimportSession) {
+        onReimportSession(session);
+      }
+    },
+    [onReimportSession],
+  );
+  const handleImportHistoryDelete = useCallback(
+    (session: PasteImportSession): void => {
+      if (onRemoveImportSession) {
+        onRemoveImportSession(session.id);
+      }
+    },
+    [onRemoveImportSession],
+  );
+
+  const reimportBannerSession =
+    !reimportBannerDismissed && previousImportSession
+      ? previousImportSession
+      : null;
+  useEffect(() => {
+    setReimportBannerDismissed(false);
+  }, [previousImportSession?.id]);
 
   const layoutStorageKey = useMemo(() => {
     return toInspectorLayoutStorageKey(jobId);
@@ -4487,7 +4710,125 @@ export function InspectorPanel({
               : "Not editable"}
           </span>
         ) : null}
+        {scopeControlsEnabled || importHistory !== undefined ? (
+          <div className="ml-auto flex items-center gap-2">
+            {scopeControlsEnabled ? (
+              <div
+                role="group"
+                aria-label="Scope presets"
+                className="flex items-center gap-1"
+              >
+                <button
+                  type="button"
+                  data-testid="inspector-scope-preset-single"
+                  onClick={handlePresetSingle}
+                  disabled={selectedNodeId === null}
+                  title={
+                    selectedNodeId === null
+                      ? "Select a node first"
+                      : "Scope to just the selected component"
+                  }
+                  className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-white/55 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
+                >
+                  Just this
+                </button>
+                <button
+                  type="button"
+                  data-testid="inspector-scope-preset-subtree"
+                  onClick={handlePresetSubtree}
+                  disabled={selectedNodeId === null}
+                  title={
+                    selectedNodeId === null
+                      ? "Select a node first"
+                      : "Scope to the selected component and its children"
+                  }
+                  className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-white/55 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
+                >
+                  + Children
+                </button>
+                <button
+                  type="button"
+                  data-testid="inspector-scope-preset-all"
+                  onClick={handleSelectAllNodes}
+                  title="Scope to all top-level screens"
+                  className="cursor-pointer rounded border border-[#333333] bg-transparent px-1.5 py-0.5 text-[10px] font-medium text-white/55 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87]"
+                >
+                  All screens
+                </button>
+              </div>
+            ) : null}
+            {scopeControlsEnabled ? (
+              <button
+                type="button"
+                data-testid="inspector-generate-selected"
+                onClick={handleGenerateSelectedClick}
+                disabled={
+                  !selectionAllSelected &&
+                  selectedNodeIdsForGenerate.length === 0
+                }
+                title={
+                  selectionAllSelected
+                    ? "Re-run pipeline for all components"
+                    : `Re-run pipeline for ${String(selectionCounts.selected)} of ${String(selectionCounts.total)} components`
+                }
+                className="cursor-pointer rounded border border-[#4eba87]/40 bg-[#4eba87]/10 px-2 py-0.5 text-[11px] font-semibold text-[#4eba87] transition hover:bg-[#4eba87]/15 disabled:cursor-default disabled:border-white/10 disabled:bg-transparent disabled:text-white/30"
+              >
+                Generate Selected
+                {!selectionAllSelected
+                  ? ` (${String(selectionCounts.selected)})`
+                  : ""}
+              </button>
+            ) : null}
+            {importHistory !== undefined ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  data-testid="inspector-import-history-toggle"
+                  aria-haspopup="dialog"
+                  aria-expanded={importHistoryOpen}
+                  onClick={handleImportHistoryToggle}
+                  className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[11px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87]"
+                  title="Import history"
+                >
+                  History
+                  {sortedImportHistorySessions.length > 0
+                    ? ` (${String(sortedImportHistorySessions.length)})`
+                    : ""}
+                </button>
+                {importHistoryOpen ? (
+                  <div className="absolute right-0 top-7 z-30 w-80">
+                    <ImportHistoryPanel
+                      sessions={sortedImportHistorySessions}
+                      onReImport={handleImportHistoryReImport}
+                      onDelete={handleImportHistoryDelete}
+                      onClose={handleImportHistoryClose}
+                    />
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
+
+      {reimportBannerSession ? (
+        <ReImportPromptBanner
+          previousSession={reimportBannerSession}
+          onUpdate={handleReimportUpdate}
+          onCreateNew={handleReimportCreateNew}
+          onDismiss={handleReimportDismiss}
+          deltaSummary={
+            activePipeline.pasteDeltaSummary
+              ? {
+                  totalNodes: activePipeline.pasteDeltaSummary.totalNodes,
+                  nodesReused: activePipeline.pasteDeltaSummary.nodesReused,
+                  nodesReprocessed:
+                    activePipeline.pasteDeltaSummary.nodesReprocessed,
+                }
+              : null
+          }
+        />
+      ) : null}
 
       {/* Edit Studio — slides down below toolbar when active */}
       {editModeActive && selectedNodeId ? (
@@ -5382,6 +5723,14 @@ export function InspectorPanel({
                 }}
                 diagnosticsMap={nodeDiagnosticsMap}
                 selectionEnabled={treeSelectionEnabled}
+                {...(scopeControlsEnabled
+                  ? {
+                      selection: nodeSelection,
+                      onToggleSelection: handleToggleNodeSelection,
+                      onSelectAll: handleSelectAllNodes,
+                      onDeselectAll: handleDeselectAllNodes,
+                    }
+                  : {})}
               />
             ) : (
               <div className="flex h-full min-h-0 flex-col bg-[#191919] p-3">

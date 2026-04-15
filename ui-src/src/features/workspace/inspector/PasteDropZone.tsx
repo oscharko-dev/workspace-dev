@@ -1,6 +1,7 @@
 import {
   useCallback,
   useId,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent as ReactChangeEvent,
@@ -12,6 +13,7 @@ import {
 } from "react";
 import { FIGMA_PASTE_MAX_BYTES } from "../submit-schema";
 import { isFigmaClipboard } from "./figma-clipboard-parser";
+import { validateFigmaUrl, type FigmaUrlValidationResult } from "./figma-url";
 
 export interface PasteDropZoneProps {
   disabled: boolean;
@@ -20,60 +22,58 @@ export interface PasteDropZoneProps {
   /** Called when a JSON file is dropped or uploaded */
   onDropFile?: (text: string, source: "drop" | "upload") => void;
   onError?: (code: "TOO_LARGE" | "UNSUPPORTED_FILE") => void;
-  /** Called when a valid Figma URL is submitted */
+  /**
+   * Called when a valid Figma URL is submitted. `fileKey` is the branch-aware
+   * effective key from the shared parser (branchKey when present, else the
+   * root file key); see {@link ./figma-url}.
+   */
   onFigmaUrl: (fileKey: string, nodeId: string | null) => void;
   errorMessage?: string;
 }
 
-export interface FigmaUrlParseResult {
-  fileKey: string;
-  nodeId: string | null;
-}
-
-/**
- * Parse a Figma design URL into a `{ fileKey, nodeId }` pair.
- *
- * Accepts both `figma.com/design/:fileKey/:fileName` and the legacy
- * `figma.com/file/:fileKey/:fileName` shape. `node-id` may be encoded as
- * `1-2`, `1:2`, or `1%3A2`; it is normalized to the `1-2` form for internal use.
- * Returns `null` for any malformed or non-Figma URL.
- */
-function parseFigmaUrl(url: string): FigmaUrlParseResult | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url.trim());
-  } catch {
-    return null;
-  }
-
-  const host = parsed.hostname.replace(/^www\./, "");
-  if (host !== "figma.com") {
-    return null;
-  }
-
-  const segments = parsed.pathname.split("/").filter(Boolean);
-  if (segments.length < 2) {
-    return null;
-  }
-
-  const kind = segments[0];
-  if (kind !== "design" && kind !== "file") {
-    return null;
-  }
-
-  const fileKey = segments[1];
-  if (fileKey === undefined || fileKey.length === 0) {
-    return null;
-  }
-
-  const rawNodeId = parsed.searchParams.get("node-id");
-  const nodeId = rawNodeId === null ? null : rawNodeId.replace(":", "-");
-
-  return { fileKey, nodeId };
-}
-
 function isJsonFile(file: File): boolean {
   return file.name.endsWith(".json") || file.type === "application/json";
+}
+
+function ValidIcon(): JSX.Element {
+  return (
+    <svg
+      data-testid="paste-drop-zone-url-valid-icon"
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="#4eba87"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+    >
+      <polyline points="3 8.5 6.5 12 13 4.5" />
+    </svg>
+  );
+}
+
+function InvalidIcon(): JSX.Element {
+  return (
+    <svg
+      data-testid="paste-drop-zone-url-invalid-icon"
+      aria-hidden="true"
+      viewBox="0 0 16 16"
+      width="14"
+      height="14"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0 text-rose-400"
+    >
+      <line x1="4" y1="4" x2="12" y2="12" />
+      <line x1="12" y1="4" x2="4" y2="12" />
+    </svg>
+  );
 }
 
 export function PasteDropZone({
@@ -92,12 +92,26 @@ export function PasteDropZone({
   const errorId = `${reactId}-error`;
   const urlInputId = `${reactId}-url`;
   const urlErrorId = `${reactId}-url-error`;
+  const urlHintId = `${reactId}-url-hint`;
 
   const [urlValue, setUrlValue] = useState("");
-  const [urlError, setUrlError] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isReadingFile, setIsReadingFile] = useState(false);
   const interactionDisabled = disabled || isReadingFile;
+
+  const trimmedUrl = urlValue.trim();
+  const urlValidation = useMemo<FigmaUrlValidationResult | null>(
+    () => (trimmedUrl.length === 0 ? null : validateFigmaUrl(trimmedUrl)),
+    [trimmedUrl],
+  );
+  const showInvalid = urlValidation !== null && !urlValidation.ok;
+  const showValid = urlValidation !== null && urlValidation.ok;
+  const showFileLevelHint =
+    urlValidation !== null &&
+    urlValidation.ok &&
+    urlValidation.value.kind === "design" &&
+    urlValidation.value.nodeId === null;
+  const submitDisabled = interactionDisabled || showInvalid;
 
   const describedByIds = [promptId];
   if (errorMessage !== undefined) {
@@ -247,11 +261,8 @@ export function PasteDropZone({
   const handleUrlChange = useCallback(
     (event: ReactChangeEvent<HTMLInputElement>): void => {
       setUrlValue(event.currentTarget.value);
-      if (urlError !== null) {
-        setUrlError(null);
-      }
     },
-    [urlError],
+    [],
   );
 
   const handleUrlSubmit = useCallback(
@@ -260,20 +271,12 @@ export function PasteDropZone({
       if (interactionDisabled) {
         return;
       }
-      const trimmed = urlValue.trim();
-      if (trimmed.length === 0) {
-        setUrlError("Enter a Figma design URL");
+      if (urlValidation === null || !urlValidation.ok) {
         return;
       }
-      const result = parseFigmaUrl(trimmed);
-      if (result === null) {
-        setUrlError("That does not look like a Figma URL");
-        return;
-      }
-      setUrlError(null);
-      onFigmaUrl(result.fileKey, result.nodeId);
+      onFigmaUrl(urlValidation.value.fileKey, urlValidation.value.nodeId);
     },
-    [interactionDisabled, onFigmaUrl, urlValue],
+    [interactionDisabled, onFigmaUrl, urlValidation],
   );
 
   return (
@@ -341,30 +344,66 @@ export function PasteDropZone({
         >
           Enter Figma URL
         </label>
-        <input
-          id={urlInputId}
-          type="url"
-          inputMode="url"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="https://figma.com/design/…"
-          value={urlValue}
-          onChange={handleUrlChange}
-          disabled={interactionDisabled}
-          aria-label="Figma design URL"
-          aria-invalid={urlError !== null ? true : undefined}
-          aria-describedby={urlError !== null ? urlErrorId : undefined}
-          className="w-full rounded border border-white/15 bg-[#0b0b0b] px-3 py-2 text-xs text-white/85 placeholder:text-white/30 focus:border-[#4eba87]/60 focus:outline-none focus:ring-1 focus:ring-[#4eba87]/40 disabled:cursor-not-allowed disabled:opacity-60"
-        />
-        {urlError !== null ? (
-          <p id={urlErrorId} role="alert" className="text-xs text-rose-300">
-            {urlError}
+        <div className="relative flex w-full items-center">
+          <input
+            id={urlInputId}
+            type="url"
+            inputMode="url"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="https://figma.com/design/…"
+            value={urlValue}
+            onChange={handleUrlChange}
+            disabled={interactionDisabled}
+            aria-label="Figma design URL"
+            aria-invalid={showInvalid ? true : undefined}
+            aria-describedby={
+              showInvalid
+                ? urlErrorId
+                : showFileLevelHint
+                  ? urlHintId
+                  : undefined
+            }
+            className={`w-full rounded border bg-[#0b0b0b] py-2 pl-3 pr-9 text-xs text-white/85 placeholder:text-white/30 focus:outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60 ${
+              showInvalid
+                ? "border-rose-400/60 focus:border-rose-400/80 focus:ring-rose-400/40"
+                : "border-white/15 focus:border-[#4eba87]/60 focus:ring-[#4eba87]/40"
+            }`}
+          />
+          {showValid ? (
+            <span className="pointer-events-none absolute right-3 flex items-center">
+              <ValidIcon />
+            </span>
+          ) : null}
+          {showInvalid ? (
+            <span className="pointer-events-none absolute right-3 flex items-center">
+              <InvalidIcon />
+            </span>
+          ) : null}
+        </div>
+        {urlValidation !== null && !urlValidation.ok ? (
+          <p
+            id={urlErrorId}
+            role="alert"
+            aria-live="polite"
+            className="text-xs text-rose-300"
+          >
+            {urlValidation.message}
+          </p>
+        ) : null}
+        {showFileLevelHint ? (
+          <p
+            id={urlHintId}
+            data-testid="paste-drop-zone-url-hint"
+            className="text-xs text-white/45"
+          >
+            No frame selected — the whole file will be imported.
           </p>
         ) : null}
         <div className="flex justify-end">
           <button
             type="submit"
-            disabled={interactionDisabled}
+            disabled={submitDisabled}
             className="cursor-pointer rounded border border-[#4eba87] bg-[#4eba87]/12 px-3 py-1.5 text-xs font-medium text-[#4eba87] transition hover:bg-[#4eba87]/18 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-transparent disabled:text-white/35"
           >
             Open design

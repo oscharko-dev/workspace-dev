@@ -1,13 +1,25 @@
-import { useCallback, useMemo, useState, type JSX } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { InspectorPanel } from "./inspector/InspectorPanel";
 import { InspectorErrorBoundary } from "./inspector/InspectorErrorBoundary";
 import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
 import { useInspectorBootstrap } from "./inspector/useInspectorBootstrap";
 import { useStreamingTreeNodes } from "./inspector/component-tree-utils";
+import { useImportHistory } from "./inspector/useImportHistory";
+import { buildPasteImportSession } from "./inspector/inspector-paste-import-session-builder";
+import { generateImportSessionId } from "./inspector/paste-import-history";
+import type { PasteImportSession } from "./inspector/paste-import-history";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
 import type {
   PastePipelineState,
+  PipelineImportMode,
   PipelineStage,
 } from "./inspector/paste-pipeline";
 import type { PipelineExecutionLog } from "./inspector/pipeline-execution-log";
@@ -81,6 +93,15 @@ interface PanelViewProps {
   pipeline?: PastePipelineState;
   onPipelineRetry?: (stage?: PipelineStage, targetIds?: string[]) => void;
   executionLog?: PipelineExecutionLog;
+  importHistory?: readonly PasteImportSession[];
+  previousImportSession?: PasteImportSession | null;
+  onGenerateSelected?: (
+    selectedNodeIds: readonly string[],
+    options?: { importMode?: PipelineImportMode },
+  ) => void;
+  onResubmitFresh?: () => void;
+  onRemoveImportSession?: (sessionId: string) => void;
+  onReimportSession?: (session: PasteImportSession) => void;
 }
 
 function PanelView({
@@ -91,6 +112,12 @@ function PanelView({
   pipeline,
   onPipelineRetry,
   executionLog,
+  importHistory,
+  previousImportSession,
+  onGenerateSelected,
+  onResubmitFresh,
+  onRemoveImportSession,
+  onReimportSession,
 }: PanelViewProps): JSX.Element {
   const navigate = useNavigate();
   const [activeJobId, setActiveJobId] = useState(jobId);
@@ -197,6 +224,18 @@ function PanelView({
             {...(pipeline !== undefined ? { pipeline } : {})}
             {...(onPipelineRetry !== undefined ? { onPipelineRetry } : {})}
             {...(executionLog !== undefined ? { executionLog } : {})}
+            {...(importHistory !== undefined ? { importHistory } : {})}
+            {...(previousImportSession !== undefined
+              ? { previousImportSession }
+              : {})}
+            {...(onGenerateSelected !== undefined
+              ? { onGenerateSelected }
+              : {})}
+            {...(onResubmitFresh !== undefined ? { onResubmitFresh } : {})}
+            {...(onRemoveImportSession !== undefined
+              ? { onRemoveImportSession }
+              : {})}
+            {...(onReimportSession !== undefined ? { onReimportSession } : {})}
           />
         </InspectorErrorBoundary>
       </main>
@@ -207,6 +246,71 @@ function PanelView({
 function BootstrapView(): JSX.Element {
   const bootstrap = useInspectorBootstrap();
   const treeNodes = useStreamingTreeNodes(bootstrap.pipelineState);
+  const importHistoryHook = useImportHistory();
+  const recordedJobIdsRef = useRef<Set<string>>(new Set<string>());
+
+  const previousImportSession = useMemo(() => {
+    const pasteIdentityKey = bootstrap.pipelineState.pasteIdentityKey ?? null;
+    const urlContext = bootstrap.lastUrlContext;
+    const jobId = bootstrap.pipelineState.jobId;
+    const match = importHistoryHook.findPrevious({
+      pasteIdentityKey,
+      ...(urlContext?.fileKey !== undefined
+        ? { fileKey: urlContext.fileKey }
+        : {}),
+      ...(urlContext?.nodeId !== undefined && urlContext.nodeId !== null
+        ? { nodeId: urlContext.nodeId }
+        : {}),
+    });
+    if (!match) {
+      return null;
+    }
+    if (jobId !== undefined && match.jobId === jobId) {
+      return null;
+    }
+    return match;
+  }, [
+    bootstrap.lastUrlContext,
+    bootstrap.pipelineState.jobId,
+    bootstrap.pipelineState.pasteIdentityKey,
+    importHistoryHook,
+  ]);
+
+  useEffect(() => {
+    const stage = bootstrap.pipelineState.stage;
+    const jobId = bootstrap.pipelineState.jobId;
+    if (jobId === undefined) {
+      return;
+    }
+    if (stage !== "ready" && stage !== "partial") {
+      return;
+    }
+    if (recordedJobIdsRef.current.has(jobId)) {
+      return;
+    }
+    const pasteIdentityKey = bootstrap.pipelineState.pasteIdentityKey ?? null;
+    const urlContext = bootstrap.lastUrlContext;
+    const existingMatch = importHistoryHook.findPrevious({
+      pasteIdentityKey,
+      ...(urlContext?.fileKey !== undefined
+        ? { fileKey: urlContext.fileKey }
+        : {}),
+      ...(urlContext?.nodeId !== undefined && urlContext.nodeId !== null
+        ? { nodeId: urlContext.nodeId }
+        : {}),
+    });
+    const session = buildPasteImportSession({
+      pipelineState: bootstrap.pipelineState,
+      urlContext,
+      sessionId: existingMatch?.id ?? generateImportSessionId(),
+      completedAt: new Date().toISOString(),
+    });
+    if (session === null) {
+      return;
+    }
+    recordedJobIdsRef.current.add(jobId);
+    importHistoryHook.addSession(session);
+  }, [bootstrap.pipelineState, bootstrap.lastUrlContext, importHistoryHook]);
 
   const handlePaste = useCallback(
     (text: string, clipboardHtml?: string): void => {
@@ -262,6 +366,44 @@ function BootstrapView(): JSX.Element {
     [bootstrap],
   );
 
+  const handleGenerateSelected = useCallback(
+    (
+      selectedNodeIds: readonly string[],
+      options?: { importMode?: PipelineImportMode },
+    ): void => {
+      bootstrap.regenerateScoped({
+        selectedNodeIds,
+        ...(options?.importMode !== undefined
+          ? { importMode: options.importMode }
+          : {}),
+      });
+    },
+    [bootstrap],
+  );
+
+  const handleResubmitFresh = useCallback((): void => {
+    bootstrap.resubmitFresh();
+  }, [bootstrap]);
+
+  const handleRemoveImportSession = useCallback(
+    (sessionId: string): void => {
+      importHistoryHook.removeSession(sessionId);
+    },
+    [importHistoryHook],
+  );
+
+  const handleReimportSession = useCallback(
+    (session: PasteImportSession): void => {
+      if (session.fileKey.length > 0) {
+        bootstrap.submitUrl(
+          session.fileKey,
+          session.nodeId.length > 0 ? session.nodeId : null,
+        );
+      }
+    },
+    [bootstrap],
+  );
+
   if (bootstrap.jobId && bootstrap.state.kind !== "failed") {
     return (
       <PanelView
@@ -272,6 +414,12 @@ function BootstrapView(): JSX.Element {
         pipeline={bootstrap.pipelineState}
         onPipelineRetry={handleRetry}
         executionLog={bootstrap.executionLog}
+        importHistory={importHistoryHook.history.entries}
+        previousImportSession={previousImportSession}
+        onGenerateSelected={handleGenerateSelected}
+        onResubmitFresh={handleResubmitFresh}
+        onRemoveImportSession={handleRemoveImportSession}
+        onReimportSession={handleReimportSession}
       />
     );
   }
