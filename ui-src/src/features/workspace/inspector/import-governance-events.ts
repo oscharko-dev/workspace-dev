@@ -28,6 +28,16 @@ export interface ImportGovernanceEvent {
   /** Identifier for the source design (Figma file key or local fallback). */
   readonly fileKey: string;
   /**
+   * Persisted session id, when known. Forwarded from `session.id` so the
+   * #994 transport can route the audit event to the correct server record.
+   */
+  readonly sessionId?: string;
+  /**
+   * Derived quality score (integer 0..100) at the moment the event fired.
+   * Optional because callers may not have computed a score yet.
+   */
+  readonly qualityScore?: number;
+  /**
    * User identity. Optional — populated by the transport when known. The
    * Inspector does not have first-class user identity in v1, so this is
    * left undefined; #994 attaches a session principal at dispatch time.
@@ -44,7 +54,7 @@ export type ImportGovernanceListener = (event: ImportGovernanceEvent) => void;
 export function toImportGovernanceEvent(
   session: PasteImportSession,
 ): ImportGovernanceEvent {
-  return {
+  const base: ImportGovernanceEvent = {
     timestamp: session.importedAt,
     scope: session.scope,
     selectedNodes: session.selectedNodes,
@@ -52,6 +62,13 @@ export function toImportGovernanceEvent(
     nodeCount: session.nodeCount,
     jobId: session.jobId,
     fileKey: session.fileKey,
+  };
+  return {
+    ...base,
+    sessionId: session.id,
+    ...(session.qualityScore !== undefined
+      ? { qualityScore: session.qualityScore }
+      : {}),
   };
 }
 

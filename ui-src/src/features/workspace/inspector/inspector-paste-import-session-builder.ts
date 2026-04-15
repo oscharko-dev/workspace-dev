@@ -8,6 +8,7 @@
 
 import type { PastePipelineState } from "./paste-pipeline";
 import type { PasteImportSession } from "./paste-import-history";
+import type { WorkspaceImportSessionStatus } from "./import-review-state";
 
 export interface BuildPasteImportSessionInput {
   /** The pipeline state at completion. */
@@ -18,6 +19,15 @@ export interface BuildPasteImportSessionInput {
   readonly sessionId: string;
   /** ISO timestamp of completion (caller controls; usually `new Date().toISOString()`). */
   readonly completedAt: string;
+  /**
+   * Optional derived quality score (integer 0..100). Forwarded onto the
+   * session when provided; out-of-range or non-integer values are dropped.
+   */
+  readonly qualityScore?: number | null;
+  /**
+   * Optional review lifecycle status. Defaults to `"imported"` when absent.
+   */
+  readonly status?: WorkspaceImportSessionStatus;
 }
 
 interface NodeWithChildren {
@@ -65,6 +75,16 @@ function sumComponentMappings(pipelineState: PastePipelineState): number {
   return total;
 }
 
+function isValidQualityScore(value: unknown): value is number {
+  return (
+    typeof value === "number" &&
+    Number.isFinite(value) &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 100
+  );
+}
+
 export function buildPasteImportSession(
   input: BuildPasteImportSessionInput,
 ): PasteImportSession | null {
@@ -81,8 +101,9 @@ export function buildPasteImportSession(
 
   const echoedScope = pipelineState.selectedNodeIds ?? [];
   const scope: "all" | "partial" = echoedScope.length > 0 ? "partial" : "all";
+  const status: WorkspaceImportSessionStatus = input.status ?? "imported";
 
-  return {
+  const base: PasteImportSession = {
     id: sessionId,
     jobId: pipelineState.jobId,
     fileKey: urlContext?.fileKey ?? "",
@@ -95,5 +116,11 @@ export function buildPasteImportSession(
     scope,
     componentMappings: sumComponentMappings(pipelineState),
     pasteIdentityKey: pipelineState.pasteIdentityKey ?? null,
+    status,
   };
+
+  if (isValidQualityScore(input.qualityScore)) {
+    return { ...base, qualityScore: input.qualityScore };
+  }
+  return base;
 }

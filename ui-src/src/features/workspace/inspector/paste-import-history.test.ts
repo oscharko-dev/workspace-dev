@@ -335,6 +335,26 @@ describe("storage roundtrip", () => {
             id: "paste-import-bad-key",
             pasteIdentityKey: 42, // wrong type
           },
+          {
+            ...valid,
+            id: "paste-import-bad-quality-high",
+            qualityScore: 101,
+          },
+          {
+            ...valid,
+            id: "paste-import-bad-quality-low",
+            qualityScore: -1,
+          },
+          {
+            ...valid,
+            id: "paste-import-bad-quality-float",
+            qualityScore: 82.5,
+          },
+          {
+            ...valid,
+            id: "paste-import-bad-status",
+            status: "not-a-status",
+          },
         ],
       }),
     );
@@ -342,6 +362,44 @@ describe("storage roundtrip", () => {
     const restored = restoreImportHistory();
     expect(restored.warning).toBeNull();
     expect(restored.history.entries).toEqual([valid]);
+  });
+
+  it("round-trips a legacy entry without qualityScore or status (backwards compatible)", () => {
+    const legacy = makeSession({ id: "paste-import-legacy" });
+    // Explicitly exclude qualityScore/status to model a pre-#994 stored entry.
+    window.localStorage.setItem(
+      toPasteImportHistoryStorageKey(),
+      JSON.stringify({
+        version: PASTE_IMPORT_HISTORY_VERSION,
+        entries: [legacy],
+      }),
+    );
+
+    const restored = restoreImportHistory();
+    expect(restored.warning).toBeNull();
+    expect(restored.history.entries).toHaveLength(1);
+    expect(restored.history.entries[0]?.qualityScore).toBeUndefined();
+    expect(restored.history.entries[0]?.status).toBeUndefined();
+  });
+
+  it("round-trips entries carrying qualityScore and status", () => {
+    const modern = makeSession({
+      id: "paste-import-modern",
+      qualityScore: 77,
+      status: "reviewing",
+    });
+    window.localStorage.setItem(
+      toPasteImportHistoryStorageKey(),
+      JSON.stringify({
+        version: PASTE_IMPORT_HISTORY_VERSION,
+        entries: [modern],
+      }),
+    );
+
+    const restored = restoreImportHistory();
+    expect(restored.warning).toBeNull();
+    expect(restored.history.entries[0]?.qualityScore).toBe(77);
+    expect(restored.history.entries[0]?.status).toBe("reviewing");
   });
 });
 
