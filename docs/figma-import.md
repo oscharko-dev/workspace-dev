@@ -3,14 +3,17 @@
 This guide explains how to move a Figma selection into the WorkspaceDev Inspector
 without going through the Figma REST API. Two direct paths are supported:
 
-- **Figma plugin** — copies a signed JSON envelope to the clipboard
-  (`figmaSourceMode=figma_plugin`). Most reliable for cross-tool copy/paste.
+- **Figma plugin** — copies a structured, versioned JSON envelope to the
+  clipboard (`figmaSourceMode=figma_plugin`). Recommended WorkspaceDev path
+  for structured cross-tool transfer.
 - **Raw JSON paste / drop / upload** — paste or drop a REST-shaped Figma JSON
   document (`figmaSourceMode=figma_paste`). Useful offline, behind a firewall,
   or when you cannot run the plugin.
 
-A third path, **Enter Figma URL**, is available in the same Inspector zone but
-uses a REST fetch under the hood and is not covered here.
+A third path, **Enter Figma URL**, is available in the same Inspector zone.
+The Inspector submits `figmaSourceMode=figma_url`, and the server normalizes
+that inspector-only alias to `hybrid` before fetching from Figma. It is not
+part of the public mode-lock surface and is not covered here in detail.
 
 For backend mode lock and submit-field requirements, see
 [README — Scope and mode lock](../README.md#scope-and-mode-lock) and
@@ -69,14 +72,16 @@ write happens.
 
 ### 4. Paste into the Inspector
 
-1. Open `http://127.0.0.1:1983/workspace/ui` (or
-   `http://127.0.0.1:1983/workspace/<figmaFileKey>`).
+1. Open `http://127.0.0.1:1983/workspace/ui/inspector`.
 2. Click anywhere in the middle column (labelled **Import**, aria-labelled
    **Paste area**).
 3. Press **⌘V** (Mac) or **Ctrl+V** (Windows).
 4. The SmartBanner above the paste area shows the detected type:
    **Plugin Export** with a confidence percentage.
 5. Click **Import starten** to confirm and submit.
+
+After import, the standard workspace views remain available at
+`/workspace/ui` and `/workspace/<figmaFileKey>`.
 
 The Inspector submits the payload with `figmaSourceMode=figma_plugin`.
 
@@ -108,7 +113,7 @@ clicking **Import starten** (aria-label: **Erkannten Typ korrigieren**).
 | Paste (clipboard) | ⌘V / Ctrl+V with focus inside **Paste area** | Reads both `text/plain` and `text/html` from the clipboard.         |
 | Drag & drop       | Drop a `.json` file onto the column          | First file only; must be `.json` or `application/json`.             |
 | Upload JSON file  | **Upload JSON file** button                  | Same validation as drop.                                            |
-| Enter Figma URL   | **Enter Figma URL** form                     | Triggers a REST fetch (`figmaSourceMode=rest`), not the paste path. |
+| Enter Figma URL   | **Enter Figma URL** form                     | Inspector-only submit alias (`figmaSourceMode=figma_url`); the server normalizes it to `hybrid` before the REST-backed fetch. |
 
 ### SmartBanner intents
 
@@ -121,6 +126,9 @@ clicking **Import starten** (aria-label: **Erkannten Typ korrigieren**).
 | `FIGMA_JSON_NODE_BATCH` | `Figma-Node JSON`     | `figma_paste`      |
 | `RAW_CODE_OR_TEXT`      | `Code / Text`         | rejected on submit |
 | `UNKNOWN`               | `Unbekannt`           | rejected on submit |
+
+`figma_url` exists only as the Inspector's URL-submit alias. The public
+mode-lock surface remains the runtime-backed modes documented in the README.
 
 ### Size limits
 
@@ -290,9 +298,10 @@ type to `Code / Text` or `Unbekannt` always rejects on submit with
 - Generic fields are redacted in job logs, but the paste payload itself is
   written to `${outputRoot}/jobs/<jobId>/figma.json`. Treat `.workspace-dev/`
   as sensitive local state.
-- The Figma **plugin workflow** is the most reliable cross-tool path; the
-  browser clipboard model makes direct Figma copy/paste lossy or blocked in
-  several environments.
+- WorkspaceDev prefers the Figma **plugin workflow** because it uses a
+  structured payload. Figma's docs recommend explicit export formats for
+  design-tool transfer, and browser clipboard behavior varies by format,
+  browser, and destination app.
 
 ## See also
 

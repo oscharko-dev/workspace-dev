@@ -124,3 +124,28 @@ test("docs: versioning policy stays aligned across README and changelogs", async
 
   assert.match(contractsSource, /VERSIONING\.md/);
 });
+
+test("docs: figma direct-import guide stays aligned with inspector submit flow", async () => {
+  const figmaImportDoc = await readRepoFile("docs/figma-import.md");
+  const pluginTestingDoc = await readRepoFile("plugin/TESTING.md");
+
+  assert.match(
+    figmaImportDoc,
+    /Open `http:\/\/127\.0\.0\.1:1983\/workspace\/ui\/inspector`\./,
+  );
+  assert.match(figmaImportDoc, /`figmaSourceMode=figma_url`/);
+  assert.match(
+    figmaImportDoc,
+    /normalizes\s+that inspector-only alias to `hybrid`/i,
+  );
+  assert.match(figmaImportDoc, /not\s+part of the public mode-lock surface/i);
+  assert.doesNotMatch(figmaImportDoc, /signed JSON envelope/i);
+  assert.doesNotMatch(
+    figmaImportDoc,
+    /\| Enter Figma URL\s+\|[^\n]*figmaSourceMode=rest/i,
+  );
+  assert.match(
+    pluginTestingDoc,
+    /No nodes selected\. Please select at least one layer\./,
+  );
+});
