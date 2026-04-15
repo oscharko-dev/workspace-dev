@@ -149,6 +149,10 @@ then submit the JSON text as `figmaJsonPayload` (no multipart upload required).
 For plugin-envelope handoff, confirm the detected plugin import in the inspector
 so the client submits `figmaSourceMode=figma_plugin`.
 
+See [docs/figma-import.md](docs/figma-import.md) for the end-to-end onboarding,
+plugin install, Inspector paste-zone reference, example payloads, FAQ, and
+troubleshooting.
+
 Optional Git/PR input:
 
 - `enableGitPr` (default `false`)
