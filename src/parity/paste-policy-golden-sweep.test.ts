@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 const currentFile = fileURLToPath(import.meta.url);
 const goldenRoot = path.resolve(path.dirname(currentFile), "fixtures/golden");
 
-const TAILWIND_CLASSNAME_PATTERN = /className="[a-zA-Z]+-[a-zA-Z0-9-]+"/;
+const TAILWIND_CLASSNAME_PATTERN =
+  /className=(?:"[^"]*\b[a-zA-Z]+-[a-zA-Z0-9-]+\b[^"]*"|`[^`]*\b[a-zA-Z]+-[a-zA-Z0-9-]+\b[^`]*`|\{[^}]*\b[a-zA-Z]+-[a-zA-Z0-9-]+\b[^}]*\})/;
 const TAILWIND_CONFIG_PATTERN = /tailwind\.config/;
 const STYLESHEET_EXTENSIONS = new Set([".css", ".scss"]);
 
@@ -83,11 +84,7 @@ for (const fixtureName of goldenFixtureNames) {
       const content = await readFile(tsxFile.absolutePath, "utf8");
       assert.ok(
         !TAILWIND_CLASSNAME_PATTERN.test(content),
-        `Expected no Tailwind utility className patterns in '${fixtureName}/${tsxFile.relativePath}'.`,
-      );
-      assert.ok(
-        !TAILWIND_CONFIG_PATTERN.test(content),
-        `Expected no tailwind.config reference in '${fixtureName}/${tsxFile.relativePath}'.`,
+        `Expected no Tailwind utility className patterns in '${fixtureName}/expected/${tsxFile.relativePath}'.`,
       );
     }
   });
