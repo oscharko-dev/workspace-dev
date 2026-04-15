@@ -390,7 +390,7 @@ describe("buildPasteImportSession — carried fields", () => {
     expect(session?.nodeId).toBe("");
   });
 
-  it("sets version to an empty string", () => {
+  it("omits version when the pipeline state does not provide it", () => {
     const pipelineState = makePipelineState();
     const session = buildPasteImportSession({
       pipelineState,
@@ -398,6 +398,32 @@ describe("buildPasteImportSession — carried fields", () => {
       sessionId: SESSION_ID,
       completedAt: COMPLETED_AT,
     });
-    expect(session?.version).toBe("");
+    expect(session?.version).toBeUndefined();
+  });
+
+  it("marks scope='all' when the pipeline state has no selectedNodeIds", () => {
+    const pipelineState = makePipelineState();
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+    });
+    expect(session?.scope).toBe("all");
+    expect(session?.selectedNodes).toEqual([]);
+  });
+
+  it("marks scope='partial' when the pipeline echoed a non-empty selectedNodeIds", () => {
+    const pipelineState = makePipelineState({
+      selectedNodeIds: ["a", "b"],
+    });
+    const session = buildPasteImportSession({
+      pipelineState,
+      urlContext: null,
+      sessionId: SESSION_ID,
+      completedAt: COMPLETED_AT,
+    });
+    expect(session?.scope).toBe("partial");
+    expect(session?.selectedNodes).toEqual(["a", "b"]);
   });
 });

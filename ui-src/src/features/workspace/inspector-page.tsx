@@ -16,6 +16,10 @@ import { useImportHistory } from "./inspector/useImportHistory";
 import { buildPasteImportSession } from "./inspector/inspector-paste-import-session-builder";
 import { generateImportSessionId } from "./inspector/paste-import-history";
 import type { PasteImportSession } from "./inspector/paste-import-history";
+import {
+  dispatchImportGovernanceEvent,
+  toImportGovernanceEvent,
+} from "./inspector/import-governance-events";
 import type { ImportIntent } from "./inspector/paste-input-classifier";
 import type {
   PastePipelineState,
@@ -310,6 +314,7 @@ function BootstrapView(): JSX.Element {
     }
     recordedJobIdsRef.current.add(jobId);
     importHistoryHook.addSession(session);
+    dispatchImportGovernanceEvent(toImportGovernanceEvent(session));
   }, [bootstrap.pipelineState, bootstrap.lastUrlContext, importHistoryHook]);
 
   const handlePaste = useCallback(

@@ -6,7 +6,7 @@
 // lifecycle; this component only renders rows + forwards intent via callbacks.
 // ---------------------------------------------------------------------------
 
-import { useEffect, type JSX } from "react";
+import { useEffect, useRef, type JSX } from "react";
 import type { PasteImportSession } from "./paste-import-history";
 
 export interface ImportHistoryPanelProps {
@@ -74,6 +74,8 @@ export function ImportHistoryPanel({
   onDelete,
   onClose,
 }: ImportHistoryPanelProps): JSX.Element {
+  const containerRef = useRef<HTMLElement | null>(null);
+
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") {
@@ -82,9 +84,21 @@ export function ImportHistoryPanel({
         onClose();
       }
     };
+    const handlePointerDown = (event: MouseEvent): void => {
+      const node = containerRef.current;
+      if (
+        node &&
+        event.target instanceof Node &&
+        !node.contains(event.target)
+      ) {
+        onClose();
+      }
+    };
     window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("mousedown", handlePointerDown);
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("mousedown", handlePointerDown);
     };
   }, [onClose]);
 
@@ -92,8 +106,9 @@ export function ImportHistoryPanel({
 
   return (
     <section
+      ref={containerRef}
       data-testid="import-history-panel"
-      role="dialog"
+      role="region"
       aria-label="Import history"
       className="flex w-80 flex-col overflow-hidden rounded border border-[#333333] bg-[#1d1d1d] text-white/65 shadow-xl"
     >

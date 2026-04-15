@@ -1,6 +1,20 @@
 import type { JSX } from "react";
 import type { PasteImportSession } from "./paste-import-history";
 
+const IMPORTED_AT_FORMATTER = new Intl.DateTimeFormat("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+function formatImportedAt(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) {
+    return iso;
+  }
+  return IMPORTED_AT_FORMATTER.format(date);
+}
+
 export interface ReImportDeltaSummary {
   readonly totalNodes: number;
   readonly nodesReused: number;
@@ -27,9 +41,7 @@ export function ReImportPromptBanner({
   onDismiss,
   deltaSummary = null,
 }: ReImportPromptBannerProps): JSX.Element {
-  const importedAtLabel = new Date(
-    previousSession.importedAt,
-  ).toLocaleDateString();
+  const importedAtLabel = formatImportedAt(previousSession.importedAt);
   const message = `This design was previously imported on ${importedAtLabel}. Update existing import or create new?`;
   const diffHint =
     deltaSummary !== null && deltaSummary.totalNodes > 0

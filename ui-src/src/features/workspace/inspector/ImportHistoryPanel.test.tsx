@@ -17,6 +17,7 @@ function buildSession(
     nodeCount: 10,
     fileCount: 3,
     selectedNodes: [],
+    scope: "all",
     componentMappings: 0,
     version: "1",
     pasteIdentityKey: null,
@@ -310,7 +311,7 @@ describe("ImportHistoryPanel — relative time formatting", () => {
 });
 
 describe("ImportHistoryPanel — accessibility", () => {
-  it("exposes role='dialog' with the 'Import history' label", () => {
+  it("exposes role='region' with the 'Import history' label", () => {
     render(
       <ImportHistoryPanel
         sessions={[]}
@@ -320,7 +321,7 @@ describe("ImportHistoryPanel — accessibility", () => {
       />,
     );
 
-    const dialog = screen.getByRole("dialog", { name: "Import history" });
+    const dialog = screen.getByRole("region", { name: "Import history" });
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveAttribute("data-testid", "import-history-panel");
   });

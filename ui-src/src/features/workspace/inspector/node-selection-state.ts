@@ -120,6 +120,48 @@ export function getNodeCheckState(
 }
 
 /**
+ * One-pass post-order build of the tri-state map for an entire forest.
+ * Replaces O(n^2) per-row `getNodeCheckState` lookups with O(n) total.
+ */
+export function buildCheckStateMap(
+  state: NodeSelectionState,
+  screens: readonly TreeNode[],
+): ReadonlyMap<string, NodeCheckState> {
+  const result = new Map<string, NodeCheckState>();
+
+  const visit = (node: TreeNode): { total: number; excluded: number } => {
+    if (isSkeleton(node)) {
+      return { total: 0, excluded: 0 };
+    }
+    let total = 1;
+    let excluded = state.excluded.has(node.id) ? 1 : 0;
+    if (node.children) {
+      for (const child of node.children) {
+        const childTally = visit(child);
+        total += childTally.total;
+        excluded += childTally.excluded;
+      }
+    }
+    let nodeState: NodeCheckState;
+    if (total === 0 || excluded === 0) {
+      nodeState = "checked";
+    } else if (excluded === total) {
+      nodeState = "unchecked";
+    } else {
+      nodeState = "partial";
+    }
+    result.set(node.id, nodeState);
+    return { total, excluded };
+  };
+
+  for (const screen of screens) {
+    visit(screen);
+  }
+
+  return result;
+}
+
+/**
  * All selected ids visible in `screens` (post-filter). Used to build the
  * submit body. Order = depth-first traversal.
  */

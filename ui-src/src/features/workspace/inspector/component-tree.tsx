@@ -17,8 +17,9 @@ import {
   type NodeDiagnosticsMap,
 } from "./node-diagnostics";
 import {
-  getNodeCheckState,
+  buildCheckStateMap,
   getSelectionCounts,
+  type NodeCheckState,
   type NodeSelectionState,
 } from "./node-selection-state";
 
@@ -82,7 +83,8 @@ interface TreeRowProps {
   onFocusNode: (nodeId: string) => void;
   diagnosticsMap?: NodeDiagnosticsMap | undefined;
   selectionEnabled: boolean;
-  selection?: NodeSelectionState | undefined;
+  /** Pre-resolved check state for this row (null when no selection prop). */
+  checkState: NodeCheckState | null;
   onToggleSelection?:
     | ((nodeId: string, nextSelected: boolean) => void)
     | undefined;
@@ -202,7 +204,7 @@ const TreeRow = memo(function TreeRow({
   onFocusNode,
   diagnosticsMap,
   selectionEnabled,
-  selection,
+  checkState,
   onToggleSelection,
   diffStatus,
 }: TreeRowProps): JSX.Element {
@@ -210,7 +212,6 @@ const TreeRow = memo(function TreeRow({
   const isFocused = focusedId === row.node.id;
   const isSelectable = selectionEnabled && row.node.type !== "skeleton";
   const isSkeleton = row.node.type === "skeleton";
-  const checkState = selection ? getNodeCheckState(selection, row.node) : null;
   const showCheckbox = checkState !== null && !isSkeleton;
   const checkboxAriaLabel =
     checkState === "checked"
@@ -444,6 +445,15 @@ export function ComponentTree({
   const filteredScreens = useMemo(() => {
     return filterTree(screens, debouncedSearchQuery);
   }, [screens, debouncedSearchQuery]);
+
+  // Pre-compute the tri-state map once per (selection, screens) — O(n) total
+  // instead of O(n^2) from per-row getNodeCheckState calls.
+  const checkStateMap = useMemo(() => {
+    if (!selection) {
+      return null;
+    }
+    return buildCheckStateMap(selection, screens);
+  }, [selection, screens]);
 
   // When searching, auto-expand all nodes so matches are visible
   const effectiveExpandedIds = useMemo(() => {
@@ -785,7 +795,7 @@ export function ComponentTree({
                 onFocusNode={setFocusedId}
                 diagnosticsMap={diagnosticsMap}
                 selectionEnabled={selectionEnabled}
-                selection={selection}
+                checkState={checkStateMap?.get(row.node.id) ?? null}
                 onToggleSelection={onToggleSelection}
                 diffStatus={diffStatusByNodeId?.get(row.node.id)}
               />

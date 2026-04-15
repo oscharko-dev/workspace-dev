@@ -2900,6 +2900,7 @@ describe("InspectorPanel scope controls + import history (issue #1010)", () => {
       nodeCount: 5,
       fileCount: 2,
       selectedNodes: [] as string[],
+      scope: "all" as const,
       componentMappings: 1,
       version: "",
       pasteIdentityKey: null,
@@ -2930,6 +2931,7 @@ describe("InspectorPanel scope controls + import history (issue #1010)", () => {
       nodeCount: 5,
       fileCount: 2,
       selectedNodes: [] as string[],
+      scope: "all" as const,
       componentMappings: 1,
       version: "",
       pasteIdentityKey: "key-abc",
@@ -2973,5 +2975,44 @@ describe("InspectorPanel scope controls + import history (issue #1010)", () => {
     fireEvent.click(screen.getByTestId("inspector-scope-preset-all"));
     fireEvent.click(screen.getByTestId("inspector-generate-selected"));
     expect(onGenerateSelected).toHaveBeenCalledWith([]);
+  });
+
+  it("re-import 'Update' re-runs onGenerateSelected with importMode: 'delta'", () => {
+    const session = {
+      id: "paste-import-3",
+      fileKey: "FILE",
+      nodeId: "1-2",
+      nodeName: "Home",
+      importedAt: new Date(2026, 3, 14, 12, 0, 0).toISOString(),
+      nodeCount: 5,
+      fileCount: 2,
+      selectedNodes: [] as string[],
+      scope: "all" as const,
+      componentMappings: 1,
+      pasteIdentityKey: "key-abc",
+      jobId: "job-prev",
+    };
+    const onGenerateSelected = vi.fn();
+    const onResubmitFresh = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      previousImportSession: session,
+      onGenerateSelected,
+      onResubmitFresh,
+    });
+
+    fireEvent.click(screen.getByTestId("reimport-update"));
+    expect(onGenerateSelected).toHaveBeenCalledTimes(1);
+    expect(onGenerateSelected).toHaveBeenCalledWith([], {
+      importMode: "delta",
+    });
+  });
+
+  it("Changed preset is disabled when there is no previous-IR diff data", () => {
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected: vi.fn(),
+    });
+    expect(screen.getByTestId("inspector-scope-preset-changed")).toBeDisabled();
   });
 });

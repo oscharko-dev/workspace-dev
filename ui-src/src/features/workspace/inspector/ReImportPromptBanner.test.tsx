@@ -19,6 +19,7 @@ function makeSession(
     nodeCount: 42,
     fileCount: 7,
     selectedNodes: [],
+    scope: "all",
     componentMappings: 3,
     version: "",
     pasteIdentityKey: null,
@@ -28,9 +29,13 @@ function makeSession(
 }
 
 describe("ReImportPromptBanner — rendering", () => {
-  it("renders the message containing the locale-formatted date", () => {
+  it("renders the message containing the locale-stable date", () => {
     const session = makeSession({ importedAt: "2026-04-15T10:00:00.000Z" });
-    const expectedLabel = new Date(session.importedAt).toLocaleDateString();
+    const expectedLabel = new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(session.importedAt));
     render(
       <ReImportPromptBanner
         previousSession={session}

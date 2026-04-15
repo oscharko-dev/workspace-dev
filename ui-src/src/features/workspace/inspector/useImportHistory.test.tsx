@@ -22,6 +22,7 @@ function makeSession(
     nodeCount: 42,
     fileCount: 7,
     selectedNodes: [],
+    scope: "all",
     componentMappings: 3,
     version: "1234567890",
     pasteIdentityKey: null,

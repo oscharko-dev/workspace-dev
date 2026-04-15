@@ -30,12 +30,25 @@ export interface PasteImportSession {
   readonly nodeCount: number;
   /** Generated files count. */
   readonly fileCount: number;
-  /** Node IDs that were included in the generation scope (empty array \u21d2 all). */
+  /**
+   * Node IDs that were included in the generation scope. Convention: an empty
+   * array means the import was unscoped (all nodes generated). When `scope` is
+   * `"partial"`, this list enumerates exactly which nodes were kept.
+   */
   readonly selectedNodes: readonly string[];
+  /**
+   * Whether the import generated the full tree or a user-selected subset.
+   * Disambiguates the empty-array case in `selectedNodes`.
+   */
+  readonly scope: "all" | "partial";
   /** Number of components mapped (from componentManifest). */
   readonly componentMappings: number;
-  /** Figma file version at import time, when known. */
-  readonly version: string;
+  /**
+   * Figma file version at import time, when known. Optional because the
+   * server does not currently expose this field; populated only when the
+   * pipeline state carries it.
+   */
+  readonly version?: string;
   /** Server-supplied pasteIdentityKey (delta summary) when present \u2014 used for re-import matching. */
   readonly pasteIdentityKey: string | null;
   /** Underlying jobId so callers can re-open the result. */
@@ -171,7 +184,6 @@ function isPasteImportSession(value: unknown): value is PasteImportSession {
     typeof value.nodeId !== "string" ||
     typeof value.nodeName !== "string" ||
     typeof value.importedAt !== "string" ||
-    typeof value.version !== "string" ||
     typeof value.jobId !== "string"
   ) {
     return false;
@@ -184,6 +196,12 @@ function isPasteImportSession(value: unknown): value is PasteImportSession {
     return false;
   }
   if (!isStringArray(value.selectedNodes)) {
+    return false;
+  }
+  if (value.scope !== "all" && value.scope !== "partial") {
+    return false;
+  }
+  if (value.version !== undefined && typeof value.version !== "string") {
     return false;
   }
   if (

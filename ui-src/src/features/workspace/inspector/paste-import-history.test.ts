@@ -25,6 +25,7 @@ function makeSession(
     nodeCount: 42,
     fileCount: 7,
     selectedNodes: [],
+    scope: "all",
     componentMappings: 3,
     version: "1234567890",
     pasteIdentityKey: null,
@@ -264,6 +265,7 @@ describe("storage roundtrip", () => {
       id: "paste-import-roundtrip",
       pasteIdentityKey: "ident-roundtrip",
       selectedNodes: ["1:2", "3:4"],
+      scope: "all",
     });
     const history = addImportSession(createEmptyImportHistory(), session);
 
@@ -411,5 +413,22 @@ describe("SSR safety", () => {
         value: originalWindow,
       });
     }
+  });
+
+  it("re-import 'Update' flow stays at length 1 when the caller reuses the prior session id (regression for M3)", () => {
+    let history = createEmptyImportHistory();
+    const baseSession = makeSession({ id: "paste-import-A" });
+    history = addImportSession(history, baseSession);
+    expect(history.entries.length).toBe(1);
+
+    const updated = makeSession({
+      id: baseSession.id,
+      jobId: "job-2",
+      nodeCount: 99,
+    });
+    history = addImportSession(history, updated);
+    expect(history.entries.length).toBe(1);
+    expect(history.entries[0]?.jobId).toBe("job-2");
+    expect(history.entries[0]?.nodeCount).toBe(99);
   });
 });

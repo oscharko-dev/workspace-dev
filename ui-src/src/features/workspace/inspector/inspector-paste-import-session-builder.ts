@@ -79,6 +79,9 @@ export function buildPasteImportSession(
 
   const nodeCount = countNodesRecursively(pipelineState.designIR?.screens);
 
+  const echoedScope = pipelineState.selectedNodeIds ?? [];
+  const scope: "all" | "partial" = echoedScope.length > 0 ? "partial" : "all";
+
   return {
     id: sessionId,
     jobId: pipelineState.jobId,
@@ -88,9 +91,9 @@ export function buildPasteImportSession(
     importedAt: completedAt,
     nodeCount,
     fileCount: pipelineState.generatedFiles?.length ?? 0,
-    selectedNodes: [...(pipelineState.selectedNodeIds ?? [])],
+    selectedNodes: [...echoedScope],
+    scope,
     componentMappings: sumComponentMappings(pipelineState),
-    version: "",
     pasteIdentityKey: pipelineState.pasteIdentityKey ?? null,
   };
 }
