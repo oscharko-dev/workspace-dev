@@ -4241,7 +4241,7 @@ export const createJobEngine = ({
       const finalized: WorkspaceImportSessionEvent = {
         ...event,
         id: event.id.length > 0 ? event.id : randomUUID(),
-        at: event.at.length > 0 ? event.at : nowIso(),
+        at: nowIso(),
       };
       await importSessionEventStore.append(finalized);
       const qualityScore = extractEventQualityScore(finalized);

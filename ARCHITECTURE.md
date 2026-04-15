@@ -93,7 +93,7 @@ Default output root is `.workspace-dev` in the current project.
 Every paste-import pipeline can emit `WorkspaceImportSessionEvent` entries whenever the Inspector walks a completed session through its review stages. Events are persisted server-side under `<outputRoot>/import-session-events/<sessionId>.json` (append-only, 200-entry rotation, note truncated at 1024 chars) and exposed via:
 
 - `GET  /workspace/import-sessions/:id/events` — ordered audit trail.
-- `POST /workspace/import-sessions/:id/events` — append one event. Body shape: `{ kind, actor?, note?, metadata? }`. `kind` must be one of `imported`, `review_started`, `approved`, `applied`, `rejected`, `apply_blocked`, `note`; `metadata` is a flat record of string/number/boolean/null.
+- `POST /workspace/import-sessions/:id/events` — append one event. Body shape: `{ id?, kind, note?, metadata? }`. `kind` must be one of `imported`, `review_started`, `approved`, `applied`, `rejected`, `apply_blocked`, `note`; `metadata` is a flat record of string/number/boolean/null. The server derives integrity fields for persisted events: `id` is preserved when supplied and otherwise generated at append time, `at` is always stamped at append time, and `actor` is only attached when a trusted server-side caller supplies an authenticated principal.
 
 The Inspector renders `ImportReviewStepper` above the suggestions panel whenever a pipeline reaches `ready` or `partial`. The stepper walks the user through four stages — Import → Review → Approve → Apply — and enforces the workspace governance policy:
 
