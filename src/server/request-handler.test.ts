@@ -4370,3 +4370,415 @@ test("token-decisions endpoint persists decisions, normalizes input, and reads t
     await rm(tempRoot, { recursive: true, force: true });
   }
 });
+
+// ---------------------------------------------------------------------------
+// Issue #988 Wave 2 — figma paste/plugin ingress payload fidelity
+// ---------------------------------------------------------------------------
+
+test("figma_paste submit preserves requestSourceMode alongside converted figmaSourceMode", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "paste-request-mode-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "1:2", type: "FRAME", name: "Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(envelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    assert.equal(capturedInput.requestSourceMode, "figma_paste");
+  } finally {
+    await close();
+  }
+});
+
+test("figma_plugin submit preserves requestSourceMode alongside converted figmaSourceMode", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "plugin-request-mode-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "3:4", type: "FRAME", name: "Plugin Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify(envelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    assert.equal(capturedInput.requestSourceMode, "figma_plugin");
+  } finally {
+    await close();
+  }
+});
+
+test("figma_paste normalizes a 3-selection ClipboardEnvelope into 3 CANVAS children on disk", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "paste-multi-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "10:1", type: "FRAME", name: "Frame A" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+        {
+          document: { id: "10:2", type: "FRAME", name: "Frame B" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+        {
+          document: { id: "10:3", type: "FRAME", name: "Frame C" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(envelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    const figmaJsonPath = capturedInput.figmaJsonPath;
+    assert.ok(
+      typeof figmaJsonPath === "string" && figmaJsonPath.length > 0,
+      "Expected figmaJsonPath to be a non-empty string",
+    );
+
+    const { readFile } = await import("node:fs/promises");
+    const writtenContent = await readFile(figmaJsonPath, "utf8");
+    const parsed = JSON.parse(writtenContent) as Record<string, unknown>;
+    const doc = parsed.document as Record<string, unknown>;
+    assert.equal(doc.type, "DOCUMENT");
+    assert.equal(doc.id, "0:0");
+    const children = doc.children as Array<Record<string, unknown>>;
+    assert.equal(children.length, 3);
+
+    const expectedNames = ["Frame A", "Frame B", "Frame C"];
+    for (let i = 0; i < children.length; i += 1) {
+      const canvas = children[i]!;
+      assert.equal(canvas.type, "CANVAS", `child ${i} should be CANVAS`);
+      assert.equal(canvas.name, expectedNames[i]);
+      const canvasChildren = canvas.children as Array<Record<string, unknown>>;
+      assert.equal(canvasChildren.length, 1);
+      assert.equal(canvasChildren[0]!.type, "FRAME");
+      assert.equal(canvasChildren[0]!.name, expectedNames[i]);
+    }
+  } finally {
+    await close();
+  }
+});
+
+test("figma_paste writes raw non-envelope Figma document JSON byte-for-byte to disk", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "paste-raw-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const rawFigmaDoc = {
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        name: "Raw Doc",
+        children: [{ id: "2:1", type: "FRAME", name: "RawFrame" }],
+      },
+      components: {},
+      componentSets: {},
+      styles: {},
+    };
+    const rawPayload = JSON.stringify(rawFigmaDoc);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: rawPayload,
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    const figmaJsonPath = capturedInput.figmaJsonPath;
+    assert.ok(typeof figmaJsonPath === "string" && figmaJsonPath.length > 0);
+
+    const { readFile } = await import("node:fs/promises");
+    const writtenContent = await readFile(figmaJsonPath, "utf8");
+    assert.equal(
+      writtenContent,
+      rawPayload,
+      "Raw non-envelope payload must be written byte-for-byte without normalization",
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("figma_plugin normalizes a 3-selection ClipboardEnvelope into 3 CANVAS children on disk", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "plugin-multi-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "20:1", type: "FRAME", name: "Plugin A" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+        {
+          document: { id: "20:2", type: "FRAME", name: "Plugin B" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+        {
+          document: { id: "20:3", type: "FRAME", name: "Plugin C" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify(envelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    assert.equal(capturedInput.figmaSourceMode, "local_json");
+    assert.equal(capturedInput.requestSourceMode, "figma_plugin");
+    const figmaJsonPath = capturedInput.figmaJsonPath;
+    assert.ok(typeof figmaJsonPath === "string" && figmaJsonPath.length > 0);
+
+    const { readFile } = await import("node:fs/promises");
+    const writtenContent = await readFile(figmaJsonPath, "utf8");
+    const parsed = JSON.parse(writtenContent) as Record<string, unknown>;
+    const doc = parsed.document as Record<string, unknown>;
+    assert.equal(doc.type, "DOCUMENT");
+    assert.equal(doc.id, "0:0");
+    const children = doc.children as Array<Record<string, unknown>>;
+    assert.equal(children.length, 3);
+    for (let i = 0; i < children.length; i += 1) {
+      assert.equal(children[i]!.type, "CANVAS");
+      const canvasChildren = children[i]!.children as Array<
+        Record<string, unknown>
+      >;
+      assert.equal(canvasChildren.length, 1);
+      assert.equal(canvasChildren[0]!.type, "FRAME");
+    }
+  } finally {
+    await close();
+  }
+});
+
+test("figma_paste forwards pasteDeltaSeed to submitJob when roots are extractable", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "paste-seed-job",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "local_json",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "0.1.0",
+      copiedAt: "2026-04-12T18:00:00.000Z",
+      selections: [
+        {
+          document: { id: "30:1", type: "FRAME", name: "Seed Card" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        },
+      ],
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(envelope),
+        importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.ok(capturedInput);
+    const seed = capturedInput.pasteDeltaSeed as
+      | Record<string, unknown>
+      | undefined;
+    assert.ok(seed, "Expected pasteDeltaSeed to be forwarded to submitJob");
+    assert.equal(typeof seed.pasteIdentityKey, "string");
+    assert.ok((seed.pasteIdentityKey as string).length > 0);
+    assert.equal(seed.requestedMode, "auto");
+    assert.ok(
+      typeof seed.provisionalSummary === "object" &&
+        seed.provisionalSummary !== null,
+      "Expected provisionalSummary in pasteDeltaSeed",
+    );
+  } finally {
+    await close();
+  }
+});
