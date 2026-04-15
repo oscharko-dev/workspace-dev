@@ -24,21 +24,33 @@ export interface ReImportDeltaSummary {
 export interface ReImportPromptBannerProps {
   /** The matching previous session. */
   previousSession: PasteImportSession;
-  /** Click handler for "Update existing import" — caller re-runs the pipeline as a delta update. */
-  onUpdate: () => void;
+  /** Click handler for "Regenerate changed" — caller re-runs the pipeline as a delta update. */
+  onRegenerateChanged: () => void;
+  /** Click handler for "Regenerate selected" — caller re-runs only the selected subset. */
+  onRegenerateSelected: () => void;
   /** Click handler for "Create new" — caller re-runs pipeline with `importMode: "full"`. */
   onCreateNew: () => void;
   /** Click handler for the dismiss/close icon. */
   onDismiss: () => void;
+  /** Count of changed nodes in the current diff. */
+  changedCount?: number;
+  /** Count of currently selected changed nodes. */
+  selectedChangedCount?: number;
+  /** Count of changed nodes that will keep existing code if the selected-only action runs. */
+  keepExistingCount?: number;
   /** Optional delta summary from the most recent run. Renders an inline diff hint. */
   deltaSummary?: ReImportDeltaSummary | null;
 }
 
 export function ReImportPromptBanner({
   previousSession,
-  onUpdate,
+  onRegenerateChanged,
+  onRegenerateSelected,
   onCreateNew,
   onDismiss,
+  changedCount = 0,
+  selectedChangedCount = 0,
+  keepExistingCount = 0,
   deltaSummary = null,
 }: ReImportPromptBannerProps): JSX.Element {
   const importedAtLabel = formatImportedAt(previousSession.importedAt);
@@ -47,6 +59,13 @@ export function ReImportPromptBanner({
     deltaSummary !== null && deltaSummary.totalNodes > 0
       ? `${String(deltaSummary.nodesReprocessed)} of ${String(deltaSummary.totalNodes)} nodes changed since last import`
       : null;
+  const hasChangedSelection = selectedChangedCount > 0;
+  const selectionHint =
+    changedCount > 0
+      ? keepExistingCount > 0
+        ? `${String(keepExistingCount)} changed component${keepExistingCount === 1 ? "" : "s"} will keep existing code.`
+        : "All changed components are currently selected."
+      : "Select changed components to regenerate only part of the update.";
 
   return (
     <div
@@ -68,14 +87,34 @@ export function ReImportPromptBanner({
           {diffHint}
         </span>
       ) : null}
+      <span
+        data-testid="reimport-selection-hint"
+        className="shrink-0 text-[10px] text-amber-100/70"
+      >
+        {selectionHint}
+      </span>
       <div className="ml-auto flex items-center gap-2">
         <button
           type="button"
-          data-testid="reimport-update"
-          onClick={onUpdate}
+          data-testid="reimport-regenerate-changed"
+          onClick={onRegenerateChanged}
           className="cursor-pointer rounded border border-amber-500/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/10"
         >
-          Update
+          Regenerate changed
+        </button>
+        <button
+          type="button"
+          data-testid="reimport-regenerate-selected"
+          onClick={onRegenerateSelected}
+          disabled={!hasChangedSelection}
+          title={
+            hasChangedSelection
+              ? `Regenerate ${String(selectedChangedCount)} selected changed component${selectedChangedCount === 1 ? "" : "s"}`
+              : "Select one or more changed components first"
+          }
+          className="cursor-pointer rounded border border-amber-500/20 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-amber-200 transition hover:bg-amber-500/10 disabled:cursor-default disabled:opacity-40"
+        >
+          Regenerate selected
         </button>
         <button
           type="button"

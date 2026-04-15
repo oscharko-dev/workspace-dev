@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isWorkspaceProjectRoute,
+  parseImportSessionRoute,
   parseJobFilesRoute,
   parseJobRoute,
   parseReproRoute,
@@ -109,6 +110,32 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
   assert.equal(parseJobRoute("/workspace/jobs//sync"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//create-pr"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//stale-check"), undefined);
+});
+
+test("parseImportSessionRoute parses list, detail, and reimport routes", () => {
+  assert.deepEqual(parseImportSessionRoute("/workspace/import-sessions"), {
+    sessionId: "",
+    action: "detail",
+  });
+  assert.deepEqual(
+    parseImportSessionRoute("/workspace/import-sessions/session-1"),
+    {
+      sessionId: "session-1",
+      action: "detail",
+    },
+  );
+  assert.deepEqual(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/reimport"),
+    {
+      sessionId: "session-1",
+      action: "reimport",
+    },
+  );
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/extra"),
+    undefined,
+  );
+  assert.equal(parseImportSessionRoute("/workspace/import-sessions/"), undefined);
 });
 
 test("parseReproRoute parses preview paths with safe index fallback", () => {

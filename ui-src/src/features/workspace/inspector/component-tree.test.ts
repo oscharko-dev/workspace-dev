@@ -21,6 +21,7 @@ import { ComponentTree, type TreeNode } from "./component-tree";
 import { filterTree } from "./component-tree-utils";
 import {
   EMPTY_SELECTION,
+  selectNodeIds,
   toggleNode,
   type NodeSelectionState,
 } from "./node-selection-state";
@@ -927,6 +928,20 @@ describe("ComponentTree checkbox column", () => {
     expect(
       screen.getByTestId("tree-checkbox-screen-stream"),
     ).toBeInTheDocument();
+  });
+
+  it("renders a skipped badge for unchecked nodes in a scoped selection", () => {
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: selectNodeIds(["screen-home", "header-bar"], makeScreens()),
+      }),
+    );
+
+    expect(screen.getByTestId("tree-skipped-submit-btn")).toHaveTextContent(
+      "Skipped",
+    );
+    expect(screen.queryByTestId("tree-skipped-header-bar")).toBeNull();
   });
 });
 

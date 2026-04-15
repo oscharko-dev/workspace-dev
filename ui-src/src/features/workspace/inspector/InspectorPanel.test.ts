@@ -2977,7 +2977,7 @@ describe("InspectorPanel scope controls + import history (issue #1010)", () => {
     expect(onGenerateSelected).toHaveBeenCalledWith([]);
   });
 
-  it("re-import 'Update' re-runs onGenerateSelected with importMode: 'delta'", () => {
+  it("re-import 'Regenerate changed' re-runs onGenerateSelected with importMode: 'delta'", () => {
     const session = {
       id: "paste-import-3",
       fileKey: "FILE",
@@ -3001,9 +3001,111 @@ describe("InspectorPanel scope controls + import history (issue #1010)", () => {
       onResubmitFresh,
     });
 
-    fireEvent.click(screen.getByTestId("reimport-update"));
+    fireEvent.click(screen.getByTestId("reimport-regenerate-changed"));
     expect(onGenerateSelected).toHaveBeenCalledTimes(1);
     expect(onGenerateSelected).toHaveBeenCalledWith([], {
+      importMode: "delta",
+    });
+  });
+
+  it("re-import 'Regenerate selected' only submits the currently selected changed nodes", () => {
+    const session = {
+      id: "paste-import-4",
+      fileKey: "FILE",
+      nodeId: "1-2",
+      nodeName: "Home",
+      importedAt: new Date(2026, 3, 14, 12, 0, 0).toISOString(),
+      nodeCount: 5,
+      fileCount: 2,
+      selectedNodes: [] as string[],
+      scope: "all" as const,
+      componentMappings: 1,
+      pasteIdentityKey: "key-abc",
+      jobId: "job-prev",
+    };
+    const merged = installQueryMock();
+    merged["inspector-design-ir"] = {
+      ...merged["inspector-design-ir"],
+      data: {
+        ok: true,
+        status: 200,
+        payload: {
+          jobId: "job-1",
+          screens: [
+            {
+              id: "screen-1",
+              name: "Home",
+              generatedFile: "src/screens/Home.tsx",
+              children: [
+                { id: "header", name: "Header", type: "frame" },
+                { id: "hero", name: "Hero", type: "frame" },
+              ],
+            },
+          ],
+        },
+      },
+    };
+    mockUseQuery.mockImplementation((input: { queryKey?: unknown[] }) => {
+      const key = Array.isArray(input.queryKey) ? input.queryKey[0] : "";
+      if (
+        key === "inspector-previous-design-ir" &&
+        Array.isArray(input.queryKey) &&
+        input.queryKey[1] === "job-prev"
+      ) {
+        return {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              jobId: "job-prev",
+              screens: [
+                {
+                  id: "screen-home",
+                  name: "Home",
+                  generatedFile: "src/screens/Home.tsx",
+                  children: [
+                    { id: "header-bar", name: "HeaderBar", type: "appbar" },
+                  ],
+                },
+              ],
+            },
+          },
+          isLoading: false,
+          refetch: vi.fn(),
+        };
+      }
+      if (key === "inspector-files") return merged["inspector-files"];
+      if (key === "inspector-manifest") return merged["inspector-manifest"];
+      if (key === "inspector-design-ir") return merged["inspector-design-ir"];
+      if (key === "inspector-file-content") {
+        return merged["inspector-file-content"];
+      }
+      if (key === "inspector-generation-metrics") {
+        return merged["inspector-generation-metrics"];
+      }
+      if (key === "inspector-workspace-policy") {
+        return merged["inspector-workspace-policy"];
+      }
+      return {
+        data: undefined,
+        isLoading: false,
+        refetch: vi.fn(),
+      };
+    });
+    const onGenerateSelected = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      previousImportSession: session,
+      previousJobId: "job-prev",
+      onGenerateSelected,
+      onResubmitFresh: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByTestId("tree-deselect-all"));
+    fireEvent.click(screen.getByTestId("tree-checkbox-hero"));
+    fireEvent.click(screen.getByTestId("reimport-regenerate-selected"));
+
+    expect(onGenerateSelected).toHaveBeenCalledWith(["hero"], {
       importMode: "delta",
     });
   });

@@ -21,6 +21,8 @@ vi.mock("./inspector/InspectorPanel", () => ({
     openDialog,
     onCloseDialog,
     onRegenerationAccepted,
+    importHistory,
+    onReimportSession,
   }: {
     jobId: string;
     previewUrl: string;
@@ -29,6 +31,8 @@ vi.mock("./inspector/InspectorPanel", () => ({
     openDialog: string | null;
     onCloseDialog: () => void;
     onRegenerationAccepted: (nextJobId: string) => void;
+    importHistory?: Array<{ id: string }>;
+    onReimportSession?: (session: { id: string }) => void;
   }): JSX.Element => (
     <div>
       <div data-testid="inspector-layout">mock-inspector-layout</div>
@@ -44,6 +48,14 @@ vi.mock("./inspector/InspectorPanel", () => ({
       <button type="button" onClick={() => onRegenerationAccepted("job-2")}>
         Accept regeneration
       </button>
+      {importHistory && importHistory.length > 0 && onReimportSession ? (
+        <button
+          type="button"
+          onClick={() => onReimportSession(importHistory[0]!)}
+        >
+          Reimport history session
+        </button>
+      ) : null}
       <button type="button" onClick={onCloseDialog}>
         Close dialog
       </button>
@@ -295,6 +307,134 @@ describe("InspectorPage — bootstrap path", () => {
     expect(screen.queryByTestId("inspector-bootstrap")).not.toBeInTheDocument();
     expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
       "job-processing|||false|",
+    );
+  });
+
+  it("reimports history entries through the server-owned replay endpoint", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace/import-sessions") {
+        return createJsonResponse({
+          payload: {
+            sessions: [
+              {
+                id: "session-1",
+                fileKey: "FILE",
+                nodeId: "1:2",
+                nodeName: "Home",
+                importedAt: "2026-04-15T10:00:00.000Z",
+                nodeCount: 5,
+                fileCount: 2,
+                selectedNodes: [],
+                scope: "all",
+                componentMappings: 1,
+                pasteIdentityKey: null,
+                jobId: "job-prev",
+                replayable: true,
+              },
+            ],
+          },
+        }) as never;
+      }
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-bootstrap" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-bootstrap",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/preview" },
+            stages: [
+              { name: "figma.source", status: "completed" },
+              { name: "ir.derive", status: "completed" },
+              { name: "template.prepare", status: "completed" },
+              { name: "codegen.generate", status: "completed" },
+            ],
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-bootstrap/design-ir" ||
+        url === "/workspace/jobs/job-bootstrap/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-bootstrap", screens: [] },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-bootstrap/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+      if (
+        url === "/workspace/import-sessions/session-1/reimport" &&
+        init?.method === "POST"
+      ) {
+        return createJsonResponse({
+          status: 202,
+          payload: {
+            sessionId: "session-1",
+            jobId: "job-reimport",
+            sourceJobId: "job-prev",
+          },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-reimport") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-reimport",
+            status: "running",
+            stages: [{ name: "figma.source", status: "completed" }],
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-reimport/design-ir" ||
+        url === "/workspace/jobs/job-reimport/component-manifest" ||
+        url === "/workspace/jobs/job-reimport/files" ||
+        url === "/workspace/jobs/job-reimport/screenshot"
+      ) {
+        return createJsonResponse({
+          status: 409,
+          ok: false,
+          payload: { error: "JOB_NOT_COMPLETED" },
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    renderPage("/workspace/ui/inspector");
+
+    const textarea = screen.getByLabelText(/figma clipboard paste target/i);
+    fireEvent.paste(textarea, {
+      clipboardData: {
+        getData: (type: string) =>
+          type === "text" || type === "text/plain" ? '{"document":{}}' : "",
+      } as DataTransfer,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId("smart-banner")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByText("Import starten"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reimport history session" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("inspector-layout")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("inspector-panel-props")).toHaveTextContent(
+      "job-reimport||job-prev|false|",
     );
   });
 

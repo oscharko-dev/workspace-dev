@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { cp, mkdir, readFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -7,6 +7,10 @@ import {
   type WorkspaceBrandTheme,
   type WorkspaceFigmaSourceMode,
   type WorkspaceFormHandlingMode,
+  type WorkspaceImportSession,
+  type WorkspaceImportSessionDeleteResult,
+  type WorkspaceImportSessionReimportAccepted,
+  type WorkspaceImportSessionSourceMode,
   type WorkspaceLocalSyncApplyResult,
   type WorkspaceLocalSyncDryRunResult,
   type WorkspaceJobDiagnostic,
@@ -109,6 +113,7 @@ import {
   reuseStorybookArtifactsFromSourceJob,
 } from "./job-engine/storybook-artifacts.js";
 import { prepareGenerationDiff } from "./job-engine/generation-diff.js";
+import { createImportSessionStore } from "./job-engine/import-session-store.js";
 
 const MODULE_DIR =
   typeof __dirname === "string"
@@ -667,6 +672,9 @@ export const createJobEngine = ({
   const queuedRetryInputs = new Map<string, WorkspaceRetryInput>();
   const runningJobIds = new Set<string>();
   const localSyncConfirmations = new Map<string, LocalSyncConfirmationRecord>();
+  const importSessionStore = createImportSessionStore({
+    rootDir: path.join(resolvedPaths.outputRoot, "import-sessions"),
+  });
 
   const isAbortLikeError = (error: unknown): boolean => {
     if (!(error instanceof Error)) {
@@ -777,6 +785,153 @@ export const createJobEngine = ({
   }): void => {
     job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
     writeTerminalJobSnapshotSync({ job, diagnostics });
+  };
+
+  const sumComponentManifestMappings = (
+    manifest: unknown,
+  ): number => {
+    if (
+      typeof manifest !== "object" ||
+      manifest === null ||
+      !("screens" in manifest) ||
+      !Array.isArray((manifest as { screens?: unknown }).screens)
+    ) {
+      return 0;
+    }
+    let total = 0;
+    for (const screen of (manifest as { screens: Array<{ components?: unknown }> }).screens) {
+      if (!screen || !Array.isArray(screen.components)) {
+        continue;
+      }
+      total += screen.components.length;
+    }
+    return total;
+  };
+
+  const countDesignIrNodes = (ir: DesignIR): number => {
+    let total = 0;
+    const stack = [...(ir.screens as Array<{ children?: unknown[] }>)];
+    while (stack.length > 0) {
+      const next = stack.pop();
+      if (!next) {
+        continue;
+      }
+      total += 1;
+      if (Array.isArray(next.children) && next.children.length > 0) {
+        for (let index = next.children.length - 1; index >= 0; index -= 1) {
+          const child = next.children[index];
+          if (child) {
+            stack.push(child as { children?: unknown[] });
+          }
+        }
+      }
+    }
+    return total;
+  };
+
+  const resolveReplayability = ({
+    requestSourceMode,
+    fileKey,
+    nodeId,
+  }: {
+    requestSourceMode: WorkspaceImportSessionSourceMode;
+    fileKey: string;
+    nodeId: string;
+  }): Pick<
+    WorkspaceImportSession,
+    "replayable" | "replayDisabledReason"
+  > => {
+    if (requestSourceMode === "figma_url") {
+      return {
+        replayable: fileKey.length > 0,
+        ...(fileKey.length === 0
+          ? {
+              replayDisabledReason:
+                "This import is missing a stable Figma file locator.",
+            }
+          : {}),
+      };
+    }
+
+    if (requestSourceMode === "figma_paste" || requestSourceMode === "figma_plugin") {
+      if (fileKey.length > 0 && nodeId.length > 0) {
+        return { replayable: true };
+      }
+      return {
+        replayable: false,
+        replayDisabledReason:
+          "Clipboard imports without a stable live locator cannot be replayed from history.",
+      };
+    }
+
+    return {
+      replayable: fileKey.length > 0,
+      ...(fileKey.length === 0
+        ? {
+            replayDisabledReason:
+              "This import is missing a stable source locator.",
+          }
+        : {}),
+    };
+  };
+
+  const persistImportSessionForJob = async ({
+    job,
+    artifactStore,
+  }: {
+    job: JobRecord;
+    artifactStore: StageArtifactStore;
+  }): Promise<void> => {
+    const requestSourceMode = job.request.requestSourceMode;
+    if (requestSourceMode === undefined) {
+      return;
+    }
+    if (job.status !== "completed" && job.status !== "partial") {
+      return;
+    }
+
+    const designIr = await artifactStore.getValue<DesignIR>(STAGE_ARTIFACT_KEYS.designIr);
+    const codegenSummary = await artifactStore.getValue<{
+      generatedPaths?: string[];
+    }>(STAGE_ARTIFACT_KEYS.codegenSummary);
+    const componentManifest = await artifactStore.getValue(
+      STAGE_ARTIFACT_KEYS.componentManifest,
+    );
+    const fileKey = job.request.figmaFileKey?.trim() ?? "";
+    const nodeId = job.request.figmaNodeId?.trim() ?? "";
+    const pasteIdentityKey = job.pasteDeltaSummary?.pasteIdentityKey ?? null;
+    const matchedSession = await importSessionStore.findMatching({
+      pasteIdentityKey,
+      ...(fileKey.length > 0 ? { fileKey } : {}),
+      ...(nodeId.length > 0 ? { nodeId } : {}),
+    });
+    const selectedNodes = [...(job.request.selectedNodeIds ?? [])];
+
+    const session: WorkspaceImportSession = {
+      id: matchedSession?.id ?? randomUUID(),
+      jobId: job.jobId,
+      sourceMode: requestSourceMode,
+      fileKey,
+      nodeId,
+      nodeName:
+        designIr?.screens[0]?.name?.trim() ||
+        job.request.projectName?.trim() ||
+        fileKey,
+      importedAt: job.finishedAt ?? nowIso(),
+      nodeCount: designIr ? countDesignIrNodes(designIr) : 0,
+      fileCount: codegenSummary?.generatedPaths?.length ?? 0,
+      selectedNodes,
+      scope: selectedNodes.length > 0 ? "partial" : "all",
+      componentMappings: sumComponentManifestMappings(componentManifest),
+      pasteIdentityKey,
+      ...resolveReplayability({
+        requestSourceMode,
+        fileKey,
+        nodeId,
+      }),
+    };
+
+    await importSessionStore.save(session);
   };
 
   const determinePartialStatus = async ({
@@ -1657,6 +1812,7 @@ export const createJobEngine = ({
           : {}),
         job,
       });
+      await persistImportSessionForJob({ job, artifactStore });
       const generationSummary = await artifactStore.getValue<{
         generatedPaths?: string[];
       }>(STAGE_ARTIFACT_KEYS.codegenSummary);
@@ -1754,6 +1910,7 @@ export const createJobEngine = ({
       };
       job.currentStage = typedError.stage;
       await syncPublicJobProjection({ job, artifactStore });
+      await persistImportSessionForJob({ job, artifactStore });
       pushRuntimeLog({
         job,
         logger: runtime.logger,
@@ -1884,6 +2041,12 @@ export const createJobEngine = ({
       enableVisualQualityValidation: resolvedEnableVisualQualityValidation,
       compositeQualityWeights: resolvedCompositeQualityWeights,
       ...(input.importMode !== undefined ? { importMode: input.importMode } : {}),
+      ...(input.selectedNodeIds !== undefined
+        ? { selectedNodeIds: [...input.selectedNodeIds] }
+        : {}),
+      ...(input.requestSourceMode !== undefined
+        ? { requestSourceMode: input.requestSourceMode }
+        : {}),
       ...(resolvedEnableVisualQualityValidation
         ? {
             visualQualityReferenceMode: resolvedVisualQualityReferenceMode,
@@ -3611,6 +3774,99 @@ export const createJobEngine = ({
     });
   };
 
+  const listImportSessions: JobEngine["listImportSessions"] = async () => {
+    return await importSessionStore.list();
+  };
+
+  const reimportImportSession: JobEngine["reimportImportSession"] = async ({
+    sessionId,
+  }): Promise<WorkspaceImportSessionReimportAccepted> => {
+    const sessions = await importSessionStore.list();
+    const session = sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      const error = new Error(`Import session '${sessionId}' not found.`);
+      (error as Error & { code: string }).code = "E_IMPORT_SESSION_NOT_FOUND";
+      throw error;
+    }
+    if (!session.replayable) {
+      const error = new Error(
+        session.replayDisabledReason ??
+          `Import session '${sessionId}' is not replayable.`,
+      );
+      (error as Error & { code: string }).code =
+        "E_IMPORT_SESSION_NOT_REPLAYABLE";
+      throw error;
+    }
+    if (session.fileKey.trim().length === 0) {
+      const error = new Error(
+        `Import session '${sessionId}' is missing a Figma file key.`,
+      );
+      (error as Error & { code: string }).code =
+        "E_IMPORT_SESSION_INVALID_LOCATOR";
+      throw error;
+    }
+
+    const figmaAccessToken = process.env.FIGMA_ACCESS_TOKEN?.trim();
+    if (!figmaAccessToken) {
+      const error = new Error(
+        "Re-import requires FIGMA_ACCESS_TOKEN in the workspace-dev environment.",
+      );
+      (error as Error & { code: string }).code =
+        "E_IMPORT_SESSION_MISSING_FIGMA_ACCESS_TOKEN";
+      throw error;
+    }
+
+    const accepted = submitJob({
+      figmaSourceMode: "hybrid",
+      requestSourceMode: "figma_url",
+      figmaFileKey: session.fileKey,
+      ...(session.nodeId.length > 0 ? { figmaNodeId: session.nodeId } : {}),
+      figmaAccessToken,
+      enableGitPr: false,
+    });
+
+    return {
+      ...accepted,
+      sessionId,
+      sourceJobId: session.jobId,
+    };
+  };
+
+  const deleteImportSession: JobEngine["deleteImportSession"] = async ({
+    sessionId,
+  }): Promise<WorkspaceImportSessionDeleteResult> => {
+    const removed = await importSessionStore.delete(sessionId);
+    if (!removed) {
+      const error = new Error(`Import session '${sessionId}' not found.`);
+      (error as Error & { code: string }).code = "E_IMPORT_SESSION_NOT_FOUND";
+      throw error;
+    }
+
+    const linkedJob = jobs.get(removed.jobId);
+    if (linkedJob) {
+      jobs.delete(removed.jobId);
+      runningJobIds.delete(removed.jobId);
+      queuedJobInputs.delete(removed.jobId);
+      queuedRegenInputs.delete(removed.jobId);
+      queuedRetryInputs.delete(removed.jobId);
+      const queueIndex = queuedJobIds.indexOf(removed.jobId);
+      if (queueIndex >= 0) {
+        queuedJobIds.splice(queueIndex, 1);
+      }
+      refreshQueueSnapshots();
+    }
+
+    const jobDir = linkedJob?.artifacts.jobDir ??
+      path.join(resolvedPaths.jobsRoot, removed.jobId);
+    await rm(jobDir, { recursive: true, force: true });
+
+    return {
+      sessionId,
+      deleted: true,
+      jobId: removed.jobId,
+    };
+  };
+
   return {
     submitJob,
     submitRegeneration,
@@ -3625,6 +3881,9 @@ export const createJobEngine = ({
     resolvePreviewAsset,
     checkStaleDraft,
     suggestRemaps,
+    listImportSessions,
+    reimportImportSession,
+    deleteImportSession,
   };
 };
 

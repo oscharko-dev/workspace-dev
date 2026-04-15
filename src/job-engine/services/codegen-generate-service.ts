@@ -1,5 +1,5 @@
 import path from "node:path";
-import { readdir, readFile, rename, writeFile } from "node:fs/promises";
+import { readdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { exportImageAssetsFromFigma } from "../image-export.js";
 import { createPipelineError, getErrorMessage } from "../errors.js";
 import type { GenerationDiffContext } from "../generation-diff.js";
@@ -17,6 +17,7 @@ import type { DesignIR } from "../../parity/types-ir.js";
 import { toCustomerProfileDesignSystemConfigFromComponentMatchReport } from "../../customer-profile.js";
 import { parseStorybookThemesArtifact, parseStorybookTokensArtifact } from "../../storybook/artifact-validation.js";
 import { resolveStorybookTheme } from "../../storybook/theme-resolver.js";
+import { pruneDesignIrToSelectedNodeIds } from "../scoped-design-ir.js";
 import type {
   ComponentMatchReportIconResolutionRecord,
   ComponentMatchReportArtifact,
@@ -341,6 +342,54 @@ const collectGeneratedPaths = async ({
   return generatedPaths;
 };
 
+const collectRemovedDeltaFilePaths = ({
+  sourceManifest,
+  currentIdentitiesByScreenId,
+}: {
+  sourceManifest: ComponentManifest;
+  currentIdentitiesByScreenId: ReadonlyMap<
+    string,
+    { filePath: string }
+  >;
+}): string[] => {
+  const currentFilePaths = new Set(
+    Array.from(currentIdentitiesByScreenId.values()).map(
+      (identity) => identity.filePath,
+    ),
+  );
+  const removedFilePaths = new Set<string>();
+  for (const screen of sourceManifest.screens) {
+    if (!currentFilePaths.has(screen.file)) {
+      removedFilePaths.add(screen.file);
+    }
+  }
+  return Array.from(removedFilePaths).sort((left, right) =>
+    left.localeCompare(right),
+  );
+};
+
+const toSafeGeneratedProjectPath = ({
+  projectDir,
+  relativePath,
+}: {
+  projectDir: string;
+  relativePath: string;
+}): string | null => {
+  const trimmed = relativePath.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const resolvedProjectDir = path.resolve(projectDir);
+  const absolutePath = path.resolve(projectDir, trimmed);
+  if (
+    absolutePath !== resolvedProjectDir &&
+    !absolutePath.startsWith(`${resolvedProjectDir}${path.sep}`)
+  ) {
+    return null;
+  }
+  return absolutePath;
+};
+
 export const createCodegenGenerateService = ({
   exportImageAssetsFromFigmaFn = exportImageAssetsFromFigma,
   generateArtifactsStreamingFn = generateArtifactsStreaming,
@@ -368,6 +417,23 @@ export const createCodegenGenerateService = ({
           message: "Design IR is missing before code generation.",
           cause: error,
           limits: context.runtime.pipelineDiagnosticLimits
+        });
+      }
+
+      if (
+        context.mode === "submission" &&
+        Array.isArray(context.input?.selectedNodeIds) &&
+        context.input.selectedNodeIds.length > 0
+      ) {
+        ir = pruneDesignIrToSelectedNodeIds({
+          ir,
+          selectedNodeIds: context.input.selectedNodeIds,
+        });
+        await writeFile(designIrPath, `${JSON.stringify(ir, null, 2)}\n`, "utf8");
+        await context.artifactStore.setPath({
+          key: STAGE_ARTIFACT_KEYS.designIr,
+          stage: "codegen.generate",
+          absolutePath: designIrPath,
         });
       }
 
@@ -657,6 +723,7 @@ export const createCodegenGenerateService = ({
         ?.map((value) => value.trim())
         .filter((value) => value.length > 0);
       let requestedTargetIds = requestedRetryTargets;
+      let removedDeltaFilePaths: string[] = [];
       let sourceComponentManifest: ComponentManifest | undefined;
       const isDeltaNoChanges =
         context.mode === "submission" &&
@@ -684,6 +751,7 @@ export const createCodegenGenerateService = ({
           if (deltaTargetIds.length === 0) {
             await downgradePasteDeltaExecution("codegen_target_mapping_failed");
           } else {
+            const removableTargetIds = new Set<string>();
             const hasPathDrift = deltaTargetIds.some((targetId) => {
               const previousScreen = sourceComponentManifest?.screens.find(
                 (screen) => screen.screenId === targetId,
@@ -692,6 +760,10 @@ export const createCodegenGenerateService = ({
                 fullEmittedScreenResolution.emittedIdentitiesByScreenId.get(
                   targetId,
                 );
+              if (previousScreen && !nextIdentity) {
+                removableTargetIds.add(targetId);
+                return false;
+              }
               return (
                 !previousScreen ||
                 !nextIdentity ||
@@ -701,7 +773,13 @@ export const createCodegenGenerateService = ({
             if (hasPathDrift) {
               await downgradePasteDeltaExecution("codegen_target_path_changed");
             } else {
-              requestedTargetIds = deltaTargetIds;
+              requestedTargetIds = deltaTargetIds.filter(
+                (targetId) => !removableTargetIds.has(targetId),
+              );
+              removedDeltaFilePaths = sourceComponentManifest.screens
+                .filter((screen) => removableTargetIds.has(screen.screenId))
+                .map((screen) => screen.file)
+                .sort((left, right) => left.localeCompare(right));
             }
           }
         } catch (error) {
@@ -714,15 +792,38 @@ export const createCodegenGenerateService = ({
         }
       }
 
+      if (
+        sourceComponentManifest &&
+        pasteDeltaExecution?.eligibleForReuse === true &&
+        pasteDeltaExecution.summary.strategy === "delta"
+      ) {
+        for (const filePath of collectRemovedDeltaFilePaths({
+          sourceManifest: sourceComponentManifest,
+          currentIdentitiesByScreenId:
+            fullEmittedScreenResolution.emittedIdentitiesByScreenId,
+        })) {
+          if (!removedDeltaFilePaths.includes(filePath)) {
+            removedDeltaFilePaths.push(filePath);
+          }
+        }
+        removedDeltaFilePaths.sort((left, right) => left.localeCompare(right));
+      }
+
+      const hasTargetFilter =
+        requestedTargetIds !== undefined || removedDeltaFilePaths.length > 0;
       const selectedTargets =
-        requestedTargetIds && requestedTargetIds.length > 0
+        hasTargetFilter
           ? fullEmittedScreenResolution.emittedTargets.filter((target) => {
               const identity = fullEmittedScreenResolution.emittedIdentitiesByScreenId.get(
                 target.emittedScreenId
               );
               return (
-                requestedTargetIds.includes(target.emittedScreenId) ||
-                (identity ? requestedTargetIds.includes(identity.filePath) : false)
+                Boolean(
+                  requestedTargetIds?.includes(target.emittedScreenId) ||
+                    (identity
+                      ? requestedTargetIds?.includes(identity.filePath)
+                      : false),
+                )
               );
             })
           : fullEmittedScreenResolution.emittedTargets;
@@ -750,6 +851,7 @@ export const createCodegenGenerateService = ({
       }
 
       const generationIr =
+        !hasTargetFilter ||
         selectedTargets.length === fullEmittedScreenResolution.emittedTargets.length
           ? ir
           : {
@@ -758,7 +860,7 @@ export const createCodegenGenerateService = ({
               screenVariantFamilies: (ir.screenVariantFamilies ?? []).filter((family) =>
                 selectedFamilyIds.has(family.familyId)
               )
-            };
+        };
 
       const generator = generateArtifactsStreamingFn({
         projectDir: context.paths.generatedProjectDir,
@@ -812,6 +914,41 @@ export const createCodegenGenerateService = ({
       const manifestPath = path.join(context.paths.generatedProjectDir, "component-manifest.json");
       const publishedScreenIds = new Set<string>();
       let generatedProjectPublished = false;
+
+      const removeDeltaFiles = async (): Promise<void> => {
+        for (const relativePath of removedDeltaFilePaths) {
+          const absolutePath = toSafeGeneratedProjectPath({
+            projectDir: context.paths.generatedProjectDir,
+            relativePath,
+          });
+          if (!absolutePath) {
+            context.log({
+              level: "warn",
+              message:
+                `Skipped deleting stale delta artifact outside the generated project root: '${relativePath}'.`,
+            });
+            continue;
+          }
+          try {
+            await unlink(absolutePath);
+          } catch (error) {
+            const code =
+              typeof error === "object" &&
+              error !== null &&
+              "code" in error &&
+              typeof (error as { code?: unknown }).code === "string"
+                ? (error as { code: string }).code
+                : "";
+            if (code !== "ENOENT") {
+              context.log({
+                level: "warn",
+                message:
+                  `Could not delete stale delta artifact '${relativePath}': ${getErrorMessage(error)}`,
+              });
+            }
+          }
+        }
+      };
 
       const publishGeneratedProject = async (): Promise<void> => {
         if (generatedProjectPublished) {
@@ -917,6 +1054,66 @@ export const createCodegenGenerateService = ({
           message:
             `Skipped code generation because delta execution detected no changes ` +
             `(reused ${generationSummary.generatedPaths.length} generated files).`,
+        });
+        return;
+      }
+
+      if (
+        context.mode === "submission" &&
+        pasteDeltaExecution?.eligibleForReuse === true &&
+        pasteDeltaExecution.summary.strategy === "delta" &&
+        selectedTargets.length === 0 &&
+        removedDeltaFilePaths.length > 0
+      ) {
+        await publishGeneratedProject();
+        await removeDeltaFiles();
+        try {
+          const manifest = await buildComponentManifestFn({
+            projectDir: context.paths.generatedProjectDir,
+            screens: fullEmittedScreenResolution.emittedScreens,
+            identitiesByScreenId:
+              fullEmittedScreenResolution.emittedIdentitiesByScreenId,
+            associatedNodeIdsByScreenId: fullManifestAssociationNodeIdsByScreenId,
+          });
+          await writeManifestAtomically({
+            manifestPath,
+            payload: manifest,
+          });
+          await context.artifactStore.setPath({
+            key: STAGE_ARTIFACT_KEYS.componentManifest,
+            stage: "codegen.generate",
+            absolutePath: manifestPath,
+          });
+        } catch (error) {
+          context.log({
+            level: "warn",
+            message:
+              `Component manifest generation failed during delta removal cleanup: ${getErrorMessage(error)}`,
+          });
+        }
+
+        const generationSummary: CodegenGenerateSummary = {
+          generatedPaths: await collectGeneratedPaths({
+            projectDir: context.paths.generatedProjectDir,
+          }),
+        };
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.codegenSummary,
+          stage: "codegen.generate",
+          value: generationSummary,
+        });
+        const diffContext: GenerationDiffContext = {
+          boardKey: currentBoardKey,
+        };
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+          stage: "codegen.generate",
+          value: diffContext,
+        });
+        context.log({
+          level: "info",
+          message:
+            `Skipped code generation and removed ${removedDeltaFilePaths.length} stale delta artifact(s).`,
         });
         return;
       }
@@ -1028,6 +1225,7 @@ export const createCodegenGenerateService = ({
       }
 
       await publishGeneratedProject();
+      await removeDeltaFiles();
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.codegenSummary,
         stage: "codegen.generate",

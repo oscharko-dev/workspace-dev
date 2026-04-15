@@ -3264,6 +3264,153 @@ test("CodegenGenerateService maps changed node ids to affected emitted targets f
   assert.deepEqual(generatedScreenIds, ["screen-1"]);
 });
 
+test("CodegenGenerateService removes carried-forward files for removed delta targets", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  const ir = createMinimalIr();
+  await writeFile(
+    executionContext.paths.designIrFile,
+    `${JSON.stringify(ir, null, 2)}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile,
+  });
+  await mkdir(
+    path.join(executionContext.paths.generatedProjectDir, "src", "screens"),
+    { recursive: true },
+  );
+  await writeFile(
+    path.join(
+      executionContext.paths.generatedProjectDir,
+      toDeterministicScreenPath("Screen 1"),
+    ),
+    "retained\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(
+      executionContext.paths.generatedProjectDir,
+      toDeterministicScreenPath("Removed Screen"),
+    ),
+    "stale\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(
+      executionContext.paths.generatedProjectDir,
+      "component-manifest.json",
+    ),
+    `${JSON.stringify(
+      {
+        screens: [
+          {
+            screenId: "screen-1",
+            screenName: "Screen 1",
+            file: toDeterministicScreenPath("Screen 1"),
+            components: [],
+          },
+          {
+            screenId: "screen-removed",
+            screenName: "Removed Screen",
+            file: toDeterministicScreenPath("Removed Screen"),
+            components: [],
+          },
+        ],
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+    stage: "figma.source",
+    value: {
+      pasteIdentityKey: "paste-removed",
+      requestedMode: "auto",
+      summary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "delta",
+        totalNodes: 2,
+        nodesReused: 1,
+        nodesReprocessed: 1,
+        structuralChangeRatio: 0.5,
+        pasteIdentityKey: "paste-removed",
+        priorManifestMissing: false,
+      },
+      currentFingerprintNodes: [],
+      rootNodeIds: ["screen-1"],
+      changedNodeIds: ["screen-removed"],
+      changedRootNodeIds: [],
+      sourceJobId: "source-codegen-removed",
+      eligibleForReuse: true,
+    },
+  });
+
+  let generatorCalled = false;
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* () {
+      generatorCalled = true;
+      return { generatedPaths: [] };
+    },
+    buildComponentManifestFn: async ({
+      screens,
+      identitiesByScreenId,
+    }) => ({
+      screens: screens.map((screen) => ({
+        screenId: screen.id,
+        screenName: screen.name,
+        file: identitiesByScreenId.get(screen.id)?.filePath ?? "",
+        components: [],
+      })),
+    }) as Awaited<
+      ReturnType<
+        typeof import("../../parity/component-manifest.js").buildComponentManifest
+      >
+    >,
+  });
+
+  await service.execute(
+    {
+      boardKeySeed: "demo-board",
+    },
+    stageContextFor("codegen.generate"),
+  );
+
+  assert.equal(generatorCalled, false);
+  await assert.rejects(
+    readFile(
+      path.join(
+        executionContext.paths.generatedProjectDir,
+        toDeterministicScreenPath("Removed Screen"),
+      ),
+      "utf8",
+    ),
+  );
+  assert.equal(
+    await readFile(
+      path.join(
+        executionContext.paths.generatedProjectDir,
+        toDeterministicScreenPath("Screen 1"),
+      ),
+      "utf8",
+    ),
+    "retained\n",
+  );
+  assert.deepEqual(
+    await executionContext.artifactStore.getValue(STAGE_ARTIFACT_KEYS.codegenSummary),
+    {
+      generatedPaths: [
+        "component-manifest.json",
+        toDeterministicScreenPath("Screen 1"),
+      ].sort((left, right) => left.localeCompare(right)),
+    },
+  );
+});
+
 test("CodegenGenerateService builds the component manifest from emitted canonical screens only", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   const ir = createMinimalIr();

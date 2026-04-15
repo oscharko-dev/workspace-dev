@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.13.0
+ * Contract version: 3.14.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -16,6 +16,11 @@ export type WorkspaceFigmaSourceMode =
   | "local_json"
   | "figma_paste"
   | "figma_plugin";
+
+/** Source modes used to record replayable import sessions. */
+export type WorkspaceImportSessionSourceMode =
+  | WorkspaceFigmaSourceMode
+  | "figma_url";
 
 /** Import intent detected by the client-side paste classifier. */
 export type WorkspaceImportIntent =
@@ -34,6 +39,8 @@ export type WorkspacePasteDeltaStrategy =
 
 /** Import mode for a Figma paste. `"auto"` lets the server pick delta vs full based on diff threshold. */
 export type WorkspaceImportMode = "full" | "delta" | "auto";
+
+export type WorkspaceImportSessionScope = "all" | "partial";
 
 /** Summary of the per-paste delta computation. Surfaced on JobResult when Figma paste import is used. */
 export interface WorkspacePasteDeltaSummary {
@@ -293,6 +300,8 @@ export interface WorkspaceJobInput {
   figmaJsonPayload?: string;
   /** Optional import mode for Figma paste. `"auto"` lets the server pick delta vs full based on diff threshold. */
   importMode?: WorkspaceImportMode;
+  /** Optional server-side generation scope. When present, only the selected IR nodes are kept for output generation. */
+  selectedNodeIds?: string[];
   storybookStaticDir?: string;
   customerProfilePath?: string;
   customerBrandId?: string;
@@ -320,6 +329,8 @@ export interface WorkspaceJobInput {
   importIntent?: WorkspaceImportIntent;
   originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
+  /** Internal submit-origin marker preserved for replayable import sessions. */
+  requestSourceMode?: WorkspaceImportSessionSourceMode;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
@@ -327,6 +338,7 @@ export interface WorkspaceJobRequestMetadata {
   figmaFileKey?: string;
   figmaNodeId?: string;
   figmaJsonPath?: string;
+  selectedNodeIds?: string[];
   storybookStaticDir?: string;
   customerProfilePath?: string;
   customerBrandId?: string;
@@ -354,6 +366,43 @@ export interface WorkspaceJobRequestMetadata {
   importIntent?: WorkspaceImportIntent;
   originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
+  requestSourceMode?: WorkspaceImportSessionSourceMode;
+}
+
+export interface WorkspaceImportSession {
+  id: string;
+  jobId: string;
+  sourceMode: WorkspaceImportSessionSourceMode;
+  fileKey: string;
+  nodeId: string;
+  nodeName: string;
+  importedAt: string;
+  nodeCount: number;
+  fileCount: number;
+  selectedNodes: string[];
+  scope: WorkspaceImportSessionScope;
+  componentMappings: number;
+  version?: string;
+  pasteIdentityKey: string | null;
+  replayable: boolean;
+  replayDisabledReason?: string;
+  userId?: string;
+}
+
+export interface WorkspaceImportSessionsResponse {
+  sessions: WorkspaceImportSession[];
+}
+
+export interface WorkspaceImportSessionReimportAccepted
+  extends WorkspaceSubmitAccepted {
+  sessionId: string;
+  sourceJobId?: string;
+}
+
+export interface WorkspaceImportSessionDeleteResult {
+  sessionId: string;
+  deleted: true;
+  jobId?: string;
 }
 
 /** Submit response for accepted jobs. */
@@ -1192,4 +1241,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.13.0" as const;
+export const CONTRACT_VERSION = "3.14.0" as const;

@@ -94,6 +94,24 @@ function createStubJobEngine(overrides: Partial<JobEngine> = {}): JobEngine {
         rejections: [],
         message: "No remaps",
       }) as Awaited<ReturnType<JobEngine["suggestRemaps"]>>,
+    listImportSessions: async () => [],
+    reimportImportSession: async ({ sessionId }) =>
+      ({
+        jobId: "reimport-job",
+        sessionId,
+        sourceJobId: "source-job",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "hybrid",
+          llmCodegenMode: "deterministic",
+        },
+      }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>,
+    deleteImportSession: async ({ sessionId }) =>
+      ({
+        sessionId,
+        deleted: true,
+        jobId: "job-accepted",
+      }) as Awaited<ReturnType<JobEngine["deleteImportSession"]>>,
     ...overrides,
   } as unknown as JobEngine;
 }
@@ -264,6 +282,122 @@ test("request handler returns the parsed inspector policy when the file is valid
           disabledRules: ["missing-h1"],
         },
       },
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler lists persisted import sessions", async () => {
+  const listImportSessions = test.mock.fn(async () => [
+    {
+      id: "session-1",
+      jobId: "job-1",
+      sourceMode: "figma_url",
+      fileKey: "file-key",
+      nodeId: "1:2",
+      nodeName: "Checkout",
+      importedAt: "2026-04-15T10:00:00.000Z",
+      nodeCount: 12,
+      fileCount: 3,
+      selectedNodes: [],
+      scope: "all",
+      componentMappings: 2,
+      pasteIdentityKey: null,
+      replayable: true,
+    },
+  ] as Awaited<ReturnType<JobEngine["listImportSessions"]>>);
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ listImportSessions }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/import-sessions",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(listImportSessions.mock.callCount(), 1);
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      sessions: [
+        {
+          id: "session-1",
+          jobId: "job-1",
+          sourceMode: "figma_url",
+          fileKey: "file-key",
+          nodeId: "1:2",
+          nodeName: "Checkout",
+          importedAt: "2026-04-15T10:00:00.000Z",
+          nodeCount: 12,
+          fileCount: 3,
+          selectedNodes: [],
+          scope: "all",
+          componentMappings: 2,
+          pasteIdentityKey: null,
+          replayable: true,
+        },
+      ],
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler reimports persisted import sessions via POST", async () => {
+  const reimportImportSession = test.mock.fn(async ({ sessionId }) => ({
+    jobId: "job-reimport",
+    sessionId,
+    sourceJobId: "job-1",
+    status: "queued",
+    acceptedModes: {
+      figmaSourceMode: "hybrid",
+      llmCodegenMode: "deterministic",
+    },
+  }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>);
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ reimportImportSession }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/reimport",
+      headers: { "content-type": "application/json" },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(reimportImportSession.mock.callCount(), 1);
+    assert.deepEqual(reimportImportSession.mock.calls[0]?.arguments[0], {
+      sessionId: "session-1",
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler deletes persisted import sessions via DELETE", async () => {
+  const deleteImportSession = test.mock.fn(async ({ sessionId }) => ({
+    sessionId,
+    deleted: true,
+    jobId: "job-1",
+  }) as Awaited<ReturnType<JobEngine["deleteImportSession"]>>);
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ deleteImportSession }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "DELETE",
+      url: "/workspace/import-sessions/session-1",
+      headers: { "content-type": "application/json" },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(deleteImportSession.mock.callCount(), 1);
+    assert.deepEqual(deleteImportSession.mock.calls[0]?.arguments[0], {
+      sessionId: "session-1",
     });
   } finally {
     await close();
@@ -969,6 +1103,45 @@ test("request handler forwards normalized componentMappings on submit and regene
         },
       ],
     );
+  } finally {
+    await close();
+  }
+});
+
+test("request handler forwards selectedNodeIds on scoped submit requests", async () => {
+  const submitJob = test.mock.fn(() => {
+    return {
+      jobId: "job-selected",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "hybrid",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "hybrid",
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token",
+        selectedNodeIds: ["frame-1", " child-2 "],
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.deepEqual(submitJob.mock.calls[0]?.arguments[0]?.selectedNodeIds, [
+      "frame-1",
+      "child-2",
+    ]);
   } finally {
     await close();
   }

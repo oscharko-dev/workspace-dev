@@ -401,6 +401,37 @@ test("schema: invalid enableGitPr types report exact issue paths", () => {
   }
 });
 
+test("schema: selectedNodeIds accepts non-empty string arrays for import-capable submits", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    selectedNodeIds: ["frame-1", " child-2 "],
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.deepEqual(result.data.selectedNodeIds, ["frame-1", "child-2"]);
+  }
+});
+
+test("schema: selectedNodeIds rejects malformed arrays", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "key-1",
+    figmaAccessToken: "token",
+    selectedNodeIds: ["frame-1", ""],
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["selectedNodeIds", 1],
+        message: "selectedNodeIds entries must be non-empty strings",
+      },
+    ]);
+  }
+});
+
 test("schema: rest mode missing credentials report exact required-field issues", () => {
   const result = SubmitRequestSchema.safeParse({
     figmaSourceMode: "rest",

@@ -266,6 +266,7 @@ interface PipelineRequest {
 
 export type PipelineAction =
   | { type: "start" }
+  | { type: "start_resolving" }
   | { type: "parsing_done" }
   | { type: "source_screens_ready"; screens: SourceScreenHint[] }
   | {
@@ -535,6 +536,20 @@ export function pastePipelineReducer(
         stageProgress: {
           ...nextState.stageProgress,
           parsing: { state: "running" },
+        },
+        canCancel: true,
+      };
+    }
+
+    case "start_resolving": {
+      const nextState = createInitialPipelineState();
+      return {
+        ...nextState,
+        stage: "resolving",
+        stageProgress: {
+          ...nextState.stageProgress,
+          parsing: { state: "done", duration: 0 },
+          resolving: { state: "running" },
         },
         canCancel: true,
       };
@@ -2070,7 +2085,8 @@ async function executePipelineRun({
   apply: (action: PipelineAction) => void;
 }): Promise<{ jobId?: string }> {
   if (retryRequest === undefined) {
-    apply({ type: "start" });
+    const startsResolving = request.sourceMode === "figma_url";
+    apply({ type: startsResolving ? "start_resolving" : "start" });
 
     const requestError = validatePipelineRequest(request);
     if (requestError !== null) {
@@ -2082,10 +2098,12 @@ async function executePipelineRun({
       return {};
     }
 
-    apply({ type: "parsing_done" });
-    const sourceScreens = extractSourceScreensFromPayload(request.payload);
-    if (sourceScreens.length > 0) {
-      apply({ type: "source_screens_ready", screens: sourceScreens });
+    if (!startsResolving) {
+      apply({ type: "parsing_done" });
+      const sourceScreens = extractSourceScreensFromPayload(request.payload);
+      if (sourceScreens.length > 0) {
+        apply({ type: "source_screens_ready", screens: sourceScreens });
+      }
     }
   }
 

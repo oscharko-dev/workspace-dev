@@ -71,6 +71,50 @@ export function isWorkspaceProjectRoute(pathname: string): boolean {
   );
 }
 
+export function parseImportSessionRoute(pathname: string):
+  | {
+      sessionId: string;
+      action: "detail" | "reimport";
+    }
+  | undefined {
+  if (pathname === "/workspace/import-sessions") {
+    return {
+      sessionId: "",
+      action: "detail",
+    };
+  }
+
+  const prefix = "/workspace/import-sessions/";
+  if (!pathname.startsWith(prefix)) {
+    return undefined;
+  }
+
+  const rest = pathname.slice(prefix.length);
+  if (rest.length === 0) {
+    return undefined;
+  }
+
+  if (rest.endsWith("/reimport")) {
+    const sessionId = rest.slice(0, -"/reimport".length);
+    if (!sessionId || sessionId.includes("/")) {
+      return undefined;
+    }
+    return {
+      sessionId,
+      action: "reimport",
+    };
+  }
+
+  if (rest.includes("/")) {
+    return undefined;
+  }
+
+  return {
+    sessionId: rest,
+    action: "detail",
+  };
+}
+
 export function parseJobRoute(pathname: string):
   | {
       jobId: string;

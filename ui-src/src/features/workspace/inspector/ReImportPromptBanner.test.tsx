@@ -39,7 +39,8 @@ describe("ReImportPromptBanner — rendering", () => {
     render(
       <ReImportPromptBanner
         previousSession={session}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={vi.fn()}
       />,
@@ -55,20 +56,41 @@ describe("ReImportPromptBanner — rendering", () => {
 });
 
 describe("ReImportPromptBanner — interactions", () => {
-  it("invokes onUpdate when the Update button is clicked", () => {
-    const onUpdate = vi.fn();
+  it("invokes onRegenerateChanged when the changed button is clicked", () => {
+    const onRegenerateChanged = vi.fn();
     render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={onUpdate}
+        onRegenerateChanged={onRegenerateChanged}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={vi.fn()}
       />,
     );
 
-    fireEvent.click(screen.getByTestId("reimport-update"));
+    fireEvent.click(screen.getByTestId("reimport-regenerate-changed"));
 
-    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expect(onRegenerateChanged).toHaveBeenCalledTimes(1);
+  });
+
+  it("invokes onRegenerateSelected when the selected button is clicked", () => {
+    const onRegenerateSelected = vi.fn();
+    render(
+      <ReImportPromptBanner
+        previousSession={makeSession()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={onRegenerateSelected}
+        onCreateNew={vi.fn()}
+        onDismiss={vi.fn()}
+        changedCount={3}
+        selectedChangedCount={2}
+        keepExistingCount={1}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId("reimport-regenerate-selected"));
+
+    expect(onRegenerateSelected).toHaveBeenCalledTimes(1);
   });
 
   it("invokes onCreateNew when the Create new button is clicked", () => {
@@ -76,7 +98,8 @@ describe("ReImportPromptBanner — interactions", () => {
     render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={onCreateNew}
         onDismiss={vi.fn()}
       />,
@@ -92,7 +115,8 @@ describe("ReImportPromptBanner — interactions", () => {
     render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={onDismiss}
       />,
@@ -103,13 +127,15 @@ describe("ReImportPromptBanner — interactions", () => {
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
-  it("does not invoke Update or CreateNew when the dismiss button is clicked", () => {
-    const onUpdate = vi.fn();
+  it("does not invoke any action buttons when the dismiss button is clicked", () => {
+    const onRegenerateChanged = vi.fn();
+    const onRegenerateSelected = vi.fn();
     const onCreateNew = vi.fn();
     render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={onUpdate}
+        onRegenerateChanged={onRegenerateChanged}
+        onRegenerateSelected={onRegenerateSelected}
         onCreateNew={onCreateNew}
         onDismiss={vi.fn()}
       />,
@@ -117,8 +143,29 @@ describe("ReImportPromptBanner — interactions", () => {
 
     fireEvent.click(screen.getByTestId("reimport-dismiss"));
 
-    expect(onUpdate).not.toHaveBeenCalled();
+    expect(onRegenerateChanged).not.toHaveBeenCalled();
+    expect(onRegenerateSelected).not.toHaveBeenCalled();
     expect(onCreateNew).not.toHaveBeenCalled();
+  });
+
+  it("disables regenerate selected when no changed components are selected", () => {
+    render(
+      <ReImportPromptBanner
+        previousSession={makeSession()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
+        onCreateNew={vi.fn()}
+        onDismiss={vi.fn()}
+        changedCount={3}
+        selectedChangedCount={0}
+        keepExistingCount={3}
+      />,
+    );
+
+    expect(screen.getByTestId("reimport-regenerate-selected")).toBeDisabled();
+    expect(screen.getByTestId("reimport-selection-hint")).toHaveTextContent(
+      "3 changed components will keep existing code.",
+    );
   });
 });
 
@@ -127,7 +174,8 @@ describe("ReImportPromptBanner — accessibility", () => {
     render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={vi.fn()}
       />,
@@ -144,7 +192,8 @@ describe("ReImportPromptBanner — accessibility", () => {
     render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={vi.fn()}
       />,
@@ -158,7 +207,8 @@ describe("ReImportPromptBanner — accessibility", () => {
     render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={vi.fn()}
         deltaSummary={{
@@ -178,7 +228,8 @@ describe("ReImportPromptBanner — accessibility", () => {
     const { rerender } = render(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={vi.fn()}
         deltaSummary={null}
@@ -189,7 +240,8 @@ describe("ReImportPromptBanner — accessibility", () => {
     rerender(
       <ReImportPromptBanner
         previousSession={makeSession()}
-        onUpdate={vi.fn()}
+        onRegenerateChanged={vi.fn()}
+        onRegenerateSelected={vi.fn()}
         onCreateNew={vi.fn()}
         onDismiss={vi.fn()}
         deltaSummary={{ totalNodes: 0, nodesReused: 0, nodesReprocessed: 0 }}
