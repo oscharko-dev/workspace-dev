@@ -53,10 +53,17 @@ export interface WorkspaceA11yPolicy {
   disabledRules?: string[];
 }
 
+export interface WorkspaceGovernancePolicy {
+  minQualityScoreToApply?: number | null;
+  securitySensitivePatterns?: string[];
+  requireNoteOnOverride?: boolean;
+}
+
 export interface WorkspacePolicy {
   quality?: WorkspaceQualityPolicy;
   tokens?: WorkspaceTokenPolicy;
   a11y?: WorkspaceA11yPolicy;
+  governance?: WorkspaceGovernancePolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,10 +89,17 @@ export interface ResolvedWorkspaceA11yPolicy {
   disabledRules: string[];
 }
 
+export interface ResolvedWorkspaceGovernancePolicy {
+  minQualityScoreToApply: number | null;
+  securitySensitivePatterns: string[];
+  requireNoteOnOverride: boolean;
+}
+
 export interface ResolvedWorkspacePolicy {
   quality: ResolvedWorkspaceQualityPolicy;
   tokens: ResolvedWorkspaceTokenPolicy;
   a11y: ResolvedWorkspaceA11yPolicy;
+  governance: ResolvedWorkspaceGovernancePolicy;
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +123,11 @@ export const DEFAULT_WORKSPACE_POLICY: ResolvedWorkspacePolicy = {
     wcagLevel: "AA",
     disabledRules: [],
   },
+  governance: {
+    minQualityScoreToApply: null,
+    securitySensitivePatterns: [],
+    requireNoteOnOverride: true,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -129,6 +148,7 @@ export function resolveWorkspacePolicy(
     quality: mergeQualityPolicy(source.quality),
     tokens: mergeTokenPolicy(source.tokens),
     a11y: mergeA11yPolicy(source.a11y),
+    governance: mergeGovernancePolicy(source.governance),
   };
 }
 
@@ -181,5 +201,23 @@ function mergeA11yPolicy(
     wcagLevel: override.wcagLevel ?? DEFAULT_WORKSPACE_POLICY.a11y.wcagLevel,
     disabledRules:
       override.disabledRules ?? DEFAULT_WORKSPACE_POLICY.a11y.disabledRules,
+  };
+}
+
+function mergeGovernancePolicy(
+  override: WorkspaceGovernancePolicy | undefined,
+): ResolvedWorkspaceGovernancePolicy {
+  if (!override) return DEFAULT_WORKSPACE_POLICY.governance;
+  return {
+    minQualityScoreToApply:
+      override.minQualityScoreToApply === undefined
+        ? DEFAULT_WORKSPACE_POLICY.governance.minQualityScoreToApply
+        : override.minQualityScoreToApply,
+    securitySensitivePatterns:
+      override.securitySensitivePatterns ??
+      DEFAULT_WORKSPACE_POLICY.governance.securitySensitivePatterns,
+    requireNoteOnOverride:
+      override.requireNoteOnOverride ??
+      DEFAULT_WORKSPACE_POLICY.governance.requireNoteOnOverride,
   };
 }

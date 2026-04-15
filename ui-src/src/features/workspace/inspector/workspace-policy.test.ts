@@ -73,3 +73,40 @@ describe("resolveWorkspacePolicy", () => {
     expect(resolved.a11y.disabledRules).toEqual(["missing-h1"]);
   });
 });
+
+describe("governance policy", () => {
+  it("returns default governance values when omitted", () => {
+    expect(resolveWorkspacePolicy({}).governance).toEqual(
+      DEFAULT_WORKSPACE_POLICY.governance,
+    );
+    expect(resolveWorkspacePolicy().governance).toEqual(
+      DEFAULT_WORKSPACE_POLICY.governance,
+    );
+  });
+
+  it("merges override values without dropping defaults", () => {
+    const resolved = resolveWorkspacePolicy({
+      governance: {
+        minQualityScoreToApply: 70,
+        securitySensitivePatterns: ["password", "ssn"],
+        requireNoteOnOverride: false,
+      },
+    });
+    expect(resolved.governance.minQualityScoreToApply).toBe(70);
+    expect(resolved.governance.securitySensitivePatterns).toEqual([
+      "password",
+      "ssn",
+    ]);
+    expect(resolved.governance.requireNoteOnOverride).toBe(false);
+  });
+
+  it("treats null minQualityScoreToApply as no gate", () => {
+    const resolved = resolveWorkspacePolicy({
+      governance: { minQualityScoreToApply: null },
+    });
+    expect(resolved.governance.minQualityScoreToApply).toBeNull();
+    expect(resolved.governance.requireNoteOnOverride).toBe(
+      DEFAULT_WORKSPACE_POLICY.governance.requireNoteOnOverride,
+    );
+  });
+});

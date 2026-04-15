@@ -4,7 +4,22 @@ import path from "node:path";
 import {
   CONTRACT_VERSION,
   type WorkspaceImportSession,
+  type WorkspaceImportSessionStatus,
 } from "../contracts/index.js";
+
+const IMPORT_SESSION_STATUSES: ReadonlySet<string> = new Set([
+  "imported",
+  "reviewing",
+  "approved",
+  "applied",
+  "rejected",
+]);
+
+const isImportSessionStatus = (
+  value: unknown,
+): value is WorkspaceImportSessionStatus => {
+  return typeof value === "string" && IMPORT_SESSION_STATUSES.has(value);
+};
 
 const DEFAULT_MAX_ENTRIES = 20;
 const STORE_FILE_NAME = "import-sessions.json";
@@ -34,7 +49,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 const isStringArray = (value: unknown): value is string[] => {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "string")
+  );
 };
 
 const isImportSession = (value: unknown): value is WorkspaceImportSession => {
@@ -58,10 +75,7 @@ const isImportSession = (value: unknown): value is WorkspaceImportSession => {
   ) {
     return false;
   }
-  if (
-    value.version !== undefined &&
-    typeof value.version !== "string"
-  ) {
+  if (value.version !== undefined && typeof value.version !== "string") {
     return false;
   }
   if (
@@ -79,10 +93,30 @@ const isImportSession = (value: unknown): value is WorkspaceImportSession => {
   if (value.userId !== undefined && typeof value.userId !== "string") {
     return false;
   }
+  if (
+    value.qualityScore !== undefined &&
+    (typeof value.qualityScore !== "number" ||
+      !Number.isInteger(value.qualityScore) ||
+      value.qualityScore < 0 ||
+      value.qualityScore > 100)
+  ) {
+    return false;
+  }
+  if (value.status !== undefined && !isImportSessionStatus(value.status)) {
+    return false;
+  }
+  if (
+    value.reviewRequired !== undefined &&
+    typeof value.reviewRequired !== "boolean"
+  ) {
+    return false;
+  }
   return true;
 };
 
-const isEnvelope = (value: unknown): value is PersistedImportSessionsEnvelope => {
+const isEnvelope = (
+  value: unknown,
+): value is PersistedImportSessionsEnvelope => {
   if (!isRecord(value)) {
     return false;
   }
@@ -101,7 +135,9 @@ const sortNewestFirst = (
   );
 };
 
-const sanitizeQueryString = (value: string | null | undefined): string | null => {
+const sanitizeQueryString = (
+  value: string | null | undefined,
+): string | null => {
   if (typeof value !== "string") {
     return null;
   }

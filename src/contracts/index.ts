@@ -369,6 +369,36 @@ export interface WorkspaceJobRequestMetadata {
   requestSourceMode?: WorkspaceImportSessionSourceMode;
 }
 
+export type WorkspaceImportSessionStatus =
+  | "imported"
+  | "reviewing"
+  | "approved"
+  | "applied"
+  | "rejected";
+
+export type WorkspaceImportSessionEventKind =
+  | "imported"
+  | "review_started"
+  | "approved"
+  | "applied"
+  | "rejected"
+  | "apply_blocked"
+  | "note";
+
+export interface WorkspaceImportSessionEvent {
+  id: string;
+  sessionId: string;
+  kind: WorkspaceImportSessionEventKind;
+  at: string;
+  actor?: string;
+  note?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+export interface WorkspaceImportSessionEventsResponse {
+  events: WorkspaceImportSessionEvent[];
+}
+
 export interface WorkspaceImportSession {
   id: string;
   jobId: string;
@@ -387,14 +417,16 @@ export interface WorkspaceImportSession {
   replayable: boolean;
   replayDisabledReason?: string;
   userId?: string;
+  qualityScore?: number;
+  status?: WorkspaceImportSessionStatus;
+  reviewRequired?: boolean;
 }
 
 export interface WorkspaceImportSessionsResponse {
   sessions: WorkspaceImportSession[];
 }
 
-export interface WorkspaceImportSessionReimportAccepted
-  extends WorkspaceSubmitAccepted {
+export interface WorkspaceImportSessionReimportAccepted extends WorkspaceSubmitAccepted {
   sessionId: string;
   sourceJobId?: string;
 }
