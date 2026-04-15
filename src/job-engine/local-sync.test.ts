@@ -765,6 +765,10 @@ test("job-engine local sync requires the source import session to be approved", 
     jobId: regenAccepted.jobId,
     targetPath: "sync-output"
   });
+  const sourceImportSession = (await engine.listImportSessions()).find(
+    (session) => session.jobId === sourceAccepted.jobId
+  );
+  assert.ok(sourceImportSession);
 
   await assert.rejects(
     () =>
@@ -780,11 +784,6 @@ test("job-engine local sync requires the source import session to be approved", 
     (error: Error & { code?: string }) =>
       error.code === "E_SYNC_IMPORT_REVIEW_REQUIRED"
   );
-
-  const sourceImportSession = (await engine.listImportSessions()).find(
-    (session) => session.jobId === sourceAccepted.jobId
-  );
-  assert.ok(sourceImportSession);
   await engine.appendImportSessionEvent({
     event: {
       id: "",
