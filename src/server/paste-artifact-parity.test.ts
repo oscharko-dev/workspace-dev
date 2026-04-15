@@ -27,6 +27,10 @@ const EXPECTED_FIXTURE_ROOT = path.resolve(
   MODULE_DIR,
   "../parity/fixtures/golden/prototype-navigation/expected",
 );
+const ENVELOPE_FIXTURE_PATH = path.resolve(
+  MODULE_DIR,
+  "../../integration/fixtures/figma-paste-pipeline/envelopes/single-selection-envelope.json",
+);
 
 const PARITY_JOB_TIMEOUT_MS = 120_000;
 
@@ -144,6 +148,35 @@ const submitPasteJob = async ({
   return String(jobId);
 };
 
+const submitPluginJob = async ({
+  server,
+  payload,
+}: {
+  server: WorkspaceServerInstance;
+  payload: string;
+}): Promise<string> => {
+  const response = await server.app.inject({
+    method: "POST",
+    url: "/workspace/submit",
+    headers: { "content-type": "application/json" },
+    payload: {
+      figmaSourceMode: "figma_plugin",
+      figmaJsonPayload: payload,
+      importIntent: "FIGMA_PLUGIN_ENVELOPE",
+      llmCodegenMode: "deterministic",
+    },
+  });
+  assert.equal(
+    response.statusCode,
+    202,
+    `figma_plugin submit expected 202, got ${response.statusCode}: ${response.body}`,
+  );
+  const body = response.json<Record<string, unknown>>();
+  const jobId = body.jobId;
+  assert.equal(typeof jobId, "string");
+  return String(jobId);
+};
+
 /**
  * Strip non-deterministic fields so two responses from different jobs can be
  * compared for semantic equality. The only expected divergence between
@@ -170,7 +203,9 @@ const normalizeForGoldenComparison = (
   keysToOmit: ReadonlySet<string>,
 ): unknown => {
   if (Array.isArray(value)) {
-    return value.map((entry) => normalizeForGoldenComparison(entry, keysToOmit));
+    return value.map((entry) =>
+      normalizeForGoldenComparison(entry, keysToOmit),
+    );
   }
   if (value !== null && typeof value === "object") {
     const entries = Object.entries(value as Record<string, unknown>);
@@ -195,7 +230,10 @@ const projectDesignIrToGoldenShape = (
   designIr: Record<string, unknown>,
 ): Record<string, unknown> => ({
   sourceName: designIr.sourceName,
-  screens: normalizeForGoldenComparison(designIr.screens, new Set(["generatedFile"])),
+  screens: normalizeForGoldenComparison(
+    designIr.screens,
+    new Set(["generatedFile"]),
+  ),
   tokens: designIr.tokens,
 });
 
@@ -325,6 +363,107 @@ const runParityJobs = async (): Promise<{
   });
 
   return { outputRoot, server, localJobId, pasteJobId };
+};
+
+/**
+ * Suite 1 runner — figma_plugin mode dispatch (raw Figma doc payload).
+ *
+ * figma_plugin accepts a raw Figma document JSON as figmaJsonPayload (it only
+ * invokes envelope normalization when the payload looks like a ClipboardEnvelope).
+ * When fed the same raw fixture as local_json, both jobs must produce identical
+ * design-ir / manifest / files artifacts.
+ */
+const runPluginParityJobsRawDoc = async (): Promise<{
+  outputRoot: string;
+  server: WorkspaceServerInstance;
+  localJobId: string;
+  pluginJobId: string;
+}> => {
+  const outputRoot = await createTempOutputRoot();
+  const port = allocateRandomPort();
+  const server = (await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: async () => {
+      throw new Error("Unexpected network fetch in parity test.");
+    },
+  })) as WorkspaceServerInstance;
+
+  const localFixturePath = path.join(outputRoot, "parity-local-fixture.json");
+  const fixtureContent = readFileSync(FIXTURE_PATH, "utf8");
+  await writeFile(localFixturePath, fixtureContent, "utf8");
+
+  const localJobId = await submitLocalJsonJob({
+    server,
+    fixturePath: localFixturePath,
+  });
+  const pluginJobId = await submitPluginJob({
+    server,
+    payload: fixtureContent,
+  });
+
+  await waitForJobTerminalState({
+    server,
+    jobId: localJobId,
+    timeoutMs: PARITY_JOB_TIMEOUT_MS,
+  });
+  await waitForJobTerminalState({
+    server,
+    jobId: pluginJobId,
+    timeoutMs: PARITY_JOB_TIMEOUT_MS,
+  });
+
+  return { outputRoot, server, localJobId, pluginJobId };
+};
+
+/**
+ * Suite 2 runner — figma_plugin ↔ figma_paste envelope equivalence.
+ *
+ * Both modes funnel ClipboardEnvelope payloads through the same
+ * normalizeEnvelopeToFigmaFile path in request-handler.ts. Submitting the same
+ * envelope JSON to both modes must produce identical artifacts.
+ */
+const runPluginPasteParityEnvelope = async (): Promise<{
+  outputRoot: string;
+  server: WorkspaceServerInstance;
+  pluginJobId: string;
+  pasteJobId: string;
+}> => {
+  const outputRoot = await createTempOutputRoot();
+  const port = allocateRandomPort();
+  const server = (await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: async () => {
+      throw new Error("Unexpected network fetch in parity test.");
+    },
+  })) as WorkspaceServerInstance;
+
+  const envelopeContent = readFileSync(ENVELOPE_FIXTURE_PATH, "utf8");
+
+  const pluginJobId = await submitPluginJob({
+    server,
+    payload: envelopeContent,
+  });
+  const pasteJobId = await submitPasteJob({
+    server,
+    payload: envelopeContent,
+  });
+
+  await waitForJobTerminalState({
+    server,
+    jobId: pluginJobId,
+    timeoutMs: PARITY_JOB_TIMEOUT_MS,
+  });
+  await waitForJobTerminalState({
+    server,
+    jobId: pasteJobId,
+    timeoutMs: PARITY_JOB_TIMEOUT_MS,
+  });
+
+  return { outputRoot, server, pluginJobId, pasteJobId };
 };
 
 test("waitForJobTerminalState fails fast on partial terminal jobs", async () => {
@@ -481,6 +620,275 @@ test(
           localContent,
           pasteContent,
           `generated file contents diverged for ${filePath}`,
+        );
+      }
+    } finally {
+      await server.app.close();
+      await rm(outputRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Suite 1 — figma_plugin mode dispatch (raw Figma doc payload) vs local_json.
+// ---------------------------------------------------------------------------
+
+test(
+  "figma_plugin produces a design-ir equivalent to local_json for prototype-navigation",
+  { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
+  async () => {
+    const { outputRoot, server, localJobId, pluginJobId } =
+      await runPluginParityJobsRawDoc();
+    try {
+      const localIr = await fetchDesignIr({ server, jobId: localJobId });
+      const pluginIr = await fetchDesignIr({ server, jobId: pluginJobId });
+
+      assert.ok(Array.isArray(localIr.screens));
+      assert.ok(
+        (localIr.screens as unknown[]).length >= 2,
+        "fixture expected >= 2 screens in design-ir",
+      );
+      assert.equal(
+        (localIr.screens as unknown[]).length,
+        (pluginIr.screens as unknown[]).length,
+        "plugin and local screen counts must match",
+      );
+
+      assert.deepEqual(
+        normalizeForComparison(localIr),
+        normalizeForComparison(pluginIr),
+        "design-ir payloads diverged between local_json and figma_plugin modes",
+      );
+      assert.deepEqual(
+        projectDesignIrToGoldenShape(localIr),
+        projectDesignIrToGoldenShape(
+          readExpectedJson<Record<string, unknown>>("design-ir.json"),
+        ),
+        "prototype-navigation design-ir no longer matches the checked-in golden",
+      );
+    } finally {
+      await server.app.close();
+      await rm(outputRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "figma_plugin produces a component-manifest equivalent to local_json for prototype-navigation",
+  { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
+  async () => {
+    const { outputRoot, server, localJobId, pluginJobId } =
+      await runPluginParityJobsRawDoc();
+    try {
+      const localManifest = await fetchComponentManifest({
+        server,
+        jobId: localJobId,
+      });
+      const pluginManifest = await fetchComponentManifest({
+        server,
+        jobId: pluginJobId,
+      });
+
+      assert.ok(Array.isArray(localManifest.screens));
+      assert.equal(
+        (localManifest.screens as unknown[]).length,
+        (pluginManifest.screens as unknown[]).length,
+        "component manifest screen counts must match",
+      );
+
+      assert.deepEqual(
+        normalizeForComparison(localManifest),
+        normalizeForComparison(pluginManifest),
+        "component-manifest payloads diverged between local_json and figma_plugin modes",
+      );
+      assert.deepEqual(
+        normalizeForComparison(localManifest),
+        readExpectedJson<Record<string, unknown>>("component-manifest.json"),
+        "prototype-navigation component-manifest no longer matches the checked-in golden",
+      );
+    } finally {
+      await server.app.close();
+      await rm(outputRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "figma_plugin produces identical generated files as local_json for prototype-navigation",
+  { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
+  async () => {
+    const { outputRoot, server, localJobId, pluginJobId } =
+      await runPluginParityJobsRawDoc();
+    try {
+      const localFiles = await fetchFilesListing({ server, jobId: localJobId });
+      const pluginFiles = await fetchFilesListing({
+        server,
+        jobId: pluginJobId,
+      });
+
+      const localPaths = localFiles.map((entry) => entry.path).sort();
+      const pluginPaths = pluginFiles.map((entry) => entry.path).sort();
+
+      assert.ok(
+        localPaths.length > 0,
+        "local_json mode should generate at least one file",
+      );
+      assert.deepEqual(
+        localPaths,
+        pluginPaths,
+        "generated file path sets diverged between local_json and figma_plugin modes",
+      );
+      assert.deepEqual(
+        localPaths,
+        [...readExpectedJson<{ files: string[] }>("files.json").files].sort(),
+        "prototype-navigation generated file set no longer matches the checked-in golden",
+      );
+
+      for (const { path: filePath } of localFiles) {
+        const [localContent, pluginContent] = await Promise.all([
+          fetchGeneratedFileContent({
+            server,
+            jobId: localJobId,
+            filePath,
+          }),
+          fetchGeneratedFileContent({
+            server,
+            jobId: pluginJobId,
+            filePath,
+          }),
+        ]);
+        assert.equal(
+          localContent,
+          pluginContent,
+          `generated file contents diverged for ${filePath}`,
+        );
+      }
+    } finally {
+      await server.app.close();
+      await rm(outputRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Suite 2 — figma_plugin ↔ figma_paste envelope equivalence.
+//
+// Both modes share the ClipboardEnvelope normalization path in
+// request-handler.ts. Submitting the same envelope JSON to both modes must
+// yield identical design-ir, component-manifest, and generated files.
+// ---------------------------------------------------------------------------
+
+test(
+  "figma_plugin and figma_paste produce an equivalent design-ir for the same ClipboardEnvelope",
+  { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
+  async () => {
+    const { outputRoot, server, pluginJobId, pasteJobId } =
+      await runPluginPasteParityEnvelope();
+    try {
+      const pluginIr = await fetchDesignIr({ server, jobId: pluginJobId });
+      const pasteIr = await fetchDesignIr({ server, jobId: pasteJobId });
+
+      assert.ok(Array.isArray(pluginIr.screens));
+      assert.ok(
+        (pluginIr.screens as unknown[]).length >= 1,
+        "envelope fixture expected to produce >= 1 screen",
+      );
+      assert.equal(
+        (pluginIr.screens as unknown[]).length,
+        (pasteIr.screens as unknown[]).length,
+        "plugin and paste screen counts must match for shared envelope",
+      );
+
+      assert.deepEqual(
+        normalizeForComparison(pluginIr),
+        normalizeForComparison(pasteIr),
+        "design-ir diverged between figma_plugin and figma_paste for the same envelope payload",
+      );
+    } finally {
+      await server.app.close();
+      await rm(outputRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "figma_plugin and figma_paste produce an equivalent component-manifest for the same ClipboardEnvelope",
+  { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
+  async () => {
+    const { outputRoot, server, pluginJobId, pasteJobId } =
+      await runPluginPasteParityEnvelope();
+    try {
+      const pluginManifest = await fetchComponentManifest({
+        server,
+        jobId: pluginJobId,
+      });
+      const pasteManifest = await fetchComponentManifest({
+        server,
+        jobId: pasteJobId,
+      });
+
+      assert.ok(Array.isArray(pluginManifest.screens));
+      assert.equal(
+        (pluginManifest.screens as unknown[]).length,
+        (pasteManifest.screens as unknown[]).length,
+        "component-manifest screen counts must match for shared envelope",
+      );
+
+      assert.deepEqual(
+        normalizeForComparison(pluginManifest),
+        normalizeForComparison(pasteManifest),
+        "component-manifest diverged between figma_plugin and figma_paste for the same envelope payload",
+      );
+    } finally {
+      await server.app.close();
+      await rm(outputRoot, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  "figma_plugin and figma_paste produce identical generated files for the same ClipboardEnvelope",
+  { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
+  async () => {
+    const { outputRoot, server, pluginJobId, pasteJobId } =
+      await runPluginPasteParityEnvelope();
+    try {
+      const pluginFiles = await fetchFilesListing({
+        server,
+        jobId: pluginJobId,
+      });
+      const pasteFiles = await fetchFilesListing({ server, jobId: pasteJobId });
+
+      const pluginPaths = pluginFiles.map((entry) => entry.path).sort();
+      const pastePaths = pasteFiles.map((entry) => entry.path).sort();
+
+      assert.ok(
+        pluginPaths.length > 0,
+        "figma_plugin envelope run should generate at least one file",
+      );
+      assert.deepEqual(
+        pluginPaths,
+        pastePaths,
+        "generated file path sets diverged between figma_plugin and figma_paste for the same envelope payload",
+      );
+
+      for (const { path: filePath } of pluginFiles) {
+        const [pluginContent, pasteContent] = await Promise.all([
+          fetchGeneratedFileContent({
+            server,
+            jobId: pluginJobId,
+            filePath,
+          }),
+          fetchGeneratedFileContent({
+            server,
+            jobId: pasteJobId,
+            filePath,
+          }),
+        ]);
+        assert.equal(
+          pluginContent,
+          pasteContent,
+          `generated file contents diverged for ${filePath} between figma_plugin and figma_paste`,
         );
       }
     } finally {
