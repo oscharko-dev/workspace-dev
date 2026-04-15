@@ -11,8 +11,11 @@
  */
 
 import type { PasteImportSession } from "./paste-import-history";
+import type { WorkspaceImportSessionEventKind } from "./import-review-state";
 
 export interface ImportGovernanceEvent {
+  /** Import-session event kind persisted by the server. */
+  readonly kind: WorkspaceImportSessionEventKind;
   /** ISO timestamp when the import completed (mirrors session.importedAt). */
   readonly timestamp: string;
   /** "all" when unscoped; "partial" when the user generated a subset. */
@@ -37,6 +40,10 @@ export interface ImportGovernanceEvent {
    * Optional because callers may not have computed a score yet.
    */
   readonly qualityScore?: number;
+  /** Whether the session must complete review before downstream writes. */
+  readonly reviewRequired?: boolean;
+  /** Reviewer note, when this event records an override or audit explanation. */
+  readonly note?: string;
   /**
    * User identity. Optional — populated by the transport when known. The
    * Inspector does not have first-class user identity in v1, so this is
@@ -55,6 +62,7 @@ export function toImportGovernanceEvent(
   session: PasteImportSession,
 ): ImportGovernanceEvent {
   const base: ImportGovernanceEvent = {
+    kind: "imported",
     timestamp: session.importedAt,
     scope: session.scope,
     selectedNodes: session.selectedNodes,
@@ -68,6 +76,9 @@ export function toImportGovernanceEvent(
     sessionId: session.id,
     ...(session.qualityScore !== undefined
       ? { qualityScore: session.qualityScore }
+      : {}),
+    ...(session.reviewRequired !== undefined
+      ? { reviewRequired: session.reviewRequired }
       : {}),
   };
 }

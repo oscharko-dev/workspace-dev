@@ -32,10 +32,17 @@ export interface InspectorWorkspaceA11yPolicy {
   disabledRules?: string[];
 }
 
+export interface InspectorWorkspaceGovernancePolicy {
+  minQualityScoreToApply?: number | null;
+  securitySensitivePatterns?: string[];
+  requireNoteOnOverride?: boolean;
+}
+
 export interface InspectorWorkspacePolicy {
   quality?: InspectorWorkspaceQualityPolicy;
   tokens?: InspectorWorkspaceTokenPolicy;
   a11y?: InspectorWorkspaceA11yPolicy;
+  governance?: InspectorWorkspaceGovernancePolicy;
 }
 
 export interface LoadInspectorPolicyResult {
@@ -157,6 +164,30 @@ function parseA11yPolicy(
   return out;
 }
 
+function parseGovernancePolicy(
+  value: unknown,
+): InspectorWorkspaceGovernancePolicy | typeof INVALID | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) return INVALID;
+
+  const out: InspectorWorkspaceGovernancePolicy = {};
+  if (value.minQualityScoreToApply !== undefined) {
+    if (value.minQualityScoreToApply !== null) {
+      if (!isFiniteNumber(value.minQualityScoreToApply)) return INVALID;
+    }
+    out.minQualityScoreToApply = value.minQualityScoreToApply;
+  }
+  if (value.securitySensitivePatterns !== undefined) {
+    if (!isStringArray(value.securitySensitivePatterns)) return INVALID;
+    out.securitySensitivePatterns = [...value.securitySensitivePatterns];
+  }
+  if (value.requireNoteOnOverride !== undefined) {
+    if (typeof value.requireNoteOnOverride !== "boolean") return INVALID;
+    out.requireNoteOnOverride = value.requireNoteOnOverride;
+  }
+  return out;
+}
+
 export function parseInspectorPolicy(
   value: unknown,
 ): InspectorWorkspacePolicy | null {
@@ -168,11 +199,14 @@ export function parseInspectorPolicy(
   if (tokens === INVALID) return null;
   const a11y = parseA11yPolicy(value.a11y);
   if (a11y === INVALID) return null;
+  const governance = parseGovernancePolicy(value.governance);
+  if (governance === INVALID) return null;
 
   return {
     ...(quality !== undefined ? { quality } : {}),
     ...(tokens !== undefined ? { tokens } : {}),
     ...(a11y !== undefined ? { a11y } : {}),
+    ...(governance !== undefined ? { governance } : {}),
   };
 }
 

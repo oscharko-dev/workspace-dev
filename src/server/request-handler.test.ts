@@ -268,6 +268,11 @@ test("request handler returns the parsed inspector policy when the file is valid
           wcagLevel: "AAA",
           disabledRules: ["missing-h1"],
         },
+        governance: {
+          minQualityScoreToApply: 70,
+          securitySensitivePatterns: ["password", "secret"],
+          requireNoteOnOverride: false,
+        },
       }),
       "utf8",
     );
@@ -292,6 +297,11 @@ test("request handler returns the parsed inspector policy when the file is valid
         a11y: {
           wcagLevel: "AAA",
           disabledRules: ["missing-h1"],
+        },
+        governance: {
+          minQualityScoreToApply: 70,
+          securitySensitivePatterns: ["password", "secret"],
+          requireNoteOnOverride: false,
         },
       },
     });
@@ -1547,6 +1557,7 @@ test("request handler maps local sync errors to deterministic HTTP envelopes", a
     ["E_SYNC_CONFIRMATION_INVALID", 409, "SYNC_CONFIRMATION_INVALID"],
     ["E_SYNC_CONFIRMATION_EXPIRED", 409, "SYNC_CONFIRMATION_EXPIRED"],
     ["E_SYNC_PREVIEW_STALE", 409, "SYNC_PREVIEW_STALE"],
+    ["E_SYNC_IMPORT_REVIEW_REQUIRED", 409, "SYNC_IMPORT_REVIEW_REQUIRED"],
     ["E_SYNC_FILE_DECISIONS_INVALID", 400, "SYNC_FILE_DECISIONS_INVALID"],
   ] as const;
 
@@ -1753,6 +1764,7 @@ test("request handler maps regeneration and create-pr job-engine failures", asyn
     ["E_PR_JOB_NOT_COMPLETED", 409, "JOB_NOT_COMPLETED"],
     ["E_PR_NOT_REGENERATION_JOB", 409, "NOT_REGENERATION_JOB"],
     ["E_PR_NO_GENERATED_PROJECT", 409, "NO_GENERATED_PROJECT"],
+    ["E_PR_IMPORT_REVIEW_REQUIRED", 409, "IMPORT_REVIEW_REQUIRED"],
   ] as const;
 
   for (const [code, statusCode, expectedError] of createPrScenarios) {

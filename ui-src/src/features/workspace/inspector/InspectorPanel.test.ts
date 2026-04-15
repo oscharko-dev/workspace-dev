@@ -17,6 +17,10 @@ import {
 } from "@testing-library/react";
 import { InspectorPanel } from "./InspectorPanel";
 import {
+  __resetImportGovernanceListenersForTests,
+  subscribeToImportGovernanceEvents,
+} from "./import-governance-events";
+import {
   computeInspectorDraftBaseFingerprint,
   createInspectorOverrideDraft,
   toInspectorOverrideDraftStorageKey,
@@ -31,11 +35,15 @@ import { createPipelineExecutionLog } from "./pipeline-execution-log";
 
 const mockUseQuery = vi.fn();
 const mockUseMutation = vi.fn();
+const mockInvalidateQueries = vi.fn();
 
 vi.mock("@tanstack/react-query", () => {
   return {
     useQuery: (args: unknown) => mockUseQuery(args),
     useMutation: (args: unknown) => mockUseMutation(args),
+    useQueryClient: () => ({
+      invalidateQueries: mockInvalidateQueries,
+    }),
     useQueries: ({ queries }: { queries: unknown[] }) =>
       queries.map(() => ({
         data: undefined,
@@ -50,7 +58,8 @@ type MockQueryKey =
   | "inspector-design-ir"
   | "inspector-file-content"
   | "inspector-generation-metrics"
-  | "inspector-workspace-policy";
+  | "inspector-workspace-policy"
+  | "import-session-events";
 
 interface MockQueryResult {
   data: unknown;
@@ -155,6 +164,17 @@ function createDefaultQueryResults(): Record<MockQueryKey, MockQueryResult> {
       isLoading: false,
       refetch: vi.fn(),
     },
+    "import-session-events": {
+      data: {
+        ok: true,
+        status: 200,
+        payload: {
+          events: [],
+        },
+      },
+      isLoading: false,
+      refetch: vi.fn(),
+    },
   };
 }
 
@@ -189,6 +209,10 @@ function installQueryMock({
       ...base["inspector-workspace-policy"],
       ...(overrides?.["inspector-workspace-policy"] ?? {}),
     },
+    "import-session-events": {
+      ...base["import-session-events"],
+      ...(overrides?.["import-session-events"] ?? {}),
+    },
   } satisfies Record<MockQueryKey, MockQueryResult>;
 
   mockUseQuery.mockImplementation((input: { queryKey?: unknown[] }) => {
@@ -210,6 +234,9 @@ function installQueryMock({
     }
     if (key === "inspector-workspace-policy") {
       return merged["inspector-workspace-policy"];
+    }
+    if (key === "import-session-events") {
+      return merged["import-session-events"];
     }
 
     return {
@@ -469,6 +496,7 @@ describe("InspectorPanel splitters", () => {
   beforeEach(() => {
     mockUseQuery.mockReset();
     mockUseMutation.mockReset();
+    mockInvalidateQueries.mockReset();
     window.localStorage.clear();
     window.sessionStorage.clear();
     installQueryMock();
@@ -2486,6 +2514,170 @@ describe("InspectorPanel pre-apply review and regeneration", () => {
     ).toHaveTextContent("REGEN_INVALID_OVERRIDE");
 
     fetchSpy.mockRestore();
+  });
+});
+
+describe("InspectorPanel import governance (issue #994)", () => {
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    installQueryMock();
+    installMutationMock();
+  });
+
+  afterEach(() => {
+    cleanup();
+    __resetImportGovernanceListenersForTests();
+  });
+
+  const buildImportSession = (overrides: Record<string, unknown> = {}) => ({
+    id: "session-1",
+    fileKey: "FILE",
+    nodeId: "1:2",
+    nodeName: "Home",
+    importedAt: "2026-04-15T10:00:00.000Z",
+    nodeCount: 8,
+    fileCount: 2,
+    selectedNodes: [],
+    scope: "all" as const,
+    componentMappings: 1,
+    pasteIdentityKey: null,
+    jobId: "job-1",
+    reviewRequired: true,
+    ...overrides,
+  });
+
+  it("hydrates the review stepper from the persisted import-session status", () => {
+    renderInspectorPanel({
+      pipeline: buildPipelineState({
+        stage: "ready",
+        errors: [],
+      }),
+      importHistory: [buildImportSession({ status: "approved" })],
+    });
+
+    expect(
+      screen.getByTestId("import-review-stepper-pill-approve"),
+    ).toHaveAttribute("aria-current", "step");
+  });
+
+  it("emits imported, review_started, approved, apply_blocked, and applied events with the real sessionId", async () => {
+    installQueryMock({
+      overrides: {
+        "inspector-workspace-policy": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              policy: {
+                governance: {
+                  minQualityScoreToApply: null,
+                  securitySensitivePatterns: ["Home"],
+                  requireNoteOnOverride: true,
+                },
+              },
+            },
+          },
+        },
+        "import-session-events": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              events: [],
+            },
+          },
+        },
+      },
+    });
+
+    const received: Array<{ kind: string; sessionId?: string }> = [];
+    subscribeToImportGovernanceEvents((event) => {
+      received.push(
+        event.sessionId !== undefined
+          ? { kind: event.kind, sessionId: event.sessionId }
+          : { kind: event.kind },
+      );
+    });
+
+    renderInspectorPanel({
+      pipeline: buildPipelineState({
+        stage: "ready",
+        errors: [],
+      }),
+      importHistory: [buildImportSession()],
+    });
+
+    await waitFor(() => {
+      expect(received.some((event) => event.kind === "imported")).toBe(true);
+    });
+
+    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+
+    expect(
+      received.filter((event) => event.kind === "apply_blocked"),
+    ).toHaveLength(1);
+    expect(received.every((event) => event.sessionId === "session-1")).toBe(
+      true,
+    );
+
+    fireEvent.change(screen.getByTestId("import-review-stepper-note"), {
+      target: { value: "approved for sensitive flow" },
+    });
+    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+
+    expect(received.map((event) => event.kind)).toEqual([
+      "imported",
+      "review_started",
+      "approved",
+      "apply_blocked",
+      "applied",
+    ]);
+  });
+
+  it("wires expanded history rows to the live import-session audit trail", async () => {
+    installQueryMock({
+      overrides: {
+        "import-session-events": {
+          data: {
+            ok: true,
+            status: 200,
+            payload: {
+              events: [
+                {
+                  id: "evt-1",
+                  sessionId: "session-1",
+                  kind: "approved",
+                  at: "2026-04-15T10:05:00.000Z",
+                  actor: "reviewer",
+                },
+              ],
+            },
+          },
+        },
+      },
+    });
+
+    renderInspectorPanel({
+      pipeline: buildPipelineState({
+        stage: "ready",
+        errors: [],
+      }),
+      importHistory: [buildImportSession({ jobId: "job-prev" })],
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-import-history-toggle"));
+    fireEvent.click(screen.getByTestId("import-history-toggle-session-1"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("import-history-trail-entry-evt-1"),
+      ).toBeInTheDocument();
+    });
   });
 });
 

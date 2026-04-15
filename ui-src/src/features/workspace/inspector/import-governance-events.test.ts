@@ -28,6 +28,7 @@ function makeSession(
     componentMappings: 4,
     pasteIdentityKey: null,
     jobId: "job-1",
+    reviewRequired: true,
     ...overrides,
   };
 }
@@ -40,6 +41,7 @@ describe("toImportGovernanceEvent", () => {
     });
     const event = toImportGovernanceEvent(session);
     expect(event).toEqual<ImportGovernanceEvent>({
+      kind: "imported",
       timestamp: "2026-04-15T12:00:00.000Z",
       scope: "partial",
       selectedNodes: ["a", "b"],
@@ -48,6 +50,7 @@ describe("toImportGovernanceEvent", () => {
       jobId: "job-1",
       fileKey: "FILE",
       sessionId: "paste-import-1",
+      reviewRequired: true,
     });
   });
 
@@ -71,6 +74,14 @@ describe("toImportGovernanceEvent", () => {
   it("omits qualityScore when the session does not carry one", () => {
     const event = toImportGovernanceEvent(makeSession());
     expect(event.qualityScore).toBeUndefined();
+  });
+
+  it("omits reviewRequired when the session does not carry it", () => {
+    const session = makeSession();
+    const { reviewRequired, ...legacySession } = session;
+    void reviewRequired;
+    const event = toImportGovernanceEvent(legacySession);
+    expect(event.reviewRequired).toBeUndefined();
   });
 });
 

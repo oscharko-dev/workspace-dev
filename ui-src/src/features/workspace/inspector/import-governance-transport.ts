@@ -27,7 +27,9 @@ export interface ImportGovernanceTransportOptions {
 
 interface GovernancePostBody {
   readonly kind: WorkspaceImportSessionEventKind;
+  readonly at: string;
   readonly actor?: string;
+  readonly note?: string;
   readonly metadata: Record<string, string | number | boolean | null>;
 }
 
@@ -38,20 +40,28 @@ function buildMetadata(
     jobId: event.jobId,
     fileKey: event.fileKey,
     scope: event.scope,
+    selectedNodes: JSON.stringify(event.selectedNodes),
     fileCount: event.fileCount,
     nodeCount: event.nodeCount,
   };
   if (event.qualityScore !== undefined) {
     metadata.qualityScore = event.qualityScore;
   }
+  if (event.reviewRequired !== undefined) {
+    metadata.reviewRequired = event.reviewRequired;
+  }
   return metadata;
 }
 
 function buildBody(event: ImportGovernanceEvent): GovernancePostBody {
-  const body: GovernancePostBody = {
-    kind: "imported",
+  let body: GovernancePostBody = {
+    kind: event.kind,
+    at: event.timestamp,
     metadata: buildMetadata(event),
   };
+  if (event.note !== undefined && event.note.trim().length > 0) {
+    body = { ...body, note: event.note };
+  }
   if (event.userId !== undefined) {
     return { ...body, actor: event.userId };
   }
