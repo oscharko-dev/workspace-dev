@@ -11,6 +11,7 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Onboarding and troubleshooting guide for the direct Figma import path at [`docs/figma-import.md`](docs/figma-import.md): Figma plugin install steps (Design and Dev Mode), Inspector paste-zone behaviour (paste / drop / upload), SmartBanner intent labels and override flow, payload-size limits, an example `workspace-dev/figma-selection@1` envelope, a REST `JSON_REST_V1` skeleton, FAQ, and a troubleshooting matrix covering "nothing happens on ⌘V/Ctrl+V", invalid JSON, unrecognised component, payload too large, and secure-context requirements. (#990)
 - Incremental delta import scaffolding for Figma paste imports (#992):
   - Persistent paste-fingerprint store keyed by `{figmaFileKey, rootNodeIds}` under `${outputRoot}/paste-fingerprints/` (LRU + TTL, contract-version gated).
   - Tree-diff module classifies node changes as `baseline_created`, `no_changes`, `delta`, or `structural_break` with a configurable structural-change threshold (default 0.5).
