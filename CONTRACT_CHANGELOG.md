@@ -47,6 +47,15 @@ Added (additive only — no `CONTRACT_VERSION` bump beyond the prior `3.14.0`):
 
 Backwards compatibility: legacy `import-sessions.json` envelopes without the new fields continue to round-trip unchanged.
 
+### Audit-trail endpoints (Issue #994)
+
+Added (additive only):
+
+- `GET  /workspace/import-sessions/:id/events` returns `WorkspaceImportSessionEventsResponse` with the ordered audit trail. Responds `404` when the session does not exist.
+- `POST /workspace/import-sessions/:id/events` appends one event. Accepts `{ kind, actor?, note?, metadata? }`; the server fills `id` and `at`. Responds `201` on success, `404` when the session does not exist, `422` on malformed bodies (missing `kind`, unknown `kind`, or nested `metadata`), `405` on other verbs.
+
+Events are persisted under `<outputRoot>/import-session-events/<sessionId>.json`, append-only, rotated at 200 entries, with `note` truncated at 1024 characters. Deleting a session via `DELETE /workspace/import-sessions/:id` also purges the corresponding event file.
+
 ---
 
 ## [3.13.0] - 2026-04-14

@@ -29,9 +29,18 @@ import { PipelineStatusBar } from "./PipelineStatusBar";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
 import { ImportHistoryPanel } from "./ImportHistoryPanel";
+import { ImportReviewStepper } from "./ImportReviewStepper";
 import { ReImportPromptBanner } from "./ReImportPromptBanner";
 import type { PasteImportSession } from "./paste-import-history";
 import type { PipelineImportMode } from "./paste-pipeline";
+import {
+  advanceReviewStage,
+  createInitialImportReviewState,
+  describeApplyGate,
+  type ImportReviewStage,
+  type ImportReviewState,
+} from "./import-review-state";
+import { dispatchImportGovernanceEvent } from "./import-governance-events";
 import {
   EMPTY_SELECTION,
   deselectAll,
@@ -2007,6 +2016,49 @@ export function InspectorPanel({
     workspacePolicy.quality,
   ]);
 
+  // Issue #994 — Import review stepper. The apply gate mirrors the governance
+  // policy; `securitySensitive` is hardcoded to `false` in Phase 1 — the regex
+  // scan across generated files is tracked as a follow-up.
+  const [reviewState, setReviewState] = useState<ImportReviewState>(
+    createInitialImportReviewState(),
+  );
+  const applyGate = useMemo(() => {
+    return describeApplyGate({
+      qualityScore: qualityScoreModel.score,
+      reviewerNote: reviewState.reviewerNote,
+      policy: workspacePolicy.governance,
+      securitySensitive: false,
+    });
+  }, [
+    qualityScoreModel.score,
+    reviewState.reviewerNote,
+    workspacePolicy.governance,
+  ]);
+  const handleReviewAdvance = useCallback((target: ImportReviewStage): void => {
+    setReviewState((state) => advanceReviewStage(state, target));
+  }, []);
+  const handleReviewerNoteChange = useCallback((note: string): void => {
+    setReviewState((state) => ({ ...state, reviewerNote: note }));
+  }, []);
+  const handleReviewApply = useCallback((): void => {
+    setReviewState((state) => advanceReviewStage(state, "apply"));
+    dispatchImportGovernanceEvent({
+      timestamp: new Date().toISOString(),
+      scope: activePipeline.selectedNodeIds?.length ? "partial" : "all",
+      selectedNodes: activePipeline.selectedNodeIds ?? [],
+      fileCount: activePipeline.generatedFiles?.length ?? 0,
+      nodeCount: 0,
+      jobId,
+      fileKey: "",
+      qualityScore: qualityScoreModel.score,
+    });
+  }, [
+    activePipeline.generatedFiles,
+    activePipeline.selectedNodeIds,
+    jobId,
+    qualityScoreModel.score,
+  ]);
+
   const tokenSuggestionsModel = useMemo(() => {
     const intelligence = activePipeline.tokenIntelligence;
     return deriveTokenSuggestionModel({
@@ -2401,11 +2453,7 @@ export function InspectorPanel({
       scopeControlsEnabled && !selectionAllSelected
         ? currentSelectedNodeIds
         : [],
-    [
-      scopeControlsEnabled,
-      selectionAllSelected,
-      currentSelectedNodeIds,
-    ],
+    [scopeControlsEnabled, selectionAllSelected, currentSelectedNodeIds],
   );
   const selectedChangedNodeIds = useMemo<readonly string[]>(() => {
     if (changedNodeIdsForPreset.length === 0) {
@@ -2415,11 +2463,7 @@ export function InspectorPanel({
       ? new Set(changedNodeIdsForPreset)
       : new Set(currentSelectedNodeIds);
     return changedNodeIdsForPreset.filter((nodeId) => selectedIds.has(nodeId));
-  }, [
-    changedNodeIdsForPreset,
-    currentSelectedNodeIds,
-    selectionAllSelected,
-  ]);
+  }, [changedNodeIdsForPreset, currentSelectedNodeIds, selectionAllSelected]);
   const keepExistingChangedCount = Math.max(
     0,
     changedNodeIdsForPreset.length - selectedChangedNodeIds.length,
@@ -2440,7 +2484,8 @@ export function InspectorPanel({
     }
     appliedSelectionScopeKeyRef.current = scopeKey;
     setNodeSelection(
-      activePipeline.selectedNodeIds && activePipeline.selectedNodeIds.length > 0
+      activePipeline.selectedNodeIds &&
+        activePipeline.selectedNodeIds.length > 0
         ? selectNodeIds(activePipeline.selectedNodeIds, effectiveTreeNodes)
         : selectAll(),
     );
@@ -2559,7 +2604,9 @@ export function InspectorPanel({
       const changedSelection =
         changedNodeIdsForPreset.length > 0 ? changedNodeIdsForPreset : [];
       if (changedSelection.length > 0) {
-        setNodeSelection(selectChangedNodes(changedSelection, effectiveTreeNodes));
+        setNodeSelection(
+          selectChangedNodes(changedSelection, effectiveTreeNodes),
+        );
       }
       onGenerateSelected(changedSelection, { importMode: "delta" });
     }
@@ -6058,6 +6105,16 @@ export function InspectorPanel({
           className="min-h-[200px] flex-1 lg:min-h-0"
           style={codePaneStyle}
         >
+          {activePipeline.stage === "ready" ||
+          activePipeline.stage === "partial" ? (
+            <ImportReviewStepper
+              state={reviewState}
+              gate={applyGate}
+              onAdvance={handleReviewAdvance}
+              onReviewerNoteChange={handleReviewerNoteChange}
+              onApply={handleReviewApply}
+            />
+          ) : null}
           {qualityScoreModel.summary.totalNodes > 0 ||
           tokenSuggestionsModel.available ||
           a11yNudgeModel.summary.total > 0 ? (

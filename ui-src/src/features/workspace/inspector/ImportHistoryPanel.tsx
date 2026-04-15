@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, type JSX } from "react";
 import type { PasteImportSession } from "./paste-import-history";
+import type { WorkspaceImportSessionEvent } from "./import-review-state";
 
 export interface ImportHistoryPanelProps {
   /** Sorted-newest-first list of sessions to render. */
@@ -18,6 +19,12 @@ export interface ImportHistoryPanelProps {
   onDelete: (session: PasteImportSession) => void;
   /** Callback when the user clicks the close button or hits Escape. */
   onClose: () => void;
+  /** Currently expanded session id, or null when none is expanded. Optional — when absent, rows are not expandable. */
+  expandedSessionId?: string | null;
+  /** Toggles expansion for a row. Called with the same session that was clicked to expand or collapse. */
+  onRowToggle?: (session: PasteImportSession) => void;
+  /** Supplies the audit trail for the expanded session. Called only when a row is expanded. */
+  getTrail?: (sessionId: string) => readonly WorkspaceImportSessionEvent[];
 }
 
 const SECOND_MS = 1000;
@@ -73,6 +80,9 @@ export function ImportHistoryPanel({
   onReImport,
   onDelete,
   onClose,
+  expandedSessionId,
+  onRowToggle,
+  getTrail,
 }: ImportHistoryPanelProps): JSX.Element {
   const containerRef = useRef<HTMLElement | null>(null);
 
@@ -178,8 +188,8 @@ export function ImportHistoryPanel({
                     title={
                       replayable
                         ? "Re-import this session"
-                        : session.replayDisabledReason ??
-                          "This import cannot be replayed from history."
+                        : (session.replayDisabledReason ??
+                          "This import cannot be replayed from history.")
                     }
                     className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[10px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87] disabled:cursor-default disabled:opacity-30"
                   >
@@ -195,7 +205,27 @@ export function ImportHistoryPanel({
                   >
                     Delete
                   </button>
+                  {onRowToggle ? (
+                    <button
+                      type="button"
+                      data-testid={`import-history-toggle-${session.id}`}
+                      aria-expanded={expandedSessionId === session.id}
+                      onClick={() => {
+                        onRowToggle(session);
+                      }}
+                      className="cursor-pointer rounded border border-[#333333] bg-transparent px-2 py-0.5 text-[10px] font-medium text-white/45 transition hover:border-[#4eba87]/40 hover:bg-[#000000] hover:text-[#4eba87]"
+                    >
+                      {expandedSessionId === session.id ? "Hide log" : "Log"}
+                    </button>
+                  ) : null}
                 </div>
+                {expandedSessionId === session.id && getTrail ? (
+                  <AuditTrail
+                    sessionId={session.id}
+                    events={getTrail(session.id)}
+                    now={now}
+                  />
+                ) : null}
               </li>
             );
           })}
@@ -203,4 +233,67 @@ export function ImportHistoryPanel({
       )}
     </section>
   );
+}
+
+interface AuditTrailProps {
+  readonly sessionId: string;
+  readonly events: readonly WorkspaceImportSessionEvent[];
+  readonly now: Date;
+}
+
+function AuditTrail({ sessionId, events, now }: AuditTrailProps): JSX.Element {
+  if (events.length === 0) {
+    return (
+      <div
+        data-testid={`import-history-trail-empty-${sessionId}`}
+        className="mt-1 rounded border border-[#333333]/60 px-2 py-1 text-[10px] text-white/35"
+      >
+        No audit events recorded yet.
+      </div>
+    );
+  }
+  return (
+    <ul
+      data-testid={`import-history-trail-${sessionId}`}
+      className="mt-1 flex list-none flex-col gap-0.5 rounded border border-[#333333]/60 px-2 py-1"
+    >
+      {events.map((event) => {
+        const at = new Date(event.at);
+        const relative = Number.isNaN(at.getTime())
+          ? event.at
+          : formatRelativeTime(now, at);
+        const note =
+          typeof event.note === "string" && event.note.length > 0
+            ? truncate(event.note, 120)
+            : null;
+        return (
+          <li
+            key={event.id}
+            data-testid={`import-history-trail-entry-${event.id}`}
+            className="flex flex-col gap-0.5 text-[10px] text-white/45"
+          >
+            <span className="text-white/65">
+              <span className="font-semibold text-white/75">{event.kind}</span>
+              <span className="ml-1 text-white/35">·</span>
+              <span className="ml-1">{relative}</span>
+              <span className="ml-1 text-white/35">·</span>
+              <span className="ml-1">
+                {typeof event.actor === "string" && event.actor.length > 0
+                  ? event.actor
+                  : "—"}
+              </span>
+            </span>
+            {note ? <span className="text-white/35">{note}</span> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function truncate(value: string, max: number): string {
+  if (value.length <= max) {
+    return value;
+  }
+  return `${value.slice(0, max - 1)}…`;
 }
