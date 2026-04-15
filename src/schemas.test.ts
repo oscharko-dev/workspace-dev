@@ -2096,6 +2096,59 @@ test("schema: importMode=auto is accepted and invalid importMode is rejected", (
   }
 });
 
+test("schema: figma_paste accepts figmaFileKey alongside figmaJsonPayload and preserves it", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
+    figmaFileKey: "abc123",
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "figma_paste");
+    assert.equal(result.data.figmaFileKey, "abc123");
+  }
+});
+
+test("schema: figma_plugin accepts plain Figma document JSON (not a ClipboardEnvelope)", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_plugin",
+    figmaJsonPayload: JSON.stringify({
+      name: "PluginDoc",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.figmaSourceMode, "figma_plugin");
+    assert.ok(typeof result.data.figmaJsonPayload === "string");
+  }
+});
+
+test("schema: figma_paste rejects when figmaJsonPath is also set", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify({
+      name: "Test",
+      document: { id: "0:0", type: "DOCUMENT", children: [] },
+    }),
+    figmaJsonPath: "./fixtures/figma.json",
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find(
+      (entry) => entry.path.join(".") === "figmaJsonPath",
+    );
+    assert.ok(issue, "Expected a figmaJsonPath issue in figma_paste mode");
+    assert.match(
+      issue!.message,
+      /figmaJsonPath must be omitted when figmaSourceMode=figma_paste/i,
+    );
+  }
+});
+
 test("resolveFigmaPasteMaxBytes: env override, invalid env, default fallback", () => {
   assert.equal(
     resolveFigmaPasteMaxBytes({ WORKSPACE_FIGMA_PASTE_MAX_BYTES: "10485760" }),

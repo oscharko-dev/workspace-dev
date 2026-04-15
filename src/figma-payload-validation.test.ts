@@ -157,3 +157,108 @@ test("summarizeFigmaPayloadValidationError includes first path and issue count",
   assert.match(summary, /^document\.id:/);
   assert.match(summary, /\+\d+ more issues?/);
 });
+
+test("safeParseFigmaPayload reports deeply nested missing id with exact path", () => {
+  const payload = {
+    name: "Deeply nested",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          children: [
+            {
+              id: "1:1",
+              type: "FRAME",
+              children: [
+                {
+                  // id intentionally omitted at depth 3
+                  type: "FRAME",
+                  children: []
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  };
+
+  const result = safeParseFigmaPayload({ input: payload });
+  assert.equal(result.success, false);
+  if (result.success) {
+    return;
+  }
+
+  const paths = toIssuePaths(result);
+  assert.equal(
+    paths.includes("document.children[0].children[0].children[0].id"),
+    true
+  );
+});
+
+test("safeParseFigmaPayload caps issues at MAX_VALIDATION_ISSUES and summary reports overflow", () => {
+  const badChildren = Array.from({ length: 250 }, () => null);
+  const result = safeParseFigmaPayload({
+    input: {
+      name: "Many invalid",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: badChildren
+      }
+    }
+  });
+
+  assert.equal(result.success, false);
+  if (result.success) {
+    return;
+  }
+
+  assert.equal(result.error.issues.length <= 128, true);
+  assert.equal(result.error.issues.length > 0, true);
+
+  const summary = summarizeFigmaPayloadValidationError({ error: result.error });
+  assert.match(summary, /\+\d+ more issues?/);
+  const overflowMatch = summary.match(/\+(\d+) more issues?/);
+  assert.ok(overflowMatch);
+  assert.equal(Number(overflowMatch![1]) > 0, true);
+});
+
+test("safeParseFigmaPayload reports non-object absoluteBoundingBox with exact path", () => {
+  const payload = {
+    name: "Bad bbox",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "0:1",
+          type: "CANVAS",
+          absoluteBoundingBox: "not-an-object",
+          children: []
+        }
+      ]
+    }
+  };
+
+  const result = safeParseFigmaPayload({ input: payload });
+  assert.equal(result.success, false);
+  if (result.success) {
+    return;
+  }
+
+  const paths = toIssuePaths(result);
+  assert.equal(
+    paths.includes("document.children[0].absoluteBoundingBox"),
+    true
+  );
+  const issue = result.error.issues.find(
+    (entry) =>
+      formatFigmaPayloadPath({ path: entry.path }) ===
+      "document.children[0].absoluteBoundingBox"
+  );
+  assert.match(issue?.message ?? "", /absoluteBoundingBox must be an object/i);
+});

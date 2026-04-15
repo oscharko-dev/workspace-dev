@@ -42,6 +42,15 @@ test("mode-lock allows figma_plugin + deterministic", () => {
   assert.equal(result.errors.length, 0);
 });
 
+test("mode-lock allows figma_paste + deterministic", () => {
+  const result = validateModeLock({
+    figmaSourceMode: "figma_paste",
+    llmCodegenMode: "deterministic",
+  });
+  assert.equal(result.valid, true);
+  assert.equal(result.errors.length, 0);
+});
+
 test("mode-lock allows empty/undefined modes (defaults apply)", () => {
   const result = validateModeLock({});
   assert.equal(result.valid, true);
