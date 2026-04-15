@@ -52,4 +52,5 @@ pnpm-debug.log*
 /REUSE.toml
 docs/Checkliste und Anleitung.pdf
 reference/storybook/storybook.evidence.json
+/Open-Issues-PR-Wellen.md
 /Audit-Issues-1011-PR-Wellen.md
