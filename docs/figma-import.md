@@ -63,8 +63,9 @@ In the plugin UI:
   when the host blocks clipboard access, or when you need to transfer the
   payload out of band (email, secure file drop).
 
-If nothing is selected, the plugin shows `"No nodes selected."` and no
-clipboard write happens.
+If nothing is selected, the plugin shows
+`"No nodes selected. Please select at least one layer."` and no clipboard
+write happens.
 
 ### 4. Paste into the Inspector
 
