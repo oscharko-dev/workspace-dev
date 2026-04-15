@@ -74,7 +74,7 @@ export function isWorkspaceProjectRoute(pathname: string): boolean {
 export function parseImportSessionRoute(pathname: string):
   | {
       sessionId: string;
-      action: "detail" | "reimport";
+      action: "detail" | "reimport" | "events";
     }
   | undefined {
   if (pathname === "/workspace/import-sessions") {
@@ -102,6 +102,17 @@ export function parseImportSessionRoute(pathname: string):
     return {
       sessionId,
       action: "reimport",
+    };
+  }
+
+  if (rest.endsWith("/events")) {
+    const sessionId = rest.slice(0, -"/events".length);
+    if (!sessionId || sessionId.includes("/")) {
+      return undefined;
+    }
+    return {
+      sessionId,
+      action: "events",
     };
   }
 
