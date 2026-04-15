@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
 import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { buildApp, type WorkspaceServerApp } from "./app-inject.js";
 import { createWorkspaceRequestHandler } from "./request-handler.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
@@ -12,6 +14,17 @@ import type {
   WorkspaceRuntimeLogInput,
   WorkspaceRuntimeLogger,
 } from "../logging.js";
+
+const pasteFixtureRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../../integration/fixtures/figma-paste-pipeline",
+);
+
+function readPasteFixture<T>(relativePath: string): T {
+  return JSON.parse(
+    readFileSync(path.join(pasteFixtureRoot, relativePath), "utf8"),
+  ) as T;
+}
 
 function createCodedError(
   code: string,
@@ -3678,19 +3691,9 @@ test("request handler accepts a valid ClipboardEnvelope via figma_paste and norm
   });
 
   try {
-    const envelope = {
-      kind: "workspace-dev/figma-selection@1",
-      pluginVersion: "0.1.0",
-      copiedAt: "2026-04-12T18:00:00.000Z",
-      selections: [
-        {
-          document: { id: "1:2", type: "FRAME", name: "Card" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-      ],
-    };
+    const envelope = readPasteFixture<Record<string, unknown>>(
+      "envelopes/single-selection-envelope.json",
+    );
 
     const response = await app.inject({
       method: "POST",
@@ -3747,12 +3750,9 @@ test("request handler rejects invalid ClipboardEnvelope via figma_paste with SCH
   });
 
   try {
-    const badEnvelope = {
-      kind: "workspace-dev/figma-selection@1",
-      pluginVersion: "0.1.0",
-      copiedAt: "2026-04-12T18:00:00.000Z",
-      selections: [],
-    };
+    const badEnvelope = readPasteFixture<Record<string, unknown>>(
+      "envelopes/invalid-empty-selections-envelope.json",
+    );
 
     const response = await app.inject({
       method: "POST",
@@ -3784,19 +3784,9 @@ test("request handler rejects unknown ClipboardEnvelope version via figma_paste 
   });
 
   try {
-    const unknownEnvelope = {
-      kind: "workspace-dev/figma-selection@99",
-      pluginVersion: "0.1.0",
-      copiedAt: "2026-04-12T18:00:00.000Z",
-      selections: [
-        {
-          document: { id: "1:2", type: "FRAME", name: "Card" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-      ],
-    };
+    const unknownEnvelope = readPasteFixture<Record<string, unknown>>(
+      "envelopes/unsupported-version-envelope.json",
+    );
 
     const response = await app.inject({
       method: "POST",
@@ -3828,19 +3818,9 @@ test("request handler rejects unknown ClipboardEnvelope version via figma_plugin
   });
 
   try {
-    const unknownEnvelope = {
-      kind: "workspace-dev/figma-selection@99",
-      pluginVersion: "0.1.0",
-      copiedAt: "2026-04-12T18:00:00.000Z",
-      selections: [
-        {
-          document: { id: "1:2", type: "FRAME", name: "Card" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-      ],
-    };
+    const unknownEnvelope = readPasteFixture<Record<string, unknown>>(
+      "envelopes/unsupported-version-envelope.json",
+    );
 
     const response = await app.inject({
       method: "POST",
@@ -3926,19 +3906,9 @@ test("request handler accepts a valid ClipboardEnvelope via figma_plugin and nor
   });
 
   try {
-    const envelope = {
-      kind: "workspace-dev/figma-selection@1",
-      pluginVersion: "0.1.0",
-      copiedAt: "2026-04-12T18:00:00.000Z",
-      selections: [
-        {
-          document: { id: "1:2", type: "FRAME", name: "Card" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-      ],
-    };
+    const envelope = readPasteFixture<Record<string, unknown>>(
+      "envelopes/whole-view-envelope.json",
+    );
 
     const response = await app.inject({
       method: "POST",
@@ -4496,31 +4466,9 @@ test("figma_paste normalizes a 3-selection ClipboardEnvelope into 3 CANVAS child
   });
 
   try {
-    const envelope = {
-      kind: "workspace-dev/figma-selection@1",
-      pluginVersion: "0.1.0",
-      copiedAt: "2026-04-12T18:00:00.000Z",
-      selections: [
-        {
-          document: { id: "10:1", type: "FRAME", name: "Frame A" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-        {
-          document: { id: "10:2", type: "FRAME", name: "Frame B" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-        {
-          document: { id: "10:3", type: "FRAME", name: "Frame C" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-      ],
-    };
+    const envelope = readPasteFixture<Record<string, unknown>>(
+      "envelopes/composite-selection-envelope.json",
+    );
 
     const response = await app.inject({
       method: "POST",
@@ -4586,17 +4534,9 @@ test("figma_paste writes raw non-envelope Figma document JSON byte-for-byte to d
   });
 
   try {
-    const rawFigmaDoc = {
-      document: {
-        id: "0:0",
-        type: "DOCUMENT",
-        name: "Raw Doc",
-        children: [{ id: "2:1", type: "FRAME", name: "RawFrame" }],
-      },
-      components: {},
-      componentSets: {},
-      styles: {},
-    };
+    const rawFigmaDoc = readPasteFixture<Record<string, unknown>>(
+      "envelopes/raw-figma-document.json",
+    );
     const rawPayload = JSON.stringify(rawFigmaDoc);
 
     const response = await app.inject({

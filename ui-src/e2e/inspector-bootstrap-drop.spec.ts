@@ -3,11 +3,15 @@
  *
  * Covers: file drop/upload happy paths, unsupported file rejection, oversized file
  * rejection, empty paste, non-JSON paste, and drag-over visual state.
- *
- * All tests are fully mocked — no real server is required.
  */
 import { expect, test, type Locator, type Page } from "@playwright/test";
-import { getWorkspaceUiUrl, resetBrowserStorage } from "./helpers";
+import {
+  getPrototypeNavigationPastePayload,
+  getWorkspaceUiUrl,
+  resetBrowserStorage,
+  simulateInspectorPaste,
+  withSubmissionRateLimit,
+} from "./helpers";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -27,15 +31,8 @@ const INSPECTOR_URL = (() => {
 /** 6 MiB — must match FIGMA_PASTE_MAX_BYTES in submit-schema.ts */
 const FIGMA_PASTE_MAX_BYTES = 6 * 1024 * 1024;
 
-/**
- * Minimal Figma JSON_REST_V1 payload that the paste-input classifier and
- * server validation accept.
- */
-const MINIMAL_FIGMA_JSON = JSON.stringify({
-  document: { id: "0:1", type: "DOCUMENT" },
-});
-
 const TEST_JOB_ID = "drop-test-job-id";
+const PROTOTYPE_NAVIGATION_PASTE = getPrototypeNavigationPastePayload();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -50,42 +47,6 @@ async function gotoInspector(page: Page): Promise<void> {
   await page.waitForSelector('[data-testid="inspector-bootstrap"]', {
     timeout: 15_000,
   });
-}
-
-/**
- * Simulates a clipboard paste onto the hidden PasteCapture textarea.
- *
- * Uses page.evaluate to dispatch a ClipboardEvent so no real clipboard
- * permission is needed.
- */
-async function simulatePaste(page: Page, text: string): Promise<void> {
-  const textarea = page.getByLabel("Figma JSON paste target");
-  await expect(textarea).toBeAttached();
-  await textarea.focus();
-  await page.evaluate((pasteText) => {
-    const textareas = Array.from(
-      document.querySelectorAll<HTMLTextAreaElement>("textarea"),
-    );
-    const target =
-      textareas.find((t) => {
-        const label = document.querySelector(`label[for="${t.id}"]`);
-        return label?.textContent
-          ?.toLowerCase()
-          .includes("figma json paste target");
-      }) ?? textareas[0];
-    if (!target) {
-      throw new Error("Could not find PasteCapture textarea");
-    }
-    const dt = new DataTransfer();
-    dt.setData("text", pasteText);
-    dt.setData("text/plain", pasteText);
-    const event = new ClipboardEvent("paste", {
-      bubbles: true,
-      cancelable: true,
-      clipboardData: dt,
-    });
-    target.dispatchEvent(event);
-  }, text);
 }
 
 interface DropFileOptions {
@@ -134,84 +95,35 @@ async function uploadFile(
 }
 
 /**
- * Installs route mocks for the submit + job-poll lifecycle.
+ * Asserts that no POST was made to /workspace/submit while performing the
+ * guarded action.
  *
- * - POST /workspace/submit  → 202 { jobId }
- * - GET  /workspace/jobs/:id → queued → running → completed (with previewUrl)
+ * The request listener is installed before the action runs so a synchronous
+ * submit fired during drop/paste cannot be missed.
  */
-async function installBootstrapRoutes(page: Page): Promise<void> {
-  let pollCount = 0;
-
-  await page.route("**/workspace/submit", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.continue();
-      return;
-    }
-    await route.fulfill({
-      status: 202,
-      contentType: "application/json",
-      body: JSON.stringify({ jobId: TEST_JOB_ID }),
-    });
-  });
-
-  await page.route(`**/workspace/jobs/${TEST_JOB_ID}`, async (route) => {
-    if (route.request().method() !== "GET") {
-      await route.continue();
-      return;
-    }
-    pollCount += 1;
-    if (pollCount === 1) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ jobId: TEST_JOB_ID, status: "queued" }),
-      });
-      return;
-    }
-    if (pollCount === 2) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ jobId: TEST_JOB_ID, status: "running" }),
-      });
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        jobId: TEST_JOB_ID,
-        status: "completed",
-        preview: { enabled: true, url: "about:blank" },
-      }),
-    });
-  });
-}
-
-/**
- * Asserts that no POST was made to /workspace/submit during the test.
- *
- * Installs a route that fulfills with a sentinel 400 and immediately
- * fails — a POST reaching this handler means the client-side fast-reject
- * did not fire.
- */
-async function assertSubmitNotCalled(page: Page): Promise<void> {
-  // We rely on the fact that we did NOT install a submit route — any request
-  // would either fail network-level or reach the real server (which is mocked
-  // by Playwright's webServer to exist but our specific test does not set a
-  // route for it).  Instead, track whether a submit request was fired.
+async function assertSubmitNotCalled(
+  page: Page,
+  action: () => Promise<void>,
+): Promise<void> {
   const submitRequests: string[] = [];
-  page.on("request", (req) => {
+  const requestListener = (req: { method(): string; url(): string }) => {
     if (req.method() === "POST" && req.url().includes("/workspace/submit")) {
       submitRequests.push(req.url());
     }
-  });
-  // Give the UI a moment to fire any pending requests before asserting.
-  await page.waitForTimeout(500);
-  expect(
-    submitRequests,
-    "Expected POST /workspace/submit NOT to be called, but it was.",
-  ).toHaveLength(0);
+  };
+
+  page.on("request", requestListener);
+  try {
+    await action();
+    // Give the UI a moment to fire any pending requests before asserting.
+    await page.waitForTimeout(500);
+    expect(
+      submitRequests,
+      "Expected POST /workspace/submit NOT to be called, but it was.",
+    ).toHaveLength(0);
+  } finally {
+    page.off("request", requestListener);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -219,7 +131,7 @@ async function assertSubmitNotCalled(page: Page): Promise<void> {
 // ---------------------------------------------------------------------------
 
 test.describe("inspector bootstrap — paste/drop/upload import target", () => {
-  test.describe.configure({ mode: "parallel" });
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
 
   test.afterEach(async ({ page }) => {
     await page.unroute("**/workspace/submit");
@@ -234,8 +146,6 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
   test("dropping a valid Figma JSON file shows the banner, confirms import, and hydrates into the inspector panel", async ({
     page,
   }) => {
-    // Arrange
-    await installBootstrapRoutes(page);
     await gotoInspector(page);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
@@ -252,12 +162,14 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     await dropFile(pasteArea, {
       name: "figma-export.json",
       type: "application/json",
-      contents: MINIMAL_FIGMA_JSON,
+      contents: PROTOTYPE_NAVIGATION_PASTE,
     });
 
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
-    await banner.getByRole("button", { name: "Import starten" }).click();
+    await withSubmissionRateLimit(async () => {
+      await banner.getByRole("button", { name: "Import starten" }).click();
+    });
 
     // Assert — submit was sent with figmaSourceMode: "figma_paste"
     const submitResponse = await submitResponsePromise;
@@ -272,7 +184,7 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
 
     // Assert — the inspector panel hydrates once the job completes
     await expect(page.getByTestId("inspector-layout")).toBeVisible({
-      timeout: 20_000,
+      timeout: 120_000,
     });
 
     // Assert — bootstrap shell is gone after hydration
@@ -285,7 +197,6 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
   test("uploading a valid Figma JSON file via the file picker hydrates into the inspector panel", async ({
     page,
   }) => {
-    await installBootstrapRoutes(page);
     await gotoInspector(page);
 
     const submitResponsePromise = page.waitForResponse(
@@ -297,12 +208,14 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     await uploadFile(page, {
       name: "figma-export.json",
       type: "application/json",
-      contents: MINIMAL_FIGMA_JSON,
+      contents: PROTOTYPE_NAVIGATION_PASTE,
     });
 
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
-    await banner.getByRole("button", { name: "Import starten" }).click();
+    await withSubmissionRateLimit(async () => {
+      await banner.getByRole("button", { name: "Import starten" }).click();
+    });
 
     const submitResponse = await submitResponsePromise;
     expect(submitResponse.status()).toBe(202);
@@ -315,7 +228,7 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
 
     await expect(page.getByTestId("inspector-layout")).toBeVisible({
-      timeout: 20_000,
+      timeout: 120_000,
     });
     await expect(page.getByTestId("inspector-bootstrap")).toHaveCount(0);
   });
@@ -333,19 +246,18 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     const pasteArea = page.getByRole("region", { name: "Paste area" });
 
     // Act — drop an unsupported image file
-    await dropFile(pasteArea, {
-      name: "design.png",
-      type: "image/png",
-      contents: "PNG_BINARY_DATA",
+    await assertSubmitNotCalled(page, async () => {
+      await dropFile(pasteArea, {
+        name: "design.png",
+        type: "image/png",
+        contents: "PNG_BINARY_DATA",
+      });
     });
 
     // Assert — inline alert with "Unsupported file" error copy
     const alert = page.locator('[role="alert"]').first();
     await expect(alert).toBeVisible({ timeout: 5_000 });
     await expect(alert).toContainText(/unsupported file/i);
-
-    // Assert — POST /workspace/submit was NOT triggered
-    await assertSubmitNotCalled(page);
 
     // Assert — still on the bootstrap shell
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
@@ -370,10 +282,12 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     const pasteArea = page.getByRole("region", { name: "Paste area" });
 
     // Act — drop an oversized JSON file
-    await dropFile(pasteArea, {
-      name: "figma-huge.json",
-      type: "application/json",
-      contents: sevenMibContents,
+    await assertSubmitNotCalled(page, async () => {
+      await dropFile(pasteArea, {
+        name: "figma-huge.json",
+        type: "application/json",
+        contents: sevenMibContents,
+      });
     });
 
     // Assert — inline alert mentioning the 6 MiB limit
@@ -381,8 +295,6 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     await expect(alert).toBeVisible({ timeout: 5_000 });
     await expect(alert).toContainText(/6 MiB/);
 
-    // Assert — POST /workspace/submit was NOT triggered
-    await assertSubmitNotCalled(page);
   });
 
   // -------------------------------------------------------------------------
@@ -414,7 +326,7 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     await uploadFile(page, {
       name: "figma-export.json",
       type: "application/json",
-      contents: MINIMAL_FIGMA_JSON,
+      contents: PROTOTYPE_NAVIGATION_PASTE,
     });
 
     const banner = page.getByTestId("smart-banner");
@@ -447,7 +359,9 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
     // Act — simulate pasting whitespace-only content
-    await simulatePaste(page, "   ");
+    await assertSubmitNotCalled(page, async () => {
+      await simulateInspectorPaste(page, "   ");
+    });
 
     // Assert — inline alert with the EMPTY_INPUT copy
     const alert = page.locator('[role="alert"]').first();
@@ -455,9 +369,6 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     await expect(alert).toContainText(
       /please paste, drop, or upload a figma json export/i,
     );
-
-    // Assert — POST /workspace/submit was NOT triggered
-    await assertSubmitNotCalled(page);
 
     // Assert — still on bootstrap shell
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
@@ -474,14 +385,13 @@ test.describe("inspector bootstrap — paste/drop/upload import target", () => {
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
     // Act — paste a plain string that is not JSON
-    await simulatePaste(page, "hello");
+    await assertSubmitNotCalled(page, async () => {
+      await simulateInspectorPaste(page, "hello");
+    });
 
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
     await expect(banner).toContainText("Code / Text");
-
-    // Assert — POST /workspace/submit was NOT triggered
-    await assertSubmitNotCalled(page);
 
     // Assert — still on bootstrap shell
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();

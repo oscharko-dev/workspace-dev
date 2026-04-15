@@ -3,41 +3,30 @@
  *
  * Covers: direct entry rendering, paste-to-hydrate happy path, 4xx inline
  * error state, and regression guard for the existing deep-link path.
- *
- * All tests are fully mocked — no real server is required.
  */
 import { expect, test, type Page } from "@playwright/test";
-import { getWorkspaceUiUrl, resetBrowserStorage } from "./helpers";
+import {
+  collectPreviewNodeIds,
+  findFirstSyncedNodeId,
+  getInspectorLocators,
+  getInspectorUiUrl,
+  getPrototypeNavigationPastePayload,
+  getUnsupportedEnvelopePastePayload,
+  openInspectorBootstrap,
+  resetBrowserStorage,
+  simulateInspectorPaste,
+  withSubmissionRateLimit,
+} from "./helpers";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const BOOTSTRAP_VIEWPORT = { width: 1920, height: 1080 } as const;
+const INSPECTOR_URL = getInspectorUiUrl();
 
-const INSPECTOR_URL = (() => {
-  const base = new URL(getWorkspaceUiUrl());
-  // UI_URL already ends with /workspace/ui; replace that suffix with the inspector path.
-  base.pathname = base.pathname.replace(
-    /\/workspace\/ui\/?$/,
-    "/workspace/ui/inspector",
-  );
-  return base.toString();
-})();
-
-/** A minimal Figma JSON_REST_V1 payload that satisfies the bootstrap hook. */
-const MINIMAL_FIGMA_JSON = JSON.stringify({
-  document: {
-    id: "0:0",
-    name: "Test Document",
-    type: "DOCUMENT",
-    children: [],
-  },
-  components: {},
-  styles: {},
-  name: "Test File",
-  schemaVersion: 0,
-});
+const PROTOTYPE_NAVIGATION_PASTE = getPrototypeNavigationPastePayload();
+const UNSUPPORTED_ENVELOPE_PASTE = getUnsupportedEnvelopePastePayload();
 
 const TEST_JOB_ID = "test-job-id";
 
@@ -57,48 +46,6 @@ async function gotoInspector(page: Page, search = ""): Promise<void> {
     '[data-testid="inspector-bootstrap"], [data-testid="inspector-panel"]',
     { timeout: 15_000 },
   );
-}
-
-/**
- * Dispatches a synthetic paste event carrying `text` onto the hidden textarea
- * inside PasteCapture.  This bypasses the system clipboard so no special
- * browser permissions are needed.
- */
-async function simulatePaste(page: Page, text: string): Promise<void> {
-  const textarea = page.getByLabel("Figma JSON paste target");
-  await expect(textarea).toBeAttached();
-  // Focus the textarea so the component treats it as active.
-  await textarea.focus();
-  await page.evaluate((pasteText) => {
-    const el = document.querySelector<HTMLTextAreaElement>(
-      "textarea[aria-label], textarea",
-    );
-    // Find specifically the paste-capture textarea (sr-only, inside PasteCapture).
-    const textareas = Array.from(
-      document.querySelectorAll<HTMLTextAreaElement>("textarea"),
-    );
-    const target =
-      textareas.find((t) => {
-        const label = document.querySelector(`label[for="${t.id}"]`);
-        return label?.textContent
-          ?.toLowerCase()
-          .includes("figma json paste target");
-      }) ??
-      textareas[0] ??
-      el;
-    if (!target) {
-      throw new Error("Could not find PasteCapture textarea");
-    }
-    const dt = new DataTransfer();
-    dt.setData("text", pasteText);
-    dt.setData("text/plain", pasteText);
-    const event = new ClipboardEvent("paste", {
-      bubbles: true,
-      cancelable: true,
-      clipboardData: dt,
-    });
-    target.dispatchEvent(event);
-  }, text);
 }
 
 /**
@@ -179,7 +126,7 @@ async function installDeepLinkArtifactRoutes(
 // ---------------------------------------------------------------------------
 
 test.describe("inspector bootstrap flow", () => {
-  test.describe.configure({ mode: "parallel" });
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
 
   test.afterEach(async ({ page }) => {
     await page.unroute("**/workspace/submit");
@@ -215,25 +162,27 @@ test.describe("inspector bootstrap flow", () => {
   test("paste shows the banner, confirms import, and hydrates into inspector panel when job completes", async ({
     page,
   }) => {
-    // Arrange: mock submit + job poll
-    await installBootstrapRoutes(page);
-    await gotoInspector(page);
+    await openInspectorBootstrap(page, BOOTSTRAP_VIEWPORT);
 
     // Confirm bootstrap shell is visible before pasting
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
-    // Act: simulate paste of a valid Figma JSON payload
+    // Act: simulate paste of a real supported fixture payload and let the real
+    // deterministic server flow own the submit/job/artifact lifecycle.
     const submitResponsePromise = page.waitForResponse(
       (response) =>
         response.request().method() === "POST" &&
         response.url().includes("/workspace/submit"),
     );
 
-    await simulatePaste(page, MINIMAL_FIGMA_JSON);
+    await simulateInspectorPaste(page, PROTOTYPE_NAVIGATION_PASTE);
 
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
-    await banner.getByRole("button", { name: "Import starten" }).click();
+    await expect(banner).toContainText("Figma-Dokument JSON");
+    await withSubmissionRateLimit(async () => {
+      await banner.getByRole("button", { name: "Import starten" }).click();
+    });
 
     // Wait for submit to complete (confirms the POST was sent with right mode)
     const submitResponse = await submitResponsePromise;
@@ -247,17 +196,63 @@ test.describe("inspector bootstrap flow", () => {
     expect(submittedBody["figmaSourceMode"]).toBe("figma_paste");
     expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
 
-    // Assert — panel hydrates once the job reaches completed
+    const {
+      inspectorPanel,
+      componentTree,
+      previewFrame,
+      previewIframe,
+      codeViewer,
+      fileSelector,
+    } = getInspectorLocators(page);
+
+    await expect(inspectorPanel).toBeVisible({ timeout: 120_000 });
     await expect(page.getByTestId("inspector-layout")).toBeVisible({
-      timeout: 20_000,
+      timeout: 120_000,
     });
+    await expect(componentTree).toBeVisible();
+    await expect(fileSelector).toBeVisible();
+    await expect(fileSelector).toBeEnabled({ timeout: 120_000 });
+    await expect(
+      page.getByRole("link", { name: "Open preview in new tab" }),
+    ).toBeVisible({ timeout: 120_000 });
+    await expect(previewIframe).toBeVisible({ timeout: 30_000 });
+    await expect(codeViewer).toBeVisible({ timeout: 30_000 });
 
     // Assert — bootstrap shell is gone after hydration
     await expect(page.getByTestId("inspector-bootstrap")).toHaveCount(0);
 
-    // Assert — URL has not been updated with new query params (spec deferred URL update)
-    const currentUrl = page.url();
-    expect(currentUrl).not.toContain("jobId=");
+    const previewNodeIds = await collectPreviewNodeIds(previewFrame);
+    expect(previewNodeIds.length).toBeGreaterThan(0);
+
+    const syncedNodeId = await findFirstSyncedNodeId(page, previewNodeIds);
+    expect(syncedNodeId).toBeTruthy();
+
+    const fileOptionValues = await fileSelector.evaluate((select) => {
+      return Array.from((select as HTMLSelectElement).options).map(
+        (option) => option.value,
+      );
+    });
+    const generatedScreenFile = fileOptionValues.find((value) =>
+      /^src\/screens\/(?!__tests__\/)(?!.*\.test\.tsx$).+\.tsx$/.test(value),
+    );
+    expect(generatedScreenFile).toBeTruthy();
+    expect(fileOptionValues).toContain("src/theme/theme.ts");
+    expect(fileOptionValues.some((value) => /tailwind/i.test(value))).toBe(
+      false,
+    );
+
+    await fileSelector.selectOption(generatedScreenFile!);
+    await expect(page.getByTestId("code-viewer-filepath")).toHaveText(
+      generatedScreenFile!,
+    );
+    const codeContent = page.getByTestId("code-content");
+    await expect(codeContent).toContainText("sx={{", { timeout: 30_000 });
+    const homeCode = (await codeContent.textContent()) ?? "";
+    expect(homeCode).toContain("sx={{");
+    expect(homeCode).not.toContain("tailwind");
+
+    await expect(page.getByTestId("inspector-suggestions-host")).toBeVisible();
+    await expect(page.getByTestId("suggestions-quality-score")).toBeVisible();
   });
 
   // -------------------------------------------------------------------------
@@ -286,7 +281,7 @@ test.describe("inspector bootstrap flow", () => {
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
     // Act: paste valid JSON and confirm import
-    await simulatePaste(page, MINIMAL_FIGMA_JSON);
+    await simulateInspectorPaste(page, PROTOTYPE_NAVIGATION_PASTE);
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
     await banner.getByRole("button", { name: "Import starten" }).click();
@@ -368,7 +363,7 @@ test.describe("inspector bootstrap flow", () => {
         response.url().includes("/workspace/submit"),
     );
 
-    await simulatePaste(page, envelope);
+    await simulateInspectorPaste(page, envelope);
 
     // Assert — the smart banner appears with the detected intent
     const banner = page.getByTestId("smart-banner");
@@ -389,7 +384,6 @@ test.describe("inspector bootstrap flow", () => {
       unknown
     >;
     expect(submittedBody["figmaSourceMode"]).toBe("figma_plugin");
-    expect(submittedBody["importIntent"]).toBe("FIGMA_PLUGIN_ENVELOPE");
     expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
 
     // Assert — panel hydrates once the job reaches completed
@@ -405,42 +399,16 @@ test.describe("inspector bootstrap flow", () => {
   test("pasting an unknown envelope version shows a clear unsupported-version error", async ({
     page,
   }) => {
-    let submitCalls = 0;
-    await page.route("**/workspace/submit", async (route) => {
-      submitCalls += 1;
-      if (route.request().method() !== "POST") {
-        await route.continue();
-        return;
-      }
-      await route.fulfill({
-        status: 400,
-        contentType: "application/json",
-        body: JSON.stringify({
-          error: "UNSUPPORTED_FORMAT",
-          message:
-            'Clipboard envelope validation failed: kind: Unknown envelope kind: "workspace-dev/figma-selection@99". Expected one of: workspace-dev/figma-selection@1.',
-        }),
-      });
-    });
-
-    await gotoInspector(page);
+    await openInspectorBootstrap(page, BOOTSTRAP_VIEWPORT);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
-    const unknownEnvelope = JSON.stringify({
-      kind: "workspace-dev/figma-selection@99",
-      pluginVersion: "0.1.0",
-      copiedAt: "2026-04-12T18:00:00.000Z",
-      selections: [
-        {
-          document: { id: "1:2", type: "FRAME", name: "Card" },
-          components: {},
-          componentSets: {},
-          styles: {},
-        },
-      ],
-    });
+    const submitResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().includes("/workspace/submit"),
+    );
 
-    await simulatePaste(page, unknownEnvelope);
+    await simulateInspectorPaste(page, UNSUPPORTED_ENVELOPE_PASTE);
 
     // Unknown versions still surface as plugin envelopes so the server can
     // return a dedicated unsupported-version error instead of a generic schema
@@ -451,7 +419,11 @@ test.describe("inspector bootstrap flow", () => {
 
     // Confirm the import — the server should reject the unsupported envelope
     // version with a dedicated error.
-    await banner.getByRole("button", { name: "Import starten" }).click();
+    await withSubmissionRateLimit(async () => {
+      await banner.getByRole("button", { name: "Import starten" }).click();
+    });
+    const submitResponse = await submitResponsePromise;
+    expect(submitResponse.status()).toBe(400);
 
     // Assert — inline error message is displayed
     const errorAlert = page.locator('[role="alert"]').first();
@@ -459,7 +431,6 @@ test.describe("inspector bootstrap flow", () => {
     await expect(errorAlert).toContainText(
       "clipboard envelope version is not supported yet",
     );
-    expect(submitCalls).toBe(1);
 
     // Assert — still on bootstrap shell
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();

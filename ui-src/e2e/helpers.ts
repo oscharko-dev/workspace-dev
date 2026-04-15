@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { open, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
 import { expect, type FrameLocator, type Locator, type Page } from "@playwright/test";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -24,21 +27,130 @@ const configuredPort = Number.parseInt(process.env.WORKSPACE_DEV_E2E_PORT?.trim(
 const defaultPort = Number.isFinite(configuredPort) && configuredPort > 0 ? configuredPort : 19831;
 const runtimeBaseUrl = configuredRuntimeBaseUrl ?? `http://127.0.0.1:${String(defaultPort)}`;
 const UI_URL = configuredUiUrl ?? `${runtimeBaseUrl}/workspace/ui`;
+const INSPECTOR_URL = (() => {
+  const base = new URL(UI_URL);
+  base.pathname = base.pathname.replace(/\/workspace\/ui\/?$/, "/workspace/ui/inspector");
+  return base.toString();
+})();
 const FIXTURE_PATH = path.resolve(
   fileURLToPath(new URL("../../src/parity/fixtures/golden/prototype-navigation/figma.json", import.meta.url))
 );
+const UNSUPPORTED_ENVELOPE_FIXTURE_PATH = path.resolve(
+  fileURLToPath(
+    new URL(
+      "../../integration/fixtures/figma-paste-pipeline/envelopes/unsupported-version-envelope.json",
+      import.meta.url
+    )
+  )
+);
+const PROTOTYPE_NAVIGATION_PASTE_PAYLOAD = readFileSync(FIXTURE_PATH, "utf8");
+const UNSUPPORTED_ENVELOPE_PASTE_PAYLOAD = readFileSync(UNSUPPORTED_ENVELOPE_FIXTURE_PATH, "utf8");
 const TERMINAL_STATUS_PATTERN = /^(COMPLETED|FAILED|CANCELED)$/;
 const TERMINAL_STATUS_CAPTURE_PATTERN = /Submit:\s*([A-Z_]+)(?=\s|$)/i;
 const JOB_COMPLETED_PATTERN = /completed successfully/i;
 const JOB_FAILED_PATTERN = /\bfailed\b/i;
 const JOB_CANCELED_PATTERN = /\bcanceled\b/i;
 const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
+const SUBMISSION_LOCK_PATH = path.join(os.tmpdir(), "workspace-dev-playwright-submit.lock");
+const SUBMISSION_TIMESTAMP_PATH = path.join(
+  os.tmpdir(),
+  "workspace-dev-playwright-submit.timestamp"
+);
+const SUBMISSION_SPACING_MS = 10_000;
+const SUBMISSION_LOCK_STALE_MS = 60_000;
 
 /**
  * Returns the workspace UI URL used by Playwright E2E tests.
  */
 export function getWorkspaceUiUrl(): string {
   return UI_URL;
+}
+
+/**
+ * Returns the direct inspector bootstrap URL used by inspector-specific E2E tests.
+ */
+export function getInspectorUiUrl(): string {
+  return INSPECTOR_URL;
+}
+
+/**
+ * Returns the deterministic paste payload used for the supported real bootstrap flow.
+ */
+export function getPrototypeNavigationPastePayload(): string {
+  return PROTOTYPE_NAVIGATION_PASTE_PAYLOAD;
+}
+
+/**
+ * Returns an unsupported plugin-envelope payload for real bootstrap error coverage.
+ */
+export function getUnsupportedEnvelopePastePayload(): string {
+  return UNSUPPORTED_ENVELOPE_PASTE_PAYLOAD;
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+async function acquireSubmissionSlot(): Promise<() => Promise<void>> {
+  while (true) {
+    try {
+      const lockHandle = await open(SUBMISSION_LOCK_PATH, "wx");
+      let waitMs = 0;
+
+      try {
+        const previousTimestamp = Number.parseInt(
+          await readFile(SUBMISSION_TIMESTAMP_PATH, "utf8"),
+          10
+        );
+        if (Number.isFinite(previousTimestamp)) {
+          waitMs = Math.max(0, SUBMISSION_SPACING_MS - (Date.now() - previousTimestamp));
+        }
+      } catch {
+        // No previous submission timestamp recorded yet.
+      }
+
+      if (waitMs > 0) {
+        await delay(waitMs);
+      }
+
+      return async () => {
+        await writeFile(SUBMISSION_TIMESTAMP_PATH, String(Date.now()), "utf8");
+        await lockHandle.close();
+        await rm(SUBMISSION_LOCK_PATH, { force: true });
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+        throw error;
+      }
+      try {
+        const lockStats = await stat(SUBMISSION_LOCK_PATH);
+        if (Date.now() - lockStats.mtimeMs > SUBMISSION_LOCK_STALE_MS) {
+          await rm(SUBMISSION_LOCK_PATH, { force: true });
+          continue;
+        }
+      } catch {
+        // Lock disappeared between attempts.
+      }
+      await delay(250);
+    }
+  }
+}
+
+/**
+ * Serializes real submit requests across Playwright workers and projects.
+ *
+ * The server enforces a rate limit on /workspace/submit, so real deterministic
+ * flows need spacing when the matrix is running in parallel.
+ */
+export async function withSubmissionRateLimit<T>(callback: () => Promise<T>): Promise<T> {
+  const release = await acquireSubmissionSlot();
+  try {
+    return await callback();
+  } finally {
+    await release();
+  }
 }
 
 /**
@@ -104,6 +216,64 @@ export async function openWorkspaceUi(page: Page, viewport: ViewportSize): Promi
   await page.setViewportSize(viewport);
   await page.goto(UI_URL);
   await expect(page.getByRole("heading", { name: "Workspace Dev" })).toBeVisible();
+}
+
+/**
+ * Opens the inspector bootstrap route and waits for the bootstrap shell to mount.
+ */
+export async function openInspectorBootstrap(page: Page, viewport: ViewportSize): Promise<void> {
+  await page.setViewportSize(viewport);
+  await page.goto(INSPECTOR_URL);
+  await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
+}
+
+/**
+ * Dispatches a synthetic paste event onto the hidden inspector paste target.
+ *
+ * This bypasses system clipboard permissions while still exercising the real
+ * bootstrap paste ingestion path.
+ */
+export async function simulateInspectorPaste(page: Page, text: string): Promise<void> {
+  const pasteArea = page.getByRole("region", { name: "Paste area" });
+  await expect(pasteArea).toBeVisible();
+  await page.evaluate((pasteText) => {
+    const textareas = Array.from(document.querySelectorAll<HTMLTextAreaElement>("textarea"));
+    const target =
+      textareas.find((candidate) => {
+        const label = document.querySelector(`label[for="${candidate.id}"]`);
+        const labelText = label?.textContent?.toLowerCase() ?? "";
+        return labelText.includes("figma json paste target") || labelText.includes("figma clipboard paste target");
+      }) ?? textareas[0];
+
+    if (!target) {
+      throw new Error("Could not find PasteCapture textarea");
+    }
+
+    target.focus();
+    const clipboardData = {
+      dropEffect: "copy",
+      effectAllowed: "all",
+      files: [],
+      items: [],
+      types: ["text", "text/plain"],
+      getData(format: string): string {
+        return format === "text" || format === "text/plain" ? pasteText : "";
+      },
+      setData(): void {
+        // Read-only test shim for paste listeners.
+      }
+    };
+    const event = new Event("paste", {
+      bubbles: true,
+      cancelable: true
+    });
+    Object.defineProperty(event, "clipboardData", {
+      configurable: true,
+      enumerable: true,
+      value: clipboardData
+    });
+    target.dispatchEvent(event);
+  }, text);
 }
 
 /**

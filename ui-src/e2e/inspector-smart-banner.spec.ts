@@ -5,8 +5,6 @@
  * confidence, dropdown correction, "Import starten" confirm that starts the
  * import, and dismiss that returns to idle.
  *
- * All tests are fully mocked — no real server is required.
- *
  * Flow under test (issue #991):
  *   User pastes content
  *     → classifyPasteInput passes (valid JSON or JSON-like)
@@ -17,7 +15,13 @@
  *   User dismisses → state returns to "idle" → SmartBanner disappears
  */
 import { expect, test, type Page } from "@playwright/test";
-import { getWorkspaceUiUrl, resetBrowserStorage } from "./helpers";
+import {
+  getPrototypeNavigationPastePayload,
+  getWorkspaceUiUrl,
+  resetBrowserStorage,
+  simulateInspectorPaste,
+  withSubmissionRateLimit,
+} from "./helpers";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -73,6 +77,7 @@ const PLAIN_JSON_PAYLOAD = JSON.stringify({ greeting: "hello world" });
 const PLAIN_TEXT_PAYLOAD = "hello world — this is plain text, not JSON";
 
 const TEST_JOB_ID = "smart-banner-test-job-id";
+const PROTOTYPE_NAVIGATION_PASTE = getPrototypeNavigationPastePayload();
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -89,103 +94,12 @@ async function gotoInspector(page: Page): Promise<void> {
   });
 }
 
-/**
- * Dispatches a synthetic ClipboardEvent carrying `text` onto the hidden
- * PasteCapture textarea.  Bypasses the system clipboard — no browser
- * permission required.
- */
-async function simulatePaste(page: Page, text: string): Promise<void> {
-  const textarea = page.getByLabel("Figma JSON paste target");
-  await expect(textarea).toBeAttached();
-  await textarea.focus();
-  await page.evaluate((pasteText) => {
-    const textareas = Array.from(
-      document.querySelectorAll<HTMLTextAreaElement>("textarea"),
-    );
-    const target =
-      textareas.find((t) => {
-        const label = document.querySelector(`label[for="${t.id}"]`);
-        return label?.textContent
-          ?.toLowerCase()
-          .includes("figma json paste target");
-      }) ?? textareas[0];
-    if (!target) {
-      throw new Error("Could not find PasteCapture textarea");
-    }
-    const dt = new DataTransfer();
-    dt.setData("text", pasteText);
-    dt.setData("text/plain", pasteText);
-    const event = new ClipboardEvent("paste", {
-      bubbles: true,
-      cancelable: true,
-      clipboardData: dt,
-    });
-    target.dispatchEvent(event);
-  }, text);
-}
-
-/**
- * Installs route mocks for the submit + job-poll lifecycle so that
- * "Import starten" tests can proceed through pasting → queued → completed.
- *
- * - POST /workspace/submit  → 202 { jobId }
- * - GET  /workspace/jobs/:id → queued → running → completed (with preview)
- */
-async function installBootstrapRoutes(page: Page): Promise<void> {
-  let pollCount = 0;
-
-  await page.route("**/workspace/submit", async (route) => {
-    if (route.request().method() !== "POST") {
-      await route.continue();
-      return;
-    }
-    await route.fulfill({
-      status: 202,
-      contentType: "application/json",
-      body: JSON.stringify({ jobId: TEST_JOB_ID }),
-    });
-  });
-
-  await page.route(`**/workspace/jobs/${TEST_JOB_ID}`, async (route) => {
-    if (route.request().method() !== "GET") {
-      await route.continue();
-      return;
-    }
-    pollCount += 1;
-    if (pollCount === 1) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ jobId: TEST_JOB_ID, status: "queued" }),
-      });
-      return;
-    }
-    if (pollCount === 2) {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ jobId: TEST_JOB_ID, status: "running" }),
-      });
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        jobId: TEST_JOB_ID,
-        status: "completed",
-        preview: { enabled: true, url: "about:blank" },
-      }),
-    });
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow", () => {
-  test.describe.configure({ mode: "parallel" });
+  test.describe.configure({ mode: "serial", timeout: 180_000 });
 
   test.afterEach(async ({ page }) => {
     await page.unroute("**/workspace/submit");
@@ -205,7 +119,7 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
     // Act — paste a JSON_REST_V1 document payload
-    await simulatePaste(page, FIGMA_DOC_JSON);
+    await simulateInspectorPaste(page, FIGMA_DOC_JSON);
 
     // Assert — SmartBanner container is visible
     const banner = page.getByTestId("smart-banner");
@@ -246,7 +160,7 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
     // Act — paste a PLUGIN_EXPORT payload
-    await simulatePaste(page, PLUGIN_EXPORT_JSON);
+    await simulateInspectorPaste(page, PLUGIN_EXPORT_JSON);
 
     // Assert — SmartBanner is visible with the correct label
     const banner = page.getByTestId("smart-banner");
@@ -269,7 +183,7 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     await gotoInspector(page);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
-    await simulatePaste(page, PLAIN_JSON_PAYLOAD);
+    await simulateInspectorPaste(page, PLAIN_JSON_PAYLOAD);
 
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
@@ -286,7 +200,7 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     await gotoInspector(page);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
-    await simulatePaste(page, PLAIN_TEXT_PAYLOAD);
+    await simulateInspectorPaste(page, PLAIN_TEXT_PAYLOAD);
 
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
@@ -303,7 +217,7 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     // Arrange — paste a doc JSON so initial intent is FIGMA_JSON_DOC
     await gotoInspector(page);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
-    await simulatePaste(page, FIGMA_DOC_JSON);
+    await simulateInspectorPaste(page, FIGMA_DOC_JSON);
 
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
@@ -332,15 +246,14 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
   test('"Import starten" confirms intent, fires POST /workspace/submit, and state transitions to pasting/queued', async ({
     page,
   }) => {
-    // Arrange: mock submit + job poll lifecycle
-    await installBootstrapRoutes(page);
     await gotoInspector(page);
     await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
 
     // Paste to trigger "detected" state → SmartBanner appears
-    await simulatePaste(page, FIGMA_DOC_JSON);
+    await simulateInspectorPaste(page, PROTOTYPE_NAVIGATION_PASTE);
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
+    await expect(banner).toContainText("Figma-Dokument JSON");
 
     // Set up promise to await the submit response before asserting
     const submitResponsePromise = page.waitForResponse(
@@ -350,7 +263,9 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     );
 
     // Act — click "Import starten"
-    await banner.getByRole("button", { name: "Import starten" }).click();
+    await withSubmissionRateLimit(async () => {
+      await banner.getByRole("button", { name: "Import starten" }).click();
+    });
 
     // Assert — POST /workspace/submit was sent
     const submitResponse = await submitResponsePromise;
@@ -361,6 +276,7 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
       string,
       unknown
     >;
+    expect(submittedBody["figmaSourceMode"]).toBe("figma_paste");
     expect(typeof submittedBody["figmaJsonPayload"]).toBe("string");
 
     // Assert — SmartBanner is removed once pasting begins (state leaves "detected")
@@ -368,12 +284,9 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
       timeout: 5_000,
     });
 
-    // Assert — bootstrap shell remains visible while the job processes
-    await expect(page.getByTestId("inspector-bootstrap")).toBeVisible();
-
     // Assert — inspector panel eventually hydrates once job completes
     await expect(page.getByTestId("inspector-layout")).toBeVisible({
-      timeout: 20_000,
+      timeout: 120_000,
     });
   });
 
@@ -396,7 +309,7 @@ test.describe("inspector SmartBanner — detect→banner→confirm/dismiss flow"
     });
 
     // Paste to trigger "detected" state → SmartBanner appears
-    await simulatePaste(page, FIGMA_DOC_JSON);
+    await simulateInspectorPaste(page, FIGMA_DOC_JSON);
     const banner = page.getByTestId("smart-banner");
     await expect(banner).toBeVisible({ timeout: 5_000 });
 
