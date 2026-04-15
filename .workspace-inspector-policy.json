@@ -24,5 +24,10 @@
   "a11y": {
     "wcagLevel": "AA",
     "disabledRules": []
+  },
+  "governance": {
+    "minQualityScoreToApply": null,
+    "securitySensitivePatterns": [],
+    "requireNoteOnOverride": true
   }
 }

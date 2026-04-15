@@ -199,7 +199,7 @@ export function ImportReviewStepper({
             <button
               type="button"
               data-testid="import-review-stepper-primary"
-              disabled={disabled || !gate.allowed}
+              disabled={disabled}
               title={gate.reason ?? undefined}
               onClick={() => {
                 onApply();

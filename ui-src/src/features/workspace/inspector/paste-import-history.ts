@@ -74,6 +74,8 @@ export interface PasteImportSession {
   readonly qualityScore?: number;
   /** Persisted review lifecycle status — optional for backwards compatibility. */
   readonly status?: WorkspaceImportSessionStatus;
+  /** Persisted review-required flag — optional for backwards compatibility. */
+  readonly reviewRequired?: boolean;
 }
 
 export interface PasteImportHistory {
@@ -275,6 +277,12 @@ function isPasteImportSession(value: unknown): value is PasteImportSession {
   if (
     value.status !== undefined &&
     !isWorkspaceImportSessionStatus(value.status)
+  ) {
+    return false;
+  }
+  if (
+    value.reviewRequired !== undefined &&
+    typeof value.reviewRequired !== "boolean"
   ) {
     return false;
   }

@@ -192,6 +192,7 @@ describe("WorkspacePage", () => {
     try {
       renderWorkspacePage();
       dispatchImportGovernanceEvent({
+        kind: "imported",
         sessionId: "paste-import-transport-check",
         jobId: "job-transport",
         fileKey: "FILE-KEY",

@@ -246,7 +246,8 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
   const engine = createFastJobEngine({ tempRoot });
   const sourceAccepted = engine.submitJob({
     figmaJsonPath: figmaPath,
-    figmaSourceMode: "local_json"
+    figmaSourceMode: "local_json",
+    requestSourceMode: "local_json"
   });
   const sourceStatus = await waitForTerminalStatus({
     getStatus: (id) => engine.getJob(id),
@@ -264,6 +265,36 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
   });
   assert.equal(regenStatus.status, "completed");
   assert.equal(regenStatus.gitPr?.status, "skipped");
+
+  const sourceImportSession = (await engine.listImportSessions()).find(
+    (session) => session.jobId === sourceAccepted.jobId
+  );
+  assert.ok(sourceImportSession);
+  assert.equal(sourceImportSession.status, "imported");
+  assert.equal(sourceImportSession.reviewRequired, true);
+
+  await assert.rejects(
+    () =>
+      engine.createPrFromJob({
+        jobId: regenAccepted.jobId,
+        prInput: {
+          repoUrl: "https://github.com/acme/repo.git",
+          repoToken: "secret-token",
+          targetPath: "generated"
+        }
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_PR_IMPORT_REVIEW_REQUIRED"
+  );
+
+  await engine.appendImportSessionEvent({
+    event: {
+      id: "",
+      sessionId: sourceImportSession.id,
+      kind: "approved",
+      at: ""
+    }
+  });
 
   const { binDir: fakeGitBin, argsLogPath, envLogPath } = await writeFakeGitBinary({ tempRoot });
   const originalPath = process.env.PATH;
@@ -289,10 +320,28 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
 
     assert.equal(result.gitPr.status, "executed");
     assert.equal(result.gitPr.prUrl, "https://example.invalid/pr/123");
+    assert.equal(
+      result.gitPr.branchName?.includes(sourceImportSession.id.slice(0, 8)),
+      true
+    );
+    assert.equal(
+      result.gitPr.branchName?.includes(regenAccepted.jobId.slice(0, 8)) ?? false,
+      false
+    );
 
     const artifactStore = new StageArtifactStore({ jobDir: String(regenStatus.artifacts.jobDir) });
     const storedGitPr = await artifactStore.getValue(STAGE_ARTIFACT_KEYS.gitPrStatus);
     assert.deepEqual(storedGitPr, result.gitPr);
+
+    const auditTrail = await engine.listImportSessionEvents({
+      sessionId: sourceImportSession.id
+    });
+    assert.equal(auditTrail.some((event) => event.kind === "note"), true);
+    const prAuditEvent = auditTrail.findLast((event) => event.kind === "note");
+    assert.equal(prAuditEvent?.metadata?.jobId, regenAccepted.jobId);
+    assert.equal(prAuditEvent?.metadata?.sourceJobId, sourceAccepted.jobId);
+    assert.equal(prAuditEvent?.metadata?.branchName, result.gitPr.branchName);
+    assert.equal(prAuditEvent?.metadata?.prUrl, "https://example.invalid/pr/123");
 
     const stageTimings = JSON.parse(await readFile(String(regenStatus.artifacts.stageTimingsFile), "utf8")) as {
       snapshotVersion?: number;

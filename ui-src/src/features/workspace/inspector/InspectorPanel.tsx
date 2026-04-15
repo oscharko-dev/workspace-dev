@@ -40,7 +40,12 @@ import {
   type ImportReviewStage,
   type ImportReviewState,
 } from "./import-review-state";
-import { dispatchImportGovernanceEvent } from "./import-governance-events";
+import {
+  dispatchImportGovernanceEvent,
+  toImportGovernanceEvent,
+} from "./import-governance-events";
+import { isSecuritySensitiveInspectorSelection } from "./import-governance-match";
+import { useImportSessionEvents } from "./useImportSessionEvents";
 import {
   EMPTY_SELECTION,
   deselectAll,
@@ -1024,6 +1029,9 @@ export function InspectorPanel({
   const [nodeSelection, setNodeSelection] =
     useState<NodeSelectionState>(EMPTY_SELECTION);
   const [importHistoryOpen, setImportHistoryOpen] = useState(false);
+  const [expandedSessionId, setExpandedSessionId] = useState<string | null>(
+    null,
+  );
   const [reimportBannerDismissed, setReimportBannerDismissed] = useState(false);
   const [boundariesEnabled, setBoundariesEnabled] = useState<boolean>(
     loadBoundariesEnabledPreference,
@@ -1091,6 +1099,7 @@ export function InspectorPanel({
 
   const encodedJobId = encodeURIComponent(jobId);
   const inspectorPanelRef = useRef<HTMLDivElement>(null);
+  const importedEventDispatchedForSessionIdRef = useRef<string | null>(null);
   const layoutContainerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<SplitterDragState | null>(null);
 
@@ -1987,6 +1996,22 @@ export function InspectorPanel({
     return findIrElementNode(irScreens, selectedNodeId);
   }, [irScreens, selectedNodeId]);
 
+  const currentImportSession = useMemo<PasteImportSession | null>(() => {
+    if (!importHistory) {
+      return null;
+    }
+    return importHistory.find((session) => session.jobId === jobId) ?? null;
+  }, [importHistory, jobId]);
+  const currentSessionEvents = useImportSessionEvents(
+    currentImportSession?.id ?? null,
+  );
+  const expandedSessionEvents = useImportSessionEvents(expandedSessionId);
+  const getExpandedSessionTrail = useCallback(
+    (sessionId: string) =>
+      expandedSessionId === sessionId ? expandedSessionEvents.events : [],
+    [expandedSessionEvents.events, expandedSessionId],
+  );
+
   // Issue #993 — quality score + token intelligence + a11y nudges.
   const workspacePolicy = useMemo(() => {
     const payload = workspacePolicyQuery.data?.payload;
@@ -2016,47 +2041,158 @@ export function InspectorPanel({
     workspacePolicy.quality,
   ]);
 
-  // Issue #994 — Import review stepper. The apply gate mirrors the governance
-  // policy; `securitySensitive` is hardcoded to `false` in Phase 1 — the regex
-  // scan across generated files is tracked as a follow-up.
+  const generatedFilePaths = useMemo(() => {
+    const pipelinePaths =
+      activePipeline.generatedFiles?.map((entry) => entry.path) ?? [];
+    return pipelinePaths.length > 0
+      ? pipelinePaths
+      : files.map((entry) => entry.path);
+  }, [activePipeline.generatedFiles, files]);
+  const securitySensitiveImport = useMemo(() => {
+    return isSecuritySensitiveInspectorSelection({
+      patterns: workspacePolicy.governance.securitySensitivePatterns,
+      screens: irScreens,
+      manifest,
+      generatedFiles: generatedFilePaths,
+    });
+  }, [
+    generatedFilePaths,
+    irScreens,
+    manifest,
+    workspacePolicy.governance.securitySensitivePatterns,
+  ]);
+
   const [reviewState, setReviewState] = useState<ImportReviewState>(
-    createInitialImportReviewState(),
+    createInitialImportReviewState({
+      status: currentImportSession?.status ?? "imported",
+    }),
   );
+  useEffect(() => {
+    importedEventDispatchedForSessionIdRef.current = null;
+    setReviewState(
+      createInitialImportReviewState({
+        status: currentImportSession?.status ?? "imported",
+      }),
+    );
+  }, [currentImportSession?.id, currentImportSession?.status, jobId]);
+
+  const emitCurrentSessionGovernanceEvent = useCallback(
+    ({
+      kind,
+      note,
+      timestamp,
+    }: {
+      kind: "review_started" | "approved" | "applied" | "apply_blocked";
+      note?: string;
+      timestamp?: string;
+    }): void => {
+      if (!currentImportSession) {
+        return;
+      }
+      dispatchImportGovernanceEvent({
+        ...toImportGovernanceEvent(currentImportSession),
+        kind,
+        timestamp: timestamp ?? new Date().toISOString(),
+        ...(qualityScoreModel.score !== null
+          ? { qualityScore: qualityScoreModel.score }
+          : {}),
+        ...(currentImportSession.reviewRequired !== undefined
+          ? { reviewRequired: currentImportSession.reviewRequired }
+          : {}),
+        ...(note && note.trim().length > 0 ? { note } : {}),
+      });
+    },
+    [currentImportSession, qualityScoreModel.score],
+  );
+
+  useEffect(() => {
+    if (!currentImportSession) {
+      return;
+    }
+    if (
+      activePipeline.stage !== "ready" &&
+      activePipeline.stage !== "partial"
+    ) {
+      return;
+    }
+    if (currentSessionEvents.isLoading) {
+      return;
+    }
+    if (
+      currentSessionEvents.events.some((event) => event.kind === "imported") ||
+      importedEventDispatchedForSessionIdRef.current === currentImportSession.id
+    ) {
+      return;
+    }
+    importedEventDispatchedForSessionIdRef.current = currentImportSession.id;
+    dispatchImportGovernanceEvent({
+      ...toImportGovernanceEvent(currentImportSession),
+      ...(qualityScoreModel.score !== null
+        ? { qualityScore: qualityScoreModel.score }
+        : {}),
+      ...(currentImportSession.reviewRequired !== undefined
+        ? { reviewRequired: currentImportSession.reviewRequired }
+        : {}),
+    });
+  }, [
+    activePipeline.stage,
+    currentImportSession,
+    currentSessionEvents.events,
+    currentSessionEvents.isLoading,
+    qualityScoreModel.score,
+  ]);
+
   const applyGate = useMemo(() => {
     return describeApplyGate({
       qualityScore: qualityScoreModel.score,
       reviewerNote: reviewState.reviewerNote,
       policy: workspacePolicy.governance,
-      securitySensitive: false,
+      securitySensitive: securitySensitiveImport,
     });
   }, [
     qualityScoreModel.score,
     reviewState.reviewerNote,
+    securitySensitiveImport,
     workspacePolicy.governance,
   ]);
-  const handleReviewAdvance = useCallback((target: ImportReviewStage): void => {
-    setReviewState((state) => advanceReviewStage(state, target));
-  }, []);
+  const handleReviewAdvance = useCallback(
+    (target: ImportReviewStage): void => {
+      setReviewState((state) => {
+        if (state.stage === "import" && target === "review") {
+          emitCurrentSessionGovernanceEvent({ kind: "review_started" });
+        }
+        if (state.stage === "review" && target === "approve") {
+          emitCurrentSessionGovernanceEvent({ kind: "approved" });
+        }
+        return advanceReviewStage(state, target);
+      });
+    },
+    [emitCurrentSessionGovernanceEvent],
+  );
   const handleReviewerNoteChange = useCallback((note: string): void => {
     setReviewState((state) => ({ ...state, reviewerNote: note }));
   }, []);
   const handleReviewApply = useCallback((): void => {
+    const note =
+      reviewState.reviewerNote.trim().length > 0
+        ? reviewState.reviewerNote.trim()
+        : undefined;
+    if (!applyGate.allowed) {
+      emitCurrentSessionGovernanceEvent({
+        kind: "apply_blocked",
+        ...(note ? { note } : {}),
+      });
+      return;
+    }
     setReviewState((state) => advanceReviewStage(state, "apply"));
-    dispatchImportGovernanceEvent({
-      timestamp: new Date().toISOString(),
-      scope: activePipeline.selectedNodeIds?.length ? "partial" : "all",
-      selectedNodes: activePipeline.selectedNodeIds ?? [],
-      fileCount: activePipeline.generatedFiles?.length ?? 0,
-      nodeCount: 0,
-      jobId,
-      fileKey: "",
-      qualityScore: qualityScoreModel.score,
+    emitCurrentSessionGovernanceEvent({
+      kind: "applied",
+      ...(note ? { note } : {}),
     });
   }, [
-    activePipeline.generatedFiles,
-    activePipeline.selectedNodeIds,
-    jobId,
-    qualityScoreModel.score,
+    applyGate.allowed,
+    emitCurrentSessionGovernanceEvent,
+    reviewState.reviewerNote,
   ]);
 
   const tokenSuggestionsModel = useMemo(() => {
@@ -2642,10 +2778,20 @@ export function InspectorPanel({
   }, []);
   const handleImportHistoryClose = useCallback((): void => {
     setImportHistoryOpen(false);
+    setExpandedSessionId(null);
   }, []);
+  const handleImportHistoryRowToggle = useCallback(
+    (session: PasteImportSession): void => {
+      setExpandedSessionId((current) =>
+        current === session.id ? null : session.id,
+      );
+    },
+    [],
+  );
   const handleImportHistoryReImport = useCallback(
     (session: PasteImportSession): void => {
       setImportHistoryOpen(false);
+      setExpandedSessionId(null);
       if (onReimportSession) {
         onReimportSession(session);
       }
@@ -2654,11 +2800,14 @@ export function InspectorPanel({
   );
   const handleImportHistoryDelete = useCallback(
     (session: PasteImportSession): void => {
+      if (expandedSessionId === session.id) {
+        setExpandedSessionId(null);
+      }
       if (onRemoveImportSession) {
         onRemoveImportSession(session.id);
       }
     },
-    [onRemoveImportSession],
+    [expandedSessionId, onRemoveImportSession],
   );
 
   const reimportBannerSession =
@@ -5004,6 +5153,9 @@ export function InspectorPanel({
                       onReImport={handleImportHistoryReImport}
                       onDelete={handleImportHistoryDelete}
                       onClose={handleImportHistoryClose}
+                      expandedSessionId={expandedSessionId}
+                      onRowToggle={handleImportHistoryRowToggle}
+                      getTrail={getExpandedSessionTrail}
                     />
                   </div>
                 ) : null}
@@ -6105,8 +6257,9 @@ export function InspectorPanel({
           className="min-h-[200px] flex-1 lg:min-h-0"
           style={codePaneStyle}
         >
-          {activePipeline.stage === "ready" ||
-          activePipeline.stage === "partial" ? (
+          {(activePipeline.stage === "ready" ||
+            activePipeline.stage === "partial") &&
+          currentImportSession ? (
             <ImportReviewStepper
               state={reviewState}
               gate={applyGate}

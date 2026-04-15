@@ -161,7 +161,7 @@ describe("ImportReviewStepper — primary button per stage", () => {
     expect(onAdvance).not.toHaveBeenCalled();
   });
 
-  it("disables Apply and does NOT call onApply when gate.allowed=false", () => {
+  it("keeps Apply enabled so the parent can record a blocked attempt", () => {
     const onApply = vi.fn();
     renderStepper({
       state: buildState("approve"),
@@ -174,9 +174,9 @@ describe("ImportReviewStepper — primary button per stage", () => {
       onApply,
     });
     const button = screen.getByTestId("import-review-stepper-primary");
-    expect(button).toBeDisabled();
+    expect(button).toBeEnabled();
     fireEvent.click(button);
-    expect(onApply).not.toHaveBeenCalled();
+    expect(onApply).toHaveBeenCalledTimes(1);
   });
 
   it("sets the Apply button title to gate.reason when provided", () => {

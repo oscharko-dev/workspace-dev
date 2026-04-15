@@ -86,7 +86,9 @@ import {
   type LocalSyncPlan,
   planLocalSync,
 } from "./job-engine/local-sync.js";
+import type { ComponentManifest } from "./parity/component-manifest.js";
 import type { DesignIR } from "./parity/types-ir.js";
+import { isSecuritySensitiveImport } from "./job-engine/import-governance.js";
 import { StageArtifactStore } from "./job-engine/pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./job-engine/pipeline/artifact-keys.js";
 import {
@@ -116,6 +118,7 @@ import {
 import { prepareGenerationDiff } from "./job-engine/generation-diff.js";
 import { createImportSessionEventStore } from "./job-engine/import-session-event-store.js";
 import { createImportSessionStore } from "./job-engine/import-session-store.js";
+import { loadInspectorPolicy } from "./server/inspector-policy.js";
 
 const MODULE_DIR =
   typeof __dirname === "string"
@@ -834,6 +837,182 @@ export const createJobEngine = ({
     return total;
   };
 
+  const readArtifactJson = async <T>({
+    artifactStore,
+    key,
+  }: {
+    artifactStore: StageArtifactStore;
+    key: (typeof STAGE_ARTIFACT_KEYS)[keyof typeof STAGE_ARTIFACT_KEYS];
+  }): Promise<T | undefined> => {
+    const inlineValue = await artifactStore.getValue<T>(key);
+    if (inlineValue !== undefined) {
+      return inlineValue;
+    }
+    const artifactPath = await artifactStore.getPath(key);
+    if (!artifactPath) {
+      return undefined;
+    }
+    try {
+      const raw = await readFile(artifactPath, "utf8");
+      return JSON.parse(raw) as T;
+    } catch {
+      return undefined;
+    }
+  };
+
+  const isImportSessionApprovedForMutation = (
+    session: WorkspaceImportSession | undefined,
+  ): boolean => {
+    return session?.status === "approved" || session?.status === "applied";
+  };
+
+  const resolveRootSourceJobId = (job: JobRecord): string | null => {
+    let current: JobRecord | undefined = job;
+    const seen = new Set<string>();
+    while (current?.lineage) {
+      if (seen.has(current.jobId)) {
+        break;
+      }
+      seen.add(current.jobId);
+      const next = jobs.get(current.lineage.sourceJobId);
+      if (!next) {
+        return current.lineage.sourceJobId;
+      }
+      current = next;
+    }
+    return current?.jobId ?? null;
+  };
+
+  const findImportSessionByJobId = async (
+    jobId: string,
+  ): Promise<WorkspaceImportSession | undefined> => {
+    const sessions = await importSessionStore.list();
+    return sessions.find((entry) => entry.jobId === jobId);
+  };
+
+  const resolveGovernancePatterns = async (): Promise<readonly string[]> => {
+    const loaded = await loadInspectorPolicy({
+      workspaceRoot: resolvedWorkspaceRoot,
+    });
+    return loaded.policy?.governance?.securitySensitivePatterns ?? [];
+  };
+
+  const resolveImportGovernanceContext = async ({
+    job,
+  }: {
+    job: JobRecord;
+  }): Promise<{
+    rootSourceJobId: string | null;
+    importSession?: WorkspaceImportSession;
+    securitySensitive: boolean;
+  }> => {
+    const rootSourceJobId = resolveRootSourceJobId(job);
+    if (!rootSourceJobId) {
+      return {
+        rootSourceJobId: null,
+        securitySensitive: false,
+      };
+    }
+
+    const sourceJob = jobs.get(rootSourceJobId);
+    if (!sourceJob) {
+      return {
+        rootSourceJobId,
+        securitySensitive: false,
+      };
+    }
+
+    const sourceArtifactStore = new StageArtifactStore({
+      jobDir: sourceJob.artifacts.jobDir,
+    });
+    const [patterns, designIr, componentManifest, codegenSummary] =
+      await Promise.all([
+        resolveGovernancePatterns(),
+        readArtifactJson<DesignIR>({
+          artifactStore: sourceArtifactStore,
+          key: STAGE_ARTIFACT_KEYS.designIr,
+        }),
+        readArtifactJson<ComponentManifest>({
+          artifactStore: sourceArtifactStore,
+          key: STAGE_ARTIFACT_KEYS.componentManifest,
+        }),
+        sourceArtifactStore.getValue<{ generatedPaths?: string[] }>(
+          STAGE_ARTIFACT_KEYS.codegenSummary,
+        ),
+      ]);
+
+    const importSession = await findImportSessionByJobId(rootSourceJobId);
+    return {
+      rootSourceJobId,
+      securitySensitive: isSecuritySensitiveImport({
+        patterns,
+        ...(designIr ? { designIr } : {}),
+        ...(componentManifest ? { componentManifest } : {}),
+        ...(codegenSummary?.generatedPaths
+          ? { generatedPaths: codegenSummary.generatedPaths }
+          : {}),
+      }),
+      ...(importSession ? { importSession } : {}),
+    };
+  };
+
+  const extractEventQualityScore = (
+    event: WorkspaceImportSessionEvent,
+  ): number | undefined => {
+    const candidate = event.metadata?.qualityScore;
+    return typeof candidate === "number" &&
+      Number.isInteger(candidate) &&
+      candidate >= 0 &&
+      candidate <= 100
+      ? candidate
+      : undefined;
+  };
+
+  const extractEventReviewRequired = (
+    event: WorkspaceImportSessionEvent,
+  ): boolean | undefined => {
+    const candidate = event.metadata?.reviewRequired;
+    return typeof candidate === "boolean" ? candidate : undefined;
+  };
+
+  const deriveSessionStatusFromEvent = ({
+    event,
+    currentStatus,
+  }: {
+    event: WorkspaceImportSessionEvent;
+    currentStatus: WorkspaceImportSession["status"];
+  }): WorkspaceImportSession["status"] => {
+    switch (event.kind) {
+      case "imported":
+        return "imported";
+      case "review_started":
+        return "reviewing";
+      case "approved":
+        return "approved";
+      case "applied":
+        return "applied";
+      case "rejected":
+        return "rejected";
+      case "apply_blocked":
+      case "note":
+        return currentStatus;
+    }
+  };
+
+  const createGovernanceError = ({
+    code,
+    message,
+  }: {
+    code:
+      | "E_SYNC_IMPORT_REVIEW_REQUIRED"
+      | "E_PR_IMPORT_REVIEW_REQUIRED";
+    message: string;
+  }): Error & { code: string } => {
+    const error = new Error(message) as Error & { code: string };
+    error.code = code;
+    return error;
+  };
+
   const resolveReplayability = ({
     requestSourceMode,
     fileKey,
@@ -895,15 +1074,17 @@ export const createJobEngine = ({
       return;
     }
 
-    const designIr = await artifactStore.getValue<DesignIR>(
-      STAGE_ARTIFACT_KEYS.designIr,
-    );
+    const designIr = await readArtifactJson<DesignIR>({
+      artifactStore,
+      key: STAGE_ARTIFACT_KEYS.designIr,
+    });
     const codegenSummary = await artifactStore.getValue<{
       generatedPaths?: string[];
     }>(STAGE_ARTIFACT_KEYS.codegenSummary);
-    const componentManifest = await artifactStore.getValue(
-      STAGE_ARTIFACT_KEYS.componentManifest,
-    );
+    const componentManifest = await readArtifactJson<ComponentManifest>({
+      artifactStore,
+      key: STAGE_ARTIFACT_KEYS.componentManifest,
+    });
     const fileKey = job.request.figmaFileKey?.trim() ?? "";
     const nodeId = job.request.figmaNodeId?.trim() ?? "";
     const pasteIdentityKey = job.pasteDeltaSummary?.pasteIdentityKey ?? null;
@@ -931,6 +1112,8 @@ export const createJobEngine = ({
       scope: selectedNodes.length > 0 ? "partial" : "all",
       componentMappings: sumComponentManifestMappings(componentManifest),
       pasteIdentityKey,
+      status: "imported",
+      reviewRequired: true,
       ...resolveReplayability({
         requestSourceMode,
         fileKey,
@@ -3181,6 +3364,21 @@ export const createJobEngine = ({
       });
     }
 
+    const syncGovernance = await resolveImportGovernanceContext({
+      job: syncContext.job,
+    });
+    if (!isImportSessionApprovedForMutation(syncGovernance.importSession)) {
+      const sessionLabel = syncGovernance.importSession?.id ?? "unknown";
+      const sessionStatus =
+        syncGovernance.importSession?.status ?? "review pending";
+      throw createGovernanceError({
+        code: "E_SYNC_IMPORT_REVIEW_REQUIRED",
+        message:
+          `Import session '${sessionLabel}' must be approved before local sync can write regenerated files ` +
+          `(current status: ${sessionStatus}${syncGovernance.securitySensitive ? ", security-sensitive scope" : ""}).`,
+      });
+    }
+
     const currentPlan = await planLocalSync({
       generatedProjectDir: syncContext.generatedProjectDir,
       workspaceRoot: resolvedWorkspaceRoot,
@@ -3528,11 +3726,27 @@ export const createJobEngine = ({
         : {}),
     };
 
+    const prGovernance = await resolveImportGovernanceContext({ job });
+    if (!isImportSessionApprovedForMutation(prGovernance.importSession)) {
+      const sessionLabel = prGovernance.importSession?.id ?? "unknown";
+      const sessionStatus =
+        prGovernance.importSession?.status ?? "review pending";
+      throw createGovernanceError({
+        code: "E_PR_IMPORT_REVIEW_REQUIRED",
+        message:
+          `Import session '${sessionLabel}' must be approved before creating a PR ` +
+          `(current status: ${sessionStatus}${prGovernance.securitySensitive ? ", security-sensitive scope" : ""}).`,
+      });
+    }
+
     job.gitPr = await executePersistedGitPr({
       artifactStore,
       input,
       jobDir: job.artifacts.jobDir,
       jobId,
+      ...(prGovernance.importSession
+        ? { importSessionId: prGovernance.importSession.id }
+        : {}),
       commandTimeoutMs: runtime.commandTimeoutMs,
       commandStdoutMaxBytes: runtime.commandStdoutMaxBytes,
       commandStderrMaxBytes: runtime.commandStderrMaxBytes,
@@ -3546,6 +3760,26 @@ export const createJobEngine = ({
         });
       },
     });
+
+    if (prGovernance.importSession) {
+      await appendImportSessionEvent({
+        event: {
+          id: "",
+          sessionId: prGovernance.importSession.id,
+          kind: "note",
+          at: "",
+          note: job.gitPr.prUrl
+            ? "PR created from regeneration job."
+            : "Branch pushed from regeneration job.",
+          metadata: {
+            jobId,
+            sourceJobId: job.lineage.sourceJobId,
+            branchName: job.gitPr.branchName ?? null,
+            prUrl: job.gitPr.prUrl ?? null,
+          },
+        },
+      });
+    }
 
     updateStage({
       job,
@@ -3930,6 +4164,19 @@ export const createJobEngine = ({
         at: event.at.length > 0 ? event.at : nowIso(),
       };
       await importSessionEventStore.append(finalized);
+      const qualityScore = extractEventQualityScore(finalized);
+      const reviewRequired = extractEventReviewRequired(finalized);
+      const nextStatus = deriveSessionStatusFromEvent({
+        event: finalized,
+        currentStatus: session.status,
+      });
+      await importSessionStore.save({
+        ...session,
+        ...(finalized.actor ? { userId: finalized.actor } : {}),
+        ...(qualityScore !== undefined ? { qualityScore } : {}),
+        ...(reviewRequired !== undefined ? { reviewRequired } : {}),
+        ...(nextStatus ? { status: nextStatus } : {}),
+      });
       return finalized;
     };
 

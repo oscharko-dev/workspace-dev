@@ -25,6 +25,7 @@ export const executePersistedGitPr = async ({
   artifactStore,
   input,
   jobId,
+  importSessionId,
   jobDir,
   commandTimeoutMs,
   commandStdoutMaxBytes,
@@ -35,6 +36,7 @@ export const executePersistedGitPr = async ({
   artifactStore: StageArtifactStore;
   input: WorkspaceJobInput;
   jobId: string;
+  importSessionId?: string;
   jobDir: string;
   commandTimeoutMs: number;
   commandStdoutMaxBytes: number;
@@ -47,6 +49,7 @@ export const executePersistedGitPr = async ({
   const result = await (deps?.runGitPrFlowFn ?? runGitPrFlow)({
     input,
     jobId,
+    ...(importSessionId ? { importSessionId } : {}),
     generatedProjectDir,
     jobDir,
     commandTimeoutMs,

@@ -6,6 +6,7 @@ function makeEvent(
   overrides: Partial<ImportGovernanceEvent> = {},
 ): ImportGovernanceEvent {
   return {
+    kind: "imported",
     timestamp: "2026-04-15T10:00:00.000Z",
     scope: "all",
     selectedNodes: [],
@@ -54,10 +55,12 @@ describe("createImportGovernanceTransport", () => {
     const bodyText = typeof init?.body === "string" ? init.body : "";
     const parsed = JSON.parse(bodyText) as Record<string, unknown>;
     expect(parsed.kind).toBe("imported");
+    expect(parsed.at).toBe("2026-04-15T10:00:00.000Z");
     expect(parsed.metadata).toEqual({
       jobId: "job-1",
       fileKey: "FILE",
       scope: "all",
+      selectedNodes: "[]",
       fileCount: 3,
       nodeCount: 12,
       qualityScore: 88,
@@ -77,6 +80,35 @@ describe("createImportGovernanceTransport", () => {
     const bodyText = typeof bodyInit === "string" ? bodyInit : "";
     const body = JSON.parse(bodyText) as Record<string, unknown>;
     expect(body.actor).toBe("user-1");
+  });
+
+  it("forwards note and reviewRequired when present on the event", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200));
+    const listener = createImportGovernanceTransport({ fetchImpl });
+
+    listener(
+      makeEvent({
+        kind: "applied",
+        selectedNodes: ["node-1", "node-2"],
+        reviewRequired: true,
+        note: "Override approved by reviewer.",
+      }),
+    );
+    await flush();
+
+    const bodyInit = fetchImpl.mock.calls[0]?.[1]?.body;
+    const bodyText = typeof bodyInit === "string" ? bodyInit : "";
+    const body = JSON.parse(bodyText) as {
+      kind: string;
+      note?: string;
+      metadata: Record<string, unknown>;
+    };
+    expect(body.kind).toBe("applied");
+    expect(body.note).toBe("Override approved by reviewer.");
+    expect(body.metadata.reviewRequired).toBe(true);
+    expect(body.metadata.selectedNodes).toBe('["node-1","node-2"]');
   });
 
   it("omits qualityScore from metadata when the event has none", async () => {

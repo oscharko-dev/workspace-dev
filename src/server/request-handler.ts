@@ -2169,6 +2169,22 @@ export function createWorkspaceRequestHandler({
                 });
                 return;
               }
+              if (code === "E_SYNC_IMPORT_REVIEW_REQUIRED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "SYNC_IMPORT_REVIEW_REQUIRED",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "The source import session must be approved before applying local sync.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Sync request failed for job '${jobId}'.`,
+                });
+                return;
+              }
             }
 
             if (error instanceof LocalSyncError) {
@@ -2626,6 +2642,22 @@ export function createWorkspaceRequestHandler({
                     message: sanitizeErrorMessage({
                       error,
                       fallback: "Job has no generated project.",
+                    }),
+                  },
+                  jobId,
+                  fallbackMessage: `Create PR request failed for job '${jobId}'.`,
+                });
+                return;
+              }
+              if (code === "E_PR_IMPORT_REVIEW_REQUIRED") {
+                sendRequestFailure({
+                  statusCode: 409,
+                  payload: {
+                    error: "IMPORT_REVIEW_REQUIRED",
+                    message: sanitizeErrorMessage({
+                      error,
+                      fallback:
+                        "The source import session must be approved before creating a PR.",
                     }),
                   },
                   jobId,
