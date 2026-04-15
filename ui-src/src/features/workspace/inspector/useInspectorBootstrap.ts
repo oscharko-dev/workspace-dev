@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { ImportIntent } from "./paste-input-classifier";
 import {
   classifyPasteIntent,
@@ -7,6 +7,7 @@ import {
 import {
   usePastePipeline,
   type PipelineError,
+  type PipelineImportMode,
   type PipelineRetryRequest,
   type PipelineStage,
 } from "./paste-pipeline";
@@ -62,6 +63,11 @@ interface DetectedPaste {
   clipboardHtml?: string;
 }
 
+export interface RegenerateScopedOptions {
+  selectedNodeIds: readonly string[];
+  importMode?: PipelineImportMode;
+}
+
 export interface UseInspectorBootstrapResult {
   state: InspectorBootstrapState;
   submit(input: { figmaJsonPayload: string }): void;
@@ -73,6 +79,18 @@ export interface UseInspectorBootstrapResult {
   confirmIntent(intent: ImportIntent): void;
   dismissIntent(): void;
   retry(stage?: PipelineStage, targetIds?: string[]): void;
+  /**
+   * Re-run the most recent submit with a scope filter. Used by Generate Selected
+   * and the re-import "Update existing" flow. No-op when nothing has been submitted yet.
+   */
+  regenerateScoped(options: RegenerateScopedOptions): void;
+  /**
+   * Re-run the most recent submit forcing `importMode: "full"`. Used by the
+   * re-import "Create new" flow.
+   */
+  resubmitFresh(): void;
+  /** Url-context for the most recent submit, or null when not from a URL. */
+  lastUrlContext: { fileKey: string; nodeId: string | null } | null;
   reset(): void;
   reportInputError(code: string): void;
   jobId: string | null;
@@ -162,7 +180,7 @@ function deriveBootstrapState({
   const failure =
     pipelineStage === "partial"
       ? localFailure
-      : localFailure ?? toBootstrapFailure(pipelineError);
+      : (localFailure ?? toBootstrapFailure(pipelineError));
   if (failure !== null) {
     return {
       kind: "failed",
@@ -186,6 +204,12 @@ function deriveBootstrapState({
   return { kind: "idle" };
 }
 
+interface LastSubmitRef {
+  payload: string;
+  sourceMode: "figma_paste" | "figma_plugin" | "figma_url";
+  urlContext: { fileKey: string; nodeId: string | null } | null;
+}
+
 export function useInspectorBootstrap(
   options?: UseInspectorBootstrapOptions,
 ): UseInspectorBootstrapResult {
@@ -196,6 +220,48 @@ export function useInspectorBootstrap(
     null,
   );
   const [localFailure, setLocalFailure] = useState<FailedState | null>(null);
+  const lastSubmitRef = useRef<LastSubmitRef | null>(null);
+  const [lastUrlContext, setLastUrlContext] = useState<{
+    fileKey: string;
+    nodeId: string | null;
+  } | null>(null);
+
+  const recordSubmit = useCallback((entry: LastSubmitRef): void => {
+    lastSubmitRef.current = entry;
+    setLastUrlContext(entry.urlContext);
+  }, []);
+
+  const regenerateScoped = useCallback(
+    (regenerateOptions: RegenerateScopedOptions): void => {
+      const last = lastSubmitRef.current;
+      if (last === null) {
+        return;
+      }
+      setDetectedPaste(null);
+      setLocalFailure(null);
+      pipeline.start(last.payload, {
+        sourceMode: last.sourceMode,
+        selectedNodeIds: regenerateOptions.selectedNodeIds,
+        ...(regenerateOptions.importMode !== undefined
+          ? { importMode: regenerateOptions.importMode }
+          : {}),
+      });
+    },
+    [pipeline],
+  );
+
+  const resubmitFresh = useCallback((): void => {
+    const last = lastSubmitRef.current;
+    if (last === null) {
+      return;
+    }
+    setDetectedPaste(null);
+    setLocalFailure(null);
+    pipeline.start(last.payload, {
+      sourceMode: last.sourceMode,
+      importMode: "full",
+    });
+  }, [pipeline]);
 
   const pipelineError =
     pipeline.state.stage === "error" || pipeline.state.stage === "partial"
@@ -242,13 +308,24 @@ export function useInspectorBootstrap(
     submit({ figmaJsonPayload }) {
       setDetectedPaste(null);
       setLocalFailure(null);
+      recordSubmit({
+        payload: figmaJsonPayload,
+        sourceMode: "figma_paste",
+        urlContext: null,
+      });
       pipeline.start(figmaJsonPayload, { sourceMode: "figma_paste" });
     },
 
     submitUrl(fileKey: string, nodeId: string | null): void {
       setDetectedPaste(null);
       setLocalFailure(null);
-      pipeline.start(JSON.stringify({ figmaFileKey: fileKey, nodeId }), {
+      const payload = JSON.stringify({ figmaFileKey: fileKey, nodeId });
+      recordSubmit({
+        payload,
+        sourceMode: "figma_url",
+        urlContext: { fileKey, nodeId },
+      });
+      pipeline.start(payload, {
         sourceMode: "figma_url",
       });
     },
@@ -341,10 +418,14 @@ export function useInspectorBootstrap(
 
       setDetectedPaste(null);
       setLocalFailure(null);
-      pipeline.start(detectedPaste.rawText, {
-        sourceMode:
-          intent === "FIGMA_PLUGIN_ENVELOPE" ? "figma_plugin" : "figma_paste",
+      const sourceMode =
+        intent === "FIGMA_PLUGIN_ENVELOPE" ? "figma_plugin" : "figma_paste";
+      recordSubmit({
+        payload: detectedPaste.rawText,
+        sourceMode,
+        urlContext: null,
       });
+      pipeline.start(detectedPaste.rawText, { sourceMode });
     },
 
     dismissIntent(): void {
@@ -383,6 +464,10 @@ export function useInspectorBootstrap(
       setDetectedPaste(null);
       setLocalFailure({ reason: code, retryable: true });
     },
+
+    regenerateScoped,
+    resubmitFresh,
+    lastUrlContext,
 
     jobId,
     previewUrl,

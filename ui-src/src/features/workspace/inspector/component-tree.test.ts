@@ -19,6 +19,11 @@ import {
 import { createElement } from "react";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { filterTree } from "./component-tree-utils";
+import {
+  EMPTY_SELECTION,
+  toggleNode,
+  type NodeSelectionState,
+} from "./node-selection-state";
 
 // jsdom does not implement scrollIntoView
 beforeEach(() => {
@@ -718,5 +723,376 @@ describe("ComponentTree mapping badges", () => {
 
     fireEvent.click(screen.getByTestId("tree-node-matched-1"));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-selection checkbox column (Issue #1010)
+// ---------------------------------------------------------------------------
+
+describe("ComponentTree checkbox column", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn(),
+  };
+
+  it("renders no checkbox column when `selection` prop is omitted", () => {
+    render(createElement(ComponentTree, defaultProps));
+    expect(screen.queryByTestId("tree-checkbox-screen-home")).toBeNull();
+    expect(screen.queryByTestId("tree-checkbox-submit-btn")).toBeNull();
+    expect(screen.queryByTestId("tree-selection-count")).toBeNull();
+  });
+
+  it("renders checkboxes for every visible non-skeleton row when `selection` is provided", () => {
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: EMPTY_SELECTION,
+      }),
+    );
+    expect(screen.getByTestId("tree-checkbox-screen-home")).toBeInTheDocument();
+    expect(screen.getByTestId("tree-checkbox-submit-btn")).toBeInTheDocument();
+    expect(screen.getByTestId("tree-checkbox-header-bar")).toBeInTheDocument();
+  });
+
+  it("checkboxes reflect tri-state (checked / partial / unchecked)", () => {
+    const screens = makeScreens();
+    // Exclude SubmitButton (a top-level child of Home, visible by default).
+    // Tri-state should bubble up: SubmitButton=unchecked, Home=partial,
+    // Details=checked (untouched).
+    const submitBtnNode = screens[0]!.children![2]!;
+    const partialState: NodeSelectionState = toggleNode(
+      EMPTY_SELECTION,
+      submitBtnNode,
+      false,
+    );
+
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        screens,
+        selection: partialState,
+      }),
+    );
+
+    expect(screen.getByTestId("tree-checkbox-submit-btn")).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    expect(screen.getByTestId("tree-checkbox-screen-home")).toHaveAttribute(
+      "aria-checked",
+      "mixed",
+    );
+    expect(screen.getByTestId("tree-checkbox-screen-details")).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+  });
+
+  it("toggling a checked checkbox calls onToggleSelection(nodeId, false)", () => {
+    const onToggleSelection = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: EMPTY_SELECTION,
+        onToggleSelection,
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("tree-checkbox-submit-btn"));
+    expect(onToggleSelection).toHaveBeenCalledWith("submit-btn", false);
+  });
+
+  it("toggling an unchecked checkbox calls onToggleSelection(nodeId, true)", () => {
+    const screens = makeScreens();
+    const submitBtnNode = screens[0]!.children![2]!;
+    const stateWithSubmitOff = toggleNode(
+      EMPTY_SELECTION,
+      submitBtnNode,
+      false,
+    );
+
+    const onToggleSelection = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        screens,
+        selection: stateWithSubmitOff,
+        onToggleSelection,
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("tree-checkbox-submit-btn"));
+    expect(onToggleSelection).toHaveBeenCalledWith("submit-btn", true);
+  });
+
+  it("toggling a partial checkbox calls onToggleSelection(nodeId, true)", () => {
+    const screens = makeScreens();
+    // Toggling SubmitButton off makes the Home screen partial.
+    const partialState = toggleNode(
+      EMPTY_SELECTION,
+      screens[0]!.children![2]!,
+      false,
+    );
+
+    const onToggleSelection = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        screens,
+        selection: partialState,
+        onToggleSelection,
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("tree-checkbox-screen-home"));
+    expect(onToggleSelection).toHaveBeenCalledWith("screen-home", true);
+  });
+
+  it("clicking a checkbox does NOT trigger onSelect", () => {
+    const onSelect = vi.fn();
+    const onToggleSelection = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        onSelect,
+        selection: EMPTY_SELECTION,
+        onToggleSelection,
+      }),
+    );
+
+    fireEvent.click(screen.getByTestId("tree-checkbox-submit-btn"));
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onToggleSelection).toHaveBeenCalled();
+  });
+
+  it("uses descriptive aria-labels for each tri-state", () => {
+    const screens = makeScreens();
+    // Toggle SubmitButton off → SubmitButton=unchecked, Home=partial,
+    // Details=checked.
+    const partialState = toggleNode(
+      EMPTY_SELECTION,
+      screens[0]!.children![2]!,
+      false,
+    );
+
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        screens,
+        selection: partialState,
+      }),
+    );
+
+    // Unchecked: "Select <name>"
+    expect(screen.getByTestId("tree-checkbox-submit-btn")).toHaveAttribute(
+      "aria-label",
+      "Select SubmitButton",
+    );
+    // Partial: "Mixed selection: <name>"
+    expect(screen.getByTestId("tree-checkbox-screen-home")).toHaveAttribute(
+      "aria-label",
+      "Mixed selection: Home",
+    );
+    // Checked: "Deselect <name>"
+    expect(screen.getByTestId("tree-checkbox-screen-details")).toHaveAttribute(
+      "aria-label",
+      "Deselect Details",
+    );
+  });
+
+  it("skeleton rows do not render a checkbox", () => {
+    const skeletonScreens: TreeNode[] = [
+      {
+        id: "screen-stream",
+        name: "Stream",
+        type: "screen",
+        children: [{ id: "skel-1", name: "", type: "skeleton" }],
+      },
+    ];
+
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        screens: skeletonScreens,
+        selection: EMPTY_SELECTION,
+      }),
+    );
+
+    expect(screen.queryByTestId("tree-checkbox-skel-1")).toBeNull();
+    // Screen-level checkbox should still exist.
+    expect(
+      screen.getByTestId("tree-checkbox-screen-stream"),
+    ).toBeInTheDocument();
+  });
+});
+
+describe("ComponentTree selection toolbar", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn(),
+  };
+
+  it("does NOT render Select All / Deselect All when selection is omitted", () => {
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        onSelectAll: vi.fn(),
+        onDeselectAll: vi.fn(),
+      }),
+    );
+    expect(screen.queryByTestId("tree-select-all")).toBeNull();
+    expect(screen.queryByTestId("tree-deselect-all")).toBeNull();
+  });
+
+  it("does NOT render Select All / Deselect All when handlers are not wired", () => {
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: EMPTY_SELECTION,
+      }),
+    );
+    expect(screen.queryByTestId("tree-select-all")).toBeNull();
+    expect(screen.queryByTestId("tree-deselect-all")).toBeNull();
+  });
+
+  it("renders Select All / Deselect All when both selection AND handlers are provided", () => {
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: EMPTY_SELECTION,
+        onSelectAll: vi.fn(),
+        onDeselectAll: vi.fn(),
+      }),
+    );
+    expect(screen.getByTestId("tree-select-all")).toBeInTheDocument();
+    expect(screen.getByTestId("tree-deselect-all")).toBeInTheDocument();
+  });
+
+  it("clicking Select All calls onSelectAll", () => {
+    const onSelectAll = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: EMPTY_SELECTION,
+        onSelectAll,
+        onDeselectAll: vi.fn(),
+      }),
+    );
+    fireEvent.click(screen.getByTestId("tree-select-all"));
+    expect(onSelectAll).toHaveBeenCalledOnce();
+  });
+
+  it("clicking Deselect All calls onDeselectAll", () => {
+    const onDeselectAll = vi.fn();
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: EMPTY_SELECTION,
+        onSelectAll: vi.fn(),
+        onDeselectAll,
+      }),
+    );
+    fireEvent.click(screen.getByTestId("tree-deselect-all"));
+    expect(onDeselectAll).toHaveBeenCalledOnce();
+  });
+});
+
+describe("ComponentTree selection count", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn(),
+  };
+
+  it("displays 'N of M selected' when selection is provided", () => {
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        selection: EMPTY_SELECTION,
+      }),
+    );
+
+    // makeScreens() = 10 nodes: Home + HeaderBar + Logo + NavMenu +
+    // PriceCard + Amount + Label + SubmitButton + Details + DetailTitle.
+    const count = screen.getByTestId("tree-selection-count");
+    expect(count.textContent).toBe("10 of 10 selected");
+  });
+
+  it("updates the count when nodes are excluded", () => {
+    const screens = makeScreens();
+    // Toggle off the logo leaf — only one node excluded.
+    const stateWithLogoOff = toggleNode(
+      EMPTY_SELECTION,
+      screens[0]!.children![0]!.children![0]!,
+      false,
+    );
+
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        screens,
+        selection: stateWithLogoOff,
+      }),
+    );
+
+    expect(screen.getByTestId("tree-selection-count").textContent).toBe(
+      "9 of 10 selected",
+    );
+  });
+
+  it("hides the count line when no selection is provided", () => {
+    render(createElement(ComponentTree, defaultProps));
+    expect(screen.queryByTestId("tree-selection-count")).toBeNull();
+  });
+});
+
+describe("ComponentTree visual diff status", () => {
+  const defaultProps = {
+    screens: makeScreens(),
+    selectedId: null,
+    onSelect: vi.fn(),
+    collapsed: false,
+    onToggleCollapsed: vi.fn(),
+  };
+
+  it("renders no diff dots when diffStatusByNodeId is omitted", () => {
+    render(createElement(ComponentTree, defaultProps));
+    expect(document.querySelector('[data-testid^="tree-diff-"]')).toBeNull();
+  });
+
+  it("renders colored dots for added / removed / modified statuses and skips unchanged", () => {
+    const diffStatusByNodeId = new Map<
+      string,
+      "added" | "removed" | "modified" | "unchanged"
+    >([
+      ["screen-home", "modified"],
+      ["submit-btn", "added"],
+      ["header-bar", "unchanged"],
+    ]);
+
+    render(
+      createElement(ComponentTree, {
+        ...defaultProps,
+        diffStatusByNodeId,
+      }),
+    );
+
+    expect(
+      screen.getByTestId("tree-diff-modified-screen-home"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("tree-diff-added-submit-btn"),
+    ).toBeInTheDocument();
+    // Unchanged nodes do not render a dot.
+    expect(screen.queryByTestId("tree-diff-unchanged-header-bar")).toBeNull();
   });
 });

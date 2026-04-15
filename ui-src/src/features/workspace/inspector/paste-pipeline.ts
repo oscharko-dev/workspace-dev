@@ -43,11 +43,7 @@ export type PipelineFallbackMode =
  */
 export interface PipelinePasteDeltaSummary {
   mode: "full" | "delta" | "auto_resolved_to_full" | "auto_resolved_to_delta";
-  strategy:
-    | "baseline_created"
-    | "no_changes"
-    | "delta"
-    | "structural_break";
+  strategy: "baseline_created" | "no_changes" | "delta" | "structural_break";
   totalNodes: number;
   nodesReused: number;
   nodesReprocessed: number;
@@ -55,6 +51,8 @@ export interface PipelinePasteDeltaSummary {
   pasteIdentityKey: string;
   priorManifestMissing: boolean;
 }
+
+export type PipelineImportMode = "full" | "delta" | "auto";
 
 type SubmitSourceMode = "figma_paste" | "figma_plugin" | "figma_url";
 type JobRuntimeStatus =
@@ -236,6 +234,10 @@ export interface PastePipelineState {
   partialStats?: PartialImportStats;
   /** Per-paste delta summary surfaced on the submit-accepted response. */
   pasteDeltaSummary?: PipelinePasteDeltaSummary | undefined;
+  /** Mirrors pasteDeltaSummary.pasteIdentityKey when delta info is available; cleared on `start`. */
+  pasteIdentityKey?: string | undefined;
+  /** Echo of the selectedNodeIds the most recent submit was sent with (omitted when unscoped). */
+  selectedNodeIds?: readonly string[] | undefined;
 }
 
 export interface PastePipelineController {
@@ -248,12 +250,18 @@ export interface PipelineOptions {
   signal?: AbortSignal;
   skipScreenshot?: boolean;
   sourceMode?: SubmitSourceMode;
+  /** Whitelist of node ids to keep in the generation scope. Empty/undefined = no filtering. */
+  selectedNodeIds?: readonly string[];
+  /** Hint to the backend delta engine. Defaults to "auto" on the server when omitted. */
+  importMode?: PipelineImportMode;
 }
 
 interface PipelineRequest {
   payload: string;
   sourceMode: SubmitSourceMode;
   skipScreenshot: boolean;
+  selectedNodeIds?: readonly string[];
+  importMode?: PipelineImportMode;
 }
 
 export type PipelineAction =
@@ -264,6 +272,7 @@ export type PipelineAction =
       type: "job_created";
       jobId: string;
       pasteDeltaSummary?: PipelinePasteDeltaSummary;
+      selectedNodeIds?: readonly string[];
     }
   | {
       type: "job_status_updated";
@@ -547,6 +556,11 @@ export function pastePipelineReducer(
         ...(action.pasteDeltaSummary !== undefined
           ? { pasteDeltaSummary: action.pasteDeltaSummary }
           : {}),
+        pasteIdentityKey: action.pasteDeltaSummary?.pasteIdentityKey,
+        selectedNodeIds:
+          action.selectedNodeIds && action.selectedNodeIds.length > 0
+            ? action.selectedNodeIds
+            : undefined,
       };
     }
 
@@ -733,6 +747,9 @@ interface SubmitBody {
   figmaJsonPayload: string;
   enableGitPr: false;
   llmCodegenMode: "deterministic";
+  importMode?: PipelineImportMode;
+  /** Server enforcement tracked under issue #1010. */
+  selectedNodeIds?: readonly string[];
 }
 
 interface RetryStageBody {
@@ -786,12 +803,22 @@ export function isPasteDeltaSummary(
 }
 
 function buildSubmitBody(request: PipelineRequest): SubmitBody {
-  return {
+  const body: SubmitBody = {
     figmaSourceMode: request.sourceMode,
     figmaJsonPayload: request.payload,
     enableGitPr: false,
     llmCodegenMode: "deterministic",
   };
+  if (request.importMode !== undefined) {
+    body.importMode = request.importMode;
+  }
+  if (
+    request.selectedNodeIds !== undefined &&
+    request.selectedNodeIds.length > 0
+  ) {
+    body.selectedNodeIds = request.selectedNodeIds;
+  }
+  return body;
 }
 
 class SubmitError extends Error {
@@ -2124,6 +2151,10 @@ async function executePipelineRun({
     type: "job_created",
     jobId,
     ...(pasteDeltaSummary !== undefined ? { pasteDeltaSummary } : {}),
+    ...(request.selectedNodeIds !== undefined &&
+    request.selectedNodeIds.length > 0
+      ? { selectedNodeIds: request.selectedNodeIds }
+      : {}),
   });
 
   let screenshotFetched = false;
@@ -2446,6 +2477,12 @@ export function startPastePipeline(
       payload,
       sourceMode: options?.sourceMode ?? "figma_paste",
       skipScreenshot: options?.skipScreenshot === true,
+      ...(options?.selectedNodeIds !== undefined
+        ? { selectedNodeIds: options.selectedNodeIds }
+        : {}),
+      ...(options?.importMode !== undefined
+        ? { importMode: options.importMode }
+        : {}),
     },
   });
 
@@ -2628,6 +2665,12 @@ export function usePastePipeline(): UsePastePipelineResult {
           payload,
           sourceMode: options?.sourceMode ?? "figma_paste",
           skipScreenshot: options?.skipScreenshot === true,
+          ...(options?.selectedNodeIds !== undefined
+            ? { selectedNodeIds: options.selectedNodeIds }
+            : {}),
+          ...(options?.importMode !== undefined
+            ? { importMode: options.importMode }
+            : {}),
         },
       });
     },

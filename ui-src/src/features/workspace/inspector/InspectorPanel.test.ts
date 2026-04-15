@@ -2814,3 +2814,205 @@ describe("InspectorPanel create PR", () => {
     fetchSpy.mockRestore();
   });
 });
+
+describe("InspectorPanel scope controls + import history (issue #1010)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  beforeEach(() => {
+    mockUseQuery.mockReset();
+    mockUseMutation.mockReset();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    installQueryMock();
+    installMutationMock();
+  });
+
+  function buildReadyPipelineState(): PastePipelineState {
+    const base = createInitialPipelineState();
+    return {
+      ...base,
+      stage: "ready",
+      jobId: "job-1",
+      jobStatus: "completed",
+      designIR: {
+        jobId: "job-1",
+        screens: [
+          {
+            id: "screen-1",
+            name: "Home",
+            children: [
+              { id: "header", name: "Header", type: "frame" },
+              { id: "hero", name: "Hero", type: "frame" },
+            ],
+          },
+        ],
+      },
+    };
+  }
+
+  it("shows Generate Selected button when scope controls are wired and tree has nodes", () => {
+    const onGenerateSelected = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected,
+      importHistory: [],
+    });
+
+    expect(
+      screen.getByTestId("inspector-generate-selected"),
+    ).toBeInTheDocument();
+  });
+
+  it("disables Generate Selected when every node is deselected via the Deselect All toolbar action", () => {
+    const onGenerateSelected = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected,
+      importHistory: [],
+    });
+
+    fireEvent.click(screen.getByTestId("tree-deselect-all"));
+    expect(screen.getByTestId("inspector-generate-selected")).toBeDisabled();
+  });
+
+  it("invokes onGenerateSelected with [] when nothing was deselected (full re-run)", () => {
+    const onGenerateSelected = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected,
+      importHistory: [],
+    });
+
+    fireEvent.click(screen.getByTestId("inspector-generate-selected"));
+    expect(onGenerateSelected).toHaveBeenCalledTimes(1);
+    expect(onGenerateSelected).toHaveBeenCalledWith([]);
+  });
+
+  it("toggles the import history popover and renders entries", () => {
+    const session = {
+      id: "paste-import-1",
+      fileKey: "FILE",
+      nodeId: "1-2",
+      nodeName: "Home",
+      importedAt: new Date(2026, 3, 14, 12, 0, 0).toISOString(),
+      nodeCount: 5,
+      fileCount: 2,
+      selectedNodes: [] as string[],
+      scope: "all" as const,
+      componentMappings: 1,
+      version: "",
+      pasteIdentityKey: null,
+      jobId: "job-prev",
+    };
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected: vi.fn(),
+      importHistory: [session],
+    });
+
+    const toggle = screen.getByTestId("inspector-import-history-toggle");
+    expect(toggle).toBeInTheDocument();
+    fireEvent.click(toggle);
+    expect(screen.getByTestId("import-history-panel")).toBeInTheDocument();
+    expect(
+      screen.getByTestId(`import-history-row-${session.id}`),
+    ).toBeInTheDocument();
+  });
+
+  it("renders the re-import banner when previousImportSession is provided", () => {
+    const session = {
+      id: "paste-import-2",
+      fileKey: "FILE",
+      nodeId: "1-2",
+      nodeName: "Home",
+      importedAt: new Date(2026, 3, 14, 12, 0, 0).toISOString(),
+      nodeCount: 5,
+      fileCount: 2,
+      selectedNodes: [] as string[],
+      scope: "all" as const,
+      componentMappings: 1,
+      version: "",
+      pasteIdentityKey: "key-abc",
+      jobId: "job-prev",
+    };
+    const onResubmitFresh = vi.fn();
+    const onGenerateSelected = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      previousImportSession: session,
+      onGenerateSelected,
+      onResubmitFresh,
+    });
+
+    expect(screen.getByTestId("reimport-banner")).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId("reimport-create-new"));
+    expect(onResubmitFresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the three scope preset buttons; Just-this and +Children are disabled without a node selection", () => {
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected: vi.fn(),
+    });
+
+    expect(screen.getByTestId("inspector-scope-preset-single")).toBeDisabled();
+    expect(screen.getByTestId("inspector-scope-preset-subtree")).toBeDisabled();
+    expect(screen.getByTestId("inspector-scope-preset-all")).not.toBeDisabled();
+  });
+
+  it("All-screens preset resets selection so Generate Selected re-runs the full set", () => {
+    const onGenerateSelected = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected,
+    });
+
+    fireEvent.click(screen.getByTestId("tree-deselect-all"));
+    expect(screen.getByTestId("inspector-generate-selected")).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId("inspector-scope-preset-all"));
+    fireEvent.click(screen.getByTestId("inspector-generate-selected"));
+    expect(onGenerateSelected).toHaveBeenCalledWith([]);
+  });
+
+  it("re-import 'Update' re-runs onGenerateSelected with importMode: 'delta'", () => {
+    const session = {
+      id: "paste-import-3",
+      fileKey: "FILE",
+      nodeId: "1-2",
+      nodeName: "Home",
+      importedAt: new Date(2026, 3, 14, 12, 0, 0).toISOString(),
+      nodeCount: 5,
+      fileCount: 2,
+      selectedNodes: [] as string[],
+      scope: "all" as const,
+      componentMappings: 1,
+      pasteIdentityKey: "key-abc",
+      jobId: "job-prev",
+    };
+    const onGenerateSelected = vi.fn();
+    const onResubmitFresh = vi.fn();
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      previousImportSession: session,
+      onGenerateSelected,
+      onResubmitFresh,
+    });
+
+    fireEvent.click(screen.getByTestId("reimport-update"));
+    expect(onGenerateSelected).toHaveBeenCalledTimes(1);
+    expect(onGenerateSelected).toHaveBeenCalledWith([], {
+      importMode: "delta",
+    });
+  });
+
+  it("Changed preset is disabled when there is no previous-IR diff data", () => {
+    renderInspectorPanel({
+      pipeline: buildReadyPipelineState(),
+      onGenerateSelected: vi.fn(),
+    });
+    expect(screen.getByTestId("inspector-scope-preset-changed")).toBeDisabled();
+  });
+});

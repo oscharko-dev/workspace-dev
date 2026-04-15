@@ -16,6 +16,12 @@ import {
   getPrimaryDiagnosticCategory,
   type NodeDiagnosticsMap,
 } from "./node-diagnostics";
+import {
+  buildCheckStateMap,
+  getSelectionCounts,
+  type NodeCheckState,
+  type NodeSelectionState,
+} from "./node-selection-state";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -32,6 +38,9 @@ export interface TreeNode {
   mappingStatus?: "matched" | "suggested" | "unmapped" | "error";
 }
 
+/** Visual diff status for re-imports — drives the colored ring on each tree row. */
+export type TreeNodeDiffStatus = "added" | "removed" | "modified" | "unchanged";
+
 interface ComponentTreeProps {
   screens: TreeNode[];
   selectedId: string | null;
@@ -42,6 +51,16 @@ interface ComponentTreeProps {
   onToggleCollapsed: () => void;
   diagnosticsMap?: NodeDiagnosticsMap;
   selectionEnabled?: boolean;
+  /** When provided, renders a checkbox column with tri-state semantics. Selection is computed from this state. */
+  selection?: NodeSelectionState;
+  /** Called when the user toggles a node's checkbox. `nextSelected` is the new state of the checkbox (boolean). */
+  onToggleSelection?: (nodeId: string, nextSelected: boolean) => void;
+  /** When provided alongside `selection`, renders a "Select All" toolbar button. */
+  onSelectAll?: () => void;
+  /** When provided alongside `selection`, renders a "Deselect All" toolbar button. */
+  onDeselectAll?: () => void;
+  /** Optional visual diff status per node id; renders a colored marker on the row. */
+  diffStatusByNodeId?: ReadonlyMap<string, TreeNodeDiffStatus>;
 }
 
 interface VisibleTreeRow {
@@ -64,6 +83,12 @@ interface TreeRowProps {
   onFocusNode: (nodeId: string) => void;
   diagnosticsMap?: NodeDiagnosticsMap | undefined;
   selectionEnabled: boolean;
+  /** Pre-resolved check state for this row (null when no selection prop). */
+  checkState: NodeCheckState | null;
+  onToggleSelection?:
+    | ((nodeId: string, nextSelected: boolean) => void)
+    | undefined;
+  diffStatus?: TreeNodeDiffStatus | undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +181,19 @@ function findParentRow(
 // Tree row
 // ---------------------------------------------------------------------------
 
+const DIFF_DOT_CLASSNAME: Record<TreeNodeDiffStatus, string> = {
+  added: "bg-emerald-400",
+  removed: "bg-rose-500",
+  modified: "bg-amber-300",
+  unchanged: "bg-transparent",
+};
+const DIFF_LABEL: Record<TreeNodeDiffStatus, string> = {
+  added: "Added since last import",
+  removed: "Removed since last import",
+  modified: "Modified since last import",
+  unchanged: "Unchanged since last import",
+};
+
 const TreeRow = memo(function TreeRow({
   row,
   selectedId,
@@ -166,10 +204,27 @@ const TreeRow = memo(function TreeRow({
   onFocusNode,
   diagnosticsMap,
   selectionEnabled,
+  checkState,
+  onToggleSelection,
+  diffStatus,
 }: TreeRowProps): JSX.Element {
   const isSelected = selectedId === row.node.id;
   const isFocused = focusedId === row.node.id;
   const isSelectable = selectionEnabled && row.node.type !== "skeleton";
+  const isSkeleton = row.node.type === "skeleton";
+  const showCheckbox = checkState !== null && !isSkeleton;
+  const checkboxAriaLabel =
+    checkState === "checked"
+      ? `Deselect ${row.node.name}`
+      : checkState === "partial"
+        ? `Mixed selection: ${row.node.name}`
+        : `Select ${row.node.name}`;
+  const checkboxAriaChecked: "true" | "false" | "mixed" =
+    checkState === "checked"
+      ? "true"
+      : checkState === "partial"
+        ? "mixed"
+        : "false";
 
   return (
     <div
@@ -213,6 +268,58 @@ const TreeRow = memo(function TreeRow({
             <span key={index} className="w-4 border-l border-[#000000]/70" />
           ))}
         </span>
+      ) : null}
+
+      {diffStatus !== undefined && diffStatus !== "unchanged" && !isSkeleton ? (
+        <span
+          data-testid={`tree-diff-${diffStatus}-${row.node.id}`}
+          aria-label={DIFF_LABEL[diffStatus]}
+          title={DIFF_LABEL[diffStatus]}
+          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${DIFF_DOT_CLASSNAME[diffStatus]}`}
+        />
+      ) : null}
+
+      {showCheckbox ? (
+        <button
+          type="button"
+          role="checkbox"
+          tabIndex={-1}
+          aria-checked={checkboxAriaChecked}
+          aria-label={checkboxAriaLabel}
+          data-testid={`tree-checkbox-${row.node.id}`}
+          className={`flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border bg-transparent p-0 transition ${
+            checkState === "checked" || checkState === "partial"
+              ? "border-[#4eba87] text-[#4eba87]"
+              : "border-white/65 text-transparent hover:border-[#4eba87]"
+          }`}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (onToggleSelection) {
+              onToggleSelection(row.node.id, checkState !== "checked");
+            }
+          }}
+        >
+          {checkState === "checked" ? (
+            <svg
+              viewBox="0 0 16 16"
+              className="h-3 w-3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+            >
+              <path
+                d="M3 8l3.5 3.5L13 5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : checkState === "partial" ? (
+            <span
+              aria-hidden="true"
+              className="block h-[2px] w-2 rounded-sm bg-[#4eba87]"
+            />
+          ) : null}
+        </button>
       ) : null}
 
       {row.hasChildren ? (
@@ -272,9 +379,9 @@ const TreeRow = memo(function TreeRow({
               ? "bg-[#4eba87]"
               : row.node.mappingStatus === "suggested"
                 ? "bg-amber-400"
-              : row.node.mappingStatus === "error"
-                ? "bg-rose-500"
-                : "bg-white/25"
+                : row.node.mappingStatus === "error"
+                  ? "bg-rose-500"
+                  : "bg-white/25"
           }`}
         />
       ) : null}
@@ -304,6 +411,11 @@ export function ComponentTree({
   onToggleCollapsed,
   diagnosticsMap,
   selectionEnabled = true,
+  selection,
+  onToggleSelection,
+  onSelectAll,
+  onDeselectAll,
+  diffStatusByNodeId,
 }: ComponentTreeProps): JSX.Element {
   const [searchQuery, setSearchQuery] = useState("");
   const debouncedSearchQuery = useDebouncedValue(
@@ -333,6 +445,15 @@ export function ComponentTree({
   const filteredScreens = useMemo(() => {
     return filterTree(screens, debouncedSearchQuery);
   }, [screens, debouncedSearchQuery]);
+
+  // Pre-compute the tri-state map once per (selection, screens) — O(n) total
+  // instead of O(n^2) from per-row getNodeCheckState calls.
+  const checkStateMap = useMemo(() => {
+    if (!selection) {
+      return null;
+    }
+    return buildCheckStateMap(selection, screens);
+  }, [selection, screens]);
 
   // When searching, auto-expand all nodes so matches are visible
   const effectiveExpandedIds = useMemo(() => {
@@ -501,7 +622,9 @@ export function ComponentTree({
       return;
     }
 
-    const anchorIndex = flatRows.findIndex((row) => row.node.id === anchor.nodeId);
+    const anchorIndex = flatRows.findIndex(
+      (row) => row.node.id === anchor.nodeId,
+    );
     if (anchorIndex < 0) {
       return;
     }
@@ -553,6 +676,13 @@ export function ComponentTree({
     );
   }
 
+  const showSelectionToolbar = Boolean(
+    selection && onSelectAll && onDeselectAll,
+  );
+  const selectionCounts = selection
+    ? getSelectionCounts(selection, screens)
+    : null;
+
   return (
     <div
       data-testid="component-tree"
@@ -563,17 +693,39 @@ export function ComponentTree({
         <span className="text-[11px] font-bold tracking-[0.24em] text-white/70 uppercase">
           Components
         </span>
-        <button
-          type="button"
-          data-testid="tree-collapse-button"
-          onClick={onToggleCollapsed}
-          aria-label="Collapse component tree"
-          className="flex h-5 w-5 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-white/45 transition hover:text-[#4eba87]"
-        >
-          <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
-            <path d="M10 4l-4 4 4 4z" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-2">
+          {showSelectionToolbar ? (
+            <>
+              <button
+                type="button"
+                data-testid="tree-select-all"
+                onClick={onSelectAll}
+                className="cursor-pointer border-0 bg-transparent p-0 text-[11px] font-bold tracking-[0.24em] text-white/70 uppercase transition hover:text-[#4eba87]"
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                data-testid="tree-deselect-all"
+                onClick={onDeselectAll}
+                className="cursor-pointer border-0 bg-transparent p-0 text-[11px] font-bold tracking-[0.24em] text-white/70 uppercase transition hover:text-[#4eba87]"
+              >
+                Deselect All
+              </button>
+            </>
+          ) : null}
+          <button
+            type="button"
+            data-testid="tree-collapse-button"
+            onClick={onToggleCollapsed}
+            aria-label="Collapse component tree"
+            className="flex h-5 w-5 cursor-pointer items-center justify-center rounded border-0 bg-transparent p-0 text-white/45 transition hover:text-[#4eba87]"
+          >
+            <svg viewBox="0 0 16 16" className="h-3 w-3" fill="currentColor">
+              <path d="M10 4l-4 4 4 4z" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       {/* Search input */}
@@ -589,6 +741,15 @@ export function ComponentTree({
           className="w-full rounded border border-[#000000] bg-[#1f1f1f] px-3 py-1.5 text-xs text-white placeholder:text-white/35 focus:border-[#4eba87] focus:outline-none"
           aria-label="Search component tree"
         />
+        {selectionCounts ? (
+          <p
+            data-testid="tree-selection-count"
+            className="mt-1.5 text-[11px] text-white/65"
+          >
+            {String(selectionCounts.selected)} of{" "}
+            {String(selectionCounts.total)} selected
+          </p>
+        ) : null}
       </div>
 
       {/* Tree */}
@@ -634,6 +795,9 @@ export function ComponentTree({
                 onFocusNode={setFocusedId}
                 diagnosticsMap={diagnosticsMap}
                 selectionEnabled={selectionEnabled}
+                checkState={checkStateMap?.get(row.node.id) ?? null}
+                onToggleSelection={onToggleSelection}
+                diffStatus={diffStatusByNodeId?.get(row.node.id)}
               />
             ))}
             <div style={{ height: bottomSpacerHeight }} />

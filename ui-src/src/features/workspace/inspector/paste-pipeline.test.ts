@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInitialPipelineState,
   pastePipelineReducer,
+  startPastePipeline,
   type PastePipelineState,
   type PipelineAction,
   type PipelineError,
@@ -128,6 +129,41 @@ describe("pastePipelineReducer", () => {
     state = dispatch(state, { type: "job_created", jobId: "job-no-delta" });
 
     expect(state.pasteDeltaSummary).toBeUndefined();
+  });
+
+  it("mirrors pasteDeltaSummary.pasteIdentityKey onto state when job_created carries a summary", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "job_created",
+      jobId: "job-delta",
+      pasteDeltaSummary: {
+        mode: "auto_resolved_to_delta",
+        strategy: "delta",
+        totalNodes: 10,
+        nodesReused: 6,
+        nodesReprocessed: 4,
+        structuralChangeRatio: 0.4,
+        pasteIdentityKey: "sha-identity-123",
+        priorManifestMissing: false,
+      },
+    });
+
+    expect(state.pasteIdentityKey).toBe("sha-identity-123");
+  });
+
+  it("clears pasteIdentityKey and selectedNodeIds on start", () => {
+    const dirtyState: PastePipelineState = {
+      ...createInitialPipelineState(),
+      stage: "ready",
+      pasteIdentityKey: "sha-old",
+      selectedNodeIds: ["node-1", "node-2"],
+    };
+
+    const state = dispatch(dirtyState, { type: "start" });
+
+    expect(state.pasteIdentityKey).toBeUndefined();
+    expect(state.selectedNodeIds).toBeUndefined();
   });
 
   it("marks intermediate backend stages done and advances progress", () => {
@@ -444,5 +480,108 @@ describe("backend-authored retry metadata", () => {
       stage: "generating",
       targetIds: ["src/App.tsx"],
     });
+  });
+});
+
+describe("startPastePipeline submit body", () => {
+  const validPayload = JSON.stringify({
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      name: "Document",
+      children: [],
+    },
+  });
+
+  type FetchArgs = Parameters<typeof fetch>;
+  let fetchSpy: ReturnType<typeof vi.fn<typeof fetch>>;
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    fetchSpy = vi.fn<typeof fetch>(async (input) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url === "/workspace/submit") {
+        return new Response(JSON.stringify({ jobId: "job-body-check" }), {
+          status: 202,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response("{}", {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    globalThis.fetch = fetchSpy as unknown as typeof fetch;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  async function waitForSubmitCall(): Promise<RequestInit> {
+    for (let attempt = 0; attempt < 50; attempt += 1) {
+      const submitCall = fetchSpy.mock.calls.find((call: FetchArgs) => {
+        const input = call[0];
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.href
+              : input.url;
+        return url === "/workspace/submit";
+      });
+      if (submitCall) {
+        const init = submitCall[1];
+        if (init !== undefined) return init;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error("submit call not observed");
+  }
+
+  it("posts a submit body without selectedNodeIds and without importMode when no options are provided", async () => {
+    startPastePipeline(validPayload);
+
+    const init = await waitForSubmitCall();
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+
+    expect(body).toEqual({
+      figmaSourceMode: "figma_paste",
+      figmaJsonPayload: validPayload,
+      enableGitPr: false,
+      llmCodegenMode: "deterministic",
+    });
+    expect(body.selectedNodeIds).toBeUndefined();
+    expect(body.importMode).toBeUndefined();
+  });
+
+  it("posts a submit body containing selectedNodeIds and importMode when both are provided", async () => {
+    startPastePipeline(validPayload, {
+      selectedNodeIds: ["a", "b"],
+      importMode: "delta",
+    });
+
+    const init = await waitForSubmitCall();
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+
+    expect(body.selectedNodeIds).toEqual(["a", "b"]);
+    expect(body.importMode).toBe("delta");
+  });
+
+  it("omits selectedNodeIds from the submit body when an empty array is provided", async () => {
+    startPastePipeline(validPayload, {
+      selectedNodeIds: [],
+    });
+
+    const init = await waitForSubmitCall();
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+
+    expect(body.selectedNodeIds).toBeUndefined();
   });
 });
