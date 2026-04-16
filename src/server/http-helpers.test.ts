@@ -3,7 +3,9 @@ import { Readable } from "node:stream";
 import test from "node:test";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  DEFAULT_STRICT_TRANSPORT_SECURITY,
   DEFAULT_CONTENT_SECURITY_POLICY,
+  ENABLE_HSTS_ENV,
   MAX_REQUEST_BODY_BYTES,
   WORKSPACE_UI_CONTENT_SECURITY_POLICY,
 } from "./constants.js";
@@ -145,6 +147,53 @@ test("sendBuffer omits frame-related headers when frame embedding is allowed", (
   assert.equal(response.headers["x-frame-options"], undefined);
   assert.equal(response.headers["x-content-type-options"], "nosniff");
   assert.equal(response.headers["referrer-policy"], "no-referrer");
+});
+
+test("sendJson emits HSTS only when explicitly enabled for secure deployments", () => {
+  const response = createMockResponse();
+  const originalHsts = process.env[ENABLE_HSTS_ENV];
+
+  process.env[ENABLE_HSTS_ENV] = "true";
+  try {
+    sendJson({
+      response,
+      statusCode: 200,
+      payload: { ok: true },
+    });
+  } finally {
+    if (originalHsts === undefined) {
+      delete process.env[ENABLE_HSTS_ENV];
+    } else {
+      process.env[ENABLE_HSTS_ENV] = originalHsts;
+    }
+  }
+
+  assert.equal(
+    response.headers["strict-transport-security"],
+    DEFAULT_STRICT_TRANSPORT_SECURITY,
+  );
+});
+
+test("sendJson does not emit HSTS on plain localhost by default", () => {
+  const response = createMockResponse();
+  const originalHsts = process.env[ENABLE_HSTS_ENV];
+
+  delete process.env[ENABLE_HSTS_ENV];
+  try {
+    sendJson({
+      response,
+      statusCode: 200,
+      payload: { ok: true },
+    });
+  } finally {
+    if (originalHsts === undefined) {
+      delete process.env[ENABLE_HSTS_ENV];
+    } else {
+      process.env[ENABLE_HSTS_ENV] = originalHsts;
+    }
+  }
+
+  assert.equal(response.headers["strict-transport-security"], undefined);
 });
 
 test("readJsonBody parses valid JSON, empty bodies, invalid JSON, and oversize payloads", async () => {

@@ -90,6 +90,7 @@ Useful scripts:
 - `pnpm run ui:test`
 - `pnpm run ui:test:e2e` (Chromium-only deterministic inspector flow via local fixture rewrite, no Figma token required in CI)
 - `pnpm run ui:test:e2e:matrix` (Chromium + Firefox + WebKit + mobile device project matrix)
+- `pnpm run test:dast-smoke` (live HTTP security smoke for headers, same-origin behavior, and traversal rejection)
 - `pnpm run test:golden`
 - `pnpm run test:golden:update`
 
@@ -214,6 +215,13 @@ With `enableGitPr=false`, generation is local-only.
 - `POST /workspace/jobs/:id/regenerate` - create a regeneration job from a completed source job
 - `POST /workspace/jobs/:id/sync` - local sync flow for completed regeneration jobs (`mode: dry_run` then `mode: apply`)
 - `GET /workspace/repros/:id/` - generated local preview
+
+## Runtime security behavior
+
+- Default local development over `http://127.0.0.1` or `http://localhost` does not emit `Strict-Transport-Security`.
+- Set `FIGMAPIPE_WORKSPACE_ENABLE_HSTS=true` only when the browser-facing deployment is HTTPS-only, such as behind a trusted TLS-terminating proxy. The runtime then emits `Strict-Transport-Security: max-age=31536000`.
+- Same-origin-only write routes do not emit permissive `Access-Control-Allow-Origin` headers for untrusted origins.
+- UI traversal probes such as `../`, encoded separators, null bytes, and Windows-style backslashes are rejected before any UI asset or SPA fallback is served.
 
 ### Local sync flow
 

@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   DEFAULT_CONTENT_SECURITY_POLICY,
+  resolveStrictTransportSecurity,
   MAX_REQUEST_BODY_BYTES,
 } from "./constants.js";
 
@@ -49,6 +50,15 @@ function applySecurityHeaders({
   response.setHeader("x-content-type-options", "nosniff");
   response.setHeader("referrer-policy", "no-referrer");
   response.setHeader("cache-control", cacheControl ?? "no-store");
+  const strictTransportSecurity = resolveStrictTransportSecurity();
+  if (strictTransportSecurity !== undefined) {
+    response.setHeader(
+      "strict-transport-security",
+      strictTransportSecurity,
+    );
+  } else {
+    response.removeHeader("strict-transport-security");
+  }
   if (!allowFrameEmbedding) {
     response.setHeader("x-frame-options", "SAMEORIGIN");
     response.setHeader(

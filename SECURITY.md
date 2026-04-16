@@ -45,6 +45,8 @@ Please include:
 - Local-only default bind (`127.0.0.1`).
 - Browser write routes are same-origin only; cross-origin embedded write access is unsupported.
 - Protected write-route preflight (`OPTIONS`) requests return explicit `405 Method Not Allowed` with `Allow: POST` and no permissive CORS allow headers.
+- `pnpm run test:dast-smoke` exercises the live HTTP runtime for header enforcement, same-origin behavior, and traversal rejection.
+- `Strict-Transport-Security` is opt-in via `FIGMAPIPE_WORKSPACE_ENABLE_HSTS=true` and is intended only for HTTPS deployments behind a trusted TLS-terminating proxy; plain `http://127.0.0.1` and `http://localhost` should not emit HSTS.
 - Runtime mode-lock enforcement (`rest` + `deterministic` only).
 - Runtime request validation and deterministic error envelopes.
 - Error-message sanitization for PII/secret leakage reduction.

@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  isForbiddenUiAssetPath,
   isWorkspaceProjectRoute,
   parseImportSessionRoute,
   parseJobFilesRoute,
   parseJobRoute,
   parseReproRoute,
   resolveUiAssetPath,
+  shouldFallbackToUiEntrypoint,
   validateSourceFilePath,
 } from "./routes.js";
 
@@ -22,7 +24,35 @@ test("resolveUiAssetPath resolves index and nested asset paths", () => {
     "assets/chunks/vendor-HASH.js",
   );
   assert.equal(resolveUiAssetPath("/workspace/ui/../index.html"), null);
+  assert.equal(
+    resolveUiAssetPath("/workspace/ui/%2e%2e%2f%2e%2e%2fetc%2fpasswd"),
+    null,
+  );
+  assert.equal(resolveUiAssetPath("/workspace/ui/assets%00app.js"), null);
+  assert.equal(
+    resolveUiAssetPath("/workspace/ui/..%5C..%5Cwindows%5Cwin.ini"),
+    null,
+  );
   assert.equal(resolveUiAssetPath("/other"), null);
+});
+
+test("UI route helpers reject traversal before SPA fallback", () => {
+  assert.equal(
+    isForbiddenUiAssetPath("/workspace/ui/%2e%2e%2f%2e%2e%2fetc%2fpasswd"),
+    true,
+  );
+  assert.equal(
+    isForbiddenUiAssetPath("/workspace/ui/..%5C..%5Cwindows%5Cwin.ini"),
+    true,
+  );
+  assert.equal(isForbiddenUiAssetPath("/workspace/ui/assets%00app.js"), true);
+  assert.equal(
+    shouldFallbackToUiEntrypoint(
+      "/workspace/ui/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+    ),
+    false,
+  );
+  assert.equal(shouldFallbackToUiEntrypoint("/workspace/ui/visual-quality"), true);
 });
 
 test("isWorkspaceProjectRoute accepts only workspace key routes", () => {
