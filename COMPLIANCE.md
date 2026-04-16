@@ -33,6 +33,38 @@ Each release candidate must provide:
   - Offline installation verification
   - License allowlist verification
 
+## License Allowlist Policy
+
+`pnpm run verify:licenses` enforces the manifest license for `workspace-dev` and `template/react-mui-app`, then scans the installed `template/react-mui-app` dependency tree transitively from `node_modules`.
+
+Approved license expressions for the shipped template graph:
+
+- `(MIT OR CC0-1.0)`
+- `0BSD`
+- `Apache-2.0`
+- `BSD-2-Clause`
+- `BSD-3-Clause`
+- `BlueOak-1.0.0`
+- `CC-BY-4.0`
+- `CC0-1.0`
+- `ISC`
+- `MIT`
+- `MIT-0`
+- `MPL-2.0`
+- `Python-2.0`
+
+Active exceptions: none.
+
+If a maintainer needs to approve a new license temporarily, record it in the relevant PR and release notes with this exception shape:
+
+- `package`: resolved package name
+- `version`: resolved package version
+- `license`: exact SPDX identifier or SPDX expression from `package.json`
+- `reason`: why the dependency is required and why replacement is not yet viable
+- `owner`: maintainer approving the exception
+- `expires`: date the exception must be removed or re-reviewed
+- `tracking`: issue or PR reference for the cleanup
+
 ## Manual Attestations
 
 These controls are repository/organization scoped and therefore attested by maintainers:
