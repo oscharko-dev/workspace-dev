@@ -14,6 +14,8 @@ Do not open public issues for security vulnerabilities.
 
 Report privately to: [security@oscharko.dev](mailto:security@oscharko.dev)
 
+If GitHub private vulnerability reporting is enabled in repository settings, prefer that private reporting flow. Otherwise use the email address above. Do not disclose unpublished vulnerabilities in public issues, PRs, or commit messages.
+
 Please include:
 
 - Impact summary
@@ -32,11 +34,22 @@ Please include:
 
 ## Coordinated Disclosure Workflow
 
-1. Intake and triage in private channel.
+1. Intake and triage in a private channel.
 2. Risk analysis and severity classification.
-3. Patch development with release-gate evidence.
-4. Advisory publication with affected/fixed versions.
-5. Deprecation of vulnerable versions and forward patch release.
+3. Confirm the affected package, impacted surfaces, affected version ranges, and any available workaround or mitigation.
+4. Prepare and validate the patch release before public disclosure.
+5. Publish or update the advisory with affected and fixed versions.
+6. Deprecate vulnerable versions and ship the patched forward release.
+
+## GHSA Maintainer Checklist
+
+1. Triage privately and keep unpublished details out of public issues, PRs, and release notes.
+2. Open or update a draft GitHub Security Advisory (GHSA) once the report is confirmed.
+3. Record the affected package name, affected version ranges, fixed version, severity, references, and any documented workaround.
+4. Request or attach a CVE when advisory publication or downstream ecosystem tracking requires one.
+5. Publish the patched release before disclosure whenever possible, then publish the GHSA with the fixed version and disclosure notes.
+6. If a patch is not yet available, publish only when a documented mitigation or operational workaround is ready for affected users.
+7. Update follow-up PRs and public release notes with the GHSA only after the advisory is public.
 
 ## Security Controls in This Package
 
