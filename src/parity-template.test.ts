@@ -68,7 +68,7 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = 
   "src/main.tsx": "0c851c4821d6f502f31ee1535902b01ffc20ee9c3c426bb0a01b9ce09bb1fbe9",
   "src/performance/report-web-vitals.ts": "2614da9f5cfb572e63eb9500fb8b882c37097813753b91ab68d726221f82f767",
   "src/performance/resource-hints.ts": "d955f9f50c78b51cb4914dccb54260df51b36587de43a7d6bc72add613555986",
-  "src/performance/runtime-errors.ts": "5f9123cd2daa924ef5a69bcc4c4e71fc4a8ac3d0d2344e4b2ed974ea2855cc42",
+  "src/performance/runtime-errors.ts": "11d976b471a714fb20562372de868be9dc65a17a818639bfcf484c68db81012b",
   "src/vite-env.d.ts": "dff9f1cbbb0559e21d251fbab9fbebcbfac51f241cf508b1bc2d04bc7c20ed80",
   "src/routes/CheckoutRoute.tsx": "d5892642a879e35e61f94b5656a5bcfce510fd50ec80454d7ebcf51ea6f0aeb2",
   "src/routes/HomeRoute.tsx": "544beb926180c66148acc098c860f2218c2ae4383aa6fe4f6b5cc9f32d2fbc81",

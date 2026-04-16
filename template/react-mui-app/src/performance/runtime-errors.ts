@@ -84,7 +84,7 @@ export const reportRuntimeError = ({
   }
 
   const payload = toPayload({ source, error, componentStack });
-  if (error instanceof Error) {
+  if (import.meta.env.DEV && error instanceof Error) {
     console.error("[runtime-error]", payload, error);
     return;
   }
