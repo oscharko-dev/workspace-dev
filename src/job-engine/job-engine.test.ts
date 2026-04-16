@@ -168,8 +168,12 @@ const createLowFidelityFigmaPayload = () => ({
   }
 });
 
-const createInvalidStorybookBuild = async (): Promise<string> => {
-  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-invalid-storybook-"));
+const createInvalidStorybookBuild = async ({
+  rootDir = os.tmpdir()
+}: {
+  rootDir?: string;
+} = {}): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(rootDir, "workspace-dev-engine-invalid-storybook-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
 
@@ -402,7 +406,7 @@ test("createJobEngine stores a trimmed storybookStaticDir in request metadata", 
 test("createJobEngine surfaces E_STORYBOOK_TOKEN_EXTRACTION_INVALID for fatal Storybook token extraction diagnostics", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-token-invalid-"));
   const figmaJsonPath = path.join(tempRoot, "input.json");
-  const storybookBuildDir = await createInvalidStorybookBuild();
+  const storybookBuildDir = await createInvalidStorybookBuild({ rootDir: tempRoot });
   await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const engine = createFastJobEngine({ tempRoot });
