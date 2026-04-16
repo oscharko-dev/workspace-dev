@@ -345,18 +345,7 @@ export const mergePipelineDiagnostics = ({
   return merged.length > 0 ? merged : undefined;
 };
 
-export const createPipelineError = ({
-  code,
-  stage,
-  message,
-  cause,
-  diagnostics,
-  limits,
-  retryable,
-  retryAfterMs,
-  fallbackMode,
-  retryTargets
-}: {
+interface CreatePipelineErrorOptions {
   code: string;
   stage: WorkspaceJobStageName;
   message: string;
@@ -367,45 +356,70 @@ export const createPipelineError = ({
   retryAfterMs?: number;
   fallbackMode?: WorkspaceJobFallbackMode;
   retryTargets?: WorkspaceJobRetryTarget[];
-}): WorkspacePipelineError => {
-  const resolvedLimits = limits ?? DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS;
-  const error = new Error(
-    sanitizeDiagnosticText({
+}
+
+export class PipelineError extends Error implements WorkspacePipelineError {
+  declare code: string;
+  declare stage: WorkspaceJobStageName;
+  declare retryable?: boolean;
+  declare retryAfterMs?: number;
+  declare fallbackMode?: WorkspaceJobFallbackMode;
+  declare retryTargets?: WorkspaceJobRetryTarget[];
+  declare diagnostics?: WorkspaceJobDiagnostic[];
+
+  constructor({
+    code,
+    stage,
+    message,
+    cause,
+    diagnostics,
+    limits,
+    retryable,
+    retryAfterMs,
+    fallbackMode,
+    retryTargets
+  }: CreatePipelineErrorOptions) {
+    const resolvedLimits = limits ?? DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS;
+    const sanitizedMessage = sanitizeDiagnosticText({
       value: message,
       maxLength: resolvedLimits.textMaxLength
-    })
-  ) as WorkspacePipelineError;
-  error.code = code;
-  error.stage = stage;
-  if (retryable !== undefined) {
-    error.retryable = retryable;
-  }
-  if (retryAfterMs !== undefined) {
-    error.retryAfterMs = retryAfterMs;
-  }
-  if (fallbackMode !== undefined) {
-    error.fallbackMode = fallbackMode;
-  }
-  if (retryTargets !== undefined) {
-    error.retryTargets = retryTargets.map((target) => ({ ...target }));
-  }
-  const normalizedDiagnostics = normalizePipelineDiagnostics({
-    diagnostics,
-    fallbackStage: stage,
-    limits: resolvedLimits
-  });
-  if (normalizedDiagnostics) {
-    error.diagnostics = normalizedDiagnostics;
-  }
-  if (cause !== undefined) {
-    Object.defineProperty(error, "cause", {
-      value: cause,
-      enumerable: false,
-      configurable: true,
-      writable: true
     });
+
+    super(sanitizedMessage, cause === undefined ? undefined : { cause });
+    Object.setPrototypeOf(this, new.target.prototype);
+    this.name = "PipelineError";
+    this.code = code;
+    this.stage = stage;
+    if (Error.captureStackTrace) {
+      Error.captureStackTrace(this, PipelineError);
+    }
+    if (retryable !== undefined) {
+      this.retryable = retryable;
+    }
+    if (retryAfterMs !== undefined) {
+      this.retryAfterMs = retryAfterMs;
+    }
+    if (fallbackMode !== undefined) {
+      this.fallbackMode = fallbackMode;
+    }
+    if (retryTargets !== undefined) {
+      this.retryTargets = retryTargets.map((target) => ({ ...target }));
+    }
+    const normalizedDiagnostics = normalizePipelineDiagnostics({
+      diagnostics,
+      fallbackStage: stage,
+      limits: resolvedLimits
+    });
+    if (normalizedDiagnostics) {
+      this.diagnostics = normalizedDiagnostics;
+    }
   }
-  return error;
+}
+
+export const createPipelineError = (
+  options: CreatePipelineErrorOptions
+): WorkspacePipelineError => {
+  return new PipelineError(options);
 };
 
 export const getErrorMessage = (error: unknown): string => {

@@ -9,7 +9,13 @@
  */
 
 import type { WorkspaceRegenerationOverrideEntry } from "../contracts/index.js";
-import type { DesignIR, ScreenElementIR, ScreenIR } from "../parity/types-ir.js";
+import type {
+  DesignIR,
+  NonTextElementIR,
+  ScreenElementIR,
+  ScreenIR,
+  TextElementIR
+} from "../parity/types-ir.js";
 import {
   validateRegenerationOverrideEntry,
   type ValidatedRegenerationOverrideEntry
@@ -57,15 +63,39 @@ export interface ApplyIrOverridesResult {
   skippedCount: number;
 }
 
+function cloneTextElement(
+  element: TextElementIR,
+  clonedChildren: ScreenElementIR[] | undefined,
+  clonedPadding: TextElementIR["padding"]
+): TextElementIR {
+  return {
+    ...element,
+    ...(clonedChildren ? { children: clonedChildren } : {}),
+    ...(clonedPadding ? { padding: clonedPadding } : {})
+  };
+}
+
+function cloneNonTextElement(
+  element: NonTextElementIR,
+  clonedChildren: ScreenElementIR[] | undefined,
+  clonedPadding: NonTextElementIR["padding"]
+): NonTextElementIR {
+  return {
+    ...element,
+    ...(clonedChildren ? { children: clonedChildren } : {}),
+    ...(clonedPadding ? { padding: clonedPadding } : {})
+  };
+}
+
 function cloneElement(element: ScreenElementIR): ScreenElementIR {
-  const cloned: ScreenElementIR = { ...element };
-  if (element.children && element.children.length > 0) {
-    cloned.children = element.children.map((child) => cloneElement(child));
+  const clonedChildren = element.children?.map((child) => cloneElement(child));
+  const clonedPadding = element.padding ? { ...element.padding } : undefined;
+
+  if (element.type === "text") {
+    return cloneTextElement(element, clonedChildren, clonedPadding);
   }
-  if (element.padding) {
-    cloned.padding = { ...element.padding };
-  }
-  return cloned as unknown as ScreenElementIR;
+
+  return cloneNonTextElement(element, clonedChildren, clonedPadding);
 }
 
 function cloneScreen(screen: ScreenIR): ScreenIR {
