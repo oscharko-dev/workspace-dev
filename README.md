@@ -218,6 +218,7 @@ With `enableGitPr=false`, generation is local-only.
 
 ## Runtime security behavior
 
+- See `THREAT_MODEL.md` for the package trust boundaries, attack surfaces, mitigations, and residual risks that back the controls below.
 - Default local development over `http://127.0.0.1` or `http://localhost` does not emit `Strict-Transport-Security`.
 - Set `FIGMAPIPE_WORKSPACE_ENABLE_HSTS=true` only when the browser-facing deployment is HTTPS-only, such as behind a trusted TLS-terminating proxy. The runtime then emits `Strict-Transport-Security: max-age=31536000`.
 - Same-origin-only write routes do not emit permissive `Access-Control-Allow-Origin` headers for untrusted origins.

@@ -153,7 +153,7 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
   const port = getPort();
   const host = "127.0.0.1";
   const baseUrl = `http://${host}:${port}`;
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const paths = {

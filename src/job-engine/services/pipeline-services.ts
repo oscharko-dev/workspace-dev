@@ -35,7 +35,8 @@ const buildFigmaSourceInput = (context: PipelineExecutionContext): FigmaSourceSt
     ...(input.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
     ...(input.figmaNodeId !== undefined ? { figmaNodeId: input.figmaNodeId } : {}),
     ...(input.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {}),
-    ...(input.figmaJsonPath !== undefined ? { figmaJsonPath: input.figmaJsonPath } : {})
+    ...(input.figmaJsonPath !== undefined ? { figmaJsonPath: input.figmaJsonPath } : {}),
+    ...(input.requestSourceMode !== undefined ? { requestSourceMode: input.requestSourceMode } : {})
   };
 };
 

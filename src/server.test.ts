@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import {
+  mkdir,
   mkdtemp,
   readFile,
   readdir,
@@ -28,6 +29,21 @@ const TEMPLATE_NODE_MODULES_ROOT = path.resolve(
   "../template/react-mui-app/node_modules",
 );
 const HEAVY_SERVER_JOB_TIMEOUT_MS = 60_000;
+const allocateTestPort = (): number => 0;
+
+const createTempWorkspaceLayout = async (): Promise<{
+  root: string;
+  workspaceRoot: string;
+  outputRoot: string;
+}> => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-layout-"));
+  const workspaceRoot = path.join(root, "workspace");
+  return {
+    root,
+    workspaceRoot,
+    outputRoot: path.join(root, "workspace-output"),
+  };
+};
 
 const createLocalFigmaPayload = () => ({
   name: "Workspace Dev Demo",
@@ -399,8 +415,18 @@ const createLowFidelityRecoveryFetch = (): typeof fetch => {
   };
 
   return async (input) => {
-    const url = typeof input === "string" ? input : input.toString();
-    if (url.includes("/nodes?")) {
+    const rawUrl =
+      input instanceof URL
+        ? input.href
+        : typeof input === "string"
+          ? input
+          : input.url;
+    const requestUrl = new URL(rawUrl);
+    if (
+      requestUrl.protocol === "https:" &&
+      requestUrl.hostname === "api.figma.com" &&
+      requestUrl.pathname.includes("/nodes")
+    ) {
       return new Response(
         JSON.stringify({
           nodes: {
@@ -545,7 +571,7 @@ const extractUiAssetUrls = ({ html }: { html: string }): string[] => {
 
 test("workspace server starts and responds on /workspace", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -564,7 +590,9 @@ test("workspace server starts and responds on /workspace", async () => {
     assert.equal(body.running, true);
     assert.equal(body.figmaSourceMode, "rest");
     assert.equal(body.llmCodegenMode, "deterministic");
-    assert.equal(body.port, port);
+    assert.equal(typeof body.port, "number");
+    assert.ok(Number.isInteger(body.port));
+    assert.ok((body.port as number) > 0);
     assert.equal(typeof body.uptimeMs, "number");
     assert.equal(typeof body.outputRoot, "string");
     assert.equal(body.previewEnabled, true);
@@ -576,7 +604,7 @@ test("workspace server starts and responds on /workspace", async () => {
 
 test("workspace server healthz endpoint", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -600,7 +628,7 @@ test("workspace server healthz endpoint", async () => {
 
 test("workspace server propagates request IDs on success and error responses", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -642,7 +670,7 @@ test("workspace server propagates request IDs on success and error responses", a
 
 test("workspace server serves UI entrypoint on /workspace/ui and /workspace/:key", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -699,7 +727,7 @@ test("workspace server serves UI entrypoint on /workspace/ui and /workspace/:key
 
 test("workspace server serves UI static assets", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -766,7 +794,7 @@ test("workspace server serves UI static assets", async () => {
 
 test("workspace server reports unknown route with deterministic 404 envelope", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -792,7 +820,7 @@ test("workspace server reports unknown route with deterministic 404 envelope", a
 
 test("workspace server blocks mcp mode on submit", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -826,7 +854,7 @@ test("workspace server blocks mcp mode on submit", async () => {
 
 test("workspace server accepts hybrid mode on submit", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -868,7 +896,7 @@ test("workspace server accepts hybrid mode on submit", async () => {
 
 test("workspace server recovers low-fidelity hybrid screens with the built-in authoritative subtree loader", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -935,7 +963,7 @@ test("workspace server recovers low-fidelity hybrid screens with the built-in au
 
 test("workspace server rejects invalid JSON payloads", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -963,7 +991,7 @@ test("workspace server rejects invalid JSON payloads", async () => {
 
 test("workspace server rejects submit requests without required fields", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -993,7 +1021,7 @@ test("workspace server rejects submit requests without required fields", async (
 
 test("workspace server rejects invalid llmCodegenMode at the submit schema boundary", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1030,7 +1058,7 @@ test("workspace server rejects invalid llmCodegenMode at the submit schema bound
 
 test("workspace server rejects unsupported generationLocale at the submit schema boundary", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1067,7 +1095,7 @@ test("workspace server rejects unsupported generationLocale at the submit schema
 
 test("workspace server rejects ambiguous source inputs that mix rest and local_json fields", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1100,7 +1128,7 @@ test("workspace server rejects ambiguous source inputs that mix rest and local_j
 
 test("workspace server accepts submit with 202 and job polling reaches completed", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1205,9 +1233,10 @@ test("workspace server accepts submit with 202 and job polling reaches completed
 });
 
 test("workspace server accepts local_json submit and completes without Figma REST fetches", async () => {
-  const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
-  const localJsonPath = path.join(outputRoot, "local-figma.json");
+  const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
+  const port = allocateTestPort();
+  await mkdir(workspaceRoot, { recursive: true });
+  const localJsonPath = path.join(workspaceRoot, "local-figma.json");
   await writeFile(
     localJsonPath,
     `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`,
@@ -1218,6 +1247,7 @@ test("workspace server accepts local_json submit and completes without Figma RES
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
+    workDir: workspaceRoot,
     outputRoot,
     fetchImpl: async () => {
       fetchCalls += 1;
@@ -1262,13 +1292,13 @@ test("workspace server accepts local_json submit and completes without Figma RES
     assert.match(cleanedFigma, /Workspace Dev Demo/i);
   } finally {
     await server.app.close();
-    await rm(outputRoot, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 });
 
 test("workspace server fails validate.project when skipInstall=true and dependencies are missing", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1314,7 +1344,7 @@ test("workspace server fails validate.project when skipInstall=true and dependen
 
 test("workspace server resolves submit brandTheme and generationLocale overrides over server defaults", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1362,7 +1392,7 @@ test("workspace server resolves submit brandTheme and generationLocale overrides
 
 test("workspace server applies hash router runtime mode to generated App shell", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1718,11 +1748,13 @@ test("workspace server returns 429 rate limiting with Retry-After on repeated su
 // ---------------------------------------------------------------------------
 
 test("workspace server accepts figma_paste submit and returns 202 with jobId", async () => {
-  const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
+  const port = allocateTestPort();
+  await mkdir(workspaceRoot, { recursive: true });
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
+    workDir: workspaceRoot,
     outputRoot,
     fetchImpl: createFakeFigmaFetch(),
   });
@@ -1750,16 +1782,18 @@ test("workspace server accepts figma_paste submit and returns 202 with jobId", a
     assert.equal(terminal.status, "completed");
   } finally {
     await server.app.close();
-    await rm(outputRoot, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 });
 
 test("workspace server accepts figma_plugin submit and returns 202 with jobId", async () => {
-  const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
+  const port = allocateTestPort();
+  await mkdir(workspaceRoot, { recursive: true });
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
+    workDir: workspaceRoot,
     outputRoot,
     fetchImpl: createFakeFigmaFetch(),
   });
@@ -1806,16 +1840,18 @@ test("workspace server accepts figma_plugin submit and returns 202 with jobId", 
     assert.ok(parsed.document !== undefined);
   } finally {
     await server.app.close();
-    await rm(outputRoot, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 });
 
 test("workspace server accepts a whole-view-sized figma_paste submit under the route caps", async () => {
-  const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
+  const port = allocateTestPort();
+  await mkdir(workspaceRoot, { recursive: true });
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
+    workDir: workspaceRoot,
     outputRoot,
     fetchImpl: createFakeFigmaFetch(),
   });
@@ -1847,13 +1883,13 @@ test("workspace server accepts a whole-view-sized figma_paste submit under the r
     assert.equal(terminal.status, "completed");
   } finally {
     await server.app.close();
-    await rm(outputRoot, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true });
   }
 });
 
 test("workspace server returns 400 UNSUPPORTED_FORMAT on figma_plugin with unknown envelope kind", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1899,7 +1935,7 @@ test("workspace server returns 400 UNSUPPORTED_FORMAT on figma_plugin with unkno
 
 test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with malformed JSON payload", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1933,7 +1969,7 @@ test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with malformed
 
 test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with structurally invalid payload", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -1967,7 +2003,7 @@ test("workspace server returns 400 SCHEMA_MISMATCH on figma_paste with structura
 
 test("workspace server returns 400 TOO_LARGE on figma_paste with oversize payload", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -2004,7 +2040,7 @@ test("workspace server returns 400 TOO_LARGE on figma_paste with oversize payloa
 
 test("workspace server returns 413 TOO_LARGE when submit body exceeds transport cap", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -2042,7 +2078,7 @@ test("workspace server returns 413 TOO_LARGE when submit body exceeds transport 
 
 test("workspace server preserves 1 MiB body cap on non-submit write routes", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",
@@ -2172,7 +2208,7 @@ test("workspace server cleans up figma_paste temp files when submit hits queue b
 
 test("workspace server existing modes still work after figma_paste addition", async () => {
   const outputRoot = await createTempOutputRoot();
-  const port = 19830 + Math.floor(Math.random() * 1000);
+  const port = allocateTestPort();
   const server = await createWorkspaceServer({
     port,
     host: "127.0.0.1",

@@ -116,7 +116,7 @@ test("e2e: stale-draft-check detects fresh draft when no newer job exists", asyn
   const port = getPort();
   const host = "127.0.0.1";
   const baseUrl = `http://${host}:${port}`;
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const paths = {
@@ -212,7 +212,7 @@ test("e2e: stale-draft-check detects stale draft with carry-forward validation",
   const port = getPort();
   const host = "127.0.0.1";
   const baseUrl = `http://${host}:${port}`;
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const paths = {

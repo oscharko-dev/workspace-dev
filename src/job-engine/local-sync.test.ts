@@ -549,7 +549,7 @@ test("job-engine local sync persists a baseline and surfaces manual edits as con
   const workspaceRoot = path.join(tempRoot, "workspace-root");
   await mkdir(workspaceRoot, { recursive: true });
 
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const engine = createJobEngine({
@@ -649,7 +649,7 @@ test("job-engine local sync rejects apply when the preview becomes stale", async
   const workspaceRoot = path.join(tempRoot, "workspace-root");
   await mkdir(workspaceRoot, { recursive: true });
 
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const engine = createJobEngine({
@@ -741,7 +741,7 @@ test("job-engine local sync rejects unreviewed sessions before any writes occur"
   const workspaceRoot = path.join(tempRoot, "workspace-root");
   await mkdir(workspaceRoot, { recursive: true });
 
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const engine = createJobEngine({
@@ -829,7 +829,7 @@ test("job-engine local sync ignores a forged stored approved status when event h
   const workspaceRoot = path.join(tempRoot, "workspace-root");
   await mkdir(workspaceRoot, { recursive: true });
 
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const engine = createJobEngine({
@@ -928,7 +928,7 @@ test("job-engine local sync applies for approved sessions without appending a fr
   const workspaceRoot = path.join(tempRoot, "workspace-root");
   await mkdir(workspaceRoot, { recursive: true });
 
-  const figmaPath = path.join(tempRoot, "figma-input.json");
+  const figmaPath = path.join(workspaceRoot, "figma-input.json");
   await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const engine = createJobEngine({
