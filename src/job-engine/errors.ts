@@ -390,8 +390,14 @@ export class PipelineError extends Error implements WorkspacePipelineError {
     this.name = "PipelineError";
     this.code = code;
     this.stage = stage;
-    if (Error.captureStackTrace) {
-      Error.captureStackTrace(this, PipelineError);
+    const captureStackTrace = Reflect.get(Error, "captureStackTrace");
+    if (typeof captureStackTrace === "function") {
+      (
+        captureStackTrace as (
+          target: object,
+          constructor?: new (...args: never[]) => unknown
+        ) => void
+      )(this, PipelineError);
     }
     if (retryable !== undefined) {
       this.retryable = retryable;
