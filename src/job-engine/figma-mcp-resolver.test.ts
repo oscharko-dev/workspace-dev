@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import {
   clearResolverCache,
   resolveFigmaDesignContext,
+  callMcpTool,
   ADAPTIVE_NODE_THRESHOLD,
   MAX_SUBTREE_BATCH_SIZE,
   DEFAULT_MCP_SERVER_URL,
@@ -47,6 +48,36 @@ const createConfig = (fetchImpl: typeof fetch): McpResolverConfig => ({
   maxRetries: 3,
   onLog: () => {},
 });
+
+const withEnv = async (
+  overrides: Record<string, string | undefined>,
+  run: () => Promise<void>,
+): Promise<void> => {
+  const previousEntries = Object.entries(overrides).map(([key]) => [
+    key,
+    process.env[key],
+  ]);
+
+  for (const [key, value] of Object.entries(overrides)) {
+    if (value === undefined) {
+      delete process.env[key];
+      continue;
+    }
+    process.env[key] = value;
+  }
+
+  try {
+    await run();
+  } finally {
+    for (const [key, value] of previousEntries) {
+      if (value === undefined) {
+        delete process.env[key];
+        continue;
+      }
+      process.env[key] = value;
+    }
+  }
+};
 
 /**
  * XML with 2 small nodes — nodeCount will be 2 (below ADAPTIVE_NODE_THRESHOLD).
@@ -1252,71 +1283,182 @@ test("MCP error envelope in response body — throws E_MCP_SERVER_ERROR", async 
 });
 
 // ---------------------------------------------------------------------------
-// Edge cases — localhost serverUrl is allowed
+// MCP server URL security policy
 // ---------------------------------------------------------------------------
 
-test("localhost serverUrl is allowed — does not throw E_MCP_NO_SERVER", async () => {
+test("production rejects loopback HTTP MCP URLs without WORKSPACE_ALLOW_INSECURE_MCP opt-in", async () => {
   clearResolverCache();
 
-  const fetchImpl: typeof fetch = async (input, init) => {
-    const req = new Request(input, init);
-    const tool = await parseTool(req);
-
-    if (tool === "get_metadata") {
-      return jsonResponse(mcpOk({ xml: SMALL_XML }));
-    }
-    if (tool === "get_design_context") {
-      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
-    }
-    if (tool === "get_screenshot") {
-      return jsonResponse(mcpOk({}));
-    }
-    return jsonResponse(mcpOk({}));
+  let fetchCalled = false;
+  const fetchImpl: typeof fetch = async () => {
+    fetchCalled = true;
+    return jsonResponse(mcpOk({ xml: SMALL_XML }));
   };
 
-  const meta: FigmaMeta = { fileKey: "abc", nodeId: "1:2" };
-  const config: McpResolverConfig = {
-    ...createConfig(fetchImpl),
-    serverUrl: "http://localhost:3000/mcp",
-    maxRetries: 1,
-  };
+  await withEnv(
+    {
+      NODE_ENV: "production",
+      WORKSPACE_ALLOW_INSECURE_MCP: undefined,
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          callMcpTool({
+            toolName: "get_metadata",
+            args: { fileKey: "abc", nodeId: "1:2" },
+            config: {
+              ...createConfig(fetchImpl),
+              serverUrl: "http://localhost:3000/mcp",
+              maxRetries: 1,
+            },
+          }),
+        (err: unknown) => {
+          assert.ok(err instanceof Error);
+          assert.equal(
+            (err as Record<string, unknown>).code,
+            "E_MCP_NO_SERVER",
+          );
+          assert.match(err.message, /WORKSPACE_ALLOW_INSECURE_MCP=true/);
+          return true;
+        },
+      );
+    },
+  );
 
-  const result = await resolveFigmaDesignContext(meta, config);
-  assert.equal(result.fileKey, "abc");
+  assert.equal(fetchCalled, false);
 });
 
-// ---------------------------------------------------------------------------
-// Edge cases — 127.0.0.1 serverUrl is also allowed
-// ---------------------------------------------------------------------------
-
-test("127.0.0.1 serverUrl is allowed — does not throw E_MCP_NO_SERVER", async () => {
+test("production allows loopback HTTP MCP URLs when WORKSPACE_ALLOW_INSECURE_MCP=true", async () => {
   clearResolverCache();
 
-  const fetchImpl: typeof fetch = async (input, init) => {
-    const req = new Request(input, init);
-    const tool = await parseTool(req);
-
-    if (tool === "get_metadata") {
-      return jsonResponse(mcpOk({ xml: SMALL_XML }));
-    }
-    if (tool === "get_design_context") {
-      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
-    }
-    if (tool === "get_screenshot") {
-      return jsonResponse(mcpOk({}));
-    }
-    return jsonResponse(mcpOk({}));
+  let requestUrl = "";
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    requestUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    return jsonResponse(mcpOk({ xml: SMALL_XML }));
   };
 
-  const meta: FigmaMeta = { fileKey: "abc", nodeId: "1:2" };
-  const config: McpResolverConfig = {
-    ...createConfig(fetchImpl),
-    serverUrl: "http://127.0.0.1:8080/mcp",
-    maxRetries: 1,
+  await withEnv(
+    {
+      NODE_ENV: "production",
+      WORKSPACE_ALLOW_INSECURE_MCP: "true",
+    },
+    async () => {
+      const result = await callMcpTool({
+        toolName: "get_metadata",
+        args: { fileKey: "abc", nodeId: "1:2" },
+        config: {
+          ...createConfig(fetchImpl),
+          serverUrl: "http://127.0.0.1:8080/mcp",
+          maxRetries: 1,
+          onLog: (message) => {
+            logs.push(message);
+          },
+        },
+      });
+
+      assert.deepEqual(result, { xml: SMALL_XML });
+    },
+  );
+
+  assert.equal(requestUrl, "http://127.0.0.1:8080/mcp");
+  assert.ok(
+    logs.some((entry) =>
+      entry.includes("MCP security warning: using insecure loopback HTTP"),
+    ),
+  );
+});
+
+test("non-production loopback HTTP opt-in still emits an insecure transport warning", async () => {
+  clearResolverCache();
+
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async () =>
+    jsonResponse(mcpOk({ xml: SMALL_XML }));
+
+  await withEnv(
+    {
+      NODE_ENV: "development",
+      WORKSPACE_ALLOW_INSECURE_MCP: "true",
+    },
+    async () => {
+      await callMcpTool({
+        toolName: "get_metadata",
+        args: { fileKey: "abc", nodeId: "1:2" },
+        config: {
+          ...createConfig(fetchImpl),
+          serverUrl: "http://[::1]:3000/mcp",
+          maxRetries: 1,
+          onLog: (message) => {
+            logs.push(message);
+          },
+        },
+      });
+    },
+  );
+
+  assert.ok(
+    logs.some(
+      (entry) =>
+        entry.includes("MCP security warning: using insecure loopback HTTP") &&
+        entry.includes("http://[::1]:3000"),
+    ),
+  );
+  assert.ok(logs.every((entry) => !entry.includes("/mcp")));
+});
+
+test("malformed and non-loopback HTTP MCP URLs are rejected before fetch", async () => {
+  clearResolverCache();
+
+  let fetchCount = 0;
+  const fetchImpl: typeof fetch = async () => {
+    fetchCount += 1;
+    return jsonResponse(mcpOk({ xml: SMALL_XML }));
   };
 
-  const result = await resolveFigmaDesignContext(meta, config);
-  assert.equal(result.fileKey, "abc");
+  await withEnv(
+    {
+      NODE_ENV: "development",
+      WORKSPACE_ALLOW_INSECURE_MCP: "true",
+    },
+    async () => {
+      for (const serverUrl of [
+        "not-a-url",
+        "http://example.com/mcp",
+        "http://localhost.attacker.tld/mcp",
+        "http://localhost@attacker.tld/mcp",
+        "http://127.0.0.1.attacker.tld/mcp",
+      ]) {
+        await assert.rejects(
+          () =>
+            callMcpTool({
+              toolName: "get_metadata",
+              args: { fileKey: "abc", nodeId: "1:2" },
+              config: {
+                ...createConfig(fetchImpl),
+                serverUrl,
+                maxRetries: 1,
+              },
+            }),
+          (err: unknown) => {
+            assert.ok(err instanceof Error);
+            assert.equal(
+              (err as Record<string, unknown>).code,
+              "E_MCP_NO_SERVER",
+            );
+            return true;
+          },
+        );
+      }
+    },
+  );
+
+  assert.equal(fetchCount, 0);
 });
 
 // ---------------------------------------------------------------------------
