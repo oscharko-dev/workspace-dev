@@ -437,7 +437,7 @@ const toValidationPipelineError = async ({
       command: commandName,
       ...(summary ? { summary } : {}),
       ...(failureHint ? { failureHint } : {}),
-      output: output.slice(0, 2000),
+      output,
       ...(result ? { outputCapture: toCommandCaptureDetails({ result }) } : {}),
       generatedProjectDir
     }
@@ -445,7 +445,7 @@ const toValidationPipelineError = async ({
   return createPipelineError({
     code: "E_VALIDATE_PROJECT",
     stage: "validate.project",
-    message: `${commandName} failed${timeoutSuffix}${hintSuffix}: ${output.slice(0, 2000)}`,
+    message: `${commandName} failed${timeoutSuffix}${hintSuffix}: ${output}`,
     ...(limits ? { limits } : {}),
     diagnostics: [
       primaryDiagnostic,
@@ -660,7 +660,7 @@ export const runProjectValidationWithDeps = async ({
         throw createPipelineError({
           code: "E_VALIDATE_PROJECT",
           stage: "validate.project",
-          message: `${installCommand.name} failed${timeoutSuffix}: ${installResult.combined.slice(0, 2000)}`,
+          message: `${installCommand.name} failed${timeoutSuffix}: ${installResult.combined}`,
           ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
           diagnostics: [
             {
@@ -671,7 +671,7 @@ export const runProjectValidationWithDeps = async ({
               severity: "error",
               details: {
                 command: installCommand.name,
-                output: installResult.combined.slice(0, 2000),
+                output: installResult.combined,
                 ...(outputCaptureDetails ? { outputCapture: outputCaptureDetails } : {})
               }
             }

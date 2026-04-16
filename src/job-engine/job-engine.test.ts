@@ -168,8 +168,12 @@ const createLowFidelityFigmaPayload = () => ({
   }
 });
 
-const createInvalidStorybookBuild = async (): Promise<string> => {
-  const buildDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-invalid-storybook-"));
+const createInvalidStorybookBuild = async ({
+  rootDir = os.tmpdir()
+}: {
+  rootDir?: string;
+} = {}): Promise<string> => {
+  const buildDir = await mkdtemp(path.join(rootDir, "workspace-dev-engine-invalid-storybook-"));
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
 
@@ -321,7 +325,8 @@ const createFastJobEngine = ({
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot
     },
     runtime: resolveRuntimeSettings({
       enablePreview,
@@ -362,7 +367,8 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot
     },
     runtime: resolveRuntimeSettings({ enablePreview: false, figmaMaxRetries: 1, figmaRequestTimeoutMs: 1000 })
   });
@@ -400,7 +406,7 @@ test("createJobEngine stores a trimmed storybookStaticDir in request metadata", 
 test("createJobEngine surfaces E_STORYBOOK_TOKEN_EXTRACTION_INVALID for fatal Storybook token extraction diagnostics", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-token-invalid-"));
   const figmaJsonPath = path.join(tempRoot, "input.json");
-  const storybookBuildDir = await createInvalidStorybookBuild();
+  const storybookBuildDir = await createInvalidStorybookBuild({ rootDir: tempRoot });
   await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
 
   const engine = createFastJobEngine({ tempRoot });
@@ -543,7 +549,8 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -717,7 +724,8 @@ test("createJobEngine redacts token-bearing hybrid loader failures before persis
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -799,7 +807,8 @@ test("createJobEngine redacts hybrid loader tokens before truncating persisted e
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
+      workspaceRoot: tempRoot
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2184,6 +2193,51 @@ test("createJobEngine fails local_json mode with path-aware figma payload valida
   assert.equal(status.error?.code, "E_FIGMA_PARSE");
   assert.equal(status.error?.stage, "figma.source");
   assert.equal(status.error?.message.includes("document.children[0].id"), true);
+});
+
+test("createJobEngine fails jobs whose runtime support-file paths escape allowed roots without leaking absolute paths", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-path-safety-"));
+  const outputRoot = path.join(tempRoot, "output");
+  const localJsonPath = path.join(tempRoot, "local-figma.json");
+  await writeFile(localJsonPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  for (const runtimeOverrides of [
+    { iconMapFilePath: "/etc/passwd" },
+    { designSystemFilePath: "unsafe\0config.json" }
+  ]) {
+    const engine = createJobEngine({
+      resolveBaseUrl: () => "http://127.0.0.1:1983",
+      paths: {
+        outputRoot,
+        jobsRoot: path.join(outputRoot, "jobs"),
+        reprosRoot: path.join(outputRoot, "repros"),
+        workspaceRoot: tempRoot
+      },
+      runtime: resolveRuntimeSettings({
+        enablePreview: false,
+        skipInstall: true,
+        figmaMaxRetries: 1,
+        figmaRequestTimeoutMs: 1000,
+        ...runtimeOverrides
+      })
+    });
+
+    const accepted = engine.submitJob({
+      figmaSourceMode: "local_json",
+      figmaJsonPath: localJsonPath
+    });
+    const status = await waitForTerminalStatus({
+      getStatus: engine.getJob,
+      jobId: accepted.jobId
+    });
+
+    assert.equal(status.status, "failed");
+    assert.equal(status.error?.code, "E_PIPELINE_PATH_INVALID");
+    assert.equal(status.error?.stage, "codegen.generate");
+    assert.equal((status.error?.message ?? "").includes(tempRoot), false);
+    assert.equal((status.error?.message ?? "").includes("/etc/passwd"), false);
+    assert.match(status.error?.message ?? "", /iconMapFilePath|designSystemFilePath/);
+  }
 });
 
 test("resolvePreviewAsset enforces safe job id/path and supports direct assets, empty-path fallback, and missing index handling", async () => {

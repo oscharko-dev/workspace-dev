@@ -23,6 +23,7 @@ import {
   isFigmaFileResponseShape,
   validatedJsonParse,
 } from "../pipeline/pipeline-schemas.js";
+import { hasSymlinkInPath, isWithinRoot } from "../preview.js";
 import {
   createPasteFingerprintStore,
   type PasteFingerprintManifest,
@@ -333,7 +334,47 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         });
       }
 
-      const resolvedLocalPath = path.resolve(localPath);
+      if (localPath.includes("\0")) {
+        throw createPipelineError({
+          code: "E_FIGMA_LOCAL_JSON_PATH",
+          stage: "figma.source",
+          message: "figmaJsonPath contains a null byte.",
+          limits: context.runtime.pipelineDiagnosticLimits,
+        });
+      }
+
+      const resolvedLocalPath = path.resolve(
+        context.resolvedWorkspaceRoot,
+        localPath,
+      );
+      if (
+        !isWithinRoot({
+          candidatePath: resolvedLocalPath,
+          rootPath: context.resolvedWorkspaceRoot,
+        })
+      ) {
+        throw createPipelineError({
+          code: "E_FIGMA_LOCAL_JSON_PATH",
+          stage: "figma.source",
+          message: "figmaJsonPath must resolve within the workspace root.",
+          limits: context.runtime.pipelineDiagnosticLimits,
+        });
+      }
+
+      if (
+        await hasSymlinkInPath({
+          candidatePath: resolvedLocalPath,
+          rootPath: context.resolvedWorkspaceRoot,
+        })
+      ) {
+        throw createPipelineError({
+          code: "E_FIGMA_LOCAL_JSON_PATH",
+          stage: "figma.source",
+          message: "figmaJsonPath contains a symbolic link and cannot be loaded.",
+          limits: context.runtime.pipelineDiagnosticLimits,
+        });
+      }
+
       let localFileContent: string;
       try {
         localFileContent = await readFile(resolvedLocalPath, "utf8");
@@ -341,7 +382,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         throw createPipelineError({
           code: "E_FIGMA_LOCAL_JSON_READ",
           stage: "figma.source",
-          message: `Could not read local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
+          message: `Could not read local Figma JSON file: ${getErrorMessage(error)}`,
           cause: error,
           limits: context.runtime.pipelineDiagnosticLimits,
         });
@@ -354,7 +395,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         throw createPipelineError({
           code: "E_FIGMA_PARSE",
           stage: "figma.source",
-          message: `Could not parse local Figma JSON file '${localPath}': ${getErrorMessage(error)}`,
+          message: `Could not parse local Figma JSON file: ${getErrorMessage(error)}`,
           cause: error,
           limits: context.runtime.pipelineDiagnosticLimits,
         });
@@ -368,7 +409,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
           code: "E_FIGMA_PARSE",
           stage: "figma.source",
           message:
-            `Could not parse local Figma JSON file '${localPath}': invalid Figma payload ` +
+            "Could not parse local Figma JSON file: invalid Figma payload " +
             `(${summarizeFigmaPayloadValidationError({ error: parsedLocalPayload.error })}).`,
           limits: context.runtime.pipelineDiagnosticLimits,
         });

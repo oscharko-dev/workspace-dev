@@ -1,3 +1,5 @@
+import os from "node:os";
+import path from "node:path";
 import type {
   WorkspaceJobDiagnostic,
   WorkspaceJobDiagnosticSeverity,
@@ -7,8 +9,6 @@ import type {
   WorkspaceJobStageName
 } from "../contracts/index.js";
 import type { WorkspacePipelineError } from "./types.js";
-
-const DETAIL_VALUE_TEXT_MAX_LENGTH = 500;
 
 export interface PipelineDiagnosticLimits {
   maxDiagnostics: number;
@@ -50,6 +50,122 @@ const truncateText = ({
   return `${value.slice(0, maxLength - 3)}...`;
 };
 
+const STATIC_SENSITIVE_PATH_ROOTS = [
+  "/etc",
+  "/var",
+  "/private",
+  "/opt",
+  "/srv",
+  "/mnt",
+  "/Volumes",
+  "/dev/shm"
+];
+
+const LEADING_TOKEN_PUNCTUATION = new Set(["(", "[", "{", "<", "\"", "'", "`"]);
+const TRAILING_TOKEN_PUNCTUATION = new Set([
+  ")",
+  "]",
+  "}",
+  ">",
+  "\"",
+  "'",
+  "`",
+  ",",
+  ".",
+  ";",
+  "!",
+  "?"
+]);
+
+const isWithinRoot = ({
+  candidatePath,
+  rootPath
+}: {
+  candidatePath: string;
+  rootPath: string;
+}): boolean => {
+  const resolvedRoot = path.resolve(rootPath);
+  const resolvedCandidate = path.resolve(candidatePath);
+  return resolvedCandidate === resolvedRoot || resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`);
+};
+
+const getSensitivePathRoots = (): string[] => {
+  const roots = [
+    process.cwd(),
+    os.tmpdir(),
+    os.homedir(),
+    ...STATIC_SENSITIVE_PATH_ROOTS
+  ];
+  return Array.from(
+    new Set(
+      roots
+        .map((root) => root.trim())
+        .filter((root) => root.length > 0)
+        .map((root) => path.resolve(root))
+    )
+  );
+};
+
+const shouldRedactAbsoluteFilesystemPath = (candidate: string): boolean => {
+  const normalized = candidate.trim();
+  if (normalized.length === 0) {
+    return false;
+  }
+  if (path.win32.isAbsolute(normalized)) {
+    return true;
+  }
+  if (!path.isAbsolute(normalized)) {
+    return false;
+  }
+
+  const resolvedCandidate = path.resolve(normalized);
+  if (getSensitivePathRoots().some((root) => isWithinRoot({ candidatePath: resolvedCandidate, rootPath: root }))) {
+    return true;
+  }
+
+  return /(?:^|[\\/])(?:generated-app|node_modules|jobs|repros|\.stage-store)(?:[\\/]|$)/.test(normalized);
+};
+
+const toRedactedPathLabel = (candidate: string): string => {
+  const basename = path.win32.isAbsolute(candidate) ? path.win32.basename(candidate) : path.basename(candidate);
+  return basename.length > 0 ? `[redacted-path]/${basename}` : "[redacted-path]";
+};
+
+const sanitizePathToken = (token: string): string => {
+  let start = 0;
+  let end = token.length;
+
+  while (start < end && LEADING_TOKEN_PUNCTUATION.has(token[start] ?? "")) {
+    start += 1;
+  }
+  while (end > start && TRAILING_TOKEN_PUNCTUATION.has(token[end - 1] ?? "")) {
+    end -= 1;
+  }
+
+  const candidate = token.slice(start, end);
+  if (!shouldRedactAbsoluteFilesystemPath(candidate)) {
+    return token;
+  }
+
+  return `${token.slice(0, start)}${toRedactedPathLabel(candidate)}${token.slice(end)}`;
+};
+
+export const sanitizeDiagnosticText = ({
+  value,
+  maxLength
+}: {
+  value: string;
+  maxLength: number;
+}): string => {
+  // Public diagnostics use one truncation policy: redact sensitive paths first,
+  // then bound the remaining text with the caller-provided diagnostic limit.
+  const redacted = value
+    .split(/(\s+)/)
+    .map((token) => (token.trim().length === 0 ? token : sanitizePathToken(token)))
+    .join("");
+  return truncateText({ value: redacted, maxLength });
+};
+
 const sanitizeDiagnosticValue = ({
   value,
   depth,
@@ -63,7 +179,7 @@ const sanitizeDiagnosticValue = ({
     return null;
   }
   if (typeof value === "string") {
-    return truncateText({ value, maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH });
+    return sanitizeDiagnosticText({ value, maxLength: limits.textMaxLength });
   }
   if (typeof value === "boolean") {
     return value;
@@ -95,29 +211,29 @@ const sanitizeDiagnosticValue = ({
       return "undefined";
     }
     if (typeof value === "function") {
-      return truncateText({
+      return sanitizeDiagnosticText({
         value: `[Function ${value.name || "anonymous"}]`,
-        maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+        maxLength: limits.textMaxLength
       });
     }
     if (typeof value === "symbol") {
-      return truncateText({
+      return sanitizeDiagnosticText({
         value: value.description ? `Symbol(${value.description})` : "Symbol()",
-        maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+        maxLength: limits.textMaxLength
       });
     }
     if (typeof value === "bigint") {
-      return truncateText({
+      return sanitizeDiagnosticText({
         value: `${value.toString()}n`,
-        maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+        maxLength: limits.textMaxLength
       });
     }
     return undefined;
   }
   if (depth >= limits.detailsMaxDepth) {
-    return truncateText({
+    return sanitizeDiagnosticText({
       value: Object.prototype.toString.call(value),
-      maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+      maxLength: limits.textMaxLength
     });
   }
   const record = value as Record<string, unknown>;
@@ -156,14 +272,14 @@ const normalizePipelineDiagnostics = ({
     if (code.length === 0) {
       continue;
     }
-    const message = truncateText({
+    const message = sanitizeDiagnosticText({
       value: candidate.message.trim(),
       maxLength: limits.textMaxLength
     });
     if (message.length === 0) {
       continue;
     }
-    const suggestion = truncateText({
+    const suggestion = sanitizeDiagnosticText({
       value: candidate.suggestion.trim(),
       maxLength: limits.textMaxLength
     });
@@ -187,9 +303,9 @@ const normalizePipelineDiagnostics = ({
       ...(candidate.figmaNodeId?.trim() ? { figmaNodeId: candidate.figmaNodeId.trim() } : {}),
       ...(candidate.figmaUrl?.trim()
         ? {
-            figmaUrl: truncateText({
+            figmaUrl: sanitizeDiagnosticText({
               value: candidate.figmaUrl.trim(),
-              maxLength: DETAIL_VALUE_TEXT_MAX_LENGTH
+              maxLength: limits.textMaxLength
             })
           }
         : {}),
@@ -252,7 +368,13 @@ export const createPipelineError = ({
   fallbackMode?: WorkspaceJobFallbackMode;
   retryTargets?: WorkspaceJobRetryTarget[];
 }): WorkspacePipelineError => {
-  const error = new Error(message) as WorkspacePipelineError;
+  const resolvedLimits = limits ?? DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS;
+  const error = new Error(
+    sanitizeDiagnosticText({
+      value: message,
+      maxLength: resolvedLimits.textMaxLength
+    })
+  ) as WorkspacePipelineError;
   error.code = code;
   error.stage = stage;
   if (retryable !== undefined) {
@@ -270,7 +392,7 @@ export const createPipelineError = ({
   const normalizedDiagnostics = normalizePipelineDiagnostics({
     diagnostics,
     fallbackStage: stage,
-    ...(limits ? { limits } : {})
+    limits: resolvedLimits
   });
   if (normalizedDiagnostics) {
     error.diagnostics = normalizedDiagnostics;

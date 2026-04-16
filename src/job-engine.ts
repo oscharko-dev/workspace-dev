@@ -503,6 +503,66 @@ const loadCustomerProfileActivationFromRequest = async ({
   };
 };
 
+const resolveConstrainedPipelinePath = async ({
+  configuredPath,
+  defaultPath,
+  label,
+  resolvedWorkspaceRoot,
+  outputRoot,
+  limits,
+}: {
+  configuredPath: string | undefined;
+  defaultPath: string;
+  label: "iconMapFilePath" | "designSystemFilePath";
+  resolvedWorkspaceRoot: string;
+  outputRoot: string;
+  limits: PipelineDiagnosticLimits;
+}): Promise<string> => {
+  const candidatePath = configuredPath?.trim() || defaultPath;
+
+  if (candidatePath.includes("\0")) {
+    throw createPipelineError({
+      code: "E_PIPELINE_PATH_INVALID",
+      stage: "codegen.generate",
+      message: `${label} contains a null byte.`,
+      limits,
+    });
+  }
+
+  const resolvedPath = path.resolve(resolvedWorkspaceRoot, candidatePath);
+  const matchingRoot = [resolvedWorkspaceRoot, outputRoot].find((rootPath) =>
+    isWithinRoot({
+      candidatePath: resolvedPath,
+      rootPath,
+    }),
+  );
+
+  if (!matchingRoot) {
+    throw createPipelineError({
+      code: "E_PIPELINE_PATH_INVALID",
+      stage: "codegen.generate",
+      message: `${label} must resolve within the workspace root or output root.`,
+      limits,
+    });
+  }
+
+  if (
+    await hasSymlinkInPath({
+      candidatePath: resolvedPath,
+      rootPath: matchingRoot,
+    })
+  ) {
+    throw createPipelineError({
+      code: "E_PIPELINE_PATH_INVALID",
+      stage: "codegen.generate",
+      message: `${label} contains a symbolic link and cannot be loaded.`,
+      limits,
+    });
+  }
+
+  return resolvedPath;
+};
+
 const toDiagnosticInputs = (
   value: unknown,
 ): PipelineDiagnosticInput[] | undefined => {
@@ -2104,17 +2164,6 @@ export const createJobEngine = ({
     const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
-    const iconMapFilePath =
-      runtime.iconMapFilePath ??
-      path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
-    const designSystemFilePath =
-      runtime.designSystemFilePath ??
-      path.join(resolvedPaths.outputRoot, "design-system.json");
-    const irCacheDir = path.join(
-      resolvedPaths.outputRoot,
-      "cache",
-      "ir-derivation",
-    );
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -2155,6 +2204,31 @@ export const createJobEngine = ({
     };
 
     try {
+      const iconMapFilePath = await resolveConstrainedPipelinePath({
+        configuredPath: runtime.iconMapFilePath,
+        defaultPath: path.join(
+          resolvedPaths.outputRoot,
+          "icon-fallback-map.json",
+        ),
+        label: "iconMapFilePath",
+        resolvedWorkspaceRoot,
+        outputRoot: resolvedPaths.outputRoot,
+        limits: runtime.pipelineDiagnosticLimits,
+      });
+      const designSystemFilePath = await resolveConstrainedPipelinePath({
+        configuredPath: runtime.designSystemFilePath,
+        defaultPath: path.join(resolvedPaths.outputRoot, "design-system.json"),
+        label: "designSystemFilePath",
+        resolvedWorkspaceRoot,
+        outputRoot: resolvedPaths.outputRoot,
+        limits: runtime.pipelineDiagnosticLimits,
+      });
+      const irCacheDir = path.join(
+        resolvedPaths.outputRoot,
+        "cache",
+        "ir-derivation",
+      );
+
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
@@ -2649,17 +2723,6 @@ export const createJobEngine = ({
     const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
-    const iconMapFilePath =
-      runtime.iconMapFilePath ??
-      path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
-    const designSystemFilePath =
-      runtime.designSystemFilePath ??
-      path.join(resolvedPaths.outputRoot, "design-system.json");
-    const irCacheDir = path.join(
-      resolvedPaths.outputRoot,
-      "cache",
-      "ir-derivation",
-    );
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -2728,6 +2791,31 @@ export const createJobEngine = ({
     };
 
     try {
+      const iconMapFilePath = await resolveConstrainedPipelinePath({
+        configuredPath: runtime.iconMapFilePath,
+        defaultPath: path.join(
+          resolvedPaths.outputRoot,
+          "icon-fallback-map.json",
+        ),
+        label: "iconMapFilePath",
+        resolvedWorkspaceRoot,
+        outputRoot: resolvedPaths.outputRoot,
+        limits: runtime.pipelineDiagnosticLimits,
+      });
+      const designSystemFilePath = await resolveConstrainedPipelinePath({
+        configuredPath: runtime.designSystemFilePath,
+        defaultPath: path.join(resolvedPaths.outputRoot, "design-system.json"),
+        label: "designSystemFilePath",
+        resolvedWorkspaceRoot,
+        outputRoot: resolvedPaths.outputRoot,
+        limits: runtime.pipelineDiagnosticLimits,
+      });
+      const irCacheDir = path.join(
+        resolvedPaths.outputRoot,
+        "cache",
+        "ir-derivation",
+      );
+
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
@@ -3035,17 +3123,6 @@ export const createJobEngine = ({
     const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
     const stageTimingsFile = path.join(jobDir, "stage-timings.json");
     const reproDir = path.join(resolvedPaths.reprosRoot, job.jobId);
-    const iconMapFilePath =
-      runtime.iconMapFilePath ??
-      path.join(resolvedPaths.outputRoot, "icon-fallback-map.json");
-    const designSystemFilePath =
-      runtime.designSystemFilePath ??
-      path.join(resolvedPaths.outputRoot, "design-system.json");
-    const irCacheDir = path.join(
-      resolvedPaths.outputRoot,
-      "cache",
-      "ir-derivation",
-    );
 
     job.artifacts.jobDir = jobDir;
     job.artifacts.generatedProjectDir = generatedProjectDir;
@@ -3059,6 +3136,7 @@ export const createJobEngine = ({
     }
 
     let collectedDiagnostics: WorkspaceJobDiagnostic[] | undefined;
+    const artifactStore = new StageArtifactStore({ jobDir });
     const appendDiagnostics = ({
       stage,
       diagnostics,
@@ -3084,10 +3162,34 @@ export const createJobEngine = ({
     };
 
     try {
+      const iconMapFilePath = await resolveConstrainedPipelinePath({
+        configuredPath: runtime.iconMapFilePath,
+        defaultPath: path.join(
+          resolvedPaths.outputRoot,
+          "icon-fallback-map.json",
+        ),
+        label: "iconMapFilePath",
+        resolvedWorkspaceRoot,
+        outputRoot: resolvedPaths.outputRoot,
+        limits: runtime.pipelineDiagnosticLimits,
+      });
+      const designSystemFilePath = await resolveConstrainedPipelinePath({
+        configuredPath: runtime.designSystemFilePath,
+        defaultPath: path.join(resolvedPaths.outputRoot, "design-system.json"),
+        label: "designSystemFilePath",
+        resolvedWorkspaceRoot,
+        outputRoot: resolvedPaths.outputRoot,
+        limits: runtime.pipelineDiagnosticLimits,
+      });
+      const irCacheDir = path.join(
+        resolvedPaths.outputRoot,
+        "cache",
+        "ir-derivation",
+      );
+
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
 
-      const artifactStore = new StageArtifactStore({ jobDir });
       await seedRetryArtifacts({
         retryInput,
         sourceJob: sourceRecord,
@@ -3215,7 +3317,6 @@ export const createJobEngine = ({
         return;
       }
 
-      const artifactStore = new StageArtifactStore({ jobDir });
       const typedError = toPipelineError({
         error,
         fallbackStage: retryInput.retryStage,
