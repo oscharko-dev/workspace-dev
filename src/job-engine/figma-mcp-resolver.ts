@@ -14,6 +14,7 @@ const ADAPTIVE_NODE_THRESHOLD = 50;
 const MAX_SUBTREE_BATCH_SIZE = 5;
 const STAGE = "figma.source" as const;
 const CACHE_TTL_MS: number = 5 * 60_000;
+const ALLOW_INSECURE_MCP_ENV = "WORKSPACE_ALLOW_INSECURE_MCP";
 
 // ---------------------------------------------------------------------------
 // Cache
@@ -203,6 +204,94 @@ const limitsArg = (
   limits: PipelineDiagnosticLimits | undefined,
 ): { limits: PipelineDiagnosticLimits } | Record<string, never> =>
   limits ? { limits } : {};
+
+const isTruthyEnvValue = (value: string | undefined): boolean => {
+  if (!value) {
+    return false;
+  }
+  return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+};
+
+const isIpv4LoopbackHostname = (hostname: string): boolean => {
+  const octets = hostname.split(".");
+  if (octets.length !== 4) {
+    return false;
+  }
+  const [firstOctet, ...restOctets] = octets;
+  if (firstOctet !== "127") {
+    return false;
+  }
+  return restOctets.every((octet) => /^\d{1,3}$/.test(octet));
+};
+
+const isLoopbackHostname = (hostname: string): boolean => {
+  const normalized = hostname.trim().toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "[::1]" ||
+    isIpv4LoopbackHostname(normalized)
+  );
+};
+
+const getMcpServerLogTarget = (parsedUrl: URL): string => parsedUrl.origin;
+
+const validateMcpServerUrl = ({
+  serverUrl,
+  onLog,
+  limits,
+}: {
+  serverUrl: string;
+  onLog?: (message: string) => void;
+  limits: { limits: PipelineDiagnosticLimits } | Record<string, never>;
+}): URL => {
+  if (!serverUrl) {
+    throw createPipelineError({
+      code: "E_MCP_NO_SERVER",
+      stage: STAGE,
+      message: "MCP server URL is not configured",
+      ...limits,
+    });
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(serverUrl);
+  } catch (error: unknown) {
+    throw createPipelineError({
+      code: "E_MCP_NO_SERVER",
+      stage: STAGE,
+      message: `MCP server URL is invalid: ${getErrorMessage(error)}`,
+      cause: error,
+      ...limits,
+    });
+  }
+
+  if (parsedUrl.protocol === "https:") {
+    return parsedUrl;
+  }
+
+  const insecureLoopbackAllowed = isTruthyEnvValue(
+    process.env[ALLOW_INSECURE_MCP_ENV],
+  );
+  if (
+    parsedUrl.protocol === "http:" &&
+    isLoopbackHostname(parsedUrl.hostname) &&
+    insecureLoopbackAllowed
+  ) {
+    onLog?.(
+      `MCP security warning: using insecure loopback HTTP for ${getMcpServerLogTarget(parsedUrl)}. This is allowed only because ${ALLOW_INSECURE_MCP_ENV}=true.`,
+    );
+    return parsedUrl;
+  }
+
+  throw createPipelineError({
+    code: "E_MCP_NO_SERVER",
+    stage: STAGE,
+    message: `MCP server URL must use HTTPS. Plain HTTP is allowed only for loopback when ${ALLOW_INSECURE_MCP_ENV}=true.`,
+    ...limits,
+  });
+};
 
 // ---------------------------------------------------------------------------
 // MCP response shape (internal)
@@ -394,28 +483,11 @@ const callMcpTool = async ({
   const { serverUrl, accessToken, fetchImpl, timeoutMs, maxRetries, onLog } =
     config;
   const limits = limitsArg(config.pipelineDiagnosticLimits);
-
-  if (!serverUrl) {
-    throw createPipelineError({
-      code: "E_MCP_NO_SERVER",
-      stage: STAGE,
-      message: "MCP server URL is not configured",
-      ...limits,
-    });
-  }
-
-  if (
-    !serverUrl.startsWith("https://") &&
-    !serverUrl.startsWith("http://127.0.0.1") &&
-    !serverUrl.startsWith("http://localhost")
-  ) {
-    throw createPipelineError({
-      code: "E_MCP_NO_SERVER",
-      stage: STAGE,
-      message: `MCP server URL must use HTTPS or localhost. Got: ${serverUrl.split("//")[0] ?? "unknown"}://...`,
-      ...limits,
-    });
-  }
+  const parsedServerUrl = validateMcpServerUrl({
+    serverUrl,
+    ...(onLog ? { onLog } : {}),
+    limits,
+  });
 
   const body = JSON.stringify({
     method: "tools/call",
@@ -435,7 +507,7 @@ const callMcpTool = async ({
       const combinedSignal = buildSignal(timeoutMs, signal);
       onLog?.(`MCP call ${toolName} attempt ${String(attempt)}`);
 
-      const response = await fetchImpl(serverUrl, {
+      const response = await fetchImpl(parsedServerUrl.href, {
         method: "POST",
         headers,
         body,
