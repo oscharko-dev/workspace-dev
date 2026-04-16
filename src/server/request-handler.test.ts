@@ -3265,6 +3265,16 @@ test("request handler preview routes inject inspect bridge into HTML and pass th
       traversalResponse.json<Record<string, unknown>>().error,
       "PREVIEW_NOT_FOUND",
     );
+
+    const nullByteResponse = await app.inject({
+      method: "GET",
+      url: "/workspace/repros/job-1/assets%00app.js",
+    });
+    assert.equal(nullByteResponse.statusCode, 404);
+    assert.equal(
+      nullByteResponse.json<Record<string, unknown>>().error,
+      "PREVIEW_NOT_FOUND",
+    );
   } finally {
     await close();
   }

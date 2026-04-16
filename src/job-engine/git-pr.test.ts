@@ -415,45 +415,47 @@ test("runGitPrFlowWithDeps rejects unsafe targetPath", async () => {
   const generatedProjectDir = path.join(tempRoot, "generated");
   await mkdir(generatedProjectDir, { recursive: true });
 
-  await assert.rejects(
-    () =>
-      runGitPrFlowWithDeps({
-        input: {
-          figmaFileKey: "demo-file",
-          figmaAccessToken: "pat",
-          enableGitPr: true,
-          repoUrl: "https://github.com/acme/repo.git",
-          repoToken: "secret",
-          targetPath: "../outside"
-        },
-        jobId: createJobRecord().jobId,
-        generatedProjectDir,
-        jobDir: path.join(tempRoot, "job"),
-        onLog: () => {
-          // no-op
-        },
-        deps: {
-          runCommand: async ({ args }) => {
-            if (args[0] === "ls-remote") {
-              return {
-                success: true,
-                code: 0,
-                stdout: "ref: refs/heads/main HEAD\n",
-                stderr: "",
-                combined: ""
-              };
-            }
-            if (args[0] === "clone") {
-              await mkdir(path.join(tempRoot, "job", "repo"), { recursive: true });
-              return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
-            }
-            return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+  for (const targetPath of ["../outside", "generated\0path"]) {
+    await assert.rejects(
+      () =>
+        runGitPrFlowWithDeps({
+          input: {
+            figmaFileKey: "demo-file",
+            figmaAccessToken: "pat",
+            enableGitPr: true,
+            repoUrl: "https://github.com/acme/repo.git",
+            repoToken: "secret",
+            targetPath
           },
-          fetchImpl: async () => new Response("", { status: 201 })
-        }
-      }),
-    /Invalid targetPath/
-  );
+          jobId: createJobRecord().jobId,
+          generatedProjectDir,
+          jobDir: path.join(tempRoot, "job"),
+          onLog: () => {
+            // no-op
+          },
+          deps: {
+            runCommand: async ({ args }) => {
+              if (args[0] === "ls-remote") {
+                return {
+                  success: true,
+                  code: 0,
+                  stdout: "ref: refs/heads/main HEAD\n",
+                  stderr: "",
+                  combined: ""
+                };
+              }
+              if (args[0] === "clone") {
+                await mkdir(path.join(tempRoot, "job", "repo"), { recursive: true });
+                return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+              }
+              return { success: true, code: 0, stdout: "", stderr: "", combined: "" };
+            },
+            fetchImpl: async () => new Response("", { status: 201 })
+          }
+        }),
+      /Invalid targetPath/
+    );
+  }
 });
 
 test("runGitPrFlowWithDeps supports ssh GitHub URLs, main fallback, and successful PR creation responses", async () => {

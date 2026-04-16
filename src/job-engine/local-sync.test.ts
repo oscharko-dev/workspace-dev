@@ -127,19 +127,21 @@ test("planLocalSync rejects unsafe targetPath traversal", async () => {
   await mkdir(sourceRoot, { recursive: true });
   await writeFile(path.join(sourceRoot, "App.tsx"), "export default function App() { return null; }\n", "utf8");
 
-  await assert.rejects(
-    () =>
-      planLocalSync({
-        generatedProjectDir: sourceRoot,
-        workspaceRoot: tempRoot,
-        outputRoot,
-        targetPath: "../escape",
-        boardKey: "board-unsafe"
-      }),
-    (error: Error) => {
-      return error instanceof LocalSyncError && error.code === "E_SYNC_TARGET_PATH_INVALID";
-    }
-  );
+  for (const targetPath of ["../escape", "sync\0escape"]) {
+    await assert.rejects(
+      () =>
+        planLocalSync({
+          generatedProjectDir: sourceRoot,
+          workspaceRoot: tempRoot,
+          outputRoot,
+          targetPath,
+          boardKey: "board-unsafe"
+        }),
+      (error: Error) => {
+        return error instanceof LocalSyncError && error.code === "E_SYNC_TARGET_PATH_INVALID";
+      }
+    );
+  }
 });
 
 test("planLocalSync marks existing unmanaged files as untracked until a baseline exists", async () => {

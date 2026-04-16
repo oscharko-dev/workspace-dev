@@ -25,6 +25,10 @@ export const getContentType = (filePath: string): string => {
 };
 
 export const normalizePathPart = (value: string): string | undefined => {
+  if (value.includes("\0")) {
+    return undefined;
+  }
+
   const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
   const segments = normalized.split("/").filter((segment) => segment.length > 0);
   if (segments.some((segment) => segment === "." || segment === "..")) {
