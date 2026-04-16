@@ -1,13 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { applyIrOverrides } from "./ir-overrides.js";
-import type { DesignIR, ScreenElementIR, ScreenIR } from "../parity/types-ir.js";
+import type { DesignIR, ScreenElementIR, ScreenIR, TextElementIR } from "../parity/types-ir.js";
 
 const createTestElement = (overrides: Partial<ScreenElementIR> & { id: string; name: string }): ScreenElementIR => ({
   type: "container",
   nodeType: "FRAME",
   ...overrides
 } as ScreenElementIR);
+
+const createTextElement = (
+  overrides: Partial<TextElementIR> & { id: string; name: string; text: string }
+): TextElementIR => ({
+  id: overrides.id,
+  name: overrides.name,
+  type: "text",
+  nodeType: "TEXT",
+  text: overrides.text,
+  ...overrides
+});
 
 const createTestScreen = (overrides: Partial<ScreenIR> & { id: string; name: string }): ScreenIR => ({
   layoutMode: "VERTICAL",
@@ -396,6 +407,59 @@ test("applyIrOverrides finds deeply nested elements", () => {
   assert.equal(result.appliedCount, 1);
   const deep = result.ir.screens[0]?.children[0]?.children?.[0]?.children?.[0];
   assert.equal(deep?.fillColor, "#bbbbbb");
+});
+
+test("applyIrOverrides clones text elements and nested children without mutating the source tree", () => {
+  const ir = createTestIr([
+    createTestScreen({
+      id: "s1",
+      name: "Screen 1",
+      children: [
+        createTestElement({
+          id: "parent",
+          name: "Parent",
+          children: [
+            createTextElement({
+              id: "text-1",
+              name: "Headline",
+              text: "Welcome",
+              fontFamily: "Roboto"
+            }),
+            createTestElement({
+              id: "nested-container",
+              name: "Nested container",
+              children: [createTestElement({ id: "deep-child", name: "Deep child", fillColor: "#111111" })]
+            })
+          ]
+        })
+      ]
+    })
+  ]);
+
+  const result = applyIrOverrides({
+    ir,
+    overrides: [
+      { nodeId: "text-1", field: "fontFamily", value: "Inter" },
+      { nodeId: "deep-child", field: "fillColor", value: "#222222" }
+    ]
+  });
+
+  const originalParent = ir.screens[0]?.children[0];
+  const clonedParent = result.ir.screens[0]?.children[0];
+  const originalText = originalParent?.children?.[0];
+  const clonedText = clonedParent?.children?.[0];
+  const originalDeepChild = originalParent?.children?.[1]?.children?.[0];
+  const clonedDeepChild = clonedParent?.children?.[1]?.children?.[0];
+
+  assert.notEqual(clonedParent, originalParent);
+  assert.notEqual(clonedText, originalText);
+  assert.notEqual(clonedDeepChild, originalDeepChild);
+  assert.equal(clonedText?.type, "text");
+  assert.equal(clonedText?.text, "Welcome");
+  assert.equal(clonedText?.fontFamily, "Inter");
+  assert.equal(originalText?.fontFamily, "Roboto");
+  assert.equal(clonedDeepChild?.fillColor, "#222222");
+  assert.equal(originalDeepChild?.fillColor, "#111111");
 });
 
 test("applyIrOverrides does not mutate source IR", () => {

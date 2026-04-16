@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createPipelineError, getErrorMessage, mergePipelineDiagnostics } from "./errors.js";
+import { createPipelineError, getErrorMessage, mergePipelineDiagnostics, PipelineError } from "./errors.js";
 
-test("createPipelineError sets code/stage/message and preserves cause", () => {
+test("createPipelineError returns a PipelineError and preserves cause", () => {
   const cause = new Error("network down");
   const error = createPipelineError({
     code: "E_TEST",
@@ -13,10 +13,31 @@ test("createPipelineError sets code/stage/message and preserves cause", () => {
     cause
   });
 
+  assert.equal(error instanceof Error, true);
+  assert.equal(error instanceof PipelineError, true);
+  assert.equal(error.name, "PipelineError");
   assert.equal(error.code, "E_TEST");
   assert.equal(error.stage, "figma.source");
   assert.equal(error.message, "pipeline failed");
   assert.equal((error as Error & { cause?: unknown }).cause, cause);
+});
+
+test("PipelineError preserves its nominal type through throw/catch", () => {
+  const cause = new Error("root cause");
+
+  try {
+    throw createPipelineError({
+      code: "E_THROW",
+      stage: "validate.project",
+      message: "thrown",
+      cause
+    });
+  } catch (error) {
+    assert.equal(error instanceof PipelineError, true);
+    assert.equal(error instanceof Error, true);
+    assert.equal((error as PipelineError).code, "E_THROW");
+    assert.equal((error as Error & { cause?: unknown }).cause, cause);
+  }
 });
 
 test("getErrorMessage returns fallback string forms for unknown values", () => {
