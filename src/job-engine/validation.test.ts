@@ -776,7 +776,14 @@ test("runProjectValidationWithDeps includes rule/code diagnostics even when code
             details?: Record<string, unknown>;
           }>;
         };
-        assert.equal(typed.diagnostics?.[1]?.details?.filePath, path.join(generatedProjectDir, "missing.ts"));
+        assert.equal(
+          typed.diagnostics?.[1]?.details?.filePath,
+          "[redacted-path]/missing.ts"
+        );
+        assert.equal(
+          String(typed.diagnostics?.[1]?.details?.filePath ?? "").includes(generatedProjectDir),
+          false
+        );
         assert.equal("codeContext" in (typed.diagnostics?.[1]?.details ?? {}), false);
         assert.match(String(typed.diagnostics?.[2]?.message), /custom\/rule/);
         return true;
@@ -854,7 +861,11 @@ test("runProjectValidationWithDeps emits structured diagnostics for failed retry
         assert.equal(typed.diagnostics?.[0]?.code, "E_VALIDATE_PROJECT");
         assert.equal(typed.diagnostics?.[0]?.details?.command, "lint");
         assert.equal(typed.diagnostics?.[1]?.code, "E_VALIDATE_PROJECT_DETAIL");
-        assert.equal(typed.diagnostics?.[1]?.details?.filePath, sourceFile);
+        assert.equal(
+          typed.diagnostics?.[1]?.details?.filePath,
+          "[redacted-path]/main.ts"
+        );
+        assert.equal(String(typed.diagnostics?.[1]?.details?.filePath ?? "").includes(sourceFile), false);
         assert.equal(String(typed.diagnostics?.[1]?.details?.codeContext ?? "").includes("1: const unused = 1;"), true);
         return true;
       }
@@ -929,13 +940,16 @@ test("runProjectValidationWithDeps preserves bounded truncation diagnostics for 
             details?: Record<string, unknown>;
           }>;
         };
-        assert.equal(String(typed.diagnostics?.[0]?.details?.output).includes(artifactPath), true);
+        assert.equal(typed.message.length <= 320, true);
+        assert.equal(String(typed.diagnostics?.[0]?.details?.output).includes(artifactPath), false);
+        assert.equal(String(typed.diagnostics?.[0]?.details?.output ?? "").length <= 320, true);
+        assert.match(String(typed.diagnostics?.[0]?.details?.output ?? ""), /\[redacted-path\]\/validate_project_attempt-1_lint\.stdout\.log/);
         assert.deepEqual(typed.diagnostics?.[0]?.details?.outputCapture, {
           stdout: {
             observedBytes: 256,
             retainedBytes: 64,
             truncated: true,
-            artifactPath
+            artifactPath: "[redacted-path]/validate_project_attempt-1_lint.stdout.log"
           },
           stderr: {
             observedBytes: 0,

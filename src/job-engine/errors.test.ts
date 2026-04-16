@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
 import { createPipelineError, getErrorMessage, mergePipelineDiagnostics } from "./errors.js";
 
@@ -219,6 +221,49 @@ test("createPipelineError respects injected diagnostic limits", () => {
       nested: "[object Object]"
     }
   });
+});
+
+test("createPipelineError redacts absolute filesystem paths from public messages and details", () => {
+  const workspacePath = path.join(process.cwd(), "src", "job-engine.ts");
+  const homePath = path.join(os.homedir(), ".ssh", "config");
+  const tempArtifactPath = path.join(
+    os.tmpdir(),
+    "workspace-dev-job",
+    ".stage-store",
+    "cmd-output",
+    "lint.stdout.log"
+  );
+
+  const error = createPipelineError({
+    code: "E_REDACT",
+    stage: "validate.project",
+    message: `Validation failed for ${workspacePath} with config ${homePath} and output at ${tempArtifactPath}`,
+    diagnostics: [
+      {
+        code: "W_REDACT",
+        message: `See ${workspacePath}`,
+        suggestion: `Inspect ${tempArtifactPath} and ${homePath}`,
+        details: {
+          filePath: workspacePath,
+          homePath,
+          artifactPath: tempArtifactPath
+        }
+      }
+    ]
+  });
+
+  assert.equal(error.message.includes(workspacePath), false);
+  assert.equal(error.message.includes(homePath), false);
+  assert.equal(error.message.includes(tempArtifactPath), false);
+  assert.match(error.message, /\[redacted-path\]\/job-engine\.ts/);
+  assert.match(error.message, /\[redacted-path\]\/config/);
+  assert.match(error.message, /\[redacted-path\]\/lint\.stdout\.log/);
+  assert.equal(String(error.diagnostics?.[0]?.details?.filePath).includes(workspacePath), false);
+  assert.equal(String(error.diagnostics?.[0]?.details?.homePath).includes(homePath), false);
+  assert.equal(String(error.diagnostics?.[0]?.details?.artifactPath).includes(tempArtifactPath), false);
+  assert.equal(error.diagnostics?.[0]?.details?.filePath, "[redacted-path]/job-engine.ts");
+  assert.equal(error.diagnostics?.[0]?.details?.homePath, "[redacted-path]/config");
+  assert.equal(error.diagnostics?.[0]?.details?.artifactPath, "[redacted-path]/lint.stdout.log");
 });
 
 test("createPipelineError sanitizes anonymous functions, deep arrays, and symbol values without descriptions", () => {

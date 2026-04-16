@@ -1833,6 +1833,88 @@ test("FigmaSourceService maps missing local_json path to E_FIGMA_LOCAL_JSON_PATH
   );
 });
 
+test("FigmaSourceService rejects local_json traversal and absolute paths outside the workspace root", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+  const outsidePath = path.join(path.dirname(executionContext.resolvedWorkspaceRoot), "outside-figma.json");
+
+  for (const figmaJsonPath of ["../outside-figma.json", outsidePath]) {
+    await assert.rejects(
+      () =>
+        FigmaSourceService.execute(
+          {
+            figmaJsonPath
+          },
+          stageContextFor("figma.source")
+        ),
+      (error: unknown) => {
+        assert.equal(error instanceof Error, true);
+        const typed = error as Error & { code?: string };
+        assert.equal(typed.code, "E_FIGMA_LOCAL_JSON_PATH");
+        assert.equal(typed.message.includes(figmaJsonPath), false);
+        assert.match(typed.message, /workspace root/i);
+        return true;
+      }
+    );
+  }
+});
+
+test("FigmaSourceService rejects local_json paths containing null bytes", async () => {
+  const { stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+
+  await assert.rejects(
+    () =>
+      FigmaSourceService.execute(
+        {
+          figmaJsonPath: "local-figma.json\0evil"
+        },
+        stageContextFor("figma.source")
+      ),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & { code?: string };
+      assert.equal(typed.code, "E_FIGMA_LOCAL_JSON_PATH");
+      assert.match(typed.message, /null byte/i);
+      return true;
+    }
+  );
+});
+
+test("FigmaSourceService keeps missing local_json read errors free of workspace path leakage", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+  const missingPath = path.join(executionContext.resolvedWorkspaceRoot, "missing-figma.json");
+
+  await assert.rejects(
+    () =>
+      FigmaSourceService.execute(
+        {
+          figmaJsonPath: missingPath
+        },
+        stageContextFor("figma.source")
+      ),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & { code?: string };
+      assert.equal(typed.code, "E_FIGMA_LOCAL_JSON_READ");
+      assert.equal(typed.message.includes(missingPath), false);
+      assert.equal(typed.message.includes(executionContext.resolvedWorkspaceRoot), false);
+      assert.match(typed.message, /Could not read local Figma JSON file/i);
+      return true;
+    }
+  );
+});
+
 test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json input", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     input: {
