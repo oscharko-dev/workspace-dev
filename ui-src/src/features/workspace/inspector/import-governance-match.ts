@@ -25,12 +25,8 @@ interface ComponentManifestLike {
   screens: readonly ComponentManifestScreen[];
 }
 
-function toPatternRegex(pattern: string): RegExp | null {
-  try {
-    return new RegExp(pattern, "i");
-  } catch {
-    return null;
-  }
+function normalizeGovernanceToken(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function collectNodeNames(screens: readonly DesignIrScreen[]): string[] {
@@ -72,21 +68,23 @@ export function isSecuritySensitiveInspectorSelection(args: {
   manifest: ComponentManifestLike | null;
   generatedFiles: readonly string[];
 }): boolean {
-  const regexes = args.patterns
-    .map((pattern) => pattern.trim())
-    .filter((pattern) => pattern.length > 0)
-    .map(toPatternRegex)
-    .filter((regex): regex is RegExp => regex !== null);
-  if (regexes.length === 0) {
+  const tokens = args.patterns
+    .map(normalizeGovernanceToken)
+    .filter((pattern) => pattern.length > 0);
+  if (tokens.length === 0) {
     return false;
   }
 
   const candidates = [
     ...collectNodeNames(args.screens),
     ...collectManifestValues(args.manifest),
-    ...args.generatedFiles.filter((entry) => entry.trim().length > 0),
+    ...args.generatedFiles,
   ];
-  return candidates.some((candidate) =>
-    regexes.some((regex) => regex.test(candidate)),
-  );
+  return candidates.some((candidate) => {
+    const normalizedCandidate = normalizeGovernanceToken(candidate);
+    if (normalizedCandidate.length === 0) {
+      return false;
+    }
+    return tokens.some((token) => normalizedCandidate.includes(token));
+  });
 }

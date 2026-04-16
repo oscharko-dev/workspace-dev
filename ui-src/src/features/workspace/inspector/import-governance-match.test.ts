@@ -55,14 +55,41 @@ describe("isSecuritySensitiveInspectorSelection", () => {
     ).toBe(true);
   });
 
-  it("ignores invalid regexes and returns false when nothing matches", () => {
+  it("matches plain tokens case-insensitively", () => {
     expect(
       isSecuritySensitiveInspectorSelection({
-        patterns: ["[invalid", "secret"],
+        patterns: ["secret"],
         screens: [],
         manifest: null,
-        generatedFiles: ["src/screens/Home.tsx"],
+        generatedFiles: ["src/screens/SECRET/Reset.tsx"],
+      }),
+    ).toBe(true);
+  });
+
+  it("matches literal metacharacter tokens as plain text", () => {
+    expect(
+      isSecuritySensitiveInspectorSelection({
+        patterns: ["(auth)"],
+        screens: [],
+        manifest: null,
+        generatedFiles: ["src/screens/auth/Home.tsx"],
       }),
     ).toBe(false);
+    expect(
+      isSecuritySensitiveInspectorSelection({
+        patterns: ["C++"],
+        screens: [],
+        manifest: null,
+        generatedFiles: ["src/lib/C++/Home.tsx"],
+      }),
+    ).toBe(true);
+    expect(
+      isSecuritySensitiveInspectorSelection({
+        patterns: ["(auth)"],
+        screens: [],
+        manifest: null,
+        generatedFiles: ["src/screens/(AUTH)/Home.tsx"],
+      }),
+    ).toBe(true);
   });
 });

@@ -1,12 +1,8 @@
 import type { ComponentManifest } from "../parity/component-manifest.js";
 import type { DesignIR } from "../parity/types-ir.js";
 
-function toPatternRegex(pattern: string): RegExp | null {
-  try {
-    return new RegExp(pattern, "i");
-  } catch {
-    return null;
-  }
+function normalizeGovernanceToken(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 function collectNodeNames(designIr: DesignIR | undefined): string[] {
@@ -75,25 +71,27 @@ export function isSecuritySensitiveImport(args: {
   componentManifest?: ComponentManifest;
   generatedPaths?: readonly string[];
 }): boolean {
-  const regexes = args.patterns
-    .map((pattern) => pattern.trim())
-    .filter((pattern) => pattern.length > 0)
-    .map(toPatternRegex)
-    .filter((regex): regex is RegExp => regex !== null);
-  if (regexes.length === 0) {
+  const tokens = args.patterns
+    .map(normalizeGovernanceToken)
+    .filter((pattern) => pattern.length > 0);
+  if (tokens.length === 0) {
     return false;
   }
 
   const candidates = [
     ...collectNodeNames(args.designIr),
     ...collectManifestValues(args.componentManifest),
-    ...(args.generatedPaths ?? []).filter((entry) => entry.trim().length > 0),
+    ...(args.generatedPaths ?? []),
   ];
   if (candidates.length === 0) {
     return false;
   }
 
-  return candidates.some((candidate) =>
-    regexes.some((regex) => regex.test(candidate)),
-  );
+  return candidates.some((candidate) => {
+    const normalizedCandidate = normalizeGovernanceToken(candidate);
+    if (normalizedCandidate.length === 0) {
+      return false;
+    }
+    return tokens.some((token) => normalizedCandidate.includes(token));
+  });
 }
