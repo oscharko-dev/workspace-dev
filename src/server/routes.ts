@@ -5,15 +5,21 @@ import {
   UI_ROUTE_PREFIX,
   type UiAssetPath,
 } from "./constants.js";
-import { normalizePlatformPath } from "./route-params.js";
+import {
+  INVALID_PATH_ENCODING,
+  normalizePlatformPath,
+  safeDecode,
+} from "./route-params.js";
 
-export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
+function normalizeUiRoutePath(
+  pathname: string,
+): UiAssetPath | null | undefined {
   if (pathname === UI_ROUTE_PREFIX || pathname === `${UI_ROUTE_PREFIX}/`) {
     return "index.html";
   }
 
   if (!pathname.startsWith(`${UI_ROUTE_PREFIX}/`)) {
-    return null;
+    return undefined;
   }
 
   const requestedAsset = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
@@ -21,20 +27,52 @@ export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
     return "index.html";
   }
 
-  if (requestedAsset.includes("..")) {
+  const decodedPath = safeDecode(requestedAsset);
+  if (decodedPath === INVALID_PATH_ENCODING || decodedPath.includes("\0")) {
     return null;
   }
 
-  return requestedAsset;
+  const normalizedPath = normalizePlatformPath(decodedPath);
+  if (!normalizedPath.ok) {
+    return null;
+  }
+
+  const segments = normalizedPath.normalized
+    .split("/")
+    .filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return "index.html";
+  }
+
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    return null;
+  }
+
+  return segments.join("/");
+}
+
+export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
+  const normalizedPath = normalizeUiRoutePath(pathname);
+  if (normalizedPath === undefined) {
+    return null;
+  }
+  return normalizedPath;
+}
+
+export function isForbiddenUiAssetPath(pathname: string): boolean {
+  return (
+    pathname.startsWith(`${UI_ROUTE_PREFIX}/`) &&
+    normalizeUiRoutePath(pathname) === null
+  );
 }
 
 export function shouldFallbackToUiEntrypoint(pathname: string): boolean {
-  if (!pathname.startsWith(`${UI_ROUTE_PREFIX}/`)) {
+  const requestedPath = normalizeUiRoutePath(pathname);
+  if (requestedPath === undefined || requestedPath === null) {
     return false;
   }
 
-  const requestedPath = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
-  if (requestedPath.length === 0 || requestedPath.includes("..")) {
+  if (requestedPath === "index.html") {
     return false;
   }
 

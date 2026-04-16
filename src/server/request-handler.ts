@@ -82,6 +82,7 @@ import {
   parseJobFilesRoute,
   parseJobRoute,
   parseReproRoute,
+  isForbiddenUiAssetPath,
   resolveUiAssetPath,
   shouldFallbackToUiEntrypoint,
   validateSourceFilePath,
@@ -471,6 +472,7 @@ export function createWorkspaceRequestHandler({
     };
 
     const method = request.method ?? "GET";
+    const rawPathname = (request.url ?? "/").split("?", 1)[0] ?? "/";
     const requestUrl = new URL(
       request.url ?? "/",
       "http://workspace-dev.local",
@@ -1493,7 +1495,19 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        const uiAssetPath = resolveUiAssetPath(pathname);
+        if (isForbiddenUiAssetPath(rawPathname)) {
+          sendJson({
+            response,
+            statusCode: 403,
+            payload: {
+              error: "FORBIDDEN_PATH",
+              message: "Path traversal is not allowed for workspace UI assets.",
+            },
+          });
+          return;
+        }
+
+        const uiAssetPath = resolveUiAssetPath(rawPathname);
         const shouldServeWorkspaceAlias = isWorkspaceProjectRoute(pathname);
         if (uiAssetPath || shouldServeWorkspaceAlias) {
           try {
@@ -1506,7 +1520,7 @@ export function createWorkspaceRequestHandler({
               shouldServeWorkspaceAlias ||
               uiAssetPath === "index.html" ||
               (requestedUiAsset === undefined &&
-                shouldFallbackToUiEntrypoint(pathname));
+                shouldFallbackToUiEntrypoint(rawPathname));
             const uiAsset = shouldServeUiEntrypoint
               ? getUiAsset({
                   assets: uiAssets,
