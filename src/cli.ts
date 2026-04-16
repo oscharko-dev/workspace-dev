@@ -1055,7 +1055,7 @@ Options:
                              Skip dependency installation in validate.project and require existing node_modules (default: ${DEFAULT_SKIP_INSTALL})
   --max-concurrent-jobs <n>  Max running jobs at once (default: ${DEFAULT_MAX_CONCURRENT_JOBS})
   --max-queued-jobs <n>      Max queued jobs before submit backpressure reject (default: ${DEFAULT_MAX_QUEUED_JOBS})
-  --rate-limit <n>           Max submit/regenerate requests per minute per client IP; 0 disables (default: ${DEFAULT_RATE_LIMIT_PER_MINUTE})
+  --rate-limit <n>           Max job submissions and import-session event writes per minute per client IP; 0 disables, with separate budgets per route family (default: ${DEFAULT_RATE_LIMIT_PER_MINUTE})
   --log-format <text|json>   Operational runtime log format (default: ${DEFAULT_WORKSPACE_LOG_FORMAT})
   --lint-autofix <true|false>
                              Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})

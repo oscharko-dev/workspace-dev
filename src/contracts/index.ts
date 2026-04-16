@@ -264,7 +264,7 @@ export interface WorkspaceStartOptions {
   maxQueuedJobs?: number;
   /** Output format for operational runtime logs. Default: "text" */
   logFormat?: WorkspaceLogFormat;
-  /** Maximum accepted submit/regenerate requests per minute for a single client IP. Use 0 to disable. Default: 10 */
+  /** Maximum accepted job submissions and import-session event writes per minute for a single client IP, enforced separately per route family. Use 0 to disable. Default: 10 */
   rateLimitPerMinute?: number;
   /**
    * Bearer token accepted for `POST /workspace/import-sessions/:id/events`.

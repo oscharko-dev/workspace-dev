@@ -150,7 +150,8 @@ function createStubLogger(
   };
 }
 
-const TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN = "test-import-session-event-bearer-token";
+const TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN =
+  "test-import-session-event-bearer-token";
 
 const createImportSessionEventAuthHeaders = (
   token: string = TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
@@ -172,12 +173,12 @@ async function createRequestHandlerApp({
   logger?: WorkspaceRuntimeLogger;
   importSessionEventBearerToken?: string;
   workspaceRoot?: string;
-	} = {}): Promise<{
-	  app: WorkspaceServerApp;
-	  baseUrl: string;
-	  close: () => Promise<void>;
-	  tempRoot: string;
-	}> {
+} = {}): Promise<{
+  app: WorkspaceServerApp;
+  baseUrl: string;
+  close: () => Promise<void>;
+  tempRoot: string;
+}> {
   const host = "127.0.0.1";
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-request-handler-"),
@@ -220,13 +221,13 @@ async function createRequestHandlerApp({
     });
   });
 
-	  const app = buildApp({ server, host, port: resolvedPort });
-	  return {
-	    app,
-	    baseUrl: `http://${host}:${resolvedPort}`,
-	    close: async () => {
-	      await app.close();
-	      await rm(tempRoot, { recursive: true, force: true });
+  const app = buildApp({ server, host, port: resolvedPort });
+  return {
+    app,
+    baseUrl: `http://${host}:${resolvedPort}`,
+    close: async () => {
+      await app.close();
+      await rm(tempRoot, { recursive: true, force: true });
     },
     tempRoot,
   };
@@ -687,7 +688,10 @@ test("request handler POST /events returns 401 before reading the body when auth
     });
 
     assert.equal(response.statusCode, 401);
-    assert.equal(response.headers["www-authenticate"], 'Bearer realm="workspace-dev"');
+    assert.equal(
+      response.headers["www-authenticate"],
+      'Bearer realm="workspace-dev"',
+    );
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "UNAUTHORIZED");
     assert.equal(
@@ -814,6 +818,116 @@ test("request handler POST /events returns 503 when server auth is not configure
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "AUTHENTICATION_UNAVAILABLE");
     assert.equal(appendImportSessionEvent.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /events rate limits before parsing the body or appending the event", async () => {
+  const appendImportSessionEvent = test.mock.fn(
+    async ({ event }) =>
+      ({
+        id: "stored-event",
+        sessionId: event.sessionId,
+        kind: event.kind,
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      appendImportSessionEvent,
+    }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+    rateLimitPerMinute: 1,
+  });
+
+  try {
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+    assert.equal(accepted.statusCode, 201);
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: "{",
+    });
+    assert.equal(limited.statusCode, 429);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(
+      limited.json<Record<string, unknown>>().error,
+      "RATE_LIMIT_EXCEEDED",
+    );
+    assert.equal(appendImportSessionEvent.mock.callCount(), 1);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler keeps import-session event writes out of the submission rate limit budget", async () => {
+  const appendImportSessionEvent = test.mock.fn(
+    async ({ event }) =>
+      ({
+        id: "stored-event",
+        sessionId: event.sessionId,
+        kind: event.kind,
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
+  );
+  const submitJob = test.mock.fn(() => {
+    return {
+      jobId: "job-accepted",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      appendImportSessionEvent,
+      submitJob,
+    }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+    rateLimitPerMinute: 1,
+  });
+
+  try {
+    const eventAccepted = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+    assert.equal(eventAccepted.statusCode, 201);
+
+    const submitAccepted = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      payload: {
+        figmaFileKey: "file-key",
+        figmaAccessToken: "token",
+      },
+    });
+    assert.equal(submitAccepted.statusCode, 202);
+    assert.equal(appendImportSessionEvent.mock.callCount(), 1);
+    assert.equal(submitJob.mock.callCount(), 1);
   } finally {
     await close();
   }
