@@ -452,11 +452,12 @@ export function createWorkspaceRequestHandler({
   request: IncomingMessage,
   response: ServerResponse,
 ) => Promise<void> {
-  const rateLimiter = createIpRateLimiter(
+  const rateLimiterOptions =
     runtime.rateLimitPerMinute === undefined
       ? {}
-      : { limitPerWindow: runtime.rateLimitPerMinute },
-  );
+      : { limitPerWindow: runtime.rateLimitPerMinute };
+  const writeRateLimiter = createIpRateLimiter(rateLimiterOptions);
+  const importSessionEventRateLimiter = createIpRateLimiter(rateLimiterOptions);
 
   return async (
     request: IncomingMessage,
@@ -561,6 +562,25 @@ export function createWorkspaceRequestHandler({
         level: statusCode >= 500 ? "error" : "warn",
         fallbackMessage,
         ...(jobId ? { jobId } : {}),
+      });
+    };
+    const sendRateLimitExceeded = ({
+      retryAfterSeconds,
+      message,
+    }: {
+      retryAfterSeconds: number;
+      message: string;
+    }): void => {
+      response.setHeader("retry-after", String(retryAfterSeconds));
+      sendAuditedError({
+        statusCode: 429,
+        payload: {
+          error: "RATE_LIMIT_EXCEEDED",
+          message,
+        },
+        event: "security.request.rate_limited",
+        level: "warn",
+        fallbackMessage: "Write request rate limited.",
       });
     };
 
@@ -1586,7 +1606,10 @@ export function createWorkspaceRequestHandler({
           });
           if (!authValidation.ok) {
             if (authValidation.wwwAuthenticate) {
-              response.setHeader("www-authenticate", authValidation.wwwAuthenticate);
+              response.setHeader(
+                "www-authenticate",
+                authValidation.wwwAuthenticate,
+              );
             }
             sendAuditedError({
               statusCode: authValidation.statusCode,
@@ -1596,7 +1619,7 @@ export function createWorkspaceRequestHandler({
                   ? "security.request.unauthorized"
                   : "workspace.request.failed",
               level: authValidation.statusCode === 401 ? "warn" : "error",
-              fallbackMessage: "Import session event write rejected."
+              fallbackMessage: "Import session event write rejected.",
             });
             return;
           }
@@ -1626,23 +1649,26 @@ export function createWorkspaceRequestHandler({
           parsedJobRoute?.action === "regenerate" ||
           parsedJobRoute?.action === "retry-stage";
         if (isRateLimitedWriteRoute) {
-          const rateLimitResult = rateLimiter.consume(
+          const rateLimitResult = writeRateLimiter.consume(
             resolveRateLimitClientKey(request),
           );
           if (!rateLimitResult.allowed) {
-            response.setHeader(
-              "retry-after",
-              String(rateLimitResult.retryAfterSeconds),
-            );
-            sendAuditedError({
-              statusCode: 429,
-              payload: {
-                error: "RATE_LIMIT_EXCEEDED",
-                message: `Too many job submissions from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
-              },
-              event: "security.request.rate_limited",
-              level: "warn",
-              fallbackMessage: "Write request rate limited.",
+            sendRateLimitExceeded({
+              retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+              message: `Too many job submissions from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+            });
+            return;
+          }
+        }
+
+        if (isImportSessionEventWriteRoute) {
+          const rateLimitResult = importSessionEventRateLimiter.consume(
+            resolveRateLimitClientKey(request),
+          );
+          if (!rateLimitResult.allowed) {
+            sendRateLimitExceeded({
+              retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+              message: `Too many import session event writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
             });
             return;
           }
@@ -1706,10 +1732,6 @@ export function createWorkspaceRequestHandler({
             response,
           );
           if (sessionId === null) return;
-
-          // Re-use `rateLimiter.consume` here if per-POST throttling becomes
-          // necessary — today the audit-event volume per user is bounded by
-          // the stepper UX, so no rate limit is applied.
 
           const rawBody = await readJsonBody(request);
           if (!rawBody.ok) {

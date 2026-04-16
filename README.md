@@ -281,7 +281,7 @@ workspace-dev scan-design-system [options]
 - `--skip-install <true|false>` (default `false`; expert mode, requires pre-existing `generated-app/node_modules`)
 - `--max-concurrent-jobs <n>` (default `1`; concurrent running job cap)
 - `--max-queued-jobs <n>` (default `20`; queued job cap before submit backpressure)
-- `--rate-limit <n>` (default `10`; per-IP submit/regenerate budget per minute, `0` disables the limiter)
+- `--rate-limit <n>` (default `10`; max job submissions and import-session event writes per minute per client IP, with separate budgets per route family; `0` disables the limiter)
 - `--log-format <text|json>` (default `text`; operational runtime log output format)
 - `--lint-autofix <true|false>` (default `true`; runs `pnpm lint --fix` before final `pnpm lint`)
 - `--preview <true|false>` (default `true`)

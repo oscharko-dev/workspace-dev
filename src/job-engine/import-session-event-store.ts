@@ -123,6 +123,47 @@ const truncateNote = (note: string): string => {
   return note.length > NOTE_MAX_LENGTH ? note.slice(0, NOTE_MAX_LENGTH) : note;
 };
 
+const isMaterialEvent = (event: WorkspaceImportSessionEvent): boolean => {
+  return event.kind !== "note";
+};
+
+const trimEventsForRetention = ({
+  events,
+  maxEventsPerSession,
+}: {
+  events: readonly WorkspaceImportSessionEvent[];
+  maxEventsPerSession: number;
+}): WorkspaceImportSessionEvent[] => {
+  if (maxEventsPerSession <= 0) {
+    return [];
+  }
+  if (events.length <= maxEventsPerSession) {
+    return [...events];
+  }
+
+  const indexedEvents = events.map((event, index) => ({ event, index }));
+  const materialEvents = indexedEvents.filter(({ event }) =>
+    isMaterialEvent(event),
+  );
+  const retainedMaterialEvents = materialEvents.slice(
+    Math.max(0, materialEvents.length - maxEventsPerSession),
+  );
+  const remainingSlots = Math.max(
+    0,
+    maxEventsPerSession - retainedMaterialEvents.length,
+  );
+  const retainedNotes =
+    remainingSlots === 0
+      ? []
+      : indexedEvents
+          .filter(({ event }) => !isMaterialEvent(event))
+          .slice(-remainingSlots);
+
+  return [...retainedMaterialEvents, ...retainedNotes]
+    .sort((left, right) => left.index - right.index)
+    .map(({ event }) => event);
+};
+
 const normalizeEventForWrite = (
   event: WorkspaceImportSessionEvent,
 ): WorkspaceImportSessionEvent => {
@@ -252,10 +293,10 @@ export const createImportSessionEventStore = ({
         sessionId: safeSessionId,
       });
       const combined = [...current, normalized];
-      const trimmed =
-        combined.length > maxEventsPerSession
-          ? combined.slice(combined.length - maxEventsPerSession)
-          : combined;
+      const trimmed = trimEventsForRetention({
+        events: combined,
+        maxEventsPerSession,
+      });
       await writeEventsFile({
         filePath,
         sessionId: safeSessionId,

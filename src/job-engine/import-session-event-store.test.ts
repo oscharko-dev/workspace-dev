@@ -155,28 +155,128 @@ test("import-session-event-store filters out individually invalid events", async
   }
 });
 
-test("import-session-event-store rotates to the newest N when the cap is exceeded", async () => {
+test("import-session-event-store evicts notes before governance events when the cap is exceeded", async () => {
   const rootDir = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-import-session-events-"),
   );
   try {
     const store = createImportSessionEventStore({
       rootDir,
-      maxEventsPerSession: 200,
+      maxEventsPerSession: 5,
     });
-    for (let index = 0; index < 205; index += 1) {
-      await store.append(
-        makeEvent({
-          id: `event-${String(index).padStart(4, "0")}`,
-          at: `2026-04-15T10:00:${String(index % 60).padStart(2, "0")}.000Z`,
-        }),
-      );
-    }
+    await store.append(
+      makeEvent({
+        id: "event-imported",
+        kind: "imported",
+        at: "2026-04-15T10:00:00.000Z",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-note-1",
+        kind: "note",
+        at: "2026-04-15T10:01:00.000Z",
+        note: "first note",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-approved",
+        kind: "approved",
+        at: "2026-04-15T10:02:00.000Z",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-note-2",
+        kind: "note",
+        at: "2026-04-15T10:03:00.000Z",
+        note: "second note",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-applied",
+        kind: "applied",
+        at: "2026-04-15T10:04:00.000Z",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-note-3",
+        kind: "note",
+        at: "2026-04-15T10:05:00.000Z",
+        note: "third note",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-note-4",
+        kind: "note",
+        at: "2026-04-15T10:06:00.000Z",
+        note: "fourth note",
+      }),
+    );
 
     const listed = await store.list("session-1");
-    assert.equal(listed.length, 200);
-    assert.equal(listed[0]?.id, "event-0005");
-    assert.equal(listed[listed.length - 1]?.id, "event-0204");
+    assert.deepEqual(
+      listed.map((entry) => entry.id),
+      [
+        "event-imported",
+        "event-approved",
+        "event-applied",
+        "event-note-3",
+        "event-note-4",
+      ],
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
+test("import-session-event-store keeps the newest material events when they alone exceed the cap", async () => {
+  const rootDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-import-session-events-"),
+  );
+  try {
+    const store = createImportSessionEventStore({
+      rootDir,
+      maxEventsPerSession: 3,
+    });
+    await store.append(
+      makeEvent({
+        id: "event-imported",
+        kind: "imported",
+        at: "2026-04-15T10:00:00.000Z",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-review-started",
+        kind: "review_started",
+        at: "2026-04-15T10:01:00.000Z",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-approved",
+        kind: "approved",
+        at: "2026-04-15T10:02:00.000Z",
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-applied",
+        kind: "applied",
+        at: "2026-04-15T10:03:00.000Z",
+      }),
+    );
+
+    const listed = await store.list("session-1");
+    assert.deepEqual(
+      listed.map((entry) => entry.id),
+      ["event-review-started", "event-approved", "event-applied"],
+    );
   } finally {
     await rm(rootDir, { recursive: true, force: true });
   }
