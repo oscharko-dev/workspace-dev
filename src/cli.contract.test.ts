@@ -172,6 +172,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_ITEMS/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_PIPELINE_DIAGNOSTIC_DETAILS_MAX_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_LOG_FORMAT/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX/i);
   assert.match(result.stdout, /--no-cache/i);
@@ -418,6 +419,28 @@ test("cli contract: rate limit environment variable is applied and logged", asyn
   try {
     const output = await waitForStdout(child, /Rate limit per minute: 7/i);
     assert.match(output, /Rate limit per minute: 7/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
+test("cli contract: import-session event auth environment variable is applied without logging the token", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {
+    env: {
+      ...process.env,
+      FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN: "super-secret-import-event-token"
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  try {
+    const output = await waitForStdout(child, /Import session event write auth enabled: true/i);
+    assert.match(output, /Import session event write auth enabled: true/i);
+    assert.doesNotMatch(output, /super-secret-import-event-token/i);
   } finally {
     child.kill("SIGTERM");
     const exitCode = await waitForExitCode(child, 8_000);

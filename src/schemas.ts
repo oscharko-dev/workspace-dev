@@ -1888,6 +1888,7 @@ function parseSyncRequest(
     "confirmationToken",
     "confirmOverwrite",
     "fileDecisions",
+    "reviewerNote",
   ]);
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
@@ -1975,6 +1976,22 @@ function parseSyncRequest(
     }
   }
 
+  let reviewerNote: string | undefined;
+  if (input.reviewerNote !== undefined) {
+    if (
+      typeof input.reviewerNote !== "string" ||
+      input.reviewerNote.trim().length === 0
+    ) {
+      pushIssue(
+        issues,
+        ["reviewerNote"],
+        "reviewerNote must be a non-empty string when provided.",
+      );
+    } else {
+      reviewerNote = input.reviewerNote.trim();
+    }
+  }
+
   if (issues.length > 0) {
     return { success: false, error: { issues } };
   }
@@ -1986,6 +2003,7 @@ function parseSyncRequest(
       confirmationToken,
       confirmOverwrite: true,
       fileDecisions: parsedFileDecisions,
+      ...(reviewerNote !== undefined ? { reviewerNote } : {}),
     },
   };
 }
@@ -2004,7 +2022,12 @@ function parseCreatePrRequest(
     return { success: false, error: { issues } };
   }
 
-  const allowedKeys = new Set(["repoUrl", "repoToken", "targetPath"]);
+  const allowedKeys = new Set([
+    "repoUrl",
+    "repoToken",
+    "targetPath",
+    "reviewerNote",
+  ]);
   for (const key of Object.keys(input)) {
     if (!allowedKeys.has(key)) {
       pushIssue(issues, [key], `Unexpected property '${key}'.`);
@@ -2034,6 +2057,22 @@ function parseCreatePrRequest(
     }
   }
 
+  let reviewerNote: string | undefined;
+  if (input.reviewerNote !== undefined) {
+    if (
+      typeof input.reviewerNote !== "string" ||
+      input.reviewerNote.trim().length === 0
+    ) {
+      pushIssue(
+        issues,
+        ["reviewerNote"],
+        "reviewerNote must be a non-empty string when provided.",
+      );
+    } else {
+      reviewerNote = input.reviewerNote.trim();
+    }
+  }
+
   if (issues.length > 0) {
     return { success: false, error: { issues } };
   }
@@ -2044,6 +2083,9 @@ function parseCreatePrRequest(
   };
   if (typeof input.targetPath === "string") {
     data.targetPath = input.targetPath;
+  }
+  if (reviewerNote !== undefined) {
+    data.reviewerNote = reviewerNote;
   }
 
   return { success: true, data };

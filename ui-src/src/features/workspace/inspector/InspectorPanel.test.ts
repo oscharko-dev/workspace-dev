@@ -2563,7 +2563,7 @@ describe("InspectorPanel import governance (issue #994)", () => {
     ).toHaveAttribute("aria-current", "step");
   });
 
-  it("emits imported, review_started, approved, apply_blocked, and applied events with the real sessionId", async () => {
+  it("keeps browser-only review telemetry local and non-persisted", async () => {
     installQueryMock({
       overrides: {
         "inspector-workspace-policy": {
@@ -2610,10 +2610,6 @@ describe("InspectorPanel import governance (issue #994)", () => {
       importHistory: [buildImportSession()],
     });
 
-    await waitFor(() => {
-      expect(received.some((event) => event.kind === "imported")).toBe(true);
-    });
-
     fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
     fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
     fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
@@ -2631,11 +2627,8 @@ describe("InspectorPanel import governance (issue #994)", () => {
     fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
 
     expect(received.map((event) => event.kind)).toEqual([
-      "imported",
       "review_started",
-      "approved",
       "apply_blocked",
-      "applied",
     ]);
   });
 
@@ -2962,22 +2955,24 @@ describe("InspectorPanel create PR", () => {
   });
 
   it("creates PR for regeneration jobs when prerequisites are provided", async () => {
-    const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          jobId: "job-regen-1",
-          sourceJobId: "job-1",
-          gitPr: {
-            status: "executed",
-            prUrl: "https://github.com/acme/repo/pull/42",
-            branchName: "auto/figma/board",
-            scopePath: "generated/board",
-            changedFiles: ["src/screens/Home.tsx"],
-          },
-        }),
-        { status: 200, headers: { "content-type": "application/json" } },
-      ),
-    );
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async () => {
+        return new Response(
+          JSON.stringify({
+            jobId: "job-regen-1",
+            sourceJobId: "job-1",
+            gitPr: {
+              status: "executed",
+              prUrl: "https://github.com/acme/repo/pull/42",
+              branchName: "auto/figma/board",
+              scopePath: "generated/board",
+              changedFiles: ["src/screens/Home.tsx"],
+            },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      });
 
     renderInspectorPanel({
       jobId: "job-regen-1",

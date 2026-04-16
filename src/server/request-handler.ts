@@ -56,7 +56,10 @@ import {
   SyncRequestSchema,
   formatZodError,
 } from "../schemas.js";
-import { validateWriteRequest } from "./request-security.js";
+import {
+  validateImportSessionEventWriteAuth,
+  validateWriteRequest,
+} from "./request-security.js";
 import {
   createIpRateLimiter,
   resolveRateLimitClientKey,
@@ -240,6 +243,7 @@ function readScreenshotUrlFromEnrichment(
 }
 
 type WorkspaceAuditEvent =
+  | "security.request.unauthorized"
   | "security.request.rejected_origin"
   | "security.request.unsupported_media_type"
   | "security.request.rate_limited"
@@ -427,6 +431,7 @@ interface CreateWorkspaceRequestHandlerInput {
   runtime: {
     previewEnabled: boolean;
     rateLimitPerMinute?: number;
+    importSessionEventBearerToken?: string;
     logger?: WorkspaceRuntimeLogger;
   };
   jobEngine: JobEngine;
@@ -1569,6 +1574,34 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        const isImportSessionEventWriteRoute =
+          method === "POST" && parsedImportSessionRoute?.action === "events";
+        if (isImportSessionEventWriteRoute) {
+          const authValidation = validateImportSessionEventWriteAuth({
+            request,
+            ...(runtime.importSessionEventBearerToken !== undefined
+              ? { bearerToken: runtime.importSessionEventBearerToken }
+              : {}),
+            routeLabel: "Import session event",
+          });
+          if (!authValidation.ok) {
+            if (authValidation.wwwAuthenticate) {
+              response.setHeader("www-authenticate", authValidation.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: authValidation.statusCode,
+              payload: authValidation.payload,
+              event:
+                authValidation.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: authValidation.statusCode === 401 ? "warn" : "error",
+              fallbackMessage: "Import session event write rejected."
+            });
+            return;
+          }
+        }
+
         const writeRequestValidation = validateWriteRequest({
           request,
           host,
@@ -2034,6 +2067,9 @@ export function createWorkspaceRequestHandler({
               confirmationToken: parsed.data.confirmationToken,
               confirmOverwrite: parsed.data.confirmOverwrite,
               fileDecisions: parsed.data.fileDecisions,
+              ...(parsed.data.reviewerNote !== undefined
+                ? { reviewerNote: parsed.data.reviewerNote }
+                : {}),
             });
             logAuditEvent({
               event: "workspace.sync.applied",

@@ -17,7 +17,7 @@
 <!-- prettier-ignore -->
 | Area | workspace-dev |
 | --- | --- |
-| Contract version | `3.14.0` |
+| Contract version | `3.15.0` |
 | `figmaSourceMode=rest` | Supported |
 | `figmaSourceMode=local_json` | Supported |
 | `figmaSourceMode=figma_paste` | Supported |

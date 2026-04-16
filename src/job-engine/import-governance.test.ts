@@ -111,6 +111,9 @@ test("createJobEngine persists import sessions with authoritative governance def
   assert.equal((sessions[0]?.componentMappings ?? 0) >= 0, true);
 
   const sessionId = sessions[0]!.id;
+  const initialAuditTrail = await engine.listImportSessionEvents({ sessionId });
+  assert.equal(initialAuditTrail.some((event) => event.kind === "imported"), true);
+
   await engine.appendImportSessionEvent({
     event: {
       id: "",

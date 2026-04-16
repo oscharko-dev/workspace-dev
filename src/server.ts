@@ -60,6 +60,11 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     typeof options.rateLimitPerMinute === "number" && Number.isFinite(options.rateLimitPerMinute)
       ? Math.max(0, Math.min(1000, Math.trunc(options.rateLimitPerMinute)))
       : DEFAULT_RATE_LIMIT_PER_MINUTE;
+  const importSessionEventBearerToken =
+    typeof options.importSessionEventBearerToken === "string" &&
+    options.importSessionEventBearerToken.trim().length > 0
+      ? options.importSessionEventBearerToken.trim()
+      : undefined;
   const outputRoot =
     typeof options.outputRoot === "string" && options.outputRoot.trim().length > 0
       ? options.outputRoot
@@ -199,6 +204,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     runtime: {
       previewEnabled: runtime.previewEnabled,
       rateLimitPerMinute,
+      ...(importSessionEventBearerToken !== undefined ? { importSessionEventBearerToken } : {}),
       logger: runtime.logger
     },
     jobEngine,

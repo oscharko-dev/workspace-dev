@@ -31,6 +31,21 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.15.0] - 2026-04-16
+
+### Added
+
+- `WorkspaceStartOptions.importSessionEventBearerToken?: string` to configure authenticated writes for `POST /workspace/import-sessions/:id/events`.
+
+### Changed
+
+- `POST /workspace/import-sessions/:id/events` is bearer-only and now requires `Authorization: Bearer <token>` matching the configured import-session event token.
+- Unauthenticated or invalidly authenticated import-session event writes now return `401` without reading the request body or mutating persisted session state.
+- When no import-session event bearer token is configured, `POST /workspace/import-sessions/:id/events` fails closed with `503`.
+- Local sync apply and create-PR requests accept optional `reviewerNote` fields so review context can travel with trusted mutation requests; successful local sync writes persist that note on the trusted `applied` event, and successful create-PR writes fold it into the persisted server-authored import-session `note` event.
+
+---
+
 ## [3.14.0] - 2026-04-15
 
 ### Import session governance scaffolding (Issue #994)
@@ -52,7 +67,7 @@ Backwards compatibility: legacy `import-sessions.json` envelopes without the new
 Added (additive only):
 
 - `GET  /workspace/import-sessions/:id/events` returns `WorkspaceImportSessionEventsResponse` with the ordered audit trail. Responds `404` when the session does not exist.
-- `POST /workspace/import-sessions/:id/events` appends one event. Accepts `{ kind, actor?, note?, metadata? }`; the server fills `id` and `at`. Responds `201` on success, `404` when the session does not exist, `422` on malformed bodies (missing `kind`, unknown `kind`, or nested `metadata`), `405` on other verbs.
+- `POST /workspace/import-sessions/:id/events` appends one event. Accepts `{ id?, kind, note?, metadata? }`; the server fills `id` when omitted and always stamps `at`. Responds `201` on success, `404` when the session does not exist, `422` on malformed bodies (missing `kind`, unknown `kind`, or nested `metadata`), `405` on other verbs.
 
 Events are persisted under `<outputRoot>/import-session-events/<sessionId>.json`, append-only, rotated at 200 entries, with `note` truncated at 1024 characters. Deleting a session via `DELETE /workspace/import-sessions/:id` also purges the corresponding event file.
 

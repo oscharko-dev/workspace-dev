@@ -31,8 +31,6 @@ import {
   type WorkspaceSubmitFormData,
   type WorkspaceSubmitPayload,
 } from "./submit-schema";
-import { subscribeToImportGovernanceEvents } from "./inspector/import-governance-events";
-import { createImportGovernanceTransport } from "./inspector/import-governance-transport";
 
 const endpoints = {
   health: "/healthz",
@@ -383,11 +381,6 @@ export function WorkspacePage(): JSX.Element {
       return toPrettyJson(redactSecrets({ value: merged }));
     });
   }, [jobResultQuery.data]);
-
-  useEffect(() => {
-    const transport = createImportGovernanceTransport();
-    return subscribeToImportGovernanceEvents(transport);
-  }, []);
 
   const runtimePayloadView = useMemo(() => {
     if (!runtimeQuery.data) {

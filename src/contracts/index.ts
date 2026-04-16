@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.14.0
+ * Contract version: 3.15.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -266,6 +266,11 @@ export interface WorkspaceStartOptions {
   logFormat?: WorkspaceLogFormat;
   /** Maximum accepted submit/regenerate requests per minute for a single client IP. Use 0 to disable. Default: 10 */
   rateLimitPerMinute?: number;
+  /**
+   * Bearer token accepted for `POST /workspace/import-sessions/:id/events`.
+   * When omitted, import-session event writes fail closed.
+   */
+  importSessionEventBearerToken?: string;
   /** Enable local preview export and serving. Default: true */
   enablePreview?: boolean;
   /** Optional custom fetch implementation (for tests or custom runtimes). */
@@ -1039,6 +1044,7 @@ export interface WorkspaceLocalSyncApplyRequest {
   confirmationToken: string;
   confirmOverwrite: boolean;
   fileDecisions: WorkspaceLocalSyncFileDecisionEntry[];
+  reviewerNote?: string;
 }
 
 /** Union of supported local sync request payloads. */
@@ -1103,6 +1109,7 @@ export interface WorkspaceCreatePrInput {
   repoUrl: string;
   repoToken: string;
   targetPath?: string;
+  reviewerNote?: string;
 }
 
 /** Result payload returned after PR creation from a regenerated job. */
@@ -1273,4 +1280,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.14.0" as const;
+export const CONTRACT_VERSION = "3.15.0" as const;
