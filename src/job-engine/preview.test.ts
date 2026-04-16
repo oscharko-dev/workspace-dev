@@ -18,6 +18,7 @@ test("normalizePathPart removes leading slashes and normalizes separators", () =
   assert.equal(normalizePathPart("/nested/file.txt"), "nested/file.txt");
   assert.equal(normalizePathPart("\\nested\\file.txt"), "nested/file.txt");
   assert.equal(normalizePathPart("plain/file.txt"), "plain/file.txt");
+  assert.equal(normalizePathPart("assets/\0app.js"), undefined);
   assert.equal(normalizePathPart("../escape.txt"), undefined);
   assert.equal(normalizePathPart("./escape.txt"), undefined);
 });
