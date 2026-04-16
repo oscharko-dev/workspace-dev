@@ -8,10 +8,12 @@ describe("runtime-errors", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 
-  it("deduplicates repeated caught errors", () => {
+  it("deduplicates repeated caught errors and preserves raw error details in development", () => {
+    vi.stubEnv("DEV", true);
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const error = new Error("caught render failure");
     const handlers = createRootErrorHandlers();
@@ -29,6 +31,26 @@ describe("runtime-errors", () => {
         source: "caught"
       }),
       error
+    );
+  });
+
+  it("omits the raw Error object from production console logging", () => {
+    vi.stubEnv("DEV", false);
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const error = new Error("caught render failure");
+    const handlers = createRootErrorHandlers();
+
+    handlers.onCaughtError(error, { componentStack: "\n    at RouteShell" });
+
+    expect(consoleSpy).toHaveBeenCalledTimes(1);
+    expect(consoleSpy).toHaveBeenCalledWith(
+      "[runtime-error]",
+      expect.objectContaining({
+        componentStack: "\n    at RouteShell",
+        href: expect.stringContaining("#/checkout"),
+        message: "caught render failure",
+        source: "caught"
+      })
     );
   });
 
