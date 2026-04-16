@@ -216,13 +216,47 @@ const readBearerToken = (request: IncomingMessage): string | undefined => {
     return undefined;
   }
 
-  const match = authorization.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
+  if (authorization.length <= "Bearer".length) {
     return undefined;
   }
 
-  const token = match[1]?.trim();
-  return token && token.length > 0 ? token : undefined;
+  const expectedScheme = "bearer";
+  for (let index = 0; index < expectedScheme.length; index += 1) {
+    const code = authorization.charCodeAt(index);
+    const normalized =
+      code >= 0x41 && code <= 0x5a
+        ? String.fromCharCode(code + 0x20)
+        : authorization[index];
+    if (normalized !== expectedScheme[index]) {
+      return undefined;
+    }
+  }
+
+  let tokenStart = "Bearer".length;
+  while (tokenStart < authorization.length) {
+    const code = authorization.charCodeAt(tokenStart);
+    if (code !== 0x20 && code !== 0x09) {
+      break;
+    }
+    tokenStart += 1;
+  }
+
+  if (tokenStart === "Bearer".length || tokenStart >= authorization.length) {
+    return undefined;
+  }
+
+  let tokenEnd = authorization.length;
+  while (tokenEnd > tokenStart) {
+    const code = authorization.charCodeAt(tokenEnd - 1);
+    if (code !== 0x20 && code !== 0x09) {
+      break;
+    }
+    tokenEnd -= 1;
+  }
+
+  return tokenEnd > tokenStart
+    ? authorization.slice(tokenStart, tokenEnd)
+    : undefined;
 };
 
 const tokensMatch = (expected: string, candidate: string): boolean => {

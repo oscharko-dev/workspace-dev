@@ -296,6 +296,41 @@ test("request-security: validateImportSessionEventWriteAuth accepts a valid bear
   });
 });
 
+test("request-security: validateImportSessionEventWriteAuth accepts bearer auth with mixed-case scheme and surrounding whitespace", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "bEaReR \t secret-token \t"
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    principal: {
+      scheme: "bearer",
+    },
+  });
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects empty bearer credentials after whitespace trimming", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "Bearer \t "
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.payload.error, "UNAUTHORIZED");
+});
+
 test("request-security: validateImportSessionEventWriteAuth rejects non-bearer credentials", () => {
   const result = validateImportSessionEventWriteAuth({
     request: createRequest({
