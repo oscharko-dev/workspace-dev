@@ -173,3 +173,27 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
     /No nodes selected\. Please select at least one layer\./,
   );
 });
+
+test("docs: security governance docs stay aligned with GHSA workflow", async () => {
+  const securityDoc = await readRepoFile("SECURITY.md");
+  const securityPointer = await readRepoFile(".github/SECURITY.yml");
+  const issueTemplateConfig = await readRepoFile(".github/ISSUE_TEMPLATE/config.yml");
+  const pullRequestTemplate = await readRepoFile(".github/pull_request_template.md");
+
+  assert.match(securityDoc, /GitHub private vulnerability reporting/i);
+  assert.match(securityDoc, /Do not disclose unpublished vulnerabilities in public issues, PRs, or commit messages\./);
+  assert.match(securityDoc, /## GHSA Maintainer Checklist/);
+  assert.match(securityDoc, /draft GitHub Security Advisory \(GHSA\)/);
+  assert.match(securityDoc, /affected version ranges/i);
+  assert.match(securityDoc, /Request or attach a CVE/i);
+  assert.match(securityDoc, /Publish the patched release before disclosure whenever possible/i);
+  assert.match(securityPointer, /GitHub recognizes SECURITY\.md as the repository security policy surface\./);
+  assert.match(securityPointer, /private vulnerability reporting, GHSA workflow, CVE handling, and coordinated disclosure guidance/i);
+  assert.match(securityPointer, /canonical_policy: SECURITY\.md/);
+  assert.match(issueTemplateConfig, /blank_issues_enabled:\s*false/);
+  assert.match(issueTemplateConfig, /name:\s*Security disclosures/);
+  assert.match(issueTemplateConfig, /mailto:security@oscharko\.dev/);
+  assert.match(issueTemplateConfig, /Do not open public security issues\./);
+  assert.match(pullRequestTemplate, /If this PR fixes a publicly disclosed security issue, link the GHSA here\./);
+  assert.match(pullRequestTemplate, /If the fix is not yet public, do not disclose details in this template; follow `SECURITY\.md`\./);
+});
