@@ -64,6 +64,23 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
+const GOVERNANCE_REGEX_STYLE_PATTERNS = [
+  /\\/,
+  /[\^$|]/,
+  /\[[^\]]*\]/,
+  /\(\?/,
+  /\{\d+(,\d*)?\}/,
+  /(?:^|[^\\])\.(?:$|[*+?]|\{\d+(,\d*)?\})/,
+  /\([^)]*\)(?:[*+?]|\{\d+(,\d*)?\})/,
+  /\([^)]*[\\.^$|*?[\]{}][^)]*\)/,
+] as const;
+
+function hasLikelyRegexStyleGovernancePattern(pattern: string): boolean {
+  return GOVERNANCE_REGEX_STYLE_PATTERNS.some((candidate) =>
+    candidate.test(pattern),
+  );
+}
+
 function parseQualityPolicy(
   value: unknown,
 ): InspectorWorkspaceQualityPolicy | typeof INVALID | undefined {
@@ -179,6 +196,13 @@ function parseGovernancePolicy(
   }
   if (value.securitySensitivePatterns !== undefined) {
     if (!isStringArray(value.securitySensitivePatterns)) return INVALID;
+    if (
+      value.securitySensitivePatterns.some((pattern) =>
+        hasLikelyRegexStyleGovernancePattern(pattern),
+      )
+    ) {
+      return INVALID;
+    }
     out.securitySensitivePatterns = [...value.securitySensitivePatterns];
   }
   if (value.requireNoteOnOverride !== undefined) {

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
+import { isSecuritySensitiveImport } from "./import-governance.js";
 import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.js";
 
 const createLocalFigmaPayload = () => ({
@@ -67,6 +68,63 @@ const waitForTerminalStatus = async ({
 
 test.before(async () => {
   await ensureTemplateValidationSeedNodeModules();
+});
+
+test("isSecuritySensitiveImport matches plain tokens case-insensitively across manifest and generated paths", () => {
+  assert.equal(
+    isSecuritySensitiveImport({
+      patterns: ["auth", "billing"],
+      componentManifest: {
+        version: 1,
+        generatedAt: "2026-04-16T00:00:00.000Z",
+        screens: [
+          {
+            screenId: "screen-1",
+            screenName: "Settings",
+            file: "src/screens/Settings.tsx",
+            components: [
+              {
+                id: "component-1",
+                name: "Auth token input",
+                file: "src/components/AuthTokenInput.tsx",
+                sourceNodeId: "node-1",
+                irNodeName: "AuthTokenInput",
+                irNodeType: "input",
+                exportName: "AuthTokenInput",
+                propsSignature: "type Props = {};",
+              },
+            ],
+          },
+        ],
+      },
+      generatedPaths: ["src/routes/BILLING/Overview.tsx"],
+    }),
+    true,
+  );
+});
+
+test("isSecuritySensitiveImport matches literal metacharacter tokens as plain text", () => {
+  assert.equal(
+    isSecuritySensitiveImport({
+      patterns: ["(auth)"],
+      generatedPaths: ["src/routes/auth/Users.tsx"],
+    }),
+    false,
+  );
+  assert.equal(
+    isSecuritySensitiveImport({
+      patterns: ["C++"],
+      generatedPaths: ["src/lib/c++/Parser.ts"],
+    }),
+    true,
+  );
+  assert.equal(
+    isSecuritySensitiveImport({
+      patterns: ["(auth)"],
+      generatedPaths: ["src/routes/(AUTH)/Users.tsx"],
+    }),
+    true,
+  );
 });
 
 test("createJobEngine persists import sessions with authoritative governance defaults and updates them from events", async () => {

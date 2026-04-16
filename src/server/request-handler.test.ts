@@ -297,7 +297,7 @@ test("request handler returns the parsed inspector policy when the file is valid
         },
         governance: {
           minQualityScoreToApply: 70,
-          securitySensitivePatterns: ["password", "secret"],
+          securitySensitivePatterns: ["password", "(auth)", "C++"],
           requireNoteOnOverride: false,
         },
       }),
@@ -327,7 +327,7 @@ test("request handler returns the parsed inspector policy when the file is valid
         },
         governance: {
           minQualityScoreToApply: 70,
-          securitySensitivePatterns: ["password", "secret"],
+          securitySensitivePatterns: ["password", "(auth)", "C++"],
           requireNoteOnOverride: false,
         },
       },
@@ -1081,6 +1081,14 @@ test("request handler soft-fails invalid inspector policy files and logs a warni
             bandThresholds: {
               excellent: "bad",
             },
+          },
+        }),
+      },
+      {
+        name: "regex-style governance pattern",
+        contents: JSON.stringify({
+          governance: {
+            securitySensitivePatterns: ["auth."],
           },
         }),
       },

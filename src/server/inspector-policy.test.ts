@@ -15,7 +15,7 @@ test("parseInspectorPolicy accepts governance alongside other policy sections", 
     },
     governance: {
       minQualityScoreToApply: 75,
-      securitySensitivePatterns: ["password", "secret"],
+      securitySensitivePatterns: ["password", "(auth)", "C++"],
       requireNoteOnOverride: false,
     },
   });
@@ -26,7 +26,7 @@ test("parseInspectorPolicy accepts governance alongside other policy sections", 
     },
     governance: {
       minQualityScoreToApply: 75,
-      securitySensitivePatterns: ["password", "secret"],
+      securitySensitivePatterns: ["password", "(auth)", "C++"],
       requireNoteOnOverride: false,
     },
   });
@@ -51,6 +51,28 @@ test("parseInspectorPolicy rejects governance with invalid shapes", () => {
   );
 });
 
+test("parseInspectorPolicy rejects likely regex-style governance patterns", () => {
+  for (const pattern of [
+    "(a+)+$",
+    "^admin$",
+    "auth.",
+    "foo\\s+bar",
+    "[a-z]+",
+    "user|admin",
+    ".*secret.*",
+  ]) {
+    assert.equal(
+      parseInspectorPolicy({
+        governance: {
+          securitySensitivePatterns: [pattern],
+        },
+      }),
+      null,
+      `Expected '${pattern}' to be rejected`,
+    );
+  }
+});
+
 test("loadInspectorPolicy returns governance from the workspace policy file", async () => {
   const workspaceRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-inspector-policy-"),
@@ -61,7 +83,7 @@ test("loadInspectorPolicy returns governance from the workspace policy file", as
       JSON.stringify({
         governance: {
           minQualityScoreToApply: null,
-          securitySensitivePatterns: ["auth", "billing"],
+          securitySensitivePatterns: ["auth", "(auth)", "C++"],
           requireNoteOnOverride: true,
         },
       }),
@@ -73,10 +95,36 @@ test("loadInspectorPolicy returns governance from the workspace policy file", as
       policy: {
         governance: {
           minQualityScoreToApply: null,
-          securitySensitivePatterns: ["auth", "billing"],
+          securitySensitivePatterns: ["auth", "(auth)", "C++"],
           requireNoteOnOverride: true,
         },
       },
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy ignores regex-style governance patterns", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-invalid-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        governance: {
+          securitySensitivePatterns: ["auth."],
+        },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded, {
+      policy: null,
+      warning:
+        "Inspector policy '.workspace-inspector-policy.json' has an invalid shape and was ignored.",
     });
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
