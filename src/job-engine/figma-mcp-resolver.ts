@@ -85,7 +85,7 @@ export interface McpResolverDiagnostic {
 
 export interface McpResolverConfig {
   serverUrl: string;
-  accessToken: string;
+  accessToken?: string | undefined;
   authMode: FigmaMcpAuthMode;
   fetchImpl: typeof fetch;
   timeoutMs: number;
@@ -497,8 +497,10 @@ const callMcpTool = async ({
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
-    Authorization: `Bearer ${accessToken}`,
   };
+  if (typeof accessToken === "string" && accessToken.trim().length > 0) {
+    headers["Authorization"] = `Bearer ${accessToken}`;
+  }
 
   let lastError: unknown;
 
@@ -1031,7 +1033,7 @@ const fetchDesignContextViaRest = async ({
   fileKey: string;
   nodeId: string;
   version?: string;
-  accessToken: string;
+  accessToken?: string | undefined;
   fetchImpl: typeof fetch;
   timeoutMs: number;
   maxRetries: number;
@@ -1055,12 +1057,15 @@ const fetchDesignContextViaRest = async ({
   for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt += 1) {
     let response: Response;
     try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+      if (typeof accessToken === "string" && accessToken.trim().length > 0) {
+        headers["X-Figma-Token"] = accessToken;
+      }
       response = await fetchImpl(url, {
         method: "GET",
-        headers: {
-          "X-Figma-Token": accessToken,
-          Accept: "application/json",
-        },
+        headers,
         signal: buildSignal(timeoutMs, rest.signal),
       });
     } catch (error: unknown) {
@@ -1166,7 +1171,7 @@ const fetchScreenshotViaRest = async ({
   fileKey: string;
   nodeId: string;
   version?: string;
-  accessToken: string;
+  accessToken?: string | undefined;
   fetchImpl: typeof fetch;
   timeoutMs: number;
   maxRetries: number;
@@ -1188,12 +1193,15 @@ const fetchScreenshotViaRest = async ({
   for (let attempt = 1; attempt <= Math.max(1, maxRetries); attempt += 1) {
     let response: Response;
     try {
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+      };
+      if (typeof accessToken === "string" && accessToken.trim().length > 0) {
+        headers["X-Figma-Token"] = accessToken;
+      }
       response = await fetchImpl(url, {
         method: "GET",
-        headers: {
-          "X-Figma-Token": accessToken,
-          Accept: "application/json",
-        },
+        headers,
         signal: buildSignal(timeoutMs, signal),
       });
     } catch (error: unknown) {

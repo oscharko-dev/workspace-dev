@@ -197,12 +197,13 @@ export interface JobEngineRuntime {
 
 export interface FigmaMcpEnrichmentLoaderInput {
   figmaFileKey: string;
-  figmaAccessToken: string;
   cleanedFile: FigmaFileResponse;
   rawFile: FigmaFileResponse;
   jobDir: string;
   workspaceRoot?: string;
   fetchImpl: typeof fetch;
+  figmaRestFetch: typeof fetch;
+  figmaMcpFetch: typeof fetch;
 }
 
 export interface CreateJobEngineInput {

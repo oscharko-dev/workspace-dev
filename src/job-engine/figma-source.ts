@@ -431,7 +431,7 @@ const executeFigmaRequest = async ({
 }: {
   url: string;
   requestLabel: string;
-  accessToken: string;
+  accessToken?: string | undefined;
   timeoutMs: number;
   maxRetries: number;
   fetchImpl: typeof fetch;
@@ -462,12 +462,19 @@ const executeFigmaRequest = async ({
     for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
       let response: Response;
       try {
-        response = await performRequest({
-          "X-Figma-Token": accessToken,
+        const patHeaders: Record<string, string> = {
           Accept: "application/json"
-        });
+        };
+        if (typeof accessToken === "string" && accessToken.trim().length > 0) {
+          patHeaders["X-Figma-Token"] = accessToken;
+        }
+        response = await performRequest(patHeaders);
 
-        if (response.status === 403) {
+        if (
+          response.status === 403 &&
+          typeof accessToken === "string" &&
+          accessToken.trim().length > 0
+        ) {
           const bodyText = (await response.clone().text()).toLowerCase();
           if (bodyText.includes("invalid token")) {
             onLog("Figma PAT rejected, retrying request with Bearer authorization header.");
@@ -1485,7 +1492,7 @@ export const fetchAuthoritativeFigmaSubtrees = async ({
   pipelineDiagnosticLimits
 }: {
   fileKey: string;
-  accessToken: string;
+  accessToken?: string | undefined;
   file: FigmaFileResponse;
   timeoutMs: number;
   maxRetries: number;

@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
+import { clearResolverCache } from "./figma-mcp-resolver.js";
 import type { FigmaFileResponse } from "./types.js";
 
 const jsonResponse = (body: unknown, init?: ResponseInit): Response =>
@@ -39,21 +40,25 @@ const demoRawFile = {
 };
 
 const createLoaderInput = (
-  fetchImpl: typeof fetch,
+  figmaFetch: typeof fetch,
   overrides: Partial<{
     cleanedFile: FigmaFileResponse;
     rawFile: FigmaFileResponse;
     jobDir: string;
     workspaceRoot: string;
+    fetchImpl: typeof fetch;
+    figmaRestFetch: typeof fetch;
+    figmaMcpFetch: typeof fetch;
   }> = {},
 ) => ({
   figmaFileKey: "demo-file",
-  figmaAccessToken: "test-token",
   cleanedFile: overrides.cleanedFile ?? demoRawFile,
   rawFile: overrides.rawFile ?? demoRawFile,
   jobDir: overrides.jobDir ?? "/tmp/workspace-dev-job",
   ...(overrides.workspaceRoot ? { workspaceRoot: overrides.workspaceRoot } : {}),
-  fetchImpl,
+  fetchImpl: overrides.fetchImpl ?? figmaFetch,
+  figmaRestFetch: overrides.figmaRestFetch ?? figmaFetch,
+  figmaMcpFetch: overrides.figmaMcpFetch ?? figmaFetch,
 });
 
 test("default hybrid loader resolves MCP context into enrichment coverage", async () => {
@@ -177,6 +182,173 @@ test("default hybrid loader resolves MCP context into enrichment coverage", asyn
   assert.deepEqual(enrichment.modeAlternatives, {});
   assert.deepEqual(enrichment.conflicts, []);
   assert.deepEqual(enrichment.unmappedVariables, []);
+});
+
+test("default hybrid loader uses authenticated Figma fetch helpers instead of generic fetchImpl", async () => {
+  const loader = createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 5,
+  });
+
+  const figmaFetch: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const url = new URL(request.url);
+
+    if (url.hostname !== "mcp.figma.com") {
+      throw new Error(`Unexpected request: ${request.url}`);
+    }
+
+    const body = (await request.json()) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name;
+
+    if (toolName === "get_metadata") {
+      return jsonResponse({
+        result: {
+          xml: '<FRAME id="2:1" name="Checkout"><TEXT id="2:2" name="Headline"/></FRAME>',
+        },
+      });
+    }
+    if (toolName === "get_design_context") {
+      return jsonResponse({
+        result: {
+          code: "export default function Checkout() {}",
+          assets: {},
+        },
+      });
+    }
+    if (toolName === "get_screenshot") {
+      return jsonResponse({
+        result: { url: "https://cdn.figma.com/screenshots/checkout.png" },
+      });
+    }
+    if (toolName === "get_variable_defs") {
+      return jsonResponse({ result: { variables: [] } });
+    }
+    if (toolName === "search_design_system") {
+      return jsonResponse({
+        result: { components: [], styles: [], variables: [] },
+      });
+    }
+    if (toolName === "get_code_connect_map") {
+      return jsonResponse({ result: {} });
+    }
+    if (toolName === "get_code_connect_suggestions") {
+      return jsonResponse({ result: [] });
+    }
+
+    throw new Error(`Unexpected tool: ${String(toolName)}`);
+  };
+
+  const enrichment = await loader(
+    createLoaderInput(figmaFetch, {
+      fetchImpl: async () => {
+        throw new Error("generic fetchImpl should not be used");
+      },
+    }),
+  );
+
+  assert.equal(enrichment.sourceMode, "hybrid");
+  assert.ok(enrichment.toolNames.includes("get_design_context"));
+});
+
+test("default hybrid loader routes MCP failures to REST fallback through the trusted fetch router", async () => {
+  clearResolverCache();
+  const loader = createDefaultFigmaMcpEnrichmentLoader({
+    timeoutMs: 1_000,
+    maxRetries: 1,
+    maxScreenCandidates: 5,
+  });
+
+  const restCalls: string[] = [];
+  const mcpCalls: string[] = [];
+
+  const enrichment = await loader(
+    createLoaderInput(async () => {
+      throw new Error("generic fetchImpl should not be used");
+    }, {
+      figmaMcpFetch: async (input, init) => {
+        const request = new Request(input, init);
+        const body = (await request.json()) as {
+          params?: { name?: string };
+        };
+        const toolName = body.params?.name ?? "";
+        mcpCalls.push(toolName);
+
+        if (toolName === "get_metadata") {
+          return jsonResponse({
+            result: {
+              xml: '<FRAME id="2:1" name="Checkout"><TEXT id="2:2" name="Headline"/></FRAME>',
+            },
+          });
+        }
+        if (toolName === "get_design_context") {
+          throw new Error("mcp unavailable");
+        }
+        if (toolName === "get_screenshot") {
+          throw new Error("screenshot unavailable");
+        }
+        if (toolName === "get_variable_defs") {
+          return jsonResponse({ result: { variables: [] } });
+        }
+        if (toolName === "search_design_system") {
+          return jsonResponse({
+            result: { components: [], styles: [], variables: [] },
+          });
+        }
+        if (toolName === "get_code_connect_map") {
+          return jsonResponse({ result: {} });
+        }
+        if (toolName === "get_code_connect_suggestions") {
+          return jsonResponse({ result: [] });
+        }
+
+        throw new Error(`Unexpected tool: ${toolName}`);
+      },
+      figmaRestFetch: async (input, init) => {
+        const request = new Request(input, init);
+        const url = new URL(request.url);
+        restCalls.push(url.pathname);
+
+        if (url.pathname.includes("/v1/files/")) {
+          return jsonResponse({
+            nodes: {
+              "2:1": {
+                document: {
+                  id: "2:1",
+                  type: "FRAME",
+                  name: "Checkout",
+                  children: [],
+                },
+              },
+            },
+          });
+        }
+        if (url.pathname.includes("/v1/images/")) {
+          return jsonResponse({
+            images: {
+              "2:1": "https://cdn.figma.com/rest/checkout.png",
+            },
+          });
+        }
+
+        throw new Error(`Unexpected REST request: ${request.url}`);
+      },
+    }),
+  );
+
+  assert.equal(enrichment.sourceMode, "hybrid");
+  assert.ok(mcpCalls.length > 0, "expected at least one MCP call");
+  assert.ok(
+    restCalls.some((pathname) => pathname.includes("/v1/files/")),
+    "expected REST nodes fallback",
+  );
+  assert.equal(
+    enrichment.screenshots?.[0]?.url,
+    "https://cdn.figma.com/rest/checkout.png",
+  );
 });
 
 test("default hybrid loader propagates safe bridge side outputs", async () => {
@@ -568,7 +740,6 @@ test("default hybrid loader falls back to REST-only enrichment when MCP resoluti
 
   const enrichment = await loader({
     figmaFileKey: "demo-file",
-    figmaAccessToken: "test-token",
     cleanedFile: {
       document: {
         id: "2:1",
@@ -587,6 +758,13 @@ test("default hybrid loader falls back to REST-only enrichment when MCP resoluti
     },
     jobDir: "/tmp/workspace-dev-job",
     fetchImpl: async () => {
+      throw new Error("generic fetchImpl should not be used");
+    },
+    figmaRestFetch: async () =>
+      jsonResponse({
+        nodes: {},
+      }),
+    figmaMcpFetch: async () => {
       throw new Error("mcp unavailable");
     },
   });
@@ -720,11 +898,13 @@ test("default hybrid loader populates nodeHints from authoritative subtrees", as
 
   const enrichment = await loader({
     figmaFileKey: "demo-file",
-    figmaAccessToken: "test-token",
     cleanedFile: lowFidelityFile,
     rawFile: lowFidelityFile,
     jobDir: "/tmp/workspace-dev-job",
-    fetchImpl: async (input, init) => {
+    fetchImpl: async () => {
+      throw new Error("generic fetchImpl should not be used");
+    },
+    figmaRestFetch: async (input, init) => {
       const request = new Request(input, init);
       const url = new URL(request.url);
 
@@ -732,6 +912,12 @@ test("default hybrid loader populates nodeHints from authoritative subtrees", as
       if (url.hostname === "api.figma.com") {
         return jsonResponse(authoritativeNodesResponse);
       }
+
+      throw new Error(`Unexpected request: ${request.url}`);
+    },
+    figmaMcpFetch: async (input, init) => {
+      const request = new Request(input, init);
+      const url = new URL(request.url);
 
       // --- Figma MCP bridge ---
       if (url.hostname === "mcp.figma.com") {
