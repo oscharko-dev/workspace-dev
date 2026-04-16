@@ -42,7 +42,11 @@ const MAX_HYBRID_LOADER_ERROR_MESSAGE_LENGTH = 240;
 
 export type FigmaSourceStageInput = Pick<
   WorkspaceJobInput,
-  "figmaFileKey" | "figmaNodeId" | "figmaAccessToken" | "figmaJsonPath"
+  | "figmaFileKey"
+  | "figmaNodeId"
+  | "figmaAccessToken"
+  | "figmaJsonPath"
+  | "requestSourceMode"
 >;
 
 const createHybridFallbackEnrichment = ({
@@ -343,16 +347,27 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         });
       }
 
+      const allowedRoots = [context.resolvedWorkspaceRoot];
+      if (
+        input.requestSourceMode === "figma_paste" ||
+        input.requestSourceMode === "figma_plugin"
+      ) {
+        allowedRoots.push(
+          path.join(context.resolvedPaths.outputRoot, "tmp-figma-paste"),
+        );
+      }
+
       const resolvedLocalPath = path.resolve(
         context.resolvedWorkspaceRoot,
         localPath,
       );
-      if (
-        !isWithinRoot({
+      const matchingRoot = allowedRoots.find((rootPath) =>
+        isWithinRoot({
           candidatePath: resolvedLocalPath,
-          rootPath: context.resolvedWorkspaceRoot,
-        })
-      ) {
+          rootPath,
+        }),
+      );
+      if (!matchingRoot) {
         throw createPipelineError({
           code: "E_FIGMA_LOCAL_JSON_PATH",
           stage: "figma.source",
@@ -364,7 +379,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       if (
         await hasSymlinkInPath({
           candidatePath: resolvedLocalPath,
-          rootPath: context.resolvedWorkspaceRoot,
+          rootPath: matchingRoot,
         })
       ) {
         throw createPipelineError({

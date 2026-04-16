@@ -6,7 +6,7 @@
 
 | Control | DORA Reference | Implementation | Evidence |
 | --- | --- | --- | --- |
-| ICT risk management and resilient engineering practices | Article 6 | Zero-runtime-dependency architecture, local-only runtime boundary, deterministic quality gates | `ARCHITECTURE.md`, CI quality workflows |
+| ICT risk management and resilient engineering practices | Article 6 | Zero-runtime-dependency architecture, local-only default runtime boundary, package-scoped threat model, deterministic quality gates | `ARCHITECTURE.md`, `THREAT_MODEL.md`, CI quality workflows |
 | Change governance and traceability | Article 9 | Changesets release flow, contract changelog discipline, reproducibility gates | `CHANGELOG.md`, `CONTRACT_CHANGELOG.md`, release workflows |
 | Incident handling and disclosure process | Article 10 | Security intake + CVSS SLA timelines + coordinated disclosure process | `SECURITY.md`, `SLA.md` |
 | Third-party ICT supply-chain risk | Article 28 | OIDC trusted publishing, provenance, SBOM, signature verification, runtime dependency minimization | `.github/workflows/changesets-release.yml`, `sbom:*` scripts, `npm audit signatures` gates |
@@ -29,6 +29,7 @@ Each release candidate must provide:
   - Signature verification (`npm audit signatures`)
   - Provenance-enabled publish path
 - Operational evidence:
+  - Package threat model and security boundary references (`THREAT_MODEL.md`, `SECURITY.md`, `ARCHITECTURE.md`)
   - Reproducible build verification report
   - Offline installation verification
   - License allowlist verification

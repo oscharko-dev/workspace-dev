@@ -10,7 +10,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -50,11 +50,21 @@ interface WorkspaceServerInstance {
   };
 }
 
-const createTempOutputRoot = async (): Promise<string> =>
-  await mkdtemp(path.join(os.tmpdir(), "workspace-paste-parity-"));
+const createTempWorkspaceLayout = async (): Promise<{
+  root: string;
+  workspaceRoot: string;
+  outputRoot: string;
+}> => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "workspace-paste-parity-"));
+  const workspaceRoot = path.join(root, "workspace");
+  return {
+    root,
+    workspaceRoot,
+    outputRoot: path.join(root, "workspace-output"),
+  };
+};
 
-const allocateRandomPort = (): number =>
-  19830 + Math.floor(Math.random() * 1000);
+const allocateRandomPort = (): number => 0;
 
 const waitForJobTerminalState = async ({
   server,
@@ -323,25 +333,28 @@ const fetchGeneratedFileContent = async ({
 };
 
 const runParityJobs = async (): Promise<{
+  root: string;
+  workspaceRoot: string;
   outputRoot: string;
   server: WorkspaceServerInstance;
   localJobId: string;
   pasteJobId: string;
 }> => {
-  const outputRoot = await createTempOutputRoot();
+  const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
+  await mkdir(workspaceRoot, { recursive: true });
   const port = allocateRandomPort();
   // local_json mode never performs a network fetch; reject to prove it.
   const server = (await createWorkspaceServer({
     port,
     host: "127.0.0.1",
+    workDir: workspaceRoot,
     outputRoot,
     fetchImpl: async () => {
       throw new Error("Unexpected network fetch in parity test.");
     },
   })) as WorkspaceServerInstance;
 
-  // Write fixture to a stable path inside outputRoot so the job can reference it.
-  const localFixturePath = path.join(outputRoot, "parity-local-fixture.json");
+  const localFixturePath = path.join(workspaceRoot, "parity-local-fixture.json");
   const fixtureContent = readFileSync(FIXTURE_PATH, "utf8");
   await writeFile(localFixturePath, fixtureContent, "utf8");
 
@@ -362,7 +375,7 @@ const runParityJobs = async (): Promise<{
     timeoutMs: PARITY_JOB_TIMEOUT_MS,
   });
 
-  return { outputRoot, server, localJobId, pasteJobId };
+  return { root, workspaceRoot, outputRoot, server, localJobId, pasteJobId };
 };
 
 /**
@@ -374,23 +387,27 @@ const runParityJobs = async (): Promise<{
  * design-ir / manifest / files artifacts.
  */
 const runPluginParityJobsRawDoc = async (): Promise<{
+  root: string;
+  workspaceRoot: string;
   outputRoot: string;
   server: WorkspaceServerInstance;
   localJobId: string;
   pluginJobId: string;
 }> => {
-  const outputRoot = await createTempOutputRoot();
+  const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
+  await mkdir(workspaceRoot, { recursive: true });
   const port = allocateRandomPort();
   const server = (await createWorkspaceServer({
     port,
     host: "127.0.0.1",
+    workDir: workspaceRoot,
     outputRoot,
     fetchImpl: async () => {
       throw new Error("Unexpected network fetch in parity test.");
     },
   })) as WorkspaceServerInstance;
 
-  const localFixturePath = path.join(outputRoot, "parity-local-fixture.json");
+  const localFixturePath = path.join(workspaceRoot, "parity-local-fixture.json");
   const fixtureContent = readFileSync(FIXTURE_PATH, "utf8");
   await writeFile(localFixturePath, fixtureContent, "utf8");
 
@@ -414,7 +431,7 @@ const runPluginParityJobsRawDoc = async (): Promise<{
     timeoutMs: PARITY_JOB_TIMEOUT_MS,
   });
 
-  return { outputRoot, server, localJobId, pluginJobId };
+  return { root, workspaceRoot, outputRoot, server, localJobId, pluginJobId };
 };
 
 /**
@@ -425,16 +442,20 @@ const runPluginParityJobsRawDoc = async (): Promise<{
  * envelope JSON to both modes must produce identical artifacts.
  */
 const runPluginPasteParityEnvelope = async (): Promise<{
+  root: string;
+  workspaceRoot: string;
   outputRoot: string;
   server: WorkspaceServerInstance;
   pluginJobId: string;
   pasteJobId: string;
 }> => {
-  const outputRoot = await createTempOutputRoot();
+  const { root, workspaceRoot, outputRoot } = await createTempWorkspaceLayout();
+  await mkdir(workspaceRoot, { recursive: true });
   const port = allocateRandomPort();
   const server = (await createWorkspaceServer({
     port,
     host: "127.0.0.1",
+    workDir: workspaceRoot,
     outputRoot,
     fetchImpl: async () => {
       throw new Error("Unexpected network fetch in parity test.");
@@ -463,7 +484,7 @@ const runPluginPasteParityEnvelope = async (): Promise<{
     timeoutMs: PARITY_JOB_TIMEOUT_MS,
   });
 
-  return { outputRoot, server, pluginJobId, pasteJobId };
+  return { root, workspaceRoot, outputRoot, server, pluginJobId, pasteJobId };
 };
 
 test("waitForJobTerminalState fails fast on partial terminal jobs", async () => {
@@ -497,7 +518,7 @@ test(
   "figma_paste produces a design-ir equivalent to local_json for prototype-navigation",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, localJobId, pasteJobId } =
+    const { root, server, localJobId, pasteJobId } =
       await runParityJobs();
     try {
       const localIr = await fetchDesignIr({ server, jobId: localJobId });
@@ -529,7 +550,7 @@ test(
       );
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -538,7 +559,7 @@ test(
   "figma_paste produces a component-manifest equivalent to local_json for prototype-navigation",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, localJobId, pasteJobId } =
+    const { root, server, localJobId, pasteJobId } =
       await runParityJobs();
     try {
       const localManifest = await fetchComponentManifest({
@@ -570,7 +591,7 @@ test(
       );
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -579,7 +600,7 @@ test(
   "figma_paste produces identical generated files as local_json for prototype-navigation",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, localJobId, pasteJobId } =
+    const { root, server, localJobId, pasteJobId } =
       await runParityJobs();
     try {
       const localFiles = await fetchFilesListing({ server, jobId: localJobId });
@@ -624,7 +645,7 @@ test(
       }
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -637,7 +658,7 @@ test(
   "figma_plugin produces a design-ir equivalent to local_json for prototype-navigation",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, localJobId, pluginJobId } =
+    const { root, server, localJobId, pluginJobId } =
       await runPluginParityJobsRawDoc();
     try {
       const localIr = await fetchDesignIr({ server, jobId: localJobId });
@@ -668,7 +689,7 @@ test(
       );
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -677,7 +698,7 @@ test(
   "figma_plugin produces a component-manifest equivalent to local_json for prototype-navigation",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, localJobId, pluginJobId } =
+    const { root, server, localJobId, pluginJobId } =
       await runPluginParityJobsRawDoc();
     try {
       const localManifest = await fetchComponentManifest({
@@ -708,7 +729,7 @@ test(
       );
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -717,7 +738,7 @@ test(
   "figma_plugin produces identical generated files as local_json for prototype-navigation",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, localJobId, pluginJobId } =
+    const { root, server, localJobId, pluginJobId } =
       await runPluginParityJobsRawDoc();
     try {
       const localFiles = await fetchFilesListing({ server, jobId: localJobId });
@@ -765,7 +786,7 @@ test(
       }
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -782,7 +803,7 @@ test(
   "figma_plugin and figma_paste produce an equivalent design-ir for the same ClipboardEnvelope",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, pluginJobId, pasteJobId } =
+    const { root, server, pluginJobId, pasteJobId } =
       await runPluginPasteParityEnvelope();
     try {
       const pluginIr = await fetchDesignIr({ server, jobId: pluginJobId });
@@ -806,7 +827,7 @@ test(
       );
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -815,7 +836,7 @@ test(
   "figma_plugin and figma_paste produce an equivalent component-manifest for the same ClipboardEnvelope",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, pluginJobId, pasteJobId } =
+    const { root, server, pluginJobId, pasteJobId } =
       await runPluginPasteParityEnvelope();
     try {
       const pluginManifest = await fetchComponentManifest({
@@ -841,7 +862,7 @@ test(
       );
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );
@@ -850,7 +871,7 @@ test(
   "figma_plugin and figma_paste produce identical generated files for the same ClipboardEnvelope",
   { timeout: PARITY_JOB_TIMEOUT_MS + 30_000 },
   async () => {
-    const { outputRoot, server, pluginJobId, pasteJobId } =
+    const { root, server, pluginJobId, pasteJobId } =
       await runPluginPasteParityEnvelope();
     try {
       const pluginFiles = await fetchFilesListing({
@@ -893,7 +914,7 @@ test(
       }
     } finally {
       await server.app.close();
-      await rm(outputRoot, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true });
     }
   },
 );

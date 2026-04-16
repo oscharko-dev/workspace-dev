@@ -12,7 +12,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -20,6 +20,7 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
+  WorkspaceImportSessionSourceMode,
   WorkspaceJobStageName,
 } from "../../contracts/index.js";
 import { StageArtifactStore } from "../pipeline/artifact-store.js";
@@ -40,6 +41,7 @@ const FIXTURE_PATH = path.resolve(
 );
 
 interface StageHarness {
+  root: string;
   executionContext: PipelineExecutionContext;
   stageContextFor: (stage: WorkspaceJobStageName) => StageRuntimeContext;
 }
@@ -52,6 +54,9 @@ const buildStageHarness = async ({
   jobId: string;
 }): Promise<StageHarness> => {
   const root = await mkdtemp(path.join(os.tmpdir(), rootLabel));
+  const workspaceRoot = path.join(root, "workspace");
+  const outputRoot = path.join(root, "workspace-output");
+  await mkdir(workspaceRoot, { recursive: true });
   const jobsRoot = path.join(root, "jobs");
   const jobDir = path.join(jobsRoot, jobId);
   const generatedProjectDir = path.join(jobDir, "generated-app");
@@ -83,7 +88,7 @@ const buildStageHarness = async ({
     stages: createInitialStages(),
     logs: [],
     artifacts: {
-      outputRoot: root,
+      outputRoot,
       jobDir,
     },
     preview: { enabled: false },
@@ -105,11 +110,11 @@ const buildStageHarness = async ({
     job,
     runtime,
     resolvedPaths: {
-      outputRoot: root,
+      outputRoot,
       jobsRoot,
-      reprosRoot: path.join(root, "repros"),
+      reprosRoot: path.join(outputRoot, "repros"),
     },
-    resolvedWorkspaceRoot: root,
+    resolvedWorkspaceRoot: workspaceRoot,
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     jobAbortController: new AbortController(),
     fetchWithCancellation: runtime.fetchImpl,
@@ -121,11 +126,11 @@ const buildStageHarness = async ({
       designIrFile: path.join(jobDir, "design-ir.json"),
       figmaAnalysisFile: path.join(jobDir, "figma-analysis.json"),
       stageTimingsFile: path.join(jobDir, "stage-timings.json"),
-      reproDir: path.join(root, "repros", jobId),
-      iconMapFilePath: path.join(root, "icon-map.json"),
-      designSystemFilePath: path.join(root, "design-system.json"),
-      irCacheDir: path.join(root, "cache", "ir"),
-      templateRoot: path.join(root, "template"),
+      reproDir: path.join(outputRoot, "repros", jobId),
+      iconMapFilePath: path.join(outputRoot, "icon-map.json"),
+      designSystemFilePath: path.join(outputRoot, "design-system.json"),
+      irCacheDir: path.join(outputRoot, "cache", "ir"),
+      templateRoot: path.join(outputRoot, "template"),
       templateCopyFilter: () => true,
     },
     artifactStore,
@@ -144,39 +149,69 @@ const buildStageHarness = async ({
   };
 
   return {
+    root,
     executionContext,
     stageContextFor: (stage) =>
       createStageRuntimeContext({ executionContext, stage }),
   };
 };
 
-const runFigmaSourceForPath = async ({
+const runFigmaSourceForFixture = async ({
   rootLabel,
   jobId,
-  inputPath,
+  inputRelativePath,
+  fixtureContent,
+  requestSourceMode,
 }: {
   rootLabel: string;
   jobId: string;
-  inputPath: string;
+  inputRelativePath: string;
+  fixtureContent: string;
+  requestSourceMode?: WorkspaceImportSessionSourceMode;
 }): Promise<{ raw: string; cleaned: string }> => {
   const harness = await buildStageHarness({ rootLabel, jobId });
-  await FigmaSourceService.execute(
-    { figmaJsonPath: inputPath },
-    harness.stageContextFor("figma.source"),
-  );
+  try {
+    const baseRoot =
+      requestSourceMode === "figma_paste" ||
+      requestSourceMode === "figma_plugin"
+        ? path.join(
+            harness.executionContext.resolvedPaths.outputRoot,
+            "tmp-figma-paste",
+          )
+        : harness.executionContext.resolvedWorkspaceRoot;
+    const inputPath = path.join(baseRoot, inputRelativePath);
+    await mkdir(path.dirname(inputPath), { recursive: true });
+    await writeFile(inputPath, fixtureContent, "utf8");
+    harness.executionContext.input = {
+      figmaSourceMode: "local_json",
+      figmaJsonPath: inputPath,
+      llmCodegenMode: "deterministic",
+      enableGitPr: false,
+      ...(requestSourceMode !== undefined ? { requestSourceMode } : {}),
+    };
+    await FigmaSourceService.execute(
+      {
+        figmaJsonPath: inputPath,
+        ...(requestSourceMode !== undefined ? { requestSourceMode } : {}),
+      },
+      harness.stageContextFor("figma.source"),
+    );
 
-  const rawPath = await harness.executionContext.artifactStore.getPath(
-    STAGE_ARTIFACT_KEYS.figmaRaw,
-  );
-  const cleanedPath = await harness.executionContext.artifactStore.getPath(
-    STAGE_ARTIFACT_KEYS.figmaCleaned,
-  );
-  assert.ok(rawPath, "figma.raw artifact path must be registered");
-  assert.ok(cleanedPath, "figma.cleaned artifact path must be registered");
+    const rawPath = await harness.executionContext.artifactStore.getPath(
+      STAGE_ARTIFACT_KEYS.figmaRaw,
+    );
+    const cleanedPath = await harness.executionContext.artifactStore.getPath(
+      STAGE_ARTIFACT_KEYS.figmaCleaned,
+    );
+    assert.ok(rawPath, "figma.raw artifact path must be registered");
+    assert.ok(cleanedPath, "figma.cleaned artifact path must be registered");
 
-  const raw = await readFile(rawPath, "utf8");
-  const cleaned = await readFile(cleanedPath, "utf8");
-  return { raw, cleaned };
+    const raw = await readFile(rawPath, "utf8");
+    const cleaned = await readFile(cleanedPath, "utf8");
+    return { raw, cleaned };
+  } finally {
+    await rm(harness.root, { recursive: true, force: true });
+  }
 };
 
 test(
@@ -185,31 +220,18 @@ test(
   async () => {
     const fixtureContent = await readFile(FIXTURE_PATH, "utf8");
 
-    // Path A: simulate local_json — job references the fixture directly inside
-    // its job directory (matching how a caller would colocate a fixture).
-    const localHarnessBase = await mkdtemp(
-      path.join(os.tmpdir(), "figma-paste-parity-localsrc-"),
-    );
-    const localInputPath = path.join(localHarnessBase, "local-figma.json");
-    await writeFile(localInputPath, fixtureContent, "utf8");
-
-    // Path B: simulate paste — handler wrote the normalized payload to a
-    // `tmp-figma-paste/<uuid>.json` file before forwarding as local_json.
-    const pasteTempDir = await mkdtemp(
-      path.join(os.tmpdir(), "figma-paste-parity-pastesrc-"),
-    );
-    const pasteInputPath = path.join(pasteTempDir, "paste-payload.json");
-    await writeFile(pasteInputPath, fixtureContent, "utf8");
-
-    const localResult = await runFigmaSourceForPath({
+    const localResult = await runFigmaSourceForFixture({
       rootLabel: "figma-paste-parity-local-",
       jobId: "job-parity-local",
-      inputPath: localInputPath,
+      inputRelativePath: "fixtures/local-figma.json",
+      fixtureContent,
     });
-    const pasteResult = await runFigmaSourceForPath({
+    const pasteResult = await runFigmaSourceForFixture({
       rootLabel: "figma-paste-parity-paste-",
       jobId: "job-parity-paste",
-      inputPath: pasteInputPath,
+      inputRelativePath: "paste-payload.json",
+      fixtureContent,
+      requestSourceMode: "figma_paste",
     });
 
     // Byte-for-byte equivalence on the raw payload (the service copies the

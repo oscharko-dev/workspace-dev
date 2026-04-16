@@ -179,8 +179,8 @@ test("e2e: remap-suggest returns suggestions and rejections for changed IR", asy
   const baseUrl = `http://${host}:${port}`;
 
   // Write source and latest fixtures as separate files
-  const sourceFigmaPath = path.join(tempRoot, "figma-source.json");
-  const latestFigmaPath = path.join(tempRoot, "figma-latest.json");
+  const sourceFigmaPath = path.join(workspaceRoot, "figma-source.json");
+  const latestFigmaPath = path.join(workspaceRoot, "figma-latest.json");
   await writeFile(sourceFigmaPath, JSON.stringify(createSourceFigmaPayload()), "utf8");
   await writeFile(latestFigmaPath, JSON.stringify(createLatestFigmaPayload()), "utf8");
 
