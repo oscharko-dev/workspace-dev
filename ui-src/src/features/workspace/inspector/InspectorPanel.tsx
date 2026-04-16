@@ -44,6 +44,7 @@ import {
   describeApplyGate,
   type ImportReviewStage,
   type ImportReviewState,
+  type WorkspaceImportSessionEvent,
 } from "./import-review-state";
 import {
   dispatchImportGovernanceEvent,
