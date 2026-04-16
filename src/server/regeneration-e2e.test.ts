@@ -400,7 +400,43 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     const sourceImportSession = importSessions.find((session) => session.jobId === sourceJobId);
     assert.ok(sourceImportSession);
 
-    // 14. Apply sync writes generated output into destination scope without requiring a pre-approved session
+    // 14. Apply sync is blocked until the governed source session is approved
+    const blockedApplyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
+      method: "POST",
+      body: JSON.stringify({
+        mode: "apply",
+        confirmationToken: dryRunBody.confirmationToken,
+        confirmOverwrite: true,
+        reviewerNote: "Approved during sync apply.",
+        fileDecisions: dryRunFiles.map((entry) => ({
+          path: entry.path,
+          decision: entry.decision
+        }))
+      })
+    });
+    assert.equal(blockedApplyResult.status, 409);
+    assert.equal(
+      (blockedApplyResult.body as Record<string, unknown>).error,
+      "SYNC_IMPORT_REVIEW_REQUIRED"
+    );
+    await assert.rejects(
+      () => stat(firstFilePath),
+      (error: Error & { code?: string }) => error.code === "ENOENT"
+    );
+
+    const approvedResult = await jsonFetch(
+      `${baseUrl}/workspace/import-sessions/${sourceImportSession.id as string}/approve`,
+      {
+        method: "POST",
+        body: JSON.stringify({})
+      }
+    );
+    assert.equal(approvedResult.status, 200);
+    assert.equal(
+      (approvedResult.body as Record<string, unknown>).kind,
+      "approved"
+    );
+
     const applyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
       method: "POST",
       body: JSON.stringify({
@@ -430,7 +466,8 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     assert.equal(eventsResult.status, 200);
     const events = ((eventsResult.body as Record<string, unknown>).events ?? []) as Array<Record<string, unknown>>;
     assert.equal(events.some((event) => event.kind === "imported"), true);
-    assert.equal(events.some((event) => event.kind === "approved"), false);
+    assert.equal(events.some((event) => event.kind === "review_started"), true);
+    assert.equal(events.some((event) => event.kind === "approved"), true);
     assert.equal(events.some((event) => event.kind === "applied"), true);
     const appliedEvent = events.findLast((event) => event.kind === "applied");
     assert.equal(appliedEvent?.note, "Approved during sync apply.");

@@ -2521,6 +2521,7 @@ describe("InspectorPanel import governance (issue #994)", () => {
   beforeEach(() => {
     mockUseQuery.mockReset();
     mockUseMutation.mockReset();
+    mockInvalidateQueries.mockReset();
     window.localStorage.clear();
     window.sessionStorage.clear();
     installQueryMock();
@@ -2563,7 +2564,7 @@ describe("InspectorPanel import governance (issue #994)", () => {
     ).toHaveAttribute("aria-current", "step");
   });
 
-  it("keeps browser-only review telemetry local and non-persisted", async () => {
+  it("keeps review_started and apply_blocked telemetry local", async () => {
     installQueryMock({
       overrides: {
         "inspector-workspace-policy": {
@@ -2601,35 +2602,120 @@ describe("InspectorPanel import governance (issue #994)", () => {
           : { kind: event.kind },
       );
     });
-
-    renderInspectorPanel({
-      pipeline: buildPipelineState({
-        stage: "ready",
-        errors: [],
-      }),
-      importHistory: [buildImportSession()],
-    });
-
-    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
-    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
-    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
-
-    expect(
-      received.filter((event) => event.kind === "apply_blocked"),
-    ).toHaveLength(1);
-    expect(received.every((event) => event.sessionId === "session-1")).toBe(
-      true,
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "approved-event-id",
+          sessionId: "session-1",
+          kind: "approved",
+          at: "2026-04-15T10:05:00.000Z",
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
     );
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
 
-    fireEvent.change(screen.getByTestId("import-review-stepper-note"), {
-      target: { value: "approved for sensitive flow" },
-    });
-    fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+    try {
+      renderInspectorPanel({
+        pipeline: buildPipelineState({
+          stage: "ready",
+          errors: [],
+        }),
+        importHistory: [buildImportSession()],
+      });
 
-    expect(received.map((event) => event.kind)).toEqual([
-      "review_started",
-      "apply_blocked",
-    ]);
+      fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+      fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/workspace/import-sessions/session-1/approve",
+          expect.objectContaining({
+            method: "POST",
+            body: "{}",
+          }),
+        );
+      });
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("import-review-stepper-pill-approve"),
+        ).toHaveAttribute("aria-current", "step");
+      });
+
+      fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+
+      expect(
+        received.filter((event) => event.kind === "apply_blocked"),
+      ).toHaveLength(1);
+      expect(received.every((event) => event.sessionId === "session-1")).toBe(
+        true,
+      );
+
+      expect(received.map((event) => event.kind)).toEqual([
+        "review_started",
+        "apply_blocked",
+      ]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("persists approval through the browser-reachable approve route", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          id: "approved-event-id",
+          sessionId: "session-1",
+          kind: "approved",
+          at: "2026-04-15T10:05:00.000Z",
+        }),
+        {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+      ),
+    );
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+    installQueryMock();
+
+    try {
+      renderInspectorPanel({
+        pipeline: buildPipelineState({
+          stage: "ready",
+          errors: [],
+        }),
+        importHistory: [buildImportSession()],
+      });
+
+      fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+      fireEvent.click(screen.getByTestId("import-review-stepper-primary"));
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/workspace/import-sessions/session-1/approve",
+          expect.objectContaining({
+            method: "POST",
+            body: "{}",
+          }),
+        );
+      });
+      await waitFor(() => {
+        expect(
+          screen.getByTestId("import-review-stepper-pill-approve"),
+        ).toHaveAttribute("aria-current", "step");
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 
   it("wires expanded history rows to the live import-session audit trail", async () => {

@@ -163,6 +163,28 @@ test("parseImportSessionRoute parses events routes and rejects malformed ones", 
   );
 });
 
+test("parseImportSessionRoute parses approve routes and rejects malformed ones", () => {
+  assert.deepEqual(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/approve"),
+    {
+      sessionId: "session-1",
+      action: "approve",
+    },
+  );
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions//approve"),
+    undefined,
+  );
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/approve/foo"),
+    undefined,
+  );
+  assert.equal(
+    parseImportSessionRoute("/workspace/import-sessions/session-1/approve/"),
+    undefined,
+  );
+});
+
 test("parseReproRoute parses preview paths with safe index fallback", () => {
   assert.equal(parseReproRoute("/workspace"), undefined);
   assert.equal(parseReproRoute("/workspace/repros/"), undefined);
