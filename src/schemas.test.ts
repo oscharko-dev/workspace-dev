@@ -1542,6 +1542,25 @@ test("schema: sync apply trims confirmationToken and file decision paths", () =>
   }
 });
 
+test("schema: sync apply trims reviewerNote when provided", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "token-123",
+    confirmOverwrite: true,
+    fileDecisions: [
+      {
+        path: "src/App.tsx",
+        decision: "write",
+      },
+    ],
+    reviewerNote: "  Approved after review.  ",
+  });
+  assert.equal(result.success, true);
+  if (result.success) {
+    assert.equal(result.data.reviewerNote, "Approved after review.");
+  }
+});
+
 test("schema: sync apply reports exact token, overwrite, and file decision issues", () => {
   const result = SyncRequestSchema.safeParse({
     mode: "apply",
@@ -1670,6 +1689,31 @@ test("schema: sync apply rejects unexpected properties", () => {
   }
 });
 
+test("schema: sync apply rejects blank reviewerNote values", () => {
+  const result = SyncRequestSchema.safeParse({
+    mode: "apply",
+    confirmationToken: "token-123",
+    confirmOverwrite: true,
+    fileDecisions: [
+      {
+        path: "src/App.tsx",
+        decision: "write",
+      },
+    ],
+    reviewerNote: "   ",
+  });
+
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["reviewerNote"],
+        message: "reviewerNote must be a non-empty string when provided.",
+      },
+    ]);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // CreatePrRequestSchema
 // ---------------------------------------------------------------------------
@@ -1740,6 +1784,16 @@ test("schema: create-pr parses valid input with optional targetPath", () => {
   if (withTarget.success) {
     assert.equal(withTarget.data.targetPath, "generated");
   }
+
+  const withReviewerNote = CreatePrRequestSchema.safeParse({
+    repoUrl: "https://github.com/acme/repo",
+    repoToken: "ghp_abc123",
+    reviewerNote: "  Approved for PR.  ",
+  });
+  assert.equal(withReviewerNote.success, true);
+  if (withReviewerNote.success) {
+    assert.equal(withReviewerNote.data.reviewerNote, "Approved for PR.");
+  }
 });
 
 test("schema: create-pr targetPath preserves non-empty strings and rejects blank ones", () => {
@@ -1781,6 +1835,23 @@ test("schema: create-pr rejects unexpected properties", () => {
       {
         path: ["extraField"],
         message: "Unexpected property 'extraField'.",
+      },
+    ]);
+  }
+});
+
+test("schema: create-pr rejects blank reviewerNote values", () => {
+  const result = CreatePrRequestSchema.safeParse({
+    repoUrl: "https://github.com/acme/repo",
+    repoToken: "tok",
+    reviewerNote: "   ",
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    assert.deepEqual(result.error.issues, [
+      {
+        path: ["reviewerNote"],
+        message: "reviewerNote must be a non-empty string when provided.",
       },
     ]);
   }

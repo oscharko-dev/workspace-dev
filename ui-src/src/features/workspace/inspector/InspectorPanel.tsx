@@ -9,7 +9,12 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import { useMutation, useQueries, useQuery } from "@tanstack/react-query";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { fetchJson } from "../../../lib/http";
 import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
@@ -1090,6 +1095,7 @@ export function InspectorPanel({
   const [prTargetPathInput, setPrTargetPathInput] = useState("");
   const [prResult, setPrResult] = useState<CreatePrPayload | null>(null);
   const [prError, setPrError] = useState<EndpointErrorDetails | null>(null);
+  const queryClient = useQueryClient();
   const [isDesktopLayout, setIsDesktopLayout] = useState(() => {
     if (typeof window === "undefined") {
       return false;
@@ -1099,7 +1105,6 @@ export function InspectorPanel({
 
   const encodedJobId = encodeURIComponent(jobId);
   const inspectorPanelRef = useRef<HTMLDivElement>(null);
-  const importedEventDispatchedForSessionIdRef = useRef<string | null>(null);
   const layoutContainerRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<SplitterDragState | null>(null);
 
@@ -1495,6 +1500,10 @@ export function InspectorPanel({
           path: entry.path,
           decision: syncFileDecisions[entry.path] ?? entry.decision,
         }));
+      const reviewerNote =
+        reviewState.reviewerNote.trim().length > 0
+          ? reviewState.reviewerNote.trim()
+          : undefined;
 
       const response = await fetchJson<LocalSyncApplyPayload>({
         url: `/workspace/jobs/${encodedJobId}/sync`,
@@ -1508,6 +1517,7 @@ export function InspectorPanel({
             confirmationToken: syncPreviewPlan.confirmationToken,
             confirmOverwrite: true,
             fileDecisions,
+            ...(reviewerNote !== undefined ? { reviewerNote } : {}),
           }),
         },
       });
@@ -1539,6 +1549,10 @@ export function InspectorPanel({
       setSyncFileDecisions({});
       setSyncConfirmationChecked(false);
       setSyncError(null);
+      currentSessionEvents.refetch();
+      void queryClient.invalidateQueries({
+        queryKey: ["workspace-import-history"],
+      });
     },
     onError: (error) => {
       setSyncError(
@@ -1622,6 +1636,9 @@ export function InspectorPanel({
       if (prTargetPathInput.trim()) {
         body.targetPath = prTargetPathInput.trim();
       }
+      if (reviewState.reviewerNote.trim()) {
+        body.reviewerNote = reviewState.reviewerNote.trim();
+      }
 
       const response = await fetchJson<CreatePrPayload>({
         url: `/workspace/jobs/${encodedJobId}/create-pr`,
@@ -1656,6 +1673,10 @@ export function InspectorPanel({
     onSuccess: (payload) => {
       setPrResult(payload);
       setPrError(null);
+      currentSessionEvents.refetch();
+      void queryClient.invalidateQueries({
+        queryKey: ["workspace-import-history"],
+      });
     },
     onError: (error) => {
       if (error instanceof PrMutationError) {
@@ -2068,7 +2089,6 @@ export function InspectorPanel({
     }),
   );
   useEffect(() => {
-    importedEventDispatchedForSessionIdRef.current = null;
     setReviewState(
       createInitialImportReviewState({
         status: currentImportSession?.status ?? "imported",
@@ -2082,7 +2102,7 @@ export function InspectorPanel({
       note,
       timestamp,
     }: {
-      kind: "review_started" | "approved" | "applied" | "apply_blocked";
+      kind: "review_started" | "apply_blocked";
       note?: string;
       timestamp?: string;
     }): void => {
@@ -2103,41 +2123,6 @@ export function InspectorPanel({
     [currentImportSession, qualityScoreModel.score],
   );
 
-  useEffect(() => {
-    if (!currentImportSession) {
-      return;
-    }
-    if (
-      activePipeline.stage !== "ready" &&
-      activePipeline.stage !== "partial"
-    ) {
-      return;
-    }
-    if (currentSessionEvents.isLoading) {
-      return;
-    }
-    if (
-      currentSessionEvents.events.some((event) => event.kind === "imported") ||
-      importedEventDispatchedForSessionIdRef.current === currentImportSession.id
-    ) {
-      return;
-    }
-    importedEventDispatchedForSessionIdRef.current = currentImportSession.id;
-    dispatchImportGovernanceEvent({
-      ...toImportGovernanceEvent(currentImportSession),
-      qualityScore: qualityScoreModel.score,
-      ...(currentImportSession.reviewRequired !== undefined
-        ? { reviewRequired: currentImportSession.reviewRequired }
-        : {}),
-    });
-  }, [
-    activePipeline.stage,
-    currentImportSession,
-    currentSessionEvents.events,
-    currentSessionEvents.isLoading,
-    qualityScoreModel.score,
-  ]);
-
   const applyGate = useMemo(() => {
     return describeApplyGate({
       qualityScore: qualityScoreModel.score,
@@ -2156,9 +2141,6 @@ export function InspectorPanel({
       setReviewState((state) => {
         if (state.stage === "import" && target === "review") {
           emitCurrentSessionGovernanceEvent({ kind: "review_started" });
-        }
-        if (state.stage === "review" && target === "approve") {
-          emitCurrentSessionGovernanceEvent({ kind: "approved" });
         }
         return advanceReviewStage(state, target);
       });
@@ -2181,10 +2163,6 @@ export function InspectorPanel({
       return;
     }
     setReviewState((state) => advanceReviewStage(state, "apply"));
-    emitCurrentSessionGovernanceEvent({
-      kind: "applied",
-      ...(note ? { note } : {}),
-    });
   }, [
     applyGate.allowed,
     emitCurrentSessionGovernanceEvent,

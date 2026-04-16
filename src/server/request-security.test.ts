@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import type { IncomingMessage } from "node:http";
 import test from "node:test";
-import { getAllowedWriteOrigins, validateWriteRequest } from "./request-security.js";
+import {
+  getAllowedWriteOrigins,
+  validateImportSessionEventWriteAuth,
+  validateWriteRequest,
+} from "./request-security.js";
 
 const createRequest = (headers: IncomingMessage["headers"]): IncomingMessage => {
   return {
@@ -221,4 +225,127 @@ test("request-security: validateWriteRequest rejects browser metadata that omits
   assert.equal(result.statusCode, 403);
   assert.equal(result.payload.error, "FORBIDDEN_REQUEST_ORIGIN");
   assert.match(result.payload.message, /must include same-origin metadata/i);
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects writes when server auth is not configured", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "Bearer secret-token"
+    }),
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 503);
+  assert.equal(result.payload.error, "AUTHENTICATION_UNAVAILABLE");
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects missing credentials", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({}),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.payload.error, "UNAUTHORIZED");
+  assert.equal(result.wwwAuthenticate, 'Bearer realm="workspace-dev"');
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects invalid bearer tokens", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "Bearer wrong-token"
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.payload.error, "UNAUTHORIZED");
+});
+
+test("request-security: validateImportSessionEventWriteAuth accepts a valid bearer token", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "Bearer secret-token"
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    principal: {
+      scheme: "bearer",
+    },
+  });
+});
+
+test("request-security: validateImportSessionEventWriteAuth accepts bearer auth with mixed-case scheme and surrounding whitespace", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "bEaReR \t secret-token \t"
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.deepEqual(result, {
+    ok: true,
+    principal: {
+      scheme: "bearer",
+    },
+  });
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects empty bearer credentials after whitespace trimming", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "Bearer \t "
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.payload.error, "UNAUTHORIZED");
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects non-bearer credentials", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      cookie: "workspace_import_session_event_auth=forbidden"
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.payload.error, "UNAUTHORIZED");
+  assert.match(result.payload.message, /bearer token/i);
 });

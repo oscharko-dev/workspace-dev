@@ -283,6 +283,7 @@ export interface JobEngine {
     confirmationToken: string;
     confirmOverwrite: boolean;
     fileDecisions: WorkspaceLocalSyncFileDecisionEntry[];
+    reviewerNote?: string;
   }) => Promise<WorkspaceLocalSyncApplyResult>;
   cancelJob: (input: {
     jobId: string;

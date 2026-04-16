@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 const JSON_CONTENT_TYPE_PATTERN = /^application\/json(?:\s*(?:;|$))/i;
@@ -17,6 +18,28 @@ interface WriteRequestValidationFailure {
 }
 
 type WriteRequestValidationResult = WriteRequestValidationSuccess | WriteRequestValidationFailure;
+type SameOriginRequestValidationResult = WriteRequestValidationSuccess | WriteRequestValidationFailure;
+
+interface ImportSessionEventAuthValidationSuccess {
+  ok: true;
+  principal: {
+    scheme: "bearer";
+  };
+}
+
+interface ImportSessionEventAuthValidationFailure {
+  ok: false;
+  statusCode: 401 | 503;
+  payload: {
+    error: "UNAUTHORIZED" | "AUTHENTICATION_UNAVAILABLE";
+    message: string;
+  };
+  wwwAuthenticate?: string;
+}
+
+export type ImportSessionEventAuthValidationResult =
+  | ImportSessionEventAuthValidationSuccess
+  | ImportSessionEventAuthValidationFailure;
 
 const getHeaderValue = (value: string | string[] | undefined): string | undefined => {
   if (typeof value === "string") {
@@ -75,27 +98,17 @@ export const getAllowedWriteOrigins = ({
   return allowedOrigins;
 };
 
-export const validateWriteRequest = ({
+const validateSameOriginRequest = ({
   request,
   host,
-  port
+  port,
+  requireBrowserMetadata = false
 }: {
   request: IncomingMessage;
   host: string;
   port: number;
-}): WriteRequestValidationResult => {
-  const contentType = getHeaderValue(request.headers["content-type"]);
-  if (!contentType || !JSON_CONTENT_TYPE_PATTERN.test(contentType)) {
-    return {
-      ok: false,
-      statusCode: 415,
-      payload: {
-        error: "UNSUPPORTED_MEDIA_TYPE",
-        message: "Write routes require 'Content-Type: application/json'."
-      }
-    };
-  }
-
+  requireBrowserMetadata?: boolean;
+}): SameOriginRequestValidationResult => {
   const originHeader = getHeaderValue(request.headers.origin);
   const refererHeader = getHeaderValue(request.headers.referer);
   const secFetchSite = getHeaderValue(request.headers["sec-fetch-site"])?.trim().toLowerCase();
@@ -104,6 +117,17 @@ export const validateWriteRequest = ({
   const allowedOrigins = getAllowedWriteOrigins({ host, port });
   const hasBrowserMetadata =
     originHeader !== undefined || refererHeader !== undefined || secFetchSite !== undefined;
+
+  if (requireBrowserMetadata && !hasBrowserMetadata) {
+    return {
+      ok: false,
+      statusCode: 403,
+      payload: {
+        error: "FORBIDDEN_REQUEST_ORIGIN",
+        message: "Browser requests to workspace-dev write routes must include same-origin metadata."
+      }
+    };
+  }
 
   if (secFetchSite !== undefined && !ALLOWED_SEC_FETCH_SITE_VALUES.has(secFetchSite)) {
     return {
@@ -150,4 +174,165 @@ export const validateWriteRequest = ({
   }
 
   return { ok: true };
+};
+
+export const validateWriteRequest = ({
+  request,
+  host,
+  port
+}: {
+  request: IncomingMessage;
+  host: string;
+  port: number;
+}): WriteRequestValidationResult => {
+  const contentType = getHeaderValue(request.headers["content-type"]);
+  if (!contentType || !JSON_CONTENT_TYPE_PATTERN.test(contentType)) {
+    return {
+      ok: false,
+      statusCode: 415,
+      payload: {
+        error: "UNSUPPORTED_MEDIA_TYPE",
+        message: "Write routes require 'Content-Type: application/json'."
+      }
+    };
+  }
+
+  return validateSameOriginRequest({ request, host, port });
+};
+
+const WORKSPACE_BEARER_REALM = "workspace-dev";
+
+const normalizeConfiguredBearerToken = (value: string | undefined): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const readBearerToken = (request: IncomingMessage): string | undefined => {
+  const authorization = getHeaderValue(request.headers.authorization);
+  if (!authorization) {
+    return undefined;
+  }
+
+  if (authorization.length <= "Bearer".length) {
+    return undefined;
+  }
+
+  const expectedScheme = "bearer";
+  for (let index = 0; index < expectedScheme.length; index += 1) {
+    const code = authorization.charCodeAt(index);
+    const normalized =
+      code >= 0x41 && code <= 0x5a
+        ? String.fromCharCode(code + 0x20)
+        : authorization[index];
+    if (normalized !== expectedScheme[index]) {
+      return undefined;
+    }
+  }
+
+  let tokenStart = "Bearer".length;
+  while (tokenStart < authorization.length) {
+    const code = authorization.charCodeAt(tokenStart);
+    if (code !== 0x20 && code !== 0x09) {
+      break;
+    }
+    tokenStart += 1;
+  }
+
+  if (tokenStart === "Bearer".length || tokenStart >= authorization.length) {
+    return undefined;
+  }
+
+  let tokenEnd = authorization.length;
+  while (tokenEnd > tokenStart) {
+    const code = authorization.charCodeAt(tokenEnd - 1);
+    if (code !== 0x20 && code !== 0x09) {
+      break;
+    }
+    tokenEnd -= 1;
+  }
+
+  return tokenEnd > tokenStart
+    ? authorization.slice(tokenStart, tokenEnd)
+    : undefined;
+};
+
+const tokensMatch = (expected: string, candidate: string): boolean => {
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  const candidateBuffer = Buffer.from(candidate, "utf8");
+  if (expectedBuffer.length !== candidateBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBuffer, candidateBuffer);
+};
+
+export const validateImportSessionEventWriteAuth = ({
+  request,
+  bearerToken,
+  routeLabel,
+}: {
+  request: IncomingMessage;
+  bearerToken?: string;
+  routeLabel: string;
+}): ImportSessionEventAuthValidationResult => {
+  const configuredToken = normalizeConfiguredBearerToken(bearerToken);
+  if (!configuredToken) {
+    return {
+      ok: false,
+      statusCode: 503,
+      payload: {
+        error: "AUTHENTICATION_UNAVAILABLE",
+        message: `${routeLabel} writes are disabled until server bearer authentication is configured.`
+      }
+    };
+  }
+
+  const receivedToken = readBearerToken(request);
+  if (receivedToken && tokensMatch(configuredToken, receivedToken)) {
+    return {
+      ok: true,
+      principal: {
+        scheme: "bearer",
+      },
+    };
+  }
+
+  return {
+    ok: false,
+    statusCode: 401,
+    payload: {
+      error: "UNAUTHORIZED",
+      message: `${routeLabel} writes require a valid Bearer token.`,
+    },
+    wwwAuthenticate: `Bearer realm="${WORKSPACE_BEARER_REALM}"`,
+  };
+};
+
+export const validateBearerToken = ({
+  request,
+  bearerToken,
+  routeLabel
+}: {
+  request: IncomingMessage;
+  bearerToken?: string;
+  routeLabel: string;
+}): ImportSessionEventAuthValidationResult => {
+  const result = validateImportSessionEventWriteAuth({
+    request,
+    ...(bearerToken === undefined ? {} : { bearerToken }),
+    routeLabel,
+  });
+  if (!result.ok) {
+    return {
+      ...result,
+      payload: {
+        ...result.payload,
+        message: `${routeLabel} writes require a valid Bearer token.`
+      }
+    };
+  }
+
+  return result;
 };

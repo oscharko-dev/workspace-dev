@@ -939,12 +939,6 @@ export const createJobEngine = ({
     }
   };
 
-  const isImportSessionApprovedForMutation = (
-    session: WorkspaceImportSession | undefined,
-  ): boolean => {
-    return session?.status === "approved" || session?.status === "applied";
-  };
-
   const resolveRootSourceJobId = (job: JobRecord): string | null => {
     let current: JobRecord = job;
     const seen = new Set<string>();
@@ -1078,18 +1072,12 @@ export const createJobEngine = ({
     }
   };
 
-  const createGovernanceError = ({
-    code,
-    message,
-  }: {
-    code:
-      | "E_SYNC_IMPORT_REVIEW_REQUIRED"
-      | "E_PR_IMPORT_REVIEW_REQUIRED";
-    message: string;
-  }): Error & { code: string } => {
-    const error = new Error(message) as Error & { code: string };
-    error.code = code;
-    return error;
+  const normalizeReviewerNote = (value: string | undefined): string | undefined => {
+    if (typeof value !== "string") {
+      return undefined;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   };
 
   const resolveReplayability = ({
@@ -1199,6 +1187,24 @@ export const createJobEngine = ({
     };
 
     await importSessionStore.save(session);
+
+    const existingEvents = await importSessionEventStore.list(session.id);
+    if (!existingEvents.some((event) => event.kind === "imported")) {
+      await importSessionEventStore.append({
+        id: randomUUID(),
+        sessionId: session.id,
+        kind: "imported",
+        at: session.importedAt,
+        metadata: {
+          jobId: session.jobId,
+          nodeCount: session.nodeCount,
+          fileCount: session.fileCount,
+          componentMappings: session.componentMappings,
+          reviewRequired: session.reviewRequired ?? null,
+          scope: session.scope,
+        },
+      });
+    }
   };
 
   const determinePartialStatus = async ({
@@ -3410,7 +3416,9 @@ export const createJobEngine = ({
     confirmationToken,
     confirmOverwrite,
     fileDecisions,
+    reviewerNote,
   }): Promise<WorkspaceLocalSyncApplyResult> => {
+    const normalizedReviewerNote = normalizeReviewerNote(reviewerNote);
     pruneExpiredSyncConfirmations();
     const syncContext = resolveSyncContext({ jobId });
 
@@ -3447,17 +3455,6 @@ export const createJobEngine = ({
     const syncGovernance = await resolveImportGovernanceContext({
       job: syncContext.job,
     });
-    if (!isImportSessionApprovedForMutation(syncGovernance.importSession)) {
-      const sessionLabel = syncGovernance.importSession?.id ?? "unknown";
-      const sessionStatus =
-        syncGovernance.importSession?.status ?? "review pending";
-      throw createGovernanceError({
-        code: "E_SYNC_IMPORT_REVIEW_REQUIRED",
-        message:
-          `Import session '${sessionLabel}' must be approved before local sync can write regenerated files ` +
-          `(current status: ${sessionStatus}${syncGovernance.securitySensitive ? ", security-sensitive scope" : ""}).`,
-      });
-    }
 
     const currentPlan = await planLocalSync({
       generatedProjectDir: syncContext.generatedProjectDir,
@@ -3485,6 +3482,26 @@ export const createJobEngine = ({
       sourceJobId: syncContext.sourceJobId,
     });
     localSyncConfirmations.delete(confirmationToken);
+    if (syncGovernance.importSession) {
+      await appendImportSessionEvent({
+        event: {
+          id: "",
+          sessionId: syncGovernance.importSession.id,
+          kind: "applied",
+          at: "",
+          ...(normalizedReviewerNote !== undefined
+            ? { note: normalizedReviewerNote }
+            : {}),
+          metadata: {
+            jobId,
+            sourceJobId: syncContext.sourceJobId,
+            selectedFiles: appliedPlan.summary.selectedFiles,
+            targetPath: appliedPlan.targetPath,
+            scopePath: appliedPlan.scopePath,
+          },
+        },
+      });
+    }
 
     return {
       jobId,
@@ -3807,17 +3824,6 @@ export const createJobEngine = ({
     };
 
     const prGovernance = await resolveImportGovernanceContext({ job });
-    if (!isImportSessionApprovedForMutation(prGovernance.importSession)) {
-      const sessionLabel = prGovernance.importSession?.id ?? "unknown";
-      const sessionStatus =
-        prGovernance.importSession?.status ?? "review pending";
-      throw createGovernanceError({
-        code: "E_PR_IMPORT_REVIEW_REQUIRED",
-        message:
-          `Import session '${sessionLabel}' must be approved before creating a PR ` +
-          `(current status: ${sessionStatus}${prGovernance.securitySensitive ? ", security-sensitive scope" : ""}).`,
-      });
-    }
 
     job.gitPr = await executePersistedGitPr({
       artifactStore,
@@ -3842,15 +3848,19 @@ export const createJobEngine = ({
     });
 
     if (prGovernance.importSession) {
+      const normalizedPrReviewerNote = normalizeReviewerNote(prInput.reviewerNote);
       await appendImportSessionEvent({
         event: {
           id: "",
           sessionId: prGovernance.importSession.id,
           kind: "note",
           at: "",
-          note: job.gitPr.prUrl
-            ? "PR created from regeneration job."
-            : "Branch pushed from regeneration job.",
+          note:
+            `${job.gitPr.prUrl ? "PR created from regeneration job." : "Branch pushed from regeneration job."}${
+              normalizedPrReviewerNote !== undefined
+                ? ` Reviewer note: ${normalizedPrReviewerNote}`
+                : ""
+            }`,
           metadata: {
             jobId,
             sourceJobId: job.lineage.sourceJobId,

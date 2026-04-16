@@ -10,10 +10,6 @@ import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../lib/http";
 import { WorkspacePage } from "./workspace-page";
-import {
-  __resetImportGovernanceListenersForTests,
-  dispatchImportGovernanceEvent,
-} from "./inspector/import-governance-events";
 
 vi.mock("../../lib/http", () => ({
   fetchJson: vi.fn(),
@@ -157,7 +153,6 @@ describe("WorkspacePage", () => {
   afterEach(() => {
     cleanup();
     vi.clearAllMocks();
-    __resetImportGovernanceListenersForTests();
   });
 
   it("shows REST fields by default and renders a Local JSON mode chip", () => {
@@ -168,50 +163,6 @@ describe("WorkspacePage", () => {
     expect(screen.queryByLabelText("Figma JSON Path")).not.toBeInTheDocument();
     expect(screen.getByText("REST mode")).toHaveClass("border");
     expect(screen.getByText("Local JSON mode")).toBeInTheDocument();
-  });
-
-  it("registers the import governance transport so audit events flow to the server", async () => {
-    const originalFetch = globalThis.fetch;
-    const fetchCalls: Array<{ url: string; body: string }> = [];
-    globalThis.fetch = vi.fn(
-      async (input: RequestInfo | URL, init?: RequestInit) => {
-        const url =
-          typeof input === "string"
-            ? input
-            : input instanceof URL
-              ? input.href
-              : input.url;
-        const body = typeof init?.body === "string" ? init.body : "";
-        fetchCalls.push({ url, body });
-        return new Response("{}", {
-          status: 201,
-          headers: { "content-type": "application/json" },
-        });
-      },
-    ) as typeof fetch;
-    try {
-      renderWorkspacePage();
-      dispatchImportGovernanceEvent({
-        kind: "imported",
-        sessionId: "paste-import-transport-check",
-        jobId: "job-transport",
-        fileKey: "FILE-KEY",
-        fileCount: 2,
-        nodeCount: 10,
-        scope: "all",
-        selectedNodes: [],
-        timestamp: "2026-04-15T10:00:00.000Z",
-      });
-      await waitFor(() => {
-        expect(fetchCalls.length).toBeGreaterThan(0);
-      });
-      const call = fetchCalls[0];
-      expect(call?.url).toBe(
-        "/workspace/import-sessions/paste-import-transport-check/events",
-      );
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
   });
 
   it("shows figmaJsonPath and activates the Local JSON chip when local_json is selected", async () => {

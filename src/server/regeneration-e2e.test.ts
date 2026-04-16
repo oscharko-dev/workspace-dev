@@ -110,6 +110,7 @@ function findFirstLayoutOverrideCandidate(
 }
 
 const getPort = (): number => 20_000 + Math.floor(Math.random() * 10_000);
+const TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN = "test-import-session-event-bearer-token";
 
 const jsonFetch = async (url: string, options?: RequestInit): Promise<{ status: number; body: unknown }> => {
   const response = await fetch(url, {
@@ -182,7 +183,10 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     startedAt: Date.now(),
     absoluteOutputRoot: tempRoot,
     defaults: { figmaSourceMode: "rest", llmCodegenMode: "deterministic" },
-    runtime: { previewEnabled: false },
+    runtime: {
+      previewEnabled: false,
+      importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN
+    },
     jobEngine,
     moduleDir: path.resolve(import.meta.dirname ?? ".", "..")
   });
@@ -388,7 +392,7 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     assert.equal(missingConfirmResult.status, 400);
     assert.equal((missingConfirmResult.body as Record<string, unknown>).error, "VALIDATION_ERROR");
 
-    // 13. Approve the source import session before applying local sync
+    // 13. Load the source import session to verify governance events later
     const listImportSessionsResult = await jsonFetch(`${baseUrl}/workspace/import-sessions`);
     assert.equal(listImportSessionsResult.status, 200);
     const importSessions = ((listImportSessionsResult.body as Record<string, unknown>).sessions ??
@@ -396,26 +400,14 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     const sourceImportSession = importSessions.find((session) => session.jobId === sourceJobId);
     assert.ok(sourceImportSession);
 
-    const approvalResult = await jsonFetch(
-      `${baseUrl}/workspace/import-sessions/${sourceImportSession.id as string}/events`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          kind: "approved"
-        })
-      }
-    );
-    assert.equal(approvalResult.status, 201);
-    assert.equal((approvalResult.body as Record<string, unknown>).sessionId, sourceImportSession.id);
-    assert.equal((approvalResult.body as Record<string, unknown>).kind, "approved");
-
-    // 14. Apply sync writes generated output into destination scope
+    // 14. Apply sync writes generated output into destination scope without requiring a pre-approved session
     const applyResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {
       method: "POST",
       body: JSON.stringify({
         mode: "apply",
         confirmationToken: dryRunBody.confirmationToken,
         confirmOverwrite: true,
+        reviewerNote: "Approved during sync apply.",
         fileDecisions: dryRunFiles.map((entry) => ({
           path: entry.path,
           decision: entry.decision
@@ -431,6 +423,17 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
     );
     const syncedContent = await readFile(firstFilePath, "utf8");
     assert.ok(syncedContent.length > 0);
+
+    const eventsResult = await jsonFetch(
+      `${baseUrl}/workspace/import-sessions/${sourceImportSession.id as string}/events`
+    );
+    assert.equal(eventsResult.status, 200);
+    const events = ((eventsResult.body as Record<string, unknown>).events ?? []) as Array<Record<string, unknown>>;
+    assert.equal(events.some((event) => event.kind === "imported"), true);
+    assert.equal(events.some((event) => event.kind === "approved"), false);
+    assert.equal(events.some((event) => event.kind === "applied"), true);
+    const appliedEvent = events.findLast((event) => event.kind === "applied");
+    assert.equal(appliedEvent?.note, "Approved during sync apply.");
 
     // 15. Token is one-time use
     const replayResult = await jsonFetch(`${baseUrl}/workspace/jobs/${regenJobId}/sync`, {

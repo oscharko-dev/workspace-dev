@@ -273,29 +273,6 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
   assert.equal(sourceImportSession.status, "imported");
   assert.equal(sourceImportSession.reviewRequired, true);
 
-  await assert.rejects(
-    () =>
-      engine.createPrFromJob({
-        jobId: regenAccepted.jobId,
-        prInput: {
-          repoUrl: "https://github.com/acme/repo.git",
-          repoToken: "secret-token",
-          targetPath: "generated"
-        }
-      }),
-    (error: Error & { code?: string }) =>
-      error.code === "E_PR_IMPORT_REVIEW_REQUIRED"
-  );
-
-  await engine.appendImportSessionEvent({
-    event: {
-      id: "",
-      sessionId: sourceImportSession.id,
-      kind: "approved",
-      at: ""
-    }
-  });
-
   const { binDir: fakeGitBin, argsLogPath, envLogPath } = await writeFakeGitBinary({ tempRoot });
   const originalPath = process.env.PATH;
   const originalFetch = globalThis.fetch;
@@ -314,7 +291,8 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
       prInput: {
         repoUrl: "https://github.com/acme/repo.git",
         repoToken: "secret-token",
-        targetPath: "generated"
+        targetPath: "generated",
+        reviewerNote: "Approved for PR creation."
       }
     });
 
@@ -336,8 +314,14 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
     const auditTrail = await engine.listImportSessionEvents({
       sessionId: sourceImportSession.id
     });
+    const approvedEvents = auditTrail.filter((event) => event.kind === "approved");
     assert.equal(auditTrail.some((event) => event.kind === "note"), true);
     const prAuditEvent = auditTrail.findLast((event) => event.kind === "note");
+    assert.equal(approvedEvents.length, 0);
+    assert.equal(
+      prAuditEvent?.note,
+      "PR created from regeneration job. Reviewer note: Approved for PR creation."
+    );
     assert.equal(prAuditEvent?.metadata?.jobId, regenAccepted.jobId);
     assert.equal(prAuditEvent?.metadata?.sourceJobId, sourceAccepted.jobId);
     assert.equal(prAuditEvent?.metadata?.branchName, result.gitPr.branchName);

@@ -114,6 +114,7 @@ interface CliOptions {
   maxConcurrentJobs: number;
   maxQueuedJobs: number;
   rateLimitPerMinute: number;
+  importSessionEventBearerToken: string | undefined;
   logFormat: WorkspaceLogFormat;
   enableLintAutofix: boolean;
   enablePreview: boolean;
@@ -436,6 +437,8 @@ const parseArgs = (argv: string[]): CliOptions => {
     min: 0,
     max: 1000
   });
+  const importSessionEventBearerToken =
+    process.env.FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN?.trim() || undefined;
   let logFormat = resolveWorkspaceLogFormat({
     value: process.env.FIGMAPIPE_WORKSPACE_LOG_FORMAT,
     fallback: DEFAULT_WORKSPACE_LOG_FORMAT
@@ -959,6 +962,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     maxConcurrentJobs,
     maxQueuedJobs,
     rateLimitPerMinute,
+    importSessionEventBearerToken,
     logFormat,
     enableLintAutofix,
     enablePreview,
@@ -1108,6 +1112,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_MAX_CONCURRENT_JOBS
   FIGMAPIPE_WORKSPACE_MAX_QUEUED_JOBS
   FIGMAPIPE_WORKSPACE_RATE_LIMIT_PER_MINUTE
+  FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN
   FIGMAPIPE_WORKSPACE_LOG_FORMAT
   FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX
   FIGMAPIPE_WORKSPACE_ENABLE_PREVIEW
@@ -1252,6 +1257,9 @@ const main = async (): Promise<void> => {
       maxQueuedJobs: options.maxQueuedJobs,
       logFormat: options.logFormat,
       rateLimitPerMinute: options.rateLimitPerMinute,
+      ...(options.importSessionEventBearerToken !== undefined
+        ? { importSessionEventBearerToken: options.importSessionEventBearerToken }
+        : {}),
       enablePreview: options.enablePreview
     });
 
@@ -1292,6 +1300,10 @@ const main = async (): Promise<void> => {
       message: `Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`
     });
     logger.log({ level: "info", message: `Rate limit per minute: ${options.rateLimitPerMinute}` });
+    logger.log({
+      level: "info",
+      message: `Import session event write auth enabled: ${options.importSessionEventBearerToken !== undefined}`
+    });
     logger.log({ level: "info", message: `Log format: ${options.logFormat}` });
     logger.log({ level: "info", message: `Lint auto-fix enabled: ${options.enableLintAutofix}` });
     logger.log({ level: "info", message: `Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}` });
