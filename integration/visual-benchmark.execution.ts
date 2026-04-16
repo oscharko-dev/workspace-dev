@@ -1481,14 +1481,19 @@ const executeVisualBenchmarkViewport = async ({
   );
   const keepTemporaryArtifacts =
     process.env.WORKSPACEDEV_VISUAL_BENCHMARK_KEEP_TMP === "1";
+  const benchmarkRuntimeRoot = path.join(workspaceRoot, ".benchmark-runtime");
+  await mkdir(benchmarkRuntimeRoot, { recursive: true });
+  const stagedFigmaDir = await mkdtemp(
+    path.join(benchmarkRuntimeRoot, "figma-source-"),
+  );
+  const stagedFigmaJsonPath = path.join(
+    stagedFigmaDir,
+    "benchmark-local-figma.json",
+  );
 
   try {
-    const localFigmaJsonPath = path.join(
-      executionContext.paths.jobDir,
-      "benchmark-local-figma.json",
-    );
     await writeFile(
-      localFigmaJsonPath,
+      stagedFigmaJsonPath,
       toStableJsonString(
         normalizeBenchmarkFigmaInput({
           fixtureId,
@@ -1520,7 +1525,7 @@ const executeVisualBenchmarkViewport = async ({
     ).visualQualityFrozenReference = visualQualityFrozenReference;
     await FigmaSourceService.execute(
       {
-        figmaJsonPath: localFigmaJsonPath,
+        figmaJsonPath: stagedFigmaJsonPath,
       },
       stageContextFor("figma.source"),
     );
@@ -1799,6 +1804,9 @@ const executeVisualBenchmarkViewport = async ({
       recursive: true,
       force: true,
     });
+    if (!keepTemporaryArtifacts) {
+      await rm(stagedFigmaDir, { recursive: true, force: true });
+    }
     if (!keepTemporaryArtifacts) {
       await rm(rootDir, { recursive: true, force: true });
     }
