@@ -237,7 +237,7 @@ test("createPrFromJob throws E_PR_JOB_NOT_COMPLETED for running job", async () =
   engine.cancelJob({ jobId: accepted.jobId });
 });
 
-test("createPrFromJob persists gitPr state through stage artifacts and rehydration", async () => {
+test("createPrFromJob requires approval and persists gitPr state through stage artifacts and rehydration", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-createpr-persisted-"));
   const figmaPayload = createLocalFigmaPayload();
   const figmaPath = path.join(tempRoot, "figma-input.json");
@@ -272,6 +272,36 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
   assert.ok(sourceImportSession);
   assert.equal(sourceImportSession.status, "imported");
   assert.equal(sourceImportSession.reviewRequired, true);
+  await assert.rejects(
+    () =>
+      engine.createPrFromJob({
+        jobId: regenAccepted.jobId,
+        prInput: {
+          repoUrl: "https://github.com/acme/repo.git",
+          repoToken: "secret-token",
+          targetPath: "generated",
+          reviewerNote: "Approved for PR creation."
+        }
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_PR_IMPORT_REVIEW_REQUIRED"
+  );
+  await engine.appendImportSessionEvent({
+    event: {
+      id: "",
+      sessionId: sourceImportSession.id,
+      kind: "review_started",
+      at: "",
+    }
+  });
+  await engine.appendImportSessionEvent({
+    event: {
+      id: "",
+      sessionId: sourceImportSession.id,
+      kind: "approved",
+      at: "",
+    }
+  });
 
   const { binDir: fakeGitBin, argsLogPath, envLogPath } = await writeFakeGitBinary({ tempRoot });
   const originalPath = process.env.PATH;
@@ -317,7 +347,7 @@ test("createPrFromJob persists gitPr state through stage artifacts and rehydrati
     const approvedEvents = auditTrail.filter((event) => event.kind === "approved");
     assert.equal(auditTrail.some((event) => event.kind === "note"), true);
     const prAuditEvent = auditTrail.findLast((event) => event.kind === "note");
-    assert.equal(approvedEvents.length, 0);
+    assert.equal(approvedEvents.length, 1);
     assert.equal(
       prAuditEvent?.note,
       "PR created from regeneration job. Reviewer note: Approved for PR creation."

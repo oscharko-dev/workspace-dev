@@ -387,6 +387,20 @@ function isRegenerationAcceptedPayload(
   );
 }
 
+function isWorkspaceImportSessionEventPayload(
+  value: unknown,
+): value is WorkspaceImportSessionEvent {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.sessionId === "string" &&
+    typeof value.kind === "string" &&
+    typeof value.at === "string"
+  );
+}
+
 class PrMutationError extends Error {
   details: EndpointErrorDetails;
 
@@ -413,6 +427,16 @@ class RegenerationMutationError extends Error {
   constructor(details: EndpointErrorDetails) {
     super(details.message);
     this.name = "RegenerationMutationError";
+    this.details = details;
+  }
+}
+
+class ApprovalMutationError extends Error {
+  details: EndpointErrorDetails;
+
+  constructor(details: EndpointErrorDetails) {
+    super(details.message);
+    this.name = "ApprovalMutationError";
     this.details = details;
   }
 }
@@ -1090,6 +1114,8 @@ export function InspectorPanel({
   const [syncApplyResult, setSyncApplyResult] =
     useState<LocalSyncApplyPayload | null>(null);
   const [syncError, setSyncError] = useState<EndpointErrorDetails | null>(null);
+  const [approvalError, setApprovalError] =
+    useState<EndpointErrorDetails | null>(null);
   const [prRepoUrlInput, setPrRepoUrlInput] = useState("");
   const [prRepoTokenInput, setPrRepoTokenInput] = useState("");
   const [prTargetPathInput, setPrTargetPathInput] = useState("");
@@ -2094,6 +2120,7 @@ export function InspectorPanel({
         status: currentImportSession?.status ?? "imported",
       }),
     );
+    setApprovalError(null);
   }, [currentImportSession?.id, currentImportSession?.status, jobId]);
 
   const emitCurrentSessionGovernanceEvent = useCallback(
@@ -2136,8 +2163,89 @@ export function InspectorPanel({
     securitySensitiveImport,
     workspacePolicy.governance,
   ]);
+
+  const approveImportSessionMutation = useMutation({
+    mutationFn: async (): Promise<WorkspaceImportSessionEvent> => {
+      if (!currentImportSession) {
+        throw new ApprovalMutationError({
+          status: 404,
+          code: "IMPORT_SESSION_NOT_FOUND",
+          message: "Import session is unavailable for approval.",
+        });
+      }
+
+      const response = await fetchJson<WorkspaceImportSessionEvent>({
+        url: `/workspace/import-sessions/${encodeURIComponent(
+          currentImportSession.id,
+        )}/approve`,
+        init: {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({}),
+        },
+      });
+
+      if (!response.ok) {
+        throw new ApprovalMutationError(
+          toEndpointError({
+            status: response.status,
+            payload: response.payload,
+            fallbackCode: "IMPORT_APPROVAL_FAILED",
+            fallbackMessage: "Could not approve import session.",
+          }),
+        );
+      }
+
+      if (!isWorkspaceImportSessionEventPayload(response.payload)) {
+        throw new ApprovalMutationError({
+          status: response.status,
+          code: "IMPORT_APPROVAL_INVALID_PAYLOAD",
+          message: "Import session approval payload is invalid.",
+        });
+      }
+
+      return response.payload;
+    },
+    onSuccess: () => {
+      setApprovalError(null);
+      setReviewState((state) =>
+        state.stage === "review" ? advanceReviewStage(state, "approve") : state,
+      );
+      currentSessionEvents.refetch();
+      void queryClient.invalidateQueries({
+        queryKey: ["workspace-import-history"],
+      });
+    },
+    onError: (error) => {
+      if (error instanceof ApprovalMutationError) {
+        setApprovalError(error.details);
+        return;
+      }
+      setApprovalError({
+        status: 500,
+        code: "IMPORT_APPROVAL_FAILED",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not approve import session.",
+      });
+    },
+  });
+
   const handleReviewAdvance = useCallback(
     (target: ImportReviewStage): void => {
+      if (
+        target === "approve" &&
+        reviewState.stage === "review" &&
+        currentImportSession
+      ) {
+        setApprovalError(null);
+        approveImportSessionMutation.mutate();
+        return;
+      }
+
       setReviewState((state) => {
         if (state.stage === "import" && target === "review") {
           emitCurrentSessionGovernanceEvent({ kind: "review_started" });
@@ -2145,7 +2253,12 @@ export function InspectorPanel({
         return advanceReviewStage(state, target);
       });
     },
-    [emitCurrentSessionGovernanceEvent],
+    [
+      approveImportSessionMutation,
+      currentImportSession,
+      emitCurrentSessionGovernanceEvent,
+      reviewState.stage,
+    ],
   );
   const handleReviewerNoteChange = useCallback((note: string): void => {
     setReviewState((state) => ({ ...state, reviewerNote: note }));
@@ -6240,7 +6353,17 @@ export function InspectorPanel({
               onAdvance={handleReviewAdvance}
               onReviewerNoteChange={handleReviewerNoteChange}
               onApply={handleReviewApply}
-            />
+              disabled={approveImportSessionMutation.isPending}
+            >
+              {approvalError ? (
+                <p
+                  data-testid="import-review-stepper-approval-error"
+                  className="text-[11px] text-rose-300"
+                >
+                  {approvalError.message}
+                </p>
+              ) : null}
+            </ImportReviewStepper>
           ) : null}
           {qualityScoreModel.summary.totalNodes > 0 ||
           tokenSuggestionsModel.available ||

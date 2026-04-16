@@ -1041,11 +1041,179 @@ export const createJobEngine = ({
       : undefined;
   };
 
-  const extractEventReviewRequired = (
-    event: WorkspaceImportSessionEvent,
-  ): boolean | undefined => {
-    const candidate = event.metadata?.reviewRequired;
-    return typeof candidate === "boolean" ? candidate : undefined;
+  const createImportSessionGovernanceError = ({
+    code,
+    message,
+  }: {
+    code:
+      | "E_IMPORT_SESSION_INVALID_TRANSITION"
+      | "E_SYNC_IMPORT_REVIEW_REQUIRED"
+      | "E_PR_IMPORT_REVIEW_REQUIRED";
+    message: string;
+  }): Error & { code: string } => {
+    const error = new Error(message) as Error & { code: string };
+    error.code = code;
+    return error;
+  };
+
+  const resolveImportSessionStatus = ({
+    session,
+  }: {
+    session: Pick<WorkspaceImportSession, "status">;
+  }): NonNullable<WorkspaceImportSession["status"]> => {
+    return session.status ?? "imported";
+  };
+
+  const GOVERNED_IMPORT_SESSION_ALLOWED_EVENTS: Record<
+    NonNullable<WorkspaceImportSession["status"]>,
+    ReadonlySet<WorkspaceImportSessionEvent["kind"]>
+  > = {
+    imported: new Set(["imported", "review_started", "rejected", "apply_blocked", "note"]),
+    reviewing: new Set(["review_started", "approved", "rejected", "apply_blocked", "note"]),
+    approved: new Set(["approved", "applied", "rejected", "apply_blocked", "note"]),
+    applied: new Set(["applied", "note"]),
+    rejected: new Set(["note"]),
+  };
+
+  const replayGovernedImportSessionHistory = ({
+    events,
+  }: {
+    events: readonly WorkspaceImportSessionEvent[];
+  }):
+    | {
+        ok: true;
+        status: NonNullable<WorkspaceImportSession["status"]>;
+        authorizingEvent?: WorkspaceImportSessionEvent;
+      }
+    | {
+        ok: false;
+        status: NonNullable<WorkspaceImportSession["status"]>;
+        invalidEvent: WorkspaceImportSessionEvent;
+      } => {
+    let status: NonNullable<WorkspaceImportSession["status"]> = "imported";
+    let authorizingEvent: WorkspaceImportSessionEvent | undefined;
+
+    for (const event of events) {
+      if (!GOVERNED_IMPORT_SESSION_ALLOWED_EVENTS[status].has(event.kind)) {
+        return {
+          ok: false,
+          status,
+          invalidEvent: event,
+        };
+      }
+      status =
+        deriveSessionStatusFromEvent({
+          event,
+          currentStatus: status,
+        }) ?? status;
+      if (event.kind === "approved" || event.kind === "applied") {
+        authorizingEvent = event;
+      }
+    }
+
+    return {
+      ok: true,
+      status,
+      ...(authorizingEvent !== undefined ? { authorizingEvent } : {}),
+    };
+  };
+
+  const resolveImportSessionGovernanceState = async ({
+    session,
+    invalidHistoryCode,
+    operation,
+  }: {
+    session: WorkspaceImportSession;
+    invalidHistoryCode:
+      | "E_IMPORT_SESSION_INVALID_TRANSITION"
+      | "E_SYNC_IMPORT_REVIEW_REQUIRED"
+      | "E_PR_IMPORT_REVIEW_REQUIRED";
+    operation: string;
+  }): Promise<{
+    status: NonNullable<WorkspaceImportSession["status"]>;
+    events: WorkspaceImportSessionEvent[];
+    authorizingEvent?: WorkspaceImportSessionEvent;
+  }> => {
+    const events = await importSessionEventStore.list(session.id);
+    if (session.reviewRequired !== true) {
+      return {
+        status: resolveImportSessionStatus({ session }),
+        events,
+      };
+    }
+
+    const replayed = replayGovernedImportSessionHistory({ events });
+    if (!replayed.ok) {
+      throw createImportSessionGovernanceError({
+        code: invalidHistoryCode,
+        message:
+          `Import session '${session.id}' has invalid governance history and cannot continue ${operation}: ` +
+          `event '${replayed.invalidEvent.kind}' is not allowed after '${replayed.status}'.`,
+      });
+    }
+
+    return {
+      status: replayed.status,
+      events,
+      ...(replayed.authorizingEvent !== undefined
+        ? { authorizingEvent: replayed.authorizingEvent }
+        : {}),
+    };
+  };
+
+  const assertImportSessionTransitionAllowed = async ({
+    session,
+    event,
+  }: {
+    session: WorkspaceImportSession;
+    event: WorkspaceImportSessionEvent;
+  }): Promise<NonNullable<WorkspaceImportSession["status"]>> => {
+    const governance = await resolveImportSessionGovernanceState({
+      session,
+      invalidHistoryCode: "E_IMPORT_SESSION_INVALID_TRANSITION",
+      operation: "appending a new import-session event",
+    });
+
+    if (
+      session.reviewRequired === true &&
+      !GOVERNED_IMPORT_SESSION_ALLOWED_EVENTS[governance.status].has(event.kind)
+    ) {
+      throw createImportSessionGovernanceError({
+        code: "E_IMPORT_SESSION_INVALID_TRANSITION",
+        message:
+          `Import session '${session.id}' cannot append '${event.kind}' while status is '${governance.status}'.`,
+      });
+    }
+
+    return governance.status;
+  };
+
+  const assertImportSessionApprovedForMutation = async ({
+    session,
+    code,
+    operation,
+  }: {
+    session: WorkspaceImportSession;
+    code: "E_SYNC_IMPORT_REVIEW_REQUIRED" | "E_PR_IMPORT_REVIEW_REQUIRED";
+    operation: string;
+  }): Promise<void> => {
+    const governance = await resolveImportSessionGovernanceState({
+      session,
+      invalidHistoryCode: code,
+      operation,
+    });
+    if (
+      session.reviewRequired !== true ||
+      governance.status === "approved" ||
+      governance.status === "applied"
+    ) {
+      return;
+    }
+
+    throw createImportSessionGovernanceError({
+      code,
+      message: `Import session '${session.id}' must be approved before ${operation}.`,
+    });
   };
 
   const deriveSessionStatusFromEvent = ({
@@ -3455,6 +3623,13 @@ export const createJobEngine = ({
     const syncGovernance = await resolveImportGovernanceContext({
       job: syncContext.job,
     });
+    if (syncGovernance.importSession) {
+      await assertImportSessionApprovedForMutation({
+        session: syncGovernance.importSession,
+        code: "E_SYNC_IMPORT_REVIEW_REQUIRED",
+        operation: "applying local sync",
+      });
+    }
 
     const currentPlan = await planLocalSync({
       generatedProjectDir: syncContext.generatedProjectDir,
@@ -3824,6 +3999,13 @@ export const createJobEngine = ({
     };
 
     const prGovernance = await resolveImportGovernanceContext({ job });
+    if (prGovernance.importSession) {
+      await assertImportSessionApprovedForMutation({
+        session: prGovernance.importSession,
+        code: "E_PR_IMPORT_REVIEW_REQUIRED",
+        operation: "creating a PR",
+      });
+    }
 
     job.gitPr = await executePersistedGitPr({
       artifactStore,
@@ -4237,6 +4419,54 @@ export const createJobEngine = ({
     return await importSessionEventStore.list(sessionId);
   };
 
+  const approveImportSession: JobEngine["approveImportSession"] = async ({
+    sessionId,
+  }): Promise<WorkspaceImportSessionEvent> => {
+    const sessions = await importSessionStore.list();
+    const session = sessions.find((entry) => entry.id === sessionId);
+    if (!session) {
+      const error = new Error(`Import session '${sessionId}' not found.`);
+      (error as Error & { code: string }).code = "E_IMPORT_SESSION_NOT_FOUND";
+      throw error;
+    }
+
+    const governance = await resolveImportSessionGovernanceState({
+      session,
+      invalidHistoryCode: "E_IMPORT_SESSION_INVALID_TRANSITION",
+      operation: "approving the import session",
+    });
+    if (governance.status === "approved" || governance.status === "applied") {
+      return (
+        governance.authorizingEvent ?? {
+          id: randomUUID(),
+          sessionId,
+          kind: "approved",
+          at: nowIso(),
+        }
+      );
+    }
+
+    if (session.reviewRequired === true && governance.status === "imported") {
+      await appendImportSessionEvent({
+        event: {
+          id: "",
+          sessionId,
+          kind: "review_started",
+          at: "",
+        },
+      });
+    }
+
+    return await appendImportSessionEvent({
+      event: {
+        id: "",
+        sessionId,
+        kind: "approved",
+        at: "",
+      },
+    });
+  };
+
   const appendImportSessionEvent: JobEngine["appendImportSessionEvent"] =
     async ({ event }): Promise<WorkspaceImportSessionEvent> => {
       const sessions = await importSessionStore.list();
@@ -4248,6 +4478,10 @@ export const createJobEngine = ({
         (error as Error & { code: string }).code = "E_IMPORT_SESSION_NOT_FOUND";
         throw error;
       }
+      const currentStatus = await assertImportSessionTransitionAllowed({
+        session,
+        event,
+      });
       const finalized: WorkspaceImportSessionEvent = {
         ...event,
         id: event.id.length > 0 ? event.id : randomUUID(),
@@ -4255,16 +4489,14 @@ export const createJobEngine = ({
       };
       await importSessionEventStore.append(finalized);
       const qualityScore = extractEventQualityScore(finalized);
-      const reviewRequired = extractEventReviewRequired(finalized);
       const nextStatus = deriveSessionStatusFromEvent({
         event: finalized,
-        currentStatus: session.status,
+        currentStatus,
       });
       await importSessionStore.save({
         ...session,
         ...(finalized.actor ? { userId: finalized.actor } : {}),
         ...(qualityScore !== undefined ? { qualityScore } : {}),
-        ...(reviewRequired !== undefined ? { reviewRequired } : {}),
         ...(nextStatus ? { status: nextStatus } : {}),
       });
       return finalized;
@@ -4288,6 +4520,7 @@ export const createJobEngine = ({
     reimportImportSession,
     deleteImportSession,
     listImportSessionEvents,
+    approveImportSession,
     appendImportSessionEvent,
   };
 };

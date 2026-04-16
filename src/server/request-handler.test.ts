@@ -127,6 +127,13 @@ function createStubJobEngine(overrides: Partial<JobEngine> = {}): JobEngine {
       }) as Awaited<ReturnType<JobEngine["deleteImportSession"]>>,
     listImportSessionEvents: async () =>
       [] as Awaited<ReturnType<JobEngine["listImportSessionEvents"]>>,
+    approveImportSession: async ({ sessionId }) =>
+      ({
+        id: "approved-event-id",
+        sessionId,
+        kind: "approved",
+        at: "2026-04-15T10:00:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["approveImportSession"]>>,
     appendImportSessionEvent: async ({ event }) =>
       ({
         id: event.id.length > 0 ? event.id : "generated-event-id",
@@ -549,6 +556,106 @@ test("request handler GET /events returns 404 for an unknown session", async () 
     assert.equal(listImportSessionEvents.mock.callCount(), 0);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "E_IMPORT_SESSION_NOT_FOUND");
+  } finally {
+    await close();
+  }
+});
+
+test("request handler GET /approve returns 405", async () => {
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine(),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/import-sessions/session-1/approve",
+    });
+
+    assert.equal(response.statusCode, 405);
+    assert.equal(
+      response.json<Record<string, unknown>>().error,
+      "METHOD_NOT_ALLOWED",
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /approve forwards browser approval to jobEngine", async () => {
+  const approveImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        id: "approved-event-id",
+        sessionId,
+        kind: "approved",
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["approveImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      approveImportSession,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(approveImportSession.mock.callCount(), 1);
+    assert.deepEqual(approveImportSession.mock.calls[0]?.arguments[0], {
+      sessionId: "session-1",
+    });
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      id: "approved-event-id",
+      sessionId: "session-1",
+      kind: "approved",
+      at: "2026-04-15T10:05:00.000Z",
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /approve returns 409 for invalid approval history", async () => {
+  const approveImportSession = test.mock.fn(async () => {
+    const error = new Error(
+      "Import session 'session-1' has invalid governance history.",
+    );
+    (error as Error & { code: string }).code =
+      "E_IMPORT_SESSION_INVALID_TRANSITION";
+    throw error;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      approveImportSession,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 409);
+    assert.equal(
+      response.json<Record<string, unknown>>().error,
+      "E_IMPORT_SESSION_INVALID_TRANSITION",
+    );
   } finally {
     await close();
   }
@@ -1030,6 +1137,42 @@ test("request handler POST /events returns 404 when the engine reports an unknow
     assert.equal(response.statusCode, 404);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "E_IMPORT_SESSION_NOT_FOUND");
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /events returns 409 for invalid governed transitions", async () => {
+  const appendImportSessionEvent = test.mock.fn(async () => {
+    const error = new Error(
+      "Import session 'session-1' cannot append 'approved' while status is 'imported'.",
+    );
+    (error as Error & { code: string }).code =
+      "E_IMPORT_SESSION_INVALID_TRANSITION";
+    throw error;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      appendImportSessionEvent,
+    }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+
+    assert.equal(response.statusCode, 409);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "E_IMPORT_SESSION_INVALID_TRANSITION");
   } finally {
     await close();
   }

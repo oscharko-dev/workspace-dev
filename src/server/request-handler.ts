@@ -409,6 +409,7 @@ function resolveProtectedWriteRoute(
   if (
     parsedImportSessionRoute &&
     ((method === "POST" && parsedImportSessionRoute.action === "reimport") ||
+      (method === "POST" && parsedImportSessionRoute.action === "approve") ||
       (method === "POST" && parsedImportSessionRoute.action === "events") ||
       (method === "DELETE" && parsedImportSessionRoute.action === "detail"))
   ) {
@@ -1189,6 +1190,18 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        if (parsedImportSessionRoute?.action === "approve") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for approve route '${pathname}'.`,
+            },
+          });
+          return;
+        }
+
         if (parsedImportSessionRoute?.action === "events") {
           const sessionId = safeDecodeParam(
             parsedImportSessionRoute.sessionId,
@@ -1564,6 +1577,8 @@ export function createWorkspaceRequestHandler({
             ? "DELETE"
             : importSessionAction === "events"
               ? "GET, POST"
+              : importSessionAction === "approve"
+                ? "POST"
               : "POST";
         response.setHeader("allow", allowedMethods);
         sendJson({
@@ -1724,6 +1739,88 @@ export function createWorkspaceRequestHandler({
 
         if (
           method === "POST" &&
+          parsedImportSessionRoute?.action === "approve"
+        ) {
+          const sessionId = safeDecodeParam(
+            parsedImportSessionRoute.sessionId,
+            "import session ID",
+            response,
+          );
+          if (sessionId === null) return;
+
+          const rawBody = await readJsonBody(request);
+          if (!rawBody.ok) {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [{ path: "(root)", message: rawBody.error }],
+              },
+              fallbackMessage: "Import session approval validation failed.",
+            });
+            return;
+          }
+
+          if (
+            rawBody.value !== undefined &&
+            (typeof rawBody.value !== "object" ||
+              rawBody.value === null ||
+              Array.isArray(rawBody.value))
+          ) {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "VALIDATION_ERROR",
+                message: "Request validation failed.",
+                issues: [
+                  {
+                    path: "(root)",
+                    message: "Approval payload must be an object when provided.",
+                  },
+                ],
+              },
+              fallbackMessage: "Import session approval validation failed.",
+            });
+            return;
+          }
+
+          try {
+            const approved = await jobEngine.approveImportSession({
+              sessionId,
+            });
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: approved,
+            });
+          } catch (error) {
+            const code =
+              error instanceof Error && "code" in error
+                ? (error as { code?: string }).code
+                : undefined;
+            sendRequestFailure({
+              statusCode:
+                code === "E_IMPORT_SESSION_NOT_FOUND"
+                  ? 404
+                  : code === "E_IMPORT_SESSION_INVALID_TRANSITION"
+                    ? 409
+                    : 500,
+              payload: {
+                error: code ?? "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not approve import session.",
+                }),
+              },
+              fallbackMessage: "Import session approval failed.",
+            });
+          }
+          return;
+        }
+
+        if (
+          method === "POST" &&
           parsedImportSessionRoute?.action === "events"
         ) {
           const sessionId = safeDecodeParam(
@@ -1854,7 +1951,12 @@ export function createWorkspaceRequestHandler({
                 ? (error as { code?: string }).code
                 : undefined;
             sendRequestFailure({
-              statusCode: code === "E_IMPORT_SESSION_NOT_FOUND" ? 404 : 500,
+              statusCode:
+                code === "E_IMPORT_SESSION_NOT_FOUND"
+                  ? 404
+                  : code === "E_IMPORT_SESSION_INVALID_TRANSITION"
+                    ? 409
+                    : 500,
               payload: {
                 error: code ?? "INTERNAL_ERROR",
                 message: sanitizeErrorMessage({

@@ -127,7 +127,7 @@ test("isSecuritySensitiveImport matches literal metacharacter tokens as plain te
   );
 });
 
-test("createJobEngine persists import sessions with authoritative governance defaults and updates them from events", async () => {
+test("createJobEngine persists authoritative governance state and rejects invalid governed transitions", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-import-governance-"),
   );
@@ -172,6 +172,44 @@ test("createJobEngine persists import sessions with authoritative governance def
   const initialAuditTrail = await engine.listImportSessionEvents({ sessionId });
   assert.equal(initialAuditTrail.some((event) => event.kind === "imported"), true);
 
+  await assert.rejects(
+    () =>
+      engine.appendImportSessionEvent({
+        event: {
+          id: "",
+          sessionId,
+          kind: "approved",
+          at: "",
+        },
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_IMPORT_SESSION_INVALID_TRANSITION",
+  );
+  await assert.rejects(
+    () =>
+      engine.appendImportSessionEvent({
+        event: {
+          id: "",
+          sessionId,
+          kind: "applied",
+          at: "",
+        },
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_IMPORT_SESSION_INVALID_TRANSITION",
+  );
+  await engine.appendImportSessionEvent({
+    event: {
+      id: "",
+      sessionId,
+      kind: "note",
+      at: "",
+      metadata: {
+        reviewRequired: false,
+      },
+    },
+  });
+
   await engine.appendImportSessionEvent({
     event: {
       id: "",
@@ -212,6 +250,7 @@ test("createJobEngine persists import sessions with authoritative governance def
   );
   assert.equal(updated?.status, "approved");
   assert.equal(updated?.qualityScore, 81);
+  assert.equal(updated?.reviewRequired, true);
   assert.equal(updated?.userId, "reviewer-1");
 
   await engine.appendImportSessionEvent({
@@ -228,4 +267,77 @@ test("createJobEngine persists import sessions with authoritative governance def
     (entry) => entry.id === sessionId,
   );
   assert.equal(applied?.status, "applied");
+});
+
+test("approveImportSession records review_started before approved and stays idempotent", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-import-governance-approve-"),
+  );
+  const figmaPath = path.join(tempRoot, "figma.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false,
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    requestSourceMode: "local_json",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: accepted.jobId,
+  });
+  assert.equal(status.status, "completed");
+
+  const sessionId = (await engine.listImportSessions())[0]?.id;
+  assert.ok(sessionId);
+
+  const approvedEvent = await engine.approveImportSession({ sessionId });
+  assert.equal(approvedEvent.kind, "approved");
+
+  const auditTrail = await engine.listImportSessionEvents({ sessionId });
+  assert.equal(
+    auditTrail.filter((event) => event.kind === "review_started").length,
+    1,
+  );
+  assert.equal(
+    auditTrail.filter((event) => event.kind === "approved").length,
+    1,
+  );
+  assert.equal(
+    auditTrail.findIndex((event) => event.kind === "review_started") <
+      auditTrail.findIndex((event) => event.kind === "approved"),
+    true,
+  );
+
+  const repeatedApproval = await engine.approveImportSession({ sessionId });
+  assert.equal(repeatedApproval.id, approvedEvent.id);
+
+  const repeatedAuditTrail = await engine.listImportSessionEvents({ sessionId });
+  assert.equal(
+    repeatedAuditTrail.filter((event) => event.kind === "review_started").length,
+    1,
+  );
+  assert.equal(
+    repeatedAuditTrail.filter((event) => event.kind === "approved").length,
+    1,
+  );
+
+  const approvedSession = (await engine.listImportSessions()).find(
+    (entry) => entry.id === sessionId,
+  );
+  assert.equal(approvedSession?.status, "approved");
 });

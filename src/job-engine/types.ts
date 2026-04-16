@@ -313,6 +313,9 @@ export interface JobEngine {
   listImportSessionEvents: (input: {
     sessionId: string;
   }) => Promise<WorkspaceImportSessionEvent[]>;
+  approveImportSession: (input: {
+    sessionId: string;
+  }) => Promise<WorkspaceImportSessionEvent>;
   appendImportSessionEvent: (input: {
     event: WorkspaceImportSessionEvent;
   }) => Promise<WorkspaceImportSessionEvent>;

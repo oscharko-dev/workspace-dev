@@ -602,6 +602,14 @@ test("job-engine local sync persists a baseline and surfaces manual edits as con
     event: {
       id: "",
       sessionId: sourceImportSession.id,
+      kind: "review_started",
+      at: "",
+    },
+  });
+  await engine.appendImportSessionEvent({
+    event: {
+      id: "",
+      sessionId: sourceImportSession.id,
       kind: "approved",
       at: "",
     },
@@ -691,6 +699,14 @@ test("job-engine local sync rejects apply when the preview becomes stale", async
     event: {
       id: "",
       sessionId: sourceImportSession.id,
+      kind: "review_started",
+      at: "",
+    },
+  });
+  await engine.appendImportSessionEvent({
+    event: {
+      id: "",
+      sessionId: sourceImportSession.id,
       kind: "approved",
       at: "",
     },
@@ -717,8 +733,96 @@ test("job-engine local sync rejects apply when the preview becomes stale", async
   );
 });
 
-test("job-engine local sync applies unreviewed sessions without appending approved events", async () => {
+test("job-engine local sync rejects unreviewed sessions before any writes occur", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-engine-governance-"));
+  const outputRoot = path.join(tempRoot, "runtime-output");
+  const workspaceRoot = path.join(tempRoot, "workspace-root");
+  await mkdir(workspaceRoot, { recursive: true });
+
+  const figmaPath = path.join(tempRoot, "figma-input.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot,
+      jobsRoot: path.join(outputRoot, "jobs"),
+      reprosRoot: path.join(outputRoot, "repros"),
+      workspaceRoot
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      enableUiValidation: false,
+      enableUnitTestValidation: false,
+      installPreferOffline: true
+    })
+  });
+
+  const sourceAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaSourceMode: "local_json",
+    requestSourceMode: "local_json"
+  });
+  const sourceStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: sourceAccepted.jobId
+  });
+  assert.equal(sourceStatus.status, "completed");
+
+  const regenAccepted = engine.submitRegeneration({
+    sourceJobId: sourceAccepted.jobId,
+    overrides: [{ nodeId: "card-1", field: "cornerRadius", value: 16 }]
+  });
+  const regenStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: regenAccepted.jobId
+  });
+  assert.equal(regenStatus.status, "completed");
+
+  const preview = await engine.previewLocalSync({
+    jobId: regenAccepted.jobId,
+    targetPath: "sync-output"
+  });
+  const firstPreviewFile = preview.files[0];
+  assert.ok(firstPreviewFile);
+  const sourceImportSession = (await engine.listImportSessions()).find(
+    (session) => session.jobId === sourceAccepted.jobId
+  );
+  assert.ok(sourceImportSession);
+
+  await assert.rejects(
+    () =>
+      engine.applyLocalSync({
+        jobId: regenAccepted.jobId,
+        confirmationToken: preview.confirmationToken,
+        confirmOverwrite: true,
+        reviewerNote: "Approved during local sync apply.",
+        fileDecisions: preview.files.map((entry) => ({
+          path: entry.path,
+          decision: entry.decision
+        }))
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_SYNC_IMPORT_REVIEW_REQUIRED"
+  );
+
+  const sourceAuditTrail = await engine.listImportSessionEvents({
+    sessionId: sourceImportSession.id
+  });
+  assert.equal(sourceAuditTrail.some((event) => event.kind === "approved"), false);
+  assert.equal(sourceAuditTrail.some((event) => event.kind === "applied"), false);
+  const firstFilePath = path.join(
+    preview.destinationRoot,
+    ...String(firstPreviewFile?.path ?? "").split("/")
+  );
+  await assert.rejects(
+    () => stat(firstFilePath),
+    (error: Error & { code?: string }) => error.code === "ENOENT"
+  );
+});
+
+test("job-engine local sync ignores a forged stored approved status when event history never approved the session", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-engine-tainted-"));
   const outputRoot = path.join(tempRoot, "runtime-output");
   const workspaceRoot = path.join(tempRoot, "workspace-root");
   await mkdir(workspaceRoot, { recursive: true });
@@ -772,24 +876,48 @@ test("job-engine local sync applies unreviewed sessions without appending approv
   );
   assert.ok(sourceImportSession);
 
-  const applied = await engine.applyLocalSync({
-    jobId: regenAccepted.jobId,
-    confirmationToken: preview.confirmationToken,
-    confirmOverwrite: true,
-    reviewerNote: "Approved during local sync apply.",
-    fileDecisions: preview.files.map((entry) => ({
-      path: entry.path,
-      decision: entry.decision
-    }))
-  });
-  assert.equal(applied.jobId, regenAccepted.jobId);
+  const sessionsPath = path.join(outputRoot, "import-sessions", "import-sessions.json");
+  const envelope = JSON.parse(await readFile(sessionsPath, "utf8")) as {
+    contractVersion: string;
+    sessions: Array<Record<string, unknown>>;
+  };
+  const persistedSourceSession = envelope.sessions.find(
+    (session) => session.id === sourceImportSession.id
+  );
+  assert.ok(persistedSourceSession);
+  persistedSourceSession.status = "approved";
+  await writeFile(
+    sessionsPath,
+    `${JSON.stringify(envelope, null, 2)}\n`,
+    "utf8"
+  );
+
+  const taintedSession = (await engine.listImportSessions()).find(
+    (session) => session.id === sourceImportSession.id
+  );
+  assert.equal(taintedSession?.status, "approved");
+
+  await assert.rejects(
+    () =>
+      engine.applyLocalSync({
+        jobId: regenAccepted.jobId,
+        confirmationToken: preview.confirmationToken,
+        confirmOverwrite: true,
+        reviewerNote: "Approved during local sync apply.",
+        fileDecisions: preview.files.map((entry) => ({
+          path: entry.path,
+          decision: entry.decision
+        }))
+      }),
+    (error: Error & { code?: string }) =>
+      error.code === "E_SYNC_IMPORT_REVIEW_REQUIRED"
+  );
 
   const sourceAuditTrail = await engine.listImportSessionEvents({
     sessionId: sourceImportSession.id
   });
   assert.equal(sourceAuditTrail.some((event) => event.kind === "approved"), false);
-  const appliedEvent = sourceAuditTrail.findLast((event) => event.kind === "applied");
-  assert.equal(appliedEvent?.note, "Approved during local sync apply.");
+  assert.equal(sourceAuditTrail.some((event) => event.kind === "applied"), false);
 });
 
 test("job-engine local sync applies for approved sessions without appending a fresh approved event", async () => {
@@ -846,6 +974,14 @@ test("job-engine local sync applies for approved sessions without appending a fr
     (session) => session.jobId === sourceAccepted.jobId
   );
   assert.ok(sourceImportSession);
+  await engine.appendImportSessionEvent({
+    event: {
+      id: "",
+      sessionId: sourceImportSession.id,
+      kind: "review_started",
+      at: "",
+    }
+  });
   await engine.appendImportSessionEvent({
     event: {
       id: "",
