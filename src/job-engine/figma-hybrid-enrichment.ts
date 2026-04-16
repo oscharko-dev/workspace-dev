@@ -228,6 +228,28 @@ const mergeToolNames = ({
   return [...merged];
 };
 
+const createTrustedFigmaLoaderFetch = ({
+  figmaRestFetch,
+  figmaMcpFetch,
+}: {
+  figmaRestFetch: typeof fetch;
+  figmaMcpFetch: typeof fetch;
+}): typeof fetch => {
+  return async (input, init) => {
+    const request = new Request(input, init);
+    const url = new URL(request.url);
+    if (url.hostname === "api.figma.com") {
+      return await figmaRestFetch(request);
+    }
+    if (url.hostname === "mcp.figma.com") {
+      return await figmaMcpFetch(request);
+    }
+    throw new Error(
+      `Default hybrid loader fetch is restricted to Figma hosts; received '${url.hostname}'.`,
+    );
+  };
+};
+
 export const createDefaultFigmaMcpEnrichmentLoader = ({
   timeoutMs,
   maxRetries,
@@ -243,18 +265,21 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
 ) => Promise<FigmaMcpEnrichment | undefined>) => {
   return async ({
     figmaFileKey,
-    figmaAccessToken,
     rawFile,
+    figmaRestFetch,
+    figmaMcpFetch,
     workspaceRoot,
-    fetchImpl,
   }: FigmaMcpEnrichmentLoaderInput): Promise<FigmaMcpEnrichment> => {
+    const trustedFigmaFetch = createTrustedFigmaLoaderFetch({
+      figmaRestFetch,
+      figmaMcpFetch,
+    });
     const authoritativeSubtrees = await fetchAuthoritativeFigmaSubtrees({
       fileKey: figmaFileKey,
-      accessToken: figmaAccessToken,
       file: rawFile,
       timeoutMs,
       maxRetries,
-      fetchImpl,
+      fetchImpl: figmaRestFetch,
       onLog: () => {},
       maxScreenCandidates,
       ...(screenNamePattern !== undefined ? { screenNamePattern } : {}),
@@ -297,9 +322,8 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
         },
         {
           serverUrl: DEFAULT_MCP_SERVER_URL,
-          accessToken: figmaAccessToken,
           authMode: "desktop",
-          fetchImpl,
+          fetchImpl: trustedFigmaFetch,
           timeoutMs,
           maxRetries,
           onLog: () => {},
@@ -318,9 +342,8 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
           nodeId: primaryNodeId,
           mcpConfig: {
             serverUrl: DEFAULT_MCP_SERVER_URL,
-            accessToken: figmaAccessToken,
             authMode: "desktop",
-            fetchImpl,
+            fetchImpl: figmaMcpFetch,
             timeoutMs,
             maxRetries,
             onLog: () => {},
@@ -392,9 +415,8 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
           nodeId: primaryNodeId,
           mcpConfig: {
             serverUrl: DEFAULT_MCP_SERVER_URL,
-            accessToken: figmaAccessToken,
             authMode: "desktop",
-            fetchImpl,
+            fetchImpl: figmaMcpFetch,
             timeoutMs,
             maxRetries,
             onLog: () => {},

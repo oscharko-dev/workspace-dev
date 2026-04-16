@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
+import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import { createWorkspaceLogger } from "../logging.js";
@@ -59,6 +60,40 @@ const createLocalFigmaPayload = () => ({
     ]
   }
 });
+
+const listFilesRecursively = async (rootDir: string): Promise<string[]> => {
+  const entries = await readdir(rootDir, { withFileTypes: true });
+  const files: string[] = [];
+  for (const entry of entries) {
+    const entryPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listFilesRecursively(entryPath)));
+      continue;
+    }
+    if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+  return files;
+};
+
+const assertTokenAbsentFromJobDir = async ({
+  jobDir,
+  token,
+}: {
+  jobDir: string;
+  token: string;
+}): Promise<void> => {
+  const files = await listFilesRecursively(jobDir);
+  for (const filePath of files) {
+    const contents = await readFile(filePath, "utf8");
+    assert.equal(
+      contents.includes(token),
+      false,
+      `Expected token to be absent from ${path.relative(jobDir, filePath)}`,
+    );
+  }
+};
 
 test.before(async () => {
   await ensureTemplateValidationSeedNodeModules();
@@ -494,7 +529,14 @@ test("createJobEngine emits structured runtime logs without changing stored job 
 test("createJobEngine supports hybrid mode with MCP enrichment loader output", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-"));
   const payload = createLocalFigmaPayload();
-  const loaderCalls: Array<{ figmaFileKey: string; figmaAccessToken: string; jobDir: string }> = [];
+  const token = "figd_boundary_secret_token_647";
+  const loaderCalls: Array<{
+    figmaFileKey: string;
+    hasFigmaAccessToken: boolean;
+    hasFigmaRestFetch: boolean;
+    hasFigmaMcpFetch: boolean;
+    jobDir: string;
+  }> = [];
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -517,9 +559,16 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
       figmaMcpEnrichmentLoader: async (input) => {
         loaderCalls.push({
           figmaFileKey: input.figmaFileKey,
-          figmaAccessToken: input.figmaAccessToken,
+          hasFigmaAccessToken: Object.hasOwn(input, "figmaAccessToken"),
+          hasFigmaRestFetch: typeof input.figmaRestFetch === "function",
+          hasFigmaMcpFetch: typeof input.figmaMcpFetch === "function",
           jobDir: input.jobDir
         });
+        await writeFile(
+          path.join(input.jobDir, "loader-input.json"),
+          JSON.stringify(input, null, 2),
+          "utf8",
+        );
 
         return {
           sourceMode: "hybrid",
@@ -590,7 +639,7 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
   const accepted = engine.submitJob({
     figmaSourceMode: "hybrid",
     figmaFileKey: "abc",
-    figmaAccessToken: "token"
+    figmaAccessToken: token
   });
   assert.equal(accepted.acceptedModes.figmaSourceMode, "hybrid");
 
@@ -603,8 +652,14 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
   assert.equal(loaderCalls.length, 1);
   assert.deepEqual(loaderCalls[0], {
     figmaFileKey: "abc",
-    figmaAccessToken: "token",
+    hasFigmaAccessToken: false,
+    hasFigmaRestFetch: true,
+    hasFigmaMcpFetch: true,
     jobDir: String(status.artifacts.jobDir)
+  });
+  await assertTokenAbsentFromJobDir({
+    jobDir: String(status.artifacts.jobDir),
+    token,
   });
 
   const designIr = JSON.parse(await readFile(String(status.artifacts.designIrFile), "utf8")) as {
@@ -650,6 +705,153 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
     (stageTimings.diagnostics ?? []).some((entry) => entry.code === "W_HYBRID_EQUIVALENT_TO_REST"),
     false
   );
+});
+
+test("createJobEngine redacts token-bearing hybrid loader failures before persisting artifacts", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-redaction-"));
+  const payload = createLocalFigmaPayload();
+  const token = "figd_secret_token_123456";
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }),
+      figmaMcpEnrichmentLoader: async () => {
+        throw new Error(`loader exploded figmaAccessToken=${token}`);
+      }
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc",
+    figmaAccessToken: token
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+  });
+
+  assert.equal(status.status, "completed");
+  assert.equal(
+    status.logs.some((entry) => entry.message.includes(token)),
+    false,
+  );
+  assert.equal(
+    status.logs.some(
+      (entry) =>
+        entry.message.includes("Hybrid MCP enrichment failed") &&
+        entry.message.includes("[REDACTED]"),
+    ),
+    true,
+  );
+
+  const designIr = JSON.parse(await readFile(String(status.artifacts.designIrFile), "utf8")) as {
+    metrics?: {
+      mcpCoverage?: {
+        fallbackUsed?: boolean;
+        diagnostics?: Array<{ code?: string; message?: string }>;
+      };
+    };
+  };
+  assert.equal(designIr.metrics?.mcpCoverage?.fallbackUsed, true);
+  assert.equal(
+    (designIr.metrics?.mcpCoverage?.diagnostics ?? []).some(
+      (entry) => entry.code === "W_MCP_ENRICHMENT_SKIPPED" && !entry.message?.includes(token),
+    ),
+    true,
+  );
+
+  const stageTimingsRaw = await readFile(String(status.artifacts.stageTimingsFile), "utf8");
+  assert.equal(stageTimingsRaw.includes(token), false);
+
+  await assertTokenAbsentFromJobDir({
+    jobDir: String(status.artifacts.jobDir),
+    token,
+  });
+});
+
+test("createJobEngine redacts hybrid loader tokens before truncating persisted error messages", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-redaction-truncate-"));
+  const payload = createLocalFigmaPayload();
+  const token = "figd_fragment_boundary_secret_987654321";
+  const tokenFragment = token.slice(0, 18);
+  const prefix = "x".repeat(230);
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros")
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json"
+          }
+        }),
+      figmaMcpEnrichmentLoader: async () => {
+        throw new Error(`${prefix}${token} trailing-loader-context`);
+      }
+    })
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc",
+    figmaAccessToken: token
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+  });
+
+  assert.equal(status.status, "completed");
+  assert.equal(
+    status.logs.some((entry) => entry.message.includes(tokenFragment)),
+    false,
+  );
+  assert.equal(
+    status.logs.some(
+      (entry) =>
+        entry.message.includes("Hybrid MCP enrichment failed") &&
+        entry.message.includes("[REDACTED]"),
+    ),
+    true,
+  );
+
+  const stageTimingsRaw = await readFile(String(status.artifacts.stageTimingsFile), "utf8");
+  assert.equal(stageTimingsRaw.includes(tokenFragment), false);
+  assert.equal(stageTimingsRaw.includes("[REDACTED]"), true);
+
+  await assertTokenAbsentFromJobDir({
+    jobDir: String(status.artifacts.jobDir),
+    token,
+  });
 });
 
 test("createJobEngine applies authoritative hybrid subtrees before IR derivation", async () => {
@@ -752,6 +954,207 @@ test("createJobEngine applies authoritative hybrid subtrees before IR derivation
   const designIr = await readFile(String(status.artifacts.designIrFile), "utf8");
   assert.equal(cleanedFigma.includes("Druckcenter"), true);
   assert.equal(designIr.includes("Druckcenter"), true);
+});
+
+test("createJobEngine default hybrid loader retries authoritative subtree recovery with Bearer after PAT rejection", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-hybrid-subtree-auth-retry-"),
+  );
+  const payload = createLowFidelityFigmaPayload();
+  const nodeRequestHeaders: Array<{
+    xFigmaToken: string | null;
+    authorization: string | null;
+  }> = [];
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      figmaMcpEnrichmentLoader: createDefaultFigmaMcpEnrichmentLoader({
+        timeoutMs: 1_000,
+        maxRetries: 1,
+        maxScreenCandidates: 5,
+      }),
+      fetchImpl: async (input, init) => {
+        const request = new Request(input, init);
+        const url = new URL(request.url);
+
+        if (url.hostname === "api.figma.com" && url.pathname.includes("/nodes")) {
+          nodeRequestHeaders.push({
+            xFigmaToken: request.headers.get("x-figma-token"),
+            authorization: request.headers.get("authorization"),
+          });
+          if (nodeRequestHeaders.length === 1) {
+            return new Response("invalid token", { status: 403 });
+          }
+          return new Response(
+            JSON.stringify({
+              nodes: {
+                "screen-recovery": {
+                  document: {
+                    id: "screen-recovery",
+                    type: "FRAME",
+                    name: "Sparkasse Recovery",
+                    absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+                    children: [
+                      {
+                        id: "title-restored",
+                        type: "TEXT",
+                        name: "Title",
+                        characters: "Finanzierungsplaner",
+                        absoluteBoundingBox: { x: 24, y: 24, width: 240, height: 24 },
+                      },
+                    ],
+                  },
+                },
+              },
+            }),
+            {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            },
+          );
+        }
+
+        if (url.hostname === "api.figma.com") {
+          return new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+          });
+        }
+
+        if (url.hostname === "mcp.figma.com") {
+          const body = (await request.json()) as {
+            params?: { name?: string };
+          };
+          const toolName = body.params?.name;
+
+          if (toolName === "get_metadata") {
+            return new Response(
+              JSON.stringify({
+                result: {
+                  xml: '<FRAME id="screen-recovery" name="Sparkasse Recovery"><TEXT id="title-restored" name="Title"/></FRAME>',
+                },
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json",
+                },
+              },
+            );
+          }
+          if (toolName === "get_design_context") {
+            return new Response(
+              JSON.stringify({
+                result: {
+                  code: "export default function Recovery() {}",
+                  assets: {},
+                },
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json",
+                },
+              },
+            );
+          }
+          if (toolName === "get_screenshot") {
+            return new Response(
+              JSON.stringify({
+                result: {
+                  url: "https://cdn.figma.com/screenshots/recovery.png",
+                },
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json",
+                },
+              },
+            );
+          }
+          if (toolName === "get_variable_defs") {
+            return new Response(JSON.stringify({ result: { variables: [] } }), {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            });
+          }
+          if (toolName === "search_design_system") {
+            return new Response(
+              JSON.stringify({
+                result: {
+                  components: [],
+                  styles: [],
+                  variables: [],
+                },
+              }),
+              {
+                status: 200,
+                headers: {
+                  "content-type": "application/json",
+                },
+              },
+            );
+          }
+          if (toolName === "get_code_connect_map") {
+            return new Response(JSON.stringify({ result: {} }), {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            });
+          }
+          if (toolName === "get_code_connect_suggestions") {
+            return new Response(JSON.stringify({ result: [] }), {
+              status: 200,
+              headers: {
+                "content-type": "application/json",
+              },
+            });
+          }
+        }
+
+        throw new Error(`Unexpected request: ${request.url}`);
+      },
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "hybrid",
+    figmaFileKey: "abc",
+    figmaAccessToken: "figd_retry_secret_647",
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
+  });
+
+  assert.equal(status.status, "completed");
+  assert.equal(nodeRequestHeaders.length, 2);
+  assert.equal(nodeRequestHeaders[0]?.xFigmaToken, "figd_retry_secret_647");
+  assert.equal(nodeRequestHeaders[0]?.authorization, null);
+  assert.equal(nodeRequestHeaders[1]?.xFigmaToken, null);
+  assert.equal(
+    nodeRequestHeaders[1]?.authorization,
+    "Bearer figd_retry_secret_647",
+  );
 });
 
 test("createJobEngine preserves uncovered screens and enriches authoritative overlay screens", async () => {

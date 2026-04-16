@@ -37,6 +37,8 @@ import {
 } from "../paste-delta-execution.js";
 import { extractDiffablePasteRoots } from "../paste-delta-roots.js";
 
+const MAX_HYBRID_LOADER_ERROR_MESSAGE_LENGTH = 240;
+
 export type FigmaSourceStageInput = Pick<
   WorkspaceJobInput,
   "figmaFileKey" | "figmaNodeId" | "figmaAccessToken" | "figmaJsonPath"
@@ -63,6 +65,127 @@ const createHybridFallbackEnrichment = ({
     ],
   };
 };
+
+const redactSecret = ({
+  value,
+  secret,
+}: {
+  value: string;
+  secret?: string | undefined;
+}): string => {
+  if (!secret || secret.trim().length === 0) {
+    return value;
+  }
+  return value.split(secret).join("[REDACTED]");
+};
+
+const sanitizeHybridLoaderErrorMessage = ({
+  error,
+  secret,
+}: {
+  error: unknown;
+  secret?: string | undefined;
+}): string => {
+  const normalized = redactSecret({
+    value: getErrorMessage(error).replace(/\s+/g, " ").trim(),
+    secret,
+  });
+  if (normalized.length === 0) {
+    return "MCP enrichment loader failed.";
+  }
+  return normalized.length > MAX_HYBRID_LOADER_ERROR_MESSAGE_LENGTH
+    ? `${normalized.slice(0, MAX_HYBRID_LOADER_ERROR_MESSAGE_LENGTH)}...`
+    : normalized;
+};
+
+const createAuthenticatedHostFetch = ({
+  fetchImpl,
+  allowedHostname,
+  primaryAuthHeaders,
+  retryAuthHeaders,
+  shouldRetryWithAlternateAuth,
+}: {
+  fetchImpl: typeof fetch;
+  allowedHostname: string;
+  primaryAuthHeaders: Record<string, string>;
+  retryAuthHeaders?: Record<string, string>;
+  shouldRetryWithAlternateAuth?: (response: Response) => Promise<boolean>;
+}): typeof fetch => {
+  return async (input, init) => {
+    const request = new Request(input, init);
+    const url = new URL(request.url);
+    if (url.hostname !== allowedHostname) {
+      throw new Error(
+        `Authenticated Figma fetch is restricted to '${allowedHostname}'.`,
+      );
+    }
+    const applyHeaders = (authHeaders: Record<string, string>): Headers => {
+      const headers = new Headers(request.headers);
+      for (const [key, value] of Object.entries(authHeaders)) {
+        headers.set(key, value);
+      }
+      return headers;
+    };
+
+    let response = await fetchImpl(
+      new Request(request, {
+        headers: applyHeaders(primaryAuthHeaders),
+      }),
+    );
+    if (
+      retryAuthHeaders &&
+      shouldRetryWithAlternateAuth &&
+      (await shouldRetryWithAlternateAuth(response))
+    ) {
+      response = await fetchImpl(
+        new Request(request, {
+          headers: applyHeaders(retryAuthHeaders),
+        }),
+      );
+    }
+    return response;
+  };
+};
+
+const createAuthenticatedFigmaRestFetch = ({
+  fetchImpl,
+  accessToken,
+}: {
+  fetchImpl: typeof fetch;
+  accessToken: string;
+}): typeof fetch =>
+  createAuthenticatedHostFetch({
+    fetchImpl,
+    allowedHostname: "api.figma.com",
+    primaryAuthHeaders: {
+      "X-Figma-Token": accessToken,
+    },
+    retryAuthHeaders: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    shouldRetryWithAlternateAuth: async (response) => {
+      if (response.status !== 403) {
+        return false;
+      }
+      const bodyText = (await response.clone().text()).toLowerCase();
+      return bodyText.includes("invalid token");
+    },
+  });
+
+const createAuthenticatedFigmaMcpFetch = ({
+  fetchImpl,
+  accessToken,
+}: {
+  fetchImpl: typeof fetch;
+  accessToken: string;
+}): typeof fetch =>
+  createAuthenticatedHostFetch({
+    fetchImpl,
+    allowedHostname: "mcp.figma.com",
+    primaryAuthHeaders: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
 
 const sortedUnique = (values: readonly string[]): string[] =>
   Array.from(new Set(values)).sort((left, right) => left.localeCompare(right));
@@ -357,9 +480,16 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
               });
             }
             try {
+              const figmaRestFetch = createAuthenticatedFigmaRestFetch({
+                fetchImpl: context.fetchWithCancellation,
+                accessToken,
+              });
+              const figmaMcpFetch = createAuthenticatedFigmaMcpFetch({
+                fetchImpl: context.fetchWithCancellation,
+                accessToken,
+              });
               const loaded = await context.runtime.figmaMcpEnrichmentLoader({
                 figmaFileKey: fileKey,
-                figmaAccessToken: accessToken,
                 cleanedFile: figmaFetch.file,
                 rawFile: validatedJsonParse({
                   raw: await readFile(context.paths.figmaRawJsonFile, "utf8"),
@@ -370,6 +500,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
                 jobDir: context.paths.jobDir,
                 workspaceRoot: context.resolvedWorkspaceRoot,
                 fetchImpl: context.fetchWithCancellation,
+                figmaRestFetch,
+                figmaMcpFetch,
               });
               if (!loaded) {
                 return createHybridFallbackEnrichment({
@@ -380,7 +512,10 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
               }
               return loaded;
             } catch (error) {
-              const message = getErrorMessage(error);
+              const message = sanitizeHybridLoaderErrorMessage({
+                error,
+                secret: accessToken,
+              });
               context.log({
                 level: "warn",
                 stage: "ir.derive",
