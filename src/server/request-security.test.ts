@@ -261,10 +261,46 @@ test("request-security: validateImportSessionEventWriteAuth rejects missing cred
   assert.equal(result.wwwAuthenticate, 'Bearer realm="workspace-dev"');
 });
 
-test("request-security: validateImportSessionEventWriteAuth rejects invalid bearer tokens", () => {
+test("request-security: validateImportSessionEventWriteAuth rejects shorter invalid bearer tokens", () => {
   const result = validateImportSessionEventWriteAuth({
     request: createRequest({
-      authorization: "Bearer wrong-token"
+      authorization: "Bearer wrong"
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.payload.error, "UNAUTHORIZED");
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects longer invalid bearer tokens", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "Bearer secret-token-extra"
+    }),
+    bearerToken: "secret-token",
+    routeLabel: "Import session event"
+  });
+
+  assert.equal(result.ok, false);
+  if (result.ok) {
+    return;
+  }
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.payload.error, "UNAUTHORIZED");
+});
+
+test("request-security: validateImportSessionEventWriteAuth rejects same-length invalid bearer tokens", () => {
+  const result = validateImportSessionEventWriteAuth({
+    request: createRequest({
+      authorization: "Bearer secret-tokez"
     }),
     bearerToken: "secret-token",
     routeLabel: "Import session event"
