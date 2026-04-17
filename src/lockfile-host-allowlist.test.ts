@@ -9,15 +9,19 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(MODULE_DIR, "..");
 const scriptPath = path.resolve(packageRoot, "scripts/check-lockfile-host-allowlist.mjs");
-const { runLockfileHostAllowlist } = await import(pathToFileURL(scriptPath).href);
+const { extractHosts, runLockfileHostAllowlist } = await import(pathToFileURL(scriptPath).href);
+
+const createLockfileFromEntries = (entries: string[]): string => {
+  return `lockfileVersion: '9.0'\n\npackages:\n${entries.join("")}`;
+};
 
 const createLockfile = (hosts: string[]): string => {
-  const packages = hosts.map((host, index) => {
+  const entries = hosts.map((host, index) => {
     const dependencyName = `fixture-${index + 1}`;
     return `  ${dependencyName}@1.0.0:\n    resolution: {integrity: sha512-${index + 1}, tarball: https://${host}/${dependencyName}-${index + 1}.tgz}\n`;
   });
 
-  return `lockfileVersion: '9.0'\n\npackages:\n${packages.join("")}`;
+  return createLockfileFromEntries(entries);
 };
 
 const writeLockfiles = async (rootPath: string, rootHosts: string[], templateHosts: string[]) => {
@@ -77,6 +81,8 @@ const runHelperCheck = async ({
   env = {},
   rootHosts = ["registry.npmjs.org"],
   templateHosts = ["registry.npmjs.org"],
+  rootContent,
+  templateContent,
   lockfilePaths = ["/virtual/pnpm-lock.yaml", "/virtual/template/react-mui-app/pnpm-lock.yaml"],
   readTextFile
 }: {
@@ -84,14 +90,16 @@ const runHelperCheck = async ({
   env?: NodeJS.ProcessEnv;
   rootHosts?: string[];
   templateHosts?: string[];
+  rootContent?: string;
+  templateContent?: string;
   lockfilePaths?: string[];
   readTextFile?: (filePath: string, encoding: string) => Promise<string>;
 }): Promise<{ code: number; stdout: string; stderr: string }> => {
   const stdoutLines: string[] = [];
   const stderrLines: string[] = [];
   const lockfileContents = new Map<string, string>([
-    [lockfilePaths[0]!, createLockfile(rootHosts)],
-    [lockfilePaths[1]!, createLockfile(templateHosts)]
+    [lockfilePaths[0]!, rootContent ?? createLockfile(rootHosts)],
+    [lockfilePaths[1]!, templateContent ?? createLockfile(templateHosts)]
   ]);
 
   const code = await runLockfileHostAllowlist({
@@ -205,6 +213,78 @@ test("lockfile host allowlist refuses CLI overrides in GitHub Actions before sca
   assert.match(result.stdout, /\[lockfile-host-allowlist\] Effective allowlist: mirror\.local/);
   assert.match(result.stderr, /CLI host overrides are refused in GitHub Actions/);
   assert.doesNotMatch(result.stderr, /lockfile scan should not run/);
+});
+
+test("lockfile host allowlist preserves tarball detection and detects explicit non-tarball resolver URLs", () => {
+  const content = createLockfileFromEntries([
+    "  tarball-fixture@1.0.0:\n    resolution: {integrity: sha512-1, tarball: https://registry.npmjs.org/tarball-fixture-1.0.0.tgz}\n",
+    "  standalone-resolution@1.0.0:\n    resolution: https://codeload.github.com/example/project/tar.gz/abcdef\n",
+    "  resolved-fixture@1.0.0:\n    resolved: https://mirror.local/resolved-fixture-1.0.0.tgz\n",
+    "  repository-fixture@1.0.0:\n    repository: https://repo.example.com/example/project.git\n",
+    "  git-specifier-fixture@1.0.0:\n    resolution: git+https://git.example.com/example/project.git#deadbeef\n"
+  ]);
+
+  assert.deepEqual([...extractHosts(content)].sort(), [
+    "codeload.github.com",
+    "git.example.com",
+    "mirror.local",
+    "registry.npmjs.org",
+    "repo.example.com"
+  ]);
+});
+
+test("lockfile host allowlist reports explicit non-tarball resolver hosts through the gate", async () => {
+  const rootContent = createLockfileFromEntries([
+    "  standalone-resolution@1.0.0:\n    resolution: https://codeload.github.com/example/project/tar.gz/abcdef\n",
+    "  resolved-fixture@1.0.0:\n    resolved: https://mirror.local/resolved-fixture-1.0.0.tgz\n",
+    "  repository-fixture@1.0.0:\n    repository: git+https://git.example.com/example/project.git#deadbeef\n"
+  ]);
+
+  const result = await runHelperCheck({
+    rootContent,
+    templateHosts: ["registry.npmjs.org"]
+  });
+
+  assert.equal(result.code, 1, `Expected failure, got stdout:\n${result.stdout}`);
+  assert.match(result.stdout, /\[lockfile-host-allowlist\] Effective allowlist: registry\.npmjs\.org/);
+  assert.match(result.stderr, /Unexpected hosts found in tracked lockfiles:/);
+  assert.match(result.stderr, / - codeload\.github\.com/);
+  assert.match(result.stderr, / - git\.example\.com/);
+  assert.match(result.stderr, / - mirror\.local/);
+});
+
+test("lockfile host allowlist fails closed for malformed URL-like resolver content", async () => {
+  const rootContent = createLockfileFromEntries([
+    "  malformed-resolution@1.0.0:\n    resolution: https://\n"
+  ]);
+
+  const result = await runHelperCheck({
+    rootContent
+  });
+
+  assert.equal(result.code, 1, `Expected malformed resolver failure, got stdout:\n${result.stdout}`);
+  assert.match(result.stdout, /\[lockfile-host-allowlist\] Effective allowlist: registry\.npmjs\.org/);
+  assert.match(result.stderr, /Malformed URL-like resolver content in resolution: https:\/\//);
+  assert.doesNotMatch(result.stderr, /Unexpected hosts found in tracked lockfiles:/);
+});
+
+test("lockfile host allowlist accepts inline resolver URLs whose query strings contain nested https tokens", () => {
+  const content = createLockfileFromEntries([
+    "  proxied-inline-resolution@1.0.0:\n    resolution: {tarball: https://proxy.example.com/fetch?url=https://registry.npmjs.org/pkg/-/pkg.tgz}\n"
+  ]);
+
+  assert.deepEqual([...extractHosts(content)], ["proxy.example.com"]);
+});
+
+test("lockfile host allowlist fails closed for mixed inline resolver objects with malformed URL-like fragments", () => {
+  const content = createLockfileFromEntries([
+    "  mixed-inline-resolution@1.0.0:\n    resolution: {integrity: sha512-1, tarball: https://registry.npmjs.org/mixed-1.0.0.tgz, broken: https://}\n"
+  ]);
+
+  assert.throws(
+    () => extractHosts(content),
+    /Malformed URL-like resolver content in resolution: \{integrity: sha512-1, tarball: https:\/\/registry\.npmjs\.org\/mixed-1\.0\.0\.tgz, broken: https:\/\/\}/
+  );
 });
 
 test("lockfile host allowlist fails clearly for unknown flags and malformed host values", async () => {

@@ -14,6 +14,10 @@ export const TRACKED_LOCKFILE_PATHS = [
 const DEFAULT_ALLOWED_HOSTS = ["registry.npmjs.org"];
 const HOST_LABEL_PATTERN = /^[a-z0-9-]+$/;
 const HOST_ENTRY_PATTERN = /^[a-z0-9.-]+$/;
+const URL_CANDIDATE_PATTERN = /(?:git\+)?https?:\/\/[^\s"',}]+/gi;
+const SUPPORTED_URL_START_PATTERN = /^(?:git\+)?https?:/i;
+const URL_LIKE_PATTERN = /\b(?:git\+)?https?:/i;
+const URL_LIKE_START_PATTERN = /(?:git\+)?https?:/gi;
 
 const isValidHost = (value) => {
   if (!HOST_ENTRY_PATTERN.test(value) || value.length > 253) {
@@ -103,15 +107,87 @@ export const formatHosts = (hosts) => {
   return [...hosts].sort((first, second) => first.localeCompare(second)).join(", ");
 };
 
-export const extractHosts = (content) => {
-  const hosts = new Set();
-  const urlPattern = /tarball:\s*(https?:\/\/([a-zA-Z0-9.-]+)(?::\d+)?\/[^\s,}]+)/g;
-  for (const match of content.matchAll(urlPattern)) {
-    const host = match[2];
-    if (host) {
-      hosts.add(host.toLowerCase());
+const stripWrappingQuotes = (value) => {
+  if (value.length >= 2) {
+    const first = value[0];
+    const last = value[value.length - 1];
+    if ((first === '"' || first === "'") && first === last) {
+      return value.slice(1, -1);
     }
   }
+
+  return value;
+};
+
+const parseHostnameFromUrlCandidate = (value, context) => {
+  const normalizedValue = stripWrappingQuotes(value.trim());
+  const normalizedUrl = normalizedValue.startsWith("git+https://") ? normalizedValue.slice(4) : normalizedValue;
+
+  try {
+    const parsedUrl = new URL(normalizedUrl);
+    if ((parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") || parsedUrl.hostname.length === 0) {
+      throw new Error(`Unsupported URL protocol '${parsedUrl.protocol}'.`);
+    }
+
+    return parsedUrl.hostname.toLowerCase();
+  } catch {
+    throw new Error(`Malformed URL-like resolver content in ${context}: ${normalizedValue}`);
+  }
+};
+
+const collectScalarResolverHost = (value, context, hosts) => {
+  const normalizedValue = stripWrappingQuotes(value.trim());
+  if (!SUPPORTED_URL_START_PATTERN.test(normalizedValue)) {
+    return;
+  }
+
+  hosts.add(parseHostnameFromUrlCandidate(normalizedValue, context));
+};
+
+const collectInlineResolverHosts = (value, context, hosts) => {
+  const matchedUrlRanges = [];
+
+  for (const match of value.matchAll(URL_CANDIDATE_PATTERN)) {
+    hosts.add(parseHostnameFromUrlCandidate(match[0], context));
+    matchedUrlRanges.push({
+      start: match.index ?? 0,
+      end: (match.index ?? 0) + match[0].length
+    });
+  }
+
+  for (const match of value.matchAll(URL_LIKE_START_PATTERN)) {
+    const start = match.index ?? 0;
+    const isCoveredByParsedUrl = matchedUrlRanges.some((range) => start >= range.start && start < range.end);
+    if (!isCoveredByParsedUrl && URL_LIKE_PATTERN.test(match[0])) {
+      throw new Error(`Malformed URL-like resolver content in ${context}: ${value.trim()}`);
+    }
+  }
+};
+
+export const extractHosts = (content) => {
+  const hosts = new Set();
+
+  const tarballFieldPattern = /\btarball:\s*([^,}\n]+)/g;
+  for (const match of content.matchAll(tarballFieldPattern)) {
+    collectScalarResolverHost(match[1], "tarball", hosts);
+  }
+
+  const resolverFieldPattern = /^[ \t]*(resolution|resolved|repository):\s*(.+)$/gm;
+  for (const match of content.matchAll(resolverFieldPattern)) {
+    const fieldName = match[1];
+    const fieldValue = match[2];
+    if (!fieldName || !fieldValue) {
+      continue;
+    }
+
+    if (fieldName === "resolution" && fieldValue.trim().startsWith("{")) {
+      collectInlineResolverHosts(fieldValue, fieldName, hosts);
+      continue;
+    }
+
+    collectScalarResolverHost(fieldValue, fieldName, hosts);
+  }
+
   return hosts;
 };
 
