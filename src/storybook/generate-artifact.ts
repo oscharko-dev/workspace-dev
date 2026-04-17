@@ -1,44 +1,50 @@
 import path from "node:path";
-import { buildStorybookCatalogArtifact, writeStorybookCatalogArtifact } from "./catalog.js";
+import { redactErrorChain } from "../error-sanitization.js";
+import {
+  buildStorybookCatalogArtifact,
+  writeStorybookCatalogArtifact,
+} from "./catalog.js";
 import {
   buildStorybookPublicArtifacts,
   getDefaultStorybookPublicOutputDir,
-  writeStorybookPublicArtifacts
+  writeStorybookPublicArtifacts,
 } from "./public-extracts.js";
 import {
   buildStorybookEvidenceArtifact,
   getDefaultStorybookBuildDir,
-  loadStorybookBuildContext
+  loadStorybookBuildContext,
 } from "./evidence.js";
 
 const run = async (): Promise<void> => {
   const buildDir = process.argv[2] ?? getDefaultStorybookBuildDir();
-  const outputDirPath = process.argv[3] ? path.resolve(process.cwd(), process.argv[3]) : getDefaultStorybookPublicOutputDir();
+  const outputDirPath = process.argv[3]
+    ? path.resolve(process.cwd(), process.argv[3])
+    : getDefaultStorybookPublicOutputDir();
   const buildContext = await loadStorybookBuildContext({
-    buildDir
+    buildDir,
   });
   const evidenceArtifact = await buildStorybookEvidenceArtifact({
     buildDir,
-    buildContext
+    buildContext,
   });
   const catalogArtifact = await buildStorybookCatalogArtifact({
     buildDir,
     buildContext,
-    evidenceArtifact
+    evidenceArtifact,
   });
   const catalogPath = await writeStorybookCatalogArtifact({
     buildDir,
-    artifact: catalogArtifact
+    artifact: catalogArtifact,
   });
   const artifacts = await buildStorybookPublicArtifacts({
     buildDir,
     buildContext,
     evidenceArtifact,
-    catalogArtifact
+    catalogArtifact,
   });
   const { outputDir, writtenFiles } = await writeStorybookPublicArtifacts({
     artifacts,
-    outputDirPath
+    outputDirPath,
   });
   process.stdout.write(
     `${JSON.stringify(
@@ -48,18 +54,24 @@ const run = async (): Promise<void> => {
         catalogPath,
         catalogEntryCount: catalogArtifact.stats.entryCount,
         catalogFamilyCount: catalogArtifact.stats.familyCount,
-        tokenCount: artifacts.tokensArtifact.$extensions["io.github.oscharko-dev.workspace-dev"].stats.tokenCount,
-        themeCount: artifacts.themesArtifact.$extensions["io.github.oscharko-dev.workspace-dev"].stats.themeCount,
-        componentCount: artifacts.componentsArtifact.stats.componentCount
+        tokenCount:
+          artifacts.tokensArtifact.$extensions[
+            "io.github.oscharko-dev.workspace-dev"
+          ].stats.tokenCount,
+        themeCount:
+          artifacts.themesArtifact.$extensions[
+            "io.github.oscharko-dev.workspace-dev"
+          ].stats.themeCount,
+        componentCount: artifacts.componentsArtifact.stats.componentCount,
       },
       null,
-      2
-    )}\n`
+      2,
+    )}\n`,
   );
 };
 
 void run().catch((error: unknown) => {
-  const message = error instanceof Error ? error.stack ?? error.message : String(error);
-  process.stderr.write(`${message}\n`);
+  const sanitized = redactErrorChain(error);
+  process.stderr.write(`${sanitized}\n`);
   process.exitCode = 1;
 });
