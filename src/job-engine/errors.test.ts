@@ -445,3 +445,46 @@ test("PipelineError does not redact empty secret values (false positive protecti
   assert.equal(error.message, '{"token":""}');
   assert.equal(error.message.includes("[redacted-secret]"), false);
 });
+
+test("PipelineError with cause stores the cause without embedding it in message", () => {
+  const cause = new Error("Inner error with token=secret_abc");
+  const error = createPipelineError({
+    code: "E_OUTER",
+    stage: "fetch.figma",
+    message: "Outer error",
+    cause,
+  });
+
+  assert.equal(error.message, "Outer error");
+  assert.equal((error as any).cause, cause);
+});
+
+test("PipelineError.toJSON() excludes cause property", () => {
+  const cause = new Error("Cause error");
+  const error = createPipelineError({
+    code: "E_TEST",
+    stage: "validate.project",
+    message: "Test error",
+    cause,
+  });
+
+  const json = error.toJSON();
+  assert.equal(json.message, "Test error");
+  assert.equal(json.code, "E_TEST");
+  assert.equal(json.stage, "validate.project");
+  assert.equal("cause" in json, false);
+});
+
+test("PipelineError.toJSON() includes optional properties when present", () => {
+  const error = createPipelineError({
+    code: "E_RETRY",
+    stage: "fetch.figma",
+    message: "Retryable error",
+    retryable: true,
+    retryAfterMs: 5000,
+  });
+
+  const json = error.toJSON();
+  assert.equal(json.retryable, true);
+  assert.equal(json.retryAfterMs, 5000);
+});

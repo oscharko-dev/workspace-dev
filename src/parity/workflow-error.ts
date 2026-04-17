@@ -3,7 +3,6 @@ import type {
   WorkspaceJobStageName,
 } from "../contracts/index.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
-import { redactErrorChain } from "../error-sanitization.js";
 
 export interface WorkflowErrorInit {
   code: string;
@@ -28,18 +27,12 @@ export class WorkflowError extends Error {
     cause,
     diagnostics,
   }: WorkflowErrorInit) {
-    let sanitizedMessage = redactHighRiskSecrets(message, "[redacted-secret]");
+    const sanitizedMessage = redactHighRiskSecrets(
+      message,
+      "[redacted-secret]",
+    );
 
-    // If cause is present, walk the chain and include sanitized cause info
-    if (cause !== undefined) {
-      const causeSanitized = redactErrorChain(cause);
-      if (causeSanitized) {
-        sanitizedMessage =
-          `${sanitizedMessage} [cause]: ${causeSanitized}`.trim();
-      }
-    }
-
-    super(sanitizedMessage, { cause });
+    super(sanitizedMessage, cause === undefined ? undefined : { cause });
     this.name = "WorkflowError";
     this.code = code;
     if (stage !== undefined) {

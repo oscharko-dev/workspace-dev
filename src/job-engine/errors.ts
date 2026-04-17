@@ -9,7 +9,6 @@ import type {
   WorkspaceJobStageName,
 } from "../contracts/index.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
-import { redactErrorChain } from "../error-sanitization.js";
 import type { WorkspacePipelineError } from "./types.js";
 
 export interface PipelineDiagnosticLimits {
@@ -413,21 +412,12 @@ export class PipelineError extends Error implements WorkspacePipelineError {
       maxLength: resolvedLimits.textMaxLength,
     });
 
-    let sanitizedMessage = redactHighRiskSecrets(
+    const sanitizedMessage = redactHighRiskSecrets(
       pathRedacted,
       "[redacted-secret]",
     );
 
-    // If cause is present, walk the chain and include sanitized cause info in message
-    if (cause !== undefined) {
-      const causeSanitized = redactErrorChain(cause);
-      if (causeSanitized) {
-        sanitizedMessage =
-          `${sanitizedMessage} [cause]: ${causeSanitized}`.trim();
-      }
-    }
-
-    // Store cause but it will be hidden by toJSON()
+    // Store both message and cause; sanitizeErrorMessage will handle cause chain
     super(sanitizedMessage, cause === undefined ? undefined : { cause });
     Object.setPrototypeOf(this, new.target.prototype);
     this.name = "PipelineError";
