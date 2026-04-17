@@ -1374,6 +1374,195 @@ test("production allows loopback HTTP MCP URLs when WORKSPACE_ALLOW_INSECURE_MCP
   );
 });
 
+test("production allows IPv4-mapped IPv6 loopback HTTP MCP URLs when WORKSPACE_ALLOW_INSECURE_MCP=true", async () => {
+  clearResolverCache();
+
+  let requestUrl = "";
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    requestUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    return jsonResponse(mcpOk({ xml: SMALL_XML }));
+  };
+
+  await withEnv(
+    {
+      NODE_ENV: "production",
+      WORKSPACE_ALLOW_INSECURE_MCP: "true",
+    },
+    async () => {
+      const result = await callMcpTool({
+        toolName: "get_metadata",
+        args: { fileKey: "abc", nodeId: "1:2" },
+        config: {
+          ...createConfig(fetchImpl),
+          serverUrl: "http://[::ffff:127.0.0.1]:3000/mcp",
+          maxRetries: 1,
+          onLog: (message) => {
+            logs.push(message);
+          },
+        },
+      });
+
+      assert.deepEqual(result, { xml: SMALL_XML });
+    },
+  );
+
+  assert.equal(requestUrl, "http://[::ffff:7f00:1]:3000/mcp");
+  assert.ok(
+    logs.some(
+      (entry) =>
+        entry.includes("MCP security warning: using insecure loopback HTTP") &&
+        entry.includes("http://[::ffff:7f00:1]:3000"),
+    ),
+  );
+  assert.ok(logs.every((entry) => !entry.includes("/mcp")));
+});
+
+test("production allows canonical IPv4-mapped IPv6 loopback HTTP MCP URLs when WORKSPACE_ALLOW_INSECURE_MCP=true", async () => {
+  clearResolverCache();
+
+  let requestUrl = "";
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    requestUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    return jsonResponse(mcpOk({ xml: SMALL_XML }));
+  };
+
+  await withEnv(
+    {
+      NODE_ENV: "production",
+      WORKSPACE_ALLOW_INSECURE_MCP: "true",
+    },
+    async () => {
+      const result = await callMcpTool({
+        toolName: "get_metadata",
+        args: { fileKey: "abc", nodeId: "1:2" },
+        config: {
+          ...createConfig(fetchImpl),
+          serverUrl: "http://[::ffff:7f00:1]:3000/mcp",
+          maxRetries: 1,
+          onLog: (message) => {
+            logs.push(message);
+          },
+        },
+      });
+
+      assert.deepEqual(result, { xml: SMALL_XML });
+    },
+  );
+
+  assert.equal(requestUrl, "http://[::ffff:7f00:1]:3000/mcp");
+  assert.ok(
+    logs.some(
+      (entry) =>
+        entry.includes("MCP security warning: using insecure loopback HTTP") &&
+        entry.includes("http://[::ffff:7f00:1]:3000"),
+    ),
+  );
+  assert.ok(logs.every((entry) => !entry.includes("/mcp")));
+});
+
+test("production allows fully expanded IPv4-mapped IPv6 loopback HTTP MCP URLs when WORKSPACE_ALLOW_INSECURE_MCP=true", async () => {
+  clearResolverCache();
+
+  let requestUrl = "";
+  const logs: string[] = [];
+  const fetchImpl: typeof fetch = async (input) => {
+    requestUrl =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    return jsonResponse(mcpOk({ xml: SMALL_XML }));
+  };
+
+  await withEnv(
+    {
+      NODE_ENV: "production",
+      WORKSPACE_ALLOW_INSECURE_MCP: "true",
+    },
+    async () => {
+      const result = await callMcpTool({
+        toolName: "get_metadata",
+        args: { fileKey: "abc", nodeId: "1:2" },
+        config: {
+          ...createConfig(fetchImpl),
+          serverUrl: "http://[0:0:0:0:0:ffff:7f00:1]:3000/mcp",
+          maxRetries: 1,
+          onLog: (message) => {
+            logs.push(message);
+          },
+        },
+      });
+
+      assert.deepEqual(result, { xml: SMALL_XML });
+    },
+  );
+
+  assert.equal(requestUrl, "http://[::ffff:7f00:1]:3000/mcp");
+  assert.ok(
+    logs.some(
+      (entry) =>
+        entry.includes("MCP security warning: using insecure loopback HTTP") &&
+        entry.includes("http://[::ffff:7f00:1]:3000"),
+    ),
+  );
+  assert.ok(logs.every((entry) => !entry.includes("/mcp")));
+});
+
+test("production rejects canonical IPv4-mapped IPv6 loopback HTTP MCP URLs without WORKSPACE_ALLOW_INSECURE_MCP opt-in", async () => {
+  clearResolverCache();
+
+  let fetchCalled = false;
+  const fetchImpl: typeof fetch = async () => {
+    fetchCalled = true;
+    return jsonResponse(mcpOk({ xml: SMALL_XML }));
+  };
+
+  await withEnv(
+    {
+      NODE_ENV: "production",
+      WORKSPACE_ALLOW_INSECURE_MCP: undefined,
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          callMcpTool({
+            toolName: "get_metadata",
+            args: { fileKey: "abc", nodeId: "1:2" },
+            config: {
+              ...createConfig(fetchImpl),
+              serverUrl: "http://[::ffff:7f00:1]:3000/mcp",
+              maxRetries: 1,
+            },
+          }),
+        (err: unknown) => {
+          assert.ok(err instanceof Error);
+          assert.equal(
+            (err as Record<string, unknown>).code,
+            "E_MCP_NO_SERVER",
+          );
+          assert.match(err.message, /WORKSPACE_ALLOW_INSECURE_MCP=true/);
+          return true;
+        },
+      );
+    },
+  );
+
+  assert.equal(fetchCalled, false);
+});
+
 test("non-production loopback HTTP opt-in still emits an insecure transport warning", async () => {
   clearResolverCache();
 
@@ -1433,6 +1622,7 @@ test("malformed and non-loopback HTTP MCP URLs are rejected before fetch", async
         "http://localhost.attacker.tld/mcp",
         "http://localhost@attacker.tld/mcp",
         "http://127.0.0.1.attacker.tld/mcp",
+        "http://[::ffff:10.0.0.1]:3000/mcp",
       ]) {
         await assert.rejects(
           () =>

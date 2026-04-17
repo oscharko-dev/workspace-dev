@@ -212,25 +212,135 @@ const isTruthyEnvValue = (value: string | undefined): boolean => {
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 };
 
-const isIpv4LoopbackHostname = (hostname: string): boolean => {
+const normalizeHostname = (hostname: string): string => {
+  const normalized = hostname.trim().toLowerCase();
+  return normalized.startsWith("[") && normalized.endsWith("]")
+    ? normalized.slice(1, -1)
+    : normalized;
+};
+
+const parseIpv4Address = (hostname: string): number[] | null => {
   const octets = hostname.split(".");
   if (octets.length !== 4) {
+    return null;
+  }
+  const values = octets.map((octet) => {
+    if (!/^\d{1,3}$/.test(octet)) {
+      return Number.NaN;
+    }
+    return Number(octet);
+  });
+  if (values.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
+    return null;
+  }
+  return values;
+};
+
+const isIpv4LoopbackHostname = (hostname: string): boolean => {
+  const octets = parseIpv4Address(hostname);
+  return octets !== null && octets[0] === 127;
+};
+
+const parseIpv6Address = (hostname: string): number[] | null => {
+  const normalized = normalizeHostname(hostname);
+  if (!normalized.includes(":")) {
+    return null;
+  }
+
+  let ipv6Source = normalized;
+  const rawSegments = normalized.split(":");
+  const lastSegment = rawSegments.at(-1);
+  if (lastSegment?.includes(".")) {
+    const ipv4Octets = parseIpv4Address(lastSegment);
+    if (ipv4Octets === null) {
+      return null;
+    }
+    const [octet0, octet1, octet2, octet3] = ipv4Octets;
+    if (
+      octet0 === undefined ||
+      octet1 === undefined ||
+      octet2 === undefined ||
+      octet3 === undefined
+    ) {
+      return null;
+    }
+    rawSegments.splice(
+      -1,
+      1,
+      ((octet0 << 8) | octet1).toString(16),
+      ((octet2 << 8) | octet3).toString(16),
+    );
+    ipv6Source = rawSegments.join(":");
+  }
+
+  if (ipv6Source.indexOf("::") !== ipv6Source.lastIndexOf("::")) {
+    return null;
+  }
+
+  const [leftSource, rightSource = ""] = ipv6Source.split("::");
+  const leftSegments = leftSource ? leftSource.split(":") : [];
+  const rightSegments = rightSource ? rightSource.split(":") : [];
+  const allSegments = [...leftSegments, ...rightSegments];
+  if (allSegments.some((segment) => !/^[\da-f]{1,4}$/i.test(segment))) {
+    return null;
+  }
+
+  if (!ipv6Source.includes("::")) {
+    if (leftSegments.length !== 8) {
+      return null;
+    }
+    return leftSegments.map((segment) => parseInt(segment, 16));
+  }
+
+  const zeroFillLength = 8 - allSegments.length;
+  if (zeroFillLength < 1) {
+    return null;
+  }
+
+  return [
+    ...leftSegments.map((segment) => parseInt(segment, 16)),
+    ...Array.from({ length: zeroFillLength }, () => 0),
+    ...rightSegments.map((segment) => parseInt(segment, 16)),
+  ];
+};
+
+const isIpv4MappedIpv6LoopbackHostname = (hostname: string): boolean => {
+  const hextets = parseIpv6Address(hostname);
+  if (hextets === null) {
     return false;
   }
-  const [firstOctet, ...restOctets] = octets;
-  if (firstOctet !== "127") {
+  const [hextet0, hextet1, hextet2, hextet3, hextet4, hextet5, hextet6, hextet7] =
+    hextets;
+  if (
+    hextet0 === undefined ||
+    hextet1 === undefined ||
+    hextet2 === undefined ||
+    hextet3 === undefined ||
+    hextet4 === undefined ||
+    hextet5 === undefined ||
+    hextet6 === undefined ||
+    hextet7 === undefined
+  ) {
     return false;
   }
-  return restOctets.every((octet) => /^\d{1,3}$/.test(octet));
+  return (
+    hextet0 === 0 &&
+    hextet1 === 0 &&
+    hextet2 === 0 &&
+    hextet3 === 0 &&
+    hextet4 === 0 &&
+    hextet5 === 0xffff &&
+    (hextet6 >> 8) === 127
+  );
 };
 
 const isLoopbackHostname = (hostname: string): boolean => {
-  const normalized = hostname.trim().toLowerCase();
+  const normalized = normalizeHostname(hostname);
   return (
     normalized === "localhost" ||
     normalized === "::1" ||
-    normalized === "[::1]" ||
-    isIpv4LoopbackHostname(normalized)
+    isIpv4LoopbackHostname(normalized) ||
+    isIpv4MappedIpv6LoopbackHostname(normalized)
   );
 };
 
