@@ -142,6 +142,16 @@ test("error sanitization redacts shared high-risk secret shapes", async (t) => {
       expected: "Authorization: Bearer [redacted-secret]",
     },
     {
+      name: "Bearer token with space separation (no prefix)",
+      input: "Bearer super-secret-token",
+      expected: "Bearer [redacted-secret]",
+    },
+    {
+      name: "Token with space separation (no prefix)",
+      input: "Token super-secret-token",
+      expected: "Token [redacted-secret]",
+    },
+    {
       name: "x-access-token headers",
       input: "x-access-token:abcdef",
       expected: "x-access-token:[redacted-secret]",

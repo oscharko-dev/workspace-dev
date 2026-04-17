@@ -502,8 +502,8 @@ test("PipelineError diagnostic details apply secret redaction to strings", () =>
     diagnostics: [
       {
         code: "D_SECRET",
-        message: "Detail with token=secret_token_abc",
-        suggestion: "Retry with token=secret_token_xyz",
+        message: "Detail with Bearer secret_token_abc",
+        suggestion: "Retry with Token secret_token_xyz",
       },
     ],
   });
