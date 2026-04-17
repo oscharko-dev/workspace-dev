@@ -22,6 +22,7 @@ const SCAN_ROOTS = [
   path.resolve(packageRoot, "ui-src/src"),
   path.resolve(packageRoot, "plugin"),
   path.resolve(packageRoot, "template"),
+  path.resolve(packageRoot, "scripts"),
 ];
 
 // ── File extensions to include / skip (AC-1.2) ──────────────────────────────
@@ -104,6 +105,7 @@ const ALLOWED_FILES = new Set([
   // The destination is supplied by the operator via `VITE_PERF_ENDPOINT`;
   // no vendor SDK is bundled and the stub no-ops when unset.
   "template/react-mui-app/src/performance/report-web-vitals.ts",
+  "scripts/check-no-telemetry.mjs", // Guard itself; must not be scanned
 ]);
 
 const hasTestSuffix = (fileName) => {
