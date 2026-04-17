@@ -225,6 +225,11 @@ test("error sanitization redacts JSON-serialized secrets", async (t) => {
       input: '{"token":""}',
       expected: '{"token":""}',
     },
+    {
+      name: "Escaped quotes in JSON value (known limitation: regex stops at backslash-quote)",
+      input: '{"token":"abc\\"def"}',
+      expected: '{"token":"[redacted-secret]"def"}',
+    },
   ] as const;
 
   for (const testCase of cases) {
