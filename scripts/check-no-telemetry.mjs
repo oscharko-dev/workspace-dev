@@ -88,13 +88,12 @@ const WEBSOCKET_TELEMETRY_URL_PATTERN =
 //
 // Safe destinations:
 //   - Figma API: `api.figma.com` or any `*.figma.com` subdomain
-//   - MCP / local loopback: exact `localhost`, `127.0.0.1`, `0.0.0.0`
-//   - Internal workspace APIs: `/workspace/*` and `/healthz` only when the
-//     hostname is a local loopback (not on arbitrary external hosts)
+//   - MCP / local loopback: exact `localhost`, `127.0.0.1`, `0.0.0.0` (any path allowed)
 const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
 
 // Matches a quoted URL literal in source code. Captures the URL body without
-// the surrounding quotes. Supports http(s) and ws(s) schemes.
+// the surrounding quotes. Supports http(s) and ws(s) schemes. Quote types must
+// match (opening and closing quotes must be identical).
 const URL_LITERAL_PATTERN = /["'`]((?:https?|wss?):\/\/[^"'`\s]+)["'`]/gi;
 
 // File-level allowlist for modules whose sensitive calls are intentional and
@@ -167,18 +166,11 @@ const isSafeDestination = (urlString) => {
     return false;
   }
   const hostname = url.hostname;
-  const pathname = url.pathname;
 
   if (hostname === "api.figma.com" || hostname.endsWith(".figma.com")) {
     return true;
   }
   if (LOOPBACK_HOSTNAMES.has(hostname)) {
-    return true;
-  }
-  if (
-    (hostname === "localhost" || hostname === "127.0.0.1") &&
-    (pathname.includes("/workspace/") || pathname === "/healthz")
-  ) {
     return true;
   }
   return false;
