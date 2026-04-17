@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { createPipelineError, getErrorMessage, mergePipelineDiagnostics, PipelineError } from "./errors.js";
+import {
+  createPipelineError,
+  getErrorMessage,
+  mergePipelineDiagnostics,
+  PipelineError,
+} from "./errors.js";
 
 test("createPipelineError returns a PipelineError and preserves cause", () => {
   const cause = new Error("network down");
@@ -10,7 +15,7 @@ test("createPipelineError returns a PipelineError and preserves cause", () => {
     code: "E_TEST",
     stage: "figma.source",
     message: "pipeline failed",
-    cause
+    cause,
   });
 
   assert.equal(error instanceof Error, true);
@@ -30,7 +35,7 @@ test("PipelineError preserves its nominal type through throw/catch", () => {
       code: "E_THROW",
       stage: "validate.project",
       message: "thrown",
-      cause
+      cause,
     });
   } catch (error) {
     assert.equal(error instanceof PipelineError, true);
@@ -61,11 +66,11 @@ test("createPipelineError normalizes and truncates diagnostics", () => {
         severity: "warning",
         details: {
           nested: {
-            value: oversized
-          }
-        }
-      }
-    ]
+            value: oversized,
+          },
+        },
+      },
+    ],
   });
 
   assert.equal(error.diagnostics?.length, 1);
@@ -73,7 +78,10 @@ test("createPipelineError normalizes and truncates diagnostics", () => {
   assert.equal(error.diagnostics?.[0]?.severity, "warning");
   assert.equal(error.diagnostics?.[0]?.message.endsWith("..."), true);
   assert.equal(error.diagnostics?.[0]?.suggestion.endsWith("..."), true);
-  assert.equal(String(error.diagnostics?.[0]?.details?.nested).length > 0, true);
+  assert.equal(
+    String(error.diagnostics?.[0]?.details?.nested).length > 0,
+    true,
+  );
 });
 
 test("createPipelineError drops invalid diagnostics and sanitizes heterogeneous detail values", () => {
@@ -85,7 +93,7 @@ test("createPipelineError drops invalid diagnostics and sanitizes heterogeneous 
       {
         code: "   ",
         message: "ignored",
-        suggestion: "ignored"
+        suggestion: "ignored",
       },
       {
         code: "W_SANITIZED",
@@ -109,25 +117,25 @@ test("createPipelineError drops invalid diagnostics and sanitizes heterogeneous 
               two: {
                 three: {
                   four: {
-                    five: "trimmed"
-                  }
-                }
-              }
-            }
-          }
-        }
+                    five: "trimmed",
+                  },
+                },
+              },
+            },
+          },
+        },
       },
       {
         code: "W_EMPTY_MESSAGE",
         message: "   ",
-        suggestion: "ignored"
+        suggestion: "ignored",
       },
       {
         code: "W_EMPTY_SUGGESTION",
         message: "ignored",
-        suggestion: "   "
-      }
-    ]
+        suggestion: "   ",
+      },
+    ],
   });
 
   assert.equal(error.diagnostics?.length, 1);
@@ -135,20 +143,36 @@ test("createPipelineError drops invalid diagnostics and sanitizes heterogeneous 
   assert.equal(error.diagnostics?.[0]?.stage, "validate.project");
   assert.equal(error.diagnostics?.[0]?.severity, "error");
   assert.equal(error.diagnostics?.[0]?.figmaNodeId, "1:2");
-  assert.equal(error.diagnostics?.[0]?.figmaUrl, "https://example.test/node/1:2");
+  assert.equal(
+    error.diagnostics?.[0]?.figmaUrl,
+    "https://example.test/node/1:2",
+  );
   assert.equal(error.diagnostics?.[0]?.details?.finiteNumber, 42);
-  assert.equal("infiniteNumber" in (error.diagnostics?.[0]?.details ?? {}), false);
+  assert.equal(
+    "infiniteNumber" in (error.diagnostics?.[0]?.details ?? {}),
+    false,
+  );
   assert.equal(error.diagnostics?.[0]?.details?.nullValue, null);
   assert.equal(error.diagnostics?.[0]?.details?.undefinedValue, "undefined");
   assert.equal(error.diagnostics?.[0]?.details?.bigintValue, "99n");
   assert.equal(error.diagnostics?.[0]?.details?.symbolValue, "Symbol(demo)");
-  assert.equal(error.diagnostics?.[0]?.details?.functionValue, "[Function sample]");
-  assert.deepEqual(error.diagnostics?.[0]?.details?.nestedArray, [1, "undefined", { keep: true }]);
+  assert.equal(
+    error.diagnostics?.[0]?.details?.functionValue,
+    "[Function sample]",
+  );
+  assert.deepEqual(error.diagnostics?.[0]?.details?.nestedArray, [
+    1,
+    "undefined",
+    { keep: true },
+  ]);
   assert.equal(typeof error.diagnostics?.[0]?.details?.deepObject, "object");
 });
 
 test("mergePipelineDiagnostics honors max and returns undefined when no diagnostics exist", () => {
-  assert.equal(mergePipelineDiagnostics({ first: undefined, second: undefined }), undefined);
+  assert.equal(
+    mergePipelineDiagnostics({ first: undefined, second: undefined }),
+    undefined,
+  );
 
   const merged = mergePipelineDiagnostics({
     first: [
@@ -158,8 +182,8 @@ test("mergePipelineDiagnostics honors max and returns undefined when no diagnost
         suggestion: "s",
         stage: "ir.derive",
         severity: "warning",
-        figmaNodeId: "node-a"
-      }
+        figmaNodeId: "node-a",
+      },
     ],
     second: [
       {
@@ -168,10 +192,10 @@ test("mergePipelineDiagnostics honors max and returns undefined when no diagnost
         suggestion: "s",
         stage: "ir.derive",
         severity: "warning",
-        figmaNodeId: "node-b"
-      }
+        figmaNodeId: "node-b",
+      },
     ],
-    max: 1
+    max: 1,
   });
 
   assert.equal(merged?.length, 1);
@@ -183,14 +207,14 @@ test("createPipelineError truncates diagnostic count and omits non-object detail
     code: `W_${String(index).padStart(2, "0")}`,
     message: `message ${index}`,
     suggestion: `suggestion ${index}`,
-    details: index === 0 ? ["array detail should be omitted"] : undefined
+    details: index === 0 ? ["array detail should be omitted"] : undefined,
   }));
 
   const error = createPipelineError({
     code: "E_BULK",
     stage: "validate.project",
     message: "bulk diagnostics",
-    diagnostics
+    diagnostics,
   });
 
   assert.equal(error.diagnostics?.length, 25);
@@ -208,7 +232,7 @@ test("createPipelineError respects injected diagnostic limits", () => {
       textMaxLength: 16,
       detailsMaxKeys: 2,
       detailsMaxItems: 2,
-      detailsMaxDepth: 2
+      detailsMaxDepth: 2,
     },
     diagnostics: [
       {
@@ -219,18 +243,18 @@ test("createPipelineError respects injected diagnostic limits", () => {
           keepA: [1, 2, 3],
           keepB: {
             nested: {
-              value: "trimmed at depth"
-            }
+              value: "trimmed at depth",
+            },
           },
-          zDropC: "excluded"
-        }
+          zDropC: "excluded",
+        },
       },
       {
         code: "W_DROPPED",
         message: "should be dropped",
-        suggestion: "should be dropped"
-      }
-    ]
+        suggestion: "should be dropped",
+      },
+    ],
   });
 
   assert.equal(error.diagnostics?.length, 1);
@@ -239,8 +263,8 @@ test("createPipelineError respects injected diagnostic limits", () => {
   assert.deepEqual(error.diagnostics?.[0]?.details, {
     keepA: [1, 2],
     keepB: {
-      nested: "[object Object]"
-    }
+      nested: "[object Object]",
+    },
   });
 });
 
@@ -252,7 +276,7 @@ test("createPipelineError redacts absolute filesystem paths from public messages
     "workspace-dev-job",
     ".stage-store",
     "cmd-output",
-    "lint.stdout.log"
+    "lint.stdout.log",
   );
 
   const error = createPipelineError({
@@ -267,10 +291,10 @@ test("createPipelineError redacts absolute filesystem paths from public messages
         details: {
           filePath: workspacePath,
           homePath,
-          artifactPath: tempArtifactPath
-        }
-      }
-    ]
+          artifactPath: tempArtifactPath,
+        },
+      },
+    ],
   });
 
   assert.equal(error.message.includes(workspacePath), false);
@@ -279,12 +303,32 @@ test("createPipelineError redacts absolute filesystem paths from public messages
   assert.match(error.message, /\[redacted-path\]\/job-engine\.ts/);
   assert.match(error.message, /\[redacted-path\]\/config/);
   assert.match(error.message, /\[redacted-path\]\/lint\.stdout\.log/);
-  assert.equal(String(error.diagnostics?.[0]?.details?.filePath).includes(workspacePath), false);
-  assert.equal(String(error.diagnostics?.[0]?.details?.homePath).includes(homePath), false);
-  assert.equal(String(error.diagnostics?.[0]?.details?.artifactPath).includes(tempArtifactPath), false);
-  assert.equal(error.diagnostics?.[0]?.details?.filePath, "[redacted-path]/job-engine.ts");
-  assert.equal(error.diagnostics?.[0]?.details?.homePath, "[redacted-path]/config");
-  assert.equal(error.diagnostics?.[0]?.details?.artifactPath, "[redacted-path]/lint.stdout.log");
+  assert.equal(
+    String(error.diagnostics?.[0]?.details?.filePath).includes(workspacePath),
+    false,
+  );
+  assert.equal(
+    String(error.diagnostics?.[0]?.details?.homePath).includes(homePath),
+    false,
+  );
+  assert.equal(
+    String(error.diagnostics?.[0]?.details?.artifactPath).includes(
+      tempArtifactPath,
+    ),
+    false,
+  );
+  assert.equal(
+    error.diagnostics?.[0]?.details?.filePath,
+    "[redacted-path]/job-engine.ts",
+  );
+  assert.equal(
+    error.diagnostics?.[0]?.details?.homePath,
+    "[redacted-path]/config",
+  );
+  assert.equal(
+    error.diagnostics?.[0]?.details?.artifactPath,
+    "[redacted-path]/lint.stdout.log",
+  );
 });
 
 test("createPipelineError sanitizes anonymous functions, deep arrays, and symbol values without descriptions", () => {
@@ -305,14 +349,20 @@ test("createPipelineError sanitizes anonymous functions, deep arrays, and symbol
         details: {
           anonymousFunction: namelessFunction,
           noDescriptionSymbol: Symbol(),
-          deepArray: [[[[["too deep"]]]]]
-        }
-      }
-    ]
+          deepArray: [[[[["too deep"]]]]],
+        },
+      },
+    ],
   });
 
-  assert.equal(error.diagnostics?.[0]?.details?.anonymousFunction, "[Function anonymous]");
-  assert.equal(error.diagnostics?.[0]?.details?.noDescriptionSymbol, "Symbol()");
+  assert.equal(
+    error.diagnostics?.[0]?.details?.anonymousFunction,
+    "[Function anonymous]",
+  );
+  assert.equal(
+    error.diagnostics?.[0]?.details?.noDescriptionSymbol,
+    "Symbol()",
+  );
   assert.deepEqual(error.diagnostics?.[0]?.details?.deepArray, [[[1]]]);
 });
 
@@ -325,14 +375,14 @@ test("createPipelineError omits the diagnostics field when every candidate is in
       {
         code: "   ",
         message: "ignored",
-        suggestion: "ignored"
+        suggestion: "ignored",
       },
       {
         code: "W_NO_MESSAGE",
         message: "   ",
-        suggestion: "ignored"
-      }
-    ]
+        suggestion: "ignored",
+      },
+    ],
   });
 
   assert.equal("diagnostics" in error, false);
@@ -346,15 +396,15 @@ test("mergePipelineDiagnostics keeps deterministic first-seen order and de-dupli
         message: "first",
         suggestion: "s",
         stage: "ir.derive",
-        severity: "warning"
+        severity: "warning",
       },
       {
         code: "W_A",
         message: "first",
         suggestion: "s",
         stage: "ir.derive",
-        severity: "warning"
-      }
+        severity: "warning",
+      },
     ],
     second: [
       {
@@ -362,12 +412,36 @@ test("mergePipelineDiagnostics keeps deterministic first-seen order and de-dupli
         message: "second",
         suggestion: "s",
         stage: "validate.project",
-        severity: "error"
-      }
-    ]
+        severity: "error",
+      },
+    ],
   });
 
   assert.equal(merged?.length, 2);
   assert.equal(merged?.[0]?.code, "W_A");
   assert.equal(merged?.[1]?.code, "W_B");
+});
+
+test("PipelineError redacts high-risk secrets in error messages", () => {
+  const error = createPipelineError({
+    code: "E_MCP_ERROR",
+    stage: "execute.import",
+    message:
+      'MCP returned {"error":"call failed","Authorization":"Bearer secret_token_123"}',
+  });
+
+  assert.equal(error.message.includes("secret_token_123"), false);
+  assert.equal(error.message.includes("[redacted-secret]"), true);
+  assert.equal(error.message.includes('{"error"'), true);
+});
+
+test("PipelineError does not redact empty secret values (false positive protection)", () => {
+  const error = createPipelineError({
+    code: "E_EMPTY",
+    stage: "validate.project",
+    message: '{"token":""}',
+  });
+
+  assert.equal(error.message, '{"token":""}');
+  assert.equal(error.message.includes("[redacted-secret]"), false);
 });
