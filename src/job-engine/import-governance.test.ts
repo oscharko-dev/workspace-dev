@@ -127,6 +127,42 @@ test("isSecuritySensitiveImport matches literal metacharacter tokens as plain te
   );
 });
 
+test("isSecuritySensitiveImport matches unicode-folded governance tokens", () => {
+  assert.equal(
+    isSecuritySensitiveImport({
+      patterns: ["admin"],
+      generatedPaths: ["src/routes/İADMİN/Overview.tsx"],
+    }),
+    true,
+  );
+  assert.equal(
+    isSecuritySensitiveImport({
+      patterns: ["strasse"],
+      componentManifest: {
+        screens: [
+          {
+            screenId: "screen-1",
+            screenName: "Operations",
+            file: "src/screens/Operations.tsx",
+            components: [
+              {
+                irNodeId: "node-1",
+                irNodeName: "Straße Console",
+                irNodeType: "input",
+                file: "src/components/OperationsPanel.tsx",
+                startLine: 1,
+                endLine: 3,
+              },
+            ],
+          },
+        ],
+      },
+      generatedPaths: ["src/routes/STRAßE/Overview.tsx"],
+    }),
+    true,
+  );
+});
+
 test("createJobEngine persists authoritative governance state and rejects invalid governed transitions", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-import-governance-"),

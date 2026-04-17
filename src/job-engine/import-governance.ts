@@ -2,7 +2,12 @@ import type { ComponentManifest } from "../parity/component-manifest.js";
 import type { DesignIR } from "../parity/types-ir.js";
 
 function normalizeGovernanceToken(value: string): string {
-  return value.trim().toLowerCase();
+  return value
+    .trim()
+    .normalize("NFKD")
+    .toLowerCase()
+    .replace(/\p{M}+/gu, "")
+    .replace(/ß/g, "ss");
 }
 
 function collectNodeNames(designIr: DesignIR | undefined): string[] {
