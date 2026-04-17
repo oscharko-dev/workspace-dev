@@ -257,6 +257,14 @@ const main = async () => {
   );
 };
 
+// Export for testing
+export {
+  findViolationsInLine,
+  hasTestSuffix,
+  hasIncludedExtension,
+  lineHasSafeDestination,
+};
+
 main().catch((error) => {
   console.error("Zero-telemetry guard failed:", error);
   process.exit(1);
