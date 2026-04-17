@@ -428,6 +428,9 @@ test("e2e: regeneration flow via HTTP server with local_json source", async () =
       `${baseUrl}/workspace/import-sessions/${sourceImportSession.id as string}/approve`,
       {
         method: "POST",
+        headers: {
+          authorization: `Bearer ${TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN}`
+        },
         body: JSON.stringify({})
       }
     );

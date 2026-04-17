@@ -1593,7 +1593,7 @@ export function createWorkspaceRequestHandler({
               ? "GET, POST"
               : importSessionAction === "approve"
                 ? "POST"
-              : "POST";
+                : "POST";
         response.setHeader("allow", allowedMethods);
         sendJson({
           response,
@@ -1625,13 +1625,20 @@ export function createWorkspaceRequestHandler({
 
         const isImportSessionEventWriteRoute =
           method === "POST" && parsedImportSessionRoute?.action === "events";
-        if (isImportSessionEventWriteRoute) {
+        const isImportSessionApproveWriteRoute =
+          method === "POST" && parsedImportSessionRoute?.action === "approve";
+        const isImportSessionBearerProtectedWriteRoute =
+          isImportSessionEventWriteRoute || isImportSessionApproveWriteRoute;
+        if (isImportSessionBearerProtectedWriteRoute) {
+          const routeLabel = isImportSessionApproveWriteRoute
+            ? "Import session approval"
+            : "Import session event";
           const authValidation = validateImportSessionEventWriteAuth({
             request,
             ...(runtime.importSessionEventBearerToken !== undefined
               ? { bearerToken: runtime.importSessionEventBearerToken }
               : {}),
-            routeLabel: "Import session event",
+            routeLabel,
           });
           if (!authValidation.ok) {
             if (authValidation.wwwAuthenticate) {
@@ -1648,7 +1655,7 @@ export function createWorkspaceRequestHandler({
                   ? "security.request.unauthorized"
                   : "workspace.request.failed",
               level: authValidation.statusCode === 401 ? "warn" : "error",
-              fallbackMessage: "Import session event write rejected.",
+              fallbackMessage: `${routeLabel} write rejected.`,
             });
             return;
           }
@@ -1790,7 +1797,8 @@ export function createWorkspaceRequestHandler({
                 issues: [
                   {
                     path: "(root)",
-                    message: "Approval payload must be an object when provided.",
+                    message:
+                      "Approval payload must be an object when provided.",
                   },
                 ],
               },
