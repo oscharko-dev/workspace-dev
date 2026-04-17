@@ -627,7 +627,12 @@ export function createWorkspaceRequestHandler({
         sendJson({
           response,
           statusCode: 200,
-          payload: { policy: result.policy },
+          payload: {
+            policy: result.policy,
+            ...(result.policy !== null && result.warning
+              ? { warning: result.warning }
+              : {}),
+          },
         });
         return;
       }

@@ -1024,17 +1024,38 @@ export const createJobEngine = ({
     return sessions.find((entry) => entry.jobId === jobId);
   };
 
-  const resolveGovernancePatterns = async (): Promise<readonly string[]> => {
+  const resolveGovernancePatterns = async ({
+    job,
+    operation,
+    stage,
+  }: {
+    job: JobRecord;
+    operation: string;
+    stage?: WorkspaceJobStageName;
+  }): Promise<readonly string[]> => {
     const loaded = await loadInspectorPolicy({
       workspaceRoot: resolvedWorkspaceRoot,
     });
+    if (loaded.warning) {
+      pushRuntimeLog({
+        job,
+        logger: runtime.logger,
+        level: "warn",
+        ...(stage ? { stage } : {}),
+        message: `Inspector policy warning while resolving import governance for ${operation}: ${loaded.warning}`,
+      });
+    }
     return loaded.policy?.governance?.securitySensitivePatterns ?? [];
   };
 
   const resolveImportGovernanceContext = async ({
     job,
+    operation,
+    stage,
   }: {
     job: JobRecord;
+    operation: string;
+    stage?: WorkspaceJobStageName;
   }): Promise<{
     rootSourceJobId: string | null;
     importSession?: WorkspaceImportSession;
@@ -1061,7 +1082,11 @@ export const createJobEngine = ({
     });
     const [patterns, designIr, componentManifest, codegenSummary] =
       await Promise.all([
-        resolveGovernancePatterns(),
+        resolveGovernancePatterns({
+          job,
+          operation,
+          ...(stage ? { stage } : {}),
+        }),
         readArtifactJson<DesignIR>({
           artifactStore: sourceArtifactStore,
           key: STAGE_ARTIFACT_KEYS.designIr,
@@ -3724,6 +3749,7 @@ export const createJobEngine = ({
 
     const syncGovernance = await resolveImportGovernanceContext({
       job: syncContext.job,
+      operation: "local sync",
     });
     if (syncGovernance.importSession) {
       await assertImportSessionApprovedForMutation({
@@ -4103,7 +4129,11 @@ export const createJobEngine = ({
         : {}),
     };
 
-    const prGovernance = await resolveImportGovernanceContext({ job });
+    const prGovernance = await resolveImportGovernanceContext({
+      job,
+      operation: "PR creation",
+      stage: "git.pr",
+    });
     if (prGovernance.importSession) {
       await assertImportSessionApprovedForMutation({
         session: prGovernance.importSession,

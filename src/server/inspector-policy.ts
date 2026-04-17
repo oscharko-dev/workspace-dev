@@ -50,6 +50,21 @@ export interface LoadInspectorPolicyResult {
   warning?: string;
 }
 
+interface DroppedGovernanceSecuritySensitivePattern {
+  index: number;
+  value: string;
+}
+
+interface ParsedGovernancePolicyResult {
+  policy: InspectorWorkspaceGovernancePolicy;
+  droppedSecuritySensitivePatterns: DroppedGovernanceSecuritySensitivePattern[];
+}
+
+interface ParseInspectorPolicyResult {
+  policy: InspectorWorkspacePolicy | null;
+  droppedGovernanceSecuritySensitivePatterns: DroppedGovernanceSecuritySensitivePattern[];
+}
+
 const INVALID = Symbol("invalid");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -183,11 +198,13 @@ function parseA11yPolicy(
 
 function parseGovernancePolicy(
   value: unknown,
-): InspectorWorkspaceGovernancePolicy | typeof INVALID | undefined {
+): ParsedGovernancePolicyResult | typeof INVALID | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return INVALID;
 
   const out: InspectorWorkspaceGovernancePolicy = {};
+  const droppedSecuritySensitivePatterns: DroppedGovernanceSecuritySensitivePattern[] =
+    [];
   if (value.minQualityScoreToApply !== undefined) {
     if (value.minQualityScoreToApply !== null) {
       if (!isFiniteNumber(value.minQualityScoreToApply)) return INVALID;
@@ -196,42 +213,88 @@ function parseGovernancePolicy(
   }
   if (value.securitySensitivePatterns !== undefined) {
     if (!isStringArray(value.securitySensitivePatterns)) return INVALID;
-    if (
-      value.securitySensitivePatterns.some((pattern) =>
-        hasLikelyRegexStyleGovernancePattern(pattern),
-      )
-    ) {
-      return INVALID;
+    const securitySensitivePatterns: string[] = [];
+    for (const [index, pattern] of value.securitySensitivePatterns.entries()) {
+      if (hasLikelyRegexStyleGovernancePattern(pattern)) {
+        droppedSecuritySensitivePatterns.push({ index, value: pattern });
+        continue;
+      }
+      securitySensitivePatterns.push(pattern);
     }
-    out.securitySensitivePatterns = [...value.securitySensitivePatterns];
+    out.securitySensitivePatterns = securitySensitivePatterns;
   }
   if (value.requireNoteOnOverride !== undefined) {
     if (typeof value.requireNoteOnOverride !== "boolean") return INVALID;
     out.requireNoteOnOverride = value.requireNoteOnOverride;
   }
-  return out;
+  return { policy: out, droppedSecuritySensitivePatterns };
+}
+
+function parseInspectorPolicyResult(
+  value: unknown,
+): ParseInspectorPolicyResult {
+  if (!isRecord(value)) {
+    return {
+      policy: null,
+      droppedGovernanceSecuritySensitivePatterns: [],
+    };
+  }
+
+  const quality = parseQualityPolicy(value.quality);
+  if (quality === INVALID) {
+    return {
+      policy: null,
+      droppedGovernanceSecuritySensitivePatterns: [],
+    };
+  }
+  const tokens = parseTokenPolicy(value.tokens);
+  if (tokens === INVALID) {
+    return {
+      policy: null,
+      droppedGovernanceSecuritySensitivePatterns: [],
+    };
+  }
+  const a11y = parseA11yPolicy(value.a11y);
+  if (a11y === INVALID) {
+    return {
+      policy: null,
+      droppedGovernanceSecuritySensitivePatterns: [],
+    };
+  }
+  const governance = parseGovernancePolicy(value.governance);
+  if (governance === INVALID) {
+    return {
+      policy: null,
+      droppedGovernanceSecuritySensitivePatterns: [],
+    };
+  }
+
+  return {
+    policy: {
+      ...(quality !== undefined ? { quality } : {}),
+      ...(tokens !== undefined ? { tokens } : {}),
+      ...(a11y !== undefined ? { a11y } : {}),
+      ...(governance !== undefined ? { governance: governance.policy } : {}),
+    },
+    droppedGovernanceSecuritySensitivePatterns:
+      governance?.droppedSecuritySensitivePatterns ?? [],
+  };
 }
 
 export function parseInspectorPolicy(
   value: unknown,
 ): InspectorWorkspacePolicy | null {
-  if (!isRecord(value)) return null;
+  return parseInspectorPolicyResult(value).policy;
+}
 
-  const quality = parseQualityPolicy(value.quality);
-  if (quality === INVALID) return null;
-  const tokens = parseTokenPolicy(value.tokens);
-  if (tokens === INVALID) return null;
-  const a11y = parseA11yPolicy(value.a11y);
-  if (a11y === INVALID) return null;
-  const governance = parseGovernancePolicy(value.governance);
-  if (governance === INVALID) return null;
+function formatDroppedGovernanceSecuritySensitivePatternsWarning(
+  droppedPatterns: DroppedGovernanceSecuritySensitivePattern[],
+): string {
+  const formattedEntries = droppedPatterns
+    .map(({ index, value }) => `[${index}] ${JSON.stringify(value)}`)
+    .join(", ");
 
-  return {
-    ...(quality !== undefined ? { quality } : {}),
-    ...(tokens !== undefined ? { tokens } : {}),
-    ...(a11y !== undefined ? { a11y } : {}),
-    ...(governance !== undefined ? { governance } : {}),
-  };
+  return `Inspector policy '${INSPECTOR_POLICY_FILE_NAME}' dropped regex-style governance.securitySensitivePatterns entries: ${formattedEntries}.`;
 }
 
 export async function loadInspectorPolicy({
@@ -270,13 +333,22 @@ export async function loadInspectorPolicy({
     };
   }
 
-  const policy = parseInspectorPolicy(parsed);
-  if (policy === null) {
+  const result = parseInspectorPolicyResult(parsed);
+  if (result.policy === null) {
     return {
       policy: null,
       warning: `Inspector policy '${INSPECTOR_POLICY_FILE_NAME}' has an invalid shape and was ignored.`,
     };
   }
 
-  return { policy };
+  return {
+    policy: result.policy,
+    ...(result.droppedGovernanceSecuritySensitivePatterns.length > 0
+      ? {
+          warning: formatDroppedGovernanceSecuritySensitivePatternsWarning(
+            result.droppedGovernanceSecuritySensitivePatterns,
+          ),
+        }
+      : {}),
+  };
 }
