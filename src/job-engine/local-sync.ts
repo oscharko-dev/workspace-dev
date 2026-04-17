@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, writeFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { sanitizeTargetPath, toScopePath } from "./target-path.js";
 
@@ -7,6 +8,8 @@ const EXCLUDED_SOURCE_DIRS = new Set(["node_modules"]);
 const LOCAL_SYNC_BASELINE_VERSION = 1;
 const LOCAL_SYNC_BASELINE_DIR_NAME = "local-sync-baselines";
 const LOCAL_SYNC_BASELINE_FILE_NAME = "baseline.json";
+const FINAL_COMPONENT_NOFOLLOW_FLAG =
+  typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : undefined;
 
 export type LocalSyncFileAction = "create" | "overwrite" | "none";
 export type LocalSyncFileStatus = "create" | "overwrite" | "conflict" | "untracked" | "unchanged";
@@ -376,6 +379,30 @@ const saveLocalSyncBaseline = async ({
       "E_SYNC_BASELINE_WRITE_FAILED",
       `Could not persist local sync baseline '${baselinePath}': ${(error as Error).message}`
     );
+  }
+};
+
+export const writeFileWithFinalComponentNoFollow = async ({
+  filePath,
+  content
+}: {
+  filePath: string;
+  content: string | Buffer;
+}): Promise<void> => {
+  if (FINAL_COMPONENT_NOFOLLOW_FLAG === undefined) {
+    await writeFile(filePath, content);
+    return;
+  }
+
+  const handle = await open(
+    filePath,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | FINAL_COMPONENT_NOFOLLOW_FLAG,
+    0o666
+  );
+  try {
+    await handle.writeFile(content);
+  } finally {
+    await handle.close();
   }
 };
 
@@ -753,8 +780,24 @@ export const applyLocalSyncPlan = async ({
     }
 
     const fileContent = await readFile(resolvedSourcePath);
-    await mkdir(path.dirname(entry.destinationPath), { recursive: true });
-    await writeFile(entry.destinationPath, fileContent);
+    try {
+      await mkdir(path.dirname(entry.destinationPath), { recursive: true });
+      // The stale-check and path-segment symlink walk above are best-effort only. If an
+      // attacker with local filesystem write access swaps an ancestor after those checks,
+      // final-component O_NOFOLLOW cannot detect it; it only protects the leaf path where supported.
+      await writeFileWithFinalComponentNoFollow({
+        filePath: entry.destinationPath,
+        content: fileContent
+      });
+    } catch (error) {
+      if (error instanceof LocalSyncError) {
+        throw error;
+      }
+      throw new LocalSyncError(
+        "E_SYNC_DESTINATION_WRITE_FAILED",
+        `Could not write destination file '${entry.destinationPath}': ${(error as Error).message}`
+      );
+    }
   }
 
   const appliedPlan = applyDecisionsToPlan({

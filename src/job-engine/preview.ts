@@ -1,5 +1,12 @@
-import { lstat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, open, readFile } from "node:fs/promises";
 import path from "node:path";
+
+const FINAL_COMPONENT_NOFOLLOW_FLAG =
+  typeof constants.O_NOFOLLOW === "number" ? constants.O_NOFOLLOW : undefined;
+
+export const supportsFinalComponentNoFollow: boolean =
+  FINAL_COMPONENT_NOFOLLOW_FLAG !== undefined;
 
 export const getContentType = (filePath: string): string => {
   const extension = path.extname(filePath).toLowerCase();
@@ -56,6 +63,9 @@ export const hasSymlinkInPath = async ({
   candidatePath: string;
   rootPath: string;
 }): Promise<boolean> => {
+  // This path-segment walk catches existing symlinks in the resolved path, but it
+  // cannot close the TOCTOU gap if an ancestor is swapped after the check. Callers
+  // still need a best-effort final-component O_NOFOLLOW open when the platform supports it.
   if (!isWithinRoot({ candidatePath, rootPath })) {
     return true;
   }
@@ -94,4 +104,19 @@ export const hasSymlinkInPath = async ({
   }
 
   return false;
+};
+
+export const readFileWithFinalComponentNoFollow = async (
+  filePath: string
+): Promise<Buffer> => {
+  if (FINAL_COMPONENT_NOFOLLOW_FLAG === undefined) {
+    return readFile(filePath);
+  }
+
+  const handle = await open(filePath, constants.O_RDONLY | FINAL_COMPONENT_NOFOLLOW_FLAG);
+  try {
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
 };

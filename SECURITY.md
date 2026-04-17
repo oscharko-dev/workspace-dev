@@ -56,11 +56,14 @@ Please include:
 - Package-scoped threat model with implementation references: `THREAT_MODEL.md`.
 - Zero runtime dependencies (supply-chain minimization).
 - No install lifecycle scripts (`preinstall`, `install`, `postinstall`).
-- Local-only default bind (`127.0.0.1`).
+- The default bind is `127.0.0.1`, but operators can change the host binding; doing so expands the exposure model.
 - Browser write routes enforce same-origin browser metadata; cross-origin embedded write access is unsupported.
 - Protected write-route preflight (`OPTIONS`) requests return explicit `405 Method Not Allowed` with `Allow: POST` and no permissive CORS allow headers.
 - `pnpm run test:dast-smoke` exercises the live HTTP runtime for header enforcement, same-origin behavior, and traversal rejection.
 - `Strict-Transport-Security` is opt-in via `FIGMAPIPE_WORKSPACE_ENABLE_HSTS=true` and is intended only for HTTPS deployments behind a trusted TLS-terminating proxy; plain `http://127.0.0.1` and `http://localhost` should not emit HSTS.
+- Preview export and local-sync path handling use path-segment symlink checks plus stale-preview detection before apply; exploitation requires local filesystem write access to race those checks.
+- Best-effort `O_NOFOLLOW` hardening is applied where Node exposes it, but it only protects the final path component and is not portable to Windows.
+- Residual risk remains for ancestor-component TOCTOU races after validation and before the final open/write operation.
 - Runtime mode-lock enforcement (`figmaSourceMode=rest|hybrid|local_json|figma_paste|figma_plugin` plus `llmCodegenMode=deterministic`).
 - Runtime request validation and deterministic error envelopes.
 - Error-message sanitization for PII/secret leakage reduction.

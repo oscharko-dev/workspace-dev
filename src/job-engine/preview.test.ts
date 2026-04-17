@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
+import { constants } from "node:fs";
+import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import test from "node:test";
-import { getContentType, isWithinRoot, normalizePathPart } from "./preview.js";
+import {
+  getContentType,
+  isWithinRoot,
+  normalizePathPart,
+  readFileWithFinalComponentNoFollow
+} from "./preview.js";
 
 test("getContentType resolves known extensions and fallback", () => {
   assert.equal(getContentType("index.html"), "text/html; charset=utf-8");
@@ -38,4 +47,29 @@ test("isWithinRoot requires true path containment and not sibling-prefix matches
     }),
     false
   );
+});
+
+test("readFileWithFinalComponentNoFollow hardens final-component symlink reads when supported", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-preview-nofollow-"));
+  const targetPath = path.join(tempRoot, "target.txt");
+  const linkPath = path.join(tempRoot, "linked.txt");
+
+  try {
+    await writeFile(targetPath, "preview-target\n", "utf8");
+    await symlink(targetPath, linkPath);
+
+    if (typeof constants.O_NOFOLLOW === "number") {
+      await assert.rejects(
+        () => readFileWithFinalComponentNoFollow(linkPath),
+        (error: Error & { code?: string }) => typeof error.code === "string"
+      );
+    } else {
+      const content = await readFileWithFinalComponentNoFollow(linkPath);
+      assert.equal(content.toString("utf8"), "preview-target\n");
+    }
+
+    assert.equal(await readFile(targetPath, "utf8"), "preview-target\n");
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
