@@ -62,6 +62,7 @@ jobs:
       - name: Run release quality gates
         run: |
           pnpm run typecheck
+          pnpm run test:dast-smoke
           pnpm run test
           pnpm run template:test
           pnpm run test:golden
