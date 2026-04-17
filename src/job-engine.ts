@@ -54,6 +54,7 @@ import {
   hasSymlinkInPath,
   isWithinRoot,
   normalizePathPart,
+  readFileWithFinalComponentNoFollow,
 } from "./job-engine/preview.js";
 import { resolveRuntimeSettings } from "./job-engine/runtime.js";
 import {
@@ -3988,12 +3989,15 @@ export const createJobEngine = ({
     if (!isWithinRoot({ candidatePath, rootPath: previewRoot })) {
       return undefined;
     }
+    // This symlink walk fails closed for known path-segment links, but an ancestor can
+    // still change before the file is opened. The final-component O_NOFOLLOW read below
+    // narrows that race where Node exposes the flag; unsupported platforms retain this limitation.
     if (await hasSymlinkInPath({ candidatePath, rootPath: previewRoot })) {
       return undefined;
     }
 
     try {
-      const content = await readFile(candidatePath);
+      const content = await readFileWithFinalComponentNoFollow(candidatePath);
       return {
         content,
         contentType: getContentType(candidatePath),
@@ -4010,7 +4014,7 @@ export const createJobEngine = ({
           return undefined;
         }
         try {
-          const content = await readFile(indexPath);
+          const content = await readFileWithFinalComponentNoFollow(indexPath);
           return {
             content,
             contentType: "text/html; charset=utf-8",

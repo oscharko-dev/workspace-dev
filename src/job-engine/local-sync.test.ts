@@ -1,11 +1,17 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
-import { applyLocalSyncPlan, LocalSyncError, planLocalSync } from "./local-sync.js";
+import {
+  applyLocalSyncPlan,
+  LocalSyncError,
+  planLocalSync,
+  writeFileWithFinalComponentNoFollow
+} from "./local-sync.js";
 import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.js";
 
 const createLocalFigmaPayload = () => ({
@@ -538,6 +544,37 @@ test("applyLocalSyncPlan validates file decisions before any writes occur", asyn
         /Select at least one file/
       );
     });
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("writeFileWithFinalComponentNoFollow hardens final-component symlink writes when supported", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-sync-write-nofollow-"));
+  const targetPath = path.join(tempRoot, "target.txt");
+  const linkPath = path.join(tempRoot, "linked.txt");
+
+  try {
+    await writeFile(targetPath, "before\n", "utf8");
+    await symlink(targetPath, linkPath);
+
+    if (typeof constants.O_NOFOLLOW === "number") {
+      await assert.rejects(
+        () =>
+          writeFileWithFinalComponentNoFollow({
+            filePath: linkPath,
+            content: Buffer.from("after\n", "utf8")
+          }),
+        (error: Error & { code?: string }) => typeof error.code === "string"
+      );
+      assert.equal(await readFile(targetPath, "utf8"), "before\n");
+    } else {
+      await writeFileWithFinalComponentNoFollow({
+        filePath: linkPath,
+        content: Buffer.from("after\n", "utf8")
+      });
+      assert.equal(await readFile(targetPath, "utf8"), "after\n");
+    }
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
