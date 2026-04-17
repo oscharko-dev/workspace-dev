@@ -4,7 +4,11 @@ import path from "node:path";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 
-import { buildArtifactReport, findSingleTarballPath } from "./verify-reproducible-build.mjs";
+import {
+  assertReproducibleIterations,
+  buildArtifactReport,
+  findSingleTarballPath
+} from "./verify-reproducible-build.mjs";
 
 test("findSingleTarballPath returns the only packed tarball", async () => {
   const packDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-pack-test-"));
@@ -58,4 +62,21 @@ test("buildArtifactReport records dist and tarball reproducibility evidence", ()
       second: { file: "workspace-dev-1.0.0.tgz", sha256: "tar123" }
     }
   });
+});
+
+test("assertReproducibleIterations rejects tarball hash mismatches", () => {
+  assert.throws(
+    () =>
+      assertReproducibleIterations(
+        {
+          distHashes: [{ file: "dist/index.js", sha256: "dist123" }],
+          tarball: { file: "workspace-dev-1.0.0.tgz", sha256: "tar123" }
+        },
+        {
+          distHashes: [{ file: "dist/index.js", sha256: "dist123" }],
+          tarball: { file: "workspace-dev-1.0.0.tgz", sha256: "tar456" }
+        }
+      ),
+    /Tarball hashes differ between consecutive clean iterations/
+  );
 });

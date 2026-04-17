@@ -96,6 +96,18 @@ export const buildArtifactReport = ({ generatedAt, distHashes, tarballs }) => ({
   }
 });
 
+export const assertReproducibleIterations = (firstIteration, secondIteration) => {
+  const firstSerialized = JSON.stringify(firstIteration.distHashes);
+  const secondSerialized = JSON.stringify(secondIteration.distHashes);
+  if (firstSerialized !== secondSerialized) {
+    throw new Error("Build output is not reproducible. Dist hashes differ between consecutive clean iterations.");
+  }
+
+  if (firstIteration.tarball.sha256 !== secondIteration.tarball.sha256) {
+    throw new Error("Build output is not reproducible. Tarball hashes differ between consecutive clean iterations.");
+  }
+};
+
 const runIteration = async () => {
   await rm(distDir, { recursive: true, force: true });
   await run("pnpm", ["run", "build"]);
@@ -123,15 +135,7 @@ export const main = async () => {
   const firstIteration = await runIteration();
   const secondIteration = await runIteration();
 
-  const firstSerialized = JSON.stringify(firstIteration.distHashes);
-  const secondSerialized = JSON.stringify(secondIteration.distHashes);
-  if (firstSerialized !== secondSerialized) {
-    throw new Error("Build output is not reproducible. Dist hashes differ between consecutive clean iterations.");
-  }
-
-  if (firstIteration.tarball.sha256 !== secondIteration.tarball.sha256) {
-    throw new Error("Build output is not reproducible. Tarball hashes differ between consecutive clean iterations.");
-  }
+  assertReproducibleIterations(firstIteration, secondIteration);
 
   await mkdir(artifactDir, { recursive: true });
   await writeFile(
