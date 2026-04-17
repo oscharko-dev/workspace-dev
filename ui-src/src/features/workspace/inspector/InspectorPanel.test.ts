@@ -1281,6 +1281,198 @@ describe("InspectorPanel data states", () => {
     );
   });
 
+  it("falls back to defaults and warns when the fetched workspace policy payload is invalid", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      installQueryMock({
+        overrides: {
+          "inspector-manifest": {
+            data: {
+              ok: true,
+              status: 200,
+              payload: {
+                jobId: "job-1",
+                screens: [
+                  {
+                    screenId: "screen-home",
+                    screenName: "Home",
+                    file: "src/screens/Home.tsx",
+                    components: [
+                      {
+                        irNodeId: "node-hero",
+                        irNodeName: "Hero",
+                        irNodeType: "container",
+                        file: "src/screens/Home.tsx",
+                        startLine: 1,
+                        endLine: 4,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          "inspector-design-ir": {
+            data: {
+              ok: true,
+              status: 200,
+              payload: {
+                jobId: "job-1",
+                screens: [
+                  {
+                    id: "screen-home",
+                    name: "Home",
+                    generatedFile: "src/screens/Home.tsx",
+                    children: [
+                      {
+                        id: "node-hero",
+                        name: "Hero",
+                        type: "container",
+                        children: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          "inspector-workspace-policy": {
+            data: {
+              ok: true,
+              status: 200,
+              payload: {
+                policy: {
+                  quality: {
+                    maxAcceptableDepth: "zero",
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      renderInspectorPanel({
+        pipeline: buildPipelineState({
+          stage: "ready",
+          jobStatus: "completed",
+          errors: [],
+        }),
+      });
+
+      expect(screen.queryByText("Deep nesting detected")).not.toBeInTheDocument();
+      expect(
+        screen.getByTestId("inspector-workspace-policy-warning"),
+      ).toHaveTextContent("Workspace policy ignored.");
+      expect(
+        screen.getByTestId("inspector-workspace-policy-warning"),
+      ).toHaveTextContent("invalid and was ignored");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("invalid and was ignored"),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("surfaces valid server workspace policy warnings without discarding the policy", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      installQueryMock({
+        overrides: {
+          "inspector-manifest": {
+            data: {
+              ok: true,
+              status: 200,
+              payload: {
+                jobId: "job-1",
+                screens: [
+                  {
+                    screenId: "screen-home",
+                    screenName: "Home",
+                    file: "src/screens/Home.tsx",
+                    components: [
+                      {
+                        irNodeId: "node-hero",
+                        irNodeName: "Hero",
+                        irNodeType: "container",
+                        file: "src/screens/Home.tsx",
+                        startLine: 1,
+                        endLine: 4,
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          "inspector-design-ir": {
+            data: {
+              ok: true,
+              status: 200,
+              payload: {
+                jobId: "job-1",
+                screens: [
+                  {
+                    id: "screen-home",
+                    name: "Home",
+                    generatedFile: "src/screens/Home.tsx",
+                    children: [
+                      {
+                        id: "node-hero",
+                        name: "Hero",
+                        type: "container",
+                        children: [],
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          },
+          "inspector-workspace-policy": {
+            data: {
+              ok: true,
+              status: 200,
+              payload: {
+                policy: {
+                  quality: {
+                    maxAcceptableDepth: 0,
+                  },
+                },
+                warning:
+                  "Regex-like governance patterns were dropped from the policy.",
+              },
+            },
+          },
+        },
+      });
+
+      renderInspectorPanel({
+        pipeline: buildPipelineState({
+          stage: "ready",
+          jobStatus: "completed",
+          errors: [],
+        }),
+      });
+
+      expect(screen.getByText("Deep nesting detected")).toBeInTheDocument();
+      expect(
+        screen.getByTestId("inspector-workspace-policy-warning"),
+      ).toHaveTextContent("Workspace policy warning.");
+      expect(
+        screen.getByTestId("inspector-workspace-policy-warning"),
+      ).toHaveTextContent(
+        "Regex-like governance patterns were dropped from the policy.",
+      );
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("renders loading and empty design-ir states in the tree pane", () => {
     installQueryMock({
       overrides: {

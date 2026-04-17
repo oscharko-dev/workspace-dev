@@ -175,8 +175,9 @@ import {
   selectA11yScanFiles,
 } from "./a11y-file-selection";
 import {
+  parseWorkspacePolicyPayload,
   resolveWorkspacePolicy,
-  type WorkspacePolicy,
+  type WorkspacePolicyPayload,
 } from "./workspace-policy";
 import {
   deriveInspectorImpactReviewModel,
@@ -267,10 +268,6 @@ interface GenerationMetricsResponse {
   payload: InspectabilityGenerationMetricsPayload | null;
   error: string | null;
   message: string | null;
-}
-
-interface WorkspacePolicyPayload {
-  policy: WorkspacePolicy | null;
 }
 
 type LocalSyncFileAction = "create" | "overwrite" | "none";
@@ -551,17 +548,6 @@ function isGenerationMetricsPayload(
   value: unknown,
 ): value is InspectabilityGenerationMetricsPayload {
   return isRecord(value);
-}
-
-function isWorkspacePolicyPayload(
-  value: unknown,
-): value is WorkspacePolicyPayload {
-  if (!isRecord(value)) return false;
-  return (
-    value.policy === null ||
-    value.policy === undefined ||
-    isRecord(value.policy)
-  );
 }
 
 function isLocalSyncFilePlanEntry(
@@ -2062,12 +2048,24 @@ export function InspectorPanel({
 
   // Issue #993 — quality score + token intelligence + a11y nudges.
   const workspacePolicy = useMemo(() => {
-    const payload = workspacePolicyQuery.data?.payload;
-    if (workspacePolicyQuery.data?.ok && isWorkspacePolicyPayload(payload)) {
-      return resolveWorkspacePolicy(payload.policy ?? null);
+    if (workspacePolicyQuery.data?.ok) {
+      return parseWorkspacePolicyPayload(workspacePolicyQuery.data.payload);
     }
-    return resolveWorkspacePolicy();
+    return {
+      policy: resolveWorkspacePolicy(),
+      source: "defaults" as const,
+      warning: null,
+    };
   }, [workspacePolicyQuery.data]);
+  useEffect(() => {
+    if (
+      workspacePolicy.source === "invalid-server-payload" &&
+      workspacePolicy.warning
+    ) {
+      console.warn(workspacePolicy.warning);
+    }
+  }, [workspacePolicy.source, workspacePolicy.warning]);
+  const resolvedWorkspacePolicy = workspacePolicy.policy;
   const qualityScoreModel = useMemo(() => {
     const screens = irScreens.map((screen) => ({
       id: screen.id,
@@ -2079,14 +2077,14 @@ export function InspectorPanel({
       diagnostics: activePipeline.figmaAnalysis?.diagnostics ?? [],
       errors: activePipeline.errors,
       ...(manifest ? { manifest } : {}),
-      policy: workspacePolicy.quality,
+      policy: resolvedWorkspacePolicy.quality,
     });
   }, [
     irScreens,
     manifest,
     activePipeline.errors,
     activePipeline.figmaAnalysis?.diagnostics,
-    workspacePolicy.quality,
+    resolvedWorkspacePolicy.quality,
   ]);
 
   const generatedFilePaths = useMemo(() => {
@@ -2098,7 +2096,8 @@ export function InspectorPanel({
   }, [activePipeline.generatedFiles, files]);
   const securitySensitiveImport = useMemo(() => {
     return isSecuritySensitiveInspectorSelection({
-      patterns: workspacePolicy.governance.securitySensitivePatterns,
+      patterns:
+        resolvedWorkspacePolicy.governance.securitySensitivePatterns,
       screens: irScreens,
       manifest,
       generatedFiles: generatedFilePaths,
@@ -2107,7 +2106,7 @@ export function InspectorPanel({
     generatedFilePaths,
     irScreens,
     manifest,
-    workspacePolicy.governance.securitySensitivePatterns,
+    resolvedWorkspacePolicy.governance.securitySensitivePatterns,
   ]);
 
   const [reviewState, setReviewState] = useState<ImportReviewState>(
@@ -2155,14 +2154,14 @@ export function InspectorPanel({
     return describeApplyGate({
       qualityScore: qualityScoreModel.score,
       reviewerNote: reviewState.reviewerNote,
-      policy: workspacePolicy.governance,
+      policy: resolvedWorkspacePolicy.governance,
       securitySensitive: securitySensitiveImport,
     });
   }, [
     qualityScoreModel.score,
     reviewState.reviewerNote,
     securitySensitiveImport,
-    workspacePolicy.governance,
+    resolvedWorkspacePolicy.governance,
   ]);
 
   const approveImportSessionMutation = useMutation({
@@ -2296,9 +2295,9 @@ export function InspectorPanel({
             },
           }
         : {}),
-      policy: workspacePolicy.tokens,
+      policy: resolvedWorkspacePolicy.tokens,
     });
-  }, [activePipeline.tokenIntelligence, workspacePolicy.tokens]);
+  }, [activePipeline.tokenIntelligence, resolvedWorkspacePolicy.tokens]);
 
   // Collect JSX-like files so we fetch only what the a11y scanner can parse.
   // Filtering rules and caps are extracted into pure helpers so they can be
@@ -2328,9 +2327,9 @@ export function InspectorPanel({
   const a11yNudgeModel = useMemo(() => {
     return deriveA11yNudges({
       files: a11yNudgeInputs,
-      policy: workspacePolicy.a11y,
+      policy: resolvedWorkspacePolicy.a11y,
     });
-  }, [a11yNudgeInputs, workspacePolicy.a11y]);
+  }, [a11yNudgeInputs, resolvedWorkspacePolicy.a11y]);
 
   const [tokenDecisionsStatus, setTokenDecisionsStatus] = useState<{
     state: "idle" | "saving" | "saved" | "error";
@@ -6119,6 +6118,23 @@ export function InspectorPanel({
               ) : null}
             </div>
           ))}
+        </div>
+      ) : null}
+
+      {workspacePolicy.warning ? (
+        <div className="shrink-0 border-b border-[#000000] bg-[#242014] px-4 py-1">
+          <p
+            role="alert"
+            data-testid="inspector-workspace-policy-warning"
+            className="m-0 text-[11px] text-amber-400"
+          >
+            <span className="font-semibold">
+              {workspacePolicy.source === "invalid-server-payload"
+                ? "Workspace policy ignored."
+                : "Workspace policy warning."}
+            </span>{" "}
+            {workspacePolicy.warning}
+          </p>
         </div>
       ) : null}
 
