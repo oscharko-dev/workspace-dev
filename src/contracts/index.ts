@@ -398,6 +398,7 @@ export interface WorkspaceImportSessionEvent {
   actor?: string;
   note?: string;
   metadata?: Record<string, string | number | boolean | null>;
+  sequence?: number;
 }
 
 export interface WorkspaceImportSessionEventsResponse {

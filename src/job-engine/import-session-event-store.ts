@@ -32,6 +32,7 @@ interface PersistedImportSessionEventsEnvelope {
   contractVersion: string;
   sessionId: string;
   events: WorkspaceImportSessionEvent[];
+  nextSequence: number;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -253,6 +254,7 @@ const writeEventsFile = async ({
     contractVersion: CONTRACT_VERSION,
     sessionId,
     events: [...events],
+    nextSequence: 0,
   };
   await writeFile(
     temporaryPath,
