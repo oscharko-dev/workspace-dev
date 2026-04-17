@@ -4,7 +4,7 @@ import {
   findViolationsInLine,
   hasTestSuffix,
   hasIncludedExtension,
-  lineHasSafeDestination,
+  isSafeDestination,
 } from "./check-no-telemetry.mjs";
 
 // ── hasTestSuffix tests ──────────────────────────────────────────────────────
@@ -44,53 +44,75 @@ test("hasIncludedExtension: rejects excluded extensions", () => {
   assert.strictEqual(hasIncludedExtension("qux"), false);
 });
 
-// ── lineHasSafeDestination tests ────────────────────────────────────────────
-test("lineHasSafeDestination: identifies Figma API calls", () => {
-  assert.strictEqual(
-    lineHasSafeDestination('fetch("https://api.figma.com/v1/files")'),
-    true,
-  );
-  assert.strictEqual(
-    lineHasSafeDestination('fetch("https://figma.com/plugin")'),
-    true,
-  );
+// ── isSafeDestination tests (AC-2.1, AC-2.2, AC-2.3, AC-2.4) ────────────────
+test("isSafeDestination: allows exact api.figma.com", () => {
+  assert.strictEqual(isSafeDestination("https://api.figma.com/v1/files"), true);
 });
 
-test("lineHasSafeDestination: identifies MCP loopback calls", () => {
-  assert.strictEqual(
-    lineHasSafeDestination('fetch("http://localhost:4000/api")'),
-    true,
-  );
-  assert.strictEqual(
-    lineHasSafeDestination('fetch("http://127.0.0.1:8080/data")'),
-    true,
-  );
-  assert.strictEqual(
-    lineHasSafeDestination('fetch("http://0.0.0.0:3000/status")'),
-    true,
-  );
+test("isSafeDestination: allows *.figma.com subdomains", () => {
+  assert.strictEqual(isSafeDestination("https://mcp.figma.com/rpc"), true);
+  assert.strictEqual(isSafeDestination("https://cdn.figma.com/asset"), true);
 });
 
-test("lineHasSafeDestination: identifies internal workspace routes", () => {
+test("isSafeDestination: rejects figma.com subdomain-spoof via suffix", () => {
+  // `evilfigma.com.attacker.net` used to slip past substring matching.
   assert.strictEqual(
-    lineHasSafeDestination('fetch("http://localhost/workspace/jobs")'),
-    true,
-  );
-  assert.strictEqual(
-    lineHasSafeDestination('fetch("http://localhost/healthz")'),
-    true,
-  );
-});
-
-test("lineHasSafeDestination: rejects telemetry destinations", () => {
-  assert.strictEqual(
-    lineHasSafeDestination('fetch("https://example.com/track")'),
+    isSafeDestination("https://evilfigma.com.attacker.net/track"),
     false,
   );
   assert.strictEqual(
-    lineHasSafeDestination('fetch("https://analytics.example.com/event")'),
+    isSafeDestination("https://a.figma.com.attacker.net/track"),
     false,
   );
+});
+
+test("isSafeDestination: rejects bare figma.com without api subdomain", () => {
+  // Only `api.figma.com` (exact) or `*.figma.com` subdomains are allowed;
+  // plain `figma.com` is not — it has no subdomain and does not equal the
+  // API host. This is intentionally stricter than the old substring check.
+  assert.strictEqual(isSafeDestination("https://figma.com/plugin"), false);
+});
+
+test("isSafeDestination: allows loopback hostnames exactly (any port)", () => {
+  assert.strictEqual(isSafeDestination("http://localhost:4000/api"), true);
+  assert.strictEqual(isSafeDestination("http://127.0.0.1:8080/data"), true);
+  assert.strictEqual(isSafeDestination("http://0.0.0.0:3000/status"), true);
+});
+
+test("isSafeDestination: rejects localhost subdomain-spoof", () => {
+  assert.strictEqual(
+    isSafeDestination("https://localhost.attacker.net/track"),
+    false,
+  );
+});
+
+test("isSafeDestination: allows internal workspace routes on loopback only", () => {
+  assert.strictEqual(
+    isSafeDestination("http://localhost/workspace/jobs"),
+    true,
+  );
+  assert.strictEqual(isSafeDestination("http://localhost/healthz"), true);
+});
+
+test("isSafeDestination: rejects /workspace path on external host", () => {
+  // Path-scoping: `/workspace/` is only safe on loopback hostnames.
+  assert.strictEqual(
+    isSafeDestination("https://example.com/workspace/jobs"),
+    false,
+  );
+});
+
+test("isSafeDestination: rejects telemetry destinations", () => {
+  assert.strictEqual(isSafeDestination("https://example.com/track"), false);
+  assert.strictEqual(
+    isSafeDestination("https://analytics.example.com/event"),
+    false,
+  );
+});
+
+test("isSafeDestination: rejects malformed URL strings", () => {
+  assert.strictEqual(isSafeDestination("not a url"), false);
+  assert.strictEqual(isSafeDestination(""), false);
 });
 
 // ── findViolationsInLine: vendor imports ──────────────────────────────────────
@@ -198,6 +220,29 @@ test("findViolationsInLine: allows fetch() to Figma API", () => {
 
 test("findViolationsInLine: allows fetch() to localhost", () => {
   const result = findViolationsInLine('fetch("http://localhost:4000/track")');
+  assert.strictEqual(result.includes("fetch-telemetry-url"), false);
+});
+
+test("findViolationsInLine: flags fetch() to figma.com subdomain-spoof (AC-2.5)", () => {
+  // Regression guard: the old substring allowlist let this URL through
+  // because the line contained the substring "figma.com".
+  const result = findViolationsInLine(
+    'fetch("https://evilfigma.com.attacker.net/track")',
+  );
+  assert.strictEqual(result.includes("fetch-telemetry-url"), true);
+});
+
+test("findViolationsInLine: flags fetch() when a comment mentions localhost", () => {
+  // Regression guard: previously, any mention of "localhost" on a line
+  // disabled the generic checks for that line.
+  const result = findViolationsInLine(
+    '// see localhost notes; fetch("https://example.com/track")',
+  );
+  assert.strictEqual(result.includes("fetch-telemetry-url"), true);
+});
+
+test("findViolationsInLine: allows fetch() to *.figma.com subdomain", () => {
+  const result = findViolationsInLine('fetch("https://mcp.figma.com/rpc")');
   assert.strictEqual(result.includes("fetch-telemetry-url"), false);
 });
 
