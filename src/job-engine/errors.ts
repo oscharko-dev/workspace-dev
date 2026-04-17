@@ -6,8 +6,9 @@ import type {
   WorkspaceJobDiagnosticValue,
   WorkspaceJobFallbackMode,
   WorkspaceJobRetryTarget,
-  WorkspaceJobStageName
+  WorkspaceJobStageName,
 } from "../contracts/index.js";
+import { redactHighRiskSecrets } from "../secret-redaction.js";
 import type { WorkspacePipelineError } from "./types.js";
 
 export interface PipelineDiagnosticLimits {
@@ -23,7 +24,7 @@ export const DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS: PipelineDiagnosticLimits = {
   textMaxLength: 320,
   detailsMaxKeys: 30,
   detailsMaxItems: 20,
-  detailsMaxDepth: 4
+  detailsMaxDepth: 4,
 };
 
 export interface PipelineDiagnosticInput {
@@ -39,7 +40,7 @@ export interface PipelineDiagnosticInput {
 
 const truncateText = ({
   value,
-  maxLength
+  maxLength,
 }: {
   value: string;
   maxLength: number;
@@ -58,35 +59,38 @@ const STATIC_SENSITIVE_PATH_ROOTS = [
   "/srv",
   "/mnt",
   "/Volumes",
-  "/dev/shm"
+  "/dev/shm",
 ];
 
-const LEADING_TOKEN_PUNCTUATION = new Set(["(", "[", "{", "<", "\"", "'", "`"]);
+const LEADING_TOKEN_PUNCTUATION = new Set(["(", "[", "{", "<", '"', "'", "`"]);
 const TRAILING_TOKEN_PUNCTUATION = new Set([
   ")",
   "]",
   "}",
   ">",
-  "\"",
+  '"',
   "'",
   "`",
   ",",
   ".",
   ";",
   "!",
-  "?"
+  "?",
 ]);
 
 const isWithinRoot = ({
   candidatePath,
-  rootPath
+  rootPath,
 }: {
   candidatePath: string;
   rootPath: string;
 }): boolean => {
   const resolvedRoot = path.resolve(rootPath);
   const resolvedCandidate = path.resolve(candidatePath);
-  return resolvedCandidate === resolvedRoot || resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`);
+  return (
+    resolvedCandidate === resolvedRoot ||
+    resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`)
+  );
 };
 
 const getSensitivePathRoots = (): string[] => {
@@ -94,15 +98,15 @@ const getSensitivePathRoots = (): string[] => {
     process.cwd(),
     os.tmpdir(),
     os.homedir(),
-    ...STATIC_SENSITIVE_PATH_ROOTS
+    ...STATIC_SENSITIVE_PATH_ROOTS,
   ];
   return Array.from(
     new Set(
       roots
         .map((root) => root.trim())
         .filter((root) => root.length > 0)
-        .map((root) => path.resolve(root))
-    )
+        .map((root) => path.resolve(root)),
+    ),
   );
 };
 
@@ -119,16 +123,26 @@ const shouldRedactAbsoluteFilesystemPath = (candidate: string): boolean => {
   }
 
   const resolvedCandidate = path.resolve(normalized);
-  if (getSensitivePathRoots().some((root) => isWithinRoot({ candidatePath: resolvedCandidate, rootPath: root }))) {
+  if (
+    getSensitivePathRoots().some((root) =>
+      isWithinRoot({ candidatePath: resolvedCandidate, rootPath: root }),
+    )
+  ) {
     return true;
   }
 
-  return /(?:^|[\\/])(?:generated-app|node_modules|jobs|repros|\.stage-store)(?:[\\/]|$)/.test(normalized);
+  return /(?:^|[\\/])(?:generated-app|node_modules|jobs|repros|\.stage-store)(?:[\\/]|$)/.test(
+    normalized,
+  );
 };
 
 const toRedactedPathLabel = (candidate: string): string => {
-  const basename = path.win32.isAbsolute(candidate) ? path.win32.basename(candidate) : path.basename(candidate);
-  return basename.length > 0 ? `[redacted-path]/${basename}` : "[redacted-path]";
+  const basename = path.win32.isAbsolute(candidate)
+    ? path.win32.basename(candidate)
+    : path.basename(candidate);
+  return basename.length > 0
+    ? `[redacted-path]/${basename}`
+    : "[redacted-path]";
 };
 
 const sanitizePathToken = (token: string): string => {
@@ -152,7 +166,7 @@ const sanitizePathToken = (token: string): string => {
 
 export const sanitizeDiagnosticText = ({
   value,
-  maxLength
+  maxLength,
 }: {
   value: string;
   maxLength: number;
@@ -161,7 +175,9 @@ export const sanitizeDiagnosticText = ({
   // then bound the remaining text with the caller-provided diagnostic limit.
   const redacted = value
     .split(/(\s+)/)
-    .map((token) => (token.trim().length === 0 ? token : sanitizePathToken(token)))
+    .map((token) =>
+      token.trim().length === 0 ? token : sanitizePathToken(token),
+    )
     .join("");
   return truncateText({ value: redacted, maxLength });
 };
@@ -169,7 +185,7 @@ export const sanitizeDiagnosticText = ({
 const sanitizeDiagnosticValue = ({
   value,
   depth,
-  limits
+  limits,
 }: {
   value: unknown;
   depth: number;
@@ -200,10 +216,12 @@ const sanitizeDiagnosticValue = ({
         sanitizeDiagnosticValue({
           value: entry,
           depth: depth + 1,
-          limits
-        })
+          limits,
+        }),
       )
-      .filter((entry): entry is WorkspaceJobDiagnosticValue => entry !== undefined);
+      .filter(
+        (entry): entry is WorkspaceJobDiagnosticValue => entry !== undefined,
+      );
     return normalizedItems;
   }
   if (typeof value !== "object") {
@@ -213,19 +231,19 @@ const sanitizeDiagnosticValue = ({
     if (typeof value === "function") {
       return sanitizeDiagnosticText({
         value: `[Function ${value.name || "anonymous"}]`,
-        maxLength: limits.textMaxLength
+        maxLength: limits.textMaxLength,
       });
     }
     if (typeof value === "symbol") {
       return sanitizeDiagnosticText({
         value: value.description ? `Symbol(${value.description})` : "Symbol()",
-        maxLength: limits.textMaxLength
+        maxLength: limits.textMaxLength,
       });
     }
     if (typeof value === "bigint") {
       return sanitizeDiagnosticText({
         value: `${value.toString()}n`,
-        maxLength: limits.textMaxLength
+        maxLength: limits.textMaxLength,
       });
     }
     return undefined;
@@ -233,7 +251,7 @@ const sanitizeDiagnosticValue = ({
   if (depth >= limits.detailsMaxDepth) {
     return sanitizeDiagnosticText({
       value: Object.prototype.toString.call(value),
-      maxLength: limits.textMaxLength
+      maxLength: limits.textMaxLength,
     });
   }
   const record = value as Record<string, unknown>;
@@ -245,7 +263,7 @@ const sanitizeDiagnosticValue = ({
     const normalized = sanitizeDiagnosticValue({
       value: record[key],
       depth: depth + 1,
-      limits
+      limits,
     });
     if (normalized !== undefined) {
       output[key] = normalized;
@@ -257,7 +275,7 @@ const sanitizeDiagnosticValue = ({
 const normalizePipelineDiagnostics = ({
   diagnostics,
   fallbackStage,
-  limits = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS
+  limits = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS,
 }: {
   diagnostics: PipelineDiagnosticInput[] | undefined;
   fallbackStage: WorkspaceJobStageName;
@@ -274,14 +292,14 @@ const normalizePipelineDiagnostics = ({
     }
     const message = sanitizeDiagnosticText({
       value: candidate.message.trim(),
-      maxLength: limits.textMaxLength
+      maxLength: limits.textMaxLength,
     });
     if (message.length === 0) {
       continue;
     }
     const suggestion = sanitizeDiagnosticText({
       value: candidate.suggestion.trim(),
-      maxLength: limits.textMaxLength
+      maxLength: limits.textMaxLength,
     });
     if (suggestion.length === 0) {
       continue;
@@ -292,7 +310,7 @@ const normalizePipelineDiagnostics = ({
         : sanitizeDiagnosticValue({
             value: candidate.details,
             depth: 0,
-            limits
+            limits,
           });
     normalized.push({
       code,
@@ -300,18 +318,27 @@ const normalizePipelineDiagnostics = ({
       suggestion,
       stage: candidate.stage ?? fallbackStage,
       severity: candidate.severity ?? "error",
-      ...(candidate.figmaNodeId?.trim() ? { figmaNodeId: candidate.figmaNodeId.trim() } : {}),
+      ...(candidate.figmaNodeId?.trim()
+        ? { figmaNodeId: candidate.figmaNodeId.trim() }
+        : {}),
       ...(candidate.figmaUrl?.trim()
         ? {
             figmaUrl: sanitizeDiagnosticText({
               value: candidate.figmaUrl.trim(),
-              maxLength: limits.textMaxLength
-            })
+              maxLength: limits.textMaxLength,
+            }),
           }
         : {}),
-      ...(detailsValue && typeof detailsValue === "object" && !Array.isArray(detailsValue)
-        ? { details: detailsValue as Record<string, WorkspaceJobDiagnosticValue> }
-        : {})
+      ...(detailsValue &&
+      typeof detailsValue === "object" &&
+      !Array.isArray(detailsValue)
+        ? {
+            details: detailsValue as Record<
+              string,
+              WorkspaceJobDiagnosticValue
+            >,
+          }
+        : {}),
     });
     if (normalized.length >= limits.maxDiagnostics) {
       break;
@@ -323,7 +350,7 @@ const normalizePipelineDiagnostics = ({
 export const mergePipelineDiagnostics = ({
   first,
   second,
-  max = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics
+  max = DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics,
 }: {
   first?: WorkspaceJobDiagnostic[];
   second?: WorkspaceJobDiagnostic[];
@@ -377,13 +404,17 @@ export class PipelineError extends Error implements WorkspacePipelineError {
     retryable,
     retryAfterMs,
     fallbackMode,
-    retryTargets
+    retryTargets,
   }: CreatePipelineErrorOptions) {
     const resolvedLimits = limits ?? DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS;
-    const sanitizedMessage = sanitizeDiagnosticText({
+    const pathRedacted = sanitizeDiagnosticText({
       value: message,
-      maxLength: resolvedLimits.textMaxLength
+      maxLength: resolvedLimits.textMaxLength,
     });
+    const sanitizedMessage = redactHighRiskSecrets(
+      pathRedacted,
+      "[redacted-secret]",
+    );
 
     super(sanitizedMessage, cause === undefined ? undefined : { cause });
     Object.setPrototypeOf(this, new.target.prototype);
@@ -395,7 +426,7 @@ export class PipelineError extends Error implements WorkspacePipelineError {
       (
         captureStackTrace as (
           target: object,
-          constructor?: new (...args: never[]) => unknown
+          constructor?: new (...args: never[]) => unknown,
         ) => void
       )(this, PipelineError);
     }
@@ -414,7 +445,7 @@ export class PipelineError extends Error implements WorkspacePipelineError {
     const normalizedDiagnostics = normalizePipelineDiagnostics({
       diagnostics,
       fallbackStage: stage,
-      limits: resolvedLimits
+      limits: resolvedLimits,
     });
     if (normalizedDiagnostics) {
       this.diagnostics = normalizedDiagnostics;
@@ -423,7 +454,7 @@ export class PipelineError extends Error implements WorkspacePipelineError {
 }
 
 export const createPipelineError = (
-  options: CreatePipelineErrorOptions
+  options: CreatePipelineErrorOptions,
 ): WorkspacePipelineError => {
   return new PipelineError(options);
 };
