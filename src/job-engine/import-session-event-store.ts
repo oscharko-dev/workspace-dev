@@ -160,8 +160,21 @@ const trimEventsForRetention = ({
           .filter(({ event }) => !isMaterialEvent(event))
           .slice(-remainingSlots);
 
+  const sequenceKey = ({
+    event,
+  }: {
+    event: WorkspaceImportSessionEvent;
+  }): number =>
+    typeof event.sequence === "number" ? event.sequence : -Infinity;
+
   return [...retainedMaterialEvents, ...retainedNotes]
-    .sort((left, right) => left.index - right.index)
+    .sort((left, right) => {
+      const sequenceDelta = sequenceKey(left) - sequenceKey(right);
+      if (sequenceDelta !== 0) {
+        return sequenceDelta;
+      }
+      return left.index - right.index;
+    })
     .map(({ event }) => event);
 };
 
