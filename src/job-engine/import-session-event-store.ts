@@ -96,6 +96,14 @@ const isImportSessionEvent = (
   if (value.metadata !== undefined && !isFlatMetadata(value.metadata)) {
     return false;
   }
+  if (
+    value.sequence !== undefined &&
+    (typeof value.sequence !== "number" ||
+      !Number.isFinite(value.sequence) ||
+      value.sequence < 0)
+  ) {
+    return false;
+  }
   return true;
 };
 

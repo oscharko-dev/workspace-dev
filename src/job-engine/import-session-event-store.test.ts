@@ -1127,6 +1127,47 @@ test("backward compat: non-finite envelope nextSequence falls back to the derive
   }
 });
 
+test("monotonic sequence: caller-supplied sequence values on input events are overridden by store assignment", async () => {
+  const rootDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-import-session-events-"),
+  );
+  try {
+    const store = createImportSessionEventStore({ rootDir });
+    // Attempt to supply a pre-set sequence value in the input event.
+    // The store must ignore this and assign its own sequence counter.
+    await store.append(
+      makeEvent({
+        id: "event-attacker-seq",
+        kind: "note",
+        note: "attacker tries to set sequence",
+        at: "2026-04-15T10:00:00.000Z",
+        sequence: 999, // Attacker tries to hijack ordering
+      }),
+    );
+    await store.append(
+      makeEvent({
+        id: "event-legitimate",
+        kind: "note",
+        note: "legitimate event",
+        at: "2026-04-15T10:01:00.000Z",
+      }),
+    );
+
+    const listed = await store.list("session-1");
+    // The first event must receive sequence 0 (not 999), and second must be 1.
+    // This proves the store overrides any caller-supplied sequence.
+    assert.deepEqual(
+      listed.map((entry) => ({ id: entry.id, sequence: entry.sequence })),
+      [
+        { id: "event-attacker-seq", sequence: 0 },
+        { id: "event-legitimate", sequence: 1 },
+      ],
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
+
 test("concurrent append with retention: all sequences remain strictly increasing after trim", async () => {
   const rootDir = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-import-session-events-"),
