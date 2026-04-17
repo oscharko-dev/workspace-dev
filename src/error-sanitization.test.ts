@@ -99,6 +99,78 @@ test("error sanitization redacts mixed sensitive content without over-redacting 
   assert.match(message, /\[redacted-secret]/);
 });
 
+test("error sanitization redacts shared high-risk secret shapes", async (t) => {
+  const cases = [
+    {
+      name: "repo token assignments",
+      input: "repoToken=ghp_secret",
+      expected: "repoToken=[redacted-secret]"
+    },
+    {
+      name: "figma access token assignments",
+      input: "figmaAccessToken=figd_secret",
+      expected: "figmaAccessToken=[redacted-secret]"
+    },
+    {
+      name: "bare token assignments",
+      input: "token=my-secret-token",
+      expected: "token=[redacted-secret]"
+    },
+    {
+      name: "authorization bearer headers",
+      input: "authorization: bearer super-secret-token",
+      expected: "authorization: bearer [redacted-secret]"
+    },
+    {
+      name: "Authorization Bearer headers",
+      input: "Authorization: Bearer super-secret-token",
+      expected: "Authorization: Bearer [redacted-secret]"
+    },
+    {
+      name: "x-access-token headers",
+      input: "x-access-token:abcdef",
+      expected: "x-access-token:[redacted-secret]"
+    },
+    {
+      name: "x-access-token headers with at signs",
+      input: "x-access-token:foo@bar",
+      expected: "x-access-token:[redacted-secret]"
+    }
+  ] as const;
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, () => {
+      const message = sanitizeErrorMessage({
+        error: new Error(`leak ${testCase.input}`),
+        fallback: "fallback"
+      });
+
+      assert.equal(message, `leak ${testCase.expected}`);
+      assert.equal(message.includes(testCase.input), false);
+    });
+  }
+});
+
+test("error sanitization preserves benign prose around secret-like words", async (t) => {
+  const cases = [
+    "Password rotation completed",
+    "ApiKey rotation started",
+    "PasswordResetFailed"
+  ] as const;
+
+  for (const input of cases) {
+    await t.test(input, () => {
+      const message = sanitizeErrorMessage({
+        error: new Error(input),
+        fallback: "fallback"
+      });
+
+      assert.equal(message, input);
+      assert.equal(message.includes("[redacted-secret]"), false);
+    });
+  }
+});
+
 test("error sanitization returns fallback for non-error input", () => {
   const message = sanitizeErrorMessage({
     error: "plain string error",

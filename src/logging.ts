@@ -1,4 +1,5 @@
 import type { WorkspaceJobStageName, WorkspaceLogFormat } from "./contracts/index.js";
+import { redactHighRiskSecrets } from "./secret-redaction.js";
 
 export type WorkspaceRuntimeLogLevel = "debug" | "info" | "warn" | "error";
 
@@ -19,10 +20,6 @@ export interface WorkspaceRuntimeLogger {
 }
 
 export const DEFAULT_WORKSPACE_LOG_FORMAT: WorkspaceLogFormat = "text";
-
-const TOKEN_EQUALS_PATTERN = /(token\s*=\s*)([^\s]+)/gi;
-const AUTHORIZATION_BEARER_PATTERN = /(authorization\s*:\s*bearer\s+)([^\s]+)/gi;
-const ACCESS_TOKEN_PATTERN = /(x-access-token:)([^@\s]+)/gi;
 
 const formatTextLine = ({
   level,
@@ -76,10 +73,7 @@ const formatTextLine = ({
 };
 
 export const redactLogMessage = (message: string): string => {
-  return message
-    .replace(TOKEN_EQUALS_PATTERN, "$1[REDACTED]")
-    .replace(AUTHORIZATION_BEARER_PATTERN, "$1[REDACTED]")
-    .replace(ACCESS_TOKEN_PATTERN, "$1[REDACTED]");
+  return redactHighRiskSecrets(message, "[REDACTED]");
 };
 
 export const resolveWorkspaceLogFormat = ({

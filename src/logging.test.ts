@@ -1,6 +1,70 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkspaceLogger } from "./logging.js";
+import { createWorkspaceLogger, redactLogMessage } from "./logging.js";
+
+test("redactLogMessage redacts shared high-risk secret shapes", async (t) => {
+  const cases = [
+    {
+      name: "repo token assignments",
+      input: "repoToken=ghp_secret",
+      expected: "repoToken=[REDACTED]"
+    },
+    {
+      name: "figma access token assignments",
+      input: "figmaAccessToken=figd_secret",
+      expected: "figmaAccessToken=[REDACTED]"
+    },
+    {
+      name: "bare token assignments",
+      input: "token=my-secret-token",
+      expected: "token=[REDACTED]"
+    },
+    {
+      name: "authorization bearer headers",
+      input: "authorization: bearer super-secret-token",
+      expected: "authorization: bearer [REDACTED]"
+    },
+    {
+      name: "Authorization Bearer headers",
+      input: "Authorization: Bearer super-secret-token",
+      expected: "Authorization: Bearer [REDACTED]"
+    },
+    {
+      name: "x-access-token headers",
+      input: "x-access-token:abcdef",
+      expected: "x-access-token:[REDACTED]"
+    },
+    {
+      name: "x-access-token headers with at signs",
+      input: "x-access-token:foo@bar",
+      expected: "x-access-token:[REDACTED]"
+    }
+  ] as const;
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, () => {
+      const message = redactLogMessage(`leak ${testCase.input}`);
+      assert.equal(message, `leak ${testCase.expected}`);
+      assert.equal(message.includes(testCase.input), false);
+    });
+  }
+});
+
+test("redactLogMessage preserves benign prose around secret-like words", async (t) => {
+  const cases = [
+    "Password rotation completed",
+    "ApiKey rotation started",
+    "PasswordResetFailed"
+  ] as const;
+
+  for (const input of cases) {
+    await t.test(input, () => {
+      const message = redactLogMessage(input);
+      assert.equal(message, input);
+      assert.equal(message.includes("[REDACTED]"), false);
+    });
+  }
+});
 
 test("createWorkspaceLogger emits newline-delimited JSON records with correlation fields", () => {
   const stdoutLines: string[] = [];
