@@ -1593,7 +1593,7 @@ export function createWorkspaceRequestHandler({
               ? "GET, POST"
               : importSessionAction === "approve"
                 ? "POST"
-              : "POST";
+                : "POST";
         response.setHeader("allow", allowedMethods);
         sendJson({
           response,
@@ -1625,13 +1625,26 @@ export function createWorkspaceRequestHandler({
 
         const isImportSessionEventWriteRoute =
           method === "POST" && parsedImportSessionRoute?.action === "events";
-        if (isImportSessionEventWriteRoute) {
+        const isImportSessionApproveWriteRoute =
+          method === "POST" && parsedImportSessionRoute?.action === "approve";
+        const isImportSessionReimportWriteRoute =
+          method === "POST" && parsedImportSessionRoute?.action === "reimport";
+        const isImportSessionBearerProtectedWriteRoute =
+          isImportSessionEventWriteRoute ||
+          isImportSessionApproveWriteRoute ||
+          isImportSessionReimportWriteRoute;
+        if (isImportSessionBearerProtectedWriteRoute) {
+          const routeLabel = isImportSessionApproveWriteRoute
+            ? "Import session approval"
+            : isImportSessionReimportWriteRoute
+              ? "Import session re-import"
+              : "Import session event";
           const authValidation = validateImportSessionEventWriteAuth({
             request,
             ...(runtime.importSessionEventBearerToken !== undefined
               ? { bearerToken: runtime.importSessionEventBearerToken }
               : {}),
-            routeLabel: "Import session event",
+            routeLabel,
           });
           if (!authValidation.ok) {
             if (authValidation.wwwAuthenticate) {
@@ -1648,7 +1661,7 @@ export function createWorkspaceRequestHandler({
                   ? "security.request.unauthorized"
                   : "workspace.request.failed",
               level: authValidation.statusCode === 401 ? "warn" : "error",
-              fallbackMessage: "Import session event write rejected.",
+              fallbackMessage: `${routeLabel} write rejected.`,
             });
             return;
           }
@@ -1690,14 +1703,19 @@ export function createWorkspaceRequestHandler({
           }
         }
 
-        if (isImportSessionEventWriteRoute) {
+        if (isImportSessionBearerProtectedWriteRoute) {
           const rateLimitResult = importSessionEventRateLimiter.consume(
             resolveRateLimitClientKey(request),
           );
           if (!rateLimitResult.allowed) {
+            const actionLabel = isImportSessionApproveWriteRoute
+              ? "import session approval"
+              : isImportSessionReimportWriteRoute
+                ? "import session re-import"
+                : "import session event";
             sendRateLimitExceeded({
               retryAfterSeconds: rateLimitResult.retryAfterSeconds,
-              message: `Too many import session event writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+              message: `Too many ${actionLabel} writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
             });
             return;
           }
@@ -1790,7 +1808,8 @@ export function createWorkspaceRequestHandler({
                 issues: [
                   {
                     path: "(root)",
-                    message: "Approval payload must be an object when provided.",
+                    message:
+                      "Approval payload must be an object when provided.",
                   },
                 ],
               },

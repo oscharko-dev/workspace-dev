@@ -64,7 +64,9 @@ jobs:
         uses: actions/upload-artifact@v7
         if: failure()
         with:
+
           name: workspace-dev-release-dast-smoke-node-${{ matrix.node-version }}-${{ github.run_id }}
+
           path: artifacts/testing/dast-smoke
           if-no-files-found: ignore
 

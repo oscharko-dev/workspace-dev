@@ -419,6 +419,47 @@ test("request handler reimports persisted import sessions via POST", async () =>
   );
   const { app, close } = await createRequestHandlerApp({
     jobEngine: createStubJobEngine({ reimportImportSession }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/reimport",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(reimportImportSession.mock.callCount(), 1);
+    assert.deepEqual(reimportImportSession.mock.calls[0]?.arguments[0], {
+      sessionId: "session-1",
+    });
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /reimport returns 401 when bearer auth is missing", async () => {
+  const reimportImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        jobId: "job-reimport",
+        sessionId,
+        sourceJobId: "job-1",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "hybrid",
+          llmCodegenMode: "deterministic",
+        },
+      }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ reimportImportSession }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
   });
 
   try {
@@ -429,11 +470,128 @@ test("request handler reimports persisted import sessions via POST", async () =>
       payload: {},
     });
 
-    assert.equal(response.statusCode, 202);
-    assert.equal(reimportImportSession.mock.callCount(), 1);
-    assert.deepEqual(reimportImportSession.mock.calls[0]?.arguments[0], {
-      sessionId: "session-1",
+    assert.equal(response.statusCode, 401);
+    assert.equal(
+      response.headers["www-authenticate"],
+      'Bearer realm="workspace-dev"',
+    );
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNAUTHORIZED");
+    assert.equal(reimportImportSession.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /reimport returns 401 for invalid bearer tokens", async () => {
+  const reimportImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        jobId: "job-reimport",
+        sessionId,
+        sourceJobId: "job-1",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "hybrid",
+          llmCodegenMode: "deterministic",
+        },
+      }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ reimportImportSession }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/reimport",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders("wrong-token"),
+      },
+      payload: {},
     });
+
+    assert.equal(response.statusCode, 401);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNAUTHORIZED");
+    assert.equal(reimportImportSession.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /reimport returns 503 when server bearer auth is not configured", async () => {
+  const reimportImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        jobId: "job-reimport",
+        sessionId,
+        sourceJobId: "job-1",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "hybrid",
+          llmCodegenMode: "deterministic",
+        },
+      }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ reimportImportSession }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/reimport",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 503);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "AUTHENTICATION_UNAVAILABLE");
+    assert.equal(reimportImportSession.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /reimport rejects cookie-based auth", async () => {
+  const reimportImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        jobId: "job-reimport",
+        sessionId,
+        sourceJobId: "job-1",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "hybrid",
+          llmCodegenMode: "deterministic",
+        },
+      }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ reimportImportSession }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/reimport",
+      headers: {
+        "content-type": "application/json",
+        cookie: "workspace_import_session_event_auth=forbidden",
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 401);
+    assert.equal(reimportImportSession.mock.callCount(), 0);
   } finally {
     await close();
   }
@@ -597,6 +755,7 @@ test("request handler POST /approve forwards browser approval to jobEngine", asy
       listImportSessions: async () => [makeListedImportSession("session-1")],
       approveImportSession,
     }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
   });
 
   try {
@@ -605,6 +764,7 @@ test("request handler POST /approve forwards browser approval to jobEngine", asy
       url: "/workspace/import-sessions/session-1/approve",
       headers: {
         "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
       },
       payload: {},
     });
@@ -639,6 +799,7 @@ test("request handler POST /approve returns 409 for invalid approval history", a
       listImportSessions: async () => [makeListedImportSession("session-1")],
       approveImportSession,
     }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
   });
 
   try {
@@ -647,6 +808,7 @@ test("request handler POST /approve returns 409 for invalid approval history", a
       url: "/workspace/import-sessions/session-1/approve",
       headers: {
         "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
       },
       payload: {},
     });
@@ -656,6 +818,156 @@ test("request handler POST /approve returns 409 for invalid approval history", a
       response.json<Record<string, unknown>>().error,
       "E_IMPORT_SESSION_INVALID_TRANSITION",
     );
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /approve returns 401 when bearer auth is missing", async () => {
+  const approveImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        id: "approved-event-id",
+        sessionId,
+        kind: "approved",
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["approveImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      approveImportSession,
+    }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: { "content-type": "application/json" },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 401);
+    assert.equal(
+      response.headers["www-authenticate"],
+      'Bearer realm="workspace-dev"',
+    );
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNAUTHORIZED");
+    assert.equal(approveImportSession.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /approve returns 401 for invalid bearer tokens", async () => {
+  const approveImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        id: "approved-event-id",
+        sessionId,
+        kind: "approved",
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["approveImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      approveImportSession,
+    }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders("wrong-token"),
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 401);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "UNAUTHORIZED");
+    assert.equal(approveImportSession.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /approve returns 503 when server bearer auth is not configured", async () => {
+  const approveImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        id: "approved-event-id",
+        sessionId,
+        kind: "approved",
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["approveImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      approveImportSession,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 503);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "AUTHENTICATION_UNAVAILABLE");
+    assert.equal(approveImportSession.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /approve rejects cookie-based auth", async () => {
+  const approveImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        id: "approved-event-id",
+        sessionId,
+        kind: "approved",
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["approveImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      approveImportSession,
+    }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: {
+        "content-type": "application/json",
+        cookie: "workspace_import_session_event_auth=forbidden",
+      },
+      payload: {},
+    });
+
+    assert.equal(response.statusCode, 401);
+    assert.equal(approveImportSession.mock.callCount(), 0);
   } finally {
     await close();
   }
@@ -977,6 +1289,111 @@ test("request handler POST /events rate limits before parsing the body or append
       "RATE_LIMIT_EXCEEDED",
     );
     assert.equal(appendImportSessionEvent.mock.callCount(), 1);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /approve rate limits before invoking approveImportSession", async () => {
+  const approveImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        id: "approved-event-id",
+        sessionId,
+        kind: "approved",
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["approveImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      listImportSessions: async () => [makeListedImportSession("session-1")],
+      approveImportSession,
+    }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+    rateLimitPerMinute: 1,
+  });
+
+  try {
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: {},
+    });
+    assert.equal(accepted.statusCode, 200);
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/approve",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: {},
+    });
+    assert.equal(limited.statusCode, 429);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(
+      limited.json<Record<string, unknown>>().error,
+      "RATE_LIMIT_EXCEEDED",
+    );
+    assert.equal(approveImportSession.mock.callCount(), 1);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler POST /reimport rate limits before invoking reimportImportSession", async () => {
+  const reimportImportSession = test.mock.fn(
+    async ({ sessionId }) =>
+      ({
+        jobId: "job-reimport",
+        sessionId,
+        sourceJobId: "job-1",
+        status: "queued",
+        acceptedModes: {
+          figmaSourceMode: "hybrid",
+          llmCodegenMode: "deterministic",
+        },
+      }) as Awaited<ReturnType<JobEngine["reimportImportSession"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ reimportImportSession }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+    rateLimitPerMinute: 1,
+  });
+
+  try {
+    const accepted = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/reimport",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: {},
+    });
+    assert.equal(accepted.statusCode, 202);
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/reimport",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: {},
+    });
+    assert.equal(limited.statusCode, 429);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(
+      limited.json<Record<string, unknown>>().error,
+      "RATE_LIMIT_EXCEEDED",
+    );
+    assert.equal(reimportImportSession.mock.callCount(), 1);
   } finally {
     await close();
   }

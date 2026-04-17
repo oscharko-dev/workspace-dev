@@ -32,6 +32,7 @@ interface PersistedImportSessionEventsEnvelope {
   contractVersion: string;
   sessionId: string;
   events: WorkspaceImportSessionEvent[];
+  nextSequence: number;
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
@@ -93,6 +94,14 @@ const isImportSessionEvent = (
     return false;
   }
   if (value.metadata !== undefined && !isFlatMetadata(value.metadata)) {
+    return false;
+  }
+  if (
+    value.sequence !== undefined &&
+    (typeof value.sequence !== "number" ||
+      !Number.isFinite(value.sequence) ||
+      value.sequence < 0)
+  ) {
     return false;
   }
   return true;
@@ -159,8 +168,21 @@ const trimEventsForRetention = ({
           .filter(({ event }) => !isMaterialEvent(event))
           .slice(-remainingSlots);
 
+  const sequenceKey = ({
+    event,
+  }: {
+    event: WorkspaceImportSessionEvent;
+  }): number =>
+    typeof event.sequence === "number" ? event.sequence : -Infinity;
+
   return [...retainedMaterialEvents, ...retainedNotes]
-    .sort((left, right) => left.index - right.index)
+    .sort((left, right) => {
+      const sequenceDelta = sequenceKey(left) - sequenceKey(right);
+      if (sequenceDelta !== 0) {
+        return sequenceDelta;
+      }
+      return left.index - right.index;
+    })
     .map(({ event }) => event);
 };
 
@@ -195,38 +217,53 @@ const resolveSessionFilePath = ({
   return path.join(rootDir, EVENTS_DIR_NAME, `${sessionId}.json`);
 };
 
+const deriveNextSequence = (
+  events: readonly WorkspaceImportSessionEvent[],
+): number => {
+  let highest = -1;
+  for (const entry of events) {
+    if (typeof entry.sequence === "number" && entry.sequence > highest) {
+      highest = entry.sequence;
+    }
+  }
+  return highest + 1;
+};
+
 const readEventsFile = async ({
   filePath,
   sessionId,
 }: {
   filePath: string;
   sessionId: string;
-}): Promise<WorkspaceImportSessionEvent[]> => {
+}): Promise<{
+  events: WorkspaceImportSessionEvent[];
+  nextSequence: number;
+}> => {
   let raw: string;
   try {
     raw = await readFile(filePath, "utf8");
   } catch {
-    return [];
+    return { events: [], nextSequence: 0 };
   }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return [];
+    return { events: [], nextSequence: 0 };
   }
 
   if (!isRecord(parsed)) {
-    return [];
+    return { events: [], nextSequence: 0 };
   }
   if (parsed.contractVersion !== CONTRACT_VERSION) {
-    return [];
+    return { events: [], nextSequence: 0 };
   }
   if (parsed.sessionId !== sessionId) {
-    return [];
+    return { events: [], nextSequence: 0 };
   }
   if (!Array.isArray(parsed.events)) {
-    return [];
+    return { events: [], nextSequence: 0 };
   }
 
   const accepted: WorkspaceImportSessionEvent[] = [];
@@ -235,17 +272,24 @@ const readEventsFile = async ({
       accepted.push(entry);
     }
   }
-  return accepted;
+  const nextSequence =
+    typeof parsed.nextSequence === "number" &&
+    Number.isFinite(parsed.nextSequence)
+      ? parsed.nextSequence
+      : deriveNextSequence(accepted);
+  return { events: accepted, nextSequence };
 };
 
 const writeEventsFile = async ({
   filePath,
   sessionId,
   events,
+  nextSequence,
 }: {
   filePath: string;
   sessionId: string;
   events: readonly WorkspaceImportSessionEvent[];
+  nextSequence: number;
 }): Promise<void> => {
   await mkdir(path.dirname(filePath), { recursive: true });
   const temporaryPath = `${filePath}.${process.pid}.${randomUUID()}.tmp`;
@@ -253,6 +297,7 @@ const writeEventsFile = async ({
     contractVersion: CONTRACT_VERSION,
     sessionId,
     events: [...events],
+    nextSequence,
   };
   await writeFile(
     temporaryPath,
@@ -272,35 +317,60 @@ export const createImportSessionEventStore = ({
   const resolvePath = (sessionId: string): string =>
     resolveSessionFilePath({ rootDir, sessionId });
 
+  const sessionMutexes = new Map<string, Promise<void>>();
+
+  const runSerialized = async (
+    sessionId: string,
+    task: () => Promise<void>,
+  ): Promise<void> => {
+    const previous = sessionMutexes.get(sessionId) ?? Promise.resolve();
+    const next = previous.then(task, task);
+    sessionMutexes.set(sessionId, next);
+    try {
+      await next;
+    } finally {
+      if (sessionMutexes.get(sessionId) === next) {
+        sessionMutexes.delete(sessionId);
+      }
+    }
+  };
+
   return {
     async list(sessionId: string): Promise<WorkspaceImportSessionEvent[]> {
       const safeSessionId = sanitizeSessionId(sessionId);
-      return await readEventsFile({
+      const { events } = await readEventsFile({
         filePath: resolvePath(safeSessionId),
         sessionId: safeSessionId,
       });
+      return events;
     },
 
     async append(event: WorkspaceImportSessionEvent): Promise<void> {
       const safeSessionId = sanitizeSessionId(event.sessionId);
-      const normalized = normalizeEventForWrite({
-        ...event,
-        sessionId: safeSessionId,
-      });
       const filePath = resolvePath(safeSessionId);
-      const current = await readEventsFile({
-        filePath,
-        sessionId: safeSessionId,
-      });
-      const combined = [...current, normalized];
-      const trimmed = trimEventsForRetention({
-        events: combined,
-        maxEventsPerSession,
-      });
-      await writeEventsFile({
-        filePath,
-        sessionId: safeSessionId,
-        events: trimmed,
+      await runSerialized(safeSessionId, async () => {
+        const { events: current, nextSequence } = await readEventsFile({
+          filePath,
+          sessionId: safeSessionId,
+        });
+        const normalized: WorkspaceImportSessionEvent = {
+          ...normalizeEventForWrite({
+            ...event,
+            sessionId: safeSessionId,
+          }),
+          sequence: nextSequence,
+        };
+        const combined = [...current, normalized];
+        const trimmed = trimEventsForRetention({
+          events: combined,
+          maxEventsPerSession,
+        });
+        await writeEventsFile({
+          filePath,
+          sessionId: safeSessionId,
+          events: trimmed,
+          nextSequence: nextSequence + 1,
+        });
       });
     },
 
