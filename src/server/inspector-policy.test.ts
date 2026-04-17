@@ -51,26 +51,29 @@ test("parseInspectorPolicy rejects governance with invalid shapes", () => {
   );
 });
 
-test("parseInspectorPolicy rejects likely regex-style governance patterns", () => {
-  for (const pattern of [
-    "(a+)+$",
-    "^admin$",
-    "auth.",
-    "foo\\s+bar",
-    "[a-z]+",
-    "user|admin",
-    ".*secret.*",
-  ]) {
-    assert.equal(
-      parseInspectorPolicy({
-        governance: {
-          securitySensitivePatterns: [pattern],
-        },
-      }),
-      null,
-      `Expected '${pattern}' to be rejected`,
-    );
-  }
+test("parseInspectorPolicy drops likely regex-style governance patterns per entry", () => {
+  const parsed = parseInspectorPolicy({
+    governance: {
+      minQualityScoreToApply: 80,
+      securitySensitivePatterns: [
+        "password",
+        "(a+)+$",
+        "(auth)",
+        "^admin$",
+        "C++",
+        ".*secret.*",
+      ],
+      requireNoteOnOverride: true,
+    },
+  });
+
+  assert.deepEqual(parsed, {
+    governance: {
+      minQualityScoreToApply: 80,
+      securitySensitivePatterns: ["password", "(auth)", "C++"],
+      requireNoteOnOverride: true,
+    },
+  });
 });
 
 test("loadInspectorPolicy returns governance from the workspace policy file", async () => {
@@ -105,7 +108,7 @@ test("loadInspectorPolicy returns governance from the workspace policy file", as
   }
 });
 
-test("loadInspectorPolicy ignores regex-style governance patterns", async () => {
+test("loadInspectorPolicy drops regex-style governance patterns and warns", async () => {
   const workspaceRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-inspector-policy-invalid-"),
   );
@@ -114,7 +117,9 @@ test("loadInspectorPolicy ignores regex-style governance patterns", async () => 
       path.join(workspaceRoot, ".workspace-inspector-policy.json"),
       JSON.stringify({
         governance: {
-          securitySensitivePatterns: ["auth."],
+          minQualityScoreToApply: 60,
+          securitySensitivePatterns: ["auth", "auth.", "(auth)", "^admin$"],
+          requireNoteOnOverride: true,
         },
       }),
       "utf8",
@@ -122,9 +127,15 @@ test("loadInspectorPolicy ignores regex-style governance patterns", async () => 
 
     const loaded = await loadInspectorPolicy({ workspaceRoot });
     assert.deepEqual(loaded, {
-      policy: null,
+      policy: {
+        governance: {
+          minQualityScoreToApply: 60,
+          securitySensitivePatterns: ["auth", "(auth)"],
+          requireNoteOnOverride: true,
+        },
+      },
       warning:
-        "Inspector policy '.workspace-inspector-policy.json' has an invalid shape and was ignored.",
+        'Inspector policy \'.workspace-inspector-policy.json\' dropped regex-style governance.securitySensitivePatterns entries: [1] "auth.", [3] "^admin$".',
     });
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });

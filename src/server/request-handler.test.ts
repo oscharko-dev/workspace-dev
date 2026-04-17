@@ -1617,7 +1617,7 @@ test("request handler rejects DELETE on /events as an unknown write route", asyn
   }
 });
 
-test("request handler soft-fails invalid inspector policy files and logs a warning", async (t) => {
+test("request handler soft-fails structurally invalid inspector policy files and logs a warning", async (t) => {
   const capturedLogs: WorkspaceRuntimeLogInput[] = [];
   const logger = createStubLogger({
     log: (input) => {
@@ -1641,14 +1641,6 @@ test("request handler soft-fails invalid inspector policy files and logs a warni
             bandThresholds: {
               excellent: "bad",
             },
-          },
-        }),
-      },
-      {
-        name: "regex-style governance pattern",
-        contents: JSON.stringify({
-          governance: {
-            securitySensitivePatterns: ["auth."],
           },
         }),
       },
@@ -1689,6 +1681,71 @@ test("request handler soft-fails invalid inspector policy files and logs a warni
         );
       });
     }
+  } finally {
+    await close();
+  }
+});
+
+test("request handler returns salvaged inspector policy and logs dropped governance patterns", async () => {
+  const capturedLogs: WorkspaceRuntimeLogInput[] = [];
+  const logger = createStubLogger({
+    log: (input) => {
+      capturedLogs.push(input);
+    },
+  });
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    logger,
+  });
+
+  try {
+    await writeFile(
+      path.join(tempRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        governance: {
+          minQualityScoreToApply: 70,
+          securitySensitivePatterns: ["password", "auth.", "(auth)", "^admin$"],
+          requireNoteOnOverride: false,
+        },
+      }),
+      "utf8",
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/inspector-policy",
+      headers: {
+        "x-request-id": "req-inspector-policy-dropped-patterns",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      policy: {
+        governance: {
+          minQualityScoreToApply: 70,
+          securitySensitivePatterns: ["password", "(auth)"],
+          requireNoteOnOverride: false,
+        },
+      },
+      warning:
+        'Inspector policy \'.workspace-inspector-policy.json\' dropped regex-style governance.securitySensitivePatterns entries: [1] "auth.", [3] "^admin$".',
+    });
+
+    const warningLog = capturedLogs.find(
+      (entry) => entry.event === "workspace.inspector_policy.invalid",
+    );
+    assert.equal(warningLog?.level, "warn");
+    assert.equal(warningLog?.method, "GET");
+    assert.equal(warningLog?.path, "/workspace/inspector-policy");
+    assert.equal(warningLog?.statusCode, 200);
+    assert.match(
+      String(warningLog?.message ?? ""),
+      /\[1\] "auth\."/,
+    );
+    assert.match(
+      String(warningLog?.message ?? ""),
+      /\[3\] "\^admin\$"/,
+    );
   } finally {
     await close();
   }
