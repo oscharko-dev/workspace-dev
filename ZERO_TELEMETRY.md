@@ -10,7 +10,7 @@
 
 ## Allowed Exceptions
 
-- CI release evidence uploads performed by GitHub Actions (`sbom.json`, `openvex.json`).
+- CI release evidence uploads performed by GitHub Actions (SBOM artifacts under `artifacts/sbom/`).
 - Manual incident reporting initiated by operators outside package runtime.
 
 ## Verification Procedure

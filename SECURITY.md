@@ -2,11 +2,11 @@
 
 ## Supported Versions
 
-| Version | Support Status |
-| --- | --- |
-| `latest` | Supported |
-| `next` | Best effort |
-| Older than `latest` | Not supported |
+| Version             | Support Status |
+| ------------------- | -------------- |
+| `latest`            | Supported      |
+| `next`              | Best effort    |
+| Older than `latest` | Not supported  |
 
 ## Reporting a Vulnerability
 
@@ -25,12 +25,12 @@ Please include:
 
 ## Response SLAs
 
-| Severity | CVSS | Acknowledge | Mitigation/Fix Target |
-| --- | --- | --- | --- |
-| Critical | 9.0-10.0 | 4 hours | 24 hours |
-| High | 7.0-8.9 | 8 hours | 72 hours |
-| Medium | 4.0-6.9 | 24 hours | 7 calendar days |
-| Low | 0.1-3.9 | 48 hours | Next scheduled release |
+| Severity | CVSS     | Acknowledge | Mitigation/Fix Target  |
+| -------- | -------- | ----------- | ---------------------- |
+| Critical | 9.0-10.0 | 4 hours     | 24 hours               |
+| High     | 7.0-8.9  | 8 hours     | 72 hours               |
+| Medium   | 4.0-6.9  | 24 hours    | 7 calendar days        |
+| Low      | 0.1-3.9  | 48 hours    | Next scheduled release |
 
 ## Coordinated Disclosure Workflow
 
@@ -77,7 +77,6 @@ Please include:
 - SBOM generation:
   - CycloneDX: `pnpm run sbom:cyclonedx`
   - SPDX: `pnpm run sbom:spdx`
-- OpenVEX artifact generation in release workflows.
 
 ## Rollback and Remediation Policy
 
