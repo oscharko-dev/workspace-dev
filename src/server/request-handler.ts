@@ -1627,12 +1627,18 @@ export function createWorkspaceRequestHandler({
           method === "POST" && parsedImportSessionRoute?.action === "events";
         const isImportSessionApproveWriteRoute =
           method === "POST" && parsedImportSessionRoute?.action === "approve";
+        const isImportSessionReimportWriteRoute =
+          method === "POST" && parsedImportSessionRoute?.action === "reimport";
         const isImportSessionBearerProtectedWriteRoute =
-          isImportSessionEventWriteRoute || isImportSessionApproveWriteRoute;
+          isImportSessionEventWriteRoute ||
+          isImportSessionApproveWriteRoute ||
+          isImportSessionReimportWriteRoute;
         if (isImportSessionBearerProtectedWriteRoute) {
           const routeLabel = isImportSessionApproveWriteRoute
             ? "Import session approval"
-            : "Import session event";
+            : isImportSessionReimportWriteRoute
+              ? "Import session re-import"
+              : "Import session event";
           const authValidation = validateImportSessionEventWriteAuth({
             request,
             ...(runtime.importSessionEventBearerToken !== undefined
@@ -1697,14 +1703,19 @@ export function createWorkspaceRequestHandler({
           }
         }
 
-        if (isImportSessionEventWriteRoute) {
+        if (isImportSessionBearerProtectedWriteRoute) {
           const rateLimitResult = importSessionEventRateLimiter.consume(
             resolveRateLimitClientKey(request),
           );
           if (!rateLimitResult.allowed) {
+            const actionLabel = isImportSessionApproveWriteRoute
+              ? "import session approval"
+              : isImportSessionReimportWriteRoute
+                ? "import session re-import"
+                : "import session event";
             sendRateLimitExceeded({
               retryAfterSeconds: rateLimitResult.retryAfterSeconds,
-              message: `Too many import session event writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+              message: `Too many ${actionLabel} writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
             });
             return;
           }
