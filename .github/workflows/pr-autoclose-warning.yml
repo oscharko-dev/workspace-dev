@@ -1,46 +1,113 @@
 name: workspace-dev PR auto-close warning
 
 on:
-  pull_request:
-    types: [opened, edited, reopened]
+  pull_request_target:
+    types: [opened, edited, reopened, synchronize, closed]
 
 permissions:
   contents: read
+  pull-requests: write
 
 jobs:
   warn-missing-autoclose-keyword:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+
       - name: Warn when #N references are missing auto-close keywords
         uses: actions/github-script@v8
         with:
           script: |
+            const { pathToFileURL } = require("node:url");
+            const {
+              PR_AUTOCLOSE_WARNING_MARKER,
+              buildAutoCloseWarningComment,
+              extractIssueReferences,
+              findMissingAutoCloseReferences,
+            } = await import(
+              pathToFileURL(`${process.env.GITHUB_WORKSPACE}/scripts/pr-autoclose-warning.mjs`).href
+            );
             const pr = context.payload.pull_request;
             if (!pr) {
               core.notice("No pull request payload found; skipping.");
               return;
             }
 
-            const searchableText = `${pr.title ?? ""}\n\n${pr.body ?? ""}`;
-            const issueRefMatches = [...searchableText.matchAll(/(^|[^\w])#(\d+)\b/g)];
-            const referencedIssues = [...new Set(issueRefMatches.map((match) => Number(match[2])))];
-            if (referencedIssues.length === 0) {
-              core.notice("No #N issue references found in PR title/body.");
+            if (context.payload.action === "closed" && pr.merged !== true) {
+              core.notice("Pull request was closed without merge; skipping.");
               return;
             }
 
-            const autoCloseMatches = [
-              ...searchableText.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi),
-            ];
-            const autoCloseIssues = new Set(autoCloseMatches.map((match) => Number(match[1])));
-            const missingAutoClose = referencedIssues.filter((issueNumber) => !autoCloseIssues.has(issueNumber));
+            const missingAutoClose = findMissingAutoCloseReferences({
+              title: pr.title ?? "",
+              body: pr.body ?? "",
+            });
+            const referencedIssues = extractIssueReferences(
+              `${pr.title ?? ""}\n\n${pr.body ?? ""}`,
+            );
+
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                per_page: 100,
+              },
+            );
+            const existingComment = comments.find(
+              (comment) =>
+                typeof comment.body === "string" &&
+                comment.body.startsWith(PR_AUTOCLOSE_WARNING_MARKER),
+            );
+
+            if (referencedIssues.length === 0) {
+              core.notice("No #N issue references found in PR title/body.");
+              if (existingComment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                });
+                core.info(`Removed resolved warning comment ${existingComment.id}.`);
+              }
+              return;
+            }
 
             if (missingAutoClose.length === 0) {
               core.notice("All referenced issues include an auto-close keyword.");
+              if (existingComment) {
+                await github.rest.issues.deleteComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existingComment.id,
+                });
+                core.info(`Removed resolved warning comment ${existingComment.id}.`);
+              }
               return;
             }
 
             const missingList = missingAutoClose.map((issueNumber) => `#${issueNumber}`).join(", ");
+            const commentBody = buildAutoCloseWarningComment(missingAutoClose);
+
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: commentBody,
+              });
+              core.info(`Updated warning comment ${existingComment.id}.`);
+            } else {
+              const created = await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                body: commentBody,
+              });
+              core.info(`Created warning comment ${created.data.id}.`);
+            }
+
             core.warning(
               `PR references ${missingList} without an auto-close keyword. Prefer 'Fixes #N', 'Closes #N', or 'Resolves #N'.`,
             );

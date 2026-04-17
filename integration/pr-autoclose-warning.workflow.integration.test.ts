@@ -13,14 +13,31 @@ test("integration: PR auto-close warning workflow stays warning-only and keyword
     "utf8",
   );
 
-  assert.match(workflow, /pull_request:/);
-  assert.match(workflow, /types: \[opened, edited, reopened\]/);
+  assert.match(workflow, /pull_request_target:/);
+  assert.match(workflow, /types: \[opened, edited, reopened, synchronize, closed\]/);
+  assert.match(workflow, /pull-requests: write/);
+  assert.match(workflow, /actions\/checkout@v6/);
   assert.match(workflow, /actions\/github-script@v8/);
   assert.match(workflow, /core\.warning\(/);
+  assert.match(workflow, /issues\.createComment/);
+  assert.match(workflow, /issues\.updateComment/);
+  assert.match(workflow, /issues\.deleteComment/);
+  assert.match(workflow, /scripts\/pr-autoclose-warning\.mjs/);
+  assert.doesNotMatch(workflow, /core\.setFailed\(/);
+});
+
+test("integration: PR auto-close warning helper keeps GitHub keyword matching logic", async () => {
+  const helper = await readFile(
+    path.resolve(packageRoot, "scripts/pr-autoclose-warning.mjs"),
+    "utf8",
+  );
+
+  assert.equal(helper.includes("close[sd]?"), true);
+  assert.equal(helper.includes("fix(?:e[sd])?"), true);
+  assert.equal(helper.includes("resolve[sd]?"), true);
+  assert.match(helper, /PR_AUTOCLOSE_WARNING_MARKER/);
   assert.equal(
-    workflow.includes("close[sd]?|fix(?:e[sd])?|resolve[sd]?"),
+    helper.includes("without a GitHub auto-close keyword"),
     true,
   );
-  assert.match(workflow, /#\(\\d\+\)/);
-  assert.doesNotMatch(workflow, /core\.setFailed\(/);
 });
