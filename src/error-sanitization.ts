@@ -4,10 +4,10 @@
  * This prevents accidental leakage of PII, credentials, or long opaque tokens.
  */
 
+import { redactHighRiskSecrets } from "./secret-redaction.js";
+
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi;
 const PAN_PATTERN = /\b\d{13,19}\b/g;
-const SECRET_TOKEN_PATTERN =
-  /\b(?:Bearer|Token|Secret|Api[-_ ]?Key|Password)\s*[:=]?\s*[A-Za-z0-9._-]{8,}\b/gi;
 
 const MAX_MESSAGE_LENGTH = 240;
 
@@ -84,12 +84,14 @@ function hasKnownIssuerPrefix(candidate: string): boolean {
 }
 
 function redact(input: string): string {
-  return input
+  return redactHighRiskSecrets(
+    input
     .replace(EMAIL_PATTERN, "[redacted-email]")
     .replace(PAN_PATTERN, (candidate) =>
       passesLuhnChecksum(candidate) && hasKnownIssuerPrefix(candidate) ? "[redacted-pan]" : candidate
-    )
-    .replace(SECRET_TOKEN_PATTERN, "[redacted-secret]");
+    ),
+    "[redacted-secret]"
+  );
 }
 
 export function sanitizeErrorMessage({
