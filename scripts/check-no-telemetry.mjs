@@ -81,21 +81,20 @@ const WEBSOCKET_NEW_PATTERN = /\bnew\s+WebSocket\s*\(/;
 const WEBSOCKET_TELEMETRY_URL_PATTERN =
   /["'`]wss?:\/\/[^"'`\s]*(track|telemetry|analytics|event|metrics|collector|beacon)[^"'`\s]*["'`]/i;
 
-// ── Allowlist for known-safe destinations (AC-1.4) ──────────────────────────
-// Lines that match one of these tokens are considered safe even if they
-// otherwise trip a generic pattern:
-//   - Figma API (`api.figma.com`, `figma.com` inc. `mcp.figma.com`, `cdn.figma.com`)
-//   - MCP / local loopback (`localhost`, `127.0.0.1`, `0.0.0.0`)
-//   - Internal workspace APIs served by this package (`/workspace/`, `/healthz`)
-const SAFE_DESTINATION_TOKENS = [
-  "api.figma.com",
-  "figma.com",
-  "localhost",
-  "127.0.0.1",
-  "0.0.0.0",
-  "/workspace/",
-  "/healthz",
-];
+// ── Allowlist for known-safe destinations (AC-1.4, AC-2.x) ──────────────────
+// The allowlist uses anchored hostname matching via URL parsing to prevent
+// substring-spoofing bypasses (e.g. `https://evilfigma.com.attacker.net`).
+//
+// Safe destinations:
+//   - Figma API: `api.figma.com` or any `*.figma.com` subdomain
+//   - MCP / local loopback: exact `localhost`, `127.0.0.1`, `0.0.0.0`
+//   - Internal workspace APIs: `/workspace/*` and `/healthz` only when the
+//     hostname is a local loopback (not on arbitrary external hosts)
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "0.0.0.0"]);
+
+// Matches a quoted URL literal in source code. Captures the URL body without
+// the surrounding quotes. Supports http(s) and ws(s) schemes.
+const URL_LITERAL_PATTERN = /["'`]((?:https?|wss?):\/\/[^"'`\s]+)["'`]/gi;
 
 // File-level allowlist for modules whose sensitive calls are intentional and
 // audited. Paths are package-root-relative POSIX-style. Each entry MUST be
@@ -158,8 +157,45 @@ const toRelativePosix = (filePath) => {
   return path.relative(packageRoot, filePath).split(path.sep).join("/");
 };
 
-const lineHasSafeDestination = (line) => {
-  return SAFE_DESTINATION_TOKENS.some((token) => line.includes(token));
+const isSafeDestination = (urlString) => {
+  let url;
+  try {
+    url = new URL(urlString);
+  } catch {
+    return false;
+  }
+  const hostname = url.hostname;
+  const pathname = url.pathname;
+
+  if (hostname === "api.figma.com" || hostname.endsWith(".figma.com")) {
+    return true;
+  }
+  if (LOOPBACK_HOSTNAMES.has(hostname)) {
+    return true;
+  }
+  if (
+    (hostname === "localhost" || hostname === "127.0.0.1") &&
+    (pathname.includes("/workspace/") || pathname === "/healthz")
+  ) {
+    return true;
+  }
+  return false;
+};
+
+const extractUrlLiterals = (line) => {
+  const urls = [];
+  for (const match of line.matchAll(URL_LITERAL_PATTERN)) {
+    urls.push(match[1]);
+  }
+  return urls;
+};
+
+const lineUrlsAllSafe = (line) => {
+  const urls = extractUrlLiterals(line);
+  if (urls.length === 0) {
+    return false;
+  }
+  return urls.every((url) => isSafeDestination(url));
 };
 
 const findViolationsInLine = (line) => {
@@ -181,12 +217,12 @@ const findViolationsInLine = (line) => {
   if (
     FETCH_CALL_PATTERN.test(line) &&
     TELEMETRY_URL_IN_STRING_PATTERN.test(line) &&
-    !lineHasSafeDestination(line)
+    !lineUrlsAllSafe(line)
   ) {
     findings.push("fetch-telemetry-url");
   }
 
-  if (SEND_BEACON_PATTERN.test(line) && !lineHasSafeDestination(line)) {
+  if (SEND_BEACON_PATTERN.test(line) && !lineUrlsAllSafe(line)) {
     findings.push("send-beacon");
   }
 
@@ -195,7 +231,7 @@ const findViolationsInLine = (line) => {
   } else if (
     XHR_OPEN_PATTERN.test(line) &&
     TELEMETRY_URL_IN_STRING_PATTERN.test(line) &&
-    !lineHasSafeDestination(line)
+    !lineUrlsAllSafe(line)
   ) {
     findings.push("xhr-open-telemetry-url");
   }
@@ -204,7 +240,7 @@ const findViolationsInLine = (line) => {
     WEBSOCKET_NEW_PATTERN.test(line) &&
     (WEBSOCKET_TELEMETRY_URL_PATTERN.test(line) ||
       TELEMETRY_URL_IN_STRING_PATTERN.test(line)) &&
-    !lineHasSafeDestination(line)
+    !lineUrlsAllSafe(line)
   ) {
     findings.push("websocket-telemetry-url");
   }
@@ -262,7 +298,7 @@ export {
   findViolationsInLine,
   hasTestSuffix,
   hasIncludedExtension,
-  lineHasSafeDestination,
+  isSafeDestination,
 };
 
 main().catch((error) => {
