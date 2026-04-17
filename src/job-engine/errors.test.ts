@@ -456,7 +456,12 @@ test("PipelineError with cause stores the cause without embedding it in message"
   });
 
   assert.equal(error.message, "Outer error");
-  assert.equal((error as any).cause, cause);
+  // Error.cause is part of the error chain; verify it's stored
+  assert.equal(
+    Object.getOwnPropertyDescriptor(error, "cause")?.value ??
+      (error as Record<string, unknown>).cause,
+    cause,
+  );
 });
 
 test("PipelineError.toJSON() excludes cause property", () => {
@@ -498,7 +503,7 @@ test("PipelineError diagnostic details apply secret redaction to strings", () =>
       {
         code: "D_SECRET",
         message: "Detail with token=secret_token_abc",
-        suggestion: "Bearer secret_token_xyz",
+        suggestion: "Retry with token=secret_token_xyz",
       },
     ],
   });

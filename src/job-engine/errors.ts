@@ -294,17 +294,23 @@ const normalizePipelineDiagnostics = ({
     if (code.length === 0) {
       continue;
     }
-    const message = sanitizeDiagnosticText({
-      value: candidate.message.trim(),
-      maxLength: limits.textMaxLength,
-    });
+    const message = redactHighRiskSecrets(
+      sanitizeDiagnosticText({
+        value: candidate.message.trim(),
+        maxLength: limits.textMaxLength,
+      }),
+      "[redacted-secret]",
+    );
     if (message.length === 0) {
       continue;
     }
-    const suggestion = sanitizeDiagnosticText({
-      value: candidate.suggestion.trim(),
-      maxLength: limits.textMaxLength,
-    });
+    const suggestion = redactHighRiskSecrets(
+      sanitizeDiagnosticText({
+        value: candidate.suggestion.trim(),
+        maxLength: limits.textMaxLength,
+      }),
+      "[redacted-secret]",
+    );
     if (suggestion.length === 0) {
       continue;
     }
