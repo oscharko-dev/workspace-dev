@@ -248,6 +248,9 @@ jobs:
       - name: Generate template SPDX SBOM
         run: node scripts/generate-spdx.mjs "${RELEASE_EVIDENCE_DIR}/sbom/figma-generated-app.spdx.json" --package-root template/react-mui-app
 
+      - name: Verify SBOM parity
+        run: node scripts/check-sbom-parity.mjs --directory "${RELEASE_EVIDENCE_DIR}/sbom"
+
       - name: Configure npm publish auth mode
         id: npm_auth_mode
         shell: bash

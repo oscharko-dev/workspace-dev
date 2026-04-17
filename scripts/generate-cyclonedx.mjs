@@ -3,10 +3,17 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
+const require = createRequire(import.meta.url);
+const cyclonedxPackageEntryPath = require.resolve("@cyclonedx/cyclonedx-npm");
+const cyclonedxCliPath = path.resolve(
+  path.dirname(cyclonedxPackageEntryPath),
+  "bin/cyclonedx-npm-cli.js"
+);
 
 const parseArgs = () => {
   const args = process.argv.slice(2);
@@ -42,9 +49,12 @@ const parseArgs = () => {
 
 const run = (command, args, cwd) =>
   new Promise((resolve, reject) => {
+    const env = { ...process.env };
+    delete env.npm_execpath;
+
     const child = spawn(command, args, {
       cwd,
-      env: process.env,
+      env,
       stdio: "inherit"
     });
 
@@ -63,11 +73,8 @@ const main = async () => {
   const absoluteOutputPath = path.resolve(repoRoot, outputPath);
   await mkdir(path.dirname(absoluteOutputPath), { recursive: true });
 
-  await run("npm", [
-    "exec",
-    "--yes",
-    "--",
-    "cyclonedx-npm",
+  await run(process.execPath, [
+    cyclonedxCliPath,
     "--ignore-npm-errors",
     "--omit",
     "dev",

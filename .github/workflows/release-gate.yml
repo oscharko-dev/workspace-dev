@@ -158,6 +158,9 @@ jobs:
       - name: Generate template SPDX SBOM
         run: pnpm run sbom:spdx:template
 
+      - name: Verify SBOM parity
+        run: pnpm run verify:sbom:parity
+
       - name: Upload flaky retry artifacts
         uses: actions/upload-artifact@v7
         if: always()
