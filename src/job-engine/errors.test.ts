@@ -488,3 +488,25 @@ test("PipelineError.toJSON() includes optional properties when present", () => {
   assert.equal(json.retryable, true);
   assert.equal(json.retryAfterMs, 5000);
 });
+
+test("PipelineError diagnostic details apply secret redaction to strings", () => {
+  const error = createPipelineError({
+    code: "E_DETAIL",
+    stage: "fetch.figma",
+    message: "Error with details",
+    diagnostics: [
+      {
+        code: "D_SECRET",
+        message: "Detail with token=secret_token_abc",
+        suggestion: "Bearer secret_token_xyz",
+      },
+    ],
+  });
+
+  const diagnostic = error.diagnostics?.[0];
+  assert.ok(diagnostic);
+  assert.equal(diagnostic.message.includes("secret_token_abc"), false);
+  assert.equal(diagnostic.suggestion.includes("secret_token_xyz"), false);
+  assert.match(diagnostic.message, /\[redacted-secret\]/);
+  assert.match(diagnostic.suggestion, /\[redacted-secret\]/);
+});

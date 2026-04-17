@@ -195,7 +195,11 @@ const sanitizeDiagnosticValue = ({
     return null;
   }
   if (typeof value === "string") {
-    return sanitizeDiagnosticText({ value, maxLength: limits.textMaxLength });
+    const pathSanitized = sanitizeDiagnosticText({
+      value,
+      maxLength: limits.textMaxLength,
+    });
+    return redactHighRiskSecrets(pathSanitized, "[redacted-secret]");
   }
   if (typeof value === "boolean") {
     return value;
