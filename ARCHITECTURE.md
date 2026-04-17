@@ -86,7 +86,7 @@ Default output root is `.workspace-dev` in the current project.
 - Root package inclusion is controlled by `package.json` `files`; that allowlist intentionally keeps the `template/` subtree while excluding template `node_modules` directories and template test files.
 - Maintainers update `template/react-mui-app/pnpm-lock.yaml` only in this repository when template dependencies or template scripts change, then keep `pnpm run template:install` (`pnpm --dir template/react-mui-app install --frozen-lockfile`) and the release quality gates green.
 - Consumers should treat the bundled template lockfile as package-owned metadata shipped inside the tarball, not as a file to hand-edit under `node_modules`.
-- `pnpm run verify:airgap` validates that the packed tarball installs offline with the bundled template assets, while `pnpm run verify:reproducible-build` separately validates repeatable `dist/` build artifacts across consecutive builds.
+- `pnpm run verify:airgap` validates that the packed tarball installs offline with the bundled template assets, while `pnpm run verify:reproducible-build` separately validates repeatable `dist/` build artifacts and the packed tarball across consecutive clean iterations.
 
 ## Import session governance (#994)
 
