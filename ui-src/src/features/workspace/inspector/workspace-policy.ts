@@ -66,6 +66,11 @@ export interface WorkspacePolicy {
   governance?: WorkspaceGovernancePolicy;
 }
 
+export interface WorkspacePolicyPayload {
+  policy: WorkspacePolicy | null;
+  warning?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Resolved (fully-populated) policy shapes — used internally after merge.
 // ---------------------------------------------------------------------------
@@ -102,6 +107,17 @@ export interface ResolvedWorkspacePolicy {
   governance: ResolvedWorkspaceGovernancePolicy;
 }
 
+export type WorkspacePolicySource =
+  | "defaults"
+  | "server"
+  | "invalid-server-payload";
+
+export interface ParsedWorkspacePolicyResult {
+  policy: ResolvedWorkspacePolicy;
+  source: WorkspacePolicySource;
+  warning: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
@@ -130,6 +146,9 @@ export const DEFAULT_WORKSPACE_POLICY: ResolvedWorkspacePolicy = {
   },
 };
 
+const INVALID_WORKSPACE_POLICY_WARNING =
+  "Workspace inspector policy payload is invalid and was ignored. Default policy thresholds are in effect.";
+
 // ---------------------------------------------------------------------------
 // Resolution
 // ---------------------------------------------------------------------------
@@ -137,8 +156,7 @@ export const DEFAULT_WORKSPACE_POLICY: ResolvedWorkspacePolicy = {
 /**
  * Resolves a user-provided policy against the baked-in defaults.
  *
- * Any omitted fields keep the default value. Unknown keys are preserved on
- * re-export so that future policy additions survive downstream consumers.
+ * Any omitted fields keep the default value.
  */
 export function resolveWorkspacePolicy(
   input?: WorkspacePolicy | null,
@@ -149,6 +167,44 @@ export function resolveWorkspacePolicy(
     tokens: mergeTokenPolicy(source.tokens),
     a11y: mergeA11yPolicy(source.a11y),
     governance: mergeGovernancePolicy(source.governance),
+  };
+}
+
+export function parseWorkspacePolicyPayload(
+  input: unknown,
+): ParsedWorkspacePolicyResult {
+  if (!isRecord(input) || !("policy" in input)) {
+    return invalidWorkspacePolicyResult();
+  }
+
+  if (
+    "warning" in input &&
+    input.warning !== undefined &&
+    typeof input.warning !== "string"
+  ) {
+    return invalidWorkspacePolicyResult();
+  }
+
+  if (input.policy === null) {
+    return {
+      policy: DEFAULT_WORKSPACE_POLICY,
+      source: "defaults",
+      warning: null,
+    };
+  }
+
+  const parsedPolicy = parseWorkspacePolicy(input.policy);
+  if (parsedPolicy === null) {
+    return invalidWorkspacePolicyResult();
+  }
+
+  return {
+    policy: resolveWorkspacePolicy(parsedPolicy),
+    source: "server",
+    warning:
+      typeof input.warning === "string" && input.warning.trim().length > 0
+        ? input.warning
+        : null,
   };
 }
 
@@ -220,4 +276,283 @@ function mergeGovernancePolicy(
       override.requireNoteOnOverride ??
       DEFAULT_WORKSPACE_POLICY.governance.requireNoteOnOverride,
   };
+}
+
+function invalidWorkspacePolicyResult(): ParsedWorkspacePolicyResult {
+  return {
+    policy: DEFAULT_WORKSPACE_POLICY,
+    source: "invalid-server-payload",
+    warning: INVALID_WORKSPACE_POLICY_WARNING,
+  };
+}
+
+function parseWorkspacePolicy(input: unknown): WorkspacePolicy | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const policy: WorkspacePolicy = {};
+
+  if ("quality" in input) {
+    const quality = parseWorkspaceQualityPolicy(input.quality);
+    if (quality === null) {
+      return null;
+    }
+    policy.quality = quality;
+  }
+
+  if ("tokens" in input) {
+    const tokens = parseWorkspaceTokenPolicy(input.tokens);
+    if (tokens === null) {
+      return null;
+    }
+    policy.tokens = tokens;
+  }
+
+  if ("a11y" in input) {
+    const a11y = parseWorkspaceA11yPolicy(input.a11y);
+    if (a11y === null) {
+      return null;
+    }
+    policy.a11y = a11y;
+  }
+
+  if ("governance" in input) {
+    const governance = parseWorkspaceGovernancePolicy(input.governance);
+    if (governance === null) {
+      return null;
+    }
+    policy.governance = governance;
+  }
+
+  return policy;
+}
+
+function parseWorkspaceQualityPolicy(
+  input: unknown,
+): WorkspaceQualityPolicy | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const policy: WorkspaceQualityPolicy = {};
+
+  if ("bandThresholds" in input) {
+    const bandThresholds = parsePartialNumberRecord(input.bandThresholds, [
+      "excellent",
+      "good",
+      "fair",
+    ]);
+    if (bandThresholds === null) {
+      return null;
+    }
+    policy.bandThresholds = bandThresholds;
+  }
+
+  if ("weights" in input) {
+    const weights = parsePartialNumberRecord(input.weights, [
+      "structure",
+      "semantic",
+      "codegen",
+    ]);
+    if (weights === null) {
+      return null;
+    }
+    policy.weights = weights;
+  }
+
+  if ("maxAcceptableDepth" in input) {
+    const maxAcceptableDepth = parseFiniteNumber(input.maxAcceptableDepth);
+    if (maxAcceptableDepth === null) {
+      return null;
+    }
+    policy.maxAcceptableDepth = maxAcceptableDepth;
+  }
+
+  if ("maxAcceptableNodes" in input) {
+    const maxAcceptableNodes = parseFiniteNumber(input.maxAcceptableNodes);
+    if (maxAcceptableNodes === null) {
+      return null;
+    }
+    policy.maxAcceptableNodes = maxAcceptableNodes;
+  }
+
+  if ("riskSeverityOverrides" in input) {
+    const riskSeverityOverrides = parseRiskSeverityOverrides(
+      input.riskSeverityOverrides,
+    );
+    if (riskSeverityOverrides === null) {
+      return null;
+    }
+    policy.riskSeverityOverrides = riskSeverityOverrides;
+  }
+
+  return policy;
+}
+
+function parseWorkspaceTokenPolicy(input: unknown): WorkspaceTokenPolicy | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const policy: WorkspaceTokenPolicy = {};
+
+  if ("autoAcceptConfidence" in input) {
+    const autoAcceptConfidence = parseFiniteNumber(input.autoAcceptConfidence);
+    if (autoAcceptConfidence === null) {
+      return null;
+    }
+    policy.autoAcceptConfidence = autoAcceptConfidence;
+  }
+
+  if ("maxConflictDelta" in input) {
+    const maxConflictDelta = parseFiniteNumber(input.maxConflictDelta);
+    if (maxConflictDelta === null) {
+      return null;
+    }
+    policy.maxConflictDelta = maxConflictDelta;
+  }
+
+  if ("disabled" in input) {
+    if (typeof input.disabled !== "boolean") {
+      return null;
+    }
+    policy.disabled = input.disabled;
+  }
+
+  return policy;
+}
+
+function parseWorkspaceA11yPolicy(input: unknown): WorkspaceA11yPolicy | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const policy: WorkspaceA11yPolicy = {};
+
+  if ("wcagLevel" in input) {
+    if (input.wcagLevel !== "AA" && input.wcagLevel !== "AAA") {
+      return null;
+    }
+    policy.wcagLevel = input.wcagLevel;
+  }
+
+  if ("disabledRules" in input) {
+    const disabledRules = parseStringArray(input.disabledRules);
+    if (disabledRules === null) {
+      return null;
+    }
+    policy.disabledRules = disabledRules;
+  }
+
+  return policy;
+}
+
+function parseWorkspaceGovernancePolicy(
+  input: unknown,
+): WorkspaceGovernancePolicy | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const policy: WorkspaceGovernancePolicy = {};
+
+  if ("minQualityScoreToApply" in input) {
+    if (input.minQualityScoreToApply === null) {
+      policy.minQualityScoreToApply = null;
+    } else {
+      const minQualityScoreToApply = parseFiniteNumber(
+        input.minQualityScoreToApply,
+      );
+      if (minQualityScoreToApply === null) {
+        return null;
+      }
+      policy.minQualityScoreToApply = minQualityScoreToApply;
+    }
+  }
+
+  if ("securitySensitivePatterns" in input) {
+    const securitySensitivePatterns = parseStringArray(
+      input.securitySensitivePatterns,
+    );
+    if (securitySensitivePatterns === null) {
+      return null;
+    }
+    policy.securitySensitivePatterns = securitySensitivePatterns;
+  }
+
+  if ("requireNoteOnOverride" in input) {
+    if (typeof input.requireNoteOnOverride !== "boolean") {
+      return null;
+    }
+    policy.requireNoteOnOverride = input.requireNoteOnOverride;
+  }
+
+  return policy;
+}
+
+function parsePartialNumberRecord<TKeys extends string>(
+  input: unknown,
+  keys: readonly TKeys[],
+): Partial<Record<TKeys, number>> | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const record: Partial<Record<TKeys, number>> = {};
+  for (const key of keys) {
+    if (!(key in input)) {
+      continue;
+    }
+
+    const value = parseFiniteNumber(input[key]);
+    if (value === null) {
+      return null;
+    }
+    record[key] = value;
+  }
+
+  return record;
+}
+
+function parseRiskSeverityOverrides(
+  input: unknown,
+): Record<string, QualityRiskSeverity> | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  const overrides: Record<string, QualityRiskSeverity> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (
+      value !== "high" &&
+      value !== "medium" &&
+      value !== "low"
+    ) {
+      return null;
+    }
+    overrides[key] = value;
+  }
+
+  return overrides;
+}
+
+function parseStringArray(input: unknown): string[] | null {
+  if (!Array.isArray(input)) {
+    return null;
+  }
+
+  if (!input.every((value) => typeof value === "string")) {
+    return null;
+  }
+
+  return [...input];
+}
+
+function parseFiniteNumber(input: unknown): number | null {
+  return typeof input === "number" && Number.isFinite(input) ? input : null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

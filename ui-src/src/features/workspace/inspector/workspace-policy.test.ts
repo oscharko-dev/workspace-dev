@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_WORKSPACE_POLICY,
+  parseWorkspacePolicyPayload,
   resolveWorkspacePolicy,
 } from "./workspace-policy";
 
@@ -108,5 +109,51 @@ describe("governance policy", () => {
     expect(resolved.governance.requireNoteOnOverride).toBe(
       DEFAULT_WORKSPACE_POLICY.governance.requireNoteOnOverride,
     );
+  });
+});
+
+describe("parseWorkspacePolicyPayload", () => {
+  it("falls back to defaults when the server payload has an invalid nested leaf", () => {
+    const result = parseWorkspacePolicyPayload({
+      policy: {
+        quality: {
+          maxAcceptableDepth: "zero",
+        },
+      },
+    });
+
+    expect(result.source).toBe("invalid-server-payload");
+    expect(result.policy).toEqual(DEFAULT_WORKSPACE_POLICY);
+    expect(result.warning).toContain("invalid");
+  });
+
+  it("preserves valid partial policies and server warnings", () => {
+    const result = parseWorkspacePolicyPayload({
+      policy: {
+        governance: {
+          securitySensitivePatterns: ["password"],
+        },
+        quality: {
+          maxAcceptableDepth: 2,
+        },
+      },
+      warning: "Regex-like governance patterns were dropped.",
+    });
+
+    expect(result.source).toBe("server");
+    expect(result.warning).toBe("Regex-like governance patterns were dropped.");
+    expect(result.policy.quality.maxAcceptableDepth).toBe(2);
+    expect(result.policy.governance.securitySensitivePatterns).toEqual([
+      "password",
+    ]);
+    expect(result.policy.tokens).toEqual(DEFAULT_WORKSPACE_POLICY.tokens);
+  });
+
+  it("keeps defaults without warning when no server policy is present", () => {
+    expect(parseWorkspacePolicyPayload({ policy: null })).toEqual({
+      policy: DEFAULT_WORKSPACE_POLICY,
+      source: "defaults",
+      warning: null,
+    });
   });
 });
