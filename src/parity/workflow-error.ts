@@ -1,4 +1,9 @@
-import type { WorkspaceJobDiagnostic, WorkspaceJobStageName } from "../contracts/index.js";
+import type {
+  WorkspaceJobDiagnostic,
+  WorkspaceJobStageName,
+} from "../contracts/index.js";
+import { redactHighRiskSecrets } from "../secret-redaction.js";
+import { redactErrorChain } from "../error-sanitization.js";
 
 export interface WorkflowErrorInit {
   code: string;
@@ -15,8 +20,26 @@ export class WorkflowError extends Error {
   public readonly retryable: boolean;
   public readonly diagnostics?: WorkspaceJobDiagnostic[];
 
-  constructor({ code, message, stage, retryable = false, cause, diagnostics }: WorkflowErrorInit) {
-    super(message, { cause });
+  constructor({
+    code,
+    message,
+    stage,
+    retryable = false,
+    cause,
+    diagnostics,
+  }: WorkflowErrorInit) {
+    let sanitizedMessage = redactHighRiskSecrets(message, "[redacted-secret]");
+
+    // If cause is present, walk the chain and include sanitized cause info
+    if (cause !== undefined) {
+      const causeSanitized = redactErrorChain(cause);
+      if (causeSanitized) {
+        sanitizedMessage =
+          `${sanitizedMessage} [cause]: ${causeSanitized}`.trim();
+      }
+    }
+
+    super(sanitizedMessage, { cause });
     this.name = "WorkflowError";
     this.code = code;
     if (stage !== undefined) {
@@ -26,6 +49,17 @@ export class WorkflowError extends Error {
     if (diagnostics !== undefined) {
       this.diagnostics = diagnostics;
     }
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      name: this.name,
+      message: this.message,
+      code: this.code,
+      ...(this.stage !== undefined && { stage: this.stage }),
+      retryable: this.retryable,
+      ...(this.diagnostics !== undefined && { diagnostics: this.diagnostics }),
+    };
   }
 }
 
@@ -41,13 +75,17 @@ export const toWorkflowError = (
     stage?: WorkspaceJobStageName;
     retryable?: boolean;
     diagnostics?: WorkspaceJobDiagnostic[];
-  }
+  },
 ): WorkflowError => {
   const fallbackWithDefinedOptionals = {
     code: fallback.code,
     ...(fallback.stage !== undefined ? { stage: fallback.stage } : {}),
-    ...(fallback.retryable !== undefined ? { retryable: fallback.retryable } : {}),
-    ...(fallback.diagnostics !== undefined ? { diagnostics: fallback.diagnostics } : {})
+    ...(fallback.retryable !== undefined
+      ? { retryable: fallback.retryable }
+      : {}),
+    ...(fallback.diagnostics !== undefined
+      ? { diagnostics: fallback.diagnostics }
+      : {}),
   };
 
   if (isWorkflowError(value)) {
@@ -58,13 +96,13 @@ export const toWorkflowError = (
     return new WorkflowError({
       ...fallbackWithDefinedOptionals,
       message: value.message,
-      cause: value
+      cause: value,
     });
   }
 
   return new WorkflowError({
     ...fallbackWithDefinedOptionals,
     message: fallback.message,
-    cause: value
+    cause: value,
   });
 };

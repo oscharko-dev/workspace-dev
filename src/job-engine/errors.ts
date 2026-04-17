@@ -9,6 +9,7 @@ import type {
   WorkspaceJobStageName,
 } from "../contracts/index.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
+import { redactErrorChain } from "../error-sanitization.js";
 import type { WorkspacePipelineError } from "./types.js";
 
 export interface PipelineDiagnosticLimits {
@@ -411,11 +412,22 @@ export class PipelineError extends Error implements WorkspacePipelineError {
       value: message,
       maxLength: resolvedLimits.textMaxLength,
     });
-    const sanitizedMessage = redactHighRiskSecrets(
+
+    let sanitizedMessage = redactHighRiskSecrets(
       pathRedacted,
       "[redacted-secret]",
     );
 
+    // If cause is present, walk the chain and include sanitized cause info in message
+    if (cause !== undefined) {
+      const causeSanitized = redactErrorChain(cause);
+      if (causeSanitized) {
+        sanitizedMessage =
+          `${sanitizedMessage} [cause]: ${causeSanitized}`.trim();
+      }
+    }
+
+    // Store cause but it will be hidden by toJSON()
     super(sanitizedMessage, cause === undefined ? undefined : { cause });
     Object.setPrototypeOf(this, new.target.prototype);
     this.name = "PipelineError";
@@ -450,6 +462,26 @@ export class PipelineError extends Error implements WorkspacePipelineError {
     if (normalizedDiagnostics) {
       this.diagnostics = normalizedDiagnostics;
     }
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      name: this.name,
+      message: this.message,
+      code: this.code,
+      stage: this.stage,
+      ...(this.retryable !== undefined && { retryable: this.retryable }),
+      ...(this.retryAfterMs !== undefined && {
+        retryAfterMs: this.retryAfterMs,
+      }),
+      ...(this.fallbackMode !== undefined && {
+        fallbackMode: this.fallbackMode,
+      }),
+      ...(this.retryTargets !== undefined && {
+        retryTargets: this.retryTargets,
+      }),
+      ...(this.diagnostics !== undefined && { diagnostics: this.diagnostics }),
+    };
   }
 }
 
