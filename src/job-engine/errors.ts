@@ -195,7 +195,11 @@ const sanitizeDiagnosticValue = ({
     return null;
   }
   if (typeof value === "string") {
-    return sanitizeDiagnosticText({ value, maxLength: limits.textMaxLength });
+    const pathSanitized = sanitizeDiagnosticText({
+      value,
+      maxLength: limits.textMaxLength,
+    });
+    return redactHighRiskSecrets(pathSanitized, "[redacted-secret]");
   }
   if (typeof value === "boolean") {
     return value;
@@ -290,17 +294,23 @@ const normalizePipelineDiagnostics = ({
     if (code.length === 0) {
       continue;
     }
-    const message = sanitizeDiagnosticText({
-      value: candidate.message.trim(),
-      maxLength: limits.textMaxLength,
-    });
+    const message = redactHighRiskSecrets(
+      sanitizeDiagnosticText({
+        value: candidate.message.trim(),
+        maxLength: limits.textMaxLength,
+      }),
+      "[redacted-secret]",
+    );
     if (message.length === 0) {
       continue;
     }
-    const suggestion = sanitizeDiagnosticText({
-      value: candidate.suggestion.trim(),
-      maxLength: limits.textMaxLength,
-    });
+    const suggestion = redactHighRiskSecrets(
+      sanitizeDiagnosticText({
+        value: candidate.suggestion.trim(),
+        maxLength: limits.textMaxLength,
+      }),
+      "[redacted-secret]",
+    );
     if (suggestion.length === 0) {
       continue;
     }
@@ -411,11 +421,13 @@ export class PipelineError extends Error implements WorkspacePipelineError {
       value: message,
       maxLength: resolvedLimits.textMaxLength,
     });
+
     const sanitizedMessage = redactHighRiskSecrets(
       pathRedacted,
       "[redacted-secret]",
     );
 
+    // Store both message and cause; sanitizeErrorMessage will handle cause chain
     super(sanitizedMessage, cause === undefined ? undefined : { cause });
     Object.setPrototypeOf(this, new.target.prototype);
     this.name = "PipelineError";
@@ -450,6 +462,26 @@ export class PipelineError extends Error implements WorkspacePipelineError {
     if (normalizedDiagnostics) {
       this.diagnostics = normalizedDiagnostics;
     }
+  }
+
+  toJSON(): Record<string, unknown> {
+    return {
+      name: this.name,
+      message: this.message,
+      code: this.code,
+      stage: this.stage,
+      ...(this.retryable !== undefined && { retryable: this.retryable }),
+      ...(this.retryAfterMs !== undefined && {
+        retryAfterMs: this.retryAfterMs,
+      }),
+      ...(this.fallbackMode !== undefined && {
+        fallbackMode: this.fallbackMode,
+      }),
+      ...(this.retryTargets !== undefined && {
+        retryTargets: this.retryTargets,
+      }),
+      ...(this.diagnostics !== undefined && { diagnostics: this.diagnostics }),
+    };
   }
 }
 

@@ -445,3 +445,73 @@ test("PipelineError does not redact empty secret values (false positive protecti
   assert.equal(error.message, '{"token":""}');
   assert.equal(error.message.includes("[redacted-secret]"), false);
 });
+
+test("PipelineError with cause stores the cause without embedding it in message", () => {
+  const cause = new Error("Inner error with token=secret_abc");
+  const error = createPipelineError({
+    code: "E_OUTER",
+    stage: "fetch.figma",
+    message: "Outer error",
+    cause,
+  });
+
+  assert.equal(error.message, "Outer error");
+  // Error.cause is part of the error chain; verify it's stored
+  assert.equal(
+    Object.getOwnPropertyDescriptor(error, "cause")?.value ??
+      (error as Record<string, unknown>).cause,
+    cause,
+  );
+});
+
+test("PipelineError.toJSON() excludes cause property", () => {
+  const cause = new Error("Cause error");
+  const error = createPipelineError({
+    code: "E_TEST",
+    stage: "validate.project",
+    message: "Test error",
+    cause,
+  });
+
+  const json = error.toJSON();
+  assert.equal(json.message, "Test error");
+  assert.equal(json.code, "E_TEST");
+  assert.equal(json.stage, "validate.project");
+  assert.equal("cause" in json, false);
+});
+
+test("PipelineError.toJSON() includes optional properties when present", () => {
+  const error = createPipelineError({
+    code: "E_RETRY",
+    stage: "fetch.figma",
+    message: "Retryable error",
+    retryable: true,
+    retryAfterMs: 5000,
+  });
+
+  const json = error.toJSON();
+  assert.equal(json.retryable, true);
+  assert.equal(json.retryAfterMs, 5000);
+});
+
+test("PipelineError diagnostic details apply secret redaction to strings", () => {
+  const error = createPipelineError({
+    code: "E_DETAIL",
+    stage: "fetch.figma",
+    message: "Error with details",
+    diagnostics: [
+      {
+        code: "D_SECRET",
+        message: "Detail with Bearer secret_token_abc",
+        suggestion: "Retry with Token secret_token_xyz",
+      },
+    ],
+  });
+
+  const diagnostic = error.diagnostics?.[0];
+  assert.ok(diagnostic);
+  assert.equal(diagnostic.message.includes("secret_token_abc"), false);
+  assert.equal(diagnostic.suggestion.includes("secret_token_xyz"), false);
+  assert.match(diagnostic.message, /\[redacted-secret\]/);
+  assert.match(diagnostic.suggestion, /\[redacted-secret\]/);
+});
