@@ -75,7 +75,6 @@ const main = async () => {
 
   await run(process.execPath, [
     cyclonedxCliPath,
-    "--ignore-npm-errors",
     "--omit",
     "dev",
     "--spec-version",
