@@ -1,0 +1,46 @@
+name: workspace-dev PR auto-close warning
+
+on:
+  pull_request:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  warn-missing-autoclose-keyword:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Warn when #N references are missing auto-close keywords
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            if (!pr) {
+              core.notice("No pull request payload found; skipping.");
+              return;
+            }
+
+            const searchableText = `${pr.title ?? ""}\n\n${pr.body ?? ""}`;
+            const issueRefMatches = [...searchableText.matchAll(/(^|[^\w])#(\d+)\b/g)];
+            const referencedIssues = [...new Set(issueRefMatches.map((match) => Number(match[2])))];
+            if (referencedIssues.length === 0) {
+              core.notice("No #N issue references found in PR title/body.");
+              return;
+            }
+
+            const autoCloseMatches = [
+              ...searchableText.matchAll(/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+#(\d+)\b/gi),
+            ];
+            const autoCloseIssues = new Set(autoCloseMatches.map((match) => Number(match[1])));
+            const missingAutoClose = referencedIssues.filter((issueNumber) => !autoCloseIssues.has(issueNumber));
+
+            if (missingAutoClose.length === 0) {
+              core.notice("All referenced issues include an auto-close keyword.");
+              return;
+            }
+
+            const missingList = missingAutoClose.map((issueNumber) => `#${issueNumber}`).join(", ");
+            core.warning(
+              `PR references ${missingList} without an auto-close keyword. Prefer 'Fixes #N', 'Closes #N', or 'Resolves #N'.`,
+            );
