@@ -8,8 +8,13 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
 const expectedWorkflowRelativePath = ".github/workflows/changesets-release.yml";
 const staleWorkflowPattern = /npm-publish\.yml/;
+const openVexPattern = /openvex/i;
 
-const ignoredPublishedDocs = new Set(["CHANGELOG.md", "CONTRACT_CHANGELOG.md", "CODE_OF_CONDUCT.md"]);
+const ignoredPublishedDocs = new Set([
+  "CHANGELOG.md",
+  "CONTRACT_CHANGELOG.md",
+  "CODE_OF_CONDUCT.md",
+]);
 
 const escapeRegExp = (value: string): string => {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -37,25 +42,35 @@ test("integration: compliance docs reference the active release workflow and avo
     publishedDocumentationPaths.map(async (relativePath) => {
       return {
         relativePath,
-        content: await readRepoFile(relativePath)
+        content: await readRepoFile(relativePath),
       };
-    })
+    }),
   );
   const workflowPath = path.resolve(packageRoot, expectedWorkflowRelativePath);
   const workflowContent = await readFile(workflowPath, "utf8");
 
   assert.ok(publishedDocumentationPaths.includes("COMPLIANCE.md"));
-  assert.match(complianceDoc, new RegExp(`\`${escapeRegExp(expectedWorkflowRelativePath)}\``));
+  assert.match(
+    complianceDoc,
+    new RegExp(`\`${escapeRegExp(expectedWorkflowRelativePath)}\``),
+  );
   assert.doesNotMatch(complianceDoc, staleWorkflowPattern);
+  assert.doesNotMatch(complianceDoc, openVexPattern);
 
   await access(workflowPath);
   assert.match(workflowContent, /pnpm run release:changesets:publish/);
+  assert.doesNotMatch(workflowContent, openVexPattern);
 
   for (const document of publishedDocs) {
     assert.doesNotMatch(
       document.content,
       staleWorkflowPattern,
-      `Found stale workflow reference in ${document.relativePath}.`
+      `Found stale workflow reference in ${document.relativePath}.`,
+    );
+    assert.doesNotMatch(
+      document.content,
+      openVexPattern,
+      `Found stale OpenVEX reference in ${document.relativePath}.`,
     );
   }
 });

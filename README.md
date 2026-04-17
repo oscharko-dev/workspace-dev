@@ -14,7 +14,7 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 ## Package and release channels
 
 - npm distribution (authoritative): https://www.npmjs.com/package/workspace-dev
-- GitHub release notes and signed evidence assets (SBOM/OpenVEX): https://github.com/oscharko-dev/workspace-dev/releases
+- GitHub release notes and release evidence assets (SBOM): https://github.com/oscharko-dev/workspace-dev/releases
 - GitHub Packages is intentionally not used for `workspace-dev` distribution.
 
 ## Versioning strategy
