@@ -3,7 +3,7 @@ import { DEFAULT_RATE_LIMIT_PER_MINUTE, RATE_LIMIT_WINDOW_MS } from "./constants
 
 export const RATE_LIMIT_FALLBACK_CLIENT_KEY = "unknown-client";
 
-interface RateLimitBucket {
+export interface RateLimitBucket {
   timestamps: number[];
   lastSeenAt: number;
 }
@@ -21,8 +21,12 @@ interface RateLimitDenied {
 export type RateLimitResult = RateLimitAllowed | RateLimitDenied;
 
 export interface IpRateLimiter {
-  consume: (clientKey: string) => RateLimitResult;
-  getTrackedClientCount: () => number;
+  consume: (clientKey: string, scopeKey?: string) => Promise<RateLimitResult>;
+  getTrackedClientCount: () => Promise<number>;
+}
+
+export interface RateLimitStore {
+  update: <T>(task: (buckets: Map<string, RateLimitBucket>) => T | Promise<T>) => Promise<T>;
 }
 
 const pruneExpiredTimestamps = ({
@@ -54,18 +58,49 @@ export const resolveRateLimitClientKey = (request: IncomingMessage): string => {
   return normalizeRateLimitClientKey(request.socket.remoteAddress);
 };
 
+const createInMemoryRateLimitStore = (): RateLimitStore => {
+  const buckets = new Map<string, RateLimitBucket>();
+  return {
+    update: async <T>(
+      task: (currentBuckets: Map<string, RateLimitBucket>) => T | Promise<T>
+    ): Promise<T> => {
+      return await task(buckets);
+    }
+  };
+};
+
+const resolveBucketKey = ({
+  clientKey,
+  scopeKey
+}: {
+  clientKey: string;
+  scopeKey: string | undefined;
+}): string => {
+  const normalizedClientKey = normalizeRateLimitClientKey(clientKey);
+  if (scopeKey === undefined) {
+    return normalizedClientKey;
+  }
+  return JSON.stringify([scopeKey, normalizedClientKey]);
+};
+
 export const createIpRateLimiter = ({
   limitPerWindow = DEFAULT_RATE_LIMIT_PER_MINUTE,
   windowMs = RATE_LIMIT_WINDOW_MS,
-  now = () => Date.now()
+  now = () => Date.now(),
+  store = createInMemoryRateLimitStore()
 }: {
   limitPerWindow?: number;
   windowMs?: number;
   now?: () => number;
+  store?: RateLimitStore;
 } = {}): IpRateLimiter => {
-  const buckets = new Map<string, RateLimitBucket>();
-
-  const cleanupExpiredBuckets = (nowMs: number): void => {
+  const cleanupExpiredBuckets = ({
+    buckets,
+    nowMs
+  }: {
+    buckets: Map<string, RateLimitBucket>;
+    nowMs: number;
+  }): void => {
     for (const [clientKey, bucket] of buckets) {
       const activeTimestamps = pruneExpiredTimestamps({
         timestamps: bucket.timestamps,
@@ -88,48 +123,53 @@ export const createIpRateLimiter = ({
   };
 
   return {
-    consume: (clientKey: string): RateLimitResult => {
+    consume: async (clientKey: string, scopeKey?: string): Promise<RateLimitResult> => {
       if (limitPerWindow <= 0) {
         return { allowed: true };
       }
 
-      const nowMs = now();
-      const normalizedClientKey = normalizeRateLimitClientKey(clientKey);
-      cleanupExpiredBuckets(nowMs);
+      return await store.update((buckets) => {
+        const nowMs = now();
+        const bucketKey = resolveBucketKey({ clientKey, scopeKey });
+        cleanupExpiredBuckets({ buckets, nowMs });
 
-      const bucket = buckets.get(normalizedClientKey);
-      const activeTimestamps = pruneExpiredTimestamps({
-        timestamps: bucket?.timestamps ?? [],
-        nowMs,
-        windowMs
-      });
+        const bucket = buckets.get(bucketKey);
+        const activeTimestamps = pruneExpiredTimestamps({
+          timestamps: bucket?.timestamps ?? [],
+          nowMs,
+          windowMs
+        });
 
-      if (activeTimestamps.length >= limitPerWindow) {
-        const oldestTimestamp = activeTimestamps[0] ?? nowMs;
-        const retryAfterMs = Math.max(1, windowMs - (nowMs - oldestTimestamp));
+        if (activeTimestamps.length >= limitPerWindow) {
+          const oldestTimestamp = activeTimestamps[0] ?? nowMs;
+          const retryAfterMs = Math.max(1, windowMs - (nowMs - oldestTimestamp));
 
-        buckets.set(normalizedClientKey, {
+          buckets.set(bucketKey, {
+            timestamps: activeTimestamps,
+            lastSeenAt: nowMs
+          });
+
+          return {
+            allowed: false,
+            retryAfterMs,
+            retryAfterSeconds: Math.ceil(retryAfterMs / 1000)
+          };
+        }
+
+        activeTimestamps.push(nowMs);
+        buckets.set(bucketKey, {
           timestamps: activeTimestamps,
           lastSeenAt: nowMs
         });
 
-        return {
-          allowed: false,
-          retryAfterMs,
-          retryAfterSeconds: Math.ceil(retryAfterMs / 1000)
-        };
-      }
-
-      activeTimestamps.push(nowMs);
-      buckets.set(normalizedClientKey, {
-        timestamps: activeTimestamps,
-        lastSeenAt: nowMs
+        return { allowed: true };
       });
-
-      return { allowed: true };
     },
-    getTrackedClientCount: (): number => {
-      return buckets.size;
+    getTrackedClientCount: async (): Promise<number> => {
+      return await store.update((buckets) => {
+        cleanupExpiredBuckets({ buckets, nowMs: now() });
+        return buckets.size;
+      });
     }
   };
 };

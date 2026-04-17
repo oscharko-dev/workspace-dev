@@ -173,6 +173,7 @@ async function createRequestHandlerApp({
   logger = createStubLogger(),
   importSessionEventBearerToken,
   workspaceRoot,
+  outputRoot,
 }: {
   jobEngine?: JobEngine;
   moduleDir?: string;
@@ -180,6 +181,7 @@ async function createRequestHandlerApp({
   logger?: WorkspaceRuntimeLogger;
   importSessionEventBearerToken?: string;
   workspaceRoot?: string;
+  outputRoot?: string;
 } = {}): Promise<{
   app: WorkspaceServerApp;
   baseUrl: string;
@@ -187,9 +189,10 @@ async function createRequestHandlerApp({
   tempRoot: string;
 }> {
   const host = "127.0.0.1";
-  const tempRoot = await mkdtemp(
-    path.join(os.tmpdir(), "workspace-dev-request-handler-"),
-  );
+  const tempRoot =
+    outputRoot ??
+    (await mkdtemp(path.join(os.tmpdir(), "workspace-dev-request-handler-")));
+  const ownsTempRoot = outputRoot === undefined;
   const resolvedWorkspaceRoot = workspaceRoot ?? tempRoot;
   let resolvedPort = 0;
   const handler = createWorkspaceRequestHandler({
@@ -234,7 +237,9 @@ async function createRequestHandlerApp({
     baseUrl: `http://${host}:${resolvedPort}`,
     close: async () => {
       await app.close();
-      await rm(tempRoot, { recursive: true, force: true });
+      if (ownsTempRoot) {
+        await rm(tempRoot, { recursive: true, force: true });
+      }
     },
     tempRoot,
   };
@@ -1803,6 +1808,150 @@ test("request handler validates cancel bodies before calling cancelJob", async (
     assert.equal(cancelJob.mock.callCount(), 0);
   } finally {
     await close();
+  }
+});
+
+test("request handler isolates import-session write budgets by session for the same client IP", async () => {
+  const appendImportSessionEvent = test.mock.fn(
+    async ({ event }) =>
+      ({
+        id: "stored-event",
+        sessionId: event.sessionId,
+        kind: event.kind,
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
+  );
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ appendImportSessionEvent }),
+    importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+    rateLimitPerMinute: 1,
+  });
+
+  try {
+    const firstSessionAccepted = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+    assert.equal(firstSessionAccepted.statusCode, 201);
+
+    const firstSessionLimited = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+    assert.equal(firstSessionLimited.statusCode, 429);
+
+    const secondSessionAccepted = await app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-2/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+    assert.equal(secondSessionAccepted.statusCode, 201);
+    assert.equal(appendImportSessionEvent.mock.callCount(), 2);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler preserves active import-session write buckets across handler recreation", async () => {
+  const outputRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-request-handler-rate-limit-"),
+  );
+  const firstAppendImportSessionEvent = test.mock.fn(
+    async ({ event }) =>
+      ({
+        id: "stored-event",
+        sessionId: event.sessionId,
+        kind: event.kind,
+        at: "2026-04-15T10:05:00.000Z",
+      }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
+  );
+  let firstApp:
+    | Awaited<ReturnType<typeof createRequestHandlerApp>>
+    | undefined;
+  let secondApp:
+    | Awaited<ReturnType<typeof createRequestHandlerApp>>
+    | undefined;
+
+  try {
+    firstApp = await createRequestHandlerApp({
+      jobEngine: createStubJobEngine({
+        appendImportSessionEvent: firstAppendImportSessionEvent,
+      }),
+      importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+      rateLimitPerMinute: 1,
+      outputRoot,
+    });
+
+    const accepted = await firstApp.app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+    assert.equal(accepted.statusCode, 201);
+    await firstApp.close();
+    firstApp = undefined;
+
+    const secondAppendImportSessionEvent = test.mock.fn(
+      async ({ event }) =>
+        ({
+          id: "stored-event",
+          sessionId: event.sessionId,
+          kind: event.kind,
+          at: "2026-04-15T10:05:00.000Z",
+        }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
+    );
+    secondApp = await createRequestHandlerApp({
+      jobEngine: createStubJobEngine({
+        appendImportSessionEvent: secondAppendImportSessionEvent,
+      }),
+      importSessionEventBearerToken: TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN,
+      rateLimitPerMinute: 1,
+      outputRoot,
+    });
+
+    const limited = await secondApp.app.inject({
+      method: "POST",
+      url: "/workspace/import-sessions/session-1/events",
+      headers: {
+        "content-type": "application/json",
+        ...createImportSessionEventAuthHeaders(),
+      },
+      payload: { kind: "approved" },
+    });
+    assert.equal(limited.statusCode, 429);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+    assert.equal(
+      limited.json<Record<string, unknown>>().error,
+      "RATE_LIMIT_EXCEEDED",
+    );
+    assert.equal(firstAppendImportSessionEvent.mock.callCount(), 1);
+    assert.equal(secondAppendImportSessionEvent.mock.callCount(), 0);
+  } finally {
+    if (firstApp) {
+      await firstApp.close();
+    }
+    if (secondApp) {
+      await secondApp.close();
+    }
+    await rm(outputRoot, { recursive: true, force: true });
   }
 });
 

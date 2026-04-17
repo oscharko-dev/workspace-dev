@@ -64,6 +64,7 @@ import {
   createIpRateLimiter,
   resolveRateLimitClientKey,
 } from "./rate-limit.js";
+import { createFileBackedRateLimitStore } from "./rate-limit-store.js";
 import {
   sendBuffer,
   sendJson,
@@ -459,7 +460,16 @@ export function createWorkspaceRequestHandler({
       ? {}
       : { limitPerWindow: runtime.rateLimitPerMinute };
   const writeRateLimiter = createIpRateLimiter(rateLimiterOptions);
-  const importSessionEventRateLimiter = createIpRateLimiter(rateLimiterOptions);
+  const importSessionEventRateLimiter = createIpRateLimiter({
+    ...rateLimiterOptions,
+    store: createFileBackedRateLimitStore({
+      filePath: path.join(
+        absoluteOutputRoot,
+        "rate-limits",
+        "import-session-writes.json",
+      ),
+    }),
+  });
 
   return async (
     request: IncomingMessage,
@@ -1691,12 +1701,24 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        const decodedImportSessionRateLimitSessionId =
+          isImportSessionBearerProtectedWriteRoute
+            ? safeDecodeParam(
+                parsedImportSessionRoute.sessionId,
+                "import session ID",
+                response,
+              )
+            : undefined;
+        if (decodedImportSessionRateLimitSessionId === null) {
+          return;
+        }
+
         const isRateLimitedWriteRoute =
           pathname === "/workspace/submit" ||
           parsedJobRoute?.action === "regenerate" ||
           parsedJobRoute?.action === "retry-stage";
         if (isRateLimitedWriteRoute) {
-          const rateLimitResult = writeRateLimiter.consume(
+          const rateLimitResult = await writeRateLimiter.consume(
             resolveRateLimitClientKey(request),
           );
           if (!rateLimitResult.allowed) {
@@ -1709,8 +1731,9 @@ export function createWorkspaceRequestHandler({
         }
 
         if (isImportSessionBearerProtectedWriteRoute) {
-          const rateLimitResult = importSessionEventRateLimiter.consume(
+          const rateLimitResult = await importSessionEventRateLimiter.consume(
             resolveRateLimitClientKey(request),
+            decodedImportSessionRateLimitSessionId,
           );
           if (!rateLimitResult.allowed) {
             const actionLabel = isImportSessionApproveWriteRoute
@@ -1730,11 +1753,13 @@ export function createWorkspaceRequestHandler({
           method === "POST" &&
           parsedImportSessionRoute?.action === "reimport"
         ) {
-          const sessionId = safeDecodeParam(
-            parsedImportSessionRoute.sessionId,
-            "import session ID",
-            response,
-          );
+          const sessionId =
+            decodedImportSessionRateLimitSessionId ??
+            safeDecodeParam(
+              parsedImportSessionRoute.sessionId,
+              "import session ID",
+              response,
+            );
           if (sessionId === null) return;
 
           try {
@@ -1778,11 +1803,13 @@ export function createWorkspaceRequestHandler({
           method === "POST" &&
           parsedImportSessionRoute?.action === "approve"
         ) {
-          const sessionId = safeDecodeParam(
-            parsedImportSessionRoute.sessionId,
-            "import session ID",
-            response,
-          );
+          const sessionId =
+            decodedImportSessionRateLimitSessionId ??
+            safeDecodeParam(
+              parsedImportSessionRoute.sessionId,
+              "import session ID",
+              response,
+            );
           if (sessionId === null) return;
 
           const rawBody = await readJsonBody(request);
@@ -1861,11 +1888,13 @@ export function createWorkspaceRequestHandler({
           method === "POST" &&
           parsedImportSessionRoute?.action === "events"
         ) {
-          const sessionId = safeDecodeParam(
-            parsedImportSessionRoute.sessionId,
-            "import session ID",
-            response,
-          );
+          const sessionId =
+            decodedImportSessionRateLimitSessionId ??
+            safeDecodeParam(
+              parsedImportSessionRoute.sessionId,
+              "import session ID",
+              response,
+            );
           if (sessionId === null) return;
 
           const rawBody = await readJsonBody(request);
