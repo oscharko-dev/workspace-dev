@@ -57,6 +57,17 @@ jobs:
       - name: Typecheck
         run: pnpm run typecheck
 
+      - name: Runtime security smoke suite
+        run: pnpm run test:dast-smoke
+
+      - name: Upload runtime security smoke artifacts
+        uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: workspace-dev-release-dast-smoke-${{ github.run_id }}
+          path: artifacts/testing/dast-smoke
+          if-no-files-found: ignore
+
       - name: Canonical tests
         run: pnpm run test
 
