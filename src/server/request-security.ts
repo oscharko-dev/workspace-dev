@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
 
 const JSON_CONTENT_TYPE_PATTERN = /^application\/json(?:\s*(?:;|$))/i;
@@ -260,12 +260,9 @@ const readBearerToken = (request: IncomingMessage): string | undefined => {
 };
 
 const tokensMatch = (expected: string, candidate: string): boolean => {
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  const candidateBuffer = Buffer.from(candidate, "utf8");
-  if (expectedBuffer.length !== candidateBuffer.length) {
-    return false;
-  }
-  return timingSafeEqual(expectedBuffer, candidateBuffer);
+  const expectedDigest = createHash("sha256").update(expected, "utf8").digest();
+  const candidateDigest = createHash("sha256").update(candidate, "utf8").digest();
+  return timingSafeEqual(expectedDigest, candidateDigest);
 };
 
 export const validateImportSessionEventWriteAuth = ({
