@@ -3,7 +3,7 @@ const SHARED_SECRET_PATTERNS = [
   /(\bauthorization\s*:\s*bearer\s+)([^\s]+)/gi,
   /(\bx-access-token\s*:\s*)([^\s]+)/gi,
   /(\b(?:Bearer|Token|Secret|Api[-_ ]?Key|Password)\b\s*[:=]\s*)([A-Za-z0-9._-]{8,})\b/gi,
-  /("(?:repoToken|figmaAccessToken|token|secret|api[-_ ]?key|password|authorization|x-figma-token)"\s*:\s*")([^"]+)/gi,
+  /("(?:repoToken|figmaAccessToken|token|secret|api[-_ ]?key|password|authorization|x-figma-token)"\s*:\s*")((?:[^"\\]|\\.)+)/gi,
 ] as const;
 
 export const redactHighRiskSecrets = (
