@@ -27,6 +27,7 @@ import { transformDesignContextToDesignIr } from "../../parity/ir-design-context
 import type { FigmaFile } from "../../parity/ir-helpers.js";
 import { applyMcpEnrichmentToIr } from "../../parity/ir-tokens.js";
 import { validateDesignIR } from "../../parity/types-ir.js";
+import { isParityNoScreensWorkflowError } from "../../parity/workflow-error.js";
 import type {
   DepthTruncatedScreenMetric,
   DesignIR,
@@ -1356,12 +1357,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
             : {}),
         });
       } catch (error) {
-        if (
-          error instanceof Error &&
-          error.message.includes(
-            "No top-level frames/components found in Figma file",
-          )
-        ) {
+        if (isParityNoScreensWorkflowError(error)) {
           throw createPipelineError({
             code: "E_IR_EMPTY",
             stage: "ir.derive",

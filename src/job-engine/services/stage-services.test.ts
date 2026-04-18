@@ -1940,6 +1940,76 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
   assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
+test("IrDeriveService maps structured parity no-screen errors to E_IR_EMPTY", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    }
+  });
+  await writeFile(
+    executionContext.paths.figmaJsonFile,
+    `${JSON.stringify(
+      {
+        name: "Empty Derived Board",
+        document: { id: "0:0", type: "DOCUMENT", children: [] }
+      },
+      null,
+      2
+    )}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.figmaCleaned,
+    stage: "figma.source",
+    absolutePath: executionContext.paths.figmaJsonFile
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
+    stage: "figma.source",
+    value: {
+      sourceMode: "local-json",
+      fetchedNodes: 0,
+      degradedGeometryNodes: []
+    }
+  });
+  await executionContext.artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.figmaCleanedReport,
+    stage: "figma.source",
+    value: {
+      inputNodeCount: 1,
+      outputNodeCount: 1,
+      removedHiddenNodes: 0,
+      removedPlaceholderNodes: 0,
+      removedHelperNodes: 0,
+      removedInvalidNodes: 0,
+      removedPropertyCount: 0,
+      screenCandidateCount: 1
+    }
+  });
+
+  await assert.rejects(
+    async () => {
+      await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+    },
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & {
+        code?: string;
+        stage?: string;
+        diagnostics?: Array<{ code?: string }>;
+      };
+      assert.equal(typed.code, "E_IR_EMPTY");
+      assert.equal(typed.stage, "ir.derive");
+      assert.equal(typed.message, "No screen found in IR.");
+      assert.equal(
+        typed.diagnostics?.some((entry) => entry.code === "E_IR_EMPTY"),
+        true
+      );
+      return true;
+    }
+  );
+});
+
 test("IrDeriveService records Sparkasse token diagnostics for an invalid configured source", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     input: {

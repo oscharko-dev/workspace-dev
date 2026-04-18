@@ -31,6 +31,10 @@ import {
   validateGeneratedJsxFragment,
   validateGeneratedSourceFile
 } from "../generated-source-validation.js";
+import type {
+  GeneratedSourceValidationResult,
+  GeneratedSourceValidationSkippedState
+} from "../generated-source-validation.js";
 import {
   registerMuiImports,
   registerMappedImport,
@@ -4994,7 +4998,7 @@ const validateRenderedElementFragment = ({
   context: RenderContext;
   renderSource: string;
 }): string => {
-  validateGeneratedJsxFragment({
+  const validationResult = validateGeneratedJsxFragment({
     raw,
     context: {
       screenName: context.screenName,
@@ -5004,7 +5008,19 @@ const validateRenderedElementFragment = ({
       renderSource
     }
   });
+  if (validationResult.status === "skipped") {
+    (context.generatedSourceValidationSkips ??= []).push(validationResult);
+  }
   return raw;
+};
+
+const recordGeneratedSourceValidationSkip = (
+  result: GeneratedSourceValidationResult,
+  target: GeneratedSourceValidationSkippedState[]
+): void => {
+  if (result.status === "skipped") {
+    target.push(result);
+  }
 };
 
 export const renderElement = (
@@ -5169,6 +5185,7 @@ export interface FallbackScreenFileResult {
   }>;
   iconWarnings: IconRenderWarning[];
   accessibilityWarnings: AccessibilityWarning[];
+  generatedSourceValidationSkips?: GeneratedSourceValidationSkippedState[];
 }
 
 export interface ScreenTestButtonTarget {
@@ -5890,6 +5907,7 @@ export const buildFallbackRenderState = ({ prepared }: { prepared: PreparedFallb
     emittedIconWarningKeys: new Set<string>(),
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized,
+    generatedSourceValidationSkips: [],
     ...(resolvedThemeComponentDefaults ? { themeComponentDefaults: resolvedThemeComponentDefaults } : {}),
     extractionInvocationByNodeId: extractionPlan.invocationByRootNodeId,
     consumedExtractionComponentNames: new Set<string>(),
@@ -6557,13 +6575,17 @@ ${datePickerImportBlock}${iconImports ? `${iconImports}\n` : ""}${mappedImports 
 ${patternContextInitialStateDeclaration}${screenExportSource}
 `;
   const sharedSxOptimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);
-  validateGeneratedSourceFile({
-    filePath,
-    content: sharedSxOptimizedScreenContent,
-    context: {
-      screenName: prepared.screen.name
-    }
-  });
+  const generatedSourceValidationSkips = [...(renderContext.generatedSourceValidationSkips ?? [])];
+  recordGeneratedSourceValidationSkip(
+    validateGeneratedSourceFile({
+      filePath,
+      content: sharedSxOptimizedScreenContent,
+      context: {
+        screenName: prepared.screen.name
+      }
+    }),
+    generatedSourceValidationSkips
+  );
   const screenTestPlan = buildScreenTestTargetPlan({
     roots: simplifiedChildren,
     renderedOutput: rendered,
@@ -6594,6 +6616,7 @@ ${patternContextInitialStateDeclaration}${screenExportSource}
     mappingWarnings: renderContext.mappingWarnings,
     iconWarnings: renderContext.iconWarnings ?? [],
     accessibilityWarnings: renderContext.accessibilityWarnings,
+    generatedSourceValidationSkips,
     componentFiles: extractionPlan.componentFiles,
     contextFiles,
     testFiles
@@ -6612,18 +6635,23 @@ export const fallbackScreenFile = (input: FallbackScreenFileInput): FallbackScre
     renderState,
     dependencies
   });
+  const generatedSourceValidationSkips = result.generatedSourceValidationSkips ?? [];
   for (const generatedFile of [...result.componentFiles, ...result.contextFiles]) {
     if (!generatedFile.path.endsWith(".ts") && !generatedFile.path.endsWith(".tsx")) {
       continue;
     }
-    validateGeneratedSourceFile({
-      filePath: generatedFile.path,
-      content: generatedFile.content,
-      context: {
-        screenName: prepared.screen.name
-      }
-    });
+    recordGeneratedSourceValidationSkip(
+      validateGeneratedSourceFile({
+        filePath: generatedFile.path,
+        content: generatedFile.content,
+        context: {
+          screenName: prepared.screen.name
+        }
+      }),
+      generatedSourceValidationSkips
+    );
   }
+  result.generatedSourceValidationSkips = generatedSourceValidationSkips;
   return result;
 };
 
@@ -6728,13 +6756,17 @@ ${wrappedShellContent}
 }
 `;
   const optimizedShellContent = extractSharedSxConstantsFromScreenContent(shellContent);
-  validateGeneratedSourceFile({
-    filePath,
-    content: optimizedShellContent,
-    context: {
-      screenName: prepared.screen.name
-    }
-  });
+  const generatedSourceValidationSkips = [...(renderContext.generatedSourceValidationSkips ?? [])];
+  recordGeneratedSourceValidationSkip(
+    validateGeneratedSourceFile({
+      filePath,
+      content: optimizedShellContent,
+      context: {
+        screenName: prepared.screen.name
+      }
+    }),
+    generatedSourceValidationSkips
+  );
   const contextFiles: GeneratedFile[] = [
     ...extractionPlan.contextFiles,
     ...(formContextFileSpec ? [formContextFileSpec.file] : []),
@@ -6751,6 +6783,7 @@ ${wrappedShellContent}
     mappingWarnings: renderContext.mappingWarnings,
     iconWarnings: renderContext.iconWarnings ?? [],
     accessibilityWarnings: renderContext.accessibilityWarnings,
+    generatedSourceValidationSkips,
     componentFiles: extractionPlan.componentFiles,
     contextFiles,
     testFiles: []
@@ -6759,13 +6792,16 @@ ${wrappedShellContent}
     if (!generatedFile.path.endsWith(".ts") && !generatedFile.path.endsWith(".tsx")) {
       continue;
     }
-    validateGeneratedSourceFile({
-      filePath: generatedFile.path,
-      content: generatedFile.content,
-      context: {
-        screenName: prepared.screen.name
-      }
-    });
+    recordGeneratedSourceValidationSkip(
+      validateGeneratedSourceFile({
+        filePath: generatedFile.path,
+        content: generatedFile.content,
+        context: {
+          screenName: prepared.screen.name
+        }
+      }),
+      generatedSourceValidationSkips
+    );
   }
   return result;
 };
@@ -7010,6 +7046,7 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
   const mappingWarnings: FallbackScreenFileResult["mappingWarnings"] = [];
   const iconWarnings: FallbackScreenFileResult["iconWarnings"] = [];
   const accessibilityWarnings: FallbackScreenFileResult["accessibilityWarnings"] = [];
+  const generatedSourceValidationSkips: GeneratedSourceValidationSkippedState[] = [];
   const simplificationStats = createEmptySimplificationStats();
   const componentFiles: GeneratedFile[] = [];
   const contextFiles: GeneratedFile[] = [];
@@ -7087,6 +7124,7 @@ export const statefulVariantScreenFile = (input: StatefulVariantScreenFileInput)
     mappingWarnings.push(...scenarioModule.renderState.renderContext.mappingWarnings);
     iconWarnings.push(...(scenarioModule.renderState.renderContext.iconWarnings ?? []));
     accessibilityWarnings.push(...scenarioModule.renderState.renderContext.accessibilityWarnings);
+    generatedSourceValidationSkips.push(...(scenarioModule.renderState.renderContext.generatedSourceValidationSkips ?? []));
     componentFiles.push(...scenarioModule.prepared.extractionPlan.componentFiles);
     contextFiles.push(
       ...scenarioModule.prepared.extractionPlan.contextFiles,
@@ -7282,13 +7320,16 @@ ${input.appShellComponentName ? hasShellTextOverrides
 }
 `;
   const optimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenSource);
-  validateGeneratedSourceFile({
-    filePath,
-    content: optimizedScreenContent,
-    context: {
-      screenName: input.screen.name
-    }
-  });
+  recordGeneratedSourceValidationSkip(
+    validateGeneratedSourceFile({
+      filePath,
+      content: optimizedScreenContent,
+      context: {
+        screenName: input.screen.name
+      }
+    }),
+    generatedSourceValidationSkips
+  );
 
   const canonicalScenarioModule = scenarioModuleByContentScreenId.get(defaultScenario.contentScreenId) ?? defaultScenarioModule;
   const screenTestPlan = buildScreenTestTargetPlan({
@@ -7312,6 +7353,7 @@ ${input.appShellComponentName ? hasShellTextOverrides
     mappingWarnings,
     iconWarnings,
     accessibilityWarnings,
+    generatedSourceValidationSkips,
     componentFiles: dedupeGeneratedFilesByPath(componentFiles),
     contextFiles: dedupeGeneratedFilesByPath(contextFiles),
     testFiles: [
@@ -7386,13 +7428,17 @@ ${wrappedScreenContent}
 }
 `;
   const optimizedScreenContent = extractSharedSxConstantsFromScreenContent(screenContent);
-  validateGeneratedSourceFile({
-    filePath,
-    content: optimizedScreenContent,
-    context: {
-      screenName: prepared.screen.name
-    }
-  });
+  const generatedSourceValidationSkips = [...(renderContext.generatedSourceValidationSkips ?? [])];
+  recordGeneratedSourceValidationSkip(
+    validateGeneratedSourceFile({
+      filePath,
+      content: optimizedScreenContent,
+      context: {
+        screenName: prepared.screen.name
+      }
+    }),
+    generatedSourceValidationSkips
+  );
   const screenTestPlan = buildScreenTestTargetPlan({
     roots: simplifiedChildren,
     renderedOutput: rendered,
@@ -7422,6 +7468,7 @@ ${wrappedScreenContent}
     mappingWarnings: renderContext.mappingWarnings,
     iconWarnings: renderContext.iconWarnings ?? [],
     accessibilityWarnings: renderContext.accessibilityWarnings,
+    generatedSourceValidationSkips,
     componentFiles: extractionPlan.componentFiles,
     contextFiles,
     testFiles
@@ -7430,13 +7477,16 @@ ${wrappedScreenContent}
     if (!generatedFile.path.endsWith(".ts") && !generatedFile.path.endsWith(".tsx")) {
       continue;
     }
-    validateGeneratedSourceFile({
-      filePath: generatedFile.path,
-      content: generatedFile.content,
-      context: {
-        screenName: prepared.screen.name
-      }
-    });
+    recordGeneratedSourceValidationSkip(
+      validateGeneratedSourceFile({
+        filePath: generatedFile.path,
+        content: generatedFile.content,
+        context: {
+          screenName: prepared.screen.name
+        }
+      }),
+      generatedSourceValidationSkips
+    );
   }
   return result;
 };

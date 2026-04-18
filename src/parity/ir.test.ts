@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { deriveTokensForTesting, figmaToDesignIr, figmaToDesignIrWithOptions } from "./ir.js";
 import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
+import { PARITY_WORKFLOW_ERROR_CODES, WorkflowError } from "./workflow-error.js";
 
 const countElements = (elements: Array<{ children?: unknown[] }>): number => {
   let total = 0;
@@ -1176,30 +1177,34 @@ const toTypeMap = (ir: ReturnType<typeof figmaToDesignIrWithOptions>): Record<st
 };
 
 test("figmaToDesignIr throws when no top-level screen nodes exist", () => {
-  assert.throws(
-    () => figmaToDesignIr({ name: "Empty", document: { id: "0:0", type: "DOCUMENT", children: [] } }),
-    /No top-level frames\/components found/
-  );
+  assert.throws(() => figmaToDesignIr({ name: "Empty", document: { id: "0:0", type: "DOCUMENT", children: [] } }), (error: unknown) => {
+    assert.equal(error instanceof WorkflowError, true);
+    assert.equal((error as WorkflowError).code, PARITY_WORKFLOW_ERROR_CODES.noScreens);
+    assert.match((error as WorkflowError).message, /No top-level frames\/components found/);
+    return true;
+  });
 });
 
 test("figmaToDesignIr throws path-aware validation errors for malformed payload", () => {
-  assert.throws(
-    () =>
-      figmaToDesignIr({
-        name: "Malformed",
-        document: {
-          id: "0:0",
-          type: "DOCUMENT",
-          children: [
-            {
-              type: "CANVAS",
-              children: []
-            }
-          ]
-        }
-      }),
-    /Invalid Figma payload: document\.children\[0\]\.id:/
-  );
+  assert.throws(() =>
+    figmaToDesignIr({
+      name: "Malformed",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [
+          {
+            type: "CANVAS",
+            children: []
+          }
+        ]
+      }
+    }), (error: unknown) => {
+    assert.equal(error instanceof WorkflowError, true);
+    assert.equal((error as WorkflowError).code, PARITY_WORKFLOW_ERROR_CODES.invalidFigmaPayload);
+    assert.match((error as WorkflowError).message, /Invalid Figma payload: document\.children\[0\]\.id:/);
+    return true;
+  });
 });
 
 test("figmaToDesignIr falls back to a deterministic source name when the payload omits name", () => {

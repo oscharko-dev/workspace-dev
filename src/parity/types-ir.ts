@@ -1,3 +1,5 @@
+import type { GeneratedSourceValidationSkippedSummary } from "./generated-source-validation.js";
+
 export interface DesignTokenPalette {
   primary: string;
   secondary: string;
@@ -555,6 +557,7 @@ export interface GenerationMetrics {
   prototypeNavigationRendered?: number;
   nodeDiagnostics?: NodeDiagnosticEntry[];
   mcpCoverage?: McpCoverageMetric;
+  generatedSourceValidation?: GeneratedSourceValidationSkippedSummary;
 }
 
 export interface DesignIR {

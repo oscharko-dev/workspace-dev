@@ -61,6 +61,7 @@ import type { InteractiveFieldModel } from "./generator-forms.js";
 import type { AccessibilityWarning } from "./generator-a11y.js";
 import { toElementSx } from "./generator-templates.js";
 import type { ResolvedStorybookTypographyStyle } from "../storybook/theme-resolver.js";
+import type { GeneratedSourceValidationSkippedState } from "./generated-source-validation.js";
 
 
 
@@ -1029,6 +1030,7 @@ export interface RenderContext {
   pageBackgroundColorNormalized: string | undefined;
   themeComponentDefaults?: ThemeComponentDefaults;
   themeSxSampleCollector?: ThemeSxSampleCollector;
+  generatedSourceValidationSkips?: GeneratedSourceValidationSkippedState[] | undefined;
   responsiveTopLevelLayoutOverrides?: Record<string, ScreenResponsiveLayoutOverridesByBreakpoint>;
   extractionInvocationByNodeId: Map<string, PatternExtractionInvocation>;
   consumedExtractionComponentNames: Set<string>;
