@@ -35,6 +35,23 @@ const createEmptySignalReferences = (): StorybookCatalogSignalReferences => ({
   css: []
 });
 
+const extractSerializedHostNames = (serialized: string): string[] => {
+  return Array.from(serialized.matchAll(/https?:\/\/[^\s"']+/g))
+    .map((match) => {
+      try {
+        return new URL(match[0]).hostname;
+      } catch {
+        return null;
+      }
+    })
+    .filter((host): host is string => host !== null);
+};
+
+const containsFigmaDomain = (serialized: string): boolean => {
+  const hosts = extractSerializedHostNames(serialized);
+  return hosts.some((host) => host === "figma.com" || host.endsWith(".figma.com"));
+};
+
 const createFigmaFamily = ({
   familyKey,
   familyName,
@@ -1545,16 +1562,7 @@ test("buildComponentMatchReportArtifact reports family mismatches while preservi
   const serialized = serializeComponentMatchReportArtifact({ artifact });
   assert.equal(serialized.includes("importPath"), false);
   assert.equal(serialized.includes("componentPath"), false);
-  const parsedHosts = Array.from(serialized.matchAll(/https?:\/\/[^\s"']+/g))
-    .map((match) => {
-      try {
-        return new URL(match[0]).hostname;
-      } catch {
-        return null;
-      }
-    })
-    .filter((host): host is string => host !== null);
-  assert.equal(parsedHosts.includes("www.figma.com"), false);
+  assert.equal(containsFigmaDomain(serialized), false);
   assert.equal(serialized.includes("figmaLibraryResolution"), true);
   assert.equal(serialized.includes("originFileKey"), true);
   assert.equal(serialized.includes("lib-file"), true);
@@ -1618,7 +1626,7 @@ test("serializeComponentMatchReportArtifact is byte-stable and preserves figma p
   assert.equal(firstBytes.includes("bundlePath"), false);
   assert.equal(firstBytes.includes("iframeBundlePath"), false);
   assert.equal(firstBytes.includes("buildRoot"), false);
-  assert.equal(firstBytes.includes("https://www.figma.com"), false);
+  assert.equal(containsFigmaDomain(firstBytes), false);
   assert.equal(firstBytes.includes("figmaLibraryResolution"), true);
   assert.equal(firstBytes.includes("originFileKey"), true);
   assert.equal(firstBytes.includes("lib-file"), true);

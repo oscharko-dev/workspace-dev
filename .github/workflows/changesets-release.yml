@@ -207,12 +207,12 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+          npm-version: 11.3.0
 
-      - name: Upgrade npm for trusted publishing
+      - name: Verify npm version for trusted publishing
         shell: bash
         run: |
           set -euo pipefail
-          npm install --global --ignore-scripts npm@11
           npm --version
 
       - name: Install dependencies

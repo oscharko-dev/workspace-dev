@@ -1677,6 +1677,13 @@ export const renderSemanticAccordion = (
     })
   ]);
 
+  const validatedExplicitDetailsContent = validateRenderedElementFragment({
+    raw: renderedDetails || "",
+    element,
+    context,
+    renderSource: "rendered accordion details"
+  });
+
   const baseAccordionLayoutEntries = baseLayoutEntries(element, parent, {
     spacingBase: context.spacingBase,
     tokens: context.tokens,
@@ -1698,11 +1705,15 @@ export const renderSemanticAccordion = (
   if (!renderedSummary) {
     registerMuiImports(context, "Typography");
   }
+  const detailsContent = hasExplicitSlots
+    ? validatedExplicitDetailsContent
+    : validatedExplicitDetailsContent || `${indent}      <Box />`;
+
   const detailsBlock =
-    !hasExplicitSlots || renderedDetails.trim()
+    !hasExplicitSlots || validatedExplicitDetailsContent.trim()
       ? `${indent}  <AccordionDetails id={${literal(accordionPanelId)}} role="region" aria-labelledby={${literal(accordionHeaderId)}} sx={{ p: 0 }}>
 ${indent}    <Box sx={{ ${detailsSx} }}>
-${renderedDetails || `${indent}      <Box />`}
+${detailsContent}
 ${indent}    </Box>
 ${indent}  </AccordionDetails>`
       : "";

@@ -43,7 +43,6 @@ on:
 permissions:
   actions: read
   contents: read
-  checks: write
 
 jobs:
   benchmark:
