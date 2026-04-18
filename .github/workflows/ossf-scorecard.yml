@@ -10,10 +10,15 @@ on:
 permissions:
   actions: read
   contents: read
-  security-events: write
 
 jobs:
   analysis:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/dev'
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -27,10 +32,9 @@ jobs:
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
-          # Keep PR/main gates deterministic: publish SARIF to GitHub only.
-          # publish_results=true requires stricter workflow permissions than
-          # this repository currently allows and causes hard CI failures.
-          publish_results: false
+          # Publication is limited to dev; non-dev manual dispatches take the
+          # fallback path below instead of invoking the Scorecard action.
+          publish_results: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Upload Scorecard SARIF
         if: github.event_name != 'push'
@@ -44,3 +48,12 @@ jobs:
           name: scorecard-results
           path: scorecard-results.sarif
           if-no-files-found: error
+
+  manual-non-dev-info:
+    if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain dev-only publication behavior
+        run: |
+          echo "Skipping OSSF Scorecard analysis for manual runs outside refs/heads/dev."
+          echo "Publishable Scorecard analysis runs only from the dev branch."
