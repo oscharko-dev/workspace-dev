@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { createElement } from "react";
 import { PreviewPane } from "./PreviewPane";
 
@@ -26,16 +32,24 @@ vi.mock("./InspectOverlay", () => ({
 vi.mock("./ScreenshotPreview", () => ({
   ScreenshotPreview: ({
     screenshotUrl,
+    badgeText,
     stageName,
-    externalOffsetY: _externalOffsetY,
+    externalOffsetY,
   }: {
     screenshotUrl: string;
+    badgeText?: string;
     stageName?: string;
     externalOffsetY?: number;
   }) =>
     createElement(
       "div",
-      { "data-testid": "screenshot-preview" },
+      {
+        "data-testid": "screenshot-preview",
+        "data-screenshot-url": screenshotUrl,
+        "data-badge-text": badgeText ?? "",
+        "data-stage-name": stageName ?? "",
+        "data-external-offset-y": String(externalOffsetY ?? 0),
+      },
       createElement("img", {
         src: screenshotUrl,
         alt: "Figma design preview",
@@ -430,5 +444,95 @@ describe("PreviewPane — split view", () => {
     expect(consoleError).not.toHaveBeenCalled();
 
     consoleError.mockRestore();
+  });
+
+  it("propagates iframe scroll as negative externalOffsetY on ScreenshotPreview", () => {
+    // Stub HTMLIFrameElement.prototype.contentWindow so the sync effect can
+    // probe same-origin and register its scroll listener.
+    const listeners = new Set<EventListener>();
+    let currentScrollY = 0;
+    const fakeWin: Partial<Window> & {
+      addEventListener: Window["addEventListener"];
+      removeEventListener: Window["removeEventListener"];
+    } = {
+      get document() {
+        return { documentElement: {} } as unknown as Document;
+      },
+      get scrollY() {
+        return currentScrollY;
+      },
+      addEventListener: ((type: string, listener: EventListener) => {
+        if (type === "scroll") listeners.add(listener);
+      }) as Window["addEventListener"],
+      removeEventListener: ((type: string, listener: EventListener) => {
+        if (type === "scroll") listeners.delete(listener);
+      }) as Window["removeEventListener"],
+    };
+
+    const originalDesc = Object.getOwnPropertyDescriptor(
+      HTMLIFrameElement.prototype,
+      "contentWindow",
+    );
+    Object.defineProperty(HTMLIFrameElement.prototype, "contentWindow", {
+      configurable: true,
+      get() {
+        return fakeWin as Window;
+      },
+    });
+
+    try {
+      window.localStorage.setItem("workspace-dev:inspector:preview-split", "1");
+
+      render(
+        createElement(PreviewPane, {
+          previewUrl: "http://127.0.0.1:4010/preview",
+          pipelineStage: "generating",
+          screenshot: "http://cdn.example.com/shot.png",
+          inspectEnabled: false,
+          activeScopeNodeId: null,
+          onToggleInspect: () => {
+            /* no-op */
+          },
+          onInspectSelect: () => {
+            /* no-op */
+          },
+        }),
+      );
+
+      const preview = screen.getByTestId("screenshot-preview");
+      expect(preview).toHaveAttribute("data-external-offset-y", "0");
+      expect(listeners.size).toBe(1);
+
+      // Fire a scroll — handler should read scrollY and update state.
+      act(() => {
+        currentScrollY = 42;
+        for (const handler of listeners) handler(new Event("scroll"));
+      });
+
+      expect(screen.getByTestId("screenshot-preview")).toHaveAttribute(
+        "data-external-offset-y",
+        "-42",
+      );
+
+      // Scroll again; sign mirrors iframe scroll direction.
+      act(() => {
+        currentScrollY = 100;
+        for (const handler of listeners) handler(new Event("scroll"));
+      });
+      expect(screen.getByTestId("screenshot-preview")).toHaveAttribute(
+        "data-external-offset-y",
+        "-100",
+      );
+    } finally {
+      if (originalDesc) {
+        Object.defineProperty(
+          HTMLIFrameElement.prototype,
+          "contentWindow",
+          originalDesc,
+        );
+      } else {
+        Reflect.deleteProperty(HTMLIFrameElement.prototype, "contentWindow");
+      }
+    }
   });
 });
