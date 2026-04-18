@@ -92,11 +92,13 @@ jobs:
         if: steps.resolve.outputs.skip == 'false' && steps.payload.outputs.found == 'true'
         env:
           VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: "false"
+          REPORT_PATH: ${{ steps.payload.outputs.report_path }}
+          ARTIFACT_RUN_URL: ${{ steps.resolve.outputs.artifact_run_url }}
         run: >-
           node scripts/print-visual-benchmark-pr-comment.mjs
-          "${{ steps.payload.outputs.report_path }}"
+          "$REPORT_PATH"
           --output downloaded-artifact/rendered-pr-comment.json
-          --artifact-url "${{ steps.resolve.outputs.artifact_run_url }}"
+          --artifact-url "$ARTIFACT_RUN_URL"
 
       - name: Post or update visual benchmark PR comment
         if: steps.resolve.outputs.skip == 'false' && steps.payload.outputs.found == 'true'
