@@ -6,9 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  id-token: write
+  contents: read
 
 jobs:
   quality-matrix:
@@ -19,6 +17,8 @@ jobs:
         node-version: [22, 24]
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
         with:
@@ -107,6 +107,8 @@ jobs:
     continue-on-error: true
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
         with:
@@ -154,6 +156,8 @@ jobs:
     needs: quality-matrix
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@v6
         with:
@@ -186,6 +190,10 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: [quality-matrix, performance-web, mutation-testing]
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@v6
 
