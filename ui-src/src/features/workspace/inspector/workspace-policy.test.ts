@@ -125,9 +125,13 @@ describe("parseWorkspacePolicyPayload", () => {
     expect(result.source).toBe("invalid-server-payload");
     expect(result.policy).toEqual(DEFAULT_WORKSPACE_POLICY);
     expect(result.warning).toContain("invalid");
+    expect(result.validation).toEqual({
+      state: "rejected",
+      diagnostics: [],
+    });
   });
 
-  it("preserves valid partial policies and server warnings", () => {
+  it("preserves valid partial policies and explicit degraded validation warnings", () => {
     const result = parseWorkspacePolicyPayload({
       policy: {
         governance: {
@@ -138,10 +142,34 @@ describe("parseWorkspacePolicyPayload", () => {
         },
       },
       warning: "Regex-like governance patterns were dropped.",
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "GOVERNANCE_PATTERN_DROPPED",
+            path: "governance.securitySensitivePatterns[1]",
+            message: 'Dropped regex-like pattern "auth.".',
+            valuePreview: "auth.",
+          },
+        ],
+      },
     });
 
     expect(result.source).toBe("server");
     expect(result.warning).toBe("Regex-like governance patterns were dropped.");
+    expect(result.validation).toEqual({
+      state: "degraded",
+      diagnostics: [
+        {
+          severity: "warning",
+          code: "GOVERNANCE_PATTERN_DROPPED",
+          path: "governance.securitySensitivePatterns[1]",
+          message: 'Dropped regex-like pattern "auth.".',
+          valuePreview: "auth.",
+        },
+      ],
+    });
     expect(result.policy.quality.maxAcceptableDepth).toBe(2);
     expect(result.policy.governance.securitySensitivePatterns).toEqual([
       "password",
@@ -154,6 +182,114 @@ describe("parseWorkspacePolicyPayload", () => {
       policy: DEFAULT_WORKSPACE_POLICY,
       source: "defaults",
       warning: null,
+      validation: {
+        state: "absent",
+        diagnostics: [],
+      },
+    });
+  });
+
+  it("distinguishes rejected server policy from normal defaults", () => {
+    const result = parseWorkspacePolicyPayload({
+      policy: null,
+      warning:
+        "Workspace inspector policy file failed validation and was ignored.",
+      validation: {
+        state: "rejected",
+        diagnostics: [
+          {
+            severity: "error",
+            code: "QUALITY_MAX_DEPTH_INVALID",
+            path: "quality.maxAcceptableDepth",
+            message: "Expected a finite number at least 0.",
+            valuePreview: "deep",
+          },
+        ],
+      },
+    });
+
+    expect(result.policy).toEqual(DEFAULT_WORKSPACE_POLICY);
+    expect(result.source).toBe("rejected-server-policy");
+    expect(result.warning).toBe(
+      "Workspace inspector policy file failed validation and was ignored.",
+    );
+    expect(result.validation).toEqual({
+      state: "rejected",
+      diagnostics: [
+        {
+          severity: "error",
+          code: "QUALITY_MAX_DEPTH_INVALID",
+          path: "quality.maxAcceptableDepth",
+          message: "Expected a finite number at least 0.",
+          valuePreview: "deep",
+        },
+      ],
+    });
+  });
+
+  it("treats legacy warning-only payloads as degraded without discarding the policy", () => {
+    const result = parseWorkspacePolicyPayload({
+      policy: {
+        quality: {
+          maxAcceptableDepth: 2,
+        },
+      },
+      warning: "Some policy entries were dropped.",
+    });
+
+    expect(result.source).toBe("server");
+    expect(result.validation).toEqual({
+      state: "degraded",
+      diagnostics: [],
+    });
+    expect(result.policy.quality.maxAcceptableDepth).toBe(2);
+    expect(result.warning).toBe("Some policy entries were dropped.");
+  });
+
+  it("ignores malformed validation sidecars and keeps a valid policy active", () => {
+    const result = parseWorkspacePolicyPayload({
+      policy: {
+        quality: {
+          maxAcceptableDepth: 2,
+        },
+      },
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "BAD_DIAGNOSTIC",
+            message: "Missing path should invalidate the sidecar.",
+          },
+        ],
+      },
+    });
+
+    expect(result.source).toBe("server");
+    expect(result.policy.quality.maxAcceptableDepth).toBe(2);
+    expect(result.validation).toEqual({
+      state: "loaded",
+      diagnostics: [],
+    });
+    expect(result.warning).toBeNull();
+  });
+
+  it("falls back to inferred rejected state when a null policy has malformed validation metadata", () => {
+    const result = parseWorkspacePolicyPayload({
+      policy: null,
+      warning: "Workspace inspector policy file was ignored.",
+      validation: {
+        state: "wat",
+        diagnostics: "bad",
+      },
+    });
+
+    expect(result.source).toBe("rejected-server-policy");
+    expect(result.policy).toEqual(DEFAULT_WORKSPACE_POLICY);
+    expect(result.warning).toBe("Workspace inspector policy file was ignored.");
+    expect(result.validation).toEqual({
+      state: "rejected",
+      diagnostics: [],
     });
   });
 });

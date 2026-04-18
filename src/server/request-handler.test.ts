@@ -281,6 +281,10 @@ test("request handler returns null inspector policy when the file is absent", as
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.json<Record<string, unknown>>(), {
       policy: null,
+      validation: {
+        state: "absent",
+        diagnostics: [],
+      },
     });
   } finally {
     await close();
@@ -342,6 +346,10 @@ test("request handler returns the parsed inspector policy when the file is valid
           securitySensitivePatterns: ["password", "(auth)", "C++"],
           requireNoteOnOverride: false,
         },
+      },
+      validation: {
+        state: "loaded",
+        diagnostics: [],
       },
     });
   } finally {
@@ -1622,7 +1630,7 @@ test("request handler rejects DELETE on /events as an unknown write route", asyn
   }
 });
 
-test("request handler soft-fails structurally invalid inspector policy files and logs a warning", async (t) => {
+test("request handler returns rejected inspector policy diagnostics and logs an error", async (t) => {
   const capturedLogs: WorkspaceRuntimeLogInput[] = [];
   const logger = createStubLogger({
     log: (input) => {
@@ -1669,14 +1677,24 @@ test("request handler soft-fails structurally invalid inspector policy files and
         });
 
         assert.equal(response.statusCode, 200);
-        assert.deepEqual(response.json<Record<string, unknown>>(), {
-          policy: null,
-        });
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.policy, null);
+        assert.equal(
+          (body.validation as { state?: string } | undefined)?.state,
+          "rejected",
+        );
+        assert.equal(typeof body.warning, "string");
+        assert.ok(
+          Array.isArray(
+            (body.validation as { diagnostics?: unknown[] } | undefined)
+              ?.diagnostics,
+          ),
+        );
 
         const warningLog = capturedLogs.find(
           (entry) => entry.event === "workspace.inspector_policy.invalid",
         );
-        assert.equal(warningLog?.level, "warn");
+        assert.equal(warningLog?.level, "error");
         assert.equal(warningLog?.method, "GET");
         assert.equal(warningLog?.path, "/workspace/inspector-policy");
         assert.equal(warningLog?.statusCode, 200);
@@ -1732,6 +1750,27 @@ test("request handler returns salvaged inspector policy and logs dropped governa
           requireNoteOnOverride: false,
         },
       },
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "regex_like_pattern_dropped",
+            path: "governance.securitySensitivePatterns[1]",
+            message:
+              "Dropped regex-like governance pattern; only literal string matches are allowed.",
+            valuePreview: '"auth."',
+          },
+          {
+            severity: "warning",
+            code: "regex_like_pattern_dropped",
+            path: "governance.securitySensitivePatterns[3]",
+            message:
+              "Dropped regex-like governance pattern; only literal string matches are allowed.",
+            valuePreview: '"^admin$"',
+          },
+        ],
+      },
       warning:
         'Inspector policy \'.workspace-inspector-policy.json\' dropped regex-style governance.securitySensitivePatterns entries: [1] "auth.", [3] "^admin$".',
     });
@@ -1750,6 +1789,84 @@ test("request handler returns salvaged inspector policy and logs dropped governa
     assert.match(
       String(warningLog?.message ?? ""),
       /\[3\] "\^admin\$"/,
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("request handler returns unknown-key diagnostics alongside regex-drop warnings", async () => {
+  const capturedLogs: WorkspaceRuntimeLogInput[] = [];
+  const logger = createStubLogger({
+    log: (input) => {
+      capturedLogs.push(input);
+    },
+  });
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    logger,
+  });
+
+  try {
+    await writeFile(
+      path.join(tempRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        governance: {
+          securitySensitivePatterns: ["auth", "^admin$"],
+          typoGovField: true,
+        },
+      }),
+      "utf8",
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/inspector-policy",
+      headers: {
+        "x-request-id": "req-inspector-policy-unknown-and-regex",
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json<Record<string, unknown>>(), {
+      policy: {
+        governance: {
+          securitySensitivePatterns: ["auth"],
+        },
+      },
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "unknown_key_ignored",
+            path: "governance.typoGovField",
+            message: "Ignored unknown inspector policy key.",
+          },
+          {
+            severity: "warning",
+            code: "regex_like_pattern_dropped",
+            path: "governance.securitySensitivePatterns[1]",
+            message:
+              "Dropped regex-like governance pattern; only literal string matches are allowed.",
+            valuePreview: '"^admin$"',
+          },
+        ],
+      },
+      warning:
+        'Inspector policy \'.workspace-inspector-policy.json\' ignored unknown keys: "governance.typoGovField". Inspector policy \'.workspace-inspector-policy.json\' dropped regex-style governance.securitySensitivePatterns entries: [1] "^admin$".',
+    });
+
+    const warningLog = capturedLogs.find(
+      (entry) => entry.event === "workspace.inspector_policy.invalid",
+    );
+    assert.equal(warningLog?.level, "warn");
+    assert.match(
+      String(warningLog?.message ?? ""),
+      /ignored unknown keys/,
+    );
+    assert.match(
+      String(warningLog?.message ?? ""),
+      /dropped regex-style/,
     );
   } finally {
     await close();

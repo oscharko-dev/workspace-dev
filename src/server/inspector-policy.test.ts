@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -190,6 +190,83 @@ test("loadInspectorPolicy returns governance from the workspace policy file", as
           requireNoteOnOverride: true,
         },
       },
+      validation: {
+        state: "loaded",
+        diagnostics: [],
+      },
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy rejects invalid JSON with validation diagnostics", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-invalid-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      "{not-valid-json",
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded, {
+      policy: null,
+      validation: {
+        state: "rejected",
+        diagnostics: [
+          {
+            severity: "error",
+            code: "invalid_json",
+            path: "$",
+            message: "The file contains invalid JSON.",
+          },
+        ],
+      },
+      warning:
+        "Inspector policy '.workspace-inspector-policy.json' is not valid JSON and was ignored.",
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy reports invalid enum diagnostics with field context", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-invalid-enum-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        quality: {
+          riskSeverityOverrides: {
+            "large-subtree": "urgent",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded, {
+      policy: null,
+      validation: {
+        state: "rejected",
+        diagnostics: [
+          {
+            severity: "error",
+            code: "invalid_enum",
+            path: "quality.riskSeverityOverrides.large-subtree",
+            message: "Expected one of: high, medium, low.",
+            valuePreview: '"urgent"',
+          },
+        ],
+      },
+      warning:
+        'Inspector policy \'.workspace-inspector-policy.json\' was rejected at quality.riskSeverityOverrides.large-subtree: Expected one of: high, medium, low. Received "urgent".',
     });
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
@@ -208,7 +285,13 @@ test("loadInspectorPolicy returns no warning for an empty policy object", async 
     );
 
     const loaded = await loadInspectorPolicy({ workspaceRoot });
-    assert.deepEqual(loaded, { policy: {} });
+    assert.deepEqual(loaded, {
+      policy: {},
+      validation: {
+        state: "loaded",
+        diagnostics: [],
+      },
+    });
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
   }
@@ -226,11 +309,22 @@ test("loadInspectorPolicy warns only at the root for a lone top-level unknown ke
     );
 
     const loaded = await loadInspectorPolicy({ workspaceRoot });
-    assert.deepEqual(loaded.policy, {});
-    assert.equal(
-      loaded.warning,
-      "Inspector policy '.workspace-inspector-policy.json' ignored unknown keys: \"typoTopLevel\".",
-    );
+    assert.deepEqual(loaded, {
+      policy: {},
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "unknown_key_ignored",
+            path: "typoTopLevel",
+            message: "Ignored unknown inspector policy key.",
+          },
+        ],
+      },
+      warning:
+        "Inspector policy '.workspace-inspector-policy.json' ignored unknown keys: \"typoTopLevel\".",
+    });
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
   }
@@ -250,13 +344,24 @@ test("loadInspectorPolicy formats a deeply nested unknown-key path correctly", a
     );
 
     const loaded = await loadInspectorPolicy({ workspaceRoot });
-    assert.deepEqual(loaded.policy, {
-      quality: { bandThresholds: {} },
+    assert.deepEqual(loaded, {
+      policy: {
+        quality: { bandThresholds: {} },
+      },
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "unknown_key_ignored",
+            path: "quality.bandThresholds.excelent",
+            message: "Ignored unknown inspector policy key.",
+          },
+        ],
+      },
+      warning:
+        'Inspector policy \'.workspace-inspector-policy.json\' ignored unknown keys: "quality.bandThresholds.excelent".',
     });
-    assert.equal(
-      loaded.warning,
-      "Inspector policy '.workspace-inspector-policy.json' ignored unknown keys: \"quality.bandThresholds.excelent\".",
-    );
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
   }
@@ -290,6 +395,10 @@ test("loadInspectorPolicy does not flag arbitrary rule IDs in riskSeverityOverri
           },
         },
       },
+      validation: {
+        state: "loaded",
+        diagnostics: [],
+      },
     });
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
@@ -312,9 +421,10 @@ test("loadInspectorPolicy does not leak unknown-key warnings when policy is inva
 
     const loaded = await loadInspectorPolicy({ workspaceRoot });
     assert.equal(loaded.policy, null);
+    assert.equal(loaded.validation.state, "rejected");
     assert.equal(
       loaded.warning,
-      `Inspector policy '.workspace-inspector-policy.json' has an invalid shape and was ignored.`,
+      "Inspector policy '.workspace-inspector-policy.json' was rejected at quality.weights.structure: Expected a finite number greater than or equal to 0. Received -1.",
     );
     assert.ok(
       !String(loaded.warning).includes("ignored unknown keys"),
@@ -377,12 +487,45 @@ test("loadInspectorPolicy warns on unknown keys at every nesting level", async (
     );
 
     const loaded = await loadInspectorPolicy({ workspaceRoot });
-    assert.deepEqual(loaded.policy, {
-      quality: {
-        bandThresholds: { excellent: 90 },
-        weights: { structure: 1 },
+    assert.deepEqual(loaded, {
+      policy: {
+        quality: {
+          bandThresholds: { excellent: 90 },
+          weights: { structure: 1 },
+        },
+        governance: { minQualityScoreToApply: 70 },
       },
-      governance: { minQualityScoreToApply: 70 },
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "unknown_key_ignored",
+            path: "bandthresholds",
+            message: "Ignored unknown inspector policy key.",
+          },
+          {
+            severity: "warning",
+            code: "unknown_key_ignored",
+            path: "quality.bandThresholds.typoThreshold",
+            message: "Ignored unknown inspector policy key.",
+          },
+          {
+            severity: "warning",
+            code: "unknown_key_ignored",
+            path: "quality.weights.typoWeight",
+            message: "Ignored unknown inspector policy key.",
+          },
+          {
+            severity: "warning",
+            code: "unknown_key_ignored",
+            path: "governance.securitysensitivepatterns",
+            message: "Ignored unknown inspector policy key.",
+          },
+        ],
+      },
+      warning:
+        'Inspector policy \'.workspace-inspector-policy.json\' ignored unknown keys: "bandthresholds", "quality.bandThresholds.typoThreshold", "quality.weights.typoWeight", "governance.securitysensitivepatterns".',
     });
     assert.match(String(loaded.warning ?? ""), /ignored unknown keys/);
     const warning = String(loaded.warning);
@@ -419,6 +562,25 @@ test("loadInspectorPolicy combines unknown-key and regex-drop warnings", async (
     );
 
     const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded.validation, {
+      state: "degraded",
+      diagnostics: [
+        {
+          severity: "warning",
+          code: "unknown_key_ignored",
+          path: "governance.typoGovField",
+          message: "Ignored unknown inspector policy key.",
+        },
+        {
+          severity: "warning",
+          code: "regex_like_pattern_dropped",
+          path: "governance.securitySensitivePatterns[1]",
+          message:
+            "Dropped regex-like governance pattern; only literal string matches are allowed.",
+          valuePreview: '"^admin$"',
+        },
+      ],
+    });
     const warning = String(loaded.warning ?? "");
     assert.match(warning, /ignored unknown keys/);
     assert.match(warning, /dropped regex-style/);
@@ -428,9 +590,122 @@ test("loadInspectorPolicy combines unknown-key and regex-drop warnings", async (
   }
 });
 
+test("loadInspectorPolicy reports out-of-range numeric diagnostics with field context", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-out-of-range-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        quality: {
+          bandThresholds: {
+            excellent: 101,
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded, {
+      policy: null,
+      validation: {
+        state: "rejected",
+        diagnostics: [
+          {
+            severity: "error",
+            code: "out_of_range",
+            path: "quality.bandThresholds.excellent",
+            message: "Expected a finite number between 0 and 100.",
+            valuePreview: "101",
+          },
+        ],
+      },
+      warning:
+        "Inspector policy '.workspace-inspector-policy.json' was rejected at quality.bandThresholds.excellent: Expected a finite number between 0 and 100. Received 101.",
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy captures dropped governance entries when a later fatal validation rejects the policy", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-rejected-governance-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        governance: {
+          securitySensitivePatterns: ["password", "auth.", "(auth)", "^admin$"],
+          requireNoteOnOverride: "yes",
+        },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded, {
+      policy: null,
+      validation: {
+        state: "rejected",
+        diagnostics: [
+          {
+            severity: "error",
+            code: "invalid_type",
+            path: "governance.requireNoteOnOverride",
+            message: "Expected a boolean.",
+            valuePreview: '"yes"',
+          },
+          {
+            severity: "warning",
+            code: "regex_like_pattern_dropped",
+            path: "governance.securitySensitivePatterns[1]",
+            message:
+              "Dropped regex-like governance pattern; only literal string matches are allowed.",
+            valuePreview: '"auth."',
+          },
+          {
+            severity: "warning",
+            code: "regex_like_pattern_dropped",
+            path: "governance.securitySensitivePatterns[3]",
+            message:
+              "Dropped regex-like governance pattern; only literal string matches are allowed.",
+            valuePreview: '"^admin$"',
+          },
+        ],
+      },
+      warning:
+        'Inspector policy \'.workspace-inspector-policy.json\' was rejected at governance.requireNoteOnOverride: Expected a boolean. Received "yes". Dropped regex-style governance.securitySensitivePatterns entries before rejection: [1] "auth.", [3] "^admin$".',
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy rejects unreadable policy files with file diagnostics", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-unreadable-"),
+  );
+  try {
+    await mkdir(path.join(workspaceRoot, ".workspace-inspector-policy.json"));
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.equal(loaded.policy, null);
+    assert.equal(loaded.validation.state, "rejected");
+    assert.equal(loaded.validation.diagnostics[0]?.code, "file_unreadable");
+    assert.equal(loaded.validation.diagnostics[0]?.path, "$");
+    assert.match(String(loaded.warning ?? ""), /Failed to load inspector policy/);
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
 test("loadInspectorPolicy drops regex-style governance patterns and warns", async () => {
   const workspaceRoot = await mkdtemp(
-    path.join(os.tmpdir(), "workspace-inspector-policy-invalid-"),
+    path.join(os.tmpdir(), "workspace-inspector-policy-degraded-"),
   );
   try {
     await writeFile(
@@ -453,6 +728,27 @@ test("loadInspectorPolicy drops regex-style governance patterns and warns", asyn
           securitySensitivePatterns: ["auth", "(auth)"],
           requireNoteOnOverride: true,
         },
+      },
+      validation: {
+        state: "degraded",
+        diagnostics: [
+          {
+            severity: "warning",
+            code: "regex_like_pattern_dropped",
+            path: "governance.securitySensitivePatterns[1]",
+            message:
+              "Dropped regex-like governance pattern; only literal string matches are allowed.",
+            valuePreview: '"auth."',
+          },
+          {
+            severity: "warning",
+            code: "regex_like_pattern_dropped",
+            path: "governance.securitySensitivePatterns[3]",
+            message:
+              "Dropped regex-like governance pattern; only literal string matches are allowed.",
+            valuePreview: '"^admin$"',
+          },
+        ],
       },
       warning:
         'Inspector policy \'.workspace-inspector-policy.json\' dropped regex-style governance.securitySensitivePatterns entries: [1] "auth.", [3] "^admin$".',
