@@ -25,6 +25,7 @@ pnpm-debug.log*
 !.env.sample
 .tmp/
 .workspace-dev/
+/.benchmark-runtime/
 /sandbox/
 /testdata/
 
