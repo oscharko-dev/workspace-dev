@@ -17,7 +17,7 @@ export const resolveBoardKey = (figmaFileKey: string): string => {
     throw new Error("Cannot resolve board key: figmaFileKey is empty");
   }
 
-  const hash = createHash("sha1").update(trimmed).digest("hex").slice(0, 10);
+  const hash = createHash("sha256").update(trimmed).digest("hex").slice(0, 10);
   const slug = toSlug(trimmed).slice(0, 64);
   const candidate = `${slug || "board"}-${hash}`;
   if (!BOARD_KEY_PATTERN.test(candidate)) {

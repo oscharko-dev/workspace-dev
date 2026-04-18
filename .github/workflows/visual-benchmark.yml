@@ -277,15 +277,21 @@ jobs:
 
       - name: Install Playwright browser (${{ matrix.browser }})
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+        env:
+          MATRIX_BROWSER: ${{ matrix.browser }}
+        run: pnpm exec playwright install --with-deps "$MATRIX_BROWSER"
 
       - name: Install Playwright OS deps (cache hit) (${{ matrix.browser }})
         if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps ${{ matrix.browser }}
+        env:
+          MATRIX_BROWSER: ${{ matrix.browser }}
+        run: pnpm exec playwright install-deps "$MATRIX_BROWSER"
 
       - name: Run frozen visual benchmark runner (${{ matrix.browser }})
+        env:
+          MATRIX_BROWSER: ${{ matrix.browser }}
         run: >-
-          pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "${{ matrix.browser }}"
+          pnpm benchmark:visual -- --ci --enforce-thresholds --browsers "$MATRIX_BROWSER"
           --storybook-component-catalog integration/fixtures/customer-board-golden/derived/storybook.component-visual-catalog.json
           --storybook-static-dir storybook-static/storybook-static
 

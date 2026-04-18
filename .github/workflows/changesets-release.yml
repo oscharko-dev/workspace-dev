@@ -390,6 +390,10 @@ jobs:
       - name: Release summary
         if: always()
         shell: bash
+        env:
+          PUBLISH_AUTH_MODE: ${{ steps.npm_auth_mode.outputs.auth_mode }}
+          GITHUB_RELEASE_TAG: ${{ steps.github_release.outputs.tag }}
+          GITHUB_RELEASE_URL: ${{ steps.github_release.outputs.url }}
         run: |
           CURRENT_VERSION="$(node -p "require('./package.json').version")"
           if [[ "$CURRENT_VERSION" == *-* ]]; then
@@ -404,7 +408,7 @@ jobs:
           echo "|------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Version (current package.json) | \`${CURRENT_VERSION}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| npm tag lane | \`${CURRENT_NPM_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Publish auth mode | \`${{ steps.npm_auth_mode.outputs.auth_mode }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Publish auth mode | \`${PUBLISH_AUTH_MODE}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Provenance path | \`pnpm run release:changesets:publish\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| GitHub release tag | \`${{ steps.github_release.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| GitHub release URL | ${{ steps.github_release.outputs.url }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub release tag | \`${GITHUB_RELEASE_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GitHub release URL | ${GITHUB_RELEASE_URL} |" >> "$GITHUB_STEP_SUMMARY"
