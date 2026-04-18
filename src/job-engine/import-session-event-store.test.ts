@@ -1226,3 +1226,43 @@ test("concurrent append with retention: all sequences remain strictly increasing
     await rm(rootDir, { recursive: true, force: true });
   }
 });
+
+test("concurrent append + deleteAllForSession is ordered: either file is deleted or contains only post-delete events", async () => {
+  const rootDir = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-import-session-events-"),
+  );
+  try {
+    const store = createImportSessionEventStore({ rootDir });
+    for (let index = 1; index <= 5; index += 1) {
+      await store.append(
+        makeEvent({
+          id: `event-${index}`,
+          kind: "note",
+          note: `note-${index}`,
+          at: `2026-04-15T10:0${index}:00.000Z`,
+        }),
+      );
+    }
+
+    await Promise.all([
+      store.append(
+        makeEvent({
+          id: "event-6",
+          kind: "note",
+          note: "note-6",
+          at: "2026-04-15T10:06:00.000Z",
+        }),
+      ),
+      store.deleteAllForSession("session-1"),
+    ]);
+
+    const listed = await store.list("session-1");
+    const ids = listed.map((entry) => entry.id);
+    assert.ok(
+      ids.length === 0 || (ids.length === 1 && ids[0] === "event-6"),
+      `expected either [] or ["event-6"], got ${JSON.stringify(ids)}`,
+    );
+  } finally {
+    await rm(rootDir, { recursive: true, force: true });
+  }
+});
