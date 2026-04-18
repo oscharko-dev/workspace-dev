@@ -125,11 +125,11 @@ jobs:
 
       - name: Install generated app dependencies for perf assertions
         if: always()
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
+        run: cd template/react-mui-app && pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build generated app for perf assertions
         if: always()
-        run: pnpm --dir template/react-mui-app run build
+        run: cd template/react-mui-app && pnpm run build
 
       - name: Run performance assertion for composite quality
         if: always()

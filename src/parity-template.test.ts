@@ -56,7 +56,7 @@ const toSemverMajor = (versionRange: string | undefined): number | undefined => 
 
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> = {
   "package.json": "0f8d9e31d98137e4488d21bc6fb47c17d05c03e8d7a179dae99301ed87eb3ea1",
-  "pnpm-lock.yaml": "3a5d3271d84f6f8ca744a9dafd94b8f5aed6f806922510a20eda21564e327266",
+  "pnpm-lock.yaml": "26bf7de42d30d626bc3965db318771a821938b2c4ccf46222f8526ba36a3139b",
   "vite.config.ts": "7afffdfa2dc74d6306cd107d1f1410621755f50702b4c9374ed0a40c80241d05",
   "tsconfig.json": "46145f2477e39d3f2d7048e04a23afbb24b9c529981a8d37dbac09faea5bb808",
   "eslint.config.js": "5c8adc94a29be71c2124aed12738dc5497d844db2225c986b2b1ec5401cbe684",
