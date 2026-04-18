@@ -28,6 +28,8 @@ export interface ImportSessionMatchQuery {
   pasteIdentityKey?: string | null;
   fileKey?: string;
   nodeId?: string;
+  allowFileKeyFallback?: boolean;
+  sourceMode?: WorkspaceImportSession["sourceMode"];
 }
 
 export interface ImportSessionStore {
@@ -162,6 +164,8 @@ const matchesImportSession = ({
 
   const fileKey = sanitizeQueryString(query.fileKey);
   const nodeId = sanitizeQueryString(query.nodeId);
+  const allowFileKeyFallback = query.allowFileKeyFallback === true;
+  const querySourceMode = sanitizeQueryString(query.sourceMode);
   if (
     fileKey !== null &&
     nodeId !== null &&
@@ -171,7 +175,15 @@ const matchesImportSession = ({
     return true;
   }
 
-  return fileKey !== null && nodeId === null && session.fileKey === fileKey;
+  return (
+    allowFileKeyFallback &&
+    fileKey !== null &&
+    nodeId === null &&
+    querySourceMode !== null &&
+    session.fileKey === fileKey &&
+    session.nodeId.trim().length === 0 &&
+    session.sourceMode === querySourceMode
+  );
 };
 
 const readSessionsFile = async ({

@@ -17,7 +17,7 @@ test("integration: PR auto-close warning workflow stays warning-only and keyword
   assert.match(workflow, /types: \[opened, edited, reopened, synchronize, closed\]/);
   assert.match(workflow, /pull-requests: write/);
   assert.match(workflow, /actions\/checkout@v6/);
-  assert.match(workflow, /actions\/github-script@v8/);
+  assert.match(workflow, /actions\/github-script@v9/);
   assert.match(workflow, /core\.warning\(/);
   assert.match(workflow, /issues\.createComment/);
   assert.match(workflow, /issues\.updateComment/);

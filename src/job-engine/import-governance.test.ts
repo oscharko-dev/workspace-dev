@@ -305,6 +305,120 @@ test("createJobEngine persists authoritative governance state and rejects invali
   assert.equal(applied?.status, "applied");
 });
 
+test("createJobEngine does not reuse file-key-only sessions for figma_paste imports without nodeId", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-import-governance-paste-session-"),
+  );
+  const figmaPath = path.join(tempRoot, "figma.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false,
+    }),
+  });
+
+  const firstAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaFileKey: "FILE-PASTE",
+    figmaSourceMode: "local_json",
+    requestSourceMode: "figma_paste",
+  });
+  const firstStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: firstAccepted.jobId,
+  });
+  assert.equal(firstStatus.status, "completed");
+
+  const secondAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaFileKey: "FILE-PASTE",
+    figmaSourceMode: "local_json",
+    requestSourceMode: "figma_paste",
+  });
+  const secondStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: secondAccepted.jobId,
+  });
+  assert.equal(secondStatus.status, "completed");
+
+  const sessions = await engine.listImportSessions();
+  assert.equal(sessions.length, 2);
+  assert.equal(
+    sessions.every(
+      (session) =>
+        session.fileKey === "FILE-PASTE" &&
+        session.nodeId === "" &&
+        session.sourceMode === "figma_paste",
+    ),
+    true,
+  );
+  assert.notEqual(sessions[0]?.id, sessions[1]?.id);
+});
+
+test("createJobEngine reuses whole-file sessions for stable non-paste imports without nodeId", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-import-governance-whole-file-session-"),
+  );
+  const figmaPath = path.join(tempRoot, "figma.json");
+  await writeFile(figmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      installPreferOffline: true,
+      enableUiValidation: false,
+      enableUnitTestValidation: false,
+    }),
+  });
+
+  const firstAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaFileKey: "FILE-STABLE",
+    figmaSourceMode: "local_json",
+    requestSourceMode: "local_json",
+  });
+  const firstStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: firstAccepted.jobId,
+  });
+  assert.equal(firstStatus.status, "completed");
+
+  const secondAccepted = engine.submitJob({
+    figmaJsonPath: figmaPath,
+    figmaFileKey: "FILE-STABLE",
+    figmaSourceMode: "local_json",
+    requestSourceMode: "local_json",
+  });
+  const secondStatus = await waitForTerminalStatus({
+    getStatus: (jobId) => engine.getJob(jobId),
+    jobId: secondAccepted.jobId,
+  });
+  assert.equal(secondStatus.status, "completed");
+
+  const sessions = await engine.listImportSessions();
+  assert.equal(sessions.length, 1);
+  assert.equal(sessions[0]?.fileKey, "FILE-STABLE");
+  assert.equal(sessions[0]?.nodeId, "");
+  assert.equal(sessions[0]?.sourceMode, "local_json");
+  assert.equal(sessions[0]?.jobId, secondAccepted.jobId);
+});
+
 test("approveImportSession records review_started before approved and stays idempotent", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-import-governance-approve-"),
