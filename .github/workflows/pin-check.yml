@@ -37,7 +37,6 @@ jobs:
             exit 1
           fi
           echo "No dangerous pull_request_target + PR-head-checkout combos found."
-
       - name: Ensure every `uses:` reference is pinned to a 40-char commit SHA
         shell: bash
         run: |

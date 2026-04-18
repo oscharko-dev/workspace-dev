@@ -43,7 +43,6 @@ jobs:
 
       - name: Enforce workflow persist-credentials policy
         run: pnpm run verify:workflow-persist-credentials
-
       - name: Enforce dependency freshness (minimum-release-age) policy
         run: pnpm run verify:npmrc-freshness
 
