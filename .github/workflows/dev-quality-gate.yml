@@ -20,6 +20,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@71c92474e7e4f5bca283fb17ef80fba9cdb2b4b1  # v6
         with:
@@ -36,6 +38,11 @@ jobs:
       - name: Enforce workflow --ignore-scripts policy
         run: pnpm run verify:workflow-install-scripts
 
+      - name: Enforce pnpm onlyBuiltDependencies allowlist
+        run: pnpm run verify:built-deps-allowlist
+
+      - name: Enforce workflow persist-credentials policy
+        run: pnpm run verify:workflow-persist-credentials
       - name: Enforce dependency freshness (minimum-release-age) policy
         run: pnpm run verify:npmrc-freshness
 
@@ -137,6 +144,8 @@ jobs:
     needs: quality
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@71c92474e7e4f5bca283fb17ef80fba9cdb2b4b1  # v6
         with:
@@ -184,6 +193,8 @@ jobs:
     needs: quality
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
 
       - uses: pnpm/action-setup@71c92474e7e4f5bca283fb17ef80fba9cdb2b4b1  # v6
         with:

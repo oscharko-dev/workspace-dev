@@ -1,3 +1,7 @@
+import {
+  DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT,
+} from "./figma-payload-validation.js";
+
 /**
  * Clipboard envelope for Figma plugin → Inspector handoff.
  *
@@ -63,8 +67,52 @@ export type EnvelopeValidationResult =
   | { valid: true; envelope: ClipboardEnvelope }
   | { valid: false; issues: EnvelopeValidationIssue[] };
 
+export type EnvelopeComplexityValidationResult =
+  | { ok: true; selectionCount: number; rootCount: number; nodeCount: number }
+  | { ok: false; message: string; selectionCount: number; rootCount: number; nodeCount: number };
+
+export const DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT = 40;
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+const countSelectionNodes = ({
+  root,
+  maxNodeCount,
+}: {
+  root: unknown;
+  maxNodeCount: number;
+}): number => {
+  let nodeCount = 0;
+  const stack: unknown[] = [root];
+  const visited = new Set<object>();
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined || typeof current !== "object" || current === null) {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    nodeCount += 1;
+    if (nodeCount > maxNodeCount) {
+      return nodeCount;
+    }
+
+    const children = (current as { children?: unknown }).children;
+    if (!Array.isArray(children) || children.length === 0) {
+      continue;
+    }
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push(children[index]);
+    }
+  }
+
+  return nodeCount;
+};
 
 /**
  * Quick probe: returns `true` if `input` looks like a clipboard envelope
@@ -298,6 +346,50 @@ export function normalizeEnvelopeToFigmaFile(
     componentSets,
     styles,
   };
+}
+
+export function validateClipboardEnvelopeComplexity(
+  envelope: ClipboardEnvelope,
+): EnvelopeComplexityValidationResult {
+  const selectionCount = envelope.selections.length;
+  if (selectionCount > DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT) {
+    return {
+      ok: false,
+      message: `figmaJsonPayload exceeds the figma_paste selection count budget (${selectionCount} > ${DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT})`,
+      selectionCount,
+      rootCount: selectionCount,
+      nodeCount: 0,
+    };
+  }
+
+  let nodeCount = 1 + selectionCount;
+  if (nodeCount > DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT) {
+    return {
+      ok: false,
+      message: `figmaJsonPayload exceeds the figma_paste node count budget (${nodeCount} > ${DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT})`,
+      selectionCount,
+      rootCount: selectionCount,
+      nodeCount,
+    };
+  }
+
+  for (const selection of envelope.selections) {
+    nodeCount += countSelectionNodes({
+      root: selection.document,
+      maxNodeCount: DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT - nodeCount,
+    });
+    if (nodeCount > DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT) {
+      return {
+        ok: false,
+        message: `figmaJsonPayload exceeds the figma_paste node count budget (${nodeCount} > ${DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT})`,
+        selectionCount,
+        rootCount: selectionCount,
+        nodeCount,
+      };
+    }
+  }
+
+  return { ok: true, selectionCount, rootCount: selectionCount, nodeCount };
 }
 
 /**

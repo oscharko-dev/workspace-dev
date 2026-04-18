@@ -22,9 +22,12 @@ import {
   looksLikeClipboardEnvelope,
   normalizeEnvelopeToFigmaFile,
   validateClipboardEnvelope,
+  validateClipboardEnvelopeComplexity,
   summarizeEnvelopeValidationIssues,
 } from "../clipboard-envelope.js";
 import { sanitizeErrorMessage } from "../error-sanitization.js";
+import { validateFigmaPayloadComplexity } from "../figma-payload-validation.js";
+import type { ValidatedFigmaNode } from "../figma-payload-validation.js";
 import type { JobEngine } from "../job-engine.js";
 import type { SubmissionJobInput } from "../job-engine/types.js";
 import { STAGE_ARTIFACT_KEYS } from "../job-engine/pipeline/artifact-keys.js";
@@ -73,6 +76,7 @@ import {
   sendBuffer,
   sendJson,
   sendText,
+  readStreamingJsonBody,
   readJsonBody,
 } from "./http-helpers.js";
 import {
@@ -3259,7 +3263,7 @@ export function createWorkspaceRequestHandler({
       }
 
       if (method === "POST" && pathname === "/workspace/submit") {
-        const rawBody = await readJsonBody(request, {
+        const rawBody = await readStreamingJsonBody(request, {
           maxBytes: MAX_SUBMIT_BODY_BYTES,
         });
         if (!rawBody.ok) {
@@ -3480,10 +3484,43 @@ export function createWorkspaceRequestHandler({
                 });
                 return;
               }
+              const complexityResult = validateClipboardEnvelopeComplexity(
+                envelopeResult.envelope,
+              );
+              if (!complexityResult.ok) {
+                sendValidationError({
+                  payload: {
+                    error: "TOO_LARGE",
+                    message: complexityResult.message,
+                  },
+                  fallbackMessage: "Submit request validation failed.",
+                });
+                return;
+              }
               const normalized = normalizeEnvelopeToFigmaFile(
                 envelopeResult.envelope,
               );
               normalizedPayload = JSON.stringify(normalized);
+            } else if (
+              typeof parsedPayload === "object" &&
+              parsedPayload !== null &&
+              "document" in parsedPayload &&
+              typeof parsedPayload.document === "object" &&
+              parsedPayload.document !== null
+            ) {
+              const complexityResult = validateFigmaPayloadComplexity({
+                document: parsedPayload.document as ValidatedFigmaNode,
+              });
+              if (!complexityResult.ok) {
+                sendValidationError({
+                  payload: {
+                    error: "TOO_LARGE",
+                    message: complexityResult.message,
+                  },
+                  fallbackMessage: "Submit request validation failed.",
+                });
+                return;
+              }
             }
           } catch {
             // JSON parse already validated in schema — fall through with raw payload.

@@ -116,6 +116,17 @@ const parseTool = async (req: Request): Promise<string> => {
   return body.params?.name ?? "";
 };
 
+const createDeferred = <T,>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} => {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
 const buildDirectChildXml = (
   childCount: number,
 ): { xml: string; childIds: string[] } => {
@@ -155,6 +166,26 @@ const buildNestedAdaptiveXml = (): {
     `<FRAME id="${directChildIds[1]}" name="Branch2"/>` +
     `</FRAME>`;
   return { xml, directChildIds, nestedChildIds };
+};
+
+const buildAuxiliaryHeavyAdaptiveXml = (): {
+  xml: string;
+} => {
+  const auxiliaryTags = Array.from(
+    { length: ADAPTIVE_NODE_THRESHOLD + 1 },
+    (_, index) => `Decoration${String(index + 1)}`,
+  );
+  const xml =
+    `<FRAME id="0:1" name="Root">` +
+    `<BOOLEAN_OPERATION name="${auxiliaryTags[0]}"/>` +
+    `<FRAME id="child:1" name="Frame1"/>` +
+    auxiliaryTags
+      .slice(1)
+      .map((auxTag) => `<BOOLEAN_OPERATION name="${auxTag}"/>`)
+      .join("") +
+    `<FRAME id="child:2" name="Frame2"/>` +
+    `</FRAME>`;
+  return { xml };
 };
 
 // ---------------------------------------------------------------------------
@@ -230,8 +261,7 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
 test("large design — subtree batching fetches all direct children in deterministic order", async () => {
   clearResolverCache();
 
-  const { xml, childIds } = buildDirectChildXml(ADAPTIVE_NODE_THRESHOLD + 10);
-  const designContextCalls: string[] = [];
+  const { xml, childIds } = buildDirectChildXml(ADAPTIVE_NODE_THRESHOLD + 2);
 
   const fetchImpl: typeof fetch = async (input, init) => {
     const req = new Request(input, init);
@@ -245,7 +275,8 @@ test("large design — subtree batching fetches all direct children in determini
     }
     if (tool === "get_design_context") {
       const nodeId = body.params?.arguments?.nodeId ?? "unknown";
-      designContextCalls.push(nodeId);
+      const reverseIndex = childIds.length - childIds.indexOf(nodeId);
+      await new Promise((resolve) => setTimeout(resolve, reverseIndex));
       return jsonResponse(mcpOk({ code: `// code for ${nodeId}`, assets: {} }));
     }
     if (tool === "get_screenshot") {
@@ -256,13 +287,6 @@ test("large design — subtree batching fetches all direct children in determini
 
   const meta: FigmaMeta = { fileKey: "bigfile", nodeId: "0:1" };
   const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
-
-  assert.equal(
-    childIds.length > MAX_SUBTREE_BATCH_SIZE,
-    true,
-    "test setup must exceed the batch size",
-  );
-  assert.deepEqual(designContextCalls, childIds);
   assert.equal(
     result.code,
     childIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
@@ -371,6 +395,156 @@ test("large design — subtree batching keeps diagnostics ordered by direct chil
       "MCP get_design_context rate limited (attempt 1/3)",
     ],
   );
+});
+
+test("large design — subtree batching uses rolling concurrency instead of serializing whole waves", async () => {
+  clearResolverCache();
+
+  const childIds = Array.from(
+    { length: MAX_SUBTREE_BATCH_SIZE + 2 },
+    (_, index) => `child:${String(index + 1)}`,
+  );
+  const nestedIds = Array.from(
+    { length: ADAPTIVE_NODE_THRESHOLD },
+    (_, index) => `nested:${String(index + 1)}`,
+  );
+  const xml =
+    `<FRAME id="0:1" name="Root">` +
+    `<FRAME id="${childIds[0]}" name="Frame1">` +
+    nestedIds
+      .map(
+        (nodeId, index) =>
+          `<FRAME id="${nodeId}" name="Nested${String(index + 1)}"/>`,
+      )
+      .join("") +
+    `</FRAME>` +
+    childIds
+      .slice(1)
+      .map(
+        (nodeId, index) =>
+          `<FRAME id="${nodeId}" name="Frame${String(index + 2)}"/>`,
+      )
+      .join("") +
+    `</FRAME>`;
+  const startedNodeIds: string[] = [];
+  const releaseByNodeId = new Map<string, () => void>();
+  const firstWaveStarted = createDeferred<void>();
+  const nextLaunchStarted = createDeferred<void>();
+  const finalLaunchStarted = createDeferred<void>();
+  let inFlight = 0;
+  let maxInFlight = 0;
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+    const body = (await new Request(input, init).json()) as {
+      params?: { arguments?: { nodeId?: string } };
+    };
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml }));
+    }
+    if (tool === "get_design_context") {
+      const nodeId = body.params?.arguments?.nodeId ?? "unknown";
+      startedNodeIds.push(nodeId);
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      if (startedNodeIds.length === MAX_SUBTREE_BATCH_SIZE) {
+        firstWaveStarted.resolve();
+      }
+      if (startedNodeIds.length === MAX_SUBTREE_BATCH_SIZE + 1) {
+        nextLaunchStarted.resolve();
+      }
+      if (startedNodeIds.length === childIds.length) {
+        finalLaunchStarted.resolve();
+      }
+      const release = createDeferred<void>();
+      releaseByNodeId.set(nodeId, () => release.resolve());
+      await release.promise;
+      inFlight -= 1;
+      return jsonResponse(mcpOk({ code: `// code for ${nodeId}`, assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const resultPromise = resolveFigmaDesignContext(
+    { fileKey: "wave-file", nodeId: "0:1" },
+    createConfig(fetchImpl),
+  );
+
+  await firstWaveStarted.promise;
+  assert.equal(maxInFlight, MAX_SUBTREE_BATCH_SIZE);
+  assert.deepEqual(
+    startedNodeIds,
+    childIds.slice(0, MAX_SUBTREE_BATCH_SIZE),
+  );
+
+  releaseByNodeId.get(childIds[1]!)?.();
+
+  await nextLaunchStarted.promise;
+  assert.deepEqual(
+    startedNodeIds,
+    childIds.slice(0, MAX_SUBTREE_BATCH_SIZE + 1),
+  );
+  assert.equal(maxInFlight, MAX_SUBTREE_BATCH_SIZE);
+
+  releaseByNodeId.get(childIds[0]!)?.();
+
+  await finalLaunchStarted.promise;
+  assert.deepEqual(startedNodeIds, childIds);
+
+  for (const nodeId of childIds.slice(2).reverse()) {
+    releaseByNodeId.get(nodeId)?.();
+  }
+
+  const result = await resultPromise;
+  assert.equal(
+    result.code,
+    childIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
+  );
+});
+
+test("large design — auxiliary self-closing non-node tags do not trigger subtree batching", async () => {
+  clearResolverCache();
+
+  const { xml } = buildAuxiliaryHeavyAdaptiveXml();
+  const designContextCalls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+    const body = (await new Request(input, init).json()) as {
+      params?: { arguments?: { nodeId?: string } };
+    };
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml }));
+    }
+    if (tool === "get_design_context") {
+      const nodeId = body.params?.arguments?.nodeId ?? "unknown";
+      designContextCalls.push(nodeId);
+      return jsonResponse(mcpOk({ code: `// code for ${nodeId}`, assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "aux-file", nodeId: "0:1" },
+    createConfig(fetchImpl),
+  );
+
+  assert.ok(
+    result.metadata !== undefined &&
+      result.metadata.nodeCount < ADAPTIVE_NODE_THRESHOLD,
+  );
+  assert.deepEqual(designContextCalls, ["0:1"]);
+  assert.equal(result.code, "// code for 0:1");
 });
 
 test("direct nodeId provided — first MCP call is get_metadata, not root scan", async () => {

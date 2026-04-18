@@ -725,20 +725,7 @@ const callMcpTool = async ({
 // ---------------------------------------------------------------------------
 
 const estimateNodeCount = (xml: string): number => {
-  let count = 0;
-  let index = 0;
-  while (index < xml.length) {
-    const openPos = xml.indexOf("<", index);
-    if (openPos === -1) {
-      break;
-    }
-    const nextChar = xml[openPos + 1];
-    if (nextChar !== "/" && nextChar !== "!" && nextChar !== "?") {
-      count += 1;
-    }
-    index = openPos + 1;
-  }
-  return count;
+  return extractMetadataNodeCandidates(xml).length;
 };
 
 const extractRootNodeInfo = (
@@ -1079,37 +1066,86 @@ const fetchDesignContextAdaptive = async (
   }
 
   const results: DesignContextResult[] = [];
-  for (
-    let batchStart = 0;
-    batchStart < subtreeIds.length;
-    batchStart += MAX_SUBTREE_BATCH_SIZE
+  const subtreeDiagnosticsByIndex: McpResolverDiagnostic[][] = Array.from(
+    { length: subtreeIds.length },
+    () => [],
+  );
+  const subtreeAbortController = new AbortController();
+  const subtreeSignal =
+    signal === undefined
+      ? subtreeAbortController.signal
+      : AbortSignal.any([signal, subtreeAbortController.signal]);
+  const subtreeResults: Array<DesignContextResult | undefined> = Array.from(
+    { length: subtreeIds.length },
+    () => undefined,
+  );
+  const inFlight = new Set<Promise<void>>();
+  let firstTaskError: unknown;
+  let nextIndex = 0;
+
+  const launchNext = (): void => {
+    const currentIndex = nextIndex;
+    nextIndex += 1;
+    const subtreeId = subtreeIds[currentIndex]!;
+    const task = (async () => {
+      try {
+        subtreeResults[currentIndex] = await fetchDesignContextSingle(
+          fileKey,
+          subtreeId,
+          config,
+          subtreeSignal,
+          subtreeDiagnosticsByIndex[currentIndex],
+        );
+      } catch (error: unknown) {
+        if (firstTaskError === undefined) {
+          firstTaskError = error;
+          subtreeAbortController.abort();
+        }
+        throw error;
+      }
+    })();
+    inFlight.add(task);
+    void task.then(
+      () => {
+        inFlight.delete(task);
+      },
+      () => {
+        inFlight.delete(task);
+      },
+    );
+  };
+
+  while (
+    nextIndex < subtreeIds.length &&
+    inFlight.size < MAX_SUBTREE_BATCH_SIZE &&
+    firstTaskError === undefined
   ) {
-    const batchIds = subtreeIds.slice(
-      batchStart,
-      batchStart + MAX_SUBTREE_BATCH_SIZE,
-    );
-    const batchResults = await Promise.all(
-      batchIds.map((subtreeId) =>
-        (async () => {
-          const subtreeDiagnostics: McpResolverDiagnostic[] = [];
-          const result = await fetchDesignContextSingle(
-            fileKey,
-            subtreeId,
-            config,
-            signal,
-            subtreeDiagnostics,
-          );
-          return {
-            result,
-            diagnostics: subtreeDiagnostics,
-          };
-        })(),
-      ),
-    );
-    for (const entry of batchResults) {
-      results.push(entry.result);
-      diagnostics?.push(...entry.diagnostics);
+    launchNext();
+  }
+
+  while (inFlight.size > 0) {
+    try {
+      await Promise.race(inFlight);
+    } catch (error: unknown) {
+      firstTaskError ??= error;
     }
+    if (firstTaskError !== undefined) {
+      await Promise.allSettled(inFlight);
+      throw firstTaskError instanceof Error
+        ? firstTaskError
+        : new Error(getErrorMessage(firstTaskError));
+    }
+    while (
+      nextIndex < subtreeIds.length &&
+      inFlight.size < MAX_SUBTREE_BATCH_SIZE
+    ) {
+      launchNext();
+    }
+  }
+
+  for (let index = 0; index < subtreeResults.length; index += 1) {
+    results.push(subtreeResults[index]!);
+    diagnostics?.push(...(subtreeDiagnosticsByIndex[index] ?? []));
   }
 
   return mergeDesignContextResults(results);
