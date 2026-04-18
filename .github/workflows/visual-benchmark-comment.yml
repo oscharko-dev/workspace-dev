@@ -19,7 +19,7 @@ jobs:
     steps:
       - name: Resolve PR and benchmark artifact
         id: resolve
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           script: |
             const workflowRun = context.payload.workflow_run;
@@ -90,7 +90,7 @@ jobs:
 
       - name: Post or update visual benchmark PR comment
         if: steps.resolve.outputs.skip == 'false' && steps.payload.outputs.found == 'true'
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         env:
           PAYLOAD_PATH: ${{ steps.payload.outputs.path }}
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
