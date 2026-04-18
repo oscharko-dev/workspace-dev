@@ -36,6 +36,9 @@ jobs:
       - name: Enforce workflow --ignore-scripts policy
         run: pnpm run verify:workflow-install-scripts
 
+      - name: Enforce dependency freshness (minimum-release-age) policy
+        run: pnpm run verify:npmrc-freshness
+
       - name: Install template dependencies
         run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
