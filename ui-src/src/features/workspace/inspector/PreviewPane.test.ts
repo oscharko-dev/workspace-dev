@@ -21,6 +21,26 @@ vi.mock("./InspectOverlay", () => ({
     }),
 }));
 
+vi.mock("./ScreenshotPreview", () => ({
+  ScreenshotPreview: ({
+    screenshotUrl,
+    stageName,
+  }: {
+    screenshotUrl: string;
+    stageName?: string;
+  }) =>
+    createElement(
+      "div",
+      { "data-testid": "screenshot-preview" },
+      createElement("img", {
+        src: screenshotUrl,
+        alt: "Figma design preview",
+      }),
+      createElement("span", null, "Figma preview"),
+      stageName !== undefined ? createElement("span", null, stageName) : null,
+    ),
+}));
+
 afterEach(() => {
   cleanup();
 });
@@ -140,7 +160,7 @@ describe("PreviewPane — pipeline stage modes", () => {
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
   });
 
-  it("shows Phase 2 srcdoc iframe with screenshot URL when generating and screenshot provided", () => {
+  it("renders ScreenshotPreview with image and badge when generating and screenshot provided", () => {
     render(
       createElement(PreviewPane, {
         previewUrl: "",
@@ -157,18 +177,16 @@ describe("PreviewPane — pipeline stage modes", () => {
       }),
     );
 
-    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
-    expect(iframe).toBeInTheDocument();
-    expect(iframe).toHaveAttribute("sandbox", "allow-scripts");
-    // The srcdoc must contain the screenshot URL and stage label
-    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
-    expect(srcdoc).toContain("cdn.example.com/screenshot.png");
-    expect(srcdoc).toContain("Generating code…");
-    // Must NOT render the live-preview iframe
+    expect(
+      screen.getByRole("img", { name: "Figma design preview" }),
+    ).toHaveAttribute("src", "http://cdn.example.com/screenshot.png");
+    expect(screen.getByText("Figma preview")).toBeInTheDocument();
+    expect(screen.getByText("Generating code…")).toBeInTheDocument();
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Phase 2 preview")).not.toBeInTheDocument();
   });
 
-  it("shows Phase 2 srcdoc iframe without img when generating and no screenshot", () => {
+  it("renders stage text fallback when generating and no screenshot provided", () => {
     render(
       createElement(PreviewPane, {
         previewUrl: "",
@@ -184,16 +202,13 @@ describe("PreviewPane — pipeline stage modes", () => {
       }),
     );
 
-    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
-    expect(iframe).toBeInTheDocument();
-    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
-    // No img tag when screenshot is absent
-    expect(srcdoc).not.toContain("<img");
-    expect(srcdoc).toContain("Generating code…");
+    expect(screen.getByText("Generating code…")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Phase 2 preview")).not.toBeInTheDocument();
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
   });
 
-  it("shows Phase 2 srcdoc iframe with resolving stage label for resolving stage", () => {
+  it("renders ScreenshotPreview with resolving stage label when resolving and screenshot provided", () => {
     render(
       createElement(PreviewPane, {
         previewUrl: "",
@@ -210,10 +225,9 @@ describe("PreviewPane — pipeline stage modes", () => {
       }),
     );
 
-    const iframe = screen.getByTitle("Phase 2 preview") as HTMLIFrameElement;
-    expect(iframe).toBeInTheDocument();
-    const srcdoc = iframe.getAttribute("srcdoc") ?? "";
-    expect(srcdoc).toContain("Resolving design…");
-    expect(srcdoc).toContain("cdn.example.com/shot.png");
+    expect(screen.getByText("Resolving design…")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Figma design preview" }),
+    ).toHaveAttribute("src", "http://cdn.example.com/shot.png");
   });
 });
