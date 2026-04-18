@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { JobDiskTracker } from "../disk-tracker.js";
 import { createPipelineError } from "../errors.js";
 import { resolveRuntimeSettings } from "../runtime.js";
 import { createInitialStages, nowIso, STAGE_ORDER } from "../stage-state.js";
@@ -13,9 +14,16 @@ import { STAGE_ARTIFACT_KEYS } from "./artifact-keys.js";
 import { PipelineCancellationError, PipelineOrchestrator, type PipelineStagePlanEntry } from "./orchestrator.js";
 import { syncPublicJobProjection } from "./public-job-projection.js";
 
-const createContext = async (): Promise<PipelineExecutionContext> => {
+const createContext = async ({
+  runtimeOverrides,
+}: {
+  runtimeOverrides?: Parameters<typeof resolveRuntimeSettings>[0];
+} = {}): Promise<PipelineExecutionContext> => {
   const root = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-orchestrator-"));
-  const runtime = resolveRuntimeSettings({ enablePreview: false });
+  const runtime = resolveRuntimeSettings({
+    enablePreview: false,
+    ...runtimeOverrides
+  });
   const jobDir = path.join(root, "jobs", "job-1");
   const generatedProjectDir = path.join(jobDir, "generated-app");
   const reproDir = path.join(root, "repros", "job-1");
@@ -47,6 +55,12 @@ const createContext = async (): Promise<PipelineExecutionContext> => {
     }
   };
   const artifactStore = new StageArtifactStore({ jobDir });
+  const diskTracker = new JobDiskTracker({
+    roots: [jobDir, reproDir],
+    limitBytes: runtime.maxJobDiskBytes,
+    limits: runtime.pipelineDiagnosticLimits
+  });
+  await diskTracker.sync();
 
   return {
     mode: "submission",
@@ -77,6 +91,7 @@ const createContext = async (): Promise<PipelineExecutionContext> => {
       templateCopyFilter: () => true
     },
     artifactStore,
+    diskTracker,
     resolvedBrandTheme: "derived",
     resolvedFigmaSourceMode: "local_json",
     resolvedFormHandlingMode: "react_hook_form",
@@ -217,6 +232,50 @@ test("PipelineOrchestrator rejects out-of-order stage plans before execution sta
       assert.equal(
         error.message,
         "Pipeline plan is out of canonical order at position 3; expected 'template.prepare' but received 'codegen.generate'.",
+      );
+      return true;
+    }
+  );
+});
+
+test("PipelineOrchestrator fails stages that exceed the configured disk quota", async () => {
+  const context = await createContext({
+    runtimeOverrides: {
+      maxJobDiskBytes: 1_024
+    }
+  });
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "figma.source": {
+            execute: async () => {
+              await writeFile(
+                path.join(context.paths.jobDir, "oversized-artifact.bin"),
+                Buffer.alloc(2_048, 1)
+              );
+            }
+          }
+        })
+      });
+    },
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      const typed = error as WorkspacePipelineError & {
+        diagnostics?: Array<{ details?: Record<string, unknown> }>;
+      };
+      assert.equal(typed.code, "DISK_QUOTA_EXCEEDED");
+      assert.equal(typed.stage, "figma.source");
+      assert.equal(
+        typed.diagnostics?.[0]?.details?.maxBytes,
+        1_024
+      );
+      assert.equal(
+        Number(typed.diagnostics?.[0]?.details?.cumulativeBytesWritten) >= 2_048,
+        true
       );
       return true;
     }
@@ -839,4 +898,36 @@ test("PipelineOrchestrator preserves explicit service-thrown cancellation errors
 
   assert.equal(context.job.stages.find((stage) => stage.name === "figma.source")?.status, "failed");
   assert.match(String(context.job.logs.at(-1)?.message ?? ""), /E_JOB_CANCELED: service canceled/);
+});
+
+test("PipelineOrchestrator fails a stage when job disk quota is exceeded", async () => {
+  const context = await createContext();
+  context.diskTracker = new JobDiskTracker({
+    roots: [context.paths.jobDir, context.paths.reproDir],
+    limitBytes: 32,
+    limits: context.runtime.pipelineDiagnosticLimits
+  });
+  await context.diskTracker.sync();
+  const orchestrator = createOrchestrator();
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "figma.source": {
+            execute: async () => {
+              await writeFile(path.join(context.paths.jobDir, "oversized.json"), "x".repeat(64), "utf8");
+            }
+          }
+        })
+      });
+    },
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "DISK_QUOTA_EXCEEDED");
+      assert.equal((error as WorkspacePipelineError).stage, "figma.source");
+      return true;
+    }
+  );
 });

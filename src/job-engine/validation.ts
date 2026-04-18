@@ -227,7 +227,8 @@ const prepareValidationNodeModules = async ({
 
 const LINT_RELEVANT_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".mts", ".cts"]);
 const MAX_LOGGED_CHANGED_FILES = 20;
-const MAX_VALIDATION_ATTEMPTS = 3;
+// Keep the emitted diagnostic cap internal to avoid turning public validation
+// output into an operator-tuned payload-shaping API.
 const MAX_EMITTED_VALIDATION_DIAGNOSTICS = 8;
 
 const toPosixPath = (filePath: string): string => {
@@ -500,6 +501,7 @@ export const runProjectValidationWithDeps = async ({
   installPreferOffline = true,
   skipInstall = false,
   lockfileMutable = false,
+  maxValidationAttempts = 3,
   pipelineDiagnosticLimits,
   abortSignal,
   seedNodeModulesDir,
@@ -519,6 +521,7 @@ export const runProjectValidationWithDeps = async ({
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   lockfileMutable?: boolean;
+  maxValidationAttempts?: number;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
@@ -707,9 +710,9 @@ export const runProjectValidationWithDeps = async ({
       }
     }
 
-    for (let attempt = 1; attempt <= MAX_VALIDATION_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= maxValidationAttempts; attempt += 1) {
       validationResult.attempts = attempt;
-      onLog(`Validation attempt ${attempt}/${MAX_VALIDATION_ATTEMPTS}`);
+      onLog(`Validation attempt ${attempt}/${maxValidationAttempts}`);
       let shouldRetry = false;
 
       for (const command of attemptCommands) {
@@ -849,15 +852,15 @@ export const runProjectValidationWithDeps = async ({
           });
         }
 
-        if (attempt >= MAX_VALIDATION_ATTEMPTS) {
+        if (attempt >= maxValidationAttempts) {
           throw await toValidationPipelineError({
             commandName: command.name,
-            timeoutSuffix: `${timeoutSuffix} after ${MAX_VALIDATION_ATTEMPTS} attempts`,
+            timeoutSuffix: `${timeoutSuffix} after ${maxValidationAttempts} attempts`,
             output: result.combined,
             result,
             generatedProjectDir,
             diagnostics: parsedDiagnostics,
-            summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`,
+            summary: `Failed after ${maxValidationAttempts} attempts.`,
             ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
             onLog
           });
@@ -890,7 +893,7 @@ export const runProjectValidationWithDeps = async ({
         }
 
         onLog(
-          `Retrying validation after ${command.name} corrections (${attempt + 1}/${MAX_VALIDATION_ATTEMPTS}).`
+          `Retrying validation after ${command.name} corrections (${attempt + 1}/${maxValidationAttempts}).`
         );
         shouldRetry = true;
         break;
@@ -922,6 +925,7 @@ export const runProjectValidation = async ({
   installPreferOffline = true,
   skipInstall = false,
   lockfileMutable = false,
+  maxValidationAttempts = 3,
   pipelineDiagnosticLimits,
   abortSignal,
   seedNodeModulesDir
@@ -940,6 +944,7 @@ export const runProjectValidation = async ({
   installPreferOffline?: boolean;
   skipInstall?: boolean;
   lockfileMutable?: boolean;
+  maxValidationAttempts?: number;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
   abortSignal?: AbortSignal;
   seedNodeModulesDir?: string;
@@ -959,6 +964,7 @@ export const runProjectValidation = async ({
     installPreferOffline,
     skipInstall,
     lockfileMutable,
+    maxValidationAttempts,
     ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {}),
     ...(seedNodeModulesDir ? { seedNodeModulesDir } : {}),
     ...(abortSignal ? { abortSignal } : {})

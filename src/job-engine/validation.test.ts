@@ -1014,6 +1014,102 @@ test("runProjectValidationWithDeps enforces max validation attempts", async () =
   assert.equal(feedbackInvocations, 2);
 });
 
+test("runProjectValidationWithDeps honors configured maxValidationAttempts", async () => {
+  let feedbackInvocations = 0;
+
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        maxValidationAttempts: 2,
+        onLog: () => {
+          // no-op
+        },
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "lint" && args.length === 1) {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "lint failed",
+                combined: "lint failed"
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          },
+          runValidationFeedback: async () => {
+            feedbackInvocations += 1;
+            return {
+              diagnostics: [],
+              changedFiles: ["src/main.ts"],
+              correctionsApplied: 1,
+              fileCorrections: [{ filePath: "src/main.ts", editCount: 1, descriptions: ["Organized imports"] }],
+              summary: "lint failed"
+            };
+          }
+        }
+      }),
+    /after 2 attempts/i
+  );
+
+  assert.equal(feedbackInvocations, 1);
+});
+
+test("runProjectValidationWithDeps respects configured maxValidationAttempts", async () => {
+  let feedbackInvocations = 0;
+
+  await assert.rejects(
+    () =>
+      runProjectValidationWithDeps({
+        generatedProjectDir: "/tmp/generated-project",
+        onLog: () => {
+          // no-op
+        },
+        maxValidationAttempts: 5,
+        deps: {
+          runCommand: async ({ args }) => {
+            if (args[0] === "lint" && args.length === 1) {
+              return {
+                success: false,
+                code: 1,
+                stdout: "",
+                stderr: "lint failed",
+                combined: "lint failed"
+              };
+            }
+            return {
+              success: true,
+              code: 0,
+              stdout: "",
+              stderr: "",
+              combined: ""
+            };
+          },
+          runValidationFeedback: async () => {
+            feedbackInvocations += 1;
+            return {
+              diagnostics: [],
+              changedFiles: ["src/main.ts"],
+              correctionsApplied: 1,
+              fileCorrections: [{ filePath: "src/main.ts", editCount: 1, descriptions: ["Organized imports"] }],
+              summary: "lint failed"
+            };
+          }
+        }
+      }),
+    /after 5 attempts/i
+  );
+
+  assert.equal(feedbackInvocations, 4);
+});
+
 test("runProjectValidationWithDeps retries build failures and reports exhaustion after the max attempts", async () => {
   const feedbackStages: string[] = [];
 

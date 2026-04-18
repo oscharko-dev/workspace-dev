@@ -30,6 +30,7 @@ import {
   type PipelineExecutionContext,
   type StageRuntimeContext,
 } from "../pipeline/context.js";
+import { JobDiskTracker } from "../disk-tracker.js";
 import { resolveRuntimeSettings } from "../runtime.js";
 import { createInitialStages, nowIso } from "../stage-state.js";
 import type { JobRecord } from "../types.js";
@@ -101,6 +102,12 @@ const buildStageHarness = async ({
   };
 
   const artifactStore = new StageArtifactStore({ jobDir });
+  const diskTracker = new JobDiskTracker({
+    roots: [jobDir, path.join(outputRoot, "repros", jobId)],
+    limitBytes: runtime.maxJobDiskBytes,
+    limits: runtime.pipelineDiagnosticLimits,
+  });
+  await diskTracker.sync();
   const resolvedBrandTheme = "derived" as WorkspaceBrandTheme;
   const resolvedFigmaSourceMode = "local_json" as WorkspaceFigmaSourceMode;
   const resolvedFormHandlingMode = "react_hook_form" as WorkspaceFormHandlingMode;
@@ -134,6 +141,7 @@ const buildStageHarness = async ({
       templateCopyFilter: () => true,
     },
     artifactStore,
+    diskTracker,
     resolvedBrandTheme,
     resolvedFigmaSourceMode,
     resolvedFormHandlingMode,

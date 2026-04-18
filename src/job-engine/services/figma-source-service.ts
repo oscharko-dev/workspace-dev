@@ -477,6 +477,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
           "cache",
           "figma-source",
         ),
+        maxJsonResponseBytes: context.runtime.maxJsonResponseBytes,
         pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
         fetchImpl: context.fetchWithCancellation,
         onLog: (message) => {

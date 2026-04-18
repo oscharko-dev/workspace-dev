@@ -121,6 +121,7 @@ export interface JobRecord {
   gitPr?: WorkspaceGitPrStatus;
   inspector?: WorkspaceJobInspector;
   error?: WorkspaceJobError;
+  logLimit?: number;
 }
 
 /**
@@ -170,8 +171,11 @@ export interface JobEngineRuntime {
   figmaScreenNamePattern: string | undefined;
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
+  maxJsonResponseBytes: number;
   irCacheEnabled: boolean;
   irCacheTtlMs: number;
+  maxIrCacheEntries: number;
+  maxIrCacheBytes: number;
   iconMapFilePath: string | undefined;
   designSystemFilePath: string | undefined;
   exportImages: boolean;
@@ -201,6 +205,9 @@ export interface JobEngineRuntime {
   skipInstall: boolean;
   maxConcurrentJobs: number;
   maxQueuedJobs: number;
+  maxValidationAttempts: number;
+  logLimit: number;
+  maxJobDiskBytes: number;
   logFormat: WorkspaceLogFormat;
   logger: WorkspaceRuntimeLogger;
   previewEnabled: boolean;

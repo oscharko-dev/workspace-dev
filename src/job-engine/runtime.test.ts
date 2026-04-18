@@ -18,8 +18,11 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaScreenNamePattern, undefined);
   assert.equal(runtime.figmaCacheEnabled, true);
   assert.equal(runtime.figmaCacheTtlMs, 15 * 60_000);
+  assert.equal(runtime.maxJsonResponseBytes, 64 * 1024 * 1024);
   assert.equal(runtime.irCacheEnabled, true);
   assert.equal(runtime.irCacheTtlMs, 60 * 60_000);
+  assert.equal(runtime.maxIrCacheEntries, 50);
+  assert.equal(runtime.maxIrCacheBytes, 128 * 1024 * 1024);
   assert.equal(runtime.iconMapFilePath, undefined);
   assert.equal(runtime.designSystemFilePath, undefined);
   assert.equal(runtime.exportImages, true);
@@ -54,6 +57,9 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.skipInstall, false);
   assert.equal(runtime.maxConcurrentJobs, 1);
   assert.equal(runtime.maxQueuedJobs, 20);
+  assert.equal(runtime.maxValidationAttempts, 3);
+  assert.equal(runtime.logLimit, 300);
+  assert.equal(runtime.maxJobDiskBytes, 512 * 1024 * 1024);
   assert.equal(runtime.previewEnabled, true);
 });
 
@@ -69,6 +75,9 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaScreenNamePattern: "  ^auth/(login|register)$  ",
     figmaCacheEnabled: false,
     figmaCacheTtlMs: 999_999_999,
+    maxJsonResponseBytes: 999_999_999,
+    maxIrCacheEntries: 999,
+    maxIrCacheBytes: 999_999_999,
     iconMapFilePath: "  /tmp/icon-map.json  ",
     designSystemFilePath: "  /tmp/design-system.json  ",
     exportImages: false,
@@ -96,7 +105,10 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     installPreferOffline: false,
     skipInstall: true,
     maxConcurrentJobs: 999,
-    maxQueuedJobs: -7
+    maxQueuedJobs: -7,
+    maxValidationAttempts: 999,
+    logLimit: 9_999,
+    maxJobDiskBytes: 99 * 1024 * 1024 * 1024
   });
 
   assert.equal(runtime.figmaBootstrapDepth, 10);
@@ -109,6 +121,9 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaScreenNamePattern, "^auth/(login|register)$");
   assert.equal(runtime.figmaCacheEnabled, false);
   assert.equal(runtime.figmaCacheTtlMs, 24 * 60 * 60_000);
+  assert.equal(runtime.maxJsonResponseBytes, 256 * 1024 * 1024);
+  assert.equal(runtime.maxIrCacheEntries, 500);
+  assert.equal(runtime.maxIrCacheBytes, 512 * 1024 * 1024);
   assert.equal(runtime.iconMapFilePath, "/tmp/icon-map.json");
   assert.equal(runtime.designSystemFilePath, "/tmp/design-system.json");
   assert.equal(runtime.exportImages, false);
@@ -143,6 +158,9 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.skipInstall, true);
   assert.equal(runtime.maxConcurrentJobs, 16);
   assert.equal(runtime.maxQueuedJobs, 0);
+  assert.equal(runtime.maxValidationAttempts, 10);
+  assert.equal(runtime.logLimit, 1000);
+  assert.equal(runtime.maxJobDiskBytes, 10 * 1024 * 1024 * 1024);
 });
 
 test("resolveRuntimeSettings normalizes empty figma screen name pattern to undefined", () => {

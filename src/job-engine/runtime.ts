@@ -36,8 +36,11 @@ const DEFAULT_ADAPTIVE_BATCHING_ENABLED = true;
 const DEFAULT_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
+const DEFAULT_MAX_JSON_RESPONSE_BYTES = 64 * 1024 * 1024;
 const DEFAULT_IR_CACHE_ENABLED = true;
 const DEFAULT_IR_CACHE_TTL_MS = 60 * 60_000;
+const DEFAULT_MAX_IR_CACHE_ENTRIES = 50;
+const DEFAULT_MAX_IR_CACHE_BYTES = 128 * 1024 * 1024;
 const DEFAULT_EXPORT_IMAGES = true;
 const DEFAULT_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_SCREEN_ELEMENT_MAX_DEPTH = 14;
@@ -63,6 +66,9 @@ const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
 const DEFAULT_MAX_CONCURRENT_JOBS = 1;
 const DEFAULT_MAX_QUEUED_JOBS = 20;
+const DEFAULT_MAX_VALIDATION_ATTEMPTS = 3;
+const DEFAULT_LOG_LIMIT = 300;
+const DEFAULT_MAX_JOB_DISK_BYTES = 512 * 1024 * 1024;
 
 const clampInteger = ({
   value,
@@ -292,8 +298,11 @@ export const resolveRuntimeSettings = ({
   figmaScreenNamePattern,
   figmaCacheEnabled,
   figmaCacheTtlMs,
+  maxJsonResponseBytes,
   irCacheEnabled,
   irCacheTtlMs,
+  maxIrCacheEntries,
+  maxIrCacheBytes,
   iconMapFilePath,
   designSystemFilePath,
   exportImages,
@@ -327,6 +336,9 @@ export const resolveRuntimeSettings = ({
   skipInstall,
   maxConcurrentJobs,
   maxQueuedJobs,
+  maxValidationAttempts,
+  logLimit,
+  maxJobDiskBytes,
   logFormat,
   logger,
   enablePreview,
@@ -347,8 +359,11 @@ export const resolveRuntimeSettings = ({
   figmaScreenNamePattern?: string;
   figmaCacheEnabled?: boolean;
   figmaCacheTtlMs?: number;
+  maxJsonResponseBytes?: number;
   irCacheEnabled?: boolean;
   irCacheTtlMs?: number;
+  maxIrCacheEntries?: number;
+  maxIrCacheBytes?: number;
   iconMapFilePath?: string;
   designSystemFilePath?: string;
   exportImages?: boolean;
@@ -382,6 +397,9 @@ export const resolveRuntimeSettings = ({
   skipInstall?: boolean;
   maxConcurrentJobs?: number;
   maxQueuedJobs?: number;
+  maxValidationAttempts?: number;
+  logLimit?: number;
+  maxJobDiskBytes?: number;
   logFormat?: string;
   logger?: WorkspaceRuntimeLogger;
   enablePreview?: boolean;
@@ -488,11 +506,29 @@ export const resolveRuntimeSettings = ({
       typeof figmaCacheTtlMs === "number" && Number.isFinite(figmaCacheTtlMs)
         ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)))
         : DEFAULT_FIGMA_CACHE_TTL_MS,
+    maxJsonResponseBytes: clampInteger({
+      value: maxJsonResponseBytes,
+      min: 1_024,
+      max: 256 * 1024 * 1024,
+      fallback: DEFAULT_MAX_JSON_RESPONSE_BYTES
+    }),
     irCacheEnabled: typeof irCacheEnabled === "boolean" ? irCacheEnabled : DEFAULT_IR_CACHE_ENABLED,
     irCacheTtlMs:
       typeof irCacheTtlMs === "number" && Number.isFinite(irCacheTtlMs)
         ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(irCacheTtlMs)))
         : DEFAULT_IR_CACHE_TTL_MS,
+    maxIrCacheEntries: clampInteger({
+      value: maxIrCacheEntries,
+      min: 1,
+      max: 500,
+      fallback: DEFAULT_MAX_IR_CACHE_ENTRIES
+    }),
+    maxIrCacheBytes: clampInteger({
+      value: maxIrCacheBytes,
+      min: 1_024,
+      max: 512 * 1024 * 1024,
+      fallback: DEFAULT_MAX_IR_CACHE_BYTES
+    }),
     iconMapFilePath: typeof iconMapFilePath === "string" && iconMapFilePath.trim().length > 0 ? iconMapFilePath.trim() : undefined,
     designSystemFilePath:
       typeof designSystemFilePath === "string" && designSystemFilePath.trim().length > 0
@@ -579,6 +615,24 @@ export const resolveRuntimeSettings = ({
       typeof maxQueuedJobs === "number" && Number.isFinite(maxQueuedJobs)
         ? Math.max(0, Math.min(1000, Math.trunc(maxQueuedJobs)))
         : DEFAULT_MAX_QUEUED_JOBS,
+    maxValidationAttempts: clampInteger({
+      value: maxValidationAttempts,
+      min: 1,
+      max: 10,
+      fallback: DEFAULT_MAX_VALIDATION_ATTEMPTS
+    }),
+    logLimit: clampInteger({
+      value: logLimit,
+      min: 1,
+      max: 1000,
+      fallback: DEFAULT_LOG_LIMIT
+    }),
+    maxJobDiskBytes: clampInteger({
+      value: maxJobDiskBytes,
+      min: 1_024,
+      max: 10 * 1024 * 1024 * 1024,
+      fallback: DEFAULT_MAX_JOB_DISK_BYTES
+    }),
     logFormat: resolvedLogFormat,
     logger: resolvedLogger,
     previewEnabled: enablePreview !== false,

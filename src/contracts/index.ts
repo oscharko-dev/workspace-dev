@@ -223,6 +223,12 @@ export interface WorkspaceStartOptions {
   figmaCacheEnabled?: boolean;
   /** Cache TTL for figma.source entries in milliseconds. Default: 900000 */
   figmaCacheTtlMs?: number;
+  /** Maximum Figma JSON response bytes accepted before parse fallback/failure. Default: 67108864 */
+  maxJsonResponseBytes?: number;
+  /** Maximum IR cache entry count before eviction. Default: 50 */
+  maxIrCacheEntries?: number;
+  /** Maximum IR cache bytes retained on disk before eviction. Default: 134217728 */
+  maxIrCacheBytes?: number;
   /** Path to icon fallback mapping file (JSON). Default: <outputRoot>/icon-fallback-map.json */
   iconMapFilePath?: string;
   /** Path to design-system mapping file (JSON). Default: <outputRoot>/design-system.json */
@@ -257,6 +263,8 @@ export interface WorkspaceStartOptions {
   pipelineDiagnosticDetailsMaxItems?: number;
   /** Maximum nesting depth retained when sanitizing structured diagnostic details. Default: 4 */
   pipelineDiagnosticDetailsMaxDepth?: number;
+  /** Maximum validation retry attempts for lint/typecheck/build correction loops. Default: 3 */
+  maxValidationAttempts?: number;
   /** Run lint auto-fix during validate.project before lint/typecheck/build. Default: true */
   enableLintAutofix?: boolean;
   /** Run perf validation during validate.project. Default: false */
@@ -289,6 +297,10 @@ export interface WorkspaceStartOptions {
   maxConcurrentJobs?: number;
   /** Maximum number of queued jobs waiting for execution before backpressure rejects submit. Default: 20 */
   maxQueuedJobs?: number;
+  /** Maximum retained job log entries. Default: 300 */
+  logLimit?: number;
+  /** Maximum on-disk bytes for job-owned roots before the pipeline fails. Default: 536870912 */
+  maxJobDiskBytes?: number;
   /** Output format for operational runtime logs. Default: "text" */
   logFormat?: WorkspaceLogFormat;
   /** Maximum accepted job submissions and import-session event writes per minute for a single client IP, enforced separately per route family. Use 0 to disable. Default: 10 */

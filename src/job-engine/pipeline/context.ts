@@ -10,6 +10,7 @@ import type {
   WorkspaceRetryInput
 } from "../../contracts/index.js";
 import type { PipelineDiagnosticInput } from "../errors.js";
+import type { JobDiskTracker } from "../disk-tracker.js";
 import { pushRuntimeLog } from "../stage-state.js";
 import type {
   JobEnginePaths,
@@ -53,6 +54,7 @@ export interface PipelineExecutionContext {
   fetchWithCancellation: typeof fetch;
   paths: PipelineResolvedPaths;
   artifactStore: StageArtifactStore;
+  diskTracker: JobDiskTracker;
   resolvedBrandTheme: WorkspaceBrandTheme;
   resolvedCustomerBrandId?: string;
   resolvedFigmaSourceMode: WorkspaceFigmaSourceMode;
@@ -162,7 +164,8 @@ export const createStageRuntimeContext = ({
         logger: executionContext.runtime.logger,
         level,
         stage: overrideStage ?? stage,
-        message
+        message,
+        logLimit: executionContext.runtime.logLimit
       });
     },
     appendDiagnostics: ({ diagnostics, stage: overrideStage }) => {

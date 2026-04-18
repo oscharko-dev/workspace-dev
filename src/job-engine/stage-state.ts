@@ -12,8 +12,6 @@ import type {
 import { redactLogMessage, type WorkspaceRuntimeLogger } from "../logging.js";
 import type { JobRecord } from "./types.js";
 
-const LOG_LIMIT = 300;
-
 export const STAGE_ORDER: WorkspaceJobStageName[] = [
   "figma.source",
   "ir.derive",
@@ -106,11 +104,13 @@ export const pushLog = ({
   level,
   message,
   stage,
+  logLimit = job.logLimit ?? 300,
 }: {
   job: JobRecord;
   level: WorkspaceJobLog["level"];
   message: string;
   stage?: WorkspaceJobStageName;
+  logLimit?: number;
 }): WorkspaceJobLog => {
   const entry: WorkspaceJobLog = {
     at: nowIso(),
@@ -122,8 +122,8 @@ export const pushLog = ({
   }
 
   job.logs.push(entry);
-  if (job.logs.length > LOG_LIMIT) {
-    job.logs.splice(0, job.logs.length - LOG_LIMIT);
+  if (job.logs.length > logLimit) {
+    job.logs.splice(0, job.logs.length - logLimit);
   }
   return entry;
 };
@@ -134,18 +134,21 @@ export const pushRuntimeLog = ({
   level,
   message,
   stage,
+  logLimit = job.logLimit ?? 300,
 }: {
   job: JobRecord;
   logger: WorkspaceRuntimeLogger;
   level: WorkspaceJobLog["level"];
   message: string;
   stage?: WorkspaceJobStageName;
+  logLimit?: number;
 }): WorkspaceJobLog => {
   const entry = pushLog({
     job,
     level,
     message,
     ...(stage ? { stage } : {}),
+    logLimit,
   });
   logger.log({
     level,
