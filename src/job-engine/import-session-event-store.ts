@@ -377,11 +377,13 @@ export const createImportSessionEventStore = ({
     async deleteAllForSession(sessionId: string): Promise<void> {
       const safeSessionId = sanitizeSessionId(sessionId);
       const filePath = resolvePath(safeSessionId);
-      try {
-        await unlink(filePath);
-      } catch {
-        // Best-effort cleanup; file may not exist.
-      }
+      await runSerialized(safeSessionId, async () => {
+        try {
+          await unlink(filePath);
+        } catch {
+          // Best-effort cleanup; file may not exist.
+        }
+      });
     },
   };
 };
