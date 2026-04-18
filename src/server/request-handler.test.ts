@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -1790,14 +1797,8 @@ test("request handler returns salvaged inspector policy and logs dropped governa
     assert.equal(warningLog?.method, "GET");
     assert.equal(warningLog?.path, "/workspace/inspector-policy");
     assert.equal(warningLog?.statusCode, 200);
-    assert.match(
-      String(warningLog?.message ?? ""),
-      /\[1\] "auth\."/,
-    );
-    assert.match(
-      String(warningLog?.message ?? ""),
-      /\[3\] "\^admin\$"/,
-    );
+    assert.match(String(warningLog?.message ?? ""), /\[1\] "auth\."/);
+    assert.match(String(warningLog?.message ?? ""), /\[3\] "\^admin\$"/);
   } finally {
     await close();
   }
@@ -1861,21 +1862,15 @@ test("request handler returns unknown-key diagnostics alongside regex-drop warni
         ],
       },
       warning:
-        'Inspector policy \'.workspace-inspector-policy.json\' ignored unknown keys: "governance.typoGovField". Inspector policy \'.workspace-inspector-policy.json\' dropped regex-style governance.securitySensitivePatterns entries: [1] "^admin$".',
+        "Inspector policy '.workspace-inspector-policy.json' ignored unknown keys: \"governance.typoGovField\". Inspector policy '.workspace-inspector-policy.json' dropped regex-style governance.securitySensitivePatterns entries: [1] \"^admin$\".",
     });
 
     const warningLog = capturedLogs.find(
       (entry) => entry.event === "workspace.inspector_policy.invalid",
     );
     assert.equal(warningLog?.level, "warn");
-    assert.match(
-      String(warningLog?.message ?? ""),
-      /ignored unknown keys/,
-    );
-    assert.match(
-      String(warningLog?.message ?? ""),
-      /dropped regex-style/,
-    );
+    assert.match(String(warningLog?.message ?? ""), /ignored unknown keys/);
+    assert.match(String(warningLog?.message ?? ""), /dropped regex-style/);
   } finally {
     await close();
   }
@@ -2004,9 +1999,7 @@ test("request handler preserves active import-session write buckets across handl
         at: "2026-04-15T10:05:00.000Z",
       }) as Awaited<ReturnType<JobEngine["appendImportSessionEvent"]>>,
   );
-  let firstApp:
-    | Awaited<ReturnType<typeof createRequestHandlerApp>>
-    | undefined;
+  let firstApp: Awaited<ReturnType<typeof createRequestHandlerApp>> | undefined;
   let secondApp:
     | Awaited<ReturnType<typeof createRequestHandlerApp>>
     | undefined;
@@ -2147,7 +2140,8 @@ test("request handler submit preserves unicode escapes from the streaming parser
       method: "POST",
       url: "/workspace/submit",
       headers: { "content-type": "application/json" },
-      payload: '{"figmaFileKey":"\\u0061\\uD834\\uDD1E","figmaAccessToken":"token"}',
+      payload:
+        '{"figmaFileKey":"\\u0061\\uD834\\uDD1E","figmaAccessToken":"token"}',
     });
 
     assert.equal(response.statusCode, 202);
@@ -2191,9 +2185,24 @@ test("request handler emits and echoes request IDs for successful responses", as
 
 test("request handler reports lifecycle-aware health and readiness states", async () => {
   const scenarios = [
-    { lifecycleState: "starting" as const, expectedHealthStatus: 200, expectedReadyStatus: 503, status: "starting" },
-    { lifecycleState: "ready" as const, expectedHealthStatus: 200, expectedReadyStatus: 200, status: "ok" },
-    { lifecycleState: "draining" as const, expectedHealthStatus: 200, expectedReadyStatus: 503, status: "draining" },
+    {
+      lifecycleState: "starting" as const,
+      expectedHealthStatus: 200,
+      expectedReadyStatus: 503,
+      status: "starting",
+    },
+    {
+      lifecycleState: "ready" as const,
+      expectedHealthStatus: 200,
+      expectedReadyStatus: 200,
+      status: "ok",
+    },
+    {
+      lifecycleState: "draining" as const,
+      expectedHealthStatus: 200,
+      expectedReadyStatus: 503,
+      status: "draining",
+    },
   ];
 
   for (const scenario of scenarios) {
@@ -2250,7 +2259,10 @@ test("request handler rejects mutating requests while draining and keeps read en
     assert.equal(response.statusCode, 503);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "SERVER_DRAINING");
-    assert.equal(body.message, "Server is draining and not accepting new requests.");
+    assert.equal(
+      body.message,
+      "Server is draining and not accepting new requests.",
+    );
     assert.equal(typeof body.requestId, "string");
   } finally {
     await close();
@@ -4075,8 +4087,9 @@ test("request handler file listing pages deterministically at the 1000-file cap"
   const expectedPaths = [
     "src/App.tsx",
     "src/styles.css",
-    ...Array.from({ length: 1001 }, (_, index) =>
-      `src/nested/file-${String(index).padStart(4, "0")}.tsx`,
+    ...Array.from(
+      { length: 1001 },
+      (_, index) => `src/nested/file-${String(index).padStart(4, "0")}.tsx`,
     ),
   ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 
@@ -4125,11 +4138,10 @@ test("request handler file listing pages deterministically at the 1000-file cap"
       files: Array<{ path: string; sizeBytes: number }>;
       nextCursor?: string;
     }>();
-    assert.deepEqual(secondPage.files.map((entry) => entry.path), [
-      expectedPaths[1000],
-      expectedPaths[1001],
-      expectedPaths[1002],
-    ]);
+    assert.deepEqual(
+      secondPage.files.map((entry) => entry.path),
+      [expectedPaths[1000], expectedPaths[1001], expectedPaths[1002]],
+    );
     assert.equal(secondPage.nextCursor, undefined);
   } finally {
     await close();
@@ -4173,10 +4185,12 @@ test("request handler file listing falls back to lstat for unknown dirent types"
 
     assert.equal(response.statusCode, 200);
     assert.deepEqual(
-      response.json<{
-        jobId: string;
-        files: Array<{ path: string; sizeBytes: number }>;
-      }>().files.map((entry) => entry.path),
+      response
+        .json<{
+          jobId: string;
+          files: Array<{ path: string; sizeBytes: number }>;
+        }>()
+        .files.map((entry) => entry.path),
       ["keep.tsx"],
     );
   } finally {
@@ -4201,8 +4215,9 @@ test("request handler file listing handles a wide root directory without materia
     );
   }
 
-  const expectedPaths = Array.from({ length: 1001 }, (_, index) =>
-    `root-${String(index).padStart(4, "0")}.tsx`,
+  const expectedPaths = Array.from(
+    { length: 1001 },
+    (_, index) => `root-${String(index).padStart(4, "0")}.tsx`,
   );
 
   const getJobRecord = () =>
@@ -4250,9 +4265,10 @@ test("request handler file listing handles a wide root directory without materia
       files: Array<{ path: string; sizeBytes: number }>;
       nextCursor?: string;
     }>();
-    assert.deepEqual(secondPage.files.map((entry) => entry.path), [
-      expectedPaths[1000],
-    ]);
+    assert.deepEqual(
+      secondPage.files.map((entry) => entry.path),
+      [expectedPaths[1000]],
+    );
     assert.equal(secondPage.nextCursor, undefined);
   } finally {
     await close();
@@ -4769,7 +4785,7 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
     });
 
     await t.test(
-      "submit rejects malformed llmCodegenMode before mode lock or submitJob",
+      "submit rejects llmCodegenMode not available in workspace-dev with MODE_LOCK_VIOLATION",
       async () => {
         const submitJob = test.mock.fn(
           (_input: Parameters<JobEngine["submitJob"]>[0]) => {
@@ -4801,13 +4817,10 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
 
           assert.equal(response.statusCode, 400);
           const body = response.json<Record<string, unknown>>();
-          assert.equal(body.error, "VALIDATION_ERROR");
-          assert.deepEqual(body.issues, [
-            {
-              path: "llmCodegenMode",
-              message: "llmCodegenMode must equal 'deterministic'",
-            },
-          ]);
+          assert.equal(body.error, "MODE_LOCK_VIOLATION");
+          assert.equal(typeof body.message, "string");
+          assert.ok((body.message as string).length > 0);
+          assert.ok(body.allowedModes !== undefined);
           assert.equal(submitJob.mock.callCount(), 0);
         } finally {
           await scoped.close();
