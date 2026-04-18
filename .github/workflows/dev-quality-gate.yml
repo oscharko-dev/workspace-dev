@@ -38,6 +38,9 @@ jobs:
       - name: Enforce workflow --ignore-scripts policy
         run: pnpm run verify:workflow-install-scripts
 
+      - name: Enforce pnpm onlyBuiltDependencies allowlist
+        run: pnpm run verify:built-deps-allowlist
+
       - name: Enforce workflow persist-credentials policy
         run: pnpm run verify:workflow-persist-credentials
 
