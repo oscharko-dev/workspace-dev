@@ -14,14 +14,19 @@ import type {
   NonTextElementIR,
   ScreenElementIR,
   ScreenIR,
-  TextElementIR
+  TextElementIR,
 } from "../parity/types-ir.js";
 import {
   validateRegenerationOverrideEntry,
-  type ValidatedRegenerationOverrideEntry
+  type ValidatedRegenerationOverrideEntry,
 } from "./ir-override-validation.js";
 
-type NumericElementField = "opacity" | "cornerRadius" | "fontSize" | "fontWeight" | "gap";
+type NumericElementField =
+  | "opacity"
+  | "cornerRadius"
+  | "fontSize"
+  | "fontWeight"
+  | "gap";
 type DimensionElementField = "width" | "height";
 type StringElementField = "fillColor" | "fontFamily";
 
@@ -31,20 +36,26 @@ function hasChildren(element: ScreenElementIR): boolean {
 
 function applyPaddingOverride(
   element: ScreenElementIR,
-  value: Extract<ValidatedRegenerationOverrideEntry, { field: "padding" }>["value"]
+  value: Extract<
+    ValidatedRegenerationOverrideEntry,
+    { field: "padding" }
+  >["value"],
 ): boolean {
   element.padding = {
     top: value.top,
     right: value.right,
     bottom: value.bottom,
-    left: value.left
+    left: value.left,
   };
   return true;
 }
 
 function applyLayoutModeOverride(
   element: ScreenElementIR,
-  value: Extract<ValidatedRegenerationOverrideEntry, { field: "layoutMode" }>["value"]
+  value: Extract<
+    ValidatedRegenerationOverrideEntry,
+    { field: "layoutMode" }
+  >["value"],
 ): boolean {
   if (!hasChildren(element)) {
     return false;
@@ -66,24 +77,24 @@ export interface ApplyIrOverridesResult {
 function cloneTextElement(
   element: TextElementIR,
   clonedChildren: ScreenElementIR[] | undefined,
-  clonedPadding: TextElementIR["padding"]
+  clonedPadding: TextElementIR["padding"],
 ): TextElementIR {
   return {
     ...element,
     ...(clonedChildren ? { children: clonedChildren } : {}),
-    ...(clonedPadding ? { padding: clonedPadding } : {})
+    ...(clonedPadding ? { padding: clonedPadding } : {}),
   };
 }
 
 function cloneNonTextElement(
   element: NonTextElementIR,
   clonedChildren: ScreenElementIR[] | undefined,
-  clonedPadding: NonTextElementIR["padding"]
+  clonedPadding: NonTextElementIR["padding"],
 ): NonTextElementIR {
   return {
     ...element,
     ...(clonedChildren ? { children: clonedChildren } : {}),
-    ...(clonedPadding ? { padding: clonedPadding } : {})
+    ...(clonedPadding ? { padding: clonedPadding } : {}),
   };
 }
 
@@ -102,13 +113,13 @@ function cloneScreen(screen: ScreenIR): ScreenIR {
   return {
     ...screen,
     padding: { ...screen.padding },
-    children: screen.children.map((child) => cloneElement(child))
+    children: screen.children.map((child) => cloneElement(child)),
   };
 }
 
 function applyOverrideToElement(
   element: ScreenElementIR,
-  override: ValidatedRegenerationOverrideEntry
+  override: ValidatedRegenerationOverrideEntry,
 ): boolean {
   switch (override.field) {
     case "opacity":
@@ -186,19 +197,38 @@ function applyOverrideToElement(
   }
 }
 
-function findAndApplyOverride(
+function collectElements(
   elements: ScreenElementIR[],
-  override: ValidatedRegenerationOverrideEntry
-): boolean {
+  map: Map<string, ScreenElementIR>,
+): void {
   for (const element of elements) {
-    if (element.id === override.nodeId) {
-      return applyOverrideToElement(element, override);
-    }
+    map.set(element.id, element);
     if (element.children && element.children.length > 0) {
-      if (findAndApplyOverride(element.children, override)) {
-        return true;
-      }
+      collectElements(element.children, map);
     }
+  }
+}
+
+function applyScreenOverride(
+  screen: ScreenIR,
+  override: ValidatedRegenerationOverrideEntry,
+): boolean {
+  if (override.field === "fillColor" && typeof override.value === "string") {
+    screen.fillColor = override.value;
+    return true;
+  }
+  if (override.field === "gap" && typeof override.value === "number") {
+    screen.gap = override.value;
+    return true;
+  }
+  if (override.field === "padding") {
+    screen.padding = {
+      top: override.value.top,
+      right: override.value.right,
+      bottom: override.value.bottom,
+      left: override.value.left,
+    };
+    return true;
   }
   return false;
 }
@@ -206,10 +236,15 @@ function findAndApplyOverride(
 /**
  * Applies override entries to a Design IR in a pure transformation step.
  * Returns a new IR with overrides applied; the input IR is not mutated.
+ *
+ * Complexity: O(n + m) where n is the number of overrides and m is the
+ * number of IR nodes. Node lookup uses a pre-built Map populated in a
+ * single pass over the cloned tree; each override is then resolved in
+ * O(1) instead of walking the tree per override.
  */
 export function applyIrOverrides({
   ir,
-  overrides
+  overrides,
 }: {
   ir: DesignIR;
   overrides: readonly WorkspaceRegenerationOverrideEntry[];
@@ -218,11 +253,18 @@ export function applyIrOverrides({
     return {
       ir,
       appliedCount: 0,
-      skippedCount: 0
+      skippedCount: 0,
     };
   }
 
   const clonedScreens = ir.screens.map((screen) => cloneScreen(screen));
+  const screenMap = new Map<string, ScreenIR>();
+  const elementMap = new Map<string, ScreenElementIR>();
+  for (const screen of clonedScreens) {
+    screenMap.set(screen.id, screen);
+    collectElements(screen.children, elementMap);
+  }
+
   let appliedCount = 0;
   let skippedCount = 0;
 
@@ -235,37 +277,14 @@ export function applyIrOverrides({
 
     const validatedOverride = validationResult.entry;
     let applied = false;
-    for (const screen of clonedScreens) {
-      // Check if the screen root itself matches
-      if (screen.id === validatedOverride.nodeId) {
-        // Screen-level overrides for applicable fields
-        if (validatedOverride.field === "fillColor" && typeof validatedOverride.value === "string") {
-          screen.fillColor = validatedOverride.value;
-          applied = true;
-          break;
-        }
-        if (validatedOverride.field === "gap" && typeof validatedOverride.value === "number") {
-          screen.gap = validatedOverride.value;
-          applied = true;
-          break;
-        }
-        if (validatedOverride.field === "padding") {
-          const paddingValue = validatedOverride.value;
-          screen.padding = {
-            top: paddingValue.top,
-            right: paddingValue.right,
-            bottom: paddingValue.bottom,
-            left: paddingValue.left
-          };
-          applied = true;
-          break;
-        }
-      }
 
-      // Search children
-      if (findAndApplyOverride(screen.children, validatedOverride)) {
-        applied = true;
-        break;
+    const screen = screenMap.get(validatedOverride.nodeId);
+    if (screen) {
+      applied = applyScreenOverride(screen, validatedOverride);
+    } else {
+      const element = elementMap.get(validatedOverride.nodeId);
+      if (element) {
+        applied = applyOverrideToElement(element, validatedOverride);
       }
     }
 
@@ -279,12 +298,12 @@ export function applyIrOverrides({
   const clonedIr: DesignIR = {
     ...ir,
     screens: clonedScreens,
-    tokens: { ...ir.tokens }
+    tokens: { ...ir.tokens },
   };
 
   return {
     ir: clonedIr,
     appliedCount,
-    skippedCount
+    skippedCount,
   };
 }
