@@ -73,6 +73,20 @@ const toCacheFilePath = ({ cacheDir, contentHash, optionsHash }: { cacheDir: str
   return path.join(cacheDir, `ir-${contentHash.slice(0, 16)}-${optionsHash.slice(0, 8)}.json`);
 };
 
+const emitIrCacheDebugLog = ({
+  onLog,
+  operation,
+  error,
+  details
+}: {
+  onLog: (message: string) => void;
+  operation: string;
+  error: unknown;
+  details: string;
+}): void => {
+  onLog(`IR cache debug: operation=${operation}; ${details}; error=${getErrorMessage(error)}.`);
+};
+
 export const loadCachedIr = async ({
   cacheDir,
   contentHash,
@@ -91,14 +105,26 @@ export const loadCachedIr = async ({
   let raw: string;
   try {
     raw = await readFile(cacheFilePath, "utf8");
-  } catch {
+  } catch (error) {
+    emitIrCacheDebugLog({
+      onLog,
+      operation: "loadCachedIr.read",
+      error,
+      details: `cacheFilePath='${cacheFilePath}'; contentHash=${contentHash.slice(0, 12)}; optionsHash=${optionsHash.slice(0, 8)}`
+    });
     return undefined;
   }
 
   let entry: unknown;
   try {
     entry = JSON.parse(raw);
-  } catch {
+  } catch (error) {
+    emitIrCacheDebugLog({
+      onLog,
+      operation: "loadCachedIr.parse",
+      error,
+      details: `cacheFilePath='${cacheFilePath}'; contentHash=${contentHash.slice(0, 12)}; optionsHash=${optionsHash.slice(0, 8)}`
+    });
     onLog("IR cache: corrupt entry, ignoring.");
     return undefined;
   }
@@ -188,8 +214,13 @@ export const saveCachedIr = async ({
 
   try {
     await evictStaleCacheEntries({ cacheDir, ttlMs, onLog });
-  } catch {
-    // Eviction is best-effort; do not block the pipeline.
+  } catch (error) {
+    emitIrCacheDebugLog({
+      onLog,
+      operation: "saveCachedIr.evictStaleCacheEntries",
+      error,
+      details: `cacheDir='${cacheDir}'; ttlMs=${ttlMs}`
+    });
   }
 };
 
@@ -205,7 +236,13 @@ const evictStaleCacheEntries = async ({
   let entries: string[];
   try {
     entries = await readdir(cacheDir);
-  } catch {
+  } catch (error) {
+    emitIrCacheDebugLog({
+      onLog,
+      operation: "evictStaleCacheEntries.readdir",
+      error,
+      details: `cacheDir='${cacheDir}'`
+    });
     return;
   }
 
@@ -220,7 +257,13 @@ const evictStaleCacheEntries = async ({
       try {
         const fileStat = await stat(filePath);
         return { name, filePath, mtimeMs: fileStat.mtimeMs };
-      } catch {
+      } catch (error) {
+        emitIrCacheDebugLog({
+          onLog,
+          operation: "evictStaleCacheEntries.stat",
+          error,
+          details: `cacheDir='${cacheDir}'; filePath='${filePath}'`
+        });
         return { name, filePath, mtimeMs: 0 };
       }
     })
@@ -239,8 +282,13 @@ const evictStaleCacheEntries = async ({
       try {
         await unlink(entry.filePath);
         evictedCount++;
-      } catch {
-        // Best-effort eviction.
+      } catch (error) {
+        emitIrCacheDebugLog({
+          onLog,
+          operation: "evictStaleCacheEntries.unlink",
+          error,
+          details: `cacheDir='${cacheDir}'; filePath='${entry.filePath}'`
+        });
       }
     }
   }

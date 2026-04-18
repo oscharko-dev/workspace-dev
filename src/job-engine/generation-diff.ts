@@ -79,10 +79,12 @@ const computeSha256 = (content: Buffer): string => {
  */
 const collectFileHashes = async ({
   projectDir,
-  baseDir
+  baseDir,
+  onLog
 }: {
   projectDir: string;
   baseDir?: string;
+  onLog?: (message: string) => void;
 }): Promise<FileHashEntry[]> => {
   const root = baseDir ?? projectDir;
   const entries: FileHashEntry[] = [];
@@ -90,7 +92,8 @@ const collectFileHashes = async ({
   let dirEntries: Dirent[];
   try {
     dirEntries = await readdir(projectDir, { withFileTypes: true });
-  } catch {
+  } catch (error) {
+    onLog?.(`Generation diff debug: operation=collectFileHashes.readdir; projectDir='${projectDir}'; error=${error instanceof Error ? error.message : String(error)}.`);
     return entries;
   }
 
@@ -102,7 +105,11 @@ const collectFileHashes = async ({
     }
 
     if (entry.isDirectory()) {
-      const subEntries = await collectFileHashes({ projectDir: fullPath, baseDir: root });
+      const subEntries = await collectFileHashes({
+        projectDir: fullPath,
+        baseDir: root,
+        ...(onLog ? { onLog } : {})
+      });
       entries.push(...subEntries);
     } else if (entry.isFile()) {
       const content = await readFile(fullPath);
@@ -143,15 +150,23 @@ const resolveHashSnapshotPath = ({
  */
 export const loadPreviousSnapshot = async ({
   outputRoot,
-  boardKey
+  boardKey,
+  onLog
 }: {
   outputRoot: string;
   boardKey: string;
+  onLog?: (message: string) => void;
 }): Promise<GenerationHashSnapshot | null> => {
   const snapshotPath = resolveHashSnapshotPath({ outputRoot, boardKey });
   try {
     const raw = await readFile(snapshotPath, "utf8");
-    const parsed = JSON.parse(raw) as unknown;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw) as unknown;
+    } catch (error) {
+      onLog?.(`Generation diff debug: operation=loadPreviousSnapshot.parse; boardKey='${boardKey}'; snapshotPath='${snapshotPath}'; error=${error instanceof Error ? error.message : String(error)}.`);
+      return null;
+    }
     if (
       typeof parsed === "object" &&
       parsed !== null &&
@@ -163,7 +178,8 @@ export const loadPreviousSnapshot = async ({
       return parsed as GenerationHashSnapshot;
     }
     return null;
-  } catch {
+  } catch (error) {
+    onLog?.(`Generation diff debug: operation=loadPreviousSnapshot.read; boardKey='${boardKey}'; snapshotPath='${snapshotPath}'; error=${error instanceof Error ? error.message : String(error)}.`);
     return null;
   }
 };
@@ -286,15 +302,24 @@ export const prepareGenerationDiff = async ({
   generatedProjectDir,
   outputRoot,
   boardKey,
-  jobId
+  jobId,
+  onLog
 }: {
   generatedProjectDir: string;
   outputRoot: string;
   boardKey: string;
   jobId: string;
+  onLog?: (message: string) => void;
 }): Promise<PreparedGenerationDiff> => {
-  const currentFiles = await collectFileHashes({ projectDir: generatedProjectDir });
-  const previousSnapshot = await loadPreviousSnapshot({ outputRoot, boardKey });
+  const currentFiles = await collectFileHashes({
+    projectDir: generatedProjectDir,
+    ...(onLog ? { onLog } : {})
+  });
+  const previousSnapshot = await loadPreviousSnapshot({
+    outputRoot,
+    boardKey,
+    ...(onLog ? { onLog } : {})
+  });
 
   return {
     report: computeGenerationDiff({
@@ -355,19 +380,22 @@ export const runGenerationDiff = async ({
   jobDir,
   outputRoot,
   boardKey,
-  jobId
+  jobId,
+  onLog
 }: {
   generatedProjectDir: string;
   jobDir: string;
   outputRoot: string;
   boardKey: string;
   jobId: string;
+  onLog?: (message: string) => void;
 }): Promise<GenerationDiffReport> => {
   const preparedDiff = await prepareGenerationDiff({
     generatedProjectDir,
     outputRoot,
     boardKey,
-    jobId
+    jobId,
+    ...(onLog ? { onLog } : {})
   });
   await persistPreparedGenerationDiff({
     jobDir,

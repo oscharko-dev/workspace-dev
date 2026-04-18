@@ -104,6 +104,7 @@
     "ui:test:e2e:matrix": "node scripts/run-ui-e2e.mjs matrix",
     "ui:test:e2e:live": "node scripts/run-ui-e2e.mjs live",
     "lint:boundaries": "node scripts/check-boundary.mjs",
+    "lint:job-engine-catch-logging": "node scripts/check-job-engine-catch-logging.mjs",
     "lint:ts-style": "eslint \"src/**/*.ts\" --max-warnings=0 --ignore-pattern \"src/**/*.test.ts\" --ignore-pattern \"src/parity/fixtures/golden/**\"",
     "lint:no-telemetry": "node scripts/check-no-telemetry.mjs",
     "lint:publint": "publint",

@@ -20,6 +20,13 @@ export interface WorkspaceRuntimeLogger {
 }
 
 export const DEFAULT_WORKSPACE_LOG_FORMAT: WorkspaceLogFormat = "text";
+const DEFAULT_WORKSPACE_LOG_LEVEL: WorkspaceRuntimeLogLevel = "info";
+const WORKSPACE_RUNTIME_LOG_LEVEL_PRIORITY: Record<WorkspaceRuntimeLogLevel, number> = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40
+};
 
 const formatTextLine = ({
   level,
@@ -93,8 +100,23 @@ export const resolveWorkspaceLogFormat = ({
   return fallback;
 };
 
+export const resolveWorkspaceLogLevel = ({
+  value,
+  fallback = DEFAULT_WORKSPACE_LOG_LEVEL
+}: {
+  value: string | undefined;
+  fallback?: WorkspaceRuntimeLogLevel;
+}): WorkspaceRuntimeLogLevel => {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "debug" || normalized === "info" || normalized === "warn" || normalized === "error") {
+    return normalized;
+  }
+  return fallback;
+};
+
 export const createWorkspaceLogger = ({
   format = DEFAULT_WORKSPACE_LOG_FORMAT,
+  minLevel,
   now = () => new Date().toISOString(),
   stdoutWriter = (line: string) => {
     process.stdout.write(line);
@@ -109,9 +131,19 @@ export const createWorkspaceLogger = ({
   stdoutWriter?: (line: string) => void;
   stderrWriter?: (line: string) => void;
   label?: string;
+  minLevel?: WorkspaceRuntimeLogLevel;
 } = {}): WorkspaceRuntimeLogger => {
+  const resolvedMinLevel = resolveWorkspaceLogLevel({
+    value: minLevel ?? process.env.FIGMAPIPE_WORKSPACE_LOG_LEVEL,
+    fallback: DEFAULT_WORKSPACE_LOG_LEVEL
+  });
+
   return {
     log: ({ level, message, jobId, stage, requestId, event, method, path, statusCode }) => {
+      if (WORKSPACE_RUNTIME_LOG_LEVEL_PRIORITY[level] < WORKSPACE_RUNTIME_LOG_LEVEL_PRIORITY[resolvedMinLevel]) {
+        return;
+      }
+
       const sanitizedMessage = redactLogMessage(message);
       const line =
         format === "json"

@@ -823,8 +823,10 @@ const readCachedFigmaResult = async ({
     onLog(`Figma cache stale for file '${fileKey}' (age=${Math.max(0, Math.trunc(ageMs))}ms).`);
     try {
       await unlink(cacheFilePath);
-    } catch {
-      // Best-effort stale cleanup.
+    } catch (error) {
+      onLog(
+        `Figma cache stale cleanup failed for file '${fileKey}' at '${cacheFilePath}': ${getErrorMessage(error)}.`
+      );
     }
     return undefined;
   }
@@ -851,6 +853,7 @@ const readLatestCacheIndex = async ({
   } catch (error) {
     const maybeError = error as NodeJS.ErrnoException;
     if (maybeError.code === "ENOENT") {
+      onLog(`Figma incremental index missing for file '${fileKey}' at '${cacheIndexPath}'.`);
       return undefined;
     }
     onLog(`Figma incremental index read failed for file '${fileKey}': ${getErrorMessage(error)}.`);
@@ -2398,6 +2401,9 @@ export const fetchFigmaFile = async ({
         if (!(error instanceof FigmaTooLargeError)) {
           throw error;
         }
+        onLog(
+          `Icon geometry recovery switching to smaller batches for screen '${screenNodeId}' after oversized response: ${getErrorMessage(error)}.`
+        );
       }
 
       if (ids.length > 1) {
@@ -2452,8 +2458,10 @@ export const fetchFigmaFile = async ({
     } catch (error) {
       if (error instanceof FigmaTooLargeError) {
         fallbackReason = "oversized";
+        onLog(`Staged node geometry fetch switching to smaller batches after oversized response: ${getErrorMessage(error)}.`);
       } else if (isTimeoutError(error)) {
         fallbackReason = "timeout";
+        onLog(`Staged node geometry fetch switching to smaller batches after timeout: ${getErrorMessage(error)}.`);
       } else {
         throw error;
       }
@@ -2521,9 +2529,11 @@ export const fetchFigmaFile = async ({
         }
       }
       degradedGeometryNodes.add(nodeId);
-    } catch {
+    } catch (error) {
       degradedGeometryNodes.add(nodeId);
-      onLog(`Node '${nodeId}' could not be fetched without geometry; keeping bootstrap node.`);
+      onLog(
+        `Node '${nodeId}' could not be fetched without geometry; keeping bootstrap node: ${getErrorMessage(error)}.`
+      );
     }
   };
 
@@ -2562,6 +2572,9 @@ export const fetchFigmaFile = async ({
           if (!(error instanceof FigmaTooLargeError)) {
             throw error;
           }
+          onLog(
+            `Incremental snapshot fetch switching to smaller batches after oversized response: ${getErrorMessage(error)}.`
+          );
         }
 
         if (ids.length > 1) {

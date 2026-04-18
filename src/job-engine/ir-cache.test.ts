@@ -122,6 +122,7 @@ test("loadCachedIr returns undefined for missing cache file", async () => {
     onLog
   });
   assert.equal(result, undefined);
+  assert.ok(logs.some((log) => log.includes("operation=loadCachedIr.read")));
 });
 
 test("loadCachedIr returns undefined for corrupt JSON", async () => {
