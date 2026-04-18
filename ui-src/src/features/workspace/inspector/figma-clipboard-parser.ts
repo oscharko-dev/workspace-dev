@@ -83,18 +83,6 @@ export function parseFigmaClipboard(html: string): FigmaClipboardResult | null {
   return { meta, hasBuffer, rawHtml: html };
 }
 
-/**
- * Derive the Figma node ID from the clipboard metadata.
- *
- * The `pasteID` alone is not a full node reference — resolving the actual node
- * requires a round-trip via the Figma MCP or REST API using `fileKey`.
- * Until that mapping exists, node-id extraction is intentionally conservative.
- */
-export function extractFigmaNodeId(figmeta: FigmaMeta): string | null {
-  void figmeta;
-  return null;
-}
-
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
