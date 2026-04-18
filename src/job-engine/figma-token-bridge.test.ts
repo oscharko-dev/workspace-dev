@@ -847,6 +847,7 @@ test("resolveFigmaTokens — full happy path with variables and design system", 
     fileKey: "test-file",
     nodeId: "1:2",
     mcpConfig: createConfig(fetchImpl),
+    tailwindDetected: true,
   });
 
   // Variables resolved
@@ -1496,6 +1497,7 @@ test("resolveFigmaTokens — preserves mode alternatives and prefers light/defau
     fileKey: "test-file",
     nodeId: "1:2",
     mcpConfig: createConfig(fetchImpl),
+    tailwindDetected: true,
   });
 
   assert.equal(result.variables.length, 2);
@@ -1549,4 +1551,69 @@ test("resolveFigmaTokens — handles large token set (500+ variables)", async ()
 
   assert.equal(result.variables.length, 600);
   assert.ok(result.cssCustomProperties.length > 0);
+});
+
+// ---------------------------------------------------------------------------
+// tailwindDetected gate (#1107)
+// ---------------------------------------------------------------------------
+
+test("resolveFigmaTokens — omits tailwindExtension when tailwindDetected is false (default)", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            { name: "color/primary", resolvedValue: "#3B82F6", type: "COLOR" },
+          ],
+        }),
+      );
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+    // tailwindDetected omitted — defaults to false
+  });
+
+  assert.ok(result.variables.length >= 1);
+  assert.ok(result.cssCustomProperties.includes("--color-primary: #3B82F6;"));
+  assert.equal(result.tailwindExtension, undefined);
+});
+
+test("resolveFigmaTokens — emits tailwindExtension when tailwindDetected is true", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            { name: "color/primary", resolvedValue: "#3B82F6", type: "COLOR" },
+          ],
+        }),
+      );
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+    tailwindDetected: true,
+  });
+
+  assert.ok(result.variables.length >= 1);
+  assert.ok(result.cssCustomProperties.includes("--color-primary: #3B82F6;"));
+  assert.ok(result.tailwindExtension);
+  assert.equal(result.tailwindExtension.colors?.["color-primary"], "#3B82F6");
 });

@@ -839,6 +839,7 @@ export interface TokenBridgeConfig {
   signal?: AbortSignal;
   existingVariables?: readonly FigmaMcpVariableDefinition[];
   existingStyles?: readonly FigmaMcpStyleCatalogEntry[];
+  tailwindDetected?: boolean;
 }
 
 const MODE_PREFERENCE_PATTERNS = [/^default$/i, /^base$/i, /^light$/i];
@@ -956,6 +957,7 @@ export const resolveFigmaTokens = async (
     signal,
     existingVariables = [],
     existingStyles = [],
+    tailwindDetected = false,
   } = bridgeConfig;
   const diagnostics: FigmaMcpEnrichmentDiagnostic[] = [];
   const unmappedVariables: string[] = [];
@@ -1088,7 +1090,9 @@ export const resolveFigmaTokens = async (
 
   // ----- Step 7: Generate CSS & Tailwind -----
   const cssCustomProperties = generateCssCustomProperties(mergedVariables);
-  const tailwindExtension = generateTailwindExtension(mergedVariables);
+  const tailwindExtension = tailwindDetected
+    ? generateTailwindExtension(mergedVariables)
+    : undefined;
   const designTokens = buildCanonicalDesignTokens({
     variables: mergedVariables,
     styleCatalog: mergedStyles,

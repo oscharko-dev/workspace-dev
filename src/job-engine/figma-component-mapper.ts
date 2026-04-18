@@ -1758,7 +1758,7 @@ export const resolveComponentMappings = async (
     const approvedMappings = new Map<string, MappedComponent>();
     for (const candidate of candidates) {
       const mapping = resultMappings.get(candidate.nodeId);
-      if (!mapping || mapping.confidence !== "exact") {
+      if (!mapping || !isPersistedMappingConfidence(mapping.confidence)) {
         continue;
       }
       approvedMappings.set(candidate.persistenceKey, mapping);
