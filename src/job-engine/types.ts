@@ -184,6 +184,8 @@ export interface JobEngineRuntime {
   commandStdoutMaxBytes: number;
   commandStderrMaxBytes: number;
   pipelineDiagnosticLimits: PipelineDiagnosticLimits;
+  enableLintAutofix: boolean;
+  enablePerfValidation: boolean;
   enableUiValidation: boolean;
   enableVisualQualityValidation: boolean;
   visualQualityReferenceMode: WorkspaceVisualQualityReferenceMode;

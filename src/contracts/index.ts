@@ -255,6 +255,10 @@ export interface WorkspaceStartOptions {
   pipelineDiagnosticDetailsMaxItems?: number;
   /** Maximum nesting depth retained when sanitizing structured diagnostic details. Default: 4 */
   pipelineDiagnosticDetailsMaxDepth?: number;
+  /** Run lint auto-fix during validate.project before lint/typecheck/build. Default: true */
+  enableLintAutofix?: boolean;
+  /** Run perf validation during validate.project. Default: false */
+  enablePerfValidation?: boolean;
   /** Run static UI validation in validate.project. Default: false */
   enableUiValidation?: boolean;
   /** Run visual quality validation in validate.project. Default: false */

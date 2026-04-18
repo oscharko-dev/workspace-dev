@@ -5716,6 +5716,100 @@ test("ValidateProjectService reads generated.project and writes validation.summa
   assert.deepEqual(executionContext.job.visualAudit, { status: "not_requested" });
 });
 
+test("ValidateProjectService uses per-runtime validation policy instead of process env", async () => {
+  const previousLintAutofix = process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX;
+  const previousWorkspacePerf = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION;
+  const previousLegacyPerf = process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
+
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = "false";
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = "false";
+  process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = "false";
+
+  try {
+    const first = await createExecutionContext({
+      runtimeOverrides: {
+        enableLintAutofix: true,
+        enablePerfValidation: false
+      }
+    });
+    const second = await createExecutionContext({
+      runtimeOverrides: {
+        enableLintAutofix: false,
+        enablePerfValidation: true
+      },
+      jobId: "job-stage-test-second"
+    });
+
+    await first.executionContext.artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.generatedProject,
+      stage: "template.prepare",
+      absolutePath: first.executionContext.paths.generatedProjectDir
+    });
+    await first.executionContext.artifactStore.setValue({
+      key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+      stage: "codegen.generate",
+      value: {
+        boardKey: "test-board-first"
+      } satisfies GenerationDiffContext
+    });
+    await second.executionContext.artifactStore.setPath({
+      key: STAGE_ARTIFACT_KEYS.generatedProject,
+      stage: "template.prepare",
+      absolutePath: second.executionContext.paths.generatedProjectDir
+    });
+    await second.executionContext.artifactStore.setValue({
+      key: STAGE_ARTIFACT_KEYS.generationDiffContext,
+      stage: "codegen.generate",
+      value: {
+        boardKey: "test-board-second"
+      } satisfies GenerationDiffContext
+    });
+
+    const capturedPolicies: Array<{ enableLintAutofix?: boolean; enablePerfValidation?: boolean }> = [];
+    const service = createValidateProjectService({
+      runProjectValidationFn: async (input) => {
+        capturedPolicies.push({
+          enableLintAutofix: input.enableLintAutofix,
+          enablePerfValidation: input.enablePerfValidation
+        });
+        return createSuccessfulValidationResult({
+          includePerfValidation: input.enablePerfValidation
+        });
+      }
+    });
+
+    await service.execute(undefined, first.stageContextFor("validate.project"));
+    await service.execute(undefined, second.stageContextFor("validate.project"));
+
+    assert.deepEqual(capturedPolicies, [
+      {
+        enableLintAutofix: true,
+        enablePerfValidation: false
+      },
+      {
+        enableLintAutofix: false,
+        enablePerfValidation: true
+      }
+    ]);
+  } finally {
+    if (previousLintAutofix === undefined) {
+      delete process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX;
+    } else {
+      process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = previousLintAutofix;
+    }
+    if (previousWorkspacePerf === undefined) {
+      delete process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION;
+    } else {
+      process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = previousWorkspacePerf;
+    }
+    if (previousLegacyPerf === undefined) {
+      delete process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
+    } else {
+      process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = previousLegacyPerf;
+    }
+  }
+});
+
 test("ValidateProjectService confidence uses collected diagnostics, generation screen inventory, and manifest ownership", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({});
   executionContext.getCollectedDiagnostics = () => [

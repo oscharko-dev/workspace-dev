@@ -237,6 +237,8 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.pipelineDiagnosticDetailsMaxDepth !== undefined
       ? { pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth }
       : {}),
+    ...(options.enableLintAutofix !== undefined ? { enableLintAutofix: options.enableLintAutofix } : {}),
+    ...(options.enablePerfValidation !== undefined ? { enablePerfValidation: options.enablePerfValidation } : {}),
     ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
     ...(options.enableVisualQualityValidation !== undefined
       ? { enableVisualQualityValidation: options.enableVisualQualityValidation }
