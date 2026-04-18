@@ -640,6 +640,7 @@ export const mergeVariablesWithExisting = ({
       if (prevValue !== newValue) {
         const conflictName = toConflictName(variable);
         conflicts.push({
+          kind: "value_override",
           name: conflictName,
           figmaValue: newValue,
           existingValue: prevValue,
@@ -806,7 +807,9 @@ const buildDesignSystemSearchQuery = ({
     }
   }
 
-  return fragments.length > 0 ? fragments.join(" ") : "background space radius font";
+  return fragments.length > 0
+    ? fragments.join(" ")
+    : "background space radius font";
 };
 
 const collectModeAlternatives = ({
@@ -824,15 +827,14 @@ const collectModeAlternatives = ({
     grouped.set(key, entry);
   }
 
-  return [...grouped.entries()].reduce<Record<string, Record<string, TokenPrimitive>>>(
-    (acc, [key, value]) => {
-      if (Object.keys(value).length > 1) {
-        acc[key] = value;
-      }
-      return acc;
-    },
-    {},
-  );
+  return [...grouped.entries()].reduce<
+    Record<string, Record<string, TokenPrimitive>>
+  >((acc, [key, value]) => {
+    if (Object.keys(value).length > 1) {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
 };
 
 const buildCanonicalDesignTokens = ({
@@ -945,19 +947,27 @@ export const resolveFigmaTokens = async (
   });
 
   // ----- Step 3: Prefer library token names over raw values -----
+  let aliasConflicts: TokenConflict[] = [];
   if (designSystemStyles.length > 0 && rawVariables.length > 0) {
-    rawVariables = preferLibraryTokenNames({
+    const libraryResult = preferLibraryTokenNames({
       variables: rawVariables,
       libraryStyles: designSystemStyles,
     });
+    rawVariables = libraryResult.variables;
+    aliasConflicts = libraryResult.conflicts;
   }
 
   // ----- Step 4: Merge with existing variables -----
-  const { merged: mergedVariables, conflicts } = mergeVariablesWithExisting({
-    incoming: rawVariables,
-    existing: [...existingVariables],
-    ...(mcpConfig.onLog ? { onLog: mcpConfig.onLog } : {}),
-  });
+  const { merged: mergedVariables, conflicts: mergeConflicts } =
+    mergeVariablesWithExisting({
+      incoming: rawVariables,
+      existing: [...existingVariables],
+      ...(mcpConfig.onLog ? { onLog: mcpConfig.onLog } : {}),
+    });
+  // Alias-collision conflicts represent pre-existing data issues in Figma;
+  // value-override conflicts arise during merge. Surface the pre-existing
+  // ones first so consumers see them before merge-time resolutions.
+  const conflicts: TokenConflict[] = [...aliasConflicts, ...mergeConflicts];
 
   // ----- Step 5: Merge style catalogs -----
   const mergedStyles = mergeStyleCatalogs({
@@ -1016,9 +1026,94 @@ export const resolveFigmaTokens = async (
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+type CollidingVariable = {
+  name: string;
+  value: string;
+  modeName?: string;
+};
+
+const groupClaimantsByLibraryName = ({
+  variables,
+  candidates,
+}: {
+  variables: readonly FigmaMcpVariableDefinition[];
+  candidates: ReadonlyArray<string | null>;
+}): Map<string, number[]> => {
+  // Dedup by `(name, modeName)` so a duplicated input variable is not counted
+  // twice as a claimant (which would falsely trigger a collision).
+  const claimantsByLibraryName = new Map<string, number[]>();
+  const seenClaimantKeysByLibraryName = new Map<string, Set<string>>();
+  candidates.forEach((libraryName, index) => {
+    if (libraryName === null) {
+      return;
+    }
+    const variable = variables[index];
+    if (!variable) {
+      return;
+    }
+    const claimantKey = `${variable.name}::${variable.modeName?.trim() ?? ""}`;
+    const seen =
+      seenClaimantKeysByLibraryName.get(libraryName) ?? new Set<string>();
+    if (seen.has(claimantKey)) {
+      return;
+    }
+    seen.add(claimantKey);
+    seenClaimantKeysByLibraryName.set(libraryName, seen);
+    const list = claimantsByLibraryName.get(libraryName) ?? [];
+    list.push(index);
+    claimantsByLibraryName.set(libraryName, list);
+  });
+  return claimantsByLibraryName;
+};
+
+const buildAliasCollisionConflict = ({
+  libraryName,
+  indices,
+  variables,
+}: {
+  libraryName: string;
+  indices: readonly number[];
+  variables: readonly FigmaMcpVariableDefinition[];
+}): TokenConflict => {
+  const collidingVariables: CollidingVariable[] = indices
+    .map((index): CollidingVariable | null => {
+      const variable = variables[index];
+      if (!variable) {
+        return null;
+      }
+      const modeName = variable.modeName?.trim();
+      return {
+        name: variable.name,
+        value: String(variable.value),
+        ...(modeName ? { modeName } : {}),
+      };
+    })
+    .filter((entry): entry is CollidingVariable => entry !== null)
+    .sort((left, right) => {
+      const nameCompare = left.name.localeCompare(right.name);
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+      return (left.modeName ?? "").localeCompare(right.modeName ?? "");
+    });
+  return {
+    kind: "library_alias_collision",
+    libraryName,
+    collidingVariables,
+    resolution: "preserve_original",
+  };
+};
+
 /**
  * When library styles are available, prefer their token names over raw variable names.
  * Matches by resolved color value.
+ *
+ * If two or more distinct variables (different `(name, modeName)` keys) match
+ * the same library style, renaming both would collapse them to the same key in
+ * `mergeVariablesWithExisting` and silently drop one. To preserve identity:
+ *   - we keep their original names (so dedup keys stay distinct)
+ *   - we still attach the library name as an alias on each claimant
+ *   - we emit a single `library_alias_collision` conflict listing all claimants
  */
 const preferLibraryTokenNames = ({
   variables,
@@ -1026,7 +1121,10 @@ const preferLibraryTokenNames = ({
 }: {
   variables: FigmaMcpVariableDefinition[];
   libraryStyles: readonly FigmaMcpStyleCatalogEntry[];
-}): FigmaMcpVariableDefinition[] => {
+}): {
+  variables: FigmaMcpVariableDefinition[];
+  conflicts: TokenConflict[];
+} => {
   const colorStylesByValue = new Map<string, string>();
   for (const style of libraryStyles) {
     if (style.color) {
@@ -1034,20 +1132,62 @@ const preferLibraryTokenNames = ({
     }
   }
 
-  return variables.map((variable) => {
+  // First pass: compute candidate library name for each variable index.
+  const candidates: Array<string | null> = variables.map((variable) => {
     if (variable.kind !== "color" || typeof variable.value !== "string") {
-      return variable;
+      return null;
     }
     const libraryName = colorStylesByValue.get(variable.value.toLowerCase());
-    if (libraryName && libraryName !== variable.name) {
+    if (!libraryName || libraryName === variable.name) {
+      return null;
+    }
+    return libraryName;
+  });
+
+  const claimantsByLibraryName = groupClaimantsByLibraryName({
+    variables,
+    candidates,
+  });
+
+  const collisionLibraryNames = new Set<string>();
+  for (const [libraryName, indices] of claimantsByLibraryName.entries()) {
+    if (indices.length > 1) {
+      collisionLibraryNames.add(libraryName);
+    }
+  }
+
+  const nextVariables = variables.map((variable, index) => {
+    const libraryName = candidates[index];
+    if (libraryName === null || libraryName === undefined) {
+      return variable;
+    }
+    if (collisionLibraryNames.has(libraryName)) {
+      // Preserve original name; expose library name as an alias only.
       return {
         ...variable,
-        aliases: [...(variable.aliases ?? []), variable.name],
-        name: libraryName,
+        aliases: [...(variable.aliases ?? []), libraryName],
       };
     }
-    return variable;
+    // Sole claimant — rename as before.
+    return {
+      ...variable,
+      aliases: [...(variable.aliases ?? []), variable.name],
+      name: libraryName,
+    };
   });
+
+  const conflicts: TokenConflict[] = [];
+  for (const libraryName of collisionLibraryNames) {
+    conflicts.push(
+      buildAliasCollisionConflict({
+        libraryName,
+        indices: claimantsByLibraryName.get(libraryName) ?? [],
+        variables,
+      }),
+    );
+  }
+
+  return { variables: nextVariables, conflicts };
 };
 
 /**
