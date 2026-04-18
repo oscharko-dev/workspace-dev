@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { CONTRACT_VERSION } from "./contracts/index.js";
+import * as publicApi from "./index.js";
 import { getAllowedFigmaSourceModes, getAllowedLlmCodegenModes, getWorkspaceDefaults } from "./mode-lock.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -16,6 +17,16 @@ const escapeRegExp = (value: string): string => {
 const readRepoFile = async (relativePath: string): Promise<string> => {
   return await readFile(path.resolve(packageRoot, relativePath), "utf8");
 };
+
+const EXPECTED_ISOLATION_RUNTIME_EXPORTS = [
+  "createProjectInstance",
+  "getProjectInstance",
+  "listProjectInstances",
+  "registerIsolationProcessCleanup",
+  "removeAllInstances",
+  "removeProjectInstance",
+  "unregisterIsolationProcessCleanup",
+].sort();
 
 test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const architectureDoc = await readRepoFile("ARCHITECTURE.md");
@@ -126,6 +137,18 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   const versioningDoc = await readRepoFile("VERSIONING.md");
   const contractChangelog = await readRepoFile("CONTRACT_CHANGELOG.md");
   const contractsSource = await readRepoFile("src/contracts/index.ts");
+  const contributingDoc = await readRepoFile("CONTRIBUTING.md");
+  const architectureDoc = await readRepoFile("ARCHITECTURE.md");
+  const publicApiSource = await readRepoFile("src/index.ts");
+  const isolationAdr = await readRepoFile(
+    "docs/decisions/2026-04-18-issue-611-isolation-public-api-surface.md"
+  );
+  const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
+    exports: Record<string, unknown>;
+  };
+  const actualIsolationExports = EXPECTED_ISOLATION_RUNTIME_EXPORTS.filter((exportName) =>
+    Object.prototype.hasOwnProperty.call(publicApi, exportName)
+  ).sort();
 
   assert.match(readmeDoc, /## Versioning strategy/i);
   assert.match(readmeDoc, /`VERSIONING\.md`/);
@@ -139,12 +162,49 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(versioningDoc, /do not need to match numerically/i);
   assert.match(versioningDoc, /Every public contract change must bump `CONTRACT_VERSION`/);
   assert.match(versioningDoc, /npm and GitHub Releases are the authoritative sources for published package versions/i);
+  assert.match(versioningDoc, /root `workspace-dev` entrypoint is also a semver-governed public API surface/i);
+  assert.match(versioningDoc, /Breaking changes to existing root exports are governed by package semver/i);
+  assert.match(versioningDoc, /`CONTRACT_VERSION` and `CONTRACT_CHANGELOG\.md` govern versioned contract changes in `src\/contracts\/`/);
+
+  assert.match(contributingDoc, /All contract-versioned public types must be defined in `src\/contracts\/`\./);
+  assert.match(
+    contributingDoc,
+    /Semver-governed runtime types exported from the root `workspace-dev` entrypoint[\s\S]*may live outside `src\/contracts\/`/
+  );
+  assert.match(contributingDoc, /Public contract changes require:/);
+  assert.match(contributingDoc, /Public package\/root-entrypoint API changes require:/);
+  assert.match(contributingDoc, /Explicit package semver treatment through Changesets and release notes/);
 
   assert.match(contractChangelog, /### Package alignment policy/);
   assert.match(contractChangelog, /intentionally independent version tracks/i);
   assert.match(contractChangelog, /does not require the checked-in `package\.json` version to change immediately/i);
   assert.match(contractChangelog, /Consumers pin the package version from npm, not `CONTRACT_VERSION`\./);
   assert.match(contractChangelog, /See `VERSIONING\.md` for the full package-versus-contract versioning policy\./);
+
+  assert.match(readmeDoc, /## Public API entrypoints/i);
+  assert.match(readmeDoc, /`workspace-dev\/contracts`/);
+  assert.match(readmeDoc, /### Advanced isolation lifecycle API/i);
+  assert.match(readmeDoc, /`ProjectInstance`/);
+  assert.match(readmeDoc, /Per-project helpers:/);
+  assert.match(readmeDoc, /Process-level lifecycle controls:/);
+  assert.match(readmeDoc, /stable advanced surface/i);
+  assert.match(readmeDoc, /not experimental or internal-only today/i);
+
+  assert.match(isolationAdr, /^# ADR: Issue #611 Isolation Public API Surface/m);
+  assert.match(isolationAdr, /Keep the isolation helpers on the root `workspace-dev` entrypoint/);
+  assert.match(isolationAdr, /Moved in this decision:\s*\n\s*-\s*None/);
+  assert.match(isolationAdr, /Advanced stable surface for embedders and orchestration hosts:/);
+  assert.match(isolationAdr, /`workspace-dev\/isolation` does not exist today/i);
+  assert.match(isolationAdr, /## Isolation API Classification/);
+
+  assert.match(architectureDoc, /supported public API, but they are an advanced orchestration surface/i);
+  assert.match(architectureDoc, /Typical consumers should prefer `createWorkspaceServer`/);
+  assert.match(architectureDoc, /future move to a dedicated subpath must be treated as a compatibility-managed public API change/i);
+
+  assert.deepEqual(actualIsolationExports, EXPECTED_ISOLATION_RUNTIME_EXPORTS);
+  assert.match(publicApiSource, /export type \{ ProjectInstance \} from "\.\/isolation\.js";/);
+  assert.deepEqual(Object.keys(packageManifest.exports).sort(), [".", "./contracts"]);
+  assert.ok(!Object.prototype.hasOwnProperty.call(packageManifest.exports, "./isolation"));
 
   assert.match(contractsSource, /VERSIONING\.md/);
 });
