@@ -8,7 +8,10 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("../../", import.meta.url));
-const FIXTURE_PATH = path.join(PACKAGE_ROOT, "src/parity/fixtures/golden/prototype-navigation/figma.json");
+const FIXTURE_PATH = path.join(
+  PACKAGE_ROOT,
+  "src/parity/fixtures/golden/prototype-navigation/figma.json",
+);
 const FIXTURE_PAYLOAD = readFileSync(FIXTURE_PATH, "utf8");
 
 interface RunningCli {
@@ -28,6 +31,7 @@ interface FilesPayload {
     path: string;
     sizeBytes: number;
   }>;
+  nextCursor?: string;
 }
 
 interface DesignIrPayload {
@@ -110,12 +114,23 @@ const startCliProcess = async (): Promise<RunningCli> => {
   const logs: string[] = [];
   const child = spawn(
     process.execPath,
-    ["--import", "tsx", "./src/cli.ts", "start", "--host", "127.0.0.1", "--port", String(port), "--preview", "true"],
+    [
+      "--import",
+      "tsx",
+      "./src/cli.ts",
+      "start",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      String(port),
+      "--preview",
+      "true",
+    ],
     {
       cwd: PACKAGE_ROOT,
       env: process.env,
-      stdio: ["ignore", "pipe", "pipe"]
-    }
+      stdio: ["ignore", "pipe", "pipe"],
+    },
   );
 
   child.stdout.setEncoding("utf8");
@@ -132,7 +147,9 @@ const startCliProcess = async (): Promise<RunningCli> => {
   return { child, baseUrl, logs };
 };
 
-const stopCliProcess = async (child: ChildProcessWithoutNullStreams): Promise<void> => {
+const stopCliProcess = async (
+  child: ChildProcessWithoutNullStreams,
+): Promise<void> => {
   if (child.exitCode !== null) {
     return;
   }
@@ -146,7 +163,7 @@ const stopCliProcess = async (child: ChildProcessWithoutNullStreams): Promise<vo
 
   const gracefulExit = await Promise.race([
     exitEvent.then(() => true),
-    sleep(5_000).then(() => false)
+    sleep(5_000).then(() => false),
   ]);
 
   if (!gracefulExit && child.exitCode === null) {
@@ -162,7 +179,7 @@ const waitForHealthz = async ({
   child,
   baseUrl,
   logs,
-  timeoutMs
+  timeoutMs,
 }: {
   child: ChildProcessWithoutNullStreams;
   baseUrl: string;
@@ -173,12 +190,14 @@ const waitForHealthz = async ({
   while (Date.now() < deadline) {
     if (child.exitCode !== null) {
       throw new Error(
-        `workspace-dev CLI exited before health check succeeded (exit=${child.exitCode}). Logs:\n${logs.join("")}`
+        `workspace-dev CLI exited before health check succeeded (exit=${child.exitCode}). Logs:\n${logs.join("")}`,
       );
     }
 
     try {
-      const response = await fetch(`${baseUrl}/healthz`, { signal: AbortSignal.timeout(500) });
+      const response = await fetch(`${baseUrl}/healthz`, {
+        signal: AbortSignal.timeout(500),
+      });
       if (response.status === 200) {
         return;
       }
@@ -189,22 +208,28 @@ const waitForHealthz = async ({
     await sleep(120);
   }
 
-  throw new Error(`workspace-dev health check timeout after ${timeoutMs}ms. Logs:\n${logs.join("")}`);
+  throw new Error(
+    `workspace-dev health check timeout after ${timeoutMs}ms. Logs:\n${logs.join("")}`,
+  );
 };
 
-const submitFixtureJob = async ({ baseUrl }: { baseUrl: string }): Promise<string> => {
+const submitFixtureJob = async ({
+  baseUrl,
+}: {
+  baseUrl: string;
+}): Promise<string> => {
   const response = await fetch(`${baseUrl}/workspace/submit`, {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
     },
     body: JSON.stringify({
       figmaSourceMode: "local_json",
       figmaJsonPath: FIXTURE_PATH,
       llmCodegenMode: "deterministic",
-      enableGitPr: false
+      enableGitPr: false,
     }),
-    signal: AbortSignal.timeout(5_000)
+    signal: AbortSignal.timeout(5_000),
   });
 
   assert.equal(response.status, 202, "submit must return 202");
@@ -214,32 +239,40 @@ const submitFixtureJob = async ({ baseUrl }: { baseUrl: string }): Promise<strin
   return jobId;
 };
 
-const submitPasteFixtureJob = async ({ baseUrl }: { baseUrl: string }): Promise<string> => {
+const submitPasteFixtureJob = async ({
+  baseUrl,
+}: {
+  baseUrl: string;
+}): Promise<string> => {
   const response = await fetch(`${baseUrl}/workspace/submit`, {
     method: "POST",
     headers: {
-      "content-type": "application/json"
+      "content-type": "application/json",
     },
     body: JSON.stringify({
       figmaSourceMode: "figma_paste",
       figmaJsonPayload: FIXTURE_PAYLOAD,
       llmCodegenMode: "deterministic",
-      enableGitPr: false
+      enableGitPr: false,
     }),
-    signal: AbortSignal.timeout(5_000)
+    signal: AbortSignal.timeout(5_000),
   });
 
   assert.equal(response.status, 202, "paste submit must return 202");
   const payload = (await response.json()) as Record<string, unknown>;
   const jobId = payload.jobId;
-  assert.equal(typeof jobId, "string", "paste submit payload must include jobId");
+  assert.equal(
+    typeof jobId,
+    "string",
+    "paste submit payload must include jobId",
+  );
   return jobId;
 };
 
 const pollJobStatus = async ({
   baseUrl,
   jobId,
-  timeoutMs
+  timeoutMs,
 }: {
   baseUrl: string;
   jobId: string;
@@ -247,26 +280,35 @@ const pollJobStatus = async ({
 }): Promise<JobPayload> => {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const response = await fetch(`${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}`, {
-      signal: AbortSignal.timeout(3_000)
-    });
+    const response = await fetch(
+      `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}`,
+      {
+        signal: AbortSignal.timeout(3_000),
+      },
+    );
     assert.equal(response.status, 200);
     const body = (await response.json()) as JobPayload;
 
-    if (body.status === "completed" || body.status === "failed" || body.status === "canceled") {
+    if (
+      body.status === "completed" ||
+      body.status === "failed" ||
+      body.status === "canceled"
+    ) {
       return body;
     }
 
     await sleep(250);
   }
 
-  throw new Error(`Job ${jobId} did not reach terminal state within ${timeoutMs}ms.`);
+  throw new Error(
+    `Job ${jobId} did not reach terminal state within ${timeoutMs}ms.`,
+  );
 };
 
 const waitForPendingEndpoint = async ({
   baseUrl,
   jobId,
-  endpoint
+  endpoint,
 }: {
   baseUrl: string;
   jobId: string;
@@ -274,9 +316,12 @@ const waitForPendingEndpoint = async ({
 }): Promise<void> => {
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
-    const response = await fetch(`${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/${endpoint}`, {
-      signal: AbortSignal.timeout(2_000)
-    });
+    const response = await fetch(
+      `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/${endpoint}`,
+      {
+        signal: AbortSignal.timeout(2_000),
+      },
+    );
 
     if (response.status === 409) {
       const body = (await response.json()) as Record<string, unknown>;
@@ -291,27 +336,41 @@ const waitForPendingEndpoint = async ({
     await sleep(120);
   }
 
-  throw new Error(`Did not observe an available or pending response for endpoint '${endpoint}'.`);
+  throw new Error(
+    `Did not observe an available or pending response for endpoint '${endpoint}'.`,
+  );
 };
 
-const fetchDesignIr = async ({ baseUrl, jobId }: { baseUrl: string; jobId: string }): Promise<DesignIrPayload> => {
-  const response = await fetch(`${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/design-ir`, {
-    signal: AbortSignal.timeout(5_000)
-  });
+const fetchDesignIr = async ({
+  baseUrl,
+  jobId,
+}: {
+  baseUrl: string;
+  jobId: string;
+}): Promise<DesignIrPayload> => {
+  const response = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/design-ir`,
+    {
+      signal: AbortSignal.timeout(5_000),
+    },
+  );
   assert.equal(response.status, 200);
   return (await response.json()) as DesignIrPayload;
 };
 
 const fetchFigmaAnalysis = async ({
   baseUrl,
-  jobId
+  jobId,
 }: {
   baseUrl: string;
   jobId: string;
 }): Promise<FigmaAnalysisPayload> => {
-  const response = await fetch(`${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/figma-analysis`, {
-    signal: AbortSignal.timeout(5_000)
-  });
+  const response = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/figma-analysis`,
+    {
+      signal: AbortSignal.timeout(5_000),
+    },
+  );
   assert.equal(response.status, 200);
   return (await response.json()) as FigmaAnalysisPayload;
 };
@@ -319,19 +378,31 @@ const fetchFigmaAnalysis = async ({
 const fetchFiles = async ({
   baseUrl,
   jobId,
-  dir
+  dir,
+  limit,
+  cursor,
 }: {
   baseUrl: string;
   jobId: string;
   dir?: string;
+  limit?: number | string;
+  cursor?: string;
 }): Promise<FilesPayload> => {
-  const url = new URL(`${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files`);
+  const url = new URL(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files`,
+  );
   if (dir) {
     url.searchParams.set("dir", dir);
   }
+  if (limit !== undefined) {
+    url.searchParams.set("limit", String(limit));
+  }
+  if (cursor !== undefined) {
+    url.searchParams.set("cursor", cursor);
+  }
 
   const response = await fetch(url, {
-    signal: AbortSignal.timeout(5_000)
+    signal: AbortSignal.timeout(5_000),
   });
   assert.equal(response.status, 200);
   return (await response.json()) as FilesPayload;
@@ -339,14 +410,17 @@ const fetchFiles = async ({
 
 const fetchComponentManifest = async ({
   baseUrl,
-  jobId
+  jobId,
 }: {
   baseUrl: string;
   jobId: string;
 }): Promise<ComponentManifestPayload> => {
-  const response = await fetch(`${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/component-manifest`, {
-    signal: AbortSignal.timeout(5_000)
-  });
+  const response = await fetch(
+    `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/component-manifest`,
+    {
+      signal: AbortSignal.timeout(5_000),
+    },
+  );
   assert.equal(response.status, 200);
   return (await response.json()) as ComponentManifestPayload;
 };
@@ -354,7 +428,7 @@ const fetchComponentManifest = async ({
 const fetchGeneratedFile = async ({
   baseUrl,
   jobId,
-  filePath
+  filePath,
 }: {
   baseUrl: string;
   jobId: string;
@@ -363,8 +437,8 @@ const fetchGeneratedFile = async ({
   const response = await fetch(
     `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/${encodeURIComponent(filePath)}`,
     {
-      signal: AbortSignal.timeout(5_000)
-    }
+      signal: AbortSignal.timeout(5_000),
+    },
   );
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /text\/plain/i);
@@ -373,7 +447,7 @@ const fetchGeneratedFile = async ({
 
 const assertCompletedFixtureArtifacts = async ({
   baseUrl,
-  jobId
+  jobId,
 }: {
   baseUrl: string;
   jobId: string;
@@ -382,13 +456,20 @@ const assertCompletedFixtureArtifacts = async ({
   const figmaAnalysis = await fetchFigmaAnalysis({ baseUrl, jobId });
   assert.equal(designIr.jobId, jobId);
   assert.equal(Array.isArray(designIr.screens), true);
-  assert.equal(designIr.screens.length, 2, "prototype-navigation fixture should expose exactly 2 screens");
+  assert.equal(
+    designIr.screens.length,
+    2,
+    "prototype-navigation fixture should expose exactly 2 screens",
+  );
   assert.equal(typeof designIr.tokens, "object");
   assert.equal(figmaAnalysis.jobId, jobId);
   assert.equal(figmaAnalysis.artifactVersion, 1);
   assert.equal(typeof figmaAnalysis.sourceName, "string");
   assert.equal(figmaAnalysis.summary.pageCount >= 1, true);
-  assert.equal(figmaAnalysis.summary.topLevelFrameCount, designIr.screens.length);
+  assert.equal(
+    figmaAnalysis.summary.topLevelFrameCount,
+    designIr.screens.length,
+  );
   assert.equal(Array.isArray(figmaAnalysis.frameVariantGroups), true);
   assert.equal(Array.isArray(figmaAnalysis.appShellSignals), true);
   assert.equal(Array.isArray(figmaAnalysis.componentDensity.byFrame), true);
@@ -398,10 +479,18 @@ const assertCompletedFixtureArtifacts = async ({
     assert.equal(typeof screen.name, "string");
     assert.equal(Array.isArray(screen.children), true);
 
-    assert.equal(typeof screen.generatedFile, "string", `screen '${screen.id}' must include generatedFile mapping`);
+    assert.equal(
+      typeof screen.generatedFile,
+      "string",
+      `screen '${screen.id}' must include generatedFile mapping`,
+    );
     assert.equal(screen.generatedFile?.startsWith("src/screens/"), true);
     assert.equal(screen.generatedFile?.endsWith(".tsx"), true);
-    assert.equal(screen.generatedFile?.startsWith("/"), false, "generatedFile must not expose absolute paths");
+    assert.equal(
+      screen.generatedFile?.startsWith("/"),
+      false,
+      "generatedFile must not expose absolute paths",
+    );
   }
 
   const fileList = await fetchFiles({ baseUrl, jobId });
@@ -412,20 +501,40 @@ const assertCompletedFixtureArtifacts = async ({
   assert.equal(filePaths.includes("src/App.tsx"), true);
   assert.equal(filePaths.includes("src/screens/Home.tsx"), true);
   assert.equal(filePaths.includes("src/screens/Details.tsx"), true);
-  assert.equal(filePaths.some((entry) => /tailwind\.config/.test(entry)), false);
-  assert.equal(filePaths.some((entry) => entry.endsWith(".css") || entry.endsWith(".scss")), false);
+  assert.equal(
+    filePaths.some((entry) => /tailwind\.config/.test(entry)),
+    false,
+  );
+  assert.equal(
+    filePaths.some(
+      (entry) => entry.endsWith(".css") || entry.endsWith(".scss"),
+    ),
+    false,
+  );
 
   for (const file of fileList.files) {
-    assert.equal(file.path.startsWith("/"), false, "listed files must always be relative paths");
-    assert.equal(file.path.includes("node_modules"), false, "node_modules must be excluded from listing");
-    assert.equal(file.path.startsWith("dist/"), false, "dist directory must be excluded from listing");
+    assert.equal(
+      file.path.startsWith("/"),
+      false,
+      "listed files must always be relative paths",
+    );
+    assert.equal(
+      file.path.includes("node_modules"),
+      false,
+      "node_modules must be excluded from listing",
+    );
+    assert.equal(
+      file.path.startsWith("dist/"),
+      false,
+      "dist directory must be excluded from listing",
+    );
     assert.equal(typeof file.sizeBytes, "number");
   }
 
   const screenDirFiles = await fetchFiles({
     baseUrl,
     jobId,
-    dir: "src/screens"
+    dir: "src/screens",
   });
   assert.equal(screenDirFiles.files.length >= 2, true);
   for (const file of screenDirFiles.files) {
@@ -435,7 +544,7 @@ const assertCompletedFixtureArtifacts = async ({
   const homeContent = await fetchGeneratedFile({
     baseUrl,
     jobId,
-    filePath: "src/screens/Home.tsx"
+    filePath: "src/screens/Home.tsx",
   });
   assert.equal(homeContent.includes("import"), true);
   assert.equal(homeContent.includes("sx={"), true);
@@ -443,29 +552,33 @@ const assertCompletedFixtureArtifacts = async ({
 
   const traversalResponse = await fetch(
     `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/..%2F..%2Fetc%2Fpasswd.ts`,
-    { signal: AbortSignal.timeout(3_000) }
+    { signal: AbortSignal.timeout(3_000) },
   );
   assert.equal(traversalResponse.status, 403);
-  const traversalBody = (await traversalResponse.json()) as Record<string, unknown>;
+  const traversalBody = (await traversalResponse.json()) as Record<
+    string,
+    unknown
+  >;
   assert.equal(traversalBody.error, "FORBIDDEN_PATH");
 
   const blockedDirFilterResponse = await fetch(
     `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files?dir=node_modules`,
-    { signal: AbortSignal.timeout(3_000) }
+    { signal: AbortSignal.timeout(3_000) },
   );
   assert.equal(blockedDirFilterResponse.status, 403);
-  const blockedDirFilterBody = (await blockedDirFilterResponse.json()) as Record<string, unknown>;
+  const blockedDirFilterBody =
+    (await blockedDirFilterResponse.json()) as Record<string, unknown>;
   assert.equal(blockedDirFilterBody.error, "FORBIDDEN_PATH");
 
   const blockedExtensionResponse = await fetch(
     `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/script.js`,
-    { signal: AbortSignal.timeout(3_000) }
+    { signal: AbortSignal.timeout(3_000) },
   );
   assert.equal(blockedExtensionResponse.status, 403);
 
   const missingFileResponse = await fetch(
     `${baseUrl}/workspace/jobs/${encodeURIComponent(jobId)}/files/src/screens/DoesNotExist.tsx`,
-    { signal: AbortSignal.timeout(3_000) }
+    { signal: AbortSignal.timeout(3_000) },
   );
   assert.equal(missingFileResponse.status, 404);
 
@@ -475,7 +588,7 @@ const assertCompletedFixtureArtifacts = async ({
 
   const previewIndexResponse = await fetch(
     `${baseUrl}/workspace/repros/${encodeURIComponent(jobId)}/`,
-    { signal: AbortSignal.timeout(5_000) }
+    { signal: AbortSignal.timeout(5_000) },
   );
   assert.equal(previewIndexResponse.status, 200);
   const previewHtml = await previewIndexResponse.text();
@@ -488,11 +601,19 @@ const assertCompletedFixtureArtifacts = async ({
 
   const designScreenIds = new Set(designIr.screens.map((screen) => screen.id));
   for (const screen of manifest.screens) {
-    assert.equal(designScreenIds.has(screen.screenId), true, "manifest screen must map to design-ir screen");
+    assert.equal(
+      designScreenIds.has(screen.screenId),
+      true,
+      "manifest screen must map to design-ir screen",
+    );
     assert.equal(typeof screen.screenName, "string");
     assert.equal(typeof screen.file, "string");
     assert.equal(Array.isArray(screen.components), true);
-    assert.equal(filePaths.includes(screen.file), true, `manifest screen file '${screen.file}' must exist in files list`);
+    assert.equal(
+      filePaths.includes(screen.file),
+      true,
+      `manifest screen file '${screen.file}' must exist in files list`,
+    );
 
     for (const component of screen.components) {
       assert.equal(typeof component.irNodeId, "string");
@@ -505,7 +626,11 @@ const assertCompletedFixtureArtifacts = async ({
       assert.equal(component.endLine >= component.startLine, true);
 
       if (component.extractedComponent !== undefined) {
-        assert.equal(component.extractedComponent, true, "extractedComponent must be true when present");
+        assert.equal(
+          component.extractedComponent,
+          true,
+          "extractedComponent must be true when present",
+        );
       }
     }
   }
@@ -515,11 +640,23 @@ test("inspector endpoints: unknown jobs return 404", async () => {
   const running = await startCliProcess();
 
   try {
-    for (const endpoint of ["design-ir", "figma-analysis", "files", "component-manifest"] as const) {
-      const response = await fetch(`${running.baseUrl}/workspace/jobs/nonexistent-job/${endpoint}`, {
-        signal: AbortSignal.timeout(2_000)
-      });
-      assert.equal(response.status, 404, `${endpoint} should return 404 for unknown job`);
+    for (const endpoint of [
+      "design-ir",
+      "figma-analysis",
+      "files",
+      "component-manifest",
+    ] as const) {
+      const response = await fetch(
+        `${running.baseUrl}/workspace/jobs/nonexistent-job/${endpoint}`,
+        {
+          signal: AbortSignal.timeout(2_000),
+        },
+      );
+      assert.equal(
+        response.status,
+        404,
+        `${endpoint} should return 404 for unknown job`,
+      );
 
       const body = (await response.json()) as Record<string, unknown>;
       assert.equal(body.error, "JOB_NOT_FOUND");
@@ -529,118 +666,319 @@ test("inspector endpoints: unknown jobs return 404", async () => {
   }
 });
 
-test("inspector endpoints: pending jobs gate terminal artifacts and may expose running files", { timeout: 120_000 }, async () => {
-  const running = await startCliProcess();
+test(
+  "inspector endpoints: pending jobs gate terminal artifacts and may expose running files",
+  { timeout: 120_000 },
+  async () => {
+    const running = await startCliProcess();
 
-  try {
-    const jobId = await submitFixtureJob({ baseUrl: running.baseUrl });
+    try {
+      const jobId = await submitFixtureJob({ baseUrl: running.baseUrl });
 
-    await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "design-ir" });
-    await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "figma-analysis" });
-    await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "files" });
-    await waitForPendingEndpoint({ baseUrl: running.baseUrl, jobId, endpoint: "component-manifest" });
+      await waitForPendingEndpoint({
+        baseUrl: running.baseUrl,
+        jobId,
+        endpoint: "design-ir",
+      });
+      await waitForPendingEndpoint({
+        baseUrl: running.baseUrl,
+        jobId,
+        endpoint: "figma-analysis",
+      });
+      await waitForPendingEndpoint({
+        baseUrl: running.baseUrl,
+        jobId,
+        endpoint: "files",
+      });
+      await waitForPendingEndpoint({
+        baseUrl: running.baseUrl,
+        jobId,
+        endpoint: "component-manifest",
+      });
 
-    const terminal = await pollJobStatus({
-      baseUrl: running.baseUrl,
-      jobId,
-      timeoutMs: 120_000
-    });
-    assert.equal(terminal.status, "completed", "fixture-backed job must complete successfully");
-  } finally {
-    await stopCliProcess(running.child);
-  }
-});
+      const terminal = await pollJobStatus({
+        baseUrl: running.baseUrl,
+        jobId,
+        timeoutMs: 120_000,
+      });
+      assert.equal(
+        terminal.status,
+        "completed",
+        "fixture-backed job must complete successfully",
+      );
+    } finally {
+      await stopCliProcess(running.child);
+    }
+  },
+);
 
-test("inspector endpoints: completed jobs expose expected payloads and files security constraints", { timeout: 120_000 }, async () => {
-  const running = await startCliProcess();
+test(
+  "inspector endpoints: completed jobs expose expected payloads and files security constraints",
+  { timeout: 120_000 },
+  async () => {
+    const running = await startCliProcess();
 
-  try {
-    const jobId = await submitFixtureJob({ baseUrl: running.baseUrl });
-    const terminal = await pollJobStatus({
-      baseUrl: running.baseUrl,
-      jobId,
-      timeoutMs: 120_000
-    });
-    assert.equal(terminal.status, "completed", "fixture-backed job must complete successfully");
-    await assertCompletedFixtureArtifacts({ baseUrl: running.baseUrl, jobId });
-  } finally {
-    await stopCliProcess(running.child);
-  }
-});
+    try {
+      const jobId = await submitFixtureJob({ baseUrl: running.baseUrl });
+      const terminal = await pollJobStatus({
+        baseUrl: running.baseUrl,
+        jobId,
+        timeoutMs: 120_000,
+      });
+      assert.equal(
+        terminal.status,
+        "completed",
+        "fixture-backed job must complete successfully",
+      );
+      await assertCompletedFixtureArtifacts({
+        baseUrl: running.baseUrl,
+        jobId,
+      });
+    } finally {
+      await stopCliProcess(running.child);
+    }
+  },
+);
 
-test("inspector endpoints: completed figma_paste jobs expose the same inspector-consumable artifacts", { timeout: 120_000 }, async () => {
-  const running = await startCliProcess();
+test(
+  "inspector endpoints: file listing supports cursor-based pagination and clamps limit",
+  { timeout: 120_000 },
+  async () => {
+    const running = await startCliProcess();
 
-  try {
-    const jobId = await submitPasteFixtureJob({ baseUrl: running.baseUrl });
-    const terminal = await pollJobStatus({
-      baseUrl: running.baseUrl,
-      jobId,
-      timeoutMs: 120_000
-    });
-    assert.equal(terminal.status, "completed", "paste-backed job must complete successfully");
+    try {
+      const jobId = await submitFixtureJob({ baseUrl: running.baseUrl });
+      const terminal = await pollJobStatus({
+        baseUrl: running.baseUrl,
+        jobId,
+        timeoutMs: 120_000,
+      });
+      assert.equal(
+        terminal.status,
+        "completed",
+        "fixture-backed job must complete successfully",
+      );
 
-    await assertCompletedFixtureArtifacts({ baseUrl: running.baseUrl, jobId });
-  } finally {
-    await stopCliProcess(running.child);
-  }
-});
+      // Full listing (default limit) — baseline for comparison.
+      const full = await fetchFiles({ baseUrl: running.baseUrl, jobId });
+      assert.equal(full.files.length > 0, true, "fixture should list files");
+      assert.equal(
+        full.nextCursor,
+        undefined,
+        "fixture has fewer than 500 files so no cursor is expected",
+      );
+      const totalCount = full.files.length;
+      assert.equal(
+        totalCount >= 3,
+        true,
+        "fixture must produce at least 3 files to exercise pagination",
+      );
 
-test("inspector endpoints: fixture runs are deterministic across repeated submissions", { timeout: 240_000 }, async () => {
-  const running = await startCliProcess();
+      // Bounded listing: limit = N-1 returns exactly N-1 files + nextCursor.
+      const firstPageLimit = totalCount - 1;
+      const firstPage = await fetchFiles({
+        baseUrl: running.baseUrl,
+        jobId,
+        limit: firstPageLimit,
+      });
+      assert.equal(firstPage.files.length, firstPageLimit);
+      assert.equal(typeof firstPage.nextCursor, "string");
+      assert.equal(
+        firstPage.nextCursor,
+        firstPage.files[firstPage.files.length - 1]?.path,
+        "nextCursor must equal the last emitted path",
+      );
+      assert.deepEqual(
+        firstPage.files.map((entry) => entry.path),
+        full.files.slice(0, firstPageLimit).map((entry) => entry.path),
+      );
 
-  try {
-    const firstJobId = await submitFixtureJob({ baseUrl: running.baseUrl });
-    const firstTerminal = await pollJobStatus({
-      baseUrl: running.baseUrl,
-      jobId: firstJobId,
-      timeoutMs: 120_000
-    });
-    assert.equal(firstTerminal.status, "completed", "first fixture run must complete");
+      // Cursor pagination: a follow-up request returns the remainder with no cursor.
+      const secondPage = await fetchFiles({
+        baseUrl: running.baseUrl,
+        jobId,
+        limit: firstPageLimit,
+        cursor: firstPage.nextCursor,
+      });
+      assert.equal(secondPage.files.length, totalCount - firstPageLimit);
+      assert.equal(
+        secondPage.nextCursor,
+        undefined,
+        "last page must omit nextCursor",
+      );
+      assert.deepEqual(
+        secondPage.files.map((entry) => entry.path),
+        full.files.slice(firstPageLimit).map((entry) => entry.path),
+      );
 
-    const secondJobId = await submitFixtureJob({ baseUrl: running.baseUrl });
-    const secondTerminal = await pollJobStatus({
-      baseUrl: running.baseUrl,
-      jobId: secondJobId,
-      timeoutMs: 120_000
-    });
-    assert.equal(secondTerminal.status, "completed", "second fixture run must complete");
+      // Last page: a limit larger than total returns all files and no cursor.
+      const unbounded = await fetchFiles({
+        baseUrl: running.baseUrl,
+        jobId,
+        limit: totalCount + 50,
+      });
+      assert.equal(unbounded.files.length, totalCount);
+      assert.equal(unbounded.nextCursor, undefined);
 
-    const firstDesignIr = await fetchDesignIr({ baseUrl: running.baseUrl, jobId: firstJobId });
-    const secondDesignIr = await fetchDesignIr({ baseUrl: running.baseUrl, jobId: secondJobId });
+      // Clamp: an out-of-range limit is accepted and never returns more than 1000 files.
+      const clamped = await fetchFiles({
+        baseUrl: running.baseUrl,
+        jobId,
+        limit: 9999,
+      });
+      assert.equal(
+        clamped.files.length <= 1000,
+        true,
+        "limit must be clamped to 1000",
+      );
+      assert.deepEqual(
+        clamped.files.map((entry) => entry.path),
+        full.files.map((entry) => entry.path),
+      );
 
-    const firstManifest = await fetchComponentManifest({ baseUrl: running.baseUrl, jobId: firstJobId });
-    const secondManifest = await fetchComponentManifest({ baseUrl: running.baseUrl, jobId: secondJobId });
+      // Invalid limit value falls back to the 500 default.
+      const invalid = await fetchFiles({
+        baseUrl: running.baseUrl,
+        jobId,
+        limit: "not-a-number",
+      });
+      assert.deepEqual(
+        invalid.files.map((entry) => entry.path),
+        full.files.map((entry) => entry.path),
+      );
+    } finally {
+      await stopCliProcess(running.child);
+    }
+  },
+);
 
-    const firstFiles = await fetchFiles({ baseUrl: running.baseUrl, jobId: firstJobId });
-    const secondFiles = await fetchFiles({ baseUrl: running.baseUrl, jobId: secondJobId });
+test(
+  "inspector endpoints: completed figma_paste jobs expose the same inspector-consumable artifacts",
+  { timeout: 120_000 },
+  async () => {
+    const running = await startCliProcess();
 
-    const normalizeDesignIr = ({ jobId: _jobId, ...payload }: DesignIrPayload): Omit<DesignIrPayload, "jobId"> => payload;
-    const normalizeManifest = ({
-      jobId: _jobId,
-      ...payload
-    }: ComponentManifestPayload): Omit<ComponentManifestPayload, "jobId"> => payload;
+    try {
+      const jobId = await submitPasteFixtureJob({ baseUrl: running.baseUrl });
+      const terminal = await pollJobStatus({
+        baseUrl: running.baseUrl,
+        jobId,
+        timeoutMs: 120_000,
+      });
+      assert.equal(
+        terminal.status,
+        "completed",
+        "paste-backed job must complete successfully",
+      );
 
-    assert.deepEqual(normalizeDesignIr(firstDesignIr), normalizeDesignIr(secondDesignIr));
-    assert.deepEqual(normalizeManifest(firstManifest), normalizeManifest(secondManifest));
-    assert.deepEqual(
-      firstFiles.files.map((entry) => entry.path),
-      secondFiles.files.map((entry) => entry.path),
-      "generated file path list must stay deterministic across repeated fixture runs"
-    );
+      await assertCompletedFixtureArtifacts({
+        baseUrl: running.baseUrl,
+        jobId,
+      });
+    } finally {
+      await stopCliProcess(running.child);
+    }
+  },
+);
 
-    const firstHomeContent = await fetch(
-      `${running.baseUrl}/workspace/jobs/${encodeURIComponent(firstJobId)}/files/${encodeURIComponent("src/screens/Home.tsx")}`,
-      { signal: AbortSignal.timeout(5_000) }
-    );
-    const secondHomeContent = await fetch(
-      `${running.baseUrl}/workspace/jobs/${encodeURIComponent(secondJobId)}/files/${encodeURIComponent("src/screens/Home.tsx")}`,
-      { signal: AbortSignal.timeout(5_000) }
-    );
-    assert.equal(firstHomeContent.status, 200);
-    assert.equal(secondHomeContent.status, 200);
-    assert.equal(await firstHomeContent.text(), await secondHomeContent.text());
-  } finally {
-    await stopCliProcess(running.child);
-  }
-});
+test(
+  "inspector endpoints: fixture runs are deterministic across repeated submissions",
+  { timeout: 240_000 },
+  async () => {
+    const running = await startCliProcess();
+
+    try {
+      const firstJobId = await submitFixtureJob({ baseUrl: running.baseUrl });
+      const firstTerminal = await pollJobStatus({
+        baseUrl: running.baseUrl,
+        jobId: firstJobId,
+        timeoutMs: 120_000,
+      });
+      assert.equal(
+        firstTerminal.status,
+        "completed",
+        "first fixture run must complete",
+      );
+
+      const secondJobId = await submitFixtureJob({ baseUrl: running.baseUrl });
+      const secondTerminal = await pollJobStatus({
+        baseUrl: running.baseUrl,
+        jobId: secondJobId,
+        timeoutMs: 120_000,
+      });
+      assert.equal(
+        secondTerminal.status,
+        "completed",
+        "second fixture run must complete",
+      );
+
+      const firstDesignIr = await fetchDesignIr({
+        baseUrl: running.baseUrl,
+        jobId: firstJobId,
+      });
+      const secondDesignIr = await fetchDesignIr({
+        baseUrl: running.baseUrl,
+        jobId: secondJobId,
+      });
+
+      const firstManifest = await fetchComponentManifest({
+        baseUrl: running.baseUrl,
+        jobId: firstJobId,
+      });
+      const secondManifest = await fetchComponentManifest({
+        baseUrl: running.baseUrl,
+        jobId: secondJobId,
+      });
+
+      const firstFiles = await fetchFiles({
+        baseUrl: running.baseUrl,
+        jobId: firstJobId,
+      });
+      const secondFiles = await fetchFiles({
+        baseUrl: running.baseUrl,
+        jobId: secondJobId,
+      });
+
+      const normalizeDesignIr = ({
+        jobId: _jobId,
+        ...payload
+      }: DesignIrPayload): Omit<DesignIrPayload, "jobId"> => payload;
+      const normalizeManifest = ({
+        jobId: _jobId,
+        ...payload
+      }: ComponentManifestPayload): Omit<ComponentManifestPayload, "jobId"> =>
+        payload;
+
+      assert.deepEqual(
+        normalizeDesignIr(firstDesignIr),
+        normalizeDesignIr(secondDesignIr),
+      );
+      assert.deepEqual(
+        normalizeManifest(firstManifest),
+        normalizeManifest(secondManifest),
+      );
+      assert.deepEqual(
+        firstFiles.files.map((entry) => entry.path),
+        secondFiles.files.map((entry) => entry.path),
+        "generated file path list must stay deterministic across repeated fixture runs",
+      );
+
+      const firstHomeContent = await fetch(
+        `${running.baseUrl}/workspace/jobs/${encodeURIComponent(firstJobId)}/files/${encodeURIComponent("src/screens/Home.tsx")}`,
+        { signal: AbortSignal.timeout(5_000) },
+      );
+      const secondHomeContent = await fetch(
+        `${running.baseUrl}/workspace/jobs/${encodeURIComponent(secondJobId)}/files/${encodeURIComponent("src/screens/Home.tsx")}`,
+        { signal: AbortSignal.timeout(5_000) },
+      );
+      assert.equal(firstHomeContent.status, 200);
+      assert.equal(secondHomeContent.status, 200);
+      assert.equal(
+        await firstHomeContent.text(),
+        await secondHomeContent.text(),
+      );
+    } finally {
+      await stopCliProcess(running.child);
+    }
+  },
+);
