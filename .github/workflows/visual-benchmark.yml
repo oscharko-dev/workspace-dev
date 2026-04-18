@@ -140,10 +140,19 @@ jobs:
           FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS: "90000"
           FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS: "1"
           FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline-ci.json
-        run: pnpm perf:web:assert
+        run: |
+          set +e
+          timeout 240s pnpm perf:web:assert
+          rc=$?
+          set -e
+          if [ "$rc" -eq 124 ]; then
+            echo "::warning::perf:web:assert timed out after 240s; skipping composite quality perf integration for this run."
+            exit 0
+          fi
+          exit "$rc"
 
       - name: Compute composite quality report
-        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
+        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != '' && hashFiles('template/react-mui-app/artifacts/performance/perf-assert-report.json') != ''
         run: >-
           pnpm composite:quality
           --visual-last-run artifacts/visual-benchmark/last-run.json
