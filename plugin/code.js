@@ -33,18 +33,21 @@ const ALLOWED_NODE_TYPES = new Set([
   "SHAPE_WITH_TEXT",
 ]);
 
-figma.showUI(__html__, { width: 380, height: 240 });
+figma.showUI(__html__, { width: 380, height: 320 });
 
 figma.ui.onmessage = async (message) => {
   if (message.type === "export-selection") {
-    await exportSelection();
+    await exportSelection("clipboard");
+  }
+  if (message.type === "upload-to-local") {
+    await exportSelection("upload", message.endpointUrl);
   }
   if (message.type === "close") {
     figma.closePlugin();
   }
 };
 
-async function exportSelection() {
+async function exportSelection(mode, endpointUrl) {
   const selection = [...figma.currentPage.selection].sort(
     compareNodesForExport,
   );
@@ -104,6 +107,54 @@ async function exportSelection() {
     selections,
   };
 
+  if (mode === "upload") {
+    figma.ui.postMessage({
+      type: "status",
+      message: "Uploading to WorkspaceDev...",
+    });
+    try {
+      const response = await fetch(`${endpointUrl}/workspace/submit`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          figmaSourceMode: "figma_plugin",
+          figmaJsonPayload: JSON.stringify(envelope),
+        }),
+      });
+      if (response.ok) {
+        const result = await response.json();
+        figma.ui.postMessage({
+          type: "upload-result",
+          jobId: result.jobId,
+          trackingUrl: `${endpointUrl}/workspace/jobs/${result.jobId}`,
+        });
+      } else {
+        const requestId = response.headers.get("x-request-id") || "";
+        let serverMessage = `HTTP ${response.status}`;
+        try {
+          const body = await response.json();
+          if (body.message) {
+            serverMessage = body.message;
+          }
+        } catch {
+          // ignore parse failure; use status text
+        }
+        figma.ui.postMessage({
+          type: "upload-error",
+          message: serverMessage,
+          requestId,
+        });
+      }
+    } catch (error) {
+      figma.ui.postMessage({
+        type: "upload-error",
+        message: `Upload failed: ${error.message}`,
+      });
+    }
+    return;
+  }
+
+  // clipboard mode (default)
   figma.ui.postMessage({
     type: "copy-to-clipboard",
     payload: JSON.stringify(envelope),
