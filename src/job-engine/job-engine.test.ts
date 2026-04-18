@@ -4184,6 +4184,39 @@ test("createJobEngine runMaintenance returns evictedJobIds and prunedConfirmatio
   assert.ok(reopened.getJob("job-keeper"));
 });
 
+test("createJobEngine runMaintenance is a no-op when no jobs are terminal", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-retention-none-"),
+  );
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 1,
+      jobRetentionMaxAgeMs: 1,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  assert.equal(accepted.status, "queued");
+
+  const result = engine.runMaintenance();
+  assert.deepEqual(result.evictedJobIds, []);
+  assert.equal(result.prunedConfirmations, 0);
+  assert.ok(engine.getJob(accepted.jobId));
+});
+
 test("createJobEngine refreshQueueSnapshots bounds work to live jobs", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-engine-queue-bounded-"),

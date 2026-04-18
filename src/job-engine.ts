@@ -876,18 +876,32 @@ export const createJobEngine = ({
     }
   };
 
+  const isWithinManagedRoot = (candidate: string): boolean => {
+    const absolute = path.resolve(candidate);
+    const jobsRoot = path.resolve(resolvedPaths.jobsRoot);
+    const reprosRoot = path.resolve(resolvedPaths.reprosRoot);
+    const withinJobs =
+      absolute === jobsRoot || absolute.startsWith(`${jobsRoot}${path.sep}`);
+    const withinRepros =
+      absolute === reprosRoot ||
+      absolute.startsWith(`${reprosRoot}${path.sep}`);
+    return (
+      (withinJobs || withinRepros) &&
+      absolute !== jobsRoot &&
+      absolute !== reprosRoot
+    );
+  };
+
   const evictTerminalJobArtifacts = (job: JobRecord): void => {
-    const cleanups: Array<Promise<unknown>> = [];
-    if (job.artifacts.jobDir) {
-      cleanups.push(rm(job.artifacts.jobDir, { recursive: true, force: true }));
+    const targets: string[] = [];
+    if (job.artifacts.jobDir && isWithinManagedRoot(job.artifacts.jobDir)) {
+      targets.push(job.artifacts.jobDir);
     }
-    if (job.artifacts.reproDir) {
-      cleanups.push(
-        rm(job.artifacts.reproDir, { recursive: true, force: true }),
-      );
+    if (job.artifacts.reproDir && isWithinManagedRoot(job.artifacts.reproDir)) {
+      targets.push(job.artifacts.reproDir);
     }
-    for (const cleanup of cleanups) {
-      cleanup.catch((error) => {
+    for (const target of targets) {
+      rm(target, { recursive: true, force: true }).catch((error: unknown) => {
         runtime.logger.log({
           level: "warn",
           message: `Retention cleanup failed for job '${job.jobId}': ${getErrorMessage(error)}`,
@@ -1818,7 +1832,7 @@ export const createJobEngine = ({
           }
         }, maintenanceIntervalMs)
       : undefined;
-  maintenanceTimer?.unref?.();
+  maintenanceTimer?.unref();
 
   const resolveSyncContext = ({
     jobId,
@@ -2424,7 +2438,7 @@ export const createJobEngine = ({
       const diskTracker = new JobDiskTracker({
         roots: [jobDir, reproDir],
         limitBytes: runtime.maxJobDiskBytes,
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
       await diskTracker.sync();
 
@@ -3073,7 +3087,7 @@ export const createJobEngine = ({
         diskTracker: new JobDiskTracker({
           roots: [jobDir, reproDir],
           limitBytes: runtime.maxJobDiskBytes,
-          limits: runtime.pipelineDiagnosticLimits
+          limits: runtime.pipelineDiagnosticLimits,
         }),
         resolvedBrandTheme,
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
@@ -3443,7 +3457,7 @@ export const createJobEngine = ({
         diskTracker: new JobDiskTracker({
           roots: [jobDir, reproDir],
           limitBytes: runtime.maxJobDiskBytes,
-          limits: runtime.pipelineDiagnosticLimits
+          limits: runtime.pipelineDiagnosticLimits,
         }),
         resolvedBrandTheme,
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
