@@ -1,7 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { PreviewPane } from "./PreviewPane";
+
+const SPLIT_PREF_KEY = "workspace-dev:inspector:preview-split";
 
 vi.mock("./InspectOverlay", () => ({
   InspectOverlay: ({
@@ -43,6 +45,7 @@ vi.mock("./ScreenshotPreview", () => ({
 
 afterEach(() => {
   cleanup();
+  window.localStorage.clear();
 });
 
 describe("PreviewPane", () => {
@@ -275,5 +278,134 @@ describe("PreviewPane — pipeline stage modes", () => {
     expect(
       screen.getByRole("img", { name: "Figma design preview" }),
     ).toHaveAttribute("src", "http://cdn.example.com/shot.png");
+  });
+});
+
+describe("PreviewPane — split view", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  const noop = () => {
+    // no-op
+  };
+
+  it("renders split toggle button", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    const toggle = screen.getByTestId("preview-split-toggle");
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("enables split mode on toggle click", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "http://127.0.0.1:4010/preview",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    const toggle = screen.getByTestId("preview-split-toggle");
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem(SPLIT_PREF_KEY)).toBe("1");
+  });
+
+  it("reads persisted split preference on mount", () => {
+    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "http://127.0.0.1:4010/preview",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByTestId("preview-split-toggle")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("renders side-by-side panes with screenshot + iframe when split enabled and both available", () => {
+    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "http://127.0.0.1:4010/preview",
+        screenshot: "http://cdn.example.com/screenshot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    // Both pane labels visible
+    expect(screen.getByText("Figma source")).toBeInTheDocument();
+    expect(screen.getByText("Generated preview")).toBeInTheDocument();
+    // Screenshot image rendered
+    expect(
+      screen.getByRole("img", { name: "Figma design preview" }),
+    ).toHaveAttribute("src", "http://cdn.example.com/screenshot.png");
+    // Iframe rendered
+    expect(screen.getByTitle("Live preview")).toBeInTheDocument();
+  });
+
+  it("renders waiting placeholder on right pane when split enabled and no preview URL", () => {
+    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        screenshot: "http://cdn.example.com/screenshot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByText("Waiting for preview…")).toBeInTheDocument();
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+  });
+
+  it("renders screenshot placeholder on left pane when split enabled and no screenshot", () => {
+    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "http://127.0.0.1:4010/preview",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByText("Screenshot unavailable")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });
