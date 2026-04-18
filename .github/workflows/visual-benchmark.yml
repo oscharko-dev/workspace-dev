@@ -124,15 +124,15 @@ jobs:
           --storybook-static-dir storybook-static/storybook-static
 
       - name: Install generated app dependencies for perf assertions
-        if: always()
+        if: always() && steps.benchmark-run.outcome == 'success'
         run: cd template/react-mui-app && pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build generated app for perf assertions
-        if: always()
+        if: always() && steps.benchmark-run.outcome == 'success'
         run: cd template/react-mui-app && pnpm run build
 
       - name: Run performance assertion for composite quality
-        if: always()
+        if: always() && steps.benchmark-run.outcome == 'success'
         env:
           FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
           FIGMAPIPE_PERF_ROUTES_JSON: '["/"]'
