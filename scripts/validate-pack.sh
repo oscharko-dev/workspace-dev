@@ -18,7 +18,65 @@ echo "=== Pack validation: workspace-dev ==="
 cd "$PKG_DIR"
 
 # --- Pack ----------------------------------------------------------------
-TARBALL=$(pnpm pack --pack-destination /tmp 2>/dev/null | tail -1)
+if ! TARBALL=$(
+  pnpm pack --json --pack-destination /tmp 2>/dev/null \
+    | node -e '
+const { readFileSync } = require("node:fs");
+const input = readFileSync(0, "utf8").trim();
+
+if (!input) {
+  process.exit(1);
+}
+
+const selectFilename = (value) => {
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const fromArray = selectFilename(item);
+      if (fromArray) {
+        return fromArray;
+      }
+    }
+    return "";
+  }
+
+  return typeof value.filename === "string" ? value.filename : "";
+};
+
+let tarballPath = "";
+
+try {
+  tarballPath = selectFilename(JSON.parse(input));
+} catch {
+  // Fallback for NDJSON or mixed output where only some lines are JSON.
+  const lines = input.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.trim()) {
+      continue;
+    }
+    try {
+      tarballPath = selectFilename(JSON.parse(line));
+    } catch {
+      continue;
+    }
+    if (tarballPath) {
+      break;
+    }
+  }
+}
+
+if (!tarballPath) {
+  process.exit(1);
+}
+
+process.stdout.write(tarballPath);
+'
+); then
+  TARBALL=""
+fi
 if [[ -z "$TARBALL" || ! -f "$TARBALL" ]]; then
   echo "ERROR: pnpm pack produced no tarball."
   exit 1
