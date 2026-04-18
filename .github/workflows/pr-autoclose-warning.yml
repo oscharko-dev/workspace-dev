@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Warn when #N references are missing auto-close keywords
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const { pathToFileURL } = require("node:url");
