@@ -75,6 +75,18 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+function isFiniteNumberInRange(
+  value: unknown,
+  min: number,
+  max: number,
+): value is number {
+  return isFiniteNumber(value) && value >= min && value <= max;
+}
+
+function isFiniteNumberAtLeast(value: unknown, min: number): value is number {
+  return isFiniteNumber(value) && value >= min;
+}
+
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
@@ -110,7 +122,7 @@ function parseQualityPolicy(
     for (const key of ["excellent", "good", "fair"] as const) {
       const candidate = value.bandThresholds[key];
       if (candidate === undefined) continue;
-      if (!isFiniteNumber(candidate)) return INVALID;
+      if (!isFiniteNumberInRange(candidate, 0, 100)) return INVALID;
       thresholds[key] = candidate;
     }
     out.bandThresholds = thresholds;
@@ -122,18 +134,18 @@ function parseQualityPolicy(
     for (const key of ["structure", "semantic", "codegen"] as const) {
       const candidate = value.weights[key];
       if (candidate === undefined) continue;
-      if (!isFiniteNumber(candidate)) return INVALID;
+      if (!isFiniteNumberAtLeast(candidate, 0)) return INVALID;
       weights[key] = candidate;
     }
     out.weights = weights;
   }
 
   if (value.maxAcceptableDepth !== undefined) {
-    if (!isFiniteNumber(value.maxAcceptableDepth)) return INVALID;
+    if (!isFiniteNumberAtLeast(value.maxAcceptableDepth, 0)) return INVALID;
     out.maxAcceptableDepth = value.maxAcceptableDepth;
   }
   if (value.maxAcceptableNodes !== undefined) {
-    if (!isFiniteNumber(value.maxAcceptableNodes)) return INVALID;
+    if (!isFiniteNumberAtLeast(value.maxAcceptableNodes, 0)) return INVALID;
     out.maxAcceptableNodes = value.maxAcceptableNodes;
   }
 
@@ -164,7 +176,9 @@ function parseTokenPolicy(
 
   const out: InspectorWorkspaceTokenPolicy = {};
   if (value.autoAcceptConfidence !== undefined) {
-    if (!isFiniteNumber(value.autoAcceptConfidence)) return INVALID;
+    if (!isFiniteNumberInRange(value.autoAcceptConfidence, 0, 100)) {
+      return INVALID;
+    }
     out.autoAcceptConfidence = value.autoAcceptConfidence;
   }
   if (value.maxConflictDelta !== undefined) {
@@ -207,7 +221,9 @@ function parseGovernancePolicy(
     [];
   if (value.minQualityScoreToApply !== undefined) {
     if (value.minQualityScoreToApply !== null) {
-      if (!isFiniteNumber(value.minQualityScoreToApply)) return INVALID;
+      if (!isFiniteNumberInRange(value.minQualityScoreToApply, 0, 100)) {
+        return INVALID;
+      }
     }
     out.minQualityScoreToApply = value.minQualityScoreToApply;
   }
