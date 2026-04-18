@@ -673,6 +673,9 @@ const escapeMarkdownHeading = (value) =>
     .replace(/\r?\n/g, " ")
     .trim();
 
+const formatEscapedWarnings = (warnings, separator = "; ") =>
+  warnings.map((warning) => escapeMarkdownCell(warning)).join(separator);
+
 const readJsonFile = async (filePath, label) => {
   const raw = await readFile(filePath, "utf8");
   try {
@@ -1142,6 +1145,9 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
 
   const artifactRoot = path.dirname(absolutePath);
   const lastRunDir = path.join(artifactRoot, "last-run");
+  const isPublicSummaryArtifact =
+    path.basename(absolutePath) === "last-run.public.json" ||
+    absolutePath.includes(`${path.sep}public-summary${path.sep}`);
   const fullPageFixtures = [];
   const componentSummary = mergeComponentSummary(
     createComponentSummary(),
@@ -1160,76 +1166,87 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
       );
     }
 
-    const fixtureDir = await resolveFixtureArtifactDir(
-      lastRunDir,
-      entry.fixtureId,
-      entry.screenId,
-      entry.viewportId,
-    );
-    const manifestPath = path.join(fixtureDir, "manifest.json");
-    const reportJsonPath = path.join(fixtureDir, "report.json");
-
-    const manifest = await readJsonFile(
-      manifestPath,
-      `Visual benchmark manifest for '${entry.fixtureId}'`,
-    );
-    const viewport = manifest.viewport;
-    if (
-      viewport === null ||
-      typeof viewport !== "object" ||
-      !isFiniteNumber(viewport.width) ||
-      !isFiniteNumber(viewport.height)
-    ) {
-      throw new Error(
-        `Visual benchmark manifest for '${entry.fixtureId}' is missing a valid viewport.`,
-      );
-    }
-
+    let manifest = null;
     let reportDimensions = null;
-    let diffArtifactPath =
-      path.relative(artifactRoot, path.join(fixtureDir, "diff.png")) || ".";
-    const reportRaw = await readJsonFileOptional(
-      reportJsonPath,
-      `Visual benchmark report for '${entry.fixtureId}'`,
-    );
-    if (
-      reportRaw !== null &&
-      typeof reportRaw.diffImagePath === "string" &&
-      reportRaw.diffImagePath.trim().length > 0
-    ) {
+    let diffArtifactPath = null;
+    let reportRaw = null;
+    let viewportText = "\u2014";
+    try {
+      const fixtureDir = await resolveFixtureArtifactDir(
+        lastRunDir,
+        entry.fixtureId,
+        entry.screenId,
+        entry.viewportId,
+      );
+      const manifestPath = path.join(fixtureDir, "manifest.json");
+      const reportJsonPath = path.join(fixtureDir, "report.json");
+
+      manifest = await readJsonFile(
+        manifestPath,
+        `Visual benchmark manifest for '${entry.fixtureId}'`,
+      );
+      const viewport = manifest.viewport;
+      if (
+        viewport === null ||
+        typeof viewport !== "object" ||
+        !isFiniteNumber(viewport.width) ||
+        !isFiniteNumber(viewport.height)
+      ) {
+        throw new Error(
+          `Visual benchmark manifest for '${entry.fixtureId}' is missing a valid viewport.`,
+        );
+      }
+      viewportText = `${viewport.width}\u00d7${viewport.height}`;
+
       diffArtifactPath =
-        path.relative(
-          artifactRoot,
-          path.resolve(fixtureDir, path.basename(reportRaw.diffImagePath)),
-        ) || ".";
-    }
-    if (
-      reportRaw !== null &&
-      reportRaw.status === "completed" &&
-      Array.isArray(reportRaw.dimensions)
-    ) {
-      const validDimensions = [];
-      for (const dim of reportRaw.dimensions) {
-        if (
-          dim !== null &&
-          typeof dim === "object" &&
-          typeof dim.name === "string" &&
-          isFiniteNumber(dim.weight) &&
-          isFiniteNumber(dim.score)
-        ) {
-          validDimensions.push({
-            name: dim.name,
-            weight: dim.weight,
-            score: dim.score,
-          });
+        path.relative(artifactRoot, path.join(fixtureDir, "diff.png")) || ".";
+      reportRaw = await readJsonFileOptional(
+        reportJsonPath,
+        `Visual benchmark report for '${entry.fixtureId}'`,
+      );
+      if (
+        reportRaw !== null &&
+        typeof reportRaw.diffImagePath === "string" &&
+        reportRaw.diffImagePath.trim().length > 0
+      ) {
+        diffArtifactPath =
+          path.relative(
+            artifactRoot,
+            path.resolve(fixtureDir, path.basename(reportRaw.diffImagePath)),
+          ) || ".";
+      }
+      if (
+        reportRaw !== null &&
+        reportRaw.status === "completed" &&
+        Array.isArray(reportRaw.dimensions)
+      ) {
+        const validDimensions = [];
+        for (const dim of reportRaw.dimensions) {
+          if (
+            dim !== null &&
+            typeof dim === "object" &&
+            typeof dim.name === "string" &&
+            isFiniteNumber(dim.weight) &&
+            isFiniteNumber(dim.score)
+          ) {
+            validDimensions.push({
+              name: dim.name,
+              weight: dim.weight,
+              score: dim.score,
+            });
+          }
+        }
+        if (validDimensions.length > 0) {
+          reportDimensions = validDimensions;
         }
       }
-      if (validDimensions.length > 0) {
-        reportDimensions = validDimensions;
+      if (reportRaw !== null) {
+        mergeComponentSummary(componentSummary, reportRaw);
       }
-    }
-    if (reportRaw !== null) {
-      mergeComponentSummary(componentSummary, reportRaw);
+    } catch (error) {
+      if (!isPublicSummaryArtifact) {
+        throw error;
+      }
     }
 
     const compositeKey = getCompositeKey(
@@ -1255,34 +1272,34 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
 
     const fixtureSummary = {
       fixtureId: entry.fixtureId,
-      screenId: normalizeOptionalString(entry.screenId ?? manifest.screenId),
+      screenId: normalizeOptionalString(entry.screenId ?? manifest?.screenId),
       screenName: normalizeOptionalString(
-        entry.screenName ?? manifest.screenName,
+        entry.screenName ?? manifest?.screenName,
       ),
-      viewportId: normalizeOptionalString(entry.viewportId ?? manifest.viewportId),
+      viewportId: normalizeOptionalString(entry.viewportId ?? manifest?.viewportId),
       viewportLabel: normalizeOptionalString(
-        entry.viewportLabel ?? manifest.viewportLabel,
+        entry.viewportLabel ?? manifest?.viewportLabel,
       ),
       displayLabel: toDisplayLabel(
         entry.fixtureId,
-        entry.screenName ?? manifest.screenName,
-        entry.screenId ?? manifest.screenId,
-        entry.viewportLabel ?? manifest.viewportLabel,
-        entry.viewportId ?? manifest.viewportId,
+        entry.screenName ?? manifest?.screenName,
+        entry.screenId ?? manifest?.screenId,
+        entry.viewportLabel ?? manifest?.viewportLabel,
+        entry.viewportId ?? manifest?.viewportId,
       ),
       score: entry.score,
       baselineScore,
       delta,
       indicator,
-      thresholdResult: normalizeThresholdResult(manifest.thresholdResult),
+      thresholdResult: normalizeThresholdResult(manifest?.thresholdResult),
       reportDimensions,
-      viewport: `${viewport.width}\u00d7${viewport.height}`,
+      viewport: viewportText,
       diffArtifactPath,
-      browserBreakdown: normalizeBrowserBreakdown(manifest.browserBreakdown),
+      browserBreakdown: normalizeBrowserBreakdown(manifest?.browserBreakdown),
       crossBrowserConsistency: normalizeCrossBrowserConsistency(
-        manifest.crossBrowserConsistency,
+        manifest?.crossBrowserConsistency,
       ),
-      perBrowser: normalizePerBrowserArtifacts(manifest.perBrowser),
+      perBrowser: normalizePerBrowserArtifacts(manifest?.perBrowser),
     };
     if (!isStorybookComponentArtifact(manifest)) {
       fullPageFixtures.push(fixtureSummary);
@@ -1480,7 +1497,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
     }
     if (compositeQuality.warnings.length > 0) {
       headerLines.push(
-        `**Composite Warnings:** ${compositeQuality.warnings.join("; ")}`,
+        `**Composite Warnings:** ${formatEscapedWarnings(compositeQuality.warnings)}`,
       );
     }
   }
@@ -1556,7 +1573,10 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
           fixture.crossBrowserConsistency.warnings.length > 0
         ) {
           detailParts.push(
-            `warnings ${fixture.crossBrowserConsistency.warnings.join(", ")}`,
+            `warnings ${formatEscapedWarnings(
+              fixture.crossBrowserConsistency.warnings,
+              ", ",
+            )}`,
           );
         }
         if (fixture.crossBrowserConsistency.pairwiseDiffs.length > 0) {
@@ -1597,7 +1617,7 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
               ].filter((value) => value !== null);
               const warningText =
                 Array.isArray(entry.warnings) && entry.warnings.length > 0
-                  ? ` warnings ${entry.warnings.join(", ")}`
+                  ? ` warnings ${formatEscapedWarnings(entry.warnings, ", ")}`
                   : "";
               return `${entry.browser}: ${entry.overallScore}${refs.length > 0 ? ` (${refs.join(", ")})` : ""}${warningText}`;
             })
@@ -1611,13 +1631,24 @@ export const buildVisualBenchmarkPrComment = async (reportPath, options) => {
   }
 
   const diffSectionHeaderLines =
-    artifactUrl && fullPageFixtures.length > 0
+    artifactUrl &&
+    fullPageFixtures.some(
+      (fixture) =>
+        typeof fixture.diffArtifactPath === "string" &&
+        fixture.diffArtifactPath.length > 0,
+    )
       ? ["", "### Diff Images", "", "| View | Diff |", "|------|------|"]
       : [];
   const diffRowLines = artifactUrl
-    ? fullPageFixtures.map((fixture) => [
-        `| ${escapeMarkdownCell(fixture.displayLabel)} | [View diff](${artifactUrl}) \`${escapeMarkdownCell(fixture.diffArtifactPath)}\` |`,
-      ])
+    ? fullPageFixtures
+        .filter(
+          (fixture) =>
+            typeof fixture.diffArtifactPath === "string" &&
+            fixture.diffArtifactPath.length > 0,
+        )
+        .map((fixture) => [
+          `| ${escapeMarkdownCell(fixture.displayLabel)} | [View diff](${artifactUrl}) \`${escapeMarkdownCell(fixture.diffArtifactPath)}\` |`,
+        ])
     : [];
 
   const fixturesWithDimensions = fullPageFixtures.filter(

@@ -169,16 +169,6 @@ jobs:
           VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: ${{ github.event_name != 'pull_request' }}
         run: node scripts/print-visual-benchmark-summary.mjs artifacts/visual-benchmark/last-run.json --check-output artifacts/visual-benchmark/check-output.json
 
-      - name: Generate visual benchmark PR comment payload
-        if: always() && steps.benchmark-run.outcome == 'success' && hashFiles('artifacts/visual-benchmark/last-run.json') != '' && github.event_name == 'pull_request'
-        env:
-          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: "false"
-        run: >-
-          node scripts/print-visual-benchmark-pr-comment.mjs
-          artifacts/visual-benchmark/last-run.json
-          --output artifacts/visual-benchmark/pr-comment.json
-          --artifact-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
       - name: Prepare public visual benchmark artifacts
         if: always() && hashFiles('artifacts/visual-benchmark/last-run.json') != ''
         run: node scripts/prepare-visual-benchmark-public-artifacts.mjs

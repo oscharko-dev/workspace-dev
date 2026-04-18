@@ -2296,7 +2296,6 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   assert.match(workflow, /scripts\/compute-composite-quality\.ts/);
   assert.match(workflow, /scripts\/print-visual-benchmark-summary\.mjs/);
   assert.match(workflow, /scripts\/visual-benchmark-summary\.mjs/);
-  assert.match(workflow, /scripts\/print-visual-benchmark-pr-comment\.mjs/);
   assert.match(workflow, /pnpm perf:web:assert/);
   assert.match(workflow, /pnpm composite:quality/);
   assert.match(workflow, /composite-quality-report\.json/);
@@ -2308,9 +2307,10 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
     workflow,
     /name:\s+Post or update visual benchmark PR comment/,
   );
+  assert.doesNotMatch(workflow, /issues:\s*write/);
 });
 
-test("visual benchmark comment workflow posts marker-based upserts from workflow_run artifacts", async () => {
+test("visual benchmark comment workflow renders trusted PR comments from structured workflow_run artifacts", async () => {
   const workflow = await readFile(
     path.join(
       process.cwd(),
@@ -2324,10 +2324,13 @@ test("visual benchmark comment workflow posts marker-based upserts from workflow
   assert.match(workflow, /workflows:\s+\['workspace-dev visual benchmark'\]/);
   assert.match(
     workflow,
-    /if:\s+github\.event\.workflow_run\.event == 'pull_request'/,
+    /if:\s+github\.event\.workflow_run\.event == 'pull_request' && github\.event\.workflow_run\.conclusion == 'success'/,
   );
-  assert.match(workflow, /listWorkflowRunArtifacts/);
-  assert.match(workflow, /pr-comment\.json/);
+  assert.match(workflow, /issues:\s*write/);
+  assert.match(workflow, /persist-credentials:\s*false/);
+  assert.match(workflow, /ref:\s*\$\{\{\s*github\.event\.repository\.default_branch\s*\}\}/);
+  assert.match(workflow, /last-run\.public\.json/);
+  assert.match(workflow, /print-visual-benchmark-pr-comment\.mjs/);
   assert.match(workflow, /payload\.body\.startsWith\(payload\.marker\)/);
   assert.match(workflow, /github\.rest\.issues\.updateComment/);
   assert.match(workflow, /github\.rest\.issues\.createComment/);

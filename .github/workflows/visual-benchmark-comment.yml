@@ -8,15 +8,20 @@ on:
 permissions:
   actions: read
   contents: read
-  pull-requests: write
+  issues: write
 
 jobs:
   post-comment:
     name: post-comment
     runs-on: ubuntu-latest
-    if: github.event.workflow_run.event == 'pull_request'
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion == 'success'
 
     steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
+
       - name: Resolve PR and benchmark artifact
         id: resolve
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
@@ -31,10 +36,7 @@ jobs:
             }
 
             const prNumber = pullRequests[0].number;
-            const candidateArtifactNames = [
-              `workspace-dev-visual-benchmark-${workflowRun.id}`,
-              `workspace-dev-visual-benchmark-${workflowRun.id}-benchmark`,
-            ];
+            const artifactName = `workspace-dev-visual-benchmark-${workflowRun.id}`;
             const { owner, repo } = context.repo;
             const response = await github.rest.actions.listWorkflowRunArtifacts({
               owner,
@@ -43,22 +45,20 @@ jobs:
               per_page: 100,
             });
             const artifact = (response.data.artifacts ?? []).find(
-              (candidate) =>
-                candidate.expired === false &&
-                candidateArtifactNames.includes(candidate.name),
+              (candidate) => candidate.expired === false && candidate.name === artifactName,
             );
 
             core.setOutput("pr_number", String(prNumber));
+            core.setOutput("artifact_name", artifactName);
             if (!artifact) {
-              core.notice(
-                `Artifacts '${candidateArtifactNames.join(", ")}' were not found for run ${workflowRun.id}; skipping.`,
-              );
+              core.notice(`Artifact '${artifactName}' was not found for run ${workflowRun.id}; skipping.`);
               core.setOutput("skip", "true");
               return;
             }
 
             core.setOutput("skip", "false");
             core.setOutput("artifact_url", artifact.archive_download_url);
+            core.setOutput("artifact_run_url", `${context.serverUrl}/${owner}/${repo}/actions/runs/${workflowRun.id}`);
 
       - name: Download visual benchmark artifact archive
         if: steps.resolve.outputs.skip == 'false'
@@ -75,24 +75,34 @@ jobs:
             -o downloaded-artifact/artifact.zip
           unzip -o downloaded-artifact/artifact.zip -d downloaded-artifact/files
 
-      - name: Locate PR comment payload
+      - name: Locate structured benchmark payload
         id: payload
         if: steps.resolve.outputs.skip == 'false'
         run: |
           set -euo pipefail
-          payload_path="$(find downloaded-artifact/files -type f -name pr-comment.json -print -quit)"
-          if [ -z "${payload_path}" ]; then
+          report_path="$(find downloaded-artifact/files -type f -path '*/last-run.public.json' -print -quit)"
+          if [ -z "${report_path}" ]; then
             echo "found=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "found=true" >> "$GITHUB_OUTPUT"
-          echo "path=${payload_path}" >> "$GITHUB_OUTPUT"
+          echo "report_path=${report_path}" >> "$GITHUB_OUTPUT"
+
+      - name: Render trusted visual benchmark PR comment payload
+        if: steps.resolve.outputs.skip == 'false' && steps.payload.outputs.found == 'true'
+        env:
+          VISUAL_BENCHMARK_ALLOW_STEP_SUMMARY: "false"
+        run: >-
+          node scripts/print-visual-benchmark-pr-comment.mjs
+          "${{ steps.payload.outputs.report_path }}"
+          --output downloaded-artifact/rendered-pr-comment.json
+          --artifact-url "${{ steps.resolve.outputs.artifact_run_url }}"
 
       - name: Post or update visual benchmark PR comment
         if: steps.resolve.outputs.skip == 'false' && steps.payload.outputs.found == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         env:
-          PAYLOAD_PATH: ${{ steps.payload.outputs.path }}
+          PAYLOAD_PATH: downloaded-artifact/rendered-pr-comment.json
           PR_NUMBER: ${{ steps.resolve.outputs.pr_number }}
         with:
           script: |
