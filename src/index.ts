@@ -35,10 +35,14 @@ export type {
   WorkspaceVisualComparisonMetadata,
   WorkspaceVisualQualityReport,
   WorkspaceJobResult,
-  WorkspaceVersionInfo
+  WorkspaceVersionInfo,
 } from "./contracts/index.js";
 
-export { CONTRACT_VERSION } from "./contracts/index.js";
+export {
+  ALLOWED_FIGMA_SOURCE_MODES,
+  ALLOWED_LLM_CODEGEN_MODES,
+  CONTRACT_VERSION,
+} from "./contracts/index.js";
 
 export { createWorkspaceServer } from "./server.js";
 export type { WorkspaceServer } from "./server.js";
@@ -46,7 +50,7 @@ export type { WorkspaceServer } from "./server.js";
 export {
   validateModeLock,
   enforceModeLock,
-  getWorkspaceDefaults
+  getWorkspaceDefaults,
 } from "./mode-lock.js";
 export type { ModeLockValidationResult } from "./mode-lock.js";
 
@@ -57,7 +61,7 @@ export {
   removeAllInstances,
   listProjectInstances,
   registerIsolationProcessCleanup,
-  unregisterIsolationProcessCleanup
+  unregisterIsolationProcessCleanup,
 } from "./isolation.js";
 export type { ProjectInstance } from "./isolation.js";
 

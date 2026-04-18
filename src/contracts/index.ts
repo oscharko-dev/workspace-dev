@@ -4,18 +4,28 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.15.0
+ * Contract version: 3.16.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
 
+/**
+ * Runtime source-of-truth list of allowed Figma source modes.
+ * Keep this array and `WorkspaceFigmaSourceMode` in lockstep;
+ * `submit-mode-parity.test.ts` enforces that compile-time and
+ * runtime agree.
+ */
+export const ALLOWED_FIGMA_SOURCE_MODES = [
+  "rest",
+  "hybrid",
+  "local_json",
+  "figma_paste",
+  "figma_plugin",
+] as const;
+
 /** Allowed Figma source modes for workspace-dev. */
 export type WorkspaceFigmaSourceMode =
-  | "rest"
-  | "hybrid"
-  | "local_json"
-  | "figma_paste"
-  | "figma_plugin";
+  (typeof ALLOWED_FIGMA_SOURCE_MODES)[number];
 
 /** Source modes used to record replayable import sessions. */
 export type WorkspaceImportSessionSourceMode =
@@ -62,8 +72,17 @@ export interface WorkspacePasteDeltaSummary {
   priorManifestMissing: boolean;
 }
 
+/**
+ * Runtime source-of-truth list of allowed codegen modes.
+ * Keep this array and `WorkspaceLlmCodegenMode` in lockstep;
+ * `submit-mode-parity.test.ts` enforces that compile-time and
+ * runtime agree.
+ */
+export const ALLOWED_LLM_CODEGEN_MODES = ["deterministic"] as const;
+
 /** Allowed codegen modes for workspace-dev. */
-export type WorkspaceLlmCodegenMode = "deterministic";
+export type WorkspaceLlmCodegenMode =
+  (typeof ALLOWED_LLM_CODEGEN_MODES)[number];
 
 /** Theme brand policy applied during IR token derivation. */
 export type WorkspaceBrandTheme = "derived" | "sparkasse";
@@ -324,8 +343,8 @@ export interface WorkspaceJobInput {
   repoUrl?: string;
   repoToken?: string;
   enableGitPr?: boolean;
-  figmaSourceMode?: string;
-  llmCodegenMode?: string;
+  figmaSourceMode?: WorkspaceFigmaSourceMode;
+  llmCodegenMode?: WorkspaceLlmCodegenMode;
   projectName?: string;
   targetPath?: string;
   brandTheme?: WorkspaceBrandTheme;
@@ -334,8 +353,6 @@ export interface WorkspaceJobInput {
   importIntent?: WorkspaceImportIntent;
   originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
-  /** Internal submit-origin marker preserved for replayable import sessions. */
-  requestSourceMode?: WorkspaceImportSessionSourceMode;
 }
 
 /** Public subset of request metadata stored for a job (secrets excluded). */
@@ -1281,4 +1298,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.15.0" as const;
+export const CONTRACT_VERSION = "3.16.0" as const;

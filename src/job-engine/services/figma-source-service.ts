@@ -4,6 +4,7 @@ import type {
   WorkspaceJobInput,
   WorkspacePasteDeltaSummary,
 } from "../../contracts/index.js";
+import type { SubmissionJobInput } from "../types.js";
 import {
   safeParseFigmaPayload,
   summarizeFigmaPayloadValidationError,
@@ -42,12 +43,9 @@ const MAX_HYBRID_LOADER_ERROR_MESSAGE_LENGTH = 240;
 
 export type FigmaSourceStageInput = Pick<
   WorkspaceJobInput,
-  | "figmaFileKey"
-  | "figmaNodeId"
-  | "figmaAccessToken"
-  | "figmaJsonPath"
-  | "requestSourceMode"
->;
+  "figmaFileKey" | "figmaNodeId" | "figmaAccessToken" | "figmaJsonPath"
+> &
+  Pick<SubmissionJobInput, "requestSourceMode">;
 
 const createHybridFallbackEnrichment = ({
   code,
@@ -385,7 +383,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         throw createPipelineError({
           code: "E_FIGMA_LOCAL_JSON_PATH",
           stage: "figma.source",
-          message: "figmaJsonPath contains a symbolic link and cannot be loaded.",
+          message:
+            "figmaJsonPath contains a symbolic link and cannot be loaded.",
           limits: context.runtime.pipelineDiagnosticLimits,
         });
       }
@@ -724,10 +723,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         } else if (plan.strategy === "structural_break") {
           allowReuse = false;
           fallbackReason = "structural_break";
-        } else if (
-          plan.addedNodes.length > 0 ||
-          plan.removedNodes.length > 0
-        ) {
+        } else if (plan.addedNodes.length > 0 || plan.removedNodes.length > 0) {
           allowReuse = false;
           fallbackReason = "root_structure_changed";
         }
@@ -776,13 +772,17 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
           rootNodeIds: plan.rootNodeIds,
           changedNodeIds,
           changedRootNodeIds,
-          ...(deltaSeed.sourceJobId ? { sourceJobId: deltaSeed.sourceJobId } : {}),
+          ...(deltaSeed.sourceJobId
+            ? { sourceJobId: deltaSeed.sourceJobId }
+            : {}),
           ...(deltaSeed.compatibilityFingerprint
             ? {
                 compatibilityFingerprint: deltaSeed.compatibilityFingerprint,
               }
             : {}),
-          ...(deltaSeed.figmaFileKey ? { figmaFileKey: deltaSeed.figmaFileKey } : {}),
+          ...(deltaSeed.figmaFileKey
+            ? { figmaFileKey: deltaSeed.figmaFileKey }
+            : {}),
           eligibleForReuse: allowReuse,
           ...(fallbackReason ? { fallbackReason } : {}),
         };
@@ -791,14 +791,15 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       } catch (error) {
         context.log({
           level: "warn",
-          message:
-            `Paste delta resolution after cleaning failed; continuing with full execution: ${getErrorMessage(error)}`,
+          message: `Paste delta resolution after cleaning failed; continuing with full execution: ${getErrorMessage(error)}`,
         });
         if (deltaSeed.provisionalSummary) {
           const fallbackSummary: WorkspacePasteDeltaSummary = {
             ...deltaSeed.provisionalSummary,
             mode:
-              deltaSeed.requestedMode === "delta" ? "full" : "auto_resolved_to_full",
+              deltaSeed.requestedMode === "delta"
+                ? "full"
+                : "auto_resolved_to_full",
             pasteIdentityKey: deltaSeed.pasteIdentityKey,
           };
           pasteDeltaExecution = {
@@ -849,7 +850,10 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       stage: "figma.source",
       value: figmaFetch.cleaning,
     });
-    if (pasteDeltaExecution && isPasteDeltaExecutionState(pasteDeltaExecution)) {
+    if (
+      pasteDeltaExecution &&
+      isPasteDeltaExecutionState(pasteDeltaExecution)
+    ) {
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
         stage: "figma.source",
