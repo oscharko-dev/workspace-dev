@@ -2282,7 +2282,7 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   );
   assert.doesNotMatch(workflow, /FIGMA_ACCESS_TOKEN/);
   assert.doesNotMatch(workflow, /FIGMA_FILE_KEY/);
-  assert.match(workflow, /actions\/github-script@v8/);
+  assert.match(workflow, /actions\/github-script@v9/);
   assert.match(workflow, /check-output\.json/);
   assert.match(workflow, /github\.rest\.checks\.update/);
   assert.match(workflow, /integration\/composite-quality\*/);

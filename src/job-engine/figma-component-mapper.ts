@@ -28,7 +28,7 @@ export interface MappedComponent {
   source: string;
   importPath?: string;
   props?: PropMapping[];
-  confidence: "exact" | "suggested" | "heuristic" | "none";
+  confidence: "exact" | "design_system" | "suggested" | "heuristic" | "none";
 }
 
 export interface PropMapping {
@@ -285,14 +285,18 @@ const asNodeArray = (value: unknown): RawFigmaNode[] =>
     ? value.filter((entry): entry is RawFigmaNode => isRecord(entry))
     : [];
 
-const resolveCodeConnectSource = (entry: RawCodeConnectEntry): string | undefined =>
+const resolveCodeConnectSource = (
+  entry: RawCodeConnectEntry,
+): string | undefined =>
   isNonEmptyString(entry.source)
     ? entry.source
     : isNonEmptyString(entry.codeConnectSrc)
       ? entry.codeConnectSrc
       : undefined;
 
-const resolveCodeConnectName = (entry: RawCodeConnectEntry): string | undefined =>
+const resolveCodeConnectName = (
+  entry: RawCodeConnectEntry,
+): string | undefined =>
   isNonEmptyString(entry.componentName)
     ? entry.componentName
     : isNonEmptyString(entry.codeConnectName)
@@ -404,13 +408,15 @@ export const parseCodeConnectSuggestionsResponse = (
   const parseEntry = (
     entry: RawCodeConnectSuggestionEntry,
     fallbackNodeId?: string,
-  ): {
-    nodeId?: string;
-    mainComponentNodeId?: string;
-    figmaName?: string;
-    componentName?: string;
-    source?: string;
-  } | undefined => {
+  ):
+    | {
+        nodeId?: string;
+        mainComponentNodeId?: string;
+        figmaName?: string;
+        componentName?: string;
+        source?: string;
+      }
+    | undefined => {
     const figmaName = isNonEmptyString(entry.figmaName)
       ? entry.figmaName
       : isNonEmptyString(entry.mainComponentName)
@@ -459,7 +465,9 @@ export const parseCodeConnectSuggestionsResponse = (
 
   if (Array.isArray(payload)) {
     return payload
-      .filter((entry): entry is RawCodeConnectSuggestionEntry => isRecord(entry))
+      .filter((entry): entry is RawCodeConnectSuggestionEntry =>
+        isRecord(entry),
+      )
       .map((entry) => parseEntry(entry))
       .filter(
         (
@@ -805,9 +813,7 @@ const collectComponentCandidates = ({
   const root = isRecord(rawFile?.document)
     ? (rawFile.document as RawFigmaNode)
     : undefined;
-  const selectionRoot = root
-    ? findSelectionRoot({ root, nodeId })
-    : undefined;
+  const selectionRoot = root ? findSelectionRoot({ root, nodeId }) : undefined;
   if (!selectionRoot) {
     return candidates;
   }
@@ -824,9 +830,7 @@ const collectComponentCandidates = ({
       continue;
     }
 
-    const nodeType = isNonEmptyString(current.type)
-      ? current.type
-      : "";
+    const nodeType = isNonEmptyString(current.type) ? current.type : "";
     if (!isComponentLikeNodeType(nodeType)) {
       continue;
     }
@@ -1154,6 +1158,13 @@ export const loadPersistedMappings = async ({
 
     const confidence = value.confidence;
     if (!isPersistedMappingConfidence(confidence)) {
+    if (
+      confidence !== "exact" &&
+      confidence !== "design_system" &&
+      confidence !== "suggested" &&
+      confidence !== "heuristic" &&
+      confidence !== "none"
+    ) {
       continue;
     }
 
@@ -1361,6 +1372,7 @@ export const annotateIrWithMappings = ({
  *
  * 1. **Code Connect lookup** — explicit MCP mappings (confidence: exact)
  * 2. **Design system search** — library component matching
+ *    (confidence: design_system; may be upgraded to heuristic by Step 4)
  * 3. **AI suggestions** — MCP suggestions, stored but never auto-applied
  *    (confidence: suggested)
  * 4. **Heuristic matching** — name-based matching against workspace components
@@ -1404,7 +1416,10 @@ export const resolveComponentMappings = async (
   let persistedMappings = new Map<string, MappedComponent>();
   if (workspaceRoot) {
     try {
-      persistedMappings = await loadPersistedMappings({ workspaceRoot, fileKey });
+      persistedMappings = await loadPersistedMappings({
+        workspaceRoot,
+        fileKey,
+      });
       if (persistedMappings.size > 0) {
         mcpConfig.onLog?.(
           `Loaded ${String(persistedMappings.size)} persisted mapping(s)`,
@@ -1478,7 +1493,10 @@ export const resolveComponentMappings = async (
       const queries = [
         candidate.figmaName,
         extractBaseComponentName(candidate.figmaName),
-      ].filter((value, index, array) => value.length > 0 && array.indexOf(value) === index);
+      ].filter(
+        (value, index, array) =>
+          value.length > 0 && array.indexOf(value) === index,
+      );
 
       let match:
         | {
@@ -1519,6 +1537,12 @@ export const resolveComponentMappings = async (
         source: match.key ?? match.name,
         ...(match.libraryKey ? { libraryKey: match.libraryKey } : {}),
       });
+      resultMappings.set(candidate.nodeId, {
+        name: match.name,
+        source: match.key ?? match.name,
+        confidence: "design_system",
+      });
+      mappedNodeIds.add(candidate.nodeId);
     }
 
     if (designSystemMappings.length > 0) {
@@ -1555,7 +1579,11 @@ export const resolveComponentMappings = async (
           suggestion,
           candidates,
         }) ??
-        (suggestion.nodeId ? candidates.find((candidate) => candidate.nodeId === suggestion.nodeId) : undefined);
+        (suggestion.nodeId
+          ? candidates.find(
+              (candidate) => candidate.nodeId === suggestion.nodeId,
+            )
+          : undefined);
       if (!matchedCandidate) {
         continue;
       }
@@ -1627,14 +1655,19 @@ export const resolveComponentMappings = async (
         );
 
         for (const candidate of candidates) {
-          if (mappedNodeIds.has(candidate.nodeId)) {
+          const existingMapping = resultMappings.get(candidate.nodeId);
+          if (
+            existingMapping &&
+            existingMapping.confidence !== "design_system"
+          ) {
             continue;
           }
 
-          const heuristicMatch = findHeuristicMatch({
-            figmaName: candidate.figmaName,
-            workspaceComponents,
-          }) ??
+          const heuristicMatch =
+            findHeuristicMatch({
+              figmaName: candidate.figmaName,
+              workspaceComponents,
+            }) ??
             (() => {
               const dsMatch = designSystemMatchesByNodeId.get(candidate.nodeId);
               if (!dsMatch) {
@@ -1702,7 +1735,9 @@ export const resolveComponentMappings = async (
     exact: [...resultMappings.values()].filter(
       (mapping) => mapping.confidence === "exact",
     ).length,
-    designSystem: designSystemMappings.length,
+    designSystem: [...resultMappings.values()].filter(
+      (mapping) => mapping.confidence === "design_system",
+    ).length,
     suggested: unmapped.filter((entry) => (entry.suggestions?.length ?? 0) > 0)
       .length,
     heuristic: [...resultMappings.values()].filter(
@@ -1731,6 +1766,11 @@ export const resolveComponentMappings = async (
     for (const candidate of candidates) {
       const mapping = resultMappings.get(candidate.nodeId);
       if (!mapping || !isPersistedMappingConfidence(mapping.confidence)) {
+      if (
+        !mapping ||
+        mapping.confidence === "suggested" ||
+        mapping.confidence === "design_system"
+      ) {
         continue;
       }
       approvedMappings.set(candidate.persistenceKey, mapping);
@@ -1787,9 +1827,14 @@ export const mapFigmaComponents = async (
   }
   const componentSets = consolidateComponentSetVariants({ irNodes: allNodes });
 
-  // Build heuristic mapping lookup
+  // Build heuristic mapping lookup. Design-system matches are handled via
+  // designSystemMappings in annotateIrWithMappings and must not be treated
+  // as code_connect by the heuristic path.
   const heuristicMappings = new Map<string, MappedComponent>();
   for (const [irNodeId, mapping] of result.mappings) {
+    if (mapping.confidence === "design_system") {
+      continue;
+    }
     heuristicMappings.set(irNodeId, mapping);
     if (mapping.confidence === "heuristic") {
       heuristicMappings.set(normalizeComponentName(mapping.name), mapping);
@@ -1829,7 +1874,10 @@ const findPersistedMappingForCandidate = ({
   candidate: ComponentMappingCandidate;
   persistedMappings: ReadonlyMap<string, MappedComponent>;
 }): MappedComponent | undefined => {
-  const lookupKeys = [candidate.persistenceKey, ...candidate.legacyPersistenceKeys];
+  const lookupKeys = [
+    candidate.persistenceKey,
+    ...candidate.legacyPersistenceKeys,
+  ];
   for (const lookupKey of lookupKeys) {
     const mapping = persistedMappings.get(lookupKey);
     if (mapping) {
@@ -1854,7 +1902,9 @@ const findSuggestionCandidate = ({
 }): ComponentMappingCandidate | undefined => {
   const byNodeId = suggestion.nodeId ?? suggestion.mainComponentNodeId;
   if (byNodeId) {
-    const nodeMatch = candidates.find((candidate) => candidate.nodeId === byNodeId);
+    const nodeMatch = candidates.find(
+      (candidate) => candidate.nodeId === byNodeId,
+    );
     if (nodeMatch) {
       return nodeMatch;
     }
