@@ -45,14 +45,13 @@ const TARGETS = [
  * Parse the set of package names that appear as keys in the lockfile's
  * packages: or snapshots: section, and the set with requiresBuild: true.
  */
-const parseLockfile = (content) => {
+export const parseLockfile = (content) => {
   const knownPackages = new Set();
   const requiresBuildPackages = new Set();
 
-  // In pnpm lockfile v9 the top-level sections are "packages:" and "snapshots:".
+  // pnpm lockfile v9: top-level sections are "packages:" and "snapshots:".
   // Package keys look like:  /name@version:  or  name@version:
-  // We extract just the bare package name (without version) for allowlist checks.
-  const pkgKeyPattern = /^  ([@\w][^:]+):\s*$/gm;
+  // Strip version and leading slash to get the bare package name for checks.
   const requiresBuildPattern = /requiresBuild: true/;
 
   const lines = content.split("\n");
@@ -62,10 +61,8 @@ const parseLockfile = (content) => {
     const keyMatch = /^  ([@/\w][^:\s][^:]*):$/.exec(line);
     if (keyMatch) {
       currentPkg = keyMatch[1];
-      // Normalise: strip version suffix to get package name
       const atIdx = currentPkg.lastIndexOf("@");
       const name = atIdx > 0 ? currentPkg.slice(0, atIdx) : currentPkg;
-      // Strip leading slash (pnpm v5/v6 format)
       knownPackages.add(name.replace(/^\//, ""));
     } else if (requiresBuildPattern.test(line) && currentPkg !== null) {
       const atIdx = currentPkg.lastIndexOf("@");
@@ -73,10 +70,6 @@ const parseLockfile = (content) => {
       requiresBuildPackages.add(name.replace(/^\//, ""));
     }
   }
-
-  // Suppress unused variable warning — pkgKeyPattern defined above but not
-  // used in the loop (loop uses inline regex). This keeps linters quiet.
-  void pkgKeyPattern;
 
   return { knownPackages, requiresBuildPackages };
 };
