@@ -22,7 +22,7 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          unpinned=$(grep -rn 'uses:' .github/workflows/ \
+          unpinned=$(grep -rn --include='*.yml' 'uses:' .github/workflows/ \
             | grep -vE '@[0-9a-f]{40}' \
             | grep -v 'pin-check.yml' \
             | grep -v '^Binary' || true)
