@@ -305,6 +305,11 @@ export interface JobEngine {
     jobId: string;
     reason?: string;
   }) => WorkspaceJobStatus | undefined;
+  cancelAllJobs: (input?: { reason?: string }) => WorkspaceJobStatus[];
+  shutdown: (input?: {
+    reason?: string;
+    timeoutMs?: number;
+  }) => Promise<{ completed: boolean; remainingJobIds: string[] }>;
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;
   getJobRecord: (jobId: string) => JobRecordSnapshot | undefined;

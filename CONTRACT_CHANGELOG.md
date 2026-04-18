@@ -31,6 +31,14 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.17.0] - 2026-04-18
+
+### Changed (Issue #638)
+
+- Added `GET /readyz` as a readiness probe. It returns `200` only when the server is fully ready and `503` during startup and graceful shutdown drain.
+- Changed `GET /healthz` to return a lifecycle-aware JSON payload `{ status, uptime }` instead of the legacy static shape.
+- Added optional `WorkspaceStartOptions.shutdownTimeoutMs` to control graceful shutdown drain timing.
+
 ## [3.16.0] - 2026-04-18
 
 ### Changed (Issue #1104)

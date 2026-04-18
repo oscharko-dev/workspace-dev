@@ -78,7 +78,7 @@ The workspace UI is implemented as a Vite + React + TypeScript + Tailwind app:
 
 - Vite 8 build output is emitted into `dist/ui`
 - Runtime serves `index.html` and hashed bundles under `/workspace/ui/assets/*`
-- API contracts are versioned (`/workspace`, `/healthz`, `/workspace/submit`, `/workspace/jobs/*`)
+- API contracts are versioned (`/workspace`, `/healthz`, `/readyz`, `/workspace/submit`, `/workspace/jobs/*`)
 - UI HTML responses enforce a strict CSP; `style-src 'unsafe-inline'` remains temporarily required because the inspector still renders inline React `style={{...}}` attributes
 
 Useful scripts:
@@ -205,7 +205,8 @@ With `enableGitPr=false`, generation is local-only.
 ## Runtime API
 
 - `GET /workspace` - runtime status
-- `GET /healthz` - health check
+- `GET /healthz` - liveness probe (`200` with `{ status, uptime }` during startup, ready, and drain)
+- `GET /readyz` - readiness probe (`200` only when ready; `503` during startup and drain)
 - `GET /workspace/inspector-policy` - resolved repo-backed inspector policy (`{ policy: WorkspacePolicy | null }`)
 - `GET /workspace/:figmaFileKey` - deep-link to workspace UI for a Figma file key
 - `POST /workspace/submit` - start autonomous generation (`202 Accepted`)
@@ -273,6 +274,7 @@ workspace-dev scan-design-system [options]
 - `--figma-cache-ttl-ms <ms>` (default `900000`)
 - `--icon-map-file <path>` (default `<outputRoot>/icon-fallback-map.json`)
 - `--design-system-file <path>` (default `<outputRoot>/design-system.json`; optional design-system mapping for deterministic codegen)
+- `--shutdown-timeout <ms>` (default `10000`, max graceful drain time before remaining connections are terminated)
 - `--export-images <true|false>` (default `true`; exports Figma image assets to `generated-app/public/images`)
 - `--figma-screen-element-budget <n>` (default `1200`)
 - `--figma-screen-element-max-depth <n>` (default `14`)

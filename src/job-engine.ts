@@ -3917,6 +3917,43 @@ export const createJobEngine = ({
     return toPublicJob(job);
   };
 
+  const cancelAllJobs: JobEngine["cancelAllJobs"] = ({
+    reason,
+  } = {}): WorkspaceJobStatus[] => {
+    const canceledJobs: WorkspaceJobStatus[] = [];
+    for (const jobId of jobs.keys()) {
+      const canceled = cancelJob({
+        jobId,
+        ...(reason !== undefined ? { reason } : {}),
+      });
+      if (canceled) {
+        canceledJobs.push(canceled);
+      }
+    }
+    return canceledJobs;
+  };
+
+  const shutdown: JobEngine["shutdown"] = async ({
+    reason,
+    timeoutMs = 10_000,
+  } = {}) => {
+    cancelAllJobs({
+      ...(reason !== undefined ? { reason } : {}),
+    });
+
+    const deadline = Date.now() + Math.max(0, timeoutMs);
+    while (runningJobIds.size > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 25);
+      });
+    }
+
+    return {
+      completed: runningJobIds.size === 0,
+      remainingJobIds: [...runningJobIds],
+    };
+  };
+
   const getJob = (jobId: string): WorkspaceJobStatus | undefined => {
     const job = jobs.get(jobId);
     if (!job) {
@@ -4663,6 +4700,8 @@ export const createJobEngine = ({
     previewLocalSync,
     applyLocalSync,
     cancelJob,
+    cancelAllJobs,
+    shutdown,
     getJob,
     getJobResult,
     getJobRecord,

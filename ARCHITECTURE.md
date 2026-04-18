@@ -9,6 +9,7 @@ It provides deterministic HTTP behavior for:
 - `GET /workspace`
 - `GET /workspace/ui` and `GET /workspace/:figmaFileKey`
 - `GET /healthz`
+- `GET /readyz`
 - `POST /workspace/submit` (starts real job execution)
 - `GET /workspace/jobs/:id`
 - `GET /workspace/jobs/:id/result`
@@ -37,6 +38,13 @@ Execution plans:
 
 - `submission`: all seven stages in canonical order
 - `regeneration`: same order with `figma.source` and `git.pr` skipped by plan rules; `ir.derive` reads seeded regeneration artifacts (`regeneration.source_ir`, `regeneration.overrides`) from the current job store
+
+Server lifecycle:
+
+- startup transitions from `starting` to `ready` once the HTTP listener is bound
+- graceful shutdown transitions to `draining`, rejects new mutating work, cancels queued/running jobs, and keeps `/readyz` at `503`
+- `/healthz` stays `200` during `starting`, `ready`, and `draining`, returning `{ status, uptime }`
+- `/readyz` returns `{ status, uptime }` and flips between `503` (`starting`/`draining`) and `200` (`ready`)
 
 ### Isolation model
 

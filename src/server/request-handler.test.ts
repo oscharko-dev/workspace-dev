@@ -89,6 +89,8 @@ function createStubJobEngine(overrides: Partial<JobEngine> = {}): JobEngine {
         status: "canceled",
         cancellation: { reason: "cleanup" },
       }) as ReturnType<JobEngine["cancelJob"]>,
+    cancelAllJobs: () => [],
+    shutdown: async () => ({ completed: true, remainingJobIds: [] }),
     getJob: () => undefined,
     getJobResult: () => undefined,
     getJobRecord: () => undefined,
@@ -174,6 +176,7 @@ async function createRequestHandlerApp({
   importSessionEventBearerToken,
   workspaceRoot,
   outputRoot,
+  getServerLifecycleState,
 }: {
   jobEngine?: JobEngine;
   moduleDir?: string;
@@ -182,6 +185,7 @@ async function createRequestHandlerApp({
   importSessionEventBearerToken?: string;
   workspaceRoot?: string;
   outputRoot?: string;
+  getServerLifecycleState?: () => "starting" | "ready" | "draining" | "stopped";
 } = {}): Promise<{
   app: WorkspaceServerApp;
   baseUrl: string;
@@ -208,6 +212,7 @@ async function createRequestHandlerApp({
       importSessionEventBearerToken,
       logger,
     },
+    ...(getServerLifecycleState ? { getServerLifecycleState } : {}),
     jobEngine,
     moduleDir,
   });
@@ -2143,6 +2148,74 @@ test("request handler emits and echoes request IDs for successful responses", as
       echoedResponse.headers["x-request-id"],
       "req-upstream-healthz",
     );
+  } finally {
+    await close();
+  }
+});
+
+test("request handler reports lifecycle-aware health and readiness states", async () => {
+  const scenarios = [
+    { lifecycleState: "starting" as const, expectedHealthStatus: 200, expectedReadyStatus: 503, status: "starting" },
+    { lifecycleState: "ready" as const, expectedHealthStatus: 200, expectedReadyStatus: 200, status: "ok" },
+    { lifecycleState: "draining" as const, expectedHealthStatus: 200, expectedReadyStatus: 503, status: "draining" },
+  ];
+
+  for (const scenario of scenarios) {
+    const { app, close } = await createRequestHandlerApp({
+      getServerLifecycleState: () => scenario.lifecycleState,
+    });
+
+    try {
+      const healthResponse = await app.inject({
+        method: "GET",
+        url: "/healthz",
+      });
+      assert.equal(healthResponse.statusCode, scenario.expectedHealthStatus);
+      assert.deepEqual(healthResponse.json(), {
+        status: scenario.status,
+        uptime: 0,
+      });
+
+      const readyResponse = await app.inject({
+        method: "GET",
+        url: "/readyz",
+      });
+      assert.equal(readyResponse.statusCode, scenario.expectedReadyStatus);
+      assert.deepEqual(readyResponse.json(), {
+        status: scenario.status,
+        uptime: 0,
+      });
+    } finally {
+      await close();
+    }
+  }
+});
+
+test("request handler rejects mutating requests while draining and keeps read endpoints available", async () => {
+  const { app, close } = await createRequestHandlerApp({
+    getServerLifecycleState: () => "draining",
+  });
+
+  try {
+    const readResponse = await app.inject({
+      method: "GET",
+      url: "/workspace",
+    });
+    assert.equal(readResponse.statusCode, 200);
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: "{}",
+    });
+    assert.equal(response.statusCode, 503);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "SERVER_DRAINING");
+    assert.equal(body.message, "Server is draining and not accepting new requests.");
+    assert.equal(typeof body.requestId, "string");
   } finally {
     await close();
   }

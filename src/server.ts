@@ -8,6 +8,7 @@
 
 import { readdir, rm, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
+import type { Socket } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkspaceStartOptions } from "./contracts/index.js";
@@ -15,13 +16,14 @@ import { createDefaultFigmaMcpEnrichmentLoader } from "./job-engine/figma-hybrid
 import { createJobEngine, resolveRuntimeSettings } from "./job-engine.js";
 import type { WorkspaceRuntimeLogger } from "./logging.js";
 import { getWorkspaceDefaults } from "./mode-lock.js";
-import { buildApp, toAddressList, type WorkspaceServerApp } from "./server/app-inject.js";
+import { buildApp, closeServer, toAddressList, type WorkspaceServerApp } from "./server/app-inject.js";
 import { DEFAULT_HOST, DEFAULT_OUTPUT_ROOT, DEFAULT_PORT, DEFAULT_RATE_LIMIT_PER_MINUTE } from "./server/constants.js";
 import { createWorkspaceRequestHandler } from "./server/request-handler.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_FIGMA_PASTE_TEMP_TTL_MS = 24 * 60 * 60_000;
 const FIGMA_PASTE_TEMP_DIR_NAME = "tmp-figma-paste";
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 export interface WorkspaceServer {
   app: WorkspaceServerApp;
@@ -30,6 +32,8 @@ export interface WorkspaceServer {
   port: number;
   startedAt: number;
 }
+
+type WorkspaceServerLifecycleState = "starting" | "ready" | "draining" | "stopped";
 
 async function startServer({
   server,
@@ -167,6 +171,10 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ? path.normalize(outputRoot)
     : path.resolve(workDir, outputRoot);
   const figmaPasteTempTtlMs = resolveFigmaPasteTempTtlMs(options.figmaPasteTempTtlMs);
+  const shutdownTimeoutMs =
+    typeof options.shutdownTimeoutMs === "number" && Number.isFinite(options.shutdownTimeoutMs)
+      ? Math.max(0, Math.trunc(options.shutdownTimeoutMs))
+      : DEFAULT_SHUTDOWN_TIMEOUT_MS;
   const absoluteIconMapFilePath =
     typeof options.iconMapFilePath === "string" && options.iconMapFilePath.trim().length > 0
       ? path.isAbsolute(options.iconMapFilePath)
@@ -280,6 +288,11 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   });
 
   let resolvedPort = port;
+  let lifecycleState: WorkspaceServerLifecycleState = "starting";
+  let drainTrackedRequestCount = 0;
+  const activeSockets = new Set<Socket>();
+  const requestDrainWaiters = new Set<() => void>();
+  let closePromise: Promise<void> | undefined;
   const jobEngine = createJobEngine({
     resolveBaseUrl: () => `http://${host}:${resolvedPort}`,
     paths: {
@@ -304,12 +317,43 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       ...(importSessionEventBearerToken !== undefined ? { importSessionEventBearerToken } : {}),
       logger: runtime.logger
     },
+    getServerLifecycleState: () => lifecycleState,
     jobEngine,
     moduleDir: MODULE_DIR
   });
 
   const server = createServer((request, response) => {
+    const trackForDrain = lifecycleState !== "draining";
+    if (trackForDrain) {
+      drainTrackedRequestCount += 1;
+    }
+    let settled = false;
+    const markRequestComplete = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (!trackForDrain) {
+        return;
+      }
+      drainTrackedRequestCount = Math.max(0, drainTrackedRequestCount - 1);
+      if (drainTrackedRequestCount === 0) {
+        for (const resolve of requestDrainWaiters) {
+          resolve();
+        }
+        requestDrainWaiters.clear();
+      }
+    };
+
+    response.once("finish", markRequestComplete);
+    response.once("close", markRequestComplete);
     void handleRequest(request, response);
+  });
+  server.on("connection", (socket) => {
+    activeSockets.add(socket);
+    socket.once("close", () => {
+      activeSockets.delete(socket);
+    });
   });
 
   await sweepStaleFigmaPasteTempFiles({
@@ -338,12 +382,76 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   if (firstAddress) {
     resolvedPort = firstAddress.port;
   }
+  lifecycleState = "ready";
 
-  const app = buildApp({
+  const baseApp = buildApp({
     server,
     host,
     port: resolvedPort
   });
+  const waitForActiveRequestsToDrain = async (): Promise<void> => {
+    if (drainTrackedRequestCount === 0) {
+      return;
+    }
+
+    await new Promise<void>((resolve) => {
+      requestDrainWaiters.add(resolve);
+    });
+  };
+  const terminateOpenSockets = (): void => {
+    for (const socket of activeSockets) {
+      socket.destroy();
+    }
+    activeSockets.clear();
+  };
+  const closeWithDrain = async (): Promise<void> => {
+    if (lifecycleState === "stopped") {
+      return;
+    }
+    if (closePromise) {
+      return await closePromise;
+    }
+
+    lifecycleState = "draining";
+    closePromise = (async () => {
+      const shutdownReason = "Server shutdown interrupted in-flight work.";
+      const jobShutdownPromise = jobEngine.shutdown({
+        reason: shutdownReason,
+        timeoutMs: shutdownTimeoutMs
+      });
+      let timedOut = false;
+
+      try {
+        await Promise.race([
+          Promise.all([waitForActiveRequestsToDrain(), jobShutdownPromise]).then(() => undefined),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error(`Graceful shutdown timed out after ${shutdownTimeoutMs}ms.`));
+            }, shutdownTimeoutMs);
+          })
+        ]);
+      } catch {
+        timedOut = true;
+        terminateOpenSockets();
+      } finally {
+        const closeServerPromise = closeServer(server);
+        if (typeof server.closeIdleConnections === "function") {
+          server.closeIdleConnections();
+        }
+        if (timedOut) {
+          terminateOpenSockets();
+        }
+        await closeServerPromise.catch(() => {});
+        lifecycleState = "stopped";
+      }
+    })();
+
+    return await closePromise;
+  };
+  const app: WorkspaceServerApp = {
+    ...baseApp,
+    close: closeWithDrain
+  };
 
   return { app, url: `http://${host}:${resolvedPort}`, host, port: resolvedPort, startedAt };
 };

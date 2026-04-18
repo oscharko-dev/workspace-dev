@@ -69,6 +69,7 @@ const DEFAULT_ENABLE_LINT_AUTOFIX = true;
 const DEFAULT_MAX_CONCURRENT_JOBS = 1;
 const DEFAULT_MAX_QUEUED_JOBS = 20;
 const DEFAULT_RATE_LIMIT_PER_MINUTE = 10;
+const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
 
 interface CliOptions {
   command: string;
@@ -116,6 +117,7 @@ interface CliOptions {
   maxConcurrentJobs: number;
   maxQueuedJobs: number;
   rateLimitPerMinute: number;
+  shutdownTimeoutMs: number;
   importSessionEventBearerToken: string | undefined;
   logFormat: WorkspaceLogFormat;
   enableLintAutofix: boolean;
@@ -444,6 +446,12 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_RATE_LIMIT_PER_MINUTE,
     min: 0,
     max: 1000
+  });
+  let shutdownTimeoutMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_SHUTDOWN_TIMEOUT_MS,
+    fallback: DEFAULT_SHUTDOWN_TIMEOUT_MS,
+    min: 0,
+    max: 60 * 60_000
   });
   const importSessionEventBearerToken =
     process.env.FIGMAPIPE_WORKSPACE_IMPORT_SESSION_EVENT_BEARER_TOKEN?.trim() || undefined;
@@ -880,6 +888,17 @@ const parseArgs = (argv: string[]): CliOptions => {
       continue;
     }
 
+    if (arg === "--shutdown-timeout") {
+      shutdownTimeoutMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: shutdownTimeoutMs,
+        min: 0,
+        max: 60 * 60_000
+      });
+      index += 1;
+      continue;
+    }
+
     if (arg === "--log-format") {
       logFormat = resolveWorkspaceLogFormat({
         value: args[index + 1],
@@ -982,6 +1001,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     maxConcurrentJobs,
     maxQueuedJobs,
     rateLimitPerMinute,
+    shutdownTimeoutMs,
     importSessionEventBearerToken,
     logFormat,
     enableLintAutofix,
@@ -1078,6 +1098,7 @@ Options:
   --max-concurrent-jobs <n>  Max running jobs at once (default: ${DEFAULT_MAX_CONCURRENT_JOBS})
   --max-queued-jobs <n>      Max queued jobs before submit backpressure reject (default: ${DEFAULT_MAX_QUEUED_JOBS})
   --rate-limit <n>           Max job submissions and import-session event writes per minute per client IP; 0 disables, with separate budgets per route family (default: ${DEFAULT_RATE_LIMIT_PER_MINUTE})
+  --shutdown-timeout <ms>    Max graceful drain time before remaining connections are terminated (default: ${DEFAULT_SHUTDOWN_TIMEOUT_MS})
   --log-format <text|json>   Operational runtime log format (default: ${DEFAULT_WORKSPACE_LOG_FORMAT})
   --lint-autofix <true|false>
                              Run eslint auto-fix before final lint validation (default: ${DEFAULT_ENABLE_LINT_AUTOFIX})
@@ -1281,6 +1302,7 @@ const main = async (): Promise<void> => {
       maxQueuedJobs: options.maxQueuedJobs,
       logFormat: options.logFormat,
       rateLimitPerMinute: options.rateLimitPerMinute,
+      shutdownTimeoutMs: options.shutdownTimeoutMs,
       ...(options.importSessionEventBearerToken !== undefined
         ? { importSessionEventBearerToken: options.importSessionEventBearerToken }
         : {}),
@@ -1323,6 +1345,7 @@ const main = async (): Promise<void> => {
       level: "info",
       message: `Queue limits: concurrent=${options.maxConcurrentJobs}, queued=${options.maxQueuedJobs}`
     });
+    logger.log({ level: "info", message: `Shutdown timeout: ${options.shutdownTimeoutMs}ms` });
     logger.log({ level: "info", message: `Rate limit per minute: ${options.rateLimitPerMinute}` });
     logger.log({
       level: "info",

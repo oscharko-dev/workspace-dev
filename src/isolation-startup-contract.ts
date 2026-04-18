@@ -4,6 +4,7 @@ export interface IsolatedChildStartConfig {
   host: string;
   workDir: string;
   logFormat?: WorkspaceLogFormat;
+  shutdownTimeoutMs?: number;
 }
 
 export interface IsolatedChildAwaitingConfigMessage {
@@ -54,7 +55,9 @@ export const isIsolatedChildStartMessage = (value: unknown): value is IsolatedCh
 
   const { config } = value;
   const hasValidLogFormat = config.logFormat === undefined || isWorkspaceLogFormat(config.logFormat);
-  return typeof config.host === "string" && typeof config.workDir === "string" && hasValidLogFormat;
+  const hasValidShutdownTimeout =
+    config.shutdownTimeoutMs === undefined || typeof config.shutdownTimeoutMs === "number";
+  return typeof config.host === "string" && typeof config.workDir === "string" && hasValidLogFormat && hasValidShutdownTimeout;
 };
 
 export const isIsolatedChildReadyMessage = (value: unknown): value is IsolatedChildReadyMessage => {

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { request as httpRequest } from "node:http";
 import {
   mkdir,
   mkdtemp,
@@ -620,7 +621,142 @@ test("workspace server healthz endpoint", async () => {
     });
 
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.json(), { ok: true, service: "workspace-dev" });
+    assert.deepEqual(response.json(), { status: "ok", uptime: 0 });
+
+    const readyResponse = await server.app.inject({
+      method: "GET",
+      url: "/readyz",
+    });
+    assert.equal(readyResponse.statusCode, 200);
+    assert.deepEqual(readyResponse.json(), { status: "ok", uptime: 0 });
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server exposes draining readiness and rejects new mutating requests during shutdown", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = allocateTestPort();
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    const inFlightResponsePromise = new Promise<{
+      statusCode: number | undefined;
+      body: string;
+    }>((resolve, reject) => {
+      const request = httpRequest(
+        `${server.url}/workspace/submit`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+        },
+        (response) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk) => {
+            chunks.push(Buffer.from(chunk));
+          });
+          response.on("end", () => {
+            resolve({
+              statusCode: response.statusCode,
+              body: Buffer.concat(chunks).toString("utf8"),
+            });
+          });
+        },
+      );
+      request.on("error", reject);
+      request.write("{");
+      setTimeout(() => {
+        request.end("}");
+      }, 100);
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const closePromise = server.app.close();
+
+    const readyResponse = await fetch(`${server.url}/readyz`, {
+      signal: AbortSignal.timeout(1_000),
+    });
+    assert.equal(readyResponse.status, 503);
+    assert.deepEqual((await readyResponse.json()) as Record<string, unknown>, {
+      status: "draining",
+      uptime: 0,
+    });
+
+    const drainingSubmitResponse = await fetch(`${server.url}/workspace/submit`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(1_000),
+    });
+    assert.equal(drainingSubmitResponse.status, 503);
+    const drainingSubmitBody = (await drainingSubmitResponse.json()) as Record<string, unknown>;
+    assert.equal(drainingSubmitBody.error, "SERVER_DRAINING");
+
+    const inFlightResponse = await inFlightResponsePromise;
+    assert.equal(inFlightResponse.statusCode, 400);
+    const inFlightBody = JSON.parse(inFlightResponse.body) as Record<string, unknown>;
+    assert.equal(inFlightBody.error, "VALIDATION_ERROR");
+
+    await closePromise;
+
+    await assert.rejects(
+      () => fetch(`${server.url}/workspace`, { signal: AbortSignal.timeout(1_000) }),
+      /fetch failed|ECONNREFUSED/i,
+    );
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server terminates stalled requests after the shutdown timeout", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const port = allocateTestPort();
+  const server = await createWorkspaceServer({
+    port,
+    host: "127.0.0.1",
+    outputRoot,
+    shutdownTimeoutMs: 50,
+    fetchImpl: createFakeFigmaFetch(),
+  });
+
+  try {
+    const stalledRequestPromise = new Promise<Error | undefined>((resolve) => {
+      const request = httpRequest(`${server.url}/workspace/submit`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+      });
+
+      request.on("error", (error) => {
+        resolve(error);
+      });
+      request.on("response", () => {
+        resolve(undefined);
+      });
+
+      request.write("{");
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const shutdownStartedAt = Date.now();
+    await server.app.close();
+    const shutdownElapsedMs = Date.now() - shutdownStartedAt;
+    assert.ok(shutdownElapsedMs < 1_000, `Expected forced shutdown within 1s, got ${shutdownElapsedMs}ms`);
+
+    const stalledRequestError = await stalledRequestPromise;
+    assert.ok(stalledRequestError instanceof Error);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

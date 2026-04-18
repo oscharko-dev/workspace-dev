@@ -58,14 +58,15 @@ const handleMessage = async (msg: unknown): Promise<void> => {
   }
 
   hasStarted = true;
-  const { host, workDir, logFormat } = msg.config;
+  const { host, workDir, logFormat, shutdownTimeoutMs } = msg.config;
 
   try {
     activeServer = await createWorkspaceServer({
       host,
       port: 0,
       workDir,
-      ...(logFormat ? { logFormat } : {})
+      ...(logFormat ? { logFormat } : {}),
+      ...(shutdownTimeoutMs !== undefined ? { shutdownTimeoutMs } : {})
     });
 
     process.send?.({
@@ -86,6 +87,14 @@ process.on("message", (message: unknown) => {
 
 // Handle parent disconnect (parent crashed or was killed)
 process.on("disconnect", () => {
+  void shutdown();
+});
+
+process.on("SIGINT", () => {
+  void shutdown();
+});
+
+process.on("SIGTERM", () => {
   void shutdown();
 });
 

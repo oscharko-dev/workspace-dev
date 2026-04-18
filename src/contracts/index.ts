@@ -291,6 +291,8 @@ export interface WorkspaceStartOptions {
   logFormat?: WorkspaceLogFormat;
   /** Maximum accepted job submissions and import-session event writes per minute for a single client IP, enforced separately per route family. Use 0 to disable. Default: 10 */
   rateLimitPerMinute?: number;
+  /** Maximum graceful shutdown drain time in milliseconds before remaining connections are terminated. Default: 10000 */
+  shutdownTimeoutMs?: number;
   /**
    * Bearer token accepted for `POST /workspace/import-sessions/:id/events`.
    * When omitted, import-session event writes fail closed.
