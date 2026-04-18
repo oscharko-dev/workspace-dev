@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  opendir,
   lstat,
   mkdir,
-  readdir,
   readFile,
   unlink,
   writeFile,
@@ -3851,102 +3851,251 @@ interface CollectSourceFilesResult {
   nextCursor?: string;
 }
 
+function compareOrdinaryStrings(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+interface SourceFileListingEntry {
+  path: string;
+  sizeBytes: number;
+}
+
+class SourceFileSelectionHeap {
+  private readonly entries: SourceFileListingEntry[] = [];
+
+  get size(): number {
+    return this.entries.length;
+  }
+
+  push(entry: SourceFileListingEntry): void {
+    this.entries.push(entry);
+    this.bubbleUp(this.entries.length - 1);
+  }
+
+  pushBounded(entry: SourceFileListingEntry, capacity: number): void {
+    if (capacity <= 0) {
+      return;
+    }
+    if (this.entries.length < capacity) {
+      this.push(entry);
+      return;
+    }
+    const currentWorst = this.entries[0];
+    if (currentWorst === undefined || compareOrdinaryStrings(entry.path, currentWorst.path) >= 0) {
+      return;
+    }
+    this.entries[0] = entry;
+    this.bubbleDown(0);
+  }
+
+  pop(): SourceFileListingEntry | undefined {
+    if (this.entries.length === 0) {
+      return undefined;
+    }
+
+    const first = this.entries[0]!;
+    const last = this.entries.pop();
+    if (this.entries.length > 0 && last !== undefined) {
+      this.entries[0] = last;
+      this.bubbleDown(0);
+    }
+    return first;
+  }
+
+  private bubbleUp(index: number): void {
+    let current = index;
+    while (current > 0) {
+      const parent = (current - 1) >>> 1;
+      if (this.compare(this.entries[current]!, this.entries[parent]!) <= 0) {
+        return;
+      }
+      [this.entries[current], this.entries[parent]] = [
+        this.entries[parent]!,
+        this.entries[current]!,
+      ];
+      current = parent;
+    }
+  }
+
+  private bubbleDown(index: number): void {
+    let current = index;
+    while (current < this.entries.length) {
+      const left = current * 2 + 1;
+      const right = left + 1;
+      let largest = current;
+
+      if (
+        left < this.entries.length &&
+        this.compare(this.entries[left]!, this.entries[largest]!) > 0
+      ) {
+        largest = left;
+      }
+
+      if (
+        right < this.entries.length &&
+        this.compare(this.entries[right]!, this.entries[largest]!) > 0
+      ) {
+        largest = right;
+      }
+
+      if (largest === current) {
+        return;
+      }
+
+      [this.entries[current], this.entries[largest]] = [
+        this.entries[largest]!,
+        this.entries[current]!,
+      ];
+      current = largest;
+    }
+  }
+
+  private compare(
+    left: SourceFileListingEntry,
+    right: SourceFileListingEntry,
+  ): number {
+    return compareOrdinaryStrings(left.path, right.path);
+  }
+}
+
 async function collectSourceFiles(
   projectDir: string,
   dirFilter: string | undefined,
   options: CollectSourceFilesOptions,
 ): Promise<CollectSourceFilesResult> {
-  const results: Array<{ path: string; sizeBytes: number }> = [];
   const baseDir =
     dirFilter !== undefined ? path.join(projectDir, dirFilter) : projectDir;
+  const { limit, cursor } = options;
+  const capacity = limit + 1;
+  const selected = new SourceFileSelectionHeap();
 
-  const walk = async (dir: string): Promise<void> => {
-    let names: string[];
+  const shouldPruneSubtree = (relativeDir: string): boolean => {
+    if (cursor === undefined) {
+      return false;
+    }
+    const subtreePrefix = `${relativeDir}/`;
+    return (
+      !cursor.startsWith(subtreePrefix) &&
+      compareOrdinaryStrings(subtreePrefix, cursor) <= 0
+    );
+  };
+
+  const scanDirectory = async (directory: string): Promise<void> => {
+    let handle: Awaited<ReturnType<typeof opendir>> | undefined;
     try {
-      names = await readdir(dir);
+      handle = await opendir(directory);
     } catch {
       return;
     }
 
-    for (const name of names) {
-      if (LISTING_BLOCKED_DIRS.has(name)) {
-        continue;
-      }
-      if (name.startsWith(".")) {
-        continue;
-      }
+    try {
+      for await (const entry of handle) {
+        if (shouldSkipDirectoryEntry(entry.name)) {
+          continue;
+        }
 
-      const fullPath = path.join(dir, name);
+        const fullPath = path.join(directory, entry.name);
+        const relativePath = path.relative(projectDir, fullPath);
 
-      let fileStat: Awaited<ReturnType<typeof lstat>>;
-      try {
-        fileStat = await lstat(fullPath);
-      } catch {
-        continue;
-      }
+        if (entry.isDirectory()) {
+          if (!shouldPruneSubtree(relativePath)) {
+            await scanDirectory(fullPath);
+          }
+          continue;
+        }
 
-      if (fileStat.isSymbolicLink()) {
-        continue;
-      }
+        if (entry.isFile()) {
+          const dotIndex = entry.name.lastIndexOf(".");
+          if (dotIndex === -1) {
+            continue;
+          }
+          const ext = entry.name.slice(dotIndex);
+          if (!LISTING_EXTENSIONS.has(ext)) {
+            continue;
+          }
+          if (
+            cursor !== undefined &&
+            compareOrdinaryStrings(relativePath, cursor) <= 0
+          ) {
+            continue;
+          }
 
-      if (fileStat.isDirectory()) {
-        await walk(fullPath);
-        continue;
-      }
+          let fileStat: Awaited<ReturnType<typeof lstat>>;
+          try {
+            fileStat = await lstat(fullPath);
+          } catch {
+            continue;
+          }
 
-      if (!fileStat.isFile()) {
-        continue;
-      }
+          if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+            continue;
+          }
 
-      const dotIndex = name.lastIndexOf(".");
-      if (dotIndex === -1) {
-        continue;
-      }
-      const ext = name.slice(dotIndex);
-      if (!LISTING_EXTENSIONS.has(ext)) {
-        continue;
-      }
+          selected.pushBounded(
+            { path: relativePath, sizeBytes: fileStat.size },
+            capacity,
+          );
+          continue;
+        }
 
-      const relativePath = path.relative(projectDir, fullPath);
-      results.push({ path: relativePath, sizeBytes: fileStat.size });
+        let fileStat: Awaited<ReturnType<typeof lstat>>;
+        try {
+          fileStat = await lstat(fullPath);
+        } catch {
+          continue;
+        }
+
+        if (fileStat.isDirectory()) {
+          if (!shouldPruneSubtree(relativePath)) {
+            await scanDirectory(fullPath);
+          }
+          continue;
+        }
+
+        if (!fileStat.isFile() || fileStat.isSymbolicLink()) {
+          continue;
+        }
+
+        const dotIndex = entry.name.lastIndexOf(".");
+        if (dotIndex === -1) {
+          continue;
+        }
+        const ext = entry.name.slice(dotIndex);
+        if (!LISTING_EXTENSIONS.has(ext)) {
+          continue;
+        }
+        if (
+          cursor !== undefined &&
+          compareOrdinaryStrings(relativePath, cursor) <= 0
+        ) {
+          continue;
+        }
+
+        selected.pushBounded(
+          { path: relativePath, sizeBytes: fileStat.size },
+          capacity,
+        );
+      }
+    } finally {
+      await handle.close().catch(() => {});
     }
   };
 
-  await walk(baseDir);
-  results.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  const shouldSkipDirectoryEntry = (name: string): boolean =>
+    LISTING_BLOCKED_DIRS.has(name) || name.startsWith(".");
 
-  const { limit, cursor } = options;
-  const startIndex =
-    cursor !== undefined ? findFirstIndexAfterCursor(results, cursor) : 0;
+  await scanDirectory(baseDir);
 
-  const windowed = results.slice(startIndex, startIndex + limit + 1);
-  if (windowed.length > limit) {
-    const page = windowed.slice(0, limit);
+  const files = Array.from({ length: selected.size }, () => selected.pop()!).sort(
+    (left, right) => compareOrdinaryStrings(left.path, right.path),
+  );
+
+  if (files.length > limit) {
+    const page = files.slice(0, limit);
     return { files: page, nextCursor: page[page.length - 1]!.path };
   }
-  return { files: windowed };
-}
 
-/**
- * Binary search the first index `i` such that `entries[i].path > cursor`.
- * Uses ordinal byte comparison to match the sort order exactly, independent
- * of locale or ICU data.
- */
-function findFirstIndexAfterCursor(
-  entries: ReadonlyArray<{ path: string }>,
-  cursor: string,
-): number {
-  let lo = 0;
-  let hi = entries.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (entries[mid]!.path <= cursor) {
-      lo = mid + 1;
-    } else {
-      hi = mid;
-    }
-  }
-  return lo;
+  return { files };
 }
 
 /**
