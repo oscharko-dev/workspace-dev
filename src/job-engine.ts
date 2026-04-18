@@ -1385,7 +1385,10 @@ export const createJobEngine = ({
   }: {
     requestSourceMode: WorkspaceImportSessionSourceMode;
   }): boolean => {
-    return requestSourceMode === "figma_url";
+    return (
+      requestSourceMode !== "figma_paste" &&
+      requestSourceMode !== "figma_plugin"
+    );
   };
 
   const persistImportSessionForJob = async ({
