@@ -579,6 +579,187 @@ export const searchDesignSystemComponents = async ({
   return parseDesignSystemComponentsResponse(result);
 };
 
+const getDesignSystemSearchQueries = (figmaName: string): string[] =>
+  [figmaName, extractBaseComponentName(figmaName)].filter(
+    (value, index, array) =>
+      value.length > 0 && array.indexOf(value) === index,
+  );
+
+const parseDesignSystemBatchEntry = (
+  raw: unknown,
+): Array<{
+  name: string;
+  key?: string;
+  libraryKey?: string;
+}> | undefined => {
+  if (Array.isArray(raw)) {
+    return parseDesignSystemComponentsResponse({ components: raw });
+  }
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+
+  if (Array.isArray(raw.components)) {
+    return parseDesignSystemComponentsResponse(raw);
+  }
+
+  for (const fieldName of ["result", "payload", "value"]) {
+    const nested = parseDesignSystemBatchEntry(raw[fieldName]);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return undefined;
+};
+
+const parseDesignSystemBatchResponse = ({
+  raw,
+  queries,
+}: {
+  raw: unknown;
+  queries: readonly string[];
+}): Map<
+  string,
+  Array<{
+    name: string;
+    key?: string;
+    libraryKey?: string;
+  }>
+> => {
+  const hydrated = new Map<
+    string,
+    Array<{
+      name: string;
+      key?: string;
+      libraryKey?: string;
+    }>
+  >();
+  const remaining = new Set(queries);
+  const querySet = new Set(queries);
+
+  const maybeSetQuery = (query: string, value: unknown): void => {
+    if (!remaining.has(query)) {
+      return;
+    }
+    const components = parseDesignSystemBatchEntry(value);
+    if (!components) {
+      return;
+    }
+    hydrated.set(query, components);
+    remaining.delete(query);
+  };
+
+  const visit = (value: unknown): void => {
+    if (remaining.size === 0) {
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      for (const entry of value) {
+        if (!isRecord(entry)) {
+          continue;
+        }
+        const query = getLooseStringField(entry, ["query", "text", "term"]);
+        if (!query || !querySet.has(query)) {
+          continue;
+        }
+        maybeSetQuery(query, entry);
+      }
+      return;
+    }
+
+    if (!isRecord(value)) {
+      return;
+    }
+
+    for (const query of queries) {
+      if (!(query in value)) {
+        continue;
+      }
+      maybeSetQuery(query, value[query]);
+    }
+
+    for (const fieldName of [
+      "results",
+      "queries",
+      "componentsByQuery",
+      "resultsByQuery",
+      "searches",
+    ]) {
+      visit(value[fieldName]);
+    }
+  };
+
+  visit(raw);
+  return hydrated;
+};
+
+const isBatchDesignSystemFallbackError = (error: unknown): boolean => {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  const maybeCode =
+    "code" in error && typeof error.code === "string" ? error.code : undefined;
+  if (maybeCode === "E_MCP_INVALID_REQUEST" || maybeCode === "E_MCP_NOT_FOUND") {
+    return true;
+  }
+
+  const message = error.message.toLowerCase();
+  return (
+    message.includes("unsupported") ||
+    message.includes("invalid request") ||
+    message.includes("schema") ||
+    message.includes("expected") ||
+    message.includes("array")
+  );
+};
+
+const searchDesignSystemComponentsBatch = async ({
+  fileKey,
+  queries,
+  config,
+  libraryKeys,
+  signal,
+}: {
+  fileKey: string;
+  queries: readonly string[];
+  config: McpResolverConfig;
+  libraryKeys?: string[];
+  signal?: AbortSignal;
+}): Promise<
+  Map<
+    string,
+    Array<{
+      name: string;
+      key?: string;
+      libraryKey?: string;
+    }>
+  >
+> => {
+  const diagnostics: McpResolverDiagnostic[] = [];
+
+  const result = await callMcpTool({
+    toolName: "search_design_system",
+    args: {
+      fileKey,
+      query: [...queries],
+      includeComponents: true,
+      includeStyles: false,
+      includeVariables: false,
+      ...(libraryKeys && libraryKeys.length > 0
+        ? { includeLibraryKeys: libraryKeys }
+        : {}),
+    },
+    config,
+    ...(signal ? { signal } : {}),
+    diagnostics,
+  });
+
+  return parseDesignSystemBatchResponse({ raw: result, queries });
+};
+
 /**
  * Fetches AI-suggested Code Connect mappings for unmapped components.
  */
@@ -1482,14 +1663,49 @@ export const resolveComponentMappings = async (
     const unresolvedCandidates = candidates.filter(
       (candidate) => !mappedNodeIds.has(candidate.nodeId),
     );
+    const unresolvedQueries: string[] = [];
+    const seenUnresolvedQueries = new Set<string>();
     for (const candidate of unresolvedCandidates) {
-      const queries = [
-        candidate.figmaName,
-        extractBaseComponentName(candidate.figmaName),
-      ].filter(
-        (value, index, array) =>
-          value.length > 0 && array.indexOf(value) === index,
-      );
+      for (const query of getDesignSystemSearchQueries(candidate.figmaName)) {
+        if (seenUnresolvedQueries.has(query)) {
+          continue;
+        }
+        seenUnresolvedQueries.add(query);
+        unresolvedQueries.push(query);
+      }
+    }
+
+    if (unresolvedQueries.length > 1) {
+      try {
+        const batchResults = await searchDesignSystemComponentsBatch({
+          fileKey,
+          queries: unresolvedQueries,
+          config: mcpConfig,
+          ...(libraryKeys ? { libraryKeys } : {}),
+          ...(signal ? { signal } : {}),
+        });
+        for (const query of unresolvedQueries) {
+          const batchResult = batchResults.get(query);
+          if (batchResult) {
+            searchCache.set(query, batchResult);
+          }
+        }
+      } catch (error: unknown) {
+        if (!isBatchDesignSystemFallbackError(error)) {
+          throw error;
+        }
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unknown error searching design system in batch mode";
+        mcpConfig.onLog?.(
+          `search_design_system batch request rejected, falling back to per-query search: ${message}`,
+        );
+      }
+    }
+
+    for (const candidate of unresolvedCandidates) {
+      const queries = getDesignSystemSearchQueries(candidate.figmaName);
 
       let match:
         | {
