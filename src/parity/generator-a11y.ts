@@ -8,18 +8,18 @@ import {
   collectTextNodes,
   normalizeHexColor
 } from "./generator-templates.js";
+import { normalizeInputSemanticText } from "./generator-forms.js";
 import {
-  normalizeInputSemanticText,
   isIconLikeNode,
   isSemanticIconWrapper,
   hasMeaningfulTextDescendants
-} from "./generator-core.js";
+} from "./generator-render.js";
 import type {
   RenderContext,
   VirtualParent,
   HeadingComponent,
   LandmarkRole
-} from "./generator-core.js";
+} from "./generator-render.js";
 
 export interface AccessibilityWarning {
   code: "W_A11Y_LOW_CONTRAST";

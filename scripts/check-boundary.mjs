@@ -38,6 +38,8 @@ const FORBIDDEN_PATTERNS = [
 // Generator modules should depend only on types-ir.ts / types.ts, never on ir.ts directly.
 const IR_BOUNDARY_PATTERN = /from\s+["']\.\/ir\.js["']/;
 const IR_BOUNDARY_SCOPE_PREFIX = "src/parity/generator-";
+const GENERATOR_CORE_BACKEDGE_PATTERN = /from\s+["'](?:\.\.?\/)+generator-core\.js["']/;
+const GENERATOR_CORE_BACKEDGE_REQUIRE_PATTERN = /require\s*\(\s*["'](?:\.\.?\/)+generator-core\.js["']\s*\)/;
 const STAGE_SERVICE_PATH_PATTERN = /^src\/job-engine\/services\/(.+)-service\.ts$/;
 const STAGE_SERVICE_IMPORT_PATTERN = /from\s+["']\.\/([a-z0-9-]+-service)\.js["']/i;
 const STAGE_SERVICE_REQUIRE_PATTERN = /require\s*\(\s*["']\.\/([a-z0-9-]+-service)\.js["']\s*\)/i;
@@ -73,6 +75,9 @@ const main = async () => {
     const isGeneratorModule =
       relativePathPosix.startsWith(IR_BOUNDARY_SCOPE_PREFIX) &&
       !relativePathPosix.endsWith(".test.ts");
+    const isParityGeneratorInternal =
+      (relativePathPosix.startsWith("src/parity/generator-") && relativePathPosix !== "src/parity/generator-core.ts" && !relativePathPosix.endsWith(".test.ts")) ||
+      relativePathPosix.startsWith("src/parity/templates/");
     const stageServiceMatch = relativePathPosix.match(STAGE_SERVICE_PATH_PATTERN);
     const currentStageServiceName = stageServiceMatch ? `${stageServiceMatch[1]}-service` : undefined;
     for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -92,6 +97,19 @@ const main = async () => {
           file: relativePath,
           line: lineIndex + 1,
           content: `IR boundary violation: generator module imports from ir.ts directly. Use types.js instead. [${line.trim()}]`,
+          type: "import"
+        });
+      }
+      if (
+        isParityGeneratorInternal &&
+        (GENERATOR_CORE_BACKEDGE_PATTERN.test(line) || GENERATOR_CORE_BACKEDGE_REQUIRE_PATTERN.test(line))
+      ) {
+        violations.push({
+          file: relativePath,
+          line: lineIndex + 1,
+          content:
+            `Generator boundary violation: parity internals must not import generator-core.js. ` +
+            `Import the owning submodule directly instead. [${line.trim()}]`,
           type: "import"
         });
       }

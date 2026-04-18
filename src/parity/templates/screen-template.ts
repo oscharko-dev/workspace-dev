@@ -35,98 +35,110 @@ import {
   registerMuiImports,
   registerMappedImport,
   registerIconImport,
-  registerInteractiveField,
-  registerInteractiveAccordion,
-  buildSemanticInputModel,
-  resolvePrototypeNavigationBinding,
-  toRouterLinkProps,
-  toNavigateHandlerProps,
-  resolveBackgroundHexForText,
-  pushLowContrastWarning,
-  resolveElementA11yLabel,
-  resolveIconButtonAriaLabel,
-  hasInteractiveDescendants,
   hasMeaningfulTextDescendants,
-  inferLandmarkRole,
-  resolveSemanticContainerDescriptor,
-  isDecorativeElement,
-  isDecorativeImageElement,
-  inferHeadingComponentByNodeId,
   resolveTypographyVariantByNodeId,
   resolveImageSource,
   pickBestIconNode,
   normalizeIconImports,
   sortChildren,
-  isLikelyInputContainer,
-  isLikelyAccordionContainer,
   isIconLikeNode,
   isVectorGraphicNode,
   isSemanticIconWrapper,
   hasVisualStyle,
+  detectGridLikeContainerLayout,
+  detectCssGridLayout,
+  renderMappedElement,
+  registerNamedMappedImport,
+  toStateKey,
+  hasSubtreeName,
+  approximatelyEqualNumber,
+  findFirstByName,
+  resolveIconColor,
+  ICON_FALLBACK_BUILTIN_RESOLVER,
+  createEmptySimplificationStats,
+  simplifyElements,
+  isRtlLocale
+} from "../generator-render.js";
+import type {
+  RenderContext,
+  VirtualParent,
+  HeadingComponent,
+  IconFallbackResolver,
+  RenderedButtonModel,
+  DatePickerProviderConfig,
+  PrimitiveJsxPropValue,
+  SpecializedComponentMapping,
+  IconRenderWarning
+} from "../generator-render.js";
+import {
+  registerInteractiveField,
+  buildSemanticInputModel,
+  isLikelyInputContainer,
+  deriveSelectOptions,
+  inferRequiredFromLabel,
+  sanitizeRequiredLabel,
+  inferVisualErrorFromOutline,
+  detectFormGroups,
+  detectCrossFieldRules,
+  inferValidationMode,
+  classifyValidationEvidence
+} from "../generator-forms.js";
+import type {
+  ValidationFieldType,
+  ValidationRule,
+  ResolvedFormHandlingMode,
+  InteractiveFieldModel,
+  FormContextFileSpec,
+  FormGroupAssignment
+} from "../generator-forms.js";
+import {
+  resolvePrototypeNavigationBinding,
+  toRouterLinkProps,
+  toNavigateHandlerProps
+} from "../generator-navigation.js";
+import {
+  resolveBackgroundHexForText,
+  pushLowContrastWarning,
+  resolveElementA11yLabel,
+  resolveIconButtonAriaLabel,
+  hasInteractiveDescendants,
+  inferLandmarkRole,
+  resolveSemanticContainerDescriptor,
+  isDecorativeElement,
+  isDecorativeImageElement,
+  inferHeadingComponentByNodeId,
+  buildTabA11yId,
+  buildTabPanelA11yId,
+  buildAccordionHeaderA11yId,
+  buildAccordionPanelA11yId
+} from "../generator-a11y.js";
+import type { AccessibilityWarning } from "../generator-a11y.js";
+import {
+  registerInteractiveAccordion,
+  isLikelyAccordionContainer,
   detectTabInterfacePattern,
   detectDialogOverlayPattern,
   detectNavigationBarPattern,
-  detectGridLikeContainerLayout,
-  detectCssGridLayout,
   detectRepeatedListPattern,
   ensureTabsStateModel,
   ensureDialogStateModel,
   collectListRows,
   analyzeListRow,
   isRenderableTabAction,
-  deriveSelectOptions,
-  renderMappedElement,
-  registerNamedMappedImport,
-  toStateKey,
-  hasSubtreeName,
-  approximatelyEqualNumber,
-  inferRequiredFromLabel,
-  sanitizeRequiredLabel,
-  inferVisualErrorFromOutline,
-  toListSecondaryActionExpression,
-  findFirstByName,
-  extractSharedSxConstantsFromScreenContent,
-  resolveIconColor,
-  ICON_FALLBACK_BUILTIN_RESOLVER,
-  buildPatternExtractionPlan,
-  createEmptySimplificationStats,
-  simplifyElements,
-  collectThemeSxSampleFromEntries,
-  collectThemeDefaultMatchedSxKeys,
-  detectFormGroups,
-  detectCrossFieldRules,
-  inferValidationMode,
-  buildTabA11yId,
-  buildTabPanelA11yId,
-  buildAccordionHeaderA11yId,
-  buildAccordionPanelA11yId,
-  isRtlLocale
-} from "../generator-core.js";
-import {
-  classifyValidationEvidence
-} from "../generator-forms.js";
+  toListSecondaryActionExpression
+} from "../generator-interactive.js";
+import type { ListRowAnalysis } from "../generator-interactive.js";
+import { buildPatternExtractionPlan } from "../generator-patterns.js";
 import type {
-  RenderContext,
-  VirtualParent,
-  AccessibilityWarning,
-  ValidationFieldType,
-  ValidationRule,
-  ResolvedFormHandlingMode,
-  HeadingComponent,
-  InteractiveFieldModel,
-  IconFallbackResolver,
   PatternContextFileSpec,
-  FormContextFileSpec,
-  PatternExtractionPlan,
-  RenderedButtonModel,
-  ThemeComponentDefaults,
-  DatePickerProviderConfig,
-  PrimitiveJsxPropValue,
-  SpecializedComponentMapping,
-  ListRowAnalysis,
-  FormGroupAssignment,
-  IconRenderWarning
-} from "../generator-core.js";
+  PatternExtractionPlan
+} from "../generator-patterns.js";
+import {
+  collectThemeSxSampleFromEntries,
+  collectThemeDefaultMatchedSxKeys
+} from "../generator-design-system.js";
+import type { ThemeComponentDefaults } from "../generator-design-system.js";
+import { extractSharedSxConstantsFromScreenContent } from "../generator-sx.js";
 import { pushMappingWarning } from "../generator-render.js";
 import type { ComponentMatchReportIconResolutionRecord } from "../../storybook/types.js";
 import type { ResolvedStorybookTypographyStyle } from "../../storybook/theme-resolver.js";
