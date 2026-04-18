@@ -55,13 +55,20 @@ interface DroppedGovernanceSecuritySensitivePattern {
   value: string;
 }
 
+interface ParsedSectionResult<T> {
+  policy: T;
+  unknownKeys: string[];
+}
+
 interface ParsedGovernancePolicyResult {
   policy: InspectorWorkspaceGovernancePolicy;
+  unknownKeys: string[];
   droppedSecuritySensitivePatterns: DroppedGovernanceSecuritySensitivePattern[];
 }
 
 interface ParseInspectorPolicyResult {
   policy: InspectorWorkspacePolicy | null;
+  unknownKeys: string[];
   droppedGovernanceSecuritySensitivePatterns: DroppedGovernanceSecuritySensitivePattern[];
 }
 
@@ -88,8 +95,60 @@ function isFiniteNumberAtLeast(value: unknown, min: number): value is number {
 }
 
 function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+  return (
+    Array.isArray(value) && value.every((entry) => typeof entry === "string")
+  );
 }
+
+function collectUnknownKeys(
+  value: Record<string, unknown>,
+  knownKeys: readonly string[],
+  pathPrefix: string,
+): string[] {
+  const known = new Set<string>(knownKeys);
+  const unknown: string[] = [];
+  for (const key of Object.keys(value)) {
+    if (!known.has(key)) {
+      unknown.push(pathPrefix === "" ? key : `${pathPrefix}.${key}`);
+    }
+  }
+  return unknown;
+}
+
+const TOP_LEVEL_KNOWN_KEYS = [
+  "quality",
+  "tokens",
+  "a11y",
+  "governance",
+] as const;
+const QUALITY_KNOWN_KEYS = [
+  "bandThresholds",
+  "weights",
+  "maxAcceptableDepth",
+  "maxAcceptableNodes",
+  "riskSeverityOverrides",
+] as const;
+const QUALITY_BAND_THRESHOLDS_KNOWN_KEYS = [
+  "excellent",
+  "good",
+  "fair",
+] as const;
+const QUALITY_WEIGHTS_KNOWN_KEYS = [
+  "structure",
+  "semantic",
+  "codegen",
+] as const;
+const TOKENS_KNOWN_KEYS = [
+  "autoAcceptConfidence",
+  "maxConflictDelta",
+  "disabled",
+] as const;
+const A11Y_KNOWN_KEYS = ["wcagLevel", "disabledRules"] as const;
+const GOVERNANCE_KNOWN_KEYS = [
+  "minQualityScoreToApply",
+  "securitySensitivePatterns",
+  "requireNoteOnOverride",
+] as const;
 
 const GOVERNANCE_REGEX_STYLE_PATTERNS = [
   /\\/,
@@ -110,16 +169,28 @@ function hasLikelyRegexStyleGovernancePattern(pattern: string): boolean {
 
 function parseQualityPolicy(
   value: unknown,
-): InspectorWorkspaceQualityPolicy | typeof INVALID | undefined {
+):
+  | ParsedSectionResult<InspectorWorkspaceQualityPolicy>
+  | typeof INVALID
+  | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return INVALID;
 
+  const unknownKeys = collectUnknownKeys(value, QUALITY_KNOWN_KEYS, "quality");
   const out: InspectorWorkspaceQualityPolicy = {};
   if (value.bandThresholds !== undefined) {
     if (!isRecord(value.bandThresholds)) return INVALID;
-    const thresholds: NonNullable<InspectorWorkspaceQualityPolicy["bandThresholds"]> =
-      {};
-    for (const key of ["excellent", "good", "fair"] as const) {
+    unknownKeys.push(
+      ...collectUnknownKeys(
+        value.bandThresholds,
+        QUALITY_BAND_THRESHOLDS_KNOWN_KEYS,
+        "quality.bandThresholds",
+      ),
+    );
+    const thresholds: NonNullable<
+      InspectorWorkspaceQualityPolicy["bandThresholds"]
+    > = {};
+    for (const key of QUALITY_BAND_THRESHOLDS_KNOWN_KEYS) {
       const candidate = value.bandThresholds[key];
       if (candidate === undefined) continue;
       if (!isFiniteNumberInRange(candidate, 0, 100)) return INVALID;
@@ -130,8 +201,15 @@ function parseQualityPolicy(
 
   if (value.weights !== undefined) {
     if (!isRecord(value.weights)) return INVALID;
+    unknownKeys.push(
+      ...collectUnknownKeys(
+        value.weights,
+        QUALITY_WEIGHTS_KNOWN_KEYS,
+        "quality.weights",
+      ),
+    );
     const weights: NonNullable<InspectorWorkspaceQualityPolicy["weights"]> = {};
-    for (const key of ["structure", "semantic", "codegen"] as const) {
+    for (const key of QUALITY_WEIGHTS_KNOWN_KEYS) {
       const candidate = value.weights[key];
       if (candidate === undefined) continue;
       if (!isFiniteNumberAtLeast(candidate, 0)) return INVALID;
@@ -152,7 +230,9 @@ function parseQualityPolicy(
   if (value.riskSeverityOverrides !== undefined) {
     if (!isRecord(value.riskSeverityOverrides)) return INVALID;
     const overrides: Record<string, Severity> = {};
-    for (const [key, candidate] of Object.entries(value.riskSeverityOverrides)) {
+    for (const [key, candidate] of Object.entries(
+      value.riskSeverityOverrides,
+    )) {
       if (
         candidate !== "high" &&
         candidate !== "medium" &&
@@ -165,15 +245,19 @@ function parseQualityPolicy(
     out.riskSeverityOverrides = overrides;
   }
 
-  return out;
+  return { policy: out, unknownKeys };
 }
 
 function parseTokenPolicy(
   value: unknown,
-): InspectorWorkspaceTokenPolicy | typeof INVALID | undefined {
+):
+  | ParsedSectionResult<InspectorWorkspaceTokenPolicy>
+  | typeof INVALID
+  | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return INVALID;
 
+  const unknownKeys = collectUnknownKeys(value, TOKENS_KNOWN_KEYS, "tokens");
   const out: InspectorWorkspaceTokenPolicy = {};
   if (value.autoAcceptConfidence !== undefined) {
     if (!isFiniteNumberInRange(value.autoAcceptConfidence, 0, 100)) {
@@ -189,15 +273,19 @@ function parseTokenPolicy(
     if (typeof value.disabled !== "boolean") return INVALID;
     out.disabled = value.disabled;
   }
-  return out;
+  return { policy: out, unknownKeys };
 }
 
 function parseA11yPolicy(
   value: unknown,
-): InspectorWorkspaceA11yPolicy | typeof INVALID | undefined {
+):
+  | ParsedSectionResult<InspectorWorkspaceA11yPolicy>
+  | typeof INVALID
+  | undefined {
   if (value === undefined) return undefined;
   if (!isRecord(value)) return INVALID;
 
+  const unknownKeys = collectUnknownKeys(value, A11Y_KNOWN_KEYS, "a11y");
   const out: InspectorWorkspaceA11yPolicy = {};
   if (value.wcagLevel !== undefined) {
     if (value.wcagLevel !== "AA" && value.wcagLevel !== "AAA") return INVALID;
@@ -207,7 +295,7 @@ function parseA11yPolicy(
     if (!isStringArray(value.disabledRules)) return INVALID;
     out.disabledRules = [...value.disabledRules];
   }
-  return out;
+  return { policy: out, unknownKeys };
 }
 
 function parseGovernancePolicy(
@@ -216,6 +304,11 @@ function parseGovernancePolicy(
   if (value === undefined) return undefined;
   if (!isRecord(value)) return INVALID;
 
+  const unknownKeys = collectUnknownKeys(
+    value,
+    GOVERNANCE_KNOWN_KEYS,
+    "governance",
+  );
   const out: InspectorWorkspaceGovernancePolicy = {};
   const droppedSecuritySensitivePatterns: DroppedGovernanceSecuritySensitivePattern[] =
     [];
@@ -243,7 +336,7 @@ function parseGovernancePolicy(
     if (typeof value.requireNoteOnOverride !== "boolean") return INVALID;
     out.requireNoteOnOverride = value.requireNoteOnOverride;
   }
-  return { policy: out, droppedSecuritySensitivePatterns };
+  return { policy: out, unknownKeys, droppedSecuritySensitivePatterns };
 }
 
 function parseInspectorPolicyResult(
@@ -252,14 +345,18 @@ function parseInspectorPolicyResult(
   if (!isRecord(value)) {
     return {
       policy: null,
+      unknownKeys: [],
       droppedGovernanceSecuritySensitivePatterns: [],
     };
   }
+
+  const unknownKeys = collectUnknownKeys(value, TOP_LEVEL_KNOWN_KEYS, "");
 
   const quality = parseQualityPolicy(value.quality);
   if (quality === INVALID) {
     return {
       policy: null,
+      unknownKeys: [],
       droppedGovernanceSecuritySensitivePatterns: [],
     };
   }
@@ -267,6 +364,7 @@ function parseInspectorPolicyResult(
   if (tokens === INVALID) {
     return {
       policy: null,
+      unknownKeys: [],
       droppedGovernanceSecuritySensitivePatterns: [],
     };
   }
@@ -274,6 +372,7 @@ function parseInspectorPolicyResult(
   if (a11y === INVALID) {
     return {
       policy: null,
+      unknownKeys: [],
       droppedGovernanceSecuritySensitivePatterns: [],
     };
   }
@@ -281,17 +380,24 @@ function parseInspectorPolicyResult(
   if (governance === INVALID) {
     return {
       policy: null,
+      unknownKeys: [],
       droppedGovernanceSecuritySensitivePatterns: [],
     };
   }
 
+  if (quality !== undefined) unknownKeys.push(...quality.unknownKeys);
+  if (tokens !== undefined) unknownKeys.push(...tokens.unknownKeys);
+  if (a11y !== undefined) unknownKeys.push(...a11y.unknownKeys);
+  if (governance !== undefined) unknownKeys.push(...governance.unknownKeys);
+
   return {
     policy: {
-      ...(quality !== undefined ? { quality } : {}),
-      ...(tokens !== undefined ? { tokens } : {}),
-      ...(a11y !== undefined ? { a11y } : {}),
+      ...(quality !== undefined ? { quality: quality.policy } : {}),
+      ...(tokens !== undefined ? { tokens: tokens.policy } : {}),
+      ...(a11y !== undefined ? { a11y: a11y.policy } : {}),
       ...(governance !== undefined ? { governance: governance.policy } : {}),
     },
+    unknownKeys,
     droppedGovernanceSecuritySensitivePatterns:
       governance?.droppedSecuritySensitivePatterns ?? [],
   };
@@ -311,6 +417,13 @@ function formatDroppedGovernanceSecuritySensitivePatternsWarning(
     .join(", ");
 
   return `Inspector policy '${INSPECTOR_POLICY_FILE_NAME}' dropped regex-style governance.securitySensitivePatterns entries: ${formattedEntries}.`;
+}
+
+function formatUnknownKeysWarning(unknownKeys: string[]): string {
+  const formattedEntries = unknownKeys
+    .map((entry) => JSON.stringify(entry))
+    .join(", ");
+  return `Inspector policy '${INSPECTOR_POLICY_FILE_NAME}' ignored unknown keys: ${formattedEntries}.`;
 }
 
 export async function loadInspectorPolicy({
@@ -357,14 +470,20 @@ export async function loadInspectorPolicy({
     };
   }
 
+  const warnings: string[] = [];
+  if (result.unknownKeys.length > 0) {
+    warnings.push(formatUnknownKeysWarning(result.unknownKeys));
+  }
+  if (result.droppedGovernanceSecuritySensitivePatterns.length > 0) {
+    warnings.push(
+      formatDroppedGovernanceSecuritySensitivePatternsWarning(
+        result.droppedGovernanceSecuritySensitivePatterns,
+      ),
+    );
+  }
+
   return {
     policy: result.policy,
-    ...(result.droppedGovernanceSecuritySensitivePatterns.length > 0
-      ? {
-          warning: formatDroppedGovernanceSecuritySensitivePatternsWarning(
-            result.droppedGovernanceSecuritySensitivePatterns,
-          ),
-        }
-      : {}),
+    ...(warnings.length > 0 ? { warning: warnings.join(" ") } : {}),
   };
 }

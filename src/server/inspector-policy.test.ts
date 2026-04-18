@@ -196,6 +196,238 @@ test("loadInspectorPolicy returns governance from the workspace policy file", as
   }
 });
 
+test("loadInspectorPolicy returns no warning for an empty policy object", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-empty-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({}),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded, { policy: {} });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy warns only at the root for a lone top-level unknown key", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-root-unknown-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({ typoTopLevel: 1 }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded.policy, {});
+    assert.equal(
+      loaded.warning,
+      "Inspector policy '.workspace-inspector-policy.json' ignored unknown keys: \"typoTopLevel\".",
+    );
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy formats a deeply nested unknown-key path correctly", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-deep-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        quality: { bandThresholds: { excelent: 90 } },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded.policy, {
+      quality: { bandThresholds: {} },
+    });
+    assert.equal(
+      loaded.warning,
+      "Inspector policy '.workspace-inspector-policy.json' ignored unknown keys: \"quality.bandThresholds.excelent\".",
+    );
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy does not flag arbitrary rule IDs in riskSeverityOverrides", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-risk-overrides-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        quality: {
+          riskSeverityOverrides: {
+            "some.arbitrary.rule": "high",
+            "totally-made-up-id": "low",
+          },
+        },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded, {
+      policy: {
+        quality: {
+          riskSeverityOverrides: {
+            "some.arbitrary.rule": "high",
+            "totally-made-up-id": "low",
+          },
+        },
+      },
+    });
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy does not leak unknown-key warnings when policy is invalid", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-invalid-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        typoTopLevel: true,
+        quality: { weights: { structure: -1, typoWeight: 5 } },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.equal(loaded.policy, null);
+    assert.equal(
+      loaded.warning,
+      `Inspector policy '.workspace-inspector-policy.json' has an invalid shape and was ignored.`,
+    );
+    assert.ok(
+      !String(loaded.warning).includes("ignored unknown keys"),
+      "invalid-shape rejection must not also emit unknown-key warning",
+    );
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("parseInspectorPolicy still parses known fields when unknown keys are present", () => {
+  const parsed = parseInspectorPolicy({
+    quality: {
+      bandThresholds: { excellent: 90, typoThreshold: 1 },
+      weights: { structure: 1, typoWeight: 2 },
+      typoQualityField: true,
+    },
+    tokens: {
+      autoAcceptConfidence: 80,
+      typoTokensField: "x",
+    },
+    a11y: { wcagLevel: "AA", typoA11yField: [] },
+    governance: {
+      minQualityScoreToApply: 70,
+      securitysensitivepatterns: ["auth"],
+    },
+    bandthresholds: {},
+  });
+
+  assert.deepEqual(parsed, {
+    quality: {
+      bandThresholds: { excellent: 90 },
+      weights: { structure: 1 },
+    },
+    tokens: { autoAcceptConfidence: 80 },
+    a11y: { wcagLevel: "AA" },
+    governance: { minQualityScoreToApply: 70 },
+  });
+});
+
+test("loadInspectorPolicy warns on unknown keys at every nesting level", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-unknown-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        quality: {
+          bandThresholds: { excellent: 90, typoThreshold: 1 },
+          weights: { structure: 1, typoWeight: 2 },
+        },
+        governance: {
+          minQualityScoreToApply: 70,
+          securitysensitivepatterns: ["auth"],
+        },
+        bandthresholds: {},
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    assert.deepEqual(loaded.policy, {
+      quality: {
+        bandThresholds: { excellent: 90 },
+        weights: { structure: 1 },
+      },
+      governance: { minQualityScoreToApply: 70 },
+    });
+    assert.match(String(loaded.warning ?? ""), /ignored unknown keys/);
+    const warning = String(loaded.warning);
+    for (const expectedPath of [
+      '"bandthresholds"',
+      '"quality.bandThresholds.typoThreshold"',
+      '"quality.weights.typoWeight"',
+      '"governance.securitysensitivepatterns"',
+    ]) {
+      assert.ok(
+        warning.includes(expectedPath),
+        `warning should include ${expectedPath}, got: ${warning}`,
+      );
+    }
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
+test("loadInspectorPolicy combines unknown-key and regex-drop warnings", async () => {
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-inspector-policy-combined-"),
+  );
+  try {
+    await writeFile(
+      path.join(workspaceRoot, ".workspace-inspector-policy.json"),
+      JSON.stringify({
+        governance: {
+          securitySensitivePatterns: ["auth", "^admin$"],
+          typoGovField: true,
+        },
+      }),
+      "utf8",
+    );
+
+    const loaded = await loadInspectorPolicy({ workspaceRoot });
+    const warning = String(loaded.warning ?? "");
+    assert.match(warning, /ignored unknown keys/);
+    assert.match(warning, /dropped regex-style/);
+    assert.ok(warning.includes('"governance.typoGovField"'));
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true });
+  }
+});
+
 test("loadInspectorPolicy drops regex-style governance patterns and warns", async () => {
   const workspaceRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-inspector-policy-invalid-"),
