@@ -186,6 +186,31 @@ describe("PreviewPane — pipeline stage modes", () => {
     expect(screen.queryByTitle("Phase 2 preview")).not.toBeInTheDocument();
   });
 
+  it("renders ScreenshotPreview with extracting stage label when extracting and screenshot provided", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        pipelineStage: "extracting",
+        screenshot: "http://cdn.example.com/extracting.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: () => {
+          /* no-op */
+        },
+        onInspectSelect: () => {
+          /* no-op */
+        },
+      }),
+    );
+
+    expect(
+      screen.getByRole("img", { name: "Figma design preview" }),
+    ).toHaveAttribute("src", "http://cdn.example.com/extracting.png");
+    expect(screen.getByText("Extracting design…")).toBeInTheDocument();
+    expect(screen.getByText("Figma preview")).toBeInTheDocument();
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+  });
+
   it("renders stage text fallback when generating and no screenshot provided", () => {
     render(
       createElement(PreviewPane, {
@@ -205,6 +230,27 @@ describe("PreviewPane — pipeline stage modes", () => {
     expect(screen.getByText("Generating code…")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.queryByTitle("Phase 2 preview")).not.toBeInTheDocument();
+    expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
+  });
+
+  it("renders extracting text fallback when extracting and no screenshot provided", () => {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        pipelineStage: "extracting",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: () => {
+          /* no-op */
+        },
+        onInspectSelect: () => {
+          /* no-op */
+        },
+      }),
+    );
+
+    expect(screen.getByText("Extracting design…")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
   });
 

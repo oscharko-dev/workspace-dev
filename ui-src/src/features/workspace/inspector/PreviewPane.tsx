@@ -17,6 +17,8 @@ function getStageLabel(stage: PipelineStage): string {
   switch (stage) {
     case "resolving":
       return "Resolving design…";
+    case "extracting":
+      return "Extracting design…";
     case "transforming":
       return "Building IR…";
     case "mapping":
@@ -74,6 +76,7 @@ export function PreviewPane({
 
   const generatingStagesSet = new Set<PipelineStage>([
     "resolving",
+    "extracting",
     "transforming",
     "mapping",
     "generating",
