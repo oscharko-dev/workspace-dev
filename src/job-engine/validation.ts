@@ -504,9 +504,12 @@ export const runProjectValidationWithDeps = async ({
   const runValidationFeedback = deps?.runValidationFeedback ?? runValidationFeedbackImpl;
   const perfArtifactRoot = path.join(generatedProjectDir, ".figmapipe", "performance");
 
+  // --ignore-scripts is always set: generated-project dependencies are untrusted input, and
+  // pnpm lifecycle hooks would otherwise run with repo/CI credentials. If a generated app needs
+  // a native build step, invoke `pnpm rebuild <pkg>` explicitly as a separate command.
   const installArgs = lockfileMutable
     ? ["install", "--ignore-scripts", "--no-frozen-lockfile", "--reporter", "append-only"]
-    : ["install", "--frozen-lockfile", "--reporter", "append-only"];
+    : ["install", "--ignore-scripts", "--frozen-lockfile", "--reporter", "append-only"];
   if (installPreferOffline) {
     installArgs.push("--prefer-offline");
   }
