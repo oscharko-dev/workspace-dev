@@ -65,7 +65,7 @@ test("runProjectValidationWithDeps executes deterministic pnpm command sequence"
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
@@ -171,7 +171,7 @@ test("runProjectValidationWithDeps can disable lint autofix", async () => {
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint",
     "pnpm typecheck",
     "pnpm build"
@@ -345,7 +345,7 @@ test("runProjectValidationWithDeps appends perf assertion when enabled", async (
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
@@ -385,7 +385,7 @@ test("runProjectValidationWithDeps falls back to install when the seeded node_mo
   }
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
@@ -427,7 +427,7 @@ test("runProjectValidationWithDeps still installs when a generated node_modules 
     await rm(seedRoot, { recursive: true, force: true });
   }
 
-  assert.equal(calls[0], "pnpm install --frozen-lockfile --reporter append-only --prefer-offline");
+  assert.equal(calls[0], "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline");
 });
 
 test("runProjectValidationWithDeps continues when lint autofix fails", async () => {
@@ -464,7 +464,7 @@ test("runProjectValidationWithDeps continues when lint autofix fails", async () 
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
@@ -593,7 +593,7 @@ test("runProjectValidationWithDeps retries lint/typecheck/build after successful
 
   assert.deepEqual(feedbackStages, ["lint"]);
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm lint --fix",
@@ -1523,7 +1523,7 @@ test("runProjectValidationWithDeps omits prefer-offline when disabled and falls 
   }
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
