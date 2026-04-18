@@ -126,6 +126,28 @@ test("loadPreviousSnapshot returns null when no snapshot exists", async () => {
   assert.equal(result, null);
 });
 
+test("loadPreviousSnapshot logs corrupt snapshot reads and returns null", async () => {
+  const tempDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gendiff-corrupt-"));
+  const boardKey = "corrupt-board";
+  const hashStoreDir = path.join(tempDir, "generation-hashes");
+  const snapshotPath = path.join(hashStoreDir, `${boardKey}.json`);
+  const logs: string[] = [];
+
+  await mkdir(hashStoreDir, { recursive: true });
+  await writeFile(snapshotPath, "{not-json", "utf8");
+
+  const result = await loadPreviousSnapshot({
+    outputRoot: tempDir,
+    boardKey,
+    onLog: (message) => {
+      logs.push(message);
+    }
+  });
+
+  assert.equal(result, null);
+  assert.equal(logs.some((entry) => entry.includes("operation=loadPreviousSnapshot.parse")), true);
+});
+
 test("runGenerationDiff creates diff report file and updates snapshot", async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-gendiff-full-"));
   const projectDir = path.join(tempDir, "generated-app");

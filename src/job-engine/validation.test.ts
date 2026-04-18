@@ -359,13 +359,14 @@ test("runProjectValidationWithDeps appends perf assertion when enabled", async (
 test("runProjectValidationWithDeps falls back to install when the seeded node_modules path does not exist", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seed-missing-"));
   const calls: string[] = [];
+  const logs: string[] = [];
 
   try {
     await runProjectValidationWithDeps({
       generatedProjectDir,
       seedNodeModulesDir: path.join(generatedProjectDir, "missing-node-modules"),
-      onLog: () => {
-        // no-op
+      onLog: (message) => {
+        logs.push(message);
       },
       deps: {
         runCommand: async ({ command, args }) => {
@@ -391,6 +392,7 @@ test("runProjectValidationWithDeps falls back to install when the seeded node_mo
     "pnpm typecheck",
     "pnpm build"
   ]);
+  assert.equal(logs.some((entry) => entry.includes("operation=prepareValidationNodeModules.seed-stat")), true);
 });
 
 test("runProjectValidationWithDeps still installs when a generated node_modules directory already exists", async () => {

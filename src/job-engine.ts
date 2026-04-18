@@ -2123,6 +2123,14 @@ export const createJobEngine = ({
       outputRoot: resolvedPaths.outputRoot,
       boardKey,
       jobId: job.jobId,
+      onLog: (message) => {
+        runtime.logger.log({
+          level: "debug",
+          jobId: job.jobId,
+          stage: "codegen.generate",
+          message,
+        });
+      },
     });
     const manifest: PasteFingerprintManifest = {
       contractVersion: CONTRACT_VERSION,

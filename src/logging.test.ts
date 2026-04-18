@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createWorkspaceLogger, redactLogMessage } from "./logging.js";
+import {
+  createWorkspaceLogger,
+  redactLogMessage,
+  resolveWorkspaceLogLevel,
+} from "./logging.js";
 
 test("redactLogMessage redacts shared high-risk secret shapes", async (t) => {
   const cases = [
@@ -164,4 +168,41 @@ test("createWorkspaceLogger routes warnings to stderr in text mode", () => {
   });
 
   assert.equal(stderrLines[0], "[workspace-dev][warn] token=[REDACTED]\n");
+});
+
+test("resolveWorkspaceLogLevel falls back to info for unknown values", () => {
+  assert.equal(resolveWorkspaceLogLevel({ value: "debug" }), "debug");
+  assert.equal(resolveWorkspaceLogLevel({ value: "WARN" }), "warn");
+  assert.equal(resolveWorkspaceLogLevel({ value: "verbose" }), "info");
+});
+
+test("createWorkspaceLogger suppresses entries below the configured minimum level", () => {
+  const stdoutLines: string[] = [];
+  const stderrLines: string[] = [];
+  const logger = createWorkspaceLogger({
+    format: "text",
+    minLevel: "warn",
+    stdoutWriter: (line) => {
+      stdoutLines.push(line);
+    },
+    stderrWriter: (line) => {
+      stderrLines.push(line);
+    },
+  });
+
+  logger.log({
+    level: "debug",
+    message: "Hidden debug line",
+  });
+  logger.log({
+    level: "info",
+    message: "Hidden info line",
+  });
+  logger.log({
+    level: "warn",
+    message: "Shown warning",
+  });
+
+  assert.deepEqual(stdoutLines, []);
+  assert.deepEqual(stderrLines, ["[workspace-dev][warn] Shown warning\n"]);
 });
