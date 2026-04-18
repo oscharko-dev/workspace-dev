@@ -205,12 +205,35 @@ export interface FigmaMcpEnrichment {
 // Token bridge types (Issue #1001)
 // ---------------------------------------------------------------------------
 
-export interface TokenConflict {
-  name: string;
-  figmaValue: string;
-  existingValue: string;
-  resolution: "figma" | "existing";
-}
+/**
+ * Reasons why a token decision was non-trivial.
+ *
+ * - `value_override`: an incoming Figma value differs from the existing
+ *   workspace value for the same `(name, mode)` key — the merge picked one.
+ * - `library_alias_collision`: two or more distinct Figma variables resolve
+ *   to the same library style by hex match. Renaming all of them to the
+ *   library name would silently drop variables in `mergeVariablesWithExisting`
+ *   (which keys by name+mode), so we keep their original names and surface
+ *   the library name only as an alias on each claimant.
+ */
+export type TokenConflict =
+  | {
+      kind: "value_override";
+      name: string;
+      figmaValue: string;
+      existingValue: string;
+      resolution: "figma" | "existing";
+    }
+  | {
+      kind: "library_alias_collision";
+      libraryName: string;
+      collidingVariables: Array<{
+        name: string;
+        value: string;
+        modeName?: string;
+      }>;
+      resolution: "preserve_original";
+    };
 
 export interface TokenBridgeResult {
   variables: FigmaMcpVariableDefinition[];
