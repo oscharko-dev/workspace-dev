@@ -74,6 +74,7 @@ Please include:
 - OIDC trusted publishing in GitHub Actions (`id-token: write`).
 - npm provenance enabled (`publishConfig.provenance=true` + publish provenance path).
 - Signature verification gate (`npm audit signatures`) in CI.
+- PR-time dependency-review gate (`.github/workflows/dependency-review.yml`) runs `actions/dependency-review-action` against the metadata diff of `package.json` and both `pnpm-lock.yaml` files on every pull request. The gate consults the GitHub Advisory Database before any install step executes, rejecting bumps that introduce advisories at `high` severity or above and denying copyleft licenses (GPL/LGPL/AGPL/SSPL) that are not in the `verify:licenses` allowlist.
 - All `actions/checkout` steps use `persist-credentials: false` to prevent GITHUB_TOKEN from being written to `.git/config` on the runner disk. The only exception is the `release` job in `changesets-release.yml`, which requires authenticated git writes for changeset publish and GitHub release creation. Enforced by `pnpm run verify:workflow-persist-credentials`.
 - SBOM generation:
   - CycloneDX: `pnpm run sbom:cyclonedx`
