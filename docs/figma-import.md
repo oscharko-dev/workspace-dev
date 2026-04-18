@@ -106,13 +106,48 @@ submit with `figmaSourceMode=figma_paste`.
 You can override the detected type from the SmartBanner `<select>` before
 clicking **Import starten** (aria-label: **Erkannten Typ korrigieren**).
 
+## Path C — Direct plugin handoff ("Send to WorkspaceDev")
+
+The plugin's **Send to WorkspaceDev** button posts the export payload directly
+to the local backend over HTTP, without requiring any clipboard interaction or
+manual paste step.
+
+### How it works
+
+The fetch call is made from `code.js` (the plugin main thread), not from the
+UI iframe. This sidesteps browser CORS restrictions: the server at
+`http://127.0.0.1:1983` rejects cross-origin preflight requests with 405 by
+design, but `code.js` runs in a non-browser sandbox where CORS does not apply.
+
+### Usage
+
+1. Select one or more frames or components on the Figma canvas.
+2. In the plugin UI, confirm the **WorkspaceDev URL** field shows
+   `http://127.0.0.1:1983` (or enter a different URL if using a non-default
+   port).
+3. Click **Send to WorkspaceDev**.
+4. On success, the status area shows
+   `"Sent! Job <jobId> is processing."` with a clickable link to the job page.
+5. On failure, the status area shows the server's error message and, when
+   available, a request ID for support.
+
+The payload is submitted with `figmaSourceMode=figma_plugin`, identical to the
+clipboard paste path. No clipboard access or paste step is required.
+
+### Manifest port note
+
+The plugin manifest declares `networkAccess.allowedDomains` to control which
+domains `code.js` may fetch. The default is `["http://127.0.0.1:1983"]`. If
+WorkspaceDev is running on a different port, update this list in
+`plugin/manifest.json` and reload the plugin in Figma.
+
 ## Inspector paste-zone reference
 
-| Input mode        | Trigger                                      | Notes                                                               |
-| ----------------- | -------------------------------------------- | ------------------------------------------------------------------- |
-| Paste (clipboard) | ⌘V / Ctrl+V with focus inside **Paste area** | Reads both `text/plain` and `text/html` from the clipboard.         |
-| Drag & drop       | Drop a `.json` file onto the column          | First file only; must be `.json` or `application/json`.             |
-| Upload JSON file  | **Upload JSON file** button                  | Same validation as drop.                                            |
+| Input mode        | Trigger                                      | Notes                                                                                                                         |
+| ----------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Paste (clipboard) | ⌘V / Ctrl+V with focus inside **Paste area** | Reads both `text/plain` and `text/html` from the clipboard.                                                                   |
+| Drag & drop       | Drop a `.json` file onto the column          | First file only; must be `.json` or `application/json`.                                                                       |
+| Upload JSON file  | **Upload JSON file** button                  | Same validation as drop.                                                                                                      |
 | Enter Figma URL   | **Enter Figma URL** form                     | Inspector-only submit alias (`figmaSourceMode=figma_url`); the server normalizes it to `hybrid` before the REST-backed fetch. |
 
 ### SmartBanner intents

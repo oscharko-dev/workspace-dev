@@ -79,6 +79,36 @@
         border: none;
         border-top: 1px solid #eee;
       }
+      .upload-section {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      label {
+        font-size: 12px;
+        color: #666;
+        display: block;
+        margin-bottom: 4px;
+      }
+      input[type="url"] {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 12px;
+        font-family: inherit;
+      }
+      #upload-btn {
+        background: #4a6cf7;
+        color: #fff;
+      }
+      #upload-btn:hover {
+        background: #3a5ce6;
+      }
+      #upload-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
     </style>
   </head>
   <body>
@@ -93,14 +123,23 @@
       <button id="download-btn" class="btn-secondary">Download JSON</button>
     </div>
     <hr />
+    <div class="upload-section">
+      <label for="endpoint-url">WorkspaceDev URL</label>
+      <input id="endpoint-url" type="url" value="http://127.0.0.1:1983" />
+      <button id="upload-btn" class="btn-primary">Send to WorkspaceDev</button>
+    </div>
+    <hr />
     <div id="status"></div>
 
     <script>
       const exportBtn = document.getElementById("export-btn");
       const downloadBtn = document.getElementById("download-btn");
+      const uploadBtn = document.getElementById("upload-btn");
+      const urlInput = document.getElementById("endpoint-url");
       const statusEl = document.getElementById("status");
 
       let lastPayload = null;
+      let lastUploadEndpointUrl = "";
 
       exportBtn.addEventListener("click", () => {
         exportBtn.disabled = true;
@@ -109,6 +148,26 @@
         statusEl.className = "";
         parent.postMessage(
           { pluginMessage: { type: "export-selection" } },
+          "*",
+        );
+      });
+
+      uploadBtn.addEventListener("click", () => {
+        const endpointUrl = normalizeWorkspaceDevUrl(urlInput.value);
+        if (!endpointUrl) {
+          statusEl.textContent =
+            "Please enter a valid WorkspaceDev URL (http:// or https://).";
+          statusEl.className = "status-error";
+          return;
+        }
+        urlInput.value = endpointUrl;
+        lastUploadEndpointUrl = endpointUrl;
+        exportBtn.disabled = true;
+        uploadBtn.disabled = true;
+        statusEl.textContent = "";
+        statusEl.className = "";
+        parent.postMessage(
+          { pluginMessage: { type: "upload-to-local", endpointUrl } },
           "*",
         );
       });
@@ -150,6 +209,40 @@
           statusEl.textContent = msg.message;
           statusEl.className = "status-error";
           exportBtn.disabled = false;
+          uploadBtn.disabled = false;
+        }
+
+        if (msg.type === "upload-result") {
+          statusEl.textContent = "";
+          const prefix = document.createTextNode("Sent! Job ");
+          const suffix = document.createTextNode(" is processing.");
+          const trackingUrl = buildTrackingUrl(lastUploadEndpointUrl, msg.jobId);
+          const jobIdText = String(msg.jobId ?? "");
+          statusEl.appendChild(prefix);
+          if (trackingUrl) {
+            const link = document.createElement("a");
+            link.href = trackingUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = jobIdText;
+            statusEl.appendChild(link);
+          } else {
+            statusEl.appendChild(document.createTextNode(jobIdText));
+          }
+          statusEl.appendChild(suffix);
+          statusEl.className = "status-success";
+          exportBtn.disabled = false;
+          uploadBtn.disabled = false;
+        }
+
+        if (msg.type === "upload-error") {
+          const requestIdSuffix = msg.requestId
+            ? ` (request ID: ${msg.requestId})`
+            : "";
+          statusEl.textContent = `${msg.message}${requestIdSuffix}`;
+          statusEl.className = "status-error";
+          exportBtn.disabled = false;
+          uploadBtn.disabled = false;
         }
       };
 
@@ -163,6 +256,34 @@
         URL.revokeObjectURL(url);
         statusEl.textContent = "Downloaded!";
         statusEl.className = "status-success";
+      }
+
+      function normalizeWorkspaceDevUrl(rawUrl) {
+        const trimmed = String(rawUrl ?? "").trim();
+        if (!trimmed) {
+          return "";
+        }
+        try {
+          const parsed = new URL(trimmed);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return "";
+          }
+          parsed.search = "";
+          parsed.hash = "";
+          parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+          return parsed.toString().replace(/\/$/, "");
+        } catch {
+          return "";
+        }
+      }
+
+      function buildTrackingUrl(endpointUrl, jobId) {
+        const normalizedEndpoint = normalizeWorkspaceDevUrl(endpointUrl);
+        const safeJobId = String(jobId ?? "").trim();
+        if (!normalizedEndpoint || !safeJobId) {
+          return "";
+        }
+        return `${normalizedEndpoint}/workspace/jobs/${encodeURIComponent(safeJobId)}`;
       }
 
     </script>

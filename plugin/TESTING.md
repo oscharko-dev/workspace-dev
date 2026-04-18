@@ -63,3 +63,25 @@ in automated CI. Follow these steps to verify the export flow.
 3. Paste the clipboard content into the paste area.
 4. Verify the SmartBanner shows "Plugin Export" as detected intent.
 5. Click "Import starten" and verify the job is submitted successfully.
+
+### 7. Direct upload to WorkspaceDev
+
+**Prerequisites**: WorkspaceDev running locally (`pnpm start` or
+`npx workspace-dev start`).
+
+1. Select one or more frames or components on the Figma canvas.
+2. In the plugin UI, confirm the **WorkspaceDev URL** field shows
+   `http://127.0.0.1:1983` (the default).
+3. Click **Send to WorkspaceDev**.
+4. Verify the status area shows "Uploading to WorkspaceDev..." briefly, then
+   transitions to a success message like
+   `"Sent! Job <jobId> is processing."` with a clickable job link.
+5. Click the job link and verify it opens the job page in your browser.
+6. Verify both the **Copy to Clipboard** and **Send to WorkspaceDev** buttons
+   are re-enabled after the operation completes.
+
+**Non-default ports**: if WorkspaceDev is running on a port other than 1983,
+update the **WorkspaceDev URL** input in the plugin UI to match
+(e.g. `http://127.0.0.1:8080`). Additionally, update
+`networkAccess.allowedDomains` in `plugin/manifest.json` to include the
+alternate port URL — Figma blocks `fetch()` calls to domains not listed there.
