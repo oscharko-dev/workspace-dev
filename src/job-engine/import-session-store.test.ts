@@ -60,7 +60,7 @@ test("import-session-store saves newest-first and enforces FIFO retention", asyn
   }
 });
 
-test("import-session-store matches by paste identity key, then locator, then file key", async () => {
+test("import-session-store matches by paste identity key, then locator, with guarded whole-file fallback only", async () => {
   const rootDir = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-import-sessions-"),
   );
@@ -72,6 +72,7 @@ test("import-session-store matches by paste identity key, then locator, then fil
         fileKey: "FILE-ONLY",
         nodeId: "",
         pasteIdentityKey: null,
+        sourceMode: "figma_url",
       }),
     );
     await store.save(
@@ -88,6 +89,14 @@ test("import-session-store matches by paste identity key, then locator, then fil
         fileKey: "FILE",
         nodeId: "1:2",
         pasteIdentityKey: "paste-123",
+      }),
+    );
+    await store.save(
+      makeSession({
+        id: "session-same-file-scoped",
+        fileKey: "FILE-ONLY",
+        nodeId: "9:9",
+        pasteIdentityKey: null,
       }),
     );
 
@@ -114,6 +123,26 @@ test("import-session-store matches by paste identity key, then locator, then fil
       (
         await store.findMatching({
           fileKey: "FILE-ONLY",
+        })
+      )?.id,
+      undefined,
+    );
+    assert.equal(
+      (
+        await store.findMatching({
+          fileKey: "FILE-ONLY",
+          sourceMode: "figma_paste",
+          allowFileKeyFallback: true,
+        })
+      )?.id,
+      undefined,
+    );
+    assert.equal(
+      (
+        await store.findMatching({
+          fileKey: "FILE-ONLY",
+          sourceMode: "figma_url",
+          allowFileKeyFallback: true,
         })
       )?.id,
       "session-file-only",

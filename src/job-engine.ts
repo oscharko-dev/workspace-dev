@@ -1380,6 +1380,14 @@ export const createJobEngine = ({
     };
   };
 
+  const allowsImportSessionFileKeyFallback = ({
+    requestSourceMode,
+  }: {
+    requestSourceMode: WorkspaceImportSessionSourceMode;
+  }): boolean => {
+    return requestSourceMode === "figma_url";
+  };
+
   const persistImportSessionForJob = async ({
     job,
     artifactStore,
@@ -1413,6 +1421,10 @@ export const createJobEngine = ({
       pasteIdentityKey,
       ...(fileKey.length > 0 ? { fileKey } : {}),
       ...(nodeId.length > 0 ? { nodeId } : {}),
+      sourceMode: requestSourceMode,
+      allowFileKeyFallback: allowsImportSessionFileKeyFallback({
+        requestSourceMode,
+      }),
     });
     const selectedNodes = [...(job.request.selectedNodeIds ?? [])];
     const firstScreenName = extractFirstScreenName(designIr);
