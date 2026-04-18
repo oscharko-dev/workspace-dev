@@ -10,10 +10,14 @@ on:
 permissions:
   actions: read
   contents: read
-  security-events: write
 
 jobs:
   analysis:
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      id-token: write
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -27,10 +31,9 @@ jobs:
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
-          # Keep PR/main gates deterministic: publish SARIF to GitHub only.
-          # publish_results=true requires stricter workflow permissions than
-          # this repository currently allows and causes hard CI failures.
-          publish_results: false
+          # Publish SARIF to GitHub with the required write scopes limited
+          # to this analysis job instead of the entire workflow.
+          publish_results: true
 
       - name: Upload Scorecard SARIF
         if: github.event_name != 'push'
