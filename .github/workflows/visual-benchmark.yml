@@ -43,11 +43,12 @@ on:
 permissions:
   actions: read
   contents: read
-  checks: write
 
 jobs:
   benchmark:
     name: benchmark
+    permissions:
+      checks: write
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
