@@ -28,9 +28,9 @@ import type {
   VirtualParent,
   RgbaColor,
   ButtonVariant,
-  ButtonSize,
-  ResolvedFormHandlingMode
-} from "../generator-core.js";
+  ButtonSize
+} from "../generator-render.js";
+import type { ResolvedFormHandlingMode } from "../generator-forms.js";
 
 const UNSAFE_JAVASCRIPT_LITERAL_ESCAPES = {
   "<": "\\u003C",

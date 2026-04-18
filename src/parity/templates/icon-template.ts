@@ -11,12 +11,12 @@ import {
   resolveIconColor,
   isRtlLocale,
   DIRECTIONAL_ICON_NAMES
-} from "../generator-core.js";
+} from "../generator-render.js";
 import type {
   RenderContext,
   VirtualParent,
   SemanticIconModel
-} from "../generator-core.js";
+} from "../generator-render.js";
 import {
   literal,
   toPxLiteral,

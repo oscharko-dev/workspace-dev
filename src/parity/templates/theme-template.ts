@@ -21,13 +21,13 @@ import {
 import {
   THEME_COMPONENT_ORDER,
   roundStableSxNumericValue,
-  normalizeThemeSxValueForKey,
-  isRtlLocale
-} from "../generator-core.js";
+  normalizeThemeSxValueForKey
+} from "../generator-design-system.js";
+import { isRtlLocale } from "../generator-render.js";
 import type {
   ThemeComponentDefaults,
   ThemeSxStyleValue
-} from "../generator-core.js";
+} from "../generator-design-system.js";
 import {
   literal,
   toRemLiteral,

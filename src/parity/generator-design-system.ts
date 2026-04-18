@@ -28,18 +28,20 @@ import {
 } from "./generator-templates.js";
 import {
   sortChildren,
-  detectNavigationBarPattern,
-  NAVIGATION_BAR_TOP_LEVEL_DEPTH,
   findFirstByName,
   ICON_FALLBACK_BUILTIN_RESOLVER,
   flattenElements
-} from "./generator-core.js";
+} from "./generator-render.js";
+import {
+  detectNavigationBarPattern,
+  NAVIGATION_BAR_TOP_LEVEL_DEPTH
+} from "./generator-interactive.js";
 import type {
   RenderContext,
   VirtualParent,
   HeadingComponent,
   PatternExtractionInvocation
-} from "./generator-core.js";
+} from "./generator-render.js";
 
 export interface ThemeComponentDefaults {
   MuiCard?: {

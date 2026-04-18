@@ -7,14 +7,14 @@ import { ensureTsxName } from "../path-utils.js";
 import {
   toFormContextProviderName,
   toFormContextHookName
-} from "../generator-core.js";
+} from "../generator-forms.js";
 import type {
   ValidationFieldType,
   ValidationRule,
   FormContextFileSpec,
   CrossFieldRule,
   RhfValidationMode
-} from "../generator-core.js";
+} from "../generator-forms.js";
 import { literal } from "./utility-functions.js";
 
 export const buildInlineLegacyFormStateBlock = ({

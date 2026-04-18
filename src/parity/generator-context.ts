@@ -23,8 +23,8 @@ import type { ThemeComponentDefaults } from "./generator-design-system.js";
 import type { AccessibilityWarning } from "./generator-a11y.js";
 import type { ScreenArtifactIdentity } from "./generator-artifacts.js";
 import { resolveFormHandlingMode } from "./generator-templates.js";
-import { loadIconFallbackResolver, ICON_FALLBACK_FILE_NAME } from "./generator-core.js";
-import type { IconFallbackResolver } from "./generator-core.js";
+import { loadIconFallbackResolver, ICON_FALLBACK_FILE_NAME } from "./generator-render.js";
+import type { IconFallbackResolver } from "./generator-render.js";
 
 // ---------------------------------------------------------------------------
 // Runtime adapters – injectable I/O boundaries
