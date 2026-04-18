@@ -1158,13 +1158,6 @@ export const loadPersistedMappings = async ({
 
     const confidence = value.confidence;
     if (!isPersistedMappingConfidence(confidence)) {
-    if (
-      confidence !== "exact" &&
-      confidence !== "design_system" &&
-      confidence !== "suggested" &&
-      confidence !== "heuristic" &&
-      confidence !== "none"
-    ) {
       continue;
     }
 
@@ -1765,12 +1758,7 @@ export const resolveComponentMappings = async (
     const approvedMappings = new Map<string, MappedComponent>();
     for (const candidate of candidates) {
       const mapping = resultMappings.get(candidate.nodeId);
-      if (!mapping || !isPersistedMappingConfidence(mapping.confidence)) {
-      if (
-        !mapping ||
-        mapping.confidence === "suggested" ||
-        mapping.confidence === "design_system"
-      ) {
+      if (!mapping || mapping.confidence !== "exact") {
         continue;
       }
       approvedMappings.set(candidate.persistenceKey, mapping);

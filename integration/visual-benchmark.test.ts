@@ -1606,7 +1606,11 @@ test("runVisualBenchmark emits overfitting alert when screen aggregate improves 
                   nodeId: "1:900",
                   status: "completed" as const,
                   score: 82,
-                  screenshotBuffer: createTestPngBuffer(4, 4, [10, 20, 30, 255]),
+                  screenshotBuffer: createTestPngBuffer(
+                    4,
+                    4,
+                    [10, 20, 30, 255],
+                  ),
                   diffBuffer: createTestPngBuffer(4, 4, [0, 0, 0, 0]),
                   report: createCompletedVisualQualityReport(82),
                   viewport: { width: 1280, height: 720 },

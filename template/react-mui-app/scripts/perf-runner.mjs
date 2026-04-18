@@ -16,6 +16,12 @@ const DEFAULT_BUDGETS = {
 const DEFAULT_ROUTES = ["/", "/overview", "/checkout"];
 const DEFAULT_PROFILES = ["mobile", "desktop"];
 const CHROME_FLAGS = "--headless --no-sandbox --disable-dev-shm-usage";
+const LIGHTHOUSE_TIMEOUT_MS =
+  Number(process.env.FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS ?? 180_000) || 180_000;
+const LIGHTHOUSE_MAX_ATTEMPTS = Math.max(
+  1,
+  Number(process.env.FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS ?? 2) || 2
+);
 
 const parseBooleanLike = (value, fallback) => {
   if (!value) {
@@ -117,18 +123,80 @@ const writeJson = async (filePath, payload) => {
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 };
 
-const runCommand = async ({ command, args, cwd, env }) => {
+const killProcessTree = (child, signal) => {
+  if (!child || child.killed) {
+    return;
+  }
+  try {
+    if (process.platform === "win32") {
+      child.kill(signal);
+      return;
+    }
+    if (typeof child.pid === "number" && child.pid > 0) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+    child.kill(signal);
+  } catch (error) {
+    const errorCode =
+      error && typeof error === "object" && "code" in error ? error.code : undefined;
+    if (errorCode !== "ESRCH") {
+      child.kill(signal);
+    }
+  }
+};
+
+const runCommand = async ({ command, args, cwd, env, timeoutMs }) => {
   return await new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32"
     });
     let settled = false;
+    let timedOut = false;
     let stdout = "";
     let stderr = "";
+    let forceKillTimer;
     child.stdout.setEncoding("utf-8");
     child.stderr.setEncoding("utf-8");
+    const timeoutTimer =
+      typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
+        ? setTimeout(() => {
+            timedOut = true;
+            killProcessTree(child, "SIGTERM");
+            forceKillTimer = setTimeout(() => {
+              killProcessTree(child, "SIGKILL");
+              child.stdout.destroy();
+              child.stderr.destroy();
+              complete({
+                code: 124,
+                errorText: `[timeout] Command exceeded ${timeoutMs}ms and was terminated.`
+              });
+            }, 2_000);
+          }, timeoutMs)
+        : undefined;
+    const complete = ({ code, errorText }) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      if (timeoutTimer) {
+        clearTimeout(timeoutTimer);
+      }
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+      resolve({
+        success: !timedOut && code === 0,
+        code,
+        timedOut,
+        stdout,
+        stderr,
+        combined: `${stdout}\n${stderr}${errorText ? `\n${errorText}` : ""}`
+      });
+    };
     child.stdout.on("data", (chunk) => {
       stdout += chunk;
     });
@@ -136,29 +204,18 @@ const runCommand = async ({ command, args, cwd, env }) => {
       stderr += chunk;
     });
     child.on("error", (error) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve({
-        success: false,
-        code: 1,
-        stdout,
-        stderr,
-        combined: `${stdout}\n${stderr}\n${error instanceof Error ? error.message : String(error)}`
+      complete({
+        code: timedOut ? 124 : 1,
+        errorText: error instanceof Error ? error.message : String(error)
       });
     });
     child.on("close", (code) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      resolve({
-        success: code === 0,
-        code: code ?? 1,
-        stdout,
-        stderr,
-        combined: `${stdout}\n${stderr}`
+      complete({
+        code: timedOut ? 124 : code ?? 1,
+        errorText:
+          timedOut && typeof timeoutMs === "number"
+            ? `[timeout] Command exceeded ${timeoutMs}ms and was terminated.`
+            : undefined
       });
     });
   });
@@ -293,14 +350,35 @@ const collectAuditForRoute = async ({
     args.push("--preset=desktop");
   }
 
-  const runResult = await runCommand({
-    command: "pnpm",
-    args,
-    cwd: process.cwd(),
-    env: process.env
-  });
+  let runResult;
+  for (let attempt = 1; attempt <= LIGHTHOUSE_MAX_ATTEMPTS; attempt += 1) {
+    console.log(
+      `[perf-runner] lighthouse profile=${profile} route=${route} attempt ${attempt}/${LIGHTHOUSE_MAX_ATTEMPTS}`
+    );
+    runResult = await runCommand({
+      command: "pnpm",
+      args,
+      cwd: process.cwd(),
+      env: process.env,
+      timeoutMs: LIGHTHOUSE_TIMEOUT_MS
+    });
+    if (runResult.success) {
+      break;
+    }
+    const reason = runResult.timedOut
+      ? `timed out after ${LIGHTHOUSE_TIMEOUT_MS}ms`
+      : `exited with code ${runResult.code}`;
+    console.warn(
+      `[perf-runner] lighthouse ${profile} ${route} attempt ${attempt}/${LIGHTHOUSE_MAX_ATTEMPTS} ${reason}`
+    );
+    if (attempt < LIGHTHOUSE_MAX_ATTEMPTS) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, attempt * 1_000);
+      });
+    }
+  }
 
-  if (!runResult.success) {
+  if (!runResult?.success) {
     throw new Error(`Lighthouse failed for ${profile} ${route}: ${runResult.combined.slice(0, 2000)}`);
   }
 
