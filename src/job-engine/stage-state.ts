@@ -1,11 +1,13 @@
 import type {
+  WorkspaceCompositeQualityReport,
   WorkspaceFigmaSourceMode,
+  WorkspaceJobConfidence,
   WorkspaceJobLog,
   WorkspaceJobStage,
   WorkspaceJobStageName,
   WorkspaceJobStageStatus,
   WorkspaceJobStatus,
-  WorkspaceLlmCodegenMode
+  WorkspaceLlmCodegenMode,
 } from "../contracts/index.js";
 import { redactLogMessage, type WorkspaceRuntimeLogger } from "../logging.js";
 import type { JobRecord } from "./types.js";
@@ -19,7 +21,7 @@ export const STAGE_ORDER: WorkspaceJobStageName[] = [
   "codegen.generate",
   "validate.project",
   "repro.export",
-  "git.pr"
+  "git.pr",
 ];
 
 export const toFileSystemSafe = (value: string): string => {
@@ -36,12 +38,12 @@ export const nowIso = (): string => new Date().toISOString();
 export const createInitialStages = (): WorkspaceJobStage[] => {
   return STAGE_ORDER.map((name) => ({
     name,
-    status: "queued"
+    status: "queued",
   }));
 };
 
 export const toAcceptedModes = ({
-  figmaSourceMode
+  figmaSourceMode,
 }: {
   figmaSourceMode?: string;
 } = {}): {
@@ -56,7 +58,7 @@ export const toAcceptedModes = ({
         : normalizedFigmaSourceMode === "hybrid"
           ? "hybrid"
           : "rest",
-    llmCodegenMode: "deterministic"
+    llmCodegenMode: "deterministic",
   };
 };
 
@@ -64,7 +66,7 @@ export const updateStage = ({
   job,
   stage,
   status,
-  message
+  message,
 }: {
   job: JobRecord;
   stage: WorkspaceJobStageName;
@@ -103,7 +105,7 @@ export const pushLog = ({
   job,
   level,
   message,
-  stage
+  stage,
 }: {
   job: JobRecord;
   level: WorkspaceJobLog["level"];
@@ -113,7 +115,7 @@ export const pushLog = ({
   const entry: WorkspaceJobLog = {
     at: nowIso(),
     level,
-    message: redactLogMessage(message)
+    message: redactLogMessage(message),
   };
   if (stage) {
     entry.stage = stage;
@@ -131,7 +133,7 @@ export const pushRuntimeLog = ({
   logger,
   level,
   message,
-  stage
+  stage,
 }: {
   job: JobRecord;
   logger: WorkspaceRuntimeLogger;
@@ -143,16 +145,65 @@ export const pushRuntimeLog = ({
     job,
     level,
     message,
-    ...(stage ? { stage } : {})
+    ...(stage ? { stage } : {}),
   });
   logger.log({
     level,
     message: entry.message,
     jobId: job.jobId,
-    ...(entry.stage ? { stage: entry.stage } : {})
+    ...(entry.stage ? { stage: entry.stage } : {}),
   });
   return entry;
 };
+
+export const cloneCompositeQuality = (
+  report: WorkspaceCompositeQualityReport,
+): WorkspaceCompositeQualityReport => ({
+  ...report,
+  ...(report.performance
+    ? {
+        performance: {
+          ...report.performance,
+          samples: report.performance.samples.map((sample) => ({ ...sample })),
+          aggregateMetrics: { ...report.performance.aggregateMetrics },
+          warnings: [...report.performance.warnings],
+        },
+      }
+    : {}),
+  ...(report.composite
+    ? {
+        composite: {
+          ...report.composite,
+          includedDimensions: [...report.composite.includedDimensions],
+        },
+      }
+    : {}),
+  ...(report.warnings ? { warnings: [...report.warnings] } : {}),
+});
+
+export const cloneJobConfidence = (
+  confidence: WorkspaceJobConfidence,
+): WorkspaceJobConfidence => ({
+  ...confidence,
+  ...(confidence.contributors
+    ? { contributors: confidence.contributors.map((entry) => ({ ...entry })) }
+    : {}),
+  ...(confidence.screens
+    ? {
+        screens: confidence.screens.map((screen) => ({
+          ...screen,
+          contributors: screen.contributors.map((entry) => ({ ...entry })),
+          components: screen.components.map((component) => ({
+            ...component,
+            contributors: component.contributors.map((entry) => ({ ...entry })),
+          })),
+        })),
+      }
+    : {}),
+  ...(confidence.lowConfidenceSummary
+    ? { lowConfidenceSummary: [...confidence.lowConfidenceSummary] }
+    : {}),
+});
 
 export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
   const status: WorkspaceJobStatus = {
@@ -195,13 +246,19 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
       ...job.visualAudit,
       ...(job.visualAudit.regions
         ? {
-            regions: job.visualAudit.regions.map((region) => ({ ...region }))
+            regions: job.visualAudit.regions.map((region) => ({ ...region })),
           }
-        : {})
+        : {}),
     };
   }
   if (job.visualQuality) {
     status.visualQuality = { ...job.visualQuality };
+  }
+  if (job.compositeQuality) {
+    status.compositeQuality = cloneCompositeQuality(job.compositeQuality);
+  }
+  if (job.confidence) {
+    status.confidence = cloneJobConfidence(job.confidence);
   }
   if (job.gitPr) {
     status.gitPr = { ...job.gitPr };
@@ -222,7 +279,9 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
       stages: job.inspector.stages.map((stage) => ({
         ...stage,
         ...(stage.retryTargets
-          ? { retryTargets: stage.retryTargets.map((target) => ({ ...target })) }
+          ? {
+              retryTargets: stage.retryTargets.map((target) => ({ ...target })),
+            }
           : {}),
       })),
     };
@@ -231,7 +290,11 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
     status.error = {
       ...job.error,
       ...(job.error.retryTargets
-        ? { retryTargets: job.error.retryTargets.map((target) => ({ ...target })) }
+        ? {
+            retryTargets: job.error.retryTargets.map((target) => ({
+              ...target,
+            })),
+          }
         : {}),
     };
   }
@@ -241,7 +304,9 @@ export const toPublicJob = (job: JobRecord): WorkspaceJobStatus => {
 
 export const toJobSummary = (job: JobRecord): string => {
   if (job.status === "completed") {
-    const count = job.stages.filter((stage) => stage.status === "completed").length;
+    const count = job.stages.filter(
+      (stage) => stage.status === "completed",
+    ).length;
     return `Job completed successfully. ${count}/${job.stages.length} stages completed.`;
   }
   if (job.status === "partial") {
