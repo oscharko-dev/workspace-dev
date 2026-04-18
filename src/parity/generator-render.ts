@@ -50,6 +50,12 @@ import {
 import type { WorkspaceFormHandlingMode } from "../contracts/index.js";
 import { buildScreenArtifactIdentities } from "./generator-artifacts.js";
 import {
+  createTraversalIndex,
+  getIndexedTextNodes,
+  getIndexedVectorPaths,
+  type TraversalIndex
+} from "./generator-traversal-index.js";
+import {
   A11Y_NAVIGATION_HINTS,
   A11Y_IMAGE_DECORATIVE_HINTS,
   HEADING_NAME_HINTS
@@ -248,15 +254,16 @@ export const isIconLikeNode = (element: ScreenElementIR): boolean => {
   );
 };
 
-export const isVectorGraphicNode = (element: ScreenElementIR): boolean => {
+export const isVectorGraphicNode = (element: ScreenElementIR, traversalIndex?: TraversalIndex): boolean => {
   if (isTextElement(element)) {
     return false;
   }
-  const vectorPaths = collectVectorPaths(element);
+  const vectorPaths = traversalIndex ? getIndexedVectorPaths(traversalIndex, element) : collectVectorPaths(element);
   if (vectorPaths.length === 0) {
     return false;
   }
-  const hasMeaningfulText = collectTextNodes(element).some((node) => /[a-z0-9]/i.test(node.text.trim()));
+  const textNodes = traversalIndex ? getIndexedTextNodes(traversalIndex, element) : collectTextNodes(element);
+  const hasMeaningfulText = textNodes.some((node) => /[a-z0-9]/i.test(node.text.trim()));
   if (hasMeaningfulText) {
     return false;
   }
@@ -693,8 +700,10 @@ export const resolveTypographyVariantByNodeId = ({
     variantName,
     variant: tokens.typography[variantName]
   }));
+  const traversalIndex = createTraversalIndex(elements);
 
-  for (const node of elements.flatMap((element) => collectTextNodes(element))) {
+  for (const element of elements) {
+    for (const node of getIndexedTextNodes(traversalIndex, element)) {
     if (
       typeof node.fontSize !== "number" &&
       typeof node.fontWeight !== "number" &&
@@ -738,6 +747,7 @@ export const resolveTypographyVariantByNodeId = ({
     }
     byNodeId.set(node.id, bestMatch.variantName);
   }
+  }
 
   return byNodeId;
 };
@@ -753,7 +763,8 @@ export const hasMeaningfulTextDescendants = ({
   if (cached !== undefined) {
     return cached;
   }
-  const resolved = collectTextNodes(element).some((node) => {
+  const textNodes = context.traversalIndex ? getIndexedTextNodes(context.traversalIndex, element) : collectTextNodes(element);
+  const resolved = textNodes.some((node) => {
     const text = node.text.trim();
     if (!text) {
       return false;
@@ -764,7 +775,17 @@ export const hasMeaningfulTextDescendants = ({
   return resolved;
 };
 
-export const collectIconNodes = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): ScreenElementIR[] => {
+export const collectIconNodes = (
+  element: ScreenElementIR,
+  visitedOrTraversalIndex: Set<ScreenElementIR> | TraversalIndex = new Set()
+): ScreenElementIR[] => {
+  if ("textNodesById" in visitedOrTraversalIndex) {
+    const traversalIndex = visitedOrTraversalIndex;
+    const local = isIconLikeNode(element) || isVectorGraphicNode(element, traversalIndex) ? [element] : [];
+    const nested = (element.children ?? []).flatMap((child) => collectIconNodes(child, traversalIndex));
+    return [...local, ...nested];
+  }
+  const visited = visitedOrTraversalIndex;
   if (visited.has(element)) {
     return [];
   }
@@ -818,8 +839,9 @@ export const resolveImageSource = ({
   });
 };
 
-export const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | undefined => {
-  const candidates = collectIconNodes(element);
+export const pickBestIconNode = (element: ScreenElementIR, traversalIndex?: TraversalIndex): ScreenElementIR | undefined => {
+  const resolvedTraversalIndex = traversalIndex ?? createTraversalIndex([element]);
+  const candidates = collectIconNodes(element, resolvedTraversalIndex);
   const sorted = [...candidates].sort((left, right) => {
     const score = (candidate: ScreenElementIR): number => {
       const lowered = candidate.name.toLowerCase();
@@ -845,7 +867,7 @@ export const pickBestIconNode = (element: ScreenElementIR): ScreenElementIR | un
       if (/(?:^|[^a-z0-9])icon(?:$|[^a-z0-9])/i.test(lowered)) {
         total += 2;
       }
-      if (collectVectorPaths(candidate).length > 0) {
+      if (getIndexedVectorPaths(resolvedTraversalIndex, candidate).length > 0) {
         total += 8;
       }
       total -= Math.min(4, candidate.children?.length ?? 0);
@@ -1037,6 +1059,7 @@ export interface RenderContext {
   currentFormGroupId?: string | undefined;
   usesDatePicker?: boolean | undefined;
   requiresChangeEventTypeImport: boolean;
+  traversalIndex?: TraversalIndex | undefined;
 }
 
 const isValidJsIdentifier = (value: string): boolean => {

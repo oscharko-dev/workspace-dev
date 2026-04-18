@@ -9,8 +9,7 @@ import {
   toRgbaColor,
   isLikelyErrorRedColor,
   normalizeFontFamily,
-  collectTextNodes,
-  collectVectorPaths
+  collectTextNodes
 } from "./generator-templates.js";
 import {
   hasSubtreeName,
@@ -23,6 +22,12 @@ import type {
   RenderContext,
   SemanticIconModel
 } from "./generator-render.js";
+import {
+  createTraversalIndex,
+  getIndexedSubtreeNodeIds,
+  getIndexedTextNodes,
+  getIndexedVectorPaths
+} from "./generator-traversal-index.js";
 
 export type ValidationFieldType =
   | "email"
@@ -549,14 +554,6 @@ export const normalizeInputSemanticText = (value: string): string => {
     .trim();
 };
 
-const collectDescendantIds = (element: ScreenElementIR, ids: Set<string> = new Set()): Set<string> => {
-  ids.add(element.id);
-  for (const child of element.children ?? []) {
-    collectDescendantIds(child, ids);
-  }
-  return ids;
-};
-
 const findElementPath = ({
   elements,
   targetId
@@ -602,6 +599,7 @@ const collectNearbyFieldLabelCandidates = ({
   descendantIds: Set<string>;
 }): NearbyFieldLabelCandidate[] => {
   const candidateById = new Map<string, NearbyFieldLabelCandidate>();
+  const traversalIndex = context.traversalIndex ?? createTraversalIndex(context.screenElements ?? []);
   const appendScope = ({
     scope,
     relationPenalty
@@ -610,7 +608,7 @@ const collectNearbyFieldLabelCandidates = ({
     relationPenalty: number;
   }): void => {
     for (const scopeElement of scope) {
-      for (const textNode of collectTextNodes(scopeElement)) {
+      for (const textNode of getIndexedTextNodes(traversalIndex, scopeElement)) {
         if (descendantIds.has(textNode.id)) {
           continue;
         }
@@ -707,7 +705,8 @@ const resolveNearbyFieldLabel = ({
 
   const right = left + width;
   const maxVerticalGap = Math.max(56, (typeof height === "number" && Number.isFinite(height) ? height : 0) * 2);
-  const descendantIds = collectDescendantIds(element);
+  const traversalIndex = context.traversalIndex ?? createTraversalIndex(context.screenElements);
+  const descendantIds = new Set(getIndexedSubtreeNodeIds(traversalIndex, element));
   const candidates = collectNearbyFieldLabelCandidates({
     context,
     element,
@@ -1151,11 +1150,12 @@ export const detectFormGroups = (simplifiedChildren: ScreenElementIR[]): FormGro
 };
 
 export const buildSemanticInputModel = (element: ScreenElementIR): SemanticInputModel => {
-  const texts = collectTextNodes(element).sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
-  const iconNodes = collectIconNodes(element)
+  const traversalIndex = createTraversalIndex([element]);
+  const texts = [...getIndexedTextNodes(traversalIndex, element)].sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+  const iconNodes = collectIconNodes(element, traversalIndex)
     .map((node) => ({
       node,
-      paths: collectVectorPaths(node)
+      paths: getIndexedVectorPaths(traversalIndex, node)
     }));
   const iconVectors = iconNodes.filter((candidate) => candidate.paths.length > 0);
 
