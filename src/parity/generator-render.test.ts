@@ -163,6 +163,30 @@ test("renderMappedElement uses element.text as implicit children when mapped con
   assert.match(rendered, />\{"Aktion"\}<\/AcmeChip>$/);
 });
 
+test("renderMappedElement escapes unsafe characters in mapped object contracts", () => {
+  const context = createRenderContext();
+  const element: ScreenElementIR = {
+    id: "code-connect-escape-check",
+    name: "Escaped contract",
+    nodeType: "INSTANCE",
+    type: "button",
+    text: "Run",
+    codeConnect: {
+      componentName: "AcmeButton",
+      source: "src/components/AcmeButton.tsx",
+      propContract: {
+        children: "{{text}}",
+        options: { script: "</script><script>" }
+      }
+    }
+  };
+
+  const rendered = renderMappedElement(element, 1, rootParent, context);
+
+  assert.ok(rendered);
+  assert.ok(rendered.includes("options={{\"script\":\"\\u003C\\u002Fscript\\u003E\\u003Cscript\\u003E\"}}"));
+});
+
 test("simplifyElements preserves semantic metadata containers instead of promoting their only child", () => {
   const stats = createEmptySimplificationStats();
   const elements: ScreenElementIR[] = [

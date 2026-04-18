@@ -1121,7 +1121,20 @@ const toContractExpression = (value: unknown): string => {
   if (typeof value === "string") {
     return literal(value);
   }
-  return JSON.stringify(value);
+  const serialized = JSON.stringify(value) as string | undefined;
+  if (serialized === undefined) {
+    return "undefined";
+  }
+  return serialized.replace(/[<>\\/&\u2028\u2029]/g, (character) => {
+    return {
+      "<": "\\u003C",
+      ">": "\\u003E",
+      "&": "\\u0026",
+      "/": "\\u002F",
+      "\u2028": "\\u2028",
+      "\u2029": "\\u2029"
+    }[character as "&" | "<" | ">" | "/" | "\u2028" | "\u2029"];
+  });
 };
 
 const resolveElementTextContent = (element: ScreenElementIR): string | undefined => {
