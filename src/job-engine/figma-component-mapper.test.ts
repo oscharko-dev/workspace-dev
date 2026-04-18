@@ -758,7 +758,7 @@ test("savePersistedMappings creates file and loadPersistedMappings reads it back
   assert.equal(loaded.get("figma-file::node::1:2")?.confidence, "exact");
 });
 
-test("savePersistedMappings merges with existing persisted entries", async () => {
+test("savePersistedMappings ignores non-authoritative mappings", async () => {
   const dir = await createTempDir();
   const srcDir = path.join(dir, "src");
   await mkdir(srcDir, { recursive: true });
@@ -802,9 +802,9 @@ test("savePersistedMappings merges with existing persisted entries", async () =>
   });
 
   const loaded = await loadPersistedMappings({ workspaceRoot: dir });
-  assert.equal(loaded.size, 2);
+  assert.equal(loaded.size, 1);
   assert.equal(loaded.get("file-a::node::1:2")?.name, "Button");
-  assert.equal(loaded.get("file-b::node::2:3")?.name, "Card");
+  assert.equal(loaded.has("file-b::node::2:3"), false);
 });
 
 test("loadPersistedMappings filters out stale mappings (deleted source file)", async () => {
@@ -831,7 +831,7 @@ test("loadPersistedMappings filters out stale mappings (deleted source file)", a
   assert.equal(loaded.size, 0);
 });
 
-test("loadPersistedMappings filters to the requested fileKey and supports legacy wrappers", async () => {
+test("loadPersistedMappings ignores non-authoritative persisted entries", async () => {
   const dir = await createTempDir();
   const srcDir = path.join(dir, "src");
   const wdDir = path.join(dir, ".workspace-dev");
@@ -857,7 +857,7 @@ test("loadPersistedMappings filters to the requested fileKey and supports legacy
         source: "src/Button.tsx",
         confidence: "exact",
       },
-      "other-file::node::9:9": {
+      "abc123::name::card": {
         name: "Card",
         source: "src/Card.tsx",
         confidence: "heuristic",
@@ -876,6 +876,7 @@ test("loadPersistedMappings filters to the requested fileKey and supports legacy
   });
   assert.equal(loaded.size, 1);
   assert.equal(loaded.get("abc123::name::button")?.name, "Button");
+  assert.equal(loaded.has("abc123::name::card"), false);
 });
 
 test("loadPersistedMappings ignores unscoped legacy entries when fileKey is provided", async () => {
@@ -1289,6 +1290,11 @@ test("resolveComponentMappings deduplicates Code Connect and design system", asy
 test("resolveComponentMappings performs heuristic matching when workspaceRoot provided", async () => {
   const dir = await createTempDir();
   const srcDir = path.join(dir, "src");
+  const persistedPath = path.join(
+    dir,
+    ".workspace-dev",
+    "figma-component-map.json",
+  );
   await mkdir(srcDir, { recursive: true });
   await writeFile(
     path.join(srcDir, "Tooltip.tsx"),
@@ -1318,6 +1324,7 @@ test("resolveComponentMappings performs heuristic matching when workspaceRoot pr
   assert.equal(result.stats.heuristic, 1);
   assert.equal(result.mappings.get("7:8")?.source, "src/Tooltip.tsx");
   assert.equal(result.unmapped.length, 0);
+  await assert.rejects(readFile(persistedPath, "utf8"));
 });
 
 test("resolveComponentMappings keeps suggestions pending instead of auto-applying them", async () => {
