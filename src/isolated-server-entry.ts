@@ -89,5 +89,13 @@ process.on("disconnect", () => {
   void shutdown();
 });
 
+process.on("SIGINT", () => {
+  void shutdown();
+});
+
+process.on("SIGTERM", () => {
+  void shutdown();
+});
+
 // Signal readiness to receive config
 process.send?.({ type: "awaiting_config", instanceId });

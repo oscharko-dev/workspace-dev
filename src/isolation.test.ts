@@ -66,8 +66,8 @@ test("isolation: two instances run in parallel on different ports", async () => 
 
   const bodyA = await resA.json() as Record<string, unknown>;
   const bodyB = await resB.json() as Record<string, unknown>;
-  assert.equal(bodyA.ok, true);
-  assert.equal(bodyB.ok, true);
+  assert.equal(bodyA.status, "ok");
+  assert.equal(bodyB.status, "ok");
 });
 
 test("isolation: entrypoint resolver supports dist and source execution modes", () => {

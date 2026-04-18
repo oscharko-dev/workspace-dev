@@ -95,7 +95,14 @@ let cleanupRegistered = false;
 const killAllActiveInstances = (): void => {
   for (const [key, inst] of activeInstances) {
     try {
-      inst.process.kill("SIGTERM");
+      inst.process.send?.({ type: "shutdown" });
+      setTimeout(() => {
+        try {
+          inst.process.kill("SIGTERM");
+        } catch {
+          // Ignore already-dead processes during best-effort cleanup.
+        }
+      }, 3_000).unref();
     } catch {
       // Ignore already-dead processes during best-effort cleanup.
     }

@@ -428,6 +428,30 @@ test("cli contract: rate limit environment variable is applied and logged", asyn
   }
 });
 
+test("cli contract: --shutdown-timeout is applied and logged", async () => {
+  const port = await acquireFreePort();
+  const child = spawn(
+    process.execPath,
+    ["--import", "tsx", cliSourcePath, "start", "--port", String(port), "--shutdown-timeout", "250"],
+    {
+      env: {
+        ...process.env,
+        FIGMAPIPE_WORKSPACE_HOST: "127.0.0.1",
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+
+  try {
+    const output = await waitForStdout(child, /Shutdown timeout: 250ms/i);
+    assert.match(output, /Shutdown timeout: 250ms/i);
+  } finally {
+    child.kill("SIGTERM");
+    const exitCode = await waitForExitCode(child, 8_000);
+    assert.equal(exitCode, 0);
+  }
+});
+
 test("cli contract: import-session event auth environment variable is applied without logging the token", async () => {
   const port = await acquireFreePort();
   const child = spawn(process.execPath, ["--import", "tsx", cliSourcePath, "start", "--port", String(port)], {

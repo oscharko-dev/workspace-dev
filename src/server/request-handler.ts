@@ -479,6 +479,7 @@ interface CreateWorkspaceRequestHandlerInput {
     importSessionEventBearerToken?: string;
     logger?: WorkspaceRuntimeLogger;
   };
+  getServerLifecycleState?: () => "starting" | "ready" | "draining" | "stopped";
   jobEngine: JobEngine;
   moduleDir: string;
 }
@@ -491,6 +492,7 @@ export function createWorkspaceRequestHandler({
   workspaceRoot,
   defaults,
   runtime,
+  getServerLifecycleState,
   jobEngine,
   moduleDir,
 }: CreateWorkspaceRequestHandlerInput): (
@@ -512,6 +514,19 @@ export function createWorkspaceRequestHandler({
       ),
     }),
   });
+  const resolveLifecycleState = (): "starting" | "ready" | "draining" | "stopped" =>
+    getServerLifecycleState?.() ?? "ready";
+  const buildHealthPayload = (): { status: "ok" | "starting" | "draining"; uptime: number } => {
+    const lifecycleState = resolveLifecycleState();
+    const uptimeSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    if (lifecycleState === "starting") {
+      return { status: "starting", uptime: uptimeSeconds };
+    }
+    if (lifecycleState === "draining") {
+      return { status: "draining", uptime: uptimeSeconds };
+    }
+    return { status: "ok", uptime: uptimeSeconds };
+  };
 
   return async (
     request: IncomingMessage,
@@ -640,6 +655,37 @@ export function createWorkspaceRequestHandler({
     };
 
     try {
+      if (method === "GET" && pathname === "/healthz") {
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: buildHealthPayload(),
+        });
+        return;
+      }
+
+      if (method === "GET" && pathname === "/readyz") {
+        const lifecycleState = resolveLifecycleState();
+        sendJson({
+          response,
+          statusCode: lifecycleState === "ready" ? 200 : 503,
+          payload: buildHealthPayload(),
+        });
+        return;
+      }
+
+      if (resolveLifecycleState() === "draining") {
+        sendJson({
+          response,
+          statusCode: 503,
+          payload: {
+            error: "SERVER_DRAINING",
+            message: "Server is draining and not accepting new requests.",
+          },
+        });
+        return;
+      }
+
       if (method === "GET" && pathname === "/workspace") {
         const resolvedPort = getResolvedPort();
         const status: WorkspaceStatus = {
@@ -654,15 +700,6 @@ export function createWorkspaceRequestHandler({
           previewEnabled: runtime.previewEnabled,
         };
         sendJson({ response, statusCode: 200, payload: status });
-        return;
-      }
-
-      if (method === "GET" && pathname === "/healthz") {
-        sendJson({
-          response,
-          statusCode: 200,
-          payload: { ok: true, service: "workspace-dev" },
-        });
         return;
       }
 

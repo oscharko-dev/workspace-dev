@@ -1715,6 +1715,65 @@ test("createJobEngine cancels running jobs and records cancellation reason", asy
   assert.equal(engine.getJobResult(accepted.jobId)?.cancellation?.reason, "Manual stop requested.");
 });
 
+test("createJobEngine shutdown cancels queued work and waits for running jobs to stop", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-cancel-all-"));
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 2,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal instanceof AbortSignal) {
+            signal.addEventListener(
+              "abort",
+              () => {
+                reject(new DOMException("aborted", "AbortError"));
+              },
+              { once: true },
+            );
+          }
+        }),
+    }),
+  });
+
+  const running = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const runningWaitStarted = Date.now();
+  while (Date.now() - runningWaitStarted < 2_000) {
+    if (engine.getJob(running.jobId)?.status === "running") {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const queued = engine.submitJob({ figmaFileKey: "def", figmaAccessToken: "token" });
+  const shutdownResult = await engine.shutdown({
+    reason: "Server shutdown interrupted in-flight work.",
+    timeoutMs: 5_000,
+  });
+
+  assert.equal(shutdownResult.completed, true);
+  assert.deepEqual(shutdownResult.remainingJobIds, []);
+  assert.equal(engine.getJob(queued.jobId)?.status, "canceled");
+
+  const runningStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: running.jobId,
+    timeoutMs: 20_000,
+  });
+  assert.equal(runningStatus.status, "canceled");
+  assert.equal(runningStatus.cancellation?.reason, "Server shutdown interrupted in-flight work.");
+  assert.equal(engine.getJobResult(queued.jobId)?.cancellation?.reason, "Server shutdown interrupted in-flight work.");
+});
+
 test("createJobEngine rehydrates completed regeneration jobs and keeps local sync helpers available", async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-regen-"));
   const figmaJsonPath = path.join(tempRoot, "input.json");
