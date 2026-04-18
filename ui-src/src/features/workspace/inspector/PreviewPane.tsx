@@ -5,6 +5,7 @@ import type { PipelineStage } from "./paste-pipeline";
 
 interface PreviewPaneProps {
   previewUrl: string;
+  phase2PreviewUrl?: string;
   inspectEnabled: boolean;
   activeScopeNodeId: string | null;
   onToggleInspect: () => void;
@@ -123,14 +124,14 @@ function PreviewSplitLayout({
     setIframeScrollY(0);
     let win: Window;
     try {
-      const doc = iframe.contentWindow?.document.documentElement;
-      if (doc === undefined || doc === null) {
+      const winCandidate = iframe.contentWindow;
+      if (winCandidate === null) {
         return;
       }
-      if (iframe.contentWindow === null) {
+      if (winCandidate.document.documentElement === null) {
         return;
       }
-      win = iframe.contentWindow;
+      win = winCandidate;
     } catch {
       return;
     }
@@ -193,6 +194,7 @@ function PreviewSplitLayout({
 
 export function PreviewPane({
   previewUrl,
+  phase2PreviewUrl,
   inspectEnabled,
   activeScopeNodeId,
   onToggleInspect,
@@ -200,14 +202,20 @@ export function PreviewPane({
   pipelineStage,
   screenshot,
 }: PreviewPaneProps): JSX.Element {
-  const hasPreviewUrl = previewUrl.trim().length > 0;
+  const livePreviewUrl = previewUrl.trim();
+  const splitPreviewUrl =
+    pipelineStage === "generating" && phase2PreviewUrl !== undefined
+      ? phase2PreviewUrl.trim()
+      : livePreviewUrl;
+  const hasLivePreviewUrl = livePreviewUrl.length > 0;
+  const hasSplitPreviewUrl = splitPreviewUrl.length > 0;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [iframeLoadVersion, setIframeLoadVersion] = useState(0);
   const [splitView, setSplitView] = useState<boolean>(readSplitPref);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  // Derive loading state: loading whenever the current previewUrl hasn't finished loading yet
-  const isLoading = hasPreviewUrl && loadedUrl !== previewUrl;
+  // Derive loading state from the active iframe URL.
+  const isLoading = hasSplitPreviewUrl && loadedUrl !== splitPreviewUrl;
 
   const generatingStagesSet = new Set<PipelineStage>([
     "resolving",
@@ -227,10 +235,10 @@ export function PreviewPane({
       : undefined;
 
   const hasScreenshot = screenshot !== undefined && screenshot.length > 0;
-  const canSplit = splitView && (hasScreenshot || hasPreviewUrl);
+  const canSplit = splitView && (hasScreenshot || hasSplitPreviewUrl);
 
   function handleIframeLoad(): void {
-    setLoadedUrl(previewUrl);
+    setLoadedUrl(splitPreviewUrl);
     setIframeLoadVersion((prev) => prev + 1);
   }
 
@@ -278,9 +286,9 @@ export function PreviewPane({
           >
             Inspect
           </button>
-          {hasPreviewUrl ? (
+          {hasSplitPreviewUrl ? (
             <a
-              href={previewUrl}
+              href={splitPreviewUrl}
               target="_blank"
               rel="noopener noreferrer"
               aria-label="Open preview in new tab"
@@ -303,7 +311,7 @@ export function PreviewPane({
           {canSplit ? (
             <PreviewSplitLayout
               screenshot={screenshot}
-              previewUrl={previewUrl}
+              previewUrl={splitPreviewUrl}
               stageLabel={stageLabel}
               iframeRef={iframeRef}
               onIframeLoad={handleIframeLoad}
@@ -335,10 +343,10 @@ export function PreviewPane({
                   </span>
                 </div>
               ) : null}
-              {hasPreviewUrl ? (
+              {hasLivePreviewUrl ? (
                 <iframe
                   ref={iframeRef}
-                  src={previewUrl}
+                  src={livePreviewUrl}
                   title="Live preview"
                   className="h-full w-full flex-1 border-0 bg-white"
                   onLoad={handleIframeLoad}

@@ -1152,6 +1152,16 @@ export function InspectorPanel({
     return generatingRecoveryError?.retryTargets ?? [];
   }, [generatingRecoveryError]);
 
+  const phase2PreviewUrl = useMemo(() => {
+    if (
+      activePipeline.stage !== "generating" ||
+      activePipeline.jobId === undefined
+    ) {
+      return undefined;
+    }
+    return `/workspace/jobs/${encodeURIComponent(activePipeline.jobId)}/preview/`;
+  }, [activePipeline.jobId, activePipeline.stage]);
+
   const previewRecoveryMessage = useMemo(() => {
     if (
       activePipeline.stage !== "partial" &&
@@ -1166,11 +1176,15 @@ export function InspectorPanel({
     ) {
       return null;
     }
+    if (phase2PreviewUrl !== undefined && activePipeline.stage === "generating") {
+      return null;
+    }
     if (activePipeline.screenshot) {
       return "Preview is unavailable for this run. Showing the captured screenshot instead.";
     }
     return "Preview is unavailable for this run. Retry generation to rebuild the preview.";
   }, [
+    phase2PreviewUrl,
     activePipeline.previewUrl,
     activePipeline.screenshot,
     activePipeline.stage,
@@ -6353,6 +6367,7 @@ export function InspectorPanel({
           ) : null}
           <PreviewPane
             previewUrl={previewUrl}
+            {...(phase2PreviewUrl !== undefined ? { phase2PreviewUrl } : {})}
             inspectEnabled={inspectEnabled}
             activeScopeNodeId={activeScopeNodeId}
             onToggleInspect={handleToggleInspect}

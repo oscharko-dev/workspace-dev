@@ -4358,6 +4358,102 @@ test("request handler preview routes inject inspect bridge into HTML and pass th
   }
 });
 
+test("request handler serves phase-2 preview assets from generated dist before repro export", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-phase2-"));
+  const projectDir = path.join(tempRoot, "generated-app");
+  const distDir = path.join(projectDir, "dist");
+  const assetsDir = path.join(distDir, "assets");
+  await mkdir(assetsDir, { recursive: true });
+  await writeFile(
+    path.join(distDir, "index.html"),
+    "<!doctype html><html><body><div data-ir-id=\"screen-root\">Preview</div><script src=\"assets/app.js\"></script></body></html>",
+    "utf8",
+  );
+  await writeFile(
+    path.join(assetsDir, "app.js"),
+    "console.log('phase-2-preview');\n",
+    "utf8",
+  );
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          jobId: "job-1",
+          status: "running",
+          artifacts: {
+            generatedProjectDir: projectDir,
+          },
+        }) as ReturnType<JobEngine["getJobRecord"]>,
+    }),
+  });
+
+  try {
+    const htmlResponse = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/preview/",
+    });
+    assert.equal(htmlResponse.statusCode, 200);
+    assert.equal(
+      htmlResponse.body.includes("data-workspace-dev-inspect"),
+      true,
+    );
+    assert.equal(htmlResponse.headers["x-frame-options"], undefined);
+
+    const assetResponse = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/preview/assets/app.js",
+    });
+    assert.equal(assetResponse.statusCode, 200);
+    assert.equal(assetResponse.body, "console.log('phase-2-preview');\n");
+
+    const traversalResponse = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/preview/%2e%2e%2fsibling%2findex.html",
+    });
+    assert.equal(traversalResponse.statusCode, 404);
+    assert.equal(
+      traversalResponse.json<Record<string, unknown>>().error,
+      "PREVIEW_NOT_FOUND",
+    );
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler returns a pending phase-2 preview shell while dist is unavailable", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-phase2-"));
+  const projectDir = path.join(tempRoot, "generated-app");
+  await mkdir(projectDir, { recursive: true });
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      getJobRecord: () =>
+        ({
+          jobId: "job-1",
+          status: "running",
+          artifacts: {
+            generatedProjectDir: projectDir,
+          },
+        }) as ReturnType<JobEngine["getJobRecord"]>,
+    }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/preview/",
+    });
+    assert.equal(response.statusCode, 202);
+    assert.equal(response.body.includes("Building the generated preview"), true);
+    assert.equal(response.headers["x-frame-options"], undefined);
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("request handler blocks browser cross-site write requests and requires JSON content type", async (t) => {
   const submitJob = test.mock.fn(() => ({
     jobId: "job-secure",

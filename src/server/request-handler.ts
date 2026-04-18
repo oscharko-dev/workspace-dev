@@ -34,6 +34,13 @@ import { STAGE_ARTIFACT_KEYS } from "../job-engine/pipeline/artifact-keys.js";
 import { StageArtifactStore } from "../job-engine/pipeline/artifact-store.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
 import {
+  getContentType,
+  hasSymlinkInPath,
+  isWithinRoot,
+  normalizePathPart,
+  readFileWithFinalComponentNoFollow,
+} from "../job-engine/preview.js";
+import {
   computePasteIdentityKey,
   createPasteFingerprintStore,
 } from "../job-engine/paste-fingerprint-store.js";
@@ -89,6 +96,7 @@ import {
   isWorkspaceProjectRoute,
   parseImportSessionRoute,
   parseJobFilesRoute,
+  parseJobPreviewRoute,
   parseJobRoute,
   parseReproRoute,
   isForbiddenUiAssetPath,
@@ -121,6 +129,102 @@ function safeDecodeParam(
     return null;
   }
   return decoded;
+}
+
+async function resolveGeneratedPreviewAsset({
+  generatedProjectDir,
+  previewPath,
+}: {
+  generatedProjectDir: string;
+  previewPath: string;
+}): Promise<{ content: Buffer; contentType: string } | undefined> {
+  const normalizedPart = normalizePathPart(previewPath || "index.html");
+  if (normalizedPart === undefined) {
+    return undefined;
+  }
+
+  const fallbackPath =
+    normalizedPart.length > 0 ? normalizedPart : "index.html";
+  const previewRoot = path.resolve(generatedProjectDir, "dist");
+  const candidatePath = path.resolve(previewRoot, fallbackPath);
+
+  if (!isWithinRoot({ candidatePath, rootPath: previewRoot })) {
+    return undefined;
+  }
+  if (await hasSymlinkInPath({ candidatePath, rootPath: previewRoot })) {
+    return undefined;
+  }
+
+  try {
+    const content = await readFileWithFinalComponentNoFollow(candidatePath);
+    return {
+      content,
+      contentType: getContentType(candidatePath),
+    };
+  } catch {
+    if (fallbackPath !== "index.html") {
+      const indexPath = path.resolve(previewRoot, "index.html");
+      if (await hasSymlinkInPath({ candidatePath: indexPath, rootPath: previewRoot })) {
+        return undefined;
+      }
+      try {
+        const content = await readFileWithFinalComponentNoFollow(indexPath);
+        return {
+          content,
+          contentType: "text/html; charset=utf-8",
+        };
+      } catch {
+        return undefined;
+      }
+    }
+    return undefined;
+  }
+}
+
+function buildPhase2PreviewPendingHtml(): string {
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="refresh" content="1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Building preview…</title>
+    <style>
+      :root { color-scheme: dark; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #111111;
+        color: rgba(255, 255, 255, 0.72);
+        font: 500 14px/1.4 ui-sans-serif, system-ui, sans-serif;
+      }
+      .badge {
+        border: 1px solid rgba(78, 186, 135, 0.35);
+        background: rgba(78, 186, 135, 0.08);
+        color: #4eba87;
+        border-radius: 999px;
+        padding: 6px 10px;
+        margin-bottom: 12px;
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      main {
+        max-width: 280px;
+        padding: 24px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="badge">Phase 2 preview</div>
+      <div>Building the generated preview…</div>
+    </main>
+  </body>
+</html>`;
 }
 
 interface FigmaUrlSubmitPayload {
@@ -1560,6 +1664,92 @@ export function createWorkspaceRequestHandler({
             statusCode: 200,
             contentType: "text/plain; charset=utf-8",
             payload: content,
+          });
+          return;
+        }
+
+        const parsedJobPreviewRoute = parseJobPreviewRoute(pathname);
+        if (parsedJobPreviewRoute) {
+          const previewJobId = safeDecodeParam(
+            parsedJobPreviewRoute.jobId,
+            "preview job ID",
+            response,
+          );
+          if (previewJobId === null) return;
+          const previewPath = safeDecodeParam(
+            parsedJobPreviewRoute.previewPath,
+            "job preview path",
+            response,
+          );
+          if (previewPath === null) return;
+
+          const record = jobEngine.getJobRecord(previewJobId);
+          if (!record) {
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "JOB_NOT_FOUND",
+                message: `Unknown job '${previewJobId}'.`,
+              },
+            });
+            return;
+          }
+
+          const generatedProjectDir = record.artifacts.generatedProjectDir;
+          const previewAsset =
+            generatedProjectDir === undefined
+              ? undefined
+              : await resolveGeneratedPreviewAsset({
+                  generatedProjectDir,
+                  previewPath,
+                });
+
+          if (!previewAsset) {
+            if (previewPath === "index.html") {
+              sendText({
+                response,
+                statusCode: 202,
+                contentType: "text/html; charset=utf-8",
+                payload: buildPhase2PreviewPendingHtml(),
+                cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+                allowFrameEmbedding: true,
+              });
+              return;
+            }
+
+            sendJson({
+              response,
+              statusCode: 404,
+              payload: {
+                error: "PREVIEW_NOT_FOUND",
+                message: `No phase-2 preview artifact found for '${parsedJobPreviewRoute.jobId}'.`,
+              },
+            });
+            return;
+          }
+
+          if (previewAsset.contentType.startsWith("text/html")) {
+            const html = previewAsset.content.toString("utf8");
+            const injectedHtml = injectInspectBridgeScript(html);
+            sendBuffer({
+              response,
+              statusCode: 200,
+              contentType: previewAsset.contentType,
+              payload: Buffer.from(injectedHtml, "utf8"),
+              cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+              allowFrameEmbedding: true,
+            });
+            return;
+          }
+
+          sendBuffer({
+            response,
+            statusCode: 200,
+            contentType: previewAsset.contentType,
+            payload: previewAsset.content,
+            cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+            allowFrameEmbedding: true,
           });
           return;
         }

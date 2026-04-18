@@ -5,6 +5,7 @@ import {
   isWorkspaceProjectRoute,
   parseImportSessionRoute,
   parseJobFilesRoute,
+  parseJobPreviewRoute,
   parseJobRoute,
   parseReproRoute,
   resolveUiAssetPath,
@@ -272,6 +273,30 @@ test("parseJobFilesRoute parses directory listing and file content routes", () =
     parseJobFilesRoute("/workspace/jobs//files/src/App.tsx"),
     undefined,
   );
+});
+
+test("parseJobPreviewRoute parses root and nested preview assets", () => {
+  assert.equal(parseJobPreviewRoute("/workspace"), undefined);
+  assert.equal(parseJobPreviewRoute("/workspace/jobs/job-1"), undefined);
+  assert.equal(parseJobPreviewRoute("/workspace/jobs/job-1/files"), undefined);
+
+  assert.deepEqual(parseJobPreviewRoute("/workspace/jobs/job-1/preview"), {
+    jobId: "job-1",
+    previewPath: "index.html",
+  });
+  assert.deepEqual(parseJobPreviewRoute("/workspace/jobs/job-1/preview/"), {
+    jobId: "job-1",
+    previewPath: "index.html",
+  });
+  assert.deepEqual(
+    parseJobPreviewRoute("/workspace/jobs/job-1/preview/assets/app.js"),
+    {
+      jobId: "job-1",
+      previewPath: "assets/app.js",
+    },
+  );
+
+  assert.equal(parseJobPreviewRoute("/workspace/jobs//preview"), undefined);
 });
 
 test("validateSourceFilePath allows valid source paths", () => {

@@ -408,6 +408,53 @@ describe("PreviewPane — split view", () => {
     expect(screen.queryByTitle("Live preview")).not.toBeInTheDocument();
   });
 
+  it("uses the phase-2 preview URL during generating when split view is enabled", () => {
+    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        phase2PreviewUrl: "/workspace/jobs/job-1/preview/",
+        pipelineStage: "generating",
+        screenshot: "http://cdn.example.com/screenshot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByTitle("Live preview")).toHaveAttribute(
+      "src",
+      "/workspace/jobs/job-1/preview/",
+    );
+    expect(
+      screen.getByRole("link", { name: "Open preview in new tab" }),
+    ).toHaveAttribute("href", "/workspace/jobs/job-1/preview/");
+  });
+
+  it("keeps the ready-state live preview URL when a phase-2 preview URL is also present", () => {
+    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "http://127.0.0.1:4010/preview",
+        phase2PreviewUrl: "/workspace/jobs/job-1/preview/",
+        pipelineStage: "ready",
+        screenshot: "http://cdn.example.com/screenshot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByTitle("Live preview")).toHaveAttribute(
+      "src",
+      "http://127.0.0.1:4010/preview",
+    );
+  });
+
   it("renders screenshot placeholder on left pane when split enabled and no screenshot", () => {
     window.localStorage.setItem(SPLIT_PREF_KEY, "1");
 

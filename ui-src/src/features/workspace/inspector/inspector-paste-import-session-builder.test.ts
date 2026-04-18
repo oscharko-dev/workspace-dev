@@ -12,7 +12,6 @@ function makePipelineState(
     stageProgress: {
       idle: { state: "done" },
       parsing: { state: "done" },
-      extracting: { state: "done" },
       resolving: { state: "done" },
       extracting: { state: "done" },
       transforming: { state: "done" },
