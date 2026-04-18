@@ -11,6 +11,7 @@ import {
 } from "./constants.js";
 import {
   readJsonBody,
+  readStreamingJsonBody,
   sendBuffer,
   sendJson,
   sendText,
@@ -253,5 +254,60 @@ test("readJsonBody respects an explicit maxBytes override", async () => {
     reason: "OVERSIZE",
     error: "Request body exceeds 2 MiB size limit.",
     maxBytes: override,
+  });
+});
+
+test("readStreamingJsonBody parses chunked JSON across token and utf8 boundaries", async () => {
+  const expected = {
+    figmaFileKey: "file-key",
+    figmaAccessToken: "token",
+    nested: [true, false, null, { count: 2 }],
+    text: "hello 🙂",
+  };
+  const payload = Buffer.from(JSON.stringify(expected), "utf8");
+  const emojiStart = payload.indexOf(Buffer.from("🙂", "utf8"));
+  assert.notEqual(emojiStart, -1);
+
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage([
+      payload.subarray(0, 7),
+      payload.subarray(7, emojiStart + 1),
+      payload.subarray(emojiStart + 1),
+    ]),
+  );
+
+  assert.deepEqual(parsed, {
+    ok: true,
+    value: expected,
+  });
+});
+
+test("readStreamingJsonBody aborts on an invalid prefix without consuming later chunks", async () => {
+  const parsed = await readStreamingJsonBody(
+    Readable.from(
+      (async function* () {
+        yield Buffer.from("{", "utf8");
+        yield Buffer.from("x", "utf8");
+        throw new Error("streaming parser should stop after the invalid prefix");
+      })(),
+    ) as IncomingMessage,
+  );
+
+  assert.deepEqual(parsed, {
+    ok: false,
+    reason: "INVALID_JSON",
+    error: "Invalid JSON payload.",
+  });
+});
+
+test("readStreamingJsonBody rejects non-JSON whitespace prefixes", async () => {
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage(['\u00a0{"ok":true}']),
+  );
+
+  assert.deepEqual(parsed, {
+    ok: false,
+    reason: "INVALID_JSON",
+    error: "Invalid JSON payload.",
   });
 });

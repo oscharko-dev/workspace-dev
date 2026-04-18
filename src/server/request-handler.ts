@@ -74,6 +74,7 @@ import {
   sendJson,
   sendText,
   readJsonBody,
+  readStreamingJsonBody,
 } from "./http-helpers.js";
 import {
   MAX_SUBMIT_BODY_BYTES,
@@ -3259,7 +3260,7 @@ export function createWorkspaceRequestHandler({
       }
 
       if (method === "POST" && pathname === "/workspace/submit") {
-        const rawBody = await readJsonBody(request, {
+        const rawBody = await readStreamingJsonBody(request, {
           maxBytes: MAX_SUBMIT_BODY_BYTES,
         });
         if (!rawBody.ok) {
