@@ -263,3 +263,33 @@ describe("ScreenshotPreview — URL change reset", () => {
     ).toHaveStyle("transform: translate(0px, 0px) scale(1)");
   });
 });
+
+describe("ScreenshotPreview — externalOffsetY", () => {
+  it("applies externalOffsetY on top of user pan", () => {
+    const { rerender } = render(
+      <ScreenshotPreview
+        screenshotUrl="http://cdn.example.com/a.png"
+        externalOffsetY={50}
+      />,
+    );
+
+    expect(
+      screen
+        .getByRole("img", { name: "Figma design preview" })
+        .getAttribute("style"),
+    ).toContain("translate(0px, 50px)");
+
+    rerender(
+      <ScreenshotPreview
+        screenshotUrl="http://cdn.example.com/a.png"
+        externalOffsetY={-30}
+      />,
+    );
+
+    expect(
+      screen
+        .getByRole("img", { name: "Figma design preview" })
+        .getAttribute("style"),
+    ).toContain("translate(0px, -30px) scale(1)");
+  });
+});
