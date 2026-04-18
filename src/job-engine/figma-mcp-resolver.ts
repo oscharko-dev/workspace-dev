@@ -1070,11 +1070,17 @@ const fetchDesignContextAdaptive = async (
     { length: subtreeIds.length },
     () => [],
   );
+  const subtreeAbortController = new AbortController();
+  const subtreeSignal =
+    signal === undefined
+      ? subtreeAbortController.signal
+      : AbortSignal.any([signal, subtreeAbortController.signal]);
   const subtreeResults: Array<DesignContextResult | undefined> = Array.from(
     { length: subtreeIds.length },
     () => undefined,
   );
   const inFlight = new Set<Promise<void>>();
+  let firstTaskError: unknown;
   let nextIndex = 0;
 
   const launchNext = (): void => {
@@ -1082,13 +1088,21 @@ const fetchDesignContextAdaptive = async (
     nextIndex += 1;
     const subtreeId = subtreeIds[currentIndex]!;
     const task = (async () => {
-      subtreeResults[currentIndex] = await fetchDesignContextSingle(
-        fileKey,
-        subtreeId,
-        config,
-        signal,
-        subtreeDiagnosticsByIndex[currentIndex],
-      );
+      try {
+        subtreeResults[currentIndex] = await fetchDesignContextSingle(
+          fileKey,
+          subtreeId,
+          config,
+          subtreeSignal,
+          subtreeDiagnosticsByIndex[currentIndex],
+        );
+      } catch (error: unknown) {
+        if (firstTaskError === undefined) {
+          firstTaskError = error;
+          subtreeAbortController.abort();
+        }
+        throw error;
+      }
     })();
     inFlight.add(task);
     void task.then(
@@ -1103,13 +1117,24 @@ const fetchDesignContextAdaptive = async (
 
   while (
     nextIndex < subtreeIds.length &&
-    inFlight.size < MAX_SUBTREE_BATCH_SIZE
+    inFlight.size < MAX_SUBTREE_BATCH_SIZE &&
+    firstTaskError === undefined
   ) {
     launchNext();
   }
 
   while (inFlight.size > 0) {
-    await Promise.race(inFlight);
+    try {
+      await Promise.race(inFlight);
+    } catch (error: unknown) {
+      firstTaskError ??= error;
+    }
+    if (firstTaskError !== undefined) {
+      await Promise.allSettled(inFlight);
+      throw firstTaskError instanceof Error
+        ? firstTaskError
+        : new Error(getErrorMessage(firstTaskError));
+    }
     while (
       nextIndex < subtreeIds.length &&
       inFlight.size < MAX_SUBTREE_BATCH_SIZE
