@@ -2408,10 +2408,10 @@ test("createJobEngine preserves pasteDeltaSummary, compositeQuality, and confide
   const rehydrated = rehydratedEngine.getJob(accepted.jobId);
   assert.equal(rehydrated?.status, "completed");
 
-  // local_json jobs have no paste delta, compositeQuality, or confidence — verify consistent absence
-  assert.equal(rehydrated?.pasteDeltaSummary, original?.pasteDeltaSummary);
-  assert.equal(rehydrated?.compositeQuality, original?.compositeQuality);
-  assert.equal(rehydrated?.confidence, original?.confidence);
+  // Verify all three optional fields round-trip identically (deepEqual handles objects and undefined)
+  assert.deepEqual(rehydrated?.pasteDeltaSummary, original?.pasteDeltaSummary);
+  assert.deepEqual(rehydrated?.compositeQuality, original?.compositeQuality);
+  assert.deepEqual(rehydrated?.confidence, original?.confidence);
   // Core fields round-trip correctly
   assert.deepEqual(rehydrated?.request, original?.request);
   assert.deepEqual(
