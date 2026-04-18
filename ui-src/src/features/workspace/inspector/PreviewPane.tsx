@@ -1,4 +1,4 @@
-import { useRef, useState, type JSX } from "react";
+import { useRef, useState, type JSX, type RefObject } from "react";
 import { InspectOverlay } from "./InspectOverlay";
 import { ScreenshotPreview } from "./ScreenshotPreview";
 import type { PipelineStage } from "./paste-pipeline";
@@ -11,6 +11,26 @@ interface PreviewPaneProps {
   onInspectSelect: (irNodeId: string) => void;
   pipelineStage?: PipelineStage;
   screenshot?: string;
+}
+
+const SPLIT_PREF_KEY = "workspace-dev:inspector:preview-split";
+
+function readSplitPref(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(SPLIT_PREF_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeSplitPref(value: boolean): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(SPLIT_PREF_KEY, value ? "1" : "0");
+  } catch {
+    // Swallow quota / access errors; UI state is the source of truth.
+  }
 }
 
 function getStageLabel(stage: PipelineStage): string {
@@ -55,6 +75,89 @@ function ExternalLinkIcon(): JSX.Element {
   );
 }
 
+function LoadingOverlay(): JSX.Element {
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-[#111111]">
+      <span className="text-sm text-white/55">Loading preview…</span>
+    </div>
+  );
+}
+
+// Pane label badge — absolute top-left, pointer-events-none so it doesn't
+// interfere with iframe interaction.
+function PaneLabel({ text }: { text: string }): JSX.Element {
+  return (
+    <span className="absolute left-2 top-2 z-10 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white/75 pointer-events-none">
+      {text}
+    </span>
+  );
+}
+
+// Scroll sync between iframe and ScreenshotPreview is intentionally omitted:
+// ScreenshotPreview uses CSS transform-based pan/zoom, not DOM scroll, so
+// mirroring iframe scrollTop would have no effect on the left pane.
+function PreviewSplitLayout({
+  screenshot,
+  previewUrl,
+  stageLabel,
+  iframeRef,
+  onIframeLoad,
+  showIframeLoading,
+}: {
+  screenshot: string | undefined;
+  previewUrl: string;
+  stageLabel: string | undefined;
+  iframeRef: RefObject<HTMLIFrameElement | null>;
+  onIframeLoad: () => void;
+  showIframeLoading: boolean;
+}): JSX.Element {
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-row">
+      {/* Left pane — Figma source */}
+      <div className="relative flex-1 min-w-0 border-r border-[#333333]">
+        <PaneLabel text="Figma source" />
+        {screenshot !== undefined && screenshot.length > 0 ? (
+          <ScreenshotPreview
+            screenshotUrl={screenshot}
+            {...(stageLabel !== undefined ? { stageName: stageLabel } : {})}
+            badgeText="Figma source"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <span className="text-sm text-white/55">
+              Screenshot unavailable
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Right pane — Generated preview */}
+      <div className="relative flex-1 min-w-0">
+        <PaneLabel text="Generated preview" />
+        {previewUrl.length === 0 ? (
+          <div className="flex h-full items-center justify-center">
+            <span className="text-sm text-white/55">
+              {stageLabel ?? "Waiting for preview…"}
+            </span>
+          </div>
+        ) : (
+          <>
+            <iframe
+              ref={iframeRef}
+              src={previewUrl}
+              title="Live preview"
+              className="h-full w-full border-0 bg-white"
+              onLoad={onIframeLoad}
+              sandbox="allow-scripts allow-same-origin"
+            />
+            {showIframeLoading ? <LoadingOverlay /> : null}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function PreviewPane({
   previewUrl,
   inspectEnabled,
@@ -67,6 +170,7 @@ export function PreviewPane({
   const hasPreviewUrl = previewUrl.trim().length > 0;
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [iframeLoadVersion, setIframeLoadVersion] = useState(0);
+  const [splitView, setSplitView] = useState<boolean>(readSplitPref);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Derive loading state: loading whenever the current previewUrl hasn't finished loading yet
@@ -88,6 +192,14 @@ export function PreviewPane({
       ? getStageLabel(pipelineStage)
       : undefined;
 
+  const hasScreenshot = screenshot !== undefined && screenshot.length > 0;
+  const canSplit = splitView && (hasScreenshot || hasPreviewUrl);
+
+  function handleIframeLoad(): void {
+    setLoadedUrl(previewUrl);
+    setIframeLoadVersion((prev) => prev + 1);
+  }
+
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#000000] text-white">
       <div className="flex h-10 shrink-0 items-center border-b border-[#333333] bg-[#000000]">
@@ -97,6 +209,26 @@ export function PreviewPane({
         </div>
         <div className="flex-1" />
         <div className="flex items-center gap-2 px-3 text-[11px] text-white/65">
+          <button
+            type="button"
+            onClick={() => {
+              setSplitView((prev) => {
+                const next = !prev;
+                writeSplitPref(next);
+                return next;
+              });
+            }}
+            aria-pressed={splitView}
+            aria-label={splitView ? "Disable split view" : "Enable split view"}
+            data-testid="preview-split-toggle"
+            className={`cursor-pointer rounded border px-2 py-1 font-semibold transition ${
+              splitView
+                ? "border-[#4eba87] bg-[#4eba87]/15 text-[#4eba87]"
+                : "border-[#333333] bg-transparent text-white/70 hover:border-[#4eba87]/40 hover:text-[#4eba87]"
+            }`}
+          >
+            Split
+          </button>
           <button
             type="button"
             onClick={onToggleInspect}
@@ -134,7 +266,16 @@ export function PreviewPane({
 
       <div className="min-h-0 flex-1 bg-[#000000] p-4 md:p-6">
         <div className="relative flex h-full min-h-0 flex-col overflow-hidden rounded-md border border-[#333333] bg-[#111111] shadow-[0_24px_80px_rgba(0,0,0,0.5)]">
-          {isParsing ? (
+          {canSplit ? (
+            <PreviewSplitLayout
+              screenshot={screenshot}
+              previewUrl={previewUrl}
+              stageLabel={stageLabel}
+              iframeRef={iframeRef}
+              onIframeLoad={handleIframeLoad}
+              showIframeLoading={isLoading}
+            />
+          ) : isParsing ? (
             <div className="flex h-full flex-1 items-center justify-center">
               <span className="text-sm text-white/55">Analyzing design…</span>
             </div>
@@ -166,10 +307,7 @@ export function PreviewPane({
                   src={previewUrl}
                   title="Live preview"
                   className="h-full w-full flex-1 border-0 bg-white"
-                  onLoad={() => {
-                    setLoadedUrl(previewUrl);
-                    setIframeLoadVersion((prev) => prev + 1);
-                  }}
+                  onLoad={handleIframeLoad}
                   sandbox="allow-scripts allow-same-origin"
                 />
               ) : (
