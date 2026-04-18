@@ -68,4 +68,29 @@ test("prepare-visual-benchmark-public-artifacts omits PR comment payloads from t
     "see https://api.figma.com/v1/files/[redacted]",
   );
   await assert.rejects(stat(path.join(publicDir, "pr-comment.json")));
+
+  const renderedCommentPath = path.join(tmpDir, "rendered-comment.json");
+  await execFileAsync(
+    "node",
+    [
+      path.join(
+        process.cwd(),
+        "scripts",
+        "print-visual-benchmark-pr-comment.mjs",
+      ),
+      path.join(publicDir, "last-run.public.json"),
+      "--output",
+      renderedCommentPath,
+    ],
+    { cwd: process.cwd() },
+  );
+
+  const renderedComment = JSON.parse(
+    await readFile(renderedCommentPath, "utf8"),
+  ) as { body: string };
+  assert.match(renderedComment.body, /## Visual Quality Benchmark/);
+  assert.doesNotMatch(
+    renderedComment.body,
+    /Visual benchmark comment was skipped due to missing or malformed artifacts\./,
+  );
 });
