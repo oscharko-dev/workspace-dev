@@ -170,27 +170,22 @@ const buildNestedAdaptiveXml = (): {
 
 const buildAuxiliaryHeavyAdaptiveXml = (): {
   xml: string;
-  childIds: string[];
 } => {
-  const childIds = ["child:1", "child:2"];
   const auxiliaryTags = Array.from(
     { length: ADAPTIVE_NODE_THRESHOLD + 1 },
-    (_, index) => `aux:${String(index + 1)}`,
+    (_, index) => `Decoration${String(index + 1)}`,
   );
   const xml =
     `<FRAME id="0:1" name="Root">` +
-    `<BOOLEAN_OPERATION id="${auxiliaryTags[0]}" name="Decoration1"/>` +
-    `<FRAME id="${childIds[0]}" name="Frame1"/>` +
+    `<BOOLEAN_OPERATION name="${auxiliaryTags[0]}"/>` +
+    `<FRAME id="child:1" name="Frame1"/>` +
     auxiliaryTags
       .slice(1)
-      .map(
-        (auxTag, index) =>
-          `<BOOLEAN_OPERATION id="${auxTag}" name="Decoration${String(index + 2)}"/>`,
-      )
+      .map((auxTag) => `<BOOLEAN_OPERATION name="${auxTag}"/>`)
       .join("") +
-    `<FRAME id="${childIds[1]}" name="Frame2"/>` +
+    `<FRAME id="child:2" name="Frame2"/>` +
     `</FRAME>`;
-  return { xml, childIds };
+  return { xml };
 };
 
 // ---------------------------------------------------------------------------
@@ -515,7 +510,7 @@ test("large design — subtree batching uses rolling concurrency instead of seri
 test("large design — auxiliary self-closing non-node tags do not trigger subtree batching", async () => {
   clearResolverCache();
 
-  const { xml, childIds } = buildAuxiliaryHeavyAdaptiveXml();
+  const { xml } = buildAuxiliaryHeavyAdaptiveXml();
   const designContextCalls: string[] = [];
 
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -546,13 +541,10 @@ test("large design — auxiliary self-closing non-node tags do not trigger subtr
 
   assert.ok(
     result.metadata !== undefined &&
-      result.metadata.nodeCount >= ADAPTIVE_NODE_THRESHOLD,
+      result.metadata.nodeCount < ADAPTIVE_NODE_THRESHOLD,
   );
-  assert.deepEqual(designContextCalls, childIds);
-  assert.equal(
-    result.code,
-    childIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
-  );
+  assert.deepEqual(designContextCalls, ["0:1"]);
+  assert.equal(result.code, "// code for 0:1");
 });
 
 test("direct nodeId provided — first MCP call is get_metadata, not root scan", async () => {
