@@ -203,7 +203,7 @@ test("parseVariableDefsResponse — structured array format", () => {
       },
     ],
   };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result.length, 2);
   assert.equal(result[0].name, "color/primary/500");
   assert.equal(result[0].kind, "color");
@@ -219,7 +219,7 @@ test("parseVariableDefsResponse — flat record format", () => {
     "icon/default/secondary": "#949494",
     "spacing/md": 16,
   };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result.length, 2);
   const color = result.find((v) => v.name === "icon/default/secondary");
   assert.ok(color);
@@ -233,45 +233,136 @@ test("parseVariableDefsResponse — flat record format", () => {
 
 test("parseVariableDefsResponse — top-level array format", () => {
   const raw = [{ name: "color/bg", resolvedValue: "#FFFFFF", type: "COLOR" }];
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result.length, 1);
   assert.equal(result[0].kind, "color");
 });
 
 test("parseVariableDefsResponse — null returns empty", () => {
-  assert.deepEqual(parseVariableDefsResponse(null), []);
+  assert.deepEqual(parseVariableDefsResponse(null).defs, []);
 });
 
 test("parseVariableDefsResponse — undefined returns empty", () => {
-  assert.deepEqual(parseVariableDefsResponse(undefined), []);
+  assert.deepEqual(parseVariableDefsResponse(undefined).defs, []);
 });
 
 test("parseVariableDefsResponse — empty object returns empty", () => {
-  assert.deepEqual(parseVariableDefsResponse({}), []);
+  assert.deepEqual(parseVariableDefsResponse({}).defs, []);
 });
 
 test("parseVariableDefsResponse — skips entries without name", () => {
   const raw = { variables: [{ resolvedValue: "#FFF", type: "COLOR" }] };
-  assert.deepEqual(parseVariableDefsResponse(raw), []);
+  assert.deepEqual(parseVariableDefsResponse(raw).defs, []);
 });
 
 test("parseVariableDefsResponse — infers boolean kind", () => {
   const raw = { "feature/enabled": true };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result[0].kind, "boolean");
   assert.equal(result[0].value, true);
 });
 
 test("parseVariableDefsResponse — infers color from hex string", () => {
   const raw = { "bg/main": "#1a1a1a" };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result[0].kind, "color");
 });
 
 test("parseVariableDefsResponse — infers color from rgba string", () => {
   const raw = { "overlay/bg": "rgba(0, 0, 0, 0.5)" };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result[0].kind, "color");
+});
+
+test("parseVariableDefsResponse — resolves single-hop alias by name", () => {
+  const raw = {
+    variables: [
+      { name: "color/alias/primary", aliasId: "color/base/500", type: "COLOR" },
+      {
+        name: "color/base/500",
+        resolvedValue: "#3B82F6",
+        type: "COLOR",
+      },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const alias = defs.find((v) => v.name === "color/alias/primary");
+  assert.ok(alias);
+  assert.equal(alias.kind, "color");
+  assert.equal(alias.value, "#3B82F6");
+});
+
+test("parseVariableDefsResponse — resolves multi-hop alias chain", () => {
+  const raw = {
+    variables: [
+      { name: "semantic/success", aliasId: "color/green/500", type: "COLOR" },
+      { name: "color/green/500", aliasId: "color/base/green", type: "COLOR" },
+      {
+        name: "color/base/green",
+        resolvedValue: "#10B981",
+        type: "COLOR",
+      },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const semantic = defs.find((v) => v.name === "semantic/success");
+  assert.ok(semantic);
+  assert.equal(semantic.value, "#10B981");
+});
+
+test("parseVariableDefsResponse — resolves alias by variable id", () => {
+  const raw = {
+    variables: [
+      {
+        name: "color/alias",
+        aliasId: "VariableID:12:34",
+        type: "COLOR",
+      },
+      {
+        id: "VariableID:12:34",
+        name: "color/primary",
+        resolvedValue: "#6366F1",
+        type: "COLOR",
+      },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const alias = defs.find((v) => v.name === "color/alias");
+  assert.ok(alias);
+  assert.equal(alias.value, "#6366F1");
+});
+
+test("parseVariableDefsResponse — emits alias_cycle conflict for circular aliases", () => {
+  const raw = {
+    variables: [
+      { name: "color/a", aliasId: "color/b", type: "COLOR" },
+      { name: "color/b", aliasId: "color/a", type: "COLOR" },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.ok(
+    conflicts.some((c) => c.kind === "alias_cycle" && c.name === "color/a"),
+    "expected alias_cycle conflict for color/a",
+  );
+  const cycled = defs.find((v) => v.name === "color/a");
+  assert.ok(cycled);
+  assert.equal(cycled.value, "");
+});
+
+test("parseVariableDefsResponse — gracefully handles unresolvable alias target", () => {
+  const raw = {
+    variables: [
+      { name: "color/orphan", aliasId: "color/nonexistent", type: "COLOR" },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const orphan = defs.find((v) => v.name === "color/orphan");
+  assert.ok(orphan);
+  assert.equal(orphan.value, "");
 });
 
 // ---------------------------------------------------------------------------
