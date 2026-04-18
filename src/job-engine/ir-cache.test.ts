@@ -390,6 +390,75 @@ test("saveCachedIr evicts stale entries once the cache exceeds the max size", as
   }
 });
 
+test("saveCachedIr evicts entries when total cache bytes exceed the configured limit", async () => {
+  clearLogs();
+  const cacheDir = await createTempDir();
+
+  try {
+    for (let index = 0; index < 3; index += 1) {
+      await saveCachedIr({
+        cacheDir,
+        contentHash: `${index.toString(16).padStart(2, "0")}`.repeat(32),
+        optionsHash: `${(index + 10).toString(16).padStart(2, "0")}`.repeat(32),
+        ttlMs: 60_000,
+        ir: createMinimalIr(4),
+        maxEntries: 500,
+        maxBytes: 1_500,
+        onLog
+      });
+    }
+
+    const entries = (await readdir(cacheDir)).filter((entry) => entry.endsWith(".json"));
+    assert.equal(entries.length < 3, true);
+    assert.ok(logs.some((log) => log.includes("IR cache eviction: removed")));
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("saveCachedIr evicts oldest entries when cache exceeds max bytes", async () => {
+  clearLogs();
+  const cacheDir = await createTempDir();
+
+  try {
+    const largeIr = {
+      ...createMinimalIr(),
+      screens: [
+        {
+          ...createMinimalIr().screens[0],
+          nodes: Array.from({ length: 80 }, (_, index) => ({
+            id: `node-${index}`,
+            type: "TEXT",
+            name: `Node ${index}`
+          }))
+        }
+      ]
+    };
+
+    for (let index = 0; index < 3; index += 1) {
+      const contentHash = `${index.toString(16).padStart(2, "0")}`.repeat(32);
+      const optionsHash = `${(index + 10).toString(16).padStart(2, "0")}`.repeat(32);
+      await saveCachedIr({
+        cacheDir,
+        contentHash,
+        optionsHash,
+        ttlMs: 60_000,
+        ir: largeIr,
+        maxEntries: 10,
+        maxBytes: 2_500,
+        onLog
+      });
+    }
+
+    const entries = (await readdir(cacheDir)).filter((entry) => entry.endsWith(".json"));
+    const sizes = await Promise.all(entries.map(async (entry) => (await stat(path.join(cacheDir, entry))).size));
+    assert.equal(sizes.reduce((sum, size) => sum + size, 0) <= 2_500, true);
+    assert.ok(logs.some((log) => log.includes("IR cache eviction: removed")));
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 // ── Round-trip: save + load ─────────────────────────────────────────────────
 
 test("round-trip: changed content hash produces cache miss", async () => {

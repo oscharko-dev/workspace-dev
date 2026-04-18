@@ -243,7 +243,8 @@ export class PipelineOrchestrator {
         logger: context.runtime.logger,
         level: "warn",
         stage,
-        message: `${error.code}: ${error.message}`
+        message: `${error.code}: ${error.message}`,
+        logLimit: context.runtime.logLimit
       });
       throw error;
     }
@@ -267,7 +268,8 @@ export class PipelineOrchestrator {
         logger: context.runtime.logger,
         level: "warn",
         stage,
-        message: `${cancellationError.code}: ${cancellationError.message}`
+        message: `${cancellationError.code}: ${cancellationError.message}`,
+        logLimit: context.runtime.logLimit
       });
       throw cancellationError;
     }
@@ -287,7 +289,8 @@ export class PipelineOrchestrator {
       logger: context.runtime.logger,
       level: "error",
       stage,
-      message: `${typedError.code}: ${typedError.message}`
+      message: `${typedError.code}: ${typedError.message}`,
+      logLimit: context.runtime.logLimit
     });
     throw typedError;
   }
@@ -313,10 +316,12 @@ export class PipelineOrchestrator {
       logger: context.runtime.logger,
       level: "info",
       stage,
-      message: `Starting stage '${stage}'.`
+      message: `Starting stage '${stage}'.`,
+      logLimit: context.runtime.logLimit
     });
 
     try {
+      await context.diskTracker.syncAndEnsureWithinLimit({ stage });
       const stageContext = createStageRuntimeContext({
         executionContext: context,
         stage
@@ -327,7 +332,9 @@ export class PipelineOrchestrator {
         requiredKeys: artifactContract.writes,
         stage
       });
+      await context.diskTracker.syncAndEnsureWithinLimit({ stage });
       await context.syncPublicJobProjection();
+      await context.diskTracker.syncAndEnsureWithinLimit({ stage });
       this.ensureStageNotCanceled({ context, stage });
       updateStage({ job: context.job, stage, status: "completed" });
       pushRuntimeLog({
@@ -335,7 +342,8 @@ export class PipelineOrchestrator {
         logger: context.runtime.logger,
         level: "info",
         stage,
-        message: `Completed stage '${stage}'.`
+        message: `Completed stage '${stage}'.`,
+        logLimit: context.runtime.logLimit
       });
     } catch (error) {
       this.handleStageError({
@@ -370,6 +378,7 @@ export class PipelineOrchestrator {
         stage
       });
       await context.syncPublicJobProjection();
+      await context.diskTracker.syncAndEnsureWithinLimit({ stage });
       this.ensureStageNotCanceled({ context, stage });
       updateStage({ job: context.job, stage, status: "skipped", message: reason });
       pushRuntimeLog({
@@ -377,7 +386,8 @@ export class PipelineOrchestrator {
         logger: context.runtime.logger,
         level: "info",
         stage,
-        message: reason
+        message: reason,
+        logLimit: context.runtime.logLimit
       });
     } catch (error) {
       this.handleStageError({

@@ -12,7 +12,8 @@ import type { FigmaFetchResult, FigmaFileResponse } from "./types.js";
 const MIN_SCREEN_WIDTH = 320;
 const MIN_SCREEN_HEIGHT = 480;
 const MAX_ERROR_BODY_CHARS = 500;
-const MAX_JSON_RESPONSE_BYTES = 64 * 1024 * 1024;
+// Keep icon recovery bounded internally to avoid pathological traversal cost on
+// malformed files; this is an algorithmic guardrail, not an operator knob.
 const MAX_ICON_RECOVERY_DESCENDANTS = 160;
 const ICON_RECOVERY_BATCH_SIZE = 20;
 const MAX_ICON_RECOVERY_DIMENSION = 96;
@@ -21,6 +22,8 @@ const LOW_FIDELITY_MIN_INSTANCE_COUNT = 12;
 const LOW_FIDELITY_MIN_EXPLICIT_COMPONENTS = 6;
 const LOW_FIDELITY_MIN_VECTOR_FALLBACKS = 2;
 const LOW_FIDELITY_MAX_TEXT_TO_INSTANCE_RATIO = 0.45;
+// Hybrid subtree application is intentionally capped to preserve deterministic
+// merge behavior and avoid turning hybrid mode into an unbounded fetch fan-out.
 const MAX_AUTHORITATIVE_SUBTREE_CANDIDATES = 8;
 const SCREEN_CANDIDATE_NAME_EXCLUDE_RE = /^(icon|icons|atom|atoms|component|components|_hidden)(\/|$)/i;
 const SCREEN_CANDIDATE_PAGE_EXCLUDE_RE = /\b(components|assets|icons|tokens|styles)\b/i;
@@ -291,12 +294,14 @@ const parseJsonWithByteLimit = async ({
   response,
   requestLabel,
   allowTooLargeFallback,
-  pipelineDiagnosticLimits
+  pipelineDiagnosticLimits,
+  maxJsonResponseBytes
 }: {
   response: Response;
   requestLabel: string;
   allowTooLargeFallback: boolean;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
+  maxJsonResponseBytes: number;
 }): Promise<unknown> => {
   const responseWithOptionalHeaders = response as {
     headers?: {
@@ -306,7 +311,7 @@ const parseJsonWithByteLimit = async ({
   const headers = responseWithOptionalHeaders.headers;
   const contentLengthRaw = typeof headers?.get === "function" ? headers.get("content-length") : null;
   const contentLength = contentLengthRaw ? Number.parseInt(contentLengthRaw, 10) : Number.NaN;
-  if (Number.isFinite(contentLength) && contentLength > MAX_JSON_RESPONSE_BYTES) {
+  if (Number.isFinite(contentLength) && contentLength > maxJsonResponseBytes) {
     if (allowTooLargeFallback) {
       throw new FigmaTooLargeError(
         `Figma response body exceeds byte limit (${requestLabel}, content-length=${contentLength}).`
@@ -341,7 +346,7 @@ const parseJsonWithByteLimit = async ({
       continue;
     }
     totalBytes += chunk.byteLength;
-    if (totalBytes > MAX_JSON_RESPONSE_BYTES) {
+    if (totalBytes > maxJsonResponseBytes) {
       await reader.cancel();
       if (allowTooLargeFallback) {
         throw new FigmaTooLargeError(
@@ -426,6 +431,7 @@ const executeFigmaRequest = async ({
   fetchImpl,
   onLog,
   allowTooLargeFallback,
+  maxJsonResponseBytes,
   figmaRestCircuitBreaker,
   pipelineDiagnosticLimits
 }: {
@@ -437,9 +443,14 @@ const executeFigmaRequest = async ({
   fetchImpl: typeof fetch;
   onLog: (message: string) => void;
   allowTooLargeFallback: boolean;
+  maxJsonResponseBytes?: number;
   figmaRestCircuitBreaker?: FigmaRestCircuitBreaker;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
 }): Promise<unknown> => {
+  const resolvedMaxJsonResponseBytes =
+    typeof maxJsonResponseBytes === "number" && Number.isFinite(maxJsonResponseBytes)
+      ? Math.max(1_024, Math.trunc(maxJsonResponseBytes))
+      : 64 * 1024 * 1024;
   const circuitDecision = figmaRestCircuitBreaker?.beforeRequest();
   if (circuitDecision && !circuitDecision.allowRequest) {
     throw toCircuitOpenError({
@@ -537,7 +548,8 @@ const executeFigmaRequest = async ({
           response,
           requestLabel,
           allowTooLargeFallback,
-          ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {})
+          ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {}),
+          maxJsonResponseBytes: resolvedMaxJsonResponseBytes
         });
         figmaRestCircuitBreaker?.recordSuccess();
         return payload;
@@ -2145,7 +2157,8 @@ export const fetchFigmaFile = async ({
   cacheEnabled,
   cacheTtlMs,
   cacheDir,
-  pipelineDiagnosticLimits
+  pipelineDiagnosticLimits,
+  maxJsonResponseBytes
 }: {
   fileKey: string;
   nodeId?: string;
@@ -2165,9 +2178,14 @@ export const fetchFigmaFile = async ({
   cacheTtlMs: number;
   cacheDir: string;
   pipelineDiagnosticLimits?: PipelineDiagnosticLimits;
+  maxJsonResponseBytes?: number;
 }): Promise<FigmaFetchResult> => {
   const resolvedCacheDir = cacheDir.trim();
   const normalizedNodeId = nodeId?.trim();
+  const resolvedMaxJsonResponseBytes =
+    typeof maxJsonResponseBytes === "number" && Number.isFinite(maxJsonResponseBytes)
+      ? Math.max(1_024, Math.trunc(maxJsonResponseBytes))
+      : 64 * 1024 * 1024;
 
   const finalizeResult = async (result: FigmaFetchResult): Promise<FigmaFetchResult> => {
     if (!normalizedNodeId) {
@@ -2210,13 +2228,14 @@ export const fetchFigmaFile = async ({
     try {
       const payload = await executeFigmaRequest({
         url: directUrl,
-        requestLabel: "files geometry=paths",
-        accessToken,
-        timeoutMs,
+      requestLabel: "files geometry=paths",
+      accessToken,
+      timeoutMs,
       maxRetries,
       fetchImpl,
       onLog,
       allowTooLargeFallback: true,
+      maxJsonResponseBytes: resolvedMaxJsonResponseBytes,
       ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {}),
       ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {})
       });
@@ -2732,6 +2751,7 @@ export const fetchFigmaFile = async ({
       fetchImpl,
       onLog,
       allowTooLargeFallback: false,
+      maxJsonResponseBytes: resolvedMaxJsonResponseBytes,
       ...(figmaRestCircuitBreaker ? { figmaRestCircuitBreaker } : {}),
       ...(pipelineDiagnosticLimits ? { pipelineDiagnosticLimits } : {})
     });

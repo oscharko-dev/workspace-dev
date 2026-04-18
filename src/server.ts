@@ -221,6 +221,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       : {}),
     ...(options.figmaCacheEnabled !== undefined ? { figmaCacheEnabled: options.figmaCacheEnabled } : {}),
     ...(options.figmaCacheTtlMs !== undefined ? { figmaCacheTtlMs: options.figmaCacheTtlMs } : {}),
+    ...(options.maxJsonResponseBytes !== undefined ? { maxJsonResponseBytes: options.maxJsonResponseBytes } : {}),
+    ...(options.maxIrCacheEntries !== undefined ? { maxIrCacheEntries: options.maxIrCacheEntries } : {}),
+    ...(options.maxIrCacheBytes !== undefined ? { maxIrCacheBytes: options.maxIrCacheBytes } : {}),
     ...(absoluteIconMapFilePath !== undefined ? { iconMapFilePath: absoluteIconMapFilePath } : {}),
     ...(absoluteDesignSystemFilePath !== undefined ? { designSystemFilePath: absoluteDesignSystemFilePath } : {}),
     ...(options.exportImages !== undefined ? { exportImages: options.exportImages } : {}),
@@ -254,6 +257,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.pipelineDiagnosticDetailsMaxDepth !== undefined
       ? { pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth }
       : {}),
+    ...(options.maxValidationAttempts !== undefined ? { maxValidationAttempts: options.maxValidationAttempts } : {}),
     ...(options.enableLintAutofix !== undefined ? { enableLintAutofix: options.enableLintAutofix } : {}),
     ...(options.enablePerfValidation !== undefined ? { enablePerfValidation: options.enablePerfValidation } : {}),
     ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
@@ -285,6 +289,8 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.skipInstall !== undefined ? { skipInstall: options.skipInstall } : {}),
     ...(options.maxConcurrentJobs !== undefined ? { maxConcurrentJobs: options.maxConcurrentJobs } : {}),
     ...(options.maxQueuedJobs !== undefined ? { maxQueuedJobs: options.maxQueuedJobs } : {}),
+    ...(options.logLimit !== undefined ? { logLimit: options.logLimit } : {}),
+    ...(options.maxJobDiskBytes !== undefined ? { maxJobDiskBytes: options.maxJobDiskBytes } : {}),
     ...(options.logFormat !== undefined ? { logFormat: options.logFormat } : {}),
     ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
     ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})

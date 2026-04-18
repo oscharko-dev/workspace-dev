@@ -10,7 +10,9 @@ import type { DesignIR } from "../parity/types.js";
 import { getErrorMessage } from "./errors.js";
 
 const IR_CACHE_ENTRY_VERSION = 1;
-const MAX_IR_CACHE_ENTRIES = 50;
+const DEFAULT_MAX_IR_CACHE_ENTRIES = 50;
+// Keep the shared IR cache bounded even when individual entries are unusually large.
+const DEFAULT_MAX_IR_CACHE_BYTES = 128 * 1024 * 1024;
 
 export interface IrCacheEntry {
   version: number;
@@ -184,6 +186,8 @@ export const saveCachedIr = async ({
   optionsHash,
   ttlMs,
   ir,
+  maxEntries = DEFAULT_MAX_IR_CACHE_ENTRIES,
+  maxBytes = DEFAULT_MAX_IR_CACHE_BYTES,
   onLog,
   onDebugLog
 }: {
@@ -192,6 +196,8 @@ export const saveCachedIr = async ({
   optionsHash: string;
   ttlMs: number;
   ir: DesignIR;
+  maxEntries?: number;
+  maxBytes?: number;
   onLog: (message: string) => void;
   onDebugLog?: (message: string) => void;
 }): Promise<void> => {
@@ -220,6 +226,8 @@ export const saveCachedIr = async ({
     await evictStaleCacheEntries({
       cacheDir,
       ttlMs,
+      maxEntries,
+      maxBytes,
       onLog,
       ...(onDebugLog ? { onDebugLog } : {})
     });
@@ -236,11 +244,15 @@ export const saveCachedIr = async ({
 const evictStaleCacheEntries = async ({
   cacheDir,
   ttlMs,
+  maxEntries,
+  maxBytes,
   onLog,
   onDebugLog
 }: {
   cacheDir: string;
   ttlMs: number;
+  maxEntries: number;
+  maxBytes: number;
   onLog: (message: string) => void;
   onDebugLog?: (message: string) => void;
 }): Promise<void> => {
@@ -258,16 +270,13 @@ const evictStaleCacheEntries = async ({
   }
 
   const irEntries = entries.filter((name) => name.startsWith("ir-") && name.endsWith(".json"));
-  if (irEntries.length <= MAX_IR_CACHE_ENTRIES) {
-    return;
-  }
 
   const withStats = await Promise.all(
     irEntries.map(async (name) => {
       const filePath = path.join(cacheDir, name);
       try {
         const fileStat = await stat(filePath);
-        return { name, filePath, mtimeMs: fileStat.mtimeMs };
+        return { name, filePath, mtimeMs: fileStat.mtimeMs, size: fileStat.size };
       } catch (error) {
         emitIrCacheDebugLog({
           operation: "evictStaleCacheEntries.stat",
@@ -275,7 +284,7 @@ const evictStaleCacheEntries = async ({
           details: `cacheDir='${cacheDir}'; filePath='${filePath}'`,
           ...(onDebugLog ? { onDebugLog } : {})
         });
-        return { name, filePath, mtimeMs: 0 };
+        return { name, filePath, mtimeMs: 0, size: 0 };
       }
     })
   );
@@ -284,15 +293,20 @@ const evictStaleCacheEntries = async ({
 
   const now = Date.now();
   let evictedCount = 0;
+  let totalBytes = withStats.reduce((sum, entry) => sum + entry.size, 0);
   for (const entry of withStats) {
-    if (irEntries.length - evictedCount <= MAX_IR_CACHE_ENTRIES) {
+    const remainingEntries = irEntries.length - evictedCount;
+    const overEntryLimit = remainingEntries > maxEntries;
+    const overByteLimit = totalBytes > maxBytes;
+    if (!overEntryLimit && !overByteLimit) {
       break;
     }
     const age = now - entry.mtimeMs;
-    if (age > ttlMs || irEntries.length - evictedCount > MAX_IR_CACHE_ENTRIES) {
+    if (age > ttlMs || overEntryLimit || overByteLimit) {
       try {
         await unlink(entry.filePath);
         evictedCount++;
+        totalBytes = Math.max(0, totalBytes - entry.size);
       } catch (error) {
         emitIrCacheDebugLog({
           operation: "evictStaleCacheEntries.unlink",

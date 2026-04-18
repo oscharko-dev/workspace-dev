@@ -45,3 +45,32 @@ test("pushRuntimeLog persists debug entries to the job log stream", () => {
     },
   ]);
 });
+
+test("pushRuntimeLog honors configured logLimit", () => {
+  const job = {
+    jobId: "job-log-limit",
+    status: "queued",
+    submittedAt: new Date().toISOString(),
+    request: {} as JobRecord["request"],
+    stages: createInitialStages(),
+    logs: [],
+    artifacts: {},
+    preview: { enabled: false },
+    queue: { position: 0, ahead: 0 },
+  } as JobRecord;
+
+  for (const message of ["one", "two", "three"]) {
+    pushRuntimeLog({
+      job,
+      logger: { log: () => {} },
+      level: "info",
+      message,
+      logLimit: 2,
+    });
+  }
+
+  assert.deepEqual(
+    job.logs.map((entry) => entry.message),
+    ["two", "three"],
+  );
+});

@@ -2995,6 +2995,7 @@ export const createValidateProjectService = ({
           installPreferOffline: context.runtime.installPreferOffline,
           skipInstall: context.runtime.skipInstall,
           lockfileMutable: hasCustomerProfileDeps,
+          maxValidationAttempts: context.runtime.maxValidationAttempts,
           pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
           seedNodeModulesDir: path.join(
             context.paths.templateRoot,

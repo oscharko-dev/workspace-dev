@@ -23,6 +23,7 @@ import { createStageRuntimeContext, type PipelineExecutionContext, type StageRun
 import { syncPublicJobProjection } from "../pipeline/public-job-projection.js";
 import { loadPreviousSnapshot, saveCurrentSnapshot, type GenerationDiffContext } from "../generation-diff.js";
 import { computeContentHash, computeOptionsHash, saveCachedIr } from "../ir-cache.js";
+import { JobDiskTracker } from "../disk-tracker.js";
 import { StageArtifactStore } from "../pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
 import { createPasteFingerprintStore } from "../paste-fingerprint-store.js";
@@ -1709,6 +1710,12 @@ const createExecutionContext = async ({
     requestOverrides
   });
   const artifactStore = new StageArtifactStore({ jobDir });
+  const diskTracker = new JobDiskTracker({
+    roots: [jobDir, path.join(root, "repros", jobId)],
+    limitBytes: runtime.maxJobDiskBytes,
+    limits: runtime.pipelineDiagnosticLimits
+  });
+  await diskTracker.sync();
   const resolvedBrandTheme = (job.request.brandTheme ?? "derived") as WorkspaceBrandTheme;
   const resolvedFigmaSourceMode = (job.request.figmaSourceMode ?? "local_json") as WorkspaceFigmaSourceMode;
   const resolvedFormHandlingMode = (job.request.formHandlingMode ?? "react_hook_form") as WorkspaceFormHandlingMode;
@@ -1743,6 +1750,7 @@ const createExecutionContext = async ({
       templateCopyFilter: () => true
     },
     artifactStore,
+    diskTracker,
     resolvedBrandTheme,
     resolvedFigmaSourceMode,
     resolvedFormHandlingMode,

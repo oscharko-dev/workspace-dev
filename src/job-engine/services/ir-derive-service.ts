@@ -1533,6 +1533,8 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         optionsHash,
         ttlMs: context.runtime.irCacheTtlMs,
         ir: derived,
+        maxEntries: context.runtime.maxIrCacheEntries,
+        maxBytes: context.runtime.maxIrCacheBytes,
         onLog: irCacheLog,
       });
     }

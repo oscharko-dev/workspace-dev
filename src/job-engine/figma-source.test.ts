@@ -577,6 +577,27 @@ test("fetchFigmaFile does not retry true malformed JSON parse errors", async () 
   assert.equal(call, 1);
 });
 
+test("fetchFigmaFile honors configured maxJsonResponseBytes", async () => {
+  let callCount = 0;
+  const result = await fetchFigmaFile({
+    ...createRequest(async (url) => {
+      callCount += 1;
+      const asString = String(url);
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response(JSON.stringify({ document: { id: "1:1", type: "DOCUMENT", children: [] } }), {
+          status: 200,
+          headers: { "content-type": "application/json", "content-length": "2048" }
+        });
+      }
+      return jsonResponse(createBootstrapDocument());
+    }),
+    maxJsonResponseBytes: 1_024
+  });
+
+  assert.equal(result.diagnostics.sourceMode, "staged-nodes");
+  assert.equal(callCount > 1, true);
+});
+
 test("fetchFigmaFile falls back to staged fetch when direct request is too large", async () => {
   const fetchImpl: typeof fetch = async (url) => {
     const asString = String(url);

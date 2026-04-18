@@ -93,6 +93,7 @@ import type { DesignIR } from "./parity/types-ir.js";
 import { isSecuritySensitiveImport } from "./job-engine/import-governance.js";
 import { StageArtifactStore } from "./job-engine/pipeline/artifact-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./job-engine/pipeline/artifact-keys.js";
+import { JobDiskTracker } from "./job-engine/disk-tracker.js";
 import {
   PipelineOrchestrator,
   isPipelineCancellationError,
@@ -2168,6 +2169,7 @@ export const createJobEngine = ({
     input: SubmissionJobInput,
   ): Promise<void> => {
     job.status = "running";
+    job.logLimit = runtime.logLimit;
     job.startedAt = nowIso();
     const jobAbortController = new AbortController();
     job.abortController = jobAbortController;
@@ -2282,6 +2284,12 @@ export const createJobEngine = ({
       await mkdir(jobDir, { recursive: true });
       await mkdir(resolvedPaths.jobsRoot, { recursive: true });
       await mkdir(resolvedPaths.reprosRoot, { recursive: true });
+      const diskTracker = new JobDiskTracker({
+        roots: [jobDir, reproDir],
+        limitBytes: runtime.maxJobDiskBytes,
+        limits: runtime.pipelineDiagnosticLimits
+      });
+      await diskTracker.sync();
 
       const storybookActivation = activateSubmissionStorybookStaticDir({
         job,
@@ -2329,6 +2337,7 @@ export const createJobEngine = ({
           templateCopyFilter: TEMPLATE_COPY_FILTER,
         },
         artifactStore,
+        diskTracker,
         resolvedBrandTheme,
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
         resolvedFigmaSourceMode,
@@ -2761,6 +2770,7 @@ export const createJobEngine = ({
     regenInput: WorkspaceRegenerationInput,
   ): Promise<void> => {
     job.status = "running";
+    job.logLimit = runtime.logLimit;
     job.startedAt = nowIso();
     const jobAbortController = new AbortController();
     job.abortController = jobAbortController;
@@ -2923,6 +2933,11 @@ export const createJobEngine = ({
           templateCopyFilter: TEMPLATE_COPY_FILTER,
         },
         artifactStore,
+        diskTracker: new JobDiskTracker({
+          roots: [jobDir, reproDir],
+          limitBytes: runtime.maxJobDiskBytes,
+          limits: runtime.pipelineDiagnosticLimits
+        }),
         resolvedBrandTheme,
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
         resolvedFigmaSourceMode,
@@ -2944,6 +2959,7 @@ export const createJobEngine = ({
                 sourceRecord.request.figmaFileKey.trim(),
             }),
       };
+      await context.diskTracker.sync();
 
       const orchestrator = new PipelineOrchestrator({
         toPipelineError: ({ error, fallbackStage }) =>
@@ -3133,6 +3149,7 @@ export const createJobEngine = ({
     }
 
     job.status = "running";
+    job.logLimit = runtime.logLimit;
     job.startedAt = nowIso();
     const jobAbortController = new AbortController();
     job.abortController = jobAbortController;
@@ -3286,6 +3303,11 @@ export const createJobEngine = ({
           templateCopyFilter: TEMPLATE_COPY_FILTER,
         },
         artifactStore,
+        diskTracker: new JobDiskTracker({
+          roots: [jobDir, reproDir],
+          limitBytes: runtime.maxJobDiskBytes,
+          limits: runtime.pipelineDiagnosticLimits
+        }),
         resolvedBrandTheme,
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
         resolvedFigmaSourceMode,
@@ -3301,6 +3323,7 @@ export const createJobEngine = ({
         },
         ...(figmaFileKeyForDiagnostics ? { figmaFileKeyForDiagnostics } : {}),
       };
+      await context.diskTracker.sync();
 
       const orchestrator = new PipelineOrchestrator({
         toPipelineError: ({ error, fallbackStage }) =>
