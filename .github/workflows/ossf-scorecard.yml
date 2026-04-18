@@ -31,9 +31,9 @@ jobs:
         with:
           results_file: scorecard-results.sarif
           results_format: sarif
-          # Publish SARIF to GitHub with the required write scopes limited
-          # to this analysis job instead of the entire workflow.
-          publish_results: true
+          # Publish only from the default branch; manual runs on other
+          # branches still generate SARIF and artifacts without publishing.
+          publish_results: ${{ github.ref == 'refs/heads/dev' }}
 
       - name: Upload Scorecard SARIF
         if: github.event_name != 'push'
