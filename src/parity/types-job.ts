@@ -368,7 +368,7 @@ export interface JobMetrics {
 export interface JobEvent {
   timestamp: string;
   type: JobEventType;
-  level: "info" | "warn" | "error";
+  level: "debug" | "info" | "warn" | "error";
   jobId: string;
   requestId?: string;
   stage?: string;

@@ -2124,9 +2124,10 @@ export const createJobEngine = ({
       boardKey,
       jobId: job.jobId,
       onLog: (message) => {
-        runtime.logger.log({
+        pushRuntimeLog({
+          job,
+          logger: runtime.logger,
           level: "debug",
-          jobId: job.jobId,
           stage: "codegen.generate",
           message,
         });

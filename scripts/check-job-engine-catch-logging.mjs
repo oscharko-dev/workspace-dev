@@ -51,6 +51,9 @@ const hasObviousLoggingCall = (node) => {
     if (found) {
       return;
     }
+    if (current !== node && (ts.isFunctionLike(current) || ts.isClassLike(current))) {
+      return;
+    }
     if (ts.isCallExpression(current)) {
       const callName = getCallExpressionName(current);
       if (callName && LOG_CALL_PATTERNS.some((pattern) => pattern.test(callName))) {

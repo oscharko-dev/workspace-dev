@@ -69,7 +69,7 @@
     "test:customer-board:live": "pnpm exec tsx --test integration/customer-board-golden.live.test.ts",
     "test:customer-board:update": "FIGMAPIPE_CUSTOMER_BOARD_APPROVE=true pnpm exec tsx integration/customer-board-golden.update.ts",
     "test:smoke:compile": "node scripts/check-source-compile-smoke.mjs",
-    "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "test:scripts": "node --test \"scripts/*.test.mjs\" && pnpm run lint:job-engine-catch-logging",
     "test:dast-smoke": "pnpm exec tsx --test src/server/dast-smoke.e2e.test.ts",
     "test:ci": "pnpm run test",
     "test:flaky-retry": "node scripts/run-test-with-flaky-retry.mjs",
