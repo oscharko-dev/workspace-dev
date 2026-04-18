@@ -186,14 +186,44 @@ describe("pastePipelineReducer", () => {
     });
     state = dispatch(state, {
       type: "stage_done",
+      stage: "extracting",
+      durationMs: 10,
+    });
+    state = dispatch(state, {
+      type: "stage_done",
       stage: "transforming",
       durationMs: 10,
     });
 
     expect(state.stage).toBe("mapping");
     expect(state.stageProgress.resolving.state).toBe("done");
+    expect(state.stageProgress.extracting.state).toBe("done");
     expect(state.stageProgress.transforming.state).toBe("done");
     expect(state.progress).toBeGreaterThan(0);
+  });
+
+  it("inserts extracting between resolving and transforming in the active stage order", () => {
+    let state = dispatch(createInitialPipelineState(), { type: "start" });
+    state = dispatch(state, { type: "parsing_done" });
+    state = dispatch(state, {
+      type: "stage_done",
+      stage: "resolving",
+      durationMs: 5,
+    });
+
+    expect(state.stage).toBe("extracting");
+    expect(state.stageProgress.resolving.state).toBe("done");
+    expect(state.stageProgress.extracting.state).toBe("running");
+
+    state = dispatch(state, {
+      type: "stage_done",
+      stage: "extracting",
+      durationMs: 7,
+    });
+
+    expect(state.stage).toBe("transforming");
+    expect(state.stageProgress.extracting.state).toBe("done");
+    expect(state.stageProgress.transforming.state).toBe("running");
   });
 
   it("stores final artifacts before ready", () => {

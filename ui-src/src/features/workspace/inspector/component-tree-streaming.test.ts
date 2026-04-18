@@ -41,6 +41,7 @@ const ALL_STAGES: readonly PipelineStage[] = [
   "idle",
   "parsing",
   "resolving",
+  "extracting",
   "transforming",
   "mapping",
   "generating",
@@ -473,8 +474,13 @@ describe("buildTreeFromIR", () => {
     expect(findNode(tree, "header")!.pipelineStatus).toBeUndefined();
   });
 
-  it("does NOT set mappingStatus for parsing/resolving/transforming stages even with manifest", () => {
-    for (const stage of ["parsing", "resolving", "transforming"] as const) {
+  it("does NOT set mappingStatus for parsing/resolving/extracting/transforming stages even with manifest", () => {
+    for (const stage of [
+      "parsing",
+      "resolving",
+      "extracting",
+      "transforming",
+    ] as const) {
       const pipeline = makePipeline({
         stage,
         designIR: makeDesignIR() as DesignIrPayload,
@@ -518,6 +524,7 @@ describe("buildTreeFromIR", () => {
     for (const stage of [
       "parsing",
       "resolving",
+      "extracting",
       "transforming",
       "mapping",
       "ready",
@@ -537,6 +544,7 @@ describe("buildTreeFromIR", () => {
       "idle",
       "parsing",
       "resolving",
+      "extracting",
       "transforming",
       "mapping",
       "generating",

@@ -264,10 +264,9 @@ describe("PipelineStatusBar — paste delta summary", () => {
       }),
     });
 
-    expect(screen.getByTestId("pipeline-status-bar-paste-delta")).toHaveAttribute(
-      "title",
-      "3 of 10 nodes reused",
-    );
+    expect(
+      screen.getByTestId("pipeline-status-bar-paste-delta"),
+    ).toHaveAttribute("title", "3 of 10 nodes reused");
   });
 
   it("hides detail and falls back to 'Paste summary unavailable' when totalNodes is 0", () => {
@@ -324,6 +323,7 @@ describe("PipelineStatusBar — details toggle", () => {
   it("shows per-stage status icons for all backend stages when expanded", () => {
     const stageProgress = baseStageProgress({
       resolving: { state: "done", duration: 120 },
+      extracting: { state: "pending" },
       transforming: { state: "running" },
       mapping: { state: "failed" },
       generating: { state: "pending" },
@@ -335,6 +335,7 @@ describe("PipelineStatusBar — details toggle", () => {
 
     const panel = screen.getByTestId("pipeline-status-bar-details");
     expect(panel).toHaveTextContent("Resolving");
+    expect(panel).toHaveTextContent("Extracting");
     expect(panel).toHaveTextContent("Transforming");
     expect(panel).toHaveTextContent("Mapping");
     expect(panel).toHaveTextContent("Generating");
