@@ -156,6 +156,9 @@ test("summarizeFigmaPayloadValidationError includes first path and issue count",
   const summary = summarizeFigmaPayloadValidationError({ error: result.error });
   assert.match(summary, /^document\.id:/);
   assert.match(summary, /\+\d+ more issues?/);
+  assert.equal(result.error.truncated, false);
+  assert.equal(result.error.maxIssues, 128);
+  assert.equal(result.error.omittedIssueCount, 0);
 });
 
 test("safeParseFigmaPayload reports deeply nested missing id with exact path", () => {
@@ -199,7 +202,7 @@ test("safeParseFigmaPayload reports deeply nested missing id with exact path", (
   );
 });
 
-test("safeParseFigmaPayload caps issues at MAX_VALIDATION_ISSUES and summary reports overflow", () => {
+test("safeParseFigmaPayload exposes truncation metadata and summary reports omitted issue count", () => {
   const badChildren = Array.from({ length: 250 }, () => null);
   const result = safeParseFigmaPayload({
     input: {
@@ -217,14 +220,17 @@ test("safeParseFigmaPayload caps issues at MAX_VALIDATION_ISSUES and summary rep
     return;
   }
 
-  assert.equal(result.error.issues.length <= 128, true);
-  assert.equal(result.error.issues.length > 0, true);
+  assert.equal(result.error.issues.length, 128);
+  assert.equal(result.error.truncated, true);
+  assert.equal(result.error.maxIssues, 128);
+  assert.equal(result.error.omittedIssueCount, 122);
 
   const summary = summarizeFigmaPayloadValidationError({ error: result.error });
-  assert.match(summary, /\+\d+ more issues?/);
-  const overflowMatch = summary.match(/\+(\d+) more issues?/);
+  assert.match(summary, /\+\d+ more issues?; \d+ omitted after cap 128\)$/);
+  const overflowMatch = summary.match(/\+(\d+) more issues?; (\d+) omitted after cap 128\)$/);
   assert.ok(overflowMatch);
-  assert.equal(Number(overflowMatch![1]) > 0, true);
+  assert.equal(Number(overflowMatch[1]), 127);
+  assert.equal(Number(overflowMatch[2]), 122);
 });
 
 test("safeParseFigmaPayload reports non-object absoluteBoundingBox with exact path", () => {
