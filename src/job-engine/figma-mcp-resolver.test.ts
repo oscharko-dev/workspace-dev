@@ -720,6 +720,60 @@ test("REST screenshot fallback provides preview when MCP falls back to REST", as
   );
 });
 
+test("REST screenshot fallback provides preview when MCP design context succeeds but MCP screenshot fails", async () => {
+  clearResolverCache();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com") {
+      if (url.includes("/images/")) {
+        return jsonResponse({
+          images: { "1:2": "https://cdn.figma.com/rest-shot.png" },
+        });
+      }
+      return jsonResponse(
+        mcpRestNodes("1:2", { type: "FRAME", name: "Screen" }),
+      );
+    }
+
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml: '<FRAME id="1:2" name="Screen"/>' }));
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return new Response("server error", { status: 500 });
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    { ...createConfig(fetchImpl), maxRetries: 1 },
+  );
+
+  assert.equal(result.screenshot, "https://cdn.figma.com/rest-shot.png");
+  assert.equal(result.fallbackMode, "none");
+  assert.ok(
+    (result.diagnostics ?? []).some(
+      (entry) => entry.code === "W_MCP_SCREENSHOT_FALLBACK_REST",
+    ),
+    `Expected W_MCP_SCREENSHOT_FALLBACK_REST diagnostic, got: ${JSON.stringify(
+      (result.diagnostics ?? []).map((d) => d.code),
+    )}`,
+  );
+});
+
 test("REST fallback does not forward ISO lastModified timestamps as version query params", async () => {
   clearResolverCache();
 

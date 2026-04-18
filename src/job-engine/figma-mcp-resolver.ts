@@ -1579,7 +1579,7 @@ export const resolveFigmaDesignContext = async (
         );
       }
 
-      if (!screenshotUrl && restFallbackUsed) {
+      if (!screenshotUrl) {
         try {
           screenshotUrl = await fetchScreenshotViaRest({
             fileKey: meta.fileKey,
