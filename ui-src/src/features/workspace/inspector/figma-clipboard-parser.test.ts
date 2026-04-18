@@ -2,11 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import {
-  extractFigmaNodeId,
-  isFigmaClipboard,
-  parseFigmaClipboard,
-} from "./figma-clipboard-parser";
+import { isFigmaClipboard, parseFigmaClipboard } from "./figma-clipboard-parser";
 import type { FigmaMeta } from "./figma-clipboard-parser";
 
 const fixtureRoot = path.resolve(
@@ -328,65 +324,5 @@ describe("parseFigmaClipboard — malformed Figma HTML", () => {
     const n = btoa("null");
     const html = `<span data-metadata="<!--(figmeta)${n}(/figmeta)-->"></span>`;
     expect(parseFigmaClipboard(html)).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// extractFigmaNodeId
-// ---------------------------------------------------------------------------
-
-describe("extractFigmaNodeId", () => {
-  it("returns null for scene payloads without MCP-backed mapping", () => {
-    const result = extractFigmaNodeId({
-      fileKey: "abc",
-      pasteID: 42,
-      dataType: "scene",
-    });
-    expect(result).toBeNull();
-  });
-
-  it("returns null for non-scene dataType", () => {
-    const result = extractFigmaNodeId({
-      fileKey: "abc",
-      pasteID: 42,
-      dataType: "component_set",
-    });
-    expect(result).toBeNull();
-  });
-
-  it("returns null for NaN pasteID", () => {
-    const result = extractFigmaNodeId({
-      fileKey: "abc",
-      pasteID: NaN,
-      dataType: "scene",
-    });
-    expect(result).toBeNull();
-  });
-
-  it("returns null for Infinity pasteID", () => {
-    const result = extractFigmaNodeId({
-      fileKey: "abc",
-      pasteID: Infinity,
-      dataType: "scene",
-    });
-    expect(result).toBeNull();
-  });
-
-  it("handles zero pasteID", () => {
-    const result = extractFigmaNodeId({
-      fileKey: "abc",
-      pasteID: 0,
-      dataType: "scene",
-    });
-    expect(result).toBeNull();
-  });
-
-  it("handles large pasteID", () => {
-    const result = extractFigmaNodeId({
-      fileKey: "abc",
-      pasteID: 999999999,
-      dataType: "scene",
-    });
-    expect(result).toBeNull();
   });
 });

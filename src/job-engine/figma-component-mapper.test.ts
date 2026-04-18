@@ -53,7 +53,9 @@ const parseTool = async (req: Request): Promise<string> => {
 };
 
 const parseArgs = async (req: Request): Promise<Record<string, unknown>> => {
-  const body = (await req.json()) as { params?: { arguments?: Record<string, unknown> } };
+  const body = (await req.json()) as {
+    params?: { arguments?: Record<string, unknown> };
+  };
   return body.params?.arguments ?? {};
 };
 
@@ -1094,12 +1096,146 @@ test("resolveComponentMappings searches the design system using candidate compon
     fileKey: "abc123",
     nodeId: "0:1",
     mcpConfig: createConfig(fetchImpl),
-    ir: makeIR([
-      makeInstanceNode({ id: "2:1", name: "Button/Primary" }),
-    ]),
+    ir: makeIR([makeInstanceNode({ id: "2:1", name: "Button/Primary" })]),
   });
 
   assert.deepEqual(queries, ["Button/Primary", "Button"]);
+});
+
+test("resolveComponentMappings promotes design-system match as first-class mapping (#1096)", async () => {
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [{ name: "Card", key: "card-key", libraryKey: "lib-1" }],
+        }),
+      );
+    }
+    if (tool === "get_code_connect_suggestions") return jsonResponse(mcpOk({}));
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    rawFile: makeRawFile([
+      { id: "2:2", type: "INSTANCE", name: "Card", componentId: "card" },
+    ]),
+  });
+
+  // Design-system match promoted into canonical mappings
+  const mapping = result.mappings.get("2:2");
+  assert.ok(mapping, "design-system match must appear in result.mappings");
+  assert.equal(mapping.confidence, "design_system");
+  assert.equal(mapping.name, "Card");
+
+  // Matched node MUST NOT appear in unmapped
+  assert.ok(
+    !result.unmapped.some((entry) => entry.irNodeId === "2:2"),
+    "design-system matched node must not appear in unmapped",
+  );
+
+  // Stats are mutually exclusive per node
+  assert.equal(result.stats.designSystem, 1);
+  assert.equal(result.stats.unmapped, 0);
+  assert.equal(result.stats.suggested, 0);
+  assert.equal(result.designSystemMappings.length, 1);
+});
+
+test("resolveComponentMappings never lists a node as both design-system matched and unmapped (#1096)", async () => {
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [
+            { name: "Card", key: "card-key" },
+            { name: "Button", key: "button-key" },
+          ],
+        }),
+      );
+    }
+    if (tool === "get_code_connect_suggestions") return jsonResponse(mcpOk({}));
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    rawFile: makeRawFile([
+      { id: "2:2", type: "INSTANCE", name: "Card", componentId: "card" },
+      { id: "3:3", type: "INSTANCE", name: "Button", componentId: "button" },
+      { id: "4:4", type: "INSTANCE", name: "Unknown", componentId: "unknown" },
+    ]),
+  });
+
+  const mappedIds = new Set(result.mappings.keys());
+  const unmappedIds = new Set(result.unmapped.map((entry) => entry.irNodeId));
+  const dsMatchedIds = new Set(
+    result.designSystemMappings.map((mapping) => mapping.nodeId),
+  );
+
+  for (const nodeId of dsMatchedIds) {
+    assert.ok(
+      !unmappedIds.has(nodeId),
+      `node ${nodeId} must not be both design-system matched and unmapped`,
+    );
+    assert.ok(
+      mappedIds.has(nodeId),
+      `node ${nodeId} must be promoted into result.mappings`,
+    );
+  }
+
+  // Unknown node has no DS match and should remain unmapped
+  assert.ok(unmappedIds.has("4:4"));
+});
+
+test("resolveComponentMappings upgrades design-system match to heuristic when workspace match exists", async () => {
+  const dir = await createTempDir();
+  const srcDir = path.join(dir, "src");
+  await mkdir(srcDir, { recursive: true });
+  await writeFile(
+    path.join(srcDir, "Card.tsx"),
+    "export const Card = () => null;",
+    "utf8",
+  );
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const tool = await parseTool(new Request(input, init));
+    if (tool === "get_code_connect_map") return jsonResponse(mcpOk({}));
+    if (tool === "search_design_system") {
+      return jsonResponse(
+        mcpOk({ components: [{ name: "Card", key: "card-key" }] }),
+      );
+    }
+    if (tool === "get_code_connect_suggestions") return jsonResponse(mcpOk({}));
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    workspaceRoot: dir,
+    rawFile: makeRawFile([
+      { id: "2:2", type: "INSTANCE", name: "Card", componentId: "card" },
+    ]),
+  });
+
+  const mapping = result.mappings.get("2:2");
+  assert.ok(mapping);
+  assert.equal(mapping.confidence, "heuristic");
+  assert.equal(mapping.source, "src/Card.tsx");
+  // Design-system match is still surfaced for downstream consumers
+  assert.equal(result.designSystemMappings.length, 1);
+  assert.equal(result.stats.heuristic, 1);
+  assert.equal(result.stats.designSystem, 0);
+  assert.equal(result.stats.unmapped, 0);
 });
 
 test("resolveComponentMappings handles all MCP failures gracefully", async () => {
@@ -1252,10 +1388,7 @@ test("resolveComponentMappings keeps lightweight suggestions pending for confirm
   assert.equal(result.mappings.has("7:8"), false);
   assert.equal(result.unmapped.length, 1);
   assert.equal(result.unmapped[0]?.suggestions?.[0]?.name, "Tooltip");
-  assert.equal(
-    result.unmapped[0]?.suggestions?.[0]?.source,
-    "figma-node:7:8",
-  );
+  assert.equal(result.unmapped[0]?.suggestions?.[0]?.source, "figma-node:7:8");
   assert.equal(result.unmapped[0]?.suggestions?.[0]?.confidence, "suggested");
 });
 

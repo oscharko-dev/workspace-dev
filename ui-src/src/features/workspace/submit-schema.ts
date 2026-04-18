@@ -8,6 +8,22 @@ export const FIGMA_PASTE_MAX_LABEL = `${
   FIGMA_PASTE_MAX_BYTES / (1024 * 1024)
 } MiB`;
 
+export const WORKSPACE_FIGMA_SOURCE_MODES = [
+  "rest",
+  "hybrid",
+  "local_json",
+  "figma_paste",
+  "figma_plugin",
+] as const;
+
+export type WorkspaceFigmaSourceMode =
+  (typeof WORKSPACE_FIGMA_SOURCE_MODES)[number];
+
+const INLINE_FIGMA_SOURCE_MODES = new Set<WorkspaceFigmaSourceMode>([
+  "figma_paste",
+  "figma_plugin",
+]);
+
 export const workspaceSubmitSchema = z
   .object({
     figmaFileKey: optionalString,
@@ -16,9 +32,7 @@ export const workspaceSubmitSchema = z
     figmaJsonPayload: optionalString,
     storybookStaticDir: optionalString,
     customerProfilePath: optionalString,
-    figmaSourceMode: z
-      .enum(["rest", "hybrid", "local_json", "figma_paste"])
-      .default("rest"),
+    figmaSourceMode: z.enum(WORKSPACE_FIGMA_SOURCE_MODES).default("rest"),
     enableGitPr: z.boolean(),
     repoUrl: optionalString,
     repoToken: optionalString,
@@ -26,12 +40,16 @@ export const workspaceSubmitSchema = z
     targetPath: optionalString,
   })
   .superRefine((value, context) => {
-    if (value.figmaSourceMode === "figma_paste") {
+    const isInlineFigmaSourceMode = INLINE_FIGMA_SOURCE_MODES.has(
+      value.figmaSourceMode,
+    );
+
+    if (isInlineFigmaSourceMode) {
       if (!value.figmaJsonPayload || !value.figmaJsonPayload.trim()) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["figmaJsonPayload"],
-          message: "Figma JSON payload is required for figma_paste mode.",
+          message: `Figma JSON payload is required for ${value.figmaSourceMode} mode.`,
         });
       } else if (
         new TextEncoder().encode(value.figmaJsonPayload).length >
@@ -43,10 +61,7 @@ export const workspaceSubmitSchema = z
           message: `Figma JSON payload must be ${FIGMA_PASTE_MAX_LABEL} or less.`,
         });
       }
-      return;
-    }
-
-    if (value.figmaSourceMode === "local_json") {
+    } else if (value.figmaSourceMode === "local_json") {
       if (!value.figmaJsonPath || !value.figmaJsonPath.trim()) {
         context.addIssue({
           code: z.ZodIssueCode.custom,
@@ -107,11 +122,7 @@ export interface WorkspaceSubmitPayload {
   enableGitPr: boolean;
   projectName?: string | undefined;
   targetPath?: string | undefined;
-  figmaSourceMode:
-    | "rest"
-    | "hybrid"
-    | "local_json"
-    | "figma_paste";
+  figmaSourceMode: WorkspaceFigmaSourceMode;
   llmCodegenMode: "deterministic";
 }
 
@@ -149,9 +160,9 @@ export function toWorkspaceSubmitPayload({
 }): WorkspaceSubmitPayload {
   const mode = formData.figmaSourceMode ?? "rest";
 
-  if (mode === "figma_paste") {
+  if (INLINE_FIGMA_SOURCE_MODES.has(mode)) {
     return {
-      figmaSourceMode: "figma_paste",
+      figmaSourceMode: mode,
       figmaJsonPayload: formData.figmaJsonPayload?.trim(),
       enableGitPr: false,
       projectName: toOptionalString({ value: formData.projectName }),

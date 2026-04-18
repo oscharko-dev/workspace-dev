@@ -13,6 +13,7 @@ import type {
   WorkspaceImportSessionDeleteResult,
   WorkspaceImportSessionEvent,
   WorkspaceImportSessionReimportAccepted,
+  WorkspaceImportSessionSourceMode,
   WorkspaceLocalSyncApplyResult,
   WorkspaceLocalSyncDryRunResult,
   WorkspaceJobDiagnostic,
@@ -122,8 +123,20 @@ export interface JobRecord {
   error?: WorkspaceJobError;
 }
 
+/**
+ * Server-internal submission payload.
+ *
+ * Extends the public `WorkspaceJobInput` with fields that are set by the
+ * server at ingress and MUST NOT be part of the public submit contract:
+ *
+ * - `requestSourceMode`: the submit-origin marker used to persist replayable
+ *   import sessions. The ingress normalizer in `src/server/request-handler.ts`
+ *   is the single writer of this field; it is never read from the HTTP body.
+ * - `pasteDeltaSeed`: internal delta-execution seed forwarded between stages.
+ */
 export type SubmissionJobInput = WorkspaceJobInput & {
   pasteDeltaSeed?: WorkspacePasteDeltaSeed;
+  requestSourceMode?: WorkspaceImportSessionSourceMode;
 };
 
 export interface WorkspacePipelineError extends Error {

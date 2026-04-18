@@ -26,11 +26,16 @@ import type {
   WorkspaceImportMode,
   WorkspaceJobInput,
   WorkspaceJobRetryStage,
+  WorkspaceLlmCodegenMode,
   WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus,
   WorkspaceVisualAuditInput,
+} from "./contracts/index.js";
+import {
+  ALLOWED_FIGMA_SOURCE_MODES,
+  ALLOWED_LLM_CODEGEN_MODES,
 } from "./contracts/index.js";
 import { validateComponentMappingRule } from "./component-mapping-rules.js";
 import {
@@ -192,22 +197,23 @@ function parseSubmitLlmCodegenMode({
 }: {
   value: string | undefined;
   issues: ValidationIssue[];
-}): string | undefined {
+}): WorkspaceLlmCodegenMode | undefined {
   if (value === undefined) {
     return undefined;
   }
 
   const normalized = value.trim().toLowerCase();
-  if (normalized !== "deterministic") {
+  const match = ALLOWED_LLM_CODEGEN_MODES.find((mode) => mode === normalized);
+  if (match === undefined) {
     pushIssue(
       issues,
       ["llmCodegenMode"],
-      "llmCodegenMode must equal 'deterministic'",
+      `llmCodegenMode must equal '${ALLOWED_LLM_CODEGEN_MODES[0]}'`,
     );
     return undefined;
   }
 
-  return "deterministic";
+  return match;
 }
 
 function parseSubmitGenerationLocale({
@@ -1192,16 +1198,17 @@ function parseSubmitRequest(
     if (normalizedFigmaSourceMode === undefined) {
       return figmaJsonPath !== undefined ? "local_json" : "rest";
     }
-    if (
-      normalizedFigmaSourceMode === "rest" ||
-      normalizedFigmaSourceMode === "hybrid" ||
-      normalizedFigmaSourceMode === "local_json" ||
-      normalizedFigmaSourceMode === "figma_paste" ||
-      normalizedFigmaSourceMode === "figma_plugin"
-    ) {
-      return normalizedFigmaSourceMode as WorkspaceFigmaSourceMode;
+    const match = ALLOWED_FIGMA_SOURCE_MODES.find(
+      (mode) => mode === normalizedFigmaSourceMode,
+    );
+    if (match === undefined) {
+      pushIssue(
+        issues,
+        ["figmaSourceMode"],
+        `figmaSourceMode must be one of: ${ALLOWED_FIGMA_SOURCE_MODES.join(", ")}`,
+      );
     }
-    return undefined;
+    return match;
   })();
 
   if (
@@ -1386,9 +1393,7 @@ function parseSubmitRequest(
   const data: WorkspaceJobInput = {
     enableGitPr,
   };
-  if (figmaSourceMode !== undefined) {
-    data.figmaSourceMode = figmaSourceMode;
-  } else if (resolvedFigmaSourceMode !== undefined) {
+  if (resolvedFigmaSourceMode !== undefined) {
     data.figmaSourceMode = resolvedFigmaSourceMode;
   }
   if (figmaFileKey !== undefined) {
@@ -1495,24 +1500,24 @@ function parseWorkspaceStatus(
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1) {
     pushIssue(issues, ["port"], "port must be a positive integer");
   }
-  if (
-    figmaSourceMode !== "rest" &&
-    figmaSourceMode !== "hybrid" &&
-    figmaSourceMode !== "local_json" &&
-    figmaSourceMode !== "figma_paste" &&
-    figmaSourceMode !== "figma_plugin"
-  ) {
+  const isAllowedFigmaSourceMode = ALLOWED_FIGMA_SOURCE_MODES.some(
+    (mode) => mode === figmaSourceMode,
+  );
+  if (!isAllowedFigmaSourceMode) {
     pushIssue(
       issues,
       ["figmaSourceMode"],
-      "figmaSourceMode must be one of: rest, hybrid, local_json, figma_paste, figma_plugin",
+      `figmaSourceMode must be one of: ${ALLOWED_FIGMA_SOURCE_MODES.join(", ")}`,
     );
   }
-  if (llmCodegenMode !== "deterministic") {
+  const isAllowedLlmCodegenMode = ALLOWED_LLM_CODEGEN_MODES.some(
+    (mode) => mode === llmCodegenMode,
+  );
+  if (!isAllowedLlmCodegenMode) {
     pushIssue(
       issues,
       ["llmCodegenMode"],
-      "llmCodegenMode must equal 'deterministic'",
+      `llmCodegenMode must equal '${ALLOWED_LLM_CODEGEN_MODES[0]}'`,
     );
   }
   if (typeof uptimeMs !== "number" || uptimeMs < 0) {
