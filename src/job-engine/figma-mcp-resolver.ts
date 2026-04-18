@@ -237,7 +237,9 @@ const parseIpv4Address = (hostname: string): number[] | null => {
     }
     return Number(octet);
   });
-  if (values.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
+  if (
+    values.some((value) => !Number.isInteger(value) || value < 0 || value > 255)
+  ) {
     return null;
   }
   return values;
@@ -316,8 +318,16 @@ const isIpv4MappedIpv6LoopbackHostname = (hostname: string): boolean => {
   if (hextets === null) {
     return false;
   }
-  const [hextet0, hextet1, hextet2, hextet3, hextet4, hextet5, hextet6, hextet7] =
-    hextets;
+  const [
+    hextet0,
+    hextet1,
+    hextet2,
+    hextet3,
+    hextet4,
+    hextet5,
+    hextet6,
+    hextet7,
+  ] = hextets;
   if (
     hextet0 === undefined ||
     hextet1 === undefined ||
@@ -337,7 +347,7 @@ const isIpv4MappedIpv6LoopbackHostname = (hostname: string): boolean => {
     hextet3 === 0 &&
     hextet4 === 0 &&
     hextet5 === 0xffff &&
-    (hextet6 >> 8) === 127
+    hextet6 >> 8 === 127
   );
 };
 
@@ -664,8 +674,8 @@ const callMcpTool = async ({
           });
           await waitFor(
             response.status === 429
-              ? parseRetryAfterMs(response.headers.get("retry-after")) ??
-                  toRetryDelay({ attempt })
+              ? (parseRetryAfterMs(response.headers.get("retry-after")) ??
+                  toRetryDelay({ attempt }))
               : toRetryDelay({ attempt }),
             signal,
           );
@@ -823,7 +833,10 @@ const extractMetadataNodeCandidates = (
 };
 
 const normalizeMetadataComparable = (value: string): string =>
-  value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "_");
+  value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_");
 
 const isPrimaryMcpNodeType = (value: unknown): boolean =>
   value === "FRAME" ||
@@ -886,7 +899,9 @@ const resolveNodeIdFromMetadataCandidates = ({
     );
     const preferredPasteMatch =
       pasteMatches.find((candidate) =>
-        preferredNodeTypes.includes(normalizeMetadataComparable(candidate.type)),
+        preferredNodeTypes.includes(
+          normalizeMetadataComparable(candidate.type),
+        ),
       ) ?? pasteMatches[0];
     if (preferredPasteMatch) {
       return {
@@ -1277,7 +1292,10 @@ const fetchDesignContextViaRest = async ({
           : {}),
         ...limits,
       });
-      if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
+      if (
+        (response.status === 429 || response.status >= 500) &&
+        attempt < maxRetries
+      ) {
         await waitFor(
           toRestRetryDelay({
             attempt,
@@ -1305,7 +1323,9 @@ const fetchDesignContextViaRest = async ({
 
     return {
       code: JSON.stringify(
-        ((nodeData as Record<string, unknown>).document as Record<string, unknown> | undefined) ?? {},
+        ((nodeData as Record<string, unknown>).document as
+          | Record<string, unknown>
+          | undefined) ?? {},
         null,
         2,
       ),
@@ -1413,7 +1433,10 @@ const fetchScreenshotViaRest = async ({
           : {}),
         ...limits,
       });
-      if ((response.status === 429 || response.status >= 500) && attempt < maxRetries) {
+      if (
+        (response.status === 429 || response.status >= 500) &&
+        attempt < maxRetries
+      ) {
         await waitFor(
           toRestRetryDelay({
             attempt,
@@ -1598,7 +1621,7 @@ export const resolveFigmaDesignContext = async (
             diagnostics.push({
               code: "W_MCP_SCREENSHOT_FALLBACK_REST",
               message:
-                "MCP screenshot was unavailable, fell back to Figma REST image export.",
+                "MCP screenshot failed, REST screenshot fallback applied.",
               severity: "warning",
             });
           }

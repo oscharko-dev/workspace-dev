@@ -124,7 +124,10 @@ const buildDirectChildXml = (
     (_, index) => `child:${String(index + 1)}`,
   );
   const xml = `<FRAME id="0:1" name="Root">${childIds
-    .map((childId, index) => `<FRAME id="${childId}" name="Frame${String(index + 1)}"/>`)
+    .map(
+      (childId, index) =>
+        `<FRAME id="${childId}" name="Frame${String(index + 1)}"/>`,
+    )
     .join("")}</FRAME>`;
   return { xml, childIds };
 };
@@ -195,12 +198,18 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
   const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
 
   // The three expected MCP calls (nodeId is provided so no root scan)
-  assert.equal(calls.some((entry) => entry.tool === "get_metadata"), true);
+  assert.equal(
+    calls.some((entry) => entry.tool === "get_metadata"),
+    true,
+  );
   assert.equal(
     calls.some((entry) => entry.tool === "get_design_context"),
     true,
   );
-  assert.equal(calls.some((entry) => entry.tool === "get_screenshot"), true);
+  assert.equal(
+    calls.some((entry) => entry.tool === "get_screenshot"),
+    true,
+  );
   assert.deepEqual(
     calls.find((entry) => entry.tool === "get_design_context")?.args,
     { fileKey: "abc", nodeId: "1:2" },
@@ -537,7 +546,9 @@ test("cache key includes version — different versions do not reuse cached cont
       return jsonResponse(mcpOk({ code: "// versioned code", assets: {} }));
     }
     if (tool === "get_screenshot") {
-      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/versioned-shot.png" }));
+      return jsonResponse(
+        mcpOk({ url: "https://cdn.figma.com/versioned-shot.png" }),
+      );
     }
     return jsonResponse(mcpOk({}));
   };
@@ -583,14 +594,22 @@ test("in-flight dedupe shares a single resolver request for identical cache keys
       return jsonResponse(mcpOk({ code: "// deduped", assets: {} }));
     }
     if (tool === "get_screenshot") {
-      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/deduped-shot.png" }));
+      return jsonResponse(
+        mcpOk({ url: "https://cdn.figma.com/deduped-shot.png" }),
+      );
     }
     return jsonResponse(mcpOk({}));
   };
 
   const config = createConfig(fetchImpl);
-  const first = resolveFigmaDesignContext({ fileKey: "abc", nodeId: "1:2" }, config);
-  const second = resolveFigmaDesignContext({ fileKey: "abc", nodeId: "1:2" }, config);
+  const first = resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    config,
+  );
+  const second = resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    config,
+  );
 
   releaseMetadata?.();
 
@@ -774,6 +793,58 @@ test("REST screenshot fallback provides preview when MCP design context succeeds
   );
 });
 
+test("both MCP and REST screenshot fail — result is non-fatal with no screenshot and no W_MCP_SCREENSHOT_FALLBACK_REST", async () => {
+  clearResolverCache();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com") {
+      if (url.includes("/images/")) {
+        return new Response("internal server error", { status: 500 });
+      }
+      return jsonResponse(
+        mcpRestNodes("1:2", { type: "FRAME", name: "Screen" }),
+      );
+    }
+
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml: '<FRAME id="1:2" name="Screen"/>' }));
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return new Response("server error", { status: 500 });
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    { ...createConfig(fetchImpl), maxRetries: 1 },
+  );
+
+  assert.equal(result.screenshot, undefined);
+  assert.equal(result.fallbackMode, "none");
+  assert.ok(
+    !(result.diagnostics ?? []).some(
+      (entry) => entry.code === "W_MCP_SCREENSHOT_FALLBACK_REST",
+    ),
+    `Expected no W_MCP_SCREENSHOT_FALLBACK_REST diagnostic, got: ${JSON.stringify(
+      (result.diagnostics ?? []).map((d) => d.code),
+    )}`,
+  );
+});
+
 test("REST fallback does not forward ISO lastModified timestamps as version query params", async () => {
   clearResolverCache();
 
@@ -831,7 +902,10 @@ test("REST fallback retries 429 using Retry-After guidance and surfaces diagnost
           ? input.href
           : (input as Request).url;
 
-    if (new URL(url).hostname === "api.figma.com" && !url.includes("/images/")) {
+    if (
+      new URL(url).hostname === "api.figma.com" &&
+      !url.includes("/images/")
+    ) {
       restNodeCalls += 1;
       if (restNodeCalls === 1) {
         return new Response("rate limited", {
@@ -937,10 +1011,7 @@ test("REST fallback treats null node documents as not-found errors", async () =>
         { ...createConfig(fetchImpl), maxRetries: 1 },
       ),
     (err: unknown) => {
-      assert.equal(
-        (err as { code?: string }).code,
-        "E_FIGMA_REST_NOT_FOUND",
-      );
+      assert.equal((err as { code?: string }).code, "E_FIGMA_REST_NOT_FOUND");
       return true;
     },
   );
@@ -1021,7 +1092,8 @@ test("abort during root metadata resolution does not fall back to document root"
   };
 
   await assert.rejects(
-    () => resolveFigmaDesignContext({ fileKey: "abc" }, createConfig(fetchImpl)),
+    () =>
+      resolveFigmaDesignContext({ fileKey: "abc" }, createConfig(fetchImpl)),
     (err: unknown) => {
       assert.ok(err instanceof Error, "Expected abort error");
       return true;
@@ -1348,8 +1420,7 @@ test("metadata-based node resolution uses dataType hint when nodeId is absent", 
       if (nodeId === "0:1") {
         return jsonResponse(
           mcpOk({
-            xml:
-              '<FRAME id="2:1" name="Screen"/><COMPONENT_SET id="9:99" name="Button Variants"/>',
+            xml: '<FRAME id="2:1" name="Screen"/><COMPONENT_SET id="9:99" name="Button Variants"/>',
           }),
         );
       }
@@ -1396,8 +1467,7 @@ test("metadata-based node resolution prefers pasteID match when available", asyn
       if (nodeId === "0:1") {
         return jsonResponse(
           mcpOk({
-            xml:
-              '<FRAME id="2:7" name="Other Screen"/><FRAME id="8:42" name="Pasted Screen"/><COMPONENT_SET id="9:42" name="Shared Variants"/>',
+            xml: '<FRAME id="2:7" name="Other Screen"/><FRAME id="8:42" name="Pasted Screen"/><COMPONENT_SET id="9:42" name="Shared Variants"/>',
           }),
         );
       }
