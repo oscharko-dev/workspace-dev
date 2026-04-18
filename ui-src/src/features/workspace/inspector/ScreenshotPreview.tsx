@@ -14,6 +14,8 @@ export interface ScreenshotPreviewProps {
   badgeText?: string;
   /** Optional sub-message below badge */
   stageName?: string;
+  /** Additional vertical pan offset (px) applied on top of user-controlled pan. Use for scroll sync from an external source. */
+  externalOffsetY?: number;
 }
 
 const MIN_SCALE = 0.1;
@@ -25,6 +27,7 @@ export function ScreenshotPreview({
   screenshotUrl,
   badgeText = "Figma preview",
   stageName,
+  externalOffsetY,
 }: ScreenshotPreviewProps): JSX.Element {
   const [scale, setScale] = useState(1);
   const [translate, setTranslate] = useState({ x: 0, y: 0 });
@@ -123,7 +126,7 @@ export function ScreenshotPreview({
           alt="Figma design preview"
           draggable={false}
           style={{
-            transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
+            transform: `translate(${translate.x}px, ${translate.y + (externalOffsetY ?? 0)}px) scale(${scale})`,
             transformOrigin: "center center",
             maxWidth: "100%",
             maxHeight: "100%",

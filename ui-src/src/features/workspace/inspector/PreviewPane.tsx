@@ -1,4 +1,4 @@
-import { useRef, useState, type JSX, type RefObject } from "react";
+import { useEffect, useRef, useState, type JSX, type RefObject } from "react";
 import { InspectOverlay } from "./InspectOverlay";
 import { ScreenshotPreview } from "./ScreenshotPreview";
 import type { PipelineStage } from "./paste-pipeline";
@@ -95,9 +95,6 @@ function PaneLabel({ text }: { text: string }): JSX.Element {
   );
 }
 
-// Scroll sync between iframe and ScreenshotPreview is intentionally omitted:
-// ScreenshotPreview uses CSS transform-based pan/zoom, not DOM scroll, so
-// mirroring iframe scrollTop would have no effect on the left pane.
 function PreviewSplitLayout({
   screenshot,
   previewUrl,
@@ -113,6 +110,39 @@ function PreviewSplitLayout({
   onIframeLoad: () => void;
   showIframeLoading: boolean;
 }): JSX.Element {
+  const [iframeScrollY, setIframeScrollY] = useState(0);
+
+  // Same-origin scroll sync: parallax the screenshot upward as the live
+  // preview scrolls, so the visible portion of each pane tracks. Falls back
+  // silently on cross-origin iframes.
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (iframe === null) {
+      return;
+    }
+    setIframeScrollY(0);
+    let win: Window;
+    try {
+      const doc = iframe.contentWindow?.document.documentElement;
+      if (doc === undefined || doc === null) {
+        return;
+      }
+      if (iframe.contentWindow === null) {
+        return;
+      }
+      win = iframe.contentWindow;
+    } catch {
+      return;
+    }
+    const handleScroll = (): void => {
+      setIframeScrollY(win.scrollY);
+    };
+    win.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      win.removeEventListener("scroll", handleScroll);
+    };
+  }, [iframeRef, previewUrl]);
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-row">
       {/* Left pane — Figma source */}
@@ -123,6 +153,7 @@ function PreviewSplitLayout({
             screenshotUrl={screenshot}
             {...(stageLabel !== undefined ? { stageName: stageLabel } : {})}
             badgeText="Figma source"
+            externalOffsetY={-iframeScrollY}
           />
         ) : (
           <div className="flex h-full items-center justify-center">

@@ -27,9 +27,11 @@ vi.mock("./ScreenshotPreview", () => ({
   ScreenshotPreview: ({
     screenshotUrl,
     stageName,
+    externalOffsetY: _externalOffsetY,
   }: {
     screenshotUrl: string;
     stageName?: string;
+    externalOffsetY?: number;
   }) =>
     createElement(
       "div",
@@ -407,5 +409,26 @@ describe("PreviewPane — split view", () => {
 
     expect(screen.getByText("Screenshot unavailable")).toBeInTheDocument();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
+  });
+
+  it("wires iframe scroll sync when split is enabled and both panes render", () => {
+    const consoleError = vi.spyOn(console, "error");
+    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "http://127.0.0.1:4010/preview",
+        screenshot: "http://cdn.example.com/screenshot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByTitle("Live preview")).toBeInTheDocument();
+    expect(consoleError).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
   });
 });
