@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Dirent } from "node:fs";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 /**
@@ -80,7 +80,7 @@ const computeSha256 = (content: Buffer): string => {
 const collectFileHashes = async ({
   projectDir,
   baseDir,
-  onLog
+  onLog,
 }: {
   projectDir: string;
   baseDir?: string;
@@ -93,7 +93,9 @@ const collectFileHashes = async ({
   try {
     dirEntries = await readdir(projectDir, { withFileTypes: true });
   } catch (error) {
-    onLog?.(`Generation diff debug: operation=collectFileHashes.readdir; projectDir='${projectDir}'; error=${error instanceof Error ? error.message : String(error)}.`);
+    onLog?.(
+      `Generation diff debug: operation=collectFileHashes.readdir; projectDir='${projectDir}'; error=${error instanceof Error ? error.message : String(error)}.`,
+    );
     return entries;
   }
 
@@ -108,16 +110,15 @@ const collectFileHashes = async ({
       const subEntries = await collectFileHashes({
         projectDir: fullPath,
         baseDir: root,
-        ...(onLog ? { onLog } : {})
+        ...(onLog ? { onLog } : {}),
       });
       entries.push(...subEntries);
     } else if (entry.isFile()) {
       const content = await readFile(fullPath);
-      const fileStat = await stat(fullPath);
       entries.push({
         relativePath: path.relative(root, fullPath),
         sha256: computeSha256(content),
-        sizeBytes: fileStat.size
+        sizeBytes: content.byteLength,
       });
     }
   }
@@ -128,7 +129,11 @@ const collectFileHashes = async ({
 /**
  * Resolves the path to the hash store directory for a board key.
  */
-const resolveHashStoreDir = ({ outputRoot }: { outputRoot: string }): string => {
+const resolveHashStoreDir = ({
+  outputRoot,
+}: {
+  outputRoot: string;
+}): string => {
   return path.join(outputRoot, HASH_STORE_DIR_NAME);
 };
 
@@ -137,7 +142,7 @@ const resolveHashStoreDir = ({ outputRoot }: { outputRoot: string }): string => 
  */
 const resolveHashSnapshotPath = ({
   outputRoot,
-  boardKey
+  boardKey,
 }: {
   outputRoot: string;
   boardKey: string;
@@ -151,7 +156,7 @@ const resolveHashSnapshotPath = ({
 export const loadPreviousSnapshot = async ({
   outputRoot,
   boardKey,
-  onLog
+  onLog,
 }: {
   outputRoot: string;
   boardKey: string;
@@ -164,7 +169,9 @@ export const loadPreviousSnapshot = async ({
     try {
       parsed = JSON.parse(raw) as unknown;
     } catch (error) {
-      onLog?.(`Generation diff debug: operation=loadPreviousSnapshot.parse; boardKey='${boardKey}'; snapshotPath='${snapshotPath}'; error=${error instanceof Error ? error.message : String(error)}.`);
+      onLog?.(
+        `Generation diff debug: operation=loadPreviousSnapshot.parse; boardKey='${boardKey}'; snapshotPath='${snapshotPath}'; error=${error instanceof Error ? error.message : String(error)}.`,
+      );
       return null;
     }
     if (
@@ -179,7 +186,9 @@ export const loadPreviousSnapshot = async ({
     }
     return null;
   } catch (error) {
-    onLog?.(`Generation diff debug: operation=loadPreviousSnapshot.read; boardKey='${boardKey}'; snapshotPath='${snapshotPath}'; error=${error instanceof Error ? error.message : String(error)}.`);
+    onLog?.(
+      `Generation diff debug: operation=loadPreviousSnapshot.read; boardKey='${boardKey}'; snapshotPath='${snapshotPath}'; error=${error instanceof Error ? error.message : String(error)}.`,
+    );
     return null;
   }
 };
@@ -189,15 +198,22 @@ export const loadPreviousSnapshot = async ({
  */
 export const saveCurrentSnapshot = async ({
   outputRoot,
-  snapshot
+  snapshot,
 }: {
   outputRoot: string;
   snapshot: GenerationHashSnapshot;
 }): Promise<void> => {
   const storeDir = resolveHashStoreDir({ outputRoot });
   await mkdir(storeDir, { recursive: true });
-  const snapshotPath = resolveHashSnapshotPath({ outputRoot, boardKey: snapshot.boardKey });
-  await writeFile(snapshotPath, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  const snapshotPath = resolveHashSnapshotPath({
+    outputRoot,
+    boardKey: snapshot.boardKey,
+  });
+  await writeFile(
+    snapshotPath,
+    `${JSON.stringify(snapshot, null, 2)}\n`,
+    "utf8",
+  );
 };
 
 /**
@@ -207,7 +223,7 @@ export const computeGenerationDiff = ({
   boardKey,
   currentJobId,
   previousSnapshot,
-  currentFiles
+  currentFiles,
 }: {
   boardKey: string;
   currentJobId: string;
@@ -227,7 +243,7 @@ export const computeGenerationDiff = ({
       modified: [],
       removed: [],
       unchanged: [],
-      summary: `${currentFiles.length} files added (first generation)`
+      summary: `${currentFiles.length} files added (first generation)`,
     };
   }
 
@@ -253,7 +269,7 @@ export const computeGenerationDiff = ({
       modified.push({
         file: entry.relativePath,
         previousHash: previous.sha256,
-        currentHash: entry.sha256
+        currentHash: entry.sha256,
       });
     } else {
       unchanged.push(entry.relativePath);
@@ -269,7 +285,9 @@ export const computeGenerationDiff = ({
 
   const parts: string[] = [];
   if (modified.length > 0) {
-    parts.push(`${modified.length} file${modified.length === 1 ? "" : "s"} modified`);
+    parts.push(
+      `${modified.length} file${modified.length === 1 ? "" : "s"} modified`,
+    );
   }
   if (added.length > 0) {
     parts.push(`${added.length} added`);
@@ -291,7 +309,7 @@ export const computeGenerationDiff = ({
     modified,
     removed,
     unchanged,
-    summary
+    summary,
   };
 };
 
@@ -303,7 +321,7 @@ export const prepareGenerationDiff = async ({
   outputRoot,
   boardKey,
   jobId,
-  onLog
+  onLog,
 }: {
   generatedProjectDir: string;
   outputRoot: string;
@@ -313,12 +331,12 @@ export const prepareGenerationDiff = async ({
 }): Promise<PreparedGenerationDiff> => {
   const currentFiles = await collectFileHashes({
     projectDir: generatedProjectDir,
-    ...(onLog ? { onLog } : {})
+    ...(onLog ? { onLog } : {}),
   });
   const previousSnapshot = await loadPreviousSnapshot({
     outputRoot,
     boardKey,
-    ...(onLog ? { onLog } : {})
+    ...(onLog ? { onLog } : {}),
   });
 
   return {
@@ -326,14 +344,14 @@ export const prepareGenerationDiff = async ({
       boardKey,
       currentJobId: jobId,
       previousSnapshot,
-      currentFiles
+      currentFiles,
     }),
     snapshot: {
       boardKey,
       jobId,
       generatedAt: new Date().toISOString(),
-      files: currentFiles
-    }
+      files: currentFiles,
+    },
   };
 };
 
@@ -342,7 +360,7 @@ export const prepareGenerationDiff = async ({
  */
 export const writeGenerationDiffReport = async ({
   jobDir,
-  report
+  report,
 }: {
   jobDir: string;
   report: GenerationDiffReport;
@@ -358,7 +376,7 @@ export const writeGenerationDiffReport = async ({
 export const persistPreparedGenerationDiff = async ({
   jobDir,
   outputRoot,
-  preparedDiff
+  preparedDiff,
 }: {
   jobDir: string;
   outputRoot: string;
@@ -366,7 +384,7 @@ export const persistPreparedGenerationDiff = async ({
 }): Promise<string> => {
   const reportPath = await writeGenerationDiffReport({
     jobDir,
-    report: preparedDiff.report
+    report: preparedDiff.report,
   });
   await saveCurrentSnapshot({ outputRoot, snapshot: preparedDiff.snapshot });
   return reportPath;
@@ -381,7 +399,7 @@ export const runGenerationDiff = async ({
   outputRoot,
   boardKey,
   jobId,
-  onLog
+  onLog,
 }: {
   generatedProjectDir: string;
   jobDir: string;
@@ -395,12 +413,12 @@ export const runGenerationDiff = async ({
     outputRoot,
     boardKey,
     jobId,
-    ...(onLog ? { onLog } : {})
+    ...(onLog ? { onLog } : {}),
   });
   await persistPreparedGenerationDiff({
     jobDir,
     outputRoot,
-    preparedDiff
+    preparedDiff,
   });
   return preparedDiff.report;
 };
@@ -408,7 +426,9 @@ export const runGenerationDiff = async ({
 /**
  * Formats a diff report summary for use in PR descriptions.
  */
-export const formatDiffForPrDescription = (report: GenerationDiffReport): string => {
+export const formatDiffForPrDescription = (
+  report: GenerationDiffReport,
+): string => {
   const lines: string[] = [];
   lines.push("### Generation Diff Report");
   lines.push("");
