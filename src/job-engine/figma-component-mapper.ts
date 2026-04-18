@@ -79,7 +79,7 @@ interface PersistedMappingEntry {
   name: string;
   source: string;
   importPath?: string;
-  confidence: MappedComponent["confidence"];
+  confidence: "exact";
   figmaComponentKey?: string;
   nodeId?: string;
 }
@@ -1106,6 +1106,10 @@ export const consolidateComponentSetVariants = ({
 const getPersistencePath = (workspaceRoot: string): string =>
   path.join(workspaceRoot, ".workspace-dev", PERSISTENCE_FILENAME);
 
+const isPersistedMappingConfidence = (
+  confidence: unknown,
+): confidence is "exact" => confidence === "exact";
+
 /**
  * Loads persisted component mappings from the workspace config file.
  * Validates that referenced source files still exist (stale mapping check).
@@ -1153,13 +1157,7 @@ export const loadPersistedMappings = async ({
     }
 
     const confidence = value.confidence;
-    if (
-      confidence !== "exact" &&
-      confidence !== "design_system" &&
-      confidence !== "suggested" &&
-      confidence !== "heuristic" &&
-      confidence !== "none"
-    ) {
+    if (!isPersistedMappingConfidence(confidence)) {
       continue;
     }
 
@@ -1198,6 +1196,9 @@ export const savePersistedMappings = async ({
   const existingMappings = await loadPersistedMappings({ workspaceRoot });
   const entries: Record<string, PersistedMappingEntry> = {};
   for (const [figmaKey, mapping] of existingMappings) {
+    if (!isPersistedMappingConfidence(mapping.confidence)) {
+      continue;
+    }
     entries[figmaKey] = {
       name: mapping.name,
       source: mapping.source,
@@ -1206,6 +1207,9 @@ export const savePersistedMappings = async ({
     };
   }
   for (const [figmaKey, mapping] of mappings) {
+    if (!isPersistedMappingConfidence(mapping.confidence)) {
+      continue;
+    }
     entries[figmaKey] = {
       name: mapping.name,
       source: mapping.source,
@@ -1754,11 +1758,7 @@ export const resolveComponentMappings = async (
     const approvedMappings = new Map<string, MappedComponent>();
     for (const candidate of candidates) {
       const mapping = resultMappings.get(candidate.nodeId);
-      if (
-        !mapping ||
-        mapping.confidence === "suggested" ||
-        mapping.confidence === "design_system"
-      ) {
+      if (!mapping || mapping.confidence !== "exact") {
         continue;
       }
       approvedMappings.set(candidate.persistenceKey, mapping);

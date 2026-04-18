@@ -1606,7 +1606,11 @@ test("runVisualBenchmark emits overfitting alert when screen aggregate improves 
                   nodeId: "1:900",
                   status: "completed" as const,
                   score: 82,
-                  screenshotBuffer: createTestPngBuffer(4, 4, [10, 20, 30, 255]),
+                  screenshotBuffer: createTestPngBuffer(
+                    4,
+                    4,
+                    [10, 20, 30, 255],
+                  ),
                   diffBuffer: createTestPngBuffer(4, 4, [0, 0, 0, 0]),
                   report: createCompletedVisualQualityReport(82),
                   viewport: { width: 1280, height: 720 },
@@ -2282,7 +2286,7 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   );
   assert.doesNotMatch(workflow, /FIGMA_ACCESS_TOKEN/);
   assert.doesNotMatch(workflow, /FIGMA_FILE_KEY/);
-  assert.match(workflow, /actions\/github-script@v8/);
+  assert.match(workflow, /actions\/github-script@v9/);
   assert.match(workflow, /check-output\.json/);
   assert.match(workflow, /github\.rest\.checks\.update/);
   assert.match(workflow, /integration\/composite-quality\*/);

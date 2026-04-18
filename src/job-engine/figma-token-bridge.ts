@@ -74,6 +74,8 @@ interface RawFigmaVariable {
   collection?: unknown;
   mode?: unknown;
   type?: unknown;
+  id?: unknown;
+  aliasId?: unknown;
 }
 
 interface RawDesignSystemStyle {
@@ -194,14 +196,72 @@ const isNonEmptyString = (value: unknown): value is string =>
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 
+const MAX_ALIAS_HOPS = 20;
+
+const buildVariableLookupMaps = (
+  raws: readonly RawFigmaVariable[],
+): {
+  byId: Map<string, RawFigmaVariable>;
+  byName: Map<string, RawFigmaVariable>;
+} => {
+  const byId = new Map<string, RawFigmaVariable>();
+  const byName = new Map<string, RawFigmaVariable>();
+  for (const raw of raws) {
+    if (isNonEmptyString(raw.id)) byId.set(raw.id, raw);
+    if (isNonEmptyString(raw.name)) byName.set(raw.name, raw);
+  }
+  return { byId, byName };
+};
+
+const resolveAlias = (
+  variableName: string,
+  aliasId: string,
+  byId: ReadonlyMap<string, RawFigmaVariable>,
+  byName: ReadonlyMap<string, RawFigmaVariable>,
+): { value: unknown; conflict: TokenConflict | undefined } => {
+  const chain: string[] = [variableName];
+  const visited = new Set<string>();
+  let currentId = aliasId;
+
+  for (let hop = 0; hop < MAX_ALIAS_HOPS; hop++) {
+    if (visited.has(currentId)) {
+      chain.push(currentId);
+      return {
+        value: undefined,
+        conflict: { kind: "alias_cycle", name: variableName, chain },
+      };
+    }
+    visited.add(currentId);
+
+    const target = byId.get(currentId) ?? byName.get(currentId);
+    if (!target) {
+      return { value: undefined, conflict: undefined };
+    }
+
+    chain.push(isNonEmptyString(target.name) ? target.name : currentId);
+
+    if (isNonEmptyString(target.aliasId)) {
+      currentId = target.aliasId;
+    } else {
+      return { value: target.resolvedValue, conflict: undefined };
+    }
+  }
+
+  return { value: undefined, conflict: undefined };
+};
+
 /**
  * Parses the raw MCP `get_variable_defs` response into typed variable defs.
+ * Also resolves any `aliasId` chains and emits `alias_cycle` conflicts when
+ * a circular reference is detected.
  */
 export const parseVariableDefsResponse = (
   raw: unknown,
-): FigmaMcpVariableDefinition[] => {
+): { defs: FigmaMcpVariableDefinition[]; conflicts: TokenConflict[] } => {
+  const conflicts: TokenConflict[] = [];
+
   if (!raw || typeof raw !== "object") {
-    return [];
+    return { defs: [], conflicts };
   }
 
   // The response may be a flat record { "name": "value" } or an array of objects
@@ -215,39 +275,64 @@ export const parseVariableDefsResponse = (
       : undefined;
 
   if (variables) {
-    return variables
+    const raws = variables
       .filter(
         (entry): entry is RawFigmaVariable =>
           typeof entry === "object" && entry !== null,
       )
-      .filter((entry) => isNonEmptyString(entry.name))
-      .map((entry) => {
-        const figmaType = isNonEmptyString(entry.type)
-          ? entry.type.toUpperCase()
-          : undefined;
-        const kind = figmaType
-          ? (FIGMA_TYPE_TO_KIND[figmaType] ?? "string")
-          : inferKind(entry.resolvedValue);
+      .filter((entry) => isNonEmptyString(entry.name));
 
-        return {
-          name: String(entry.name),
-          kind,
-          value: coerceValue(entry.resolvedValue, kind),
-          ...(isNonEmptyString(entry.collection)
-            ? { collectionName: entry.collection }
-            : {}),
-          ...(isNonEmptyString(entry.mode) ? { modeName: entry.mode } : {}),
-        };
-      });
+    const { byId, byName } = buildVariableLookupMaps(raws);
+
+    const defs = raws.map((entry) => {
+      const figmaType = isNonEmptyString(entry.type)
+        ? entry.type.toUpperCase()
+        : undefined;
+
+      let resolvedValue = entry.resolvedValue;
+
+      if (
+        (resolvedValue === undefined || resolvedValue === null) &&
+        isNonEmptyString(entry.aliasId)
+      ) {
+        const aliasResult = resolveAlias(
+          String(entry.name),
+          entry.aliasId,
+          byId,
+          byName,
+        );
+        if (aliasResult.conflict !== undefined) {
+          conflicts.push(aliasResult.conflict);
+        } else if (aliasResult.value !== undefined) {
+          resolvedValue = aliasResult.value;
+        }
+      }
+
+      const kind = figmaType
+        ? (FIGMA_TYPE_TO_KIND[figmaType] ?? "string")
+        : inferKind(resolvedValue);
+
+      return {
+        name: String(entry.name),
+        kind,
+        value: coerceValue(resolvedValue, kind),
+        ...(isNonEmptyString(entry.collection)
+          ? { collectionName: entry.collection }
+          : {}),
+        ...(isNonEmptyString(entry.mode) ? { modeName: entry.mode } : {}),
+      };
+    });
+
+    return { defs, conflicts };
   }
 
   // Case 2: Flat record { "variable/name": "resolved-value" }
   const entries = Object.entries(record).filter(([key]) => key.length > 0);
   if (entries.length === 0) {
-    return [];
+    return { defs: [], conflicts };
   }
 
-  return entries.map(([name, value]) => {
+  const defs = entries.map(([name, value]) => {
     const kind = inferKind(value);
     return {
       name,
@@ -255,6 +340,8 @@ export const parseVariableDefsResponse = (
       value: coerceValue(value, kind),
     };
   });
+
+  return { defs, conflicts };
 };
 
 const inferKind = (value: unknown): FigmaMcpVariableDefinition["kind"] => {
@@ -640,6 +727,7 @@ export const mergeVariablesWithExisting = ({
       if (prevValue !== newValue) {
         const conflictName = toConflictName(variable);
         conflicts.push({
+          kind: "value_override",
           name: conflictName,
           figmaValue: newValue,
           existingValue: prevValue,
@@ -696,7 +784,7 @@ export const fetchFigmaVariableDefs = async ({
   config: McpResolverConfig;
   signal?: AbortSignal;
 }): Promise<FigmaMcpVariableDefinition[]> => {
-  return parseVariableDefsResponse(
+  const { defs } = parseVariableDefsResponse(
     await fetchFigmaVariablePayload({
       fileKey,
       nodeId,
@@ -704,6 +792,7 @@ export const fetchFigmaVariableDefs = async ({
       ...(signal ? { signal } : {}),
     }),
   );
+  return defs;
 };
 
 /**
@@ -806,7 +895,9 @@ const buildDesignSystemSearchQuery = ({
     }
   }
 
-  return fragments.length > 0 ? fragments.join(" ") : "background space radius font";
+  return fragments.length > 0
+    ? fragments.join(" ")
+    : "background space radius font";
 };
 
 const collectModeAlternatives = ({
@@ -824,15 +915,14 @@ const collectModeAlternatives = ({
     grouped.set(key, entry);
   }
 
-  return [...grouped.entries()].reduce<Record<string, Record<string, TokenPrimitive>>>(
-    (acc, [key, value]) => {
-      if (Object.keys(value).length > 1) {
-        acc[key] = value;
-      }
-      return acc;
-    },
-    {},
-  );
+  return [...grouped.entries()].reduce<
+    Record<string, Record<string, TokenPrimitive>>
+  >((acc, [key, value]) => {
+    if (Object.keys(value).length > 1) {
+      acc[key] = value;
+    }
+    return acc;
+  }, {});
 };
 
 const buildCanonicalDesignTokens = ({
@@ -873,6 +963,7 @@ export const resolveFigmaTokens = async (
 
   // ----- Step 1: Fetch variable definitions -----
   let rawVariables: FigmaMcpVariableDefinition[] = [];
+  let parsedAliasConflicts: TokenConflict[] = [];
 
   try {
     const rawPayload = await fetchFigmaVariablePayload({
@@ -881,7 +972,10 @@ export const resolveFigmaTokens = async (
       config: mcpConfig,
       ...(signal ? { signal } : {}),
     });
-    rawVariables = parseVariableDefsResponse(rawPayload);
+    const { defs: parsedDefs, conflicts: varAliasConflicts } =
+      parseVariableDefsResponse(rawPayload);
+    rawVariables = parsedDefs;
+    parsedAliasConflicts = varAliasConflicts;
     selectionStyles = parseDesignSystemResponse(rawPayload).styles;
     mcpConfig.onLog?.(
       `Fetched ${String(rawVariables.length)} variable defs and ${String(selectionStyles.length)} selection styles from MCP`,
@@ -945,19 +1039,30 @@ export const resolveFigmaTokens = async (
   });
 
   // ----- Step 3: Prefer library token names over raw values -----
+  let aliasConflicts: TokenConflict[] = [];
   if (designSystemStyles.length > 0 && rawVariables.length > 0) {
-    rawVariables = preferLibraryTokenNames({
+    const libraryResult = preferLibraryTokenNames({
       variables: rawVariables,
       libraryStyles: designSystemStyles,
     });
+    rawVariables = libraryResult.variables;
+    aliasConflicts = libraryResult.conflicts;
   }
 
   // ----- Step 4: Merge with existing variables -----
-  const { merged: mergedVariables, conflicts } = mergeVariablesWithExisting({
-    incoming: rawVariables,
-    existing: [...existingVariables],
-    ...(mcpConfig.onLog ? { onLog: mcpConfig.onLog } : {}),
-  });
+  const { merged: mergedVariables, conflicts: mergeConflicts } =
+    mergeVariablesWithExisting({
+      incoming: rawVariables,
+      existing: [...existingVariables],
+      ...(mcpConfig.onLog ? { onLog: mcpConfig.onLog } : {}),
+    });
+  // Order: alias cycles → library collisions → value overrides.
+  // Structural problems (cycles, collisions) surface before merge-time resolutions.
+  const conflicts: TokenConflict[] = [
+    ...parsedAliasConflicts,
+    ...aliasConflicts,
+    ...mergeConflicts,
+  ];
 
   // ----- Step 5: Merge style catalogs -----
   const mergedStyles = mergeStyleCatalogs({
@@ -1016,9 +1121,102 @@ export const resolveFigmaTokens = async (
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+type CollidingVariable = {
+  name: string;
+  value: string;
+  modeName?: string;
+};
+
+type ClaimantGroup = { libraryName: string; indices: number[] };
+
+const groupClaimantsByPostRenameMergeKey = ({
+  variables,
+  candidates,
+}: {
+  variables: readonly FigmaMcpVariableDefinition[];
+  candidates: ReadonlyArray<string | null>;
+}): Map<string, ClaimantGroup> => {
+  // Group by the post-rename merge key used by `mergeVariablesWithExisting`
+  // (`normalizeFigmaVariableName(libraryName)::modeName`). Two candidates only
+  // collide when the rename would produce the SAME merge key — entries with
+  // the same library name in different modes have distinct merge keys and are
+  // safe to rename.
+  const groups = new Map<string, ClaimantGroup>();
+  const seenSourceKeysByMergeKey = new Map<string, Set<string>>();
+  candidates.forEach((libraryName, index) => {
+    if (libraryName === null) {
+      return;
+    }
+    const variable = variables[index];
+    if (!variable) {
+      return;
+    }
+    const modeKey = variable.modeName?.trim().toLowerCase() || "default";
+    const mergeKey = `${normalizeFigmaVariableName(libraryName)}::${modeKey}`;
+    // Dedup by `(name, modeName)` so a duplicated input variable is not
+    // counted twice as a claimant for the same merge key.
+    const sourceKey = `${variable.name}::${variable.modeName?.trim() ?? ""}`;
+    const seen = seenSourceKeysByMergeKey.get(mergeKey) ?? new Set<string>();
+    if (seen.has(sourceKey)) {
+      return;
+    }
+    seen.add(sourceKey);
+    seenSourceKeysByMergeKey.set(mergeKey, seen);
+    const group = groups.get(mergeKey) ?? { libraryName, indices: [] };
+    group.indices.push(index);
+    groups.set(mergeKey, group);
+  });
+  return groups;
+};
+
+const buildAliasCollisionConflict = ({
+  libraryName,
+  indices,
+  variables,
+}: {
+  libraryName: string;
+  indices: readonly number[];
+  variables: readonly FigmaMcpVariableDefinition[];
+}): TokenConflict => {
+  const collidingVariables: CollidingVariable[] = indices
+    .map((index): CollidingVariable | null => {
+      const variable = variables[index];
+      if (!variable) {
+        return null;
+      }
+      const modeName = variable.modeName?.trim();
+      return {
+        name: variable.name,
+        value: String(variable.value),
+        ...(modeName ? { modeName } : {}),
+      };
+    })
+    .filter((entry): entry is CollidingVariable => entry !== null)
+    .sort((left, right) => {
+      const nameCompare = left.name.localeCompare(right.name);
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+      return (left.modeName ?? "").localeCompare(right.modeName ?? "");
+    });
+  return {
+    kind: "library_alias_collision",
+    libraryName,
+    collidingVariables,
+    resolution: "preserve_original",
+  };
+};
+
 /**
  * When library styles are available, prefer their token names over raw variable names.
  * Matches by resolved color value.
+ *
+ * If two or more distinct variables (different `(name, modeName)` keys) match
+ * the same library style, renaming both would collapse them to the same key in
+ * `mergeVariablesWithExisting` and silently drop one. To preserve identity:
+ *   - we keep their original names (so dedup keys stay distinct)
+ *   - we still attach the library name as an alias on each claimant
+ *   - we emit a single `library_alias_collision` conflict listing all claimants
  */
 const preferLibraryTokenNames = ({
   variables,
@@ -1026,7 +1224,10 @@ const preferLibraryTokenNames = ({
 }: {
   variables: FigmaMcpVariableDefinition[];
   libraryStyles: readonly FigmaMcpStyleCatalogEntry[];
-}): FigmaMcpVariableDefinition[] => {
+}): {
+  variables: FigmaMcpVariableDefinition[];
+  conflicts: TokenConflict[];
+} => {
   const colorStylesByValue = new Map<string, string>();
   for (const style of libraryStyles) {
     if (style.color) {
@@ -1034,20 +1235,75 @@ const preferLibraryTokenNames = ({
     }
   }
 
-  return variables.map((variable) => {
+  // First pass: compute candidate library name for each variable index.
+  const candidates: Array<string | null> = variables.map((variable) => {
     if (variable.kind !== "color" || typeof variable.value !== "string") {
-      return variable;
+      return null;
     }
     const libraryName = colorStylesByValue.get(variable.value.toLowerCase());
-    if (libraryName && libraryName !== variable.name) {
+    if (!libraryName || libraryName === variable.name) {
+      return null;
+    }
+    return libraryName;
+  });
+
+  const claimantGroups = groupClaimantsByPostRenameMergeKey({
+    variables,
+    candidates,
+  });
+
+  const collidingIndices = new Set<number>();
+  const collisionGroups: ClaimantGroup[] = [];
+  for (const group of claimantGroups.values()) {
+    if (group.indices.length > 1) {
+      collisionGroups.push(group);
+      for (const index of group.indices) {
+        collidingIndices.add(index);
+      }
+    }
+  }
+
+  const nextVariables = variables.map((variable, index) => {
+    const libraryName = candidates[index];
+    if (libraryName === null || libraryName === undefined) {
+      return variable;
+    }
+    if (collidingIndices.has(index)) {
+      // Preserve original name; expose library name as an alias only.
       return {
         ...variable,
-        aliases: [...(variable.aliases ?? []), variable.name],
-        name: libraryName,
+        aliases: [...(variable.aliases ?? []), libraryName],
       };
     }
-    return variable;
+    // Sole claimant for this merge key — rename as before.
+    return {
+      ...variable,
+      aliases: [...(variable.aliases ?? []), variable.name],
+      name: libraryName,
+    };
   });
+
+  const conflicts: TokenConflict[] = collisionGroups
+    .map(({ libraryName, indices }) =>
+      buildAliasCollisionConflict({ libraryName, indices, variables }),
+    )
+    .sort((left, right) => {
+      if (
+        left.kind !== "library_alias_collision" ||
+        right.kind !== "library_alias_collision"
+      ) {
+        return 0;
+      }
+      const nameCompare = left.libraryName.localeCompare(right.libraryName);
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+      const leftMode = left.collidingVariables[0]?.modeName ?? "";
+      const rightMode = right.collidingVariables[0]?.modeName ?? "";
+      return leftMode.localeCompare(rightMode);
+    });
+
+  return { variables: nextVariables, conflicts };
 };
 
 /**

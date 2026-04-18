@@ -86,10 +86,8 @@ const SMALL_XML = readMcpFixture("metadata-small.xml");
 
 /**
  * XML with 60 FRAME nodes — nodeCount will be >= ADAPTIVE_NODE_THRESHOLD (50),
- * triggering subtree batching.  Uses self-closing tags so extractChildSubtreeIds
- * extracts valid IDs from every element.
+ * triggering subtree batching across more than MAX_SUBTREE_BATCH_SIZE direct children.
  */
-const LARGE_XML = readMcpFixture("metadata-large.xml");
 const DESIGN_CONTEXT_SUCCESS = readMcpFixtureJson<{
   code: string;
   assets: Record<string, unknown>;
@@ -116,6 +114,47 @@ const parseTool = async (req: Request): Promise<string> => {
     params?: { name?: string };
   };
   return body.params?.name ?? "";
+};
+
+const buildDirectChildXml = (
+  childCount: number,
+): { xml: string; childIds: string[] } => {
+  const childIds = Array.from(
+    { length: childCount },
+    (_, index) => `child:${String(index + 1)}`,
+  );
+  const xml = `<FRAME id="0:1" name="Root">${childIds
+    .map(
+      (childId, index) =>
+        `<FRAME id="${childId}" name="Frame${String(index + 1)}"/>`,
+    )
+    .join("")}</FRAME>`;
+  return { xml, childIds };
+};
+
+const buildNestedAdaptiveXml = (): {
+  xml: string;
+  directChildIds: string[];
+  nestedChildIds: string[];
+} => {
+  const nestedChildIds = Array.from(
+    { length: ADAPTIVE_NODE_THRESHOLD },
+    (_, index) => `nested:${String(index + 1)}`,
+  );
+  const directChildIds = ["branch:1", "branch:2"];
+  const xml =
+    `<FRAME id="0:1" name="Root">` +
+    `<FRAME id="${directChildIds[0]}" name="Branch1">` +
+    nestedChildIds
+      .map(
+        (childId, index) =>
+          `<FRAME id="${childId}" name="Nested${String(index + 1)}"/>`,
+      )
+      .join("") +
+    `</FRAME>` +
+    `<FRAME id="${directChildIds[1]}" name="Branch2"/>` +
+    `</FRAME>`;
+  return { xml, directChildIds, nestedChildIds };
 };
 
 // ---------------------------------------------------------------------------
@@ -159,12 +198,18 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
   const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
 
   // The three expected MCP calls (nodeId is provided so no root scan)
-  assert.equal(calls.some((entry) => entry.tool === "get_metadata"), true);
+  assert.equal(
+    calls.some((entry) => entry.tool === "get_metadata"),
+    true,
+  );
   assert.equal(
     calls.some((entry) => entry.tool === "get_design_context"),
     true,
   );
-  assert.equal(calls.some((entry) => entry.tool === "get_screenshot"), true);
+  assert.equal(
+    calls.some((entry) => entry.tool === "get_screenshot"),
+    true,
+  );
   assert.deepEqual(
     calls.find((entry) => entry.tool === "get_design_context")?.args,
     { fileKey: "abc", nodeId: "1:2" },
@@ -182,9 +227,10 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
   );
 });
 
-test("large design — subtree batching triggers multiple get_design_context calls", async () => {
+test("large design — subtree batching fetches all direct children in deterministic order", async () => {
   clearResolverCache();
 
+  const { xml, childIds } = buildDirectChildXml(ADAPTIVE_NODE_THRESHOLD + 10);
   const designContextCalls: string[] = [];
 
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -195,7 +241,7 @@ test("large design — subtree batching triggers multiple get_design_context cal
     };
 
     if (tool === "get_metadata") {
-      return jsonResponse(mcpOk({ xml: LARGE_XML }));
+      return jsonResponse(mcpOk({ xml }));
     }
     if (tool === "get_design_context") {
       const nodeId = body.params?.arguments?.nodeId ?? "unknown";
@@ -211,18 +257,120 @@ test("large design — subtree batching triggers multiple get_design_context cal
   const meta: FigmaMeta = { fileKey: "bigfile", nodeId: "0:1" };
   const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
 
-  // Subtree batching: up to MAX_SUBTREE_BATCH_SIZE (5) separate get_design_context calls
-  assert.ok(
-    designContextCalls.length > 1,
-    `Expected > 1 design context calls, got ${String(designContextCalls.length)}`,
+  assert.equal(
+    childIds.length > MAX_SUBTREE_BATCH_SIZE,
+    true,
+    "test setup must exceed the batch size",
   );
-  assert.ok(
-    designContextCalls.length <= MAX_SUBTREE_BATCH_SIZE,
-    `Expected <= ${String(MAX_SUBTREE_BATCH_SIZE)} calls, got ${String(designContextCalls.length)}`,
+  assert.deepEqual(designContextCalls, childIds);
+  assert.equal(
+    result.code,
+    childIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
+  );
+});
+
+test("large nested design — subtree batching only fetches direct children", async () => {
+  clearResolverCache();
+
+  const { xml, directChildIds, nestedChildIds } = buildNestedAdaptiveXml();
+  const designContextCalls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+    const body = (await new Request(input, init).json()) as {
+      params?: { arguments?: { nodeId?: string } };
+    };
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml }));
+    }
+    if (tool === "get_design_context") {
+      const nodeId = body.params?.arguments?.nodeId ?? "unknown";
+      designContextCalls.push(nodeId);
+      return jsonResponse(mcpOk({ code: `// code for ${nodeId}`, assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const meta: FigmaMeta = { fileKey: "nestedfile", nodeId: "0:1" };
+  const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
+
+  assert.deepEqual(designContextCalls, directChildIds);
+  assert.equal(designContextCalls.includes("0:1"), false);
+  for (const nestedChildId of nestedChildIds) {
+    assert.equal(designContextCalls.includes(nestedChildId), false);
+  }
+  assert.equal(
+    result.code,
+    directChildIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
+  );
+});
+
+test("large design — subtree batching keeps diagnostics ordered by direct child", async () => {
+  clearResolverCache();
+
+  const { xml, childIds } = buildDirectChildXml(ADAPTIVE_NODE_THRESHOLD + 1);
+  const attemptByNodeId = new Map<string, number>();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+    const body = (await new Request(input, init).json()) as {
+      params?: { arguments?: { nodeId?: string } };
+    };
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml }));
+    }
+    if (tool === "get_design_context") {
+      const nodeId = body.params?.arguments?.nodeId ?? "unknown";
+      const attempt = (attemptByNodeId.get(nodeId) ?? 0) + 1;
+      attemptByNodeId.set(nodeId, attempt);
+      if (
+        (nodeId === childIds[0] && attempt <= 2) ||
+        (nodeId === childIds[1] && attempt === 1)
+      ) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "0" },
+        });
+      }
+      if (nodeId === childIds[0]) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return jsonResponse(mcpOk({ code: `// code for ${nodeId}`, assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "diagnostics-file", nodeId: "0:1" },
+    createConfig(fetchImpl),
   );
 
-  // Code should be a merge of individual results
-  assert.ok(result.code.length > 0);
+  assert.equal(
+    result.code,
+    childIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
+  );
+  assert.deepEqual(
+    result.diagnostics?.map((diagnostic) => diagnostic.code),
+    ["W_MCP_RATE_LIMITED", "W_MCP_RATE_LIMITED", "W_MCP_RATE_LIMITED"],
+  );
+  assert.deepEqual(
+    result.diagnostics?.map((diagnostic) => diagnostic.message),
+    [
+      "MCP get_design_context rate limited (attempt 1/3)",
+      "MCP get_design_context rate limited (attempt 2/3)",
+      "MCP get_design_context rate limited (attempt 1/3)",
+    ],
+  );
 });
 
 test("direct nodeId provided — first MCP call is get_metadata, not root scan", async () => {
@@ -398,7 +546,9 @@ test("cache key includes version — different versions do not reuse cached cont
       return jsonResponse(mcpOk({ code: "// versioned code", assets: {} }));
     }
     if (tool === "get_screenshot") {
-      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/versioned-shot.png" }));
+      return jsonResponse(
+        mcpOk({ url: "https://cdn.figma.com/versioned-shot.png" }),
+      );
     }
     return jsonResponse(mcpOk({}));
   };
@@ -444,14 +594,22 @@ test("in-flight dedupe shares a single resolver request for identical cache keys
       return jsonResponse(mcpOk({ code: "// deduped", assets: {} }));
     }
     if (tool === "get_screenshot") {
-      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/deduped-shot.png" }));
+      return jsonResponse(
+        mcpOk({ url: "https://cdn.figma.com/deduped-shot.png" }),
+      );
     }
     return jsonResponse(mcpOk({}));
   };
 
   const config = createConfig(fetchImpl);
-  const first = resolveFigmaDesignContext({ fileKey: "abc", nodeId: "1:2" }, config);
-  const second = resolveFigmaDesignContext({ fileKey: "abc", nodeId: "1:2" }, config);
+  const first = resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    config,
+  );
+  const second = resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    config,
+  );
 
   releaseMetadata?.();
 
@@ -581,6 +739,112 @@ test("REST screenshot fallback provides preview when MCP falls back to REST", as
   );
 });
 
+test("REST screenshot fallback provides preview when MCP design context succeeds but MCP screenshot fails", async () => {
+  clearResolverCache();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com") {
+      if (url.includes("/images/")) {
+        return jsonResponse({
+          images: { "1:2": "https://cdn.figma.com/rest-shot.png" },
+        });
+      }
+      return jsonResponse(
+        mcpRestNodes("1:2", { type: "FRAME", name: "Screen" }),
+      );
+    }
+
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml: '<FRAME id="1:2" name="Screen"/>' }));
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return new Response("server error", { status: 500 });
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    { ...createConfig(fetchImpl), maxRetries: 1 },
+  );
+
+  assert.equal(result.screenshot, "https://cdn.figma.com/rest-shot.png");
+  assert.equal(result.fallbackMode, "none");
+  assert.ok(
+    (result.diagnostics ?? []).some(
+      (entry) => entry.code === "W_MCP_SCREENSHOT_FALLBACK_REST",
+    ),
+    `Expected W_MCP_SCREENSHOT_FALLBACK_REST diagnostic, got: ${JSON.stringify(
+      (result.diagnostics ?? []).map((d) => d.code),
+    )}`,
+  );
+});
+
+test("both MCP and REST screenshot fail — result is non-fatal with no screenshot and no W_MCP_SCREENSHOT_FALLBACK_REST", async () => {
+  clearResolverCache();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : (input as Request).url;
+
+    if (new URL(url).hostname === "api.figma.com") {
+      if (url.includes("/images/")) {
+        return new Response("internal server error", { status: 500 });
+      }
+      return jsonResponse(
+        mcpRestNodes("1:2", { type: "FRAME", name: "Screen" }),
+      );
+    }
+
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml: '<FRAME id="1:2" name="Screen"/>' }));
+    }
+    if (tool === "get_design_context") {
+      return jsonResponse(mcpOk({ code: "// code", assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return new Response("server error", { status: 500 });
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "abc", nodeId: "1:2" },
+    { ...createConfig(fetchImpl), maxRetries: 1 },
+  );
+
+  assert.equal(result.screenshot, undefined);
+  assert.equal(result.fallbackMode, "none");
+  assert.ok(
+    !(result.diagnostics ?? []).some(
+      (entry) => entry.code === "W_MCP_SCREENSHOT_FALLBACK_REST",
+    ),
+    `Expected no W_MCP_SCREENSHOT_FALLBACK_REST diagnostic, got: ${JSON.stringify(
+      (result.diagnostics ?? []).map((d) => d.code),
+    )}`,
+  );
+});
+
 test("REST fallback does not forward ISO lastModified timestamps as version query params", async () => {
   clearResolverCache();
 
@@ -638,7 +902,10 @@ test("REST fallback retries 429 using Retry-After guidance and surfaces diagnost
           ? input.href
           : (input as Request).url;
 
-    if (new URL(url).hostname === "api.figma.com" && !url.includes("/images/")) {
+    if (
+      new URL(url).hostname === "api.figma.com" &&
+      !url.includes("/images/")
+    ) {
       restNodeCalls += 1;
       if (restNodeCalls === 1) {
         return new Response("rate limited", {
@@ -744,10 +1011,7 @@ test("REST fallback treats null node documents as not-found errors", async () =>
         { ...createConfig(fetchImpl), maxRetries: 1 },
       ),
     (err: unknown) => {
-      assert.equal(
-        (err as { code?: string }).code,
-        "E_FIGMA_REST_NOT_FOUND",
-      );
+      assert.equal((err as { code?: string }).code, "E_FIGMA_REST_NOT_FOUND");
       return true;
     },
   );
@@ -828,7 +1092,8 @@ test("abort during root metadata resolution does not fall back to document root"
   };
 
   await assert.rejects(
-    () => resolveFigmaDesignContext({ fileKey: "abc" }, createConfig(fetchImpl)),
+    () =>
+      resolveFigmaDesignContext({ fileKey: "abc" }, createConfig(fetchImpl)),
     (err: unknown) => {
       assert.ok(err instanceof Error, "Expected abort error");
       return true;
@@ -1155,8 +1420,7 @@ test("metadata-based node resolution uses dataType hint when nodeId is absent", 
       if (nodeId === "0:1") {
         return jsonResponse(
           mcpOk({
-            xml:
-              '<FRAME id="2:1" name="Screen"/><COMPONENT_SET id="9:99" name="Button Variants"/>',
+            xml: '<FRAME id="2:1" name="Screen"/><COMPONENT_SET id="9:99" name="Button Variants"/>',
           }),
         );
       }
@@ -1203,8 +1467,7 @@ test("metadata-based node resolution prefers pasteID match when available", asyn
       if (nodeId === "0:1") {
         return jsonResponse(
           mcpOk({
-            xml:
-              '<FRAME id="2:7" name="Other Screen"/><FRAME id="8:42" name="Pasted Screen"/><COMPONENT_SET id="9:42" name="Shared Variants"/>',
+            xml: '<FRAME id="2:7" name="Other Screen"/><FRAME id="8:42" name="Pasted Screen"/><COMPONENT_SET id="9:42" name="Shared Variants"/>',
           }),
         );
       }

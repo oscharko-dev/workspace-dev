@@ -203,7 +203,7 @@ test("parseVariableDefsResponse — structured array format", () => {
       },
     ],
   };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result.length, 2);
   assert.equal(result[0].name, "color/primary/500");
   assert.equal(result[0].kind, "color");
@@ -219,7 +219,7 @@ test("parseVariableDefsResponse — flat record format", () => {
     "icon/default/secondary": "#949494",
     "spacing/md": 16,
   };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result.length, 2);
   const color = result.find((v) => v.name === "icon/default/secondary");
   assert.ok(color);
@@ -233,45 +233,136 @@ test("parseVariableDefsResponse — flat record format", () => {
 
 test("parseVariableDefsResponse — top-level array format", () => {
   const raw = [{ name: "color/bg", resolvedValue: "#FFFFFF", type: "COLOR" }];
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result.length, 1);
   assert.equal(result[0].kind, "color");
 });
 
 test("parseVariableDefsResponse — null returns empty", () => {
-  assert.deepEqual(parseVariableDefsResponse(null), []);
+  assert.deepEqual(parseVariableDefsResponse(null).defs, []);
 });
 
 test("parseVariableDefsResponse — undefined returns empty", () => {
-  assert.deepEqual(parseVariableDefsResponse(undefined), []);
+  assert.deepEqual(parseVariableDefsResponse(undefined).defs, []);
 });
 
 test("parseVariableDefsResponse — empty object returns empty", () => {
-  assert.deepEqual(parseVariableDefsResponse({}), []);
+  assert.deepEqual(parseVariableDefsResponse({}).defs, []);
 });
 
 test("parseVariableDefsResponse — skips entries without name", () => {
   const raw = { variables: [{ resolvedValue: "#FFF", type: "COLOR" }] };
-  assert.deepEqual(parseVariableDefsResponse(raw), []);
+  assert.deepEqual(parseVariableDefsResponse(raw).defs, []);
 });
 
 test("parseVariableDefsResponse — infers boolean kind", () => {
   const raw = { "feature/enabled": true };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result[0].kind, "boolean");
   assert.equal(result[0].value, true);
 });
 
 test("parseVariableDefsResponse — infers color from hex string", () => {
   const raw = { "bg/main": "#1a1a1a" };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result[0].kind, "color");
 });
 
 test("parseVariableDefsResponse — infers color from rgba string", () => {
   const raw = { "overlay/bg": "rgba(0, 0, 0, 0.5)" };
-  const result = parseVariableDefsResponse(raw);
+  const { defs: result } = parseVariableDefsResponse(raw);
   assert.equal(result[0].kind, "color");
+});
+
+test("parseVariableDefsResponse — resolves single-hop alias by name", () => {
+  const raw = {
+    variables: [
+      { name: "color/alias/primary", aliasId: "color/base/500", type: "COLOR" },
+      {
+        name: "color/base/500",
+        resolvedValue: "#3B82F6",
+        type: "COLOR",
+      },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const alias = defs.find((v) => v.name === "color/alias/primary");
+  assert.ok(alias);
+  assert.equal(alias.kind, "color");
+  assert.equal(alias.value, "#3B82F6");
+});
+
+test("parseVariableDefsResponse — resolves multi-hop alias chain", () => {
+  const raw = {
+    variables: [
+      { name: "semantic/success", aliasId: "color/green/500", type: "COLOR" },
+      { name: "color/green/500", aliasId: "color/base/green", type: "COLOR" },
+      {
+        name: "color/base/green",
+        resolvedValue: "#10B981",
+        type: "COLOR",
+      },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const semantic = defs.find((v) => v.name === "semantic/success");
+  assert.ok(semantic);
+  assert.equal(semantic.value, "#10B981");
+});
+
+test("parseVariableDefsResponse — resolves alias by variable id", () => {
+  const raw = {
+    variables: [
+      {
+        name: "color/alias",
+        aliasId: "VariableID:12:34",
+        type: "COLOR",
+      },
+      {
+        id: "VariableID:12:34",
+        name: "color/primary",
+        resolvedValue: "#6366F1",
+        type: "COLOR",
+      },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const alias = defs.find((v) => v.name === "color/alias");
+  assert.ok(alias);
+  assert.equal(alias.value, "#6366F1");
+});
+
+test("parseVariableDefsResponse — emits alias_cycle conflict for circular aliases", () => {
+  const raw = {
+    variables: [
+      { name: "color/a", aliasId: "color/b", type: "COLOR" },
+      { name: "color/b", aliasId: "color/a", type: "COLOR" },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.ok(
+    conflicts.some((c) => c.kind === "alias_cycle" && c.name === "color/a"),
+    "expected alias_cycle conflict for color/a",
+  );
+  const cycled = defs.find((v) => v.name === "color/a");
+  assert.ok(cycled);
+  assert.equal(cycled.value, "");
+});
+
+test("parseVariableDefsResponse — gracefully handles unresolvable alias target", () => {
+  const raw = {
+    variables: [
+      { name: "color/orphan", aliasId: "color/nonexistent", type: "COLOR" },
+    ],
+  };
+  const { defs, conflicts } = parseVariableDefsResponse(raw);
+  assert.equal(conflicts.length, 0);
+  const orphan = defs.find((v) => v.name === "color/orphan");
+  assert.ok(orphan);
+  assert.equal(orphan.value, "");
 });
 
 // ---------------------------------------------------------------------------
@@ -557,9 +648,14 @@ test("mergeVariablesWithExisting — figma tokens override existing", () => {
     existing,
   });
   assert.equal(conflicts.length, 1);
-  assert.equal(conflicts[0].figmaValue, "#NEW");
-  assert.equal(conflicts[0].existingValue, "#OLD");
-  assert.equal(conflicts[0].resolution, "figma");
+  const overrideConflict = conflicts[0];
+  assert.equal(overrideConflict.kind, "value_override");
+  if (overrideConflict.kind !== "value_override") {
+    throw new Error("expected value_override conflict");
+  }
+  assert.equal(overrideConflict.figmaValue, "#NEW");
+  assert.equal(overrideConflict.existingValue, "#OLD");
+  assert.equal(overrideConflict.resolution, "figma");
   const primary = merged.find(
     (v) => normalizeFigmaVariableName(v.name) === "color-primary",
   );
@@ -602,7 +698,10 @@ test("mergeVariablesWithExisting — preserves distinct variable modes", () => {
     },
   ];
 
-  const { merged, conflicts } = mergeVariablesWithExisting({ incoming, existing });
+  const { merged, conflicts } = mergeVariablesWithExisting({
+    incoming,
+    existing,
+  });
 
   assert.equal(conflicts.length, 0);
   assert.equal(merged.length, 2);
@@ -921,8 +1020,13 @@ test("resolveFigmaTokens — merges with existing variables and tracks conflicts
   });
 
   assert.equal(result.conflicts.length, 1);
-  assert.equal(result.conflicts[0].figmaValue, "#NEW");
-  assert.equal(result.conflicts[0].existingValue, "#OLD");
+  const overrideConflict = result.conflicts[0];
+  assert.equal(overrideConflict.kind, "value_override");
+  if (overrideConflict.kind !== "value_override") {
+    throw new Error("expected value_override conflict");
+  }
+  assert.equal(overrideConflict.figmaValue, "#NEW");
+  assert.equal(overrideConflict.existingValue, "#OLD");
   // Existing-only token preserved
   const spacing = result.variables.find((v) => v.name === "spacing/base");
   assert.ok(spacing);
@@ -972,6 +1076,291 @@ test("resolveFigmaTokens — library styles override raw variable names", async 
   assert.ok(
     renamed.aliases?.includes("raw/color/1"),
     "Original name should be in aliases",
+  );
+  // Single-claimant rename must not emit a collision conflict.
+  assert.equal(
+    result.conflicts.filter((c) => c.kind === "library_alias_collision").length,
+    0,
+    "Single-claimant rename should not emit a collision conflict",
+  );
+});
+
+test("resolveFigmaTokens — variable with no library match passes through unchanged", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            { name: "raw/color/1", resolvedValue: "#ABCDEF", type: "COLOR" },
+          ],
+        }),
+      );
+    }
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [],
+          styles: [
+            { name: "Brand/Primary", styleType: "FILL", color: "#3B82F6" },
+          ],
+          variables: [],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  const original = result.variables.find((v) => v.name === "raw/color/1");
+  assert.ok(original, "Non-matching variable should pass through unchanged");
+  assert.equal(
+    original.aliases ?? undefined,
+    undefined,
+    "Non-matching variable should not gain aliases",
+  );
+  assert.equal(
+    result.conflicts.filter((c) => c.kind === "library_alias_collision").length,
+    0,
+    "Non-matching variable must not produce a collision conflict",
+  );
+});
+
+test("resolveFigmaTokens — emits library_alias_collision when two variables share a hex matching one library style", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            {
+              name: "Colors/Brand/Primary",
+              resolvedValue: "#0052CC",
+              type: "COLOR",
+              collection: "Colors",
+            },
+            {
+              name: "Legacy/Brand/Primary",
+              resolvedValue: "#0052CC",
+              type: "COLOR",
+              collection: "Legacy",
+            },
+          ],
+        }),
+      );
+    }
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [],
+          styles: [
+            { name: "color/primary/500", styleType: "FILL", color: "#0052CC" },
+          ],
+          variables: [],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  // Both originals are preserved (no silent drop).
+  const colorsBrand = result.variables.find(
+    (v) => v.name === "Colors/Brand/Primary",
+  );
+  const legacyBrand = result.variables.find(
+    (v) => v.name === "Legacy/Brand/Primary",
+  );
+  assert.ok(colorsBrand, "Colors/Brand/Primary should be preserved");
+  assert.ok(legacyBrand, "Legacy/Brand/Primary should be preserved");
+
+  // Both carry the library name as an alias.
+  assert.ok(
+    colorsBrand.aliases?.includes("color/primary/500"),
+    "Colors/Brand/Primary should expose library name as alias",
+  );
+  assert.ok(
+    legacyBrand.aliases?.includes("color/primary/500"),
+    "Legacy/Brand/Primary should expose library name as alias",
+  );
+
+  // No variable was renamed to the library style name.
+  assert.equal(
+    result.variables.find((v) => v.name === "color/primary/500"),
+    undefined,
+    "No variable should be renamed when colliding",
+  );
+
+  // Exactly one collision conflict, listing both originals.
+  const collisionConflicts = result.conflicts.filter(
+    (c) => c.kind === "library_alias_collision",
+  );
+  assert.equal(collisionConflicts.length, 1);
+  const collision = collisionConflicts[0];
+  if (!collision || collision.kind !== "library_alias_collision") {
+    throw new Error("expected library_alias_collision conflict");
+  }
+  assert.equal(collision.libraryName, "color/primary/500");
+  assert.equal(collision.resolution, "preserve_original");
+  assert.equal(collision.collidingVariables.length, 2);
+  const collisionNames = collision.collidingVariables
+    .map((entry) => entry.name)
+    .sort();
+  assert.deepEqual(collisionNames, [
+    "Colors/Brand/Primary",
+    "Legacy/Brand/Primary",
+  ]);
+  for (const entry of collision.collidingVariables) {
+    assert.equal(entry.value, "#0052CC");
+  }
+});
+
+test("resolveFigmaTokens — renames cross-mode variables sharing a hex without collision", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            {
+              name: "Color/Brand",
+              resolvedValue: "#0052CC",
+              type: "COLOR",
+              mode: "light",
+            },
+            {
+              name: "Color/Brand",
+              resolvedValue: "#0052CC",
+              type: "COLOR",
+              mode: "dark",
+            },
+          ],
+        }),
+      );
+    }
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [],
+          styles: [
+            { name: "color/primary/500", styleType: "FILL", color: "#0052CC" },
+          ],
+          variables: [],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  // Both variables should be renamed since their merge keys differ by mode.
+  const renamed = result.variables.filter(
+    (v) => v.name === "color/primary/500",
+  );
+  assert.equal(
+    renamed.length,
+    2,
+    "Both cross-mode variables should be renamed",
+  );
+  for (const variable of renamed) {
+    assert.ok(
+      variable.aliases?.includes("Color/Brand"),
+      "Renamed variable should expose original name as alias",
+    );
+  }
+  const modes = renamed.map((v) => v.modeName).sort();
+  assert.deepEqual(modes, ["dark", "light"]);
+
+  // No collision conflict should be emitted.
+  assert.equal(
+    result.conflicts.filter((c) => c.kind === "library_alias_collision").length,
+    0,
+    "Cross-mode rename must not emit a collision conflict",
+  );
+});
+
+test("resolveFigmaTokens — no-op when variable already matches library style name", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            { name: "color/primary", resolvedValue: "#0052CC", type: "COLOR" },
+          ],
+        }),
+      );
+    }
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [],
+          styles: [
+            { name: "color/primary", styleType: "FILL", color: "#0052CC" },
+          ],
+          variables: [],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  const variable = result.variables.find((v) => v.name === "color/primary");
+  assert.ok(variable, "Variable should pass through unchanged");
+  assert.equal(
+    variable.aliases ?? undefined,
+    undefined,
+    "No alias should be added when name already matches",
+  );
+  assert.equal(
+    result.conflicts.filter((c) => c.kind === "library_alias_collision").length,
+    0,
+    "No collision conflict when name already matches library style",
   );
 });
 
@@ -1117,7 +1506,10 @@ test("resolveFigmaTokens — preserves mode alternatives and prefers light/defau
     },
   });
   assert.equal(result.designTokens.palette.primary, "#3B82F6");
-  assert.equal(result.cssCustomProperties, ":root {\n  --color-primary: #3B82F6;\n}");
+  assert.equal(
+    result.cssCustomProperties,
+    ":root {\n  --color-primary: #3B82F6;\n}",
+  );
   assert.deepEqual(result.tailwindExtension, {
     colors: {
       "color-primary": "#3B82F6",
