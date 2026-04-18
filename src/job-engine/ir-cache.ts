@@ -25,6 +25,7 @@ interface IrCacheDerivationOptions {
   screenElementBudget?: number;
   screenElementMaxDepth?: number;
   brandTheme?: string;
+  sparkasseTokensFilePath?: string;
   figmaSourceMode?: string;
   mcpEnrichmentFingerprint?: string;
 }
@@ -61,6 +62,7 @@ export const computeOptionsHash = (options: IrCacheDerivationOptions): string =>
     screenElementBudget: options.screenElementBudget,
     screenElementMaxDepth: options.screenElementMaxDepth,
     brandTheme: options.brandTheme,
+    sparkasseTokensFilePath: options.sparkasseTokensFilePath,
     figmaSourceMode: options.figmaSourceMode,
     mcpEnrichmentFingerprint: options.mcpEnrichmentFingerprint
   });

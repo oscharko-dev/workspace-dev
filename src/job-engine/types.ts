@@ -178,6 +178,7 @@ export interface JobEngineRuntime {
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
+  sparkasseTokensFilePath?: string;
   generationLocale: string;
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;

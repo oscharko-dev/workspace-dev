@@ -95,6 +95,20 @@ test("computeOptionsHash differs for different options", () => {
   assert.notEqual(a, b);
 });
 
+test("computeOptionsHash differs for different Sparkasse token sources", () => {
+  const a = computeOptionsHash({
+    screenElementBudget: 1200,
+    brandTheme: "sparkasse",
+    sparkasseTokensFilePath: "/tmp/sparkasse-a.json"
+  });
+  const b = computeOptionsHash({
+    screenElementBudget: 1200,
+    brandTheme: "sparkasse",
+    sparkasseTokensFilePath: "/tmp/sparkasse-b.json"
+  });
+  assert.notEqual(a, b);
+});
+
 // ── loadCachedIr ────────────────────────────────────────────────────────────
 
 test("loadCachedIr returns undefined for missing cache file", async () => {

@@ -1039,6 +1039,9 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       screenElementBudget: context.runtime.figmaScreenElementBudget,
       screenElementMaxDepth: context.runtime.figmaScreenElementMaxDepth,
       brandTheme: context.resolvedBrandTheme,
+      ...(context.runtime.sparkasseTokensFilePath !== undefined
+        ? { sparkasseTokensFilePath: context.runtime.sparkasseTokensFilePath }
+        : {}),
       figmaSourceMode: context.resolvedFigmaSourceMode,
       ...(hybridMcpEnrichment
         ? { mcpEnrichmentFingerprint: computeContentHash(hybridMcpEnrichment) }

@@ -1330,6 +1330,19 @@ test("figmaToDesignIrWithOptions applies brand theme policy deterministically", 
   assert.deepEqual(sparkasseIr.tokens, applySparkasseThemeDefaults(derivedTokens));
 });
 
+test("figmaToDesignIrWithOptions records Sparkasse token diagnostics for an invalid explicit source", () => {
+  const ir = figmaToDesignIrWithOptions(createSampleFigmaFile(), {
+    brandTheme: "sparkasse",
+    sparkasseTokensFilePath: "/definitely/missing/sparkasse-tokens.json"
+  });
+
+  assert.equal(ir.tokens.palette.primary, "#EE0000");
+  assert.equal(
+    ir.metrics?.nodeDiagnostics?.some((entry) => entry.category === "sparkasse-theme-load-failure"),
+    true
+  );
+});
+
 test("figmaToDesignIrWithOptions removes placeholder text only in instance/component-set context", () => {
   const ir = figmaToDesignIrWithOptions({
     name: "Placeholder Demo",

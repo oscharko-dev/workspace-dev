@@ -95,6 +95,7 @@ interface CliOptions {
   figmaScreenElementBudget: number;
   figmaScreenElementMaxDepth: number;
   brandTheme: WorkspaceBrandTheme;
+  sparkasseTokensFilePath: string | undefined;
   generationLocale: string;
   routerMode: WorkspaceRouterMode;
   commandTimeoutMs: number;
@@ -326,6 +327,10 @@ const parseArgs = (argv: string[]): CliOptions => {
     value: process.env.FIGMAPIPE_WORKSPACE_BRAND,
     fallback: DEFAULT_BRAND_THEME
   });
+  let sparkasseTokensFilePath =
+    process.env.FIGMAPIPE_WORKSPACE_SPARKASSE_TOKENS_FILE?.trim() ||
+    process.env.BRAND_TOKENS_FILE?.trim() ||
+    undefined;
   let generationLocale = resolveGenerationLocale({
     requestedLocale: process.env.FIGMAPIPE_WORKSPACE_GENERATION_LOCALE,
     fallbackLocale: DEFAULT_GENERATION_LOCALE
@@ -979,6 +984,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaScreenElementBudget,
     figmaScreenElementMaxDepth,
     brandTheme,
+    sparkasseTokensFilePath,
     generationLocale,
     routerMode,
     commandTimeoutMs,
@@ -1275,6 +1281,9 @@ const main = async (): Promise<void> => {
       figmaScreenElementBudget: options.figmaScreenElementBudget,
       figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth,
       brandTheme: options.brandTheme,
+      ...(options.sparkasseTokensFilePath !== undefined
+        ? { sparkasseTokensFilePath: options.sparkasseTokensFilePath }
+        : {}),
       generationLocale: options.generationLocale,
       routerMode: options.routerMode,
       commandTimeoutMs: options.commandTimeoutMs,

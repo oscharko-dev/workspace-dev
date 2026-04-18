@@ -1940,6 +1940,37 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
   assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
+test("IrDeriveService records Sparkasse token diagnostics for an invalid configured source", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({
+    input: {
+      figmaSourceMode: "local_json"
+    },
+    requestOverrides: {
+      brandTheme: "sparkasse"
+    },
+    runtimeOverrides: {
+      sparkasseTokensFilePath: "/definitely/missing/sparkasse-tokens.json"
+    }
+  });
+  const localPayloadPath = path.join(executionContext.paths.jobDir, "local-figma.json");
+  await writeFile(localPayloadPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+
+  await FigmaSourceService.execute(
+    {
+      figmaJsonPath: localPayloadPath
+    },
+    stageContextFor("figma.source")
+  );
+  await IrDeriveService.execute(undefined, stageContextFor("ir.derive"));
+
+  const designIr = JSON.parse(await readFile(executionContext.paths.designIrFile, "utf8")) as DesignIR;
+  assert.equal(
+    designIr.metrics?.nodeDiagnostics?.some((entry) => entry.category === "sparkasse-theme-load-failure"),
+    true
+  );
+  assert.equal(designIr.tokens.palette.primary, "#EE0000");
+});
+
 test("IrDeriveService persists screenVariantFamilies together with appShells for the variant-shell fixture", async () => {
   const { executionContext, stageContextFor } = await createExecutionContext({
     input: {

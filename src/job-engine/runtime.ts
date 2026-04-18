@@ -300,6 +300,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenElementBudget,
   figmaScreenElementMaxDepth,
   brandTheme,
+  sparkasseTokensFilePath,
   generationLocale,
   routerMode,
   commandTimeoutMs,
@@ -354,6 +355,7 @@ export const resolveRuntimeSettings = ({
   figmaScreenElementBudget?: number;
   figmaScreenElementMaxDepth?: number;
   brandTheme?: string;
+  sparkasseTokensFilePath?: string;
   generationLocale?: string;
   routerMode?: string;
   commandTimeoutMs?: number;
@@ -507,6 +509,9 @@ export const resolveRuntimeSettings = ({
         : DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
     brandTheme:
       typeof brandTheme === "string" ? (normalizeBrandTheme(brandTheme) ?? DEFAULT_BRAND_THEME) : DEFAULT_BRAND_THEME,
+    ...(typeof sparkasseTokensFilePath === "string" && sparkasseTokensFilePath.trim().length > 0
+      ? { sparkasseTokensFilePath: sparkasseTokensFilePath.trim() }
+      : {}),
     generationLocale: resolveGenerationLocale({
       requestedLocale: generationLocale,
       fallbackLocale: DEFAULT_GENERATION_LOCALE

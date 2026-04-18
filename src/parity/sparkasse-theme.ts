@@ -3,7 +3,8 @@ import type {
   DesignTokenTypographyScale,
   DesignTokenTypographyVariant,
   DesignTokenTypographyVariantName,
-  DesignTokens
+  DesignTokens,
+  NodeDiagnosticEntry
 } from "./types.js";
 import { DESIGN_TYPOGRAPHY_VARIANTS, completeTypographyScale } from "./typography-tokens.js";
 
@@ -16,6 +17,16 @@ interface SparkasseTokenSchema {
   typography?: Record<string, unknown>;
   spacing?: Record<string, unknown>;
   borderRadius?: Record<string, unknown>;
+}
+
+export interface SparkasseThemeOptions {
+  sparkasseTokensFilePath?: string;
+}
+
+export interface SparkasseThemeResolution {
+  tokens: DesignTokens;
+  diagnostics: NodeDiagnosticEntry[];
+  sourceKey: string;
 }
 
 const DEFAULT_SPARKASSE_FONT_FAMILY = "'sparkasseRegular', 'sparkasseRegular Fallback', Roboto, Arial, sans-serif";
@@ -237,7 +248,9 @@ const defaultSparkasseTokens: DesignTokens = {
   typography: defaultSparkasseTypography
 };
 
-let cachedSparkasseTokens: DesignTokens | null = null;
+const DEFAULT_SPARKASSE_SOURCE_KEY = "defaults";
+const SPARKASSE_THEME_NODE_ID = "__theme:sparkasse";
+const cachedSparkasseTokens = new Map<string, SparkasseThemeResolution>();
 
 const readTypographyVariantFromSchema = ({
   source,
@@ -287,134 +300,233 @@ const readTypographyVariantFromSchema = ({
   return undefined;
 };
 
-const loadSparkasseTokensFromSchema = (): DesignTokens => {
-  const tokensFile = process.env.BRAND_TOKENS_FILE ?? "/workspace-config/sparkasse-design-tokens.json";
+const cloneDesignTokens = (tokens: DesignTokens): DesignTokens => {
+  return {
+    ...tokens,
+    palette: {
+      ...tokens.palette,
+      action: { ...tokens.palette.action }
+    },
+    typography: cloneTypographyScale(tokens.typography)
+  };
+};
 
-  try {
-    const rawFile = readFileSync(tokensFile, "utf-8");
-    const parsed = JSON.parse(rawFile) as SparkasseTokenSchema;
-    const primary = readFirstColor(parsed, [["color", "brand", "primary"]]) ?? defaultSparkasseTokens.palette.primary;
-    const text = readFirstColor(parsed, [["color", "neutral", "gray-900"]]) ?? defaultSparkasseTokens.palette.text;
-    const success =
-      readFirstColor(parsed, [
-        ["color", "system", "success"],
-        ["color", "system", "success-alt"],
-        ["color", "semantic", "success"]
-      ]) ?? defaultSparkasseTokens.palette.success;
-    const warning =
-      readFirstColor(parsed, [
-        ["color", "system", "warning"],
-        ["color", "system", "warn"],
-        ["color", "semantic", "warning"]
-      ]) ?? defaultSparkasseTokens.palette.warning;
-    const error =
-      readFirstColor(parsed, [
-        ["color", "system", "error"],
-        ["color", "semantic", "error"],
-        ["color", "feedback", "error"]
-      ]) ?? defaultSparkasseTokens.palette.error;
-    const info =
-      readFirstColor(parsed, [
-        ["color", "system", "info"],
-        ["color", "semantic", "info"],
-        ["color", "feedback", "info"]
-      ]) ?? defaultSparkasseTokens.palette.info;
-    const divider =
-      readFirstColor(parsed, [
-        ["color", "neutral", "gray-200"],
-        ["color", "neutral", "gray-300"],
-        ["color", "border", "default"]
-      ]) ?? toHexWithAlpha(text, 0.12);
-    const secondary =
-      readFirstColor(parsed, [
-        ["color", "system", "success-alt"],
-        ["color", "system", "success"]
-      ]) ?? defaultSparkasseTokens.palette.secondary;
+const normalizeSparkasseTokensFilePath = (value: string | undefined): string | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+};
 
-    const fontFamily = normalizeFontFamily(
-      readFirstFontFamily(parsed, [
-        ["typography", "fontFamily", "regular"],
-        ["typography", "fontFamily", "body"],
-        ["typography", "fontFamily", "heading"]
-      ]) ?? defaultSparkasseTokens.fontFamily
-    );
-    const headingSize = readNumber(parsed, ["typography", "fontSize", "2xl"]) ?? defaultSparkasseTokens.headingSize;
-    const bodySize = readNumber(parsed, ["typography", "fontSize", "md"]) ?? defaultSparkasseTokens.bodySize;
+const createSparkasseThemeDiagnostic = ({
+  category,
+  reason
+}: {
+  category: NodeDiagnosticEntry["category"];
+  reason: string;
+}): NodeDiagnosticEntry => ({
+  nodeId: SPARKASSE_THEME_NODE_ID,
+  category,
+  reason
+});
 
-    const typographyPartial = Object.fromEntries(
-      DESIGN_TYPOGRAPHY_VARIANTS.flatMap((variantName) => {
-        const explicitVariant = readTypographyVariantFromSchema({
-          source: parsed,
+const buildTokensFromSchema = (parsed: SparkasseTokenSchema): DesignTokens => {
+  const primary = readFirstColor(parsed, [["color", "brand", "primary"]]) ?? defaultSparkasseTokens.palette.primary;
+  const text = readFirstColor(parsed, [["color", "neutral", "gray-900"]]) ?? defaultSparkasseTokens.palette.text;
+  const success =
+    readFirstColor(parsed, [
+      ["color", "system", "success"],
+      ["color", "system", "success-alt"],
+      ["color", "semantic", "success"]
+    ]) ?? defaultSparkasseTokens.palette.success;
+  const warning =
+    readFirstColor(parsed, [
+      ["color", "system", "warning"],
+      ["color", "system", "warn"],
+      ["color", "semantic", "warning"]
+    ]) ?? defaultSparkasseTokens.palette.warning;
+  const error =
+    readFirstColor(parsed, [
+      ["color", "system", "error"],
+      ["color", "semantic", "error"],
+      ["color", "feedback", "error"]
+    ]) ?? defaultSparkasseTokens.palette.error;
+  const info =
+    readFirstColor(parsed, [
+      ["color", "system", "info"],
+      ["color", "semantic", "info"],
+      ["color", "feedback", "info"]
+    ]) ?? defaultSparkasseTokens.palette.info;
+  const divider =
+    readFirstColor(parsed, [
+      ["color", "neutral", "gray-200"],
+      ["color", "neutral", "gray-300"],
+      ["color", "border", "default"]
+    ]) ?? toHexWithAlpha(text, 0.12);
+  const secondary =
+    readFirstColor(parsed, [
+      ["color", "system", "success-alt"],
+      ["color", "system", "success"]
+    ]) ?? defaultSparkasseTokens.palette.secondary;
+
+  const fontFamily = normalizeFontFamily(
+    readFirstFontFamily(parsed, [
+      ["typography", "fontFamily", "regular"],
+      ["typography", "fontFamily", "body"],
+      ["typography", "fontFamily", "heading"]
+    ]) ?? defaultSparkasseTokens.fontFamily
+  );
+  const headingSize = readNumber(parsed, ["typography", "fontSize", "2xl"]) ?? defaultSparkasseTokens.headingSize;
+  const bodySize = readNumber(parsed, ["typography", "fontSize", "md"]) ?? defaultSparkasseTokens.bodySize;
+
+  const typographyPartial = Object.fromEntries(
+    DESIGN_TYPOGRAPHY_VARIANTS.flatMap((variantName) => {
+      const explicitVariant = readTypographyVariantFromSchema({
+        source: parsed,
+        variantName,
+        fallbackFontFamily: fontFamily
+      });
+      const fallbackFontSizePx = readFirstNumber(parsed, TYPOGRAPHY_SIZE_FALLBACK_PATHS[variantName]);
+      if (!explicitVariant && fallbackFontSizePx === undefined) {
+        return [];
+      }
+      return [
+        [
           variantName,
-          fallbackFontFamily: fontFamily
-        });
-        const fallbackFontSizePx = readFirstNumber(parsed, TYPOGRAPHY_SIZE_FALLBACK_PATHS[variantName]);
-        if (!explicitVariant && fallbackFontSizePx === undefined) {
-          return [];
-        }
-        return [
-          [
-            variantName,
-            {
-              ...explicitVariant,
-              ...(typeof fallbackFontSizePx === "number" && explicitVariant?.fontSizePx === undefined
-                ? { fontSizePx: fallbackFontSizePx }
-                : {})
-            }
-          ]
-        ];
+          {
+            ...explicitVariant,
+            ...(typeof fallbackFontSizePx === "number" && explicitVariant?.fontSizePx === undefined
+              ? { fontSizePx: fallbackFontSizePx }
+              : {})
+          }
+        ]
+      ];
+    })
+  ) as Partial<Record<DesignTokenTypographyVariantName, Partial<DesignTokenTypographyVariant>>>;
+
+  const typography = completeTypographyScale({
+    partialScale: typographyPartial,
+    fontFamily,
+    headingSize,
+    bodySize
+  });
+
+  return {
+    palette: {
+      primary,
+      secondary,
+      background: readFirstColor(parsed, [["color", "neutral", "gray-50"]]) ?? defaultSparkasseTokens.palette.background,
+      text,
+      success,
+      warning,
+      error,
+      info,
+      divider,
+      action: buildActionPalette({
+        primaryColor: primary,
+        textColor: text
       })
-    ) as Partial<Record<DesignTokenTypographyVariantName, Partial<DesignTokenTypographyVariant>>>;
+    },
+    borderRadius: readNumber(parsed, ["borderRadius", "lg"]) ?? defaultSparkasseTokens.borderRadius,
+    spacingBase: readNumber(parsed, ["spacing", "xs"]) ?? defaultSparkasseTokens.spacingBase,
+    fontFamily,
+    headingSize: typography.h1.fontSizePx,
+    bodySize: typography.body1.fontSizePx,
+    typography
+  };
+};
 
-    const typography = completeTypographyScale({
-      partialScale: typographyPartial,
-      fontFamily,
-      headingSize,
-      bodySize
-    });
-
+export const resolveSparkasseThemeDefaults = (options: SparkasseThemeOptions = {}): SparkasseThemeResolution => {
+  const sparkasseTokensFilePath = normalizeSparkasseTokensFilePath(options.sparkasseTokensFilePath);
+  const sourceKey = sparkasseTokensFilePath ? `file:${sparkasseTokensFilePath}` : DEFAULT_SPARKASSE_SOURCE_KEY;
+  const cached = cachedSparkasseTokens.get(sourceKey);
+  if (cached) {
     return {
-      palette: {
-        primary,
-        secondary,
-        background: readFirstColor(parsed, [["color", "neutral", "gray-50"]]) ?? defaultSparkasseTokens.palette.background,
-        text,
-        success,
-        warning,
-        error,
-        info,
-        divider,
-        action: buildActionPalette({
-          primaryColor: primary,
-          textColor: text
+      ...cached,
+      tokens: cloneDesignTokens(cached.tokens),
+      diagnostics: [...cached.diagnostics]
+    };
+  }
+
+  const defaultResolution: SparkasseThemeResolution = {
+    tokens: cloneDesignTokens(defaultSparkasseTokens),
+    diagnostics: [],
+    sourceKey
+  };
+
+  if (!sparkasseTokensFilePath) {
+    cachedSparkasseTokens.set(sourceKey, defaultResolution);
+    return {
+      ...defaultResolution,
+      tokens: cloneDesignTokens(defaultResolution.tokens)
+    };
+  }
+
+  let rawFile: string;
+  try {
+    rawFile = readFileSync(sparkasseTokensFilePath, "utf-8");
+  } catch (error) {
+    const readFailure = {
+      ...defaultResolution,
+      diagnostics: [
+        createSparkasseThemeDiagnostic({
+          category: "sparkasse-theme-load-failure",
+          reason:
+            `Failed to read configured Sparkasse tokens file '${sparkasseTokensFilePath}': ` +
+            (error instanceof Error ? error.message : "unknown error")
         })
-      },
-      borderRadius: readNumber(parsed, ["borderRadius", "lg"]) ?? defaultSparkasseTokens.borderRadius,
-      spacingBase: readNumber(parsed, ["spacing", "xs"]) ?? defaultSparkasseTokens.spacingBase,
-      fontFamily,
-      headingSize: typography.h1.fontSizePx,
-      bodySize: typography.body1.fontSizePx,
-      typography
+      ]
     };
-  } catch {
+    cachedSparkasseTokens.set(sourceKey, readFailure);
     return {
-      ...defaultSparkasseTokens,
-      typography: cloneTypographyScale(defaultSparkasseTokens.typography)
+      ...readFailure,
+      tokens: cloneDesignTokens(readFailure.tokens),
+      diagnostics: [...readFailure.diagnostics]
     };
   }
-};
 
-export const getSparkasseThemeDefaults = (): DesignTokens => {
-  if (cachedSparkasseTokens) {
-    return cachedSparkasseTokens;
+  let parsed: SparkasseTokenSchema;
+  try {
+    parsed = JSON.parse(rawFile) as SparkasseTokenSchema;
+  } catch (error) {
+    const parseFailure = {
+      ...defaultResolution,
+      diagnostics: [
+        createSparkasseThemeDiagnostic({
+          category: "sparkasse-theme-parse-failure",
+          reason:
+            `Failed to parse configured Sparkasse tokens file '${sparkasseTokensFilePath}': ` +
+            (error instanceof Error ? error.message : "unknown error")
+        })
+      ]
+    };
+    cachedSparkasseTokens.set(sourceKey, parseFailure);
+    return {
+      ...parseFailure,
+      tokens: cloneDesignTokens(parseFailure.tokens),
+      diagnostics: [...parseFailure.diagnostics]
+    };
   }
 
-  cachedSparkasseTokens = loadSparkasseTokensFromSchema();
-  return cachedSparkasseTokens;
+  const resolved = {
+    tokens: buildTokensFromSchema(parsed),
+    diagnostics: [],
+    sourceKey
+  };
+  cachedSparkasseTokens.set(sourceKey, resolved);
+  return {
+    ...resolved,
+    tokens: cloneDesignTokens(resolved.tokens)
+  };
 };
 
-export const applySparkasseThemeDefaults = (tokens: DesignTokens): DesignTokens => {
-  const sparkasseDefaults = getSparkasseThemeDefaults();
+export const getSparkasseThemeDefaults = (options: SparkasseThemeOptions = {}): DesignTokens => {
+  return resolveSparkasseThemeDefaults(options).tokens;
+};
+
+export const applySparkasseThemeDefaults = (tokens: DesignTokens, options: SparkasseThemeOptions = {}): DesignTokens => {
+  const sparkasseDefaults = getSparkasseThemeDefaults(options);
 
   return {
     ...tokens,
