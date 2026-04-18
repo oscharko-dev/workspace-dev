@@ -60,6 +60,7 @@
   ],
   "sideEffects": false,
   "scripts": {
+    "prepare": "node scripts/install-git-hooks.mjs",
     "build": "tsup --config tsup.config.ts && node scripts/create-cjs-types.mjs && pnpm run ui:build",
     "typecheck": "tsc --noEmit && pnpm run ui:typecheck",
     "test": "pnpm run test:smoke:compile && pnpm run ui:build && tsx --test \"src/**/*.test.ts\" \"integration/**/*.test.ts\" && pnpm run test:scripts && pnpm run ui:test",
