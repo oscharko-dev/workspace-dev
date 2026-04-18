@@ -43,6 +43,9 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 npm install --save-dev workspace-dev
 ```
 
+> **Safe defaults**: This repo enforces `ignore-scripts=true` and `save-exact=true` via the root `.npmrc`.
+> If a dependency requires lifecycle scripts, add it explicitly with `npm install --ignore-scripts=false <pkg>` and document the exception in your PR.
+
 For projects that import `workspace-dev` types or compile against the published package declarations, use TypeScript `>=5.0.0`. The published dual ESM/CJS type surface is validated only for TypeScript 5+ consumers.
 
 ## Quickstart

@@ -6,3 +6,5 @@
 package.json @oscharko-dev
 pnpm-lock.yaml @oscharko-dev
 scripts/ @oscharko-dev
+.npmrc @oscharko-dev
+template/**/.npmrc @oscharko-dev
