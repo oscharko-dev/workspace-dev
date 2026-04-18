@@ -69,7 +69,7 @@
     "test:customer-board:live": "pnpm exec tsx --test integration/customer-board-golden.live.test.ts",
     "test:customer-board:update": "FIGMAPIPE_CUSTOMER_BOARD_APPROVE=true pnpm exec tsx integration/customer-board-golden.update.ts",
     "test:smoke:compile": "node scripts/check-source-compile-smoke.mjs",
-    "test:scripts": "node --test \"scripts/*.test.mjs\"",
+    "test:scripts": "node --test \"scripts/*.test.mjs\" && pnpm run lint:job-engine-catch-logging",
     "test:dast-smoke": "pnpm exec tsx --test src/server/dast-smoke.e2e.test.ts",
     "test:ci": "pnpm run test",
     "test:flaky-retry": "node scripts/run-test-with-flaky-retry.mjs",
@@ -104,6 +104,7 @@
     "ui:test:e2e:matrix": "node scripts/run-ui-e2e.mjs matrix",
     "ui:test:e2e:live": "node scripts/run-ui-e2e.mjs live",
     "lint:boundaries": "node scripts/check-boundary.mjs",
+    "lint:job-engine-catch-logging": "node scripts/check-job-engine-catch-logging.mjs",
     "lint:ts-style": "eslint \"src/**/*.ts\" --max-warnings=0 --ignore-pattern \"src/**/*.test.ts\" --ignore-pattern \"src/parity/fixtures/golden/**\"",
     "lint:no-telemetry": "node scripts/check-no-telemetry.mjs",
     "lint:publint": "publint",
@@ -112,6 +113,7 @@
     "verify:licenses": "node scripts/check-license-allowlist.mjs",
     "verify:lockfile-hosts": "node scripts/check-lockfile-host-allowlist.mjs",
     "verify:workflow-install-scripts": "node scripts/check-workflow-install-scripts.mjs",
+    "verify:npmrc-freshness": "node scripts/check-npmrc-freshness-policy.mjs",
     "verify:docs-template-stack": "node scripts/check-doc-template-stack.mjs",
     "verify:reproducible-build": "node scripts/verify-reproducible-build.mjs",
     "verify:airgap": "node scripts/verify-airgap-install.mjs",
@@ -129,8 +131,8 @@
     "sbom:spdx": "node scripts/generate-spdx.mjs artifacts/sbom/workspace-dev.spdx.json",
     "sbom:spdx:template": "node scripts/generate-spdx.mjs artifacts/sbom/figma-generated-app.spdx.json --package-root template/react-mui-app",
     "release:changesets:publish": "node scripts/changesets-publish.mjs",
-    "release:quality-gates": "pnpm run typecheck && pnpm run test && pnpm run template:install && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:coverage && pnpm run ui:test:e2e && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:cyclonedx:template && pnpm run sbom:spdx && pnpm run sbom:spdx:template && pnpm run verify:sbom:parity && pnpm run verify:airgap && pnpm run verify:workflow-install-scripts",
-    "release:quality-gates:publish-lifecycle": "pnpm run typecheck && pnpm run test && pnpm run template:install && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:cyclonedx:template && pnpm run sbom:spdx && pnpm run sbom:spdx:template && pnpm run verify:sbom:parity && pnpm run verify:airgap && pnpm run verify:workflow-install-scripts",
+    "release:quality-gates": "pnpm run typecheck && pnpm run test && pnpm run template:install && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:coverage && pnpm run ui:test:e2e && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:types-publish && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:cyclonedx:template && pnpm run sbom:spdx && pnpm run sbom:spdx:template && pnpm run verify:sbom:parity && pnpm run verify:airgap && pnpm run verify:workflow-install-scripts && pnpm run verify:npmrc-freshness",
+    "release:quality-gates:publish-lifecycle": "pnpm run typecheck && pnpm run test && pnpm run template:install && pnpm run template:test && pnpm run test:golden && pnpm run ui:test:coverage && pnpm run test:flaky-retry && pnpm run test:bdd && pnpm run test:property-based && pnpm run ui:lint && pnpm run lint:boundaries && pnpm run lint:ts-style && pnpm run lint:no-telemetry && pnpm run build && pnpm run lint:publint && pnpm run lint:size && pnpm run verify:licenses && pnpm run verify:pack && pnpm run verify:lockfile-hosts && pnpm run verify:docs-template-stack && pnpm run verify:reproducible-build && pnpm run verify:fips && pnpm run sbom:cyclonedx && pnpm run sbom:cyclonedx:template && pnpm run sbom:spdx && pnpm run sbom:spdx:template && pnpm run verify:sbom:parity && pnpm run verify:airgap && pnpm run verify:workflow-install-scripts && pnpm run verify:npmrc-freshness",
     "prepublishOnly": "pnpm run release:quality-gates:publish-lifecycle"
   },
   "peerDependencies": {
@@ -212,6 +214,7 @@
     "provenance": true
   },
   "pnpm": {
+    "onlyBuiltDependencies": [],
     "overrides": {
       "flatted": "^3.4.2",
       "vitest>picomatch": "^4.0.4"

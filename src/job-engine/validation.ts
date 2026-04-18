@@ -86,21 +86,35 @@ export const getUiGateReportPaths = ({
   };
 };
 
-const hasExistingNodeModules = async ({ generatedProjectDir }: { generatedProjectDir: string }): Promise<boolean> => {
+const hasExistingNodeModules = async ({
+  generatedProjectDir,
+  onLog
+}: {
+  generatedProjectDir: string;
+  onLog?: (message: string) => void;
+}): Promise<boolean> => {
   const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
   try {
     const metadata = await stat(nodeModulesDir);
     return metadata.isDirectory();
-  } catch {
+  } catch (error) {
+    onLog?.(`Validation debug: operation=hasExistingNodeModules.stat; nodeModulesDir='${nodeModulesDir}'; error=${error instanceof Error ? error.message : String(error)}.`);
     return false;
   }
 };
 
-const pathExists = async (candidatePath: string): Promise<boolean> => {
+const pathExists = async ({
+  candidatePath,
+  onLog
+}: {
+  candidatePath: string;
+  onLog?: (message: string) => void;
+}): Promise<boolean> => {
   try {
     await lstat(candidatePath);
     return true;
-  } catch {
+  } catch (error) {
+    onLog?.(`Validation debug: operation=pathExists.lstat; candidatePath='${candidatePath}'; error=${error instanceof Error ? error.message : String(error)}.`);
     return false;
   }
 };
@@ -127,7 +141,7 @@ const prepareValidationNodeModules = async ({
   const nodeModulesDir = path.join(generatedProjectDir, "node_modules");
 
   if (skipInstall) {
-    const nodeModulesExists = await hasExistingNodeModules({ generatedProjectDir });
+    const nodeModulesExists = await hasExistingNodeModules({ generatedProjectDir, onLog });
     if (!nodeModulesExists) {
       throw createPipelineError({
         code: "E_VALIDATE_PROJECT",
@@ -170,7 +184,7 @@ const prepareValidationNodeModules = async ({
     };
   }
 
-  if (await hasExistingNodeModules({ generatedProjectDir })) {
+  if (await hasExistingNodeModules({ generatedProjectDir, onLog })) {
     return {
       installRequired: true,
       strategy: "existing_node_modules"
@@ -180,7 +194,8 @@ const prepareValidationNodeModules = async ({
   let seedNodeModulesMetadata: Awaited<ReturnType<typeof stat>>;
   try {
     seedNodeModulesMetadata = await stat(seedNodeModulesDir);
-  } catch {
+  } catch (error) {
+    onLog(`Validation debug: operation=prepareValidationNodeModules.seed-stat; seedNodeModulesDir='${seedNodeModulesDir}'; error=${error instanceof Error ? error.message : String(error)}.`);
     return {
       installRequired: true,
       strategy: "fresh_install"
@@ -194,7 +209,7 @@ const prepareValidationNodeModules = async ({
     };
   }
 
-  if (await pathExists(nodeModulesDir)) {
+  if (await pathExists({ candidatePath: nodeModulesDir, onLog })) {
     await rm(nodeModulesDir, { recursive: true, force: true });
   }
 
@@ -302,10 +317,12 @@ const toRetryableDiagnosticStage = (commandName: string): RetryableValidationSta
 
 const toCodeContext = async ({
   filePath,
-  line
+  line,
+  onLog
 }: {
   filePath: string | undefined;
   line: number | undefined;
+  onLog?: (message: string) => void;
 }): Promise<string | undefined> => {
   if (!filePath || !line || line <= 0) {
     return undefined;
@@ -324,21 +341,25 @@ const toCodeContext = async ({
       output.push(`${index + 1}: ${lines[index] ?? ""}`);
     }
     return output.join("\n");
-  } catch {
+  } catch (error) {
+    onLog?.(`Validation debug: operation=toCodeContext.readFile; filePath='${filePath}'; line=${line}; error=${error instanceof Error ? error.message : String(error)}.`);
     return undefined;
   }
 };
 
 const toValidationDetailDiagnostics = async ({
-  diagnostics
+  diagnostics,
+  onLog
 }: {
   diagnostics: ValidationDiagnostic[];
+  onLog?: (message: string) => void;
 }): Promise<WorkspaceJobDiagnostic[]> => {
   const detailed: WorkspaceJobDiagnostic[] = [];
   for (const diagnostic of diagnostics.slice(0, MAX_EMITTED_VALIDATION_DIAGNOSTICS)) {
     const codeContext = await toCodeContext({
       filePath: diagnostic.filePath,
-      line: diagnostic.line
+      line: diagnostic.line,
+      ...(onLog ? { onLog } : {})
     });
     detailed.push({
       code: "E_VALIDATE_PROJECT_DETAIL",
@@ -411,7 +432,8 @@ const toValidationPipelineError = async ({
   generatedProjectDir,
   diagnostics,
   summary,
-  limits
+  limits,
+  onLog
 }: {
   commandName: string;
   timeoutSuffix: string;
@@ -422,10 +444,12 @@ const toValidationPipelineError = async ({
   diagnostics: ValidationDiagnostic[];
   summary: string | undefined;
   limits?: PipelineDiagnosticLimits;
+  onLog?: (message: string) => void;
 }) => {
   const hintSuffix = failureHint ? ` (${failureHint})` : "";
   const detailDiagnostics = await toValidationDetailDiagnostics({
-    diagnostics
+    diagnostics,
+    ...(onLog ? { onLog } : {})
   });
   const primaryDiagnostic: PipelineDiagnosticInput = {
     code: "E_VALIDATE_PROJECT",
@@ -504,9 +528,12 @@ export const runProjectValidationWithDeps = async ({
   const runValidationFeedback = deps?.runValidationFeedback ?? runValidationFeedbackImpl;
   const perfArtifactRoot = path.join(generatedProjectDir, ".figmapipe", "performance");
 
+  // --ignore-scripts is always set: generated-project dependencies are untrusted input, and
+  // pnpm lifecycle hooks would otherwise run with repo/CI credentials. If a generated app needs
+  // a native build step, invoke `pnpm rebuild <pkg>` explicitly as a separate command.
   const installArgs = lockfileMutable
     ? ["install", "--ignore-scripts", "--no-frozen-lockfile", "--reporter", "append-only"]
-    : ["install", "--frozen-lockfile", "--reporter", "append-only"];
+    : ["install", "--ignore-scripts", "--frozen-lockfile", "--reporter", "append-only"];
   if (installPreferOffline) {
     installArgs.push("--prefer-offline");
   }
@@ -817,7 +844,8 @@ export const runProjectValidationWithDeps = async ({
             generatedProjectDir,
             diagnostics: parsedDiagnostics,
             summary: undefined,
-            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {})
+            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
+            onLog
           });
         }
 
@@ -830,7 +858,8 @@ export const runProjectValidationWithDeps = async ({
             generatedProjectDir,
             diagnostics: parsedDiagnostics,
             summary: `Failed after ${MAX_VALIDATION_ATTEMPTS} attempts.`,
-            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {})
+            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
+            onLog
           });
         }
 
@@ -855,7 +884,8 @@ export const runProjectValidationWithDeps = async ({
             generatedProjectDir,
             diagnostics: feedback.diagnostics,
             summary: feedback.summary,
-            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {})
+            ...(pipelineDiagnosticLimits ? { limits: pipelineDiagnosticLimits } : {}),
+            onLog
           });
         }
 

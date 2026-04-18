@@ -481,7 +481,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         fetchImpl: context.fetchWithCancellation,
         onLog: (message) => {
           context.log({
-            level: "info",
+            level: "debug",
             message,
           });
         },

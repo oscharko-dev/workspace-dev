@@ -54,6 +54,9 @@ const logs: string[] = [];
 const onLog = (message: string): void => {
   logs.push(message);
 };
+const onDebugLog = (message: string): void => {
+  logs.push(message);
+};
 const clearLogs = (): void => {
   logs.length = 0;
 };
@@ -119,9 +122,11 @@ test("loadCachedIr returns undefined for missing cache file", async () => {
     contentHash: "abc123".padEnd(64, "0"),
     optionsHash: "def456".padEnd(64, "0"),
     ttlMs: 60_000,
-    onLog
+    onLog,
+    onDebugLog
   });
   assert.equal(result, undefined);
+  assert.ok(logs.some((log) => log.includes("operation=loadCachedIr.read")));
 });
 
 test("loadCachedIr returns undefined for corrupt JSON", async () => {

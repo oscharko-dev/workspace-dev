@@ -499,7 +499,7 @@ export interface WorkspaceJobStage {
 /** Structured job log line. */
 export interface WorkspaceJobLog {
   at: string;
-  level: "info" | "warn" | "error";
+  level: "debug" | "info" | "warn" | "error";
   stage?: WorkspaceJobStageName;
   message: string;
 }

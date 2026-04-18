@@ -1,100 +1,87 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { scanSourceText } from "./check-job-engine-catch-logging.mjs";
+import { analyzeSourceText } from "./check-job-engine-catch-logging.mjs";
 
-test("scanSourceText flags a bare catch block", () => {
-  const findings = scanSourceText({
-    filePath: "src/job-engine/example.ts",
-    sourceText: [
-      "export const run = () => {",
-      "  try {",
-      "    doWork();",
-      "  } catch {",
-      "  }",
-      "};"
-    ].join("\n")
+test("analyzeSourceText ignores catch blocks with obvious logging calls", () => {
+  const findings = analyzeSourceText({
+    filePath: "sample.ts",
+    text: `
+      try {
+        work();
+      } catch (error) {
+        onLog("handled");
+        return undefined;
+      }
+    `,
+  });
+
+  assert.deepEqual(findings, []);
+});
+
+test("analyzeSourceText flags empty catch blocks", () => {
+  const findings = analyzeSourceText({
+    filePath: "sample.ts",
+    text: `
+      try {
+        work();
+      } catch {
+      }
+    `,
   });
 
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].line, 4);
-  assert.equal(findings[0].reason, "bare catch block");
+  assert.match(findings[0].reason, /empty catch block/);
 });
 
-test("scanSourceText flags catch blocks that only return undefined without logging", () => {
-  const findings = scanSourceText({
-    filePath: "src/job-engine/example.ts",
-    sourceText: [
-      "export const run = () => {",
-      "  try {",
-      "    doWork();",
-      "  } catch (error) {",
-      "    if (isTransient(error)) {",
-      "      return undefined;",
-      "    }",
-      "    return undefined;",
-      "  }",
-      "};"
-    ].join("\n")
+test("analyzeSourceText flags nullish returns without logging", () => {
+  const findings = analyzeSourceText({
+    filePath: "sample.ts",
+    text: `
+      try {
+        work();
+      } catch (error) {
+        return undefined;
+      }
+    `,
   });
 
   assert.equal(findings.length, 1);
-  assert.equal(findings[0].line, 4);
-  assert.equal(findings[0].reason, "catch block returns nullish value without logging");
+  assert.match(findings[0].reason, /returns nullish value/);
 });
 
-test("scanSourceText allows catch blocks that log before returning undefined", () => {
-  const findings = scanSourceText({
-    filePath: "src/job-engine/example.ts",
-    sourceText: [
-      "export const run = (onLog: (message: string) => void) => {",
-      "  try {",
-      "    doWork();",
-      "  } catch (error) {",
-      "    onLog(`failed: ${String(error)}`);",
-      "    return undefined;",
-      "  }",
-      "};"
-    ].join("\n")
+test("analyzeSourceText flags swallowed catches that only conditionally rethrow", () => {
+  const findings = analyzeSourceText({
+    filePath: "sample.ts",
+    text: `
+      try {
+        work();
+      } catch (error) {
+        if (!(error instanceof Error)) {
+          throw error;
+        }
+      }
+    `,
   });
 
-  assert.deepEqual(findings, []);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].reason, /swallows errors without logging/);
 });
 
-test("scanSourceText allows catch blocks that call a diagnostic logging helper", () => {
-  const findings = scanSourceText({
-    filePath: "src/job-engine/example.ts",
-    sourceText: [
-      "const logExampleDiagnostic = () => {};",
-      "export const run = () => {",
-      "  try {",
-      "    doWork();",
-      "  } catch (error) {",
-      "    logExampleDiagnostic({ error });",
-      "    return undefined;",
-      "  }",
-      "};"
-    ].join("\n")
+test("analyzeSourceText ignores nested helper logging when the catch still swallows", () => {
+  const findings = analyzeSourceText({
+    filePath: "sample.ts",
+    text: `
+      try {
+        work();
+      } catch (error) {
+        const later = () => {
+          onLog("deferred");
+        };
+        return undefined;
+      }
+    `,
   });
 
-  assert.deepEqual(findings, []);
-});
-
-test("scanSourceText allows catch blocks that rethrow", () => {
-  const findings = scanSourceText({
-    filePath: "src/job-engine/example.ts",
-    sourceText: [
-      "export const run = () => {",
-      "  try {",
-      "    doWork();",
-      "  } catch (error) {",
-      "    if (error instanceof Error) {",
-      "      throw error;",
-      "    }",
-      "    return undefined;",
-      "  }",
-      "};"
-    ].join("\n")
-  });
-
-  assert.deepEqual(findings, []);
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].reason, /returns nullish value/);
 });

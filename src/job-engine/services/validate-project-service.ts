@@ -3003,7 +3003,7 @@ export const createValidateProjectService = ({
           abortSignal: context.abortSignal,
           onLog: (message) => {
             context.log({
-              level: "info",
+              level: "debug",
               message,
             });
           },
@@ -3877,6 +3877,12 @@ export const createValidateProjectService = ({
         outputRoot: context.resolvedPaths.outputRoot,
         boardKey: diffContext.boardKey,
         jobId: context.jobId,
+        onLog: (message) => {
+          context.log({
+            level: "debug",
+            message,
+          });
+        },
       });
       const diffReportPath = await writeGenerationDiffReportFn({
         jobDir: context.paths.jobDir,

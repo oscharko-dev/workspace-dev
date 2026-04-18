@@ -92,15 +92,30 @@ See `docs/visual-quality-assessment.md` for detailed architecture and scoring do
 ## Boundary Rules
 
 `workspace-dev` must not import from internal modules (`services/*`, `workspace/`, `infra/`, `scripts/`).
-All public types must be defined in `src/contracts/`.
+All contract-versioned public types must be defined in `src/contracts/`.
+Semver-governed runtime types exported from the root `workspace-dev` entrypoint
+may live outside `src/contracts/` when they model runtime behavior rather than
+the versioned contract schema.
 
 ## Contract Change Rules
 
-Any public API change requires:
+Public contract changes require:
 
 1. `CONTRACT_CHANGELOG.md` entry
+2. `CONTRACT_VERSION` bump
+3. Passing tests and type checks
+
+Public package/root-entrypoint API changes require:
+
+1. Explicit package semver treatment through Changesets and release notes
 2. Snapshot updates in `src/contract-version.test.ts` when runtime exports change
 3. Passing tests and type checks
+
+For avoidance of doubt:
+
+- Existing exports from the root `workspace-dev` entrypoint are public API.
+- Changing the runtime barrel in `src/index.ts` is not an internal refactor when it affects exported names.
+- Clarifying docs for an already-exported runtime symbol does not require a package or contract bump unless the underlying API itself changes.
 
 ## Adding new validated fields
 

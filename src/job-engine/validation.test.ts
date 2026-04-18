@@ -65,7 +65,7 @@ test("runProjectValidationWithDeps executes deterministic pnpm command sequence"
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
@@ -171,7 +171,7 @@ test("runProjectValidationWithDeps can disable lint autofix", async () => {
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint",
     "pnpm typecheck",
     "pnpm build"
@@ -345,7 +345,7 @@ test("runProjectValidationWithDeps appends perf assertion when enabled", async (
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
@@ -359,13 +359,14 @@ test("runProjectValidationWithDeps appends perf assertion when enabled", async (
 test("runProjectValidationWithDeps falls back to install when the seeded node_modules path does not exist", async () => {
   const generatedProjectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-validation-seed-missing-"));
   const calls: string[] = [];
+  const logs: string[] = [];
 
   try {
     await runProjectValidationWithDeps({
       generatedProjectDir,
       seedNodeModulesDir: path.join(generatedProjectDir, "missing-node-modules"),
-      onLog: () => {
-        // no-op
+      onLog: (message) => {
+        logs.push(message);
       },
       deps: {
         runCommand: async ({ command, args }) => {
@@ -385,12 +386,13 @@ test("runProjectValidationWithDeps falls back to install when the seeded node_mo
   }
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
     "pnpm build"
   ]);
+  assert.equal(logs.some((entry) => entry.includes("operation=prepareValidationNodeModules.seed-stat")), true);
 });
 
 test("runProjectValidationWithDeps still installs when a generated node_modules directory already exists", async () => {
@@ -427,7 +429,7 @@ test("runProjectValidationWithDeps still installs when a generated node_modules 
     await rm(seedRoot, { recursive: true, force: true });
   }
 
-  assert.equal(calls[0], "pnpm install --frozen-lockfile --reporter append-only --prefer-offline");
+  assert.equal(calls[0], "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline");
 });
 
 test("runProjectValidationWithDeps continues when lint autofix fails", async () => {
@@ -464,7 +466,7 @@ test("runProjectValidationWithDeps continues when lint autofix fails", async () 
   });
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",
@@ -593,7 +595,7 @@ test("runProjectValidationWithDeps retries lint/typecheck/build after successful
 
   assert.deepEqual(feedbackStages, ["lint"]);
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only --prefer-offline",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only --prefer-offline",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm lint --fix",
@@ -1523,7 +1525,7 @@ test("runProjectValidationWithDeps omits prefer-offline when disabled and falls 
   }
 
   assert.deepEqual(calls, [
-    "pnpm install --frozen-lockfile --reporter append-only",
+    "pnpm install --ignore-scripts --frozen-lockfile --reporter append-only",
     "pnpm lint --fix",
     "pnpm lint",
     "pnpm typecheck",

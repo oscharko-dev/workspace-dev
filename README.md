@@ -59,6 +59,46 @@ Default runtime URL: `http://127.0.0.1:1983/workspace`
 - UI: `http://127.0.0.1:1983/workspace/ui`
 - Deep link by file key: `http://127.0.0.1:1983/workspace/<figmaFileKey>`
 
+## Public API entrypoints
+
+The package currently exposes two public entrypoints:
+
+- `workspace-dev` — primary runtime entrypoint for `createWorkspaceServer`, contract types, mode-lock helpers, visual quality helpers, and advanced isolation helpers.
+- `workspace-dev/contracts` — contract-focused types and runtime constants for consumers that only need versioned contract data.
+
+For most consumers, `createWorkspaceServer` and the exported contract types are the intended day-to-day surface.
+
+### Advanced isolation lifecycle API
+
+The root `workspace-dev` entrypoint also intentionally exports an advanced
+isolation lifecycle API from `src/isolation.ts`.
+
+Per-project helpers:
+
+- `createProjectInstance`
+- `getProjectInstance`
+- `removeProjectInstance`
+- `listProjectInstances`
+- `ProjectInstance`
+
+Process-level lifecycle controls:
+
+- `removeAllInstances`
+- `registerIsolationProcessCleanup`
+- `unregisterIsolationProcessCleanup`
+
+Stability annotations:
+
+- `createWorkspaceServer` and contract types are the core stable surface for typical package consumers.
+- The isolation lifecycle API is a stable advanced surface for embedders that need to orchestrate multiple isolated `workspace-dev` child processes from one host process.
+- The isolation helpers are not experimental or internal-only today; any future relocation behind a dedicated subpath would require an explicit compatibility plan and semver-governed rollout.
+
+Operational constraints for the advanced isolation surface:
+
+- The parent-process instance registry is owned inside one Node.js process and is not safe to share across `worker_threads` or other concurrent mutation models.
+- Cleanup hooks are opt-in and best-effort; call `registerIsolationProcessCleanup()` only when your host process wants `workspace-dev` to tear down active child instances during process shutdown.
+- If you only need one local runtime, prefer `createWorkspaceServer` instead of managing isolated child processes directly.
+
 ## Repository layout
 
 The published package is intentionally small; this repository is broader because

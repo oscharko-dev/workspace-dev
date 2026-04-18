@@ -1890,6 +1890,161 @@ test("fetchFigmaFile reuses cached staged result on repeated runs", async () => 
   }
 });
 
+test("fetchFigmaFile logs when the latest cache index is missing and incremental fetch is skipped", async () => {
+  const cacheDir = await createTempCacheDir();
+  const logs: string[] = [];
+
+  try {
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:30:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return jsonResponse({
+          versions: [{ id: "2331244008983733558" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?")) {
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(logs.some((entry) => entry.includes("incremental index missing")), true);
+    assert.equal(logs.some((entry) => entry.includes("no previous cache index")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
+test("fetchFigmaFile logs when the previous cache entry is missing and incremental fetch is skipped", async () => {
+  const cacheDir = await createTempCacheDir();
+  const fileKey = "abc";
+  const previousLastModified = "2026-03-16T05:40:00Z";
+  const latestIndexPath = path.join(
+    cacheDir,
+    `${createHash("sha256").update(fileKey).digest("hex")}.latest.json`
+  );
+  const logs: string[] = [];
+
+  try {
+    await writeFile(
+      latestIndexPath,
+      `${JSON.stringify({
+        version: 1,
+        fileKey,
+        lastModified: previousLastModified,
+        updatedAt: Date.now()
+      }, null, 2)}\n`,
+      "utf8"
+    );
+
+    const fetchImpl: typeof fetch = async (url) => {
+      const asString = String(url);
+      if (asString.includes("?depth=1") && !asString.includes("/nodes?")) {
+        return jsonResponse({
+          name: "Demo",
+          lastModified: "2026-03-16T05:41:00Z",
+          document: { id: "0:0", type: "DOCUMENT", children: [] }
+        });
+      }
+      if (asString.includes("?geometry=paths") && !asString.includes("/nodes?")) {
+        return new Response("Request too large", { status: 413 });
+      }
+      if (asString.includes("/versions?page_size=1")) {
+        return jsonResponse({
+          versions: [{ id: "2331244008983733558" }]
+        });
+      }
+      if (asString.includes("?depth=5")) {
+        return jsonResponse(createBootstrapDocument());
+      }
+      if (asString.includes("/nodes?")) {
+        return jsonResponse({
+          nodes: {
+            "1:1": {
+              document: {
+                id: "1:1",
+                type: "FRAME",
+                name: "Loaded Screen A",
+                absoluteBoundingBox: { x: 0, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            },
+            "1:2": {
+              document: {
+                id: "1:2",
+                type: "FRAME",
+                name: "Loaded Screen B",
+                absoluteBoundingBox: { x: 420, y: 0, width: 400, height: 800 },
+                children: []
+              }
+            }
+          }
+        });
+      }
+      throw new Error(`Unexpected URL: ${asString}`);
+    };
+
+    await fetchFigmaFile({
+      ...createRequest(fetchImpl),
+      cacheEnabled: true,
+      cacheTtlMs: 60_000,
+      cacheDir,
+      onLog: (message) => {
+        logs.push(message);
+      }
+    });
+
+    assert.equal(logs.some((entry) => entry.includes("previous cache entry missing")), true);
+    assert.equal(logs.some((entry) => entry.includes("previous cache entry unavailable")), true);
+  } finally {
+    await rm(cacheDir, { recursive: true, force: true });
+  }
+});
+
 test("fetchFigmaFile incrementally refetches only changed staged candidates", async () => {
   const cacheDir = await createTempCacheDir();
   const logs: string[] = [];

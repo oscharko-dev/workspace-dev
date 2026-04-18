@@ -14,6 +14,15 @@
 - It is tracked in `CONTRACT_CHANGELOG.md`.
 - Use the contract version for compatibility audits, integration reviews, and contract-specific change tracking.
 
+## Runtime Export Surface
+
+- The root `workspace-dev` entrypoint is also a semver-governed public API surface.
+- Root barrel exports in `src/index.ts` are intentional public package exports, not private implementation details.
+- Removing or relocating an existing root export is a public package API change and requires explicit compatibility treatment before merge.
+- Breaking changes to existing root exports are governed by package semver and release through Changesets and package release notes.
+- `CONTRACT_VERSION` and `CONTRACT_CHANGELOG.md` govern versioned contract changes in `src/contracts/`; they do not automatically apply to every root-export change.
+- Additive documentation that clarifies the intended audience or stability of an existing root export does not, by itself, require a `CONTRACT_VERSION` bump.
+
 ## How The Two Tracks Relate
 
 - Package version and contract version do not need to match numerically.

@@ -1051,7 +1051,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
 
     const irCacheLog = (message: string): void => {
       context.log({
-        level: "info",
+        level: "debug",
         message,
       });
     };
