@@ -233,6 +233,11 @@ export type TokenConflict =
         modeName?: string;
       }>;
       resolution: "preserve_original";
+    }
+  | {
+      kind: "alias_cycle";
+      name: string;
+      chain: string[];
     };
 
 export interface TokenBridgeResult {
