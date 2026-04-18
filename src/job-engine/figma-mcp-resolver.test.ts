@@ -86,10 +86,8 @@ const SMALL_XML = readMcpFixture("metadata-small.xml");
 
 /**
  * XML with 60 FRAME nodes — nodeCount will be >= ADAPTIVE_NODE_THRESHOLD (50),
- * triggering subtree batching.  Uses self-closing tags so extractChildSubtreeIds
- * extracts valid IDs from every element.
+ * triggering subtree batching across more than MAX_SUBTREE_BATCH_SIZE direct children.
  */
-const LARGE_XML = readMcpFixture("metadata-large.xml");
 const DESIGN_CONTEXT_SUCCESS = readMcpFixtureJson<{
   code: string;
   assets: Record<string, unknown>;
@@ -116,6 +114,44 @@ const parseTool = async (req: Request): Promise<string> => {
     params?: { name?: string };
   };
   return body.params?.name ?? "";
+};
+
+const buildDirectChildXml = (
+  childCount: number,
+): { xml: string; childIds: string[] } => {
+  const childIds = Array.from(
+    { length: childCount },
+    (_, index) => `child:${String(index + 1)}`,
+  );
+  const xml = `<FRAME id="0:1" name="Root">${childIds
+    .map((childId, index) => `<FRAME id="${childId}" name="Frame${String(index + 1)}"/>`)
+    .join("")}</FRAME>`;
+  return { xml, childIds };
+};
+
+const buildNestedAdaptiveXml = (): {
+  xml: string;
+  directChildIds: string[];
+  nestedChildIds: string[];
+} => {
+  const nestedChildIds = Array.from(
+    { length: ADAPTIVE_NODE_THRESHOLD },
+    (_, index) => `nested:${String(index + 1)}`,
+  );
+  const directChildIds = ["branch:1", "branch:2"];
+  const xml =
+    `<FRAME id="0:1" name="Root">` +
+    `<FRAME id="${directChildIds[0]}" name="Branch1">` +
+    nestedChildIds
+      .map(
+        (childId, index) =>
+          `<FRAME id="${childId}" name="Nested${String(index + 1)}"/>`,
+      )
+      .join("") +
+    `</FRAME>` +
+    `<FRAME id="${directChildIds[1]}" name="Branch2"/>` +
+    `</FRAME>`;
+  return { xml, directChildIds, nestedChildIds };
 };
 
 // ---------------------------------------------------------------------------
@@ -182,9 +218,10 @@ test("small design — three MCP calls: get_metadata, get_design_context, get_sc
   );
 });
 
-test("large design — subtree batching triggers multiple get_design_context calls", async () => {
+test("large design — subtree batching fetches all direct children in deterministic order", async () => {
   clearResolverCache();
 
+  const { xml, childIds } = buildDirectChildXml(ADAPTIVE_NODE_THRESHOLD + 10);
   const designContextCalls: string[] = [];
 
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -195,7 +232,7 @@ test("large design — subtree batching triggers multiple get_design_context cal
     };
 
     if (tool === "get_metadata") {
-      return jsonResponse(mcpOk({ xml: LARGE_XML }));
+      return jsonResponse(mcpOk({ xml }));
     }
     if (tool === "get_design_context") {
       const nodeId = body.params?.arguments?.nodeId ?? "unknown";
@@ -211,18 +248,120 @@ test("large design — subtree batching triggers multiple get_design_context cal
   const meta: FigmaMeta = { fileKey: "bigfile", nodeId: "0:1" };
   const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
 
-  // Subtree batching: up to MAX_SUBTREE_BATCH_SIZE (5) separate get_design_context calls
-  assert.ok(
-    designContextCalls.length > 1,
-    `Expected > 1 design context calls, got ${String(designContextCalls.length)}`,
+  assert.equal(
+    childIds.length > MAX_SUBTREE_BATCH_SIZE,
+    true,
+    "test setup must exceed the batch size",
   );
-  assert.ok(
-    designContextCalls.length <= MAX_SUBTREE_BATCH_SIZE,
-    `Expected <= ${String(MAX_SUBTREE_BATCH_SIZE)} calls, got ${String(designContextCalls.length)}`,
+  assert.deepEqual(designContextCalls, childIds);
+  assert.equal(
+    result.code,
+    childIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
+  );
+});
+
+test("large nested design — subtree batching only fetches direct children", async () => {
+  clearResolverCache();
+
+  const { xml, directChildIds, nestedChildIds } = buildNestedAdaptiveXml();
+  const designContextCalls: string[] = [];
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+    const body = (await new Request(input, init).json()) as {
+      params?: { arguments?: { nodeId?: string } };
+    };
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml }));
+    }
+    if (tool === "get_design_context") {
+      const nodeId = body.params?.arguments?.nodeId ?? "unknown";
+      designContextCalls.push(nodeId);
+      return jsonResponse(mcpOk({ code: `// code for ${nodeId}`, assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const meta: FigmaMeta = { fileKey: "nestedfile", nodeId: "0:1" };
+  const result = await resolveFigmaDesignContext(meta, createConfig(fetchImpl));
+
+  assert.deepEqual(designContextCalls, directChildIds);
+  assert.equal(designContextCalls.includes("0:1"), false);
+  for (const nestedChildId of nestedChildIds) {
+    assert.equal(designContextCalls.includes(nestedChildId), false);
+  }
+  assert.equal(
+    result.code,
+    directChildIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
+  );
+});
+
+test("large design — subtree batching keeps diagnostics ordered by direct child", async () => {
+  clearResolverCache();
+
+  const { xml, childIds } = buildDirectChildXml(ADAPTIVE_NODE_THRESHOLD + 1);
+  const attemptByNodeId = new Map<string, number>();
+
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const req = new Request(input, init);
+    const tool = await parseTool(req);
+    const body = (await new Request(input, init).json()) as {
+      params?: { arguments?: { nodeId?: string } };
+    };
+
+    if (tool === "get_metadata") {
+      return jsonResponse(mcpOk({ xml }));
+    }
+    if (tool === "get_design_context") {
+      const nodeId = body.params?.arguments?.nodeId ?? "unknown";
+      const attempt = (attemptByNodeId.get(nodeId) ?? 0) + 1;
+      attemptByNodeId.set(nodeId, attempt);
+      if (
+        (nodeId === childIds[0] && attempt <= 2) ||
+        (nodeId === childIds[1] && attempt === 1)
+      ) {
+        return new Response("rate limited", {
+          status: 429,
+          headers: { "retry-after": "0" },
+        });
+      }
+      if (nodeId === childIds[0]) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return jsonResponse(mcpOk({ code: `// code for ${nodeId}`, assets: {} }));
+    }
+    if (tool === "get_screenshot") {
+      return jsonResponse(mcpOk({ url: "https://cdn.figma.com/shot.png" }));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaDesignContext(
+    { fileKey: "diagnostics-file", nodeId: "0:1" },
+    createConfig(fetchImpl),
   );
 
-  // Code should be a merge of individual results
-  assert.ok(result.code.length > 0);
+  assert.equal(
+    result.code,
+    childIds.map((nodeId) => `// code for ${nodeId}`).join("\n"),
+  );
+  assert.deepEqual(
+    result.diagnostics?.map((diagnostic) => diagnostic.code),
+    ["W_MCP_RATE_LIMITED", "W_MCP_RATE_LIMITED", "W_MCP_RATE_LIMITED"],
+  );
+  assert.deepEqual(
+    result.diagnostics?.map((diagnostic) => diagnostic.message),
+    [
+      "MCP get_design_context rate limited (attempt 1/3)",
+      "MCP get_design_context rate limited (attempt 2/3)",
+      "MCP get_design_context rate limited (attempt 1/3)",
+    ],
+  );
 });
 
 test("direct nodeId provided — first MCP call is get_metadata, not root scan", async () => {

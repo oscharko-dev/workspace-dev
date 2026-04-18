@@ -4514,6 +4514,9 @@ export const createJobEngine = ({
       requestSourceMode: "figma_url",
       figmaFileKey: session.fileKey,
       ...(session.nodeId.length > 0 ? { figmaNodeId: session.nodeId } : {}),
+      ...(session.scope === "partial"
+        ? { selectedNodeIds: [...session.selectedNodes] }
+        : {}),
       figmaAccessToken,
       enableGitPr: false,
     });

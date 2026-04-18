@@ -3,8 +3,10 @@ import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import type { WorkspaceImportSession } from "../contracts/index.js";
 import { createJobEngine, resolveRuntimeSettings } from "../job-engine.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./figma-hybrid-enrichment.js";
+import { createImportSessionStore } from "./import-session-store.js";
 import { STAGE_ARTIFACT_KEYS } from "./pipeline/artifact-keys.js";
 import { StageArtifactStore } from "./pipeline/artifact-store.js";
 import { createWorkspaceLogger } from "../logging.js";
@@ -360,6 +362,26 @@ const submitCompletedLocalJsonJob = async ({
   return { accepted, status };
 };
 
+const createImportSessionFixture = (
+  overrides: Partial<WorkspaceImportSession> = {},
+): WorkspaceImportSession => ({
+  id: "session-1",
+  jobId: "job-1",
+  sourceMode: "figma_url",
+  fileKey: "FILE",
+  nodeId: "1:2",
+  nodeName: "Home",
+  importedAt: "2026-04-18T10:00:00.000Z",
+  nodeCount: 5,
+  fileCount: 2,
+  selectedNodes: [],
+  scope: "all",
+  componentMappings: 1,
+  pasteIdentityKey: null,
+  replayable: true,
+  ...overrides,
+});
+
 test("createJobEngine accepts jobs and exposes queued status", () => {
   const tempRoot = path.join(os.tmpdir(), "workspace-dev-engine-accept");
   const engine = createJobEngine({
@@ -379,6 +401,105 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
   assert.equal(accepted.acceptedModes.llmCodegenMode, "deterministic");
   assert.equal(engine.getJob("unknown"), undefined);
   assert.equal(engine.getJobResult("unknown"), undefined);
+});
+
+test("createJobEngine reimportImportSession replays stored selected nodes for partial sessions only", async () => {
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-reimport-scope-"));
+  const store = createImportSessionStore({
+    rootDir: path.join(tempRoot, "import-sessions"),
+  });
+  await store.save(
+    createImportSessionFixture({
+      id: "session-partial",
+      jobId: "job-partial",
+      fileKey: "FILE-PARTIAL",
+      nodeId: "2:3",
+      selectedNodes: ["2:3", "2:4"],
+      scope: "partial",
+    }),
+  );
+  await store.save(
+    createImportSessionFixture({
+      id: "session-all",
+      jobId: "job-all",
+      fileKey: "FILE-ALL",
+      nodeId: "5:6",
+      importedAt: "2026-04-18T11:00:00.000Z",
+    }),
+  );
+  await store.save(
+    createImportSessionFixture({
+      id: "session-all-stale-selected",
+      jobId: "job-all-stale-selected",
+      fileKey: "FILE-ALL-STALE",
+      nodeId: "7:8",
+      importedAt: "2026-04-18T12:00:00.000Z",
+      selectedNodes: ["7:8", "7:9"],
+      scope: "all",
+    }),
+  );
+
+  const previousToken = process.env.FIGMA_ACCESS_TOKEN;
+  process.env.FIGMA_ACCESS_TOKEN = "token";
+
+  try {
+    const engine = createFastJobEngine({ tempRoot });
+    const reimportedJobIds: string[] = [];
+
+    const partialAccepted = await engine.reimportImportSession({
+      sessionId: "session-partial",
+    });
+    reimportedJobIds.push(partialAccepted.jobId);
+    assert.deepEqual(
+      engine.getJob(partialAccepted.jobId)?.request.selectedNodeIds,
+      ["2:3", "2:4"],
+    );
+    engine.cancelJob({
+      jobId: partialAccepted.jobId,
+      reason: "test cleanup",
+    });
+
+    const allAccepted = await engine.reimportImportSession({
+      sessionId: "session-all",
+    });
+    reimportedJobIds.push(allAccepted.jobId);
+    assert.equal(
+      engine.getJob(allAccepted.jobId)?.request.selectedNodeIds,
+      undefined,
+    );
+    engine.cancelJob({
+      jobId: allAccepted.jobId,
+      reason: "test cleanup",
+    });
+
+    const staleAllAccepted = await engine.reimportImportSession({
+      sessionId: "session-all-stale-selected",
+    });
+    reimportedJobIds.push(staleAllAccepted.jobId);
+    assert.equal(
+      engine.getJob(staleAllAccepted.jobId)?.request.selectedNodeIds,
+      undefined,
+    );
+    engine.cancelJob({
+      jobId: staleAllAccepted.jobId,
+      reason: "test cleanup",
+    });
+
+    for (const jobId of reimportedJobIds) {
+      const status = await waitForTerminalStatus({
+        getStatus: engine.getJob,
+        jobId,
+      });
+      assert.equal(status.status, "canceled");
+    }
+  } finally {
+    if (previousToken === undefined) {
+      delete process.env.FIGMA_ACCESS_TOKEN;
+    } else {
+      process.env.FIGMA_ACCESS_TOKEN = previousToken;
+    }
+    await rm(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("createJobEngine stores a trimmed storybookStaticDir in request metadata", async () => {

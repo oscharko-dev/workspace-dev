@@ -44,7 +44,11 @@ import type {
   WorkspaceRuntimeLogLevel,
   WorkspaceRuntimeLogger,
 } from "../logging.js";
-import { enforceModeLock, getAllowedFigmaSourceModes } from "../mode-lock.js";
+import {
+  enforceModeLock,
+  getAllowedFigmaSourceModes,
+  validateModeLock,
+} from "../mode-lock.js";
 import { buildScreenArtifactIdentities } from "../parity/generator-artifacts.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
 import type { ScreenIR } from "../parity/types-ir.js";
@@ -232,6 +236,41 @@ function normalizeFigmaUrlSubmitInput(
       ...(figmaNodeId !== undefined ? { figmaNodeId } : {}),
       figmaAccessToken,
     },
+  };
+}
+
+function resolveBlockedModeViolation(
+  input: unknown,
+): { figmaSourceMode?: string; llmCodegenMode?: string; message: string } | null {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return null;
+  }
+
+  const candidate = input as {
+    figmaSourceMode?: unknown;
+    llmCodegenMode?: unknown;
+  };
+  const figmaSourceMode =
+    typeof candidate.figmaSourceMode === "string"
+      ? candidate.figmaSourceMode
+      : undefined;
+  const llmCodegenMode =
+    typeof candidate.llmCodegenMode === "string"
+      ? candidate.llmCodegenMode
+      : undefined;
+
+  const modeLock = validateModeLock({ figmaSourceMode, llmCodegenMode });
+  const blockedMessage = modeLock.errors.find((message) =>
+    message.includes("not available in workspace-dev"),
+  );
+  if (!blockedMessage) {
+    return null;
+  }
+
+  return {
+    ...(figmaSourceMode !== undefined ? { figmaSourceMode } : {}),
+    ...(llmCodegenMode !== undefined ? { llmCodegenMode } : {}),
+    message: blockedMessage,
   };
 }
 
@@ -3229,6 +3268,25 @@ export function createWorkspaceRequestHandler({
           sendValidationError({
             statusCode: normalizedSubmitInput.statusCode,
             payload: normalizedSubmitInput.payload,
+            fallbackMessage: "Submit request validation failed.",
+          });
+          return;
+        }
+
+        const blockedModeViolation = resolveBlockedModeViolation(
+          normalizedSubmitInput.value,
+        );
+        if (blockedModeViolation) {
+          sendValidationError({
+            payload: {
+              error: "MODE_LOCK_VIOLATION",
+              message: blockedModeViolation.message,
+              allowedModes: {
+                figmaSourceMode: defaults.figmaSourceMode,
+                figmaSourceModes: [...getAllowedFigmaSourceModes()],
+                llmCodegenMode: defaults.llmCodegenMode,
+              },
+            },
             fallbackMessage: "Submit request validation failed.",
           });
           return;
