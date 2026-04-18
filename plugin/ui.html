@@ -139,6 +139,7 @@
       const statusEl = document.getElementById("status");
 
       let lastPayload = null;
+      let lastUploadEndpointUrl = "";
 
       exportBtn.addEventListener("click", () => {
         exportBtn.disabled = true;
@@ -152,12 +153,15 @@
       });
 
       uploadBtn.addEventListener("click", () => {
-        const endpointUrl = urlInput.value.trim();
+        const endpointUrl = normalizeWorkspaceDevUrl(urlInput.value);
         if (!endpointUrl) {
-          statusEl.textContent = "Please enter a WorkspaceDev URL.";
+          statusEl.textContent =
+            "Please enter a valid WorkspaceDev URL (http:// or https://).";
           statusEl.className = "status-error";
           return;
         }
+        urlInput.value = endpointUrl;
+        lastUploadEndpointUrl = endpointUrl;
         exportBtn.disabled = true;
         uploadBtn.disabled = true;
         statusEl.textContent = "";
@@ -211,14 +215,20 @@
         if (msg.type === "upload-result") {
           statusEl.textContent = "";
           const prefix = document.createTextNode("Sent! Job ");
-          const link = document.createElement("a");
-          link.href = msg.trackingUrl;
-          link.target = "_blank";
-          link.rel = "noopener";
-          link.textContent = msg.jobId;
           const suffix = document.createTextNode(" is processing.");
+          const trackingUrl = buildTrackingUrl(lastUploadEndpointUrl, msg.jobId);
+          const jobIdText = String(msg.jobId ?? "");
           statusEl.appendChild(prefix);
-          statusEl.appendChild(link);
+          if (trackingUrl) {
+            const link = document.createElement("a");
+            link.href = trackingUrl;
+            link.target = "_blank";
+            link.rel = "noopener noreferrer";
+            link.textContent = jobIdText;
+            statusEl.appendChild(link);
+          } else {
+            statusEl.appendChild(document.createTextNode(jobIdText));
+          }
           statusEl.appendChild(suffix);
           statusEl.className = "status-success";
           exportBtn.disabled = false;
@@ -246,6 +256,34 @@
         URL.revokeObjectURL(url);
         statusEl.textContent = "Downloaded!";
         statusEl.className = "status-success";
+      }
+
+      function normalizeWorkspaceDevUrl(rawUrl) {
+        const trimmed = String(rawUrl ?? "").trim();
+        if (!trimmed) {
+          return "";
+        }
+        try {
+          const parsed = new URL(trimmed);
+          if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+            return "";
+          }
+          parsed.search = "";
+          parsed.hash = "";
+          parsed.pathname = parsed.pathname.replace(/\/+$/, "");
+          return parsed.toString().replace(/\/$/, "");
+        } catch {
+          return "";
+        }
+      }
+
+      function buildTrackingUrl(endpointUrl, jobId) {
+        const normalizedEndpoint = normalizeWorkspaceDevUrl(endpointUrl);
+        const safeJobId = String(jobId ?? "").trim();
+        if (!normalizedEndpoint || !safeJobId) {
+          return "";
+        }
+        return `${normalizedEndpoint}/workspace/jobs/${encodeURIComponent(safeJobId)}`;
       }
 
     </script>
