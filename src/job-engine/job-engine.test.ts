@@ -1,5 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  rm,
+  symlink,
+  writeFile,
+} from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -15,9 +23,11 @@ import { ensureTemplateValidationSeedNodeModules } from "./test-validation-seed.
 const waitForTerminalStatus = async ({
   getStatus,
   jobId,
-  timeoutMs = 120_000
+  timeoutMs = 120_000,
 }: {
-  getStatus: (jobId: string) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
+  getStatus: (
+    jobId: string,
+  ) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
   jobId: string;
   timeoutMs?: number;
 }) => {
@@ -35,7 +45,9 @@ const waitForTerminalStatus = async ({
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
-  throw new Error(`Timed out after ${timeoutMs}ms waiting for job ${jobId} status`);
+  throw new Error(
+    `Timed out after ${timeoutMs}ms waiting for job ${jobId} status`,
+  );
 };
 
 const HEAVY_JOB_TIMEOUT_MS = 180_000;
@@ -55,12 +67,19 @@ const createLocalFigmaPayload = () => ({
             type: "FRAME",
             name: "Local Screen",
             absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
-            children: [{ id: "title", type: "TEXT", characters: "Hello", absoluteBoundingBox: { x: 0, y: 0, width: 80, height: 20 } }]
-          }
-        ]
-      }
-    ]
-  }
+            children: [
+              {
+                id: "title",
+                type: "TEXT",
+                characters: "Hello",
+                absoluteBoundingBox: { x: 0, y: 0, width: 80, height: 20 },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 });
 
 const listFilesRecursively = async (rootDir: string): Promise<string[]> => {
@@ -125,57 +144,59 @@ const createLowFidelityFigmaPayload = () => ({
                   x: (index % 3) * 220,
                   y: Math.floor(index / 3) * 120,
                   width: 200,
-                  height: 96
+                  height: 96,
                 },
-                children: []
+                children: [],
               })),
               {
                 id: "vector-logo",
                 type: "VECTOR",
                 name: "Sparkasse S",
-                absoluteBoundingBox: { x: 24, y: 24, width: 24, height: 24 }
+                absoluteBoundingBox: { x: 24, y: 24, width: 24, height: 24 },
               },
               {
                 id: "vector-dot",
                 type: "VECTOR",
                 name: "Ellipse 4",
-                absoluteBoundingBox: { x: 52, y: 24, width: 12, height: 12 }
+                absoluteBoundingBox: { x: 52, y: 24, width: 12, height: 12 },
               },
               {
                 id: "text-title",
                 type: "TEXT",
                 name: "Heading",
                 characters: "Finanzierungsplaner",
-                absoluteBoundingBox: { x: 24, y: 200, width: 240, height: 24 }
+                absoluteBoundingBox: { x: 24, y: 200, width: 240, height: 24 },
               },
               {
                 id: "text-meta",
                 type: "TEXT",
                 name: "Meta",
                 characters: "Meyer Technology GmbH",
-                absoluteBoundingBox: { x: 24, y: 232, width: 200, height: 20 }
+                absoluteBoundingBox: { x: 24, y: 232, width: 200, height: 20 },
               },
               {
                 id: "text-chip",
                 type: "TEXT",
                 name: "Chip",
                 characters: "Bearbeitung gesperrt",
-                absoluteBoundingBox: { x: 24, y: 264, width: 180, height: 20 }
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }
+                absoluteBoundingBox: { x: 24, y: 264, width: 180, height: 20 },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 });
 
 const createInvalidStorybookBuild = async ({
-  rootDir = os.tmpdir()
+  rootDir = os.tmpdir(),
 }: {
   rootDir?: string;
 } = {}): Promise<string> => {
-  const buildDir = await mkdtemp(path.join(rootDir, "workspace-dev-engine-invalid-storybook-"));
+  const buildDir = await mkdtemp(
+    path.join(rootDir, "workspace-dev-engine-invalid-storybook-"),
+  );
   const assetsDir = path.join(buildDir, "assets");
   await mkdir(assetsDir, { recursive: true });
 
@@ -190,12 +211,16 @@ const createInvalidStorybookBuild = async ({
         storiesImports: [],
         type: "story",
         tags: ["dev", "test"],
-        componentPath: "./src/core/Tooltip/Tooltip.tsx"
-      }
-    }
+        componentPath: "./src/core/Tooltip/Tooltip.tsx",
+      },
+    },
   };
 
-  await writeFile(path.join(buildDir, "index.json"), `${JSON.stringify(indexJson, null, 2)}\n`, "utf8");
+  await writeFile(
+    path.join(buildDir, "index.json"),
+    `${JSON.stringify(indexJson, null, 2)}\n`,
+    "utf8",
+  );
   await writeFile(
     path.join(buildDir, "iframe.html"),
     `
@@ -206,7 +231,7 @@ const createInvalidStorybookBuild = async ({
         </body>
       </html>
     `,
-    "utf8"
+    "utf8",
   );
   await writeFile(
     path.join(assetsDir, "iframe-test.js"),
@@ -215,7 +240,7 @@ const createInvalidStorybookBuild = async ({
         "./src/core/Tooltip/stories/Tooltip.stories.tsx": n(() => c0(() => import("./Tooltip.stories-test.js"), true ? __vite__mapDeps([1]) : void 0, import.meta.url), "./src/core/Tooltip/stories/Tooltip.stories.tsx")
       };
     `,
-    "utf8"
+    "utf8",
   );
   await writeFile(
     path.join(assetsDir, "Tooltip.stories-test.js"),
@@ -224,7 +249,7 @@ const createInvalidStorybookBuild = async ({
         title: "ReactUI/Core/Tooltip"
       };
     `,
-    "utf8"
+    "utf8",
   );
   await writeFile(
     path.join(assetsDir, "shared-theme.js"),
@@ -237,7 +262,7 @@ const createInvalidStorybookBuild = async ({
       });
       export const Wrapped = () => jsx(ThemeProvider, { theme: appTheme, children: jsx(App, {}) });
     `,
-    "utf8"
+    "utf8",
   );
 
   return buildDir;
@@ -245,7 +270,7 @@ const createInvalidStorybookBuild = async ({
 
 const createCustomerProfileFixture = ({
   packageName = "@customer/components",
-  dependencyVersion = "^1.2.3"
+  dependencyVersion = "^1.2.3",
 }: {
   packageName?: string;
   dependencyVersion?: string;
@@ -258,9 +283,9 @@ const createCustomerProfileFixture = ({
       aliases: {
         figma: ["components"],
         storybook: ["components"],
-        code: [packageName]
-      }
-    }
+        code: [packageName],
+      },
+    },
   ],
   brandMappings: [
     {
@@ -269,9 +294,9 @@ const createCustomerProfileFixture = ({
       brandTheme: "sparkasse",
       storybookThemes: {
         light: "sparkasse-light",
-        dark: "sparkasse-dark"
-      }
-    }
+        dark: "sparkasse-dark",
+      },
+    },
   ],
   imports: {
     components: {
@@ -280,42 +305,42 @@ const createCustomerProfileFixture = ({
         package: packageName,
         export: "PrimaryButton",
         importAlias: "CustomerButton",
-        propMappings: {}
-      }
+        propMappings: {},
+      },
     },
-    icons: {}
+    icons: {},
   },
   fallbacks: {
     mui: {
       defaultPolicy: "allow",
-      components: {}
+      components: {},
     },
     icons: {
       defaultPolicy: "deny",
-      icons: {}
-    }
+      icons: {},
+    },
   },
   template: {
     dependencies: {
-      [packageName]: dependencyVersion
+      [packageName]: dependencyVersion,
     },
     devDependencies: {},
     importAliases: {
-      "@customer/ui": packageName
-    }
+      "@customer/ui": packageName,
+    },
   },
   strictness: {
     match: "warn",
     token: "warn",
-    import: "error"
-  }
+    import: "error",
+  },
 });
 
 const createFastJobEngine = ({
   tempRoot,
   fetchImpl,
   enablePreview = false,
-  runtimeOverrides
+  runtimeOverrides,
 }: {
   tempRoot: string;
   fetchImpl?: typeof fetch;
@@ -328,7 +353,7 @@ const createFastJobEngine = ({
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
       reprosRoot: path.join(tempRoot, "repros"),
-      workspaceRoot: tempRoot
+      workspaceRoot: tempRoot,
     },
     runtime: resolveRuntimeSettings({
       enablePreview,
@@ -338,25 +363,25 @@ const createFastJobEngine = ({
       figmaMaxRetries: 1,
       figmaRequestTimeoutMs: 1_000,
       ...(fetchImpl ? { fetchImpl } : {}),
-      ...runtimeOverrides
-    })
+      ...runtimeOverrides,
+    }),
   });
 
 const submitCompletedLocalJsonJob = async ({
   engine,
-  figmaJsonPath
+  figmaJsonPath,
 }: {
   engine: ReturnType<typeof createJobEngine>;
   figmaJsonPath: string;
 }) => {
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
-    figmaJsonPath
+    figmaJsonPath,
   });
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 300_000
+    timeoutMs: 300_000,
   });
   assert.equal(status.status, "completed");
   return { accepted, status };
@@ -390,12 +415,19 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
       reprosRoot: path.join(tempRoot, "repros"),
-      workspaceRoot: tempRoot
+      workspaceRoot: tempRoot,
     },
-    runtime: resolveRuntimeSettings({ enablePreview: false, figmaMaxRetries: 1, figmaRequestTimeoutMs: 1000 })
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1000,
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
   assert.equal(accepted.status, "queued");
   assert.equal(accepted.acceptedModes.figmaSourceMode, "rest");
   assert.equal(accepted.acceptedModes.llmCodegenMode, "deterministic");
@@ -404,7 +436,9 @@ test("createJobEngine accepts jobs and exposes queued status", () => {
 });
 
 test("createJobEngine reimportImportSession replays stored selected nodes for partial sessions only", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-reimport-scope-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-reimport-scope-"),
+  );
   const store = createImportSessionStore({
     rootDir: path.join(tempRoot, "import-sessions"),
   });
@@ -503,58 +537,82 @@ test("createJobEngine reimportImportSession replays stored selected nodes for pa
 });
 
 test("createJobEngine stores a trimmed storybookStaticDir in request metadata", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-request-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-storybook-request-"),
+  );
   const figmaJsonPath = path.join(tempRoot, "input.json");
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createFastJobEngine({ tempRoot });
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
     figmaJsonPath,
-    storybookStaticDir: "  storybook-static/build  "
+    storybookStaticDir: "  storybook-static/build  ",
   });
 
-  assert.equal(engine.getJob(accepted.jobId)?.request.storybookStaticDir, "storybook-static/build");
+  assert.equal(
+    engine.getJob(accepted.jobId)?.request.storybookStaticDir,
+    "storybook-static/build",
+  );
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
-    jobId: accepted.jobId
+    jobId: accepted.jobId,
   });
   assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_STORYBOOK_ARTIFACTS_FAILED");
 });
 
 test("createJobEngine surfaces E_STORYBOOK_TOKEN_EXTRACTION_INVALID for fatal Storybook token extraction diagnostics", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-token-invalid-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-storybook-token-invalid-"),
+  );
   const figmaJsonPath = path.join(tempRoot, "input.json");
-  const storybookBuildDir = await createInvalidStorybookBuild({ rootDir: tempRoot });
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  const storybookBuildDir = await createInvalidStorybookBuild({
+    rootDir: tempRoot,
+  });
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createFastJobEngine({ tempRoot });
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
     figmaJsonPath,
-    storybookStaticDir: storybookBuildDir
+    storybookStaticDir: storybookBuildDir,
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
-    jobId: accepted.jobId
+    jobId: accepted.jobId,
   });
 
   assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_STORYBOOK_TOKEN_EXTRACTION_INVALID");
   assert.equal(
-    Array.isArray(status.error?.diagnostics) && (status.error?.diagnostics?.length ?? 0) > 0,
-    true
+    Array.isArray(status.error?.diagnostics) &&
+      (status.error?.diagnostics?.length ?? 0) > 0,
+    true,
   );
 });
 
 test("createJobEngine rejects storybookStaticDir traversal outside the configured workspace root", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-storybook-traversal-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-storybook-traversal-"),
+  );
   const outputRoot = path.join(tempRoot, "output");
   const figmaJsonPath = path.join(tempRoot, "input.json");
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -562,24 +620,24 @@ test("createJobEngine rejects storybookStaticDir traversal outside the configure
       outputRoot,
       jobsRoot: path.join(outputRoot, "jobs"),
       reprosRoot: path.join(outputRoot, "repros"),
-      workspaceRoot: tempRoot
+      workspaceRoot: tempRoot,
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
       enableUiValidation: false,
-      enableUnitTestValidation: false
-    })
+      enableUnitTestValidation: false,
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
     figmaJsonPath,
-    storybookStaticDir: "../outside-storybook"
+    storybookStaticDir: "../outside-storybook",
   });
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
-    jobId: accepted.jobId
+    jobId: accepted.jobId,
   });
 
   assert.equal(status.status, "failed");
@@ -588,11 +646,17 @@ test("createJobEngine rejects storybookStaticDir traversal outside the configure
 });
 
 test("createJobEngine emits structured runtime logs without changing stored job log payloads", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-structured-logs-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-structured-logs-"),
+  );
   const figmaJsonPath = path.join(tempRoot, "input.json");
   const stdoutLines: string[] = [];
   const stderrLines: string[] = [];
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createFastJobEngine({
     tempRoot,
@@ -606,55 +670,74 @@ test("createJobEngine emits structured runtime logs without changing stored job 
         },
         stderrWriter: (line) => {
           stderrLines.push(line);
-        }
-      })
-    }
+        },
+      }),
+    },
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
-    figmaJsonPath
+    figmaJsonPath,
   });
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
 
   assert.equal(status.status, "completed");
   assert.equal(stderrLines.length, 0);
 
-  const records = stdoutLines.map((line) => JSON.parse(line) as Record<string, string>);
+  const records = stdoutLines.map(
+    (line) => JSON.parse(line) as Record<string, string>,
+  );
   assert.equal(records.length > 0, true);
-  assert.equal(records.every((record) => record.ts === "2026-03-27T12:00:00.000Z"), true);
-  assert.equal(records.every((record) => record.jobId === accepted.jobId), true);
   assert.equal(
-    records.some(
-      (record) =>
-        record.stage === "figma.source" && record.msg === "Starting stage 'figma.source'."
-    ),
-    true
+    records.every((record) => record.ts === "2026-03-27T12:00:00.000Z"),
+    true,
+  );
+  assert.equal(
+    records.every((record) => record.jobId === accepted.jobId),
+    true,
   );
   assert.equal(
     records.some(
       (record) =>
-        record.stage === "git.pr" && record.msg === "Git/PR flow disabled by request."
+        record.stage === "figma.source" &&
+        record.msg === "Starting stage 'figma.source'.",
     ),
-    true
+    true,
   );
   assert.equal(
     records.some(
       (record) =>
-        !("stage" in record) && record.msg === "Job accepted by workspace-dev runtime."
+        record.stage === "git.pr" &&
+        record.msg === "Git/PR flow disabled by request.",
     ),
-    true
+    true,
   );
-  assert.equal(status.logs.every((entry) => !Object.hasOwn(entry, "jobId")), true);
-  assert.equal(status.logs.every((entry) => !Object.hasOwn(entry, "ts")), true);
+  assert.equal(
+    records.some(
+      (record) =>
+        !("stage" in record) &&
+        record.msg === "Job accepted by workspace-dev runtime.",
+    ),
+    true,
+  );
+  assert.equal(
+    status.logs.every((entry) => !Object.hasOwn(entry, "jobId")),
+    true,
+  );
+  assert.equal(
+    status.logs.every((entry) => !Object.hasOwn(entry, "ts")),
+    true,
+  );
 });
 
 test("createJobEngine supports hybrid mode with MCP enrichment loader output", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-"),
+  );
   const payload = createLocalFigmaPayload();
   const token = "figd_boundary_secret_token_647";
   const loaderCalls: Array<{
@@ -671,7 +754,7 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
       reprosRoot: path.join(tempRoot, "repros"),
-      workspaceRoot: tempRoot
+      workspaceRoot: tempRoot,
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -681,8 +764,8 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
+            "content-type": "application/json",
+          },
         }),
       figmaMcpEnrichmentLoader: async (input) => {
         loaderCalls.push({
@@ -690,7 +773,7 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
           hasFigmaAccessToken: Object.hasOwn(input, "figmaAccessToken"),
           hasFigmaRestFetch: typeof input.figmaRestFetch === "function",
           hasFigmaMcpFetch: typeof input.figmaMcpFetch === "function",
-          jobDir: input.jobDir
+          jobDir: input.jobDir,
         });
         await writeFile(
           path.join(input.jobDir, "loader-input.json"),
@@ -707,16 +790,16 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
               nodeId: "missing-node",
               layerName: "Main Header",
               layerType: "FRAME",
-              sourceTools: ["get_metadata"]
-            }
+              sourceTools: ["get_metadata"],
+            },
           ],
           codeConnectMappings: [
             {
               nodeId: "missing-node",
               componentName: "Banner",
               source: "src/components/Banner.tsx",
-              label: "React"
-            }
+              label: "React",
+            },
           ],
           designSystemMappings: [
             {
@@ -724,15 +807,15 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
               componentName: "BannerSurface",
               source: "src/components/BannerSurface.tsx",
               label: "React",
-              libraryKey: "demo-library"
-            }
+              libraryKey: "demo-library",
+            },
           ],
           variables: [
             {
               name: "color/primary",
               kind: "color",
-              value: "#102030"
-            }
+              value: "#102030",
+            },
           ],
           styleCatalog: [
             {
@@ -741,40 +824,40 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
               fontSizePx: 42,
               fontWeight: 700,
               lineHeightPx: 50,
-              fontFamily: "Figma Sans"
-            }
+              fontFamily: "Figma Sans",
+            },
           ],
           assets: [
             {
               nodeId: "missing-node",
               source: "/figma/assets/banner.svg",
               kind: "image",
-              purpose: "render"
-            }
+              purpose: "render",
+            },
           ],
           screenshots: [
             {
               nodeId: "missing-node",
               url: "https://example.invalid/banner.png",
-              purpose: "quality-gate"
-            }
-          ]
+              purpose: "quality-gate",
+            },
+          ],
         };
-      }
-    })
+      },
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "hybrid",
     figmaFileKey: "abc",
-    figmaAccessToken: token
+    figmaAccessToken: token,
   });
   assert.equal(accepted.acceptedModes.figmaSourceMode, "hybrid");
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
   assert.equal(status.status, "completed");
   assert.equal(loaderCalls.length, 1);
@@ -783,14 +866,16 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
     hasFigmaAccessToken: false,
     hasFigmaRestFetch: true,
     hasFigmaMcpFetch: true,
-    jobDir: String(status.artifacts.jobDir)
+    jobDir: String(status.artifacts.jobDir),
   });
   await assertTokenAbsentFromJobDir({
     jobDir: String(status.artifacts.jobDir),
     token,
   });
 
-  const designIr = JSON.parse(await readFile(String(status.artifacts.designIrFile), "utf8")) as {
+  const designIr = JSON.parse(
+    await readFile(String(status.artifacts.designIrFile), "utf8"),
+  ) as {
     tokens?: {
       palette?: { primary?: string };
       typography?: { h1?: { fontSizePx?: number; fontFamily?: string } };
@@ -823,20 +908,30 @@ test("createJobEngine supports hybrid mode with MCP enrichment loader output", a
   assert.equal(designIr.metrics?.mcpCoverage?.screenshotCount, 1);
   assert.equal(designIr.metrics?.mcpCoverage?.fallbackUsed, undefined);
   assert.equal(
-    status.logs.some((entry) => entry.message.includes("MCP enrichment coverage (hybrid): variables=1, styles=1")),
-    true
+    status.logs.some((entry) =>
+      entry.message.includes(
+        "MCP enrichment coverage (hybrid): variables=1, styles=1",
+      ),
+    ),
+    true,
   );
-  const stageTimings = JSON.parse(await readFile(String(status.artifacts.stageTimingsFile), "utf8")) as {
+  const stageTimings = JSON.parse(
+    await readFile(String(status.artifacts.stageTimingsFile), "utf8"),
+  ) as {
     diagnostics?: Array<{ code?: string }>;
   };
   assert.equal(
-    (stageTimings.diagnostics ?? []).some((entry) => entry.code === "W_HYBRID_EQUIVALENT_TO_REST"),
-    false
+    (stageTimings.diagnostics ?? []).some(
+      (entry) => entry.code === "W_HYBRID_EQUIVALENT_TO_REST",
+    ),
+    false,
   );
 });
 
 test("createJobEngine redacts token-bearing hybrid loader failures before persisting artifacts", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-redaction-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-redaction-"),
+  );
   const payload = createLocalFigmaPayload();
   const token = "figd_secret_token_123456";
 
@@ -846,7 +941,7 @@ test("createJobEngine redacts token-bearing hybrid loader failures before persis
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
       reprosRoot: path.join(tempRoot, "repros"),
-      workspaceRoot: tempRoot
+      workspaceRoot: tempRoot,
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -856,25 +951,25 @@ test("createJobEngine redacts token-bearing hybrid loader failures before persis
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
+            "content-type": "application/json",
+          },
         }),
       figmaMcpEnrichmentLoader: async () => {
         throw new Error(`loader exploded figmaAccessToken=${token}`);
-      }
-    })
+      },
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "hybrid",
     figmaFileKey: "abc",
-    figmaAccessToken: token
+    figmaAccessToken: token,
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
 
   assert.equal(status.status, "completed");
@@ -891,7 +986,9 @@ test("createJobEngine redacts token-bearing hybrid loader failures before persis
     true,
   );
 
-  const designIr = JSON.parse(await readFile(String(status.artifacts.designIrFile), "utf8")) as {
+  const designIr = JSON.parse(
+    await readFile(String(status.artifacts.designIrFile), "utf8"),
+  ) as {
     metrics?: {
       mcpCoverage?: {
         fallbackUsed?: boolean;
@@ -902,12 +999,17 @@ test("createJobEngine redacts token-bearing hybrid loader failures before persis
   assert.equal(designIr.metrics?.mcpCoverage?.fallbackUsed, true);
   assert.equal(
     (designIr.metrics?.mcpCoverage?.diagnostics ?? []).some(
-      (entry) => entry.code === "W_MCP_ENRICHMENT_SKIPPED" && !entry.message?.includes(token),
+      (entry) =>
+        entry.code === "W_MCP_ENRICHMENT_SKIPPED" &&
+        !entry.message?.includes(token),
     ),
     true,
   );
 
-  const stageTimingsRaw = await readFile(String(status.artifacts.stageTimingsFile), "utf8");
+  const stageTimingsRaw = await readFile(
+    String(status.artifacts.stageTimingsFile),
+    "utf8",
+  );
   assert.equal(stageTimingsRaw.includes(token), false);
 
   await assertTokenAbsentFromJobDir({
@@ -917,7 +1019,12 @@ test("createJobEngine redacts token-bearing hybrid loader failures before persis
 });
 
 test("createJobEngine redacts hybrid loader tokens before truncating persisted error messages", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-loader-redaction-truncate-"));
+  const tempRoot = await mkdtemp(
+    path.join(
+      os.tmpdir(),
+      "workspace-dev-engine-hybrid-loader-redaction-truncate-",
+    ),
+  );
   const payload = createLocalFigmaPayload();
   const token = "figd_fragment_boundary_secret_987654321";
   const tokenFragment = token.slice(0, 18);
@@ -929,7 +1036,7 @@ test("createJobEngine redacts hybrid loader tokens before truncating persisted e
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
       reprosRoot: path.join(tempRoot, "repros"),
-      workspaceRoot: tempRoot
+      workspaceRoot: tempRoot,
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -939,25 +1046,25 @@ test("createJobEngine redacts hybrid loader tokens before truncating persisted e
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
+            "content-type": "application/json",
+          },
         }),
       figmaMcpEnrichmentLoader: async () => {
         throw new Error(`${prefix}${token} trailing-loader-context`);
-      }
-    })
+      },
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "hybrid",
     figmaFileKey: "abc",
-    figmaAccessToken: token
+    figmaAccessToken: token,
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
 
   assert.equal(status.status, "completed");
@@ -974,7 +1081,10 @@ test("createJobEngine redacts hybrid loader tokens before truncating persisted e
     true,
   );
 
-  const stageTimingsRaw = await readFile(String(status.artifacts.stageTimingsFile), "utf8");
+  const stageTimingsRaw = await readFile(
+    String(status.artifacts.stageTimingsFile),
+    "utf8",
+  );
   assert.equal(stageTimingsRaw.includes(tokenFragment), false);
   assert.equal(stageTimingsRaw.includes("[REDACTED]"), true);
 
@@ -985,7 +1095,9 @@ test("createJobEngine redacts hybrid loader tokens before truncating persisted e
 });
 
 test("createJobEngine applies authoritative hybrid subtrees before IR derivation", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-subtrees-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-hybrid-subtrees-"),
+  );
   const payload = {
     name: "Hybrid Subtree Board",
     document: {
@@ -1007,14 +1119,14 @@ test("createJobEngine applies authoritative hybrid subtrees before IR derivation
                   type: "INSTANCE",
                   name: "<Button>",
                   absoluteBoundingBox: { x: 24, y: 24, width: 320, height: 96 },
-                  children: []
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   };
 
   const engine = createJobEngine({
@@ -1022,7 +1134,7 @@ test("createJobEngine applies authoritative hybrid subtrees before IR derivation
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -1032,8 +1144,8 @@ test("createJobEngine applies authoritative hybrid subtrees before IR derivation
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
+            "content-type": "application/json",
+          },
         }),
       figmaMcpEnrichmentLoader: async () => ({
         sourceMode: "hybrid",
@@ -1053,35 +1165,43 @@ test("createJobEngine applies authoritative hybrid subtrees before IR derivation
                   type: "TEXT",
                   name: "Action Title",
                   characters: "Druckcenter",
-                  absoluteBoundingBox: { x: 72, y: 40, width: 160, height: 20 }
-                }
-              ]
-            }
-          }
-        ]
-      })
-    })
+                  absoluteBoundingBox: { x: 72, y: 40, width: 160, height: 20 },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "hybrid",
     figmaFileKey: "abc",
-    figmaAccessToken: "token"
+    figmaAccessToken: "token",
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
   assert.equal(status.status, "completed");
   assert.equal(
-    status.logs.some((entry) => entry.message.includes("authoritative subtree snapshot")),
-    true
+    status.logs.some((entry) =>
+      entry.message.includes("authoritative subtree snapshot"),
+    ),
+    true,
   );
 
-  const cleanedFigma = await readFile(String(status.artifacts.figmaJsonFile), "utf8");
-  const designIr = await readFile(String(status.artifacts.designIrFile), "utf8");
+  const cleanedFigma = await readFile(
+    String(status.artifacts.figmaJsonFile),
+    "utf8",
+  );
+  const designIr = await readFile(
+    String(status.artifacts.designIrFile),
+    "utf8",
+  );
   assert.equal(cleanedFigma.includes("Druckcenter"), true);
   assert.equal(designIr.includes("Druckcenter"), true);
 });
@@ -1116,7 +1236,10 @@ test("createJobEngine default hybrid loader retries authoritative subtree recove
         const request = new Request(input, init);
         const url = new URL(request.url);
 
-        if (url.hostname === "api.figma.com" && url.pathname.includes("/nodes")) {
+        if (
+          url.hostname === "api.figma.com" &&
+          url.pathname.includes("/nodes")
+        ) {
           nodeRequestHeaders.push({
             xFigmaToken: request.headers.get("x-figma-token"),
             authorization: request.headers.get("authorization"),
@@ -1132,14 +1255,24 @@ test("createJobEngine default hybrid loader retries authoritative subtree recove
                     id: "screen-recovery",
                     type: "FRAME",
                     name: "Sparkasse Recovery",
-                    absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+                    absoluteBoundingBox: {
+                      x: 0,
+                      y: 0,
+                      width: 1440,
+                      height: 1200,
+                    },
                     children: [
                       {
                         id: "title-restored",
                         type: "TEXT",
                         name: "Title",
                         characters: "Finanzierungsplaner",
-                        absoluteBoundingBox: { x: 24, y: 24, width: 240, height: 24 },
+                        absoluteBoundingBox: {
+                          x: 24,
+                          y: 24,
+                          width: 240,
+                          height: 24,
+                        },
                       },
                     ],
                   },
@@ -1325,7 +1458,12 @@ test("createJobEngine preserves uncovered screens and enriches authoritative ove
                   id: "action-button",
                   type: "INSTANCE",
                   name: "<Button>",
-                  absoluteBoundingBox: { x: 724, y: 32, width: 240, height: 72 },
+                  absoluteBoundingBox: {
+                    x: 724,
+                    y: 32,
+                    width: 240,
+                    height: 72,
+                  },
                   children: [],
                 },
               ],
@@ -1386,7 +1524,12 @@ test("createJobEngine preserves uncovered screens and enriches authoritative ove
                   id: "action-button",
                   type: "INSTANCE",
                   name: "<Button>",
-                  absoluteBoundingBox: { x: 724, y: 32, width: 240, height: 72 },
+                  absoluteBoundingBox: {
+                    x: 724,
+                    y: 32,
+                    width: 240,
+                    height: 72,
+                  },
                   children: [
                     {
                       id: "action-label",
@@ -1436,10 +1579,10 @@ test("createJobEngine preserves uncovered screens and enriches authoritative ove
     };
   };
 
-  assert.deepEqual(
-    designIr.screens.map((screen) => screen.id).sort(),
-    ["screen-a", "screen-b"],
-  );
+  assert.deepEqual(designIr.screens.map((screen) => screen.id).sort(), [
+    "screen-a",
+    "screen-b",
+  ]);
   assert.equal(designIr.metrics?.mcpCoverage?.sourceMode, "hybrid");
 
   const overlayButton = designIr.screens
@@ -1456,7 +1599,9 @@ test("createJobEngine preserves uncovered screens and enriches authoritative ove
 });
 
 test("createJobEngine fails low-fidelity rest jobs without authoritative recovery", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-low-fidelity-rest-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-low-fidelity-rest-"),
+  );
   const payload = createLowFidelityFigmaPayload();
 
   const engine = createJobEngine({
@@ -1464,7 +1609,7 @@ test("createJobEngine fails low-fidelity rest jobs without authoritative recover
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -1474,31 +1619,36 @@ test("createJobEngine fails low-fidelity rest jobs without authoritative recover
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        })
-    })
+            "content-type": "application/json",
+          },
+        }),
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "rest",
     figmaFileKey: "abc",
-    figmaAccessToken: "token"
+    figmaAccessToken: "token",
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_FIGMA_LOW_FIDELITY_SOURCE");
   assert.equal(status.error?.stage, "figma.source");
-  assert.equal(status.error?.diagnostics?.[0]?.code, "E_FIGMA_LOW_FIDELITY_SOURCE");
+  assert.equal(
+    status.error?.diagnostics?.[0]?.code,
+    "E_FIGMA_LOW_FIDELITY_SOURCE",
+  );
 });
 
 test("createJobEngine falls back deterministically when hybrid mode has no MCP enrichment loader", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-hybrid-fallback-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-hybrid-fallback-"),
+  );
   const payload = createLocalFigmaPayload();
 
   const engine = createJobEngine({
@@ -1506,7 +1656,7 @@ test("createJobEngine falls back deterministically when hybrid mode has no MCP e
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -1516,30 +1666,34 @@ test("createJobEngine falls back deterministically when hybrid mode has no MCP e
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        })
-    })
+            "content-type": "application/json",
+          },
+        }),
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "hybrid",
     figmaFileKey: "abc",
-    figmaAccessToken: "token"
+    figmaAccessToken: "token",
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
   assert.equal(status.status, "completed");
   assert.equal(
-    status.logs.some((entry) => entry.message.includes("no figmaMcpEnrichmentLoader is configured")),
-    true
+    status.logs.some((entry) =>
+      entry.message.includes("no figmaMcpEnrichmentLoader is configured"),
+    ),
+    true,
   );
 
-  const designIr = JSON.parse(await readFile(String(status.artifacts.designIrFile), "utf8")) as {
+  const designIr = JSON.parse(
+    await readFile(String(status.artifacts.designIrFile), "utf8"),
+  ) as {
     metrics?: {
       mcpCoverage?: {
         sourceMode?: string;
@@ -1563,24 +1717,33 @@ test("createJobEngine falls back deterministically when hybrid mode has no MCP e
   assert.equal(designIr.metrics?.mcpCoverage?.metadataHintCount, 0);
   assert.equal(designIr.metrics?.mcpCoverage?.assetCount, 0);
   assert.equal(designIr.metrics?.mcpCoverage?.fallbackUsed, true);
-  assert.equal(designIr.metrics?.mcpCoverage?.diagnostics?.[0]?.code, "W_MCP_ENRICHMENT_SKIPPED");
-  const stageTimings = JSON.parse(await readFile(String(status.artifacts.stageTimingsFile), "utf8")) as {
+  assert.equal(
+    designIr.metrics?.mcpCoverage?.diagnostics?.[0]?.code,
+    "W_MCP_ENRICHMENT_SKIPPED",
+  );
+  const stageTimings = JSON.parse(
+    await readFile(String(status.artifacts.stageTimingsFile), "utf8"),
+  ) as {
     diagnostics?: Array<{ code?: string }>;
   };
   assert.equal(
-    (stageTimings.diagnostics ?? []).some((entry) => entry.code === "W_HYBRID_EQUIVALENT_TO_REST"),
-    true
+    (stageTimings.diagnostics ?? []).some(
+      (entry) => entry.code === "W_HYBRID_EQUIVALENT_TO_REST",
+    ),
+    true,
   );
 });
 
 test("createJobEngine rejects submit when queue backpressure cap is reached", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-backpressure-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-backpressure-"),
+  );
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -1597,15 +1760,21 @@ test("createJobEngine rejects submit when queue backpressure cap is reached", as
               () => {
                 reject(new DOMException("aborted", "AbortError"));
               },
-              { once: true }
+              { once: true },
             );
           }
-        })
-    })
+        }),
+    }),
   });
 
-  const first = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
-  const second = engine.submitJob({ figmaFileKey: "def", figmaAccessToken: "token" });
+  const first = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const second = engine.submitJob({
+    figmaFileKey: "def",
+    figmaAccessToken: "token",
+  });
   assert.equal(first.status, "queued");
   assert.equal(second.status, "queued");
 
@@ -1613,22 +1782,31 @@ test("createJobEngine rejects submit when queue backpressure cap is reached", as
     () => {
       engine.submitJob({ figmaFileKey: "ghi", figmaAccessToken: "token" });
     },
-    (error: unknown) => error instanceof Error && "code" in error && (error as { code: string }).code === "E_JOB_QUEUE_FULL"
+    (error: unknown) =>
+      error instanceof Error &&
+      "code" in error &&
+      (error as { code: string }).code === "E_JOB_QUEUE_FULL",
   );
 
   engine.cancelJob({ jobId: first.jobId, reason: "cleanup" });
   engine.cancelJob({ jobId: second.jobId, reason: "cleanup" });
-  await waitForTerminalStatus({ getStatus: engine.getJob, jobId: first.jobId, timeoutMs: 20_000 });
+  await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: first.jobId,
+    timeoutMs: 20_000,
+  });
 });
 
 test("createJobEngine cancels queued jobs with terminal canceled state", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-cancel-queued-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-cancel-queued-"),
+  );
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -1645,35 +1823,57 @@ test("createJobEngine cancels queued jobs with terminal canceled state", async (
               () => {
                 reject(new DOMException("aborted", "AbortError"));
               },
-              { once: true }
+              { once: true },
             );
           }
-        })
-    })
+        }),
+    }),
   });
 
-  const running = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
-  const queued = engine.submitJob({ figmaFileKey: "def", figmaAccessToken: "token" });
-  const canceled = engine.cancelJob({ jobId: queued.jobId, reason: "User canceled queued job." });
+  const running = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const queued = engine.submitJob({
+    figmaFileKey: "def",
+    figmaAccessToken: "token",
+  });
+  const canceled = engine.cancelJob({
+    jobId: queued.jobId,
+    reason: "User canceled queued job.",
+  });
 
   assert.equal(canceled?.status, "canceled");
   assert.equal(canceled?.cancellation?.reason, "User canceled queued job.");
-  assert.equal(engine.getJobResult(queued.jobId)?.cancellation?.reason, "User canceled queued job.");
-  assert.equal(engine.cancelJob({ jobId: queued.jobId, reason: "ignored-after-terminal" })?.status, "canceled");
+  assert.equal(
+    engine.getJobResult(queued.jobId)?.cancellation?.reason,
+    "User canceled queued job.",
+  );
+  assert.equal(
+    engine.cancelJob({ jobId: queued.jobId, reason: "ignored-after-terminal" })
+      ?.status,
+    "canceled",
+  );
 
   engine.cancelJob({ jobId: running.jobId, reason: "cleanup" });
-  const runningStatus = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: running.jobId, timeoutMs: 20_000 });
+  const runningStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: running.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(runningStatus.status, "canceled");
 });
 
 test("createJobEngine cancels running jobs and records cancellation reason", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-cancel-running-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-cancel-running-"),
+  );
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -1690,14 +1890,17 @@ test("createJobEngine cancels running jobs and records cancellation reason", asy
               () => {
                 reject(new DOMException("aborted", "AbortError"));
               },
-              { once: true }
+              { once: true },
             );
           }
-        })
-    })
+        }),
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
   const runningWaitStarted = Date.now();
   while (Date.now() - runningWaitStarted < 2_000) {
     const current = engine.getJob(accepted.jobId);
@@ -1706,43 +1909,62 @@ test("createJobEngine cancels running jobs and records cancellation reason", asy
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  const canceledJob = engine.cancelJob({ jobId: accepted.jobId, reason: "Manual stop requested." });
+  const canceledJob = engine.cancelJob({
+    jobId: accepted.jobId,
+    reason: "Manual stop requested.",
+  });
   assert.equal(canceledJob?.cancellation?.reason, "Manual stop requested.");
 
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(status.status, "canceled");
   assert.equal(status.cancellation?.reason, "Manual stop requested.");
-  assert.equal(engine.getJobResult(accepted.jobId)?.cancellation?.reason, "Manual stop requested.");
+  assert.equal(
+    engine.getJobResult(accepted.jobId)?.cancellation?.reason,
+    "Manual stop requested.",
+  );
 });
 
 test("createJobEngine rehydrates completed regeneration jobs and keeps local sync helpers available", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-regen-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-regen-"),
+  );
   const figmaJsonPath = path.join(tempRoot, "input.json");
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createFastJobEngine({ tempRoot });
   const { accepted: sourceAccepted } = await submitCompletedLocalJsonJob({
     engine,
-    figmaJsonPath
+    figmaJsonPath,
   });
 
   const regenAccepted = engine.submitRegeneration({
     sourceJobId: sourceAccepted.jobId,
     overrides: [{ nodeId: "title", field: "fontSize", value: 28 }],
     draftId: "draft-1",
-    baseFingerprint: "fnv1a64:rehydrate"
+    baseFingerprint: "fnv1a64:rehydrate",
   });
   const regenStatus = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: regenAccepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
   assert.equal(regenStatus.status, "completed");
 
   const rehydratedEngine = createFastJobEngine({ tempRoot });
   let rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
   const rehydrateWaitStarted = Date.now();
-  while ((!rehydrated || rehydrated.status !== "completed") && Date.now() - rehydrateWaitStarted < 5_000) {
+  while (
+    (!rehydrated || rehydrated.status !== "completed") &&
+    Date.now() - rehydrateWaitStarted < 5_000
+  ) {
     await new Promise((resolve) => setTimeout(resolve, 50));
     rehydrated = rehydratedEngine.getJob(regenAccepted.jobId);
   }
@@ -1751,11 +1973,14 @@ test("createJobEngine rehydrates completed regeneration jobs and keeps local syn
   assert.deepEqual(rehydrated?.lineage, regenStatus.lineage);
   assert.deepEqual(rehydrated?.generationDiff, regenStatus.generationDiff);
   assert.deepEqual(rehydrated?.gitPr, regenStatus.gitPr);
-  assert.equal(rehydrated?.artifacts.generatedProjectDir, regenStatus.artifacts.generatedProjectDir);
+  assert.equal(
+    rehydrated?.artifacts.generatedProjectDir,
+    regenStatus.artifacts.generatedProjectDir,
+  );
 
   const syncPreview = await rehydratedEngine.previewLocalSync({
     jobId: regenAccepted.jobId,
-    targetPath: "rehydrated-sync"
+    targetPath: "rehydrated-sync",
   });
   assert.equal(syncPreview.jobId, regenAccepted.jobId);
   assert.equal(syncPreview.sourceJobId, sourceAccepted.jobId);
@@ -1763,10 +1988,16 @@ test("createJobEngine rehydrates completed regeneration jobs and keeps local syn
 });
 
 test("createJobEngine rehydrates failed and canceled jobs while skipping legacy snapshots", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-terminal-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-terminal-"),
+  );
   const validFigmaPath = path.join(tempRoot, "valid-input.json");
   const invalidFigmaPath = path.join(tempRoot, "invalid-input.json");
-  await writeFile(validFigmaPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    validFigmaPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
   await writeFile(
     invalidFigmaPath,
     JSON.stringify({
@@ -1774,10 +2005,10 @@ test("createJobEngine rehydrates failed and canceled jobs while skipping legacy 
       document: {
         id: "0:0",
         type: "DOCUMENT",
-        children: [{ type: "CANVAS", children: [] }]
-      }
+        children: [{ type: "CANVAS", children: [] }],
+      },
     }),
-    "utf8"
+    "utf8",
   );
 
   const engine = createFastJobEngine({
@@ -1791,35 +2022,38 @@ test("createJobEngine rehydrates failed and canceled jobs while skipping legacy 
             () => {
               reject(new DOMException("aborted", "AbortError"));
             },
-            { once: true }
+            { once: true },
           );
         }
       }),
     runtimeOverrides: {
       maxConcurrentJobs: 1,
-      maxQueuedJobs: 2
-    }
+      maxQueuedJobs: 2,
+    },
   });
 
   const failedAccepted = engine.submitJob({
     figmaSourceMode: "local_json",
-    figmaJsonPath: invalidFigmaPath
+    figmaJsonPath: invalidFigmaPath,
   });
   const failedStatus = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: failedAccepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: 20_000,
   });
   assert.equal(failedStatus.status, "failed");
 
-  const runningAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const runningAccepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
   const queuedAccepted = engine.submitJob({
     figmaSourceMode: "local_json",
-    figmaJsonPath: validFigmaPath
+    figmaJsonPath: validFigmaPath,
   });
   const canceledQueued = engine.cancelJob({
     jobId: queuedAccepted.jobId,
-    reason: "Persist canceled queue state."
+    reason: "Persist canceled queue state.",
   });
   assert.equal(canceledQueued?.status, "canceled");
 
@@ -1828,14 +2062,14 @@ test("createJobEngine rehydrates failed and canceled jobs while skipping legacy 
   await writeFile(
     path.join(legacyJobDir, "stage-timings.json"),
     `${JSON.stringify({ jobId: "legacy-job", status: "completed", stages: [] }, null, 2)}\n`,
-    "utf8"
+    "utf8",
   );
 
   engine.cancelJob({ jobId: runningAccepted.jobId, reason: "cleanup" });
   await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: runningAccepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: 20_000,
   });
 
   const rehydratedEngine = createFastJobEngine({ tempRoot });
@@ -1845,8 +2079,345 @@ test("createJobEngine rehydrates failed and canceled jobs while skipping legacy 
   assert.equal(rehydratedFailed?.status, "failed");
   assert.equal(rehydratedFailed?.error?.code, failedStatus.error?.code);
   assert.equal(rehydratedCanceled?.status, "canceled");
-  assert.equal(rehydratedCanceled?.cancellation?.reason, "Persist canceled queue state.");
+  assert.equal(
+    rehydratedCanceled?.cancellation?.reason,
+    "Persist canceled queue state.",
+  );
   assert.equal(rehydratedEngine.getJob("legacy-job"), undefined);
+});
+
+test("createJobEngine rehydrates pasteDeltaSummary, compositeQuality, and confidence from on-disk snapshot", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-fields-"),
+  );
+  const jobsRoot = path.join(tempRoot, "jobs");
+  const jobId = "rehydrate-fields-job";
+  const jobDir = path.join(jobsRoot, jobId);
+  await mkdir(jobDir, { recursive: true });
+
+  const pasteDeltaSummary = {
+    mode: "delta" as const,
+    strategy: "subtree_updated" as const,
+    totalNodes: 12,
+    nodesReused: 8,
+    nodesReprocessed: 4,
+    structuralChangeRatio: 0.33,
+    pasteIdentityKey: "sha256:abc123",
+    priorManifestMissing: false,
+  };
+
+  const compositeQuality = {
+    status: "completed" as const,
+    generatedAt: "2026-04-18T00:00:00.000Z",
+    weights: { visual: 0.6, performance: 0.4 },
+    visual: {
+      score: 0.82,
+      ranAt: "2026-04-18T00:00:01.000Z",
+      source: "visual-audit",
+    },
+    performance: {
+      sourcePath: "perf/report.json",
+      score: 0.9,
+      sampleCount: 2,
+      samples: [
+        {
+          profile: "mobile" as const,
+          route: "/",
+          performanceScore: 0.88,
+          fcp_ms: 1100,
+          lcp_ms: 2100,
+          cls: 0.02,
+          tbt_ms: 80,
+          speed_index_ms: 2400,
+        },
+        {
+          profile: "desktop" as const,
+          route: "/",
+          performanceScore: 0.92,
+          fcp_ms: 800,
+          lcp_ms: 1600,
+          cls: 0.01,
+          tbt_ms: 40,
+          speed_index_ms: 1800,
+        },
+      ],
+      aggregateMetrics: {
+        fcp_ms: 950,
+        lcp_ms: 1850,
+        cls: 0.015,
+        tbt_ms: 60,
+        speed_index_ms: 2100,
+      },
+      warnings: ["lighthouse warmup slow"],
+    },
+    composite: {
+      score: 0.86,
+      includedDimensions: ["visual" as const, "performance" as const],
+      explanation: "Weighted blend of visual (0.82) and performance (0.9).",
+    },
+    warnings: ["sample size small"],
+    message: "Completed with minor warnings.",
+  };
+
+  const confidence = {
+    status: "completed" as const,
+    generatedAt: "2026-04-18T00:00:02.000Z",
+    level: "medium" as const,
+    score: 0.71,
+    contributors: [
+      {
+        signal: "visual_quality",
+        impact: "positive" as const,
+        weight: 0.4,
+        value: 0.82,
+        detail: "High visual similarity",
+      },
+    ],
+    screens: [
+      {
+        screenId: "screen-1",
+        screenName: "Home",
+        level: "medium" as const,
+        score: 0.7,
+        contributors: [
+          {
+            signal: "layout",
+            impact: "neutral" as const,
+            weight: 0.2,
+            value: 0.5,
+            detail: "Layout broadly matches",
+          },
+        ],
+        components: [
+          {
+            componentId: "comp-1",
+            componentName: "Button",
+            level: "high" as const,
+            score: 0.9,
+            contributors: [
+              {
+                signal: "mapping",
+                impact: "positive" as const,
+                weight: 0.3,
+                value: 0.95,
+                detail: "Explicit customer profile mapping",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+    lowConfidenceSummary: ["screen-2 lacks reference"],
+    message: "Overall medium confidence.",
+  };
+
+  const snapshot = {
+    snapshotVersion: 1,
+    generatedAt: "2026-04-18T00:00:03.000Z",
+    jobId,
+    status: "completed",
+    submittedAt: "2026-04-18T00:00:00.000Z",
+    startedAt: "2026-04-18T00:00:00.500Z",
+    finishedAt: "2026-04-18T00:00:05.000Z",
+    request: { figmaSourceMode: "local_json", llmCodegenMode: "deterministic" },
+    stages: [
+      { name: "figma.source", status: "completed" },
+      { name: "ir.derive", status: "completed" },
+      { name: "template.prepare", status: "completed" },
+      { name: "codegen.generate", status: "completed" },
+      { name: "validate.project", status: "completed" },
+      { name: "repro.export", status: "completed" },
+      { name: "git.pr", status: "skipped" },
+    ],
+    logs: [],
+    artifacts: { outputRoot: tempRoot, jobDir },
+    preview: { enabled: false },
+    queue: {
+      runningCount: 0,
+      queuedCount: 0,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 4,
+    },
+    pasteDeltaSummary,
+    compositeQuality,
+    confidence,
+  };
+
+  await writeFile(
+    path.join(jobDir, "stage-timings.json"),
+    `${JSON.stringify(snapshot, null, 2)}\n`,
+    "utf8",
+  );
+
+  const engine = createFastJobEngine({ tempRoot });
+  const rehydrated = engine.getJob(jobId);
+  assert.ok(rehydrated, "expected rehydrated job to be present");
+  assert.equal(rehydrated.status, "completed");
+  assert.deepEqual(rehydrated.pasteDeltaSummary, pasteDeltaSummary);
+  assert.deepEqual(rehydrated.compositeQuality, compositeQuality);
+  assert.deepEqual(rehydrated.confidence, confidence);
+
+  // Verify deep copy: mutating rehydrated nested arrays must not affect the original fixture
+  if (rehydrated.compositeQuality?.performance?.samples) {
+    rehydrated.compositeQuality.performance.samples.push({
+      profile: "mobile",
+      route: "/mutation",
+      performanceScore: 0,
+      fcp_ms: null,
+      lcp_ms: null,
+      cls: null,
+      tbt_ms: null,
+      speed_index_ms: null,
+    });
+  }
+  assert.equal(
+    compositeQuality.performance.samples.length,
+    2,
+    "snapshot samples must not be mutated by rehydration",
+  );
+
+  if (rehydrated.confidence?.screens?.[0]?.components) {
+    rehydrated.confidence.screens[0].components.push({
+      componentId: "injected",
+      componentName: "Injected",
+      level: "low",
+      score: 0,
+      contributors: [],
+    });
+  }
+  assert.equal(
+    confidence.screens[0]?.components.length,
+    1,
+    "snapshot screen components must not be mutated by rehydration",
+  );
+});
+
+test("createJobEngine accepts submitRetry from a rehydrated failed job", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-retry-"),
+  );
+  const invalidFigmaPath = path.join(tempRoot, "invalid-input.json");
+  await writeFile(
+    invalidFigmaPath,
+    JSON.stringify({
+      name: "Broken Board",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: [{ type: "CANVAS", children: [] }],
+      },
+    }),
+    "utf8",
+  );
+
+  const engine = createFastJobEngine({ tempRoot });
+  const failedAccepted = engine.submitJob({
+    figmaSourceMode: "local_json",
+    figmaJsonPath: invalidFigmaPath,
+  });
+  const failedStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: failedAccepted.jobId,
+    timeoutMs: 20_000,
+  });
+  assert.equal(failedStatus.status, "failed");
+  const retryStage = failedStatus.error?.stage ?? "figma.source";
+
+  const rehydratedEngine = createFastJobEngine({ tempRoot });
+  const rehydratedFailed = rehydratedEngine.getJob(failedAccepted.jobId);
+  assert.equal(rehydratedFailed?.status, "failed");
+
+  const retryAccepted = rehydratedEngine.submitRetry({
+    sourceJobId: failedAccepted.jobId,
+    retryStage,
+  });
+  assert.equal(retryAccepted.sourceJobId, failedAccepted.jobId);
+  assert.equal(retryAccepted.retryStage, retryStage);
+  assert.equal(retryAccepted.status, "queued");
+  assert.notEqual(retryAccepted.jobId, failedAccepted.jobId);
+
+  const retryStatus = await waitForTerminalStatus({
+    getStatus: rehydratedEngine.getJob,
+    jobId: retryAccepted.jobId,
+    timeoutMs: 20_000,
+  });
+  assert.equal(
+    retryStatus.lineage?.sourceJobId,
+    failedAccepted.jobId,
+    "retry job must carry lineage back to the rehydrated failed source",
+  );
+});
+
+test("createJobEngine answers checkStaleDraft against a rehydrated completed job", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-stale-"),
+  );
+  const figmaJsonPath = path.join(tempRoot, "input.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
+
+  const engine = createFastJobEngine({ tempRoot });
+  const { accepted } = await submitCompletedLocalJsonJob({
+    engine,
+    figmaJsonPath,
+  });
+
+  const rehydratedEngine = createFastJobEngine({ tempRoot });
+  const rehydrated = rehydratedEngine.getJob(accepted.jobId);
+  assert.equal(rehydrated?.status, "completed");
+
+  const staleResult = await rehydratedEngine.checkStaleDraft({
+    jobId: accepted.jobId,
+    draftNodeIds: ["title"],
+  });
+  assert.equal(staleResult.sourceJobId, accepted.jobId);
+  assert.equal(
+    staleResult.stale,
+    false,
+    "no newer job exists for this board after restart",
+  );
+  assert.ok(
+    staleResult.boardKey,
+    "board key must resolve from rehydrated request metadata",
+  );
+});
+
+test("createJobEngine preserves pasteDeltaSummary, compositeQuality, and confidence across restart", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rehydrate-fields2-"),
+  );
+  const figmaJsonPath = path.join(tempRoot, "input.json");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
+
+  const engine = createFastJobEngine({ tempRoot });
+  const { accepted } = await submitCompletedLocalJsonJob({
+    engine,
+    figmaJsonPath,
+  });
+  const original = engine.getJob(accepted.jobId);
+  assert.equal(original?.status, "completed");
+
+  const rehydratedEngine = createFastJobEngine({ tempRoot });
+  const rehydrated = rehydratedEngine.getJob(accepted.jobId);
+  assert.equal(rehydrated?.status, "completed");
+
+  // local_json jobs have no paste delta, compositeQuality, or confidence — verify consistent absence
+  assert.equal(rehydrated?.pasteDeltaSummary, original?.pasteDeltaSummary);
+  assert.equal(rehydrated?.compositeQuality, original?.compositeQuality);
+  assert.equal(rehydrated?.confidence, original?.confidence);
+  // Core fields round-trip correctly
+  assert.deepEqual(rehydrated?.request, original?.request);
+  assert.deepEqual(
+    rehydrated?.artifacts.generatedProjectDir,
+    original?.artifacts.generatedProjectDir,
+  );
 });
 
 test("createJobEngine resolves request brandTheme and generationLocale with submit override precedence", () => {
@@ -1856,7 +2427,7 @@ test("createJobEngine resolves request brandTheme and generationLocale with subm
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       brandTheme: "sparkasse",
@@ -1865,11 +2436,14 @@ test("createJobEngine resolves request brandTheme and generationLocale with subm
       figmaRequestTimeoutMs: 1000,
       fetchImpl: async () => {
         throw new Error("network down");
-      }
-    })
+      },
+    }),
   });
 
-  const defaultAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const defaultAccepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
   const defaultRequest = engine.getJob(defaultAccepted.jobId)?.request;
   assert.equal(defaultRequest?.brandTheme, "sparkasse");
   assert.equal(defaultRequest?.generationLocale, "de-DE");
@@ -1880,7 +2454,7 @@ test("createJobEngine resolves request brandTheme and generationLocale with subm
     figmaAccessToken: "token",
     brandTheme: "derived",
     generationLocale: "en-US",
-    formHandlingMode: "legacy_use_state"
+    formHandlingMode: "legacy_use_state",
   });
   const overrideRequest = engine.getJob(overrideAccepted.jobId)?.request;
   assert.equal(overrideRequest?.brandTheme, "derived");
@@ -1889,28 +2463,45 @@ test("createJobEngine resolves request brandTheme and generationLocale with subm
 });
 
 test("createJobEngine resolves relative customerProfilePath, persists the snapshot, and applies it to submission output", async () => {
-  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-"));
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-"),
+  );
   const outputRoot = path.join(workspaceRoot, ".workspace-dev");
   const jobsRoot = path.join(outputRoot, "jobs");
   const reprosRoot = path.join(outputRoot, "repros");
   const figmaJsonPath = path.join(workspaceRoot, "figma.json");
   const customerProfileDir = path.join(workspaceRoot, "profiles");
-  const customerProfileAbsolutePath = path.join(customerProfileDir, "customer-profile.json");
+  const customerProfileAbsolutePath = path.join(
+    customerProfileDir,
+    "customer-profile.json",
+  );
   await mkdir(customerProfileDir, { recursive: true });
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
   const templatePackageJson = JSON.parse(
-    await readFile(path.join(process.cwd(), "template", "react-mui-app", "package.json"), "utf8")
+    await readFile(
+      path.join(process.cwd(), "template", "react-mui-app", "package.json"),
+      "utf8",
+    ),
   ) as {
     dependencies?: Record<string, string>;
   };
-  const muiMaterialVersion = templatePackageJson.dependencies?.["@mui/material"];
+  const muiMaterialVersion =
+    templatePackageJson.dependencies?.["@mui/material"];
   assert.ok(muiMaterialVersion);
   const customerProfileFixture = createCustomerProfileFixture({
     packageName: "@mui/material",
     dependencyVersion: muiMaterialVersion,
-    exportName: "Button"
+    exportName: "Button",
   });
-  await writeFile(customerProfileAbsolutePath, JSON.stringify(customerProfileFixture), "utf8");
+  await writeFile(
+    customerProfileAbsolutePath,
+    JSON.stringify(customerProfileFixture),
+    "utf8",
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -1918,36 +2509,49 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
       workspaceRoot,
       outputRoot,
       jobsRoot,
-      reprosRoot
+      reprosRoot,
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
       enableUiValidation: false,
-      enableUnitTestValidation: false
-    })
+      enableUnitTestValidation: false,
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
     figmaJsonPath,
-    customerProfilePath: " profiles/customer-profile.json "
+    customerProfilePath: " profiles/customer-profile.json ",
   });
-  assert.equal(engine.getJob(accepted.jobId)?.request.customerProfilePath, "profiles/customer-profile.json");
+  assert.equal(
+    engine.getJob(accepted.jobId)?.request.customerProfilePath,
+    "profiles/customer-profile.json",
+  );
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
   });
 
-  assert.equal(status.status, "completed", `Job should complete, got: ${status.status} — ${status.error?.message ?? "no error"}`);
   assert.equal(
-    status.logs.some((entry) => entry.message.includes("Activated customer profile snapshot from request path")),
-    true
+    status.status,
+    "completed",
+    `Job should complete, got: ${status.status} — ${status.error?.message ?? "no error"}`,
+  );
+  assert.equal(
+    status.logs.some((entry) =>
+      entry.message.includes(
+        "Activated customer profile snapshot from request path",
+      ),
+    ),
+    true,
   );
 
-  const artifactStore = new StageArtifactStore({ jobDir: String(status.artifacts.jobDir) });
+  const artifactStore = new StageArtifactStore({
+    jobDir: String(status.artifacts.jobDir),
+  });
   const snapshot = await artifactStore.getValue<{
     origin: string;
     submittedPath?: string;
@@ -1957,22 +2561,34 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
     origin: "request",
     submittedPath: "profiles/customer-profile.json",
     resolvedPath: customerProfileAbsolutePath,
-    profile: customerProfileFixture
+    profile: customerProfileFixture,
   });
 
   const generatedPackage = JSON.parse(
-    await readFile(path.join(String(status.artifacts.generatedProjectDir), "package.json"), "utf8")
+    await readFile(
+      path.join(String(status.artifacts.generatedProjectDir), "package.json"),
+      "utf8",
+    ),
   ) as {
     dependencies?: Record<string, string>;
   };
-  assert.equal(generatedPackage.dependencies?.["@mui/material"], muiMaterialVersion);
+  assert.equal(
+    generatedPackage.dependencies?.["@mui/material"],
+    muiMaterialVersion,
+  );
 });
 
 test("createJobEngine fails explicit customerProfilePath loads with E_CUSTOMER_PROFILE_LOAD_FAILED", async () => {
-  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-fail-"));
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-fail-"),
+  );
   const outputRoot = path.join(workspaceRoot, ".workspace-dev");
   const figmaJsonPath = path.join(workspaceRoot, "figma.json");
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -1980,27 +2596,30 @@ test("createJobEngine fails explicit customerProfilePath loads with E_CUSTOMER_P
       workspaceRoot,
       outputRoot,
       jobsRoot: path.join(outputRoot, "jobs"),
-      reprosRoot: path.join(outputRoot, "repros")
+      reprosRoot: path.join(outputRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
       enableUiValidation: false,
-      enableUnitTestValidation: false
-    })
+      enableUnitTestValidation: false,
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
     figmaJsonPath,
-    customerProfilePath: " profiles/missing.json "
+    customerProfilePath: " profiles/missing.json ",
   });
-  assert.equal(engine.getJob(accepted.jobId)?.request.customerProfilePath, "profiles/missing.json");
+  assert.equal(
+    engine.getJob(accepted.jobId)?.request.customerProfilePath,
+    "profiles/missing.json",
+  );
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: 20_000,
   });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_CUSTOMER_PROFILE_LOAD_FAILED");
@@ -2009,10 +2628,16 @@ test("createJobEngine fails explicit customerProfilePath loads with E_CUSTOMER_P
 });
 
 test("createJobEngine rejects customerProfilePath that traverses outside the workspace root", async () => {
-  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-traversal-"));
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-traversal-"),
+  );
   const outputRoot = path.join(workspaceRoot, ".workspace-dev");
   const figmaJsonPath = path.join(workspaceRoot, "figma.json");
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -2020,38 +2645,47 @@ test("createJobEngine rejects customerProfilePath that traverses outside the wor
       workspaceRoot,
       outputRoot,
       jobsRoot: path.join(outputRoot, "jobs"),
-      reprosRoot: path.join(outputRoot, "repros")
+      reprosRoot: path.join(outputRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
       enableUiValidation: false,
-      enableUnitTestValidation: false
-    })
+      enableUnitTestValidation: false,
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
     figmaJsonPath,
-    customerProfilePath: "../../etc/passwd"
+    customerProfilePath: "../../etc/passwd",
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: 20_000,
   });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_CUSTOMER_PROFILE_LOAD_FAILED");
   assert.equal(status.error?.stage, "figma.source");
-  assert.match(status.error?.message ?? "", /resolves outside the workspace root/);
+  assert.match(
+    status.error?.message ?? "",
+    /resolves outside the workspace root/,
+  );
 });
 
 test("#698 createJobEngine rejects customerProfilePath containing a null byte", async () => {
-  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-nullbyte-"));
+  const workspaceRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-customer-profile-nullbyte-"),
+  );
   const outputRoot = path.join(workspaceRoot, ".workspace-dev");
   const figmaJsonPath = path.join(workspaceRoot, "figma.json");
-  await writeFile(figmaJsonPath, JSON.stringify(createLocalFigmaPayload()), "utf8");
+  await writeFile(
+    figmaJsonPath,
+    JSON.stringify(createLocalFigmaPayload()),
+    "utf8",
+  );
 
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -2059,26 +2693,26 @@ test("#698 createJobEngine rejects customerProfilePath containing a null byte", 
       workspaceRoot,
       outputRoot,
       jobsRoot: path.join(outputRoot, "jobs"),
-      reprosRoot: path.join(outputRoot, "repros")
+      reprosRoot: path.join(outputRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       installPreferOffline: true,
       enableUiValidation: false,
-      enableUnitTestValidation: false
-    })
+      enableUnitTestValidation: false,
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
     figmaJsonPath,
-    customerProfilePath: "profile\0.json"
+    customerProfilePath: "profile\0.json",
   });
 
   const status = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: 20_000,
   });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_CUSTOMER_PROFILE_LOAD_FAILED");
@@ -2086,7 +2720,9 @@ test("#698 createJobEngine rejects customerProfilePath containing a null byte", 
 });
 
 test("createJobEngine defensively falls back invalid direct-submit generationLocale and emits deterministic warning log", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-generation-locale-fallback-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-generation-locale-fallback-"),
+  );
   const payload = {
     name: "Locale board",
     document: {
@@ -2102,12 +2738,19 @@ test("createJobEngine defensively falls back invalid direct-submit generationLoc
               type: "FRAME",
               name: "Locale Screen",
               absoluteBoundingBox: { x: 0, y: 0, width: 640, height: 480 },
-              children: [{ id: "title", type: "TEXT", characters: "Hello", absoluteBoundingBox: { x: 0, y: 0, width: 80, height: 20 } }]
-            }
-          ]
-        }
-      ]
-    }
+              children: [
+                {
+                  id: "title",
+                  type: "TEXT",
+                  characters: "Hello",
+                  absoluteBoundingBox: { x: 0, y: 0, width: 80, height: 20 },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   };
 
   const engine = createJobEngine({
@@ -2115,7 +2758,7 @@ test("createJobEngine defensively falls back invalid direct-submit generationLoc
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2126,38 +2769,46 @@ test("createJobEngine defensively falls back invalid direct-submit generationLoc
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        })
-    })
+            "content-type": "application/json",
+          },
+        }),
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaFileKey: "abc",
     figmaAccessToken: "token",
-    generationLocale: "invalid_locale"
+    generationLocale: "invalid_locale",
   });
   const request = engine.getJob(accepted.jobId)?.request;
   assert.equal(request?.generationLocale, "de-DE");
 
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(status.status, "partial");
   assert.equal(
     status.logs.some((entry) =>
-      entry.message.includes("Invalid generationLocale override 'invalid_locale' - falling back to 'de-DE'.")
+      entry.message.includes(
+        "Invalid generationLocale override 'invalid_locale' - falling back to 'de-DE'.",
+      ),
     ),
-    true
+    true,
   );
 });
 
 test("createJobEngine marks jobs failed when figma source cannot be fetched", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-fail-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-fail-"),
+  );
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: true,
@@ -2165,27 +2816,38 @@ test("createJobEngine marks jobs failed when figma source cannot be fetched", as
       figmaRequestTimeoutMs: 1000,
       fetchImpl: async () => {
         throw new Error("network down");
-      }
-    })
+      },
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+  });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_FIGMA_NETWORK");
   assert.equal(status.error?.stage, "figma.source");
-  assert.equal(engine.getJobResult(accepted.jobId)?.error?.code, "E_FIGMA_NETWORK");
+  assert.equal(
+    engine.getJobResult(accepted.jobId)?.error?.code,
+    "E_FIGMA_NETWORK",
+  );
 });
 
 test("createJobEngine surfaces circuit-open diagnostics after transient figma failures open the breaker", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-circuit-open-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-circuit-open-"),
+  );
   let fetchCalls = 0;
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2197,38 +2859,72 @@ test("createJobEngine surfaces circuit-open diagnostics after transient figma fa
       fetchImpl: async () => {
         fetchCalls += 1;
         throw new Error("network down");
-      }
-    })
+      },
+    }),
   });
 
-  const firstAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
-  const firstStatus = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: firstAccepted.jobId, timeoutMs: 20_000 });
+  const firstAccepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const firstStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: firstAccepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(firstStatus.status, "failed");
   assert.equal(firstStatus.error?.code, "E_FIGMA_NETWORK");
   assert.equal(fetchCalls, 1);
 
-  const secondAccepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const secondAccepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
   const secondStatus = await waitForTerminalStatus({
     getStatus: engine.getJob,
     jobId: secondAccepted.jobId,
-    timeoutMs: 20_000
+    timeoutMs: 20_000,
   });
   assert.equal(secondStatus.status, "failed");
   assert.equal(secondStatus.error?.code, "E_FIGMA_CIRCUIT_OPEN");
   assert.equal(secondStatus.error?.stage, "figma.source");
-  assert.equal(secondStatus.error?.diagnostics?.[0]?.code, "E_FIGMA_CIRCUIT_OPEN");
-  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.circuitState, "open");
-  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.failureThreshold, 1);
-  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.resetTimeoutMs, 60_000);
-  assert.equal(secondStatus.error?.diagnostics?.[0]?.details?.probeInFlight, false);
-  assert.equal(typeof secondStatus.error?.diagnostics?.[0]?.details?.nextProbeAt, "string");
+  assert.equal(
+    secondStatus.error?.diagnostics?.[0]?.code,
+    "E_FIGMA_CIRCUIT_OPEN",
+  );
+  assert.equal(
+    secondStatus.error?.diagnostics?.[0]?.details?.circuitState,
+    "open",
+  );
+  assert.equal(
+    secondStatus.error?.diagnostics?.[0]?.details?.failureThreshold,
+    1,
+  );
+  assert.equal(
+    secondStatus.error?.diagnostics?.[0]?.details?.resetTimeoutMs,
+    60_000,
+  );
+  assert.equal(
+    secondStatus.error?.diagnostics?.[0]?.details?.probeInFlight,
+    false,
+  );
+  assert.equal(
+    typeof secondStatus.error?.diagnostics?.[0]?.details?.nextProbeAt,
+    "string",
+  );
   assert.equal(fetchCalls, 1);
 });
 
 test("createJobEngine supports local_json mode without Figma REST calls", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-local-json-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-local-json-"),
+  );
   const localJsonPath = path.join(tempRoot, "local-figma.json");
-  await writeFile(localJsonPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+  await writeFile(
+    localJsonPath,
+    `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`,
+    "utf8",
+  );
 
   let fetchCalls = 0;
   const engine = createJobEngine({
@@ -2236,7 +2932,7 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2246,18 +2942,25 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
       fetchImpl: async () => {
         fetchCalls += 1;
         throw new Error("unexpected fetch call");
-      }
-    })
+      },
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
-    figmaJsonPath: localJsonPath
+    figmaJsonPath: localJsonPath,
   });
   assert.equal(accepted.acceptedModes.figmaSourceMode, "local_json");
 
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
-  assert.equal(status.stages.find((stage) => stage.name === "figma.source")?.status, "completed");
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
+  assert.equal(
+    status.stages.find((stage) => stage.name === "figma.source")?.status,
+    "completed",
+  );
   assert.equal(fetchCalls, 0);
   assert.equal(status.request.figmaSourceMode, "local_json");
   assert.equal(status.request.figmaJsonPath, localJsonPath);
@@ -2265,7 +2968,9 @@ test("createJobEngine supports local_json mode without Figma REST calls", async 
 });
 
 test("createJobEngine fails local_json mode with path-aware figma payload validation errors", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-local-json-invalid-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-local-json-invalid-"),
+  );
   const localJsonPath = path.join(tempRoot, "local-figma-invalid.json");
   await writeFile(
     localJsonPath,
@@ -2278,15 +2983,15 @@ test("createJobEngine fails local_json mode with path-aware figma payload valida
           children: [
             {
               type: "CANVAS",
-              children: []
-            }
-          ]
-        }
+              children: [],
+            },
+          ],
+        },
       },
       null,
-      2
+      2,
     )}\n`,
-    "utf8"
+    "utf8",
   );
 
   const engine = createJobEngine({
@@ -2294,22 +2999,26 @@ test("createJobEngine fails local_json mode with path-aware figma payload valida
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
       skipInstall: true,
       figmaMaxRetries: 1,
-      figmaRequestTimeoutMs: 1000
-    })
+      figmaRequestTimeoutMs: 1000,
+    }),
   });
 
   const accepted = engine.submitJob({
     figmaSourceMode: "local_json",
-    figmaJsonPath: localJsonPath
+    figmaJsonPath: localJsonPath,
   });
 
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(status.status, "failed");
   assert.equal(status.error?.code, "E_FIGMA_PARSE");
   assert.equal(status.error?.stage, "figma.source");
@@ -2317,14 +3026,20 @@ test("createJobEngine fails local_json mode with path-aware figma payload valida
 });
 
 test("createJobEngine fails jobs whose runtime support-file paths escape allowed roots without leaking absolute paths", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-path-safety-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-path-safety-"),
+  );
   const outputRoot = path.join(tempRoot, "output");
   const localJsonPath = path.join(tempRoot, "local-figma.json");
-  await writeFile(localJsonPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+  await writeFile(
+    localJsonPath,
+    `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`,
+    "utf8",
+  );
 
   for (const runtimeOverrides of [
     { iconMapFilePath: "/etc/passwd" },
-    { designSystemFilePath: "unsafe\0config.json" }
+    { designSystemFilePath: "unsafe\0config.json" },
   ]) {
     const engine = createJobEngine({
       resolveBaseUrl: () => "http://127.0.0.1:1983",
@@ -2332,24 +3047,24 @@ test("createJobEngine fails jobs whose runtime support-file paths escape allowed
         outputRoot,
         jobsRoot: path.join(outputRoot, "jobs"),
         reprosRoot: path.join(outputRoot, "repros"),
-        workspaceRoot: tempRoot
+        workspaceRoot: tempRoot,
       },
       runtime: resolveRuntimeSettings({
         enablePreview: false,
         skipInstall: true,
         figmaMaxRetries: 1,
         figmaRequestTimeoutMs: 1000,
-        ...runtimeOverrides
-      })
+        ...runtimeOverrides,
+      }),
     });
 
     const accepted = engine.submitJob({
       figmaSourceMode: "local_json",
-      figmaJsonPath: localJsonPath
+      figmaJsonPath: localJsonPath,
     });
     const status = await waitForTerminalStatus({
       getStatus: engine.getJob,
-      jobId: accepted.jobId
+      jobId: accepted.jobId,
     });
 
     assert.equal(status.status, "failed");
@@ -2357,48 +3072,96 @@ test("createJobEngine fails jobs whose runtime support-file paths escape allowed
     assert.equal(status.error?.stage, "codegen.generate");
     assert.equal((status.error?.message ?? "").includes(tempRoot), false);
     assert.equal((status.error?.message ?? "").includes("/etc/passwd"), false);
-    assert.match(status.error?.message ?? "", /iconMapFilePath|designSystemFilePath/);
+    assert.match(
+      status.error?.message ?? "",
+      /iconMapFilePath|designSystemFilePath/,
+    );
   }
 });
 
 test("resolvePreviewAsset enforces safe job id/path and supports direct assets, empty-path fallback, and missing index handling", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-preview-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-preview-"),
+  );
   const reproDir = path.join(tempRoot, "repros", "safe-job");
   const siblingReproDir = path.join(tempRoot, "repros", "safe-job-2");
   await mkdir(reproDir, { recursive: true });
   await mkdir(siblingReproDir, { recursive: true });
-  await writeFile(path.join(reproDir, "index.html"), "<html>ok</html>\n", "utf8");
-  await writeFile(path.join(siblingReproDir, "index.html"), "<html>sibling</html>\n", "utf8");
+  await writeFile(
+    path.join(reproDir, "index.html"),
+    "<html>ok</html>\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(siblingReproDir, "index.html"),
+    "<html>sibling</html>\n",
+    "utf8",
+  );
   await mkdir(path.join(reproDir, "assets"), { recursive: true });
-  await writeFile(path.join(reproDir, "assets", "app.js"), "console.log('asset');\n", "utf8");
-  await writeFile(path.join(tempRoot, "outside.js"), "console.log('outside');\n", "utf8");
-  await symlink(path.join(tempRoot, "outside.js"), path.join(reproDir, "assets", "linked.js"));
-  await symlink(siblingReproDir, path.join(tempRoot, "repros", "safe-job-link"));
+  await writeFile(
+    path.join(reproDir, "assets", "app.js"),
+    "console.log('asset');\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(tempRoot, "outside.js"),
+    "console.log('outside');\n",
+    "utf8",
+  );
+  await symlink(
+    path.join(tempRoot, "outside.js"),
+    path.join(reproDir, "assets", "linked.js"),
+  );
+  await symlink(
+    siblingReproDir,
+    path.join(tempRoot, "repros", "safe-job-link"),
+  );
 
   const engine = createFastJobEngine({ tempRoot, enablePreview: true });
 
   const bad = await engine.resolvePreviewAsset("../unsafe", "index.html");
   assert.equal(bad, undefined);
 
-  const escapedPath = await engine.resolvePreviewAsset("safe-job", "../outside.js");
+  const escapedPath = await engine.resolvePreviewAsset(
+    "safe-job",
+    "../outside.js",
+  );
   assert.equal(escapedPath, undefined);
 
-  const siblingEscape = await engine.resolvePreviewAsset("safe-job", "../safe-job-2/index.html");
+  const siblingEscape = await engine.resolvePreviewAsset(
+    "safe-job",
+    "../safe-job-2/index.html",
+  );
   assert.equal(siblingEscape, undefined);
 
-  const symlinkedRoot = await engine.resolvePreviewAsset("safe-job-link", "index.html");
+  const symlinkedRoot = await engine.resolvePreviewAsset(
+    "safe-job-link",
+    "index.html",
+  );
   assert.equal(symlinkedRoot, undefined);
 
   const indexFromEmptyPath = await engine.resolvePreviewAsset("safe-job", "");
   assert.ok(indexFromEmptyPath);
   assert.equal(indexFromEmptyPath?.contentType, "text/html; charset=utf-8");
 
-  const directAsset = await engine.resolvePreviewAsset("safe-job", "assets/app.js");
+  const directAsset = await engine.resolvePreviewAsset(
+    "safe-job",
+    "assets/app.js",
+  );
   assert.ok(directAsset);
-  assert.equal(directAsset?.contentType, "application/javascript; charset=utf-8");
-  assert.equal(directAsset?.content.toString("utf8"), "console.log('asset');\n");
+  assert.equal(
+    directAsset?.contentType,
+    "application/javascript; charset=utf-8",
+  );
+  assert.equal(
+    directAsset?.content.toString("utf8"),
+    "console.log('asset');\n",
+  );
 
-  const symlinkedAsset = await engine.resolvePreviewAsset("safe-job", "assets/linked.js");
+  const symlinkedAsset = await engine.resolvePreviewAsset(
+    "safe-job",
+    "assets/linked.js",
+  );
   assert.equal(symlinkedAsset, undefined);
 
   const fallback = await engine.resolvePreviewAsset("safe-job", "missing.txt");
@@ -2406,37 +3169,46 @@ test("resolvePreviewAsset enforces safe job id/path and supports direct assets, 
   assert.equal(fallback?.contentType, "text/html; charset=utf-8");
   assert.ok(fallback?.content.toString("utf8").includes("ok"));
 
-  const missingIndex = await engine.resolvePreviewAsset("missing-job", "missing.txt");
+  const missingIndex = await engine.resolvePreviewAsset(
+    "missing-job",
+    "missing.txt",
+  );
   assert.equal(missingIndex, undefined);
 });
 
 test("createJobEngine stale-check and remap helpers cover missing, unreadable, and artifact-free cases", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-stale-remap-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-stale-remap-"),
+  );
   const figmaPath = path.join(tempRoot, "local-figma.json");
-  await writeFile(figmaPath, `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`, "utf8");
+  await writeFile(
+    figmaPath,
+    `${JSON.stringify(createLocalFigmaPayload(), null, 2)}\n`,
+    "utf8",
+  );
 
   const engine = createFastJobEngine({
     tempRoot,
     fetchImpl: async () => {
       throw new Error("network down");
-    }
+    },
   });
 
   try {
     const noBoardAccepted = engine.submitJob({
       figmaSourceMode: "local_json",
-      figmaJsonPath: "   "
+      figmaJsonPath: "   ",
     });
     const noBoard = await engine.checkStaleDraft({
       jobId: noBoardAccepted.jobId,
-      draftNodeIds: []
+      draftNodeIds: [],
     });
     assert.equal(noBoard.boardKey, null);
     assert.equal(noBoard.message, "Cannot determine board key for this job.");
 
     const missingJob = await engine.checkStaleDraft({
       jobId: "missing-job",
-      draftNodeIds: ["title"]
+      draftNodeIds: ["title"],
     });
     assert.equal(missingJob.stale, false);
     assert.equal(missingJob.latestJobId, null);
@@ -2444,17 +3216,17 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
 
     const first = await submitCompletedLocalJsonJob({
       engine,
-      figmaJsonPath: figmaPath
+      figmaJsonPath: figmaPath,
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
     const second = await submitCompletedLocalJsonJob({
       engine,
-      figmaJsonPath: figmaPath
+      figmaJsonPath: figmaPath,
     });
 
     const latestSelf = await engine.checkStaleDraft({
       jobId: second.accepted.jobId,
-      draftNodeIds: ["title"]
+      draftNodeIds: ["title"],
     });
     assert.equal(latestSelf.stale, false);
     assert.equal(latestSelf.latestJobId, null);
@@ -2462,7 +3234,7 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
 
     const carryForward = await engine.checkStaleDraft({
       jobId: first.accepted.jobId,
-      draftNodeIds: ["title"]
+      draftNodeIds: ["title"],
     });
     assert.equal(carryForward.stale, true);
     assert.equal(carryForward.latestJobId, second.accepted.jobId);
@@ -2471,7 +3243,7 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
 
     const unmapped = await engine.checkStaleDraft({
       jobId: first.accepted.jobId,
-      draftNodeIds: ["title", "missing-node"]
+      draftNodeIds: ["title", "missing-node"],
     });
     assert.equal(unmapped.carryForwardAvailable, false);
     assert.deepEqual(unmapped.unmappedNodeIds, ["missing-node"]);
@@ -2480,7 +3252,7 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
     const missingSource = await engine.suggestRemaps({
       sourceJobId: "missing-job",
       latestJobId: second.accepted.jobId,
-      unmappedNodeIds: ["missing-node"]
+      unmappedNodeIds: ["missing-node"],
     });
     assert.equal(missingSource.suggestions.length, 0);
     assert.equal(missingSource.rejections.length, 1);
@@ -2489,7 +3261,7 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
     const missingLatest = await engine.suggestRemaps({
       sourceJobId: first.accepted.jobId,
       latestJobId: "missing-job",
-      unmappedNodeIds: ["missing-node"]
+      unmappedNodeIds: ["missing-node"],
     });
     assert.equal(missingLatest.suggestions.length, 0);
     assert.equal(missingLatest.rejections.length, 1);
@@ -2497,27 +3269,30 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
 
     const failedAccepted = engine.submitJob({
       figmaFileKey: "rest-fail",
-      figmaAccessToken: "token"
+      figmaAccessToken: "token",
     });
     const failedStatus = await waitForTerminalStatus({
       getStatus: engine.getJob,
       jobId: failedAccepted.jobId,
-      timeoutMs: 20_000
+      timeoutMs: 20_000,
     });
     assert.equal(failedStatus.status, "failed");
 
     const missingArtifacts = await engine.suggestRemaps({
       sourceJobId: failedAccepted.jobId,
       latestJobId: second.accepted.jobId,
-      unmappedNodeIds: ["missing-node"]
+      unmappedNodeIds: ["missing-node"],
     });
     assert.equal(missingArtifacts.suggestions.length, 0);
-    assert.equal(missingArtifacts.message, "Could not read Design IR files for remap analysis.");
+    assert.equal(
+      missingArtifacts.message,
+      "Could not read Design IR files for remap analysis.",
+    );
 
     const readableRemap = await engine.suggestRemaps({
       sourceJobId: first.accepted.jobId,
       latestJobId: second.accepted.jobId,
-      unmappedNodeIds: ["title"]
+      unmappedNodeIds: ["title"],
     });
     assert.equal(readableRemap.sourceJobId, first.accepted.jobId);
     assert.equal(readableRemap.latestJobId, second.accepted.jobId);
@@ -2527,29 +3302,42 @@ test("createJobEngine stale-check and remap helpers cover missing, unreadable, a
 
     const unreadableStale = await engine.checkStaleDraft({
       jobId: first.accepted.jobId,
-      draftNodeIds: ["title"]
+      draftNodeIds: ["title"],
     });
     assert.equal(unreadableStale.stale, true);
     assert.equal(unreadableStale.latestJobId, second.accepted.jobId);
     assert.equal(unreadableStale.carryForwardAvailable, false);
     assert.deepEqual(unreadableStale.unmappedNodeIds, []);
-    assert.equal(unreadableStale.message, `A newer job '${second.accepted.jobId}' exists for this board.`);
+    assert.equal(
+      unreadableStale.message,
+      `A newer job '${second.accepted.jobId}' exists for this board.`,
+    );
 
     const unreadableRemap = await engine.suggestRemaps({
       sourceJobId: first.accepted.jobId,
       latestJobId: second.accepted.jobId,
-      unmappedNodeIds: ["title"]
+      unmappedNodeIds: ["title"],
     });
     assert.equal(unreadableRemap.suggestions.length, 0);
     assert.equal(unreadableRemap.rejections.length, 0);
-    assert.equal(unreadableRemap.message, "Could not read Design IR files for remap analysis.");
+    assert.equal(
+      unreadableRemap.message,
+      "Could not read Design IR files for remap analysis.",
+    );
   } finally {
-    await rm(tempRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 });
+    await rm(tempRoot, {
+      recursive: true,
+      force: true,
+      maxRetries: 3,
+      retryDelay: 200,
+    });
   }
 });
 
 test("createJobEngine fails fast when cleaning removes all screen candidates", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-clean-empty-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-clean-empty-"),
+  );
   const payload = {
     name: "Hidden only board",
     document: {
@@ -2564,12 +3352,12 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
               id: "hidden-screen",
               type: "FRAME",
               visible: false,
-              children: []
-            }
-          ]
-        }
-      ]
-    }
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
   };
 
   const engine = createJobEngine({
@@ -2577,7 +3365,7 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2587,28 +3375,42 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        })
-    })
+            "content-type": "application/json",
+          },
+        }),
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+  });
   assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_FIGMA_CLEAN_EMPTY");
   assert.equal(status.error?.stage, "ir.derive");
   assert.equal(status.error?.diagnostics?.[0]?.code, "E_FIGMA_CLEAN_EMPTY");
   assert.equal(status.error?.diagnostics?.[0]?.severity, "error");
-  assert.equal(status.error?.diagnostics?.[0]?.details?.screenCandidateCount, 0);
   assert.equal(
-    String(status.error?.diagnostics?.[0]?.suggestion ?? "").includes("visible FRAME/COMPONENT"),
-    true
+    status.error?.diagnostics?.[0]?.details?.screenCandidateCount,
+    0,
+  );
+  assert.equal(
+    String(status.error?.diagnostics?.[0]?.suggestion ?? "").includes(
+      "visible FRAME/COMPONENT",
+    ),
+    true,
   );
 
   const rawPath = path.join(status.artifacts.jobDir, "figma.raw.json");
   const cleanedPath = path.join(status.artifacts.jobDir, "figma.json");
-  const stageTimingsPath = path.join(status.artifacts.jobDir, "stage-timings.json");
+  const stageTimingsPath = path.join(
+    status.artifacts.jobDir,
+    "stage-timings.json",
+  );
   const raw = await readFile(rawPath, "utf8");
   const cleaned = await readFile(cleanedPath, "utf8");
   const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
@@ -2617,11 +3419,18 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
 
   assert.equal(raw.length > cleaned.length, true);
   assert.equal(cleaned.includes('"visible": false'), false);
-  assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "E_FIGMA_CLEAN_EMPTY"), true);
+  assert.equal(
+    stageTimings.diagnostics?.some(
+      (entry) => entry.code === "E_FIGMA_CLEAN_EMPTY",
+    ),
+    true,
+  );
 });
 
 test("createJobEngine surfaces truncation/classification warnings in failure diagnostics with figma links", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-warnings-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-warnings-"),
+  );
   const payload = {
     name: "Diagnostics board",
     document: {
@@ -2646,18 +3455,35 @@ test("createJobEngine surfaces truncation/classification warnings in failure dia
                       id: "nested-2",
                       type: "FRAME",
                       name: "Layer Beta",
-                      children: [{ id: "nested-3", type: "RECTANGLE", name: "_<CardContent>", children: [] }]
-                    }
-                  ]
+                      children: [
+                        {
+                          id: "nested-3",
+                          type: "RECTANGLE",
+                          name: "_<CardContent>",
+                          children: [],
+                        },
+                      ],
+                    },
+                  ],
                 },
-                { id: "rect-1", type: "RECTANGLE", name: "_<CardContent>", children: [] },
-                { id: "rect-2", type: "RECTANGLE", name: "Mystery Block 2", children: [] }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+                {
+                  id: "rect-1",
+                  type: "RECTANGLE",
+                  name: "_<CardContent>",
+                  children: [],
+                },
+                {
+                  id: "rect-2",
+                  type: "RECTANGLE",
+                  name: "Mystery Block 2",
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   };
 
   const engine = createJobEngine({
@@ -2665,7 +3491,7 @@ test("createJobEngine surfaces truncation/classification warnings in failure dia
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2678,39 +3504,75 @@ test("createJobEngine surfaces truncation/classification warnings in failure dia
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        })
-    })
+            "content-type": "application/json",
+          },
+        }),
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "token",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
-  assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK"), true);
-  assert.equal(status.error?.diagnostics?.some((entry) => entry.code === "W_IR_DEPTH_TRUNCATION"), true);
   assert.equal(
     status.error?.diagnostics?.some(
-      (entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK" && entry.message?.includes("CardContent")
+      (entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK",
     ),
-    true
+    true,
   );
   assert.equal(
-    status.error?.diagnostics?.some((entry) => entry.figmaUrl?.includes("https://www.figma.com/design/abc123?node-id=")),
-    true
+    status.error?.diagnostics?.some(
+      (entry) => entry.code === "W_IR_DEPTH_TRUNCATION",
+    ),
+    true,
+  );
+  assert.equal(
+    status.error?.diagnostics?.some(
+      (entry) =>
+        entry.code === "W_IR_CLASSIFICATION_FALLBACK" &&
+        entry.message?.includes("CardContent"),
+    ),
+    true,
+  );
+  assert.equal(
+    status.error?.diagnostics?.some((entry) =>
+      entry.figmaUrl?.includes("https://www.figma.com/design/abc123?node-id="),
+    ),
+    true,
   );
 
-  const stageTimingsPath = path.join(status.artifacts.jobDir, "stage-timings.json");
+  const stageTimingsPath = path.join(
+    status.artifacts.jobDir,
+    "stage-timings.json",
+  );
   const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
     diagnostics?: Array<{ code?: string; message?: string }>;
   };
-  assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK"), true);
-  assert.equal(stageTimings.diagnostics?.some((entry) => entry.code === "E_VALIDATE_PROJECT"), true);
+  assert.equal(
+    stageTimings.diagnostics?.some(
+      (entry) => entry.code === "W_IR_CLASSIFICATION_FALLBACK",
+    ),
+    true,
+  );
+  assert.equal(
+    stageTimings.diagnostics?.some(
+      (entry) => entry.code === "E_VALIDATE_PROJECT",
+    ),
+    true,
+  );
 });
 
 test("createJobEngine surfaces budget truncation diagnostics with figma links", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-budget-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-budget-"),
+  );
   const payload = {
     name: "Budget diagnostics board",
     document: {
@@ -2729,13 +3591,13 @@ test("createJobEngine surfaces budget truncation diagnostics with figma links", 
                 id: `rect-${index + 1}`,
                 type: "RECTANGLE",
                 name: `Block ${index + 1}`,
-                children: []
-              }))
-            }
-          ]
-        }
-      ]
-    }
+                children: [],
+              })),
+            },
+          ],
+        },
+      ],
+    },
   };
 
   const engine = createJobEngine({
@@ -2743,7 +3605,7 @@ test("createJobEngine surfaces budget truncation diagnostics with figma links", 
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2756,28 +3618,41 @@ test("createJobEngine surfaces budget truncation diagnostics with figma links", 
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        })
-    })
+            "content-type": "application/json",
+          },
+        }),
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "token",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
   assert.equal(
-    status.error?.diagnostics?.some((entry) => entry.code === "W_IR_ELEMENT_BUDGET_TRUNCATION"),
-    true
+    status.error?.diagnostics?.some(
+      (entry) => entry.code === "W_IR_ELEMENT_BUDGET_TRUNCATION",
+    ),
+    true,
   );
   assert.equal(
-    status.error?.diagnostics?.some((entry) => entry.figmaUrl?.includes("https://www.figma.com/design/abc123?node-id=")),
-    true
+    status.error?.diagnostics?.some((entry) =>
+      entry.figmaUrl?.includes("https://www.figma.com/design/abc123?node-id="),
+    ),
+    true,
   );
 });
 
 test("createJobEngine respects pipelineDiagnosticMaxCount when surfacing job failures", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-max-count-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-diagnostics-max-count-"),
+  );
   const payload = {
     name: "Diagnostics board",
     document: {
@@ -2802,18 +3677,35 @@ test("createJobEngine respects pipelineDiagnosticMaxCount when surfacing job fai
                       id: "nested-2",
                       type: "FRAME",
                       name: "Layer Beta",
-                      children: [{ id: "nested-3", type: "RECTANGLE", name: "Unknown Box", children: [] }]
-                    }
-                  ]
+                      children: [
+                        {
+                          id: "nested-3",
+                          type: "RECTANGLE",
+                          name: "Unknown Box",
+                          children: [],
+                        },
+                      ],
+                    },
+                  ],
                 },
-                { id: "rect-1", type: "RECTANGLE", name: "Mystery Block", children: [] },
-                { id: "rect-2", type: "RECTANGLE", name: "Mystery Block 2", children: [] }
-              ]
-            }
-          ]
-        }
-      ]
-    }
+                {
+                  id: "rect-1",
+                  type: "RECTANGLE",
+                  name: "Mystery Block",
+                  children: [],
+                },
+                {
+                  id: "rect-2",
+                  type: "RECTANGLE",
+                  name: "Mystery Block 2",
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
   };
 
   const engine = createJobEngine({
@@ -2821,7 +3713,7 @@ test("createJobEngine respects pipelineDiagnosticMaxCount when surfacing job fai
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2835,20 +3727,30 @@ test("createJobEngine respects pipelineDiagnosticMaxCount when surfacing job fai
         new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
-        })
-    })
+            "content-type": "application/json",
+          },
+        }),
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc123", figmaAccessToken: "token" });
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "token",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(status.status, "partial");
   assert.equal(status.error?.code, "E_VALIDATE_PROJECT");
   assert.equal(status.error?.diagnostics?.length, 1);
   assert.equal(status.error?.diagnostics?.[0]?.code, "E_VALIDATE_PROJECT");
 
-  const stageTimingsPath = path.join(status.artifacts.jobDir, "stage-timings.json");
+  const stageTimingsPath = path.join(
+    status.artifacts.jobDir,
+    "stage-timings.json",
+  );
   const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
     diagnostics?: Array<{ code?: string }>;
   };
@@ -2878,18 +3780,20 @@ const createImageBoardPayload = () => ({
                 name: "Hero",
                 fills: [{ type: "IMAGE" }],
                 absoluteBoundingBox: { x: 0, y: 0, width: 320, height: 180 },
-                children: []
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  },
 });
 
 test("createJobEngine skips /v1/images export calls when exportImages=false", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-no-image-export-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-no-image-export-"),
+  );
   const payload = createImageBoardPayload();
   let imageEndpointCalls = 0;
 
@@ -2898,7 +3802,7 @@ test("createJobEngine skips /v1/images export calls when exportImages=false", as
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2914,21 +3818,33 @@ test("createJobEngine skips /v1/images export calls when exportImages=false", as
         return new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
+            "content-type": "application/json",
+          },
         });
-      }
-    })
+      },
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(imageEndpointCalls, 0);
-  assert.equal(status.stages.find((stage) => stage.name === "codegen.generate")?.status, "completed");
+  assert.equal(
+    status.stages.find((stage) => stage.name === "codegen.generate")?.status,
+    "completed",
+  );
 });
 
 test("createJobEngine continues codegen when image export warns on /v1/images failures", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-image-export-warn-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-image-export-warn-"),
+  );
   const payload = createImageBoardPayload();
   let imageEndpointCalls = 0;
 
@@ -2937,7 +3853,7 @@ test("createJobEngine continues codegen when image export warns on /v1/images fa
     paths: {
       outputRoot: tempRoot,
       jobsRoot: path.join(tempRoot, "jobs"),
-      reprosRoot: path.join(tempRoot, "repros")
+      reprosRoot: path.join(tempRoot, "repros"),
     },
     runtime: resolveRuntimeSettings({
       enablePreview: false,
@@ -2952,23 +3868,37 @@ test("createJobEngine continues codegen when image export warns on /v1/images fa
           return new Response(JSON.stringify({ err: "upstream unavailable" }), {
             status: 500,
             headers: {
-              "content-type": "application/json"
-            }
+              "content-type": "application/json",
+            },
           });
         }
         return new Response(JSON.stringify(payload), {
           status: 200,
           headers: {
-            "content-type": "application/json"
-          }
+            "content-type": "application/json",
+          },
         });
-      }
-    })
+      },
+    }),
   });
 
-  const accepted = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
-  const status = await waitForTerminalStatus({ getStatus: engine.getJob, jobId: accepted.jobId, timeoutMs: 20_000 });
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: 20_000,
+  });
   assert.equal(imageEndpointCalls > 0, true);
-  assert.equal(status.stages.find((stage) => stage.name === "codegen.generate")?.status, "completed");
-  assert.ok(status.logs.some((entry) => entry.message.toLowerCase().includes("image asset export warning")));
+  assert.equal(
+    status.stages.find((stage) => stage.name === "codegen.generate")?.status,
+    "completed",
+  );
+  assert.ok(
+    status.logs.some((entry) =>
+      entry.message.toLowerCase().includes("image asset export warning"),
+    ),
+  );
 });

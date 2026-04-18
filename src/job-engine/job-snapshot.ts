@@ -1,12 +1,26 @@
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { WorkspaceJobDiagnostic, WorkspaceJobRuntimeStatus, WorkspaceJobStatus } from "../contracts/index.js";
-import { nowIso, toPublicJob } from "./stage-state.js";
+import type {
+  WorkspaceJobDiagnostic,
+  WorkspaceJobRuntimeStatus,
+  WorkspaceJobStatus,
+} from "../contracts/index.js";
+import {
+  cloneCompositeQuality,
+  cloneJobConfidence,
+  nowIso,
+  toPublicJob,
+} from "./stage-state.js";
 import type { JobRecord } from "./types.js";
 
 const TERMINAL_SNAPSHOT_VERSION = 1 as const;
-const TERMINAL_STATUSES = new Set<WorkspaceJobRuntimeStatus>(["completed", "partial", "failed", "canceled"]);
+const TERMINAL_STATUSES = new Set<WorkspaceJobRuntimeStatus>([
+  "completed",
+  "partial",
+  "failed",
+  "canceled",
+]);
 
 interface PersistedTerminalJobSnapshot extends WorkspaceJobStatus {
   snapshotVersion: typeof TERMINAL_SNAPSHOT_VERSION;
@@ -18,38 +32,59 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const isTerminalStatus = (value: unknown): value is WorkspaceJobRuntimeStatus => {
-  return typeof value === "string" && TERMINAL_STATUSES.has(value as WorkspaceJobRuntimeStatus);
+const isTerminalStatus = (
+  value: unknown,
+): value is WorkspaceJobRuntimeStatus => {
+  return (
+    typeof value === "string" &&
+    TERMINAL_STATUSES.has(value as WorkspaceJobRuntimeStatus)
+  );
 };
 
-const isPersistedTerminalJobSnapshot = (value: unknown): value is PersistedTerminalJobSnapshot => {
+const isPersistedTerminalJobSnapshot = (
+  value: unknown,
+): value is PersistedTerminalJobSnapshot => {
   if (!isRecord(value)) {
     return false;
   }
   if (value.snapshotVersion !== TERMINAL_SNAPSHOT_VERSION) {
     return false;
   }
-  if (typeof value.jobId !== "string" || !isTerminalStatus(value.status) || typeof value.submittedAt !== "string") {
+  if (
+    typeof value.jobId !== "string" ||
+    !isTerminalStatus(value.status) ||
+    typeof value.submittedAt !== "string"
+  ) {
     return false;
   }
-  if (!isRecord(value.request) || !Array.isArray(value.stages) || !Array.isArray(value.logs)) {
+  if (
+    !isRecord(value.request) ||
+    !Array.isArray(value.stages) ||
+    !Array.isArray(value.logs)
+  ) {
     return false;
   }
-  if (!isRecord(value.artifacts) || !isRecord(value.preview) || !isRecord(value.queue)) {
+  if (
+    !isRecord(value.artifacts) ||
+    !isRecord(value.preview) ||
+    !isRecord(value.queue)
+  ) {
     return false;
   }
   return true;
 };
 
 const resolveStageTimingsFile = ({ job }: { job: JobRecord }): string => {
-  const stageTimingsFile = job.artifacts.stageTimingsFile ?? path.join(job.artifacts.jobDir, "stage-timings.json");
+  const stageTimingsFile =
+    job.artifacts.stageTimingsFile ??
+    path.join(job.artifacts.jobDir, "stage-timings.json");
   job.artifacts.stageTimingsFile = stageTimingsFile;
   return stageTimingsFile;
 };
 
 const buildTerminalJobSnapshot = ({
   job,
-  diagnostics
+  diagnostics,
 }: {
   job: JobRecord;
   diagnostics?: WorkspaceJobDiagnostic[] | undefined;
@@ -59,13 +94,13 @@ const buildTerminalJobSnapshot = ({
     snapshotVersion: TERMINAL_SNAPSHOT_VERSION,
     generatedAt: nowIso(),
     ...publicJob,
-    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {})
+    ...(diagnostics && diagnostics.length > 0 ? { diagnostics } : {}),
   };
 };
 
 export const writeTerminalJobSnapshot = async ({
   job,
-  diagnostics
+  diagnostics,
 }: {
   job: JobRecord;
   diagnostics?: WorkspaceJobDiagnostic[] | undefined;
@@ -73,13 +108,17 @@ export const writeTerminalJobSnapshot = async ({
   const stageTimingsFile = resolveStageTimingsFile({ job });
   const snapshot = buildTerminalJobSnapshot({ job, diagnostics });
   await mkdir(path.dirname(stageTimingsFile), { recursive: true });
-  await writeFile(stageTimingsFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  await writeFile(
+    stageTimingsFile,
+    `${JSON.stringify(snapshot, null, 2)}\n`,
+    "utf8",
+  );
   return snapshot;
 };
 
 export const writeTerminalJobSnapshotSync = ({
   job,
-  diagnostics
+  diagnostics,
 }: {
   job: JobRecord;
   diagnostics?: WorkspaceJobDiagnostic[] | undefined;
@@ -87,13 +126,17 @@ export const writeTerminalJobSnapshotSync = ({
   const stageTimingsFile = resolveStageTimingsFile({ job });
   const snapshot = buildTerminalJobSnapshot({ job, diagnostics });
   mkdirSync(path.dirname(stageTimingsFile), { recursive: true });
-  writeFileSync(stageTimingsFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
+  writeFileSync(
+    stageTimingsFile,
+    `${JSON.stringify(snapshot, null, 2)}\n`,
+    "utf8",
+  );
   return snapshot;
 };
 
 const restorePreview = ({
   job,
-  resolveBaseUrl
+  resolveBaseUrl,
 }: {
   job: JobRecord;
   resolveBaseUrl: () => string;
@@ -109,7 +152,7 @@ const toRehydratedJobRecord = ({
   snapshot,
   jobDir,
   stageTimingsFile,
-  resolveBaseUrl
+  resolveBaseUrl,
 }: {
   snapshot: PersistedTerminalJobSnapshot;
   jobDir: string;
@@ -126,10 +169,10 @@ const toRehydratedJobRecord = ({
     artifacts: {
       ...snapshot.artifacts,
       jobDir,
-      stageTimingsFile
+      stageTimingsFile,
     },
     preview: { ...snapshot.preview },
-    queue: { ...snapshot.queue }
+    queue: { ...snapshot.queue },
   };
   if (snapshot.currentStage) {
     job.currentStage = snapshot.currentStage;
@@ -157,9 +200,11 @@ const toRehydratedJobRecord = ({
       ...snapshot.visualAudit,
       ...(snapshot.visualAudit.regions
         ? {
-            regions: snapshot.visualAudit.regions.map((region) => ({ ...region }))
+            regions: snapshot.visualAudit.regions.map((region) => ({
+              ...region,
+            })),
           }
-        : {})
+        : {}),
     };
   }
   if (snapshot.visualQuality) {
@@ -184,7 +229,9 @@ const toRehydratedJobRecord = ({
       stages: snapshot.inspector.stages.map((stage) => ({
         ...stage,
         ...(stage.retryTargets
-          ? { retryTargets: stage.retryTargets.map((target) => ({ ...target })) }
+          ? {
+              retryTargets: stage.retryTargets.map((target) => ({ ...target })),
+            }
           : {}),
       })),
     };
@@ -193,9 +240,22 @@ const toRehydratedJobRecord = ({
     job.error = {
       ...snapshot.error,
       ...(snapshot.error.retryTargets
-        ? { retryTargets: snapshot.error.retryTargets.map((target) => ({ ...target })) }
+        ? {
+            retryTargets: snapshot.error.retryTargets.map((target) => ({
+              ...target,
+            })),
+          }
         : {}),
     };
+  }
+  if (snapshot.pasteDeltaSummary) {
+    job.pasteDeltaSummary = { ...snapshot.pasteDeltaSummary };
+  }
+  if (snapshot.compositeQuality) {
+    job.compositeQuality = cloneCompositeQuality(snapshot.compositeQuality);
+  }
+  if (snapshot.confidence) {
+    job.confidence = cloneJobConfidence(snapshot.confidence);
   }
   restorePreview({ job, resolveBaseUrl });
   return job;
@@ -203,14 +263,17 @@ const toRehydratedJobRecord = ({
 
 export const loadRehydratedJobs = ({
   jobsRoot,
-  resolveBaseUrl
+  resolveBaseUrl,
 }: {
   jobsRoot: string;
   resolveBaseUrl: () => string;
 }): JobRecord[] => {
   const entries = (() => {
     try {
-      return readdirSync(jobsRoot, { withFileTypes: true }) as Array<{ isDirectory: () => boolean; name: string }>;
+      return readdirSync(jobsRoot, { withFileTypes: true }) as Array<{
+        isDirectory: () => boolean;
+        name: string;
+      }>;
     } catch {
       return [];
     }
@@ -238,8 +301,8 @@ export const loadRehydratedJobs = ({
         snapshot: parsed,
         jobDir,
         stageTimingsFile,
-        resolveBaseUrl
-      })
+        resolveBaseUrl,
+      }),
     );
   }
 
