@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { ALLOWED_FIGMA_SOURCE_MODES } from "../../../../src/contracts/index";
 import {
   FIGMA_PASTE_MAX_BYTES,
+  WORKSPACE_FIGMA_SOURCE_MODES,
   toInspectorBootstrapPayload,
   workspaceSubmitSchema,
   toWorkspaceSubmitPayload,
@@ -49,6 +51,10 @@ describe("workspaceSubmitSchema", () => {
     });
   });
 
+  it("keeps the frontend workspace allowlist aligned with the backend contract", () => {
+    expect(WORKSPACE_FIGMA_SOURCE_MODES).toEqual(ALLOWED_FIGMA_SOURCE_MODES);
+  });
+
   it("supports hybrid submit payloads", () => {
     const parsed = workspaceSubmitSchema.parse({
       figmaFileKey: "file-key",
@@ -63,6 +69,18 @@ describe("workspaceSubmitSchema", () => {
 
     expect(payload.figmaSourceMode).toBe("hybrid");
     expect(payload.llmCodegenMode).toBe("deterministic");
+  });
+
+  it("accepts figma_plugin mode with inline payloads", () => {
+    const parsed = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_plugin",
+      figmaJsonPayload: '{"kind":"workspace-dev/figma-selection@1"}',
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    expect(parsed.success).toBe(true);
   });
 
   it("accepts local_json mode with figmaJsonPath", () => {
@@ -90,6 +108,40 @@ describe("workspaceSubmitSchema", () => {
     if (!parsed.success) {
       const paths = parsed.error.issues.map((issue) => issue.path.join("."));
       expect(paths).toContain("figmaJsonPath");
+    }
+  });
+
+  it("requires figmaJsonPayload when figma_plugin is selected", () => {
+    const parsed = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_plugin",
+      figmaJsonPayload: "",
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const paths = parsed.error.issues.map((issue) => issue.path.join("."));
+      expect(paths).toContain("figmaJsonPayload");
+      expect(parsed.error.issues[0]?.message).toMatch(/figma_plugin mode/);
+    }
+  });
+
+  it("requires repo fields for figma_plugin when Git/PR is enabled", () => {
+    const parsed = workspaceSubmitSchema.safeParse({
+      figmaSourceMode: "figma_plugin",
+      figmaJsonPayload: '{"kind":"workspace-dev/figma-selection@1"}',
+      enableGitPr: true,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    expect(parsed.success).toBe(false);
+    if (!parsed.success) {
+      const paths = parsed.error.issues.map((issue) => issue.path.join("."));
+      expect(paths).toContain("repoUrl");
+      expect(paths).toContain("repoToken");
     }
   });
 
@@ -146,6 +198,34 @@ describe("workspaceSubmitSchema", () => {
       enableGitPr: false,
       repoUrl: undefined,
       repoToken: undefined,
+      projectName: undefined,
+      targetPath: undefined,
+      llmCodegenMode: "deterministic",
+    });
+
+    expect(payload.figmaFileKey).toBeUndefined();
+    expect(payload.figmaAccessToken).toBeUndefined();
+  });
+
+  it("creates figma_plugin payloads with inline JSON and omits REST-only fields", () => {
+    const parsed = workspaceSubmitSchema.parse({
+      figmaSourceMode: "figma_plugin",
+      figmaJsonPayload: " {\"kind\":\"workspace-dev/figma-selection@1\"} ",
+      storybookStaticDir: " storybook-static/customer ",
+      customerProfilePath: " profiles/customer-profile.json ",
+      enableGitPr: false,
+      repoUrl: "",
+      repoToken: "",
+    });
+
+    const payload = toWorkspaceSubmitPayload({ formData: parsed });
+
+    expect(payload).toEqual({
+      figmaSourceMode: "figma_plugin",
+      figmaJsonPayload: '{"kind":"workspace-dev/figma-selection@1"}',
+      storybookStaticDir: "storybook-static/customer",
+      customerProfilePath: "profiles/customer-profile.json",
+      enableGitPr: false,
       projectName: undefined,
       targetPath: undefined,
       llmCodegenMode: "deterministic",

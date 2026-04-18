@@ -9,6 +9,7 @@ import {
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../lib/http";
+import type { RuntimeStatusPayload } from "./workspace-page.helpers";
 import { WorkspacePage } from "./workspace-page";
 
 vi.mock("../../lib/http", () => ({
@@ -17,19 +18,7 @@ vi.mock("../../lib/http", () => ({
 
 const fetchJsonMock = vi.mocked(fetchJson);
 
-interface MockRuntimeStatusPayload {
-  running: boolean;
-  url: string;
-  host: string;
-  port: number;
-  figmaSourceMode: "rest" | "hybrid" | "local_json";
-  llmCodegenMode: "deterministic";
-  uptimeMs: number;
-  outputRoot: string;
-  previewEnabled: boolean;
-}
-
-const runtimeStatusPayload: MockRuntimeStatusPayload = {
+const runtimeStatusPayload: RuntimeStatusPayload = {
   running: true,
   url: "http://127.0.0.1:1983",
   host: "127.0.0.1",
@@ -163,6 +152,11 @@ describe("WorkspacePage", () => {
     expect(screen.queryByLabelText("Figma JSON Path")).not.toBeInTheDocument();
     expect(screen.getByText("REST mode")).toHaveClass("border");
     expect(screen.getByText("Local JSON mode")).toBeInTheDocument();
+    expect(
+      screen.getByText(/figmaSourceMode=rest\|hybrid\|local_json/),
+    ).toBeVisible();
+    expect(screen.queryByText(/figma_paste/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/figma_plugin/)).not.toBeInTheDocument();
   });
 
   it("shows figmaJsonPath and activates the Local JSON chip when local_json is selected", async () => {
