@@ -243,9 +243,11 @@ function normalizeFigmaUrlSubmitInput(
   };
 }
 
-function resolveBlockedModeViolation(
-  input: unknown,
-): { figmaSourceMode?: string; llmCodegenMode?: string; message: string } | null {
+function resolveBlockedModeViolation(input: unknown): {
+  figmaSourceMode?: string;
+  llmCodegenMode?: string;
+  message: string;
+} | null {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return null;
   }
@@ -518,11 +520,20 @@ export function createWorkspaceRequestHandler({
       ),
     }),
   });
-  const resolveLifecycleState = (): "starting" | "ready" | "draining" | "stopped" =>
-    getServerLifecycleState?.() ?? "ready";
-  const buildHealthPayload = (): { status: "ok" | "starting" | "draining"; uptime: number } => {
+  const resolveLifecycleState = ():
+    | "starting"
+    | "ready"
+    | "draining"
+    | "stopped" => getServerLifecycleState?.() ?? "ready";
+  const buildHealthPayload = (): {
+    status: "ok" | "starting" | "draining";
+    uptime: number;
+  } => {
     const lifecycleState = resolveLifecycleState();
-    const uptimeSeconds = Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+    const uptimeSeconds = Math.max(
+      0,
+      Math.floor((Date.now() - startedAt) / 1000),
+    );
     if (lifecycleState === "starting") {
       return { status: "starting", uptime: uptimeSeconds };
     }
@@ -678,7 +689,10 @@ export function createWorkspaceRequestHandler({
         return;
       }
 
-      if (resolveLifecycleState() === "draining" && protectedWriteRoute !== null) {
+      if (
+        resolveLifecycleState() === "draining" &&
+        protectedWriteRoute !== null
+      ) {
         sendJson({
           response,
           statusCode: 503,
@@ -712,8 +726,7 @@ export function createWorkspaceRequestHandler({
         if (result.warning) {
           logAuditEvent({
             event: "workspace.inspector_policy.invalid",
-            level:
-              result.validation.state === "rejected" ? "error" : "warn",
+            level: result.validation.state === "rejected" ? "error" : "warn",
             statusCode: 200,
             message: result.warning,
           });
@@ -1422,9 +1435,21 @@ export function createWorkspaceRequestHandler({
               dirFilter = path.posix.dirname(dirValidation.normalizedPath);
             }
 
-            let fileEntries: Array<{ path: string; sizeBytes: number }>;
+            const rawLimit = requestUrl.searchParams.get("limit");
+            const parsedLimit =
+              rawLimit !== null ? Number.parseInt(rawLimit, 10) : Number.NaN;
+            const limit = Number.isFinite(parsedLimit)
+              ? Math.min(1000, Math.max(1, parsedLimit))
+              : 500;
+
+            const cursorParam = requestUrl.searchParams.get("cursor");
+
+            let listing: CollectSourceFilesResult;
             try {
-              fileEntries = await collectSourceFiles(projectDir, dirFilter);
+              listing = await collectSourceFiles(projectDir, dirFilter, {
+                limit,
+                ...(cursorParam !== null ? { cursor: cursorParam } : {}),
+              });
             } catch {
               sendJson({
                 response,
@@ -1442,7 +1467,10 @@ export function createWorkspaceRequestHandler({
               statusCode: 200,
               payload: {
                 jobId,
-                files: fileEntries,
+                files: listing.files,
+                ...(listing.nextCursor !== undefined
+                  ? { nextCursor: listing.nextCursor }
+                  : {}),
               },
             });
             return;
@@ -3810,10 +3838,24 @@ function countFigmaNodes(jsonString: string): number {
   }
 }
 
+interface CollectSourceFilesOptions {
+  /** Already-clamped page size (callers must constrain to 1..1000). */
+  limit: number;
+  /** Opaque cursor equal to the last returned `path` from a prior page. */
+  cursor?: string;
+}
+
+interface CollectSourceFilesResult {
+  files: Array<{ path: string; sizeBytes: number }>;
+  /** Present only when more pages exist. */
+  nextCursor?: string;
+}
+
 async function collectSourceFiles(
   projectDir: string,
-  dirFilter?: string,
-): Promise<Array<{ path: string; sizeBytes: number }>> {
+  dirFilter: string | undefined,
+  options: CollectSourceFilesOptions,
+): Promise<CollectSourceFilesResult> {
   const results: Array<{ path: string; sizeBytes: number }> = [];
   const baseDir =
     dirFilter !== undefined ? path.join(projectDir, dirFilter) : projectDir;
@@ -3871,8 +3913,40 @@ async function collectSourceFiles(
   };
 
   await walk(baseDir);
-  results.sort((a, b) => a.path.localeCompare(b.path));
-  return results;
+  results.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+
+  const { limit, cursor } = options;
+  const startIndex =
+    cursor !== undefined ? findFirstIndexAfterCursor(results, cursor) : 0;
+
+  const windowed = results.slice(startIndex, startIndex + limit + 1);
+  if (windowed.length > limit) {
+    const page = windowed.slice(0, limit);
+    return { files: page, nextCursor: page[page.length - 1]!.path };
+  }
+  return { files: windowed };
+}
+
+/**
+ * Binary search the first index `i` such that `entries[i].path > cursor`.
+ * Uses ordinal byte comparison to match the sort order exactly, independent
+ * of locale or ICU data.
+ */
+function findFirstIndexAfterCursor(
+  entries: ReadonlyArray<{ path: string }>,
+  cursor: string,
+): number {
+  let lo = 0;
+  let hi = entries.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (entries[mid]!.path <= cursor) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
 }
 
 /**

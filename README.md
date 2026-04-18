@@ -258,7 +258,30 @@ With `enableGitPr=false`, generation is local-only.
 - `POST /workspace/jobs/:id/cancel` - request cancellation for queued/running jobs
 - `POST /workspace/jobs/:id/regenerate` - create a regeneration job from a completed source job
 - `POST /workspace/jobs/:id/sync` - local sync flow for completed regeneration jobs (`mode: dry_run` then `mode: apply`)
+- `GET /workspace/jobs/:id/files` - paginated listing of generated source files (see below)
 - `GET /workspace/repros/:id/` - generated local preview
+
+### File listing pagination
+
+`GET /workspace/jobs/:id/files` returns a bounded page of the generated project's source files. Responses are always bounded to at most `limit` files (maximum 1000). When `nextCursor` is present in the response, more files exist and clients must page to retrieve them all.
+
+| Query param | Type   | Default | Notes                                                                                   |
+| ----------- | ------ | ------- | --------------------------------------------------------------------------------------- |
+| `dir`       | string | -       | Optional directory filter, restricted to the generated project (validated server-side). |
+| `limit`     | number | `500`   | Page size. Clamped to `[1, 1000]`; non-numeric values fall back to the default.         |
+| `cursor`    | string | -       | Opaque continuation token. Pass the `nextCursor` from the previous response.            |
+
+Response shape:
+
+```json
+{
+  "jobId": "…",
+  "files": [{ "path": "src/App.tsx", "sizeBytes": 1234 }],
+  "nextCursor": "src/App.tsx"
+}
+```
+
+`nextCursor` is omitted on the last page. Clients iterate until it is absent.
 
 ## Runtime security behavior
 
