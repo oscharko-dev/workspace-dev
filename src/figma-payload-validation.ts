@@ -16,6 +16,9 @@ export interface FigmaPayloadValidationError {
 
 type FigmaPayloadOpenRecord = Record<string, unknown>;
 
+export const DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT = 40;
+export const DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT = 5_000;
+
 export type ValidatedFigmaNode = FigmaPayloadOpenRecord & {
   id: string;
   type: string;
@@ -33,6 +36,10 @@ export type ValidatedFigmaPayload = FigmaPayloadOpenRecord & {
   document: ValidatedFigmaNode;
 };
 
+export type FigmaPayloadComplexityValidationResult =
+  | { ok: true; rootCount: number; nodeCount: number }
+  | { ok: false; message: string; rootCount: number; nodeCount: number };
+
 type ValidationResult<T> = { success: true; data: T } | { success: false; error: FigmaPayloadValidationError };
 
 type ValidationIssueAccumulator = {
@@ -46,6 +53,44 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 
 const isFiniteNumber = (value: unknown): value is number => {
   return typeof value === "number" && Number.isFinite(value);
+};
+
+const countComplexityNodes = ({
+  root,
+  maxNodeCount
+}: {
+  root: unknown;
+  maxNodeCount: number;
+}): number => {
+  let nodeCount = 0;
+  const stack: unknown[] = [root];
+  const visited = new Set<object>();
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+    if (current === undefined || typeof current !== "object" || current === null) {
+      continue;
+    }
+    if (visited.has(current)) {
+      continue;
+    }
+    visited.add(current);
+
+    nodeCount += 1;
+    if (nodeCount > maxNodeCount) {
+      return nodeCount;
+    }
+
+    const children = (current as { children?: unknown }).children;
+    if (!Array.isArray(children) || children.length === 0) {
+      continue;
+    }
+    for (let index = children.length - 1; index >= 0; index -= 1) {
+      stack.push(children[index]);
+    }
+  }
+
+  return nodeCount;
 };
 
 const pushIssue = ({
@@ -233,6 +278,38 @@ export const safeParseFigmaPayload = ({ input }: { input: unknown }): Validation
     success: true,
     data: input as ValidatedFigmaPayload
   };
+};
+
+export const validateFigmaPayloadComplexity = ({
+  document,
+  maxRootCount = DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT,
+  maxNodeCount = DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT
+}: {
+  document: ValidatedFigmaNode;
+  maxRootCount?: number;
+  maxNodeCount?: number;
+}): FigmaPayloadComplexityValidationResult => {
+  const rootCount = Array.isArray(document.children) ? document.children.length : 0;
+  if (rootCount > maxRootCount) {
+    return {
+      ok: false,
+      message: `figmaJsonPayload exceeds the figma_paste root count budget (${rootCount} > ${maxRootCount})`,
+      rootCount,
+      nodeCount: 0
+    };
+  }
+
+  const nodeCount = countComplexityNodes({ root: document, maxNodeCount });
+  if (nodeCount > maxNodeCount) {
+    return {
+      ok: false,
+      message: `figmaJsonPayload exceeds the figma_paste node count budget (${nodeCount} > ${maxNodeCount})`,
+      rootCount,
+      nodeCount
+    };
+  }
+
+  return { ok: true, rootCount, nodeCount };
 };
 
 export const formatFigmaPayloadPath = ({ path }: { path: PathSegment[] }): string => {

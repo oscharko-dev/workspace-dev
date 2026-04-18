@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { readFileSync } from "node:fs";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildApp, type WorkspaceServerApp } from "./app-inject.js";
 import { createWorkspaceRequestHandler } from "./request-handler.js";
+import { DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT } from "../clipboard-envelope.js";
+import { DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT } from "../figma-payload-validation.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
 import type { JobEngine } from "../job-engine.js";
 import type {
@@ -5180,6 +5182,160 @@ test("request handler rejects invalid ClipboardEnvelope via figma_paste with SCH
     assert.equal(body.error, "SCHEMA_MISMATCH");
 
     assert.equal(submitJob.mock.callCount(), 0);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rejects overly complex figma_paste envelopes before temp-file writes", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "1.0.0",
+      copiedAt: "2026-04-18T12:00:00.000Z",
+      selections: Array.from(
+        { length: DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT + 1 },
+        (_, index) => ({
+          document: {
+            id: `selection-${index}`,
+            type: "FRAME",
+            name: `Selection ${index + 1}`,
+          },
+          components: {},
+          componentSets: {},
+          styles: {},
+        }),
+      ),
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(envelope),
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "TOO_LARGE");
+    assert.equal(submitJob.mock.callCount(), 0);
+
+    const pasteTempDir = path.join(tempRoot, "tmp-figma-paste");
+    const tempEntries = await readdir(pasteTempDir).catch(() => []);
+    assert.deepEqual(tempEntries, []);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rejects overly complex figma_plugin envelopes before temp-file writes", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const envelope = {
+      kind: "workspace-dev/figma-selection@1",
+      pluginVersion: "1.0.0",
+      copiedAt: "2026-04-18T12:00:00.000Z",
+      selections: Array.from(
+        { length: DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT + 1 },
+        (_, index) => ({
+          document: {
+            id: `selection-${index}`,
+            type: "FRAME",
+            name: `Selection ${index + 1}`,
+          },
+          components: {},
+          componentSets: {},
+          styles: {},
+        }),
+      ),
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_plugin",
+        figmaJsonPayload: JSON.stringify(envelope),
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "TOO_LARGE");
+    assert.equal(submitJob.mock.callCount(), 0);
+
+    const pasteTempDir = path.join(tempRoot, "tmp-figma-paste");
+    const tempEntries = await readdir(pasteTempDir).catch(() => []);
+    assert.deepEqual(tempEntries, []);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rejects overly complex raw figma_paste documents before temp-file writes", async () => {
+  const submitJob = test.mock.fn(() => {
+    throw new Error("submitJob should not be called");
+  });
+
+  const { app, close, tempRoot } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const payload = {
+      name: "Too many roots",
+      document: {
+        id: "0:0",
+        type: "DOCUMENT",
+        children: Array.from(
+          { length: DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT + 1 },
+          (_, index) => ({
+            id: `1:${index + 1}`,
+            type: "CANVAS",
+            name: `Root ${index + 1}`,
+            children: [],
+          }),
+        ),
+      },
+    };
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: {
+        figmaSourceMode: "figma_paste",
+        figmaJsonPayload: JSON.stringify(payload),
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "TOO_LARGE");
+    assert.equal(submitJob.mock.callCount(), 0);
+
+    const pasteTempDir = path.join(tempRoot, "tmp-figma-paste");
+    const tempEntries = await readdir(pasteTempDir).catch(() => []);
+    assert.deepEqual(tempEntries, []);
   } finally {
     await close();
   }
