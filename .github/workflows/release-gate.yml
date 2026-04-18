@@ -37,10 +37,10 @@ jobs:
           echo "TZ=UTC" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
       - name: Enforce dependency vulnerability gate
         run: pnpm audit --audit-level high
@@ -210,7 +210,7 @@ jobs:
           cache-dependency-path: template/react-mui-app/pnpm-lock.yaml
 
       - name: Install template dependencies
-        run: pnpm --dir template/react-mui-app install --frozen-lockfile
+        run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
       - name: Typecheck template app
         run: pnpm --dir template/react-mui-app run typecheck
@@ -256,7 +256,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Run mutation baseline (blocking >=68%)
         run: pnpm run test:mutation
@@ -289,7 +289,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build package
         run: pnpm run build
@@ -313,7 +313,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Verify changeset CLI commands are available (non-publishing)
         run: |
