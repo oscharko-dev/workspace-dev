@@ -2296,7 +2296,6 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   assert.match(workflow, /scripts\/compute-composite-quality\.ts/);
   assert.match(workflow, /scripts\/print-visual-benchmark-summary\.mjs/);
   assert.match(workflow, /scripts\/visual-benchmark-summary\.mjs/);
-  assert.match(workflow, /scripts\/print-visual-benchmark-pr-comment\.mjs/);
   assert.match(workflow, /pnpm perf:web:assert/);
   assert.match(workflow, /pnpm composite:quality/);
   assert.match(workflow, /composite-quality-report\.json/);
@@ -2306,34 +2305,32 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   );
   assert.doesNotMatch(
     workflow,
-    /workflows\/visual-benchmark-comment\.yml/,
-  );
-  assert.match(
-    workflow,
     /name:\s+Post or update visual benchmark PR comment/,
   );
-  assert.match(
-    workflow,
-    /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
-  );
-  assert.match(workflow, /issues:\s*write/);
-  assert.doesNotMatch(workflow, /pull-requests:\s*write/);
+  assert.doesNotMatch(workflow, /issues:\s*write/);
 });
 
-test("visual benchmark workflow posts marker-based upserts directly for same-repo pull requests", async () => {
+test("visual benchmark comment workflow renders trusted PR comments from structured workflow_run artifacts", async () => {
   const workflow = await readFile(
     path.join(
       process.cwd(),
       ".github",
-      "workflows/visual-benchmark.yml",
+      "workflows",
+      "visual-benchmark-comment.yml",
     ),
     "utf8",
   );
+  assert.match(workflow, /workflow_run:/);
+  assert.match(workflow, /workflows:\s+\['workspace-dev visual benchmark'\]/);
   assert.match(
     workflow,
-    /if:\s+always\(\) && steps\.benchmark-run\.outcome == 'success' && hashFiles\('artifacts\/visual-benchmark\/pr-comment\.json'\) != '' && github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+    /if:\s+github\.event\.workflow_run\.event == 'pull_request' && github\.event\.workflow_run\.conclusion == 'success'/,
   );
-  assert.match(workflow, /pr-comment\.json/);
+  assert.match(workflow, /issues:\s*write/);
+  assert.match(workflow, /persist-credentials:\s*false/);
+  assert.match(workflow, /ref:\s*\$\{\{\s*github\.event\.repository\.default_branch\s*\}\}/);
+  assert.match(workflow, /last-run\.public\.json/);
+  assert.match(workflow, /print-visual-benchmark-pr-comment\.mjs/);
   assert.match(workflow, /payload\.body\.startsWith\(payload\.marker\)/);
   assert.match(workflow, /github\.rest\.issues\.updateComment/);
   assert.match(workflow, /github\.rest\.issues\.createComment/);
