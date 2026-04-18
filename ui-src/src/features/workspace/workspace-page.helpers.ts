@@ -1,4 +1,5 @@
 import type { JsonResponse } from "../../lib/http";
+import type { WorkspaceFigmaSourceMode } from "./submit-schema";
 
 export type BadgeVariant = "default" | "ok" | "warn" | "error";
 export type JobLifecycleStatus =
@@ -14,7 +15,7 @@ export interface RuntimeStatusPayload {
   url: string;
   host: string;
   port: number;
-  figmaSourceMode: "rest" | "hybrid" | "local_json";
+  figmaSourceMode: WorkspaceFigmaSourceMode;
   llmCodegenMode: "deterministic";
   uptimeMs: number;
   outputRoot: string;
