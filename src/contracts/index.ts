@@ -235,6 +235,8 @@ export interface WorkspaceStartOptions {
   figmaScreenElementMaxDepth?: number;
   /** Token brand policy used when deriving IR tokens. Default: "derived" */
   brandTheme?: WorkspaceBrandTheme;
+  /** Optional Sparkasse design-token file used only when `brandTheme="sparkasse"`; when omitted, built-in defaults are used. */
+  sparkasseTokensFilePath?: string;
   /** Locale used for deterministic select-option number derivation. Default: "de-DE" */
   generationLocale?: string;
   /** Router mode for generated App.tsx shell. Default: "browser" */

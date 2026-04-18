@@ -26,6 +26,7 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.figmaScreenElementBudget, 1_200);
   assert.equal(runtime.figmaScreenElementMaxDepth, 14);
   assert.equal(runtime.brandTheme, "derived");
+  assert.equal(runtime.sparkasseTokensFilePath, undefined);
   assert.equal(runtime.generationLocale, "de-DE");
   assert.equal(runtime.routerMode, "browser");
   assert.equal(runtime.commandTimeoutMs, 15 * 60_000);
@@ -74,6 +75,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
     figmaScreenElementBudget: 999_999,
     figmaScreenElementMaxDepth: -9,
     brandTheme: "SPARKASSE",
+    sparkasseTokensFilePath: "  /tmp/sparkasse-tokens.json  ",
     generationLocale: "EN-us",
     routerMode: "HASH",
     commandTimeoutMs: 10,
@@ -113,6 +115,7 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.figmaScreenElementBudget, 10_000);
   assert.equal(runtime.figmaScreenElementMaxDepth, 1);
   assert.equal(runtime.brandTheme, "sparkasse");
+  assert.equal(runtime.sparkasseTokensFilePath, "/tmp/sparkasse-tokens.json");
   assert.equal(runtime.generationLocale, "en-US");
   assert.equal(runtime.routerMode, "hash");
   assert.equal(runtime.commandTimeoutMs, 5_000);

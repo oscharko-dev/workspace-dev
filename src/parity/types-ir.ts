@@ -484,7 +484,9 @@ export type NodeDiagnosticCategory =
   | "missing-style-enrichment"
   | "missing-code-connect-enrichment"
   | "missing-metadata-enrichment"
-  | "asset-fallback";
+  | "asset-fallback"
+  | "sparkasse-theme-load-failure"
+  | "sparkasse-theme-parse-failure";
 
 export interface NodeDiagnosticEntry {
   nodeId: string;

@@ -187,6 +187,12 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
         ? path.normalize(options.designSystemFilePath)
         : path.resolve(workDir, options.designSystemFilePath)
       : undefined;
+  const absoluteSparkasseTokensFilePath =
+    typeof options.sparkasseTokensFilePath === "string" && options.sparkasseTokensFilePath.trim().length > 0
+      ? path.isAbsolute(options.sparkasseTokensFilePath)
+        ? path.normalize(options.sparkasseTokensFilePath)
+        : path.resolve(workDir, options.sparkasseTokensFilePath)
+      : undefined;
 
   const startedAt = Date.now();
   const defaults = getWorkspaceDefaults();
@@ -225,6 +231,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       ? { figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth }
       : {}),
     ...(options.brandTheme !== undefined ? { brandTheme: options.brandTheme } : {}),
+    ...(absoluteSparkasseTokensFilePath !== undefined
+      ? { sparkasseTokensFilePath: absoluteSparkasseTokensFilePath }
+      : {}),
     ...(options.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
     ...(options.routerMode !== undefined ? { routerMode: options.routerMode } : {}),
     ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),

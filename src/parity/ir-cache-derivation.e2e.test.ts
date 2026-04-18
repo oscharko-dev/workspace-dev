@@ -115,6 +115,30 @@ test("E2E: different derivation options produce cache miss", { skip: skipReason,
   assert.equal(loaded, undefined, "Expected cache miss for different options");
 });
 
+test("E2E: different Sparkasse token sources produce cache miss", { skip: skipReason, timeout: 120_000 }, async () => {
+  const figmaFile = await fetchFigmaFileOnce();
+  const cacheDir = await createTempCacheDir();
+  const onLog = (): void => {};
+
+  const ir = figmaToDesignIrWithOptions(figmaFile);
+  const contentHash = computeContentHash(figmaFile);
+  const optionsHash1 = computeOptionsHash({
+    screenElementBudget: 1200,
+    brandTheme: "sparkasse",
+    sparkasseTokensFilePath: "/tmp/sparkasse-a.json"
+  });
+  const optionsHash2 = computeOptionsHash({
+    screenElementBudget: 1200,
+    brandTheme: "sparkasse",
+    sparkasseTokensFilePath: "/tmp/sparkasse-b.json"
+  });
+
+  await saveCachedIr({ cacheDir, contentHash, optionsHash: optionsHash1, ttlMs: 60_000, ir, onLog });
+
+  const loaded = await loadCachedIr({ cacheDir, contentHash, optionsHash: optionsHash2, ttlMs: 60_000, onLog });
+  assert.equal(loaded, undefined, "Expected cache miss for different Sparkasse token sources");
+});
+
 // ── Cache expiry ────────────────────────────────────────────────────────────
 
 test("E2E: expired cache entry is not returned", { skip: skipReason, timeout: 120_000 }, async () => {

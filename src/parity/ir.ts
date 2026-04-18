@@ -10,7 +10,10 @@ import {
   summarizeFigmaPayloadValidationError,
 } from "../figma-payload-validation.js";
 import type { DesignIR, DesignTokens } from "./types.js";
-import { applySparkasseThemeDefaults } from "./sparkasse-theme.js";
+import {
+  applySparkasseThemeDefaults,
+  resolveSparkasseThemeDefaults,
+} from "./sparkasse-theme.js";
 import {
   DEFAULT_SCREEN_ELEMENT_BUDGET,
   DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
@@ -177,7 +180,21 @@ export const figmaToDesignIrWithOptions = (
   const derivedTokens = deriveTokens(parsed, options?.mcpEnrichment);
   const resolvedTokens =
     resolvedBrandTheme === "sparkasse"
-      ? applySparkasseThemeDefaults(derivedTokens)
+      ? (() => {
+          const sparkasseResolution = resolveSparkasseThemeDefaults({
+            ...(options?.sparkasseTokensFilePath !== undefined
+              ? { sparkasseTokensFilePath: options.sparkasseTokensFilePath }
+              : {}),
+          });
+          if (sparkasseResolution.diagnostics.length > 0) {
+            metrics.nodeDiagnostics.push(...sparkasseResolution.diagnostics);
+          }
+          return applySparkasseThemeDefaults(derivedTokens, {
+            ...(options?.sparkasseTokensFilePath !== undefined
+              ? { sparkasseTokensFilePath: options.sparkasseTokensFilePath }
+              : {}),
+          });
+        })()
       : derivedTokens;
   const themeAnalysis = deriveThemeAnalysis({
     file: parsed,

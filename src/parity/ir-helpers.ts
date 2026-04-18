@@ -224,6 +224,7 @@ export interface FigmaToIrOptions {
   mcpEnrichment?: FigmaMcpEnrichment;
   screenElementBudget?: number;
   screenElementMaxDepth?: number;
+  sparkasseTokensFilePath?: string;
   placeholderRules?: {
     allowlist?: string[];
     blocklist?: string[];
