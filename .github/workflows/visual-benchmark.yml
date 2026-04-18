@@ -123,37 +123,6 @@ jobs:
           --storybook-component-catalog integration/fixtures/customer-board-golden/derived/storybook.component-visual-catalog.json
           --storybook-static-dir storybook-static/storybook-static
 
-      - name: Diagnose pnpm overrides in template
-        if: always()
-        run: |
-          set -x
-          echo "=== pwd ==="
-          pwd
-          echo "=== ls template/react-mui-app ==="
-          ls -la template/react-mui-app | head -20
-          echo "=== template .npmrc ==="
-          cat template/react-mui-app/.npmrc 2>/dev/null || echo "(no .npmrc)"
-          echo "=== template pnpm-workspace.yaml ==="
-          cat template/react-mui-app/pnpm-workspace.yaml 2>/dev/null || echo "(no pnpm-workspace.yaml)"
-          echo "=== template package.json pnpm section ==="
-          node -e "const p=require('./template/react-mui-app/package.json'); console.log(JSON.stringify(p.pnpm,null,2))"
-          echo "=== template lockfile head ==="
-          head -20 template/react-mui-app/pnpm-lock.yaml
-          echo "=== root package.json pnpm section ==="
-          node -e "const p=require('./package.json'); console.log(JSON.stringify(p.pnpm,null,2))"
-          echo "=== root .npmrc ==="
-          cat .npmrc 2>/dev/null || echo "(no root .npmrc)"
-          echo "=== root pnpm-workspace.yaml ==="
-          cat pnpm-workspace.yaml 2>/dev/null || echo "(no root pnpm-workspace.yaml)"
-          echo "=== pnpm version ==="
-          pnpm --version
-          echo "=== pnpm config list (from template dir) ==="
-          cd template/react-mui-app && pnpm config list
-          echo "=== env vars with npm/pnpm ==="
-          env | grep -iE '(npm|pnpm)_' || true
-          echo "=== attempt install with --loglevel=debug (capture first 200 lines) ==="
-          pnpm install --frozen-lockfile --ignore-scripts --loglevel=debug 2>&1 | head -200 || true
-
       - name: Install generated app dependencies for perf assertions
         if: always()
         run: cd template/react-mui-app && pnpm install --frozen-lockfile --ignore-scripts
