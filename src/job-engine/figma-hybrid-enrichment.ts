@@ -1,3 +1,5 @@
+import { access } from "node:fs/promises";
+import { join } from "node:path";
 import type { FigmaMcpEnrichment, FigmaMcpNodeHint } from "../parity/types.js";
 import { fetchAuthoritativeFigmaSubtrees } from "./figma-source.js";
 import {
@@ -18,6 +20,28 @@ import type { FigmaMcpEnrichmentLoaderInput } from "./types.js";
 const TOKEN_BRIDGE_VARIABLES_SKIPPED_CODE = "W_TOKEN_BRIDGE_VARIABLES_SKIPPED";
 const TOKEN_BRIDGE_DESIGN_SYSTEM_SKIPPED_CODE =
   "W_TOKEN_BRIDGE_DESIGN_SYSTEM_SKIPPED";
+
+const TAILWIND_CONFIG_NAMES = [
+  "tailwind.config.js",
+  "tailwind.config.ts",
+  "tailwind.config.cjs",
+  "tailwind.config.mjs",
+];
+
+const detectTailwindWorkspace = async (
+  workspaceRoot: string | undefined,
+): Promise<boolean> => {
+  if (!workspaceRoot) return false;
+  for (const name of TAILWIND_CONFIG_NAMES) {
+    try {
+      await access(join(workspaceRoot, name));
+      return true;
+    } catch {
+      // config file not present
+    }
+  }
+  return false;
+};
 
 type RawFigmaNode = {
   id?: unknown;
@@ -337,6 +361,7 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
 
       // --- Token bridge: resolve Figma variables & design system tokens ---
       try {
+        const tailwindDetected = await detectTailwindWorkspace(workspaceRoot);
         const bridgeConfig: TokenBridgeConfig = {
           fileKey: figmaFileKey,
           nodeId: primaryNodeId,
@@ -348,6 +373,7 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
             maxRetries,
             onLog: () => {},
           },
+          tailwindDetected,
         };
 
         const bridgeResult = await resolveFigmaTokens(bridgeConfig);
