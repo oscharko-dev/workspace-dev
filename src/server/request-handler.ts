@@ -3963,8 +3963,16 @@ async function collectSourceFiles(
   dirFilter: string | undefined,
   options: CollectSourceFilesOptions,
 ): Promise<CollectSourceFilesResult> {
+  const resolvedProjectDir = path.resolve(projectDir);
   const baseDir =
-    dirFilter !== undefined ? path.join(projectDir, dirFilter) : projectDir;
+    dirFilter !== undefined ? path.join(resolvedProjectDir, dirFilter) : resolvedProjectDir;
+  const resolvedBaseDir = path.resolve(baseDir);
+  if (
+    resolvedBaseDir !== resolvedProjectDir &&
+    !resolvedBaseDir.startsWith(`${resolvedProjectDir}/`)
+  ) {
+    return { files: [] };
+  }
   const { limit, cursor } = options;
   const capacity = limit + 1;
   const selected = new SourceFileSelectionHeap();
