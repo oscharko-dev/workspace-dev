@@ -674,7 +674,7 @@ export function createWorkspaceRequestHandler({
         return;
       }
 
-      if (resolveLifecycleState() === "draining") {
+      if (resolveLifecycleState() === "draining" && protectedWriteRoute !== null) {
         sendJson({
           response,
           statusCode: 503,

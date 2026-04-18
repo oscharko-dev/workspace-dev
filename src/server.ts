@@ -289,7 +289,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
 
   let resolvedPort = port;
   let lifecycleState: WorkspaceServerLifecycleState = "starting";
-  let activeRequestCount = 0;
+  let drainTrackedRequestCount = 0;
   const activeSockets = new Set<Socket>();
   const requestDrainWaiters = new Set<() => void>();
   let closePromise: Promise<void> | undefined;
@@ -323,15 +323,21 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   });
 
   const server = createServer((request, response) => {
-    activeRequestCount += 1;
+    const trackForDrain = lifecycleState !== "draining";
+    if (trackForDrain) {
+      drainTrackedRequestCount += 1;
+    }
     let settled = false;
     const markRequestComplete = (): void => {
       if (settled) {
         return;
       }
       settled = true;
-      activeRequestCount = Math.max(0, activeRequestCount - 1);
-      if (activeRequestCount === 0) {
+      if (!trackForDrain) {
+        return;
+      }
+      drainTrackedRequestCount = Math.max(0, drainTrackedRequestCount - 1);
+      if (drainTrackedRequestCount === 0) {
         for (const resolve of requestDrainWaiters) {
           resolve();
         }
@@ -384,7 +390,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     port: resolvedPort
   });
   const waitForActiveRequestsToDrain = async (): Promise<void> => {
-    if (activeRequestCount === 0) {
+    if (drainTrackedRequestCount === 0) {
       return;
     }
 
@@ -413,15 +419,11 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
         reason: shutdownReason,
         timeoutMs: shutdownTimeoutMs
       });
-
-      const closeServerPromise = closeServer(server);
-      if (typeof server.closeIdleConnections === "function") {
-        server.closeIdleConnections();
-      }
+      let timedOut = false;
 
       try {
         await Promise.race([
-          Promise.all([closeServerPromise, waitForActiveRequestsToDrain(), jobShutdownPromise]).then(() => undefined),
+          Promise.all([waitForActiveRequestsToDrain(), jobShutdownPromise]).then(() => undefined),
           new Promise<never>((_, reject) => {
             setTimeout(() => {
               reject(new Error(`Graceful shutdown timed out after ${shutdownTimeoutMs}ms.`));
@@ -429,9 +431,17 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
           })
         ]);
       } catch {
+        timedOut = true;
         terminateOpenSockets();
-        await closeServerPromise.catch(() => {});
       } finally {
+        const closeServerPromise = closeServer(server);
+        if (typeof server.closeIdleConnections === "function") {
+          server.closeIdleConnections();
+        }
+        if (timedOut) {
+          terminateOpenSockets();
+        }
+        await closeServerPromise.catch(() => {});
         lifecycleState = "stopped";
       }
     })();

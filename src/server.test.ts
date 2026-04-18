@@ -635,7 +635,7 @@ test("workspace server healthz endpoint", async () => {
   }
 });
 
-test("workspace server drains in-flight requests and rejects new connections during shutdown", async () => {
+test("workspace server exposes draining readiness and rejects new mutating requests during shutdown", async () => {
   const outputRoot = await createTempOutputRoot();
   const port = allocateTestPort();
   const server = await createWorkspaceServer({
@@ -681,10 +681,26 @@ test("workspace server drains in-flight requests and rejects new connections dur
     await new Promise((resolve) => setTimeout(resolve, 25));
     const closePromise = server.app.close();
 
-    await assert.rejects(
-      () => fetch(`${server.url}/workspace`, { signal: AbortSignal.timeout(1_000) }),
-      /fetch failed|ECONNREFUSED/i,
-    );
+    const readyResponse = await fetch(`${server.url}/readyz`, {
+      signal: AbortSignal.timeout(1_000),
+    });
+    assert.equal(readyResponse.status, 503);
+    assert.deepEqual((await readyResponse.json()) as Record<string, unknown>, {
+      status: "draining",
+      uptime: 0,
+    });
+
+    const drainingSubmitResponse = await fetch(`${server.url}/workspace/submit`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(1_000),
+    });
+    assert.equal(drainingSubmitResponse.status, 503);
+    const drainingSubmitBody = (await drainingSubmitResponse.json()) as Record<string, unknown>;
+    assert.equal(drainingSubmitBody.error, "SERVER_DRAINING");
 
     const inFlightResponse = await inFlightResponsePromise;
     assert.equal(inFlightResponse.statusCode, 400);
@@ -692,6 +708,11 @@ test("workspace server drains in-flight requests and rejects new connections dur
     assert.equal(inFlightBody.error, "VALIDATION_ERROR");
 
     await closePromise;
+
+    await assert.rejects(
+      () => fetch(`${server.url}/workspace`, { signal: AbortSignal.timeout(1_000) }),
+      /fetch failed|ECONNREFUSED/i,
+    );
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

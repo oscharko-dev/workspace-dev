@@ -204,16 +204,19 @@ export const buildIsolatedChildProcessEnv = ({
 const createIsolatedChildStartConfig = ({
   host,
   workDir,
-  logFormat
+  logFormat,
+  shutdownTimeoutMs
 }: {
   host: string;
   workDir: string;
   logFormat?: WorkspaceStartOptions["logFormat"];
+  shutdownTimeoutMs?: WorkspaceStartOptions["shutdownTimeoutMs"];
 }): IsolatedChildStartConfig => {
   return {
     host,
     workDir,
-    ...(logFormat ? { logFormat } : {})
+    ...(logFormat ? { logFormat } : {}),
+    ...(shutdownTimeoutMs !== undefined ? { shutdownTimeoutMs } : {})
   };
 };
 
@@ -333,7 +336,12 @@ export const createProjectInstance = async (
         // not define target-root behavior and intentionally omits it from IPC.
         child.send({
           type: "start",
-          config: createIsolatedChildStartConfig({ host, workDir, logFormat: options.logFormat })
+          config: createIsolatedChildStartConfig({
+            host,
+            workDir,
+            logFormat: options.logFormat,
+            shutdownTimeoutMs: options.shutdownTimeoutMs
+          })
         });
       } else if (isIsolatedChildReadyMessage(msg)) {
         clearTimeout(timeout);

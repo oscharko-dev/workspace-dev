@@ -2191,17 +2191,26 @@ test("request handler reports lifecycle-aware health and readiness states", asyn
   }
 });
 
-test("request handler rejects non-health requests while draining", async () => {
+test("request handler rejects mutating requests while draining and keeps read endpoints available", async () => {
   const { app, close } = await createRequestHandlerApp({
     getServerLifecycleState: () => "draining",
   });
 
   try {
-    const response = await app.inject({
+    const readResponse = await app.inject({
       method: "GET",
       url: "/workspace",
     });
+    assert.equal(readResponse.statusCode, 200);
 
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: "{}",
+    });
     assert.equal(response.statusCode, 503);
     const body = response.json<Record<string, unknown>>();
     assert.equal(body.error, "SERVER_DRAINING");

@@ -306,7 +306,21 @@ test("isolation: startup contract type guards reject malformed messages", () => 
   // start
   assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1", workDir: "/tmp" } }), true);
   assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1", workDir: "/tmp", logFormat: "json" } }), true);
+  assert.equal(
+    isIsolatedChildStartMessage({
+      type: "start",
+      config: { host: "127.0.0.1", workDir: "/tmp", shutdownTimeoutMs: 2500 }
+    }),
+    true
+  );
   assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1", workDir: "/tmp", logFormat: "invalid" } }), false);
+  assert.equal(
+    isIsolatedChildStartMessage({
+      type: "start",
+      config: { host: "127.0.0.1", workDir: "/tmp", shutdownTimeoutMs: "slow" }
+    }),
+    false
+  );
   assert.equal(isIsolatedChildStartMessage({ type: "start", config: { host: "127.0.0.1" } }), false);
   assert.equal(isIsolatedChildStartMessage({ type: "start" }), false);
 
