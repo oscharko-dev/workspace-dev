@@ -135,6 +135,11 @@ jobs:
         if: always()
         env:
           FIGMAPIPE_PERF_ALLOW_BASELINE_BOOTSTRAP: "true"
+          FIGMAPIPE_PERF_ROUTES_JSON: '["/"]'
+          FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
+          FIGMAPIPE_PERF_LIGHTHOUSE_TIMEOUT_MS: "90000"
+          FIGMAPIPE_PERF_LIGHTHOUSE_MAX_ATTEMPTS: "1"
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline-ci.json
         run: pnpm perf:web:assert
 
       - name: Compute composite quality report
