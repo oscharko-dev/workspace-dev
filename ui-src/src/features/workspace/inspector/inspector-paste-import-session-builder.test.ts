@@ -12,6 +12,7 @@ function makePipelineState(
     stageProgress: {
       idle: { state: "done" },
       parsing: { state: "done" },
+      extracting: { state: "done" },
       resolving: { state: "done" },
       extracting: { state: "done" },
       transforming: { state: "done" },
@@ -49,6 +50,7 @@ describe("buildPasteImportSession — null cases", () => {
   it.each<PipelineStage>([
     "idle",
     "parsing",
+    "extracting",
     "resolving",
     "extracting",
     "transforming",
