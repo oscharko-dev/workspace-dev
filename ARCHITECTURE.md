@@ -54,6 +54,12 @@ Server lifecycle:
 - Targeted instance removal uses graceful IPC shutdown first, waits up to 3 seconds for process exit, then falls back to `SIGKILL`.
 - Host-process cleanup hooks use best-effort `SIGTERM` because they run during parent shutdown and prioritize deterministic teardown over additional coordination state.
 
+Consumer-facing intent:
+
+- The isolation helpers exported from the root `workspace-dev` entrypoint are part of the supported public API, but they are an advanced orchestration surface rather than the default integration path.
+- Typical consumers should prefer `createWorkspaceServer`; the isolation helpers exist for hosts that need to manage multiple isolated `workspace-dev` child processes in one parent process.
+- Any future move to a dedicated subpath must be treated as a compatibility-managed public API change, not as an internal cleanup.
+
 ## Hard mode lock
 
 The runtime enforces:
