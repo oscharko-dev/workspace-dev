@@ -69,6 +69,26 @@ export interface WorkspacePolicy {
 export interface WorkspacePolicyPayload {
   policy: WorkspacePolicy | null;
   warning?: string;
+  validation?: WorkspacePolicyValidationPayload;
+}
+
+export type WorkspacePolicyValidationState =
+  | "absent"
+  | "loaded"
+  | "degraded"
+  | "rejected";
+
+export interface WorkspacePolicyValidationDiagnostic {
+  severity: string;
+  code: string;
+  path: string;
+  message: string;
+  valuePreview?: unknown;
+}
+
+export interface WorkspacePolicyValidationPayload {
+  state: WorkspacePolicyValidationState;
+  diagnostics: WorkspacePolicyValidationDiagnostic[];
 }
 
 // ---------------------------------------------------------------------------
@@ -110,12 +130,14 @@ export interface ResolvedWorkspacePolicy {
 export type WorkspacePolicySource =
   | "defaults"
   | "server"
+  | "rejected-server-policy"
   | "invalid-server-payload";
 
 export interface ParsedWorkspacePolicyResult {
   policy: ResolvedWorkspacePolicy;
   source: WorkspacePolicySource;
   warning: string | null;
+  validation: WorkspacePolicyValidationPayload;
 }
 
 // ---------------------------------------------------------------------------
@@ -148,6 +170,8 @@ export const DEFAULT_WORKSPACE_POLICY: ResolvedWorkspacePolicy = {
 
 const INVALID_WORKSPACE_POLICY_WARNING =
   "Workspace inspector policy payload is invalid and was ignored. Default policy thresholds are in effect.";
+const REJECTED_WORKSPACE_POLICY_WARNING =
+  "Workspace inspector policy file was rejected and ignored. Default policy thresholds are in effect.";
 
 // ---------------------------------------------------------------------------
 // Resolution
@@ -185,11 +209,34 @@ export function parseWorkspacePolicyPayload(
     return invalidWorkspacePolicyResult();
   }
 
-  if (input.policy === null) {
+  const warning = normalizeWorkspacePolicyWarning(input.warning);
+  const validationFallback = {
+    hasPolicy: input.policy !== null,
+    hasWarning: warning !== null,
+  };
+  const validation =
+    parseWorkspacePolicyValidationPayload(input.validation, validationFallback) ??
+    inferWorkspacePolicyValidationPayload(validationFallback);
+
+  if (validation.state === "absent") {
+    if (input.policy !== null) {
+      return invalidWorkspacePolicyResult();
+    }
+
     return {
       policy: DEFAULT_WORKSPACE_POLICY,
       source: "defaults",
       warning: null,
+      validation,
+    };
+  }
+
+  if (validation.state === "rejected") {
+    return {
+      policy: DEFAULT_WORKSPACE_POLICY,
+      source: "rejected-server-policy",
+      warning: warning ?? REJECTED_WORKSPACE_POLICY_WARNING,
+      validation,
     };
   }
 
@@ -201,10 +248,8 @@ export function parseWorkspacePolicyPayload(
   return {
     policy: resolveWorkspacePolicy(parsedPolicy),
     source: "server",
-    warning:
-      typeof input.warning === "string" && input.warning.trim().length > 0
-        ? input.warning
-        : null,
+    warning,
+    validation,
   };
 }
 
@@ -283,6 +328,107 @@ function invalidWorkspacePolicyResult(): ParsedWorkspacePolicyResult {
     policy: DEFAULT_WORKSPACE_POLICY,
     source: "invalid-server-payload",
     warning: INVALID_WORKSPACE_POLICY_WARNING,
+    validation: {
+      state: "rejected",
+      diagnostics: [],
+    },
+  };
+}
+
+function normalizeWorkspacePolicyWarning(input: unknown): string | null {
+  if (typeof input !== "string" || input.trim().length === 0) {
+    return null;
+  }
+
+  return input;
+}
+
+function parseWorkspacePolicyValidationPayload(
+  input: unknown,
+  fallback: {
+    hasPolicy: boolean;
+    hasWarning: boolean;
+  },
+): WorkspacePolicyValidationPayload | null {
+  if (input === undefined) {
+    return inferWorkspacePolicyValidationPayload(fallback);
+  }
+
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  if (
+    input.state !== "absent" &&
+    input.state !== "loaded" &&
+    input.state !== "degraded" &&
+    input.state !== "rejected"
+  ) {
+    return null;
+  }
+
+  if (!Array.isArray(input.diagnostics)) {
+    return null;
+  }
+
+  const diagnostics: WorkspacePolicyValidationDiagnostic[] = [];
+  for (const diagnostic of input.diagnostics) {
+    const parsed = parseWorkspacePolicyValidationDiagnostic(diagnostic);
+    if (parsed === null) {
+      return null;
+    }
+    diagnostics.push(parsed);
+  }
+
+  return {
+    state: input.state,
+    diagnostics,
+  };
+}
+
+function inferWorkspacePolicyValidationPayload(input: {
+  hasPolicy: boolean;
+  hasWarning: boolean;
+}): WorkspacePolicyValidationPayload {
+  return {
+    state: inferLegacyWorkspacePolicyValidationState(input),
+    diagnostics: [],
+  };
+}
+
+function inferLegacyWorkspacePolicyValidationState(input: {
+  hasPolicy: boolean;
+  hasWarning: boolean;
+}): WorkspacePolicyValidationState {
+  if (!input.hasPolicy) {
+    return input.hasWarning ? "rejected" : "absent";
+  }
+
+  return input.hasWarning ? "degraded" : "loaded";
+}
+
+function parseWorkspacePolicyValidationDiagnostic(
+  input: unknown,
+): WorkspacePolicyValidationDiagnostic | null {
+  if (!isRecord(input)) {
+    return null;
+  }
+
+  if (
+    typeof input.severity !== "string" ||
+    typeof input.code !== "string" ||
+    typeof input.path !== "string" ||
+    typeof input.message !== "string"
+  ) {
+    return null;
+  }
+
+  return {
+    severity: input.severity,
+    code: input.code,
+    path: input.path,
+    message: input.message,
+    ...("valuePreview" in input ? { valuePreview: input.valuePreview } : {}),
   };
 }
 

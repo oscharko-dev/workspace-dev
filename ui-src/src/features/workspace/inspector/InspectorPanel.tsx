@@ -2055,6 +2055,10 @@ export function InspectorPanel({
       policy: resolveWorkspacePolicy(),
       source: "defaults" as const,
       warning: null,
+      validation: {
+        state: "absent" as const,
+        diagnostics: [],
+      },
     };
   }, [workspacePolicyQuery.data]);
   useEffect(() => {
@@ -2066,6 +2070,45 @@ export function InspectorPanel({
     }
   }, [workspacePolicy.source, workspacePolicy.warning]);
   const resolvedWorkspacePolicy = workspacePolicy.policy;
+  const workspacePolicyBanner = useMemo(() => {
+    if (!workspacePolicy.warning) {
+      return null;
+    }
+
+    if (workspacePolicy.source === "invalid-server-payload") {
+      return {
+        title: "Workspace policy ignored.",
+        containerClassName:
+          "shrink-0 border-b border-[#000000] bg-[#241414] px-4 py-1",
+        textClassName: "m-0 text-[11px] text-rose-400",
+      };
+    }
+
+    if (workspacePolicy.validation.state === "rejected") {
+      return {
+        title: "Workspace policy rejected; defaults active.",
+        containerClassName:
+          "shrink-0 border-b border-[#000000] bg-[#241414] px-4 py-1",
+        textClassName: "m-0 text-[11px] text-rose-400",
+      };
+    }
+
+    if (workspacePolicy.validation.state === "degraded") {
+      return {
+        title: "Workspace policy partially applied.",
+        containerClassName:
+          "shrink-0 border-b border-[#000000] bg-[#242014] px-4 py-1",
+        textClassName: "m-0 text-[11px] text-amber-400",
+      };
+    }
+
+    return {
+      title: "Workspace policy warning.",
+      containerClassName:
+        "shrink-0 border-b border-[#000000] bg-[#242014] px-4 py-1",
+      textClassName: "m-0 text-[11px] text-amber-400",
+    };
+  }, [workspacePolicy]);
   const qualityScoreModel = useMemo(() => {
     const screens = irScreens.map((screen) => ({
       id: screen.id,
@@ -6121,18 +6164,14 @@ export function InspectorPanel({
         </div>
       ) : null}
 
-      {workspacePolicy.warning ? (
-        <div className="shrink-0 border-b border-[#000000] bg-[#242014] px-4 py-1">
+      {workspacePolicyBanner ? (
+        <div className={workspacePolicyBanner.containerClassName}>
           <p
             role="alert"
             data-testid="inspector-workspace-policy-warning"
-            className="m-0 text-[11px] text-amber-400"
+            className={workspacePolicyBanner.textClassName}
           >
-            <span className="font-semibold">
-              {workspacePolicy.source === "invalid-server-payload"
-                ? "Workspace policy ignored."
-                : "Workspace policy warning."}
-            </span>{" "}
+            <span className="font-semibold">{workspacePolicyBanner.title}</span>{" "}
             {workspacePolicy.warning}
           </p>
         </div>

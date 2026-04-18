@@ -629,7 +629,8 @@ export function createWorkspaceRequestHandler({
         if (result.warning) {
           logAuditEvent({
             event: "workspace.inspector_policy.invalid",
-            level: "warn",
+            level:
+              result.validation.state === "rejected" ? "error" : "warn",
             statusCode: 200,
             message: result.warning,
           });
@@ -639,9 +640,8 @@ export function createWorkspaceRequestHandler({
           statusCode: 200,
           payload: {
             policy: result.policy,
-            ...(result.policy !== null && result.warning
-              ? { warning: result.warning }
-              : {}),
+            validation: result.validation,
+            ...(result.warning ? { warning: result.warning } : {}),
           },
         });
         return;
