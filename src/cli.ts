@@ -44,6 +44,7 @@ const DEFAULT_FIGMA_ADAPTIVE_BATCHING = true;
 const DEFAULT_FIGMA_MAX_SCREEN_CANDIDATES = 40;
 const DEFAULT_FIGMA_CACHE_ENABLED = true;
 const DEFAULT_FIGMA_CACHE_TTL_MS = 15 * 60_000;
+const DEFAULT_FIGMA_PASTE_TEMP_TTL_MS = 24 * 60 * 60_000;
 const DEFAULT_EXPORT_IMAGES = true;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_BUDGET = 1_200;
 const DEFAULT_FIGMA_SCREEN_ELEMENT_MAX_DEPTH = 14;
@@ -86,6 +87,7 @@ interface CliOptions {
   figmaScreenNamePattern: string | undefined;
   figmaCacheEnabled: boolean;
   figmaCacheTtlMs: number;
+  figmaPasteTempTtlMs: number;
   iconMapFilePath: string | undefined;
   designSystemFilePath: string | undefined;
   exportImages: boolean;
@@ -293,6 +295,12 @@ const parseArgs = (argv: string[]): CliOptions => {
     fallback: DEFAULT_FIGMA_CACHE_TTL_MS,
     min: 1_000,
     max: 24 * 60 * 60_000
+  });
+  let figmaPasteTempTtlMs = parseIntInRange({
+    raw: process.env.FIGMAPIPE_WORKSPACE_FIGMA_PASTE_TEMP_TTL_MS,
+    fallback: DEFAULT_FIGMA_PASTE_TEMP_TTL_MS,
+    min: 0,
+    max: 30 * 24 * 60 * 60_000
   });
   let iconMapFilePath = process.env.FIGMAPIPE_WORKSPACE_ICON_MAP_FILE?.trim() || undefined;
   let designSystemFilePath = process.env.FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE?.trim() || undefined;
@@ -601,6 +609,17 @@ const parseArgs = (argv: string[]): CliOptions => {
         fallback: figmaCacheTtlMs,
         min: 1_000,
         max: 24 * 60 * 60_000
+      });
+      index += 1;
+      continue;
+    }
+
+    if (arg === "--figma-paste-temp-ttl-ms") {
+      figmaPasteTempTtlMs = parseIntInRange({
+        raw: args[index + 1],
+        fallback: figmaPasteTempTtlMs,
+        min: 0,
+        max: 30 * 24 * 60 * 60_000
       });
       index += 1;
       continue;
@@ -934,6 +953,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     figmaScreenNamePattern,
     figmaCacheEnabled,
     figmaCacheTtlMs,
+    figmaPasteTempTtlMs,
     iconMapFilePath,
     designSystemFilePath,
     exportImages,
@@ -1008,6 +1028,8 @@ Options:
                              Case-insensitive regex include-filter for staged screen names
   --no-cache                 Disable figma.source file-system cache
   --figma-cache-ttl-ms <ms>  Cache TTL for figma.source entries (default: ${DEFAULT_FIGMA_CACHE_TTL_MS})
+  --figma-paste-temp-ttl-ms <ms>
+                             Startup cleanup TTL for stale tmp-figma-paste JSON files (default: ${DEFAULT_FIGMA_PASTE_TEMP_TTL_MS})
   --icon-map-file <path>     Override icon fallback mapping file path
   --design-system-file <path>
                              Override design-system mapping file path
@@ -1085,6 +1107,7 @@ Environment variables:
   FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN
   FIGMAPIPE_WORKSPACE_NO_CACHE
   FIGMAPIPE_WORKSPACE_FIGMA_CACHE_TTL_MS
+  FIGMAPIPE_WORKSPACE_FIGMA_PASTE_TEMP_TTL_MS
   FIGMAPIPE_WORKSPACE_ICON_MAP_FILE
   FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE
   FIGMAPIPE_WORKSPACE_EXPORT_IMAGES
@@ -1227,6 +1250,7 @@ const main = async (): Promise<void> => {
         : {}),
       figmaCacheEnabled: options.figmaCacheEnabled,
       figmaCacheTtlMs: options.figmaCacheTtlMs,
+      figmaPasteTempTtlMs: options.figmaPasteTempTtlMs,
       ...(options.iconMapFilePath !== undefined ? { iconMapFilePath: options.iconMapFilePath } : {}),
       ...(options.designSystemFilePath !== undefined ? { designSystemFilePath: options.designSystemFilePath } : {}),
       exportImages: options.exportImages,
@@ -1308,6 +1332,7 @@ const main = async (): Promise<void> => {
     logger.log({ level: "info", message: `Log format: ${options.logFormat}` });
     logger.log({ level: "info", message: `Lint auto-fix enabled: ${options.enableLintAutofix}` });
     logger.log({ level: "info", message: `Figma cache enabled: ${options.figmaCacheEnabled}, ttlMs=${options.figmaCacheTtlMs}` });
+    logger.log({ level: "info", message: `Figma paste temp cleanup ttlMs=${options.figmaPasteTempTtlMs}` });
     logger.log({
       level: "info",
       message:

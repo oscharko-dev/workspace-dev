@@ -6,18 +6,22 @@
  * and integrated preview serving from local generated artifacts.
  */
 
+import { readdir, rm, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WorkspaceStartOptions } from "./contracts/index.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./job-engine/figma-hybrid-enrichment.js";
 import { createJobEngine, resolveRuntimeSettings } from "./job-engine.js";
+import type { WorkspaceRuntimeLogger } from "./logging.js";
 import { getWorkspaceDefaults } from "./mode-lock.js";
 import { buildApp, toAddressList, type WorkspaceServerApp } from "./server/app-inject.js";
 import { DEFAULT_HOST, DEFAULT_OUTPUT_ROOT, DEFAULT_PORT, DEFAULT_RATE_LIMIT_PER_MINUTE } from "./server/constants.js";
 import { createWorkspaceRequestHandler } from "./server/request-handler.js";
 
 const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const DEFAULT_FIGMA_PASTE_TEMP_TTL_MS = 24 * 60 * 60_000;
+const FIGMA_PASTE_TEMP_DIR_NAME = "tmp-figma-paste";
 
 export interface WorkspaceServer {
   app: WorkspaceServerApp;
@@ -52,6 +56,96 @@ async function startServer({
   });
 }
 
+const getErrorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : String(error);
+};
+
+const resolveFigmaPasteTempTtlMs = (value: number | undefined): number => {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_FIGMA_PASTE_TEMP_TTL_MS;
+  }
+  return Math.max(0, Math.trunc(value));
+};
+
+const sweepStaleFigmaPasteTempFiles = async ({
+  outputRoot,
+  ttlMs,
+  logger,
+  nowMs = Date.now()
+}: {
+  outputRoot: string;
+  ttlMs: number;
+  logger: WorkspaceRuntimeLogger;
+  nowMs?: number;
+}): Promise<number> => {
+  const pasteTempDir = path.join(outputRoot, FIGMA_PASTE_TEMP_DIR_NAME);
+  let deletedCount = 0;
+
+  try {
+    const entries = await readdir(pasteTempDir, { withFileTypes: true });
+    const deletedEntries = await Promise.all(
+      entries.map(async (entry): Promise<number> => {
+        if (!entry.isFile() || !entry.name.endsWith(".json")) {
+          return 0;
+        }
+
+        const entryPath = path.join(pasteTempDir, entry.name);
+        let entryStats: Awaited<ReturnType<typeof stat>>;
+        try {
+          entryStats = await stat(entryPath);
+        } catch (error) {
+          const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          if (code !== "ENOENT") {
+            logger.log({
+              level: "warn",
+              event: "figma_paste_temp_sweep",
+              message: `tmp-figma-paste startup sweep could not stat '${entry.name}': ${getErrorMessage(error)}`
+            });
+          }
+          return 0;
+        }
+
+        if (nowMs - entryStats.mtimeMs <= ttlMs) {
+          return 0;
+        }
+
+        try {
+          await rm(entryPath, { force: true });
+          return 1;
+        } catch (error) {
+          const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          if (code !== "ENOENT") {
+            logger.log({
+              level: "warn",
+              event: "figma_paste_temp_sweep",
+              message: `tmp-figma-paste startup sweep could not delete '${entry.name}': ${getErrorMessage(error)}`
+            });
+          }
+          return 0;
+        }
+      })
+    );
+    deletedCount = deletedEntries.reduce((sum, count) => sum + count, 0);
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    if (code !== "ENOENT") {
+      logger.log({
+        level: "warn",
+        event: "figma_paste_temp_sweep",
+        message: `tmp-figma-paste startup sweep failed: ${getErrorMessage(error)}`
+      });
+    }
+  }
+
+  logger.log({
+    level: "info",
+    event: "figma_paste_temp_sweep",
+    message: `tmp-figma-paste startup sweep deleted ${deletedCount} stale file(s); ttlMs=${ttlMs}`
+  });
+
+  return deletedCount;
+};
+
 export const createWorkspaceServer = async (options: WorkspaceStartOptions = {}): Promise<WorkspaceServer> => {
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
@@ -72,6 +166,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const absoluteOutputRoot = path.isAbsolute(outputRoot)
     ? path.normalize(outputRoot)
     : path.resolve(workDir, outputRoot);
+  const figmaPasteTempTtlMs = resolveFigmaPasteTempTtlMs(options.figmaPasteTempTtlMs);
   const absoluteIconMapFilePath =
     typeof options.iconMapFilePath === "string" && options.iconMapFilePath.trim().length > 0
       ? path.isAbsolute(options.iconMapFilePath)
@@ -213,6 +308,12 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
 
   const server = createServer((request, response) => {
     void handleRequest(request, response);
+  });
+
+  await sweepStaleFigmaPasteTempFiles({
+    outputRoot: absoluteOutputRoot,
+    ttlMs: figmaPasteTempTtlMs,
+    logger: runtime.logger
   });
 
   try {

@@ -259,7 +259,10 @@ function resolveBlockedModeViolation(
       ? candidate.llmCodegenMode
       : undefined;
 
-  const modeLock = validateModeLock({ figmaSourceMode, llmCodegenMode });
+  const modeLock = validateModeLock({
+    ...(figmaSourceMode !== undefined ? { figmaSourceMode } : {}),
+    ...(llmCodegenMode !== undefined ? { llmCodegenMode } : {}),
+  });
   const blockedMessage = modeLock.errors.find((message) =>
     message.includes("not available in workspace-dev"),
   );

@@ -6,6 +6,7 @@ import {
   readdir,
   readlink,
   rm,
+  utimes,
   writeFile,
 } from "node:fs/promises";
 import os from "node:os";
@@ -2200,6 +2201,37 @@ test("workspace server cleans up figma_paste temp files when submit hits queue b
       timeoutMs: 20_000,
     });
     assert.equal(secondTerminal.status, "canceled");
+  } finally {
+    await server.app.close();
+    await rm(outputRoot, { recursive: true, force: true });
+  }
+});
+
+test("workspace server startup sweeps only stale tmp-figma-paste JSON files", async () => {
+  const outputRoot = await createTempOutputRoot();
+  const pasteTempDir = path.join(outputRoot, "tmp-figma-paste");
+  const stalePath = path.join(pasteTempDir, "stale.json");
+  const freshPath = path.join(pasteTempDir, "fresh.json");
+
+  await mkdir(pasteTempDir, { recursive: true });
+  await writeFile(stalePath, '{"kind":"stale"}\n', "utf8");
+  await writeFile(freshPath, '{"kind":"fresh"}\n', "utf8");
+
+  const staleDate = new Date(Date.now() - 48 * 60 * 60_000);
+  const freshDate = new Date(Date.now() - 60 * 60_000);
+  await utimes(stalePath, staleDate, staleDate);
+  await utimes(freshPath, freshDate, freshDate);
+
+  const server = await createWorkspaceServer({
+    port: allocateTestPort(),
+    host: "127.0.0.1",
+    outputRoot,
+    figmaPasteTempTtlMs: 24 * 60 * 60_000,
+  });
+
+  try {
+    const tempEntries = await readdir(pasteTempDir);
+    assert.deepEqual(tempEntries.sort(), ["fresh.json"]);
   } finally {
     await server.app.close();
     await rm(outputRoot, { recursive: true, force: true });

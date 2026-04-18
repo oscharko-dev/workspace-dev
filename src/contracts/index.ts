@@ -197,6 +197,8 @@ export interface WorkspaceStartOptions {
   workDir?: string;
   /** Output root relative to workDir or as absolute path. Default: ".workspace-dev" */
   outputRoot?: string;
+  /** Startup cleanup TTL for stale tmp-figma-paste JSON files in milliseconds. Default: 86400000 */
+  figmaPasteTempTtlMs?: number;
   /** Figma request timeout in milliseconds. Default: 30000 */
   figmaRequestTimeoutMs?: number;
   /** Figma retry attempts. Default: 3 */

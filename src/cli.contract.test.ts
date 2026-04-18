@@ -158,6 +158,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_DESIGN_SYSTEM_FILE/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_EXPORT_IMAGES/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_NAME_PATTERN/i);
+  assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_PASTE_TEMP_TTL_MS/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_FIGMA_SCREEN_ELEMENT_MAX_DEPTH/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_BRAND/i);
   assert.match(result.stdout, /FIGMAPIPE_WORKSPACE_GENERATION_LOCALE/i);
@@ -186,6 +187,7 @@ test("cli contract: --help prints usage and exits with code 0", async () => {
   assert.match(result.stdout, /--log-format/i);
   assert.match(result.stdout, /--lint-autofix/i);
   assert.match(result.stdout, /--figma-screen-name-pattern/i);
+  assert.match(result.stdout, /--figma-paste-temp-ttl-ms/i);
   assert.match(result.stdout, /--brand/i);
   assert.match(result.stdout, /--generation-locale/i);
   assert.match(result.stdout, /--router/i);
