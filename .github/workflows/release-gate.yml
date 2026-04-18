@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Enforce workflow persist-credentials policy
+        run: pnpm run verify:workflow-persist-credentials
+
       - name: Install template dependencies
         run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
