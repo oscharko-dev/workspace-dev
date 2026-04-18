@@ -3969,8 +3969,9 @@ async function collectSourceFiles(
   const resolvedBaseDir = path.resolve(baseDir);
   if (
     resolvedBaseDir !== resolvedProjectDir &&
-    !resolvedBaseDir.startsWith(`${resolvedProjectDir}/`)
+    !resolvedBaseDir.startsWith(`${resolvedProjectDir}${path.sep}`)
   ) {
+    // Should never happen after upstream validateSourceFilePath, but guard defensively.
     return { files: [] };
   }
   const { limit, cursor } = options;
