@@ -18,6 +18,26 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Reject pull_request_target workflows that check out PR-head code
+        shell: bash
+        run: |
+          set -uo pipefail
+          prt_files=$(grep -rl 'pull_request_target:' .github/workflows/*.yml 2>/dev/null | grep -v 'pin-check.yml' || true)
+          if [[ -z "${prt_files}" ]]; then
+            echo "No pull_request_target workflows found."
+            exit 0
+          fi
+          violations=$(echo "${prt_files}" | xargs grep -n \
+            -e 'github\.event\.pull_request\.head' \
+            -e 'github\.head_ref' \
+            2>/dev/null || true)
+          if [[ -n "${violations}" ]]; then
+            echo "::error::pull_request_target workflow checks out PR-head code (pwn-request risk). Use github.event.pull_request.base.ref or omit the ref entirely." >&2
+            echo "${violations}" >&2
+            exit 1
+          fi
+          echo "No dangerous pull_request_target + PR-head-checkout combos found."
+
       - name: Ensure every `uses:` reference is pinned to a 40-char commit SHA
         shell: bash
         run: |
