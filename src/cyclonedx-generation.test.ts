@@ -173,3 +173,18 @@ test("CycloneDX generator ignores an inherited npm_execpath that points at pnpm"
 
   assert.deepEqual(packageKeys, ["allowed-child@2.0.0", "allowed-parent@1.2.0"]);
 });
+
+test("CycloneDX generator fails when npm reports dependency resolution errors", async () => {
+  const result = await runGenerator({
+    manifest: createPackageJson({
+      name: "broken-project",
+      dependencies: {
+        "missing-package": "1.0.0"
+      }
+    })
+  });
+
+  assert.notEqual(result.code, 0, "Expected generation to fail when dependencies are unresolved");
+  assert.equal(result.document, null);
+  assert.match(result.stderr, /Command failed with exit code/);
+});
