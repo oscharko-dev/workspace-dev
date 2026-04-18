@@ -4,7 +4,7 @@
 // See issue #315.
 // ---------------------------------------------------------------------------
 import { createHash } from "node:crypto";
-import { mkdir, readFile, readdir, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DesignIR } from "../parity/types.js";
 import { getErrorMessage } from "./errors.js";
@@ -176,7 +176,9 @@ export const saveCachedIr = async ({
 
   try {
     await mkdir(cacheDir, { recursive: true });
-    await writeFile(cacheFilePath, `${JSON.stringify(entry, null, 2)}\n`, "utf8");
+    const tmpPath = `${cacheFilePath}.tmp`;
+    await writeFile(tmpPath, `${JSON.stringify(entry, null, 2)}\n`, "utf8");
+    await rename(tmpPath, cacheFilePath);
     onLog(`IR cache write completed (hash=${contentHash.slice(0, 12)}…, screens=${ir.screens.length}).`);
   } catch (error) {
     onLog(`IR cache write failed: ${getErrorMessage(error)}.`);

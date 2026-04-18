@@ -280,6 +280,20 @@ test("saveCachedIr writes cache entry that can be loaded back", async () => {
   assert.ok(logs.some((log) => log.includes("cache hit")));
 });
 
+test("saveCachedIr leaves no .tmp file after successful write", async () => {
+  clearLogs();
+  const cacheDir = await createTempDir();
+  const contentHash = computeContentHash({ name: "Atomic" });
+  const optionsHash = computeOptionsHash({ screenElementBudget: 800, brandTheme: "derived" });
+  const ir = createMinimalIr();
+
+  await saveCachedIr({ cacheDir, contentHash, optionsHash, ttlMs: 60_000, ir, onLog });
+
+  const entries = await readdir(cacheDir);
+  assert.equal(entries.some((name) => name.endsWith(".tmp")), false);
+  assert.ok(entries.some((name) => name.endsWith(".json")));
+});
+
 test("saveCachedIr creates cache directory if missing", async () => {
   clearLogs();
   const tmpDir = await createTempDir();
