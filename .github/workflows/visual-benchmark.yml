@@ -58,7 +58,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 10.30.3
+          version: 10.33.0
 
       - uses: actions/setup-node@v6
         with:
@@ -241,7 +241,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 10.30.3
+          version: 10.33.0
 
       - uses: actions/setup-node@v6
         with:
@@ -300,7 +300,7 @@ jobs:
 
       - uses: pnpm/action-setup@v6
         with:
-          version: 10.30.3
+          version: 10.33.0
 
       - uses: actions/setup-node@v6
         with:
