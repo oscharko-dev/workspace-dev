@@ -123,12 +123,36 @@ const writeJson = async (filePath, payload) => {
   await writeFile(filePath, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 };
 
+const killProcessTree = (child, signal) => {
+  if (!child || child.killed) {
+    return;
+  }
+  try {
+    if (process.platform === "win32") {
+      child.kill(signal);
+      return;
+    }
+    if (typeof child.pid === "number" && child.pid > 0) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+    child.kill(signal);
+  } catch (error) {
+    const errorCode =
+      error && typeof error === "object" && "code" in error ? error.code : undefined;
+    if (errorCode !== "ESRCH") {
+      child.kill(signal);
+    }
+  }
+};
+
 const runCommand = async ({ command, args, cwd, env, timeoutMs }) => {
   return await new Promise((resolve) => {
     const child = spawn(command, args, {
       cwd,
       env,
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      detached: process.platform !== "win32"
     });
     let settled = false;
     let timedOut = false;
@@ -141,9 +165,15 @@ const runCommand = async ({ command, args, cwd, env, timeoutMs }) => {
       typeof timeoutMs === "number" && Number.isFinite(timeoutMs) && timeoutMs > 0
         ? setTimeout(() => {
             timedOut = true;
-            child.kill("SIGTERM");
+            killProcessTree(child, "SIGTERM");
             forceKillTimer = setTimeout(() => {
-              child.kill("SIGKILL");
+              killProcessTree(child, "SIGKILL");
+              child.stdout.destroy();
+              child.stderr.destroy();
+              complete({
+                code: 124,
+                errorText: `[timeout] Command exceeded ${timeoutMs}ms and was terminated.`
+              });
             }, 2_000);
           }, timeoutMs)
         : undefined;
