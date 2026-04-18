@@ -11,7 +11,22 @@ import {
 test("parseInspectorPolicy accepts governance alongside other policy sections", () => {
   const parsed = parseInspectorPolicy({
     quality: {
+      bandThresholds: {
+        excellent: 100,
+        good: 80,
+        fair: 0,
+      },
+      weights: {
+        structure: 0,
+        semantic: 0.5,
+        codegen: 1,
+      },
+      maxAcceptableDepth: 0,
       maxAcceptableNodes: 8,
+    },
+    tokens: {
+      autoAcceptConfidence: 100,
+      maxConflictDelta: 2,
     },
     governance: {
       minQualityScoreToApply: 75,
@@ -22,7 +37,22 @@ test("parseInspectorPolicy accepts governance alongside other policy sections", 
 
   assert.deepEqual(parsed, {
     quality: {
+      bandThresholds: {
+        excellent: 100,
+        good: 80,
+        fair: 0,
+      },
+      weights: {
+        structure: 0,
+        semantic: 0.5,
+        codegen: 1,
+      },
+      maxAcceptableDepth: 0,
       maxAcceptableNodes: 8,
+    },
+    tokens: {
+      autoAcceptConfidence: 100,
+      maxConflictDelta: 2,
     },
     governance: {
       minQualityScoreToApply: 75,
@@ -49,6 +79,64 @@ test("parseInspectorPolicy rejects governance with invalid shapes", () => {
     }),
     null,
   );
+});
+
+test("parseInspectorPolicy rejects out-of-range numeric fields", () => {
+  for (const value of [
+    {
+      quality: {
+        bandThresholds: {
+          excellent: -1,
+        },
+      },
+    },
+    {
+      quality: {
+        bandThresholds: {
+          good: 101,
+        },
+      },
+    },
+    {
+      quality: {
+        weights: {
+          structure: -0.01,
+        },
+      },
+    },
+    {
+      quality: {
+        maxAcceptableDepth: -1,
+      },
+    },
+    {
+      quality: {
+        maxAcceptableNodes: -1,
+      },
+    },
+    {
+      tokens: {
+        autoAcceptConfidence: -1,
+      },
+    },
+    {
+      tokens: {
+        autoAcceptConfidence: 101,
+      },
+    },
+    {
+      governance: {
+        minQualityScoreToApply: -1,
+      },
+    },
+    {
+      governance: {
+        minQualityScoreToApply: 101,
+      },
+    },
+  ]) {
+    assert.equal(parseInspectorPolicy(value), null);
+  }
 });
 
 test("parseInspectorPolicy drops likely regex-style governance patterns per entry", () => {
