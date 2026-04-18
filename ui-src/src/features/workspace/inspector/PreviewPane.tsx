@@ -1,5 +1,6 @@
-import { useMemo, useRef, useState, type JSX } from "react";
+import { useRef, useState, type JSX } from "react";
 import { InspectOverlay } from "./InspectOverlay";
+import { ScreenshotPreview } from "./ScreenshotPreview";
 import type { PipelineStage } from "./paste-pipeline";
 
 interface PreviewPaneProps {
@@ -10,14 +11,6 @@ interface PreviewPaneProps {
   onInspectSelect: (irNodeId: string) => void;
   pipelineStage?: PipelineStage;
   screenshot?: string;
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 function getStageLabel(stage: PipelineStage): string {
@@ -33,40 +26,6 @@ function getStageLabel(stage: PipelineStage): string {
     default:
       return "Processing…";
   }
-}
-
-function buildPhase2Srcdoc(
-  screenshotUrl: string | undefined,
-  stageLabel: string,
-): string {
-  const imgHtml =
-    screenshotUrl !== undefined
-      ? `<img src="${escapeHtml(screenshotUrl)}" alt="Design preview" style="max-width:100%;max-height:100%;object-fit:contain;display:block;">`
-      : "";
-  const stageHtml =
-    stageLabel.length > 0
-      ? `<div class="stage">${escapeHtml(stageLabel)}</div>`
-      : "";
-  return [
-    "<!DOCTYPE html>",
-    '<html lang="en">',
-    "<head>",
-    '<meta charset="utf-8">',
-    "<style>",
-    "*{margin:0;padding:0;box-sizing:border-box}",
-    "body{background:#0d0d0d;display:flex;align-items:center;justify-content:center;height:100vh;overflow:hidden}",
-    "img{max-width:100%;max-height:100%;object-fit:contain;display:block}",
-    ".badge{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.8);color:#4eba87;border:1px solid rgba(78,186,135,.4);border-radius:9999px;padding:4px 12px;font-size:12px;font-weight:500;white-space:nowrap}",
-    ".stage{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);color:rgba(255,255,255,.6);border-radius:4px;padding:2px 8px;font-size:10px;white-space:nowrap}",
-    "</style>",
-    "</head>",
-    "<body>",
-    imgHtml,
-    '<div class="badge">Figma preview</div>',
-    stageHtml,
-    "</body>",
-    "</html>",
-  ].join("");
 }
 
 function PreviewIcon(): JSX.Element {
@@ -129,11 +88,6 @@ export function PreviewPane({
       ? getStageLabel(pipelineStage)
       : undefined;
 
-  const phase2Srcdoc = useMemo(
-    () => (isGenerating ? buildPhase2Srcdoc(screenshot, stageLabel ?? "") : ""),
-    [isGenerating, screenshot, stageLabel],
-  );
-
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#000000] text-white">
       <div className="flex h-10 shrink-0 items-center border-b border-[#333333] bg-[#000000]">
@@ -185,12 +139,18 @@ export function PreviewPane({
               <span className="text-sm text-white/55">Analyzing design…</span>
             </div>
           ) : isGenerating ? (
-            <iframe
-              title="Phase 2 preview"
-              srcDoc={phase2Srcdoc}
-              sandbox="allow-scripts"
-              className="h-full w-full flex-1 border-0 bg-[#0d0d0d]"
-            />
+            screenshot !== undefined && screenshot.length > 0 ? (
+              <ScreenshotPreview
+                screenshotUrl={screenshot}
+                {...(stageLabel !== undefined ? { stageName: stageLabel } : {})}
+              />
+            ) : (
+              <div className="flex h-full flex-1 items-center justify-center">
+                <span className="text-sm text-white/55">
+                  {stageLabel ?? "Processing…"}
+                </span>
+              </div>
+            )
           ) : (
             <>
               {isLoading ? (

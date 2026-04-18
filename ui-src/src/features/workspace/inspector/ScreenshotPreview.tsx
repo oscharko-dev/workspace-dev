@@ -19,6 +19,7 @@ export interface ScreenshotPreviewProps {
 const MIN_SCALE = 0.1;
 const MAX_SCALE = 5;
 const ZOOM_SENSITIVITY = 0.001;
+const ZOOM_STEP = 1.25;
 
 export function ScreenshotPreview({
   screenshotUrl,
@@ -89,6 +90,21 @@ export function ScreenshotPreview({
     isPanning.current = false;
   }, []);
 
+  const handleZoomIn = useCallback((): void => {
+    setScale((prev) => Math.min(MAX_SCALE, prev * ZOOM_STEP));
+  }, []);
+
+  const handleZoomOut = useCallback((): void => {
+    setScale((prev) => Math.max(MIN_SCALE, prev / ZOOM_STEP));
+  }, []);
+
+  const handleReset = useCallback((): void => {
+    setScale(1);
+    setTranslate({ x: 0, y: 0 });
+  }, []);
+
+  const zoomPercent = Math.round(scale * 100);
+
   return (
     <div
       ref={containerRef}
@@ -126,6 +142,47 @@ export function ScreenshotPreview({
             {stageName}
           </div>
         ) : null}
+      </div>
+
+      {/* pointer-events-auto re-enables clicks on the button group; the parent
+          container is pointer-events-none so pan events don't conflict. */}
+      <div className="pointer-events-auto absolute bottom-3 right-3 flex items-center gap-1 rounded border border-[#333333] bg-[#000000]/80 px-1.5 py-1 backdrop-blur-sm">
+        <span
+          className="min-w-[3ch] text-center text-[10px] text-white/60"
+          aria-live="polite"
+          data-testid="screenshot-preview-zoom-percent"
+        >
+          {zoomPercent}%
+        </span>
+        <button
+          type="button"
+          aria-label="Zoom out"
+          data-testid="screenshot-preview-zoom-out"
+          disabled={scale <= MIN_SCALE}
+          onClick={handleZoomOut}
+          className="flex h-5 w-5 items-center justify-center rounded border border-[#333333] text-xs text-white/70 hover:border-[#4eba87]/40 hover:text-[#4eba87] active:text-[#4eba87] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          −
+        </button>
+        <button
+          type="button"
+          aria-label="Zoom in"
+          data-testid="screenshot-preview-zoom-in"
+          disabled={scale >= MAX_SCALE}
+          onClick={handleZoomIn}
+          className="flex h-5 w-5 items-center justify-center rounded border border-[#333333] text-xs text-white/70 hover:border-[#4eba87]/40 hover:text-[#4eba87] active:text-[#4eba87] disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          aria-label="Reset zoom"
+          data-testid="screenshot-preview-zoom-reset"
+          onClick={handleReset}
+          className="flex h-5 items-center justify-center rounded border border-[#333333] px-1.5 text-[10px] text-white/70 hover:border-[#4eba87]/40 hover:text-[#4eba87] active:text-[#4eba87]"
+        >
+          Reset
+        </button>
       </div>
     </div>
   );
