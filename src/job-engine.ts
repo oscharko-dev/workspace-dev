@@ -135,7 +135,8 @@ const isWorkspaceJobRetryTarget = (
     typeof candidate.targetId === "string" &&
     (candidate.displayName === undefined ||
       typeof candidate.displayName === "string") &&
-    (candidate.filePath === undefined || typeof candidate.filePath === "string") &&
+    (candidate.filePath === undefined ||
+      typeof candidate.filePath === "string") &&
     (candidate.emittedScreenId === undefined ||
       typeof candidate.emittedScreenId === "string")
   );
@@ -171,6 +172,9 @@ const WORKSPACE_JOB_STAGE_SET = new Set<WorkspaceJobStageName>(
   WORKSPACE_JOB_STAGES,
 );
 const LOCAL_SYNC_CONFIRMATION_TTL_MS = 10 * 60_000;
+
+const TERMINAL_JOB_STATUSES: ReadonlySet<WorkspaceJobStatus["status"]> =
+  new Set(["completed", "partial", "failed", "canceled"]);
 
 interface LocalSyncConfirmationRecord {
   token: string;
@@ -858,9 +862,109 @@ export const createJobEngine = ({
   };
 
   const refreshQueueSnapshots = (): void => {
-    for (const [jobId, job] of jobs.entries()) {
-      job.queue = toQueueSnapshot({ jobId });
+    for (const jobId of queuedJobIds) {
+      const job = jobs.get(jobId);
+      if (job) {
+        job.queue = toQueueSnapshot({ jobId });
+      }
     }
+    for (const jobId of runningJobIds) {
+      const job = jobs.get(jobId);
+      if (job) {
+        job.queue = toQueueSnapshot({ jobId });
+      }
+    }
+  };
+
+  const isWithinManagedRoot = (candidate: string): boolean => {
+    const absolute = path.resolve(candidate);
+    const jobsRoot = path.resolve(resolvedPaths.jobsRoot);
+    const reprosRoot = path.resolve(resolvedPaths.reprosRoot);
+    const withinJobs =
+      absolute === jobsRoot || absolute.startsWith(`${jobsRoot}${path.sep}`);
+    const withinRepros =
+      absolute === reprosRoot ||
+      absolute.startsWith(`${reprosRoot}${path.sep}`);
+    return (
+      (withinJobs || withinRepros) &&
+      absolute !== jobsRoot &&
+      absolute !== reprosRoot
+    );
+  };
+
+  const evictTerminalJobArtifacts = (job: JobRecord): void => {
+    const targets: string[] = [];
+    if (job.artifacts.jobDir && isWithinManagedRoot(job.artifacts.jobDir)) {
+      targets.push(job.artifacts.jobDir);
+    }
+    if (job.artifacts.reproDir && isWithinManagedRoot(job.artifacts.reproDir)) {
+      targets.push(job.artifacts.reproDir);
+    }
+    for (const target of targets) {
+      rm(target, { recursive: true, force: true }).catch((error: unknown) => {
+        runtime.logger.log({
+          level: "warn",
+          message: `Retention cleanup failed for job '${job.jobId}': ${getErrorMessage(error)}`,
+        });
+      });
+    }
+  };
+
+  const parseFinishedMs = (job: JobRecord): number => {
+    const stamp = job.finishedAt ?? job.submittedAt;
+    const parsed = Date.parse(stamp);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const enforceJobRetention = (): string[] => {
+    const maxCount = runtime.jobRetentionMaxCount;
+    const maxAgeMs = runtime.jobRetentionMaxAgeMs;
+    if (maxCount <= 0 && maxAgeMs <= 0) {
+      return [];
+    }
+    const nowMs = Date.now();
+    const terminal: Array<{ jobId: string; finishedMs: number }> = [];
+    for (const [jobId, job] of jobs.entries()) {
+      if (!TERMINAL_JOB_STATUSES.has(job.status)) {
+        continue;
+      }
+      terminal.push({ jobId, finishedMs: parseFinishedMs(job) });
+    }
+    if (terminal.length === 0) {
+      return [];
+    }
+    terminal.sort((left, right) => left.finishedMs - right.finishedMs);
+
+    const evictSet = new Set<string>();
+    if (maxAgeMs > 0) {
+      for (const entry of terminal) {
+        if (nowMs - entry.finishedMs > maxAgeMs) {
+          evictSet.add(entry.jobId);
+        }
+      }
+    }
+    if (maxCount > 0) {
+      const remaining = terminal.filter((entry) => !evictSet.has(entry.jobId));
+      const excess = remaining.length - maxCount;
+      for (let index = 0; index < excess; index += 1) {
+        const victim = remaining[index];
+        if (victim) {
+          evictSet.add(victim.jobId);
+        }
+      }
+    }
+
+    const evicted: string[] = [];
+    for (const jobId of evictSet) {
+      const job = jobs.get(jobId);
+      if (!job) {
+        continue;
+      }
+      jobs.delete(jobId);
+      evicted.push(jobId);
+      evictTerminalJobArtifacts(job);
+    }
+    return evicted;
   };
 
   const persistTerminalSnapshot = async ({
@@ -872,6 +976,7 @@ export const createJobEngine = ({
   }): Promise<void> => {
     job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
     await writeTerminalJobSnapshot({ job, diagnostics });
+    enforceJobRetention();
   };
 
   const persistTerminalSnapshotSync = ({
@@ -883,6 +988,7 @@ export const createJobEngine = ({
   }): void => {
     job.queue = toTerminalQueueSnapshot({ jobId: job.jobId });
     writeTerminalJobSnapshotSync({ job, diagnostics });
+    enforceJobRetention();
   };
 
   const buildCompletedTerminalJob = ({
@@ -1155,9 +1261,27 @@ export const createJobEngine = ({
     NonNullable<WorkspaceImportSession["status"]>,
     ReadonlySet<WorkspaceImportSessionEvent["kind"]>
   > = {
-    imported: new Set(["imported", "review_started", "rejected", "apply_blocked", "note"]),
-    reviewing: new Set(["review_started", "approved", "rejected", "apply_blocked", "note"]),
-    approved: new Set(["approved", "applied", "rejected", "apply_blocked", "note"]),
+    imported: new Set([
+      "imported",
+      "review_started",
+      "rejected",
+      "apply_blocked",
+      "note",
+    ]),
+    reviewing: new Set([
+      "review_started",
+      "approved",
+      "rejected",
+      "apply_blocked",
+      "note",
+    ]),
+    approved: new Set([
+      "approved",
+      "applied",
+      "rejected",
+      "apply_blocked",
+      "note",
+    ]),
     applied: new Set(["applied", "note"]),
     rejected: new Set(["note"]),
   };
@@ -1267,8 +1391,7 @@ export const createJobEngine = ({
     ) {
       throw createImportSessionGovernanceError({
         code: "E_IMPORT_SESSION_INVALID_TRANSITION",
-        message:
-          `Import session '${session.id}' cannot append '${event.kind}' while status is '${governance.status}'.`,
+        message: `Import session '${session.id}' cannot append '${event.kind}' while status is '${governance.status}'.`,
       });
     }
 
@@ -1327,7 +1450,9 @@ export const createJobEngine = ({
     }
   };
 
-  const normalizeReviewerNote = (value: string | undefined): string | undefined => {
+  const normalizeReviewerNote = (
+    value: string | undefined,
+  ): string | undefined => {
     if (typeof value !== "string") {
       return undefined;
     }
@@ -1653,6 +1778,7 @@ export const createJobEngine = ({
   })) {
     jobs.set(rehydratedJob.jobId, rehydratedJob);
   }
+  enforceJobRetention();
   refreshQueueSnapshots();
 
   const createSyncError = ({
@@ -1674,14 +1800,39 @@ export const createJobEngine = ({
     return error;
   };
 
-  const pruneExpiredSyncConfirmations = (): void => {
+  const pruneExpiredSyncConfirmations = (): number => {
     const nowMs = Date.now();
+    let pruned = 0;
     for (const [token, record] of localSyncConfirmations.entries()) {
       if (record.expiresAtMs <= nowMs) {
         localSyncConfirmations.delete(token);
+        pruned += 1;
       }
     }
+    return pruned;
   };
+
+  const runMaintenance: JobEngine["runMaintenance"] = () => {
+    const prunedConfirmations = pruneExpiredSyncConfirmations();
+    const evictedJobIds = enforceJobRetention();
+    return { prunedConfirmations, evictedJobIds };
+  };
+
+  const maintenanceIntervalMs = runtime.localSyncConfirmationSweepIntervalMs;
+  const maintenanceTimer =
+    maintenanceIntervalMs > 0
+      ? setInterval(() => {
+          try {
+            runMaintenance();
+          } catch (error) {
+            runtime.logger.log({
+              level: "warn",
+              message: `Scheduled maintenance sweep failed: ${getErrorMessage(error)}`,
+            });
+          }
+        }, maintenanceIntervalMs)
+      : undefined;
+  maintenanceTimer?.unref();
 
   const resolveSyncContext = ({
     jobId,
@@ -2287,7 +2438,7 @@ export const createJobEngine = ({
       const diskTracker = new JobDiskTracker({
         roots: [jobDir, reproDir],
         limitBytes: runtime.maxJobDiskBytes,
-        limits: runtime.pipelineDiagnosticLimits
+        limits: runtime.pipelineDiagnosticLimits,
       });
       await diskTracker.sync();
 
@@ -2936,7 +3087,7 @@ export const createJobEngine = ({
         diskTracker: new JobDiskTracker({
           roots: [jobDir, reproDir],
           limitBytes: runtime.maxJobDiskBytes,
-          limits: runtime.pipelineDiagnosticLimits
+          limits: runtime.pipelineDiagnosticLimits,
         }),
         resolvedBrandTheme,
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
@@ -3306,7 +3457,7 @@ export const createJobEngine = ({
         diskTracker: new JobDiskTracker({
           roots: [jobDir, reproDir],
           limitBytes: runtime.maxJobDiskBytes,
-          limits: runtime.pipelineDiagnosticLimits
+          limits: runtime.pipelineDiagnosticLimits,
         }),
         resolvedBrandTheme,
         ...(resolvedCustomerBrandId ? { resolvedCustomerBrandId } : {}),
@@ -3969,6 +4120,10 @@ export const createJobEngine = ({
     reason,
     timeoutMs = 10_000,
   } = {}) => {
+    if (maintenanceTimer) {
+      clearInterval(maintenanceTimer);
+    }
+
     cancelAllJobs({
       ...(reason !== undefined ? { reason } : {}),
     });
@@ -4249,19 +4404,20 @@ export const createJobEngine = ({
     });
 
     if (prGovernance.importSession) {
-      const normalizedPrReviewerNote = normalizeReviewerNote(prInput.reviewerNote);
+      const normalizedPrReviewerNote = normalizeReviewerNote(
+        prInput.reviewerNote,
+      );
       await appendImportSessionEvent({
         event: {
           id: "",
           sessionId: prGovernance.importSession.id,
           kind: "note",
           at: "",
-          note:
-            `${job.gitPr.prUrl ? "PR created from regeneration job." : "Branch pushed from regeneration job."}${
-              normalizedPrReviewerNote !== undefined
-                ? ` Reviewer note: ${normalizedPrReviewerNote}`
-                : ""
-            }`,
+          note: `${job.gitPr.prUrl ? "PR created from regeneration job." : "Branch pushed from regeneration job."}${
+            normalizedPrReviewerNote !== undefined
+              ? ` Reviewer note: ${normalizedPrReviewerNote}`
+              : ""
+          }`,
           metadata: {
             jobId,
             sourceJobId: job.lineage.sourceJobId,
@@ -4734,6 +4890,7 @@ export const createJobEngine = ({
     cancelJob,
     cancelAllJobs,
     shutdown,
+    runMaintenance,
     getJob,
     getJobResult,
     getJobRecord,

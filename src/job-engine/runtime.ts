@@ -2,26 +2,32 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceCompositeQualityWeightsInput,
   WorkspaceRouterMode,
-  WorkspaceVisualQualityReferenceMode
+  WorkspaceVisualQualityReferenceMode,
 } from "../contracts/index.js";
-import { DEFAULT_GENERATION_LOCALE, resolveGenerationLocale } from "../generation-locale.js";
+import {
+  DEFAULT_GENERATION_LOCALE,
+  resolveGenerationLocale,
+} from "../generation-locale.js";
 import {
   createWorkspaceLogger,
   DEFAULT_WORKSPACE_LOG_FORMAT,
   resolveWorkspaceLogFormat,
-  type WorkspaceRuntimeLogger
+  type WorkspaceRuntimeLogger,
 } from "../logging.js";
 import type { FigmaMcpEnrichment } from "../parity/types.js";
 import {
   DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS,
-  type PipelineDiagnosticLimits
+  type PipelineDiagnosticLimits,
 } from "./errors.js";
 import {
   createFigmaRestCircuitBreaker,
   type FigmaRestCircuitBreakerClock,
-  type FigmaRestCircuitTransitionEvent
+  type FigmaRestCircuitTransitionEvent,
 } from "./figma-rest-circuit-breaker.js";
-import type { FigmaMcpEnrichmentLoaderInput, JobEngineRuntime } from "./types.js";
+import type {
+  FigmaMcpEnrichmentLoaderInput,
+  JobEngineRuntime,
+} from "./types.js";
 import type { ResolvedCustomerProfile } from "../customer-profile.js";
 import { normalizeVisualBrowserNames } from "./visual-browser-matrix.js";
 
@@ -53,14 +59,16 @@ const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
 const DEFAULT_ENABLE_LINT_AUTOFIX = true;
 const DEFAULT_ENABLE_PERF_VALIDATION = false;
-const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode = "figma_api";
+const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode =
+  "figma_api";
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_HEIGHT = 800;
 const DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR = 1;
-const DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT: WorkspaceCompositeQualityWeightsInput = {
-  visual: 0.6,
-  performance: 0.4
-};
+const DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT: WorkspaceCompositeQualityWeightsInput =
+  {
+    visual: 0.6,
+    performance: 0.4,
+  };
 const DEFAULT_ENABLE_UNIT_TEST_VALIDATION = false;
 const DEFAULT_INSTALL_PREFER_OFFLINE = true;
 const DEFAULT_SKIP_INSTALL = false;
@@ -69,12 +77,15 @@ const DEFAULT_MAX_QUEUED_JOBS = 20;
 const DEFAULT_MAX_VALIDATION_ATTEMPTS = 3;
 const DEFAULT_LOG_LIMIT = 300;
 const DEFAULT_MAX_JOB_DISK_BYTES = 512 * 1024 * 1024;
+const DEFAULT_JOB_RETENTION_MAX_COUNT = 200;
+const DEFAULT_JOB_RETENTION_MAX_AGE_MS = 24 * 60 * 60_000;
+const DEFAULT_LOCAL_SYNC_CONFIRMATION_SWEEP_INTERVAL_MS = 60_000;
 
 const clampInteger = ({
   value,
   min,
   max,
-  fallback
+  fallback,
 }: {
   value: number | undefined;
   min: number;
@@ -91,7 +102,7 @@ const resolveIntegerInRange = ({
   value,
   min,
   max,
-  fallback
+  fallback,
 }: {
   value: number | undefined;
   min: number;
@@ -112,7 +123,7 @@ const resolveFiniteNumberInRange = ({
   value,
   min,
   max,
-  fallback
+  fallback,
 }: {
   value: number | undefined;
   min: number;
@@ -128,7 +139,9 @@ const resolveFiniteNumberInRange = ({
   return Math.min(max, value);
 };
 
-const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | undefined => {
+const normalizeBrandTheme = (
+  value: string | undefined,
+): WorkspaceBrandTheme | undefined => {
   if (!value) {
     return undefined;
   }
@@ -139,7 +152,9 @@ const normalizeBrandTheme = (value: string | undefined): WorkspaceBrandTheme | u
   return undefined;
 };
 
-const normalizeRouterMode = (value: string | undefined): WorkspaceRouterMode | undefined => {
+const normalizeRouterMode = (
+  value: string | undefined,
+): WorkspaceRouterMode | undefined => {
   if (!value) {
     return undefined;
   }
@@ -151,7 +166,7 @@ const normalizeRouterMode = (value: string | undefined): WorkspaceRouterMode | u
 };
 
 const normalizeVisualQualityReferenceMode = (
-  value: string | undefined
+  value: string | undefined,
 ): WorkspaceVisualQualityReferenceMode | undefined => {
   if (!value) {
     return undefined;
@@ -163,7 +178,9 @@ const normalizeVisualQualityReferenceMode = (
   return undefined;
 };
 
-const parseCompositeQualityWeight = (value: string | undefined): number | undefined => {
+const parseCompositeQualityWeight = (
+  value: string | undefined,
+): number | undefined => {
   if (typeof value !== "string") {
     return undefined;
   }
@@ -183,10 +200,20 @@ const parseBooleanLike = (value: string | undefined): boolean | undefined => {
   if (normalized.length === 0) {
     return undefined;
   }
-  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+  if (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "yes" ||
+    normalized === "on"
+  ) {
     return true;
   }
-  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+  if (
+    normalized === "0" ||
+    normalized === "false" ||
+    normalized === "no" ||
+    normalized === "off"
+  ) {
     return false;
   }
   return undefined;
@@ -198,7 +225,8 @@ const resolvePerfValidationPolicy = (value: boolean | undefined): boolean => {
   }
   return (
     parseBooleanLike(
-      process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION
+      process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
+        process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION,
     ) ?? DEFAULT_ENABLE_PERF_VALIDATION
   );
 };
@@ -207,7 +235,10 @@ const resolveLintAutofixPolicy = (value: boolean | undefined): boolean => {
   if (typeof value === "boolean") {
     return value;
   }
-  return parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX) ?? DEFAULT_ENABLE_LINT_AUTOFIX;
+  return (
+    parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX) ??
+    DEFAULT_ENABLE_LINT_AUTOFIX
+  );
 };
 
 const resolveCompositeQualityWeightInput = (
@@ -216,15 +247,23 @@ const resolveCompositeQualityWeightInput = (
   if (input?.visual !== undefined || input?.performance !== undefined) {
     return {
       ...(input.visual !== undefined ? { visual: input.visual } : {}),
-      ...(input.performance !== undefined ? { performance: input.performance } : {})
+      ...(input.performance !== undefined
+        ? { performance: input.performance }
+        : {}),
     };
   }
-  const visualFromEnv = parseCompositeQualityWeight(process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT);
-  const performanceFromEnv = parseCompositeQualityWeight(process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT);
+  const visualFromEnv = parseCompositeQualityWeight(
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_VISUAL_WEIGHT,
+  );
+  const performanceFromEnv = parseCompositeQualityWeight(
+    process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT,
+  );
   if (visualFromEnv !== undefined || performanceFromEnv !== undefined) {
     return {
       ...(visualFromEnv !== undefined ? { visual: visualFromEnv } : {}),
-      ...(performanceFromEnv !== undefined ? { performance: performanceFromEnv } : {})
+      ...(performanceFromEnv !== undefined
+        ? { performance: performanceFromEnv }
+        : {}),
     };
   }
   return { ...DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT };
@@ -240,7 +279,9 @@ const resolveNormalizedCompositeQualityWeights = (
       return;
     }
     if (!Number.isFinite(value) || value < 0 || value > 1) {
-      throw new Error(`runtime: ${label} composite quality weight must be within 0..1.`);
+      throw new Error(
+        `runtime: ${label} composite quality weight must be within 0..1.`,
+      );
     }
   };
   validate(visual, "visual");
@@ -248,23 +289,29 @@ const resolveNormalizedCompositeQualityWeights = (
   if (visual === undefined && performance === undefined) {
     return {
       visual: DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT.visual ?? 0.6,
-      performance: DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT.performance ?? 0.4
+      performance: DEFAULT_COMPOSITE_QUALITY_WEIGHTS_INPUT.performance ?? 0.4,
     };
   }
   let resolvedVisual = visual;
   let resolvedPerformance = performance;
   if (resolvedVisual === undefined && resolvedPerformance !== undefined) {
     resolvedVisual = 1 - resolvedPerformance;
-  } else if (resolvedPerformance === undefined && resolvedVisual !== undefined) {
+  } else if (
+    resolvedPerformance === undefined &&
+    resolvedVisual !== undefined
+  ) {
     resolvedPerformance = 1 - resolvedVisual;
   }
   const total = (resolvedVisual ?? 0) + (resolvedPerformance ?? 0);
   if (!Number.isFinite(total) || total <= 0) {
-    throw new Error("runtime: composite quality weights must sum to a positive value.");
+    throw new Error(
+      "runtime: composite quality weights must sum to a positive value.",
+    );
   }
   return {
     visual: Math.round(((resolvedVisual ?? 0) / total) * 10_000) / 10_000,
-    performance: Math.round(((resolvedPerformance ?? 0) / total) * 10_000) / 10_000
+    performance:
+      Math.round(((resolvedPerformance ?? 0) / total) * 10_000) / 10_000,
   };
 };
 
@@ -272,12 +319,12 @@ const toFigmaRestCircuitTransitionLogMessage = ({
   fromState,
   toState,
   trigger,
-  snapshot
+  snapshot,
 }: FigmaRestCircuitTransitionEvent): string => {
   const details = [
     `trigger=${trigger}`,
     `consecutiveFailures=${snapshot.consecutiveFailures}`,
-    `probeInFlight=${snapshot.probeInFlight}`
+    `probeInFlight=${snapshot.probeInFlight}`,
   ];
   if (snapshot.nextProbeAt !== undefined) {
     details.push(`nextProbeAt=${snapshot.nextProbeAt}`);
@@ -339,13 +386,16 @@ export const resolveRuntimeSettings = ({
   maxValidationAttempts,
   logLimit,
   maxJobDiskBytes,
+  jobRetentionMaxCount,
+  jobRetentionMaxAgeMs,
+  localSyncConfirmationSweepIntervalMs,
   logFormat,
   logger,
   enablePreview,
   fetchImpl,
   customerProfile,
   figmaMcpEnrichmentLoader,
-  figmaCircuitBreakerClock
+  figmaCircuitBreakerClock,
 }: {
   figmaRequestTimeoutMs?: number;
   figmaMaxRetries?: number;
@@ -400,71 +450,88 @@ export const resolveRuntimeSettings = ({
   maxValidationAttempts?: number;
   logLimit?: number;
   maxJobDiskBytes?: number;
+  jobRetentionMaxCount?: number;
+  jobRetentionMaxAgeMs?: number;
+  localSyncConfirmationSweepIntervalMs?: number;
   logFormat?: string;
   logger?: WorkspaceRuntimeLogger;
   enablePreview?: boolean;
   fetchImpl?: typeof fetch;
   customerProfile?: ResolvedCustomerProfile;
-  figmaMcpEnrichmentLoader?: (input: FigmaMcpEnrichmentLoaderInput) => Promise<FigmaMcpEnrichment | undefined>;
+  figmaMcpEnrichmentLoader?: (
+    input: FigmaMcpEnrichmentLoaderInput,
+  ) => Promise<FigmaMcpEnrichment | undefined>;
   figmaCircuitBreakerClock?: FigmaRestCircuitBreakerClock;
 }): JobEngineRuntime => {
   const resolvedFigmaCircuitBreakerFailureThreshold =
-    typeof figmaCircuitBreakerFailureThreshold === "number" && Number.isFinite(figmaCircuitBreakerFailureThreshold)
-      ? Math.max(1, Math.min(20, Math.trunc(figmaCircuitBreakerFailureThreshold)))
+    typeof figmaCircuitBreakerFailureThreshold === "number" &&
+    Number.isFinite(figmaCircuitBreakerFailureThreshold)
+      ? Math.max(
+          1,
+          Math.min(20, Math.trunc(figmaCircuitBreakerFailureThreshold)),
+        )
       : DEFAULT_FIGMA_CIRCUIT_BREAKER_FAILURE_THRESHOLD;
   const resolvedFigmaCircuitBreakerResetTimeoutMs =
-    typeof figmaCircuitBreakerResetTimeoutMs === "number" && Number.isFinite(figmaCircuitBreakerResetTimeoutMs)
-      ? Math.max(1_000, Math.min(60 * 60_000, Math.trunc(figmaCircuitBreakerResetTimeoutMs)))
+    typeof figmaCircuitBreakerResetTimeoutMs === "number" &&
+    Number.isFinite(figmaCircuitBreakerResetTimeoutMs)
+      ? Math.max(
+          1_000,
+          Math.min(60 * 60_000, Math.trunc(figmaCircuitBreakerResetTimeoutMs)),
+        )
       : DEFAULT_FIGMA_CIRCUIT_BREAKER_RESET_TIMEOUT_MS;
   const resolvedLogFormat = resolveWorkspaceLogFormat({
     value: logFormat,
-    fallback: DEFAULT_WORKSPACE_LOG_FORMAT
+    fallback: DEFAULT_WORKSPACE_LOG_FORMAT,
   });
-  const resolvedLogger = logger ?? createWorkspaceLogger({ format: resolvedLogFormat });
+  const resolvedLogger =
+    logger ?? createWorkspaceLogger({ format: resolvedLogFormat });
   const resolvedPipelineDiagnosticLimits: PipelineDiagnosticLimits = {
     maxDiagnostics: clampInteger({
       value: pipelineDiagnosticMaxCount,
       min: 1,
       max: 500,
-      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.maxDiagnostics,
     }),
     textMaxLength: clampInteger({
       value: pipelineDiagnosticTextMaxLength,
       min: 16,
       max: 4_000,
-      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.textMaxLength,
     }),
     detailsMaxKeys: clampInteger({
       value: pipelineDiagnosticDetailsMaxKeys,
       min: 1,
       max: 200,
-      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxKeys,
     }),
     detailsMaxItems: clampInteger({
       value: pipelineDiagnosticDetailsMaxItems,
       min: 1,
       max: 200,
-      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxItems,
     }),
     detailsMaxDepth: clampInteger({
       value: pipelineDiagnosticDetailsMaxDepth,
       min: 1,
       max: 10,
-      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth
-    })
+      fallback: DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS.detailsMaxDepth,
+    }),
   };
 
   return {
     figmaTimeoutMs:
-      typeof figmaRequestTimeoutMs === "number" && Number.isFinite(figmaRequestTimeoutMs)
+      typeof figmaRequestTimeoutMs === "number" &&
+      Number.isFinite(figmaRequestTimeoutMs)
         ? Math.max(1_000, Math.trunc(figmaRequestTimeoutMs))
         : DEFAULT_TIMEOUT_MS,
     figmaMaxRetries:
       typeof figmaMaxRetries === "number" && Number.isFinite(figmaMaxRetries)
         ? Math.max(1, Math.min(10, Math.trunc(figmaMaxRetries)))
         : DEFAULT_MAX_RETRIES,
-    figmaCircuitBreakerFailureThreshold: resolvedFigmaCircuitBreakerFailureThreshold,
-    figmaCircuitBreakerResetTimeoutMs: resolvedFigmaCircuitBreakerResetTimeoutMs,
+    figmaCircuitBreakerFailureThreshold:
+      resolvedFigmaCircuitBreakerFailureThreshold,
+    figmaCircuitBreakerResetTimeoutMs:
+      resolvedFigmaCircuitBreakerResetTimeoutMs,
     figmaRestCircuitBreaker: createFigmaRestCircuitBreaker({
       failureThreshold: resolvedFigmaCircuitBreakerFailureThreshold,
       resetTimeoutMs: resolvedFigmaCircuitBreakerResetTimeoutMs,
@@ -473,20 +540,23 @@ export const resolveRuntimeSettings = ({
         resolvedLogger.log({
           level: "info",
           stage: "figma.source",
-          message: toFigmaRestCircuitTransitionLogMessage(event)
+          message: toFigmaRestCircuitTransitionLogMessage(event),
         });
-      }
+      },
     }),
     figmaBootstrapDepth:
-      typeof figmaBootstrapDepth === "number" && Number.isFinite(figmaBootstrapDepth)
+      typeof figmaBootstrapDepth === "number" &&
+      Number.isFinite(figmaBootstrapDepth)
         ? Math.max(1, Math.min(10, Math.trunc(figmaBootstrapDepth)))
         : DEFAULT_BOOTSTRAP_DEPTH,
     figmaNodeBatchSize:
-      typeof figmaNodeBatchSize === "number" && Number.isFinite(figmaNodeBatchSize)
+      typeof figmaNodeBatchSize === "number" &&
+      Number.isFinite(figmaNodeBatchSize)
         ? Math.max(1, Math.min(20, Math.trunc(figmaNodeBatchSize)))
         : DEFAULT_NODE_BATCH_SIZE,
     figmaNodeFetchConcurrency:
-      typeof figmaNodeFetchConcurrency === "number" && Number.isFinite(figmaNodeFetchConcurrency)
+      typeof figmaNodeFetchConcurrency === "number" &&
+      Number.isFinite(figmaNodeFetchConcurrency)
         ? Math.max(1, Math.min(10, Math.trunc(figmaNodeFetchConcurrency)))
         : DEFAULT_NODE_FETCH_CONCURRENCY,
     figmaAdaptiveBatchingEnabled:
@@ -494,25 +564,36 @@ export const resolveRuntimeSettings = ({
         ? figmaAdaptiveBatchingEnabled
         : DEFAULT_ADAPTIVE_BATCHING_ENABLED,
     figmaMaxScreenCandidates:
-      typeof figmaMaxScreenCandidates === "number" && Number.isFinite(figmaMaxScreenCandidates)
+      typeof figmaMaxScreenCandidates === "number" &&
+      Number.isFinite(figmaMaxScreenCandidates)
         ? Math.max(1, Math.min(200, Math.trunc(figmaMaxScreenCandidates)))
         : DEFAULT_MAX_SCREEN_CANDIDATES,
     figmaScreenNamePattern:
-      typeof figmaScreenNamePattern === "string" && figmaScreenNamePattern.trim().length > 0
+      typeof figmaScreenNamePattern === "string" &&
+      figmaScreenNamePattern.trim().length > 0
         ? figmaScreenNamePattern.trim()
         : undefined,
-    figmaCacheEnabled: typeof figmaCacheEnabled === "boolean" ? figmaCacheEnabled : DEFAULT_FIGMA_CACHE_ENABLED,
+    figmaCacheEnabled:
+      typeof figmaCacheEnabled === "boolean"
+        ? figmaCacheEnabled
+        : DEFAULT_FIGMA_CACHE_ENABLED,
     figmaCacheTtlMs:
       typeof figmaCacheTtlMs === "number" && Number.isFinite(figmaCacheTtlMs)
-        ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)))
+        ? Math.max(
+            1_000,
+            Math.min(24 * 60 * 60_000, Math.trunc(figmaCacheTtlMs)),
+          )
         : DEFAULT_FIGMA_CACHE_TTL_MS,
     maxJsonResponseBytes: clampInteger({
       value: maxJsonResponseBytes,
       min: 1_024,
       max: 256 * 1024 * 1024,
-      fallback: DEFAULT_MAX_JSON_RESPONSE_BYTES
+      fallback: DEFAULT_MAX_JSON_RESPONSE_BYTES,
     }),
-    irCacheEnabled: typeof irCacheEnabled === "boolean" ? irCacheEnabled : DEFAULT_IR_CACHE_ENABLED,
+    irCacheEnabled:
+      typeof irCacheEnabled === "boolean"
+        ? irCacheEnabled
+        : DEFAULT_IR_CACHE_ENABLED,
     irCacheTtlMs:
       typeof irCacheTtlMs === "number" && Number.isFinite(irCacheTtlMs)
         ? Math.max(1_000, Math.min(24 * 60 * 60_000, Math.trunc(irCacheTtlMs)))
@@ -521,94 +602,124 @@ export const resolveRuntimeSettings = ({
       value: maxIrCacheEntries,
       min: 1,
       max: 500,
-      fallback: DEFAULT_MAX_IR_CACHE_ENTRIES
+      fallback: DEFAULT_MAX_IR_CACHE_ENTRIES,
     }),
     maxIrCacheBytes: clampInteger({
       value: maxIrCacheBytes,
       min: 1_024,
       max: 512 * 1024 * 1024,
-      fallback: DEFAULT_MAX_IR_CACHE_BYTES
+      fallback: DEFAULT_MAX_IR_CACHE_BYTES,
     }),
-    iconMapFilePath: typeof iconMapFilePath === "string" && iconMapFilePath.trim().length > 0 ? iconMapFilePath.trim() : undefined,
+    iconMapFilePath:
+      typeof iconMapFilePath === "string" && iconMapFilePath.trim().length > 0
+        ? iconMapFilePath.trim()
+        : undefined,
     designSystemFilePath:
-      typeof designSystemFilePath === "string" && designSystemFilePath.trim().length > 0
+      typeof designSystemFilePath === "string" &&
+      designSystemFilePath.trim().length > 0
         ? designSystemFilePath.trim()
         : undefined,
-    exportImages: typeof exportImages === "boolean" ? exportImages : DEFAULT_EXPORT_IMAGES,
+    exportImages:
+      typeof exportImages === "boolean" ? exportImages : DEFAULT_EXPORT_IMAGES,
     figmaScreenElementBudget:
-      typeof figmaScreenElementBudget === "number" && Number.isFinite(figmaScreenElementBudget)
+      typeof figmaScreenElementBudget === "number" &&
+      Number.isFinite(figmaScreenElementBudget)
         ? Math.max(100, Math.min(10_000, Math.trunc(figmaScreenElementBudget)))
         : DEFAULT_SCREEN_ELEMENT_BUDGET,
     figmaScreenElementMaxDepth:
-      typeof figmaScreenElementMaxDepth === "number" && Number.isFinite(figmaScreenElementMaxDepth)
+      typeof figmaScreenElementMaxDepth === "number" &&
+      Number.isFinite(figmaScreenElementMaxDepth)
         ? Math.max(1, Math.min(64, Math.trunc(figmaScreenElementMaxDepth)))
         : DEFAULT_SCREEN_ELEMENT_MAX_DEPTH,
     brandTheme:
-      typeof brandTheme === "string" ? (normalizeBrandTheme(brandTheme) ?? DEFAULT_BRAND_THEME) : DEFAULT_BRAND_THEME,
-    ...(typeof sparkasseTokensFilePath === "string" && sparkasseTokensFilePath.trim().length > 0
+      typeof brandTheme === "string"
+        ? (normalizeBrandTheme(brandTheme) ?? DEFAULT_BRAND_THEME)
+        : DEFAULT_BRAND_THEME,
+    ...(typeof sparkasseTokensFilePath === "string" &&
+    sparkasseTokensFilePath.trim().length > 0
       ? { sparkasseTokensFilePath: sparkasseTokensFilePath.trim() }
       : {}),
     generationLocale: resolveGenerationLocale({
       requestedLocale: generationLocale,
-      fallbackLocale: DEFAULT_GENERATION_LOCALE
+      fallbackLocale: DEFAULT_GENERATION_LOCALE,
     }).locale,
     routerMode:
-      typeof routerMode === "string" ? (normalizeRouterMode(routerMode) ?? DEFAULT_ROUTER_MODE) : DEFAULT_ROUTER_MODE,
+      typeof routerMode === "string"
+        ? (normalizeRouterMode(routerMode) ?? DEFAULT_ROUTER_MODE)
+        : DEFAULT_ROUTER_MODE,
     commandTimeoutMs:
       typeof commandTimeoutMs === "number" && Number.isFinite(commandTimeoutMs)
         ? Math.max(5_000, Math.min(60 * 60_000, Math.trunc(commandTimeoutMs)))
         : DEFAULT_COMMAND_TIMEOUT_MS,
     commandStdoutMaxBytes:
-      typeof commandStdoutMaxBytes === "number" && Number.isFinite(commandStdoutMaxBytes)
-        ? Math.max(4_096, Math.min(16_777_216, Math.trunc(commandStdoutMaxBytes)))
+      typeof commandStdoutMaxBytes === "number" &&
+      Number.isFinite(commandStdoutMaxBytes)
+        ? Math.max(
+            4_096,
+            Math.min(16_777_216, Math.trunc(commandStdoutMaxBytes)),
+          )
         : DEFAULT_COMMAND_STDOUT_MAX_BYTES,
     commandStderrMaxBytes:
-      typeof commandStderrMaxBytes === "number" && Number.isFinite(commandStderrMaxBytes)
-        ? Math.max(4_096, Math.min(16_777_216, Math.trunc(commandStderrMaxBytes)))
+      typeof commandStderrMaxBytes === "number" &&
+      Number.isFinite(commandStderrMaxBytes)
+        ? Math.max(
+            4_096,
+            Math.min(16_777_216, Math.trunc(commandStderrMaxBytes)),
+          )
         : DEFAULT_COMMAND_STDERR_MAX_BYTES,
     pipelineDiagnosticLimits: resolvedPipelineDiagnosticLimits,
     enableLintAutofix: resolveLintAutofixPolicy(enableLintAutofix),
     enablePerfValidation: resolvePerfValidationPolicy(enablePerfValidation),
     enableUiValidation:
-      typeof enableUiValidation === "boolean" ? enableUiValidation : DEFAULT_ENABLE_UI_VALIDATION,
+      typeof enableUiValidation === "boolean"
+        ? enableUiValidation
+        : DEFAULT_ENABLE_UI_VALIDATION,
     enableVisualQualityValidation:
       typeof enableVisualQualityValidation === "boolean"
         ? enableVisualQualityValidation
         : DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION,
     visualQualityReferenceMode:
-      normalizeVisualQualityReferenceMode(visualQualityReferenceMode) ?? DEFAULT_VISUAL_QUALITY_REFERENCE_MODE,
+      normalizeVisualQualityReferenceMode(visualQualityReferenceMode) ??
+      DEFAULT_VISUAL_QUALITY_REFERENCE_MODE,
     visualQualityViewportWidth: resolveIntegerInRange({
       value: visualQualityViewportWidth,
       min: 320,
       max: 4_096,
-      fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH
+      fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH,
     }),
     visualQualityViewportHeight: resolveIntegerInRange({
       value: visualQualityViewportHeight,
       min: 200,
       max: 4_096,
-      fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_HEIGHT
+      fallback: DEFAULT_VISUAL_QUALITY_VIEWPORT_HEIGHT,
     }),
     visualQualityDeviceScaleFactor: resolveFiniteNumberInRange({
       value: visualQualityDeviceScaleFactor,
       min: 0.5,
       max: 4,
-      fallback: DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR
+      fallback: DEFAULT_VISUAL_QUALITY_DEVICE_SCALE_FACTOR,
     }),
     visualQualityBrowsers: normalizeVisualBrowserNames(visualQualityBrowsers),
     compositeQualityWeights: resolveNormalizedCompositeQualityWeights(
-      resolveCompositeQualityWeightInput(compositeQualityWeights)
+      resolveCompositeQualityWeightInput(compositeQualityWeights),
     ),
     enableUnitTestValidation:
       typeof enableUnitTestValidation === "boolean"
         ? enableUnitTestValidation
         : DEFAULT_ENABLE_UNIT_TEST_VALIDATION,
-    unitTestIgnoreFailure: typeof unitTestIgnoreFailure === "boolean" ? unitTestIgnoreFailure : false,
+    unitTestIgnoreFailure:
+      typeof unitTestIgnoreFailure === "boolean"
+        ? unitTestIgnoreFailure
+        : false,
     installPreferOffline:
-      typeof installPreferOffline === "boolean" ? installPreferOffline : DEFAULT_INSTALL_PREFER_OFFLINE,
-    skipInstall: typeof skipInstall === "boolean" ? skipInstall : DEFAULT_SKIP_INSTALL,
+      typeof installPreferOffline === "boolean"
+        ? installPreferOffline
+        : DEFAULT_INSTALL_PREFER_OFFLINE,
+    skipInstall:
+      typeof skipInstall === "boolean" ? skipInstall : DEFAULT_SKIP_INSTALL,
     maxConcurrentJobs:
-      typeof maxConcurrentJobs === "number" && Number.isFinite(maxConcurrentJobs)
+      typeof maxConcurrentJobs === "number" &&
+      Number.isFinite(maxConcurrentJobs)
         ? Math.max(1, Math.min(16, Math.trunc(maxConcurrentJobs)))
         : DEFAULT_MAX_CONCURRENT_JOBS,
     maxQueuedJobs:
@@ -619,25 +730,43 @@ export const resolveRuntimeSettings = ({
       value: maxValidationAttempts,
       min: 1,
       max: 10,
-      fallback: DEFAULT_MAX_VALIDATION_ATTEMPTS
+      fallback: DEFAULT_MAX_VALIDATION_ATTEMPTS,
     }),
     logLimit: clampInteger({
       value: logLimit,
       min: 1,
       max: 1000,
-      fallback: DEFAULT_LOG_LIMIT
+      fallback: DEFAULT_LOG_LIMIT,
     }),
     maxJobDiskBytes: clampInteger({
       value: maxJobDiskBytes,
       min: 1_024,
       max: 10 * 1024 * 1024 * 1024,
-      fallback: DEFAULT_MAX_JOB_DISK_BYTES
+      fallback: DEFAULT_MAX_JOB_DISK_BYTES,
+    }),
+    jobRetentionMaxCount: clampInteger({
+      value: jobRetentionMaxCount,
+      min: 0,
+      max: 10_000,
+      fallback: DEFAULT_JOB_RETENTION_MAX_COUNT,
+    }),
+    jobRetentionMaxAgeMs: clampInteger({
+      value: jobRetentionMaxAgeMs,
+      min: 0,
+      max: 7 * 24 * 60 * 60_000,
+      fallback: DEFAULT_JOB_RETENTION_MAX_AGE_MS,
+    }),
+    localSyncConfirmationSweepIntervalMs: clampInteger({
+      value: localSyncConfirmationSweepIntervalMs,
+      min: 0,
+      max: 60 * 60_000,
+      fallback: DEFAULT_LOCAL_SYNC_CONFIRMATION_SWEEP_INTERVAL_MS,
     }),
     logFormat: resolvedLogFormat,
     logger: resolvedLogger,
     previewEnabled: enablePreview !== false,
     fetchImpl: fetchImpl ?? fetch,
     ...(customerProfile ? { customerProfile } : {}),
-    ...(figmaMcpEnrichmentLoader ? { figmaMcpEnrichmentLoader } : {})
+    ...(figmaMcpEnrichmentLoader ? { figmaMcpEnrichmentLoader } : {}),
   };
 };
