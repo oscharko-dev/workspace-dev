@@ -25,6 +25,7 @@ export interface PipelineStatusBarProps {
 
 const BACKEND_STAGE_LABELS: Partial<Record<PipelineStage, string>> = {
   resolving: "Resolving",
+  extracting: "Extracting",
   transforming: "Transforming",
   mapping: "Mapping",
   generating: "Generating",
@@ -60,13 +61,18 @@ function StageStatusIcon({
   );
 }
 
-function useRetryCountdown(errors: readonly PipelineError[]): number | undefined {
+function useRetryCountdown(
+  errors: readonly PipelineError[],
+): number | undefined {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (
       !errors.some((error) => {
-        return error.retryAvailableAtMs !== undefined || error.retryAfterMs !== undefined;
+        return (
+          error.retryAvailableAtMs !== undefined ||
+          error.retryAfterMs !== undefined
+        );
       })
     ) {
       return;

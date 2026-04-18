@@ -22,6 +22,7 @@ export type PipelineStage =
   | "idle"
   | "parsing"
   | "resolving"
+  | "extracting"
   | "transforming"
   | "mapping"
   | "generating"
@@ -309,6 +310,7 @@ export type PipelineAction =
 const ACTIVE_STAGES: readonly PipelineStage[] = [
   "parsing",
   "resolving",
+  "extracting",
   "transforming",
   "mapping",
   "generating",
@@ -317,6 +319,7 @@ const ACTIVE_STAGES: readonly PipelineStage[] = [
 /** Backend-only stages used to determine "partial" success. Excludes "parsing" which is always trivial client-side JSON validation. */
 export const BACKEND_STAGES: readonly PipelineStage[] = [
   "resolving",
+  "extracting",
   "transforming",
   "mapping",
   "generating",
@@ -326,6 +329,7 @@ const ALL_STAGES: readonly PipelineStage[] = [
   "idle",
   "parsing",
   "resolving",
+  "extracting",
   "transforming",
   "mapping",
   "generating",
@@ -878,6 +882,7 @@ function toPipelineStage(value: unknown): PipelineStage | undefined {
   if (
     value === "parsing" ||
     value === "resolving" ||
+    value === "extracting" ||
     value === "transforming" ||
     value === "mapping" ||
     value === "generating"
@@ -1387,8 +1392,22 @@ function stageTransitionEvents(
   }
   knownStatuses.set(stage.name, stage.status);
 
+  // Synthesize the extracting stage when ir.derive starts or completes —
+  // there is no distinct backend stage name for extracting; the UI stage is
+  // bridged from the transition between figma.source and ir.derive.
+  const extractingBridge: StageEvent[] = [];
+  if (
+    stage.name === "ir.derive" &&
+    (stage.status === "running" || stage.status === "completed") &&
+    !knownStatuses.has("__extracting_completed__")
+  ) {
+    knownStatuses.set("__extracting_completed__", "true");
+    extractingBridge.push({ kind: "done", stage: "extracting" });
+  }
+
   if (stage.status === "running") {
     return [
+      ...extractingBridge,
       {
         kind: "start",
         stage: mappedStage,
@@ -1403,10 +1422,11 @@ function stageTransitionEvents(
       stage.name === "ir.derive" ||
       stage.name === "template.prepare"
     ) {
-      return [{ kind: "done", stage: mappedStage }];
+      return [...extractingBridge, { kind: "done", stage: mappedStage }];
     }
 
     return [
+      ...extractingBridge,
       {
         kind: "message",
         stage: mappedStage,
