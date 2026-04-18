@@ -113,6 +113,7 @@
     "verify:licenses": "node scripts/check-license-allowlist.mjs",
     "verify:lockfile-hosts": "node scripts/check-lockfile-host-allowlist.mjs",
     "verify:workflow-install-scripts": "node scripts/check-workflow-install-scripts.mjs",
+    "verify:workflow-persist-credentials": "node scripts/check-workflow-persist-credentials.mjs",
     "verify:npmrc-freshness": "node scripts/check-npmrc-freshness-policy.mjs",
     "verify:docs-template-stack": "node scripts/check-doc-template-stack.mjs",
     "verify:reproducible-build": "node scripts/verify-reproducible-build.mjs",
