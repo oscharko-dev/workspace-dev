@@ -41,6 +41,7 @@ import {
 } from "./generator-a11y.js";
 import type { DetectedTabInterfacePattern, DetectedDialogOverlayPattern, DialogActionModel, RenderedItem } from "./generator-templates.js";
 import { resolvePrototypeNavigationBinding, toRouterLinkProps } from "./generator-navigation.js";
+import { createTraversalIndex, getIndexedSubtreeNodeIds, getIndexedTextNodes } from "./generator-traversal-index.js";
 
 
 export const ensureTabsStateModel = ({
@@ -282,14 +283,6 @@ const isRightAlignedListActionCandidate = ({
   return nodeStartX >= threshold;
 };
 
-const collectSubtreeNodeIds = (element: ScreenElementIR, visited: Set<ScreenElementIR> = new Set()): string[] => {
-  if (visited.has(element)) {
-    return [];
-  }
-  visited.add(element);
-  return [element.id, ...(element.children ?? []).flatMap((child) => collectSubtreeNodeIds(child, visited))];
-};
-
 export const analyzeListRow = ({
   row,
   generationLocale
@@ -297,6 +290,7 @@ export const analyzeListRow = ({
   row: ScreenElementIR;
   generationLocale: string | undefined;
 }): ListRowAnalysis => {
+  const traversalIndex = createTraversalIndex([row]);
   const sortOptions = generationLocale ? { generationLocale } : undefined;
   const sortedChildren = sortChildren(row.children ?? [], row.layoutMode ?? "NONE", sortOptions).filter(
     (child) => !isDividerLikeListSeparator(child)
@@ -326,24 +320,24 @@ export const analyzeListRow = ({
           return true;
         }
         if (child.type === "container") {
-          return Boolean(pickBestIconNode(child));
+          return Boolean(pickBestIconNode(child, traversalIndex));
         }
         return false;
       });
 
   const excludedTextNodeIds = new Set<string>();
   if (trailingActionNode) {
-    for (const nodeId of collectSubtreeNodeIds(trailingActionNode)) {
+    for (const nodeId of getIndexedSubtreeNodeIds(traversalIndex, trailingActionNode)) {
       excludedTextNodeIds.add(nodeId);
     }
   }
   if (leadingAvatarNode) {
-    for (const nodeId of collectSubtreeNodeIds(leadingAvatarNode)) {
+    for (const nodeId of getIndexedSubtreeNodeIds(traversalIndex, leadingAvatarNode)) {
       excludedTextNodeIds.add(nodeId);
     }
   }
 
-  const textNodes = collectTextNodes(row)
+  const textNodes = getIndexedTextNodes(traversalIndex, row)
     .filter((node) => !excludedTextNodeIds.has(node.id))
     .sort((left, right) => (left.y ?? 0) - (right.y ?? 0) || (left.x ?? 0) - (right.x ?? 0));
   const textValues = textNodes.map((node) => node.text.trim()).filter((value) => value.length > 0);

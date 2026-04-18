@@ -29,9 +29,9 @@ import {
 import {
   sortChildren,
   findFirstByName,
-  ICON_FALLBACK_BUILTIN_RESOLVER,
-  flattenElements
+  ICON_FALLBACK_BUILTIN_RESOLVER
 } from "./generator-render.js";
+import { createTraversalIndex, type TraversalIndex } from "./generator-traversal-index.js";
 import {
   detectNavigationBarPattern,
   NAVIGATION_BAR_TOP_LEVEL_DEPTH
@@ -82,6 +82,13 @@ export interface ThemeSxSample {
 }
 
 export type ThemeSxSampleCollector = (sample: ThemeSxSample) => void;
+
+interface ThemeScreenAnalysis {
+  screen: ScreenIR;
+  traversalIndex: TraversalIndex;
+  flattenedElements: ScreenElementIR[];
+  appBarCandidates: ScreenElementIR[];
+}
 
 // Theme sx extraction constants imported from ./constants.js
 const THEME_SX_VISUAL_KEYS = new Set(["borderRadius", "bgcolor", "background", "borderColor", "border", "boxShadow", "color", "textTransform"]);
@@ -331,6 +338,7 @@ const createThemeDerivationRenderContext = ({
   generationLocale,
   spacingBase,
   tokens,
+  traversalIndex,
   themeComponentDefaults,
   themeSxSampleCollector
 }: {
@@ -338,6 +346,7 @@ const createThemeDerivationRenderContext = ({
   generationLocale: string;
   spacingBase: number;
   tokens?: DesignTokens;
+  traversalIndex?: TraversalIndex;
   themeComponentDefaults?: ThemeComponentDefaults;
   themeSxSampleCollector?: ThemeSxSampleCollector;
 }): RenderContext => {
@@ -378,6 +387,7 @@ const createThemeDerivationRenderContext = ({
     emittedAccessibilityWarningKeys: new Set<string>(),
     pageBackgroundColorNormalized: normalizeHexColor(screen.fillColor ?? tokens?.palette.background),
     requiresChangeEventTypeImport: false,
+    ...(traversalIndex ? { traversalIndex } : {}),
     ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
     ...(themeSxSampleCollector ? { themeSxSampleCollector } : {}),
     extractionInvocationByNodeId: new Map<string, PatternExtractionInvocation>(),
@@ -391,21 +401,24 @@ const createThemeDerivationRenderContext = ({
 
 const collectAppBarDefaultsCandidates = ({
   screen,
+  traversalIndex,
   generationLocale,
   spacingBase,
   tokens
 }: {
   screen: ScreenIR;
+  traversalIndex: TraversalIndex;
   generationLocale: string;
   spacingBase: number;
   tokens?: DesignTokens;
 }): ScreenElementIR[] => {
-  const flattened = flattenElements(screen.children);
+  const flattened = traversalIndex.flatElements;
   const explicitAppBarCandidates = flattened.filter((element) => element.type === "appbar");
   const context = createThemeDerivationRenderContext({
     screen,
     generationLocale,
     spacingBase,
+    traversalIndex,
     ...(tokens ? { tokens } : {})
   });
   const rootParent: VirtualParent = {
@@ -438,25 +451,55 @@ const collectAppBarDefaultsCandidates = ({
   return Array.from(byId.values());
 };
 
-const collectThemeSxSamplesFromScreens = ({
+const analyzeThemeScreens = ({
   screens,
+  generationLocale,
+  spacingBase,
+  tokens
+}: {
+  screens: ScreenIR[];
+  generationLocale: string;
+  spacingBase: number;
+  tokens?: DesignTokens;
+}): ThemeScreenAnalysis[] => {
+  return screens.map((screen) => {
+    const traversalIndex = createTraversalIndex(screen.children);
+    return {
+      screen,
+      traversalIndex,
+      flattenedElements: traversalIndex.flatElements,
+      appBarCandidates: collectAppBarDefaultsCandidates({
+        screen,
+        traversalIndex,
+        generationLocale,
+        spacingBase,
+        ...(tokens ? { tokens } : {})
+      })
+    };
+  });
+};
+
+const collectThemeSxSamplesFromScreens = ({
+  analyses,
   generationLocale,
   spacingBase,
   tokens,
   themeComponentDefaults
 }: {
-  screens: ScreenIR[];
+  analyses: ThemeScreenAnalysis[];
   generationLocale: string;
   spacingBase: number;
   tokens?: DesignTokens;
   themeComponentDefaults?: ThemeComponentDefaults;
 }): ThemeSxSample[] => {
   const samples: ThemeSxSample[] = [];
-  for (const screen of screens) {
+  for (const analysis of analyses) {
+    const { screen, traversalIndex } = analysis;
     const context = createThemeDerivationRenderContext({
       screen,
       generationLocale,
       spacingBase,
+      traversalIndex,
       ...(tokens ? { tokens } : {}),
       ...(themeComponentDefaults ? { themeComponentDefaults } : {}),
       themeSxSampleCollector: (sample) => {
@@ -593,7 +636,13 @@ const deriveThemeComponentDefaultsFromScreens = ({
   if (screens.length === 0) {
     return undefined;
   }
-  const allElements = screens.flatMap((screen) => flattenElements(screen.children));
+  const analyses = analyzeThemeScreens({
+    screens,
+    generationLocale,
+    spacingBase,
+    ...(tokens ? { tokens } : {})
+  });
+  const allElements = analyses.flatMap((analysis) => analysis.flattenedElements);
 
   const cardNodes = allElements.filter((element) => element.type === "card");
   const cardBorderRadius = resolveDeterministicIntegerSample({
@@ -652,15 +701,8 @@ const deriveThemeComponentDefaultsFromScreens = ({
   });
 
   const appBarBackgroundColor = resolveDeterministicColorSample(
-    screens
-      .flatMap((screen) =>
-        collectAppBarDefaultsCandidates({
-          screen,
-          generationLocale,
-          spacingBase,
-          ...(tokens ? { tokens } : {})
-        })
-      )
+    analyses
+      .flatMap((analysis) => analysis.appBarCandidates)
       .map((node) => node.fillColor)
   );
 
@@ -743,7 +785,7 @@ const deriveThemeComponentDefaultsFromScreens = ({
 
   const c1StyleOverrides = deriveThemeSxComponentStyleOverridesFromSamples({
     samples: collectThemeSxSamplesFromScreens({
-      screens,
+      analyses,
       generationLocale,
       spacingBase,
       ...(tokens ? { tokens } : {}),
