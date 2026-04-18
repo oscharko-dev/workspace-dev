@@ -1146,6 +1146,133 @@ test("resolveFigmaTokens — emits library_alias_collision when two variables sh
   }
 });
 
+test("resolveFigmaTokens — renames cross-mode variables sharing a hex without collision", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            {
+              name: "Color/Brand",
+              resolvedValue: "#0052CC",
+              type: "COLOR",
+              mode: "light",
+            },
+            {
+              name: "Color/Brand",
+              resolvedValue: "#0052CC",
+              type: "COLOR",
+              mode: "dark",
+            },
+          ],
+        }),
+      );
+    }
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [],
+          styles: [
+            { name: "color/primary/500", styleType: "FILL", color: "#0052CC" },
+          ],
+          variables: [],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  // Both variables should be renamed since their merge keys differ by mode.
+  const renamed = result.variables.filter(
+    (v) => v.name === "color/primary/500",
+  );
+  assert.equal(
+    renamed.length,
+    2,
+    "Both cross-mode variables should be renamed",
+  );
+  for (const variable of renamed) {
+    assert.ok(
+      variable.aliases?.includes("Color/Brand"),
+      "Renamed variable should expose original name as alias",
+    );
+  }
+  const modes = renamed.map((v) => v.modeName).sort();
+  assert.deepEqual(modes, ["dark", "light"]);
+
+  // No collision conflict should be emitted.
+  assert.equal(
+    result.conflicts.filter((c) => c.kind === "library_alias_collision").length,
+    0,
+    "Cross-mode rename must not emit a collision conflict",
+  );
+});
+
+test("resolveFigmaTokens — no-op when variable already matches library style name", async () => {
+  const fetchImpl: typeof fetch = async (_input, init) => {
+    const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {
+      params?: { name?: string };
+    };
+    const toolName = body.params?.name ?? "";
+
+    if (toolName === "get_variable_defs") {
+      return jsonResponse(
+        mcpOk({
+          variables: [
+            { name: "color/primary", resolvedValue: "#0052CC", type: "COLOR" },
+          ],
+        }),
+      );
+    }
+
+    if (toolName === "search_design_system") {
+      return jsonResponse(
+        mcpOk({
+          components: [],
+          styles: [
+            { name: "color/primary", styleType: "FILL", color: "#0052CC" },
+          ],
+          variables: [],
+        }),
+      );
+    }
+
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveFigmaTokens({
+    fileKey: "test-file",
+    nodeId: "1:2",
+    mcpConfig: createConfig(fetchImpl),
+  });
+
+  const variable = result.variables.find((v) => v.name === "color/primary");
+  assert.ok(variable, "Variable should pass through unchanged");
+  assert.equal(
+    variable.aliases ?? undefined,
+    undefined,
+    "No alias should be added when name already matches",
+  );
+  assert.equal(
+    result.conflicts.filter((c) => c.kind === "library_alias_collision").length,
+    0,
+    "No collision conflict when name already matches library style",
+  );
+});
+
 test("resolveFigmaTokens — preserves styles with same name but different style types", async () => {
   const fetchImpl: typeof fetch = async (_input, init) => {
     const body = JSON.parse(String((init as RequestInit)?.body ?? "{}")) as {

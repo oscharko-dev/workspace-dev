@@ -1032,17 +1032,22 @@ type CollidingVariable = {
   modeName?: string;
 };
 
-const groupClaimantsByLibraryName = ({
+type ClaimantGroup = { libraryName: string; indices: number[] };
+
+const groupClaimantsByPostRenameMergeKey = ({
   variables,
   candidates,
 }: {
   variables: readonly FigmaMcpVariableDefinition[];
   candidates: ReadonlyArray<string | null>;
-}): Map<string, number[]> => {
-  // Dedup by `(name, modeName)` so a duplicated input variable is not counted
-  // twice as a claimant (which would falsely trigger a collision).
-  const claimantsByLibraryName = new Map<string, number[]>();
-  const seenClaimantKeysByLibraryName = new Map<string, Set<string>>();
+}): Map<string, ClaimantGroup> => {
+  // Group by the post-rename merge key used by `mergeVariablesWithExisting`
+  // (`normalizeFigmaVariableName(libraryName)::modeName`). Two candidates only
+  // collide when the rename would produce the SAME merge key — entries with
+  // the same library name in different modes have distinct merge keys and are
+  // safe to rename.
+  const groups = new Map<string, ClaimantGroup>();
+  const seenSourceKeysByMergeKey = new Map<string, Set<string>>();
   candidates.forEach((libraryName, index) => {
     if (libraryName === null) {
       return;
@@ -1051,19 +1056,22 @@ const groupClaimantsByLibraryName = ({
     if (!variable) {
       return;
     }
-    const claimantKey = `${variable.name}::${variable.modeName?.trim() ?? ""}`;
-    const seen =
-      seenClaimantKeysByLibraryName.get(libraryName) ?? new Set<string>();
-    if (seen.has(claimantKey)) {
+    const modeKey = variable.modeName?.trim().toLowerCase() || "default";
+    const mergeKey = `${normalizeFigmaVariableName(libraryName)}::${modeKey}`;
+    // Dedup by `(name, modeName)` so a duplicated input variable is not
+    // counted twice as a claimant for the same merge key.
+    const sourceKey = `${variable.name}::${variable.modeName?.trim() ?? ""}`;
+    const seen = seenSourceKeysByMergeKey.get(mergeKey) ?? new Set<string>();
+    if (seen.has(sourceKey)) {
       return;
     }
-    seen.add(claimantKey);
-    seenClaimantKeysByLibraryName.set(libraryName, seen);
-    const list = claimantsByLibraryName.get(libraryName) ?? [];
-    list.push(index);
-    claimantsByLibraryName.set(libraryName, list);
+    seen.add(sourceKey);
+    seenSourceKeysByMergeKey.set(mergeKey, seen);
+    const group = groups.get(mergeKey) ?? { libraryName, indices: [] };
+    group.indices.push(index);
+    groups.set(mergeKey, group);
   });
-  return claimantsByLibraryName;
+  return groups;
 };
 
 const buildAliasCollisionConflict = ({
@@ -1144,15 +1152,19 @@ const preferLibraryTokenNames = ({
     return libraryName;
   });
 
-  const claimantsByLibraryName = groupClaimantsByLibraryName({
+  const claimantGroups = groupClaimantsByPostRenameMergeKey({
     variables,
     candidates,
   });
 
-  const collisionLibraryNames = new Set<string>();
-  for (const [libraryName, indices] of claimantsByLibraryName.entries()) {
-    if (indices.length > 1) {
-      collisionLibraryNames.add(libraryName);
+  const collidingIndices = new Set<number>();
+  const collisionGroups: ClaimantGroup[] = [];
+  for (const group of claimantGroups.values()) {
+    if (group.indices.length > 1) {
+      collisionGroups.push(group);
+      for (const index of group.indices) {
+        collidingIndices.add(index);
+      }
     }
   }
 
@@ -1161,14 +1173,14 @@ const preferLibraryTokenNames = ({
     if (libraryName === null || libraryName === undefined) {
       return variable;
     }
-    if (collisionLibraryNames.has(libraryName)) {
+    if (collidingIndices.has(index)) {
       // Preserve original name; expose library name as an alias only.
       return {
         ...variable,
         aliases: [...(variable.aliases ?? []), libraryName],
       };
     }
-    // Sole claimant — rename as before.
+    // Sole claimant for this merge key — rename as before.
     return {
       ...variable,
       aliases: [...(variable.aliases ?? []), variable.name],
@@ -1176,16 +1188,25 @@ const preferLibraryTokenNames = ({
     };
   });
 
-  const conflicts: TokenConflict[] = [];
-  for (const libraryName of collisionLibraryNames) {
-    conflicts.push(
-      buildAliasCollisionConflict({
-        libraryName,
-        indices: claimantsByLibraryName.get(libraryName) ?? [],
-        variables,
-      }),
-    );
-  }
+  const conflicts: TokenConflict[] = collisionGroups
+    .map(({ libraryName, indices }) =>
+      buildAliasCollisionConflict({ libraryName, indices, variables }),
+    )
+    .sort((left, right) => {
+      if (
+        left.kind !== "library_alias_collision" ||
+        right.kind !== "library_alias_collision"
+      ) {
+        return 0;
+      }
+      const nameCompare = left.libraryName.localeCompare(right.libraryName);
+      if (nameCompare !== 0) {
+        return nameCompare;
+      }
+      const leftMode = left.collidingVariables[0]?.modeName ?? "";
+      const rightMode = right.collidingVariables[0]?.modeName ?? "";
+      return leftMode.localeCompare(rightMode);
+    });
 
   return { variables: nextVariables, conflicts };
 };
