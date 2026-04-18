@@ -6,9 +6,15 @@ import {
   __setTypescriptModuleResolverForTests,
   collectGeneratedSourceFileDiagnostics,
   collectGeneratedJsxFragmentDiagnostics,
+  GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE,
+  GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE,
   validateGeneratedJsxFragment,
   validateGeneratedSourceFile
 } from "./generated-source-validation.js";
+import {
+  PARITY_WORKFLOW_ERROR_CODES,
+  WorkflowError
+} from "./workflow-error.js";
 
 afterEach(() => {
   __resetTypescriptModuleResolverForTests();
@@ -43,7 +49,7 @@ const createStubTypescriptModule = ({
   }) as unknown as typeof TypeScript;
 
 test("validateGeneratedJsxFragment accepts multiple sibling roots in a valid JSX context", () => {
-  assert.doesNotThrow(() => {
+  assert.deepEqual(
     validateGeneratedJsxFragment({
       raw: "      <AppBar />\n      <Stack />",
       context: {
@@ -53,8 +59,9 @@ test("validateGeneratedJsxFragment accepts multiple sibling roots in a valid JSX
         nodeType: "appbar",
         renderSource: "render strategy 'appbar'"
       }
-    });
-  });
+    }),
+    { status: "validated" }
+  );
 });
 
 test("validateGeneratedJsxFragment rejects stray closing tags with node context", () => {
@@ -71,7 +78,18 @@ test("validateGeneratedJsxFragment rejects stray closing tags with node context"
         }
       });
     },
-    /Invalid generated JSX fragment in screen 'Broken Screen' for node 'node-2' \(Broken Header, appbar\) during pre-dispatch strategy: __generated_fragment__\.tsx:1:\d+ - Expected corresponding closing tag for JSX fragment\./
+    (error: unknown) => {
+      assert.equal(error instanceof WorkflowError, true);
+      assert.equal(
+        (error as WorkflowError).code,
+        PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedJsxFragment
+      );
+      assert.match(
+        (error as WorkflowError).message,
+        /Invalid generated JSX fragment in screen 'Broken Screen' for node 'node-2' \(Broken Header, appbar\) during pre-dispatch strategy: __generated_fragment__\.tsx:1:\d+ - Expected corresponding closing tag for JSX fragment\./
+      );
+      return true;
+    }
   );
 });
 
@@ -91,7 +109,18 @@ test("validateGeneratedSourceFile rejects malformed TSX modules with file path c
         content: `export default function BrokenScreen() {\n  return (\n    <Box>\n  );\n}\n`
       });
     },
-    /Invalid generated source file 'src\/screens\/Broken\.tsx': src\/screens\/Broken\.tsx:\d+:\d+ - JSX element 'Box' has no corresponding closing tag\./
+    (error: unknown) => {
+      assert.equal(error instanceof WorkflowError, true);
+      assert.equal(
+        (error as WorkflowError).code,
+        PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile
+      );
+      assert.match(
+        (error as WorkflowError).message,
+        /Invalid generated source file 'src\/screens\/Broken\.tsx': src\/screens\/Broken\.tsx:\d+:\d+ - JSX element 'Box' has no corresponding closing tag\./
+      );
+      return true;
+    }
   );
 });
 
@@ -128,7 +157,18 @@ test("validateGeneratedSourceFile includes screen context when provided", () => 
         }
       });
     },
-    /Invalid generated source file 'src\/screens\/Checkout\.tsx' for screen 'Checkout': src\/screens\/Checkout\.tsx:\d+:\d+ - JSX element 'Stack' has no corresponding closing tag\./
+    (error: unknown) => {
+      assert.equal(error instanceof WorkflowError, true);
+      assert.equal(
+        (error as WorkflowError).code,
+        PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile
+      );
+      assert.match(
+        (error as WorkflowError).message,
+        /Invalid generated source file 'src\/screens\/Checkout\.tsx' for screen 'Checkout': src\/screens\/Checkout\.tsx:\d+:\d+ - JSX element 'Stack' has no corresponding closing tag\./
+      );
+      return true;
+    }
   );
 });
 
@@ -160,12 +200,36 @@ test("generated source validation skips parser checks and warns once when the op
       }),
       []
     );
-    assert.doesNotThrow(() => {
+    assert.deepEqual(
       validateGeneratedSourceFile({
         filePath: "src/screens/MissingRuntime.tsx",
         content: `export default function MissingRuntimeScreen() {\n  return (\n    <Stack>\n  );\n}\n`
-      });
-    });
+      }),
+      {
+        status: "skipped",
+        reason: "missing_typescript_runtime",
+        code: GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE,
+        message: GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE
+      }
+    );
+    assert.deepEqual(
+      validateGeneratedJsxFragment({
+        raw: "</Stack>",
+        context: {
+          screenName: "Missing Runtime Screen",
+          nodeId: "node-missing-runtime",
+          nodeName: "Broken Node",
+          nodeType: "stack",
+          renderSource: "test"
+        }
+      }),
+      {
+        status: "skipped",
+        reason: "missing_typescript_runtime",
+        code: GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE,
+        message: GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE
+      }
+    );
 
     assert.equal(warnings.length, 1);
     assert.equal(

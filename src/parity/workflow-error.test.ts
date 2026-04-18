@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  PARITY_WORKFLOW_ERROR_CODES,
   WorkflowError,
+  hasWorkflowErrorCode,
   isWorkflowError,
+  isParityNoScreensWorkflowError,
   toWorkflowError,
 } from "./workflow-error.js";
 
@@ -31,6 +34,33 @@ test("isWorkflowError detects only WorkflowError instances", () => {
   );
   assert.equal(isWorkflowError(new Error("plain")), false);
   assert.equal(isWorkflowError("nope"), false);
+});
+
+test("workflow error helpers match structured parity codes", () => {
+  const noScreensError = new WorkflowError({
+    code: PARITY_WORKFLOW_ERROR_CODES.noScreens,
+    message: "No top-level frames/components found in Figma file",
+    stage: "ir.derive",
+  });
+
+  assert.equal(
+    hasWorkflowErrorCode(
+      noScreensError,
+      PARITY_WORKFLOW_ERROR_CODES.noScreens,
+    ),
+    true,
+  );
+  assert.equal(isParityNoScreensWorkflowError(noScreensError), true);
+  assert.equal(
+    isParityNoScreensWorkflowError(
+      new WorkflowError({
+        code: PARITY_WORKFLOW_ERROR_CODES.invalidFigmaPayload,
+        message: "Invalid Figma payload",
+        stage: "ir.derive",
+      }),
+    ),
+    false,
+  );
 });
 
 test("toWorkflowError returns existing WorkflowError untouched", () => {

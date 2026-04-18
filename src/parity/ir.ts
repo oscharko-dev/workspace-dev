@@ -30,6 +30,7 @@ import {
   deriveThemeAnalysis,
   applyMcpEnrichmentToIr,
 } from "./ir-tokens.js";
+import { PARITY_WORKFLOW_ERROR_CODES, WorkflowError } from "./workflow-error.js";
 
 // ── Re-exports from ir-variants.ts (unchanged) ──────────────────────────
 export {
@@ -91,9 +92,11 @@ const parseFigmaPayloadOrThrow = ({
   if (parsed.success) {
     return parsed.data;
   }
-  throw new Error(
-    `Invalid Figma payload: ${summarizeFigmaPayloadValidationError({ error: parsed.error })}`,
-  );
+  throw new WorkflowError({
+    code: PARITY_WORKFLOW_ERROR_CODES.invalidFigmaPayload,
+    message: `Invalid Figma payload: ${summarizeFigmaPayloadValidationError({ error: parsed.error })}`,
+    stage: "ir.derive",
+  });
 };
 
 export const deriveTokensForTesting = (
@@ -174,7 +177,11 @@ export const figmaToDesignIrWithOptions = (
   });
 
   if (screens.length === 0) {
-    throw new Error("No top-level frames/components found in Figma file");
+    throw new WorkflowError({
+      code: PARITY_WORKFLOW_ERROR_CODES.noScreens,
+      message: "No top-level frames/components found in Figma file",
+      stage: "ir.derive",
+    });
   }
 
   const derivedTokens = deriveTokens(parsed, options?.mcpEnrichment);

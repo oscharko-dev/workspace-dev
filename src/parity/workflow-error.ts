@@ -13,6 +13,16 @@ export interface WorkflowErrorInit {
   diagnostics?: WorkspaceJobDiagnostic[];
 }
 
+export const PARITY_WORKFLOW_ERROR_CODES = {
+  invalidFigmaPayload: "E_PARITY_INVALID_FIGMA_PAYLOAD",
+  noScreens: "E_PARITY_NO_SCREENS",
+  invalidGeneratedJsxFragment: "E_PARITY_INVALID_GENERATED_JSX_FRAGMENT",
+  invalidGeneratedSourceFile: "E_PARITY_INVALID_GENERATED_SOURCE_FILE",
+} as const;
+
+export type ParityWorkflowErrorCode =
+  (typeof PARITY_WORKFLOW_ERROR_CODES)[keyof typeof PARITY_WORKFLOW_ERROR_CODES];
+
 export class WorkflowError extends Error {
   public readonly code: string;
   public readonly stage?: WorkspaceJobStageName;
@@ -58,6 +68,21 @@ export class WorkflowError extends Error {
 
 export const isWorkflowError = (value: unknown): value is WorkflowError => {
   return value instanceof WorkflowError;
+};
+
+export const hasWorkflowErrorCode = <TCode extends string>(
+  value: unknown,
+  code: TCode,
+): value is WorkflowError & { code: TCode } => {
+  return isWorkflowError(value) && value.code === code;
+};
+
+export const isParityNoScreensWorkflowError = (
+  value: unknown,
+): value is WorkflowError & {
+  code: typeof PARITY_WORKFLOW_ERROR_CODES.noScreens;
+} => {
+  return hasWorkflowErrorCode(value, PARITY_WORKFLOW_ERROR_CODES.noScreens);
 };
 
 export const toWorkflowError = (

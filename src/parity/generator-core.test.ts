@@ -16,7 +16,13 @@ import {
   isDeepIconImport,
   extractSharedSxConstantsFromScreenContent
 } from "./generator-core.js";
-import { validateGeneratedSourceFile } from "./generated-source-validation.js";
+import {
+  __resetTypescriptModuleResolverForTests,
+  __setTypescriptModuleResolverForTests,
+  GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE,
+  GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE,
+  validateGeneratedSourceFile
+} from "./generated-source-validation.js";
 import { figmaToDesignIr } from "./ir.js";
 import { buildTypographyScaleFromAliases } from "./typography-tokens.js";
 import { parseCustomerProfileConfig } from "../customer-profile.js";
@@ -7110,6 +7116,51 @@ test("generateArtifacts logs and writes accessibility contrast warnings", async 
   assert.equal(Array.isArray(metrics.accessibilityWarnings), true);
   assert.ok((metrics.accessibilityWarnings ?? []).length > 0);
   assert.equal(metrics.accessibilityWarnings?.[0]?.code, "W_A11Y_LOW_CONTRAST");
+});
+
+test("generateArtifacts surfaces skipped generated source validation in production metrics when the TypeScript runtime is unavailable", async () => {
+  const projectDir = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-generator-validation-skip-"));
+
+  __setTypescriptModuleResolverForTests(() => null);
+  try {
+    const result = await generateArtifacts({
+      projectDir,
+      ir: createIr(),
+      llmCodegenMode: "deterministic",
+      llmModelName: "deterministic",
+      onLog: () => {}
+    });
+
+    assert.equal(result.generationMetrics.generatedSourceValidation?.status, "skipped");
+    assert.equal(
+      result.generationMetrics.generatedSourceValidation?.code,
+      GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE
+    );
+    assert.equal(
+      result.generationMetrics.generatedSourceValidation?.message,
+      GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE
+    );
+    assert.equal(
+      (result.generationMetrics.generatedSourceValidation?.skippedCount ?? 0) > 0,
+      true
+    );
+
+    const metricsContent = await readFile(path.join(projectDir, "generation-metrics.json"), "utf8");
+    const metrics = JSON.parse(metricsContent) as {
+      generatedSourceValidation?: {
+        status?: string;
+        code?: string;
+        message?: string;
+        skippedCount?: number;
+      };
+    };
+    assert.deepEqual(
+      metrics.generatedSourceValidation,
+      result.generationMetrics.generatedSourceValidation
+    );
+  } finally {
+    __resetTypescriptModuleResolverForTests();
+  }
 });
 
 test("createDeterministicAppFile uses lazy route-level loading for non-initial screens", () => {

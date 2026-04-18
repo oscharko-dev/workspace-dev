@@ -38,6 +38,10 @@ import type { WorkspaceFormHandlingMode, WorkspaceRouterMode } from "../contract
 import type { IconRenderWarning } from "./generator-render.js";
 import { resolveEmittedScreenTargets } from "./emitted-screen-targets.js";
 import { deriveThemeComponentDefaultsFromIr } from "./generator-design-system.js";
+import {
+  summarizeGeneratedSourceValidationSkips,
+  type GeneratedSourceValidationSkippedState
+} from "./generated-source-validation.js";
 import type { ThemeComponentDefaults, ThemeSxStyleValue } from "./generator-design-system.js";
 import {
   resolveFormHandlingMode,
@@ -637,7 +641,10 @@ const initializeGenerateArtifactsStatePhase = ({
     prototypeNavigationUnresolved: ir.metrics?.prototypeNavigationUnresolved ?? 0,
     prototypeNavigationRendered: 0,
     ...(ir.metrics?.nodeDiagnostics ? { nodeDiagnostics: [...ir.metrics.nodeDiagnostics] } : {}),
-    ...(ir.metrics?.mcpCoverage ? { mcpCoverage: { ...ir.metrics.mcpCoverage } } : {})
+    ...(ir.metrics?.mcpCoverage ? { mcpCoverage: { ...ir.metrics.mcpCoverage } } : {}),
+    ...(ir.metrics?.generatedSourceValidation
+      ? { generatedSourceValidation: { ...ir.metrics.generatedSourceValidation } }
+      : {})
   };
   const truncationByScreenId = new Map(
     generationMetrics.truncatedScreens.map((entry) => [entry.screenId, entry] as const)
@@ -1183,6 +1190,7 @@ export async function* generateArtifactsStreaming(
   const screenMappingWarnings: ComponentMappingWarning[] = [];
   const iconWarnings: IconRenderWarning[] = [];
   const accessibilityWarnings: AccessibilityWarning[] = [];
+  const generatedSourceValidationSkips: GeneratedSourceValidationSkippedState[] = [];
   const simplificationByScreen: ScreenSimplificationMetric[] = [];
   const aggregatedSimplificationStats = createEmptySimplificationStats();
   let prototypeNavigationRenderedCount = 0;
@@ -1256,6 +1264,7 @@ export async function* generateArtifactsStreaming(
     }
     iconWarnings.push(...deterministicAppShell.iconWarnings);
     accessibilityWarnings.push(...deterministicAppShell.accessibilityWarnings);
+    generatedSourceValidationSkips.push(...(deterministicAppShell.generatedSourceValidationSkips ?? []));
 
     const appShellFileArtifact = transformGeneratedFileWithDesignSystem(deterministicAppShell.file);
     const componentFiles = deterministicAppShell.componentFiles.map((file) =>
@@ -1369,6 +1378,7 @@ export async function* generateArtifactsStreaming(
       }
       iconWarnings.push(...deterministicScreen.iconWarnings);
       accessibilityWarnings.push(...deterministicScreen.accessibilityWarnings);
+      generatedSourceValidationSkips.push(...(deterministicScreen.generatedSourceValidationSkips ?? []));
 
       const screenFile = transformGeneratedFileWithDesignSystem(deterministicScreen.file);
       const componentFiles = deterministicScreen.componentFiles.map((file) =>
@@ -1430,6 +1440,12 @@ export async function* generateArtifactsStreaming(
     aggregate: aggregatedSimplificationStats,
     screens: simplificationByScreen
   };
+  const generatedSourceValidationSummary = summarizeGeneratedSourceValidationSkips(
+    generatedSourceValidationSkips
+  );
+  if (generatedSourceValidationSummary) {
+    generationMetrics.generatedSourceValidation = generatedSourceValidationSummary;
+  }
   const generationMetricsPayload = {
     ...generationMetrics,
     accessibilityWarnings

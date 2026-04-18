@@ -1,10 +1,62 @@
 import path from "node:path";
 import { createRequire } from "node:module";
 import type * as TypeScript from "typescript";
+import { PARITY_WORKFLOW_ERROR_CODES, WorkflowError } from "./workflow-error.js";
 
 let cachedTypescriptModule: typeof TypeScript | null | undefined;
 let missingTypescriptWarningEmitted = false;
 let resolveTypescriptModuleOverride: (() => typeof TypeScript | null) | undefined;
+
+export const GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE =
+  "WORKSPACE_DEV_MISSING_TYPESCRIPT_VALIDATION";
+export const GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE =
+  "Generated source validation is unavailable because the optional 'typescript' runtime is not installed. Generated source files will skip parser validation.";
+
+export interface GeneratedSourceValidationValidatedState {
+  status: "validated";
+}
+
+export interface GeneratedSourceValidationSkippedState {
+  status: "skipped";
+  reason: "missing_typescript_runtime";
+  code: typeof GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE;
+  message: typeof GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE;
+}
+
+export type GeneratedSourceValidationResult =
+  | GeneratedSourceValidationValidatedState
+  | GeneratedSourceValidationSkippedState;
+
+export interface GeneratedSourceValidationSkippedSummary
+  extends GeneratedSourceValidationSkippedState {
+  skippedCount: number;
+}
+
+const GENERATED_SOURCE_VALIDATION_VALIDATED_RESULT: GeneratedSourceValidationValidatedState =
+  {
+    status: "validated"
+  };
+
+const GENERATED_SOURCE_VALIDATION_SKIPPED_RESULT: GeneratedSourceValidationSkippedState =
+  {
+    status: "skipped",
+    reason: "missing_typescript_runtime",
+    code: GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE,
+    message: GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE
+  };
+
+export const summarizeGeneratedSourceValidationSkips = (
+  results: readonly GeneratedSourceValidationSkippedState[]
+): GeneratedSourceValidationSkippedSummary | undefined => {
+  const [firstResult] = results;
+  if (!firstResult) {
+    return undefined;
+  }
+  return {
+    ...firstResult,
+    skippedCount: results.length
+  };
+};
 
 export const __setTypescriptModuleResolverForTests = (
   resolver?: (() => typeof TypeScript | null)
@@ -36,20 +88,32 @@ const resolveTypescriptModule = (): typeof TypeScript | null => {
   return cachedTypescriptModule;
 };
 
-const getTypescriptModule = (): typeof TypeScript | null => {
-  const typescriptModule = resolveTypescriptModule();
-  if (typescriptModule || missingTypescriptWarningEmitted) {
-    return typescriptModule;
-  }
-
-  process.emitWarning(
-    "Generated source validation is unavailable because the optional 'typescript' runtime is not installed. Generated source files will skip parser validation.",
-    {
-      code: "WORKSPACE_DEV_MISSING_TYPESCRIPT_VALIDATION"
+const getTypescriptValidationRuntime = ():
+  | {
+      typescriptModule: typeof TypeScript;
+      result: GeneratedSourceValidationValidatedState;
     }
-  );
-  missingTypescriptWarningEmitted = true;
-  return null;
+  | {
+      typescriptModule: null;
+      result: GeneratedSourceValidationSkippedState;
+    } => {
+  const typescriptModule = resolveTypescriptModule();
+  if (typescriptModule) {
+    return {
+      typescriptModule,
+      result: GENERATED_SOURCE_VALIDATION_VALIDATED_RESULT
+    };
+  }
+  if (!missingTypescriptWarningEmitted) {
+    process.emitWarning(GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_MESSAGE, {
+      code: GENERATED_SOURCE_VALIDATION_MISSING_TYPESCRIPT_CODE
+    });
+    missingTypescriptWarningEmitted = true;
+  }
+  return {
+    typescriptModule: null,
+    result: GENERATED_SOURCE_VALIDATION_SKIPPED_RESULT
+  };
 };
 
 const toCompilerOptions = ({
@@ -82,24 +146,34 @@ const collectErrorDiagnostics = ({
   sourceText: string;
   filePath: string;
   forceJsx?: boolean;
-}): TypeScript.Diagnostic[] => {
-  const typescriptModule = getTypescriptModule();
-  if (!typescriptModule) {
-    return [];
+}): {
+  diagnostics: TypeScript.Diagnostic[];
+  result: GeneratedSourceValidationResult;
+} => {
+  const runtime = getTypescriptValidationRuntime();
+  if (!runtime.typescriptModule) {
+    return {
+      diagnostics: [],
+      result: runtime.result
+    };
   }
 
-  const result = typescriptModule.transpileModule(sourceText, {
+  const result = runtime.typescriptModule.transpileModule(sourceText, {
     fileName: filePath,
     reportDiagnostics: true,
     compilerOptions: toCompilerOptions({
       filePath,
-      typescriptModule,
+      typescriptModule: runtime.typescriptModule,
       ...(forceJsx !== undefined ? { forceJsx } : {})
     })
   });
-  return (result.diagnostics ?? []).filter(
-    (diagnostic) => diagnostic.category === typescriptModule.DiagnosticCategory.Error
-  );
+  return {
+    diagnostics: (result.diagnostics ?? []).filter(
+      (diagnostic) =>
+        diagnostic.category === runtime.typescriptModule.DiagnosticCategory.Error
+    ),
+    result: runtime.result
+  };
 };
 
 const formatDiagnostic = ({
@@ -175,12 +249,12 @@ export const collectGeneratedJsxFragmentDiagnostics = ({
 }: {
   raw: string;
 }): string[] => {
-  const typescriptModule = getTypescriptModule();
-  if (!typescriptModule) {
+  const runtime = getTypescriptValidationRuntime();
+  if (!runtime.typescriptModule) {
     return [];
   }
 
-  const diagnostics = collectErrorDiagnostics({
+  const { diagnostics } = collectErrorDiagnostics({
     sourceText: `${GENERATED_FRAGMENT_PREFIX}\n${raw}\n${GENERATED_FRAGMENT_SUFFIX}\n`,
     filePath: GENERATED_FRAGMENT_FILE_PATH,
     forceJsx: true
@@ -193,7 +267,7 @@ export const collectGeneratedJsxFragmentDiagnostics = ({
       diagnostic,
       lineOffset: GENERATED_FRAGMENT_LINE_OFFSET,
       filePath: GENERATED_FRAGMENT_FILE_PATH,
-      typescriptModule
+      typescriptModule: runtime.typescriptModule
     })
   );
 };
@@ -204,16 +278,34 @@ export const validateGeneratedJsxFragment = ({
 }: {
   raw: string;
   context: GeneratedJsxFragmentValidationContext;
-}): void => {
-  const diagnostics = collectGeneratedJsxFragmentDiagnostics({
-    raw
+}): GeneratedSourceValidationResult => {
+  const runtime = getTypescriptValidationRuntime();
+  if (!runtime.typescriptModule) {
+    return runtime.result;
+  }
+
+  const { diagnostics } = collectErrorDiagnostics({
+    sourceText: `${GENERATED_FRAGMENT_PREFIX}\n${raw}\n${GENERATED_FRAGMENT_SUFFIX}\n`,
+    filePath: GENERATED_FRAGMENT_FILE_PATH,
+    forceJsx: true
   });
   if (diagnostics.length === 0) {
-    return;
+    return runtime.result;
   }
-  throw new Error(
-    `Invalid generated JSX fragment in screen '${context.screenName}' for node '${context.nodeId}' (${context.nodeName}, ${context.nodeType}) during ${context.renderSource}: ${diagnostics.join("; ")}`
-  );
+  throw new WorkflowError({
+    code: PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedJsxFragment,
+    message: `Invalid generated JSX fragment in screen '${context.screenName}' for node '${context.nodeId}' (${context.nodeName}, ${context.nodeType}) during ${context.renderSource}: ${diagnostics
+      .map((diagnostic) =>
+        formatDiagnostic({
+          diagnostic,
+          lineOffset: GENERATED_FRAGMENT_LINE_OFFSET,
+          filePath: GENERATED_FRAGMENT_FILE_PATH,
+          typescriptModule: runtime.typescriptModule
+        })
+      )
+      .join("; ")}`,
+    stage: "codegen.generate"
+  });
 };
 
 export const collectGeneratedSourceFileDiagnostics = ({
@@ -223,12 +315,12 @@ export const collectGeneratedSourceFileDiagnostics = ({
   filePath: string;
   content: string;
 }): string[] => {
-  const typescriptModule = getTypescriptModule();
-  if (!typescriptModule) {
+  const runtime = getTypescriptValidationRuntime();
+  if (!runtime.typescriptModule) {
     return [];
   }
 
-  const diagnostics = collectErrorDiagnostics({
+  const { diagnostics } = collectErrorDiagnostics({
     sourceText: content,
     filePath
   });
@@ -239,7 +331,7 @@ export const collectGeneratedSourceFileDiagnostics = ({
     formatDiagnostic({
       diagnostic,
       filePath,
-      typescriptModule
+      typescriptModule: runtime.typescriptModule
     })
   );
 };
@@ -252,27 +344,29 @@ export const validateGeneratedSourceFile = ({
   filePath: string;
   content: string;
   context?: GeneratedSourceFileValidationContext;
-}): void => {
-  const typescriptModule = getTypescriptModule();
-  if (!typescriptModule) {
-    return;
+}): GeneratedSourceValidationResult => {
+  const runtime = getTypescriptValidationRuntime();
+  if (!runtime.typescriptModule) {
+    return runtime.result;
   }
 
-  const diagnostics = collectErrorDiagnostics({
+  const { diagnostics } = collectErrorDiagnostics({
     sourceText: content,
     filePath
   });
   if (diagnostics.length === 0) {
-    return;
+    return runtime.result;
   }
   const prefix = context?.screenName
     ? `Invalid generated source file '${filePath}' for screen '${context.screenName}'`
     : `Invalid generated source file '${filePath}'`;
-  throw new Error(
-    `${prefix}: ${formatDiagnostics({
+  throw new WorkflowError({
+    code: PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile,
+    message: `${prefix}: ${formatDiagnostics({
       diagnostics,
       filePath,
-      typescriptModule
-    })}`
-  );
+      typescriptModule: runtime.typescriptModule
+    })}`,
+    stage: "codegen.generate"
+  });
 };
