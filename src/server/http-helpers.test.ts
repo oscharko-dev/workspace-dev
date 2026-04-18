@@ -311,3 +311,46 @@ test("readStreamingJsonBody rejects non-JSON whitespace prefixes", async () => {
     error: "Invalid JSON payload.",
   });
 });
+
+test("readStreamingJsonBody matches JSON.parse for unicode escapes across chunk boundaries", async () => {
+  const rawPayload = '{"text":"\\u0061\\uD834\\uDD1E"}';
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage([
+      rawPayload.slice(0, 14),
+      rawPayload.slice(14, 20),
+      rawPayload.slice(20),
+    ]),
+  );
+
+  assert.deepEqual(parsed, {
+    ok: true,
+    value: JSON.parse(rawPayload),
+  });
+});
+
+test("readStreamingJsonBody preserves __proto__ as an own property", async () => {
+  const parsed = await readStreamingJsonBody(
+    toIncomingMessage(['{"__proto__":{"polluted":true}}']),
+  );
+
+  assert.equal(parsed.ok, true);
+  if (!parsed.ok) {
+    return;
+  }
+
+  assert.equal(({} as { polluted?: unknown }).polluted, undefined);
+  assert.equal(Object.getPrototypeOf(parsed.value as object), Object.prototype);
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(parsed.value, "__proto__"),
+    true,
+  );
+  assert.deepEqual(
+    Object.getOwnPropertyDescriptor(parsed.value as object, "__proto__"),
+    {
+      value: { polluted: true },
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    },
+  );
+});

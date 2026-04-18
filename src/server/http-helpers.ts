@@ -210,6 +210,7 @@ class StreamingJsonParser {
   private stringIsObjectKey = false;
   private readonly stringSegments: string[] = [];
   private stringEscapePending = false;
+  private unicodeEscapePending = false;
   private unicodeEscapeDigits = "";
   private numberBuffer = "";
   private literalTarget = "";
@@ -386,13 +387,14 @@ class StreamingJsonParser {
     this.stringIsObjectKey = isObjectKey;
     this.stringSegments.length = 0;
     this.stringEscapePending = false;
+    this.unicodeEscapePending = false;
     this.unicodeEscapeDigits = "";
   }
 
   private consumeString(input: string, index: number): number {
     let cursor = index;
     while (cursor < input.length) {
-      if (this.unicodeEscapeDigits.length > 0) {
+      if (this.unicodeEscapePending) {
         const character = input.charAt(cursor);
         if (!/[0-9a-fA-F]/.test(character)) {
           throw new Error("Invalid JSON payload.");
@@ -405,6 +407,7 @@ class StreamingJsonParser {
               Number.parseInt(this.unicodeEscapeDigits, 16),
             ),
           );
+          this.unicodeEscapePending = false;
           this.unicodeEscapeDigits = "";
         }
         continue;
@@ -435,6 +438,7 @@ class StreamingJsonParser {
             this.stringSegments.push("\t");
             break;
           case "u":
+            this.unicodeEscapePending = true;
             this.unicodeEscapeDigits = "";
             break;
           default:
@@ -466,6 +470,7 @@ class StreamingJsonParser {
         this.mode = "normal";
         this.stringSegments.length = 0;
         this.stringEscapePending = false;
+        this.unicodeEscapePending = false;
         this.unicodeEscapeDigits = "";
         if (this.stringIsObjectKey) {
           const frame = this.stack[this.stack.length - 1];
@@ -583,7 +588,12 @@ class StreamingJsonParser {
       ) {
         throw new Error("Invalid JSON payload.");
       }
-      frame.value[frame.currentKey] = value;
+      Object.defineProperty(frame.value, frame.currentKey, {
+        value,
+        enumerable: true,
+        configurable: true,
+        writable: true,
+      });
       delete frame.currentKey;
       frame.state = "expectingCommaOrEnd";
       return;
