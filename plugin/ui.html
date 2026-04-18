@@ -209,7 +209,17 @@
         }
 
         if (msg.type === "upload-result") {
-          statusEl.innerHTML = `Sent! Job <a href="${msg.trackingUrl}" target="_blank">${msg.jobId}</a> is processing.`;
+          statusEl.textContent = "";
+          const prefix = document.createTextNode("Sent! Job ");
+          const link = document.createElement("a");
+          link.href = msg.trackingUrl;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = msg.jobId;
+          const suffix = document.createTextNode(" is processing.");
+          statusEl.appendChild(prefix);
+          statusEl.appendChild(link);
+          statusEl.appendChild(suffix);
           statusEl.className = "status-success";
           exportBtn.disabled = false;
           uploadBtn.disabled = false;
