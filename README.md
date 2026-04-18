@@ -263,7 +263,7 @@ With `enableGitPr=false`, generation is local-only.
 
 ### File listing pagination
 
-`GET /workspace/jobs/:id/files` returns a bounded page of the generated project's source files. Responses never include the full tree in a single payload.
+`GET /workspace/jobs/:id/files` returns a bounded page of the generated project's source files. Responses are always bounded to at most `limit` files (maximum 1000). When `nextCursor` is present in the response, more files exist and clients must page to retrieve them all.
 
 | Query param | Type   | Default | Notes                                                                                   |
 | ----------- | ------ | ------- | --------------------------------------------------------------------------------------- |

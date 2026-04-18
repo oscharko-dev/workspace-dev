@@ -3913,7 +3913,7 @@ async function collectSourceFiles(
   };
 
   await walk(baseDir);
-  results.sort((a, b) => a.path.localeCompare(b.path));
+  results.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   const { limit, cursor } = options;
   const startIndex =
@@ -3922,19 +3922,15 @@ async function collectSourceFiles(
   const windowed = results.slice(startIndex, startIndex + limit + 1);
   if (windowed.length > limit) {
     const page = windowed.slice(0, limit);
-    const lastEntry = page[page.length - 1];
-    if (lastEntry === undefined) {
-      return { files: page };
-    }
-    return { files: page, nextCursor: lastEntry.path };
+    return { files: page, nextCursor: page[page.length - 1]!.path };
   }
   return { files: windowed };
 }
 
 /**
  * Binary search the first index `i` such that `entries[i].path > cursor`.
- * Entries are sorted by `path` via `localeCompare`, so we use the same
- * comparator for consistency with the sort order.
+ * Uses ordinal byte comparison to match the sort order exactly, independent
+ * of locale or ICU data.
  */
 function findFirstIndexAfterCursor(
   entries: ReadonlyArray<{ path: string }>,
@@ -3944,11 +3940,7 @@ function findFirstIndexAfterCursor(
   let hi = entries.length;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    const midEntry = entries[mid];
-    if (midEntry === undefined) {
-      break;
-    }
-    if (midEntry.path.localeCompare(cursor) <= 0) {
+    if (entries[mid]!.path <= cursor) {
       lo = mid + 1;
     } else {
       hi = mid;
