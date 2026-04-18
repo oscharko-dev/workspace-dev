@@ -74,47 +74,6 @@ import {
 } from "../confidence-scoring.js";
 import type { ComponentManifest } from "../../parity/component-manifest.js";
 
-const isPerfValidationEnabled = (): boolean => {
-  const raw =
-    process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ??
-    process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
-  if (!raw) {
-    return false;
-  }
-  const normalized = raw.trim().toLowerCase();
-  return (
-    normalized === "1" ||
-    normalized === "true" ||
-    normalized === "yes" ||
-    normalized === "on"
-  );
-};
-
-const isLintAutofixEnabled = (): boolean => {
-  const raw = process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX;
-  if (!raw) {
-    return true;
-  }
-  const normalized = raw.trim().toLowerCase();
-  if (
-    normalized === "1" ||
-    normalized === "true" ||
-    normalized === "yes" ||
-    normalized === "on"
-  ) {
-    return true;
-  }
-  if (
-    normalized === "0" ||
-    normalized === "false" ||
-    normalized === "no" ||
-    normalized === "off"
-  ) {
-    return false;
-  }
-  return true;
-};
-
 interface ValidateProjectServiceDeps {
   runProjectValidationFn: typeof runProjectValidation;
   prepareGenerationDiffFn: typeof prepareGenerationDiff;
@@ -122,8 +81,6 @@ interface ValidateProjectServiceDeps {
   saveCurrentSnapshotFn: typeof saveCurrentSnapshot;
   captureFromProjectFn: typeof captureFromProject;
   comparePngBuffersFn: typeof comparePngBuffers;
-  isLintAutofixEnabledFn: () => boolean;
-  isPerfValidationEnabledFn: () => boolean;
 }
 
 type ValidationGateStatus =
@@ -1833,8 +1790,6 @@ export const createValidateProjectService = ({
   saveCurrentSnapshotFn = saveCurrentSnapshot,
   captureFromProjectFn = captureFromProject,
   comparePngBuffersFn = comparePngBuffers,
-  isLintAutofixEnabledFn = isLintAutofixEnabled,
-  isPerfValidationEnabledFn = isPerfValidationEnabled,
 }: Partial<ValidateProjectServiceDeps> = {}): StageService<void> => {
   return {
     stageName: "validate.project",
@@ -3029,8 +2984,8 @@ export const createValidateProjectService = ({
         validationResult = await runProjectValidationFn({
           generatedProjectDir,
           jobDir: context.paths.jobDir,
-          enableLintAutofix: isLintAutofixEnabledFn(),
-          enablePerfValidation: isPerfValidationEnabledFn(),
+          enableLintAutofix: context.runtime.enableLintAutofix,
+          enablePerfValidation: context.runtime.enablePerfValidation,
           enableUiValidation: context.runtime.enableUiValidation,
           enableUnitTestValidation: context.runtime.enableUnitTestValidation,
           unitTestIgnoreFailure: context.runtime.unitTestIgnoreFailure,

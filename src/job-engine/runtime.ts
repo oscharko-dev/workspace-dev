@@ -48,6 +48,8 @@ const DEFAULT_COMMAND_STDOUT_MAX_BYTES = 1_048_576;
 const DEFAULT_COMMAND_STDERR_MAX_BYTES = 1_048_576;
 const DEFAULT_ENABLE_UI_VALIDATION = false;
 const DEFAULT_ENABLE_VISUAL_QUALITY_VALIDATION = false;
+const DEFAULT_ENABLE_LINT_AUTOFIX = true;
+const DEFAULT_ENABLE_PERF_VALIDATION = false;
 const DEFAULT_VISUAL_QUALITY_REFERENCE_MODE: WorkspaceVisualQualityReferenceMode = "figma_api";
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const DEFAULT_VISUAL_QUALITY_VIEWPORT_HEIGHT = 800;
@@ -167,6 +169,41 @@ const parseCompositeQualityWeight = (value: string | undefined): number | undefi
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const parseBooleanLike = (value: string | undefined): boolean | undefined => {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return undefined;
+  }
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+  return undefined;
+};
+
+const resolvePerfValidationPolicy = (value: boolean | undefined): boolean => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return (
+    parseBooleanLike(
+      process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION ?? process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION
+    ) ?? DEFAULT_ENABLE_PERF_VALIDATION
+  );
+};
+
+const resolveLintAutofixPolicy = (value: boolean | undefined): boolean => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  return parseBooleanLike(process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX) ?? DEFAULT_ENABLE_LINT_AUTOFIX;
+};
+
 const resolveCompositeQualityWeightInput = (
   input: WorkspaceCompositeQualityWeightsInput | undefined,
 ): WorkspaceCompositeQualityWeightsInput => {
@@ -273,6 +310,8 @@ export const resolveRuntimeSettings = ({
   pipelineDiagnosticDetailsMaxKeys,
   pipelineDiagnosticDetailsMaxItems,
   pipelineDiagnosticDetailsMaxDepth,
+  enableLintAutofix,
+  enablePerfValidation,
   enableUiValidation,
   enableVisualQualityValidation,
   visualQualityReferenceMode,
@@ -325,6 +364,8 @@ export const resolveRuntimeSettings = ({
   pipelineDiagnosticDetailsMaxKeys?: number;
   pipelineDiagnosticDetailsMaxItems?: number;
   pipelineDiagnosticDetailsMaxDepth?: number;
+  enableLintAutofix?: boolean;
+  enablePerfValidation?: boolean;
   enableUiValidation?: boolean;
   enableVisualQualityValidation?: boolean;
   visualQualityReferenceMode?: string;
@@ -485,6 +526,8 @@ export const resolveRuntimeSettings = ({
         ? Math.max(4_096, Math.min(16_777_216, Math.trunc(commandStderrMaxBytes)))
         : DEFAULT_COMMAND_STDERR_MAX_BYTES,
     pipelineDiagnosticLimits: resolvedPipelineDiagnosticLimits,
+    enableLintAutofix: resolveLintAutofixPolicy(enableLintAutofix),
+    enablePerfValidation: resolvePerfValidationPolicy(enablePerfValidation),
     enableUiValidation:
       typeof enableUiValidation === "boolean" ? enableUiValidation : DEFAULT_ENABLE_UI_VALIDATION,
     enableVisualQualityValidation:

@@ -36,6 +36,8 @@ test("resolveRuntimeSettings applies defaults for staged fetch and IR budget", (
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxKeys, 30);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 20);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 4);
+  assert.equal(runtime.enableLintAutofix, true);
+  assert.equal(runtime.enablePerfValidation, false);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.enableVisualQualityValidation, false);
   assert.equal(runtime.visualQualityReferenceMode, "figma_api");
@@ -121,6 +123,8 @@ test("resolveRuntimeSettings clamps staged fetch and budget parameters", () => {
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxKeys, 1);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxItems, 200);
   assert.equal(runtime.pipelineDiagnosticLimits.detailsMaxDepth, 1);
+  assert.equal(runtime.enableLintAutofix, true);
+  assert.equal(runtime.enablePerfValidation, false);
   assert.equal(runtime.enableUiValidation, false);
   assert.equal(runtime.enableVisualQualityValidation, true);
   assert.equal(runtime.visualQualityReferenceMode, "frozen_fixture");
@@ -208,6 +212,45 @@ test("resolveRuntimeSettings resolves composite quality weights from explicit in
       delete process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT;
     } else {
       process.env.FIGMAPIPE_WORKSPACE_COMPOSITE_QUALITY_PERFORMANCE_WEIGHT = previousPerformance;
+    }
+  }
+});
+
+test("resolveRuntimeSettings resolves validation policy from environment and explicit overrides", () => {
+  const previousLintAutofix = process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX;
+  const previousWorkspacePerf = process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION;
+  const previousLegacyPerf = process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
+
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = "false";
+  process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = "true";
+  process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = "false";
+
+  try {
+    const fromEnv = resolveRuntimeSettings({});
+    assert.equal(fromEnv.enableLintAutofix, false);
+    assert.equal(fromEnv.enablePerfValidation, true);
+
+    const fromInput = resolveRuntimeSettings({
+      enableLintAutofix: true,
+      enablePerfValidation: false
+    });
+    assert.equal(fromInput.enableLintAutofix, true);
+    assert.equal(fromInput.enablePerfValidation, false);
+  } finally {
+    if (previousLintAutofix === undefined) {
+      delete process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX;
+    } else {
+      process.env.FIGMAPIPE_WORKSPACE_ENABLE_LINT_AUTOFIX = previousLintAutofix;
+    }
+    if (previousWorkspacePerf === undefined) {
+      delete process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION;
+    } else {
+      process.env.FIGMAPIPE_WORKSPACE_ENABLE_PERF_VALIDATION = previousWorkspacePerf;
+    }
+    if (previousLegacyPerf === undefined) {
+      delete process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION;
+    } else {
+      process.env.FIGMAPIPE_ENABLE_PERF_VALIDATION = previousLegacyPerf;
     }
   }
 });
