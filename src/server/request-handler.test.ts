@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdtemp, mkdir, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -4040,6 +4041,219 @@ test("request handler file listing and file reads enforce filters and path safet
         }
       },
     );
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler file listing pages deterministically at the 1000-file cap", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-request-handler-files-page-"),
+  );
+  const projectDir = path.join(tempRoot, "generated-project");
+  await mkdir(path.join(projectDir, "src", "nested"), { recursive: true });
+  await writeFile(
+    path.join(projectDir, "src", "App.tsx"),
+    "export const App = () => null;\n",
+    "utf8",
+  );
+  await writeFile(
+    path.join(projectDir, "src", "styles.css"),
+    "body { margin: 0; }\n",
+    "utf8",
+  );
+  for (let index = 0; index <= 1000; index += 1) {
+    const suffix = String(index).padStart(4, "0");
+    await writeFile(
+      path.join(projectDir, "src", "nested", `file-${suffix}.tsx`),
+      `export const File${suffix} = () => null;\n`,
+      "utf8",
+    );
+  }
+
+  const expectedPaths = [
+    "src/App.tsx",
+    "src/styles.css",
+    ...Array.from({ length: 1001 }, (_, index) =>
+      `src/nested/file-${String(index).padStart(4, "0")}.tsx`,
+    ),
+  ].sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
+
+  const getJobRecord = () =>
+    ({
+      jobId: "job-1",
+      status: "completed",
+      artifacts: {
+        generatedProjectDir: projectDir,
+      },
+    }) as ReturnType<JobEngine["getJobRecord"]>;
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ getJobRecord }),
+  });
+
+  try {
+    const firstPageResponse = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/files?limit=1000",
+    });
+
+    assert.equal(firstPageResponse.statusCode, 200);
+    const firstPage = firstPageResponse.json<{
+      jobId: string;
+      files: Array<{ path: string; sizeBytes: number }>;
+      nextCursor?: string;
+    }>();
+    assert.equal(firstPage.files.length, 1000);
+    assert.equal(firstPage.nextCursor, expectedPaths[999]);
+    assert.deepEqual(
+      firstPage.files.map((entry) => entry.path),
+      expectedPaths.slice(0, 1000),
+    );
+
+    const secondPageResponse = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/job-1/files?limit=1000&cursor=${encodeURIComponent(
+        firstPage.nextCursor ?? "",
+      )}`,
+    });
+
+    assert.equal(secondPageResponse.statusCode, 200);
+    const secondPage = secondPageResponse.json<{
+      jobId: string;
+      files: Array<{ path: string; sizeBytes: number }>;
+      nextCursor?: string;
+    }>();
+    assert.deepEqual(secondPage.files.map((entry) => entry.path), [
+      expectedPaths[1000],
+      expectedPaths[1001],
+      expectedPaths[1002],
+    ]);
+    assert.equal(secondPage.nextCursor, undefined);
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler file listing falls back to lstat for unknown dirent types", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-request-handler-files-unknown-"),
+  );
+  const projectDir = path.join(tempRoot, "generated-project");
+  await mkdir(projectDir, { recursive: true });
+  await writeFile(
+    path.join(projectDir, "keep.tsx"),
+    "export const Keep = () => null;\n",
+    "utf8",
+  );
+
+  const fifoPath = path.join(projectDir, "pipe.tsx");
+  execFileSync("mkfifo", [fifoPath]);
+
+  const getJobRecord = () =>
+    ({
+      jobId: "job-1",
+      status: "completed",
+      artifacts: {
+        generatedProjectDir: projectDir,
+      },
+    }) as ReturnType<JobEngine["getJobRecord"]>;
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ getJobRecord }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/files",
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(
+      response.json<{
+        jobId: string;
+        files: Array<{ path: string; sizeBytes: number }>;
+      }>().files.map((entry) => entry.path),
+      ["keep.tsx"],
+    );
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler file listing handles a wide root directory without materializing every child", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-request-handler-files-wide-"),
+  );
+  const projectDir = path.join(tempRoot, "generated-project");
+  await mkdir(projectDir, { recursive: true });
+
+  for (let index = 0; index <= 1000; index += 1) {
+    const suffix = String(index).padStart(4, "0");
+    await writeFile(
+      path.join(projectDir, `root-${suffix}.tsx`),
+      `export const Root${suffix} = () => null;\n`,
+      "utf8",
+    );
+  }
+
+  const expectedPaths = Array.from({ length: 1001 }, (_, index) =>
+    `root-${String(index).padStart(4, "0")}.tsx`,
+  );
+
+  const getJobRecord = () =>
+    ({
+      jobId: "job-1",
+      status: "completed",
+      artifacts: {
+        generatedProjectDir: projectDir,
+      },
+    }) as ReturnType<JobEngine["getJobRecord"]>;
+
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ getJobRecord }),
+  });
+
+  try {
+    const firstPageResponse = await app.inject({
+      method: "GET",
+      url: "/workspace/jobs/job-1/files?limit=1000",
+    });
+
+    assert.equal(firstPageResponse.statusCode, 200);
+    const firstPage = firstPageResponse.json<{
+      jobId: string;
+      files: Array<{ path: string; sizeBytes: number }>;
+      nextCursor?: string;
+    }>();
+    assert.equal(firstPage.files.length, 1000);
+    assert.equal(firstPage.nextCursor, expectedPaths[999]);
+    assert.deepEqual(
+      firstPage.files.map((entry) => entry.path),
+      expectedPaths.slice(0, 1000),
+    );
+
+    const secondPageResponse = await app.inject({
+      method: "GET",
+      url: `/workspace/jobs/job-1/files?limit=1000&cursor=${encodeURIComponent(
+        firstPage.nextCursor ?? "",
+      )}`,
+    });
+
+    assert.equal(secondPageResponse.statusCode, 200);
+    const secondPage = secondPageResponse.json<{
+      jobId: string;
+      files: Array<{ path: string; sizeBytes: number }>;
+      nextCursor?: string;
+    }>();
+    assert.deepEqual(secondPage.files.map((entry) => entry.path), [
+      expectedPaths[1000],
+    ]);
+    assert.equal(secondPage.nextCursor, undefined);
   } finally {
     await close();
     await rm(tempRoot, { recursive: true, force: true });
