@@ -17,6 +17,11 @@ import {
   MAX_SUBMIT_BODY_BYTES,
   resolveFigmaPasteMaxBytes,
 } from "./server/constants.js";
+import { DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT } from "./clipboard-envelope.js";
+import {
+  DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT,
+  DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT,
+} from "./figma-payload-validation.js";
 
 const pasteFixtureRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -2103,6 +2108,146 @@ test("schema: figma_paste mode accepts multi-selection ClipboardEnvelope", () =>
     figmaJsonPayload: JSON.stringify(envelope),
   });
   assert.equal(result.success, true);
+});
+
+test("schema: figma_paste mode rejects under-cap envelopes with too many selections", () => {
+  const envelope = {
+    kind: "workspace-dev/figma-selection@1",
+    pluginVersion: "1.0.0",
+    copiedAt: "2026-04-18T12:00:00.000Z",
+    selections: Array.from(
+      { length: DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT + 1 },
+      (_, index) => ({
+        document: {
+          id: `selection-${index}`,
+          type: "FRAME",
+          name: `Selection ${index + 1}`,
+        },
+        components: {},
+        componentSets: {},
+        styles: {},
+      }),
+    ),
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(envelope),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((entry) =>
+      entry.message.startsWith("TOO_LARGE:"),
+    );
+    assert.ok(issue, "Expected a TOO_LARGE issue for selection count");
+    assert.match(issue.message, /selection count budget/i);
+  }
+});
+
+test("schema: figma_paste mode rejects envelopes whose normalized wrapper nodes exceed the node budget", () => {
+  const selectionChildCount =
+    DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT / 2 - 1;
+  const envelope = {
+    kind: "workspace-dev/figma-selection@1",
+    pluginVersion: "1.0.0",
+    copiedAt: "2026-04-18T12:00:00.000Z",
+    selections: Array.from({ length: 2 }, (_, selectionIndex) => ({
+      document: {
+        id: `selection-${selectionIndex}`,
+        type: "FRAME",
+        name: `Selection ${selectionIndex + 1}`,
+        children: Array.from({ length: selectionChildCount }, (_, childIndex) => ({
+          id: `${selectionIndex}:${childIndex + 1}`,
+          type: "FRAME",
+          name: `Child ${childIndex + 1}`,
+          children: [],
+        })),
+      },
+      components: {},
+      componentSets: {},
+      styles: {},
+    })),
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(envelope),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((entry) =>
+      entry.message.startsWith("TOO_LARGE:"),
+    );
+    assert.ok(issue, "Expected a TOO_LARGE issue for normalized wrapper nodes");
+    assert.match(issue.message, /node count budget/i);
+  }
+});
+
+test("schema: figma_paste mode rejects under-cap documents with too many roots", () => {
+  const payload = {
+    name: "Too many roots",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: Array.from(
+        { length: DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT + 1 },
+        (_, index) => ({
+          id: `1:${index + 1}`,
+          type: "CANVAS",
+          name: `Root ${index + 1}`,
+          children: [],
+        }),
+      ),
+    },
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(payload),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((entry) =>
+      entry.message.startsWith("TOO_LARGE:"),
+    );
+    assert.ok(issue, "Expected a TOO_LARGE issue for root count");
+    assert.match(issue.message, /root count budget/i);
+  }
+});
+
+test("schema: figma_paste mode rejects under-cap documents with too many nodes", () => {
+  const payload = {
+    name: "Too many nodes",
+    document: {
+      id: "0:0",
+      type: "DOCUMENT",
+      children: [
+        {
+          id: "1:1",
+          type: "CANVAS",
+          name: "Page 1",
+          children: Array.from(
+            { length: DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT },
+            (_, index) => ({
+              id: `2:${index + 1}`,
+              type: "FRAME",
+              name: `Frame ${index + 1}`,
+              children: [],
+            }),
+          ),
+        },
+      ],
+    },
+  };
+  const result = SubmitRequestSchema.safeParse({
+    figmaSourceMode: "figma_paste",
+    figmaJsonPayload: JSON.stringify(payload),
+  });
+  assert.equal(result.success, false);
+  if (!result.success) {
+    const issue = result.error.issues.find((entry) =>
+      entry.message.startsWith("TOO_LARGE:"),
+    );
+    assert.ok(issue, "Expected a TOO_LARGE issue for node count");
+    assert.match(issue.message, /node count budget/i);
+  }
 });
 
 // ---------------------------------------------------------------------------

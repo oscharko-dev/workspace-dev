@@ -42,11 +42,13 @@ import {
   isClipboardEnvelope,
   looksLikeClipboardEnvelope,
   validateClipboardEnvelope,
+  validateClipboardEnvelopeComplexity,
   summarizeEnvelopeValidationIssues,
 } from "./clipboard-envelope.js";
 import {
   safeParseFigmaPayload,
   summarizeFigmaPayloadValidationError,
+  validateFigmaPayloadComplexity,
 } from "./figma-payload-validation.js";
 import { normalizeGenerationLocale } from "./generation-locale.js";
 import { validateRegenerationOverrideEntry } from "./job-engine/ir-override-validation.js";
@@ -1308,6 +1310,17 @@ function parseSubmitRequest(
                 ["figmaJsonPayload"],
                 `${issuePrefix}: ${summarizeEnvelopeValidationIssues(envelopeResult.issues)}`,
               );
+            } else {
+              const complexityResult = validateClipboardEnvelopeComplexity(
+                envelopeResult.envelope,
+              );
+              if (!complexityResult.ok) {
+                pushIssue(
+                  issues,
+                  ["figmaJsonPayload"],
+                  `TOO_LARGE: ${complexityResult.message}`,
+                );
+              }
             }
           } else {
             // Validate as full Figma document JSON.
@@ -1322,6 +1335,17 @@ function parseSubmitRequest(
                   error: validatedFigmaPayload.error,
                 })}`,
               );
+            } else {
+              const complexityResult = validateFigmaPayloadComplexity({
+                document: validatedFigmaPayload.data.document,
+              });
+              if (!complexityResult.ok) {
+                pushIssue(
+                  issues,
+                  ["figmaJsonPayload"],
+                  `TOO_LARGE: ${complexityResult.message}`,
+                );
+              }
             }
           }
         } catch {
