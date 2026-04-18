@@ -3002,10 +3002,8 @@ export const createValidateProjectService = ({
           ),
           abortSignal: context.abortSignal,
           onLog: (message) => {
-            context.runtime.logger.log({
+            context.log({
               level: "debug",
-              jobId: context.jobId,
-              stage: "validate.project",
               message,
             });
           },
@@ -3880,10 +3878,8 @@ export const createValidateProjectService = ({
         boardKey: diffContext.boardKey,
         jobId: context.jobId,
         onLog: (message) => {
-          context.runtime.logger.log({
+          context.log({
             level: "debug",
-            jobId: context.jobId,
-            stage: "validate.project",
             message,
           });
         },

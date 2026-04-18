@@ -66,3 +66,22 @@ test("analyzeSourceText flags swallowed catches that only conditionally rethrow"
   assert.equal(findings.length, 1);
   assert.match(findings[0].reason, /swallows errors without logging/);
 });
+
+test("analyzeSourceText ignores nested helper logging when the catch still swallows", () => {
+  const findings = analyzeSourceText({
+    filePath: "sample.ts",
+    text: `
+      try {
+        work();
+      } catch (error) {
+        const later = () => {
+          onLog("deferred");
+        };
+        return undefined;
+      }
+    `,
+  });
+
+  assert.equal(findings.length, 1);
+  assert.match(findings[0].reason, /returns nullish value/);
+});

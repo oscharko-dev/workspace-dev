@@ -480,10 +480,8 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         pipelineDiagnosticLimits: context.runtime.pipelineDiagnosticLimits,
         fetchImpl: context.fetchWithCancellation,
         onLog: (message) => {
-          context.runtime.logger.log({
+          context.log({
             level: "debug",
-            jobId: context.jobId,
-            stage: "figma.source",
             message,
           });
         },
