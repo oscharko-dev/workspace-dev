@@ -2122,6 +2122,39 @@ test("request handler rate limits submit before parsing the body or calling subm
   }
 });
 
+test("request handler submit preserves unicode escapes from the streaming parser", async () => {
+  let capturedInput: Record<string, unknown> | undefined;
+  const submitJob = test.mock.fn((input: Record<string, unknown>) => {
+    capturedInput = input;
+    return {
+      jobId: "job-accepted",
+      status: "queued",
+      acceptedModes: {
+        figmaSourceMode: "rest",
+        llmCodegenMode: "deterministic",
+      },
+    } as ReturnType<JobEngine["submitJob"]>;
+  });
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({ submitJob }),
+  });
+
+  try {
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/submit",
+      headers: { "content-type": "application/json" },
+      payload: '{"figmaFileKey":"\\u0061\\uD834\\uDD1E","figmaAccessToken":"token"}',
+    });
+
+    assert.equal(response.statusCode, 202);
+    assert.equal(submitJob.mock.callCount(), 1);
+    assert.equal(capturedInput?.figmaFileKey, "a𝄞");
+  } finally {
+    await close();
+  }
+});
+
 test("request handler emits and echoes request IDs for successful responses", async () => {
   const { app, close } = await createRequestHandlerApp();
 
