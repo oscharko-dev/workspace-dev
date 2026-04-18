@@ -31,6 +31,21 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.16.0] - 2026-04-18
+
+### Changed (Issue #1104)
+
+- `WorkspaceJobInput.figmaSourceMode` is now typed as `WorkspaceFigmaSourceMode` (previously loosely `string`).
+- `WorkspaceJobInput.llmCodegenMode` is now typed as `WorkspaceLlmCodegenMode` (previously loosely `string`).
+- Removed `WorkspaceJobInput.requestSourceMode`. The submit-origin marker was internal metadata; it never belonged on the public submit surface and is now set server-side during ingress normalization. `WorkspaceJobRequestMetadata.requestSourceMode` is unchanged and continues to be persisted for replayable import sessions.
+
+### Added (Issue #1104)
+
+- `ALLOWED_FIGMA_SOURCE_MODES` — runtime-exported `readonly` source-of-truth array for `WorkspaceFigmaSourceMode`. Consumed by `src/schemas.ts` so the submit parser allowlist cannot drift from the exported type.
+- `ALLOWED_LLM_CODEGEN_MODES` — runtime-exported `readonly` source-of-truth array for `WorkspaceLlmCodegenMode`. Consumed by `src/schemas.ts` for the same reason.
+
+---
+
 ## [3.15.0] - 2026-04-16
 
 ### Added

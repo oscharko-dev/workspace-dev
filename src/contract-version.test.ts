@@ -7,12 +7,22 @@ import * as contracts from "./contracts/index.js";
 import * as publicApi from "./index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const contractChangelogPath = path.resolve(__dirname, "../CONTRACT_CHANGELOG.md");
-const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const contractChangelogPath = path.resolve(
+  __dirname,
+  "../CONTRACT_CHANGELOG.md",
+);
+const escapeRegExp = (value: string): string =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const EXPECTED_CONTRACT_RUNTIME_EXPORTS = ["CONTRACT_VERSION"].sort();
+const EXPECTED_CONTRACT_RUNTIME_EXPORTS = [
+  "ALLOWED_FIGMA_SOURCE_MODES",
+  "ALLOWED_LLM_CODEGEN_MODES",
+  "CONTRACT_VERSION",
+].sort();
 
 const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
+  "ALLOWED_FIGMA_SOURCE_MODES",
+  "ALLOWED_LLM_CODEGEN_MODES",
   "DEFAULT_CAPTURE_CONFIG",
   "DEFAULT_DIFF_CONFIG",
   "DEFAULT_SCORING_CONFIG",
@@ -45,7 +55,7 @@ const EXPECTED_PUBLIC_RUNTIME_EXPORTS = [
   "unregisterIsolationProcessCleanup",
   "validateModeLock",
   "waitWithTimeout",
-  "writeDiffImage"
+  "writeDiffImage",
 ].sort();
 
 test("contract surface: contracts runtime exports match snapshot", () => {
@@ -53,7 +63,7 @@ test("contract surface: contracts runtime exports match snapshot", () => {
   assert.deepEqual(
     actualExports,
     EXPECTED_CONTRACT_RUNTIME_EXPORTS,
-    `Contract runtime exports changed. Actual: [${actualExports.join(", ")}], expected: [${EXPECTED_CONTRACT_RUNTIME_EXPORTS.join(", ")}].`
+    `Contract runtime exports changed. Actual: [${actualExports.join(", ")}], expected: [${EXPECTED_CONTRACT_RUNTIME_EXPORTS.join(", ")}].`,
   );
 });
 
@@ -62,7 +72,7 @@ test("public API surface: runtime exports match snapshot", () => {
   assert.deepEqual(
     actualExports,
     EXPECTED_PUBLIC_RUNTIME_EXPORTS,
-    `Public API runtime exports changed. Actual: [${actualExports.join(", ")}], expected: [${EXPECTED_PUBLIC_RUNTIME_EXPORTS.join(", ")}].`
+    `Public API runtime exports changed. Actual: [${actualExports.join(", ")}], expected: [${EXPECTED_PUBLIC_RUNTIME_EXPORTS.join(", ")}].`,
   );
 });
 
