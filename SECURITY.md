@@ -74,6 +74,7 @@ Please include:
 - OIDC trusted publishing in GitHub Actions (`id-token: write`).
 - npm provenance enabled (`publishConfig.provenance=true` + publish provenance path).
 - Signature verification gate (`npm audit signatures`) in CI.
+- All `actions/checkout` steps use `persist-credentials: false` to prevent GITHUB_TOKEN from being written to `.git/config` on the runner disk. The only exception is the `release` job in `changesets-release.yml`, which requires authenticated git writes for changeset publish and GitHub release creation. Enforced by `pnpm run verify:workflow-persist-credentials`.
 - SBOM generation:
   - CycloneDX: `pnpm run sbom:cyclonedx`
   - SPDX: `pnpm run sbom:spdx`
