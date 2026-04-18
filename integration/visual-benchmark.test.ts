@@ -2306,27 +2306,33 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   );
   assert.doesNotMatch(
     workflow,
+    /workflows\/visual-benchmark-comment\.yml/,
+  );
+  assert.match(
+    workflow,
     /name:\s+Post or update visual benchmark PR comment/,
   );
+  assert.match(
+    workflow,
+    /github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
+  );
+  assert.match(workflow, /issues:\s*write/);
+  assert.doesNotMatch(workflow, /pull-requests:\s*write/);
 });
 
-test("visual benchmark comment workflow posts marker-based upserts from workflow_run artifacts", async () => {
+test("visual benchmark workflow posts marker-based upserts directly for same-repo pull requests", async () => {
   const workflow = await readFile(
     path.join(
       process.cwd(),
       ".github",
-      "workflows",
-      "visual-benchmark-comment.yml",
+      "workflows/visual-benchmark.yml",
     ),
     "utf8",
   );
-  assert.match(workflow, /workflow_run:/);
-  assert.match(workflow, /workflows:\s+\['workspace-dev visual benchmark'\]/);
   assert.match(
     workflow,
-    /if:\s+github\.event\.workflow_run\.event == 'pull_request'/,
+    /if:\s+always\(\) && steps\.benchmark-run\.outcome == 'success' && hashFiles\('artifacts\/visual-benchmark\/pr-comment\.json'\) != '' && github\.event_name == 'pull_request' && github\.event\.pull_request\.head\.repo\.full_name == github\.repository/,
   );
-  assert.match(workflow, /listWorkflowRunArtifacts/);
   assert.match(workflow, /pr-comment\.json/);
   assert.match(workflow, /payload\.body\.startsWith\(payload\.marker\)/);
   assert.match(workflow, /github\.rest\.issues\.updateComment/);

@@ -4,7 +4,6 @@ import path from "node:path";
 const ROOT = path.resolve(process.cwd(), "artifacts", "visual-benchmark");
 const LAST_RUN_PATH = path.join(ROOT, "last-run.json");
 const CHECK_OUTPUT_PATH = path.join(ROOT, "check-output.json");
-const PR_COMMENT_PATH = path.join(ROOT, "pr-comment.json");
 const PUBLIC_DIR = path.join(ROOT, "public-summary");
 
 const sanitizeText = (value) => {
@@ -28,18 +27,6 @@ const sanitizeWarnings = (warnings) => {
     .filter((entry) => typeof entry === "string" && entry.trim().length > 0)
     .map((entry) => sanitizeText(entry.trim()));
   return sanitized.length > 0 ? sanitized : undefined;
-};
-
-const sanitizePrCommentPayload = (raw) => {
-  if (typeof raw !== "object" || raw === null) {
-    throw new Error("Expected PR comment payload to be an object.");
-  }
-  const input = raw;
-  return {
-    marker:
-      typeof input.marker === "string" ? sanitizeText(input.marker) : "",
-    body: typeof input.body === "string" ? sanitizeText(input.body) : "",
-  };
 };
 
 const sanitizeLastRun = (raw) => {
@@ -173,18 +160,6 @@ const main = async () => {
         null,
         2,
       )}\n`,
-      "utf8",
-    );
-  } catch {
-    // optional output
-  }
-
-  try {
-    const prCommentPayload = JSON.parse(await readFile(PR_COMMENT_PATH, "utf8"));
-    const publicPrCommentPath = path.join(PUBLIC_DIR, "pr-comment.json");
-    await writeFile(
-      publicPrCommentPath,
-      `${JSON.stringify(sanitizePrCommentPayload(prCommentPayload), null, 2)}\n`,
       "utf8",
     );
   } catch {
