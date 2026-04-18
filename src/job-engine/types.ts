@@ -208,6 +208,9 @@ export interface JobEngineRuntime {
   maxValidationAttempts: number;
   logLimit: number;
   maxJobDiskBytes: number;
+  jobRetentionMaxCount: number;
+  jobRetentionMaxAgeMs: number;
+  localSyncConfirmationSweepIntervalMs: number;
   logFormat: WorkspaceLogFormat;
   logger: WorkspaceRuntimeLogger;
   previewEnabled: boolean;
@@ -318,6 +321,10 @@ export interface JobEngine {
     reason?: string;
     timeoutMs?: number;
   }) => Promise<{ completed: boolean; remainingJobIds: string[] }>;
+  runMaintenance: () => {
+    prunedConfirmations: number;
+    evictedJobIds: string[];
+  };
   getJob: (jobId: string) => WorkspaceJobStatus | undefined;
   getJobResult: (jobId: string) => WorkspaceJobResult | undefined;
   getJobRecord: (jobId: string) => JobRecordSnapshot | undefined;

@@ -1929,7 +1929,9 @@ test("createJobEngine cancels running jobs and records cancellation reason", asy
 });
 
 test("createJobEngine shutdown cancels queued work and waits for running jobs to stop", async () => {
-  const tempRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-engine-cancel-all-"));
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-cancel-all-"),
+  );
   const engine = createJobEngine({
     resolveBaseUrl: () => "http://127.0.0.1:1983",
     paths: {
@@ -1959,7 +1961,10 @@ test("createJobEngine shutdown cancels queued work and waits for running jobs to
     }),
   });
 
-  const running = engine.submitJob({ figmaFileKey: "abc", figmaAccessToken: "token" });
+  const running = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
   const runningWaitStarted = Date.now();
   while (Date.now() - runningWaitStarted < 2_000) {
     if (engine.getJob(running.jobId)?.status === "running") {
@@ -1967,7 +1972,10 @@ test("createJobEngine shutdown cancels queued work and waits for running jobs to
     }
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
-  const queued = engine.submitJob({ figmaFileKey: "def", figmaAccessToken: "token" });
+  const queued = engine.submitJob({
+    figmaFileKey: "def",
+    figmaAccessToken: "token",
+  });
   const shutdownResult = await engine.shutdown({
     reason: "Server shutdown interrupted in-flight work.",
     timeoutMs: 5_000,
@@ -1983,8 +1991,14 @@ test("createJobEngine shutdown cancels queued work and waits for running jobs to
     timeoutMs: 20_000,
   });
   assert.equal(runningStatus.status, "canceled");
-  assert.equal(runningStatus.cancellation?.reason, "Server shutdown interrupted in-flight work.");
-  assert.equal(engine.getJobResult(queued.jobId)?.cancellation?.reason, "Server shutdown interrupted in-flight work.");
+  assert.equal(
+    runningStatus.cancellation?.reason,
+    "Server shutdown interrupted in-flight work.",
+  );
+  assert.equal(
+    engine.getJobResult(queued.jobId)?.cancellation?.reason,
+    "Server shutdown interrupted in-flight work.",
+  );
 });
 
 test("createJobEngine rehydrates completed regeneration jobs and keeps local sync helpers available", async () => {
@@ -3960,4 +3974,258 @@ test("createJobEngine continues codegen when image export warns on /v1/images fa
       entry.message.toLowerCase().includes("image asset export warning"),
     ),
   );
+});
+
+const seedTerminalJobSnapshot = async ({
+  jobsRoot,
+  jobId,
+  finishedAt,
+  outputRoot,
+}: {
+  jobsRoot: string;
+  jobId: string;
+  finishedAt: string;
+  outputRoot: string;
+}): Promise<string> => {
+  const jobDir = path.join(jobsRoot, jobId);
+  await mkdir(jobDir, { recursive: true });
+  const snapshot = {
+    snapshotVersion: 1,
+    generatedAt: finishedAt,
+    jobId,
+    status: "completed",
+    submittedAt: finishedAt,
+    startedAt: finishedAt,
+    finishedAt,
+    request: {
+      figmaSourceMode: "local_json",
+      llmCodegenMode: "deterministic",
+    },
+    stages: [
+      { name: "figma.source", status: "completed" },
+      { name: "ir.derive", status: "completed" },
+      { name: "template.prepare", status: "completed" },
+      { name: "codegen.generate", status: "completed" },
+      { name: "validate.project", status: "completed" },
+      { name: "repro.export", status: "completed" },
+      { name: "git.pr", status: "skipped" },
+    ],
+    logs: [],
+    artifacts: { outputRoot, jobDir },
+    preview: { enabled: false },
+    queue: {
+      runningCount: 0,
+      queuedCount: 0,
+      maxConcurrentJobs: 1,
+      maxQueuedJobs: 20,
+    },
+  };
+  await writeFile(
+    path.join(jobDir, "stage-timings.json"),
+    `${JSON.stringify(snapshot, null, 2)}\n`,
+    "utf8",
+  );
+  return jobDir;
+};
+
+test("createJobEngine evicts oldest terminal jobs when retention count is exceeded", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-retention-count-"),
+  );
+  const jobsRoot = path.join(tempRoot, "jobs");
+  const oldestDir = await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "job-old",
+    finishedAt: "2026-04-18T09:00:00.000Z",
+    outputRoot: tempRoot,
+  });
+  await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "job-mid",
+    finishedAt: "2026-04-18T10:00:00.000Z",
+    outputRoot: tempRoot,
+  });
+  await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "job-new",
+    finishedAt: "2026-04-18T11:00:00.000Z",
+    outputRoot: tempRoot,
+  });
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot,
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 2,
+      jobRetentionMaxAgeMs: 0,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+
+  assert.equal(engine.getJob("job-old"), undefined);
+  assert.ok(engine.getJob("job-mid"));
+  assert.ok(engine.getJob("job-new"));
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await assert.rejects(() =>
+    readFile(path.join(oldestDir, "stage-timings.json"), "utf8"),
+  );
+});
+
+test("createJobEngine evicts terminal jobs older than retention max age", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-retention-age-"),
+  );
+  const jobsRoot = path.join(tempRoot, "jobs");
+  const oldFinishedAt = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
+  const freshFinishedAt = new Date().toISOString();
+  const oldestDir = await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "job-aged-out",
+    finishedAt: oldFinishedAt,
+    outputRoot: tempRoot,
+  });
+  await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "job-fresh",
+    finishedAt: freshFinishedAt,
+    outputRoot: tempRoot,
+  });
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot,
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 0,
+      jobRetentionMaxAgeMs: 60 * 60_000,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+
+  assert.equal(engine.getJob("job-aged-out"), undefined);
+  assert.ok(engine.getJob("job-fresh"));
+
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  await assert.rejects(() =>
+    readFile(path.join(oldestDir, "stage-timings.json"), "utf8"),
+  );
+});
+
+test("createJobEngine runMaintenance returns evictedJobIds and prunedConfirmations", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-maintenance-"),
+  );
+  const jobsRoot = path.join(tempRoot, "jobs");
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot,
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 1,
+      jobRetentionMaxAgeMs: 0,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+
+  const first = engine.runMaintenance();
+  assert.deepEqual(first.evictedJobIds, []);
+  assert.equal(first.prunedConfirmations, 0);
+
+  await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "job-keeper",
+    finishedAt: "2026-04-18T10:00:00.000Z",
+    outputRoot: tempRoot,
+  });
+  await seedTerminalJobSnapshot({
+    jobsRoot,
+    jobId: "job-to-evict",
+    finishedAt: "2026-04-18T09:00:00.000Z",
+    outputRoot: tempRoot,
+  });
+
+  const reopened = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot,
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 1,
+      jobRetentionMaxAgeMs: 0,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+  assert.equal(reopened.getJob("job-to-evict"), undefined);
+  assert.ok(reopened.getJob("job-keeper"));
+});
+
+test("createJobEngine refreshQueueSnapshots bounds work to live jobs", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-queue-bounded-"),
+  );
+  const jobsRoot = path.join(tempRoot, "jobs");
+  for (let index = 0; index < 5; index += 1) {
+    await seedTerminalJobSnapshot({
+      jobsRoot,
+      jobId: `job-history-${index}`,
+      finishedAt: `2026-04-18T1${index}:00:00.000Z`,
+      outputRoot: tempRoot,
+    });
+  }
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot,
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      jobRetentionMaxCount: 100,
+      jobRetentionMaxAgeMs: 0,
+      localSyncConfirmationSweepIntervalMs: 0,
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  assert.equal(accepted.status, "queued");
+
+  const terminalSnapshotQueues = Array.from(
+    { length: 5 },
+    (_, index) => `job-history-${index}`,
+  ).map((jobId) => engine.getJob(jobId)?.queue);
+  for (const queueState of terminalSnapshotQueues) {
+    assert.ok(queueState);
+  }
 });
