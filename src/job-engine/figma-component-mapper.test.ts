@@ -1074,8 +1074,8 @@ test("resolveComponentMappings orchestrates all MCP calls", async () => {
   assert.equal(result.mappings.get("1:2")?.confidence, "exact");
 });
 
-test("resolveComponentMappings searches the design system using candidate component names", async () => {
-  const queries: string[] = [];
+test("resolveComponentMappings batches unresolved design-system queries in candidate order", async () => {
+  const queries: unknown[] = [];
   const fetchImpl: typeof fetch = async (input, init) => {
     const request = new Request(input, init);
     const tool = await parseTool(request.clone());
@@ -1084,8 +1084,15 @@ test("resolveComponentMappings searches the design system using candidate compon
     }
     if (tool === "search_design_system") {
       const args = await parseArgs(request);
-      queries.push(String(args.query ?? ""));
-      return jsonResponse(mcpOk({ components: [] }));
+      queries.push(args.query);
+      return jsonResponse(
+        mcpOk({
+          results: {
+            "Button/Primary": { components: [] },
+            Button: { components: [{ name: "Button", key: "button-key" }] },
+          },
+        }),
+      );
     }
     if (tool === "get_code_connect_suggestions") {
       return jsonResponse(mcpOk({}));
@@ -1100,7 +1107,277 @@ test("resolveComponentMappings searches the design system using candidate compon
     ir: makeIR([makeInstanceNode({ id: "2:1", name: "Button/Primary" })]),
   });
 
-  assert.deepEqual(queries, ["Button/Primary", "Button"]);
+  assert.deepEqual(queries, [["Button/Primary", "Button"]]);
+});
+
+test("resolveComponentMappings hydrates the search cache from a successful batch search", async () => {
+  const queries: unknown[] = [];
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const tool = await parseTool(request.clone());
+    if (tool === "get_code_connect_map") {
+      return jsonResponse(mcpOk({}));
+    }
+    if (tool === "search_design_system") {
+      const args = await parseArgs(request);
+      queries.push(args.query);
+      return jsonResponse(
+        mcpOk({
+          results: [
+            {
+              query: "Button/Primary",
+              components: [],
+            },
+            {
+              query: "Button",
+              components: [{ name: "Button", key: "button-key" }],
+            },
+            {
+              query: "Card/Primary",
+              components: [],
+            },
+            {
+              query: "Card",
+              components: [{ name: "Card", key: "card-key" }],
+            },
+          ],
+        }),
+      );
+    }
+    if (tool === "get_code_connect_suggestions") {
+      return jsonResponse(mcpOk({}));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    ir: makeIR([
+      makeInstanceNode({ id: "2:1", name: "Button/Primary" }),
+      makeInstanceNode({ id: "2:2", name: "Card/Primary" }),
+    ]),
+  });
+
+  assert.deepEqual(queries, [[
+    "Button/Primary",
+    "Button",
+    "Card/Primary",
+    "Card",
+  ]]);
+  assert.equal(result.designSystemMappings.length, 2);
+  assert.equal(result.mappings.get("2:1")?.source, "button-key");
+  assert.equal(result.mappings.get("2:2")?.source, "card-key");
+});
+
+test("resolveComponentMappings falls back per-query for unresolved entries in a partial batch response", async () => {
+  const queries: unknown[] = [];
+  let batchServed = false;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const tool = await parseTool(request.clone());
+    if (tool === "get_code_connect_map") {
+      return jsonResponse(mcpOk({}));
+    }
+    if (tool === "search_design_system") {
+      const args = await parseArgs(request);
+      queries.push(args.query);
+      if (Array.isArray(args.query) && !batchServed) {
+        batchServed = true;
+        return jsonResponse(
+          mcpOk({
+            results: [
+              {
+                query: "Button/Primary",
+                components: [],
+              },
+              {
+                query: "Button",
+                components: [{ name: "Button", key: "button-key" }],
+              },
+              {
+                query: "Card/Primary",
+                components: [],
+              },
+            ],
+          }),
+        );
+      }
+      return jsonResponse(
+        mcpOk({
+          components:
+            args.query === "Card"
+              ? [{ name: "Card", key: "card-key" }]
+              : [],
+        }),
+      );
+    }
+    if (tool === "get_code_connect_suggestions") {
+      return jsonResponse(mcpOk({}));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    ir: makeIR([
+      makeInstanceNode({ id: "2:1", name: "Button/Primary" }),
+      makeInstanceNode({ id: "2:2", name: "Card/Primary" }),
+    ]),
+  });
+
+  assert.deepEqual(queries, [
+    ["Button/Primary", "Button", "Card/Primary", "Card"],
+    "Card",
+  ]);
+  assert.equal(result.designSystemMappings.length, 2);
+  assert.equal(result.mappings.get("2:1")?.source, "button-key");
+  assert.equal(result.mappings.get("2:2")?.source, "card-key");
+});
+
+test("resolveComponentMappings keeps N=10 design-system search to one batch call or one retry", async () => {
+  const componentNames = Array.from(
+    { length: 10 },
+    (_, index) => `Card${String(index + 1)}`,
+  );
+  const unresolvedNodes = componentNames.map((componentName, index) =>
+    makeInstanceNode({
+      id: `2:${String(index + 1)}`,
+      name: `${componentName}/Primary`,
+    }),
+  );
+  const expectedBatchQueries = componentNames.flatMap((componentName) => [
+    `${componentName}/Primary`,
+    componentName,
+  ]);
+
+  const runScenario = async ({
+    omittedBaseQuery,
+  }: {
+    omittedBaseQuery?: string;
+  }): Promise<{ searchCalls: unknown[]; result: Awaited<ReturnType<typeof resolveComponentMappings>> }> => {
+    const searchCalls: unknown[] = [];
+    let batchServed = false;
+    const fetchImpl: typeof fetch = async (input, init) => {
+      const request = new Request(input, init);
+      const tool = await parseTool(request.clone());
+      if (tool === "get_code_connect_map") {
+        return jsonResponse(mcpOk({}));
+      }
+      if (tool === "search_design_system") {
+        const args = await parseArgs(request);
+        searchCalls.push(args.query);
+        if (Array.isArray(args.query) && !batchServed) {
+          batchServed = true;
+          return jsonResponse(
+            mcpOk({
+              results: expectedBatchQueries.flatMap((query) => {
+                const isBaseQuery = !query.endsWith("/Primary");
+                if (isBaseQuery && query === omittedBaseQuery) {
+                  return [];
+                }
+                return [
+                  {
+                    query,
+                    components: isBaseQuery
+                      ? [{ name: query, key: `${query.toLowerCase()}-key` }]
+                      : [],
+                  },
+                ];
+              }),
+            }),
+          );
+        }
+
+        return jsonResponse(
+          mcpOk({
+            components:
+              typeof args.query === "string" && args.query === omittedBaseQuery
+                ? [{ name: args.query, key: `${args.query.toLowerCase()}-key` }]
+                : [],
+          }),
+        );
+      }
+      if (tool === "get_code_connect_suggestions") {
+        return jsonResponse(mcpOk({}));
+      }
+      return jsonResponse(mcpOk({}));
+    };
+
+    const result = await resolveComponentMappings({
+      fileKey: "abc123",
+      nodeId: "0:1",
+      mcpConfig: createConfig(fetchImpl),
+      ir: makeIR(unresolvedNodes),
+    });
+
+    return { searchCalls, result };
+  };
+
+  const fullyHydrated = await runScenario({});
+  assert.deepEqual(fullyHydrated.searchCalls, [expectedBatchQueries]);
+  assert.ok(fullyHydrated.searchCalls.length <= 1);
+  assert.equal(fullyHydrated.result.designSystemMappings.length, 10);
+  for (const [index, componentName] of componentNames.entries()) {
+    assert.equal(
+      fullyHydrated.result.mappings.get(`2:${String(index + 1)}`)?.source,
+      `${componentName.toLowerCase()}-key`,
+    );
+  }
+
+  const partialBatch = await runScenario({ omittedBaseQuery: "Card10" });
+  assert.deepEqual(partialBatch.searchCalls, [expectedBatchQueries, "Card10"]);
+  assert.ok(partialBatch.searchCalls.length <= 2);
+  assert.equal(partialBatch.result.designSystemMappings.length, 10);
+  assert.equal(partialBatch.result.mappings.get("2:10")?.source, "card10-key");
+});
+
+test("resolveComponentMappings falls back to per-query search when batch search is rejected", async () => {
+  const queries: unknown[] = [];
+  let rejectedBatch = false;
+  const fetchImpl: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    const tool = await parseTool(request.clone());
+    if (tool === "get_code_connect_map") {
+      return jsonResponse(mcpOk({}));
+    }
+    if (tool === "search_design_system") {
+      const args = await parseArgs(request);
+      queries.push(args.query);
+      if (Array.isArray(args.query) && !rejectedBatch) {
+        rejectedBatch = true;
+        return new Response("unsupported query batching", { status: 400 });
+      }
+      return jsonResponse(
+        mcpOk({
+          components:
+            args.query === "Button" ? [{ name: "Button", key: "button-key" }] : [],
+        }),
+      );
+    }
+    if (tool === "get_code_connect_suggestions") {
+      return jsonResponse(mcpOk({}));
+    }
+    return jsonResponse(mcpOk({}));
+  };
+
+  const result = await resolveComponentMappings({
+    fileKey: "abc123",
+    nodeId: "0:1",
+    mcpConfig: createConfig(fetchImpl),
+    ir: makeIR([makeInstanceNode({ id: "2:1", name: "Button/Primary" })]),
+  });
+
+  assert.deepEqual(queries, [
+    ["Button/Primary", "Button"],
+    "Button/Primary",
+    "Button",
+  ]);
+  assert.equal(result.designSystemMappings.length, 1);
+  assert.equal(result.mappings.get("2:1")?.source, "button-key");
 });
 
 test("resolveComponentMappings promotes design-system match as first-class mapping (#1096)", async () => {
