@@ -4881,7 +4881,7 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
     });
 
     await t.test(
-      "submit rejects llmCodegenMode not available in workspace-dev with MODE_LOCK_VIOLATION",
+      "submit rejects figmaSourceMode not available in workspace-dev with MODE_LOCK_VIOLATION",
       async () => {
         const submitJob = test.mock.fn(
           (_input: Parameters<JobEngine["submitJob"]>[0]) => {
@@ -4905,9 +4905,9 @@ test("request handler stale-check, remap-suggest, submit, and cancel routes cove
             url: "/workspace/submit",
             headers: { "content-type": "application/json" },
             payload: {
+              figmaSourceMode: "mcp",
               figmaFileKey: "file-key",
               figmaAccessToken: "token",
-              llmCodegenMode: "hybrid",
             },
           });
 

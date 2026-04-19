@@ -599,7 +599,11 @@ test("workspace server starts and responds on /workspace", async () => {
     assert.equal(typeof body.outputRoot, "string");
     assert.equal(body.previewEnabled, true);
   } finally {
-    await server.app.close();
+    await server.app.close().catch((error) => {
+      if (error instanceof Error && error.message !== "Server is already stopped.") {
+        throw error;
+      }
+    });
     await rm(outputRoot, { recursive: true, force: true });
   }
 });
@@ -630,7 +634,11 @@ test("workspace server healthz endpoint", async () => {
     assert.equal(readyResponse.statusCode, 200);
     assert.deepEqual(readyResponse.json(), { status: "ok", uptime: 0 });
   } finally {
-    await server.app.close();
+    await server.app.close().catch((error) => {
+      if (error instanceof Error && error.message !== "Server is already stopped.") {
+        throw error;
+      }
+    });
     await rm(outputRoot, { recursive: true, force: true });
   }
 });
@@ -714,7 +722,11 @@ test("workspace server exposes draining readiness and rejects new mutating reque
       /fetch failed|ECONNREFUSED/i,
     );
   } finally {
-    await server.app.close();
+    await server.app.close().catch((error) => {
+      if (error instanceof Error && error.message !== "Server is already stopped.") {
+        throw error;
+      }
+    });
     await rm(outputRoot, { recursive: true, force: true });
   }
 });
@@ -758,7 +770,11 @@ test("workspace server terminates stalled requests after the shutdown timeout", 
     const stalledRequestError = await stalledRequestPromise;
     assert.ok(stalledRequestError instanceof Error);
   } finally {
-    await server.app.close();
+    await server.app.close().catch((error) => {
+      if (error instanceof Error && error.message !== "Server is already stopped.") {
+        throw error;
+      }
+    });
     await rm(outputRoot, { recursive: true, force: true });
   }
 });

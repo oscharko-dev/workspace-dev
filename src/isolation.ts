@@ -95,7 +95,7 @@ let cleanupRegistered = false;
 const killAllActiveInstances = (): void => {
   for (const [key, inst] of activeInstances) {
     try {
-      inst.process.send?.({ type: "shutdown" });
+      inst.process.send({ type: "shutdown" });
       setTimeout(() => {
         try {
           inst.process.kill("SIGTERM");

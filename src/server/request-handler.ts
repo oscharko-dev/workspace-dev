@@ -364,14 +364,9 @@ function resolveBlockedModeViolation(input: unknown): {
     typeof candidate.figmaSourceMode === "string"
       ? candidate.figmaSourceMode
       : undefined;
-  const llmCodegenMode =
-    typeof candidate.llmCodegenMode === "string"
-      ? candidate.llmCodegenMode
-      : undefined;
 
   const modeLock = validateModeLock({
     ...(figmaSourceMode !== undefined ? { figmaSourceMode } : {}),
-    ...(llmCodegenMode !== undefined ? { llmCodegenMode } : {}),
   });
   const blockedMessage = modeLock.errors.find((message) =>
     message.includes("not available in workspace-dev"),
@@ -382,7 +377,6 @@ function resolveBlockedModeViolation(input: unknown): {
 
   return {
     ...(figmaSourceMode !== undefined ? { figmaSourceMode } : {}),
-    ...(llmCodegenMode !== undefined ? { llmCodegenMode } : {}),
     message: blockedMessage,
   };
 }

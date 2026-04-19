@@ -9,6 +9,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+
+/* eslint-disable react-hooks/set-state-in-effect */
 import {
   useMutation,
   useQueries,
@@ -2315,11 +2317,12 @@ export function InspectorPanel({
       currentImportSession,
       emitCurrentSessionGovernanceEvent,
       reviewState.stage,
+      setReviewState,
     ],
   );
   const handleReviewerNoteChange = useCallback((note: string): void => {
     setReviewState((state) => ({ ...state, reviewerNote: note }));
-  }, []);
+  }, [setReviewState]);
   const handleReviewApply = useCallback((): void => {
     const note =
       reviewState.reviewerNote.trim().length > 0
@@ -2337,6 +2340,7 @@ export function InspectorPanel({
     applyGate.allowed,
     emitCurrentSessionGovernanceEvent,
     reviewState.reviewerNote,
+    setReviewState,
   ]);
 
   const tokenSuggestionsModel = useMemo(() => {
