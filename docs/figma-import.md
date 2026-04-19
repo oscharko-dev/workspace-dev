@@ -326,6 +326,30 @@ type to `Code / Text` or `Unbekannt` always rejects on submit with
 `"This paste looks like code or plain text, …"` or
 `"This paste could not be matched to a supported Figma import path. …"`.
 
+## Plan quota
+
+When the Inspector resolves Figma content through the Model Context Protocol
+(MCP) transport, each successful call counts toward the Figma plan's monthly
+MCP budget. The **Starter** plan allows **6 MCP calls per month**.
+
+WorkspaceDev tracks these calls locally (in your browser's `localStorage`) and
+shows a non-blocking warning banner at the top of the Inspector once usage
+reaches **80%** of the plan budget (i.e. 5 of 6 calls). The banner links to
+the [Figma pricing page](https://www.figma.com/pricing/) and can be dismissed
+for the rest of the session with the **✕** button. Dismissal is scoped to the
+current month — a new month re-enables the banner.
+
+The counter is:
+
+- **Local-only**: the call count never leaves your browser. No network
+  request, no external telemetry.
+- **Per-month**: counters reset at the start of each UTC month.
+- **Scoped to MCP**: runs that fell back to the Figma REST API are not
+  counted (REST has a different quota regime; see the 429 section below).
+
+To silence the banner permanently, upgrade the Figma plan or switch to the
+REST fallback path (set `figmaSourceMode=rest` in submits).
+
 ## Security notes
 
 - Paste and plugin payloads are processed locally only. Tokens are never

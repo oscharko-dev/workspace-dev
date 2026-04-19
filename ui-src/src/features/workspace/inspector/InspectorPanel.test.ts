@@ -1361,7 +1361,9 @@ describe("InspectorPanel data states", () => {
         }),
       });
 
-      expect(screen.queryByText("Deep nesting detected")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Deep nesting detected"),
+      ).not.toBeInTheDocument();
       expect(
         screen.getByTestId("inspector-workspace-policy-warning"),
       ).toHaveTextContent("Workspace policy ignored.");
@@ -1575,7 +1577,9 @@ describe("InspectorPanel data states", () => {
         }),
       });
 
-      expect(screen.queryByText("Deep nesting detected")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Deep nesting detected"),
+      ).not.toBeInTheDocument();
       expect(
         screen.getByTestId("inspector-workspace-policy-warning"),
       ).toHaveTextContent("Workspace policy rejected; defaults active.");
@@ -2905,6 +2909,10 @@ describe("InspectorPanel import governance (issue #994)", () => {
 
     const received: Array<{ kind: string; sessionId?: string }> = [];
     subscribeToImportGovernanceEvents((event) => {
+      if (event.kind === "mcp-budget-threshold-crossed") {
+        received.push({ kind: event.kind });
+        return;
+      }
       received.push(
         event.sessionId !== undefined
           ? { kind: event.kind, sessionId: event.sessionId }

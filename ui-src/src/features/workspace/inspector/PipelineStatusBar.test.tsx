@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PipelineStatusBar } from "./PipelineStatusBar";
 import {
   createInitialPipelineState,
@@ -9,9 +9,28 @@ import {
   type PipelineStage,
   type StageStatus,
 } from "./paste-pipeline";
+import {
+  __resetFigmaMcpCallCounterForTests,
+  recordMcpCall,
+} from "./figma-mcp-call-counter";
+
+beforeEach(() => {
+  __resetFigmaMcpCallCounterForTests();
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    // ignore
+  }
+});
 
 afterEach(() => {
   cleanup();
+  __resetFigmaMcpCallCounterForTests();
+  try {
+    window.sessionStorage.clear();
+  } catch {
+    // ignore
+  }
 });
 
 function baseStageProgress(
@@ -385,9 +404,8 @@ describe("PipelineStatusBar — accessibility", () => {
   it("has role='status' on the root element", () => {
     renderBar({ stage: "error" });
 
-    const root = screen.getByRole("status");
-    expect(root).toBeInTheDocument();
-    expect(root).toHaveAttribute("data-testid", "pipeline-status-bar");
+    const root = screen.getByTestId("pipeline-status-bar");
+    expect(root).toHaveAttribute("role", "status");
   });
 
   it("details toggle has aria-expanded='false' initially and 'true' after click", () => {
@@ -399,5 +417,29 @@ describe("PipelineStatusBar — accessibility", () => {
     fireEvent.click(toggle);
 
     expect(toggle).toHaveAttribute("aria-expanded", "true");
+  });
+});
+
+describe("PipelineStatusBar — MCP budget banner integration (#1093)", () => {
+  it("renders the RateLimitBudgetBanner when the MCP quota threshold is crossed", () => {
+    for (let i = 0; i < 5; i += 1) {
+      recordMcpCall();
+    }
+
+    renderBar({ stage: "error" });
+
+    expect(screen.getByTestId("rate-limit-budget-banner")).toBeInTheDocument();
+  });
+
+  it("does not render the banner when below threshold", () => {
+    for (let i = 0; i < 3; i += 1) {
+      recordMcpCall();
+    }
+
+    renderBar({ stage: "error" });
+
+    expect(
+      screen.queryByTestId("rate-limit-budget-banner"),
+    ).not.toBeInTheDocument();
   });
 });

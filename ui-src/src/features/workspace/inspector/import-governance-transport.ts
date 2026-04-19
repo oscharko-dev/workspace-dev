@@ -7,9 +7,11 @@
  * flaky audit log never breaks the Inspector flow.
  */
 
-import type {
-  ImportGovernanceEvent,
-  ImportGovernanceListener,
+import {
+  isImportSessionGovernanceEvent,
+  type ImportGovernanceEvent,
+  type ImportGovernanceListener,
+  type ImportSessionGovernanceEvent,
 } from "./import-governance-events";
 import type { WorkspaceImportSessionEventKind } from "./import-review-state";
 
@@ -34,7 +36,7 @@ interface GovernancePostBody {
 }
 
 function buildMetadata(
-  event: ImportGovernanceEvent,
+  event: ImportSessionGovernanceEvent,
 ): Record<string, string | number | boolean | null> {
   const metadata: Record<string, string | number | boolean | null> = {
     jobId: event.jobId,
@@ -53,7 +55,7 @@ function buildMetadata(
   return metadata;
 }
 
-function buildBody(event: ImportGovernanceEvent): GovernancePostBody {
+function buildBody(event: ImportSessionGovernanceEvent): GovernancePostBody {
   let body: GovernancePostBody = {
     kind: event.kind,
     at: event.timestamp,
@@ -86,6 +88,9 @@ export function createImportGovernanceTransport(
   const baseUrl = options?.baseUrl;
 
   return (event: ImportGovernanceEvent): void => {
+    if (!isImportSessionGovernanceEvent(event)) {
+      return;
+    }
     if (event.sessionId === undefined || event.sessionId.length === 0) {
       return;
     }

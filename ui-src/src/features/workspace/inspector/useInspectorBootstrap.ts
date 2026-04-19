@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ImportIntent } from "./paste-input-classifier";
 import {
   classifyPasteIntent,
@@ -19,6 +19,7 @@ import {
   recordClassification,
   recordCorrection,
 } from "./intent-classification-metrics";
+import { recordMcpCall } from "./figma-mcp-call-counter";
 
 function toUnsupportedIntentReason({
   confirmedIntent,
@@ -260,6 +261,28 @@ export function useInspectorBootstrap(
 
   const jobId = pipeline.state.jobId ?? null;
   const previewUrl = pipeline.state.previewUrl ?? null;
+
+  // Issue #1093: Count successful MCP-backed pipeline completions once per
+  // jobId. REST-fallback runs are excluded — they consume a different quota.
+  const countedMcpJobIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const stage = pipeline.state.stage;
+    const fallbackMode = pipeline.state.fallbackMode;
+    if (stage !== "ready" && stage !== "partial") {
+      return;
+    }
+    if (jobId === null) {
+      return;
+    }
+    if (fallbackMode === "rest") {
+      return;
+    }
+    if (countedMcpJobIdRef.current === jobId) {
+      return;
+    }
+    countedMcpJobIdRef.current = jobId;
+    recordMcpCall();
+  }, [pipeline.state.stage, pipeline.state.fallbackMode, jobId]);
 
   const state = useMemo(
     () =>

@@ -7,13 +7,18 @@
  * no-op so the runtime stays self-contained; #994 swaps in a transport that
  * forwards events to the team-admin audit log.
  *
+ * Issue #1093 extends the event union with a local-only
+ * `mcp-budget-threshold-crossed` signal dispatched when Figma MCP usage
+ * reaches the plan warning threshold. That variant carries no session data
+ * and is filtered out by the audit-log transport.
+ *
  * Pure module — no React, no DOM, no fetches.
  */
 
 import type { PasteImportSession } from "./paste-import-history";
 import type { WorkspaceImportSessionEventKind } from "./import-review-state";
 
-export interface ImportGovernanceEvent {
+export interface ImportSessionGovernanceEvent {
   /** Import-session event kind persisted by the server. */
   readonly kind: WorkspaceImportSessionEventKind;
   /** ISO timestamp when the import completed (mirrors session.importedAt). */
@@ -52,7 +57,31 @@ export interface ImportGovernanceEvent {
   readonly userId?: string;
 }
 
+/**
+ * Emitted once per session when Figma MCP call volume first reaches the
+ * warning threshold for the current month (Issue #1093). Non-auditable —
+ * the transport at #994 filters this variant out because there is no
+ * `sessionId` to route it to.
+ */
+export interface McpBudgetThresholdCrossedEvent {
+  readonly kind: "mcp-budget-threshold-crossed";
+  readonly callsThisMonth: number;
+  readonly budget: number;
+  /** YYYY-MM month identifier for the crossing. */
+  readonly month: string;
+}
+
+export type ImportGovernanceEvent =
+  | ImportSessionGovernanceEvent
+  | McpBudgetThresholdCrossedEvent;
+
 export type ImportGovernanceListener = (event: ImportGovernanceEvent) => void;
+
+export function isImportSessionGovernanceEvent(
+  event: ImportGovernanceEvent,
+): event is ImportSessionGovernanceEvent {
+  return event.kind !== "mcp-budget-threshold-crossed";
+}
 
 /**
  * Convert a recorded session into a governance event suitable for emission.
@@ -60,8 +89,8 @@ export type ImportGovernanceListener = (event: ImportGovernanceEvent) => void;
  */
 export function toImportGovernanceEvent(
   session: PasteImportSession,
-): ImportGovernanceEvent {
-  const base: ImportGovernanceEvent = {
+): ImportSessionGovernanceEvent {
+  const base: ImportSessionGovernanceEvent = {
     kind: "imported",
     timestamp: session.importedAt,
     scope: session.scope,

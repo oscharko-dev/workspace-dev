@@ -2,9 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   __resetImportGovernanceListenersForTests,
   dispatchImportGovernanceEvent,
+  isImportSessionGovernanceEvent,
   subscribeToImportGovernanceEvents,
   toImportGovernanceEvent,
   type ImportGovernanceEvent,
+  type ImportSessionGovernanceEvent,
+  type McpBudgetThresholdCrossedEvent,
 } from "./import-governance-events";
 import type { PasteImportSession } from "./paste-import-history";
 
@@ -40,7 +43,7 @@ describe("toImportGovernanceEvent", () => {
       selectedNodes: ["a", "b"],
     });
     const event = toImportGovernanceEvent(session);
-    expect(event).toEqual<ImportGovernanceEvent>({
+    expect(event).toEqual<ImportSessionGovernanceEvent>({
       kind: "imported",
       timestamp: "2026-04-15T12:00:00.000Z",
       scope: "partial",
@@ -121,5 +124,38 @@ describe("subscribeToImportGovernanceEvents", () => {
     expect(() =>
       dispatchImportGovernanceEvent(toImportGovernanceEvent(makeSession())),
     ).not.toThrow();
+  });
+});
+
+describe("McpBudgetThresholdCrossedEvent — union flow (#1093)", () => {
+  it("flows through the listener as a discriminated union variant", () => {
+    const received: ImportGovernanceEvent[] = [];
+    subscribeToImportGovernanceEvents((event) => received.push(event));
+
+    const mcpEvent: McpBudgetThresholdCrossedEvent = {
+      kind: "mcp-budget-threshold-crossed",
+      callsThisMonth: 5,
+      budget: 6,
+      month: "2026-04",
+    };
+    dispatchImportGovernanceEvent(mcpEvent);
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual(mcpEvent);
+  });
+
+  it("isImportSessionGovernanceEvent narrows the mcp variant to false", () => {
+    const mcpEvent: ImportGovernanceEvent = {
+      kind: "mcp-budget-threshold-crossed",
+      callsThisMonth: 6,
+      budget: 6,
+      month: "2026-04",
+    };
+    expect(isImportSessionGovernanceEvent(mcpEvent)).toBe(false);
+  });
+
+  it("isImportSessionGovernanceEvent narrows the session variant to true", () => {
+    const session = toImportGovernanceEvent(makeSession());
+    expect(isImportSessionGovernanceEvent(session)).toBe(true);
   });
 });

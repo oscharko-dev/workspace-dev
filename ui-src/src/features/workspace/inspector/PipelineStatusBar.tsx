@@ -9,6 +9,7 @@ import type {
   StageStatus,
 } from "./paste-pipeline";
 import { PipelineErrorBanner } from "./PipelineErrorBanner";
+import { RateLimitBudgetBanner } from "./RateLimitBudgetBanner";
 
 export interface PipelineStatusBarProps {
   stage: PipelineStage;
@@ -144,152 +145,155 @@ export function PipelineStatusBar({
       : `Import failed · ${String(errors.length)} error${errors.length !== 1 ? "s" : ""}`;
 
   return (
-    <div
-      data-testid="pipeline-status-bar"
-      role="status"
-      aria-live="polite"
-      className="shrink-0 border-b border-[#000000] bg-[#1c1800] px-4 py-1.5"
-    >
-      <div className="flex items-center gap-3 text-[11px]">
-        <span aria-hidden="true" className="text-amber-400">
-          ⚠
-        </span>
-        <span className="text-amber-400">{summaryText}</span>
-        {fallbackMode === "rest" ? (
-          <span
-            data-testid="pipeline-status-bar-fallback-mode"
-            className="rounded border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300"
-          >
-            Figma REST fallback active
+    <>
+      <RateLimitBudgetBanner />
+      <div
+        data-testid="pipeline-status-bar"
+        role="status"
+        aria-live="polite"
+        className="shrink-0 border-b border-[#000000] bg-[#1c1800] px-4 py-1.5"
+      >
+        <div className="flex items-center gap-3 text-[11px]">
+          <span aria-hidden="true" className="text-amber-400">
+            ⚠
           </span>
-        ) : null}
-        {pasteDeltaSummary !== undefined ? (
-          <>
+          <span className="text-amber-400">{summaryText}</span>
+          {fallbackMode === "rest" ? (
             <span
-              data-testid="pipeline-status-bar-paste-delta"
-              className={pasteDeltaBadgeConfig(pasteDeltaSummary).className}
-              title={
-                pasteDeltaSummary.totalNodes > 0
-                  ? `${String(pasteDeltaSummary.nodesReused)} of ${String(pasteDeltaSummary.totalNodes)} nodes reused`
-                  : "Paste summary unavailable"
-              }
+              data-testid="pipeline-status-bar-fallback-mode"
+              className="rounded border border-sky-400/30 bg-sky-400/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300"
             >
-              {pasteDeltaBadgeConfig(pasteDeltaSummary).label}
+              Figma REST fallback active
             </span>
-            {pasteDeltaSummary.totalNodes > 0 ? (
-              <span
-                data-testid="pipeline-status-bar-paste-delta-detail"
-                className="text-[10px] text-white/45"
-              >
-                {String(pasteDeltaSummary.nodesReused)}/
-                {String(pasteDeltaSummary.totalNodes)} reused
-              </span>
-            ) : null}
-          </>
-        ) : null}
-        {retryRemainingMs !== undefined && retryRemainingMs > 0 ? (
-          <span
-            data-testid="pipeline-status-bar-retry-countdown"
-            className="text-[10px] text-white/45"
-          >
-            Retry available in {Math.ceil(retryRemainingMs / 1000)}s
-          </span>
-        ) : null}
-
-        <div className="ml-auto flex items-center gap-2">
-          {canRetry && onRetry ? (
-            <button
-              type="button"
-              data-testid="pipeline-status-bar-retry"
-              onClick={() => {
-                if (retryBlocked) {
-                  return;
-                }
-                const targetIds = firstRetryableError?.retryTargets
-                  ?.map((target) => target.id)
-                  .filter((id) => id.length > 0);
-                onRetry(
-                  firstRetryableError?.stage,
-                  targetIds !== undefined && targetIds.length > 0
-                    ? targetIds
-                    : undefined,
-                );
-              }}
-              disabled={retryBlocked}
-              className="rounded border border-amber-500/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/10 disabled:cursor-default disabled:opacity-50"
-            >
-              Retry
-            </button>
           ) : null}
-          <button
-            type="button"
-            data-testid="pipeline-status-bar-details-toggle"
-            aria-expanded={expanded}
-            aria-controls="pipeline-status-bar-details"
-            onClick={() => {
-              setExpanded((prev) => !prev);
-            }}
-            className="cursor-pointer rounded border border-white/10 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-white/55 transition hover:border-white/20 hover:text-white/80"
-          >
-            {expanded ? "Hide Details" : "Details"}
-          </button>
-          {onCopyReport ? (
+          {pasteDeltaSummary !== undefined ? (
+            <>
+              <span
+                data-testid="pipeline-status-bar-paste-delta"
+                className={pasteDeltaBadgeConfig(pasteDeltaSummary).className}
+                title={
+                  pasteDeltaSummary.totalNodes > 0
+                    ? `${String(pasteDeltaSummary.nodesReused)} of ${String(pasteDeltaSummary.totalNodes)} nodes reused`
+                    : "Paste summary unavailable"
+                }
+              >
+                {pasteDeltaBadgeConfig(pasteDeltaSummary).label}
+              </span>
+              {pasteDeltaSummary.totalNodes > 0 ? (
+                <span
+                  data-testid="pipeline-status-bar-paste-delta-detail"
+                  className="text-[10px] text-white/45"
+                >
+                  {String(pasteDeltaSummary.nodesReused)}/
+                  {String(pasteDeltaSummary.totalNodes)} reused
+                </span>
+              ) : null}
+            </>
+          ) : null}
+          {retryRemainingMs !== undefined && retryRemainingMs > 0 ? (
+            <span
+              data-testid="pipeline-status-bar-retry-countdown"
+              className="text-[10px] text-white/45"
+            >
+              Retry available in {Math.ceil(retryRemainingMs / 1000)}s
+            </span>
+          ) : null}
+
+          <div className="ml-auto flex items-center gap-2">
+            {canRetry && onRetry ? (
+              <button
+                type="button"
+                data-testid="pipeline-status-bar-retry"
+                onClick={() => {
+                  if (retryBlocked) {
+                    return;
+                  }
+                  const targetIds = firstRetryableError?.retryTargets
+                    ?.map((target) => target.id)
+                    .filter((id) => id.length > 0);
+                  onRetry(
+                    firstRetryableError?.stage,
+                    targetIds !== undefined && targetIds.length > 0
+                      ? targetIds
+                      : undefined,
+                  );
+                }}
+                disabled={retryBlocked}
+                className="rounded border border-amber-500/30 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-amber-400 transition hover:bg-amber-500/10 disabled:cursor-default disabled:opacity-50"
+              >
+                Retry
+              </button>
+            ) : null}
             <button
               type="button"
-              data-testid="pipeline-status-bar-copy-report"
-              onClick={onCopyReport}
+              data-testid="pipeline-status-bar-details-toggle"
+              aria-expanded={expanded}
+              aria-controls="pipeline-status-bar-details"
+              onClick={() => {
+                setExpanded((prev) => !prev);
+              }}
               className="cursor-pointer rounded border border-white/10 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-white/55 transition hover:border-white/20 hover:text-white/80"
             >
-              Copy Report
+              {expanded ? "Hide Details" : "Details"}
             </button>
-          ) : null}
-        </div>
-      </div>
-
-      {expanded ? (
-        <div
-          data-testid="pipeline-status-bar-details"
-          id="pipeline-status-bar-details"
-          role="region"
-          aria-label="Pipeline error details"
-          className="mt-2 space-y-2"
-        >
-          {/* Per-stage status */}
-          <div className="flex flex-wrap gap-3">
-            {BACKEND_STAGES.map((s) => {
-              const status = stageProgress[s];
-              const label = BACKEND_STAGE_LABELS[s] ?? s;
-              return (
-                <div
-                  key={s}
-                  className="flex items-center gap-1 text-[10px] text-white/55"
-                >
-                  <StageStatusIcon state={status.state} />
-                  <span>{label}</span>
-                  {status.duration !== undefined ? (
-                    <span className="text-white/30">
-                      {String(status.duration)}ms
-                    </span>
-                  ) : null}
-                </div>
-              );
-            })}
+            {onCopyReport ? (
+              <button
+                type="button"
+                data-testid="pipeline-status-bar-copy-report"
+                onClick={onCopyReport}
+                className="cursor-pointer rounded border border-white/10 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-white/55 transition hover:border-white/20 hover:text-white/80"
+              >
+                Copy Report
+              </button>
+            ) : null}
           </div>
-
-          {/* Per-error details */}
-          {errors.length > 0 ? (
-            <div className="space-y-2 border-t border-white/5 pt-2">
-              {errors.map((error, i) => (
-                <PipelineErrorBanner
-                  key={`${error.stage}-${String(i)}`}
-                  error={error}
-                  {...(canRetry && onRetry !== undefined ? { onRetry } : {})}
-                />
-              ))}
-            </div>
-          ) : null}
         </div>
-      ) : null}
-    </div>
+
+        {expanded ? (
+          <div
+            data-testid="pipeline-status-bar-details"
+            id="pipeline-status-bar-details"
+            role="region"
+            aria-label="Pipeline error details"
+            className="mt-2 space-y-2"
+          >
+            {/* Per-stage status */}
+            <div className="flex flex-wrap gap-3">
+              {BACKEND_STAGES.map((s) => {
+                const status = stageProgress[s];
+                const label = BACKEND_STAGE_LABELS[s] ?? s;
+                return (
+                  <div
+                    key={s}
+                    className="flex items-center gap-1 text-[10px] text-white/55"
+                  >
+                    <StageStatusIcon state={status.state} />
+                    <span>{label}</span>
+                    {status.duration !== undefined ? (
+                      <span className="text-white/30">
+                        {String(status.duration)}ms
+                      </span>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Per-error details */}
+            {errors.length > 0 ? (
+              <div className="space-y-2 border-t border-white/5 pt-2">
+                {errors.map((error, i) => (
+                  <PipelineErrorBanner
+                    key={`${error.stage}-${String(i)}`}
+                    error={error}
+                    {...(canRetry && onRetry !== undefined ? { onRetry } : {})}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </>
   );
 }

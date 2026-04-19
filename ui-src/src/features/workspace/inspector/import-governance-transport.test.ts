@@ -1,10 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ImportGovernanceEvent } from "./import-governance-events";
+import type {
+  ImportGovernanceEvent,
+  ImportSessionGovernanceEvent,
+} from "./import-governance-events";
 import { createImportGovernanceTransport } from "./import-governance-transport";
 
 function makeEvent(
-  overrides: Partial<ImportGovernanceEvent> = {},
-): ImportGovernanceEvent {
+  overrides: Partial<ImportSessionGovernanceEvent> = {},
+): ImportSessionGovernanceEvent {
   return {
     kind: "imported",
     timestamp: "2026-04-15T10:00:00.000Z",
