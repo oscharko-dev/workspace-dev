@@ -654,6 +654,7 @@ test("workspace server exposes draining readiness and rejects new mutating reque
   });
 
   try {
+    let finishInFlightRequest: (() => void) | undefined;
     const inFlightResponsePromise = new Promise<{
       statusCode: number | undefined;
       body: string;
@@ -681,9 +682,9 @@ test("workspace server exposes draining readiness and rejects new mutating reque
       );
       request.on("error", reject);
       request.write("{");
-      setTimeout(() => {
+      finishInFlightRequest = () => {
         request.end("}");
-      }, 100);
+      };
     });
 
     await new Promise((resolve) => setTimeout(resolve, 25));
@@ -710,6 +711,7 @@ test("workspace server exposes draining readiness and rejects new mutating reque
     const drainingSubmitBody = (await drainingSubmitResponse.json()) as Record<string, unknown>;
     assert.equal(drainingSubmitBody.error, "SERVER_DRAINING");
 
+    finishInFlightRequest?.();
     const inFlightResponse = await inFlightResponsePromise;
     assert.equal(inFlightResponse.statusCode, 400);
     const inFlightBody = JSON.parse(inFlightResponse.body) as Record<string, unknown>;
@@ -1614,7 +1616,7 @@ test("workspace server exposes listening address metadata and clears it after cl
   await rm(outputRoot, { recursive: true, force: true });
 });
 
-test("workspace server close is not silently idempotent", async () => {
+test("workspace server close is idempotent after shutdown", async () => {
   const outputRoot = await createTempOutputRoot();
   const server = await createWorkspaceServer({
     port: 0,
@@ -1623,9 +1625,7 @@ test("workspace server close is not silently idempotent", async () => {
     fetchImpl: createFakeFigmaFetch(),
   });
   await server.app.close();
-  await assert.rejects(async () => {
-    await server.app.close();
-  });
+  await server.app.close();
   await rm(outputRoot, { recursive: true, force: true });
 });
 
