@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "lib": ["ES2020"],
+    "module": "none",
+    "moduleResolution": "node",
+    "strict": true,
+    "noImplicitAny": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "isolatedModules": false,
+    "outDir": ".",
+    "rootDir": ".",
+    "removeComments": false,
+    "newLine": "lf",
+    "types": ["@figma/plugin-typings"]
+  },
+  "include": ["code.ts"],
+  "exclude": ["code.test.ts", "plugin-helpers.test.ts", "node_modules"]
+}

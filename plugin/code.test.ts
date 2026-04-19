@@ -4,8 +4,6 @@
  * code.js uses Figma globals (figma, __html__) and cannot be loaded as an
  * ES module in Node. We execute it with vm.runInThisContext after setting up
  * all globals, then read figma.ui.onmessage to drive the handler directly.
- *
- * Run: node --test plugin/code.test.mjs
  */
 
 import { describe, it, beforeEach } from "node:test";
@@ -19,6 +17,67 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const CODE_JS = readFileSync(join(__dirname, "code.js"), "utf8");
 
 // ---------------------------------------------------------------------------
+// Types mirroring the plugin's runtime contracts
+// ---------------------------------------------------------------------------
+
+interface ExportAsyncOptions {
+  format: string;
+}
+
+interface ExportedRestDocument {
+  document: { id: string; type: string; name: string };
+  components: Record<string, unknown>;
+  componentSets: Record<string, unknown>;
+  styles: Record<string, unknown>;
+}
+
+interface FakeNode {
+  id: string;
+  type: string;
+  name: string;
+  exportAsync: (options: ExportAsyncOptions) => Promise<ExportedRestDocument>;
+}
+
+interface PostedMessage {
+  type: string;
+  [key: string]: unknown;
+}
+
+interface FakeFigma {
+  _posted: PostedMessage[];
+  showUI: () => void;
+  closePlugin: () => void;
+  currentPage: { selection: FakeNode[] };
+  ui: {
+    postMessage: (msg: PostedMessage) => void;
+    onmessage: ((message: unknown) => unknown) | null;
+  };
+}
+
+interface FakeFetchResponseHeaders {
+  get: (name: string) => string | null;
+}
+
+interface FakeFetchResponse {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+  headers: FakeFetchResponseHeaders;
+}
+
+type FakeFetch = (
+  url: string,
+  options: { method?: string; headers?: unknown; body?: string },
+) => Promise<FakeFetchResponse>;
+
+interface CapturedFetchArgs {
+  url: string;
+  options: { method?: string; headers?: unknown; body?: string };
+}
+
+type Onmessage = (message: unknown) => Promise<void>;
+
+// ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
@@ -27,12 +86,12 @@ const CODE_JS = readFileSync(join(__dirname, "code.js"), "utf8");
  * exportAsync in code.js is called with { format: "JSON_REST_V1" }, but our
  * mock ignores the options argument and returns a plausible REST v1 shape.
  */
-function makeNode(type = "FRAME", name = "Test Frame") {
+function makeNode(type = "FRAME", name = "Test Frame"): FakeNode {
   return {
     id: "123:456",
     type,
     name,
-    exportAsync: async (_opts) => ({
+    exportAsync: async (_opts: ExportAsyncOptions) => ({
       document: { id: "123:456", type, name },
       components: {},
       componentSets: {},
@@ -47,24 +106,26 @@ function makeNode(type = "FRAME", name = "Test Frame") {
  *
  * Each call re-executes the plugin source so globals are fresh.
  */
-function loadPlugin(figmaMock, fetchMock) {
-  globalThis.figma = figmaMock;
-  globalThis.__html__ = "";
-  globalThis.fetch = fetchMock;
+function loadPlugin(figmaMock: FakeFigma, fetchMock: FakeFetch): Onmessage {
+  (globalThis as Record<string, unknown>).figma = figmaMock;
+  (globalThis as Record<string, unknown>).__html__ = "";
+  (globalThis as Record<string, unknown>).fetch = fetchMock;
   // Wrap in an IIFE so that const/let declarations in code.js get a fresh
   // block scope on each call. Without this, the second loadPlugin call throws
   // "Identifier 'ENVELOPE_KIND' has already been declared" because
   // runInThisContext shares the same top-level scope across invocations.
   runInThisContext(`(function(){\n${CODE_JS}\n})()`);
-  return figmaMock.ui.onmessage;
+  const handler = figmaMock.ui.onmessage;
+  assert.ok(handler, "code.js must register figma.ui.onmessage");
+  return handler as Onmessage;
 }
 
 /**
  * Creates a fresh figma mock object. postMessage records every call so tests
  * can assert on specific message types without caring about order.
  */
-function makeFigmaMock(selection = []) {
-  const posted = [];
+function makeFigmaMock(selection: FakeNode[] = []): FakeFigma {
+  const posted: PostedMessage[] = [];
   return {
     _posted: posted,
     showUI: () => {},
@@ -73,29 +134,30 @@ function makeFigmaMock(selection = []) {
       selection,
     },
     ui: {
-      postMessage(msg) {
+      postMessage(msg: PostedMessage) {
         posted.push(msg);
       },
-      // onmessage is assigned by code.js at load time
       onmessage: null,
     },
   };
 }
 
 /** Returns all postMessage calls of the given type. */
-function messagesOfType(mock, type) {
+function messagesOfType(mock: FakeFigma, type: string): PostedMessage[] {
   return mock._posted.filter((m) => m.type === type);
 }
 
 /** Returns the single postMessage call of the given type, or throws. */
-function singleMessageOfType(mock, type) {
+function singleMessageOfType(mock: FakeFigma, type: string): PostedMessage {
   const matches = messagesOfType(mock, type);
   assert.equal(
     matches.length,
     1,
     `Expected exactly one "${type}" message, got ${matches.length}: ${JSON.stringify(mock._posted)}`,
   );
-  return matches[0];
+  const match = matches[0];
+  assert.ok(match);
+  return match;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,15 +165,15 @@ function singleMessageOfType(mock, type) {
 // ---------------------------------------------------------------------------
 
 describe("upload-to-local — success", () => {
-  let figmaMock;
-  let onmessage;
-  let capturedFetchArgs;
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
+  let capturedFetchArgs: CapturedFetchArgs | null;
 
   beforeEach(() => {
     capturedFetchArgs = null;
     figmaMock = makeFigmaMock([makeNode("FRAME", "Test Frame")]);
 
-    const fetchMock = async (url, options) => {
+    const fetchMock: FakeFetch = async (url, options) => {
       capturedFetchArgs = { url, options };
       return {
         ok: true,
@@ -144,6 +206,7 @@ describe("upload-to-local — success", () => {
       endpointUrl: "http://127.0.0.1:1983",
     });
 
+    assert.ok(capturedFetchArgs, "fetch was not called");
     assert.equal(
       capturedFetchArgs.url,
       "http://127.0.0.1:1983/workspace/submit",
@@ -157,7 +220,11 @@ describe("upload-to-local — success", () => {
       endpointUrl: "http://127.0.0.1:1983",
     });
 
-    const body = JSON.parse(capturedFetchArgs.options.body);
+    assert.ok(capturedFetchArgs, "fetch was not called");
+    assert.ok(capturedFetchArgs.options.body, "fetch body was not sent");
+    const body = JSON.parse(capturedFetchArgs.options.body) as {
+      figmaSourceMode: string;
+    };
     assert.equal(body.figmaSourceMode, "figma_plugin");
   });
 
@@ -167,13 +234,20 @@ describe("upload-to-local — success", () => {
       endpointUrl: "http://127.0.0.1:1983",
     });
 
-    const body = JSON.parse(capturedFetchArgs.options.body);
+    assert.ok(capturedFetchArgs, "fetch was not called");
+    assert.ok(capturedFetchArgs.options.body, "fetch body was not sent");
+    const body = JSON.parse(capturedFetchArgs.options.body) as {
+      figmaJsonPayload: string;
+    };
     assert.ok(
       typeof body.figmaJsonPayload === "string",
       "figmaJsonPayload must be a JSON string",
     );
 
-    const payload = JSON.parse(body.figmaJsonPayload);
+    const payload = JSON.parse(body.figmaJsonPayload) as {
+      kind: string;
+      pluginVersion: string;
+    };
     assert.equal(payload.kind, "workspace-dev/figma-selection@1");
     assert.equal(payload.pluginVersion, "0.2.0");
   });
@@ -185,8 +259,8 @@ describe("upload-to-local — success", () => {
     });
 
     const statusMsgs = messagesOfType(figmaMock, "status");
-    const uploadingMsg = statusMsgs.find((m) =>
-      m.message.includes("Uploading"),
+    const uploadingMsg = statusMsgs.find(
+      (m) => typeof m.message === "string" && m.message.includes("Uploading"),
     );
     assert.ok(
       uploadingMsg,
@@ -200,17 +274,17 @@ describe("upload-to-local — success", () => {
 // ---------------------------------------------------------------------------
 
 describe("upload-to-local — HTTP error", () => {
-  let figmaMock;
-  let onmessage;
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
 
   beforeEach(() => {
     figmaMock = makeFigmaMock([makeNode("FRAME", "Test Frame")]);
 
-    const fetchMock = async (_url, _options) => ({
+    const fetchMock: FakeFetch = async (_url, _options) => ({
       ok: false,
       status: 422,
       headers: {
-        get: (header) => (header === "x-request-id" ? "req-xyz" : null),
+        get: (header: string) => (header === "x-request-id" ? "req-xyz" : null),
       },
       json: async () => ({ message: "Validation failed" }),
     });
@@ -244,17 +318,17 @@ describe("upload-to-local — HTTP error", () => {
 // ---------------------------------------------------------------------------
 
 describe("upload-to-local — HTTP error with no body message", () => {
-  let figmaMock;
-  let onmessage;
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
 
   beforeEach(() => {
     figmaMock = makeFigmaMock([makeNode("FRAME", "Test Frame")]);
 
-    const fetchMock = async (_url, _options) => ({
+    const fetchMock: FakeFetch = async (_url, _options) => ({
       ok: false,
       status: 503,
       headers: { get: () => "" },
-      json: async () => ({}), // no message field
+      json: async () => ({}),
     });
 
     onmessage = loadPlugin(figmaMock, fetchMock);
@@ -276,13 +350,13 @@ describe("upload-to-local — HTTP error with no body message", () => {
 // ---------------------------------------------------------------------------
 
 describe("upload-to-local — network error", () => {
-  let figmaMock;
-  let onmessage;
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
 
   beforeEach(() => {
     figmaMock = makeFigmaMock([makeNode("FRAME", "Test Frame")]);
 
-    const fetchMock = async (_url, _options) => {
+    const fetchMock: FakeFetch = async (_url, _options) => {
       throw new Error("ECONNREFUSED");
     };
 
@@ -314,12 +388,12 @@ describe("upload-to-local — network error", () => {
 // ---------------------------------------------------------------------------
 
 describe("upload-to-local — empty selection", () => {
-  let figmaMock;
-  let onmessage;
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
 
   beforeEach(() => {
-    figmaMock = makeFigmaMock([]); // no nodes selected
-    const fetchMock = async () => {
+    figmaMock = makeFigmaMock([]);
+    const fetchMock: FakeFetch = async () => {
       throw new Error("fetch should not be called with empty selection");
     };
 
@@ -363,12 +437,12 @@ describe("upload-to-local — empty selection", () => {
 // ---------------------------------------------------------------------------
 
 describe("upload-to-local — unsupported node type", () => {
-  let figmaMock;
-  let onmessage;
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
 
   beforeEach(() => {
     figmaMock = makeFigmaMock([makeNode("SLICE", "Bad Node")]);
-    const fetchMock = async () => {
+    const fetchMock: FakeFetch = async () => {
       throw new Error("fetch should not be called for unsupported node");
     };
 
@@ -383,9 +457,88 @@ describe("upload-to-local — unsupported node type", () => {
 
     const err = singleMessageOfType(figmaMock, "error");
     assert.ok(
-      err.message.includes("Unsupported node type"),
-      `Expected 'Unsupported node type' in: ${err.message}`,
+      typeof err.message === "string" &&
+        err.message.includes("Unsupported node type"),
+      `Expected 'Unsupported node type' in: ${String(err.message)}`,
     );
+  });
+
+  it("lists the supported set in the error message", async () => {
+    await onmessage({
+      type: "upload-to-local",
+      endpointUrl: "http://127.0.0.1:1983",
+    });
+
+    const err = singleMessageOfType(figmaMock, "error");
+    assert.ok(
+      typeof err.message === "string" && err.message.includes("Supported:"),
+      `Expected 'Supported:' listing in: ${String(err.message)}`,
+    );
+    assert.ok(
+      typeof err.message === "string" && err.message.includes("FRAME"),
+      `Expected 'FRAME' in supported list: ${String(err.message)}`,
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Clipboard export path (valid FRAME selection)
+// ---------------------------------------------------------------------------
+
+describe("export-selection — clipboard mode, valid FRAME", () => {
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
+  let exportAsyncCalls: ExportAsyncOptions[];
+
+  beforeEach(() => {
+    exportAsyncCalls = [];
+    const node: FakeNode = {
+      id: "123:456",
+      type: "FRAME",
+      name: "Test Frame",
+      exportAsync: async (opts) => {
+        exportAsyncCalls.push(opts);
+        return {
+          document: { id: "123:456", type: "FRAME", name: "Test Frame" },
+          components: {},
+          componentSets: {},
+          styles: {},
+        };
+      },
+    };
+    figmaMock = makeFigmaMock([node]);
+    const fetchMock: FakeFetch = async () => {
+      throw new Error("fetch should not be called in clipboard mode");
+    };
+
+    onmessage = loadPlugin(figmaMock, fetchMock);
+  });
+
+  it("invokes exportAsync with { format: 'JSON_REST_V1' }", async () => {
+    await onmessage({ type: "export-selection" });
+
+    assert.equal(exportAsyncCalls.length, 1);
+    assert.deepEqual(exportAsyncCalls[0], { format: "JSON_REST_V1" });
+  });
+
+  it("posts copy-to-clipboard with the envelope JSON string", async () => {
+    await onmessage({ type: "export-selection" });
+
+    const msg = singleMessageOfType(figmaMock, "copy-to-clipboard");
+    assert.ok(
+      typeof msg.payload === "string",
+      "copy-to-clipboard payload must be a string",
+    );
+    const envelope = JSON.parse(msg.payload) as {
+      kind: string;
+      pluginVersion: string;
+      copiedAt: string;
+      selections: Array<Record<string, unknown>>;
+    };
+    assert.equal(envelope.kind, "workspace-dev/figma-selection@1");
+    assert.equal(envelope.pluginVersion, "0.2.0");
+    assert.equal(typeof envelope.copiedAt, "string");
+    assert.equal(envelope.selections.length, 1);
   });
 });
 
@@ -394,11 +547,11 @@ describe("upload-to-local — unsupported node type", () => {
 // ---------------------------------------------------------------------------
 
 describe("upload-to-local — exportAsync throws", () => {
-  let figmaMock;
-  let onmessage;
+  let figmaMock: FakeFigma;
+  let onmessage: Onmessage;
 
   beforeEach(() => {
-    const badNode = {
+    const badNode: FakeNode = {
       id: "999:000",
       type: "FRAME",
       name: "Broken Frame",
@@ -407,7 +560,7 @@ describe("upload-to-local — exportAsync throws", () => {
       },
     };
     figmaMock = makeFigmaMock([badNode]);
-    const fetchMock = async () => {
+    const fetchMock: FakeFetch = async () => {
       throw new Error("fetch should not be called when export fails");
     };
 
@@ -422,9 +575,20 @@ describe("upload-to-local — exportAsync throws", () => {
 
     const err = singleMessageOfType(figmaMock, "error");
     assert.ok(
-      err.message.includes("Figma export quota exceeded"),
-      `Expected export error message in: ${err.message}`,
+      typeof err.message === "string" &&
+        err.message.includes("Figma export quota exceeded"),
+      `Expected export error message in: ${String(err.message)}`,
     );
+  });
+
+  it("does not fall through to upload-error when exportAsync throws", async () => {
+    await onmessage({
+      type: "upload-to-local",
+      endpointUrl: "http://127.0.0.1:1983",
+    });
+
+    assert.equal(messagesOfType(figmaMock, "upload-error").length, 0);
+    assert.equal(messagesOfType(figmaMock, "upload-result").length, 0);
   });
 });
 
@@ -440,9 +604,10 @@ describe("close message", () => {
       closeCalled = true;
     };
 
-    const onmessage = loadPlugin(figmaMock, async () => {
+    const fetchMock: FakeFetch = async () => {
       throw new Error("fetch must not be called for close");
-    });
+    };
+    const onmessage = loadPlugin(figmaMock, fetchMock);
 
     await onmessage({ type: "close" });
     assert.ok(closeCalled, "closePlugin should have been called");
