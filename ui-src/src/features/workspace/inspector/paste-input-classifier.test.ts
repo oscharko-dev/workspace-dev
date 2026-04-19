@@ -207,27 +207,27 @@ describe("classifyPasteIntent — FIGMA_JSON_DOC", () => {
 });
 
 describe("classifyPasteIntent — FIGMA_JSON_NODE_BATCH plugin signals", () => {
-  it("type === PLUGIN_EXPORT → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_plugin", () => {
+  it("type === PLUGIN_EXPORT → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_paste", () => {
     const result = classifyPasteIntent('{"type":"PLUGIN_EXPORT","nodes":[]}');
     expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
     expect(result.confidence).toBe(0.85);
-    expect(result.suggestedJobSource).toBe("figma_plugin");
+    expect(result.suggestedJobSource).toBe("figma_paste");
   });
 
-  it("figmaSourceMode field → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_plugin", () => {
+  it("figmaSourceMode field → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_paste", () => {
     const result = classifyPasteIntent(
       '{"figmaSourceMode":"figma_paste","data":{}}',
     );
     expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
     expect(result.confidence).toBe(0.85);
-    expect(result.suggestedJobSource).toBe("figma_plugin");
+    expect(result.suggestedJobSource).toBe("figma_paste");
   });
 
-  it("plugin field → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_plugin", () => {
+  it("plugin field → FIGMA_JSON_NODE_BATCH confidence 0.85 figma_paste", () => {
     const result = classifyPasteIntent('{"plugin":"my-plugin","version":1}');
     expect(result.intent).toBe("FIGMA_JSON_NODE_BATCH");
     expect(result.confidence).toBe(0.85);
-    expect(result.suggestedJobSource).toBe("figma_plugin");
+    expect(result.suggestedJobSource).toBe("figma_paste");
   });
 });
 

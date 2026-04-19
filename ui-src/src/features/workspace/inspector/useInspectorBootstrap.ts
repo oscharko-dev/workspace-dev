@@ -17,29 +17,15 @@ import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import { isFigmaClipboard } from "./figma-clipboard-parser";
 
 function toUnsupportedIntentReason({
-  detectedIntent,
   confirmedIntent,
-  suggestedJobSource,
 }: {
-  detectedIntent: ImportIntent;
   confirmedIntent: ImportIntent;
-  suggestedJobSource: string;
 }): string | null {
   if (confirmedIntent === "RAW_CODE_OR_TEXT") {
     return "UNSUPPORTED_TEXT_PASTE";
   }
   if (confirmedIntent === "UNKNOWN") {
     return "UNSUPPORTED_UNKNOWN_PASTE";
-  }
-  if (confirmedIntent === "FIGMA_PLUGIN_ENVELOPE") {
-    return null;
-  }
-  if (
-    suggestedJobSource === "figma_plugin" &&
-    confirmedIntent === detectedIntent &&
-    detectedIntent === "FIGMA_JSON_NODE_BATCH"
-  ) {
-    return "UNSUPPORTED_PLUGIN_EXPORT";
   }
   return null;
 }
@@ -390,9 +376,7 @@ export function useInspectorBootstrap(
       }
 
       const unsupportedReason = toUnsupportedIntentReason({
-        detectedIntent: detectedPaste.intent,
         confirmedIntent: intent,
-        suggestedJobSource: detectedPaste.suggestedJobSource,
       });
       if (unsupportedReason !== null) {
         setDetectedPaste(null);
