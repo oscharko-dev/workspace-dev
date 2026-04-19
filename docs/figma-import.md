@@ -165,6 +165,22 @@ WorkspaceDev is running on a different port, update this list in
 `figma_url` exists only as the Inspector's URL-submit alias. The public
 mode-lock surface remains the runtime-backed modes documented in the README.
 
+### Programmatic vs paste submission
+
+Two hook methods handle submission, and they serve different callers:
+
+- **`submit({ figmaJsonPayload })`** — programmatic / offline / CLI / firewall
+  handoff. The caller already knows its intent and provides pre-validated
+  Figma JSON (for example a CI artifact, a server-to-server POST, or a
+  downloaded plugin export). No intent classification, no SmartBanner.
+- **`submitPaste(text, { source?, clipboardHtml? })`** — interactive paste
+  path. Runs `classifyPasteIntent` on the raw input and shows the SmartBanner
+  for the user to confirm or correct the detected intent before submitting.
+
+`classifyPasteIntent` is designed for free-form strings, and the SmartBanner
+is an interactive modal that requires user input; both are unsuitable for
+headless or server-to-server callers. See Issue #1022 for the decision.
+
 ### Size limits
 
 - Client guard (Zod): **6 MiB** per `figmaJsonPayload`. Exceeding this raises
