@@ -1,0 +1,10 @@
+{
+  "variables": [
+    {
+      "name": "color/primary",
+      "resolvedValue": "#3B82F6",
+      "type": "COLOR",
+      "collection": "Colors"
+    }
+  ]
+}
