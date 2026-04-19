@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "noEmit": true,
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["node", "@figma/plugin-typings"],
+    "allowImportingTsExtensions": false,
+    "resolveJsonModule": true,
+    "verbatimModuleSyntax": false
+  },
+  "include": ["code.test.ts", "plugin-helpers.test.ts"],
+  "exclude": ["node_modules"]
+}

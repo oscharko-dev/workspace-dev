@@ -3,8 +3,6 @@
  *
  * Functions are defined inline here so there is no import dependency on the
  * HTML file. If the originals change, these definitions must stay in sync.
- *
- * Run: node --test plugin/plugin-helpers.test.mjs
  */
 
 import { describe, it } from "node:test";
@@ -14,7 +12,7 @@ import assert from "node:assert/strict";
 // Inline copies of the helpers under test (from plugin/ui.html ~261-287)
 // ---------------------------------------------------------------------------
 
-function normalizeWorkspaceDevUrl(rawUrl) {
+function normalizeWorkspaceDevUrl(rawUrl: unknown): string {
   const trimmed = String(rawUrl ?? "").trim();
   if (!trimmed) {
     return "";
@@ -33,7 +31,7 @@ function normalizeWorkspaceDevUrl(rawUrl) {
   }
 }
 
-function buildTrackingUrl(endpointUrl, jobId) {
+function buildTrackingUrl(endpointUrl: unknown, jobId: unknown): string {
   const normalizedEndpoint = normalizeWorkspaceDevUrl(endpointUrl);
   const safeJobId = String(jobId ?? "").trim();
   if (!normalizedEndpoint || !safeJobId) {
@@ -124,7 +122,6 @@ describe("buildTrackingUrl", () => {
       result,
       `http://127.0.0.1:1983/workspace/jobs/${encodeURIComponent("job/with/slashes")}`,
     );
-    // Confirm slashes are actually encoded, not literal
     assert.ok(result.includes("%2F"), "slashes must be percent-encoded");
   });
 
@@ -141,7 +138,6 @@ describe("buildTrackingUrl", () => {
   });
 
   it("normalizes the endpoint URL before building the tracking URL", () => {
-    // Trailing slash on endpoint must be stripped so the path is clean.
     assert.equal(
       buildTrackingUrl("http://127.0.0.1:1983/", "job-abc"),
       "http://127.0.0.1:1983/workspace/jobs/job-abc",
