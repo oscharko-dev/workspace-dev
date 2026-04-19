@@ -2261,7 +2261,19 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   );
   assert.match(
     workflow,
-    /pnpm exec tsx --test integration\/visual-benchmark\.execution\.test\.ts integration\/visual-benchmark\.test\.ts integration\/visual-benchmark-runner\.error-isolation\.test\.ts integration\/visual-quality-config\.test\.ts/,
+    /pnpm exec tsx --test integration\/visual-benchmark\.execution\.test\.ts/,
+  );
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test integration\/visual-benchmark\.test\.ts/,
+  );
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test integration\/visual-benchmark-runner\.error-isolation\.test\.ts/,
+  );
+  assert.match(
+    workflow,
+    /pnpm exec tsx --test integration\/visual-quality-config\.test\.ts/,
   );
   assert.match(
     workflow,
