@@ -412,6 +412,45 @@ export function parseJobFilesRoute(
   return { jobId, filePath };
 }
 
+export function parseJobPreviewRoute(
+  pathname: string,
+): { jobId: string; previewPath: string } | undefined {
+  if (!pathname.startsWith(JOB_ROUTE_PREFIX)) {
+    return undefined;
+  }
+
+  const rest = pathname.slice(JOB_ROUTE_PREFIX.length);
+  if (!rest) {
+    return undefined;
+  }
+
+  const previewSegment = "/preview";
+  const previewSegmentIndex = rest.indexOf(previewSegment);
+  if (previewSegmentIndex === -1) {
+    return undefined;
+  }
+
+  const jobId = rest.slice(0, previewSegmentIndex);
+  if (!jobId || jobId.includes("/")) {
+    return undefined;
+  }
+
+  const afterPreview = rest.slice(previewSegmentIndex + previewSegment.length);
+  if (afterPreview.length === 0 || afterPreview === "/") {
+    return { jobId, previewPath: "index.html" };
+  }
+
+  if (!afterPreview.startsWith("/")) {
+    return undefined;
+  }
+
+  const previewPath = afterPreview.slice(1);
+  return {
+    jobId,
+    previewPath: previewPath || "index.html",
+  };
+}
+
 /** Allowed extensions for generated source file serving. */
 const ALLOWED_FILE_EXTENSIONS = new Set([
   ".tsx",

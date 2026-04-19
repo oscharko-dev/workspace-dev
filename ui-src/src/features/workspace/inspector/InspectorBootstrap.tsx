@@ -275,6 +275,10 @@ export function InspectorBootstrap({
     pipelineStage === "parsing" ||
     screenshot != null ||
     (typeof previewUrl === "string" && previewUrl.trim().length > 0);
+  const phase2PreviewUrl =
+    pipelineStage === "generating" && "jobId" in state
+      ? `/workspace/jobs/${encodeURIComponent(state.jobId)}/preview/`
+      : undefined;
 
   return (
     <div
@@ -323,6 +327,9 @@ export function InspectorBootstrap({
               <div className="min-h-0 flex-1 overflow-hidden">
                 <PreviewPane
                   previewUrl={previewUrl ?? ""}
+                  {...(phase2PreviewUrl !== undefined
+                    ? { phase2PreviewUrl }
+                    : {})}
                   inspectEnabled={false}
                   activeScopeNodeId={null}
                   onToggleInspect={() => {
