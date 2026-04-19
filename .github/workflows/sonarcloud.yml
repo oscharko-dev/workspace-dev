@@ -74,11 +74,13 @@ jobs:
       # tests require external resources that are unavailable in this context.
       - name: Generate backend coverage report
         continue-on-error: true
+        timeout-minutes: 10
         run: pnpm run test:coverage
 
       # Run UI coverage (Vitest + @vitest/coverage-v8 → coverage/ui/lcov.info).
       - name: Generate UI coverage report
         continue-on-error: true
+        timeout-minutes: 10
         run: pnpm run ui:test:coverage
 
       # The scanner reads sonar-project.properties for all static settings.
