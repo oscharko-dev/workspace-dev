@@ -306,6 +306,7 @@ export interface VisualBenchmarkRunOptions extends VisualBenchmarkExecutionOptio
   qualityConfig?: VisualQualityConfig;
   componentVisualCatalogFile?: string;
   ci?: boolean;
+  output?: (chunk: string) => void;
 }
 
 interface PreparedStorybookComponentFixtures {
@@ -3146,6 +3147,7 @@ export const runVisualBenchmark = async (
   dependencies?: VisualBenchmarkRunnerDependencies,
 ): Promise<VisualBenchmarkResult> => {
   const runAt = new Date().toISOString();
+  const emit = options?.output ?? (() => {});
   const preparedStorybookComponents =
     await (dependencies?.prepareStorybookComponentFixtures ??
       (async (fixtureOptions?: VisualBenchmarkRunOptions) =>
@@ -3208,7 +3210,7 @@ export const runVisualBenchmark = async (
           benchmarkWarnings.push(
             `Visual benchmark fixture '${fixtureId}' failed: ${failure.error.code} ${failure.error.message}`,
           );
-          process.stdout.write(
+          emit(
             `\u26A0\uFE0F  Visual benchmark fixture '${fixtureId}' failed (${failure.error.code}); continuing with remaining fixtures.\n`,
           );
           continue;
@@ -3281,7 +3283,7 @@ export const runVisualBenchmark = async (
           benchmarkWarnings.push(
             `Visual benchmark fixture '${fixtureId}' failed: ${failure.error.code} ${failure.error.message}`,
           );
-          process.stdout.write(
+          emit(
             `\u26A0\uFE0F  Visual benchmark fixture '${fixtureId}' failed (${failure.error.code}); continuing with remaining fixtures.\n`,
           );
           continue;
@@ -3984,14 +3986,14 @@ export const runVisualBenchmark = async (
   });
 
   const table = formatVisualBenchmarkTable(result);
-  process.stdout.write(`${table}\n`);
+  emit(`${table}\n`);
 
   // Emit per-fixture trend summary block
   const trendBlock = formatVisualBenchmarkTrendSummaryBlock(
     result.trendSummaries,
   );
   if (trendBlock.length > 0) {
-    process.stdout.write(`\n${trendBlock}\n`);
+    emit(`\n${trendBlock}\n`);
   }
 
   // Emit regression alerts, if any
@@ -3999,7 +4001,7 @@ export const runVisualBenchmark = async (
     const alertLines = result.alerts.map(
       (alert) => `  \u26A0\uFE0F ${alert.code}: ${alert.message}`,
     );
-    process.stdout.write(
+    emit(
       `\n${String(result.alerts.length)} visual quality regression alert(s):\n${alertLines.join("\n")}\n`,
     );
   }
@@ -4012,17 +4014,17 @@ export const runVisualBenchmark = async (
       (d) => d.thresholdResult?.verdict === "warn",
     );
     if (thresholdFailedFixtures.length > 0) {
-      process.stdout.write(
+      emit(
         `\n\u274C ${thresholdFailedFixtures.length} fixture(s) below fail threshold: ${thresholdFailedFixtures.map((d) => d.fixtureId).join(", ")}\n`,
       );
     }
     if (warnedFixtures.length > 0) {
-      process.stdout.write(
+      emit(
         `\u26A0\uFE0F ${warnedFixtures.length} fixture(s) below warn threshold: ${warnedFixtures.map((d) => d.fixtureId).join(", ")}\n`,
       );
     }
     if (thresholdFailedFixtures.length === 0 && warnedFixtures.length === 0) {
-      process.stdout.write(`\n\u2705 All fixtures pass quality thresholds.\n`);
+      emit(`\n\u2705 All fixtures pass quality thresholds.\n`);
     }
   }
 
@@ -4044,12 +4046,12 @@ export const runVisualBenchmark = async (
       regressionConfig.historySize,
     );
     await saveVisualBenchmarkHistory(updatedHistory, effectiveOptions);
-    process.stdout.write(
+    emit(
       `History updated (${String(updatedHistory.entries.length)} entries).\n`,
     );
 
     await saveVisualBenchmarkBaselineScores(scores, effectiveOptions);
-    process.stdout.write("Baseline updated.\n");
+    emit("Baseline updated.\n");
   }
 
   return result;
