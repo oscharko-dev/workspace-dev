@@ -1,8 +1,9 @@
 /**
  * Figma MCP call counter for Issue #1093 (proactive plan-budget warning).
  *
- * Tracks successful MCP calls per YYYY-MM so the Inspector can render a
- * non-blocking banner at >=80% of the Figma Starter plan budget (6/month).
+ * Tracks server-reported successful MCP read-tool calls per YYYY-MM so the
+ * Inspector can render a non-blocking banner at >=80% of the Figma Starter
+ * plan budget (6/month).
  * Local, air-gap-safe (no network). SSR-safe (window guarded). Malformed
  * or version-mismatched storage payloads are discarded silently.
  */
@@ -14,7 +15,7 @@ import {
 
 export const FIGMA_STARTER_BUDGET = 6;
 export const WARNING_THRESHOLD_PCT = 80;
-export const FIGMA_MCP_CALL_COUNTER_STORAGE_VERSION = 1;
+export const FIGMA_MCP_CALL_COUNTER_STORAGE_VERSION = 2;
 
 const STORAGE_KEY = "workspace-dev:mcp-call-counter";
 const DISMISS_KEY_PREFIX = "workspace-dev:mcp-budget-banner-dismissed:";
@@ -214,6 +215,7 @@ export function getQuotaSnapshot(options?: CounterOptions): QuotaSnapshot {
 
 export interface RecordMcpCallOptions extends CounterOptions {
   readonly jobId?: string | null;
+  readonly count?: number;
 }
 
 export function recordMcpCall(options?: RecordMcpCallOptions): void {
@@ -229,10 +231,19 @@ export function recordMcpCall(options?: RecordMcpCallOptions): void {
   ensureRestored();
   const month = formatMonth(resolveNow(options));
   rollMonthIfNeeded(month);
+  const count =
+    options?.count === undefined
+      ? 1
+      : isNonNegativeFiniteInt(options.count) && options.count > 0
+        ? options.count
+        : 0;
+  if (count === 0) {
+    return;
+  }
   if (typeof options?.jobId === "string" && options.jobId.length > 0) {
     countedJobIds.add(options.jobId);
   }
-  state.callsThisMonth += 1;
+  state.callsThisMonth += count;
   const usagePct = computeUsagePct(state.callsThisMonth);
   const thresholdCrossed = usagePct >= WARNING_THRESHOLD_PCT;
   if (thresholdCrossed && !hasDispatchedThisSession) {

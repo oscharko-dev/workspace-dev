@@ -332,11 +332,12 @@ When the Inspector resolves Figma content through the Model Context Protocol
 (MCP) transport, each successful call counts toward the Figma plan's monthly
 MCP budget. The **Starter** plan allows **6 MCP calls per month**.
 
-WorkspaceDev tracks these calls locally (in your browser's `localStorage`) and
-shows a non-blocking warning banner at the top of the Inspector once usage
-reaches **80%** of the plan budget (i.e. 5 of 6 calls). The banner links to
-the [Figma pricing page](https://www.figma.com/pricing/) and can be dismissed
-for the rest of the session with the **✕** button. Dismissal is scoped to the
+WorkspaceDev tracks these calls locally (in your browser's `localStorage`) from
+the backend's reported successful MCP tool usage and shows a non-blocking
+warning banner at the top of the Inspector once usage reaches **80%** of the
+plan budget (i.e. 5 of 6 calls). The banner links to the
+[Figma pricing page](https://www.figma.com/pricing/) and can be dismissed for
+the rest of the session with the **✕** button. Dismissal is scoped to the
 current month — a new month re-enables the banner.
 
 The counter is:

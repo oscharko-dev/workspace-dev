@@ -262,27 +262,25 @@ export function useInspectorBootstrap(
   const jobId = pipeline.state.jobId ?? null;
   const previewUrl = pipeline.state.previewUrl ?? null;
 
-  // Issue #1093: Count successful MCP-backed pipeline completions once per
-  // jobId. REST-fallback runs are excluded — they consume a different quota.
+  // Issue #1093: Count server-reported MCP read-tool usage once per jobId.
+  // The backend projects `mcpCallsConsumed` only for terminal job payloads, so
+  // client-only failures (for example polling errors) do not inflate the local
+  // warning counter.
   const countedMcpJobIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const stage = pipeline.state.stage;
-    const fallbackMode = pipeline.state.fallbackMode;
-    if (stage !== "ready" && stage !== "partial") {
-      return;
-    }
+    const mcpCallsConsumed = pipeline.state.mcpCallsConsumed;
     if (jobId === null) {
       return;
     }
-    if (fallbackMode === "rest") {
+    if (mcpCallsConsumed === undefined || mcpCallsConsumed <= 0) {
       return;
     }
     if (countedMcpJobIdRef.current === jobId) {
       return;
     }
     countedMcpJobIdRef.current = jobId;
-    recordMcpCall({ jobId });
-  }, [pipeline.state.stage, pipeline.state.fallbackMode, jobId]);
+    recordMcpCall({ jobId, count: mcpCallsConsumed });
+  }, [pipeline.state.mcpCallsConsumed, jobId]);
 
   const state = useMemo(
     () =>
