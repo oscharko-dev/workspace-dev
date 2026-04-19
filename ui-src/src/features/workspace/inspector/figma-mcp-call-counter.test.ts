@@ -132,6 +132,14 @@ describe("recordMcpCall — usage percentages", () => {
     expect(snapshot.usagePct).toBe(133);
     expect(snapshot.thresholdCrossed).toBe(true);
   });
+
+  it("supports batched MCP call counts from a single job", () => {
+    recordMcpCall({ count: 3 });
+    const snapshot = getQuotaSnapshot();
+    expect(snapshot.callsThisMonth).toBe(3);
+    expect(snapshot.usagePct).toBe(50);
+    expect(snapshot.thresholdCrossed).toBe(false);
+  });
 });
 
 describe("month rollover", () => {

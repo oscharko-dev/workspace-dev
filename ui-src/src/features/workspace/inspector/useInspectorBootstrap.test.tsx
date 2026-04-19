@@ -5,6 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../../lib/http";
 import { useInspectorBootstrap } from "./useInspectorBootstrap";
 import {
+  __resetFigmaMcpCallCounterForTests,
+  getQuotaSnapshot,
+} from "./figma-mcp-call-counter";
+import {
   __resetIntentClassificationMetricsForTests,
   getIntentClassificationMetricsSnapshot,
 } from "./intent-classification-metrics";
@@ -78,12 +82,14 @@ function buildFigmaClipboardHtml(): string {
 
 beforeEach(() => {
   __resetIntentClassificationMetricsForTests();
+  __resetFigmaMcpCallCounterForTests();
 });
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   __resetIntentClassificationMetricsForTests();
+  __resetFigmaMcpCallCounterForTests();
 });
 
 describe("useInspectorBootstrap", () => {
@@ -181,6 +187,7 @@ describe("useInspectorBootstrap", () => {
 
     expect(result.current.jobId).toBe("job-happy");
     expect(result.current.previewUrl).toBe("http://127.0.0.1:1983/preview");
+    expect(getQuotaSnapshot().callsThisMonth).toBe(0);
   });
 
   it("uses figma_plugin mode for confirmed plugin envelopes", async () => {
@@ -427,6 +434,159 @@ describe("useInspectorBootstrap", () => {
       expect(result.current.state.jobId).toBe("job-partial");
       expect(result.current.state.fallbackMode).toBe("rest");
     }
+    expect(getQuotaSnapshot().callsThisMonth).toBe(0);
+  });
+
+  it("counts server-reported MCP tool usage for completed MCP-backed jobs", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-count-ready" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-count-ready") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-count-ready",
+            status: "completed",
+            inspector: {
+              mcpCallsConsumed: 3,
+              stages: [],
+            },
+            preview: { url: "http://127.0.0.1:1983/count-ready" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-count-ready/design-ir" ||
+        url === "/workspace/jobs/job-count-ready/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-count-ready", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-count-ready/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-count-ready/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitUrl("ABC123fileKey", "1:2");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("ready");
+    });
+
+    expect(getQuotaSnapshot().callsThisMonth).toBe(3);
+  });
+
+  it("counts server-reported MCP tool usage for terminal MCP-backed failures", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-count-failed" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-count-failed") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-count-failed",
+            status: "failed",
+            inspector: {
+              mcpCallsConsumed: 2,
+              stages: [],
+            },
+            error: {
+              stage: "figma.source",
+              code: "MCP_SOURCE_FAILED",
+              message: "Figma MCP source stage failed.",
+              retryable: true,
+            },
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitUrl("ABC123fileKey", "1:2");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    }, { timeout: 5000 });
+
+    expect(getQuotaSnapshot().callsThisMonth).toBe(2);
+  });
+
+  it("does not count failed jobs when the backend reports no MCP usage", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-no-mcp-usage" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-no-mcp-usage") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-no-mcp-usage",
+            status: "failed",
+            error: {
+              stage: "figma.source",
+              code: "MCP_USAGE_UNKNOWN",
+              message: "Backend failed before MCP usage could be projected.",
+              retryable: true,
+            },
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitUrl("ABC123fileKey", "1:2");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("failed");
+    });
+
+    expect(getQuotaSnapshot().callsThisMonth).toBe(0);
   });
 
   it("fails fast for raw Figma clipboard HTML without a JSON payload", async () => {

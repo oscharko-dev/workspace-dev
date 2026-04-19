@@ -27,7 +27,10 @@ interface CodegenSummaryLike {
 interface HybridEnrichmentLike {
   sourceMode?: string;
   diagnostics?: Array<{ code?: string }>;
+  toolNames?: string[];
 }
+
+const NON_MCP_TOOL_NAMES = new Set(["figma-rest-authoritative-subtrees"]);
 
 const RETRYABLE_STAGE_SET = new Set<WorkspaceJobRetryStage>([
   "figma.source",
@@ -90,6 +93,25 @@ const inferFallbackMode = ({
     return hybridEnrichment.sourceMode === "hybrid" ? "hybrid_rest" : "rest";
   }
   return undefined;
+};
+
+const inferMcpCallsConsumed = ({
+  job,
+  hybridEnrichment,
+}: {
+  job: JobRecord;
+  hybridEnrichment: HybridEnrichmentLike | undefined;
+}): number => {
+  if (job.request.figmaSourceMode === "local_json" || !hybridEnrichment) {
+    return 0;
+  }
+  return (hybridEnrichment.toolNames ?? []).filter((toolName) => {
+    return (
+      typeof toolName === "string" &&
+      toolName.length > 0 &&
+      !NON_MCP_TOOL_NAMES.has(toolName)
+    );
+  }).length;
 };
 
 export const syncPublicJobProjection = async ({
@@ -384,6 +406,7 @@ export const syncPublicJobProjection = async ({
   );
   const inspectorOutcome = inferOutcome({ job });
   const fallbackMode = inferFallbackMode({ job, hybridEnrichment });
+  const mcpCallsConsumed = inferMcpCallsConsumed({ job, hybridEnrichment });
   const retryTargets =
     job.error?.retryTargets ?? codegenSummary?.failedTargets ?? [];
   const retryableStages = [
@@ -397,6 +420,7 @@ export const syncPublicJobProjection = async ({
   const inspector: WorkspaceJobInspector = {
     ...(inspectorOutcome ? { outcome: inspectorOutcome } : {}),
     ...(fallbackMode ? { fallbackMode } : {}),
+    ...(mcpCallsConsumed > 0 ? { mcpCallsConsumed } : {}),
     ...(retryTargets.length > 0
       ? {
           retryTargets: retryTargets.map((target) => ({

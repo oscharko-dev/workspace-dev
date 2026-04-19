@@ -186,6 +186,7 @@ const createJob = async (): Promise<{
 
 test("syncPublicJobProjection maps stage artifacts back into public job fields and clears stale optional fields", async () => {
   const { job, artifactStore, jobDir } = await createJob();
+  job.request.figmaSourceMode = "hybrid";
   const generatedProjectDir = path.join(jobDir, "generated-app");
   const designIrFile = path.join(jobDir, "design-ir.json");
   const figmaAnalysisFile = path.join(jobDir, "figma-analysis.json");
@@ -516,6 +517,19 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
       changedFiles: 3,
     },
   });
+  await artifactStore.setValue({
+    key: STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+    stage: "figma.source",
+    value: {
+      sourceMode: "hybrid",
+      toolNames: [
+        "get_design_context",
+        "get_metadata",
+        "figma-rest-authoritative-subtrees",
+        "search_design_system",
+      ],
+    },
+  });
 
   await syncPublicJobProjection({ job, artifactStore });
 
@@ -628,6 +642,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     scopePath: "src",
     changedFiles: 3,
   });
+  assert.equal(job.inspector?.mcpCallsConsumed, 3);
 });
 
 test("syncPublicJobProjection clears stale visualQuality when no artifact is stored", async () => {

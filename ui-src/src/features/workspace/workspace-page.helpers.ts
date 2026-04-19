@@ -49,6 +49,7 @@ export interface JobInspectorStagePayload {
 export interface JobInspectorPayload {
   outcome?: string;
   fallbackMode?: string;
+  mcpCallsConsumed?: number;
   retryableStages?: string[];
   retryTargets?: unknown;
   stages?: JobInspectorStagePayload[];

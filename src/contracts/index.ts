@@ -566,6 +566,8 @@ export interface WorkspaceJobInspectorStage {
 export interface WorkspaceJobInspector {
   outcome?: WorkspaceJobOutcome;
   fallbackMode?: WorkspaceJobFallbackMode;
+  /** Successful MCP read-tool calls consumed by this job. */
+  mcpCallsConsumed?: number;
   retryableStages?: WorkspaceJobRetryStage[];
   retryTargets?: WorkspaceJobRetryTarget[];
   stages: WorkspaceJobInspectorStage[];

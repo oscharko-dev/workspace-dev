@@ -231,6 +231,8 @@ export interface PastePipelineState {
   canCancel: boolean;
   fallbackMode?: PipelineFallbackMode | undefined;
   retryRequest?: PipelineRetryRequest | undefined;
+  /** Successful MCP read-tool calls consumed by the current job, when known. */
+  mcpCallsConsumed?: number | undefined;
   /** Set when at least one stage succeeded but at least one failed. */
   partialStats?: PartialImportStats;
   /** Per-paste delta summary surfaced on the submit-accepted response. */
@@ -284,7 +286,12 @@ export type PipelineAction =
   | { type: "stage_start"; stage: PipelineStage; message: string }
   | { type: "stage_message"; stage: PipelineStage; message: string }
   | { type: "stage_done"; stage: PipelineStage; durationMs: number }
-  | { type: "stage_failed"; stage: PipelineStage; error: PipelineError }
+  | {
+      type: "stage_failed";
+      stage: PipelineStage;
+      error: PipelineError;
+      mcpCallsConsumed?: number;
+    }
   | { type: "retry_stage"; stage: PipelineStage; targetIds?: string[] }
   | { type: "design_ir_ready"; designIR: DesignIrPayload }
   | { type: "figma_analysis_ready"; figmaAnalysis: FigmaAnalysisPayload }
@@ -301,6 +308,7 @@ export type PipelineAction =
       previewUrl?: string;
       outcome?: PipelineOutcome;
       fallbackMode?: PipelineFallbackMode;
+      mcpCallsConsumed?: number;
     };
 
 // ---------------------------------------------------------------------------
@@ -641,6 +649,9 @@ export function pastePipelineReducer(
         ...(error.fallbackMode !== undefined
           ? { fallbackMode: error.fallbackMode }
           : {}),
+        ...(action.mcpCallsConsumed !== undefined
+          ? { mcpCallsConsumed: action.mcpCallsConsumed }
+          : {}),
         ...(nextRetryRequest !== undefined
           ? { retryRequest: nextRetryRequest }
           : {}),
@@ -700,6 +711,9 @@ export function pastePipelineReducer(
         canCancel: false,
         ...(action.fallbackMode !== undefined
           ? { fallbackMode: action.fallbackMode }
+          : {}),
+        ...(action.mcpCallsConsumed !== undefined
+          ? { mcpCallsConsumed: action.mcpCallsConsumed }
           : {}),
         ...(outcome === "partial"
           ? {
@@ -1352,6 +1366,20 @@ function getJobFallbackMode(
     payload.error.fallbackMode.length > 0
   ) {
     return payload.error.fallbackMode as PipelineFallbackMode;
+  }
+  return undefined;
+}
+
+function getJobMcpCallsConsumed(payload: JobPayload): number | undefined {
+  if (
+    isRecord(payload.inspector) &&
+    typeof payload.inspector.mcpCallsConsumed === "number" &&
+    Number.isFinite(payload.inspector.mcpCallsConsumed) &&
+    payload.inspector.mcpCallsConsumed >= 0 &&
+    Math.floor(payload.inspector.mcpCallsConsumed) ===
+      payload.inspector.mcpCallsConsumed
+  ) {
+    return payload.inspector.mcpCallsConsumed;
   }
   return undefined;
 }
@@ -2329,9 +2357,13 @@ async function executePipelineRun({
 
   if (payload.status === "failed") {
     const stage = inferFailureStage(knownStatuses);
+    const mcpCallsConsumed = getJobMcpCallsConsumed(payload);
     apply({
       type: "stage_failed",
       stage,
+      ...(mcpCallsConsumed !== undefined
+        ? { mcpCallsConsumed }
+        : {}),
       error: parsePipelineErrorPayload({
         fallbackStage: stage,
         payload: payload.error,
@@ -2381,11 +2413,13 @@ async function executePipelineRun({
     }
   }
   const fallbackMode = getJobFallbackMode(payload);
+  const mcpCallsConsumed = getJobMcpCallsConsumed(payload);
   apply({
     type: "complete",
     ...(previewUrl !== undefined ? { previewUrl } : {}),
     outcome,
     ...(fallbackMode !== undefined ? { fallbackMode } : {}),
+    ...(mcpCallsConsumed !== undefined ? { mcpCallsConsumed } : {}),
   });
   return { jobId };
 }
