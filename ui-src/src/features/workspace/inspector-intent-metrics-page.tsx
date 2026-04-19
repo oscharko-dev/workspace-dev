@@ -273,6 +273,55 @@ export function InspectorIntentMetricsPage(): JSX.Element {
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <h2 className="m-0 text-sm font-semibold text-white">
+                Correction totals
+              </h2>
+              <p className="m-0 mt-1 text-[11px] text-white/55">
+                SmartBanner correction counts by detected intent to
+                user-confirmed intent.
+              </p>
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table
+              data-testid="intent-metrics-corrections-table"
+              className="min-w-full border-collapse text-left text-xs"
+            >
+              <thead>
+                <tr className="border-b border-white/10 text-white/45">
+                  <th className="px-3 py-2 font-medium">Detected</th>
+                  {ALL_INTENTS.map((intent) => (
+                    <th key={intent} className="px-3 py-2 font-medium">
+                      {formatIntentLabel(intent)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ALL_INTENTS.map((fromIntent) => (
+                  <tr key={fromIntent} className="border-b border-white/5">
+                    <th className="px-3 py-2 font-medium text-white/80">
+                      {formatIntentLabel(fromIntent)}
+                    </th>
+                    {ALL_INTENTS.map((toIntent) => (
+                      <td
+                        key={`${fromIntent}-${toIntent}`}
+                        data-testid={`intent-metrics-correction-${fromIntent}-${toIntent}`}
+                        className="px-3 py-2 font-mono text-white/70"
+                      >
+                        {snapshot.corrections[fromIntent][toIntent]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="rounded-md border border-white/10 bg-[#171717] p-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="m-0 text-sm font-semibold text-white">
                 Recent events
               </h2>
               <p className="m-0 mt-1 text-[11px] text-white/55">

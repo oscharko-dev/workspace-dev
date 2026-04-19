@@ -86,7 +86,8 @@ test.describe("inspector intent metrics", () => {
   }) => {
     let mismatches = 0;
     const runCount = 5;
-    const expectedTotalClassifications = SAMPLE_CASES.length * runCount;
+    const representativeClassificationCount = SAMPLE_CASES.length * runCount;
+    const expectedTotalClassifications = SAMPLE_CASES.length * runCount + 1;
 
     await gotoInspector(page);
 
@@ -109,7 +110,22 @@ test.describe("inspector intent metrics", () => {
       }
     }
 
-    const observedRate = mismatches / expectedTotalClassifications;
+    await simulateInspectorPaste(page, FIGMA_DOC_JSON);
+    const correctionBanner = page.getByTestId("smart-banner");
+    await expect(correctionBanner).toBeVisible({ timeout: 5_000 });
+    await correctionBanner
+      .getByRole("combobox", { name: "Erkannten Typ korrigieren" })
+      .selectOption("RAW_CODE_OR_TEXT");
+    await correctionBanner
+      .getByRole("button", { name: "Import starten" })
+      .click();
+    await expect(
+      page.getByText(
+        "This paste looks like code or plain text, not a Figma JSON export. Paste a JSON_REST_V1 export or correct the detected type.",
+      ),
+    ).toBeVisible();
+
+    const observedRate = mismatches / representativeClassificationCount;
     expect(observedRate).toBeLessThanOrEqual(MAX_MISCLASSIFICATION_RATE);
 
     await gotoIntentMetrics(page);
@@ -119,13 +135,18 @@ test.describe("inspector intent metrics", () => {
     ).toContainText(String(expectedTotalClassifications));
     await expect(
       page.getByTestId("intent-metrics-total-corrections"),
-    ).toContainText("0");
+    ).toContainText("1");
     await expect(
       page.getByTestId("intent-metrics-misclassification-rate"),
-    ).toContainText("0.00%");
+    ).toContainText("4.76%");
     await expect(
       page.getByTestId("intent-metrics-threshold-status"),
     ).toContainText("Pass");
+    await expect(
+      page.getByTestId(
+        "intent-metrics-correction-FIGMA_JSON_DOC-RAW_CODE_OR_TEXT",
+      ),
+    ).toContainText("1");
     await expect(page.getByTestId("intent-metrics-events")).toBeVisible();
   });
 });

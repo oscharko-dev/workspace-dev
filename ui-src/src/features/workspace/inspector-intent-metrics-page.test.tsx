@@ -67,6 +67,11 @@ describe("InspectorIntentMetricsPage", () => {
     expect(
       screen.getByTestId("intent-metrics-threshold-status"),
     ).toHaveTextContent("Fail");
+    expect(
+      screen.getByTestId(
+        "intent-metrics-correction-FIGMA_JSON_DOC-FIGMA_PLUGIN_ENVELOPE",
+      ),
+    ).toHaveTextContent("1");
   });
 
   it("resets counters from the diagnostics page", async () => {
