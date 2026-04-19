@@ -1,5 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RateLimitBudgetBanner } from "./RateLimitBudgetBanner";
 import {
   __resetFigmaMcpCallCounterForTests,
@@ -125,5 +125,62 @@ describe("RateLimitBudgetBanner — accessibility + link", () => {
     expect(screen.getByTestId("rate-limit-budget-banner")).toHaveTextContent(
       /Upgrade your plan/,
     );
+  });
+});
+
+describe("cross-month re-enablement", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    __resetFigmaMcpCallCounterForTests();
+    try {
+      window.sessionStorage.clear();
+    } catch {
+      // ignore
+    }
+  });
+
+  it("re-shows the banner on month rollover even if dismissed in the prior month", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-04-15T12:00:00Z"));
+
+    // Seed 5/6 calls in April so threshold is crossed.
+    for (let i = 0; i < 5; i += 1) {
+      recordMcpCall();
+    }
+
+    // Render — banner should be visible.
+    const { unmount, rerender } = render(<RateLimitBudgetBanner />);
+    expect(screen.getByTestId("rate-limit-budget-banner")).toBeInTheDocument();
+
+    // Dismiss — banner should hide.
+    fireEvent.click(screen.getByTestId("rate-limit-budget-banner-dismiss"));
+    expect(
+      screen.queryByTestId("rate-limit-budget-banner"),
+    ).not.toBeInTheDocument();
+
+    // Same clock — still hidden on rerender.
+    rerender(<RateLimitBudgetBanner />);
+    expect(
+      screen.queryByTestId("rate-limit-budget-banner"),
+    ).not.toBeInTheDocument();
+
+    // Unmount before rolling to May.
+    unmount();
+
+    // Roll forward to May and seed 5/6 calls for the new month.
+    vi.setSystemTime(new Date("2026-05-02T12:00:00Z"));
+    __resetFigmaMcpCallCounterForTests();
+    try {
+      window.sessionStorage.clear();
+    } catch {
+      // ignore
+    }
+    for (let i = 0; i < 5; i += 1) {
+      recordMcpCall();
+    }
+
+    // Remount — banner must be visible again for May.
+    render(<RateLimitBudgetBanner />);
+    expect(screen.getByTestId("rate-limit-budget-banner")).toBeInTheDocument();
   });
 });

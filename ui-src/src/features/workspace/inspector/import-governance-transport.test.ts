@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ImportGovernanceEvent,
   ImportSessionGovernanceEvent,
+  McpBudgetThresholdCrossedEvent,
 } from "./import-governance-events";
 import { createImportGovernanceTransport } from "./import-governance-transport";
 
@@ -231,5 +232,23 @@ describe("createImportGovernanceTransport", () => {
 
     const [url] = fetchImpl.mock.calls[0] ?? [];
     expect(url).toBe("/workspace/import-sessions/paste%20import%2F42/events");
+  });
+
+  it("ignores mcp-budget-threshold-crossed events (no fetch, no body)", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(jsonResponse(200));
+    const listener = createImportGovernanceTransport({ fetchImpl });
+
+    const event: McpBudgetThresholdCrossedEvent = {
+      kind: "mcp-budget-threshold-crossed",
+      callsThisMonth: 5,
+      budget: 6,
+      month: "2026-04",
+    };
+    listener(event);
+    await flush();
+
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

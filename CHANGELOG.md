@@ -26,6 +26,7 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 - CI `performance-web` jobs in release workflows with artifact upload.
 - Responsive viewport configuration for visual benchmark: declare per-fixture or per-screen viewport lists with `id/width/height/deviceScaleFactor/weight` in `visual-quality.config.json`. Default behavior is a single `desktop` viewport (1280x800) for byte-identical back-compat. Explicit viewports are honored by the `validate-project` service via `visualQualityViewportHeight` + `visualQualityDeviceScaleFactor` runtime fields. (#838)
 - `--viewport <id>` CLI flag on `pnpm benchmark:visual` for future per-viewport filtering. Flag is parsed and validated today; runner integration follows. (#838)
+- Proactive Figma MCP plan-budget warning (#1093): a non-blocking banner appears in the Inspector when usage reaches ≥80% (5/6 calls) of the Figma Starter MCP budget. Counter is local-only (localStorage); dismissal is session- and month-scoped.
 
 ### Changed
 

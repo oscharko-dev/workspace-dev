@@ -251,6 +251,25 @@ describe("localStorage persistence", () => {
     const snapshot = getQuotaSnapshot();
     expect(snapshot.callsThisMonth).toBe(0);
   });
+
+  it.each(["not-a-date", "2026-13", "26-04", "2026-00", "2026-1"])(
+    "discards malformed month %s in persisted envelope",
+    (badMonth) => {
+      __resetFigmaMcpCallCounterForTests();
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          version: FIGMA_MCP_CALL_COUNTER_STORAGE_VERSION,
+          month: badMonth,
+          callsThisMonth: 3,
+          thresholdDispatchedForMonth: null,
+        }),
+      );
+
+      const snapshot = getQuotaSnapshot();
+      expect(snapshot.callsThisMonth).toBe(0);
+    },
+  );
 });
 
 describe("SSR safety", () => {
@@ -306,6 +325,26 @@ describe("isBannerDismissedForMonth / dismissBannerForMonth", () => {
   });
 });
 
+describe("recordMcpCall — jobId dedupe", () => {
+  it("does not double-count when recordMcpCall is called twice with the same jobId", () => {
+    recordMcpCall({ jobId: "job-abc" });
+    recordMcpCall({ jobId: "job-abc" });
+    expect(getQuotaSnapshot().callsThisMonth).toBe(1);
+  });
+
+  it("counts when called with a fresh jobId after a prior one", () => {
+    recordMcpCall({ jobId: "job-abc" });
+    recordMcpCall({ jobId: "job-xyz" });
+    expect(getQuotaSnapshot().callsThisMonth).toBe(2);
+  });
+
+  it("counts normally when no jobId is provided", () => {
+    recordMcpCall();
+    recordMcpCall();
+    expect(getQuotaSnapshot().callsThisMonth).toBe(2);
+  });
+});
+
 describe("mcp-budget-threshold-crossed governance event", () => {
   it("fires exactly once per session when the threshold first flips", () => {
     const events: ImportGovernanceEvent[] = [];
@@ -355,5 +394,45 @@ describe("mcp-budget-threshold-crossed governance event", () => {
       expect(thresholdEvent.budget).toBe(FIGMA_STARTER_BUDGET);
       expect(thresholdEvent.month).toBe("2026-04");
     }
+  });
+
+  it("re-dispatches on the first call of a new session when threshold was already met in a prior session", () => {
+    // Simulate a prior session: persist a v1 envelope with 5 calls already
+    // recorded and thresholdDispatchedForMonth set.
+    const currentMonth = formatMonth(new Date());
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: FIGMA_MCP_CALL_COUNTER_STORAGE_VERSION,
+        month: currentMonth,
+        callsThisMonth: 5,
+        thresholdDispatchedForMonth: currentMonth,
+      }),
+    );
+    // Reset clears hasDispatchedThisSession (session-scoped) but leaves
+    // the localStorage envelope in place — simulating a fresh page load.
+    __resetFigmaMcpCallCounterForTests();
+    // Re-seed localStorage after the reset clears it, to mimic a page reload
+    // where storage was already populated before the module was imported.
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: FIGMA_MCP_CALL_COUNTER_STORAGE_VERSION,
+        month: currentMonth,
+        callsThisMonth: 5,
+        thresholdDispatchedForMonth: currentMonth,
+      }),
+    );
+
+    const events: ImportGovernanceEvent[] = [];
+    subscribeToImportGovernanceEvents((e) => events.push(e));
+
+    // One more call in the new session — still above threshold.
+    recordMcpCall();
+
+    const thresholdEvents = events.filter(
+      (e) => e.kind === "mcp-budget-threshold-crossed",
+    );
+    expect(thresholdEvents).toHaveLength(1);
   });
 });

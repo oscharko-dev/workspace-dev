@@ -77,10 +77,26 @@ export type ImportGovernanceEvent =
 
 export type ImportGovernanceListener = (event: ImportGovernanceEvent) => void;
 
+/**
+ * Positive exhaustive allowlist of the session-event kinds that belong to
+ * `ImportSessionGovernanceEvent`. Adding a new union variant to
+ * `ImportGovernanceEvent` without adding it here will cause a TS error via
+ * the `satisfies` check below, preventing silent pass-through in the transport.
+ */
+const IMPORT_SESSION_EVENT_KINDS = [
+  "imported",
+  "review_started",
+  "approved",
+  "applied",
+  "rejected",
+  "apply_blocked",
+  "note",
+] as const satisfies readonly WorkspaceImportSessionEventKind[];
+
 export function isImportSessionGovernanceEvent(
   event: ImportGovernanceEvent,
 ): event is ImportSessionGovernanceEvent {
-  return event.kind !== "mcp-budget-threshold-crossed";
+  return (IMPORT_SESSION_EVENT_KINDS as readonly string[]).includes(event.kind);
 }
 
 /**
