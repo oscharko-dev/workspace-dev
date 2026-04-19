@@ -72,7 +72,7 @@ export function resolveInjectRequest({
 
   const init: RequestInit = { method, headers };
   if (body !== undefined) {
-    init.body = body;
+    init.body = body as BodyInit;
   }
 
   return {
