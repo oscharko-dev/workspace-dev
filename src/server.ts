@@ -421,7 +421,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   };
   const closeWithDrain = async (): Promise<void> => {
     if (lifecycleState === "stopped") {
-      throw new Error("Server is already stopped.");
+      return;
     }
     if (closePromise) {
       return await closePromise;
