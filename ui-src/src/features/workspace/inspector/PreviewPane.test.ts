@@ -9,7 +9,8 @@ import {
 import { createElement } from "react";
 import { PreviewPane } from "./PreviewPane";
 
-const SPLIT_PREF_KEY = "workspace-dev:inspector:preview-split";
+const LEGACY_SPLIT_PREF_KEY = "workspace-dev:inspector:preview-split";
+const VIEW_MODE_PREF_KEY = "workspace-dev:inspector:preview-view-mode";
 
 vi.mock("./InspectOverlay", () => ({
   InspectOverlay: ({
@@ -343,11 +344,36 @@ describe("PreviewPane — split view", () => {
     fireEvent.click(toggle);
 
     expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(window.localStorage.getItem(SPLIT_PREF_KEY)).toBe("1");
+    expect(window.localStorage.getItem(VIEW_MODE_PREF_KEY)).toBe("split");
+    // The legacy key must not be written by the new code path.
+    expect(window.localStorage.getItem(LEGACY_SPLIT_PREF_KEY)).toBeNull();
   });
 
-  it("reads persisted split preference on mount", () => {
-    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+  it("reads persisted split preference on mount (via legacy key migration)", () => {
+    // Seed only the legacy key — new code must migrate on read.
+    window.localStorage.setItem(LEGACY_SPLIT_PREF_KEY, "1");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "http://127.0.0.1:4010/preview",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByTestId("preview-split-toggle")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    // Migration effect: new key written, legacy key removed.
+    expect(window.localStorage.getItem(VIEW_MODE_PREF_KEY)).toBe("split");
+    expect(window.localStorage.getItem(LEGACY_SPLIT_PREF_KEY)).toBeNull();
+  });
+
+  it("reads persisted split preference from the new view-mode key", () => {
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "split");
 
     render(
       createElement(PreviewPane, {
@@ -366,7 +392,7 @@ describe("PreviewPane — split view", () => {
   });
 
   it("renders side-by-side panes with screenshot + iframe when split enabled and both available", () => {
-    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "split");
 
     render(
       createElement(PreviewPane, {
@@ -391,7 +417,7 @@ describe("PreviewPane — split view", () => {
   });
 
   it("renders waiting placeholder on right pane when split enabled and no preview URL", () => {
-    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "split");
 
     render(
       createElement(PreviewPane, {
@@ -409,7 +435,7 @@ describe("PreviewPane — split view", () => {
   });
 
   it("uses the phase-2 preview URL during generating when split view is enabled", () => {
-    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "split");
 
     render(
       createElement(PreviewPane, {
@@ -434,7 +460,7 @@ describe("PreviewPane — split view", () => {
   });
 
   it("keeps the ready-state live preview URL when a phase-2 preview URL is also present", () => {
-    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "split");
 
     render(
       createElement(PreviewPane, {
@@ -456,7 +482,7 @@ describe("PreviewPane — split view", () => {
   });
 
   it("renders screenshot placeholder on left pane when split enabled and no screenshot", () => {
-    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "split");
 
     render(
       createElement(PreviewPane, {
@@ -474,7 +500,7 @@ describe("PreviewPane — split view", () => {
 
   it("wires iframe scroll sync when split is enabled and both panes render", () => {
     const consoleError = vi.spyOn(console, "error");
-    window.localStorage.setItem(SPLIT_PREF_KEY, "1");
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "split");
 
     render(
       createElement(PreviewPane, {
@@ -528,7 +554,10 @@ describe("PreviewPane — split view", () => {
     });
 
     try {
-      window.localStorage.setItem("workspace-dev:inspector:preview-split", "1");
+      window.localStorage.setItem(
+        "workspace-dev:inspector:preview-view-mode",
+        "split",
+      );
 
       render(
         createElement(PreviewPane, {
@@ -581,5 +610,258 @@ describe("PreviewPane — split view", () => {
         Reflect.deleteProperty(HTMLIFrameElement.prototype, "contentWindow");
       }
     }
+  });
+});
+
+describe("PreviewPane — overlay view", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    window.localStorage.clear();
+  });
+
+  const noop = (): void => {
+    // no-op
+  };
+
+  function renderOverlay(
+    overrides: Partial<{
+      previewUrl: string;
+      screenshot: string | undefined;
+    }> = {},
+  ): void {
+    render(
+      createElement(PreviewPane, {
+        previewUrl: overrides.previewUrl ?? "http://127.0.0.1:4010/preview",
+        screenshot: overrides.screenshot ?? "http://cdn.example.com/shot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+  }
+
+  it("renders the overlay toggle button", () => {
+    renderOverlay();
+    const toggle = screen.getByTestId("preview-overlay-toggle");
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("engages overlay mode and shows slider + layout when both layers present", () => {
+    renderOverlay();
+
+    const toggle = screen.getByTestId("preview-overlay-toggle");
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(window.localStorage.getItem(VIEW_MODE_PREF_KEY)).toBe("overlay");
+
+    // Overlay layout renders an <img> (not via ScreenshotPreview mock) + iframe.
+    expect(screen.getByTestId("preview-overlay-layout")).toBeInTheDocument();
+    expect(screen.getByTitle("Live preview")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("preview-overlay-opacity-slider"),
+    ).toBeInTheDocument();
+  });
+
+  it("starts opacity at 50% and applies slider value to iframe style", () => {
+    renderOverlay();
+    fireEvent.click(screen.getByTestId("preview-overlay-toggle"));
+
+    const slider = screen.getByTestId(
+      "preview-overlay-opacity-slider",
+    ) as HTMLInputElement;
+    expect(slider.value).toBe("50");
+
+    const iframe = screen.getByTitle("Live preview") as HTMLIFrameElement;
+    expect(iframe.style.opacity).toBe("0.5");
+
+    // 0%
+    fireEvent.change(slider, { target: { value: "0" } });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("0");
+
+    // 100%
+    fireEvent.change(slider, { target: { value: "100" } });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("1");
+
+    // 25%
+    fireEvent.change(slider, { target: { value: "25" } });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("0.25");
+  });
+
+  it("clamps slider input at min (0) and max (100) boundaries", () => {
+    renderOverlay();
+    fireEvent.click(screen.getByTestId("preview-overlay-toggle"));
+
+    const slider = screen.getByTestId(
+      "preview-overlay-opacity-slider",
+    ) as HTMLInputElement;
+
+    // Below min — opacity clamps to 0.
+    fireEvent.change(slider, { target: { value: "-10" } });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("0");
+    expect(slider.getAttribute("aria-valuenow")).toBe("0");
+
+    // Above max — opacity clamps to 1.
+    fireEvent.change(slider, { target: { value: "999" } });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("1");
+    expect(slider.getAttribute("aria-valuenow")).toBe("100");
+  });
+
+  it("exposes ARIA slider semantics on the opacity input", () => {
+    renderOverlay();
+    fireEvent.click(screen.getByTestId("preview-overlay-toggle"));
+
+    const slider = screen.getByTestId("preview-overlay-opacity-slider");
+    // Native <input type="range"> exposes the implicit ARIA "slider" role
+    // via the accessibility tree (verified by getByRole), not as a DOM
+    // attribute. Keep both checks: implicit role + the explicit ARIA props.
+    expect(
+      screen.getByRole("slider", { name: "Preview overlay opacity" }),
+    ).toBe(slider);
+    expect(slider).toHaveAttribute("aria-label", "Preview overlay opacity");
+    expect(slider).toHaveAttribute("aria-valuemin", "0");
+    expect(slider).toHaveAttribute("aria-valuemax", "100");
+    expect(slider).toHaveAttribute("aria-valuenow", "50");
+    expect(slider).toHaveAttribute("aria-valuetext", "50%");
+
+    // Visible label updates with the value.
+    expect(screen.getByText("Opacity 50%")).toBeInTheDocument();
+    fireEvent.change(slider, { target: { value: "25" } });
+    expect(screen.getByText("Opacity 25%")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("preview-overlay-opacity-slider"),
+    ).toHaveAttribute("aria-valuenow", "25");
+  });
+
+  it("supports quick-set keyboard shortcuts 0/5/1 while overlay is active", () => {
+    renderOverlay();
+    fireEvent.click(screen.getByTestId("preview-overlay-toggle"));
+
+    const root = screen.getByTestId("preview-pane-root");
+
+    fireEvent.keyDown(root, { key: "0" });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("0");
+    expect(
+      screen.getByTestId("preview-overlay-opacity-slider"),
+    ).toHaveAttribute("aria-valuenow", "0");
+
+    fireEvent.keyDown(root, { key: "5" });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("0.5");
+    expect(
+      screen.getByTestId("preview-overlay-opacity-slider"),
+    ).toHaveAttribute("aria-valuenow", "50");
+
+    fireEvent.keyDown(root, { key: "1" });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("1");
+    expect(
+      screen.getByTestId("preview-overlay-opacity-slider"),
+    ).toHaveAttribute("aria-valuenow", "100");
+  });
+
+  it("ignores keyboard shortcuts when overlay mode is not active", () => {
+    renderOverlay();
+    // Do not toggle overlay — viewMode stays "single".
+    const root = screen.getByTestId("preview-pane-root");
+
+    // Without overlay, the slider is not rendered so we assert it is absent
+    // and key presses do not create it.
+    expect(
+      screen.queryByTestId("preview-overlay-opacity-slider"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.keyDown(root, { key: "0" });
+    fireEvent.keyDown(root, { key: "5" });
+    fireEvent.keyDown(root, { key: "1" });
+
+    expect(
+      screen.queryByTestId("preview-overlay-opacity-slider"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("ignores shortcuts when modifier keys are held", () => {
+    renderOverlay();
+    fireEvent.click(screen.getByTestId("preview-overlay-toggle"));
+
+    const root = screen.getByTestId("preview-pane-root");
+
+    // Slider starts at 50%. A ctrl+0 press should NOT snap it to 0%.
+    fireEvent.keyDown(root, { key: "0", ctrlKey: true });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("0.5");
+
+    fireEvent.keyDown(root, { key: "1", metaKey: true });
+    expect(
+      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+    ).toBe("0.5");
+  });
+
+  it("shows a waiting note when overlay is requested but only one layer is available", () => {
+    // Preview URL missing — cannot overlay.
+    window.localStorage.setItem(VIEW_MODE_PREF_KEY, "overlay");
+
+    render(
+      createElement(PreviewPane, {
+        previewUrl: "",
+        screenshot: "http://cdn.example.com/shot.png",
+        inspectEnabled: false,
+        activeScopeNodeId: null,
+        onToggleInspect: noop,
+        onInspectSelect: noop,
+      }),
+    );
+
+    expect(screen.getByText("Waiting for both layers…")).toBeInTheDocument();
+    // Slider must be hidden when both layers aren't ready.
+    expect(
+      screen.queryByTestId("preview-overlay-opacity-slider"),
+    ).not.toBeInTheDocument();
+    // Overlay layout must not render yet.
+    expect(
+      screen.queryByTestId("preview-overlay-layout"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("makes overlay mutually exclusive with split", () => {
+    renderOverlay();
+
+    const splitToggle = screen.getByTestId("preview-split-toggle");
+    const overlayToggle = screen.getByTestId("preview-overlay-toggle");
+
+    fireEvent.click(splitToggle);
+    expect(splitToggle).toHaveAttribute("aria-pressed", "true");
+    expect(overlayToggle).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(overlayToggle);
+    expect(overlayToggle).toHaveAttribute("aria-pressed", "true");
+    // Split must have been released when overlay was selected.
+    expect(splitToggle).toHaveAttribute("aria-pressed", "false");
+    expect(window.localStorage.getItem(VIEW_MODE_PREF_KEY)).toBe("overlay");
+
+    // And vice-versa.
+    fireEvent.click(splitToggle);
+    expect(splitToggle).toHaveAttribute("aria-pressed", "true");
+    expect(overlayToggle).toHaveAttribute("aria-pressed", "false");
   });
 });
