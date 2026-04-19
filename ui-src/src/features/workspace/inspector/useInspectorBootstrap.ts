@@ -15,6 +15,10 @@ import type { PastePipelineState } from "./paste-pipeline";
 import type { PipelineExecutionLog } from "./pipeline-execution-log";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 import { isFigmaClipboard } from "./figma-clipboard-parser";
+import {
+  recordClassification,
+  recordCorrection,
+} from "./intent-classification-metrics";
 
 function toUnsupportedIntentReason({
   confirmedIntent,
@@ -358,6 +362,11 @@ export function useInspectorBootstrap(
         return;
       }
 
+      recordClassification({
+        intent: intentClassification.intent,
+        confidence: intentClassification.confidence,
+      });
+
       setLocalFailure(null);
       setDetectedPaste({
         intent: intentClassification.intent,
@@ -373,6 +382,13 @@ export function useInspectorBootstrap(
     confirmIntent(intent: ImportIntent): void {
       if (detectedPaste === null) {
         return;
+      }
+
+      if (
+        intent !== detectedPaste.intent &&
+        detectedPaste.intent !== "UNKNOWN"
+      ) {
+        recordCorrection({ from: detectedPaste.intent, to: intent });
       }
 
       const unsupportedReason = toUnsupportedIntentReason({
