@@ -36,32 +36,61 @@ on:
   workflow_dispatch:
 
 permissions:
-  pull-requests: read # allows SonarCloud to decorate PRs with analysis results
+  contents: read         # required by actions/checkout and for the scanner to read sources
+  pull-requests: read    # allows SonarCloud to decorate PRs with analysis results
+  security-events: write # allows publishing GitHub Code Scanning alerts
 
 jobs:
   Analysis:
     runs-on: ubuntu-latest
+    # Skip on fork PRs — repository secrets are unavailable there
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.fork == false
 
     steps:
-      - name: Analyze with SonarCloud
-
-        # You can pin the exact commit or the version.
-        # uses: SonarSource/sonarcloud-github-action@v2.2.0
-        uses: SonarSource/sonarcloud-github-action@4006f663ecaf1f8093e8e4abb9227f6041f52216
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # Generate a token on Sonarcloud.io, add it to the secrets of this repo with the name SONAR_TOKEN (Settings > Secrets > Actions > add new repository secret)
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
-          # Additional arguments for the SonarScanner CLI
-          args:
-            # Unique keys of your project and organization. You can find them in SonarCloud > Information (bottom-left menu)
-            # mandatory
-            -Dsonar.projectKey=
-            -Dsonar.organization=
-            # Comma-separated paths to directories containing main source files.
-            #-Dsonar.sources= # optional, default is project base directory
-            # Comma-separated paths to directories containing test source files.
-            #-Dsonar.tests= # optional. For more info about Code Coverage, please refer to https://docs.sonarcloud.io/enriching/test-coverage/overview/
-            # Adds more detail to both client and server-side analysis logs, activating DEBUG mode for the scanner, and adding client-side environment variables and system properties to the server-side log of analysis report processing.
-            #-Dsonar.verbose= # optional, default is false
-          # When you need the analysis to take place in a directory other than the one from which it was launched, default is .
+          # Full history is required so SonarCloud can perform blame annotations
+          # and correctly identify new vs existing code in pull-request analysis.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@71c92474e7e4f5bca283fb17ef80fba9cdb2b4b1  # v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Run backend coverage (src + integration tests via c8/Node test runner).
+      # continue-on-error keeps the Sonar step running even when integration
+      # tests require external resources that are unavailable in this context.
+      - name: Generate backend coverage report
+        continue-on-error: true
+        run: pnpm run test:coverage
+
+      # Run UI coverage (Vitest + @vitest/coverage-v8 → coverage/ui/lcov.info).
+      - name: Generate UI coverage report
+        continue-on-error: true
+        run: pnpm run ui:test:coverage
+
+      # The scanner reads sonar-project.properties for all static settings.
+      # Only the project key and organization are injected at runtime because
+      # they differ per GitHub organisation/fork and must not be hard-coded.
+      - name: Analyze with SonarCloud
+        uses: SonarSource/sonarcloud-github-action@4006f663ecaf1f8093e8e4abb9227f6041f52216  # v2.2.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: >-
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
           projectBaseDir: .
