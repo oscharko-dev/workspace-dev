@@ -662,7 +662,7 @@ export async function readStreamingJsonBody(
 
   try {
     for await (const chunk of request) {
-    const normalizedChunkBuffer = normalizeRequestChunk(chunk as string | Buffer | Uint8Array | undefined | null);
+      const normalizedChunkBuffer = normalizeRequestChunk(chunk as string | Buffer | Uint8Array | undefined | null);
       bodyBytes += normalizedChunkBuffer.byteLength;
       if (bodyBytes > maxBytes) {
         return {
