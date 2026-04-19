@@ -33,6 +33,7 @@ import {
   type PipelineExecutionLog,
 } from "./pipeline-execution-log";
 import { PipelineStatusBar } from "./PipelineStatusBar";
+import { RateLimitBudgetBanner } from "./RateLimitBudgetBanner";
 import { ShortcutHelp } from "./ShortcutHelp";
 import { ConfigDialog } from "./ConfigDialog";
 import { ImportHistoryPanel } from "./ImportHistoryPanel";
@@ -1178,7 +1179,10 @@ export function InspectorPanel({
     ) {
       return null;
     }
-    if (phase2PreviewUrl !== undefined && activePipeline.stage === "generating") {
+    if (
+      phase2PreviewUrl !== undefined &&
+      activePipeline.stage === "generating"
+    ) {
       return null;
     }
     if (activePipeline.screenshot) {
@@ -2155,8 +2159,7 @@ export function InspectorPanel({
   }, [activePipeline.generatedFiles, files]);
   const securitySensitiveImport = useMemo(() => {
     return isSecuritySensitiveInspectorSelection({
-      patterns:
-        resolvedWorkspacePolicy.governance.securitySensitivePatterns,
+      patterns: resolvedWorkspacePolicy.governance.securitySensitivePatterns,
       screens: irScreens,
       manifest,
       generatedFiles: generatedFilePaths,
@@ -2320,9 +2323,12 @@ export function InspectorPanel({
       setReviewState,
     ],
   );
-  const handleReviewerNoteChange = useCallback((note: string): void => {
-    setReviewState((state) => ({ ...state, reviewerNote: note }));
-  }, [setReviewState]);
+  const handleReviewerNoteChange = useCallback(
+    (note: string): void => {
+      setReviewState((state) => ({ ...state, reviewerNote: note }));
+    },
+    [setReviewState],
+  );
   const handleReviewApply = useCallback((): void => {
     const note =
       reviewState.reviewerNote.trim().length > 0
@@ -6228,7 +6234,9 @@ export function InspectorPanel({
             : {})}
           onCopyReport={handleCopyPipelineReport}
         />
-      ) : null}
+      ) : (
+        <RateLimitBudgetBanner />
+      )}
 
       {/* ===== THREE-COLUMN IDE LAYOUT ===== */}
       <div
