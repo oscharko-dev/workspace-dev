@@ -10,6 +10,12 @@ const LazyInspectorPage = lazy(async () => {
   return { default: module.InspectorPage };
 });
 
+const LazyInspectorIntentMetricsPage = lazy(async () => {
+  const module =
+    await import("./features/workspace/inspector-intent-metrics-page");
+  return { default: module.InspectorIntentMetricsPage };
+});
+
 const LazyVisualQualityPage = lazy(async () => {
   const module = await import("./features/visual-quality/visual-quality-page");
   return { default: module.VisualQualityPage };
@@ -20,6 +26,14 @@ const routeFallback = (
 );
 
 const appRouter = createBrowserRouter([
+  {
+    path: "/workspace/ui/inspector/intent-metrics",
+    element: (
+      <Suspense fallback={routeFallback}>
+        <LazyInspectorIntentMetricsPage />
+      </Suspense>
+    ),
+  },
   {
     path: "/workspace/ui/inspector",
     element: (
