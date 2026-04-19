@@ -170,7 +170,7 @@ export function classifyPasteIntent(
       return {
         intent: "FIGMA_JSON_NODE_BATCH",
         confidence: 0.85,
-        suggestedJobSource: "figma_plugin",
+        suggestedJobSource: "figma_paste",
         rawText,
         parsedJson,
       };
