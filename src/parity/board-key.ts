@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-const BOARD_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{2,80}$/;
+const BOARD_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{2,74}$/;
 
 const toSlug = (value: string): string => {
   return value
@@ -21,7 +21,9 @@ export const resolveBoardKey = (figmaFileKey: string): string => {
   const slug = toSlug(trimmed).slice(0, 64);
   const candidate = `${slug || "board"}-${hash}`;
   if (!BOARD_KEY_PATTERN.test(candidate)) {
-    throw new Error("Resolved board key is invalid");
+    throw new Error(
+      `Resolved board key '${candidate}' does not match expected pattern ${BOARD_KEY_PATTERN}`
+    );
   }
   return candidate;
 };

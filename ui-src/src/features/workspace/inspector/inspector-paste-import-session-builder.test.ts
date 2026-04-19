@@ -51,7 +51,6 @@ describe("buildPasteImportSession — null cases", () => {
     "parsing",
     "extracting",
     "resolving",
-    "extracting",
     "transforming",
     "mapping",
     "generating",
