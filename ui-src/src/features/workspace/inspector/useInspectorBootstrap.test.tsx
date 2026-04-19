@@ -897,6 +897,145 @@ describe("useInspectorBootstrap", () => {
     expect(snapshot.totalClassifications).toBe(0);
   });
 
+  it("bypasses intent classification for programmatic submit()", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-programmatic" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-programmatic") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-programmatic",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/programmatic" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-programmatic/design-ir" ||
+        url === "/workspace/jobs/job-programmatic/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-programmatic", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-programmatic/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-programmatic/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submit({ figmaJsonPayload: buildDirectJsonPayload() });
+    });
+
+    expect(result.current.state.kind).not.toBe("detected");
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("ready");
+    });
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalClassifications).toBe(0);
+    expect(snapshot.totalCorrections).toBe(0);
+  });
+
+  it("preserves explicit figma_plugin source mode for programmatic submit()", async () => {
+    let capturedBody: string | null = null;
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace/submit") {
+        capturedBody = typeof init?.body === "string" ? init.body : null;
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-programmatic-plugin" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-programmatic-plugin") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-programmatic-plugin",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/programmatic-plugin" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-programmatic-plugin/design-ir" ||
+        url === "/workspace/jobs/job-programmatic-plugin/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-programmatic-plugin", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-programmatic-plugin/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-programmatic-plugin/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submit({
+        figmaJsonPayload: buildPluginEnvelopePayload(),
+        sourceMode: "figma_plugin",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("ready");
+    });
+
+    expect(capturedBody).not.toBeNull();
+    const parsedBody = JSON.parse(capturedBody!) as {
+      figmaSourceMode: string;
+      figmaJsonPayload: string;
+      enableGitPr: boolean;
+      llmCodegenMode: string;
+    };
+    expect(parsedBody.figmaSourceMode).toBe("figma_plugin");
+    expect(parsedBody.figmaJsonPayload).toBe(buildPluginEnvelopePayload());
+    expect(parsedBody.enableGitPr).toBe(false);
+  });
+
   it("records a correction when confirmIntent changes the detected intent", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {

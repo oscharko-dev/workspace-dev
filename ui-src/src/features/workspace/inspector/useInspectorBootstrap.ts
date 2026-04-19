@@ -36,6 +36,7 @@ function toUnsupportedIntentReason({
 }
 
 export type PasteSource = "clipboard-api" | "paste-event" | "drop" | "upload";
+export type ProgrammaticSubmitSourceMode = "figma_paste" | "figma_plugin";
 
 export interface UseInspectorBootstrapOptions {
   pollIntervalMs?: number;
@@ -61,7 +62,10 @@ export interface RegenerateScopedOptions {
 
 export interface UseInspectorBootstrapResult {
   state: InspectorBootstrapState;
-  submit(input: { figmaJsonPayload: string }): void;
+  submit(input: {
+    figmaJsonPayload: string;
+    sourceMode?: ProgrammaticSubmitSourceMode;
+  }): void;
   submitPaste(
     text: string,
     options?: { source?: PasteSource; clipboardHtml?: string },
@@ -317,21 +321,21 @@ export function useInspectorBootstrap(
     pipelineStage: pipeline.state.stage,
 
     // Programmatic / offline / CLI handoff path. The caller already knows its
-    // intent and provides pre-validated Figma JSON, so intent classification
-    // is intentionally not wired here: classifyPasteIntent expects free-form
-    // strings, and SmartBanner is an interactive modal that would block
-    // headless or server-to-server callers with no user to confirm. For the
-    // interactive paste path that runs classification and shows SmartBanner,
-    // use submitPaste(). See Issue #1022 for the decision.
-    submit({ figmaJsonPayload }) {
+    // source mode and provides pre-validated Figma JSON, so intent
+    // classification is intentionally not wired here: classifyPasteIntent
+    // expects free-form strings, and SmartBanner is an interactive modal that
+    // would block headless or server-to-server callers with no user to
+    // confirm. For the interactive paste path that runs classification and
+    // shows SmartBanner, use submitPaste(). See Issue #1022 for the decision.
+    submit({ figmaJsonPayload, sourceMode = "figma_paste" }) {
       setDetectedPaste(null);
       setLocalFailure(null);
       recordSubmit({
         payload: figmaJsonPayload,
-        sourceMode: "figma_paste",
+        sourceMode,
         urlContext: null,
       });
-      pipeline.start(figmaJsonPayload, { sourceMode: "figma_paste" });
+      pipeline.start(figmaJsonPayload, { sourceMode });
     },
 
     submitUrl(fileKey: string, nodeId: string | null): void {
