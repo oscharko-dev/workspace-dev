@@ -27,6 +27,7 @@ type ViewMode = "single" | "split" | "overlay";
 const VIEW_MODE_PREF_KEY = "workspace-dev:inspector:preview-view-mode";
 const LEGACY_SPLIT_PREF_KEY = "workspace-dev:inspector:preview-split";
 const DEFAULT_OVERLAY_OPACITY = 50;
+const OVERLAY_QUICK_SET_VALUES = [0, 50, 100] as const;
 
 function isViewMode(value: string | null): value is ViewMode {
   return value === "single" || value === "split" || value === "overlay";
@@ -154,9 +155,6 @@ function PreviewSplitLayout({
     try {
       const winCandidate = iframe.contentWindow;
       if (winCandidate === null) {
-        return;
-      }
-      if (winCandidate.document.documentElement === null) {
         return;
       }
       win = winCandidate;
@@ -337,6 +335,10 @@ export function PreviewPane({
     writeViewModePref(next);
   }, []);
 
+  const setOverlayOpacityValue = useCallback((value: number): void => {
+    setOverlayOpacity(clampOpacity(value));
+  }, []);
+
   function handleIframeLoad(): void {
     setLoadedUrl(splitPreviewUrl);
     setIframeLoadVersion((prev) => prev + 1);
@@ -359,17 +361,17 @@ export function PreviewPane({
         if (target.isContentEditable) return;
       }
       if (event.key === "0") {
-        setOverlayOpacity(0);
+        setOverlayOpacityValue(0);
         event.preventDefault();
       } else if (event.key === "5") {
-        setOverlayOpacity(50);
+        setOverlayOpacityValue(50);
         event.preventDefault();
       } else if (event.key === "1") {
-        setOverlayOpacity(100);
+        setOverlayOpacityValue(100);
         event.preventDefault();
       }
     },
-    [viewMode],
+    [setOverlayOpacityValue, viewMode],
   );
 
   return (
@@ -443,7 +445,7 @@ export function PreviewPane({
                 step={1}
                 value={overlayOpacity}
                 onChange={(event) => {
-                  setOverlayOpacity(clampOpacity(Number(event.target.value)));
+                  setOverlayOpacityValue(Number(event.target.value));
                 }}
                 aria-label="Preview overlay opacity"
                 aria-valuemin={0}
@@ -453,6 +455,39 @@ export function PreviewPane({
                 data-testid="preview-overlay-opacity-slider"
                 className="h-1 w-24 cursor-pointer accent-[#4eba87]"
               />
+              <div
+                className="flex items-center gap-1"
+                data-testid="preview-overlay-quickset-controls"
+              >
+                {OVERLAY_QUICK_SET_VALUES.map((value) => {
+                  const active = overlayOpacity === value;
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setOverlayOpacityValue(value);
+                      }}
+                      aria-pressed={active}
+                      aria-label={`Set overlay opacity to ${String(value)}%`}
+                      data-testid={`preview-overlay-quickset-${String(value)}`}
+                      className={`cursor-pointer rounded border px-1.5 py-1 font-semibold transition ${
+                        active
+                          ? "border-[#4eba87] bg-[#4eba87]/15 text-[#4eba87]"
+                          : "border-[#333333] bg-transparent text-white/70 hover:border-[#4eba87]/40 hover:text-[#4eba87]"
+                      }`}
+                    >
+                      {value}%
+                    </button>
+                  );
+                })}
+              </div>
+              <span
+                className="text-white/45"
+                data-testid="preview-overlay-shortcut-hint"
+              >
+                Keys 0 / 5 / 1
+              </span>
             </div>
           ) : null}
           <button
