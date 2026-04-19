@@ -666,6 +666,12 @@ describe("PreviewPane — overlay view", () => {
     expect(
       screen.getByTestId("preview-overlay-opacity-slider"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("preview-overlay-quickset-controls"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("preview-overlay-shortcut-hint"),
+    ).toHaveTextContent("Keys 0 / 5 / 1");
   });
 
   it("starts opacity at 50% and applies slider value to iframe style", () => {
@@ -779,6 +785,39 @@ describe("PreviewPane — overlay view", () => {
     ).toHaveAttribute("aria-valuenow", "100");
   });
 
+  it("supports visible quick-set controls for 0%, 50%, and 100%", () => {
+    renderOverlay();
+    fireEvent.click(screen.getByTestId("preview-overlay-toggle"));
+
+    const iframe = screen.getByTitle("Live preview") as HTMLIFrameElement;
+    const slider = screen.getByTestId(
+      "preview-overlay-opacity-slider",
+    ) as HTMLInputElement;
+
+    fireEvent.click(screen.getByTestId("preview-overlay-quickset-0"));
+    expect(iframe.style.opacity).toBe("0");
+    expect(slider).toHaveAttribute("aria-valuenow", "0");
+    expect(screen.getByTestId("preview-overlay-quickset-0")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    fireEvent.click(screen.getByTestId("preview-overlay-quickset-100"));
+    expect(iframe.style.opacity).toBe("1");
+    expect(slider).toHaveAttribute("aria-valuenow", "100");
+    expect(
+      screen.getByTestId("preview-overlay-quickset-100"),
+    ).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByTestId("preview-overlay-quickset-50"));
+    expect(iframe.style.opacity).toBe("0.5");
+    expect(slider).toHaveAttribute("aria-valuenow", "50");
+    expect(screen.getByTestId("preview-overlay-quickset-50")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
   it("ignores keyboard shortcuts when overlay mode is not active", () => {
     renderOverlay();
     // Do not toggle overlay — viewMode stays "single".
@@ -836,6 +875,9 @@ describe("PreviewPane — overlay view", () => {
     // Slider must be hidden when both layers aren't ready.
     expect(
       screen.queryByTestId("preview-overlay-opacity-slider"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("preview-overlay-quickset-controls"),
     ).not.toBeInTheDocument();
     // Overlay layout must not render yet.
     expect(

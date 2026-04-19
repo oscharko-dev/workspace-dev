@@ -88,7 +88,8 @@ function buildShortcutData(): ShortcutCategory[] {
     {
       title: "Inspector Tool",
       entries: [
-        { keys: ["?"], description: "Toggle this shortcut help" }
+        { keys: ["?"], description: "Toggle this shortcut help" },
+        { keys: ["0", "5", "1"], description: "Set overlay opacity to 0%, 50%, or 100%" }
       ]
     }
   ];
