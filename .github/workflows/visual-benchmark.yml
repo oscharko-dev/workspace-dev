@@ -6,15 +6,19 @@ on:
   pull_request:
     branches: [dev]
     paths:
+      - "src/job-engine.ts"
       - "src/parity/**"
       - "src/job-engine/**"
+      - "src/server/request-handler.ts"
       - "template/**"
+      - "integration/paste-delta-benchmark*"
       - "integration/visual-benchmark*"
       - "integration/composite-quality*"
       - "integration/visual-quality*"
       - "integration/fixtures/visual-benchmark/**"
       - ".github/workflows/visual-benchmark.yml"
       - ".github/workflows/visual-benchmark-comment.yml"
+      - "package.json"
       - "scripts/compute-composite-quality.ts"
       - "scripts/assert-no-skipped-tests.mjs"
       - "scripts/prepare-visual-benchmark-public-artifacts.mjs"
@@ -116,11 +120,22 @@ jobs:
             pnpm exec tsx --test integration/visual-benchmark.test.ts
             pnpm exec tsx --test integration/visual-benchmark-runner.error-isolation.test.ts
             pnpm exec tsx --test integration/visual-quality-config.test.ts
-            pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts
+            pnpm exec tsx --test integration/mutation-testing.integration.test.ts integration/visual-benchmark.cli.test.ts integration/visual-benchmark-summary.test.ts integration/paste-delta-benchmark.test.ts integration/paste-delta-benchmark.integration.test.ts src/job-engine/paste-delta-roots.test.ts
             pnpm exec tsx --test src/parity/ir-classification.test.ts src/parity/ir-screen-variants.test.ts src/parity/ir.test.ts
             pnpm exec vitest run --config ui-src/vite.config.ts ui-src/src/features/visual-quality/data/report-schema.test.ts ui-src/src/features/visual-quality/data/file-source.test.ts
           } 2>&1 | tee artifacts/visual-benchmark/logs/verification-suites.log
           node scripts/assert-no-skipped-tests.mjs artifacts/visual-benchmark/logs/verification-suites.log
+
+      - name: Run paste delta benchmark gate
+        run: pnpm run benchmark:paste-delta -- --check
+
+      - name: Upload paste delta benchmark artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: always() && hashFiles('artifacts/testing/paste-delta-benchmark.json') != ''
+        with:
+          name: workspace-dev-paste-delta-benchmark-${{ github.run_id }}
+          path: artifacts/testing/paste-delta-benchmark.json
+          if-no-files-found: ignore
 
       - name: Run frozen visual benchmark runner
         id: benchmark-run

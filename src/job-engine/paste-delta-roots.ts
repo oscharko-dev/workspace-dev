@@ -1,12 +1,27 @@
 import type { DiffableFigmaNode } from "./paste-tree-diff.js";
 
 const ROOT_NODE_TYPES = new Set<string>([
-  "CANVAS",
   "FRAME",
   "COMPONENT",
   "COMPONENT_SET",
   "INSTANCE",
 ]);
+
+const collectScreenLikeRoots = (
+  node: DiffableFigmaNode,
+  roots: DiffableFigmaNode[],
+): void => {
+  if (ROOT_NODE_TYPES.has(node.type)) {
+    roots.push(node);
+    return;
+  }
+  if (node.type !== "SECTION" || !Array.isArray(node.children)) {
+    return;
+  }
+  for (const child of node.children) {
+    collectScreenLikeRoots(child, roots);
+  }
+};
 
 const asDiffableFigmaNode = (
   value: unknown,
@@ -39,9 +54,16 @@ export const extractDiffablePasteRoots = (
       const roots: DiffableFigmaNode[] = [];
       for (const child of documentRecord.children) {
         const node = asDiffableFigmaNode(child);
-        if (node !== undefined && ROOT_NODE_TYPES.has(node.type)) {
-          roots.push(node);
+        if (node === undefined) {
+          continue;
         }
+        if (node.type === "CANVAS" && Array.isArray(node.children)) {
+          for (const pageChild of node.children) {
+            collectScreenLikeRoots(pageChild, roots);
+          }
+          continue;
+        }
+        collectScreenLikeRoots(node, roots);
       }
       return roots;
     }
@@ -57,7 +79,7 @@ export const extractDiffablePasteRoots = (
         (entry as Record<string, unknown>).document,
       );
       if (node !== undefined) {
-        roots.push(node);
+        collectScreenLikeRoots(node, roots);
       }
     }
     return roots;
