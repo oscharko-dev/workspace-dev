@@ -57,6 +57,7 @@ npx workspace-dev start
 Default runtime URL: `http://127.0.0.1:1983/workspace`
 
 - UI: `http://127.0.0.1:1983/workspace/ui`
+- Inspector intent metrics: `http://127.0.0.1:1983/workspace/ui/inspector/intent-metrics`
 - Deep link by file key: `http://127.0.0.1:1983/workspace/<figmaFileKey>`
 
 ## Public API entrypoints
@@ -131,7 +132,7 @@ Useful scripts:
 - `pnpm run ui:typecheck`
 - `pnpm run ui:lint`
 - `pnpm run ui:test`
-- `pnpm run ui:test:e2e` (Chromium-only deterministic inspector flow via local fixture rewrite, no Figma token required in CI)
+- `pnpm run ui:test:e2e` (Chromium-only deterministic inspector flow via local fixture rewrite, no Figma token required in CI; includes the Issue #1094 representative misclassification-rate gate at `<5%`)
 - `pnpm run ui:test:e2e:matrix` (Chromium + Firefox + WebKit + mobile device project matrix)
 - `pnpm run test:dast-smoke` (live HTTP security smoke for headers, same-origin behavior, and traversal rejection)
 - `pnpm run test:golden`
@@ -144,6 +145,22 @@ Linting is standardized on ESLint v9 flat config:
 - Template app config: `template/react-mui-app/eslint.config.js`
 
 `pnpm run lint:ts-style` and `pnpm run ui:lint` both enforce `--max-warnings=0`.
+
+## Inspector intent metrics
+
+The inspector exposes a local diagnostics route at
+`/workspace/ui/inspector/intent-metrics` for Issue #1094 telemetry. It reads
+the same browser-local snapshot that powers the SmartBanner classification
+audit:
+
+- total classifications by `intent x confidence bucket`
+- total SmartBanner corrections by `from -> to`
+- recent local event buffer and current storage version
+- current misclassification rate against the `<5%` target from Issue #991
+
+The diagnostics are local-only and air-gap-safe. No external telemetry is sent,
+and CI enforces the representative E2E misclassification ceiling through the
+Playwright inspector suite.
 
 ## Golden fixture tests
 

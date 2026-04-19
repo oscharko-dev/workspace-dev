@@ -44,6 +44,7 @@ export interface IntentClassificationMetricsSnapshot {
 }
 
 export const INTENT_CLASSIFICATION_METRICS_STORAGE_VERSION = 1;
+export const INTENT_CLASSIFICATION_MAX_MISCLASSIFICATION_RATE = 0.05;
 const STORAGE_KEY = "workspace-dev:intent-classification-metrics";
 const RECENT_EVENTS_CAP = 200;
 
