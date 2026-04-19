@@ -248,6 +248,95 @@ describe("useInspectorBootstrap", () => {
     });
   });
 
+  it("routes plugin-shaped JSON node batches through figma_paste (regression for #1105)", async () => {
+    const pluginShapedPayload = JSON.stringify({
+      type: "PLUGIN_EXPORT",
+      nodes: [{ type: "FRAME", name: "Card" }],
+    });
+
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace/submit") {
+        expect(init?.body).toBe(
+          JSON.stringify({
+            figmaSourceMode: "figma_paste",
+            figmaJsonPayload: pluginShapedPayload,
+            enableGitPr: false,
+            llmCodegenMode: "deterministic",
+          }),
+        );
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-plugin-shape" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-plugin-shape") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-plugin-shape",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/plugin-shape-preview" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-plugin-shape/design-ir" ||
+        url === "/workspace/jobs/job-plugin-shape/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-plugin-shape", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-plugin-shape/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-plugin-shape/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitPaste(pluginShapedPayload);
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    if (result.current.state.kind === "detected") {
+      expect(result.current.state.intent).toBe("FIGMA_JSON_NODE_BATCH");
+      expect(result.current.state.suggestedJobSource).toBe("figma_paste");
+    }
+
+    act(() => {
+      result.current.confirmIntent("FIGMA_JSON_NODE_BATCH");
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("ready");
+    });
+
+    expect(result.current.jobId).toBe("job-plugin-shape");
+    expect(result.current.previewUrl).toBe(
+      "http://127.0.0.1:1983/plugin-shape-preview",
+    );
+  });
+
   it("keeps partial jobs in partial bootstrap state instead of collapsing to ready", async () => {
     fetchJsonMock.mockImplementation(async ({ url }) => {
       if (url === "/workspace/submit") {
