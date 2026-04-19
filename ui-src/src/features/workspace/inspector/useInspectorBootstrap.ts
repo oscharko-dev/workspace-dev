@@ -281,7 +281,7 @@ export function useInspectorBootstrap(
       return;
     }
     countedMcpJobIdRef.current = jobId;
-    recordMcpCall();
+    recordMcpCall({ jobId });
   }, [pipeline.state.stage, pipeline.state.fallbackMode, jobId]);
 
   const state = useMemo(

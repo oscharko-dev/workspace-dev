@@ -66,6 +66,9 @@ let state: InternalState = createInitialState();
 // thresholdDispatchedForMonth is independent (cross-tab hint) and still
 // honored on restore.
 let hasDispatchedThisSession = false;
+// Module-level authoritative dedupe for jobIds. Prevents double-counting when
+// the component unmounts and remounts while the same jobId is still active.
+const countedJobIds = new Set<string>();
 
 function getLocalStorage(): Storage | null {
   if (typeof window === "undefined") {
@@ -205,10 +208,26 @@ export function getQuotaSnapshot(options?: CounterOptions): QuotaSnapshot {
   });
 }
 
-export function recordMcpCall(options?: CounterOptions): void {
+export interface RecordMcpCallOptions extends CounterOptions {
+  readonly jobId?: string | null;
+}
+
+export function recordMcpCall(options?: RecordMcpCallOptions): void {
+  // Module-level dedupe: prevents double-counting on unmount/remount when the
+  // same jobId is still in a ready/partial stage.
+  if (
+    typeof options?.jobId === "string" &&
+    options.jobId.length > 0 &&
+    countedJobIds.has(options.jobId)
+  ) {
+    return;
+  }
   ensureRestored();
   const month = formatMonth(resolveNow(options));
   rollMonthIfNeeded(month);
+  if (typeof options?.jobId === "string" && options.jobId.length > 0) {
+    countedJobIds.add(options.jobId);
+  }
   state.callsThisMonth += 1;
   const usagePct = computeUsagePct(state.callsThisMonth);
   const thresholdCrossed = usagePct >= WARNING_THRESHOLD_PCT;
@@ -253,6 +272,7 @@ export function dismissBannerForMonth(month: string): void {
 export function __resetFigmaMcpCallCounterForTests(): void {
   state = createInitialState();
   hasDispatchedThisSession = false;
+  countedJobIds.clear();
   const storage = getLocalStorage();
   if (storage !== null) {
     try {

@@ -306,6 +306,26 @@ describe("isBannerDismissedForMonth / dismissBannerForMonth", () => {
   });
 });
 
+describe("recordMcpCall — jobId dedupe", () => {
+  it("does not double-count when recordMcpCall is called twice with the same jobId", () => {
+    recordMcpCall({ jobId: "job-abc" });
+    recordMcpCall({ jobId: "job-abc" });
+    expect(getQuotaSnapshot().callsThisMonth).toBe(1);
+  });
+
+  it("counts when called with a fresh jobId after a prior one", () => {
+    recordMcpCall({ jobId: "job-abc" });
+    recordMcpCall({ jobId: "job-xyz" });
+    expect(getQuotaSnapshot().callsThisMonth).toBe(2);
+  });
+
+  it("counts normally when no jobId is provided", () => {
+    recordMcpCall();
+    recordMcpCall();
+    expect(getQuotaSnapshot().callsThisMonth).toBe(2);
+  });
+});
+
 describe("mcp-budget-threshold-crossed governance event", () => {
   it("fires exactly once per session when the threshold first flips", () => {
     const events: ImportGovernanceEvent[] = [];
