@@ -187,13 +187,16 @@ function isJsonWhitespace(character: string): boolean {
 }
 
 function normalizeRequestChunk(
-  chunk: string | Buffer | Uint8Array | unknown,
+  chunk: string | Buffer | Uint8Array | undefined | null,
 ): Buffer {
   if (typeof chunk === "string") {
     return Buffer.from(chunk, "utf8");
   }
   if (Buffer.isBuffer(chunk)) {
     return chunk;
+  }
+  if (chunk === undefined || chunk === null) {
+    return Buffer.from("", "utf8");
   }
   if (chunk instanceof Uint8Array) {
     return Buffer.from(chunk);
@@ -619,7 +622,7 @@ export async function readJsonBody(
   let bodyBytes = 0;
 
   for await (const chunk of request) {
-    const normalizedChunkBuffer = normalizeRequestChunk(chunk);
+    const normalizedChunkBuffer = normalizeRequestChunk(chunk as string | Buffer | Uint8Array | undefined | null);
     bodyBytes += normalizedChunkBuffer.byteLength;
     if (bodyBytes > maxBytes) {
       return {
@@ -659,7 +662,7 @@ export async function readStreamingJsonBody(
 
   try {
     for await (const chunk of request) {
-      const normalizedChunkBuffer = normalizeRequestChunk(chunk);
+    const normalizedChunkBuffer = normalizeRequestChunk(chunk as string | Buffer | Uint8Array | undefined | null);
       bodyBytes += normalizedChunkBuffer.byteLength;
       if (bodyBytes > maxBytes) {
         return {

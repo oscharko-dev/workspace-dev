@@ -19,6 +19,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent
 } from "react";
@@ -86,7 +87,27 @@ export function DiffViewer({
   const [searchInput, setSearchInput] = useState("");
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [currentTheme, setCurrentTheme] = useState<HighlightTheme>(() => resolveViewerTheme(themeMode));
+  const systemTheme = useSyncExternalStore(
+    (onChange) => {
+      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+        return () => {};
+      }
+
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      mediaQuery.addEventListener("change", onChange);
+      return () => {
+        mediaQuery.removeEventListener("change", onChange);
+      };
+    },
+    () => getPreferredTheme(),
+    () => getPreferredTheme(),
+  );
+  const currentTheme = useMemo(() => {
+    if (themeMode === "system") {
+      return systemTheme;
+    }
+    return resolveViewerTheme(themeMode);
+  }, [systemTheme, themeMode]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -94,21 +115,6 @@ export function DiffViewer({
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const isDark = currentTheme === "github-dark";
-
-  // Theme listener
-  useEffect(() => {
-    setCurrentTheme(resolveViewerTheme(themeMode));
-  }, [themeMode]);
-
-  // Theme listener
-  useEffect(() => {
-    if (themeMode !== "system") return;
-    if (typeof window === "undefined") return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (): void => { setCurrentTheme(getPreferredTheme()); };
-    mq.addEventListener("change", handler);
-    return () => { mq.removeEventListener("change", handler); };
-  }, [themeMode]);
 
   // Compute diff
   const diffResult: DiffResult = useMemo(
@@ -135,24 +141,27 @@ export function DiffViewer({
     return matches;
   }, [diffResult.lines, searchQuery]);
 
-  const activeMatch = useMemo(() => {
-    if (activeMatchIndex < 0 || activeMatchIndex >= searchMatches.length) return null;
-    return searchMatches[activeMatchIndex] ?? null;
-  }, [activeMatchIndex, searchMatches]);
-
   const searchMatchedLineSet = useMemo(
     () => new Set(searchMatches.map((m) => m.lineIndex)),
     [searchMatches]
   );
 
-  // Reset match index when query or matches change
-  useEffect(() => {
+  const effectiveActiveMatchIndex = useMemo(() => {
     if (searchQuery.length === 0 || searchMatches.length === 0) {
-      setActiveMatchIndex(-1);
-      return;
+      return -1;
     }
-    setActiveMatchIndex((c) => (c < 0 || c >= searchMatches.length ? 0 : c));
-  }, [searchQuery, searchMatches.length]);
+    if (activeMatchIndex < 0 || activeMatchIndex >= searchMatches.length) {
+      return 0;
+    }
+    return activeMatchIndex;
+  }, [activeMatchIndex, searchMatches.length, searchQuery.length]);
+
+  const activeMatch = useMemo(() => {
+    if (effectiveActiveMatchIndex < 0 || effectiveActiveMatchIndex >= searchMatches.length) {
+      return null;
+    }
+    return searchMatches[effectiveActiveMatchIndex] ?? null;
+  }, [effectiveActiveMatchIndex, searchMatches]);
 
   // Scroll active match into view
   useEffect(() => {
@@ -180,7 +189,7 @@ export function DiffViewer({
     (direction: 1 | -1) => {
       if (searchMatches.length === 0) return;
       setActiveMatchIndex((current) => {
-        const base = current < 0 ? (direction === 1 ? -1 : 0) : current;
+        const base = current < 0 || current >= searchMatches.length ? 0 : current;
         return (base + direction + searchMatches.length) % searchMatches.length;
       });
     },
@@ -198,11 +207,11 @@ export function DiffViewer({
 
   const findCountText = useMemo(() => {
     if (searchQuery.length === 0) return "0";
-    if (searchMatches.length === 0 || activeMatchIndex < 0) {
+    if (searchMatches.length === 0 || effectiveActiveMatchIndex < 0) {
       return `0 of ${String(searchMatches.length)}`;
     }
-    return `${String(activeMatchIndex + 1)} of ${String(searchMatches.length)}`;
-  }, [activeMatchIndex, searchMatches.length, searchQuery.length]);
+    return `${String(effectiveActiveMatchIndex + 1)} of ${String(searchMatches.length)}`;
+  }, [effectiveActiveMatchIndex, searchMatches.length, searchQuery.length]);
 
   // Clean up copy timeout on unmount
   useEffect(() => {

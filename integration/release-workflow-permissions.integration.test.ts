@@ -90,7 +90,9 @@ test("integration: install/test jobs set persist-credentials: false on checkout"
 
   const preReleaseJobs = workflow.slice(jobsStart, releaseStart);
 
-  const checkouts = preReleaseJobs.match(/uses: actions\/checkout@v\d+/g);
+  const checkouts = preReleaseJobs.match(
+    /uses: actions\/checkout@(v\d+|[0-9a-f]{40})\s+#\s*v\d+/g,
+  );
   assert.ok(
     checkouts !== null && checkouts.length > 0,
     "pre-release jobs must contain at least one checkout step",

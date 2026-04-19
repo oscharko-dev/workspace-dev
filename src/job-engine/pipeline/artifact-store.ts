@@ -76,20 +76,26 @@ export class StageArtifactStore {
     await mkdir(this.refsDir, { recursive: true });
     try {
       const raw = await readFile(this.indexFile, "utf8");
-      const parsed: unknown = JSON.parse(raw);
-      if (!Array.isArray(parsed)) {
-        this.corruptionDiagnostic =
-          "StageArtifactStore: index is not an array. Starting with empty store.";
-      } else {
-        for (let i = 0; i < parsed.length; i++) {
-          const entry = parsed[i];
-          if (!isStageArtifactReference(entry)) {
-            this.corruptionDiagnostic = `StageArtifactStore: skipped invalid ref entry at index ${i}.`;
-            continue;
-          }
-          this.references.set(entry.key, entry);
-        }
-      }
+	      const parsed: unknown = JSON.parse(raw);
+	      if (!Array.isArray(parsed)) {
+	        this.corruptionDiagnostic =
+	          "StageArtifactStore: index is not an array. Starting with empty store.";
+	      } else {
+	        const entries = parsed as readonly unknown[];
+	        for (let i = 0; i < entries.length; i++) {
+	          const candidate = entries[i];
+	          if (typeof candidate !== "object" || candidate === null) {
+	            this.corruptionDiagnostic = `StageArtifactStore: skipped invalid ref entry at index ${i}.`;
+	            continue;
+	          }
+	          if (!isStageArtifactReference(candidate)) {
+	            this.corruptionDiagnostic = `StageArtifactStore: skipped invalid ref entry at index ${i}.`;
+	            continue;
+	          }
+	          const ref = candidate;
+	          this.references.set(ref.key, ref);
+	        }
+	      }
     } catch (error) {
       if (!isFileNotFoundError(error)) {
         const msg = error instanceof Error ? error.message : String(error);

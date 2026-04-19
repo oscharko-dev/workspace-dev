@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   quality-matrix:
+    timeout-minutes: 480
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -103,6 +104,7 @@ jobs:
           if-no-files-found: ignore
 
   performance-web:
+    timeout-minutes: 180
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -152,6 +154,7 @@ jobs:
           if-no-files-found: ignore
 
   mutation-testing:
+    timeout-minutes: 420
     runs-on: ubuntu-latest
     needs: quality-matrix
     steps:
@@ -187,6 +190,7 @@ jobs:
           if-no-files-found: ignore
 
   release:
+    timeout-minutes: 240
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     needs: [quality-matrix, performance-web, mutation-testing]

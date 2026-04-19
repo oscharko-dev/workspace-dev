@@ -62,9 +62,9 @@ const toSemverMajor = (
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
   {
     "package.json":
-      "e17f716b1d5325306c411155252226f0e1198fa9f1932587796642e1286115fa",
+      "83bddf0bfa3525df5b5ab36f774dd4b60393bdc590301119723107519c44c2a6",
     "pnpm-lock.yaml":
-      "5eeb829eba92b3f1e095c7bb7171c6f6cfb3d4442861ce736015b7bc36cd80a4",
+      "8a53aa05e138ec3dfee591d879aaa6df0b9c90b29d079ccb1f5f8158fc0344cc",
     "vite.config.ts":
       "7afffdfa2dc74d6306cd107d1f1410621755f50702b4c9374ed0a40c80241d05",
     "tsconfig.json":
@@ -74,7 +74,7 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
     "perf-budget.json":
       "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
     "scripts/perf-runner.mjs":
-      "20cfd927a9a8216c4acdcd8f4b065a980ba2f20e731227b0f9de3171798966a8",
+      "8d5ef6592eaeb6efdfc3b4ecdeed0ed1f5f72781f9f9fc71a062a0f3a4a84f60",
     "src/App.tsx":
       "985cdba983fb04d56e28ea58102b9691fb912f0eb3412feab1f0bb7966332a65",
     "src/components/ErrorBoundary.tsx":

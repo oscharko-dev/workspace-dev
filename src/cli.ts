@@ -327,7 +327,7 @@ const parseArgs = (argv: string[]): CliOptions => {
     value: process.env.FIGMAPIPE_WORKSPACE_BRAND,
     fallback: DEFAULT_BRAND_THEME
   });
-  let sparkasseTokensFilePath =
+  const sparkasseTokensFilePath =
     process.env.FIGMAPIPE_WORKSPACE_SPARKASSE_TOKENS_FILE?.trim() ||
     process.env.BRAND_TOKENS_FILE?.trim() ||
     undefined;

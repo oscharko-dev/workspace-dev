@@ -13,7 +13,18 @@
  *
  * @see https://github.com/oscharko-dev/workspace-dev/issues/384
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type JSX,
+  type KeyboardEvent as ReactKeyboardEvent
+} from "react";
+
+/* eslint-disable react-hooks/set-state-in-effect */
 import {
   detectLanguage,
   exceedsMaxSize,
@@ -563,7 +574,27 @@ export function CodeViewer({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [currentTheme, setCurrentTheme] = useState(() => resolveViewerTheme(themeMode));
+  const systemTheme = useSyncExternalStore(
+    (onChange) => {
+      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+        return () => {};
+      }
+
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      mediaQuery.addEventListener("change", onChange);
+      return () => {
+        mediaQuery.removeEventListener("change", onChange);
+      };
+    },
+    () => getPreferredTheme(),
+    () => getPreferredTheme(),
+  );
+  const currentTheme = useMemo(() => {
+    if (themeMode === "system") {
+      return systemTheme;
+    }
+    return resolveViewerTheme(themeMode);
+  }, [systemTheme, themeMode]);
   const usesExternalFormatting = onFormat !== undefined || externalFormatStatus !== undefined;
   const effectiveFormatStatus = externalFormatStatus ?? formatStatus;
   const displayCode = usesExternalFormatting ? code : (formattedCode ?? code);
@@ -629,10 +660,6 @@ export function CodeViewer({
   }, []);
 
   useEffect(() => {
-    setCurrentTheme(resolveViewerTheme(themeMode));
-  }, [themeMode]);
-
-  useEffect(() => {
     if (usesExternalFormatting) {
       setFormattedCode(null);
       return;
@@ -650,24 +677,6 @@ export function CodeViewer({
       }
     };
   }, [clearFormatFeedbackTimeout]);
-
-  // Listen for system theme changes
-  useEffect(() => {
-    if (themeMode !== "system") {
-      return;
-    }
-    if (typeof window === "undefined") {
-      return;
-    }
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (): void => {
-      setCurrentTheme(getPreferredTheme());
-    };
-    mq.addEventListener("change", handler);
-    return () => {
-      mq.removeEventListener("change", handler);
-    };
-  }, [themeMode]);
 
   // Run Shiki highlighting
   useEffect(() => {

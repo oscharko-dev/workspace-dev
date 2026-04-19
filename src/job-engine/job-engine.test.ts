@@ -2284,14 +2284,17 @@ test("createJobEngine rehydrates pasteDeltaSummary, compositeQuality, and confid
     message: "Overall medium confidence.",
   };
 
+  const now = new Date();
+  const timestamp = (deltaMs: number): string =>
+    new Date(now.getTime() - deltaMs).toISOString();
   const snapshot = {
     snapshotVersion: 1,
-    generatedAt: "2026-04-18T00:00:03.000Z",
+    generatedAt: timestamp(5_000),
     jobId,
     status: "completed",
-    submittedAt: "2026-04-18T00:00:00.000Z",
-    startedAt: "2026-04-18T00:00:00.500Z",
-    finishedAt: "2026-04-18T00:00:05.000Z",
+    submittedAt: timestamp(10_000),
+    startedAt: timestamp(9_500),
+    finishedAt: timestamp(5_000),
     request: { figmaSourceMode: "local_json", llmCodegenMode: "deterministic" },
     stages: [
       { name: "figma.source", status: "completed" },
