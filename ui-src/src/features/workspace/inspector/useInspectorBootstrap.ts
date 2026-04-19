@@ -316,6 +316,13 @@ export function useInspectorBootstrap(
     screenshot: pipeline.state.screenshot ?? null,
     pipelineStage: pipeline.state.stage,
 
+    // Programmatic / offline / CLI handoff path. The caller already knows its
+    // intent and provides pre-validated Figma JSON, so intent classification
+    // is intentionally not wired here: classifyPasteIntent expects free-form
+    // strings, and SmartBanner is an interactive modal that would block
+    // headless or server-to-server callers with no user to confirm. For the
+    // interactive paste path that runs classification and shows SmartBanner,
+    // use submitPaste(). See Issue #1022 for the decision.
     submit({ figmaJsonPayload }) {
       setDetectedPaste(null);
       setLocalFailure(null);
