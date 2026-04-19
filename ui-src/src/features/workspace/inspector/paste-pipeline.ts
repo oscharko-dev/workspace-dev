@@ -2472,7 +2472,8 @@ interface ControllerRuntime {
   state: PastePipelineState;
   activeRunId: number;
   activeRunController?: AbortController;
-  activeJobId: string | undefined;
+  cancelableJobId: string | undefined;
+  inFlight: boolean;
   knownStatuses: Map<string, string>;
   lastRequest?: PipelineRequest;
 }
@@ -2484,7 +2485,8 @@ export function startPastePipeline(
   const runtime: ControllerRuntime = {
     state: createInitialPipelineState(),
     activeRunId: 0,
-    activeJobId: undefined,
+    cancelableJobId: undefined,
+    inFlight: false,
     knownStatuses: new Map(),
   };
 
@@ -2500,8 +2502,9 @@ export function startPastePipeline(
     runtime.activeRunId += 1;
     const runId = runtime.activeRunId;
     runtime.activeRunController?.abort();
+    runtime.inFlight = true;
     runtime.knownStatuses = new Map();
-    runtime.activeJobId = undefined;
+    runtime.cancelableJobId = undefined;
     runtime.lastRequest = request;
 
     const controller = new AbortController();
@@ -2522,10 +2525,15 @@ export function startPastePipeline(
         return;
       }
       if (action.type === "job_created") {
-        runtime.activeJobId = action.jobId;
+        runtime.cancelableJobId = action.jobId;
       }
-      if (action.type === "cancel_complete") {
-        runtime.activeJobId = undefined;
+      if (
+        action.type === "cancel_complete" ||
+        action.type === "complete" ||
+        action.type === "stage_failed"
+      ) {
+        runtime.cancelableJobId = undefined;
+        runtime.inFlight = false;
       }
       runtime.state = pastePipelineReducer(runtime.state, action);
     };
@@ -2537,9 +2545,10 @@ export function startPastePipeline(
       signal: controller.signal,
       knownStatuses: runtime.knownStatuses,
       apply,
-    }).then(({ jobId }) => {
+    }).finally(() => {
       if (runtime.activeRunId === runId) {
-        runtime.activeJobId = jobId;
+        runtime.inFlight = false;
+        runtime.cancelableJobId = undefined;
       }
     });
   };
@@ -2560,43 +2569,52 @@ export function startPastePipeline(
 
   return {
     cancel(): void {
-      const activeJobId = runtime.activeJobId;
+      const cancelableJobId = runtime.cancelableJobId;
       runtime.activeRunId += 1;
       const runId = runtime.activeRunId;
       runtime.activeRunController?.abort();
-      runtime.activeJobId = undefined;
-      if (!activeJobId) {
+      runtime.cancelableJobId = undefined;
+      if (!runtime.inFlight || !cancelableJobId) {
+        runtime.inFlight = false;
         runtime.state = pastePipelineReducer(runtime.state, {
           type: "cancel_complete",
         });
         return;
       }
 
+      runtime.inFlight = true;
       const cancelController = new AbortController();
       runtime.activeRunController = cancelController;
       const apply = (action: PipelineAction): void => {
         if (runtime.activeRunId !== runId) {
           return;
         }
-        if (action.type === "job_created") {
-          runtime.activeJobId = action.jobId;
-        }
-        if (action.type === "cancel_complete") {
-          runtime.activeJobId = undefined;
+        if (
+          action.type === "cancel_complete" ||
+          action.type === "complete" ||
+          action.type === "stage_failed"
+        ) {
+          runtime.cancelableJobId = undefined;
+          runtime.inFlight = false;
         }
         runtime.state = pastePipelineReducer(runtime.state, action);
       };
       void executeCancellation({
-        jobId: activeJobId,
+        jobId: cancelableJobId,
         signal: cancelController.signal,
         knownStatuses: runtime.knownStatuses,
         apply,
+      }).finally(() => {
+        if (runtime.activeRunId === runId) {
+          runtime.inFlight = false;
+          runtime.cancelableJobId = undefined;
+        }
       });
     },
 
     retry(requestOverride?: PipelineRetryRequest): void {
       const lastRequest = runtime.lastRequest;
-      if (!lastRequest) {
+      if (!lastRequest || runtime.inFlight) {
         return;
       }
       const retryRequest = requestOverride ?? runtime.state.retryRequest;
@@ -2633,7 +2651,8 @@ export interface UsePastePipelineResult {
 interface HookRuntime {
   activeRunId: number;
   activeRunController?: AbortController;
-  activeJobId: string | undefined;
+  cancelableJobId: string | undefined;
+  inFlight: boolean;
   knownStatuses: Map<string, string>;
   lastRequest?: PipelineRequest;
 }
@@ -2647,7 +2666,8 @@ export function usePastePipeline(): UsePastePipelineResult {
 
   const runtimeRef = useRef<HookRuntime>({
     activeRunId: 0,
-    activeJobId: undefined,
+    cancelableJobId: undefined,
+    inFlight: false,
     knownStatuses: new Map(),
   });
   const [executionLog] = useState(() => createPipelineExecutionLog());
@@ -2667,7 +2687,8 @@ export function usePastePipeline(): UsePastePipelineResult {
     const runId = runtime.activeRunId;
     runtime.activeRunController?.abort();
     runtime.activeRunController = new AbortController();
-    runtime.activeJobId = undefined;
+    runtime.cancelableJobId = undefined;
+    runtime.inFlight = true;
     runtime.knownStatuses = new Map();
     runtime.lastRequest = request;
 
@@ -2676,10 +2697,15 @@ export function usePastePipeline(): UsePastePipelineResult {
         return;
       }
       if (action.type === "job_created") {
-        runtimeRef.current.activeJobId = action.jobId;
+        runtimeRef.current.cancelableJobId = action.jobId;
       }
-      if (action.type === "cancel_complete") {
-        runtimeRef.current.activeJobId = undefined;
+      if (
+        action.type === "cancel_complete" ||
+        action.type === "complete" ||
+        action.type === "stage_failed"
+      ) {
+        runtimeRef.current.cancelableJobId = undefined;
+        runtimeRef.current.inFlight = false;
       }
       dispatch(action);
     };
@@ -2714,9 +2740,10 @@ export function usePastePipeline(): UsePastePipelineResult {
       signal: runtime.activeRunController.signal,
       knownStatuses: runtime.knownStatuses,
       apply: loggedApply,
-    }).then(({ jobId }) => {
+    }).finally(() => {
       if (runtimeRef.current.activeRunId === runId) {
-        runtimeRef.current.activeJobId = jobId;
+        runtimeRef.current.inFlight = false;
+        runtimeRef.current.cancelableJobId = undefined;
       }
     });
   };
@@ -2749,36 +2776,48 @@ export function usePastePipeline(): UsePastePipelineResult {
 
     cancel(): void {
       const runtime = runtimeRef.current;
-      const activeJobId = runtime.activeJobId;
+      const cancelableJobId = runtime.cancelableJobId;
       runtime.activeRunId += 1;
       const runId = runtime.activeRunId;
       runtime.activeRunController?.abort();
-      runtime.activeJobId = undefined;
-      if (!activeJobId) {
+      runtime.cancelableJobId = undefined;
+      if (!runtime.inFlight || !cancelableJobId) {
+        runtime.inFlight = false;
         dispatch({ type: "cancel_complete" });
         return;
       }
 
+      runtime.inFlight = true;
       const cancelController = new AbortController();
       runtime.activeRunController = cancelController;
       void executeCancellation({
-        jobId: activeJobId,
+        jobId: cancelableJobId,
         signal: cancelController.signal,
         knownStatuses: runtime.knownStatuses,
         apply: (action) => {
           if (runtimeRef.current.activeRunId === runId) {
-            if (action.type === "cancel_complete") {
-              runtimeRef.current.activeJobId = undefined;
+            if (
+              action.type === "cancel_complete" ||
+              action.type === "complete" ||
+              action.type === "stage_failed"
+            ) {
+              runtimeRef.current.cancelableJobId = undefined;
+              runtimeRef.current.inFlight = false;
             }
             dispatch(action);
           }
         },
+      }).finally(() => {
+        if (runtimeRef.current.activeRunId === runId) {
+          runtimeRef.current.inFlight = false;
+          runtimeRef.current.cancelableJobId = undefined;
+        }
       });
     },
 
     retry(requestOverride?: PipelineRetryRequest): void {
       const request = runtimeRef.current.lastRequest;
-      if (!request) {
+      if (!request || runtimeRef.current.inFlight) {
         return;
       }
       const retryRequest = requestOverride ?? state.retryRequest;

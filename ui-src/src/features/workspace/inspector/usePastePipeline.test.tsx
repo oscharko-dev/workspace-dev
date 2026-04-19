@@ -11,6 +11,20 @@ vi.mock("../../../lib/http", () => ({
 
 const fetchJsonMock = vi.mocked(fetchJson);
 
+function createAbortError(): DOMException {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
 function createJsonResponse<TPayload>({
   status = 200,
   ok = true,
@@ -624,6 +638,508 @@ describe("usePastePipeline", () => {
     expect(cancelRequestCount).toBe(1);
   });
 
+  it("keeps only the latest state when start() is called twice in quick succession", async () => {
+    const firstPoll = createDeferred<JsonResponse<unknown>>();
+
+    fetchJsonMock.mockImplementation(({ url, init }) => {
+      if (url === "/workspace/submit") {
+        const jobId =
+          fetchJsonMock.mock.calls.filter(
+            ([input]) => input.url === "/workspace/submit",
+          ).length === 1
+            ? "job-first"
+            : "job-second";
+        return Promise.resolve(
+          createJsonResponse({
+            status: 202,
+            payload: { jobId },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-first") {
+        init?.signal?.addEventListener(
+          "abort",
+          () => firstPoll.reject(createAbortError()),
+          { once: true },
+        );
+        return firstPoll.promise as never;
+      }
+
+      if (url === "/workspace/jobs/job-second") {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: {
+              jobId: "job-second",
+              status: "completed",
+              preview: { url: "http://127.0.0.1:1983/second-preview" },
+            },
+          }),
+        ) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-second/design-ir" ||
+        url === "/workspace/jobs/job-second/figma-analysis" ||
+        url === "/workspace/jobs/job-second/component-manifest"
+      ) {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: { jobId: "job-second", screens: [] },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-second/files") {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: { files: [] },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-second/screenshot") {
+        return Promise.resolve(
+          createJsonResponse({
+            status: 404,
+            ok: false,
+            payload: {},
+          }),
+        ) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+      result.current.start(buildPluginEnvelopePayload(), {
+        sourceMode: "figma_plugin",
+      });
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("ready");
+    });
+
+    expect(result.current.state.previewUrl).toBe(
+      "http://127.0.0.1:1983/second-preview",
+    );
+    expect(result.current.state.sourceScreens).toEqual([
+      { id: "1:2", name: "Card", nodeType: "frame" },
+    ]);
+    expect(result.current.state.jobId).toBe("job-second");
+    expect(result.current.state.designIR?.jobId).not.toBe("job-first");
+    expect(
+      fetchJsonMock.mock.calls.filter(
+        ([input]) => input.url === "/workspace/submit",
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("cancel() during resolving returns to idle without surfacing an error", async () => {
+    const resolvingPoll = createDeferred<JsonResponse<unknown>>();
+    let resolvingPollAborted = false;
+    let cancelRequestCount = 0;
+
+    fetchJsonMock.mockImplementation(({ url, init }) => {
+      if (url === "/workspace/submit") {
+        return Promise.resolve(
+          createJsonResponse({
+            status: 202,
+            payload: { jobId: "job-resolving-cancel" },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-resolving-cancel") {
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            resolvingPollAborted = true;
+            resolvingPoll.reject(createAbortError());
+          },
+          { once: true },
+        );
+        return resolvingPoll.promise as never;
+      }
+
+      if (url === "/workspace/jobs/job-resolving-cancel/cancel") {
+        cancelRequestCount += 1;
+        return Promise.resolve(
+          createJsonResponse({
+            payload: {
+              jobId: "job-resolving-cancel",
+              status: "canceled",
+            },
+          }),
+        ) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.jobId).toBe("job-resolving-cancel");
+    });
+
+    await act(async () => {
+      result.current.cancel();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("idle");
+    });
+
+    expect(resolvingPollAborted).toBe(true);
+    expect(cancelRequestCount).toBe(1);
+    expect(result.current.state.errors).toEqual([]);
+  });
+
+  it("cancel() during transforming aborts in-flight artifact fetches and returns to idle", async () => {
+    const designIrFetch = createDeferred<JsonResponse<unknown>>();
+    let designIrAborted = false;
+    let cancelRequestCount = 0;
+
+    fetchJsonMock.mockImplementation(({ url, init }) => {
+      if (url === "/workspace/submit") {
+        return Promise.resolve(
+          createJsonResponse({
+            status: 202,
+            payload: { jobId: "job-transform-cancel" },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-transform-cancel") {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: {
+              jobId: "job-transform-cancel",
+              status: "running",
+              stages: [
+                { name: "figma.source", status: "completed" },
+                { name: "ir.derive", status: "running" },
+              ],
+            },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-transform-cancel/design-ir") {
+        init?.signal?.addEventListener(
+          "abort",
+          () => {
+            designIrAborted = true;
+            designIrFetch.reject(createAbortError());
+          },
+          { once: true },
+        );
+        return designIrFetch.promise as never;
+      }
+
+      if (url === "/workspace/jobs/job-transform-cancel/figma-analysis") {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: {
+              jobId: "job-transform-cancel",
+              diagnostics: [],
+              layoutGraph: { pages: [], frames: [] },
+            },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-transform-cancel/cancel") {
+        cancelRequestCount += 1;
+        return Promise.resolve(
+          createJsonResponse({
+            payload: {
+              jobId: "job-transform-cancel",
+              status: "canceled",
+            },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-transform-cancel/token-intelligence") {
+        return Promise.resolve(
+          createJsonResponse({
+            status: 404,
+            ok: false,
+            payload: {},
+          }),
+        ) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("transforming");
+    });
+
+    await act(async () => {
+      result.current.cancel();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("idle");
+    });
+
+    expect(designIrAborted).toBe(true);
+    expect(cancelRequestCount).toBe(1);
+    expect(result.current.state.errors).toEqual([]);
+  });
+
+  it("cancel() after ready resets locally without posting a server cancel", async () => {
+    let cancelRequestCount = 0;
+
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-ready-cancel" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-ready-cancel") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-ready-cancel",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/ready-preview" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-ready-cancel/design-ir" ||
+        url === "/workspace/jobs/job-ready-cancel/figma-analysis" ||
+        url === "/workspace/jobs/job-ready-cancel/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-ready-cancel", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-ready-cancel/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-ready-cancel/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-ready-cancel/cancel") {
+        cancelRequestCount += 1;
+        return createJsonResponse({
+          payload: {
+            jobId: "job-ready-cancel",
+            status: "canceled",
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("ready");
+    });
+
+    await act(async () => {
+      result.current.cancel();
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("idle");
+    });
+
+    expect(cancelRequestCount).toBe(0);
+  });
+
+  it("retry() ignores overlapping calls while the previous retry is still transitioning", async () => {
+    const retryPoll = createDeferred<JsonResponse<unknown>>();
+    let retryStageCalls = 0;
+
+    fetchJsonMock.mockImplementation(({ url, init }) => {
+      if (url === "/workspace/submit") {
+        return Promise.resolve(
+          createJsonResponse({
+            status: 202,
+            payload: { jobId: "job-partial-race" },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-race") {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: {
+              jobId: "job-partial-race",
+              status: "failed",
+              outcome: "partial",
+              stages: [
+                { name: "figma.source", status: "completed" },
+                { name: "ir.derive", status: "completed" },
+                { name: "template.prepare", status: "completed" },
+                {
+                  name: "codegen.generate",
+                  status: "failed",
+                  code: "CODEGEN_PARTIAL",
+                  message: "Some files failed",
+                  retryable: true,
+                  retryTargets: [{ id: "src/App.tsx", file: "src/App.tsx" }],
+                },
+              ],
+              error: {
+                stage: "generating",
+                code: "CODEGEN_PARTIAL",
+                message: "Some files failed",
+                retryable: true,
+                retryTargets: [{ id: "src/App.tsx", file: "src/App.tsx" }],
+              },
+            },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-race/retry-stage") {
+        retryStageCalls += 1;
+        expect(init?.body).toBe(
+          JSON.stringify({
+            stage: "generating",
+            targetIds: ["src/App.tsx"],
+          }),
+        );
+        return Promise.resolve(
+          createJsonResponse({
+            status: 202,
+            payload: {
+              jobId: "job-partial-race-retry",
+              sourceJobId: "job-partial-race",
+              status: "queued",
+            },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-race-retry") {
+        return retryPoll.promise as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-partial-race-retry/design-ir" ||
+        url === "/workspace/jobs/job-partial-race-retry/figma-analysis" ||
+        url === "/workspace/jobs/job-partial-race-retry/component-manifest"
+      ) {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: { jobId: "job-partial-race-retry", screens: [] },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-race-retry/files") {
+        return Promise.resolve(
+          createJsonResponse({
+            payload: { files: [] },
+          }),
+        ) as never;
+      }
+
+      if (url === "/workspace/jobs/job-partial-race-retry/screenshot") {
+        return Promise.resolve(
+          createJsonResponse({
+            status: 404,
+            ok: false,
+            payload: {},
+          }),
+        ) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => usePastePipeline(), {
+      wrapper: makeWrapper(),
+    });
+
+    await act(async () => {
+      result.current.start(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("partial");
+    });
+
+    await act(async () => {
+      result.current.retry();
+      result.current.retry();
+    });
+
+    expect(retryStageCalls).toBe(1);
+
+    retryPoll.resolve(
+      createJsonResponse({
+        payload: {
+          jobId: "job-partial-race-retry",
+          status: "completed",
+          preview: { url: "http://127.0.0.1:1983/retry-race-preview" },
+          stages: [
+            { name: "figma.source", status: "completed" },
+            { name: "ir.derive", status: "completed" },
+            { name: "template.prepare", status: "completed" },
+            { name: "codegen.generate", status: "completed" },
+          ],
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(result.current.state.stage).toBe("ready");
+    });
+
+    expect(result.current.state.previewUrl).toBe(
+      "http://127.0.0.1:1983/retry-race-preview",
+    );
+  });
+
   it("startPastePipeline does not retain a stale active job after cancellation", async () => {
     let cancelRequestCount = 0;
 
@@ -641,10 +1157,7 @@ describe("usePastePipeline", () => {
         return new Promise((_, reject) => {
           init?.signal?.addEventListener(
             "abort",
-            () =>
-              reject(
-                new DOMException("The operation was aborted.", "AbortError"),
-              ),
+            () => reject(createAbortError()),
             { once: true },
           );
         }) as never;
@@ -682,6 +1195,79 @@ describe("usePastePipeline", () => {
     await waitFor(() => {
       expect(cancelRequestCount).toBe(1);
     });
+  });
+
+  it("startPastePipeline treats cancel() after ready as a local reset", async () => {
+    let cancelRequestCount = 0;
+
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-controller-ready" },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-controller-ready") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-controller-ready",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/controller-ready" },
+          },
+        }) as never;
+      }
+
+      if (
+        url === "/workspace/jobs/job-controller-ready/design-ir" ||
+        url === "/workspace/jobs/job-controller-ready/figma-analysis" ||
+        url === "/workspace/jobs/job-controller-ready/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-controller-ready", screens: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-controller-ready/files") {
+        return createJsonResponse({
+          payload: { files: [] },
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-controller-ready/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+
+      if (url === "/workspace/jobs/job-controller-ready/cancel") {
+        cancelRequestCount += 1;
+        return createJsonResponse({
+          payload: {
+            jobId: "job-controller-ready",
+            status: "canceled",
+          },
+        }) as never;
+      }
+
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const controller = startPastePipeline(buildDirectJsonPayload());
+
+    await waitFor(() => {
+      expect(controller.getState().stage).toBe("ready");
+    });
+
+    controller.cancel();
+
+    await waitFor(() => {
+      expect(controller.getState().stage).toBe("idle");
+    });
+
+    expect(cancelRequestCount).toBe(0);
   });
 });
 
