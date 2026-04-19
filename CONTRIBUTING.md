@@ -43,12 +43,15 @@ The visual benchmark suite measures how closely generated output matches committ
 
 ```bash
 pnpm benchmark:visual
+pnpm benchmark:paste-delta
 ```
 
 - Run `pnpm benchmark:visual` before and after making generator changes.
 - Compare the ASCII table output to see score deltas per fixture.
 - A delta > +1 indicates improvement; delta < -1 indicates degradation.
 - The +/-1 neutral band absorbs small rendering variance.
+- Run `pnpm benchmark:paste-delta` when changing the paste-delta import path (`src/server/request-handler.ts`, `src/job-engine.ts`, or the delta-aware stage services).
+- The runner writes `artifacts/testing/paste-delta-benchmark.json` and enforces the Issue `#992` acceptance target: delta mode must keep the 80th percentile `delta/full` wall-clock ratio at or below `0.70` (at least a 30% wall-clock reduction for typical small iterations).
 
 ### Expected workflow
 

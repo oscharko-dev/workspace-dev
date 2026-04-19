@@ -82,6 +82,7 @@
     "test:coverage": "c8 --all --src src --include \"src/**/*.ts\" --exclude \"src/**/*.test.ts\" --exclude \"src/isolated-server-entry.ts\" --exclude \"src/job-engine.ts\" --exclude \"src/job-engine/figma-source.ts\" --exclude \"src/job-engine/types.ts\" --exclude \"src/parity/types.ts\" --exclude \"src/parity/types-core.ts\" --exclude \"src/parity/types-edit-session.ts\" --exclude \"src/parity/types-job.ts\" --exclude \"src/parity/types-kpi.ts\" --exclude \"src/parity/types-mapping.ts\" --exclude \"src/parity/types-sync.ts\" --exclude \"src/parity/fixtures/golden/**/expected/src_theme_theme.ts\" --reporter=text-summary --reporter=lcov --reporter=json-summary --report-dir coverage tsx --test \"src/**/*.test.ts\" \"integration/**/*.test.ts\" && node scripts/check-coverage-thresholds.mjs",
     "test:mutation": "pnpm exec stryker run stryker.config.mjs",
     "benchmark:visual": "tsx integration/visual-benchmark.cli.ts",
+    "benchmark:paste-delta": "tsx integration/paste-delta-benchmark.ts",
     "composite:quality": "tsx scripts/compute-composite-quality.ts",
     "benchmark:visual:ab": "tsx integration/visual-benchmark-ab.cli.ts",
     "benchmark:visual:update-fixtures": "pnpm run benchmark:visual -- --update-fixtures",
