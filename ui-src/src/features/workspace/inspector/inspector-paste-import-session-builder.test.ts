@@ -30,7 +30,7 @@ function makePipelineState(
   return base;
 }
 
-const COMPLETED_AT = "2026-04-15T10:00:00.000Z";
+const COMPLETED_AT = "2024-04-15T10:00:00.000Z";
 const SESSION_ID = "paste-import-1";
 
 describe("buildPasteImportSession — null cases", () => {

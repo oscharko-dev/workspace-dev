@@ -32,10 +32,6 @@ function toUnsupportedIntentReason({
 
 export type PasteSource = "clipboard-api" | "paste-event" | "drop" | "upload";
 
-export interface UseInspectorBootstrapOptions {
-  pollIntervalMs?: number;
-}
-
 interface FailedState {
   reason: string;
   retryable: boolean;
@@ -163,6 +159,9 @@ function deriveBootstrapState({
     };
   }
 
+  // In the "partial" stage we intentionally only consider `localFailure`.
+  // `pipelineError` may reflect non-fatal pipeline issues while a partial result
+  // (with `jobId`) is still usable, so we avoid overriding that state as failed.
   const failure =
     pipelineStage === "partial"
       ? localFailure
@@ -196,11 +195,7 @@ interface LastSubmitRef {
   urlContext: { fileKey: string; nodeId: string | null } | null;
 }
 
-export function useInspectorBootstrap(
-  options?: UseInspectorBootstrapOptions,
-): UseInspectorBootstrapResult {
-  void options;
-
+export function useInspectorBootstrap(): UseInspectorBootstrapResult {
   const pipeline = usePastePipeline();
   const [detectedPaste, setDetectedPaste] = useState<DetectedPaste | null>(
     null,
@@ -249,9 +244,11 @@ export function useInspectorBootstrap(
     });
   }, [pipeline]);
 
+  const lastPipelineError =
+    pipeline.state.errors[pipeline.state.errors.length - 1] ?? null;
   const pipelineError =
     pipeline.state.stage === "error" || pipeline.state.stage === "partial"
-      ? (pipeline.state.errors[pipeline.state.errors.length - 1] ?? null)
+      ? lastPipelineError
       : null;
 
   const jobId = pipeline.state.jobId ?? null;
@@ -389,12 +386,13 @@ export function useInspectorBootstrap(
 
       if (!isJsonPayload(detectedPaste.rawText)) {
         setDetectedPaste(null);
+        const isUnsupportedFigmaClipboardHtml =
+          detectedPaste.clipboardHtml !== undefined &&
+          isFigmaClipboard(detectedPaste.clipboardHtml);
         setLocalFailure({
-          reason:
-            detectedPaste.clipboardHtml !== undefined &&
-            isFigmaClipboard(detectedPaste.clipboardHtml)
-              ? "UNSUPPORTED_FIGMA_CLIPBOARD_HTML"
-              : "SCHEMA_MISMATCH",
+          reason: isUnsupportedFigmaClipboardHtml
+            ? "UNSUPPORTED_FIGMA_CLIPBOARD_HTML"
+            : "SCHEMA_MISMATCH",
           retryable: false,
         });
         return;
