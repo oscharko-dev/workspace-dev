@@ -60,6 +60,8 @@ const makeRecordingFetch = (): {
   return { fetch: fetchImpl, urls };
 };
 
+const parseRecordedUrls = (urls: string[]): URL[] => urls.map((url) => new URL(url));
+
 test("WORKSPACE_DEV_MCP_SERVER_URL override routes MCP traffic through the mock URL", async () => {
   const overrideUrl = "http://127.0.0.1:54321/mcp";
   await withEnv(
@@ -96,11 +98,11 @@ test("WORKSPACE_DEV_MCP_SERVER_URL override routes MCP traffic through the mock 
       }
 
       assert.ok(
-        mcp.urls.some((u) => u.startsWith(overrideUrl)),
+        parseRecordedUrls(mcp.urls).some((u) => u.href === overrideUrl),
         `expected mock URL in MCP fetches, got: ${mcp.urls.join(", ")}`,
       );
       assert.ok(
-        mcp.urls.every((u) => u.startsWith(overrideUrl)),
+        parseRecordedUrls(mcp.urls).every((u) => u.href === overrideUrl),
         `expected only the configured override URL under override, got: ${mcp.urls.join(", ")}`,
       );
     },
@@ -139,7 +141,7 @@ test("unset WORKSPACE_DEV_MCP_SERVER_URL keeps production MCP URL", async () => 
       }
 
       assert.ok(
-        mcp.urls.every((u) => !u.startsWith("http://127.0.0.1")),
+        parseRecordedUrls(mcp.urls).every((u) => u.hostname !== "127.0.0.1"),
         `expected no override URL, got: ${mcp.urls.join(", ")}`,
       );
     },
@@ -181,7 +183,9 @@ test("malformed WORKSPACE_DEV_MCP_SERVER_URL falls back to production MCP URL", 
       }
 
       assert.ok(
-        mcp.urls.every((u) => u.startsWith("https://mcp.figma.com")),
+        parseRecordedUrls(mcp.urls).every(
+          (u) => u.origin === "https://mcp.figma.com" && u.pathname === "/mcp",
+        ),
         `expected malformed override to fall back to production MCP URL, got: ${mcp.urls.join(", ")}`,
       );
     },
