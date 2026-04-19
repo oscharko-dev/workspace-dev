@@ -29,9 +29,11 @@ Run `pnpm run test:mutation` from the repository root to execute the scoped Stry
 
 The generated JSON and HTML reports are written to `artifacts/testing/mutation`, and CI uploads the same directory as a build artifact for inspection.
 
-Mutation testing is intentionally limited to the current high-value modules and is enforced as a CI-blocking quality gate.
+Mutation testing is intentionally limited to the current high-value backend modules covered by the `tap` runner and is enforced as a CI-blocking quality gate.
 
-Current baseline mutation score: `68%` (CI fails below this threshold across `src/mode-lock.ts`, `src/schemas.ts`, `src/server/request-security.ts`, `src/job-engine/pipeline/orchestrator.ts`, `src/job-engine/visual-scoring.ts`, and `src/parity/ir.ts`).
+Current baseline mutation score: `58.76%` (CI fails below `58%` across `src/mode-lock.ts`, `src/schemas.ts`, `src/server/request-security.ts`, `src/job-engine/pipeline/orchestrator.ts`, `src/job-engine/visual-scoring.ts`, `src/job-engine/figma-mcp-resolver.ts`, `src/job-engine/figma-token-bridge.ts`, `src/job-engine/figma-component-mapper.ts`, `src/job-engine/import-session-event-store.ts`, `src/job-engine/paste-fingerprint-store.ts`, `src/job-engine/paste-tree-diff.ts`, `src/parity/ir.ts`, and `src/parity/ir-design-context.ts`).
+
+The UI inspector paste modules under `ui-src/src/features/workspace/inspector/` currently use Vitest and remain outside this backend mutation gate until they are added through a dedicated Vitest-compatible Stryker profile.
 
 ## Visual Benchmark Workflow
 

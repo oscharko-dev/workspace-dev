@@ -270,7 +270,7 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Run mutation baseline (blocking >=68%)
+      - name: Run mutation baseline (blocking >=58%)
         run: pnpm run test:mutation
 
       - name: Summarize mutation report
