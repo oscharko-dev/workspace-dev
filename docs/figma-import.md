@@ -169,17 +169,22 @@ mode-lock surface remains the runtime-backed modes documented in the README.
 
 Two hook methods handle submission, and they serve different callers:
 
-- **`submit({ figmaJsonPayload })`** — programmatic / offline / CLI / firewall
-  handoff. The caller already knows its intent and provides pre-validated
-  Figma JSON (for example a CI artifact, a server-to-server POST, or a
-  downloaded plugin export). No intent classification, no SmartBanner.
+- **`submit({ figmaJsonPayload, sourceMode? })`** — programmatic / test /
+  non-UI handoff inside the Inspector hook. The caller already knows the
+  runtime `figmaSourceMode` and provides pre-validated Figma JSON. It defaults
+  to `figma_paste` and can opt into `figma_plugin` explicitly. No intent
+  classification, no SmartBanner.
 - **`submitPaste(text, { source?, clipboardHtml? })`** — interactive paste
   path. Runs `classifyPasteIntent` on the raw input and shows the SmartBanner
   for the user to confirm or correct the detected intent before submitting.
 
 `classifyPasteIntent` is designed for free-form strings, and the SmartBanner
 is an interactive modal that requires user input; both are unsuitable for
-headless or server-to-server callers. See Issue #1022 for the decision.
+headless or server-to-server callers. For actual offline / CLI / firewall
+integrations outside the UI, call `POST /workspace/submit` directly and set the
+request `figmaSourceMode` explicitly. The Inspector upload / paste / drop flow
+remains interactive and uses `submitPaste()`. See Issue #1022 for the
+decision.
 
 ### Size limits
 
