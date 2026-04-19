@@ -80,6 +80,10 @@ interface PersistedEnvelope {
   totalCorrections: number;
 }
 
+function isNonNegativeFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
+}
+
 function createEmptyClassifications(): Map<
   ImportIntent,
   Map<ConfidenceBucket, number>
@@ -151,8 +155,8 @@ function isPersistedEnvelope(value: unknown): value is PersistedEnvelope {
     return false;
   }
   if (
-    typeof record["totalClassifications"] !== "number" ||
-    typeof record["totalCorrections"] !== "number"
+    !isNonNegativeFiniteNumber(record["totalClassifications"]) ||
+    !isNonNegativeFiniteNumber(record["totalCorrections"])
   ) {
     return false;
   }
@@ -284,8 +288,8 @@ function restoreFromStorage(): void {
   }
   state.recentEvents = events.slice(-RECENT_EVENTS_CAP);
 
-  state.totalClassifications = parsed.totalClassifications;
-  state.totalCorrections = parsed.totalCorrections;
+  state.totalClassifications = sumClassificationCounts(state.classifications);
+  state.totalCorrections = sumCorrectionCounts(state.corrections);
 }
 
 function ensureRestored(): void {
@@ -349,6 +353,30 @@ function pushEvent(event: IntentClassificationMetricEvent): void {
   if (state.recentEvents.length > RECENT_EVENTS_CAP) {
     state.recentEvents.splice(0, state.recentEvents.length - RECENT_EVENTS_CAP);
   }
+}
+
+function sumClassificationCounts(
+  classifications: Map<ImportIntent, Map<ConfidenceBucket, number>>,
+): number {
+  let total = 0;
+  for (const intentMap of classifications.values()) {
+    for (const value of intentMap.values()) {
+      total += value;
+    }
+  }
+  return total;
+}
+
+function sumCorrectionCounts(
+  corrections: Map<ImportIntent, Map<ImportIntent, number>>,
+): number {
+  let total = 0;
+  for (const fromMap of corrections.values()) {
+    for (const value of fromMap.values()) {
+      total += value;
+    }
+  }
+  return total;
 }
 
 export function recordClassification({
@@ -451,6 +479,10 @@ export function getIntentClassificationMetricsSnapshot(): IntentClassificationMe
 }
 
 export function __resetIntentClassificationMetricsForTests(): void {
+  resetIntentClassificationMetrics();
+}
+
+export function resetIntentClassificationMetrics(): void {
   state.classifications = createEmptyClassifications();
   state.corrections = createEmptyCorrections();
   state.recentEvents = [];
@@ -503,7 +535,7 @@ function installIntentClassificationDevtoolsAccessor(): void {
     }
     const accessor: DevtoolsAccessor = {
       getSnapshot: getIntentClassificationMetricsSnapshot,
-      reset: __resetIntentClassificationMetricsForTests,
+      reset: resetIntentClassificationMetrics,
     };
     host[DEVTOOLS_GLOBAL_KEY] = accessor;
   } catch {

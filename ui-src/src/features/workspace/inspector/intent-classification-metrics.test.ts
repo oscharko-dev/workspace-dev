@@ -289,6 +289,51 @@ describe("localStorage persistence", () => {
     expect(snapshot.totalClassifications).toBe(0);
   });
 
+  it("discards payloads with invalid total counters", () => {
+    __resetIntentClassificationMetricsForTests();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: INTENT_CLASSIFICATION_METRICS_STORAGE_VERSION,
+        classifications: {},
+        corrections: {},
+        recentEvents: [],
+        totalClassifications: Number.NaN,
+        totalCorrections: Infinity,
+      }),
+    );
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalClassifications).toBe(0);
+    expect(snapshot.totalCorrections).toBe(0);
+    expect(snapshot.misclassificationRate).toBe(0);
+  });
+
+  it("recomputes totals from restored counters instead of trusting stored totals", () => {
+    __resetIntentClassificationMetricsForTests();
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        version: INTENT_CLASSIFICATION_METRICS_STORAGE_VERSION,
+        classifications: {
+          FIGMA_JSON_DOC: { very_high: 2 },
+          RAW_CODE_OR_TEXT: { low: 1 },
+        },
+        corrections: {
+          FIGMA_JSON_DOC: { FIGMA_PLUGIN_ENVELOPE: 3 },
+        },
+        recentEvents: [],
+        totalClassifications: 999,
+        totalCorrections: 999,
+      }),
+    );
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalClassifications).toBe(3);
+    expect(snapshot.totalCorrections).toBe(3);
+    expect(snapshot.misclassificationRate).toBe(1);
+  });
+
   it("does not throw when localStorage.setItem throws", () => {
     const setItemSpy = vi
       .spyOn(Storage.prototype, "setItem")
