@@ -94,6 +94,9 @@ jobs:
       - name: Golden parity fixtures
         run: pnpm run test:golden
 
+      - name: Coverage thresholds
+        run: pnpm run test:coverage
+
       - name: Install Playwright browser (Chromium)
         run: pnpm exec playwright install --with-deps chromium
 

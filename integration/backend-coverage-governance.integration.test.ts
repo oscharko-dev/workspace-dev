@@ -16,6 +16,9 @@ test("integration: backend coverage gate keeps core import and governance paths 
     scripts?: Record<string, string>;
   };
   const pipelineDoc = await readRepoFile("PIPELINE.md");
+  const devQualityWorkflow = await readRepoFile(
+    ".github/workflows/dev-quality-gate.yml",
+  );
   const releaseGateWorkflow = await readRepoFile(
     ".github/workflows/release-gate.yml",
   );
@@ -57,7 +60,11 @@ test("integration: backend coverage gate keeps core import and governance paths 
     /must be documented here with an explicit rationale, owner, and retirement condition/i,
   );
 
-  for (const workflow of [releaseGateWorkflow, changesetsReleaseWorkflow]) {
+  for (const workflow of [
+    devQualityWorkflow,
+    releaseGateWorkflow,
+    changesetsReleaseWorkflow,
+  ]) {
     assert.match(workflow, /pnpm run test:coverage/);
   }
 });

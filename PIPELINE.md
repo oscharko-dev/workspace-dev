@@ -47,7 +47,7 @@ flowchart TB
 - `pnpm run test:coverage` is the authoritative backend coverage gate. It runs `c8 --all` across `src/**/*.ts`, then enforces the fixed threshold policy from [`scripts/check-coverage-thresholds.mjs`](scripts/check-coverage-thresholds.mjs).
 - The current backend minimums are `lines >= 90%`, `statements >= 90%`, `functions >= 90%`, and `branches >= 85%`.
 - [`src/job-engine.ts`](src/job-engine.ts) and [`src/job-engine/figma-source.ts`](src/job-engine/figma-source.ts) stay inside that global backend gate because they own queue orchestration, import governance, re-import handling, delta fetch reuse, and Figma transport retry behavior.
-- Release-quality CI executes `pnpm run test:coverage` directly, so backend coverage-denominator changes are CI-visible without a second policy layer.
+- Dev-gate and release-quality CI execute `pnpm run test:coverage` directly, so backend coverage-denominator changes are CI-visible on both promotion paths without a second policy layer.
 - Any future backend coverage exclusion for a high-risk runtime boundary must be documented here with an explicit rationale, owner, and retirement condition before it is allowed to land.
 
 ## UI hotspot coverage
