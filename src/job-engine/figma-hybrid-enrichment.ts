@@ -21,6 +21,19 @@ const TOKEN_BRIDGE_VARIABLES_SKIPPED_CODE = "W_TOKEN_BRIDGE_VARIABLES_SKIPPED";
 const TOKEN_BRIDGE_DESIGN_SYSTEM_SKIPPED_CODE =
   "W_TOKEN_BRIDGE_DESIGN_SYSTEM_SKIPPED";
 
+/**
+ * Test/dev override for the MCP server URL. Production behavior is unchanged
+ * when this is unset — consumers fall back to `DEFAULT_MCP_SERVER_URL`. The
+ * resolver itself enforces HTTPS unless `WORKSPACE_ALLOW_INSECURE_MCP=true`,
+ * so pointing this at an http://127.0.0.1 mock also requires that opt-in.
+ */
+const MCP_SERVER_URL_OVERRIDE_ENV = "WORKSPACE_DEV_MCP_SERVER_URL";
+
+const resolveMcpServerUrl = (): string => {
+  const override = process.env[MCP_SERVER_URL_OVERRIDE_ENV]?.trim();
+  return override && override.length > 0 ? override : DEFAULT_MCP_SERVER_URL;
+};
+
 const TAILWIND_CONFIG_NAMES = [
   "tailwind.config.js",
   "tailwind.config.ts",
@@ -252,6 +265,18 @@ const mergeToolNames = ({
   return [...merged];
 };
 
+const resolveOverrideMcpHostname = (): string | undefined => {
+  const override = process.env[MCP_SERVER_URL_OVERRIDE_ENV]?.trim();
+  if (!override || override.length === 0) {
+    return undefined;
+  }
+  try {
+    return new URL(override).hostname;
+  } catch {
+    return undefined;
+  }
+};
+
 const createTrustedFigmaLoaderFetch = ({
   figmaRestFetch,
   figmaMcpFetch,
@@ -266,6 +291,12 @@ const createTrustedFigmaLoaderFetch = ({
       return await figmaRestFetch(request);
     }
     if (url.hostname === "mcp.figma.com") {
+      return await figmaMcpFetch(request);
+    }
+    // When WORKSPACE_DEV_MCP_SERVER_URL is set, allow its hostname too so the
+    // in-process mock server can serve MCP traffic. Production leaves this
+    // unset and the wrapper remains restricted to api/mcp.figma.com.
+    if (url.hostname === resolveOverrideMcpHostname()) {
       return await figmaMcpFetch(request);
     }
     throw new Error(
@@ -345,7 +376,7 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
             : {}),
         },
         {
-          serverUrl: DEFAULT_MCP_SERVER_URL,
+          serverUrl: resolveMcpServerUrl(),
           authMode: "desktop",
           fetchImpl: trustedFigmaFetch,
           timeoutMs,
@@ -366,7 +397,7 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
           fileKey: figmaFileKey,
           nodeId: primaryNodeId,
           mcpConfig: {
-            serverUrl: DEFAULT_MCP_SERVER_URL,
+            serverUrl: resolveMcpServerUrl(),
             authMode: "desktop",
             fetchImpl: figmaMcpFetch,
             timeoutMs,
@@ -440,7 +471,7 @@ export const createDefaultFigmaMcpEnrichmentLoader = ({
           fileKey: figmaFileKey,
           nodeId: primaryNodeId,
           mcpConfig: {
-            serverUrl: DEFAULT_MCP_SERVER_URL,
+            serverUrl: resolveMcpServerUrl(),
             authMode: "desktop",
             fetchImpl: figmaMcpFetch,
             timeoutMs,
