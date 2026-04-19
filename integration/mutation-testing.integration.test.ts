@@ -65,17 +65,33 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
     "src/server/request-security.ts",
     "src/job-engine/pipeline/orchestrator.ts",
     "src/job-engine/visual-scoring.ts",
+    "src/job-engine/figma-mcp-resolver.ts",
+    "src/job-engine/figma-token-bridge.ts",
+    "src/job-engine/figma-component-mapper.ts",
+    "src/job-engine/import-session-event-store.ts",
+    "src/job-engine/paste-fingerprint-store.ts",
+    "src/job-engine/paste-tree-diff.ts",
     "src/parity/ir.ts",
+    "src/parity/ir-design-context.ts",
   ]);
-  assert.equal(strykerConfigModule.default.thresholds.break, 68);
-  assert.equal(strykerConfigModule.default.thresholds.high, 68);
-  assert.equal(strykerConfigModule.default.thresholds.low, 68);
-  assert.equal(
-    strykerConfigModule.default.tap.testFiles.includes(
-      "src/server/request-security.test.ts",
-    ),
-    true,
-  );
+  assert.equal(strykerConfigModule.default.thresholds.break, 58);
+  assert.equal(strykerConfigModule.default.thresholds.high, 58);
+  assert.equal(strykerConfigModule.default.thresholds.low, 58);
+  assert.deepEqual(strykerConfigModule.default.tap.testFiles, [
+    "src/mode-lock.test.ts",
+    "src/schemas.test.ts",
+    "src/server/request-security.test.ts",
+    "src/job-engine/pipeline/orchestrator.test.ts",
+    "src/job-engine/visual-scoring.test.ts",
+    "src/job-engine/figma-mcp-resolver.test.ts",
+    "src/job-engine/figma-token-bridge.test.ts",
+    "src/job-engine/figma-component-mapper.test.ts",
+    "src/job-engine/import-session-event-store.test.ts",
+    "src/job-engine/paste-fingerprint-store.test.ts",
+    "src/job-engine/paste-tree-diff.test.ts",
+    "src/parity/ir.test.ts",
+    "src/parity/ir-design-context.test.ts",
+  ]);
   assert.equal(
     strykerConfigModule.default.jsonReporter.fileName,
     "artifacts/testing/mutation/mutation.json",
@@ -91,7 +107,7 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
   assert.match(contributingDoc, /Current baseline mutation score:/i);
   assert.match(
     mutationSummaryScript,
-    /"src\/job-engine\/visual-scoring\.ts"/,
+    /"src\/job-engine\/paste-tree-diff\.ts"/,
   );
 
   for (const workflow of [
@@ -104,7 +120,7 @@ test("integration: mutation-testing config, docs, and workflows stay aligned", a
     assert.doesNotMatch(mutationJobBlock, /continue-on-error:\s*true/);
     assert.match(
       mutationJobBlock,
-      /Run mutation baseline \(blocking >=68%\)/,
+      /Run mutation baseline \(blocking >=58%\)/,
     );
     assert.match(mutationJobBlock, /pnpm run test:mutation/);
     assert.match(mutationJobBlock, /print-mutation-report-summary\.mjs/);

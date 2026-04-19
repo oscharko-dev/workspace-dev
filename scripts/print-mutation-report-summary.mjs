@@ -8,7 +8,14 @@ const TARGET_FILES = [
   "src/server/request-security.ts",
   "src/job-engine/pipeline/orchestrator.ts",
   "src/job-engine/visual-scoring.ts",
-  "src/parity/ir.ts"
+  "src/job-engine/figma-mcp-resolver.ts",
+  "src/job-engine/figma-token-bridge.ts",
+  "src/job-engine/figma-component-mapper.ts",
+  "src/job-engine/import-session-event-store.ts",
+  "src/job-engine/paste-fingerprint-store.ts",
+  "src/job-engine/paste-tree-diff.ts",
+  "src/parity/ir.ts",
+  "src/parity/ir-design-context.ts"
 ];
 
 const toMetrics = (mutants) => {
