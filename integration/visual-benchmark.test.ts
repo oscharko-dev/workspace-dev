@@ -2322,6 +2322,39 @@ test("visual benchmark workflow enforces thresholds and updates the existing che
   assert.doesNotMatch(workflow, /issues:\s*write/);
 });
 
+test("runVisualBenchmark is silent by default and writes via output callback when provided", async () => {
+  const env = await createBenchmarkFixtureEnvironment();
+  const output: string[] = [];
+  try {
+    const resultWithoutOutput = await runVisualBenchmark(
+      env,
+      {
+        runFixtureBenchmark: async (fixtureId) =>
+          singleScreenRunResult(fixtureId, 87),
+      },
+    );
+
+    await runVisualBenchmark(
+      {
+        ...env,
+        output: (chunk) => {
+          output.push(chunk);
+        },
+      },
+      {
+        runFixtureBenchmark: async (fixtureId) =>
+          singleScreenRunResult(fixtureId, 87),
+      },
+    );
+
+    const renderedOutput = output.join("");
+    assert.equal(resultWithoutOutput.alerts.length, 0);
+    assert.ok(renderedOutput.includes("Overall Average"));
+  } finally {
+    await rm(path.dirname(env.fixtureRoot), { recursive: true, force: true });
+  }
+});
+
 test("visual benchmark comment workflow renders trusted PR comments from structured workflow_run artifacts", async () => {
   const workflow = await readFile(
     path.join(

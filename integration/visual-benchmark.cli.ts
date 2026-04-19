@@ -218,6 +218,7 @@ export const runVisualBenchmarkCli = async (
         componentVisualCatalogFile: input?.componentVisualCatalogFile,
         storybookStaticDir: input?.storybookStaticDir,
         browsers: input?.browsers,
+        output: (chunk) => process.stdout.write(chunk),
       });
     });
   const threshold = resolution.qualityThreshold;
