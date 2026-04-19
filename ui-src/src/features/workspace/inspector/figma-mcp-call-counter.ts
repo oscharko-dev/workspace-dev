@@ -109,7 +109,11 @@ function isPersistedEnvelope(value: unknown): value is PersistedEnvelope {
   if (record["version"] !== FIGMA_MCP_CALL_COUNTER_STORAGE_VERSION) {
     return false;
   }
-  if (typeof record["month"] !== "string" || record["month"].length === 0) {
+  if (
+    typeof record["month"] !== "string" ||
+    record["month"].length === 0 ||
+    !/^\d{4}-(0[1-9]|1[0-2])$/.test(record["month"])
+  ) {
     return false;
   }
   if (!isNonNegativeFiniteInt(record["callsThisMonth"])) {
