@@ -1,9 +1,13 @@
 import type { JSX, ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../../lib/http";
 import { useInspectorBootstrap } from "./useInspectorBootstrap";
+import {
+  __resetIntentClassificationMetricsForTests,
+  getIntentClassificationMetricsSnapshot,
+} from "./intent-classification-metrics";
 
 vi.mock("../../../lib/http", () => ({
   fetchJson: vi.fn(),
@@ -72,9 +76,14 @@ function buildFigmaClipboardHtml(): string {
   return `<span data-metadata="<!--(figmeta)${encoded}(/figmeta)-->"></span>`;
 }
 
+beforeEach(() => {
+  __resetIntentClassificationMetricsForTests();
+});
+
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  __resetIntentClassificationMetricsForTests();
 });
 
 describe("useInspectorBootstrap", () => {
@@ -678,5 +687,179 @@ describe("useInspectorBootstrap", () => {
       JSON.stringify({ figmaFileKey: "ABC123fileKey", nodeId: "1-2" }),
     );
     expect(parsedBody.enableGitPr).toBe(false);
+  });
+
+  it("records a classification event for plugin-shaped JSON (high bucket)", () => {
+    const pluginShapedPayload = JSON.stringify({
+      type: "PLUGIN_EXPORT",
+      nodes: [{ type: "FRAME", name: "Card" }],
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitPaste(pluginShapedPayload);
+    });
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalClassifications).toBe(1);
+    expect(snapshot.classifications.FIGMA_JSON_NODE_BATCH.high).toBe(1);
+  });
+
+  it("records a classification event for Figma clipboard HTML (very_high bucket)", () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitPaste(buildDirectJsonPayload(), {
+        clipboardHtml: buildFigmaClipboardHtml(),
+      });
+    });
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalClassifications).toBe(1);
+    expect(snapshot.classifications.FIGMA_JSON_NODE_BATCH.very_high).toBe(1);
+  });
+
+  it("does not record a classification when the input is empty (UNKNOWN intent)", () => {
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitPaste("");
+    });
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalClassifications).toBe(0);
+  });
+
+  it("records a correction when confirmIntent changes the detected intent", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-correct" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-correct") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-correct",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/correct" },
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-correct/design-ir" ||
+        url === "/workspace/jobs/job-correct/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-correct", screens: [] },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-correct/files") {
+        return createJsonResponse({ payload: { files: [] } }) as never;
+      }
+      if (url === "/workspace/jobs/job-correct/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const pluginShapedPayload = JSON.stringify({
+      type: "PLUGIN_EXPORT",
+      nodes: [{ type: "FRAME", name: "Card" }],
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitPaste(pluginShapedPayload);
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    act(() => {
+      result.current.confirmIntent("FIGMA_PLUGIN_ENVELOPE");
+    });
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalClassifications).toBe(1);
+    expect(snapshot.totalCorrections).toBe(1);
+    expect(
+      snapshot.corrections.FIGMA_JSON_NODE_BATCH.FIGMA_PLUGIN_ENVELOPE,
+    ).toBe(1);
+    expect(snapshot.misclassificationRate).toBe(1);
+  });
+
+  it("does not record a correction when confirmIntent matches the detected intent", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace/submit") {
+        return createJsonResponse({
+          status: 202,
+          payload: { jobId: "job-match" },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-match") {
+        return createJsonResponse({
+          payload: {
+            jobId: "job-match",
+            status: "completed",
+            preview: { url: "http://127.0.0.1:1983/match" },
+          },
+        }) as never;
+      }
+      if (
+        url === "/workspace/jobs/job-match/design-ir" ||
+        url === "/workspace/jobs/job-match/component-manifest"
+      ) {
+        return createJsonResponse({
+          payload: { jobId: "job-match", screens: [] },
+        }) as never;
+      }
+      if (url === "/workspace/jobs/job-match/files") {
+        return createJsonResponse({ payload: { files: [] } }) as never;
+      }
+      if (url === "/workspace/jobs/job-match/screenshot") {
+        return createJsonResponse({
+          status: 404,
+          ok: false,
+          payload: {},
+        }) as never;
+      }
+      throw new Error(`Unexpected url: ${url}`);
+    });
+
+    const { result } = renderHook(() => useInspectorBootstrap(), {
+      wrapper: makeWrapper(),
+    });
+
+    act(() => {
+      result.current.submitPaste(buildDirectJsonPayload());
+    });
+
+    await waitFor(() => {
+      expect(result.current.state.kind).toBe("detected");
+    });
+
+    act(() => {
+      result.current.confirmIntent("FIGMA_JSON_DOC");
+    });
+
+    const snapshot = getIntentClassificationMetricsSnapshot();
+    expect(snapshot.totalCorrections).toBe(0);
   });
 });
