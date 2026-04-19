@@ -31,6 +31,10 @@ function isMacPlatform(): boolean {
 
 const OVERLAY_QUICK_SET_KEYS = ["0", "5", "1"] as const;
 
+function overlayQuickSetKeyToPercent(value: (typeof OVERLAY_QUICK_SET_KEYS)[number]): number {
+  return value === "1" ? 100 : Number(value) * 10;
+}
+
 function modifierLabel(): string {
   return isMacPlatform() ? "⌘" : "Ctrl";
 }
@@ -95,7 +99,7 @@ function buildShortcutData(): ShortcutCategory[] {
         {
           keys: [...OVERLAY_QUICK_SET_KEYS],
           description: `Set overlay opacity to ${OVERLAY_QUICK_SET_KEYS
-            .map((value) => `${value === "1" ? 100 : Number(value) * 10}%`)
+            .map((value) => `${overlayQuickSetKeyToPercent(value)}%`)
             .join(", ")
             .replace(/, ([^,]*)$/, ", or $1")}`
         }
