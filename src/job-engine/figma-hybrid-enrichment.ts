@@ -265,16 +265,24 @@ const mergeToolNames = ({
   return [...merged];
 };
 
-const resolveOverrideMcpHostname = (): string | undefined => {
+const resolveOverrideMcpServerUrl = (): URL | undefined => {
   const override = process.env[MCP_SERVER_URL_OVERRIDE_ENV]?.trim();
   if (!override || override.length === 0) {
     return undefined;
   }
   try {
-    return new URL(override).hostname;
+    return new URL(override);
   } catch {
     return undefined;
   }
+};
+
+const isOverrideMcpRequest = (url: URL): boolean => {
+  const overrideUrl = resolveOverrideMcpServerUrl();
+  if (!overrideUrl) {
+    return false;
+  }
+  return url.origin === overrideUrl.origin && url.pathname === overrideUrl.pathname;
 };
 
 const createTrustedFigmaLoaderFetch = ({
@@ -296,7 +304,7 @@ const createTrustedFigmaLoaderFetch = ({
     // When WORKSPACE_DEV_MCP_SERVER_URL is set, allow its hostname too so the
     // in-process mock server can serve MCP traffic. Production leaves this
     // unset and the wrapper remains restricted to api/mcp.figma.com.
-    if (url.hostname === resolveOverrideMcpHostname()) {
+    if (isOverrideMcpRequest(url)) {
       return await figmaMcpFetch(request);
     }
     throw new Error(
