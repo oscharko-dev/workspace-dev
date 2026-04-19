@@ -186,9 +186,7 @@ function isJsonWhitespace(character: string): boolean {
   );
 }
 
-function normalizeRequestChunk(
-  chunk: string | Buffer | Uint8Array | undefined | null,
-): Buffer {
+function normalizeRequestChunk(chunk: unknown): Buffer {
   if (typeof chunk === "string") {
     return Buffer.from(chunk, "utf8");
   }
