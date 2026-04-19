@@ -50,8 +50,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
+          # Full history is required so SonarCloud can perform blame annotations
+          # and correctly identify new vs existing code in pull-request analysis.
+          fetch-depth: 0
           persist-credentials: false
 
+      - name: Set up pnpm
+        uses: pnpm/action-setup@71c92474e7e4f5bca283fb17ef80fba9cdb2b4b1  # v6
+        with:
+          version: 10.33.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      # Run backend coverage (src + integration tests via c8/Node test runner).
+      # continue-on-error keeps the Sonar step running even when integration
+      # tests require external resources that are unavailable in this context.
+      - name: Generate backend coverage report
+        continue-on-error: true
+        run: pnpm run test:coverage
+
+      # Run UI coverage (Vitest + @vitest/coverage-v8 → coverage/ui/lcov.info).
+      - name: Generate UI coverage report
+        continue-on-error: true
+        run: pnpm run ui:test:coverage
+
+      # The scanner reads sonar-project.properties for all static settings.
+      # Only the project key and organization are injected at runtime because
+      # they differ per GitHub organisation/fork and must not be hard-coded.
       - name: Analyze with SonarCloud
         uses: SonarSource/sonarcloud-github-action@4006f663ecaf1f8093e8e4abb9227f6041f52216  # v2.2.0
         env:
