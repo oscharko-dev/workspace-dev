@@ -2435,7 +2435,7 @@ export const detectCssGridLayout = (element: ScreenElementIR): GridLayoutDetecti
     // Check row spanning by height
     const avgRowHeight = rowClusters.length > 1
       ? ((rowClusters.at(-1) ?? 0) - (rowClusters[0] ?? 0)) / (rowClusters.length - 1)
-      : childHeight;
+      : 1;
     if (childHeight > avgRowHeight * CSS_GRID_SPAN_HEIGHT_RATIO && rowEnd - rowStart <= 1 && avgRowHeight > 0) {
       rowEnd = Math.min(rowStart + Math.round(childHeight / avgRowHeight), rowClusters.length);
     }

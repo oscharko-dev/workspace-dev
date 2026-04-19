@@ -114,6 +114,7 @@ describe("ShortcutHelp", () => {
     expect(screen.getByText("Redo edit action")).toBeTruthy();
     expect(screen.getByText("Create draft snapshot")).toBeTruthy();
     expect(screen.getByText("Toggle this shortcut help")).toBeTruthy();
+    expect(screen.getByText("Set overlay opacity to 0%, 50%, or 100%")).toBeTruthy();
   });
 
   it("uses platform-aware modifier key (Ctrl in jsdom)", () => {

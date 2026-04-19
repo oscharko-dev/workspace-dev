@@ -23,9 +23,16 @@ import { getPreferredTheme } from "../../../lib/shiki-shared";
 
 function isMacPlatform(): boolean {
   if (typeof navigator === "undefined") return false;
-  // navigator.platform is deprecated but widely supported; userAgentData is
-  // not yet available everywhere.
-  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+  const uaDataPlatform = (navigator as Navigator & { userAgentData?: { platform?: string } })
+    .userAgentData?.platform;
+  const platform = uaDataPlatform ?? navigator.platform;
+  return /Mac|iPhone|iPad|iPod/i.test(platform);
+}
+
+const OVERLAY_QUICK_SET_KEYS = ["0", "5", "1"] as const;
+
+function overlayQuickSetKeyToPercent(value: (typeof OVERLAY_QUICK_SET_KEYS)[number]): number {
+  return value === "1" ? 100 : Number(value) * 10;
 }
 
 function modifierLabel(): string {
@@ -89,7 +96,13 @@ function buildShortcutData(): ShortcutCategory[] {
       title: "Inspector Tool",
       entries: [
         { keys: ["?"], description: "Toggle this shortcut help" },
-        { keys: ["0", "5", "1"], description: "Set overlay opacity to 0%, 50%, or 100%" }
+        {
+          keys: [...OVERLAY_QUICK_SET_KEYS],
+          description: `Set overlay opacity to ${OVERLAY_QUICK_SET_KEYS
+            .map((value) => `${overlayQuickSetKeyToPercent(value)}%`)
+            .join(", ")
+            .replace(/, ([^,]*)$/, ", or $1")}`
+        }
       ]
     }
   ];
