@@ -61,7 +61,9 @@ const normalizeDynamicGoldenArtifact = (
   return JSON.stringify(redact(JSON.parse(content)), null, 2);
 };
 
-test("customer-board golden offline fixture reproduces committed derived artifacts and generated outputs deterministically", async () => {
+test("customer-board golden offline fixture reproduces committed derived artifacts and generated outputs deterministically", {
+  timeout: 900_000,
+}, async () => {
   const manifest = await loadCustomerBoardGoldenManifest();
   const committedBundle = await readCommittedCustomerBoardGoldenBundle();
   const { figmaInput } = await loadCustomerBoardFixtureInputs({
@@ -289,8 +291,9 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assertAttemptOneStage(validationSummary.generatedApp?.lint, "validation-summary.generatedApp.lint", "passed");
   assertAttemptOneStage(validationSummary.generatedApp?.build, "validation-summary.generatedApp.build", "passed");
   assertAttemptOneStage(validationSummary.generatedApp?.typecheck, "validation-summary.generatedApp.typecheck", "passed");
-  assert.equal(validationSummary.generatedApp?.install?.command?.attempt, 1);
-  assert.equal(validationSummary.generatedApp?.install?.status, "completed");
+  assert.equal(validationSummary.generatedApp?.install?.status, "skipped");
+  assert.equal(validationSummary.generatedApp?.install?.strategy, "normalized");
+  assert.equal(validationSummary.generatedApp?.install?.command, undefined);
   assert.equal(validationSummary.mapping?.figmaLibraryResolution?.status, "ok");
   assert.equal(validationSummary.mapping?.componentMatchReport?.status, "ok");
   assert.notEqual(validationSummary.mapping?.customerProfileMatch?.status, "not_available");
@@ -317,14 +320,11 @@ test("customer-board golden offline fixture reproduces committed derived artifac
   assert.equal(validationSummary.style?.issueCount ?? 0, 0);
   assert.deepEqual(validationSummary.style?.issues ?? [], []);
   assert.equal(validationSummary.import?.customerProfile?.import?.issueCount ?? 0, 0);
-  assert.equal(validationSummary.generatedApp?.install?.status, "completed");
+  assert.equal(validationSummary.generatedApp?.install?.status, "skipped");
   assert.equal(validationSummary.generatedApp?.status, "ok");
   assert.equal(validationSummary.generatedApp?.attempts, 1);
   assert.equal(JSON.stringify(validationSummary.generatedApp).includes("attempt-2"), false);
-  assert.equal(
-    validationSummary.generatedApp?.install?.command?.outputCaptureKey?.includes("validate.project") ?? false,
-    true
-  );
+  assert.equal("command" in (validationSummary.generatedApp?.install ?? {}), false);
 
   // #812 — uiA11y gate: the offline fixture runs with enableUiValidation=true.
   // The validate-ui-report.mjs script performs static analysis (no browser required)

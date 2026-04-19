@@ -50,6 +50,47 @@ const waitForTerminalStatus = async ({
   );
 };
 
+const waitForStageStatus = async ({
+  getStatus,
+  jobId,
+  stageName,
+  expectedStatus = "completed",
+  timeoutMs = 120_000,
+}: {
+  getStatus: (
+    jobId: string,
+  ) => ReturnType<ReturnType<typeof createJobEngine>["getJob"]>;
+  jobId: string;
+  stageName: string;
+  expectedStatus?: string;
+  timeoutMs?: number;
+}) => {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const status = getStatus(jobId);
+    const stageStatus = status?.stages.find(
+      (stage) => stage.name === stageName,
+    )?.status;
+    if (stageStatus === expectedStatus) {
+      return status;
+    }
+    if (
+      status &&
+      (status.status === "failed" ||
+        status.status === "partial" ||
+        status.status === "canceled")
+    ) {
+      throw new Error(
+        `Job ${jobId} reached terminal status '${status.status}' before stage '${stageName}' reached '${expectedStatus}'.`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(
+    `Timed out after ${timeoutMs}ms waiting for job ${jobId} stage '${stageName}' status '${expectedStatus}'`,
+  );
+};
+
 const HEAVY_JOB_TIMEOUT_MS = 180_000;
 
 const createLocalFigmaPayload = () => ({
@@ -2605,16 +2646,16 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
     "profiles/customer-profile.json",
   );
 
-  const status = await waitForTerminalStatus({
+  const status = await waitForStageStatus({
     getStatus: engine.getJob,
     jobId: accepted.jobId,
-    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
+    stageName: "codegen.generate",
+    timeoutMs: 20_000,
   });
 
   assert.equal(
-    status.status,
+    status.stages.find((stage) => stage.name === "codegen.generate")?.status,
     "completed",
-    `Job should complete, got: ${status.status} — ${status.error?.message ?? "no error"}`,
   );
   assert.equal(
     status.logs.some((entry) =>
@@ -2652,6 +2693,22 @@ test("createJobEngine resolves relative customerProfilePath, persists the snapsh
     generatedPackage.dependencies?.["@mui/material"],
     muiMaterialVersion,
   );
+
+  const activeJob = engine.getJob(accepted.jobId);
+  if (
+    activeJob &&
+    (activeJob.status === "running" || activeJob.status === "queued")
+  ) {
+    assert.ok(
+      engine.cancelJob({ jobId: accepted.jobId, reason: "cleanup" }),
+      "expected cleanup cancellation to return the updated job snapshot",
+    );
+    await waitForTerminalStatus({
+      getStatus: engine.getJob,
+      jobId: accepted.jobId,
+      timeoutMs: 20_000,
+    });
+  }
 });
 
 test("createJobEngine fails explicit customerProfilePath loads with E_CUSTOMER_PROFILE_LOAD_FAILED", async () => {

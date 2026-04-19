@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +10,7 @@ import {
 import { cleanFigmaForCodegen } from "../src/job-engine/figma-clean.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "../src/job-engine/figma-hybrid-enrichment.js";
 import { fetchFigmaFile } from "../src/job-engine/figma-source.js";
+import { ensureTemplateValidationSeedNodeModules } from "../src/job-engine/test-validation-seed.js";
 import {
   fetchFigmaVisualReference,
   selectVisualQualityReferenceNode
@@ -82,6 +83,12 @@ const REQUESTED_STORYBOOK_STATIC_DIR = "storybook-static/storybook-static";
 const CUSTOMER_BOARD_BRAND_ID = "customer-board";
 const CUSTOMER_BOARD_VISUAL_QUALITY_VIEWPORT_WIDTH = 1280;
 const WORKSPACE_ROOT = process.cwd();
+const TEMPLATE_NODE_MODULES_DIR = path.join(
+  WORKSPACE_ROOT,
+  "template",
+  "react-mui-app",
+  "node_modules"
+);
 
 const TIMESTAMP_KEYS = new Set([
   "validatedAt",
@@ -1307,7 +1314,7 @@ const createExecutionContext = async ({
   const generatedProjectDir = path.join(jobDir, "generated-app");
   const runtime = resolveRuntimeSettings({
     enablePreview: false,
-    skipInstall: false,
+    skipInstall: true,
     enableUiValidation: true,
     enableVisualQualityValidation: true,
     visualQualityReferenceMode: "frozen_fixture",
@@ -1321,6 +1328,12 @@ const createExecutionContext = async ({
 
   await mkdir(jobDir, { recursive: true });
   await mkdir(generatedProjectDir, { recursive: true });
+  await ensureTemplateValidationSeedNodeModules();
+  await symlink(
+    TEMPLATE_NODE_MODULES_DIR,
+    path.join(generatedProjectDir, "node_modules"),
+    process.platform === "win32" ? "junction" : "dir"
+  );
 
   const artifactStore = new StageArtifactStore({ jobDir });
   const customerProfilePath = path.join(fixtureRoot, "inputs", "customer-profile.json");

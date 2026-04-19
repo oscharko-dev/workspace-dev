@@ -42,11 +42,13 @@ flowchart TB
 - Required stage `reads` are enforced before execution. Optional reads declare conditionally consumed artifacts such as the storybook-first surface without breaking non-storybook runs.
 - Public job fields such as `artifacts.*`, `generationDiff`, and `gitPr` are projected from the stage store by the pipeline kernel rather than being mutated directly inside stage services. That projection includes the curated storybook-first artifact paths when they are available.
 
-## Coverage gate exclusions
+## Backend coverage gate
 
-- `pnpm run test:coverage` now excludes [`src/job-engine.ts`](src/job-engine.ts) and [`src/job-engine/figma-source.ts`](src/job-engine/figma-source.ts) from the global `c8` branch gate.
-- These files remain covered by unit and integration tests, but they contain the highest branch fan-out in the repository because they combine queue orchestration, cancellation, retry classification, circuit-breaker state, and Figma transport error handling in a single runtime boundary.
-- The branch gate was raised to `88%` by expanding deterministic renderer and utility coverage first. These two exclusions are the minimal fallback needed after that test work, and they must stay explicitly documented here so the exception remains auditable.
+- `pnpm run test:coverage` is the authoritative backend coverage gate. It runs `c8 --all` across `src/**/*.ts`, then enforces the fixed threshold policy from [`scripts/check-coverage-thresholds.mjs`](scripts/check-coverage-thresholds.mjs).
+- The current backend minimums are `lines >= 90%`, `statements >= 90%`, `functions >= 90%`, and `branches >= 85%`.
+- [`src/job-engine.ts`](src/job-engine.ts) and [`src/job-engine/figma-source.ts`](src/job-engine/figma-source.ts) stay inside that global backend gate because they own queue orchestration, import governance, re-import handling, delta fetch reuse, and Figma transport retry behavior.
+- Release-quality CI executes `pnpm run test:coverage` directly, so backend coverage-denominator changes are CI-visible without a second policy layer.
+- Any future backend coverage exclusion for a high-risk runtime boundary must be documented here with an explicit rationale, owner, and retirement condition before it is allowed to land.
 
 ## UI hotspot coverage
 
