@@ -574,9 +574,34 @@ test.describe("inspector governance stepper (issue #994)", () => {
     await installPartialJobRoute(page);
     await installImportSessionsRoute(page);
     await installNoGatePolicyRoute(page);
-    await installApproveRoute(page);
     await installSessionEventsRoute(page);
     await installSilencedArtifactRoutes(page);
+
+    let approveCallCount = 0;
+    let approveRequestBody: unknown = null;
+    await page.route(
+      `**/workspace/import-sessions/${SESSION_ID}/approve`,
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        approveCallCount += 1;
+        const requestBody = route.request().postData();
+        approveRequestBody = requestBody ? JSON.parse(requestBody) : null;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: "event-approve-001",
+            sessionId: SESSION_ID,
+            kind: "approved",
+            at: new Date().toISOString(),
+            actor: "test-user",
+          }),
+        });
+      },
+    );
 
     // Act — advance to review, then to approve
     await triggerPasteAndConfirm(page);
@@ -604,6 +629,10 @@ test.describe("inspector governance stepper (issue #994)", () => {
 
     // Assert — Back button is visible (approve stage allows back)
     await expect(page.getByTestId("import-review-stepper-back")).toBeVisible();
+
+    // Assert — approval POST fired once with an empty JSON body.
+    await expect.poll(() => approveCallCount, { timeout: 5_000 }).toBe(1);
+    expect(approveRequestBody).toEqual({});
   });
 
   // -------------------------------------------------------------------------

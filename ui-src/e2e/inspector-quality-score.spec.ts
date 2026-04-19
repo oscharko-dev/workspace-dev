@@ -26,8 +26,8 @@
  *   buttons are never rendered in this integration surface.
  *
  * - The focus button (suggestions-a11y-focus-{ruleId}) is only rendered when
- *   the parent passes onFocusFile. InspectorPanel.tsx (line ~6458) omits it,
- *   so TC-8 (focus button DOM effect) is skipped with an explanation.
+ *   the parent passes onFocusFile. InspectorPanel.tsx omits it in this
+ *   integration surface, so the E2E suite asserts button absence explicitly.
  *
  * Strategy: intercept /workspace/submit → 202, mock the job poll to return
  * status:"partial" (avoids previewUrl requirement), then mock the final-
@@ -577,25 +577,27 @@ test.describe("inspector quality score panel (issue #993)", () => {
   });
 
   // -------------------------------------------------------------------------
-  // TC-9: A11y focus button is NOT rendered in the InspectorPanel integration
+  // TC-9: A11y focus button is not rendered in the InspectorPanel integration
   //
-  // InspectorPanel.tsx omits the onFocusFile prop when mounting SuggestionsPanel
-  // (line ~6458 in InspectorPanel.tsx). SuggestionsPanel only renders the
-  // focus button when onFocusFile is provided (line ~606 in SuggestionsPanel.tsx).
-  // Testing DOM-focus changes is therefore impossible without a component-level
-  // change to wire up the prop. This is intentionally skipped rather than
-  // silently absent.
+  // The panel surfaces post-generation nudges, but this integration does not
+  // currently expose the per-nudge focus button. Keep the assertion explicit
+  // so the skipped acceptance claim does not drift from actual behavior.
   // -------------------------------------------------------------------------
-  test("suggestions-a11y-focus-{ruleId} button changes DOM focus when clicked", async () => {
-    // InspectorPanel.tsx omits the onFocusFile prop when mounting SuggestionsPanel
-    // (line ~6458 in InspectorPanel.tsx). SuggestionsPanel only renders the
-    // focus button when onFocusFile is provided (line ~606 in SuggestionsPanel.tsx).
-    // Testing DOM-focus changes is therefore impossible without a component-level
-    // change to wire up the prop.
-    test.skip(
-      true,
-      "onFocusFile is not wired in InspectorPanel — focus buttons are never rendered",
-    );
+  test("suggestions-a11y-focus-{ruleId} button is absent in InspectorPanel integration", async ({
+    page,
+  }) => {
+    // Arrange
+    await installSubmitRoute(page);
+    await installJobPollRoute(page);
+    await installAllArtifactRoutes(page);
+
+    // Act
+    await triggerPasteAndWaitForSuggestionsPanel(page);
+
+    // Assert — the nudge row is present, but the focus button is not rendered.
+    await expect(
+      page.getByTestId("suggestions-a11y-focus-img-missing-alt"),
+    ).toHaveCount(0);
   });
 
   // -------------------------------------------------------------------------
