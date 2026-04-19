@@ -477,12 +477,15 @@ test.describe("inspector delta import badge and reimport banner (issue #992)", (
     await installImportSessionsRoute(page);
 
     let submitCallCount = 0;
+    const submitBodies: Array<Record<string, unknown>> = [];
     await page.route("**/workspace/submit", async (route) => {
       if (route.request().method() !== "POST") {
         await route.continue();
         return;
       }
       submitCallCount += 1;
+      const requestBody = route.request().postData();
+      submitBodies.push(requestBody ? (JSON.parse(requestBody) as Record<string, unknown>) : {});
       await route.fulfill({
         status: 202,
         contentType: "application/json",
@@ -550,5 +553,11 @@ test.describe("inspector delta import badge and reimport banner (issue #992)", (
     await expect
       .poll(() => submitCallCount, { timeout: 10_000, intervals: [200] })
       .toBeGreaterThan(submitCountBeforeClick);
+
+    const regeneratePayload = submitBodies.at(-1);
+    expect(regeneratePayload).toBeDefined();
+    expect(regeneratePayload).toMatchObject({
+      importMode: "delta",
+    });
   });
 });
