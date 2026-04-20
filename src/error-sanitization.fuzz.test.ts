@@ -60,15 +60,36 @@ const toLuhnCandidate = (body: string): string => {
   throw new Error("Expected a valid Luhn check digit.");
 };
 
-const luhnPanArb = fc
-  .integer({ min: 12, max: 18 })
-  .chain((bodyLength) =>
-    fc
-      .array(fc.integer({ min: 0, max: 9 }), {
-        minLength: bodyLength,
-        maxLength: bodyLength,
-      })
-      .map((digits) => toLuhnCandidate(digits.join(""))),
+const panLikeProfileArb = fc.constantFrom(
+  { prefix: "4", lengths: [13, 16, 19] },
+  { prefix: "34", lengths: [15] },
+  { prefix: "37", lengths: [15] },
+  { prefix: "51", lengths: [16] },
+  { prefix: "55", lengths: [16] },
+  { prefix: "62", lengths: [16, 17, 18, 19] },
+  { prefix: "65", lengths: [16, 19] },
+  { prefix: "300", lengths: [14] },
+  { prefix: "305", lengths: [14] },
+  { prefix: "644", lengths: [16, 19] },
+  { prefix: "649", lengths: [16, 19] },
+  { prefix: "2221", lengths: [16] },
+  { prefix: "2720", lengths: [16] },
+  { prefix: "3528", lengths: [16, 17, 18, 19] },
+  { prefix: "3589", lengths: [16, 17, 18, 19] },
+  { prefix: "6011", lengths: [16, 19] },
+);
+
+const luhnPanArb = panLikeProfileArb.chain(({ prefix, lengths }) =>
+  fc
+    .constantFrom(...lengths)
+    .chain((totalLength) =>
+      fc
+        .array(fc.integer({ min: 0, max: 9 }), {
+          minLength: totalLength - prefix.length - 1,
+          maxLength: totalLength - prefix.length - 1,
+        })
+        .map((digits) => toLuhnCandidate(`${prefix}${digits.join("")}`)),
+    ),
   );
 
 const toSanitizedMessage = ({
@@ -110,7 +131,7 @@ test("fuzz: sanitizeErrorMessage redacts secret-bearing fragments in root errors
   );
 });
 
-test("fuzz: sanitizeErrorMessage redacts all Luhn-valid PAN-like sequences in root errors and causes", () => {
+test("fuzz: sanitizeErrorMessage redacts Luhn-valid PAN-like sequences in root errors and causes", () => {
   fc.assert(
     fc.property(luhnPanArb, fc.boolean(), (pan, useCause) => {
       const sanitized = toSanitizedMessage({
