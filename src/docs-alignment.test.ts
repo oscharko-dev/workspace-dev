@@ -251,13 +251,25 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(contractChangelog, /See `VERSIONING\.md` for the full package-versus-contract versioning policy\./);
 
   assert.match(readmeDoc, /## Public API entrypoints/i);
+  assert.match(readmeDoc, /## Programmatic API/i);
   assert.match(readmeDoc, /`workspace-dev\/contracts`/);
+  assert.match(readmeDoc, /import \{ createWorkspaceServer \} from "workspace-dev";/);
+  assert.match(readmeDoc, /import type \{ WorkspaceStartOptions \} from "workspace-dev\/contracts";/);
+  assert.match(readmeDoc, /import \{ validateModeLock \} from "workspace-dev";/);
+  assert.match(readmeDoc, /figmaSourceMode: "mcp"/);
+  assert.match(readmeDoc, /CONTRACT_VERSION/);
+  assert.match(readmeDoc, /type WorkspaceJobInput/);
+  assert.match(readmeDoc, /type WorkspaceFigmaSourceMode/);
   assert.match(readmeDoc, /### Advanced isolation lifecycle API/i);
   assert.match(readmeDoc, /`ProjectInstance`/);
   assert.match(readmeDoc, /Per-project helpers:/);
   assert.match(readmeDoc, /Process-level lifecycle controls:/);
   assert.match(readmeDoc, /stable advanced surface/i);
   assert.match(readmeDoc, /not experimental or internal-only today/i);
+  assert.match(readmeDoc, /## Operational Hardening/i);
+  assert.match(readmeDoc, /default loopback bind \(`127\.0\.0\.1:1983`\)/i);
+  assert.match(readmeDoc, /`local_json` is the preferred air-gap and firewall-friendly source mode/i);
+  assert.match(readmeDoc, /repository-only verification fixtures, test suites, and\s+template `node_modules` do not ship/i);
 
   assert.match(isolationAdr, /^# ADR: Issue #611 Isolation Public API Surface/m);
   assert.match(isolationAdr, /Keep the isolation helpers on the root `workspace-dev` entrypoint/);
