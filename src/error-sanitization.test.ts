@@ -45,16 +45,15 @@ test("error sanitization preserves long numeric values that fail the Luhn checks
   }
 });
 
-test("error sanitization preserves Luhn-valid numbers that lack a known card issuer prefix", async (t) => {
-  // These pass the Luhn checksum but start with non-card-network prefixes
-  const luhnValidNonCards = [
+test("error sanitization preserves Luhn-valid non-PAN identifiers", async (t) => {
+  const nonPanIdentifiers = [
     "1000000000009",
     "9000000000001",
-    "8000000000002",
+    "490154203237518",
   ] as const;
 
-  for (const candidate of luhnValidNonCards) {
-    await t.test(`preserves Luhn-valid non-card ${candidate}`, () => {
+  for (const candidate of nonPanIdentifiers) {
+    await t.test(`preserves non-PAN identifier ${candidate}`, () => {
       const message = sanitizeErrorMessage({
         error: new Error(`Identifier ${candidate}`),
         fallback: "fallback",
@@ -444,6 +443,15 @@ test("redactErrorChain redacts JSON-serialized secrets in nested causes", () => 
   assert.equal(out.includes("root_secret_value"), false);
   const secretCount = (out.match(/\[redacted-secret]/g) ?? []).length;
   assert.equal(secretCount >= 2, true);
+});
+
+test("redactErrorChain redacts PAN-like values in nested causes", () => {
+  const leaf = new Error("card 4242424242424242 leaked");
+  const root = new Error("outer", { cause: leaf });
+
+  const out = redactErrorChain(root);
+  assert.equal(out.includes("4242424242424242"), false);
+  assert.match(out, /\[redacted-pan]/);
 });
 
 test("sanitizeErrorMessage uses the cause chain when cause is present", () => {

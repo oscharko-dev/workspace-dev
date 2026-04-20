@@ -41,30 +41,31 @@ function passesLuhnChecksum(candidate: string): boolean {
   return checksum % 10 === 0;
 }
 
-/** Lightweight IIN/BIN prefix check for major card networks. */
-function hasKnownIssuerPrefix(candidate: string): boolean {
+/** Lightweight PAN classifier for major card-network ranges. */
+function isPanLikeCandidate(candidate: string): boolean {
+  const length = candidate.length;
   const d1 = candidate.charCodeAt(0) - 48;
   const d2 = d1 * 10 + (candidate.charCodeAt(1) - 48);
 
   // Visa: starts with 4
-  if (d1 === 4) return true;
+  if (d1 === 4) return length === 13 || length === 16 || length === 19;
   // Amex: 34, 37
-  if (d2 === 34 || d2 === 37) return true;
+  if (d2 === 34 || d2 === 37) return length === 15;
   // Mastercard: 51-55
-  if (d2 >= 51 && d2 <= 55) return true;
+  if (d2 >= 51 && d2 <= 55) return length === 16;
   // UnionPay: 62
-  if (d2 === 62) return true;
+  if (d2 === 62) return length >= 16 && length <= 19;
   // Discover: 65
-  if (d2 === 65) return true;
+  if (d2 === 65) return length === 16 || length === 19;
   // Diners Club: 36, 38
-  if (d2 === 36 || d2 === 38) return true;
+  if (d2 === 36 || d2 === 38) return length === 14;
 
   if (candidate.length >= 3) {
     const d3 = d2 * 10 + (candidate.charCodeAt(2) - 48);
     // Diners Club: 300-305
-    if (d3 >= 300 && d3 <= 305) return true;
+    if (d3 >= 300 && d3 <= 305) return length === 14;
     // Discover: 644-649
-    if (d3 >= 644 && d3 <= 649) return true;
+    if (d3 >= 644 && d3 <= 649) return length === 16 || length === 19;
   }
 
   if (candidate.length >= 4) {
@@ -74,11 +75,11 @@ function hasKnownIssuerPrefix(candidate: string): boolean {
       (candidate.charCodeAt(2) - 48) * 10 +
       (candidate.charCodeAt(3) - 48);
     // Mastercard: 2221-2720
-    if (d4 >= 2221 && d4 <= 2720) return true;
+    if (d4 >= 2221 && d4 <= 2720) return length === 16;
     // JCB: 3528-3589
-    if (d4 >= 3528 && d4 <= 3589) return true;
+    if (d4 >= 3528 && d4 <= 3589) return length >= 16 && length <= 19;
     // Discover: 6011
-    if (d4 === 6011) return true;
+    if (d4 === 6011) return length === 16 || length === 19;
   }
 
   return false;
@@ -89,7 +90,7 @@ function redact(input: string): string {
     input
       .replace(EMAIL_PATTERN, "[redacted-email]")
       .replace(PAN_PATTERN, (candidate) =>
-        passesLuhnChecksum(candidate) && hasKnownIssuerPrefix(candidate)
+        passesLuhnChecksum(candidate) && isPanLikeCandidate(candidate)
           ? "[redacted-pan]"
           : candidate,
       ),
@@ -126,7 +127,7 @@ export function redactErrorChain(
               typeof current === "bigint"
             ? String(current)
             : "[object Object]";
-      const rendered = redactHighRiskSecrets(raw, "[redacted-secret]");
+      const rendered = redact(raw);
       lines.push(`${prefix}${rendered}`);
       break;
     }
@@ -143,19 +144,13 @@ export function redactErrorChain(
         : "Error";
     const rawMessage =
       typeof current.message === "string" ? current.message : "";
-    const redactedMessage = redactHighRiskSecrets(
-      rawMessage,
-      "[redacted-secret]",
-    );
+    const redactedMessage = redact(rawMessage);
     const header =
       redactedMessage.length > 0 ? `${name}: ${redactedMessage}` : name;
     lines.push(`${prefix}${header}`);
 
     if (typeof current.stack === "string" && current.stack.length > 0) {
-      const redactedStack = redactHighRiskSecrets(
-        current.stack,
-        "[redacted-secret]",
-      );
+      const redactedStack = redact(current.stack);
       lines.push(redactedStack);
     }
 
