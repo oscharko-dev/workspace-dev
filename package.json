@@ -78,7 +78,7 @@
     "test:flaky-retry": "node scripts/run-test-with-flaky-retry.mjs",
     "test:flaky-target": "pnpm run ui:test:e2e",
     "test:bdd": "tsx --test src/bdd-contract.test.ts",
-    "test:property-based": "tsx --test src/mode-lock.fuzz.test.ts",
+    "test:property-based": "tsx --test \"src/**/*.fuzz.test.ts\" \"src/**/*.property.test.ts\"",
     "test:coverage": "node --max-old-space-size=8192 ./node_modules/c8/bin/c8.js --all --src src --include \"src/**/*.ts\" --exclude \"src/**/*.test.ts\" --exclude \"src/isolated-server-entry.ts\" --exclude \"src/job-engine/types.ts\" --exclude \"src/parity/types.ts\" --exclude \"src/parity/types-core.ts\" --exclude \"src/parity/types-edit-session.ts\" --exclude \"src/parity/types-job.ts\" --exclude \"src/parity/types-kpi.ts\" --exclude \"src/parity/types-mapping.ts\" --exclude \"src/parity/types-sync.ts\" --exclude \"src/parity/fixtures/golden/**/expected/src_theme_theme.ts\" --reporter=text-summary --reporter=lcov --reporter=json-summary --report-dir coverage tsx --test \"src/**/*.test.ts\" \"integration/**/*.test.ts\" && node scripts/check-coverage-thresholds.mjs",
     "test:mutation": "pnpm exec stryker run stryker.config.mjs",
     "benchmark:visual": "tsx integration/visual-benchmark.cli.ts",
