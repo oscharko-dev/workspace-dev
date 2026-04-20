@@ -28,6 +28,35 @@ const EXPECTED_ISOLATION_RUNTIME_EXPORTS = [
   "unregisterIsolationProcessCleanup",
 ].sort();
 
+const EXPECTED_FIGMA_IMPORT_QUALITY_GOVERNANCE_HEADINGS = [
+  "Quality and governance",
+  "Pre-flight quality score",
+  "Token matching intelligence",
+  "Post-gen review nudges",
+  "Review stepper and audit trail",
+  "Workspace inspector policy (`.workspace-inspector-policy.json`)",
+] as const;
+
+const EXPECTED_FIGMA_IMPORT_POLICY_KEYS = [
+  "quality.bandThresholds.excellent",
+  "quality.bandThresholds.good",
+  "quality.bandThresholds.fair",
+  "quality.weights.structure",
+  "quality.weights.semantic",
+  "quality.weights.codegen",
+  "quality.maxAcceptableDepth",
+  "quality.maxAcceptableNodes",
+  "quality.riskSeverityOverrides",
+  "tokens.autoAcceptConfidence",
+  "tokens.maxConflictDelta",
+  "tokens.disabled",
+  "a11y.wcagLevel",
+  "a11y.disabledRules",
+  "governance.minQualityScoreToApply",
+  "governance.securitySensitivePatterns",
+  "governance.requireNoteOnOverride",
+] as const;
+
 test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const architectureDoc = await readRepoFile("ARCHITECTURE.md");
   const complianceDoc = await readRepoFile("COMPLIANCE.md");
@@ -213,6 +242,7 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   const figmaImportDoc = await readRepoFile("docs/figma-import.md");
   const pluginTestingDoc = await readRepoFile("plugin/TESTING.md");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
+  const readmeDoc = await readRepoFile("README.md");
 
   assert.match(
     figmaImportDoc,
@@ -256,6 +286,40 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.match(
     figmaImportDoc,
     /operator-facing benchmark maintenance commands[\s\S]*do not\s+require MCP server setup/i,
+  );
+  for (const heading of EXPECTED_FIGMA_IMPORT_QUALITY_GOVERNANCE_HEADINGS) {
+    const level = heading === "Quality and governance" ? "##" : "###";
+    assert.match(
+      figmaImportDoc,
+      new RegExp(`^${escapeRegExp(`${level} ${heading}`)}$`, "m"),
+    );
+  }
+  for (const key of EXPECTED_FIGMA_IMPORT_POLICY_KEYS) {
+    assert.match(figmaImportDoc, new RegExp(escapeRegExp(`\`${key}\``)));
+  }
+  assert.match(figmaImportDoc, /`Accept all`/);
+  assert.match(figmaImportDoc, /`Reject all`/);
+  assert.match(figmaImportDoc, /Import → Review → Approve → Apply/);
+  assert.match(figmaImportDoc, /`GET \/workspace\/import-sessions\/:id\/events`/);
+  assert.match(figmaImportDoc, /`POST \/workspace\/import-sessions\/:id\/approve`/);
+  assert.match(figmaImportDoc, /local-only/i);
+  assert.match(
+    figmaImportDoc,
+    /does not upload the design or[\s\S]*generated code to an LLM/i,
+  );
+  assert.match(figmaImportDoc, /ARCHITECTURE\.md#import-session-governance-994/);
+  assert.match(
+    figmaImportDoc,
+    /case-insensitive literal substring matches[\s\S]*Regex-like entries are dropped with a warning/i,
+  );
+  assert.match(figmaImportDoc, /`GET \/workspace\/inspector-policy`/);
+  assert.match(
+    readmeDoc,
+    /\[docs\/figma-import\.md - Quality and governance\]\(docs\/figma-import\.md#quality-and-governance\)/,
+  );
+  assert.match(
+    readmeDoc,
+    /`GET \/workspace\/inspector-policy` - repo-backed inspector policy loader payload \(`\{ policy, validation, warning\? \}`\)/,
   );
   assert.match(
     contributingDoc,
