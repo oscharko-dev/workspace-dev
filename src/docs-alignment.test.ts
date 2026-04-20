@@ -212,6 +212,7 @@ test("docs: versioning policy stays aligned across README and changelogs", async
 test("docs: figma direct-import guide stays aligned with inspector submit flow", async () => {
   const figmaImportDoc = await readRepoFile("docs/figma-import.md");
   const pluginTestingDoc = await readRepoFile("plugin/TESTING.md");
+  const contributingDoc = await readRepoFile("CONTRIBUTING.md");
 
   assert.match(
     figmaImportDoc,
@@ -227,6 +228,46 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.doesNotMatch(
     figmaImportDoc,
     /\| Enter Figma URL\s+\|[^\n]*figmaSourceMode=rest/i,
+  );
+  assert.match(
+    figmaImportDoc,
+    /^## Path D - Figma URL \(hybrid MCP \+ REST fallback\)$/m,
+  );
+  assert.match(figmaImportDoc, /`figmaSourceMode=hybrid`/);
+  assert.match(figmaImportDoc, /`figmaSourceMode=mcp`/);
+  assert.match(figmaImportDoc, /not a standalone\s+mode-lock option/i);
+  assert.match(figmaImportDoc, /`WORKSPACE_DEV_MCP_SERVER_URL`/);
+  assert.match(figmaImportDoc, /`WORKSPACE_ALLOW_INSECURE_MCP=true`/);
+  assert.match(figmaImportDoc, /https:\/\/mcp\.figma\.com\/mcp/);
+  assert.match(figmaImportDoc, /`get_design_context`/);
+  assert.match(figmaImportDoc, /`get_variable_defs`/);
+  assert.match(figmaImportDoc, /`get_metadata`/);
+  assert.match(figmaImportDoc, /`get_screenshot`/);
+  assert.match(figmaImportDoc, /`search_design_system`/);
+  assert.match(figmaImportDoc, /`W_MCP_FALLBACK_REST`/);
+  assert.match(figmaImportDoc, /`W_MCP_SCREENSHOT_FALLBACK_REST`/);
+  assert.match(figmaImportDoc, /`Figma REST fallback active`/);
+  assert.match(figmaImportDoc, /Retry available in\s+Ns/i);
+  assert.match(figmaImportDoc, /`AUTH_REQUIRED`/);
+  assert.match(figmaImportDoc, /`MCP_RATE_LIMITED`/);
+  assert.match(figmaImportDoc, /`MCP_UNAVAILABLE`/);
+  assert.match(figmaImportDoc, /`INSPECTOR_LIVE_E2E=1`/);
+  assert.match(figmaImportDoc, /`FIGMA_FILE_KEY`/);
+  assert.match(
+    figmaImportDoc,
+    /operator-facing benchmark maintenance commands[\s\S]*do not\s+require MCP server setup/i,
+  );
+  assert.match(
+    contributingDoc,
+    /not\s+MCP setup flows/i,
+  );
+  assert.match(
+    contributingDoc,
+    /`WORKSPACEDEV_FIGMA_TOKEN`, `VISUAL_BENCHMARK_FIGMA_TOKEN`, or `FIGMA_ACCESS_TOKEN`/,
+  );
+  assert.match(
+    contributingDoc,
+    /`pnpm visual:audit live` currently requires `FIGMA_ACCESS_TOKEN`\./,
   );
   assert.match(
     pluginTestingDoc,
