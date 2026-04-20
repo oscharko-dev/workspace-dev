@@ -41,6 +41,7 @@
     "!template/**/*.test.ts",
     "!template/**/*.test.tsx",
     "README.md",
+    "TROUBLESHOOTING.md",
     "VERSIONING.md",
     "LICENSE",
     "CHANGELOG.md",
