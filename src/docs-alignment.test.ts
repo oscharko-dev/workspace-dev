@@ -33,6 +33,20 @@ const extractMarkdownSection = (
   return match ? match[0] : null;
 };
 
+const extractMarkdownTopLevelSection = (
+  markdown: string,
+  heading: string,
+): string | null => {
+  const escapedHeading = escapeRegExp(heading);
+  const match = markdown.match(
+    new RegExp(
+      `^## ${escapedHeading}$([\\s\\S]*?)(?=^## |\\Z)`,
+      "m",
+    ),
+  );
+  return match ? match[0] : null;
+};
+
 const EXPECTED_ISOLATION_RUNTIME_EXPORTS = [
   "createProjectInstance",
   "getProjectInstance",
@@ -199,6 +213,55 @@ test("docs: validation and app template source contain expected pipeline pattern
   assert.match(validationSource, /args: \["run", "perf:assert"\]/);
   assert.match(appTemplateSource, /BrowserRouter/);
   assert.match(appTemplateSource, /HashRouter/);
+});
+
+test("docs: troubleshooting guide is linked from README and included in the published package", async () => {
+  const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
+    files?: string[];
+  };
+  const readmeDoc = await readRepoFile("README.md");
+  const troubleshootingDoc = await readRepoFile("TROUBLESHOOTING.md");
+  const nodeSection = extractMarkdownTopLevelSection(troubleshootingDoc, "Node.js Version Mismatch");
+  const pnpmSection = extractMarkdownTopLevelSection(troubleshootingDoc, "pnpm Install / Cache Failures");
+  const portSection = extractMarkdownTopLevelSection(troubleshootingDoc, "Port 1983 Collision");
+  const figmaSourceModeSection = extractMarkdownTopLevelSection(troubleshootingDoc, "figmaSourceMode Input Errors");
+  const validateProjectSection = extractMarkdownTopLevelSection(
+    troubleshootingDoc,
+    "Validation Stage Failures (`validate.project`)",
+  );
+  const templateDependencySection = extractMarkdownTopLevelSection(
+    troubleshootingDoc,
+    "Template Dependency Issues",
+  );
+
+  assert.ok(packageManifest.files?.includes("TROUBLESHOOTING.md"));
+  assert.match(readmeDoc, /\[TROUBLESHOOTING\.md\]\(TROUBLESHOOTING\.md\)/);
+  assert.match(troubleshootingDoc, /^# TROUBLESHOOTING$/m);
+  for (const section of [
+    nodeSection,
+    pnpmSection,
+    portSection,
+    figmaSourceModeSection,
+    validateProjectSection,
+    templateDependencySection,
+  ]) {
+    assert.ok(section);
+    assert.match(section, /\*\*Symptom\*\*/);
+    assert.match(section, /\*\*Cause\*\*/);
+    assert.match(section, /\*\*Resolution\*\*/);
+  }
+  assert.match(nodeSection ?? "", /Node\.js `>=22\.0\.0`/);
+  assert.match(nodeSection ?? "", /nvm use/);
+  assert.match(pnpmSection ?? "", /network or registry path is unavailable/);
+  assert.match(pnpmSection ?? "", /pnpm store prune/);
+  assert.match(portSection ?? "", /lsof -i :1983/);
+  assert.match(portSection ?? "", /FIGMAPIPE_WORKSPACE_PORT=21983/);
+  assert.match(figmaSourceModeSection ?? "", /use only `rest`, `hybrid`, or `local_json`/);
+  assert.match(figmaSourceModeSection ?? "", /test -f \/absolute\/path\/to\/figma\.json/);
+  assert.match(validateProjectSection ?? "", /TypeScript errors, ESLint violations, or generated-project install failures/);
+  assert.match(validateProjectSection ?? "", /pnpm run template:install/);
+  assert.match(templateDependencySection ?? "", /template\/react-mui-app\/pnpm-lock\.yaml/);
+  assert.match(templateDependencySection ?? "", /pnpm install --frozen-lockfile/);
 });
 
 test("docs: versioning policy stays aligned across README and changelogs", async () => {
