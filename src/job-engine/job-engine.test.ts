@@ -1838,6 +1838,94 @@ test("createJobEngine rejects submit when queue backpressure cap is reached", as
   });
 });
 
+test("createJobEngine runs up to maxConcurrentJobs jobs before queueing the rest", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-concurrency-"),
+  );
+  let abortedRequests = 0;
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      maxConcurrentJobs: 2,
+      maxQueuedJobs: 2,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal instanceof AbortSignal) {
+            signal.addEventListener(
+              "abort",
+              () => {
+                abortedRequests += 1;
+                reject(new DOMException("aborted", "AbortError"));
+              },
+              { once: true },
+            );
+          }
+        }),
+    }),
+  });
+
+  const first = engine.submitJob({
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+  const second = engine.submitJob({
+    figmaFileKey: "def",
+    figmaAccessToken: "token",
+  });
+  const third = engine.submitJob({
+    figmaFileKey: "ghi",
+    figmaAccessToken: "token",
+  });
+  const fourth = engine.submitJob({
+    figmaFileKey: "jkl",
+    figmaAccessToken: "token",
+  });
+
+  const started = Date.now();
+  while (Date.now() - started < 2_000) {
+    if (
+      engine.getJob(first.jobId)?.status === "running" &&
+      engine.getJob(second.jobId)?.status === "running" &&
+      engine.getJob(third.jobId)?.status === "queued" &&
+      engine.getJob(fourth.jobId)?.status === "queued"
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  assert.equal(engine.getJob(first.jobId)?.status, "running");
+  assert.equal(engine.getJob(second.jobId)?.status, "running");
+  assert.equal(engine.getJob(third.jobId)?.status, "queued");
+  assert.equal(engine.getJob(fourth.jobId)?.status, "queued");
+  assert.equal(engine.getJob(third.jobId)?.queue.position, 1);
+  assert.equal(engine.getJob(fourth.jobId)?.queue.position, 2);
+  assert.equal(engine.getJob(first.jobId)?.queue.runningCount, 2);
+  assert.equal(engine.getJob(first.jobId)?.queue.queuedCount, 2);
+
+  for (const jobId of [first.jobId, second.jobId, third.jobId, fourth.jobId]) {
+    engine.cancelJob({ jobId, reason: "cleanup" });
+  }
+  for (const jobId of [first.jobId, second.jobId, third.jobId, fourth.jobId]) {
+    const status = await waitForTerminalStatus({
+      getStatus: engine.getJob,
+      jobId,
+      timeoutMs: 20_000,
+    });
+    assert.equal(status.status, "canceled");
+  }
+  assert.equal(abortedRequests, 2);
+});
+
 test("createJobEngine cancels queued jobs with terminal canceled state", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-engine-cancel-queued-"),
@@ -2040,6 +2128,87 @@ test("createJobEngine shutdown cancels queued work and waits for running jobs to
     engine.getJobResult(queued.jobId)?.cancellation?.reason,
     "Server shutdown interrupted in-flight work.",
   );
+});
+
+test("createJobEngine drains queue state after rapid submit and cancel cycles", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-rapid-cancel-"),
+  );
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      maxConcurrentJobs: 2,
+      maxQueuedJobs: 8,
+      figmaCircuitBreakerFailureThreshold: 20,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      fetchImpl: async (_input, init) =>
+        await new Promise<Response>((_resolve, reject) => {
+          const signal = init?.signal;
+          if (signal instanceof AbortSignal) {
+            signal.addEventListener(
+              "abort",
+              () => reject(new DOMException("aborted", "AbortError")),
+              { once: true },
+            );
+          }
+        }),
+    }),
+  });
+
+  const accepted = Array.from({ length: 6 }, (_, index) =>
+    engine.submitJob({
+      figmaFileKey: `board-${index}`,
+      figmaAccessToken: "token",
+    }),
+  );
+
+  for (const job of accepted) {
+    engine.cancelJob({ jobId: job.jobId, reason: "rapid cleanup" });
+  }
+
+  for (const job of accepted) {
+    const status = await waitForTerminalStatus({
+      getStatus: engine.getJob,
+      jobId: job.jobId,
+      timeoutMs: 20_000,
+    });
+    assert.equal(status.status, "canceled");
+    assert.equal(status.cancellation?.reason, "rapid cleanup");
+  }
+
+  const replacement = engine.submitJob({
+    figmaFileKey: "replacement",
+    figmaAccessToken: "token",
+  });
+  const runningWaitStarted = Date.now();
+  while (Date.now() - runningWaitStarted < 2_000) {
+    const current = engine.getJob(replacement.jobId);
+    if (current?.status === "running") {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+
+  const runningSnapshot = engine.getJob(replacement.jobId);
+  assert.equal(runningSnapshot?.status, "running");
+  assert.equal(typeof runningSnapshot?.startedAt, "string");
+  assert.equal(runningSnapshot?.queue.runningCount, 1);
+  assert.equal(runningSnapshot?.queue.queuedCount, 0);
+
+  engine.cancelJob({ jobId: replacement.jobId, reason: "cleanup" });
+  const replacementStatus = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: replacement.jobId,
+    timeoutMs: 20_000,
+  });
+  assert.equal(replacementStatus.status, "canceled");
 });
 
 test("createJobEngine rehydrates completed regeneration jobs and keeps local sync helpers available", async () => {
