@@ -43,6 +43,8 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 npm install --save-dev workspace-dev
 ```
 
+Enterprise and air-gapped install path: [docs/enterprise-quickstart.md](docs/enterprise-quickstart.md)
+
 > **Safe defaults**: This repo enforces `ignore-scripts=true` and `save-exact=true` via the root `.npmrc`.
 > If a dependency requires lifecycle scripts, add it explicitly with `npm install --ignore-scripts=false <pkg>` and document the exception in your PR.
 
