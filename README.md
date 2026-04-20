@@ -4,6 +4,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/oscharko-dev/workspace-dev?display_name=tag)](https://github.com/oscharko-dev/workspace-dev/releases)
 [![release publish](https://img.shields.io/github/actions/workflow/status/oscharko-dev/workspace-dev/changesets-release.yml?branch=main&label=release%20publish)](https://github.com/oscharko-dev/workspace-dev/actions/workflows/changesets-release.yml)
 [![dev quality](https://img.shields.io/github/actions/workflow/status/oscharko-dev/workspace-dev/dev-quality-gate.yml?branch=dev&label=dev%20quality)](https://github.com/oscharko-dev/workspace-dev/actions/workflows/dev-quality-gate.yml)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/oscharko-dev/workspace-dev/badge)](https://securityscorecards.dev/viewer/?uri=github.com/oscharko-dev/workspace-dev)
 [![Node >=22](https://img.shields.io/badge/node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![MIT License](https://img.shields.io/github/license/oscharko-dev/workspace-dev)](https://github.com/oscharko-dev/workspace-dev/blob/dev/LICENSE)
 
