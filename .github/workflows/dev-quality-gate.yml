@@ -82,6 +82,17 @@ jobs:
           path: artifacts/testing/dast-smoke
           if-no-files-found: ignore
 
+      - name: Runtime load smoke suite
+        run: pnpm run test:load
+
+      - name: Upload runtime load smoke artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: failure()
+        with:
+          name: workspace-dev-dev-load-smoke-${{ github.run_id }}
+          path: artifacts/testing/load-smoke
+          if-no-files-found: ignore
+
       - name: Canonical tests
         run: pnpm run test
 
