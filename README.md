@@ -74,6 +74,7 @@ The package currently exposes two public entrypoints:
 - `workspace-dev/contracts` — contract-focused types and runtime constants for consumers that only need versioned contract data.
 
 For most consumers, `createWorkspaceServer` and the exported contract types are the intended day-to-day surface.
+Generated API reference: [docs/api/README.md](docs/api/README.md).
 
 ## Programmatic API
 

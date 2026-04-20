@@ -353,6 +353,38 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(contractsSource, /VERSIONING\.md/);
 });
 
+test("docs: generated API reference stays wired to the public entrypoints", async () => {
+  const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
+    scripts?: Record<string, string>;
+  };
+  const readmeDoc = await readRepoFile("README.md");
+  const typedocConfig = await readRepoFile("typedoc.json");
+  const apiReferenceIndex = await readRepoFile("docs/api/README.md");
+  const rootApiReference = await readRepoFile("docs/api/index/README.md");
+  const contractsApiReference = await readRepoFile("docs/api/contracts/README.md");
+
+  assert.equal(packageManifest.scripts?.["docs:api"], "node scripts/generate-api-docs.mjs");
+  assert.equal(packageManifest.scripts?.["docs:api:check"], "node scripts/check-api-docs.mjs");
+  assert.match(readmeDoc, /\[docs\/api\/README\.md\]\(docs\/api\/README\.md\)/);
+  assert.match(typedocConfig, /"entryPoints": \["src\/index\.ts", "src\/contracts\/index\.ts"\]/);
+  assert.match(typedocConfig, /"disableSources": true/);
+  assert.match(apiReferenceIndex, /^# workspace-dev$/m);
+  assert.match(apiReferenceIndex, /\[contracts\]\(contracts\/README\.md\)/);
+  assert.match(apiReferenceIndex, /\[index\]\(index\/README\.md\)/);
+  assert.match(rootApiReference, /^# index$/m);
+  assert.match(rootApiReference, /^## Interfaces$/m);
+  assert.match(rootApiReference, /^### InjectRequest$/m);
+  assert.match(rootApiReference, /^### InjectResponse$/m);
+  assert.match(rootApiReference, /^### WorkspaceServer$/m);
+  assert.match(rootApiReference, /^### WorkspaceServerApp$/m);
+  assert.match(rootApiReference, /^### createWorkspaceServer\(\)$/m);
+  assert.match(contractsApiReference, /^# contracts$/m);
+  assert.match(contractsApiReference, /^## Interfaces$/m);
+  assert.match(contractsApiReference, /^### WorkspaceStartOptions$/m);
+  assert.match(contractsApiReference, /^## Variables$/m);
+  assert.match(contractsApiReference, /^### CONTRACT\\_VERSION$/m);
+});
+
 test("docs: figma direct-import guide stays aligned with inspector submit flow", async () => {
   const figmaImportDoc = await readRepoFile("docs/figma-import.md");
   const pluginTestingDoc = await readRepoFile("plugin/TESTING.md");
