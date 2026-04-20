@@ -54,6 +54,9 @@ jobs:
       - name: Enforce pipeline/template docs version consistency
         run: pnpm run verify:docs-template-stack
 
+      - name: Enforce generated API reference freshness
+        run: pnpm run docs:api:check
+
       - name: Verify npm signature attestations
         run: npm audit signatures
 

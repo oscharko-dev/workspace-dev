@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/typedoc-plugin-markdown/typedoc-plugin-markdown.schema.json",
+  "plugin": ["typedoc-plugin-markdown"],
+  "entryPoints": ["src/index.ts", "src/contracts/index.ts"],
+  "entryPointStrategy": "resolve",
+  "readme": "none",
+  "excludeInternal": true,
+  "excludeReferences": true,
+  "disableSources": true,
+  "cleanOutputDir": true,
+  "treatValidationWarningsAsErrors": true,
+  "membersWithOwnFile": [],
+  "intentionallyNotExported": ["WorkspaceServerApp"],
+  "out": "docs/api"
+}
