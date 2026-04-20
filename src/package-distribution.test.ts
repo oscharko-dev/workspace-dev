@@ -75,6 +75,7 @@ test("package distribution includes template lockfile but excludes template node
       cwd: packageRoot
     });
 
+    assert.match(tarballListing, /package\/GOVERNANCE\.md/);
     assert.match(tarballListing, /package\/template\/react-mui-app\/package\.json/);
     assert.match(tarballListing, /package\/template\/react-mui-app\/pnpm-lock\.yaml/);
     assert.doesNotMatch(tarballListing, /package\/template\/react-mui-app\/node_modules\//);
