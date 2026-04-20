@@ -963,6 +963,35 @@ function toTargetIds(value: unknown): string[] | undefined {
   return ids.length > 0 ? ids : undefined;
 }
 
+export function normalizeRuntimePipelineErrorCode(code: string): {
+  code: string;
+  rawCode?: string;
+} {
+  switch (code) {
+    case "E_MCP_AUTH":
+    case "E_FIGMA_REST_AUTH":
+      return { code: "AUTH_REQUIRED", rawCode: code };
+    case "E_MCP_RATE_LIMIT":
+      return { code: "MCP_RATE_LIMITED", rawCode: code };
+    case "E_MCP_NOT_FOUND":
+    case "E_FIGMA_REST_NOT_FOUND":
+      return { code: "FILE_NOT_FOUND", rawCode: code };
+    case "E_FIGMA_NODE_NOT_FOUND":
+      return { code: "NODE_NOT_FOUND", rawCode: code };
+    case "E_MCP_NETWORK":
+    case "E_MCP_TIMEOUT":
+    case "E_MCP_SERVER_ERROR":
+    case "E_MCP_ABORTED":
+    case "E_FIGMA_REST_NETWORK":
+    case "E_FIGMA_REST_TIMEOUT":
+    case "E_FIGMA_REST_ERROR":
+    case "E_FIGMA_CIRCUIT_OPEN":
+      return { code: "MCP_UNAVAILABLE", rawCode: code };
+    default:
+      return { code };
+  }
+}
+
 function parsePipelineErrorPayload({
   fallbackStage,
   payload,
@@ -986,12 +1015,13 @@ function parsePipelineErrorPayload({
   }
 
   const stage = toPipelineStage(payload.stage) ?? fallbackStage;
-  const code =
+  const rawCode =
     typeof payload.code === "string" && payload.code.length > 0
       ? payload.code
       : typeof payload.error === "string" && payload.error.length > 0
         ? payload.error
         : fallbackCode;
+  const normalizedCode = normalizeRuntimePipelineErrorCode(rawCode);
   const message =
     typeof payload.message === "string" && payload.message.length > 0
       ? payload.message
@@ -1026,16 +1056,23 @@ function parsePipelineErrorPayload({
     isRecord(payload.details) && !Array.isArray(payload.details)
       ? payload.details
       : undefined;
+  const normalizedDetails =
+    normalizedCode.rawCode !== undefined
+      ? {
+          ...(details ?? {}),
+          rawCode: normalizedCode.rawCode,
+        }
+      : details;
 
   return {
     stage,
-    code,
+    code: normalizedCode.code,
     message,
     retryable,
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     ...(fallbackMode !== undefined ? { fallbackMode } : {}),
     ...(retryTargets !== undefined ? { retryTargets } : {}),
-    ...(details !== undefined ? { details } : {}),
+    ...(normalizedDetails !== undefined ? { details: normalizedDetails } : {}),
   };
 }
 

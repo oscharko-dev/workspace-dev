@@ -260,6 +260,113 @@ curl -sS -X POST http://127.0.0.1:1983/workspace/submit \
   }')"
 ```
 
+## Path D - Figma URL (hybrid MCP + REST fallback)
+
+The Inspector's **Enter Figma URL** form is the WorkspaceDev path that exercises
+the MCP-backed resolver from Issue #1000. The browser submits the Inspector-only
+alias `figmaSourceMode=figma_url`, and the server normalizes that alias to
+`figmaSourceMode=hybrid` before the job starts.
+
+This is intentionally **not** a public `figmaSourceMode=mcp` surface. In this
+repository, MCP is an implementation detail of `hybrid`, not a standalone
+mode-lock option.
+
+### 1. What the resolver does
+
+For `hybrid`, WorkspaceDev combines direct Figma REST access with MCP
+enrichment:
+
+1. Resolve the file and candidate screen subtree from the Figma REST payload.
+2. Call `get_design_context` for the primary node.
+3. Call `get_metadata` when the resolver needs the XML node tree to recover a
+   stable root node, node count, or root-layer metadata.
+4. Call `get_screenshot` for a preview when screenshot capture is enabled.
+5. Call `get_variable_defs` and `search_design_system` to enrich tokens,
+   variables, and component/library matches.
+
+The default MCP endpoint is `https://mcp.figma.com/mcp`. The current runtime
+export is `DEFAULT_MCP_SERVER_URL` in
+[`src/job-engine/figma-mcp-resolver.ts`](../src/job-engine/figma-mcp-resolver.ts).
+
+### 2. Credentials and environment
+
+`hybrid` requires a Figma file key plus a token that can read the target file.
+WorkspaceDev uses the same token for both the Figma REST API fallback and the
+hosted MCP endpoint.
+
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `FIGMA_ACCESS_TOKEN` | Yes for `figma_url` / `hybrid` flows | Used for direct REST reads and for MCP bearer auth in the local runtime. |
+| `WORKSPACE_DEV_MCP_SERVER_URL` | Optional | Overrides the default hosted MCP URL for enterprise, test, or mock deployments. |
+| `WORKSPACE_ALLOW_INSECURE_MCP=true` | Optional, dev-only | Allows a loopback `http://127.0.0.1` / `localhost` MCP override. Production rejects plain HTTP without this opt-in. |
+
+For the token itself:
+
+- Figma's REST docs use **personal access tokens (PATs)** for direct API
+  access.
+- Figma's Help Center says PATs are created from **Settings -> Security -> Personal access tokens**.
+- The token value is shown only once at creation time.
+- PATs are broad-scope account credentials. Treat them like a secret and revoke
+  them when no longer needed.
+
+For general MCP onboarding, Figma's official docs recommend the **remote MCP
+server** and supported clients, and they use a Figma sign-in / **Allow access**
+flow. WorkspaceDev keeps its own runtime path in `hybrid` mode and does not ask
+you to switch the submit mode to `mcp`.
+
+### 3. Tool order, retries, and fallback signals
+
+When the MCP leg succeeds, the job records successful MCP read-tool usage and
+the Inspector can surface the local budget banner. When MCP fails or exhausts
+its retries, WorkspaceDev continues in REST mode when possible and surfaces the
+fallback in diagnostics and UI state.
+
+- MCP `429` responses record `W_MCP_RATE_LIMITED`. When `Retry-After` is
+  present, WorkspaceDev waits for that value before retrying; otherwise it uses
+  bounded exponential backoff starting at 500 ms.
+- If MCP still fails, the resolver emits `W_MCP_FALLBACK_REST` and continues
+  with the REST API when a valid `FIGMA_ACCESS_TOKEN` is available.
+- If only the screenshot call fails, the resolver keeps the MCP design context
+  and emits `W_MCP_SCREENSHOT_FALLBACK_REST` when the REST screenshot fallback
+  succeeds.
+- In the Inspector, hybrid fallback shows a `Figma REST fallback active` badge
+  in the status bar.
+- Rate-limited pipeline errors surface a retry countdown (`Retry available in
+  Ns`) in the error banner and status bar.
+
+Figma also documents plan- and seat-based limits for the hosted MCP server and
+for the REST API. See Figma's
+[MCP plans/access guide](https://developers.figma.com/docs/figma-mcp-server/plans-access-and-permissions/)
+and [REST rate-limit reference](https://developers.figma.com/docs/rest-api/rate-limits/).
+
+### 4. Live Inspector and hybrid test runs
+
+To exercise the hosted Figma path in live runs, make sure the job is actually
+submitted in `hybrid` mode (or via the Inspector URL path, which normalizes to
+`hybrid`). Supplying `FIGMA_FILE_KEY` and `FIGMA_ACCESS_TOKEN` alone is not
+enough if the submit stays on plain `rest`.
+
+Common live-run env vars in this repository:
+
+- `FIGMA_FILE_KEY` - live board/file under test.
+- `FIGMA_ACCESS_TOKEN` - required for the live Figma calls.
+- `INSPECTOR_LIVE_E2E=1` - enables live Inspector Playwright suites under
+  `ui-src/e2e/*.live.spec.ts`.
+- `WORKSPACE_DEV_VISUAL_BASELINE_PATH` - optional screenshot baseline override
+  for `ui-src/e2e/visual-parity.live.spec.ts`.
+- `WORKSPACE_DEV_VISUAL_AUDIT_MODE=strict` - turns visual parity warnings into
+  hard failures.
+
+The main live test surfaces are:
+
+- `src/parity/*.live.e2e.test.ts` for Node-side parity and analysis checks.
+- `ui-src/e2e/*.live.spec.ts` for Inspector and visual regression flows.
+
+The operator-facing benchmark maintenance commands under `integration/`
+(`pnpm benchmark:visual:live`, `pnpm benchmark:visual:update-fixtures`,
+`pnpm visual:audit live`) are separate REST-token workflows. They do not
+require MCP server setup; see [`CONTRIBUTING.md`](../CONTRIBUTING.md#choosing-the-correct-live-audit).
+
 ## FAQ
 
 **Can I paste any Figma copy directly?**
@@ -347,16 +454,35 @@ type to `Code / Text` or `Unbekannt` always rejects on submit with
 `"This paste looks like code or plain text, …"` or
 `"This paste could not be matched to a supported Figma import path. …"`.
 
+### Hybrid MCP / REST resolver
+
+The URL-based `hybrid` path is the one that can surface MCP and REST resolver
+errors in the Inspector.
+
+| Error code / surface | What it means | Recovery |
+| --- | --- | --- |
+| `AUTH_REQUIRED` / 401 or invalid token | The runtime could not authenticate the Figma request. This is usually a missing, expired, or revoked `FIGMA_ACCESS_TOKEN`. | Generate a new PAT in Figma, update the runtime secret, and retry the same file. |
+| `MCP_RATE_LIMITED` / 429 | The hosted MCP endpoint or downstream Figma read path rate-limited the request. WorkspaceDev preserves `Retry-After` when provided and shows a retry countdown. | Wait for the countdown to finish, then retry. If this happens repeatedly, check your Figma plan/seat limits and consider using a smaller file or lower-frequency live suite. |
+| `MCP_UNAVAILABLE` / 503, timeout, or connection error | The MCP endpoint could not be reached or returned a transient server failure. If the job continues, the status bar shows `Figma REST fallback active`. | Retry later, verify `WORKSPACE_DEV_MCP_SERVER_URL` if you overrode it, and keep `FIGMA_ACCESS_TOKEN` configured so REST fallback can proceed. |
+| `FILE_NOT_FOUND` / 404 | The file key is wrong, the file was deleted, or the token does not have access to the file. | Open the file in Figma, confirm the file key from the URL, and retry with a token from an account that can view the file. |
+| `NODE_NOT_FOUND` / `E_FIGMA_NODE_NOT_FOUND` | The layer or frame in the copied URL no longer exists in the file version you are resolving. | Copy a fresh Figma URL or select a stable frame before retrying. |
+
+For debugging, copied reports and raw job payloads may still include the lower-level
+backend codes (`E_MCP_*`, `E_FIGMA_REST_*`, `E_FIGMA_NODE_NOT_FOUND`) alongside
+the Inspector's generic banner/status mapping.
+
 ## Plan quota
 
 When the Inspector resolves Figma content through the Model Context Protocol
-(MCP) transport, each successful call counts toward the Figma plan's monthly
-MCP budget. The **Starter** plan allows **6 MCP calls per month**.
+(MCP) transport, each successful read-tool call increments WorkspaceDev's
+local-only MCP counter in the browser.
 
 WorkspaceDev tracks these calls locally (in your browser's `localStorage`) from
 the backend's reported successful MCP tool usage and shows a non-blocking
 warning banner at the top of the Inspector once usage reaches **80%** of the
-plan budget (i.e. 5 of 6 calls). The banner links to the
+current local threshold. Today that threshold is keyed to the published Figma
+Starter-tier limit of **6 MCP read-tool calls per month**, so the warning
+appears at **5 of 6** calls. The banner links to the
 [Figma pricing page](https://www.figma.com/pricing/) and can be dismissed for
 the rest of the session with the **✕** button. Dismissal is scoped to the
 current month — a new month re-enables the banner.
@@ -367,7 +493,8 @@ The counter is:
   request, no external telemetry.
 - **Per-month**: counters reset at the start of each UTC month.
 - **Scoped to MCP**: runs that fell back to the Figma REST API are not
-  counted (REST has a different quota regime; see the 429 section below).
+  counted (REST has a different quota regime; see
+  [Hybrid MCP / REST resolver](#hybrid-mcp--rest-resolver)).
 
 To silence the banner permanently, upgrade the Figma plan or switch to the
 REST fallback path (set `figmaSourceMode=rest` in submits).
@@ -392,6 +519,14 @@ REST fallback path (set `figmaSourceMode=rest` in submits).
   validator and error strings.
 - [`src/server/constants.ts`](../src/server/constants.ts) — byte caps and the
   `WORKSPACE_FIGMA_PASTE_MAX_BYTES` override.
+- [`src/job-engine/figma-mcp-resolver.ts`](../src/job-engine/figma-mcp-resolver.ts) — default MCP URL, retry logic, and REST fallback diagnostics.
+- [`ui-src/src/features/workspace/inspector/paste-error-catalog.ts`](../ui-src/src/features/workspace/inspector/paste-error-catalog.ts) — Inspector error-code catalog used in the troubleshooting table above.
 - Figma plugin developer reference: <https://developers.figma.com/docs/plugins/>
+- Figma MCP introduction: <https://developers.figma.com/docs/figma-mcp-server/>
+- Figma remote MCP setup: <https://developers.figma.com/docs/figma-mcp-server/remote-server-installation/>
+- Figma MCP plans and permissions: <https://developers.figma.com/docs/figma-mcp-server/plans-access-and-permissions/>
+- Figma REST authentication: <https://developers.figma.com/docs/rest-api/authentication/>
+- Figma PAT management: <https://help.figma.com/hc/en-us/articles/8085703771159-Manage-personal-access-tokens>
+- Figma REST rate limits: <https://developers.figma.com/docs/rest-api/rate-limits/>
 - Figma copy/paste behaviour in external apps:
   <https://help.figma.com/hc/en-us/articles/4409078832791-Copy-and-paste-objects>
