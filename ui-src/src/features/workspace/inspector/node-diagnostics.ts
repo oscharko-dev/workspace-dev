@@ -48,13 +48,13 @@ export interface NodeDiagnosticBadgeConfig {
 // ---------------------------------------------------------------------------
 
 const CATEGORY_BADGE_CONFIG: Record<NodeDiagnosticCategory, Omit<NodeDiagnosticBadgeConfig, "title">> = {
-  hidden: { label: "Hidden", abbr: "H", color: "bg-gray-200 text-gray-600" },
-  placeholder: { label: "Placeholder", abbr: "PH", color: "bg-amber-200 text-amber-700" },
-  truncated: { label: "Truncated", abbr: "TR", color: "bg-orange-200 text-orange-700" },
-  "depth-truncated": { label: "Depth-truncated", abbr: "DT", color: "bg-orange-200 text-orange-700" },
-  "classification-fallback": { label: "Fallback", abbr: "FB", color: "bg-yellow-200 text-yellow-700" },
-  "degraded-geometry": { label: "Degraded", abbr: "DG", color: "bg-red-200 text-red-700" },
-  unmapped: { label: "Unmapped", abbr: "UM", color: "bg-slate-200 text-slate-600" }
+  hidden: { label: "Hidden", abbr: "H", color: "bg-gray-200 text-gray-700" },
+  placeholder: { label: "Placeholder", abbr: "PH", color: "bg-amber-100 text-amber-900" },
+  truncated: { label: "Truncated", abbr: "TR", color: "bg-orange-100 text-orange-900" },
+  "depth-truncated": { label: "Depth-truncated", abbr: "DT", color: "bg-orange-100 text-orange-900" },
+  "classification-fallback": { label: "Fallback", abbr: "FB", color: "bg-yellow-100 text-yellow-900" },
+  "degraded-geometry": { label: "Degraded", abbr: "DG", color: "bg-red-100 text-red-900" },
+  unmapped: { label: "Unmapped", abbr: "UM", color: "bg-slate-200 text-slate-700" }
 };
 
 const VALID_CATEGORIES = new Set<string>(Object.keys(CATEGORY_BADGE_CONFIG));

@@ -125,9 +125,9 @@ function PanelView({
       ? acceptedRegeneration.nextJobId
       : jobId;
   const activeIsRegenerationJob =
-    acceptedRegeneration?.sourceJobId === jobId
-      ? true
-      : initialIsRegeneration;
+    initialIsRegeneration ||
+    acceptedRegeneration?.sourceJobId === jobId ||
+    acceptedRegeneration?.nextJobId === jobId;
   const [openDialog, setOpenDialog] = useState<ConfigDialogKey | null>(null);
 
   const activePreviewUrl = useMemo(() => {

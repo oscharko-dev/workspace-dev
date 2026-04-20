@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { expectNoBlockingAccessibilityViolations } from "./a11y";
 import {
   cleanupDeterministicSubmitRoute,
   collectPreviewNodeIds,
@@ -49,6 +50,14 @@ test.describe("inspector deterministic flow", () => {
     if (selectedSecondFile) {
       await expect(page.getByTestId("code-viewer-filepath")).toHaveText(selectedSecondFile);
     }
+  });
+
+  test("has no blocking accessibility violations in the inspector panel", async ({ page }) => {
+    await expectNoBlockingAccessibilityViolations({
+      page,
+      include: '[data-testid="inspector-panel"]',
+      exclude: 'iframe[title="Live preview"]',
+    });
   });
 
   test("supports component tree expand and collapse with source line highlighting", async ({ page }) => {

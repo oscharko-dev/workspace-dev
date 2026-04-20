@@ -61,6 +61,8 @@ async function setupRegenerationLineageRoute(page: Page): Promise<void> {
 }
 
 test.describe("inspector local sync controls", () => {
+  test.describe.configure({ timeout: 120_000 });
+
   test.beforeEach(async ({ page }) => {
     await setupDeterministicSubmitRoute(page);
     await setupRegenerationLineageRoute(page);

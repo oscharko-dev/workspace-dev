@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import "vitest-axe/extend-expect";
+import * as axeMatchers from "vitest-axe/matchers";
+import { expect } from "vitest";
+
+expect.extend(axeMatchers);
 
 // Node 25 ships an experimental built-in `localStorage` that returns a plain
 // empty object when `--localstorage-file` is not provided. That shim replaces

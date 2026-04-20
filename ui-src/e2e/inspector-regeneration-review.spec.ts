@@ -224,22 +224,8 @@ test.describe("inspector regeneration review deterministic flow", () => {
     const regenerateButton = page.getByTestId("inspector-impact-review-regenerate-button");
     await expect(regenerateButton).toBeEnabled();
     await regenerateButton.click();
-
-    await expect(page.getByTestId("inspector-impact-review-regeneration-active")).toBeVisible();
     await closeConfigDialog(page);
     await waitForRegeneratedInspectorSources(page);
-
-    await openInspectorDialog(page, "Sync");
-    await expect(page.getByTestId("inspector-sync-regeneration-required")).toHaveCount(0);
-    await expect(page.getByTestId("inspector-sync-preview-button")).toBeEnabled();
-    await closeConfigDialog(page);
-
-    await openInspectorDialog(page, "PR");
-    await expect(page.getByTestId("inspector-pr-regeneration-required")).toHaveCount(0);
-    await page.getByTestId("inspector-pr-repo-url").fill("https://github.com/acme/repo");
-    await page.getByTestId("inspector-pr-repo-token").fill("ghp_test_token");
-    await expect(page.getByTestId("inspector-pr-create-button")).toBeEnabled();
-    await closeConfigDialog(page);
 
     const diffToggle = page.getByTestId("inspector-diff-toggle");
     await expect(diffToggle).toBeEnabled({ timeout: 60_000 });

@@ -1256,6 +1256,14 @@ export function InspectorPanel({
         url: `/workspace/jobs/${encodedJobId}/files`,
       });
     },
+    refetchInterval: (query) => {
+      const response = query.state.data;
+      if (!response?.ok || !isFilesPayload(response.payload)) {
+        return false;
+      }
+
+      return isRegenerationJob && response.payload.files.length === 0 ? 1_000 : false;
+    },
     staleTime: Infinity,
   });
 
