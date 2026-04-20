@@ -49,6 +49,24 @@ jobs:
           path: scorecard-results.sarif
           if-no-files-found: error
 
+  enforce-threshold:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/dev'
+    needs: analysis
+    runs-on: ubuntu-latest
+    env:
+      SCORECARD_MIN_SCORE: "5.5"
+      SCORECARD_API_URL: https://api.securityscorecards.dev/projects/github.com/${{ github.repository }}
+      SCORECARD_REPOSITORY_URI: github.com/${{ github.repository }}
+      SCORECARD_EXPECTED_COMMIT: ${{ github.sha }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Enforce Scorecard minimum threshold
+        run: node scripts/check-scorecard-threshold.mjs
+
   manual-non-dev-info:
     if: github.event_name == 'workflow_dispatch' && github.ref != 'refs/heads/dev'
     runs-on: ubuntu-latest
