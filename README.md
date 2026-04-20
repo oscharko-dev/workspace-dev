@@ -255,6 +255,9 @@ Example:
 }
 ```
 
+See [docs/figma-import.md - Quality and governance](docs/figma-import.md#quality-and-governance)
+for the review stepper, audit trail, and full inspector policy field reference.
+
 Optional token branding input:
 
 - `brandTheme` (optional: `derived` or `sparkasse`; defaults to server runtime setting)
@@ -268,7 +271,7 @@ With `enableGitPr=false`, generation is local-only.
 - `GET /workspace` - runtime status
 - `GET /healthz` - liveness probe (`200` with `{ status, uptime }` during startup, ready, and drain)
 - `GET /readyz` - readiness probe (`200` only when ready; `503` during startup and drain)
-- `GET /workspace/inspector-policy` - resolved repo-backed inspector policy (`{ policy: WorkspacePolicy | null }`)
+- `GET /workspace/inspector-policy` - repo-backed inspector policy loader payload (`{ policy, validation, warning? }`)
 - `GET /workspace/:figmaFileKey` - deep-link to workspace UI for a Figma file key
 - `POST /workspace/submit` - start autonomous generation (`202 Accepted`)
 - `GET /workspace/jobs/:id` - job polling (stages/logs/artifacts)

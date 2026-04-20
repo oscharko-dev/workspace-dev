@@ -471,6 +471,171 @@ For debugging, copied reports and raw job payloads may still include the lower-l
 backend codes (`E_MCP_*`, `E_FIGMA_REST_*`, `E_FIGMA_NODE_NOT_FOUND`) alongside
 the Inspector's generic banner/status mapping.
 
+## Quality and governance
+
+After an import reaches `ready` or `partial`, the Inspector adds a dedicated
+review surface for import quality, token decisions, accessibility follow-up,
+and governance. This is the same surface covered by the shipped `#993` and
+`#994` behavior. For the backend event model and route semantics, see
+[ARCHITECTURE.md - Import session governance (#994)](../ARCHITECTURE.md#import-session-governance-994).
+
+### Pre-flight quality score
+
+The **Pre-flight quality score** panel is derived locally in the Inspector from
+artifacts that are already present in the browser session:
+
+- Design IR shape and node counts
+- Figma analyzer diagnostics
+- component-manifest coverage
+- pipeline errors already attached to the job
+
+The score is deterministic and local-only. It does not upload the design or
+generated code to an LLM, and it does not require an extra network round trip.
+
+The panel shows:
+
+- a numeric score from `0` to `100`
+- a band label (`Excellent`, `Good`, `Fair`, `Poor`)
+- Structure / Semantic / Codegen breakdown bars
+- the highest-priority risk tags to review before applying the import
+
+Workspace-level tuning comes from the repo-root policy file:
+`/.workspace-inspector-policy.json`.
+
+### Token matching intelligence
+
+The **Token mapping intelligence** section summarizes token conflicts and
+unmapped Figma variables detected during import. Reviewers can:
+
+- toggle each row individually with its checkbox
+- use `Accept all`
+- use `Reject all`
+- click `Apply decisions` to persist the current accepted/rejected token list
+
+The default recommendations are influenced by the workspace policy:
+
+- `tokens.autoAcceptConfidence` raises or lowers the threshold for
+  auto-accepting a conflict
+- `tokens.maxConflictDelta` sets how far a Figma value may drift from the
+  existing workspace value before the row is forced into manual review
+- `tokens.disabled` clears token suggestions so the review surface has no
+  conflict or unmapped rows to apply
+
+### Post-gen review nudges
+
+**Post-gen review nudges** are follow-up hints for generated output. The
+Inspector scans generated `.tsx`, `.jsx`, `.html`, and `.mdx` files for
+accessibility and semantic HTML issues, then shows a severity-ranked list of
+items to inspect.
+
+These nudges are advisory only:
+
+- they do not edit generated files automatically
+- they do not block the import on their own
+- they are meant to guide manual review after generation
+
+Policy controls:
+
+- `a11y.wcagLevel` chooses `AA` or `AAA` severity handling
+- `a11y.disabledRules` turns off specific rule ids when your workspace has an
+  intentional exception
+
+### Review stepper and audit trail
+
+When a governed import session is active, the Inspector renders the review
+stepper:
+
+`Import → Review → Approve → Apply`
+
+The gate before `Apply` uses the resolved governance policy:
+
+- `governance.minQualityScoreToApply` blocks apply until the score meets the
+  minimum, or a reviewer override is allowed
+- `governance.requireNoteOnOverride` requires a reviewer note before low-score
+  or security-sensitive imports can be applied
+- `governance.securitySensitivePatterns` marks imports as security-sensitive
+  when a configured literal pattern matches a generated file path, manifest
+  entry, or IR node name
+
+The same session also has an ordered audit trail. In the Inspector, expand
+**Import History** and use **Log** on a session row to inspect persisted events
+such as `imported`, `review_started`, `approved`, `applied`, `rejected`, and
+`note`.
+
+Automation and backend callers can read the same trail from
+`GET /workspace/import-sessions/:id/events`. Approval persists through
+`POST /workspace/import-sessions/:id/approve`.
+
+### Workspace inspector policy (`.workspace-inspector-policy.json`)
+
+WorkspaceDev loads `/.workspace-inspector-policy.json` from the repo root and
+exposes the loader payload at `GET /workspace/inspector-policy` as
+`{ policy, validation, warning? }`. The route returns the repo-backed policy
+document as loaded, plus validation diagnostics. When the route returns
+`policy: null` because the file is absent or rejected, the Inspector resolves
+defaults client-side and surfaces any warning text to the reviewer.
+
+Example:
+
+```json
+{
+  "quality": {
+    "bandThresholds": {
+      "excellent": 90,
+      "good": 75,
+      "fair": 55
+    },
+    "weights": {
+      "structure": 0.3,
+      "semantic": 0.45,
+      "codegen": 0.25
+    },
+    "maxAcceptableDepth": 5,
+    "maxAcceptableNodes": 80,
+    "riskSeverityOverrides": {
+      "deep-nesting": "high",
+      "interaction-no-semantics": "high"
+    }
+  },
+  "tokens": {
+    "autoAcceptConfidence": 95,
+    "maxConflictDelta": 10,
+    "disabled": false
+  },
+  "a11y": {
+    "wcagLevel": "AAA",
+    "disabledRules": ["missing-h1"]
+  },
+  "governance": {
+    "minQualityScoreToApply": 85,
+    "securitySensitivePatterns": ["auth", "payments/", "AdminPanel"],
+    "requireNoteOnOverride": true
+  }
+}
+```
+
+Field reference:
+
+| Key | Meaning |
+| --- | --- |
+| `quality.bandThresholds.excellent` | Score threshold for the `Excellent` band. |
+| `quality.bandThresholds.good` | Score threshold for the `Good` band. |
+| `quality.bandThresholds.fair` | Score threshold for the `Fair` band. |
+| `quality.weights.structure` | Weight applied to the structural sub-score. |
+| `quality.weights.semantic` | Weight applied to the semantic sub-score. |
+| `quality.weights.codegen` | Weight applied to the codegen-risk sub-score. |
+| `quality.maxAcceptableDepth` | Nesting-depth budget before the structure score is penalized. |
+| `quality.maxAcceptableNodes` | Node-count budget before the structure score is penalized. |
+| `quality.riskSeverityOverrides` | Per-risk override map for `high`, `medium`, or `low` severity labels. |
+| `tokens.autoAcceptConfidence` | Confidence threshold used when deciding whether a token conflict can be auto-accepted. |
+| `tokens.maxConflictDelta` | Maximum allowed token-value drift before a conflict is forced into manual review. |
+| `tokens.disabled` | Disables token suggestions for the Inspector review flow. |
+| `a11y.wcagLevel` | Accessibility review strictness: `AA` or `AAA`. |
+| `a11y.disabledRules` | Rule ids to suppress in post-generation nudges. |
+| `governance.minQualityScoreToApply` | Minimum score required before apply can proceed. Use `null` to disable the score gate. |
+| `governance.securitySensitivePatterns` | Case-insensitive literal substring matches used to flag security-sensitive imports. Regex-like entries are dropped with a warning. |
+| `governance.requireNoteOnOverride` | Requires a reviewer note when overriding a low-score or security-sensitive gate. |
+
 ## Plan quota
 
 When the Inspector resolves Figma content through the Model Context Protocol
