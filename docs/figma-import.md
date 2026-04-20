@@ -525,6 +525,48 @@ Yes. The SmartBanner shows the intent label and a confidence percentage (e.g.
 
 ## Troubleshooting
 
+### Inspector error-code reference
+
+The Inspector normalizes runtime failures to the following `PasteErrorCode`
+values. Use this table as the canonical code-to-recovery index when a banner,
+status row, or support bundle includes one of these identifiers.
+
+| Code | User-facing summary | Probable cause | Recovery action |
+| --- | --- | --- | --- |
+| <a id="error-code-clipboard-not-figma"></a>`CLIPBOARD_NOT_FIGMA` | The pasted content is not recognized as a supported Figma export. | The clipboard contains plain text, source code, unsupported HTML, or an unsupported clipboard envelope. | Copy a fresh Figma plugin export or a valid JSON export, then retry. |
+| <a id="error-code-mcp-unavailable"></a>`MCP_UNAVAILABLE` | WorkspaceDev could not reach the Figma MCP path. | The MCP endpoint timed out, returned `503`, or failed before a successful REST fallback. | Retry later, verify `WORKSPACE_DEV_MCP_SERVER_URL` if overridden, and keep REST fallback credentials configured. |
+| <a id="error-code-mcp-rate-limited"></a>`MCP_RATE_LIMITED` | The Figma MCP path rate-limited the request. | The hosted MCP endpoint or downstream Figma read path returned `429`. | Wait for the countdown or `Retry-After` window to finish, then retry. |
+| <a id="error-code-file-not-found"></a>`FILE_NOT_FOUND` | WorkspaceDev could not resolve the copied Figma file. | The file key is wrong, the file was deleted, or the current token cannot view it. | Open the file in Figma, confirm the file key, and retry with an account that has access. |
+| <a id="error-code-node-not-found"></a>`NODE_NOT_FOUND` | The referenced frame, layer, or component no longer exists. | The copied node ID drifted after the URL or payload was captured. | Copy a fresh Figma URL or selection and retry. |
+| <a id="error-code-auth-required"></a>`AUTH_REQUIRED` | Figma authentication is required before the import can proceed. | `FIGMA_ACCESS_TOKEN` is missing, expired, revoked, or does not have access to the file. | Generate or refresh the token, update the runtime secret, and retry. |
+| <a id="error-code-transform-partial"></a>`TRANSFORM_PARTIAL` | The import finished with skipped or unsupported elements. | Some nodes could not be transformed into the internal design representation. | Review the partial-result details, fix or remove unsupported nodes, and retry if needed. |
+| <a id="error-code-codegen-partial"></a>`CODEGEN_PARTIAL` | The import succeeded, but some generated files failed. | Code generation completed only for part of the output set. | Inspect the failed file list, keep the successful output, and retry the failed generation step. |
+| <a id="error-code-payload-too-large"></a>`PAYLOAD_TOO_LARGE` | The pasted design exceeds the configured import size limit. | The clipboard payload or uploaded JSON file is larger than the allowed cap. | Import a smaller selection or raise `WORKSPACE_FIGMA_PASTE_MAX_BYTES` within the transport limit. |
+| <a id="error-code-schema-mismatch"></a>`SCHEMA_MISMATCH` | The pasted content is not valid for the expected Figma JSON schema. | The JSON is malformed, incomplete, or not a supported Figma export shape. | Re-export the JSON from Figma or use the WorkspaceDev plugin, then retry. |
+| <a id="error-code-stage-failed"></a>`STAGE_FAILED` | A pipeline stage failed before the import could complete cleanly. | An intermediate pipeline step returned an unmapped or generic processing error. | Check the stage details, correct the underlying input or dependency problem, and retry. |
+| <a id="error-code-job-failed"></a>`JOB_FAILED` | The overall import job did not complete successfully. | One or more pipeline stages failed and the job entered a terminal error state. | Review the job details, correct the underlying failure, and rerun the import. |
+| <a id="error-code-poll-failed"></a>`POLL_FAILED` | The UI lost the job-status stream while waiting for results. | The browser lost network connectivity or the status poll endpoint could not be reached. | Refresh or retry after connectivity recovers. |
+| <a id="error-code-submit-failed"></a>`SUBMIT_FAILED` | The browser could not start the import request. | The submit request failed before the job was accepted by the backend. | Check the runtime URL and network connection, then retry the submit action. |
+| <a id="error-code-cancel-failed"></a>`CANCEL_FAILED` | The UI could not send the cancellation request. | The cancel request failed before the backend acknowledged it. | Refresh the job state and retry cancellation only if the import is still running. |
+| <a id="error-code-missing-preview-url"></a>`MISSING_PREVIEW_URL` | The import completed, but the generated preview URL is missing. | The backend finished the job without attaching the preview link expected by the Inspector. | Retry to regenerate the preview and inspect the job details if the problem persists. |
+
+Bootstrap and submit validation can still surface raw pre-normalization aliases.
+Use the canonical row above as the landing page when you encounter one of these
+identifiers in logs, copied reports, or Inspector state:
+
+| Alias code | Maps to | Notes |
+| --- | --- | --- |
+| `INVALID_PAYLOAD` | [`SCHEMA_MISMATCH`](#error-code-schema-mismatch) | Pre-submit validation rejected a payload that is not a supported Figma JSON shape. |
+| `TOO_LARGE` | [`PAYLOAD_TOO_LARGE`](#error-code-payload-too-large) | The raw bootstrap/server alias for the configured payload cap. |
+| `UNSUPPORTED_FORMAT` | [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma) | The clipboard envelope format or version is unsupported. |
+| `UNSUPPORTED_CLIPBOARD_KIND` | [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma) | The clipboard kind is not a supported WorkspaceDev/Figma import payload. |
+| `UNSUPPORTED_FIGMA_CLIPBOARD_HTML` | [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma) | Native Figma clipboard HTML is not importable through the Inspector yet. |
+| `UNSUPPORTED_TEXT_PASTE` | [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma) | Plain text, source code, or prose was pasted instead of a Figma export. |
+| `UNSUPPORTED_UNKNOWN_PASTE` | [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma) | The pasted content could not be matched to a supported import path. |
+| `EMPTY_INPUT` | [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma) | The paste/drop/upload action produced no importable payload. |
+| `UNSUPPORTED_FILE` | See [Non-JSON file dropped or uploaded](#non-json-file-dropped-or-uploaded) | File validation failed before the canonical paste-error mapping applies. |
+| `SECURE_CONTEXT_MISSING` | See [Nothing happens on Cmd/Ctrl+V](#nothing-happens-on-cmdctrlv) | Clipboard access was blocked because the browser context is not secure. |
+
 ### Nothing happens on Cmd/Ctrl+V
 
 1. Click once inside the middle **Import** column to focus the paste target.
@@ -535,16 +577,17 @@ Yes. The SmartBanner shows the intent label and a confidence percentage (e.g.
 3. If the copy originated from Figma's native canvas (without the plugin),
    the paste is rejected as
    `"Direct Figma clipboard HTML is not importable here yet. Paste a JSON export or a supported WorkspaceDev plugin envelope instead."`
-   Use the plugin or the **Upload JSON file** button instead.
+   Use the plugin or the **Upload JSON file** button instead. See
+   [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma).
 4. Empty clipboard input surfaces
    `"Please paste, drop, or upload a Figma JSON export."`.
 
 ### "Invalid JSON" / payload not accepted
 
-- `"That does not look like a Figma JSON export. Please paste a JSON_REST_V1 payload."` — the text parses as JSON but does not contain a Figma document (`document`, `type+children`, or an array of nodes). Re-export from Figma (File → Export) or use the plugin.
-- `"The payload does not match the expected Figma JSON_REST_V1 schema."` — the server rejected the payload shape. Compare your JSON against the [REST JSON example](#rest-json--json_rest_v1).
-- `"This paste looks like code or plain text, not a Figma JSON export. …"` — you pasted source code, HTML, or prose. Copy from Figma (plugin or File → Export) instead.
-- `"This WorkspaceDev clipboard envelope version is not supported yet. Update the plugin or paste a supported envelope export."` — the envelope `kind` is newer or unknown. Reinstall the plugin from this repository's `plugin/manifest.json`.
+- `"That does not look like a Figma JSON export. Please paste a JSON_REST_V1 payload."` — the text parses as JSON but does not contain a Figma document (`document`, `type+children`, or an array of nodes). Re-export from Figma (File → Export) or use the plugin. See [`SCHEMA_MISMATCH`](#error-code-schema-mismatch).
+- `"The payload does not match the expected Figma JSON_REST_V1 schema."` — the server rejected the payload shape. Compare your JSON against the [REST JSON example](#rest-json--json_rest_v1). See [`SCHEMA_MISMATCH`](#error-code-schema-mismatch).
+- `"This paste looks like code or plain text, not a Figma JSON export. …"` — you pasted source code, HTML, or prose. Copy from Figma (plugin or File → Export) instead. See [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma).
+- `"This WorkspaceDev clipboard envelope version is not supported yet. Update the plugin or paste a supported envelope export."` — the envelope `kind` is newer or unknown. Reinstall the plugin from this repository's `plugin/manifest.json`. See [`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma) and the alias rows for `UNSUPPORTED_FORMAT` / `UNSUPPORTED_CLIPBOARD_KIND` above.
 
 ### Component is not recognized
 
@@ -565,7 +608,8 @@ Yes. The SmartBanner shows the intent label and a confidence percentage (e.g.
   `"Payload is too large. The limit is 6 MiB."`.
 - Copy a smaller section (single frame or component) instead of the full page,
   or raise the server cap via `WORKSPACE_FIGMA_PASTE_MAX_BYTES` (bounded by
-  the 8 MiB submit transport cap).
+  the 8 MiB submit transport cap). See
+  [`PAYLOAD_TOO_LARGE`](#error-code-payload-too-large).
 
 ### Non-JSON file dropped or uploaded
 
@@ -578,7 +622,42 @@ Yes. The SmartBanner shows the intent label and a confidence percentage (e.g.
 The confirm flow trusts the user's final SmartBanner selection. Setting the
 type to `Code / Text` or `Unbekannt` always rejects on submit with
 `"This paste looks like code or plain text, …"` or
-`"This paste could not be matched to a supported Figma import path. …"`.
+`"This paste could not be matched to a supported Figma import path. …"`. See
+[`CLIPBOARD_NOT_FIGMA`](#error-code-clipboard-not-figma).
+
+### Partial or failed processing after submit
+
+- `TRANSFORM_PARTIAL` indicates the import completed with skipped or unsupported
+  nodes. Review the details panel, correct the unsupported nodes if needed, and
+  retry only the affected selection. See
+  [`TRANSFORM_PARTIAL`](#error-code-transform-partial).
+- `CODEGEN_PARTIAL` means the design import succeeded but one or more generated
+  files failed. Keep the successful output, inspect the failed file list, and
+  rerun only the failed generation step. See
+  [`CODEGEN_PARTIAL`](#error-code-codegen-partial).
+- `STAGE_FAILED` is the generic pipeline-stage fallback when WorkspaceDev
+  cannot map the failure to a narrower category. Use the stage details to find
+  the underlying dependency or input issue before retrying. See
+  [`STAGE_FAILED`](#error-code-stage-failed).
+- `JOB_FAILED` means the overall import reached a terminal failure state.
+  Review the job-level error details, correct the underlying issue, and rerun
+  the import. See [`JOB_FAILED`](#error-code-job-failed).
+- `MISSING_PREVIEW_URL` means the backend finished processing without attaching
+  the preview link expected by the Inspector. Retry to regenerate the preview
+  and inspect the job details if it happens again. See
+  [`MISSING_PREVIEW_URL`](#error-code-missing-preview-url).
+
+### Submit, polling, or cancel request failures
+
+- `SUBMIT_FAILED` means the browser could not hand the import request to the
+  backend. Verify the runtime URL and network path, then retry the submit
+  action. See [`SUBMIT_FAILED`](#error-code-submit-failed).
+- `POLL_FAILED` means the UI lost the job-status stream while waiting for
+  results. Refresh or retry after network connectivity recovers. See
+  [`POLL_FAILED`](#error-code-poll-failed).
+- `CANCEL_FAILED` means the cancel request could not be delivered. Refresh the
+  page to confirm whether the job is still running before retrying cancel. See
+  [`CANCEL_FAILED`](#error-code-cancel-failed).
 
 ### Hybrid MCP / REST resolver
 
