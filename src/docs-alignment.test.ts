@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { CONTRACT_VERSION } from "./contracts/index.js";
 import * as publicApi from "./index.js";
 import { getAllowedFigmaSourceModes, getAllowedLlmCodegenModes, getWorkspaceDefaults } from "./mode-lock.js";
+import { PASTE_ERROR_CATALOG } from "../ui-src/src/features/workspace/inspector/paste-error-catalog.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
@@ -16,6 +17,20 @@ const escapeRegExp = (value: string): string => {
 
 const readRepoFile = async (relativePath: string): Promise<string> => {
   return await readFile(path.resolve(packageRoot, relativePath), "utf8");
+};
+
+const extractMarkdownSection = (
+  markdown: string,
+  heading: string,
+): string | null => {
+  const escapedHeading = escapeRegExp(heading);
+  const match = markdown.match(
+    new RegExp(
+      `^### ${escapedHeading}$([\\s\\S]*?)(?=^## |^### |\\Z)`,
+      "m",
+    ),
+  );
+  return match ? match[0] : null;
 };
 
 const EXPECTED_ISOLATION_RUNTIME_EXPORTS = [
@@ -64,6 +79,19 @@ const EXPECTED_FIGMA_IMPORT_POLICY_KEYS = [
   "governance.minQualityScoreToApply",
   "governance.securitySensitivePatterns",
   "governance.requireNoteOnOverride",
+] as const;
+
+const EXPECTED_FIGMA_IMPORT_ERROR_ALIAS_CODES = [
+  "EMPTY_INPUT",
+  "INVALID_PAYLOAD",
+  "TOO_LARGE",
+  "UNSUPPORTED_FORMAT",
+  "UNSUPPORTED_CLIPBOARD_KIND",
+  "UNSUPPORTED_FIGMA_CLIPBOARD_HTML",
+  "UNSUPPORTED_TEXT_PASTE",
+  "UNSUPPORTED_UNKNOWN_PASTE",
+  "UNSUPPORTED_FILE",
+  "SECURE_CONTEXT_MISSING",
 ] as const;
 
 test("docs: mode lock docs stay aligned with runtime constraints", async () => {
@@ -252,6 +280,10 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   const pluginTestingDoc = await readRepoFile("plugin/TESTING.md");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
   const readmeDoc = await readRepoFile("README.md");
+  const errorCodeReferenceSection = extractMarkdownSection(
+    figmaImportDoc,
+    "Inspector error-code reference",
+  );
 
   assert.match(
     figmaImportDoc,
@@ -290,6 +322,54 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.match(figmaImportDoc, /`AUTH_REQUIRED`/);
   assert.match(figmaImportDoc, /`MCP_RATE_LIMITED`/);
   assert.match(figmaImportDoc, /`MCP_UNAVAILABLE`/);
+  assert.ok(errorCodeReferenceSection, "missing Inspector error-code reference section");
+  for (const errorCode of Object.keys(PASTE_ERROR_CATALOG).sort()) {
+    assert.match(
+      errorCodeReferenceSection,
+      new RegExp(escapeRegExp(`\`${errorCode}\``)),
+    );
+  }
+  for (const aliasCode of EXPECTED_FIGMA_IMPORT_ERROR_ALIAS_CODES) {
+    assert.match(
+      errorCodeReferenceSection,
+      new RegExp(escapeRegExp(`\`${aliasCode}\``)),
+    );
+  }
+  assert.match(
+    figmaImportDoc,
+    /\[`CLIPBOARD_NOT_FIGMA`\]\(#error-code-clipboard-not-figma\)/,
+  );
+  assert.match(
+    figmaImportDoc,
+    /\[`SCHEMA_MISMATCH`\]\(#error-code-schema-mismatch\)/,
+  );
+  assert.match(
+    figmaImportDoc,
+    /\[`PAYLOAD_TOO_LARGE`\]\(#error-code-payload-too-large\)/,
+  );
+  assert.match(
+    figmaImportDoc,
+    /\[`TRANSFORM_PARTIAL`\]\(#error-code-transform-partial\)/,
+  );
+  assert.match(
+    figmaImportDoc,
+    /\[`CODEGEN_PARTIAL`\]\(#error-code-codegen-partial\)/,
+  );
+  assert.match(figmaImportDoc, /\[`STAGE_FAILED`\]\(#error-code-stage-failed\)/);
+  assert.match(figmaImportDoc, /\[`JOB_FAILED`\]\(#error-code-job-failed\)/);
+  assert.match(
+    figmaImportDoc,
+    /\[`MISSING_PREVIEW_URL`\]\(#error-code-missing-preview-url\)/,
+  );
+  assert.match(
+    figmaImportDoc,
+    /\[`SUBMIT_FAILED`\]\(#error-code-submit-failed\)/,
+  );
+  assert.match(figmaImportDoc, /\[`POLL_FAILED`\]\(#error-code-poll-failed\)/);
+  assert.match(
+    figmaImportDoc,
+    /\[`CANCEL_FAILED`\]\(#error-code-cancel-failed\)/,
+  );
   assert.match(figmaImportDoc, /`INSPECTOR_LIVE_E2E=1`/);
   assert.match(figmaImportDoc, /`FIGMA_FILE_KEY`/);
   for (const heading of EXPECTED_FIGMA_IMPORT_SCOPE_HEADINGS) {
