@@ -57,7 +57,7 @@ const BAND_STYLE: Record<
 > = {
   excellent: { bg: "#ecfdf5", border: "#10b981", text: "#065f46" },
   good: { bg: "#eff6ff", border: "#3b82f6", text: "#1e40af" },
-  fair: { bg: "#fffbeb", border: "#f59e0b", text: "#92400e" },
+  fair: { bg: "#fffbeb", border: "#d97706", text: "#78350f" },
   poor: { bg: "#fef2f2", border: "#dc2626", text: "#991b1b" },
 };
 
@@ -106,6 +106,7 @@ export function SuggestionsPanel({
         borderRadius: 8,
         border: "1px solid #e5e7eb",
         background: "#fafafa",
+        color: "#111827",
         fontSize: 13,
         lineHeight: 1.5,
       }}

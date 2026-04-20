@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { expectNoBlockingAccessibilityViolations } from "../../../test/accessibility";
 import { InspectorBootstrap } from "./InspectorBootstrap";
 import type { InspectorBootstrapState } from "./inspector-bootstrap-state";
 
@@ -172,6 +173,16 @@ describe("InspectorBootstrap — state-aware copy", () => {
 
     const center = screen.getByTestId("inspector-bootstrap-center");
     expect(center).toHaveTextContent(/schemaVersion/);
+  });
+
+  it("has no blocking accessibility violations in a retryable failure state", async () => {
+    renderBootstrap({
+      state: { kind: "failed", reason: "SUBMIT_FAILED", retryable: true },
+    });
+
+    await expectNoBlockingAccessibilityViolations(
+      screen.getByTestId("inspector-bootstrap"),
+    );
   });
 });
 

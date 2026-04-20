@@ -9,6 +9,7 @@ import {
 import { createMemoryRouter, RouterProvider } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchJson, type JsonResponse } from "../../lib/http";
+import { expectNoBlockingAccessibilityViolations } from "../../test/accessibility";
 import type { RuntimeStatusPayload } from "./workspace-page.helpers";
 import { WorkspacePage } from "./workspace-page";
 
@@ -175,6 +176,17 @@ describe("WorkspacePage", () => {
       screen.queryByLabelText("Figma Access Token"),
     ).not.toBeInTheDocument();
     expect(screen.getByText("Local JSON mode")).toHaveClass("border");
+  });
+
+  it("has no blocking accessibility violations in the submit form", async () => {
+    renderWorkspacePage();
+
+    const form = document.getElementById("workspace-submit-form");
+    if (!(form instanceof HTMLFormElement)) {
+      throw new Error("Expected workspace submit form to be rendered.");
+    }
+
+    await expectNoBlockingAccessibilityViolations(form);
   });
 
   it("restores REST-only fields when switching from local_json to hybrid", async () => {
@@ -496,6 +508,10 @@ describe("WorkspacePage", () => {
 
     expect(screen.getByTestId("job-payload")).toHaveTextContent(
       /"status": "completed"/,
+    );
+
+    await expectNoBlockingAccessibilityViolations(
+      screen.getByTestId("job-status-card"),
     );
   });
 

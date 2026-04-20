@@ -280,21 +280,23 @@ export async function simulateInspectorPaste(page: Page, text: string): Promise<
  * Triggers a deterministic generation request and asserts that submit responds successfully.
  */
 export async function triggerDeterministicGeneration(page: Page): Promise<void> {
-  const submitResponsePromise = page.waitForResponse(
-    (response) =>
-      response.request().method() === "POST" &&
-      response.url().endsWith(SUBMIT_ENDPOINT_SUFFIX)
-  );
+  await withSubmissionRateLimit(async () => {
+    const submitResponsePromise = page.waitForResponse(
+      (response) =>
+        response.request().method() === "POST" &&
+        response.url().endsWith(SUBMIT_ENDPOINT_SUFFIX)
+    );
 
-  await page.getByLabel("Figma file key").fill("fixture-key");
-  await page.getByLabel("Figma access token").fill("fixture-token");
-  await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
+    await page.getByLabel("Figma file key").fill("fixture-key");
+    await page.getByLabel("Figma access token").fill("fixture-token");
+    await page.getByRole("banner").getByRole("button", { name: "Generate" }).click();
 
-  const submitResponse = await submitResponsePromise;
-  expect(
-    submitResponse.ok(),
-    `Expected submit response to be successful, but got HTTP ${submitResponse.status()}`
-  ).toBeTruthy();
+    const submitResponse = await submitResponsePromise;
+    expect(
+      submitResponse.ok(),
+      `Expected submit response to be successful, but got HTTP ${submitResponse.status()}`
+    ).toBeTruthy();
+  });
 }
 
 /**

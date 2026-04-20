@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { expectNoBlockingAccessibilityViolations } from "./a11y";
 import {
   ensureWorkspaceDiagnosticsVisible,
   getWorkspaceUiUrl,
@@ -91,3 +92,21 @@ for (const viewport of desktopViewportMatrix) {
     });
   });
 }
+
+test("workspace submit form has no blocking accessibility violations", async ({
+  page,
+}) => {
+  try {
+    await openWorkspaceUi(page, {
+      width: 1536,
+      height: 864,
+    });
+
+    await expectNoBlockingAccessibilityViolations({
+      page,
+      include: "#workspace-submit-form",
+    });
+  } finally {
+    await resetBrowserStorage(page);
+  }
+});
