@@ -74,6 +74,79 @@ The package currently exposes two public entrypoints:
 
 For most consumers, `createWorkspaceServer` and the exported contract types are the intended day-to-day surface.
 
+## Programmatic API
+
+Use the root `workspace-dev` entrypoint when you want to start and stop the local runtime from your own Node.js process.
+
+```ts
+import { createWorkspaceServer } from "workspace-dev";
+import type { WorkspaceStartOptions } from "workspace-dev/contracts";
+
+const options: WorkspaceStartOptions = {
+  host: "127.0.0.1",
+  port: 1983,
+  outputRoot: ".workspace-dev",
+  logFormat: "json",
+};
+
+const server = await createWorkspaceServer(options);
+console.log(server.url);
+
+// Later, when your host process is done with the runtime:
+await server.app.close();
+```
+
+Use `validateModeLock` before accepting user-supplied mode overrides so invalid combinations fail fast with the same supported-mode wording as the runtime.
+
+```ts
+import { validateModeLock } from "workspace-dev";
+
+const accepted = validateModeLock({
+  figmaSourceMode: "local_json",
+  llmCodegenMode: "deterministic",
+});
+
+if (!accepted.valid) {
+  throw new Error(accepted.errors.join("\n"));
+}
+
+const rejected = validateModeLock({
+  figmaSourceMode: "mcp",
+  llmCodegenMode: "hybrid",
+});
+
+console.log(rejected.valid); // false
+console.log(rejected.errors);
+```
+
+Use the contracts subpath when you only need versioned types and constants without the runtime server factory.
+
+```ts
+import {
+  CONTRACT_VERSION,
+  type WorkspaceFigmaSourceMode,
+  type WorkspaceJobInput,
+  type WorkspaceStartOptions,
+} from "workspace-dev/contracts";
+
+const contractVersion: string = CONTRACT_VERSION;
+
+const preferredMode: WorkspaceFigmaSourceMode = "local_json";
+
+const startOptions: WorkspaceStartOptions = {
+  host: "127.0.0.1",
+  port: 1983,
+};
+
+const job: WorkspaceJobInput = {
+  figmaSourceMode: preferredMode,
+  llmCodegenMode: "deterministic",
+  figmaJsonPath: "fixtures/example/figma.json",
+};
+
+console.log({ contractVersion, startOptions, job });
+```
+
 ### Advanced isolation lifecycle API
 
 The root `workspace-dev` entrypoint also intentionally exports an advanced
@@ -113,13 +186,17 @@ release-ready.
 
 - `src/` - runtime, CLI, contracts, deterministic generator, and backend tests
 - `ui-src/` - inspector/workspace UI source and UI tests
-- `template/` - generated app template that is shipped in the npm package
+- `template/` - generator scaffolding and the generated-app template baseline that ships in the npm package; it is not a consumer runtime dependency loaded by `createWorkspaceServer`
 - `integration/` - release-gate and end-to-end verification fixtures
 - `docs/` - deeper implementation and operations references
 - `plugin/` - Figma plugin source for clipboard export flows
 
 If you only need the consumable product surface, `package.json.files` defines
 the authoritative publish boundary.
+The published package ships the compiled runtime from `dist/`, the docs listed
+in `package.json.files`, and the `template/` scaffold used to materialize the
+generated app baseline. Repository-only verification fixtures, test suites, and
+template `node_modules` do not ship.
 
 ## Frontend stack
 
@@ -316,6 +393,14 @@ Response shape:
 - Set `FIGMAPIPE_WORKSPACE_ENABLE_HSTS=true` only when the browser-facing deployment is HTTPS-only, such as behind a trusted TLS-terminating proxy. The runtime then emits `Strict-Transport-Security: max-age=31536000`.
 - Same-origin-only write routes do not emit permissive `Access-Control-Allow-Origin` headers for untrusted origins.
 - UI traversal probes such as `../`, encoded separators, null bytes, and Windows-style backslashes are rejected before any UI asset or SPA fallback is served.
+
+## Operational Hardening
+
+- Keep the default loopback bind (`127.0.0.1:1983`) unless you have an explicit reason to expand the trust boundary. The default `WorkspaceStartOptions.host` and CLI `--host` value are both `127.0.0.1`.
+- Treat non-loopback or reverse-proxied browser-facing deployments as an explicit exposure expansion. Use HTTPS in front of the runtime, scope network access narrowly, and enable `FIGMAPIPE_WORKSPACE_ENABLE_HSTS=true` only when the browser-facing origin is HTTPS-only behind a trusted TLS terminator.
+- `local_json` is the preferred air-gap and firewall-friendly source mode for programmatic or operational smoke tests. It consumes a local `figmaJsonPath`, avoids outbound Figma REST and MCP fetches, and pairs cleanly with loopback-only runtime deployment.
+- For browser-based clipboard and inspector flows on remote hosts, use HTTPS rather than plain HTTP. Browsers treat `http://127.0.0.1` as a secure context, but remote hosts and reverse proxies do not get that exception.
+- Use `package.json.files` as the publish contract when auditing what ships to npm. The repository contains broader test, fixture, and generator-development surfaces than the installed consumer package.
 
 ### Local sync flow
 
