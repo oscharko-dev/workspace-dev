@@ -57,6 +57,7 @@ export class StageArtifactStore {
   private readonly indexFile: string;
   private readonly references = new Map<string, StageArtifactReference>();
   private loadPromise: Promise<void> | null = null;
+  private persistQueue: Promise<void> = Promise.resolve();
   private corruptionDiagnostic: string | null = null;
 
   constructor({ jobDir }: { jobDir: string }) {
@@ -149,17 +150,27 @@ export class StageArtifactStore {
   private async persistReference(
     reference: StageArtifactReference,
   ): Promise<void> {
-    await this.ensureLoaded();
-    this.references.set(reference.key, reference);
-    const refFile = path.join(
-      this.refsDir,
-      `${safeKeyToFileName(reference.key)}.json`,
+    const persistTask = this.persistQueue.then(async () => {
+      await this.ensureLoaded();
+      this.references.set(reference.key, reference);
+      const refFile = path.join(
+        this.refsDir,
+        `${safeKeyToFileName(reference.key)}.json`,
+      );
+      await atomicWriteFile(
+        refFile,
+        `${JSON.stringify(reference, null, 2)}\n`,
+      );
+      await atomicWriteFile(
+        this.indexFile,
+        `${JSON.stringify([...this.references.values()], null, 2)}\n`,
+      );
+    });
+    this.persistQueue = persistTask.then(
+      () => undefined,
+      () => undefined,
     );
-    await atomicWriteFile(refFile, `${JSON.stringify(reference, null, 2)}\n`);
-    await atomicWriteFile(
-      this.indexFile,
-      `${JSON.stringify([...this.references.values()], null, 2)}\n`,
-    );
+    await persistTask;
   }
 
   async setPath({

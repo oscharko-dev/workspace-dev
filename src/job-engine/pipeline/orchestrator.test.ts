@@ -238,6 +238,55 @@ test("PipelineOrchestrator rejects out-of-order stage plans before execution sta
   );
 });
 
+test("PipelineOrchestrator normalizes syncPublicJobProjection failures through the active stage", async () => {
+  const context = await createContext();
+  const orchestrator = createOrchestrator();
+  let projectionCalls = 0;
+  context.syncPublicJobProjection = async () => {
+    projectionCalls += 1;
+    throw new Error("projection storage unavailable");
+  };
+
+  await assert.rejects(
+    async () => {
+      await orchestrator.execute({
+        context,
+        plan: createCanonicalPlan({
+          "figma.source": {
+            execute: async () => {
+              await context.artifactStore.setPath({
+                key: STAGE_ARTIFACT_KEYS.figmaCleaned,
+                stage: "figma.source",
+                absolutePath: context.paths.figmaJsonFile,
+              });
+            },
+            artifacts: {
+              writes: [STAGE_ARTIFACT_KEYS.figmaCleaned],
+            },
+          },
+        }),
+      });
+    },
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal((error as WorkspacePipelineError).code, "E_PIPELINE_UNKNOWN");
+      assert.equal((error as WorkspacePipelineError).stage, "figma.source");
+      assert.equal(error.message, "projection storage unavailable");
+      return true;
+    },
+  );
+
+  assert.equal(projectionCalls, 1);
+  assert.equal(
+    context.job.stages.find((stage) => stage.name === "figma.source")?.status,
+    "failed",
+  );
+  assert.equal(
+    context.job.stages.find((stage) => stage.name === "figma.source")?.message,
+    "projection storage unavailable",
+  );
+});
+
 test("PipelineOrchestrator fails stages that exceed the configured disk quota", async () => {
   const context = await createContext({
     runtimeOverrides: {
