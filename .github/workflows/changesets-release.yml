@@ -64,6 +64,7 @@ jobs:
         run: |
           pnpm run typecheck
           pnpm run test:dast-smoke
+          pnpm run test:load
           pnpm run test
           pnpm run template:test
           pnpm run test:golden
@@ -91,6 +92,14 @@ jobs:
           pnpm run sbom:spdx
           pnpm run sbom:spdx:template
           pnpm run verify:airgap
+
+      - name: Upload runtime load smoke artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7
+        if: failure()
+        with:
+          name: workspace-dev-changesets-load-smoke-node-${{ matrix.node-version }}-${{ github.run_id }}
+          path: artifacts/testing/load-smoke
+          if-no-files-found: ignore
 
       - name: Upload release evidence artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7

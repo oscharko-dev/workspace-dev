@@ -135,6 +135,7 @@ Useful scripts:
 - `pnpm run ui:test:e2e` (Chromium-only deterministic inspector flow via local fixture rewrite, no Figma token required in CI; includes the Issue #1094 representative misclassification-rate gate at `<5%`)
 - `pnpm run ui:test:e2e:matrix` (Chromium + Firefox + WebKit + mobile device project matrix)
 - `pnpm run test:dast-smoke` (live HTTP security smoke for headers, same-origin behavior, and traversal rejection)
+- `pnpm run test:load` (live HTTP load/backpressure smoke for queued submit and regenerate traffic against small in-memory queue caps; writes JSON evidence to `artifacts/testing/load-smoke/`)
 - `pnpm run test:golden`
 - `pnpm run test:golden:update`
 
