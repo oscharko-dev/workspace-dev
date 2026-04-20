@@ -4,6 +4,7 @@
     "generation-metrics.json",
     "index.html",
     "package.json",
+    "perf-baseline.json",
     "perf-budget.json",
     "src/App.test.tsx",
     "src/App.tsx",
