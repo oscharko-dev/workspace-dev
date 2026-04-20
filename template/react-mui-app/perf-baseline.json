@@ -1,0 +1,26 @@
+{
+  "generatedAt": "2026-04-20T10:45:14.545Z",
+  "aggregate": {
+    "inp_p75_ms": 4.5,
+    "lcp_p75_ms": 1862.63845,
+    "cls_p75": 0,
+    "initial_js_kb": 153.71,
+    "route_transition_ms": 0
+  },
+  "budgets": {
+    "inp_p75_ms": 200,
+    "lcp_p75_ms": 2500,
+    "cls_p75": 0.1,
+    "initial_js_kb": 180,
+    "route_transition_ms": 300
+  },
+  "routes": [
+    "/",
+    "/overview",
+    "/checkout"
+  ],
+  "profiles": [
+    "mobile",
+    "desktop"
+  ]
+}

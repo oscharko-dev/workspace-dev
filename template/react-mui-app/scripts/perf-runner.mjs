@@ -300,7 +300,7 @@ const resolveScriptConfig = async () => {
   }).filter((entry) => entry === "mobile" || entry === "desktop");
   const artifactDir = process.env.FIGMAPIPE_PERF_ARTIFACT_DIR?.trim() || path.join(process.cwd(), "artifacts", "performance");
   const baselinePath =
-    process.env.FIGMAPIPE_PERF_BASELINE_PATH?.trim() || path.join(artifactDir, "perf-baseline.json");
+    process.env.FIGMAPIPE_PERF_BASELINE_PATH?.trim() || path.join(process.cwd(), "perf-baseline.json");
   const reportPath = process.env.FIGMAPIPE_PERF_REPORT_PATH?.trim() || path.join(artifactDir, `perf-${mode}-report.json`);
   const regressionTolerancePct =
     Number(process.env.FIGMAPIPE_PERF_REGRESSION_TOLERANCE_PCT ?? budgetConfig.regressionTolerancePct ?? 10) || 10;

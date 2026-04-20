@@ -213,7 +213,6 @@ jobs:
   performance-web:
     timeout-minutes: 180
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
@@ -238,10 +237,10 @@ jobs:
       - name: Build template app
         run: pnpm --dir template/react-mui-app run build
 
-      - name: Assert web performance budgets and regression (warn-only)
+      - name: Assert web performance budgets and regression
         env:
           FIGMAPIPE_PERF_ARTIFACT_DIR: template/react-mui-app/artifacts/performance
-          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/artifacts/performance/perf-baseline.json
+          FIGMAPIPE_PERF_BASELINE_PATH: template/react-mui-app/perf-baseline.json
           FIGMAPIPE_PERF_ROUTES_JSON: '["/","/overview","/checkout"]'
           FIGMAPIPE_PERF_PROFILES_JSON: '["mobile","desktop"]'
           FIGMAPIPE_PERF_STRICT: "true"

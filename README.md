@@ -458,8 +458,10 @@ Bundled template (`template/react-mui-app`) includes a baseline + assertion pipe
 - `pnpm --dir template/react-mui-app run perf:baseline`
 - `pnpm --dir template/react-mui-app run perf:assert`
 
-Artifacts are written to `template/react-mui-app/artifacts/performance` by default.
+Approved release baselines live in `template/react-mui-app/perf-baseline.json`.
+Runtime reports and Lighthouse artifacts are written to `template/react-mui-app/artifacts/performance`.
 Budget policy is configured in `template/react-mui-app/perf-budget.json`.
+The dev quality gate keeps this assertion warn-only for iteration speed; release and publish workflows treat it as blocking.
 Detailed operating notes: `docs/react-web-performance.md`.
 
 ## React Compiler (template opt-in)
