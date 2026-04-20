@@ -46,6 +46,11 @@ export {
 
 export { createWorkspaceServer } from "./server.js";
 export type { WorkspaceServer } from "./server.js";
+export type {
+  InjectRequest,
+  InjectResponse,
+  WorkspaceServerApp,
+} from "./server/app-inject.js";
 
 export {
   validateModeLock,

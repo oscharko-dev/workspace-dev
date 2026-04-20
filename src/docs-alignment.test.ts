@@ -373,7 +373,10 @@ test("docs: generated API reference stays wired to the public entrypoints", asyn
   assert.match(apiReferenceIndex, /\[index\]\(index\/README\.md\)/);
   assert.match(rootApiReference, /^# index$/m);
   assert.match(rootApiReference, /^## Interfaces$/m);
+  assert.match(rootApiReference, /^### InjectRequest$/m);
+  assert.match(rootApiReference, /^### InjectResponse$/m);
   assert.match(rootApiReference, /^### WorkspaceServer$/m);
+  assert.match(rootApiReference, /^### WorkspaceServerApp$/m);
   assert.match(rootApiReference, /^### createWorkspaceServer\(\)$/m);
   assert.match(contractsApiReference, /^# contracts$/m);
   assert.match(contractsApiReference, /^## Interfaces$/m);

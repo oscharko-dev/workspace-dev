@@ -866,6 +866,60 @@ https://v8.dev/docs/stack-trace-api#customizing-stack-traces
 
 ***
 
+### InjectRequest
+
+#### Properties
+
+##### headers?
+
+> `optional` **headers?**: `Record`\<`string`, `string`\>
+
+##### method
+
+> **method**: `string`
+
+##### payload?
+
+> `optional` **payload?**: `unknown`
+
+##### url
+
+> **url**: `string`
+
+***
+
+### InjectResponse
+
+#### Properties
+
+##### body
+
+> **body**: `string`
+
+##### headers
+
+> **headers**: `Record`\<`string`, `string`\>
+
+##### json
+
+> **json**: \<`T`\>() => `T`
+
+###### Type Parameters
+
+###### T
+
+`T` = `unknown`
+
+###### Returns
+
+`T`
+
+##### statusCode
+
+> **statusCode**: `number`
+
+***
+
 ### ModeLockValidationResult
 
 #### Properties
@@ -1266,7 +1320,7 @@ Project-specific working directory.
 
 ##### app
 
-> **app**: `WorkspaceServerApp`
+> **app**: [`WorkspaceServerApp`](#workspaceserverapp-1)
 
 ##### host
 
@@ -1283,6 +1337,42 @@ Project-specific working directory.
 ##### url
 
 > **url**: `string`
+
+***
+
+### WorkspaceServerApp
+
+#### Properties
+
+##### addresses
+
+> **addresses**: () => `object`[]
+
+###### Returns
+
+`object`[]
+
+##### close
+
+> **close**: () => `Promise`\<`void`\>
+
+###### Returns
+
+`Promise`\<`void`\>
+
+##### inject
+
+> **inject**: (`request`) => `Promise`\<[`InjectResponse`](#injectresponse)\>
+
+###### Parameters
+
+###### request
+
+[`InjectRequest`](#injectrequest)
+
+###### Returns
+
+`Promise`\<[`InjectResponse`](#injectresponse)\>
 
 ## Type Aliases
 

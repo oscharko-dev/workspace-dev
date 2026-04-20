@@ -10,6 +10,5 @@
   "cleanOutputDir": true,
   "treatValidationWarningsAsErrors": true,
   "membersWithOwnFile": [],
-  "intentionallyNotExported": ["WorkspaceServerApp"],
   "out": "docs/api"
 }
