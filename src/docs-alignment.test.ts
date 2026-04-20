@@ -148,6 +148,7 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(contributingDoc, /feature branch from `dev`/);
   assert.match(contributingDoc, /PR targeting `dev`/);
   assert.match(contributingDoc, /dev -> dev-gate -> main/);
+  assert.match(contributingDoc, /\[GOVERNANCE\.md\]\(GOVERNANCE\.md\)/);
   assert.match(contributingDoc, /## Adding new validated fields/);
   assert.match(contributingDoc, /allowedKeys/);
   assert.match(contributingDoc, /formatZodError/);
@@ -157,10 +158,12 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(schemasSource, /Define an explicit `allowedKeys` set for each object schema and reject/);
   assert.match(schemasSource, /Collect failures in `ValidationIssue\[\]` with stable paths and messages/);
   assert.match(packageManifest, /"THREAT_MODEL\.md"/);
+  assert.match(packageManifest, /"GOVERNANCE\.md"/);
   assert.match(readmeDoc, /## Repository branch flow/i);
   assert.match(readmeDoc, /`dev` is the active development branch/i);
   assert.match(readmeDoc, /`dev-gate` is the protected quality gate branch/i);
   assert.match(readmeDoc, /`main` is the release branch/i);
+  assert.match(readmeDoc, /\[GOVERNANCE\.md\]\(GOVERNANCE\.md\)/);
   assert.match(readmeDoc, /`THREAT_MODEL\.md`/);
   assert.match(readmeDoc, /TypeScript `>=5\.0\.0` for typed package consumption/);
   assert.match(readmeDoc, /published dual ESM\/CJS type surface is validated only for TypeScript 5\+ consumers/i);

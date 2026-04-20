@@ -2,6 +2,9 @@
 
 Thank you for your interest in contributing.
 
+Repository governance, maintainer decision authority, release approvals, and
+succession expectations are documented in [GOVERNANCE.md](GOVERNANCE.md).
+
 ## Development Setup
 
 ```bash

@@ -31,6 +31,9 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 - `dev-gate` is the protected quality gate branch; only `dev` may merge into `dev-gate`.
 - `main` is the release branch; only `dev-gate` may merge into `main`.
 
+Governance, release authority, maintainer responsibilities, and succession
+expectations are documented in [GOVERNANCE.md](GOVERNANCE.md).
+
 ## Prerequisites
 
 - Node.js `>=22.0.0`
