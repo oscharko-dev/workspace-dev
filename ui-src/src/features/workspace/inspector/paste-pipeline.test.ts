@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createInitialPipelineState,
+  normalizeRuntimePipelineErrorCode,
   pastePipelineReducer,
   startPastePipeline,
   type PastePipelineState,
@@ -416,6 +417,41 @@ describe("retry_stage action", () => {
   });
 });
 
+describe("normalizeRuntimePipelineErrorCode", () => {
+  it("maps hybrid resolver auth/rate/unavailable/not-found codes to catalog codes", () => {
+    expect(normalizeRuntimePipelineErrorCode("E_MCP_AUTH")).toEqual({
+      code: "AUTH_REQUIRED",
+      rawCode: "E_MCP_AUTH",
+    });
+    expect(normalizeRuntimePipelineErrorCode("E_MCP_RATE_LIMIT")).toEqual({
+      code: "MCP_RATE_LIMITED",
+      rawCode: "E_MCP_RATE_LIMIT",
+    });
+    expect(normalizeRuntimePipelineErrorCode("E_MCP_SERVER_ERROR")).toEqual({
+      code: "MCP_UNAVAILABLE",
+      rawCode: "E_MCP_SERVER_ERROR",
+    });
+    expect(normalizeRuntimePipelineErrorCode("E_FIGMA_REST_NOT_FOUND")).toEqual(
+      {
+        code: "FILE_NOT_FOUND",
+        rawCode: "E_FIGMA_REST_NOT_FOUND",
+      },
+    );
+    expect(normalizeRuntimePipelineErrorCode("E_FIGMA_NODE_NOT_FOUND")).toEqual(
+      {
+        code: "NODE_NOT_FOUND",
+        rawCode: "E_FIGMA_NODE_NOT_FOUND",
+      },
+    );
+  });
+
+  it("leaves unrelated codes unchanged", () => {
+    expect(normalizeRuntimePipelineErrorCode("CODEGEN_PARTIAL")).toEqual({
+      code: "CODEGEN_PARTIAL",
+    });
+  });
+});
+
 describe("PipelineError retryAfterMs", () => {
   it("propagates retryAfterMs through stage_failed", () => {
     let state = createInitialPipelineState();
@@ -433,6 +469,29 @@ describe("PipelineError retryAfterMs", () => {
     });
     const err = state.errors[0];
     expect(err?.retryAfterMs).toBe(60_000);
+  });
+
+  it("preserves the raw backend code in details when a resolver error is normalized", () => {
+    let state = createInitialPipelineState();
+    state = dispatch(state, { type: "start" });
+    state = dispatch(state, {
+      type: "stage_failed",
+      stage: "resolving",
+      error: {
+        stage: "resolving",
+        code: "AUTH_REQUIRED",
+        message: "Auth failed",
+        retryable: false,
+        details: {
+          rawCode: "E_MCP_AUTH",
+        },
+      },
+    });
+
+    expect(state.errors[0]).toMatchObject({
+      code: "AUTH_REQUIRED",
+      details: { rawCode: "E_MCP_AUTH" },
+    });
   });
 });
 

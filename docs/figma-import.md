@@ -467,6 +467,10 @@ errors in the Inspector.
 | `FILE_NOT_FOUND` / 404 | The file key is wrong, the file was deleted, or the token does not have access to the file. | Open the file in Figma, confirm the file key from the URL, and retry with a token from an account that can view the file. |
 | `NODE_NOT_FOUND` / `E_FIGMA_NODE_NOT_FOUND` | The layer or frame in the copied URL no longer exists in the file version you are resolving. | Copy a fresh Figma URL or select a stable frame before retrying. |
 
+For debugging, copied reports and raw job payloads may still include the lower-level
+backend codes (`E_MCP_*`, `E_FIGMA_REST_*`, `E_FIGMA_NODE_NOT_FOUND`) alongside
+the Inspector's generic banner/status mapping.
+
 ## Plan quota
 
 When the Inspector resolves Figma content through the Model Context Protocol
