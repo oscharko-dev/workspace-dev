@@ -367,6 +367,132 @@ The operator-facing benchmark maintenance commands under `integration/`
 `pnpm visual:audit live`) are separate REST-token workflows. They do not
 require MCP server setup; see [`CONTRIBUTING.md`](../CONTRIBUTING.md#choosing-the-correct-live-audit).
 
+## Scope, re-import, and delta mode
+
+This section covers the Inspector controls that appear after an import reaches
+`ready` or `partial`.
+
+### Multi-select scope and `Generate Selected`
+
+When the Inspector has a design tree, the left-hand tree adds a checkbox column
+with subtree-aware tri-state semantics:
+
+- `aria-checked="true"`: the node and its visible descendants are selected.
+- `aria-checked="mixed"`: only part of the subtree is selected.
+- `aria-checked="false"`: the node is excluded from the next scoped rerun.
+
+The checkbox toggles scope only; clicking the row still changes the active node
+selection for preview/diff/editing. Parent toggles apply to the whole subtree,
+and the tree toolbar exposes `Select All` / `Deselect All` for the current
+visible tree.
+
+The Inspector toolbar exposes four scope presets:
+
+- `Just this` - rerun only the currently selected node.
+- `+ Children` - rerun the selected node plus its descendants.
+- `All screens` - reset the scope to a full rerun.
+- `Changed` - after a re-import diff exists, scope to the nodes marked as added
+  or modified.
+
+`Generate Selected` submits the current scope:
+
+- When everything is selected, it re-runs the full import and sends `[]` as the
+  scoped node list.
+- When part of the tree is deselected, it re-runs only the selected nodes.
+- When nothing is selected, the button is disabled.
+
+### Re-import prompt and update diff
+
+The re-import banner appears when the current import matches a previous import
+session. Matching prefers the server-supplied `pasteIdentityKey`; when that is
+not available, WorkspaceDev can fall back to the same Figma `fileKey` +
+`nodeId` locator.
+
+The banner offers three actions:
+
+- `Regenerate changed` - rerun the import in delta mode for all changed nodes.
+- `Regenerate selected` - rerun only the currently selected changed nodes.
+- `Create new` - force a fresh full import instead of updating the existing one.
+
+When the current run includes a delta summary, the banner also shows an inline
+hint such as `2 of 10 nodes changed since last import`.
+
+Below the toolbar, the Inspector renders an `Update diff` panel with
+`Added` / `Modified` / `Removed` / `Unchanged` counts. The tree mirrors this
+with colored node markers:
+
+- green dot - added since the last import
+- amber dot - modified since the last import
+- rose dot - removed since the last import
+
+Use the existing code pane and diff controls to review the generated file
+changes after a rerun.
+
+### Import history and replay
+
+The `History` button opens the Import History panel. WorkspaceDev keeps the
+latest 20 import sessions, sorted newest-first. The backing store is persisted
+under `<outputRoot>/import-sessions/import-sessions.json`; with the default
+local runtime layout, that path is `.workspace-dev/import-sessions/import-sessions.json`.
+
+Each row can expose up to three actions:
+
+- `Re-import` - start a new job from the saved locator.
+- `Delete` - remove the session from history.
+- `Log` - expand the persisted audit trail for that session.
+
+Replay is only enabled when the session is still replayable. In practice that
+usually means the stored session still has a usable Figma file key (and, when
+needed, node id). History re-imports submit through the URL-backed hybrid path,
+so `FIGMA_ACCESS_TOKEN` must still be configured in the local runtime.
+
+To clear history from the UI, delete the rows you no longer need. Removing the
+last row removes the backing store file as part of best-effort cleanup.
+
+### URL entry and frame targeting
+
+The Inspector accepts direct Figma file URLs from the paste zone's
+`Enter Figma URL` form.
+
+- Accepted parser shapes include `https://figma.com/design/...`,
+  legacy `https://figma.com/file/...`, and branch URLs.
+- Paste a frame URL when you already know the target node.
+- If you paste a file-level URL without `node-id`, the Inspector asks for a
+  frame URL or a raw node id before enabling `Open design`.
+- Branch URLs are accepted; WorkspaceDev resolves the branch key as the
+  effective file key for MCP/REST access.
+- FigJam, Figma Make, and community URLs are rejected by this path.
+
+### Delta mode, fallback, and cache invalidation
+
+Delta mode is backed by on-disk fingerprint manifests in
+`<outputRoot>/paste-fingerprints/`. In the default local runtime layout this is
+`.workspace-dev/paste-fingerprints/`.
+
+- First import of a diffable source creates a baseline and reports
+  `strategy: baseline_created`.
+- Re-import of the same Figma file/root set can resolve to delta reuse
+  (`strategy: no_changes` or `strategy: delta`) when WorkspaceDev can load the
+  prior manifest and match it to the source job/file key.
+- If the structure changed too much, the prior source job no longer matches,
+  the file key is missing, or changed roots cannot be resolved, delta falls
+  back to a full rebuild. One explicit fallback reason is
+  `strategy: structural_break`.
+
+Two practical rules matter:
+
+1. Delta reuse requires a usable Figma file key. Imports without one still get a
+   summary, but they recreate the baseline instead of reusing prior output.
+2. The `Changed` preset is driven by the IR diff from the previous import, not
+   by a heuristic text search over generated files.
+
+Fingerprint manifests are retained for 30 days and the store trims itself to a
+64-entry least-recently-used window based on access time.
+
+When you need to invalidate the delta cache manually, delete the relevant
+manifest file or remove `<outputRoot>/paste-fingerprints/` entirely while the
+runtime is stopped. The next import recreates a fresh baseline automatically.
+
 ## FAQ
 
 **Can I paste any Figma copy directly?**

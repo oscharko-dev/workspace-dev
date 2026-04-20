@@ -37,6 +37,15 @@ const EXPECTED_FIGMA_IMPORT_QUALITY_GOVERNANCE_HEADINGS = [
   "Workspace inspector policy (`.workspace-inspector-policy.json`)",
 ] as const;
 
+const EXPECTED_FIGMA_IMPORT_SCOPE_HEADINGS = [
+  "Scope, re-import, and delta mode",
+  "Multi-select scope and `Generate Selected`",
+  "Re-import prompt and update diff",
+  "Import history and replay",
+  "URL entry and frame targeting",
+  "Delta mode, fallback, and cache invalidation",
+] as const;
+
 const EXPECTED_FIGMA_IMPORT_POLICY_KEYS = [
   "quality.bandThresholds.excellent",
   "quality.bandThresholds.good",
@@ -283,6 +292,43 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.match(figmaImportDoc, /`MCP_UNAVAILABLE`/);
   assert.match(figmaImportDoc, /`INSPECTOR_LIVE_E2E=1`/);
   assert.match(figmaImportDoc, /`FIGMA_FILE_KEY`/);
+  for (const heading of EXPECTED_FIGMA_IMPORT_SCOPE_HEADINGS) {
+    const level = heading === "Scope, re-import, and delta mode" ? "##" : "###";
+    assert.match(
+      figmaImportDoc,
+      new RegExp(`^${escapeRegExp(`${level} ${heading}`)}$`, "m"),
+    );
+  }
+  assert.match(figmaImportDoc, /`Just this`/);
+  assert.match(figmaImportDoc, /`\+ Children`/);
+  assert.match(figmaImportDoc, /`All screens`/);
+  assert.match(figmaImportDoc, /`Changed`/);
+  assert.match(figmaImportDoc, /`Generate Selected`/);
+  assert.match(figmaImportDoc, /`aria-checked="mixed"`/);
+  assert.match(figmaImportDoc, /`Regenerate changed`/);
+  assert.match(figmaImportDoc, /`Regenerate selected`/);
+  assert.match(figmaImportDoc, /`Create new`/);
+  assert.match(figmaImportDoc, /`Update diff`/);
+  assert.match(figmaImportDoc, /`Added` \/ `Modified` \/ `Removed` \/ `Unchanged`/);
+  assert.match(figmaImportDoc, /latest 20 import sessions/i);
+  assert.match(figmaImportDoc, /`<outputRoot>\/import-sessions\/import-sessions\.json`/);
+  assert.match(
+    figmaImportDoc,
+    /`\.workspace-dev\/import-sessions\/import-sessions\.json`/,
+  );
+  assert.match(figmaImportDoc, /`Delete` - remove the session from history\./);
+  assert.match(figmaImportDoc, /`Log` - expand the persisted audit trail/i);
+  assert.match(figmaImportDoc, /`Open design`/);
+  assert.match(figmaImportDoc, /legacy `https:\/\/figma\.com\/file\/\.\.\.`/i);
+  assert.match(figmaImportDoc, /branch urls are accepted/i);
+  assert.match(figmaImportDoc, /FigJam, Figma Make, and community URLs are rejected/i);
+  assert.match(figmaImportDoc, /`<outputRoot>\/paste-fingerprints\/`/);
+  assert.match(figmaImportDoc, /`\.workspace-dev\/paste-fingerprints\/`/);
+  assert.match(figmaImportDoc, /`strategy: baseline_created`/);
+  assert.match(figmaImportDoc, /`strategy: structural_break`/);
+  assert.match(figmaImportDoc, /prior source job no longer matches/i);
+  assert.match(figmaImportDoc, /30 days/);
+  assert.match(figmaImportDoc, /64-entry least-recently-used/i);
   assert.match(
     figmaImportDoc,
     /operator-facing benchmark maintenance commands[\s\S]*do not\s+require MCP server setup/i,
