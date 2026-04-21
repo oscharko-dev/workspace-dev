@@ -25,9 +25,8 @@ services:
       - --output-root
       - /workspace/.workspace-dev
     healthcheck:
-      test:
-        - CMD-SHELL
-        - node -e "fetch('http://127.0.0.1:1983/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      test: >-
+        node -e "fetch('http://127.0.0.1:1983/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
       interval: 10s
       timeout: 5s
       retries: 6
