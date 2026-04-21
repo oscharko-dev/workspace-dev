@@ -59,6 +59,7 @@
     "SUPPORT.md",
     "CONTRACT_CHANGELOG.md",
     "docs/migration-guide.md",
+    "docs/template-maintenance.md",
     "PIPELINE.md"
   ],
   "sideEffects": false,

@@ -26,6 +26,13 @@ pnpm lint:boundaries
 6. Open a PR targeting `dev` with clear change rationale.
 7. Maintainers promote vetted changes through `dev -> dev-gate -> main`.
 
+## Template Dependency Maintenance
+
+The generated React app template in `template/react-mui-app/` has its own
+dependency update policy, validation gates, and freshness automation. See
+[docs/template-maintenance.md](docs/template-maintenance.md) before changing
+template dependencies or lockfiles.
+
 ## Mutation Testing
 
 Run `pnpm run test:mutation` from the repository root to execute the scoped Stryker mutation suite for the critical issue modules.
