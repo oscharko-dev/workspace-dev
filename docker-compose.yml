@@ -1,0 +1,36 @@
+services:
+  workspace-dev:
+    build:
+      context: .
+    image: workspace-dev:local
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:1983:1983"
+    environment:
+      FIGMAPIPE_WORKSPACE_HOST: 0.0.0.0
+      FIGMAPIPE_WORKSPACE_PORT: "1983"
+      FIGMAPIPE_WORKSPACE_OUTPUT_ROOT: /workspace/.workspace-dev
+    volumes:
+      - workspace-dev-data:/workspace/.workspace-dev
+    command:
+      - start
+      - --host
+      - 0.0.0.0
+      - --port
+      - "1983"
+      - --output-root
+      - /workspace/.workspace-dev
+    healthcheck:
+      test: >-
+        node -e "fetch('http://127.0.0.1:1983/healthz').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 10s
+
+volumes:
+  workspace-dev-data:

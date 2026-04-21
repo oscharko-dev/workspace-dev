@@ -1,0 +1,125 @@
+name: Docker build
+
+on:
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-build:
+    name: Build and smoke test image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - name: Build image
+        run: docker build --pull -t workspace-dev:test .
+
+      - name: Validate compose model
+        run: docker compose config
+
+      - name: Verify entrypoint
+        run: docker run --rm workspace-dev:test --help
+
+      - name: Smoke test local_json job
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p .workspace-dev-docker-smoke
+          chmod 0777 .workspace-dev-docker-smoke
+
+          docker run --rm -d \
+            --name workspace-dev-smoke \
+            -p 127.0.0.1:21983:1983 \
+            -v "${PWD}/.workspace-dev-docker-smoke:/workspace/.workspace-dev" \
+            -v "${PWD}/src/parity/fixtures/golden/simple-auth/figma.json:/workspace/fixtures/simple-auth.json:ro" \
+            workspace-dev:test \
+            start \
+            --host 0.0.0.0 \
+            --port 1983 \
+            --output-root /workspace/.workspace-dev \
+            --export-images false
+
+          cleanup() {
+            docker logs workspace-dev-smoke || true
+            docker stop workspace-dev-smoke >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          node <<'EOF'
+          const baseUrl = "http://127.0.0.1:21983";
+          const timeoutAt = Date.now() + 60_000;
+          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+          async function waitForHealthz() {
+            while (Date.now() < timeoutAt) {
+              try {
+                const response = await fetch(`${baseUrl}/healthz`);
+                if (response.ok) {
+                  return;
+                }
+              } catch {
+                // Container may still be starting.
+              }
+              await sleep(500);
+            }
+            throw new Error("Timed out waiting for /healthz");
+          }
+
+          await waitForHealthz();
+
+          const submitResponse = await fetch(`${baseUrl}/workspace/submit`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              figmaSourceMode: "local_json",
+              llmCodegenMode: "deterministic",
+              figmaJsonPath: "/workspace/fixtures/simple-auth.json",
+              enableGitPr: false
+            })
+          });
+
+          if (submitResponse.status !== 202) {
+            throw new Error(`Submit failed with ${submitResponse.status}: ${await submitResponse.text()}`);
+          }
+
+          const accepted = await submitResponse.json();
+          const jobId = accepted.jobId;
+          if (typeof jobId !== "string" || jobId.length === 0) {
+            throw new Error(`Submit response did not include a jobId: ${JSON.stringify(accepted)}`);
+          }
+
+          while (Date.now() < timeoutAt) {
+            const jobResponse = await fetch(`${baseUrl}/workspace/jobs/${jobId}`);
+            if (!jobResponse.ok) {
+              throw new Error(`Job poll failed with ${jobResponse.status}: ${await jobResponse.text()}`);
+            }
+            const job = await jobResponse.json();
+            if (job.status === "completed") {
+              const resultResponse = await fetch(`${baseUrl}/workspace/jobs/${jobId}/result`);
+              if (!resultResponse.ok) {
+                throw new Error(`Job result failed with ${resultResponse.status}: ${await resultResponse.text()}`);
+              }
+              const result = await resultResponse.json();
+              if (result.status !== "completed" || result.outcome !== "success") {
+                throw new Error(`Unexpected job result: ${JSON.stringify(result)}`);
+              }
+              console.log(JSON.stringify({ jobId, status: result.status, outcome: result.outcome }));
+              process.exit(0);
+            }
+            if (["failed", "partial", "canceled"].includes(job.status)) {
+              throw new Error(`Job reached terminal failure status: ${JSON.stringify(job)}`);
+            }
+            await sleep(1000);
+          }
+
+          throw new Error(`Timed out waiting for job ${jobId} completion`);
+          EOF
