@@ -22,7 +22,7 @@ if (mode === "chromium") {
   playwrightArgs.push("--project=chromium");
 }
 if (mode === "live") {
-  playwrightArgs.push("--project=chromium", "ui-src/e2e/**/*.live.spec.ts");
+  playwrightArgs.push("--project=chromium", "live.spec.ts");
 }
 playwrightArgs.push(...forwardedArgs);
 
