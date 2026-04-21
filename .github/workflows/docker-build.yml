@@ -54,72 +54,73 @@ jobs:
           }
           trap cleanup EXIT
 
-          node <<'EOF'
-          const baseUrl = "http://127.0.0.1:21983";
-          const timeoutAt = Date.now() + 60_000;
-          const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+          base_url="http://127.0.0.1:21983"
+          timeout_at=$((SECONDS + 60))
 
-          async function waitForHealthz() {
-            while (Date.now() < timeoutAt) {
-              try {
-                const response = await fetch(`${baseUrl}/healthz`);
-                if (response.ok) {
-                  return;
-                }
-              } catch {
-                // Container may still be starting.
-              }
-              await sleep(500);
-            }
-            throw new Error("Timed out waiting for /healthz");
+          parse_json_field() {
+            node -e 'const fs = require("fs"); const [field] = process.argv.slice(1); const data = JSON.parse(fs.readFileSync(0, "utf8")); const value = data?.[field]; if (typeof value !== "string" || value.length === 0) process.exit(1); process.stdout.write(value);' "$1"
           }
 
-          await waitForHealthz();
+          while (( SECONDS < timeout_at )); do
+            if curl -fsS --max-time 5 "$base_url/healthz" >/dev/null; then
+              break
+            fi
+            sleep 1
+          done
 
-          const submitResponse = await fetch(`${baseUrl}/workspace/submit`, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              figmaSourceMode: "local_json",
-              llmCodegenMode: "deterministic",
-              figmaJsonPath: "/workspace/fixtures/simple-auth.json",
-              enableGitPr: false
-            })
-          });
+          if (( SECONDS >= timeout_at )); then
+            echo "Timed out waiting for /healthz" >&2
+            exit 1
+          fi
 
-          if (submitResponse.status !== 202) {
-            throw new Error(`Submit failed with ${submitResponse.status}: ${await submitResponse.text()}`);
-          }
+          submit_response="$(
+            curl -fsS --max-time 10 \
+              -H 'content-type: application/json' \
+              -d '{
+                "figmaSourceMode": "local_json",
+                "llmCodegenMode": "deterministic",
+                "figmaJsonPath": "/workspace/fixtures/simple-auth.json",
+                "enableGitPr": false
+              }' \
+              "$base_url/workspace/submit"
+          )"
 
-          const accepted = await submitResponse.json();
-          const jobId = accepted.jobId;
-          if (typeof jobId !== "string" || jobId.length === 0) {
-            throw new Error(`Submit response did not include a jobId: ${JSON.stringify(accepted)}`);
-          }
+          job_id="$(printf '%s' "$submit_response" | parse_json_field jobId)"
 
-          while (Date.now() < timeoutAt) {
-            const jobResponse = await fetch(`${baseUrl}/workspace/jobs/${jobId}`);
-            if (!jobResponse.ok) {
-              throw new Error(`Job poll failed with ${jobResponse.status}: ${await jobResponse.text()}`);
-            }
-            const job = await jobResponse.json();
-            if (job.status === "completed") {
-              const resultResponse = await fetch(`${baseUrl}/workspace/jobs/${jobId}/result`);
-              if (!resultResponse.ok) {
-                throw new Error(`Job result failed with ${resultResponse.status}: ${await resultResponse.text()}`);
-              }
-              const result = await resultResponse.json();
-              if (result.status !== "completed" || result.outcome !== "success") {
-                throw new Error(`Unexpected job result: ${JSON.stringify(result)}`);
-              }
-              console.log(JSON.stringify({ jobId, status: result.status, outcome: result.outcome }));
-              process.exit(0);
-            }
-            if (["failed", "partial", "canceled"].includes(job.status)) {
-              throw new Error(`Job reached terminal failure status: ${JSON.stringify(job)}`);
-            }
-            await sleep(1000);
-          }
+          while (( SECONDS < timeout_at )); do
+            job_response="$(curl -fsS --max-time 5 "$base_url/workspace/jobs/$job_id")"
+            job_status="$(
+              printf '%s' "$job_response" |
+                node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const status = data?.status; if (typeof status !== "string" || status.length === 0) process.exit(1); process.stdout.write(status);'
+            )"
 
-          throw new Error(`Timed out waiting for job ${jobId} completion`);
-          EOF
+            if [[ "$job_status" == "completed" ]]; then
+              result_response="$(curl -fsS --max-time 5 "$base_url/workspace/jobs/$job_id/result")"
+              result_status="$(
+                printf '%s' "$result_response" |
+                  node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const status = data?.status; if (typeof status !== "string" || status.length === 0) process.exit(1); process.stdout.write(status);'
+              )"
+              result_outcome="$(
+                printf '%s' "$result_response" |
+                  node -e 'const fs = require("fs"); const data = JSON.parse(fs.readFileSync(0, "utf8")); const outcome = data?.outcome; if (typeof outcome !== "string" || outcome.length === 0) process.exit(1); process.stdout.write(outcome);'
+              )"
+
+              if [[ "$result_status" != "completed" || "$result_outcome" != "success" ]]; then
+                echo "Unexpected job result: $result_response" >&2
+                exit 1
+              fi
+
+              printf '{"jobId":"%s","status":"%s","outcome":"%s"}\n' "$job_id" "$result_status" "$result_outcome"
+              exit 0
+            fi
+
+            if [[ "$job_status" == "failed" || "$job_status" == "partial" || "$job_status" == "canceled" ]]; then
+              echo "Job reached terminal failure status: $job_response" >&2
+              exit 1
+            fi
+
+            sleep 1
+          done
+
+          echo "Timed out waiting for job $job_id completion" >&2
+          exit 1
