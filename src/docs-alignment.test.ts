@@ -267,6 +267,7 @@ test("docs: troubleshooting guide is linked from README and included in the publ
 test("docs: versioning policy stays aligned across README and changelogs", async () => {
   const readmeDoc = await readRepoFile("README.md");
   const versioningDoc = await readRepoFile("VERSIONING.md");
+  const migrationGuide = await readRepoFile("docs/migration-guide.md");
   const contractChangelog = await readRepoFile("CONTRACT_CHANGELOG.md");
   const contractsSource = await readRepoFile("src/contracts/index.ts");
   const contributingDoc = await readRepoFile("CONTRIBUTING.md");
@@ -277,6 +278,7 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   );
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports: Record<string, unknown>;
+    files?: string[];
   };
   const actualIsolationExports = EXPECTED_ISOLATION_RUNTIME_EXPORTS.filter((exportName) =>
     Object.prototype.hasOwnProperty.call(publicApi, exportName)
@@ -288,6 +290,16 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(readmeDoc, /Use `CONTRACT_VERSION` for compatibility audits/i);
   assert.match(readmeDoc, /`CHANGELOG\.md` tracks package release history/i);
   assert.match(readmeDoc, /`CONTRACT_CHANGELOG\.md` tracks public contract history/i);
+  assert.match(readmeDoc, /## Migration/i);
+  assert.match(readmeDoc, /\[contract migration guide\]\(docs\/migration-guide\.md\)/i);
+  assert.ok(packageManifest.files?.includes("docs/migration-guide.md"));
+  assert.match(migrationGuide, /CONTRACT_VERSION/);
+  assert.match(migrationGuide, /workspace-dev\/contracts/);
+  assert.match(migrationGuide, /CONTRACT_CHANGELOG\.md/);
+  assert.match(migrationGuide, /workspace-dev": "~?1\.0\.0"/);
+  assert.match(migrationGuide, /WorkspaceJobInput\.requestSourceMode/);
+  assert.match(migrationGuide, /pnpm exec tsc --noEmit/);
+  assert.match(migrationGuide, /Rollback/i);
 
   assert.match(versioningDoc, /two independent version tracks/i);
   assert.match(versioningDoc, /consumers install and pin in their own `package\.json`/i);
