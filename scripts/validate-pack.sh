@@ -158,13 +158,14 @@ fi
 echo "  ✓ UI bundle assets present (js=$JS_ASSET_COUNT, css=$CSS_ASSET_COUNT)"
 
 # --- Runtime smokes ------------------------------------------------------
-echo "  ✓ Running packed CLI help smoke"
+echo "  - Running packed CLI help smoke"
 if ! node "$PACK_ROOT/dist/cli.js" --help >/dev/null; then
   echo "FAIL: packed CLI help smoke failed"
   exit 1
 fi
+echo "  ✓ Packed CLI help smoke passed"
 
-echo "  ✓ Running packed ESM import smoke"
+echo "  - Running packed ESM import smoke"
 if ! node --input-type=module -e '
 import { pathToFileURL } from "node:url";
 const mod = await import(pathToFileURL(process.argv[1]).href);
@@ -175,6 +176,32 @@ if (typeof mod.createWorkspaceServer !== "function") {
   echo "FAIL: packed ESM import smoke failed"
   exit 1
 fi
+echo "  ✓ Packed ESM import smoke passed"
+
+echo "  - Running packed contracts ESM import smoke"
+if ! node --input-type=module -e '
+import { pathToFileURL } from "node:url";
+const mod = await import(pathToFileURL(process.argv[1]).href);
+if (typeof mod.CONTRACT_VERSION !== "string" || !Array.isArray(mod.ALLOWED_FIGMA_SOURCE_MODES)) {
+  throw new Error("contracts ESM import failed");
+}
+' "$PACK_ROOT/dist/contracts/index.js"; then
+  echo "FAIL: packed contracts ESM import smoke failed"
+  exit 1
+fi
+echo "  ✓ Packed contracts ESM import smoke passed"
+
+echo "  - Running packed contracts CJS require smoke"
+if ! node -e '
+const mod = require(process.argv[1]);
+if (typeof mod.CONTRACT_VERSION !== "string" || !Array.isArray(mod.ALLOWED_FIGMA_SOURCE_MODES)) {
+  throw new Error("contracts CJS require failed");
+}
+' "$PACK_ROOT/dist/contracts/index.cjs"; then
+  echo "FAIL: packed contracts CJS require smoke failed"
+  exit 1
+fi
+echo "  ✓ Packed contracts CJS require smoke passed"
 
 # --- Forbidden paths/patterns ----------------------------------------------
 FORBIDDEN_ROOT_PATHS=(

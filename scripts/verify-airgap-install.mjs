@@ -28,11 +28,7 @@ const resolveCommandEnv = () => {
   return commandEnv;
 };
 
-const run = ({
-  command,
-  args,
-  cwd
-}) =>
+const run = ({ command, args, cwd }) =>
   new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       cwd,
@@ -89,40 +85,62 @@ const getAvailableLoopbackPort = async (host = "127.0.0.1") =>
       }
 
       const { port } = address;
-      server.close((closeError) => {
-        if (closeError) {
-          reject(closeError);
-          return;
-        }
-
+      server.close(() => {
         resolve(port);
       });
     });
   });
 
-const createChildExitError = (code, signal) =>
-  Object.assign(new Error(`workspace-dev exited before readiness (code=${code ?? "unknown"}${signal ? `, signal=${signal}` : ""}).`), {
-    name: "ChildProcessExitedError"
+const formatChildOutput = (output) => {
+  const trimmed = output.trim();
+  return trimmed.length > 0 ? `\n\nChild output:\n${trimmed}` : "";
+};
+
+const createChildExitError = (code, signal, output = "") =>
+  Object.assign(
+    new Error(
+      `workspace-dev exited before readiness (code=${code ?? "unknown"}${signal ? `, signal=${signal}` : ""}).${formatChildOutput(output)}`
+    ),
+    {
+      name: "ChildProcessExitedError"
+    }
+  );
+
+const createChildSpawnError = (error, output = "") =>
+  Object.assign(error instanceof Error ? error : new Error(String(error)), {
+    name: "ChildProcessSpawnError",
+    message: `${error instanceof Error ? error.message : String(error)}${formatChildOutput(output)}`
   });
 
-const createChildSpawnError = (error) =>
-  Object.assign(error instanceof Error ? error : new Error(String(error)), {
-    name: "ChildProcessSpawnError"
-  });
+const createBoundedOutputBuffer = (maxBytes = 32 * 1024) => {
+  let buffered = "";
+
+  const append = (chunk) => {
+    const text = Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk);
+    buffered += text;
+    if (buffered.length > maxBytes) {
+      buffered = buffered.slice(buffered.length - maxBytes);
+    }
+  };
+
+  const snapshot = () => buffered;
+
+  return { append, snapshot };
+};
 
 const isChildProcessFailureError = (error) =>
   error instanceof Error &&
   (error.name === "ChildProcessExitedError" || error.name === "ChildProcessSpawnError");
 
-const waitForHttpOk = async ({ baseUrl, expectedOutputRoot, child, paths, timeoutMs = 30_000 }) => {
+const waitForHttpOk = async ({ baseUrl, expectedOutputRoot, child, output, paths, timeoutMs = 30_000 }) => {
   const deadline = Date.now() + timeoutMs;
   let lastError;
   let rejectChildFailure = () => {};
   const onChildError = (error) => {
-    rejectChildFailure(createChildSpawnError(error));
+    rejectChildFailure(createChildSpawnError(error, output.snapshot()));
   };
   const onChildExit = (code, signal) => {
-    rejectChildFailure(createChildExitError(code, signal));
+    rejectChildFailure(createChildExitError(code, signal, output.snapshot()));
   };
   const childFailure = new Promise((_, reject) => {
     rejectChildFailure = reject;
@@ -175,7 +193,8 @@ const waitForHttpOk = async ({ baseUrl, expectedOutputRoot, child, paths, timeou
 
     throw new Error(
       `Timed out waiting for ${paths.join(", ")} to return HTTP 200 at ${baseUrl}.` +
-        (lastError instanceof Error ? ` Last error: ${lastError.message}` : "")
+        (lastError instanceof Error ? ` Last error: ${lastError.message}` : "") +
+        formatChildOutput(output.snapshot())
     );
   } finally {
     child.off("error", onChildError);
@@ -189,6 +208,7 @@ const stopChildProcess = async (child, timeoutMs = 5_000) => {
   }
 
   await new Promise((resolve, reject) => {
+    let finished = false;
     const killTimeout = setTimeout(() => {
       if (child.exitCode === null && child.signalCode === null) {
         child.kill("SIGKILL");
@@ -201,19 +221,45 @@ const stopChildProcess = async (child, timeoutMs = 5_000) => {
       child.off("exit", onExit);
     };
 
-    const onError = (error) => {
-      cleanup();
-      reject(error);
-    };
-
-    const onExit = () => {
+    const finish = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
       cleanup();
       resolve();
     };
 
+    const fail = (error) => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      cleanup();
+      reject(error);
+    };
+
+    const onError = (error) => {
+      fail(error);
+    };
+
+    const onExit = () => {
+      finish();
+    };
+
     child.once("error", onError);
     child.once("exit", onExit);
-    child.kill("SIGTERM");
+
+    if (child.exitCode !== null || child.signalCode !== null) {
+      finish();
+      return;
+    }
+
+    try {
+      child.kill("SIGTERM");
+    } catch (error) {
+      fail(error);
+    }
   });
 };
 
@@ -223,6 +269,7 @@ const main = async () => {
   const installDir = path.join(tmpRoot, "install");
   const host = "127.0.0.1";
   let startChild;
+  const startOutput = createBoundedOutputBuffer();
 
   try {
     await run({
@@ -300,12 +347,16 @@ const main = async () => {
         "true"
       ],
       cwd: installDir,
-      stdio: "ignore"
+      stdio: ["ignore", "pipe", "pipe"]
     });
+
+    startChild.stdout?.on("data", startOutput.append);
+    startChild.stderr?.on("data", startOutput.append);
 
     await waitForHttpOk({
       baseUrl: `http://${host}:${port}`,
       child: startChild,
+      output: startOutput,
       expectedOutputRoot: outputRoot,
       paths: ["/healthz", "/workspace", "/workspace/ui/inspector"]
     });
