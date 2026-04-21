@@ -8,6 +8,7 @@ Use this guide when `workspace-dev` must run inside a controlled environment wit
 - Verify signatures and provenance with the current npm command.
 - Run one repository-root `local_json` job that avoids Figma network calls.
 - Capture the proxy and firewall settings that matter for package resolution and localhost runtime use.
+- Use the reference container setup when your enterprise deployment standard requires Docker or Compose.
 
 ## Prerequisites
 
@@ -179,6 +180,7 @@ Operational notes:
 ## See Also
 
 - [README.md](../README.md)
+- [docs/container-deployment.md](./container-deployment.md)
 - [docs/local-runtime.md](./local-runtime.md)
 - [docs/figma-import.md](./figma-import.md)
 - [SECURITY.md](../SECURITY.md)

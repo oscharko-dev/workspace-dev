@@ -55,6 +55,8 @@ npm install --save-dev workspace-dev
 ```
 
 Enterprise and air-gapped install path: [docs/enterprise-quickstart.md](docs/enterprise-quickstart.md)
+
+Container deployment path: [docs/container-deployment.md](docs/container-deployment.md)
 Troubleshooting: [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 > **Safe defaults**: This repo enforces `ignore-scripts=true` and `save-exact=true` via the root `.npmrc`.
