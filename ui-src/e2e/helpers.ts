@@ -477,7 +477,11 @@ export async function findFirstSyncedNodeId(page: Page, previewNodeIds: string[]
  */
 export async function resetBrowserStorage(page: Page): Promise<void> {
   await page.evaluate(() => {
-    window.localStorage.clear();
-    window.sessionStorage.clear();
+    try {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    } catch {
+      // Ignore SecurityError on about:blank or cross-origin
+    }
   });
 }
