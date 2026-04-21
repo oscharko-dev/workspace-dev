@@ -4,10 +4,13 @@ import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(__dirname, "..");
+const workspaceDevLauncher = "pnpm";
+const workspaceDevLauncherArgs = ["exec", "workspace-dev"];
 
 const resolveCommandEnv = () => {
   const commandEnv = {
@@ -51,10 +54,175 @@ const run = ({
     });
   });
 
+const runWorkspaceDev = async ({ args, cwd }) =>
+  await run({
+    command: workspaceDevLauncher,
+    args: [...workspaceDevLauncherArgs, ...args],
+    cwd
+  });
+
+const spawnWorkspaceDev = ({ args, cwd, stdio }) =>
+  spawn(workspaceDevLauncher, [...workspaceDevLauncherArgs, ...args], {
+    cwd,
+    env: resolveCommandEnv(),
+    stdio
+  });
+
+const delay = async (milliseconds) =>
+  await new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
+
+const getAvailableLoopbackPort = async (host = "127.0.0.1") =>
+  await new Promise((resolve, reject) => {
+    const server = createServer();
+
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, host, () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => {
+          reject(new Error("Failed to allocate an available loopback port."));
+        });
+        return;
+      }
+
+      const { port } = address;
+      server.close((closeError) => {
+        if (closeError) {
+          reject(closeError);
+          return;
+        }
+
+        resolve(port);
+      });
+    });
+  });
+
+const createChildExitError = (code, signal) =>
+  Object.assign(new Error(`workspace-dev exited before readiness (code=${code ?? "unknown"}${signal ? `, signal=${signal}` : ""}).`), {
+    name: "ChildProcessExitedError"
+  });
+
+const createChildSpawnError = (error) =>
+  Object.assign(error instanceof Error ? error : new Error(String(error)), {
+    name: "ChildProcessSpawnError"
+  });
+
+const isChildProcessFailureError = (error) =>
+  error instanceof Error &&
+  (error.name === "ChildProcessExitedError" || error.name === "ChildProcessSpawnError");
+
+const waitForHttpOk = async ({ baseUrl, expectedOutputRoot, child, paths, timeoutMs = 30_000 }) => {
+  const deadline = Date.now() + timeoutMs;
+  let lastError;
+  let rejectChildFailure = () => {};
+  const onChildError = (error) => {
+    rejectChildFailure(createChildSpawnError(error));
+  };
+  const onChildExit = (code, signal) => {
+    rejectChildFailure(createChildExitError(code, signal));
+  };
+  const childFailure = new Promise((_, reject) => {
+    rejectChildFailure = reject;
+    child.once("error", onChildError);
+    child.once("exit", onChildExit);
+  });
+
+  try {
+    while (Date.now() < deadline) {
+      try {
+        await Promise.race([
+          (async () => {
+            for (const pathname of paths) {
+              const response = await fetch(new URL(pathname, baseUrl), {
+                signal: AbortSignal.timeout(2_000)
+              });
+
+              if (response.status !== 200) {
+                throw new Error(`Expected 200 from ${pathname}, received ${response.status}.`);
+              }
+
+              if (pathname === "/workspace") {
+                const status = await response.json();
+                if (typeof status !== "object" || status === null) {
+                  throw new Error("Expected /workspace to return a JSON object.");
+                }
+
+                const outputRoot = status.outputRoot;
+                if (outputRoot !== expectedOutputRoot) {
+                  throw new Error(
+                    `Expected /workspace outputRoot to equal ${expectedOutputRoot}, received ${String(outputRoot)}.`
+                  );
+                }
+              }
+            }
+          })(),
+          childFailure
+        ]);
+
+        return;
+      } catch (error) {
+        if (isChildProcessFailureError(error)) {
+          throw error;
+        }
+
+        lastError = error;
+        await Promise.race([delay(250), childFailure]);
+      }
+    }
+
+    throw new Error(
+      `Timed out waiting for ${paths.join(", ")} to return HTTP 200 at ${baseUrl}.` +
+        (lastError instanceof Error ? ` Last error: ${lastError.message}` : "")
+    );
+  } finally {
+    child.off("error", onChildError);
+    child.off("exit", onChildExit);
+  }
+};
+
+const stopChildProcess = async (child, timeoutMs = 5_000) => {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
+    const killTimeout = setTimeout(() => {
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGKILL");
+      }
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(killTimeout);
+      child.off("error", onError);
+      child.off("exit", onExit);
+    };
+
+    const onError = (error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const onExit = () => {
+      cleanup();
+      resolve();
+    };
+
+    child.once("error", onError);
+    child.once("exit", onExit);
+    child.kill("SIGTERM");
+  });
+};
+
 const main = async () => {
   const tmpRoot = await mkdtemp(path.join(os.tmpdir(), "workspace-dev-airgap-"));
   const packDir = path.join(tmpRoot, "pack");
   const installDir = path.join(tmpRoot, "install");
+  const host = "127.0.0.1";
+  let startChild;
 
   try {
     await run({
@@ -91,6 +259,11 @@ const main = async () => {
       cwd: installDir
     });
 
+    await runWorkspaceDev({
+      args: ["--help"],
+      cwd: installDir
+    });
+
     await run({
       command: "node",
       args: [
@@ -110,8 +283,45 @@ const main = async () => {
       cwd: installDir
     });
 
-    console.log("[airgap] Offline install and dual-module smoke checks passed.");
+    const port = await getAvailableLoopbackPort(host);
+    const outputRoot = path.join(installDir, "output-root");
+    await mkdir(outputRoot, { recursive: true });
+
+    startChild = spawnWorkspaceDev({
+      args: [
+        "start",
+        "--host",
+        host,
+        "--port",
+        String(port),
+        "--output-root",
+        outputRoot,
+        "--preview",
+        "true"
+      ],
+      cwd: installDir,
+      stdio: "ignore"
+    });
+
+    await waitForHttpOk({
+      baseUrl: `http://${host}:${port}`,
+      child: startChild,
+      expectedOutputRoot: outputRoot,
+      paths: ["/healthz", "/workspace", "/workspace/ui/inspector"]
+    });
+
+    await stopChildProcess(startChild);
+    startChild = undefined;
+
+    console.log("[airgap] Offline install, bin, module, and start smoke checks passed.");
   } finally {
+    if (startChild) {
+      try {
+        await stopChildProcess(startChild);
+      } catch {
+        // Best-effort cleanup during teardown.
+      }
+    }
     await rm(tmpRoot, { recursive: true, force: true });
   }
 };

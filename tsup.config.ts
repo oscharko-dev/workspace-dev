@@ -1,6 +1,7 @@
 import { defineConfig } from "tsup";
 
 const CJS_IMPORT_META_URL_SHIM = "__workspaceDevImportMetaUrl";
+const ESM_CREATE_REQUIRE_SHIM = "__workspaceDevCreateRequire";
 
 export default defineConfig({
   entry: {
@@ -25,6 +26,12 @@ export default defineConfig({
   outDir: "dist",
   cjsInterop: true,
   esbuildOptions(options, context) {
+    if (context.format === "esm") {
+      options.banner = {
+        ...(options.banner ?? {}),
+        js: `${options.banner?.js ? `${options.banner.js}\n` : ""}import { createRequire as ${ESM_CREATE_REQUIRE_SHIM} } from "node:module";\nconst require = ${ESM_CREATE_REQUIRE_SHIM}(import.meta.url);`
+      };
+    }
     if (context.format === "cjs") {
       options.define = {
         ...(options.define ?? {}),
