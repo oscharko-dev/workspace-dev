@@ -1,0 +1,96 @@
+name: workspace-dev template dependency freshness
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check-template-dependencies:
+    name: Check template dependency freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f  # v6
+        with:
+          node-version: 22
+
+      - name: Check template dependency freshness
+        run: >-
+          node scripts/check-template-dependency-freshness.mjs
+          --json-output artifacts/template-dependency-freshness/report.json
+          --markdown-output artifacts/template-dependency-freshness/issue.md
+
+      - name: Open or update freshness issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
+        env:
+          REPORT_PATH: artifacts/template-dependency-freshness/report.json
+          ISSUE_BODY_PATH: artifacts/template-dependency-freshness/issue.md
+        with:
+          script: |
+            const fs = require("node:fs");
+            const marker = "<!-- workspace-dev:template-dependency-freshness -->";
+            const title = "Template dependencies need minor or patch updates";
+            const report = JSON.parse(fs.readFileSync(process.env.REPORT_PATH, "utf8"));
+            const { owner, repo } = context.repo;
+            const openIssues = await github.paginate(github.rest.issues.listForRepo, {
+              owner,
+              repo,
+              state: "open",
+              per_page: 100,
+            });
+            const existingIssue = openIssues.find((issue) => {
+              return !issue.pull_request &&
+                issue.title === title &&
+                typeof issue.body === "string" &&
+                issue.body.startsWith(marker);
+            });
+
+            if (!Array.isArray(report.staleDependencies) || report.staleDependencies.length === 0) {
+              if (existingIssue) {
+                await github.rest.issues.createComment({
+                  owner,
+                  repo,
+                  issue_number: existingIssue.number,
+                  body: `${marker}\n\nTemplate dependency freshness is back within policy as of ${report.checkedAt}. Closing this automation-created issue.`,
+                });
+                await github.rest.issues.update({
+                  owner,
+                  repo,
+                  issue_number: existingIssue.number,
+                  state: "closed",
+                  state_reason: "completed",
+                });
+                core.notice(`Closed resolved template dependency freshness issue #${existingIssue.number}.`);
+                return;
+              }
+              core.notice("No template dependencies are more than 30 days behind latest same-major minor/patch releases.");
+              return;
+            }
+
+            const body = fs.readFileSync(process.env.ISSUE_BODY_PATH, "utf8");
+            if (existingIssue) {
+              await github.rest.issues.update({
+                owner,
+                repo,
+                issue_number: existingIssue.number,
+                body,
+              });
+              core.notice(`Updated template dependency freshness issue #${existingIssue.number}.`);
+              return;
+            }
+
+            const created = await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });
+            core.notice(`Created template dependency freshness issue #${created.data.number}.`);
