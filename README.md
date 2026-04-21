@@ -26,6 +26,13 @@ Autonomous local Workspace runtime for deterministic Figma-to-code generation vi
 - `CHANGELOG.md` tracks package release history, while `CONTRACT_CHANGELOG.md` tracks public contract history.
 - npm and GitHub Releases are the authoritative sources for published package versions.
 
+## Migration
+
+Use the [contract migration guide](docs/migration-guide.md) when upgrading across
+`CONTRACT_VERSION` bumps. It covers programmatic version detection, contract
+semver policy, downstream package pinning, and a breaking-change migration
+checklist.
+
 ## Repository branch flow
 
 - `dev` is the active development branch for feature work and contributor pull requests.
