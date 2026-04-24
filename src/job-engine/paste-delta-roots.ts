@@ -15,7 +15,7 @@ const collectScreenLikeRoots = (
     roots.push(node);
     return;
   }
-  if (node.type !== "SECTION" || !Array.isArray(node.children)) {
+  if (node.type !== "SECTION" || node.children === undefined) {
     return;
   }
   for (const child of node.children) {
@@ -23,9 +23,7 @@ const collectScreenLikeRoots = (
   }
 };
 
-const asDiffableFigmaNode = (
-  value: unknown,
-): DiffableFigmaNode | undefined => {
+const asDiffableFigmaNode = (value: unknown): DiffableFigmaNode | undefined => {
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
@@ -50,14 +48,17 @@ export const extractDiffablePasteRoots = (
       typeof document === "object" && document !== null
         ? (document as Record<string, unknown>)
         : undefined;
-    if (documentRecord !== undefined && Array.isArray(documentRecord.children)) {
+    if (
+      documentRecord !== undefined &&
+      Array.isArray(documentRecord.children)
+    ) {
       const roots: DiffableFigmaNode[] = [];
       for (const child of documentRecord.children) {
         const node = asDiffableFigmaNode(child);
         if (node === undefined) {
           continue;
         }
-        if (node.type === "CANVAS" && Array.isArray(node.children)) {
+        if (node.type === "CANVAS" && node.children !== undefined) {
           for (const pageChild of node.children) {
             collectScreenLikeRoots(pageChild, roots);
           }
@@ -71,7 +72,9 @@ export const extractDiffablePasteRoots = (
 
   if (typeof record.nodes === "object" && record.nodes !== null) {
     const roots: DiffableFigmaNode[] = [];
-    for (const entry of Object.values(record.nodes as Record<string, unknown>)) {
+    for (const entry of Object.values(
+      record.nodes as Record<string, unknown>,
+    )) {
       if (typeof entry !== "object" || entry === null) {
         continue;
       }

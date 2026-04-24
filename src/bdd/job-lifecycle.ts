@@ -22,7 +22,7 @@ export const jobLifecycleScenarioNames = [
   "Return the existing terminal state when canceling a completed job",
 ] as const;
 
-test("bdd contract: Submit a valid job request", async () => {
+void test("bdd contract: Submit a valid job request", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -49,7 +49,7 @@ test("bdd contract: Submit a valid job request", async () => {
   }
 });
 
-test("bdd contract: Reject an invalid submit payload", async () => {
+void test("bdd contract: Reject an invalid submit payload", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -77,7 +77,7 @@ test("bdd contract: Reject an invalid submit payload", async () => {
   }
 });
 
-test("bdd contract: Treat duplicate submit requests as separate jobs", async () => {
+void test("bdd contract: Treat duplicate submit requests as separate jobs", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -85,8 +85,14 @@ test("bdd contract: Treat duplicate submit requests as separate jobs", async () 
   });
 
   try {
-    const firstSubmit = await submitRestJob({ server, figmaFileKey: "duplicate-key" });
-    const secondSubmit = await submitRestJob({ server, figmaFileKey: "duplicate-key" });
+    const firstSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "duplicate-key",
+    });
+    const secondSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "duplicate-key",
+    });
 
     assert.equal(firstSubmit.status, "queued");
     assert.equal(secondSubmit.status, "queued");
@@ -113,7 +119,7 @@ test("bdd contract: Treat duplicate submit requests as separate jobs", async () 
   }
 });
 
-test("bdd contract: Report queued and running job states", async () => {
+void test("bdd contract: Report queued and running job states", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -125,8 +131,14 @@ test("bdd contract: Report queued and running job states", async () => {
   let secondJobId = "";
 
   try {
-    const firstSubmit = await submitRestJob({ server, figmaFileKey: "queue-1" });
-    const secondSubmit = await submitRestJob({ server, figmaFileKey: "queue-2" });
+    const firstSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "queue-1",
+    });
+    const secondSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "queue-2",
+    });
     firstJobId = String(firstSubmit.jobId);
     secondJobId = String(secondSubmit.jobId);
 
@@ -165,7 +177,7 @@ test("bdd contract: Report queued and running job states", async () => {
   }
 });
 
-test("bdd contract: Report completed and failed terminal states", async () => {
+void test("bdd contract: Report completed and failed terminal states", async () => {
   const completedLayout = await createTempWorkspaceLayout();
   const completedServer = await createBddWorkspaceServer({
     outputRoot: completedLayout.outputRoot,
@@ -196,7 +208,10 @@ test("bdd contract: Report completed and failed terminal states", async () => {
   });
 
   try {
-    const missingPath = path.join(failedLayout.workspaceRoot, "missing-input.json");
+    const missingPath = path.join(
+      failedLayout.workspaceRoot,
+      "missing-input.json",
+    );
     const submitResponse = await failedServer.app.inject({
       method: "POST",
       url: "/workspace/submit",
@@ -222,7 +237,7 @@ test("bdd contract: Report completed and failed terminal states", async () => {
   }
 });
 
-test("bdd contract: Cancel queued and running jobs", async () => {
+void test("bdd contract: Cancel queued and running jobs", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -232,8 +247,14 @@ test("bdd contract: Cancel queued and running jobs", async () => {
   });
 
   try {
-    const firstSubmit = await submitRestJob({ server, figmaFileKey: "cancel-1" });
-    const secondSubmit = await submitRestJob({ server, figmaFileKey: "cancel-2" });
+    const firstSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "cancel-1",
+    });
+    const secondSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "cancel-2",
+    });
     const firstJobId = String(firstSubmit.jobId);
     const secondJobId = String(secondSubmit.jobId);
 
@@ -281,7 +302,7 @@ test("bdd contract: Cancel queued and running jobs", async () => {
   }
 });
 
-test("bdd contract: Return the existing terminal state when canceling a completed job", async () => {
+void test("bdd contract: Return the existing terminal state when canceling a completed job", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -289,7 +310,10 @@ test("bdd contract: Return the existing terminal state when canceling a complete
   });
 
   try {
-    const submitBody = await submitRestJob({ server, figmaFileKey: "cancel-complete" });
+    const submitBody = await submitRestJob({
+      server,
+      figmaFileKey: "cancel-complete",
+    });
     const jobId = String(submitBody.jobId);
     const terminal = await waitForJobTerminalState({
       server,
