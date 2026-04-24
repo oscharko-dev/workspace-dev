@@ -45,7 +45,7 @@ const createCompletedLocalJsonSource = async () => {
   return { ...layout, server, sourceJobId };
 };
 
-test("bdd contract: Regenerate from a completed source job with lineage", async () => {
+void test("bdd contract: Regenerate from a completed source job with lineage", async () => {
   const { root, server, sourceJobId } = await createCompletedLocalJsonSource();
 
   try {
@@ -87,7 +87,7 @@ test("bdd contract: Regenerate from a completed source job with lineage", async 
   }
 });
 
-test("bdd contract: Return a sync dry-run plan with a confirmation token", async () => {
+void test("bdd contract: Return a sync dry-run plan with a confirmation token", async () => {
   const { root, server, sourceJobId } = await createCompletedLocalJsonSource();
 
   try {
@@ -139,7 +139,7 @@ test("bdd contract: Return a sync dry-run plan with a confirmation token", async
   }
 });
 
-test("bdd contract: Require approval and single-use confirmation tokens for sync apply", async () => {
+void test("bdd contract: Require approval and single-use confirmation tokens for sync apply", async () => {
   const { root, server, sourceJobId } = await createCompletedLocalJsonSource();
 
   try {
@@ -222,9 +222,9 @@ test("bdd contract: Require approval and single-use confirmation tokens for sync
       url: "/workspace/import-sessions",
     });
     assert.equal(importSessionsResponse.statusCode, 200);
-    const importSessions = (
-      importSessionsResponse.json<Record<string, unknown>>().sessions ?? []
-    ) as Array<Record<string, unknown>>;
+    const importSessions = (importSessionsResponse.json<
+      Record<string, unknown>
+    >().sessions ?? []) as Array<Record<string, unknown>>;
     const sourceImportSession = importSessions.find(
       (session) => session.jobId === sourceJobId,
     );
@@ -232,7 +232,7 @@ test("bdd contract: Require approval and single-use confirmation tokens for sync
 
     const approveResponse = await server.app.inject({
       method: "POST",
-      url: `/workspace/import-sessions/${String(sourceImportSession?.id)}/approve`,
+      url: `/workspace/import-sessions/${String(sourceImportSession.id)}/approve`,
       headers: {
         authorization: `Bearer ${TEST_IMPORT_SESSION_EVENT_BEARER_TOKEN}`,
         "content-type": "application/json",
@@ -240,7 +240,10 @@ test("bdd contract: Require approval and single-use confirmation tokens for sync
       payload: {},
     });
     assert.equal(approveResponse.statusCode, 200);
-    assert.equal(approveResponse.json<Record<string, unknown>>().kind, "approved");
+    assert.equal(
+      approveResponse.json<Record<string, unknown>>().kind,
+      "approved",
+    );
 
     const applyResponse = await server.app.inject({
       method: "POST",
@@ -262,7 +265,7 @@ test("bdd contract: Require approval and single-use confirmation tokens for sync
     const firstFile = files[0];
     const writtenFilePath = path.join(
       String(dryRunBody.destinationRoot),
-      ...String(firstFile?.path ?? "").split("/"),
+      ...(typeof firstFile?.path === "string" ? firstFile.path : "").split("/"),
     );
     await stat(writtenFilePath);
     assert.equal(
@@ -295,7 +298,7 @@ test("bdd contract: Require approval and single-use confirmation tokens for sync
   }
 });
 
-test("bdd contract: Return queue backpressure when capacity is exhausted", async () => {
+void test("bdd contract: Return queue backpressure when capacity is exhausted", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -305,8 +308,14 @@ test("bdd contract: Return queue backpressure when capacity is exhausted", async
   });
 
   try {
-    const firstSubmit = await submitRestJob({ server, figmaFileKey: "backpressure-1" });
-    const secondSubmit = await submitRestJob({ server, figmaFileKey: "backpressure-2" });
+    const firstSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "backpressure-1",
+    });
+    const secondSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "backpressure-2",
+    });
     const thirdResponse = await server.app.inject({
       method: "POST",
       url: "/workspace/submit",
@@ -350,7 +359,7 @@ test("bdd contract: Return queue backpressure when capacity is exhausted", async
   }
 });
 
-test("bdd contract: Return rate limiting with Retry-After", async () => {
+void test("bdd contract: Return rate limiting with Retry-After", async () => {
   const { root, outputRoot } = await createTempWorkspaceLayout();
   const server = await createBddWorkspaceServer({
     outputRoot,
@@ -359,7 +368,10 @@ test("bdd contract: Return rate limiting with Retry-After", async () => {
   });
 
   try {
-    const firstSubmit = await submitRestJob({ server, figmaFileKey: "rate-limit-1" });
+    const firstSubmit = await submitRestJob({
+      server,
+      figmaFileKey: "rate-limit-1",
+    });
     const secondResponse = await server.app.inject({
       method: "POST",
       url: "/workspace/submit",

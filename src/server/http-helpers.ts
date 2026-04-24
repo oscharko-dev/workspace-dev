@@ -53,10 +53,7 @@ function applySecurityHeaders({
   response.setHeader("cache-control", cacheControl ?? "no-store");
   const strictTransportSecurity = resolveStrictTransportSecurity();
   if (strictTransportSecurity !== undefined) {
-    response.setHeader(
-      "strict-transport-security",
-      strictTransportSecurity,
-    );
+    response.setHeader("strict-transport-security", strictTransportSecurity);
   } else {
     response.removeHeader("strict-transport-security");
   }
@@ -174,8 +171,7 @@ type JsonContainerFrame =
       state: "expectingValueOrEnd" | "expectingValue" | "expectingCommaOrEnd";
     };
 
-const JSON_NUMBER_PATTERN =
-  /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+const JSON_NUMBER_PATTERN = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
 
 function isJsonWhitespace(character: string): boolean {
   return (
@@ -199,7 +195,14 @@ function normalizeRequestChunk(chunk: unknown): Buffer {
   if (chunk instanceof Uint8Array) {
     return Buffer.from(chunk);
   }
-  return Buffer.from(String(chunk), "utf8");
+  if (
+    typeof chunk === "number" ||
+    typeof chunk === "boolean" ||
+    typeof chunk === "bigint"
+  ) {
+    return Buffer.from(String(chunk), "utf8");
+  }
+  return Buffer.from("", "utf8");
 }
 
 class StreamingJsonParser {
@@ -277,13 +280,13 @@ class StreamingJsonParser {
             this.pushValue(frame.value);
             return index + 1;
           }
-          if (character === "\"") {
+          if (character === '"') {
             this.startString(true);
             return index + 1;
           }
           throw new Error("Invalid JSON payload.");
         case "expectingKey":
-          if (character === "\"") {
+          if (character === '"') {
             this.startString(true);
             return index + 1;
           }
@@ -359,7 +362,7 @@ class StreamingJsonParser {
       });
       return index + 1;
     }
-    if (character === "\"") {
+    if (character === '"') {
       this.startString(false);
       return index + 1;
     }
@@ -404,9 +407,7 @@ class StreamingJsonParser {
         cursor += 1;
         if (this.unicodeEscapeDigits.length === 4) {
           this.stringSegments.push(
-            String.fromCharCode(
-              Number.parseInt(this.unicodeEscapeDigits, 16),
-            ),
+            String.fromCharCode(Number.parseInt(this.unicodeEscapeDigits, 16)),
           );
           this.unicodeEscapePending = false;
           this.unicodeEscapeDigits = "";
@@ -418,7 +419,7 @@ class StreamingJsonParser {
         const character = input.charAt(cursor);
         cursor += 1;
         switch (character) {
-          case "\"":
+          case '"':
           case "\\":
           case "/":
             this.stringSegments.push(character);
@@ -466,7 +467,7 @@ class StreamingJsonParser {
       }
 
       const character = input.charAt(cursor);
-      if (character === "\"") {
+      if (character === '"') {
         const value = this.stringSegments.join("");
         this.mode = "normal";
         this.stringSegments.length = 0;
@@ -583,10 +584,7 @@ class StreamingJsonParser {
     }
 
     if (frame.kind === "object") {
-      if (
-        frame.state !== "expectingValue" ||
-        frame.currentKey === undefined
-      ) {
+      if (frame.state !== "expectingValue" || frame.currentKey === undefined) {
         throw new Error("Invalid JSON payload.");
       }
       Object.defineProperty(frame.value, frame.currentKey, {
@@ -620,7 +618,9 @@ export async function readJsonBody(
   let bodyBytes = 0;
 
   for await (const chunk of request) {
-    const normalizedChunkBuffer = normalizeRequestChunk(chunk as string | Buffer | Uint8Array | undefined | null);
+    const normalizedChunkBuffer = normalizeRequestChunk(
+      chunk as string | Buffer | Uint8Array | undefined | null,
+    );
     bodyBytes += normalizedChunkBuffer.byteLength;
     if (bodyBytes > maxBytes) {
       return {
@@ -660,7 +660,9 @@ export async function readStreamingJsonBody(
 
   try {
     for await (const chunk of request) {
-      const normalizedChunkBuffer = normalizeRequestChunk(chunk as string | Buffer | Uint8Array | undefined | null);
+      const normalizedChunkBuffer = normalizeRequestChunk(
+        chunk as string | Buffer | Uint8Array | undefined | null,
+      );
       bodyBytes += normalizedChunkBuffer.byteLength;
       if (bodyBytes > maxBytes) {
         return {
