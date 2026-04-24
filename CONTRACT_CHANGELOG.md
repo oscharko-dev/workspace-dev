@@ -31,6 +31,20 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.19.0] - 2026-04-24
+
+### Added (Issue #1361)
+
+- `BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION` — schema version constant (`"1.0.0"`) for the redacted Business Test Intent IR artifact consumed by the downstream test-case generator.
+- `BusinessTestIntentIr`, `BusinessTestIntentIrSource`, `BusinessTestIntentScreen`, `DetectedField`, `DetectedAction`, `DetectedValidation`, `DetectedNavigation`, `InferredBusinessObject`, `PiiIndicator`, `IntentRedaction`, `IntentTraceRef`, `IntentAmbiguity`, `IntentProvenance`, `PiiKind`, `PiiMatchLocation` exported types describing the IR shape, its Figma trace references, provenance, and redaction records.
+- `VisualScreenDescription` interface — public type for the optional multimodal visual sidecar consumed alongside Figma input (Issue #1386 preparation).
+
+### Unchanged (Issue #1361)
+
+- No runtime schema, submit parser, or orchestrator wiring changed. The derivation library (`src/test-intelligence/`) is a pure helper surface that downstream waves will wire into the pipeline.
+
+---
+
 ## [3.18.0] - 2026-04-24
 
 ### Added (Issue #1360)

@@ -1,0 +1,69 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-payment",
+      "screenName": "Payment Details",
+      "nodes": [
+        {
+          "nodeId": "n-iban",
+          "nodeName": "IBAN",
+          "nodeType": "TEXT_INPUT",
+          "text": "IBAN",
+          "defaultValue": "DE89370400440532013000",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-pan",
+          "nodeName": "Card Number",
+          "nodeType": "TEXT_INPUT",
+          "text": "Card Number",
+          "defaultValue": "4111111111111111",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-email",
+          "nodeName": "Email",
+          "nodeType": "TEXT_INPUT",
+          "text": "Email",
+          "defaultValue": "max.mustermann@sparkasse.de",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-phone",
+          "nodeName": "Phone",
+          "nodeType": "TEXT_INPUT",
+          "text": "Phone",
+          "defaultValue": "+49 221 1234567",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-name",
+          "nodeName": "Cardholder Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Cardholder Name",
+          "defaultValue": "Max Mustermann",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tax",
+          "nodeName": "Tax ID",
+          "nodeType": "TEXT_INPUT",
+          "text": "Tax ID",
+          "defaultValue": "86095742719",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-submit",
+          "nodeName": "Pay",
+          "nodeType": "BUTTON",
+          "text": "Pay",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

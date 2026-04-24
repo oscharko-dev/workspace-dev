@@ -1,0 +1,264 @@
+{
+  "version": "1.0.0",
+  "source": {
+    "kind": "figma_local_json",
+    "contentHash": "f489accbfe04631d9aae2c965ac84241183177f88c87b2fa97705a38fdf3de63"
+  },
+  "screens": [
+    {
+      "screenId": "s-payment",
+      "screenName": "Payment Details",
+      "trace": {
+        "nodeId": "s-payment",
+        "nodeName": "Payment Details"
+      }
+    }
+  ],
+  "detectedFields": [
+    {
+      "id": "s-payment::field::n-email",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-email",
+        "nodeName": "Email"
+      },
+      "provenance": "reconciled",
+      "confidence": 0.9,
+      "label": "Email",
+      "type": "text",
+      "defaultValue": "[REDACTED:EMAIL]"
+    },
+    {
+      "id": "s-payment::field::n-iban",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-iban",
+        "nodeName": "IBAN"
+      },
+      "provenance": "reconciled",
+      "confidence": 0.9,
+      "label": "IBAN",
+      "type": "text",
+      "defaultValue": "[REDACTED:IBAN]"
+    },
+    {
+      "id": "s-payment::field::n-name",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-name",
+        "nodeName": "Cardholder Name"
+      },
+      "provenance": "reconciled",
+      "confidence": 0.9,
+      "label": "Cardholder Name",
+      "type": "text",
+      "defaultValue": "[REDACTED:FULL_NAME]"
+    },
+    {
+      "id": "s-payment::field::n-pan",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-pan",
+        "nodeName": "Card Number"
+      },
+      "provenance": "reconciled",
+      "confidence": 0.9,
+      "label": "Card Number",
+      "type": "text",
+      "defaultValue": "[REDACTED:PAN]"
+    },
+    {
+      "id": "s-payment::field::n-phone",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-phone",
+        "nodeName": "Phone"
+      },
+      "provenance": "reconciled",
+      "confidence": 0.9,
+      "label": "Phone",
+      "type": "text",
+      "defaultValue": "[REDACTED:PHONE]"
+    },
+    {
+      "id": "s-payment::field::n-tax",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-tax",
+        "nodeName": "Tax ID"
+      },
+      "provenance": "reconciled",
+      "confidence": 0.9,
+      "label": "Tax ID",
+      "type": "text",
+      "defaultValue": "[REDACTED:TAX_ID]"
+    }
+  ],
+  "detectedActions": [
+    {
+      "id": "s-payment::action::n-submit",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-submit",
+        "nodeName": "Pay"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.9,
+      "label": "Pay",
+      "kind": "button"
+    }
+  ],
+  "detectedValidations": [
+    {
+      "id": "s-payment::validation::n-iban::Required",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-iban",
+        "nodeName": "IBAN"
+      },
+      "provenance": "figma_node",
+      "confidence": 0.85,
+      "rule": "Required",
+      "targetFieldId": "s-payment::field::n-iban"
+    },
+    {
+      "id": "s-payment::validation::visual::n-iban::Must be a valid IBAN",
+      "screenId": "s-payment",
+      "trace": {
+        "nodeId": "n-iban"
+      },
+      "provenance": "visual_sidecar",
+      "confidence": 0.95,
+      "rule": "Must be a valid IBAN"
+    }
+  ],
+  "detectedNavigation": [],
+  "inferredBusinessObjects": [],
+  "risks": [],
+  "assumptions": [],
+  "openQuestions": [],
+  "piiIndicators": [
+    {
+      "id": "s-payment::field::n-email::pii::email::field_default_value",
+      "kind": "email",
+      "confidence": 0.95,
+      "matchLocation": "field_default_value",
+      "redacted": "[REDACTED:EMAIL]",
+      "screenId": "s-payment",
+      "traceRef": {
+        "nodeId": "n-email",
+        "nodeName": "Email"
+      },
+      "elementId": "s-payment::field::n-email"
+    },
+    {
+      "id": "s-payment::field::n-iban::pii::iban::field_default_value",
+      "kind": "iban",
+      "confidence": 0.99,
+      "matchLocation": "field_default_value",
+      "redacted": "[REDACTED:IBAN]",
+      "screenId": "s-payment",
+      "traceRef": {
+        "nodeId": "n-iban",
+        "nodeName": "IBAN"
+      },
+      "elementId": "s-payment::field::n-iban"
+    },
+    {
+      "id": "s-payment::field::n-name::pii::full_name::field_default_value",
+      "kind": "full_name",
+      "confidence": 0.7,
+      "matchLocation": "field_default_value",
+      "redacted": "[REDACTED:FULL_NAME]",
+      "screenId": "s-payment",
+      "traceRef": {
+        "nodeId": "n-name",
+        "nodeName": "Cardholder Name"
+      },
+      "elementId": "s-payment::field::n-name"
+    },
+    {
+      "id": "s-payment::field::n-pan::pii::pan::field_default_value",
+      "kind": "pan",
+      "confidence": 0.95,
+      "matchLocation": "field_default_value",
+      "redacted": "[REDACTED:PAN]",
+      "screenId": "s-payment",
+      "traceRef": {
+        "nodeId": "n-pan",
+        "nodeName": "Card Number"
+      },
+      "elementId": "s-payment::field::n-pan"
+    },
+    {
+      "id": "s-payment::field::n-phone::pii::phone::field_default_value",
+      "kind": "phone",
+      "confidence": 0.8,
+      "matchLocation": "field_default_value",
+      "redacted": "[REDACTED:PHONE]",
+      "screenId": "s-payment",
+      "traceRef": {
+        "nodeId": "n-phone",
+        "nodeName": "Phone"
+      },
+      "elementId": "s-payment::field::n-phone"
+    },
+    {
+      "id": "s-payment::field::n-tax::pii::tax_id::field_default_value",
+      "kind": "tax_id",
+      "confidence": 0.85,
+      "matchLocation": "field_default_value",
+      "redacted": "[REDACTED:TAX_ID]",
+      "screenId": "s-payment",
+      "traceRef": {
+        "nodeId": "n-tax",
+        "nodeName": "Tax ID"
+      },
+      "elementId": "s-payment::field::n-tax"
+    }
+  ],
+  "redactions": [
+    {
+      "id": "s-payment::field::n-email::pii::email::field_default_value::redaction",
+      "indicatorId": "s-payment::field::n-email::pii::email::field_default_value",
+      "kind": "email",
+      "reason": "Detected email in field_default_value",
+      "replacement": "[REDACTED:EMAIL]"
+    },
+    {
+      "id": "s-payment::field::n-iban::pii::iban::field_default_value::redaction",
+      "indicatorId": "s-payment::field::n-iban::pii::iban::field_default_value",
+      "kind": "iban",
+      "reason": "Detected iban in field_default_value",
+      "replacement": "[REDACTED:IBAN]"
+    },
+    {
+      "id": "s-payment::field::n-name::pii::full_name::field_default_value::redaction",
+      "indicatorId": "s-payment::field::n-name::pii::full_name::field_default_value",
+      "kind": "full_name",
+      "reason": "Detected full_name in field_default_value",
+      "replacement": "[REDACTED:FULL_NAME]"
+    },
+    {
+      "id": "s-payment::field::n-pan::pii::pan::field_default_value::redaction",
+      "indicatorId": "s-payment::field::n-pan::pii::pan::field_default_value",
+      "kind": "pan",
+      "reason": "Detected pan in field_default_value",
+      "replacement": "[REDACTED:PAN]"
+    },
+    {
+      "id": "s-payment::field::n-phone::pii::phone::field_default_value::redaction",
+      "indicatorId": "s-payment::field::n-phone::pii::phone::field_default_value",
+      "kind": "phone",
+      "reason": "Detected phone in field_default_value",
+      "replacement": "[REDACTED:PHONE]"
+    },
+    {
+      "id": "s-payment::field::n-tax::pii::tax_id::field_default_value::redaction",
+      "indicatorId": "s-payment::field::n-tax::pii::tax_id::field_default_value",
+      "kind": "tax_id",
+      "reason": "Detected tax_id in field_default_value",
+      "replacement": "[REDACTED:TAX_ID]"
+    }
+  ]
+}
