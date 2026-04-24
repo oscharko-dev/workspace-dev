@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.16.0
+ * Contract version: 3.18.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -411,6 +411,123 @@ export interface WorkspaceJobRequestMetadata {
   originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
   requestSourceMode?: WorkspaceImportSessionSourceMode;
+}
+
+/** Submission payload for Test Space v1 business test-case generation. */
+export interface WorkspaceTestSpaceRunRequest {
+  figmaSourceMode: WorkspaceFigmaSourceMode;
+  figmaFileKey?: string;
+  figmaNodeId?: string;
+  figmaAccessToken?: string;
+  figmaJsonPath?: string;
+  figmaJsonPayload?: string;
+  testSuiteName?: string;
+  businessContext: {
+    summary: string;
+    productName?: string;
+    audience?: string;
+    goals?: string[];
+    constraints?: string[];
+    notes?: string;
+  };
+}
+
+/** Public request summary for completed Test Space runs and persisted artifacts. */
+export interface WorkspaceTestSpaceRunRequestSummary {
+  figmaSourceMode: WorkspaceFigmaSourceMode;
+  figmaFileKey?: string;
+  figmaNodeId?: string;
+  figmaJsonPayloadPresent: boolean;
+  figmaJsonPayloadSha256?: string;
+  figmaJsonPathPresent: boolean;
+  figmaJsonPathBasename?: string;
+  testSuiteName?: string;
+  businessContext: {
+    summary: string;
+    productName?: string;
+    audience?: string;
+    goals?: string[];
+    constraints?: string[];
+    notes?: string;
+  };
+}
+
+/** Single executable step within a generated Test Space case. */
+export interface WorkspaceTestSpaceStep {
+  order: number;
+  action: string;
+  expectedResult: string;
+}
+
+/** Generated business test case derived from Figma and business context. */
+export interface WorkspaceTestSpaceCase {
+  id: string;
+  title: string;
+  priority: "P0" | "P1" | "P2";
+  type: "happy_path" | "validation" | "edge_case" | "regression";
+  preconditions?: string[];
+  steps: WorkspaceTestSpaceStep[];
+  expectedResult: string;
+  coverageTags: string[];
+}
+
+/** Coverage gap or risk finding produced during Test Space generation. */
+export interface WorkspaceTestSpaceCoverageFinding {
+  id: string;
+  severity: "low" | "medium" | "high";
+  message: string;
+  recommendation: string;
+  relatedCaseIds: string[];
+}
+
+/** Markdown artifact describing the generated Test Space run. */
+export interface WorkspaceTestSpaceMarkdownArtifact {
+  path: string;
+  title: string;
+  contentType: "text/markdown; charset=utf-8";
+  bytes: number;
+  lineCount: number;
+}
+
+/** QC mapping draft prepared for a future OpenText ALM/QC write boundary. */
+export interface WorkspaceTestSpaceQcMappingDraft {
+  connector: "opentext-alm-qc";
+  writeEnabled: false;
+  projectName: string;
+  testPlanName: string;
+  testSetName: string;
+  caseMappings: Array<{
+    caseId: string;
+    title: string;
+    priority: "P0" | "P1" | "P2";
+    stepCount: number;
+    coverageTags: string[];
+  }>;
+}
+
+/** Public result for a completed Test Space run. */
+export interface WorkspaceTestSpaceRun {
+  runId: string;
+  status: "completed";
+  modelDeployment: string;
+  createdAt: string;
+  updatedAt: string;
+  request: WorkspaceTestSpaceRunRequestSummary;
+  figmaSummary: Record<string, unknown>;
+  testCases: WorkspaceTestSpaceCase[];
+  coverageFindings: WorkspaceTestSpaceCoverageFinding[];
+  markdownArtifact: WorkspaceTestSpaceMarkdownArtifact;
+  qcMappingDraft: WorkspaceTestSpaceQcMappingDraft;
+  artifacts: {
+    root: string;
+    inputJson: string;
+    figmaSummaryJson: string;
+    llmRequestRedactedJson: string;
+    llmResponseRawJson: string;
+    testCasesJson: string;
+    testCasesMarkdown: string;
+    auditLogJsonl: string;
+  };
 }
 
 export type WorkspaceImportSessionStatus =
@@ -1322,4 +1439,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.16.0" as const;
+export const CONTRACT_VERSION = "3.18.0" as const;

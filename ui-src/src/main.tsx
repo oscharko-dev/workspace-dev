@@ -21,11 +21,32 @@ const LazyVisualQualityPage = lazy(async () => {
   return { default: module.VisualQualityPage };
 });
 
+const LazyTestSpacePage = lazy(async () => {
+  const module = await import("./features/test-space/test-space-page");
+  return { default: module.TestSpacePage };
+});
+
 const routeFallback = (
   <div aria-hidden="true" className="min-h-screen bg-[#101010]" />
 );
 
 const appRouter = createBrowserRouter([
+  {
+    path: "/workspace/ui/test-space",
+    element: (
+      <Suspense fallback={routeFallback}>
+        <LazyTestSpacePage />
+      </Suspense>
+    ),
+  },
+  {
+    path: "/ui/test-space",
+    element: (
+      <Suspense fallback={routeFallback}>
+        <LazyTestSpacePage />
+      </Suspense>
+    ),
+  },
   {
     path: "/workspace/ui/inspector/intent-metrics",
     element: (

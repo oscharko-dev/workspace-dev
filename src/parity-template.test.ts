@@ -74,7 +74,7 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
     "perf-budget.json":
       "aa06e9a8708171dd36884798f08a7903b5c06b84b431cdd477e83fc3e8a93e44",
     "scripts/perf-runner.mjs":
-      "8d5ef6592eaeb6efdfc3b4ecdeed0ed1f5f72781f9f9fc71a062a0f3a4a84f60",
+      "8b4f390b32a0e2866b2a4104344a4d4bd63e53afd414033ca02aa343c96277f8",
     "src/App.tsx":
       "985cdba983fb04d56e28ea58102b9691fb912f0eb3412feab1f0bb7966332a65",
     "src/components/ErrorBoundary.tsx":

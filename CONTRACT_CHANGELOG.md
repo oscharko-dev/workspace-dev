@@ -31,6 +31,34 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.18.0] - 2026-04-24
+
+### Added
+
+- Test Space v1 public contracts for business test-case generation from Figma-derived input:
+  - `WorkspaceTestSpaceRunRequest`
+  - `WorkspaceTestSpaceRun`
+  - `WorkspaceTestSpaceCase`
+  - `WorkspaceTestSpaceStep`
+  - `WorkspaceTestSpaceCoverageFinding`
+  - `WorkspaceTestSpaceMarkdownArtifact`
+  - `WorkspaceTestSpaceQcMappingDraft`
+- `POST /workspace/test-space/runs`
+- `GET /workspace/test-space/runs/:runId`
+- `GET /workspace/test-space/runs/:runId/test-cases`
+- `GET /workspace/test-space/runs/:runId/test-cases.md`
+- Server-side Test Space artifact persistence rooted under `<absoluteOutputRoot>/test-space/runs/<runId>/` with deterministic Markdown output and a QC mapping draft boundary that remains write-disabled in v1.
+
+### Changed
+
+- Added `/ui/test-space` SPA alias support at the server-routing layer while preserving traversal checks.
+- Aligned the Test Space config surface to the approved env names:
+  - `WORKSPACE_TEST_SPACE_MODEL_ENDPOINT`
+  - `WORKSPACE_TEST_SPACE_MODEL_DEPLOYMENT` with default `gpt-oss-120b`
+  - `WORKSPACE_TEST_SPACE_AZURE_BEARER_TOKEN` for injected test/CI auth
+  - QC server-only vars: `WORKSPACE_TEST_SPACE_QC_BASE_URL`, `WORKSPACE_TEST_SPACE_QC_DOMAIN`, `WORKSPACE_TEST_SPACE_QC_PROJECT`, `WORKSPACE_TEST_SPACE_QC_CLIENT_ID`, `WORKSPACE_TEST_SPACE_QC_CLIENT_SECRET`, `WORKSPACE_TEST_SPACE_QC_WRITE_ENABLED=false`
+- Legacy `WORKSPACE_TEST_SPACE_LLM_*` and `WORKSPACE_TEST_SPACE_QC_API_TOKEN` names remain accepted internally for compatibility, but the approved names are now the primary surface.
+
 ## [3.17.0] - 2026-04-18
 
 ### Changed (Issue #638)

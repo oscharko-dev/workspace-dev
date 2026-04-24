@@ -17,6 +17,14 @@ export type {
   WorkspaceImportSessionSourceMode,
   WorkspaceLogFormat,
   WorkspaceRouterMode,
+  WorkspaceTestSpaceCase,
+  WorkspaceTestSpaceCoverageFinding,
+  WorkspaceTestSpaceMarkdownArtifact,
+  WorkspaceTestSpaceQcMappingDraft,
+  WorkspaceTestSpaceRun,
+  WorkspaceTestSpaceRunRequest,
+  WorkspaceTestSpaceRunRequestSummary,
+  WorkspaceTestSpaceStep,
   WorkspaceVisualQualityReferenceMode,
   WorkspaceStartOptions,
   WorkspaceStatus,
@@ -43,6 +51,20 @@ export {
   ALLOWED_LLM_CODEGEN_MODES,
   CONTRACT_VERSION,
 } from "./contracts/index.js";
+
+export {
+  DEFAULT_TEST_SPACE_MODEL_DEPLOYMENT,
+  DEFAULT_TEST_SPACE_QC_WRITE_ENABLED,
+  WORKSPACE_TEST_SPACE_AZURE_BEARER_TOKEN_ENV,
+  WORKSPACE_TEST_SPACE_MODEL_DEPLOYMENT_ENV,
+  WORKSPACE_TEST_SPACE_MODEL_ENDPOINT_ENV,
+  WORKSPACE_TEST_SPACE_QC_BASE_URL_ENV,
+  WORKSPACE_TEST_SPACE_QC_CLIENT_ID_ENV,
+  WORKSPACE_TEST_SPACE_QC_CLIENT_SECRET_ENV,
+  WORKSPACE_TEST_SPACE_QC_DOMAIN_ENV,
+  WORKSPACE_TEST_SPACE_QC_PROJECT_ENV,
+  WORKSPACE_TEST_SPACE_QC_WRITE_ENABLED_ENV,
+} from "./test-space/constants.js";
 
 export { createWorkspaceServer } from "./server.js";
 export type { WorkspaceServer } from "./server.js";

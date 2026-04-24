@@ -89,7 +89,11 @@ import {
 import {
   MAX_SUBMIT_BODY_BYTES,
   WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+  TEST_SPACE_RUNS_ROUTE_PREFIX,
 } from "./constants.js";
+import {
+  resolveWorkspaceTestSpaceModelDeployment,
+} from "../test-space/constants.js";
 import { ErrorCode } from "./error-codes.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
 import {
@@ -98,6 +102,7 @@ import {
   parseJobFilesRoute,
   parseJobPreviewRoute,
   parseJobRoute,
+  parseTestSpaceRunRoute,
   parseReproRoute,
   isForbiddenUiAssetPath,
   resolveUiAssetPath,
@@ -106,6 +111,15 @@ import {
 } from "./routes.js";
 import { loadInspectorPolicy } from "./inspector-policy.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
+import { createWorkspaceTestSpaceLlmClientFromEnv } from "../test-space/llm-client.js";
+import {
+  createWorkspaceTestSpaceService,
+  isWorkspaceTestSpaceError,
+} from "../test-space/service.js";
+import {
+  TestSpaceRunRequestSchema,
+  formatTestSpaceValidationError,
+} from "../test-space/validation.js";
 
 /**
  * Decode a URI component safely, sending a 400 response on malformed input.
@@ -548,6 +562,15 @@ function resolveProtectedWriteRoute(
     return {};
   }
 
+  if (
+    method === "POST" &&
+    (pathname === TEST_SPACE_RUNS_ROUTE_PREFIX ||
+      pathname === `${TEST_SPACE_RUNS_ROUTE_PREFIX}/` ||
+      pathname.startsWith(`${TEST_SPACE_RUNS_ROUTE_PREFIX}/`))
+  ) {
+    return {};
+  }
+
   const parsedJobRoute = parseJobRoute(pathname);
   if (parsedJobRoute && PROTECTED_POST_ACTIONS.has(parsedJobRoute.action)) {
     return { parsedJobRoute };
@@ -623,6 +646,7 @@ export function createWorkspaceRequestHandler({
     | "ready"
     | "draining"
     | "stopped" => getServerLifecycleState?.() ?? "ready";
+  const testSpaceModelDeployment = resolveWorkspaceTestSpaceModelDeployment();
   const buildHealthPayload = (): {
     status: "ok" | "starting" | "draining";
     uptime: number;
@@ -640,6 +664,15 @@ export function createWorkspaceRequestHandler({
     }
     return { status: "ok", uptime: uptimeSeconds };
   };
+  const testSpaceLlmClient = createWorkspaceTestSpaceLlmClientFromEnv();
+  const testSpaceService = createWorkspaceTestSpaceService({
+    absoluteOutputRoot,
+    workspaceRoot,
+    modelDeployment: testSpaceModelDeployment,
+    ...(testSpaceLlmClient !== undefined
+      ? { llmClient: testSpaceLlmClient }
+      : {}),
+  });
 
   return async (
     request: IncomingMessage,
@@ -1462,6 +1495,111 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        const parsedTestSpaceRoute = parseTestSpaceRunRoute(pathname);
+        if (parsedTestSpaceRoute) {
+          if (parsedTestSpaceRoute.action === "collection") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message:
+                  "Use POST for route '/workspace/test-space/runs'.",
+              },
+            });
+            return;
+          }
+
+          const runId = safeDecodeParam(
+            parsedTestSpaceRoute.runId,
+            "Test Space run ID",
+            response,
+          );
+          if (runId === null) return;
+
+          try {
+            const run = await testSpaceService.getRun(runId);
+            if (!run) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "TEST_SPACE_RUN_NOT_FOUND",
+                  message: `Unknown Test Space run '${runId}'.`,
+                },
+              });
+              return;
+            }
+
+            if (parsedTestSpaceRoute.action === "detail") {
+              sendJson({
+                response,
+                statusCode: 200,
+                payload: run,
+              });
+              return;
+            }
+
+            if (parsedTestSpaceRoute.action === "test-cases") {
+              sendJson({
+                response,
+                statusCode: 200,
+                payload: {
+                  runId: run.runId,
+                  createdAt: run.createdAt,
+                  updatedAt: run.updatedAt,
+                  modelDeployment: run.modelDeployment,
+                  testCases: run.testCases,
+                  coverageFindings: run.coverageFindings,
+                  qcMappingDraft: run.qcMappingDraft,
+                },
+              });
+              return;
+            }
+
+            const markdown = await testSpaceService.getRunMarkdown(runId);
+            if (markdown === undefined) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "TEST_SPACE_MARKDOWN_NOT_FOUND",
+                  message: `Markdown artifact not available for Test Space run '${runId}'.`,
+                },
+              });
+              return;
+            }
+            sendText({
+              response,
+              statusCode: 200,
+              contentType: "text/markdown; charset=utf-8",
+              payload: markdown,
+              cacheControl: "no-store, no-cache, must-revalidate, max-age=0",
+            });
+          } catch (error) {
+            if (isWorkspaceTestSpaceError(error)) {
+              sendJson({
+                response,
+                statusCode: error.statusCode,
+                payload: error.payload,
+              });
+              return;
+            }
+            sendRequestFailure({
+              statusCode: 500,
+              payload: {
+                error: "INTERNAL_ERROR",
+                message: sanitizeErrorMessage({
+                  error,
+                  fallback: "Could not load Test Space run.",
+                }),
+              },
+              fallbackMessage: "Test Space lookup failed.",
+            });
+          }
+          return;
+        }
+
         const parsedFilesRoute = parseJobFilesRoute(pathname);
         if (parsedFilesRoute) {
           const jobId = safeDecodeParam(
@@ -2010,6 +2148,8 @@ export function createWorkspaceRequestHandler({
 
         const isRateLimitedWriteRoute =
           pathname === "/workspace/submit" ||
+          pathname === TEST_SPACE_RUNS_ROUTE_PREFIX ||
+          pathname === `${TEST_SPACE_RUNS_ROUTE_PREFIX}/` ||
           parsedJobRoute?.action === "regenerate" ||
           parsedJobRoute?.action === "retry-stage";
         if (isRateLimitedWriteRoute) {
@@ -3472,6 +3612,106 @@ export function createWorkspaceRequestHandler({
           });
           return;
         }
+      }
+
+      if (
+        method === "POST" &&
+        (pathname === TEST_SPACE_RUNS_ROUTE_PREFIX ||
+          pathname.startsWith(`${TEST_SPACE_RUNS_ROUTE_PREFIX}/`))
+      ) {
+        const parsedTestSpaceRoute = parseTestSpaceRunRoute(pathname);
+        if (!parsedTestSpaceRoute || parsedTestSpaceRoute.action !== "collection") {
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message:
+                parsedTestSpaceRoute?.action === "detail" ||
+                parsedTestSpaceRoute?.action === "test-cases" ||
+                parsedTestSpaceRoute?.action === "markdown"
+                  ? `Use GET for route '${pathname}'.`
+                  : `Use POST for route '${TEST_SPACE_RUNS_ROUTE_PREFIX}'.`,
+            },
+          });
+          return;
+        }
+
+        const rawBody = await readStreamingJsonBody(request, {
+          maxBytes: MAX_SUBMIT_BODY_BYTES,
+        });
+        if (!rawBody.ok) {
+          if (rawBody.reason === "OVERSIZE") {
+            sendRequestFailure({
+              statusCode: 413,
+              payload: {
+                error: ErrorCode.TOO_LARGE,
+                message: rawBody.error,
+                maxBytes: rawBody.maxBytes,
+              },
+              fallbackMessage: "Test Space request body too large.",
+            });
+          } else {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: ErrorCode.INVALID_PAYLOAD,
+                message: rawBody.error,
+              },
+              fallbackMessage: "Test Space request validation failed.",
+            });
+          }
+          return;
+        }
+
+        const parsed = TestSpaceRunRequestSchema.safeParse(rawBody.value);
+        if (!parsed.success) {
+          sendValidationError({
+            statusCode: 422,
+            payload: formatTestSpaceValidationError(parsed.error),
+            fallbackMessage: "Test Space request validation failed.",
+          });
+          return;
+        }
+
+        try {
+          const run = await testSpaceService.createRun(parsed.data);
+          sendJson({
+            response,
+            statusCode: 201,
+            payload: run,
+          });
+        } catch (error) {
+          if (isWorkspaceTestSpaceError(error)) {
+            if (error.statusCode === 422) {
+              sendValidationError({
+                statusCode: error.statusCode,
+                payload: error.payload,
+                fallbackMessage: "Test Space request validation failed.",
+              });
+              return;
+            }
+            sendRequestFailure({
+              statusCode: error.statusCode,
+              payload: error.payload,
+              fallbackMessage: "Test Space run failed.",
+            });
+            return;
+          }
+
+          sendRequestFailure({
+            statusCode: 500,
+            payload: {
+              error: "INTERNAL_ERROR",
+              message: sanitizeErrorMessage({
+                error,
+                fallback: "Could not create Test Space run.",
+              }),
+            },
+            fallbackMessage: "Test Space run failed.",
+          });
+        }
+        return;
       }
 
       if (method === "POST" && pathname === "/workspace/submit") {

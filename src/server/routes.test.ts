@@ -7,6 +7,7 @@ import {
   parseJobFilesRoute,
   parseJobPreviewRoute,
   parseJobRoute,
+  parseTestSpaceRunRoute,
   parseReproRoute,
   resolveUiAssetPath,
   shouldFallbackToUiEntrypoint,
@@ -16,12 +17,22 @@ import {
 test("resolveUiAssetPath resolves index and nested asset paths", () => {
   assert.equal(resolveUiAssetPath("/workspace/ui"), "index.html");
   assert.equal(resolveUiAssetPath("/workspace/ui/"), "index.html");
+  assert.equal(resolveUiAssetPath("/ui/test-space"), "index.html");
+  assert.equal(resolveUiAssetPath("/ui/test-space/"), "index.html");
   assert.equal(
     resolveUiAssetPath("/workspace/ui/assets/main-HASH.js"),
     "assets/main-HASH.js",
   );
   assert.equal(
+    resolveUiAssetPath("/ui/test-space/assets/main-HASH.js"),
+    "assets/main-HASH.js",
+  );
+  assert.equal(
     resolveUiAssetPath("/workspace/ui/assets/chunks/vendor-HASH.js"),
+    "assets/chunks/vendor-HASH.js",
+  );
+  assert.equal(
+    resolveUiAssetPath("/ui/test-space/assets/chunks/vendor-HASH.js"),
     "assets/chunks/vendor-HASH.js",
   );
   assert.equal(resolveUiAssetPath("/workspace/ui/../index.html"), null);
@@ -29,9 +40,19 @@ test("resolveUiAssetPath resolves index and nested asset paths", () => {
     resolveUiAssetPath("/workspace/ui/%2e%2e%2f%2e%2e%2fetc%2fpasswd"),
     null,
   );
+  assert.equal(resolveUiAssetPath("/ui/test-space/../index.html"), null);
+  assert.equal(
+    resolveUiAssetPath("/ui/test-space/%2e%2e%2f%2e%2e%2fetc%2fpasswd"),
+    null,
+  );
   assert.equal(resolveUiAssetPath("/workspace/ui/assets%00app.js"), null);
+  assert.equal(resolveUiAssetPath("/ui/test-space/assets%00app.js"), null);
   assert.equal(
     resolveUiAssetPath("/workspace/ui/..%5C..%5Cwindows%5Cwin.ini"),
+    null,
+  );
+  assert.equal(
+    resolveUiAssetPath("/ui/test-space/..%5C..%5Cwindows%5Cwin.ini"),
     null,
   );
   assert.equal(resolveUiAssetPath("/other"), null);
@@ -43,17 +64,33 @@ test("UI route helpers reject traversal before SPA fallback", () => {
     true,
   );
   assert.equal(
+    isForbiddenUiAssetPath("/ui/test-space/%2e%2e%2f%2e%2e%2fetc%2fpasswd"),
+    true,
+  );
+  assert.equal(
     isForbiddenUiAssetPath("/workspace/ui/..%5C..%5Cwindows%5Cwin.ini"),
     true,
   );
+  assert.equal(
+    isForbiddenUiAssetPath("/ui/test-space/..%5C..%5Cwindows%5Cwin.ini"),
+    true,
+  );
   assert.equal(isForbiddenUiAssetPath("/workspace/ui/assets%00app.js"), true);
+  assert.equal(isForbiddenUiAssetPath("/ui/test-space/assets%00app.js"), true);
   assert.equal(
     shouldFallbackToUiEntrypoint(
       "/workspace/ui/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
     ),
     false,
   );
+  assert.equal(
+    shouldFallbackToUiEntrypoint(
+      "/ui/test-space/%2e%2e%2f%2e%2e%2fetc%2fpasswd",
+    ),
+    false,
+  );
   assert.equal(shouldFallbackToUiEntrypoint("/workspace/ui/visual-quality"), true);
+  assert.equal(shouldFallbackToUiEntrypoint("/ui/test-space/test-space"), true);
 });
 
 test("isWorkspaceProjectRoute accepts only workspace key routes", () => {
@@ -141,6 +178,39 @@ test("parseJobRoute parses detail/result routes and rejects invalid forms", () =
   assert.equal(parseJobRoute("/workspace/jobs//sync"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//create-pr"), undefined);
   assert.equal(parseJobRoute("/workspace/jobs//stale-check"), undefined);
+});
+
+test("parseTestSpaceRunRoute parses collection/detail/cases/markdown routes and rejects invalid forms", () => {
+  assert.deepEqual(parseTestSpaceRunRoute("/workspace/test-space/runs"), {
+    runId: "",
+    action: "collection",
+  });
+  assert.deepEqual(parseTestSpaceRunRoute("/workspace/test-space/runs/"), {
+    runId: "",
+    action: "collection",
+  });
+  assert.deepEqual(parseTestSpaceRunRoute("/workspace/test-space/runs/run-1"), {
+    runId: "run-1",
+    action: "detail",
+  });
+  assert.deepEqual(
+    parseTestSpaceRunRoute("/workspace/test-space/runs/run-1/test-cases"),
+    {
+      runId: "run-1",
+      action: "test-cases",
+    },
+  );
+  assert.deepEqual(
+    parseTestSpaceRunRoute("/workspace/test-space/runs/run-1/test-cases.md"),
+    {
+      runId: "run-1",
+      action: "markdown",
+    },
+  );
+  assert.equal(parseTestSpaceRunRoute("/workspace/test-space/runs//test-cases"), undefined);
+  assert.equal(parseTestSpaceRunRoute("/workspace/test-space/runs/run-1/extra"), undefined);
+  assert.equal(parseTestSpaceRunRoute("/workspace/test-space/runs/run-1/test-cases/extra"), undefined);
+  assert.equal(parseTestSpaceRunRoute("/workspace/test-space/run-1"), undefined);
 });
 
 test("parseImportSessionRoute parses list, detail, and reimport routes", () => {

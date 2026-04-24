@@ -6639,3 +6639,381 @@ test("figma_paste forwards pasteDeltaSeed to submitJob when roots are extractabl
     await close();
   }
 });
+
+test("request handler creates and serves Test Space runs with deterministic artifacts", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp();
+
+  try {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/test-space/runs",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPayload: JSON.stringify({
+          document: {
+            type: "DOCUMENT",
+            name: "Checkout",
+            children: [
+              {
+                type: "FRAME",
+                name: "Checkout",
+                children: [
+                  {
+                    type: "TEXT",
+                    name: "Primary CTA",
+                    characters: "Pay now",
+                  },
+                ],
+              },
+            ],
+          },
+        }),
+        testSuiteName: "Checkout flow",
+        businessContext: {
+          summary: "Checkout flow for retail customers",
+          productName: "Retail App",
+          goals: ["Complete payment"],
+        },
+      },
+    });
+
+    assert.equal(createResponse.statusCode, 201);
+    const created = createResponse.json<Record<string, unknown>>();
+    assert.equal(created.status, "completed");
+    assert.equal(created.modelDeployment, "gpt-oss-120b");
+    assert.equal(created.qcMappingDraft && typeof created.qcMappingDraft === "object", true);
+
+    const runId = created.runId as string;
+    assert.equal(typeof runId, "string");
+    assert.equal(path.relative(tempRoot, String(created.artifacts?.root)).startsWith(".."), false);
+    assert.equal(created.markdownArtifact && typeof created.markdownArtifact === "object", true);
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: `/workspace/test-space/runs/${runId}`,
+    });
+    assert.equal(detailResponse.statusCode, 200);
+    const detail = detailResponse.json<Record<string, unknown>>();
+    assert.equal(detail.runId, runId);
+    assert.equal(detail.testCases && Array.isArray(detail.testCases), true);
+
+    const casesResponse = await app.inject({
+      method: "GET",
+      url: `/workspace/test-space/runs/${runId}/test-cases`,
+    });
+    assert.equal(casesResponse.statusCode, 200);
+    const casesBody = casesResponse.json<Record<string, unknown>>();
+    assert.equal(casesBody.runId, runId);
+    assert.equal(Array.isArray(casesBody.testCases), true);
+
+    const markdownResponse = await app.inject({
+      method: "GET",
+      url: `/workspace/test-space/runs/${runId}/test-cases.md`,
+    });
+    assert.equal(markdownResponse.statusCode, 200);
+    assert.match(markdownResponse.body, /^# Test Space Run /m);
+    assert.match(markdownResponse.body, /## Table of Contents/);
+    assert.match(markdownResponse.body, /## Test Cases/);
+    assert.match(markdownResponse.body, /## Coverage Findings/);
+    assert.doesNotMatch(markdownResponse.body, /## QC Mapping Draft/);
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler returns 405 for Test Space write subpaths", async () => {
+  const { app, close } = await createRequestHandlerApp({
+    jobEngine: createStubJobEngine({
+      submitJob: () => {
+        throw new Error("submitJob should not be called");
+      },
+    }),
+  });
+
+  try {
+    for (const url of [
+      "/workspace/test-space/runs/route-test-run",
+      "/workspace/test-space/runs/route-test-run/test-cases",
+      "/workspace/test-space/runs/route-test-run/test-cases.md",
+    ]) {
+      const response = await app.inject({
+        method: "POST",
+        url,
+        headers: {
+          "content-type": "application/json",
+        },
+        payload: {
+          figmaSourceMode: "local_json",
+          figmaJsonPayload: JSON.stringify({
+            document: {
+              type: "DOCUMENT",
+              name: "Checkout",
+            },
+          }),
+          testSuiteName: "Checkout flow",
+          businessContext: {
+            summary: "Checkout flow for retail customers",
+          },
+        },
+      });
+
+      assert.equal(response.statusCode, 405);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "METHOD_NOT_ALLOWED");
+      assert.equal(
+        body.message,
+        `Use GET for route '${url}'.`,
+      );
+    }
+  } finally {
+    await close();
+  }
+});
+
+test("request handler redacts raw Figma payload text from Test Space run responses", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp();
+
+  try {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/workspace/test-space/runs",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPayload: JSON.stringify({
+          type: "DOCUMENT",
+          name: "Checkout",
+          children: [
+            {
+              type: "FRAME",
+              name: "Secret <script>alert(1)</script> token",
+              children: [
+                {
+                  type: "TEXT",
+                  name: "token label",
+                  characters: "secret-token <script>alert(1)</script>",
+                },
+              ],
+            },
+          ],
+        }),
+        testSuiteName: "Checkout flow",
+        businessContext: {
+          summary: "Checkout flow for retail customers",
+          productName: "Retail App",
+          goals: ["Complete payment"],
+        },
+      },
+    });
+
+    assert.equal(createResponse.statusCode, 201);
+    const created = createResponse.json<Record<string, unknown>>();
+    const request = created.request as Record<string, unknown>;
+    assert.equal(request.figmaJsonPayloadPresent, true);
+    assert.equal(request.figmaJsonPathPresent, false);
+    assert.equal(typeof request.figmaJsonPayloadSha256, "string");
+    assert.equal(request.figmaJsonPayload, undefined);
+
+    const responseBody = createResponse.body;
+    assert.doesNotMatch(responseBody, /secret-token/i);
+    assert.doesNotMatch(responseBody, /<script>alert\(1\)<\/script>/i);
+    assert.doesNotMatch(responseBody, /"figmaJsonPayload"\s*:/i);
+  } finally {
+    await close();
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("request handler rejects invalid Test Space requests and method mismatches", async () => {
+  const { app, close } = await createRequestHandlerApp();
+
+  try {
+    const invalidCreate = await app.inject({
+      method: "POST",
+      url: "/workspace/test-space/runs",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: {
+        figmaSourceMode: "local_json",
+        businessContext: {
+          summary: "",
+        },
+      },
+    });
+
+    assert.equal(invalidCreate.statusCode, 422);
+    const invalidBody = invalidCreate.json<Record<string, unknown>>();
+    assert.equal(invalidBody.error, "VALIDATION_ERROR");
+    assert.equal(invalidBody.message, "Request validation failed.");
+    assert.deepEqual(invalidBody.issues, [
+      {
+        path: "businessContext.summary",
+        message: "summary must not be empty.",
+      },
+      {
+        path: "figmaJsonPath",
+        message:
+          "figmaJsonPath or figmaJsonPayload is required for Test Space runs.",
+      },
+    ]);
+
+    const methodMismatch = await app.inject({
+      method: "GET",
+      url: "/workspace/test-space/runs",
+    });
+
+    assert.equal(methodMismatch.statusCode, 405);
+    const methodMismatchBody = methodMismatch.json<Record<string, unknown>>();
+    assert.equal(methodMismatchBody.error, "METHOD_NOT_ALLOWED");
+    assert.equal(
+      methodMismatchBody.message,
+      "Use POST for route '/workspace/test-space/runs'.",
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("request handler rate limits POST /workspace/test-space/runs", async () => {
+  const { app, close } = await createRequestHandlerApp({
+    rateLimitPerMinute: 1,
+  });
+
+  try {
+    const payload = {
+      figmaSourceMode: "local_json",
+      figmaJsonPayload: JSON.stringify({
+        document: {
+          type: "DOCUMENT",
+          name: "Checkout",
+        },
+      }),
+      businessContext: {
+        summary: "Checkout flow for retail customers",
+      },
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/workspace/test-space/runs",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload,
+    });
+    assert.equal(first.statusCode, 201);
+
+    const limited = await app.inject({
+      method: "POST",
+      url: "/workspace/test-space/runs",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload,
+    });
+
+    assert.equal(limited.statusCode, 429);
+    const limitedBody = limited.json<Record<string, unknown>>();
+    assert.equal(limitedBody.error, "RATE_LIMIT_EXCEEDED");
+    assert.match(String(limitedBody.message ?? ""), /Too many job submissions/);
+    assert.match(limited.headers["retry-after"] ?? "", /^\d+$/);
+  } finally {
+    await close();
+  }
+});
+
+test("request handler does not leak absolute paths in Test Space read failures", async () => {
+  const { app, close, tempRoot } = await createRequestHandlerApp();
+
+  try {
+    const missingPath = path.join(
+      tempRoot,
+      "missing",
+      `workspace-dev-test-space-missing-${process.pid}-${Date.now()}.json`,
+    );
+    const response = await app.inject({
+      method: "POST",
+      url: "/workspace/test-space/runs",
+      headers: {
+        "content-type": "application/json",
+      },
+      payload: {
+        figmaSourceMode: "local_json",
+        figmaJsonPath: missingPath,
+        businessContext: {
+          summary: "Checkout flow for retail customers",
+        },
+      },
+    });
+
+    assert.equal(response.statusCode, 422);
+    const body = response.json<Record<string, unknown>>();
+    assert.equal(body.error, "INVALID_FIGMA_JSON");
+    assert.equal(body.message, "Could not read local Figma JSON.");
+    assert.ok(!String(body.message ?? "").includes(missingPath));
+  } finally {
+    await close();
+  }
+});
+
+test(
+  "request handler honors WORKSPACE_TEST_SPACE_MODEL_DEPLOYMENT for Test Space runs",
+  { concurrency: false },
+  async () => {
+  const originalDeployment = process.env.WORKSPACE_TEST_SPACE_MODEL_DEPLOYMENT;
+  process.env.WORKSPACE_TEST_SPACE_MODEL_DEPLOYMENT = "azure-gpt-4o";
+
+  try {
+    const { app, close } = await createRequestHandlerApp();
+
+    try {
+      const createResponse = await app.inject({
+        method: "POST",
+        url: "/workspace/test-space/runs",
+        headers: {
+          "content-type": "application/json",
+        },
+        payload: {
+          figmaSourceMode: "local_json",
+          figmaJsonPayload: JSON.stringify({
+            document: {
+              type: "DOCUMENT",
+              name: "Checkout",
+            },
+          }),
+          businessContext: {
+            summary: "Checkout flow for retail customers",
+          },
+        },
+      });
+
+      assert.equal(createResponse.statusCode, 201);
+      const created = createResponse.json<Record<string, unknown>>();
+      assert.equal(created.modelDeployment, "azure-gpt-4o");
+
+      const runId = created.runId as string;
+      const detailResponse = await app.inject({
+        method: "GET",
+        url: `/workspace/test-space/runs/${runId}`,
+      });
+      assert.equal(detailResponse.statusCode, 200);
+      assert.equal(detailResponse.json<Record<string, unknown>>().modelDeployment, "azure-gpt-4o");
+    } finally {
+      await close();
+    }
+  } finally {
+    if (originalDeployment === undefined) {
+      delete process.env.WORKSPACE_TEST_SPACE_MODEL_DEPLOYMENT;
+    } else {
+      process.env.WORKSPACE_TEST_SPACE_MODEL_DEPLOYMENT = originalDeployment;
+    }
+  }
+  },
+);

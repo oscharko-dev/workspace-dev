@@ -2,6 +2,8 @@ import path from "node:path";
 import {
   JOB_ROUTE_PREFIX,
   REPRO_ROUTE_PREFIX,
+  TEST_SPACE_RUNS_ROUTE_PREFIX,
+  TEST_SPACE_UI_ROUTE_PREFIX,
   UI_ROUTE_PREFIX,
   type UiAssetPath,
 } from "./constants.js";
@@ -11,44 +13,50 @@ import {
   safeDecode,
 } from "./route-params.js";
 
+const UI_ROUTE_PREFIXES = [UI_ROUTE_PREFIX, TEST_SPACE_UI_ROUTE_PREFIX] as const;
+
 function normalizeUiRoutePath(
   pathname: string,
 ): UiAssetPath | null | undefined {
-  if (pathname === UI_ROUTE_PREFIX || pathname === `${UI_ROUTE_PREFIX}/`) {
-    return "index.html";
+  for (const routePrefix of UI_ROUTE_PREFIXES) {
+    if (pathname === routePrefix || pathname === `${routePrefix}/`) {
+      return "index.html";
+    }
+
+    if (!pathname.startsWith(`${routePrefix}/`)) {
+      continue;
+    }
+
+    const requestedAsset = pathname.slice(`${routePrefix}/`.length);
+    if (requestedAsset.length === 0) {
+      return "index.html";
+    }
+
+    const decodedPath = safeDecode(requestedAsset);
+    if (decodedPath === INVALID_PATH_ENCODING || decodedPath.includes("\0")) {
+      return null;
+    }
+
+    const normalizedPath = normalizePlatformPath(decodedPath);
+    if (!normalizedPath.ok) {
+      return null;
+    }
+
+    const segments = normalizedPath.normalized
+      .split("/")
+      .filter((segment) => segment.length > 0);
+    if (segments.length === 0) {
+      return "index.html";
+    }
+
+    if (segments.some((segment) => segment === "." || segment === "..")) {
+      return null;
+    }
+
+    return segments.join("/");
   }
 
-  if (!pathname.startsWith(`${UI_ROUTE_PREFIX}/`)) {
-    return undefined;
-  }
-
-  const requestedAsset = pathname.slice(`${UI_ROUTE_PREFIX}/`.length);
-  if (requestedAsset.length === 0) {
-    return "index.html";
-  }
-
-  const decodedPath = safeDecode(requestedAsset);
-  if (decodedPath === INVALID_PATH_ENCODING || decodedPath.includes("\0")) {
-    return null;
-  }
-
-  const normalizedPath = normalizePlatformPath(decodedPath);
-  if (!normalizedPath.ok) {
-    return null;
-  }
-
-  const segments = normalizedPath.normalized
-    .split("/")
-    .filter((segment) => segment.length > 0);
-  if (segments.length === 0) {
-    return "index.html";
-  }
-
-  if (segments.some((segment) => segment === "." || segment === "..")) {
-    return null;
-  }
-
-  return segments.join("/");
+  return undefined;
 }
 
 export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
@@ -61,8 +69,9 @@ export function resolveUiAssetPath(pathname: string): UiAssetPath | null {
 
 export function isForbiddenUiAssetPath(pathname: string): boolean {
   return (
-    pathname.startsWith(`${UI_ROUTE_PREFIX}/`) &&
-    normalizeUiRoutePath(pathname) === null
+    UI_ROUTE_PREFIXES.some((routePrefix) =>
+      pathname.startsWith(`${routePrefix}/`),
+    ) && normalizeUiRoutePath(pathname) === null
   );
 }
 
@@ -107,6 +116,63 @@ export function isWorkspaceProjectRoute(pathname: string): boolean {
   return (
     !withoutPrefix.startsWith("jobs") && !withoutPrefix.startsWith("repros")
   );
+}
+
+export function parseTestSpaceRunRoute(pathname: string):
+  | {
+      runId: string;
+      action: "collection" | "detail" | "test-cases" | "markdown";
+    }
+  | undefined {
+  if (
+    pathname === TEST_SPACE_RUNS_ROUTE_PREFIX ||
+    pathname === `${TEST_SPACE_RUNS_ROUTE_PREFIX}/`
+  ) {
+    return {
+      runId: "",
+      action: "collection",
+    };
+  }
+
+  if (!pathname.startsWith(`${TEST_SPACE_RUNS_ROUTE_PREFIX}/`)) {
+    return undefined;
+  }
+
+  const rest = pathname.slice(`${TEST_SPACE_RUNS_ROUTE_PREFIX}/`.length);
+  if (rest.length === 0) {
+    return undefined;
+  }
+
+  if (rest.endsWith("/test-cases.md")) {
+    const runId = rest.slice(0, -"/test-cases.md".length);
+    if (!runId || runId.includes("/")) {
+      return undefined;
+    }
+    return {
+      runId,
+      action: "markdown",
+    };
+  }
+
+  if (rest.endsWith("/test-cases")) {
+    const runId = rest.slice(0, -"/test-cases".length);
+    if (!runId || runId.includes("/")) {
+      return undefined;
+    }
+    return {
+      runId,
+      action: "test-cases",
+    };
+  }
+
+  if (rest.includes("/")) {
+    return undefined;
+  }
+
+  return {
+    runId: rest,
+    action: "detail",
+  };
 }
 
 export function parseImportSessionRoute(pathname: string):
