@@ -1268,6 +1268,17 @@ function parseSubmitRequest(
     value: rawTestIntelligenceMode,
     issues,
   });
+  const resolvedJobType = jobType ?? "figma_to_code";
+  if (
+    testIntelligenceMode !== undefined &&
+    resolvedJobType !== "figma_to_qc_test_cases"
+  ) {
+    pushIssue(
+      issues,
+      ["testIntelligenceMode"],
+      'testIntelligenceMode is only valid when jobType is "figma_to_qc_test_cases".',
+    );
+  }
   const generationLocale = parseSubmitGenerationLocale({
     value: rawGenerationLocale,
     issues,

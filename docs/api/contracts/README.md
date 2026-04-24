@@ -1041,6 +1041,16 @@ Optional import mode for Figma paste. `"auto"` lets the server pick delta vs ful
 
 > `optional` **intentCorrected?**: `boolean`
 
+##### jobType?
+
+> `optional` **jobType?**: `"figma_to_code"` \| `"figma_to_qc_test_cases"`
+
+Optional job-type discriminator. When omitted, the submission is treated
+as `figma_to_code`. Setting `figma_to_qc_test_cases` requires both the
+`WorkspaceStartOptions.testIntelligence.enabled` startup flag and the
+`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` environment variable. When the
+gates are not satisfied, the server returns `503 Feature Disabled`.
+
 ##### llmCodegenMode?
 
 > `optional` **llmCodegenMode?**: `"deterministic"`
@@ -1074,6 +1084,14 @@ Optional server-side generation scope. When present, only the selected IR nodes 
 ##### targetPath?
 
 > `optional` **targetPath?**: `string`
+
+##### testIntelligenceMode?
+
+> `optional` **testIntelligenceMode?**: `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`
+
+Optional test-intelligence mode namespace. Only relevant when
+`jobType="figma_to_qc_test_cases"`. Values are validated independently
+of `llmCodegenMode`, which remains locked to `deterministic`.
 
 ##### ~~visualAudit?~~
 
@@ -2742,6 +2760,30 @@ Reserved for backward compatibility with callers that reuse
 submit-time option objects. Isolated child startup ignores this field and
 it does not define any server-start target-root behavior.
 
+##### testIntelligence?
+
+> `optional` **testIntelligence?**: `object`
+
+Opt-in startup feature gate for Figma-to-QC test case generation.
+
+Test intelligence is SEPARATE from the Figma-to-code mode lock and is
+local-first by design. The feature is reachable only when both this
+startup option and the `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1`
+environment variable are enabled; otherwise, submitting a
+`figma_to_qc_test_cases` job fails closed with a `503 Feature Disabled`
+response and performs no side effects.
+
+A future-facing optional subpath export `workspace-dev/test-intelligence`
+is planned to expose the full test-intelligence surface without
+importing it from the root entry point; that export is not wired in
+this wave.
+
+###### enabled
+
+> **enabled**: `boolean`
+
+Whether test-intelligence features may be invoked at runtime. Default: false.
+
 ##### unitTestIgnoreFailure?
 
 > `optional` **unitTestIgnoreFailure?**: `boolean`
@@ -3725,6 +3767,14 @@ Stage status values for each pipeline stage.
 
 ***
 
+### WorkspaceJobType
+
+> **WorkspaceJobType** = *typeof* [`ALLOWED_WORKSPACE_JOB_TYPES`](#allowed_workspace_job_types)\[`number`\]
+
+Allowed job types for workspace-dev submissions.
+
+***
+
 ### WorkspaceLlmCodegenMode
 
 > **WorkspaceLlmCodegenMode** = *typeof* [`ALLOWED_LLM_CODEGEN_MODES`](#allowed_llm_codegen_modes)\[`number`\]
@@ -3837,6 +3887,14 @@ User decision for handling a stale draft — extended with remap option.
 
 ***
 
+### WorkspaceTestIntelligenceMode
+
+> **WorkspaceTestIntelligenceMode** = *typeof* [`ALLOWED_TEST_INTELLIGENCE_MODES`](#allowed_test_intelligence_modes)\[`number`\]
+
+Allowed test-intelligence modes.
+
+***
+
 ### WorkspaceVisualAuditStatus
 
 > **WorkspaceVisualAuditStatus** = `"not_requested"` \| `"ok"` \| `"warn"` \| `"failed"`
@@ -3883,10 +3941,64 @@ runtime agree.
 
 ***
 
+### ALLOWED\_TEST\_INTELLIGENCE\_MODES
+
+> `const` **ALLOWED\_TEST\_INTELLIGENCE\_MODES**: readonly \[`"deterministic_llm"`, `"offline_eval"`, `"dry_run"`\]
+
+Runtime source-of-truth for allowed test-intelligence modes.
+
+Test intelligence is an opt-in, local-first feature that is SEPARATE from
+the `llmCodegenMode` namespace used by the deterministic code generation
+pipeline. The two mode namespaces are intentionally isolated: changes to
+this array must never affect `ALLOWED_LLM_CODEGEN_MODES`.
+
+***
+
+### ALLOWED\_WORKSPACE\_JOB\_TYPES
+
+> `const` **ALLOWED\_WORKSPACE\_JOB\_TYPES**: readonly \[`"figma_to_code"`, `"figma_to_qc_test_cases"`\]
+
+Runtime source-of-truth for allowed workspace-dev job types.
+Keep this array and `WorkspaceJobType` in lockstep.
+
+***
+
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.16.0"`
+> `const` **CONTRACT\_VERSION**: `"3.18.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
 Package version alignment is documented in VERSIONING.md.
+
+***
+
+### GENERATED\_TEST\_CASE\_SCHEMA\_VERSION
+
+> `const` **GENERATED\_TEST\_CASE\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for generated test case payloads.
+
+***
+
+### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
+
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.0.0"`
+
+Contract version for the opt-in test-intelligence surface.
+
+***
+
+### TEST\_INTELLIGENCE\_ENV
+
+> `const` **TEST\_INTELLIGENCE\_ENV**: `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`
+
+Environment variable name that gates test-intelligence features at startup.
+
+***
+
+### TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION
+
+> `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.0.0"`
+
+Prompt template version for the test-intelligence prompt family.

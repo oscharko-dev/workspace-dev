@@ -393,8 +393,19 @@ test("docs: generated API reference stays wired to the public entrypoints", asyn
   assert.match(contractsApiReference, /^# contracts$/m);
   assert.match(contractsApiReference, /^## Interfaces$/m);
   assert.match(contractsApiReference, /^### WorkspaceStartOptions$/m);
+  assert.match(contractsApiReference, /^##### testIntelligence\?$/m);
+  assert.match(contractsApiReference, /^##### jobType\?$/m);
+  assert.match(contractsApiReference, /^##### testIntelligenceMode\?$/m);
+  assert.match(contractsApiReference, /^### WorkspaceJobType$/m);
+  assert.match(contractsApiReference, /^### WorkspaceTestIntelligenceMode$/m);
   assert.match(contractsApiReference, /^## Variables$/m);
+  assert.match(contractsApiReference, /^### ALLOWED\\_TEST\\_INTELLIGENCE\\_MODES$/m);
+  assert.match(contractsApiReference, /^### ALLOWED\\_WORKSPACE\\_JOB\\_TYPES$/m);
   assert.match(contractsApiReference, /^### CONTRACT\\_VERSION$/m);
+  assert.match(contractsApiReference, /^### GENERATED\\_TEST\\_CASE\\_SCHEMA\\_VERSION$/m);
+  assert.match(contractsApiReference, /^### TEST\\_INTELLIGENCE\\_CONTRACT\\_VERSION$/m);
+  assert.match(contractsApiReference, /^### TEST\\_INTELLIGENCE\\_ENV$/m);
+  assert.match(contractsApiReference, /^### TEST\\_INTELLIGENCE\\_PROMPT\\_TEMPLATE\\_VERSION$/m);
 });
 
 test("docs: figma direct-import guide stays aligned with inspector submit flow", async () => {

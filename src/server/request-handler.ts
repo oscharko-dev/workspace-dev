@@ -10,10 +10,12 @@ import {
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
+  TEST_INTELLIGENCE_ENV,
   type WorkspaceFigmaSourceMode,
   type WorkspaceImportSessionEvent,
   type WorkspaceImportSessionEventKind,
   type WorkspaceImportSessionSourceMode,
+  type WorkspaceJobType,
   type WorkspacePasteDeltaSummary,
   type WorkspaceStatus,
 } from "../contracts/index.js";
@@ -351,6 +353,25 @@ function normalizeFigmaUrlSubmitInput(
       figmaAccessToken,
     },
   };
+}
+
+const TEST_INTELLIGENCE_JOB_TYPE =
+  "figma_to_qc_test_cases" satisfies WorkspaceJobType;
+
+function resolveRawSubmitJobType(input: unknown): WorkspaceJobType | undefined {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return undefined;
+  }
+
+  const candidate = input as Record<string, unknown>;
+  if (typeof candidate.jobType !== "string") {
+    return undefined;
+  }
+
+  const normalized = candidate.jobType.trim().toLowerCase();
+  return normalized === TEST_INTELLIGENCE_JOB_TYPE
+    ? TEST_INTELLIGENCE_JOB_TYPE
+    : undefined;
 }
 
 function resolveBlockedModeViolation(input: unknown): {
@@ -3515,6 +3536,26 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        const rawJobType = resolveRawSubmitJobType(rawBody.value);
+        const testIntelligenceGatesEnabled =
+          resolveTestIntelligenceEnabled() &&
+          runtime.testIntelligenceEnabled === true;
+        if (
+          rawJobType === TEST_INTELLIGENCE_JOB_TYPE &&
+          !testIntelligenceGatesEnabled
+        ) {
+          sendRequestFailure({
+            statusCode: 503,
+            payload: {
+              error: ErrorCode.FEATURE_DISABLED,
+              message:
+                `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1 to use ${rawJobType}.`,
+            },
+            fallbackMessage: "Test intelligence feature disabled.",
+          });
+          return;
+        }
+
         const requestSourceMode = (() => {
           if (
             typeof rawBody.value !== "object" ||
@@ -3604,21 +3645,30 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
-        if (parsed.data.jobType === "figma_to_qc_test_cases") {
-          const envEnabled = resolveTestIntelligenceEnabled();
-          const startupEnabled = runtime.testIntelligenceEnabled === true;
-          if (!envEnabled || !startupEnabled) {
+        if (parsed.data.jobType === TEST_INTELLIGENCE_JOB_TYPE) {
+          if (!testIntelligenceGatesEnabled) {
             sendRequestFailure({
               statusCode: 503,
               payload: {
                 error: ErrorCode.FEATURE_DISABLED,
                 message:
-                  "Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1 to use figma_to_qc_test_cases.",
+                  `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1 to use ${parsed.data.jobType}.`,
               },
               fallbackMessage: "Test intelligence feature disabled.",
             });
             return;
           }
+
+          sendRequestFailure({
+            statusCode: 501,
+            payload: {
+              error: "NOT_IMPLEMENTED",
+              message:
+                `${TEST_INTELLIGENCE_JOB_TYPE} requires an isolated local test-intelligence runner and cannot use the existing Figma-to-code pipeline.`,
+            },
+            fallbackMessage: "Test intelligence job execution unavailable.",
+          });
+          return;
         }
 
         const { figmaSourceMode, llmCodegenMode } = parsed.data;
