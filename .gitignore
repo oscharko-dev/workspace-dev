@@ -39,6 +39,7 @@ pnpm-debug.log*
 .DS_Store
 
 # Local-only repo files
+/infra/
 /AGENTS.md
 /mcp.json
 /.mcp.json
