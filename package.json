@@ -116,6 +116,7 @@
     "lint:job-engine-catch-logging": "node scripts/check-job-engine-catch-logging.mjs",
     "lint:ts-style": "eslint \"src/**/*.ts\" --max-warnings=0 --ignore-pattern \"src/**/*.test.ts\" --ignore-pattern \"src/parity/fixtures/golden/**\"",
     "lint:no-telemetry": "node scripts/check-no-telemetry.mjs",
+    "lint:secrets": "node scripts/check-secrets.mjs",
     "lint:publint": "publint",
     "lint:types-publish": "attw --pack . --config-path .attw.json",
     "lint:size": "size-limit && node scripts/check-ui-worker-size.mjs",

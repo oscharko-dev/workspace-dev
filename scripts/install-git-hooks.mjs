@@ -33,14 +33,25 @@ export const runInstall = ({
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  execFile("git", ["config", "core.hooksPath", ".githooks"], {
+  // Use an absolute path so each working tree (including git worktrees, which
+  // maintain their own config.worktree) binds hooks to its own .githooks dir.
+  // A relative value would be resolved against the gitdir, which for a
+  // worktree is .git/worktrees/<name>/ and contains no hooks.
+  const hooksPath = path.join(cwd, ".githooks");
+
+  // `--worktree` targets $GIT_DIR/config.worktree when
+  // extensions.worktreeConfig is enabled; otherwise it behaves like `--local`.
+  // Using it unconditionally means: main working tree writes to .git/config,
+  // each linked worktree writes to its own config.worktree — so neither
+  // overwrites the other's hooks path.
+  execFile("git", ["config", "--worktree", "core.hooksPath", hooksPath], {
     cwd,
     env,
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  stdout("[install-git-hooks] Configured core.hooksPath to .githooks.");
+  stdout(`[install-git-hooks] Configured core.hooksPath to ${hooksPath}.`);
   return 0;
 };
 
