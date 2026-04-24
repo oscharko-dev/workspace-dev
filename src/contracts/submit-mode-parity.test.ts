@@ -193,6 +193,17 @@ test("submit-mode parity: SubmitRequestSchema rejects unknown testIntelligenceMo
   assert.equal(result.success, false);
 });
 
+test("submit-mode parity: SubmitRequestSchema rejects testIntelligenceMode on figma_to_code jobs", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    figmaSourceMode: "rest",
+    jobType: "figma_to_code",
+    testIntelligenceMode: "dry_run",
+  });
+  assert.equal(result.success, false);
+});
+
 test("submit-mode parity: every WorkspaceJobType is accepted by SubmitRequestSchema", () => {
   for (const jobType of Object.keys(WORKSPACE_JOB_TYPE_EXHAUSTIVE) as Array<
     keyof typeof WORKSPACE_JOB_TYPE_EXHAUSTIVE

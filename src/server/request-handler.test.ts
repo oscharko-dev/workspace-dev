@@ -24,6 +24,7 @@ import type {
   WorkspaceRuntimeLogInput,
   WorkspaceRuntimeLogger,
 } from "../logging.js";
+import { TEST_INTELLIGENCE_ENV } from "../contracts/index.js";
 
 const pasteFixtureRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -6648,25 +6649,23 @@ test("figma_paste forwards pasteDeltaSeed to submitJob when roots are extractabl
   }
 });
 
-const TEST_INTELLIGENCE_ENV_KEY = "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE";
-
 async function withTestIntelligenceEnv<T>(
   value: string | undefined,
   run: () => Promise<T>,
 ): Promise<T> {
-  const previous = process.env[TEST_INTELLIGENCE_ENV_KEY];
+  const previous = process.env[TEST_INTELLIGENCE_ENV];
   if (value === undefined) {
-    delete process.env[TEST_INTELLIGENCE_ENV_KEY];
+    delete process.env[TEST_INTELLIGENCE_ENV];
   } else {
-    process.env[TEST_INTELLIGENCE_ENV_KEY] = value;
+    process.env[TEST_INTELLIGENCE_ENV] = value;
   }
   try {
     return await run();
   } finally {
     if (previous === undefined) {
-      delete process.env[TEST_INTELLIGENCE_ENV_KEY];
+      delete process.env[TEST_INTELLIGENCE_ENV];
     } else {
-      process.env[TEST_INTELLIGENCE_ENV_KEY] = previous;
+      process.env[TEST_INTELLIGENCE_ENV] = previous;
     }
   }
 }
@@ -6687,6 +6686,34 @@ test("submit figma_to_qc_test_cases returns 503 FEATURE_DISABLED when both gates
         payload: {
           figmaFileKey: "file-key",
           figmaAccessToken: "token",
+          jobType: "figma_to_qc_test_cases",
+        },
+      });
+      assert.equal(response.statusCode, 503);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "FEATURE_DISABLED");
+      assert.equal(submitJob.mock.callCount(), 0);
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("submit figma_to_qc_test_cases fails closed before figma_url normalization when gates are off", async () => {
+  await withTestIntelligenceEnv(undefined, async () => {
+    const submitJob = test.mock.fn();
+    const { app, close } = await createRequestHandlerApp({
+      jobEngine: createStubJobEngine({
+        submitJob: submitJob as unknown as JobEngine["submitJob"],
+      }),
+      testIntelligenceEnabled: false,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/submit",
+        payload: {
+          figmaSourceMode: "figma_url",
           jobType: "figma_to_qc_test_cases",
         },
       });
@@ -6758,7 +6785,38 @@ test("submit figma_to_qc_test_cases returns 503 FEATURE_DISABLED when only start
   });
 });
 
-test("submit figma_to_qc_test_cases is accepted when both gates are on", async () => {
+test("submit figma_to_qc_test_cases does not enter codegen pipeline when both gates are on", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const submitJob = test.mock.fn();
+    const { app, close } = await createRequestHandlerApp({
+      jobEngine: createStubJobEngine({
+        submitJob: submitJob as unknown as JobEngine["submitJob"],
+      }),
+      testIntelligenceEnabled: true,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/submit",
+        payload: {
+          figmaFileKey: "file-key",
+          figmaAccessToken: "token",
+          jobType: "figma_to_qc_test_cases",
+          testIntelligenceMode: "dry_run",
+        },
+      });
+      assert.notEqual(response.statusCode, 503);
+      assert.equal(response.statusCode, 501);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "NOT_IMPLEMENTED");
+      assert.equal(submitJob.mock.callCount(), 0);
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("submit figma_to_code path is unaffected when test-intelligence gates are on", async () => {
   await withTestIntelligenceEnv("1", async () => {
     const submitJob = test.mock.fn(
       () =>
@@ -6774,43 +6832,6 @@ test("submit figma_to_qc_test_cases is accepted when both gates are on", async (
     const { app, close } = await createRequestHandlerApp({
       jobEngine: createStubJobEngine({ submitJob }),
       testIntelligenceEnabled: true,
-    });
-    try {
-      const response = await app.inject({
-        method: "POST",
-        url: "/workspace/submit",
-        payload: {
-          figmaFileKey: "file-key",
-          figmaAccessToken: "token",
-          jobType: "figma_to_qc_test_cases",
-          testIntelligenceMode: "dry_run",
-        },
-      });
-      assert.notEqual(response.statusCode, 503);
-      assert.equal(response.statusCode, 202);
-      assert.equal(submitJob.mock.callCount(), 1);
-    } finally {
-      await close();
-    }
-  });
-});
-
-test("submit figma_to_code path is unaffected by test-intelligence gates", async () => {
-  await withTestIntelligenceEnv(undefined, async () => {
-    const submitJob = test.mock.fn(
-      () =>
-        ({
-          jobId: "job-accepted",
-          status: "queued",
-          acceptedModes: {
-            figmaSourceMode: "rest",
-            llmCodegenMode: "deterministic",
-          },
-        }) as ReturnType<JobEngine["submitJob"]>,
-    );
-    const { app, close } = await createRequestHandlerApp({
-      jobEngine: createStubJobEngine({ submitJob }),
-      testIntelligenceEnabled: false,
     });
     try {
       const implicit = await app.inject({

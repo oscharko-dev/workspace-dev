@@ -28,7 +28,6 @@ import {
 import { DEFAULT_PIPELINE_DIAGNOSTIC_LIMITS } from "./job-engine/errors.js";
 import { parseVisualBrowserList } from "./job-engine/visual-browser-matrix.js";
 import { createWorkspaceServer } from "./server.js";
-import { resolveTestIntelligenceEnabled } from "./server/constants.js";
 import path from "node:path";
 
 const DEFAULT_PORT = 1983;
@@ -1316,7 +1315,6 @@ const main = async (): Promise<void> => {
       ...(options.importSessionEventBearerToken !== undefined
         ? { importSessionEventBearerToken: options.importSessionEventBearerToken }
         : {}),
-      testIntelligence: { enabled: resolveTestIntelligenceEnabled() },
       enablePreview: options.enablePreview
     });
 
