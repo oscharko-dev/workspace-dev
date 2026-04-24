@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.16.0
+ * Contract version: 3.18.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -83,6 +83,49 @@ export const ALLOWED_LLM_CODEGEN_MODES = ["deterministic"] as const;
 /** Allowed codegen modes for workspace-dev. */
 export type WorkspaceLlmCodegenMode =
   (typeof ALLOWED_LLM_CODEGEN_MODES)[number];
+
+/**
+ * Runtime source-of-truth for allowed workspace-dev job types.
+ * Keep this array and `WorkspaceJobType` in lockstep.
+ */
+export const ALLOWED_WORKSPACE_JOB_TYPES = [
+  "figma_to_code",
+  "figma_to_qc_test_cases",
+] as const;
+
+/** Allowed job types for workspace-dev submissions. */
+export type WorkspaceJobType = (typeof ALLOWED_WORKSPACE_JOB_TYPES)[number];
+
+/**
+ * Runtime source-of-truth for allowed test-intelligence modes.
+ *
+ * Test intelligence is an opt-in, local-first feature that is SEPARATE from
+ * the `llmCodegenMode` namespace used by the deterministic code generation
+ * pipeline. The two mode namespaces are intentionally isolated: changes to
+ * this array must never affect `ALLOWED_LLM_CODEGEN_MODES`.
+ */
+export const ALLOWED_TEST_INTELLIGENCE_MODES = [
+  "deterministic_llm",
+  "offline_eval",
+  "dry_run",
+] as const;
+
+/** Allowed test-intelligence modes. */
+export type WorkspaceTestIntelligenceMode =
+  (typeof ALLOWED_TEST_INTELLIGENCE_MODES)[number];
+
+/** Contract version for the opt-in test-intelligence surface. */
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.0.0" as const;
+
+/** Schema version for generated test case payloads. */
+export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Prompt template version for the test-intelligence prompt family. */
+export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
+
+/** Environment variable name that gates test-intelligence features at startup. */
+export const TEST_INTELLIGENCE_ENV =
+  "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE" as const;
 
 /** Theme brand policy applied during IR token derivation. */
 export type WorkspaceBrandTheme = "derived" | "sparkasse";
@@ -322,6 +365,25 @@ export interface WorkspaceStartOptions {
    * it does not define any server-start target-root behavior.
    */
   targetPath?: string;
+  /**
+   * Opt-in startup feature gate for Figma-to-QC test case generation.
+   *
+   * Test intelligence is SEPARATE from the Figma-to-code mode lock and is
+   * local-first by design. The feature is reachable only when both this
+   * startup option and the `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1`
+   * environment variable are enabled; otherwise, submitting a
+   * `figma_to_qc_test_cases` job fails closed with a `503 Feature Disabled`
+   * response and performs no side effects.
+   *
+   * A future-facing optional subpath export `workspace-dev/test-intelligence`
+   * is planned to expose the full test-intelligence surface without
+   * importing it from the root entry point; that export is not wired in
+   * this wave.
+   */
+  testIntelligence?: {
+    /** Whether test-intelligence features may be invoked at runtime. Default: false. */
+    enabled: boolean;
+  };
 }
 
 /** Status of a running workspace-dev instance. */
@@ -372,6 +434,20 @@ export interface WorkspaceJobInput {
   brandTheme?: WorkspaceBrandTheme;
   generationLocale?: string;
   formHandlingMode?: WorkspaceFormHandlingMode;
+  /**
+   * Optional job-type discriminator. When omitted, the submission is treated
+   * as `figma_to_code`. Setting `figma_to_qc_test_cases` requires both the
+   * `WorkspaceStartOptions.testIntelligence.enabled` startup flag and the
+   * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` environment variable. When the
+   * gates are not satisfied, the server returns `503 Feature Disabled`.
+   */
+  jobType?: WorkspaceJobType;
+  /**
+   * Optional test-intelligence mode namespace. Only relevant when
+   * `jobType="figma_to_qc_test_cases"`. Values are validated independently
+   * of `llmCodegenMode`, which remains locked to `deterministic`.
+   */
+  testIntelligenceMode?: WorkspaceTestIntelligenceMode;
   importIntent?: WorkspaceImportIntent;
   originalIntent?: WorkspaceImportIntent;
   intentCorrected?: boolean;
@@ -1322,4 +1398,4 @@ export interface WorkspaceJobConfidence {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.16.0" as const;
+export const CONTRACT_VERSION = "3.18.0" as const;

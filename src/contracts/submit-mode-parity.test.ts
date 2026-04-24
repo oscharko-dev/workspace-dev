@@ -12,8 +12,12 @@ import test from "node:test";
 import {
   ALLOWED_FIGMA_SOURCE_MODES,
   ALLOWED_LLM_CODEGEN_MODES,
+  ALLOWED_TEST_INTELLIGENCE_MODES,
+  ALLOWED_WORKSPACE_JOB_TYPES,
   type WorkspaceFigmaSourceMode,
+  type WorkspaceJobType,
   type WorkspaceLlmCodegenMode,
+  type WorkspaceTestIntelligenceMode,
 } from "./index.js";
 import { SubmitRequestSchema } from "../schemas.js";
 
@@ -32,6 +36,17 @@ const LLM_CODEGEN_MODE_EXHAUSTIVE = {
   deterministic: true,
 } as const satisfies Record<WorkspaceLlmCodegenMode, true>;
 
+const TEST_INTELLIGENCE_MODE_EXHAUSTIVE = {
+  deterministic_llm: true,
+  offline_eval: true,
+  dry_run: true,
+} as const satisfies Record<WorkspaceTestIntelligenceMode, true>;
+
+const WORKSPACE_JOB_TYPE_EXHAUSTIVE = {
+  figma_to_code: true,
+  figma_to_qc_test_cases: true,
+} as const satisfies Record<WorkspaceJobType, true>;
+
 // The reverse direction: the runtime allowlist must only contain values
 // that the contract type accepts. `satisfies` on the array element type
 // enforces this at compile time.
@@ -39,6 +54,10 @@ const ALLOWED_FIGMA_SOURCE_MODES_TYPED =
   ALLOWED_FIGMA_SOURCE_MODES satisfies readonly WorkspaceFigmaSourceMode[];
 const ALLOWED_LLM_CODEGEN_MODES_TYPED =
   ALLOWED_LLM_CODEGEN_MODES satisfies readonly WorkspaceLlmCodegenMode[];
+const ALLOWED_TEST_INTELLIGENCE_MODES_TYPED =
+  ALLOWED_TEST_INTELLIGENCE_MODES satisfies readonly WorkspaceTestIntelligenceMode[];
+const ALLOWED_WORKSPACE_JOB_TYPES_TYPED =
+  ALLOWED_WORKSPACE_JOB_TYPES satisfies readonly WorkspaceJobType[];
 
 test("submit-mode parity: every WorkspaceFigmaSourceMode is accepted by SubmitRequestSchema", () => {
   for (const mode of Object.keys(FIGMA_SOURCE_MODE_EXHAUSTIVE) as Array<
@@ -123,6 +142,98 @@ test("submit-mode parity: SubmitRequestSchema rejects unknown llmCodegenMode val
     figmaAccessToken: "figd_xxx",
     figmaSourceMode: "rest",
     llmCodegenMode: "nondeterministic",
+  });
+  assert.equal(result.success, false);
+});
+
+test("submit-mode parity: every WorkspaceTestIntelligenceMode is accepted by SubmitRequestSchema", () => {
+  for (const mode of Object.keys(TEST_INTELLIGENCE_MODE_EXHAUSTIVE) as Array<
+    keyof typeof TEST_INTELLIGENCE_MODE_EXHAUSTIVE
+  >) {
+    const result = SubmitRequestSchema.safeParse({
+      figmaFileKey: "abc123",
+      figmaAccessToken: "figd_xxx",
+      figmaSourceMode: "rest",
+      jobType: "figma_to_qc_test_cases",
+      testIntelligenceMode: mode,
+    });
+    assert.equal(
+      result.success,
+      true,
+      `SubmitRequestSchema rejected testIntelligenceMode='${mode}': ${
+        result.success ? "" : JSON.stringify(result.error.issues)
+      }`,
+    );
+    if (result.success) {
+      assert.equal(result.data.testIntelligenceMode, mode);
+    }
+  }
+});
+
+test("submit-mode parity: every ALLOWED_TEST_INTELLIGENCE_MODES value is in WorkspaceTestIntelligenceMode", () => {
+  const allowed = new Set<string>(ALLOWED_TEST_INTELLIGENCE_MODES_TYPED);
+  const typed = new Set<string>(Object.keys(TEST_INTELLIGENCE_MODE_EXHAUSTIVE));
+  assert.deepEqual(
+    [...allowed].sort(),
+    [...typed].sort(),
+    `ALLOWED_TEST_INTELLIGENCE_MODES drifted from WorkspaceTestIntelligenceMode. Runtime=[${[
+      ...allowed,
+    ].join(", ")}] Type=[${[...typed].join(", ")}]`,
+  );
+});
+
+test("submit-mode parity: SubmitRequestSchema rejects unknown testIntelligenceMode values", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    figmaSourceMode: "rest",
+    jobType: "figma_to_qc_test_cases",
+    testIntelligenceMode: "not_a_real_mode",
+  });
+  assert.equal(result.success, false);
+});
+
+test("submit-mode parity: every WorkspaceJobType is accepted by SubmitRequestSchema", () => {
+  for (const jobType of Object.keys(WORKSPACE_JOB_TYPE_EXHAUSTIVE) as Array<
+    keyof typeof WORKSPACE_JOB_TYPE_EXHAUSTIVE
+  >) {
+    const result = SubmitRequestSchema.safeParse({
+      figmaFileKey: "abc123",
+      figmaAccessToken: "figd_xxx",
+      figmaSourceMode: "rest",
+      jobType,
+    });
+    assert.equal(
+      result.success,
+      true,
+      `SubmitRequestSchema rejected jobType='${jobType}': ${
+        result.success ? "" : JSON.stringify(result.error.issues)
+      }`,
+    );
+    if (result.success) {
+      assert.equal(result.data.jobType, jobType);
+    }
+  }
+});
+
+test("submit-mode parity: every ALLOWED_WORKSPACE_JOB_TYPES value is in WorkspaceJobType", () => {
+  const allowed = new Set<string>(ALLOWED_WORKSPACE_JOB_TYPES_TYPED);
+  const typed = new Set<string>(Object.keys(WORKSPACE_JOB_TYPE_EXHAUSTIVE));
+  assert.deepEqual(
+    [...allowed].sort(),
+    [...typed].sort(),
+    `ALLOWED_WORKSPACE_JOB_TYPES drifted from WorkspaceJobType. Runtime=[${[
+      ...allowed,
+    ].join(", ")}] Type=[${[...typed].join(", ")}]`,
+  );
+});
+
+test("submit-mode parity: SubmitRequestSchema rejects unknown jobType values", () => {
+  const result = SubmitRequestSchema.safeParse({
+    figmaFileKey: "abc123",
+    figmaAccessToken: "figd_xxx",
+    figmaSourceMode: "rest",
+    jobType: "not_a_real_job_type",
   });
   assert.equal(result.success, false);
 });

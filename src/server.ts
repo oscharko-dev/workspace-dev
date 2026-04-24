@@ -330,6 +330,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       previewEnabled: runtime.previewEnabled,
       rateLimitPerMinute,
       ...(importSessionEventBearerToken !== undefined ? { importSessionEventBearerToken } : {}),
+      testIntelligenceEnabled: options.testIntelligence?.enabled === true,
       logger: runtime.logger
     },
     getServerLifecycleState: () => lifecycleState,
