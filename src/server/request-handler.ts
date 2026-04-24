@@ -89,6 +89,7 @@ import {
 import {
   MAX_SUBMIT_BODY_BYTES,
   WORKSPACE_UI_CONTENT_SECURITY_POLICY,
+  resolveTestIntelligenceEnabled,
 } from "./constants.js";
 import { ErrorCode } from "./error-codes.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
@@ -164,7 +165,12 @@ async function resolveGeneratedPreviewAsset({
   } catch {
     if (fallbackPath !== "index.html") {
       const indexPath = path.resolve(previewRoot, "index.html");
-      if (await hasSymlinkInPath({ candidatePath: indexPath, rootPath: previewRoot })) {
+      if (
+        await hasSymlinkInPath({
+          candidatePath: indexPath,
+          rootPath: previewRoot,
+        })
+      ) {
         return undefined;
       }
       try {
@@ -581,6 +587,14 @@ interface CreateWorkspaceRequestHandlerInput {
     previewEnabled: boolean;
     rateLimitPerMinute?: number;
     importSessionEventBearerToken?: string;
+    /**
+     * Opt-in startup feature gate for the Figma-to-QC test-intelligence
+     * surface. Combined with the `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1`
+     * environment variable; both must be true for a
+     * `jobType="figma_to_qc_test_cases"` submission to be accepted.
+     * Default (when omitted): false.
+     */
+    testIntelligenceEnabled?: boolean;
     logger?: WorkspaceRuntimeLogger;
   };
   getServerLifecycleState?: () => "starting" | "ready" | "draining" | "stopped";
@@ -3590,6 +3604,23 @@ export function createWorkspaceRequestHandler({
           return;
         }
 
+        if (parsed.data.jobType === "figma_to_qc_test_cases") {
+          const envEnabled = resolveTestIntelligenceEnabled();
+          const startupEnabled = runtime.testIntelligenceEnabled === true;
+          if (!envEnabled || !startupEnabled) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: ErrorCode.FEATURE_DISABLED,
+                message:
+                  "Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1 to use figma_to_qc_test_cases.",
+              },
+              fallbackMessage: "Test intelligence feature disabled.",
+            });
+            return;
+          }
+        }
+
         const { figmaSourceMode, llmCodegenMode } = parsed.data;
         const resolvedFigmaSourceMode =
           (figmaSourceMode?.trim().toLowerCase() as
@@ -4065,7 +4096,10 @@ class SourceFileSelectionHeap {
       return;
     }
     const currentWorst = this.entries[0];
-    if (currentWorst === undefined || compareOrdinaryStrings(entry.path, currentWorst.path) >= 0) {
+    if (
+      currentWorst === undefined ||
+      compareOrdinaryStrings(entry.path, currentWorst.path) >= 0
+    ) {
       return;
     }
     this.entries[0] = entry;
@@ -4149,7 +4183,9 @@ async function collectSourceFiles(
 ): Promise<CollectSourceFilesResult> {
   const resolvedProjectDir = path.resolve(projectDir);
   const baseDir =
-    dirFilter !== undefined ? path.join(resolvedProjectDir, dirFilter) : resolvedProjectDir;
+    dirFilter !== undefined
+      ? path.join(resolvedProjectDir, dirFilter)
+      : resolvedProjectDir;
   const resolvedBaseDir = path.resolve(baseDir);
   if (
     resolvedBaseDir !== resolvedProjectDir &&
@@ -4279,9 +4315,10 @@ async function collectSourceFiles(
 
   await scanDirectory(baseDir);
 
-  const files = Array.from({ length: selected.size }, () => selected.pop()!).sort(
-    (left, right) => compareOrdinaryStrings(left.path, right.path),
-  );
+  const files = Array.from(
+    { length: selected.size },
+    () => selected.pop()!,
+  ).sort((left, right) => compareOrdinaryStrings(left.path, right.path));
 
   if (files.length > limit) {
     const page = files.slice(0, limit);

@@ -1,3 +1,5 @@
+import { TEST_INTELLIGENCE_ENV } from "../contracts/index.js";
+
 export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_PORT = 1983;
 export const DEFAULT_OUTPUT_ROOT = ".workspace-dev";
@@ -39,6 +41,29 @@ export function resolveStrictTransportSecurity(
   }
 
   return DEFAULT_STRICT_TRANSPORT_SECURITY;
+}
+/**
+ * Environment-variable feature gate for the opt-in test-intelligence surface.
+ * Returns `true` only when `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` is set to a
+ * recognized truthy value. This gate is combined with the startup option
+ * `WorkspaceStartOptions.testIntelligence.enabled`; both must be enabled for
+ * `POST /workspace/submit` with `jobType="figma_to_qc_test_cases"` to be
+ * accepted. The feature is local-first and isolated from `llmCodegenMode`.
+ */
+export function resolveTestIntelligenceEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const raw = env[TEST_INTELLIGENCE_ENV];
+  if (raw === undefined) {
+    return false;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
 }
 export const DEFAULT_CONTENT_SECURITY_POLICY = "frame-ancestors 'self'";
 export const WORKSPACE_UI_CONTENT_SECURITY_POLICY =

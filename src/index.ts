@@ -8,6 +8,8 @@
 export type {
   WorkspaceFigmaSourceMode,
   WorkspaceLlmCodegenMode,
+  WorkspaceJobType,
+  WorkspaceTestIntelligenceMode,
   WorkspaceBrandTheme,
   WorkspaceFormHandlingMode,
   WorkspaceImportSession,
@@ -41,7 +43,13 @@ export type {
 export {
   ALLOWED_FIGMA_SOURCE_MODES,
   ALLOWED_LLM_CODEGEN_MODES,
+  ALLOWED_TEST_INTELLIGENCE_MODES,
+  ALLOWED_WORKSPACE_JOB_TYPES,
   CONTRACT_VERSION,
+  GENERATED_TEST_CASE_SCHEMA_VERSION,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
+  TEST_INTELLIGENCE_ENV,
+  TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
 } from "./contracts/index.js";
 
 export { createWorkspaceServer } from "./server.js";

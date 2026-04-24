@@ -31,6 +31,29 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.18.0] - 2026-04-24
+
+### Added (Issue #1360)
+
+- `WorkspaceStartOptions.testIntelligence?: { enabled: boolean }` — opt-in startup feature gate for Figma-to-QC test case generation.
+- `WorkspaceJobInput.jobType?: WorkspaceJobType` with values `"figma_to_code"` (default) and `"figma_to_qc_test_cases"`.
+- `WorkspaceJobInput.testIntelligenceMode?: WorkspaceTestIntelligenceMode` — separate mode namespace with values `"deterministic_llm" | "offline_eval" | "dry_run"`, isolated from `llmCodegenMode`.
+- `ALLOWED_WORKSPACE_JOB_TYPES` and `ALLOWED_TEST_INTELLIGENCE_MODES` runtime-exported `readonly` arrays, consumed by `src/schemas.ts` to keep the submit parser allowlist in lockstep with the exported types.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION`, `GENERATED_TEST_CASE_SCHEMA_VERSION`, `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` constants — version stamps for the opt-in surface.
+- `TEST_INTELLIGENCE_ENV` constant naming the `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` environment gate.
+- `FEATURE_DISABLED` error code. `POST /workspace/submit` with `jobType="figma_to_qc_test_cases"` returns `503 FEATURE_DISABLED` when the startup option or environment gate is not enabled and performs no side effects.
+
+### Unchanged (Issue #1360)
+
+- `llmCodegenMode=deterministic` mode-lock validation is unchanged and isolated from the test-intelligence namespace.
+- All existing `figma_to_code` submission behavior (including mode-lock, schema validation, and engine submission) is preserved.
+
+### Planned (not in this wave)
+
+- Optional subpath export `workspace-dev/test-intelligence` for the full test-intelligence surface. The current wave exposes the contract surface from the root entry point only.
+
+---
+
 ## [3.17.0] - 2026-04-18
 
 ### Changed (Issue #638)
@@ -642,9 +665,9 @@ Added:
 Added:
 
 - New stage names:
-  - `template.prepare`
-  - `validate.project`
-  - `git.pr`
+    - `template.prepare`
+    - `validate.project`
+    - `git.pr`
 - `WorkspaceJobInput.enableGitPr?: boolean` (`false` by default)
 - `WorkspaceGitPrStatus` payload on `WorkspaceJobStatus` and `WorkspaceJobResult`
 
@@ -662,13 +685,13 @@ Breaking changes:
 
 - `POST /workspace/submit` now returns `202 Accepted` and enqueues a real local generation job.
 - `WorkspaceJobInput` now requires:
-  - `figmaAccessToken`
-  - `repoUrl`
-  - `repoToken`
+    - `figmaAccessToken`
+    - `repoUrl`
+    - `repoToken`
 - `WorkspaceJobResult` changed from static `not_implemented` envelope to compact job result payload.
 - `WorkspaceStatus` now includes:
-  - `outputRoot`
-  - `previewEnabled`
+    - `outputRoot`
+    - `previewEnabled`
 
 Added:
 

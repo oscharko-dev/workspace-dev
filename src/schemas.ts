@@ -26,16 +26,20 @@ import type {
   WorkspaceImportMode,
   WorkspaceJobInput,
   WorkspaceJobRetryStage,
+  WorkspaceJobType,
   WorkspaceLlmCodegenMode,
   WorkspaceLocalSyncApplyRequest,
   WorkspaceLocalSyncRequest,
   WorkspaceRegenerationOverrideEntry,
   WorkspaceStatus,
+  WorkspaceTestIntelligenceMode,
   WorkspaceVisualAuditInput,
 } from "./contracts/index.js";
 import {
   ALLOWED_FIGMA_SOURCE_MODES,
   ALLOWED_LLM_CODEGEN_MODES,
+  ALLOWED_TEST_INTELLIGENCE_MODES,
+  ALLOWED_WORKSPACE_JOB_TYPES,
 } from "./contracts/index.js";
 import { validateComponentMappingRule } from "./component-mapping-rules.js";
 import {
@@ -211,6 +215,58 @@ function parseSubmitLlmCodegenMode({
       issues,
       ["llmCodegenMode"],
       `llmCodegenMode must equal '${ALLOWED_LLM_CODEGEN_MODES[0]}'`,
+    );
+    return undefined;
+  }
+
+  return match;
+}
+
+function parseSubmitJobType({
+  value,
+  issues,
+}: {
+  value: string | undefined;
+  issues: ValidationIssue[];
+}): WorkspaceJobType | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  const match = ALLOWED_WORKSPACE_JOB_TYPES.find((mode) => mode === normalized);
+  if (match === undefined) {
+    pushIssue(
+      issues,
+      ["jobType"],
+      `jobType must be one of: ${ALLOWED_WORKSPACE_JOB_TYPES.join(", ")}`,
+    );
+    return undefined;
+  }
+
+  return match;
+}
+
+function parseSubmitTestIntelligenceMode({
+  value,
+  issues,
+}: {
+  value: string | undefined;
+  issues: ValidationIssue[];
+}): WorkspaceTestIntelligenceMode | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  const match = ALLOWED_TEST_INTELLIGENCE_MODES.find(
+    (mode) => mode === normalized,
+  );
+  if (match === undefined) {
+    pushIssue(
+      issues,
+      ["testIntelligenceMode"],
+      `testIntelligenceMode must be one of: ${ALLOWED_TEST_INTELLIGENCE_MODES.join(", ")}`,
     );
     return undefined;
   }
@@ -917,6 +973,8 @@ function parseSubmitRequest(
     "enableGitPr",
     "figmaSourceMode",
     "llmCodegenMode",
+    "jobType",
+    "testIntelligenceMode",
     "projectName",
     "targetPath",
     "brandTheme",
@@ -1025,6 +1083,18 @@ function parseSubmitRequest(
   const rawLlmCodegenMode = parseStringField({
     input,
     key: "llmCodegenMode",
+    required: false,
+    issues,
+  });
+  const rawJobType = parseStringField({
+    input,
+    key: "jobType",
+    required: false,
+    issues,
+  });
+  const rawTestIntelligenceMode = parseStringField({
+    input,
+    key: "testIntelligenceMode",
     required: false,
     issues,
   });
@@ -1188,6 +1258,14 @@ function parseSubmitRequest(
   })();
   const llmCodegenMode = parseSubmitLlmCodegenMode({
     value: rawLlmCodegenMode,
+    issues,
+  });
+  const jobType = parseSubmitJobType({
+    value: rawJobType,
+    issues,
+  });
+  const testIntelligenceMode = parseSubmitTestIntelligenceMode({
+    value: rawTestIntelligenceMode,
     issues,
   });
   const generationLocale = parseSubmitGenerationLocale({
@@ -1458,6 +1536,12 @@ function parseSubmitRequest(
   }
   if (llmCodegenMode !== undefined) {
     data.llmCodegenMode = llmCodegenMode;
+  }
+  if (jobType !== undefined) {
+    data.jobType = jobType;
+  }
+  if (testIntelligenceMode !== undefined) {
+    data.testIntelligenceMode = testIntelligenceMode;
   }
   if (projectName !== undefined) {
     data.projectName = projectName;
