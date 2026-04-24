@@ -42,6 +42,7 @@ export const STAGE_ARTIFACT_KEYS = {
   codeConnectMap: "code_connect.map",
   gitPrStatus: "git.pr.status",
   pasteFingerprint: "figma.paste.fingerprint",
+  businessTestIntentIr: "test_intelligence.business_intent_ir",
 } as const;
 
 export type StageArtifactKey =

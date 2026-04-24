@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.18.0
+ * Contract version: 3.19.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -1394,8 +1394,197 @@ export interface WorkspaceJobConfidence {
 }
 
 /**
+ * Business Test Intent IR surface (Issue #1361).
+ *
+ * The IR is the sanitized, test-design-oriented input that the downstream
+ * test-case generator consumes. Raw Figma payloads must never reach prompt
+ * compilation — PII-like mock values are detected and replaced with opaque
+ * redaction tokens before any artifact is persisted.
+ */
+
+/** Schema version for `BusinessTestIntentIr` artifacts. */
+export const BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Known PII-like categories detected in mock form data. */
+export type PiiKind =
+  | "iban"
+  | "pan"
+  | "tax_id"
+  | "email"
+  | "phone"
+  | "full_name";
+
+/** Where a detected element came from during reconciliation. */
+export type IntentProvenance = "figma_node" | "visual_sidecar" | "reconciled";
+
+/** Location within the input that held a PII-like match. */
+export type PiiMatchLocation =
+  | "field_label"
+  | "field_default_value"
+  | "screen_text"
+  | "action_label"
+  | "trace_node_name"
+  | "trace_node_path"
+  | "screen_name"
+  | "screen_path"
+  | "validation_rule"
+  | "navigation_target";
+
+/** Reference to the Figma node that produced an intent element. */
+export interface IntentTraceRef {
+  nodeId?: string;
+  nodeName?: string;
+  nodePath?: string;
+}
+
+/** Ambiguity note attached to a detected element or PII indicator. */
+export interface IntentAmbiguity {
+  reason: string;
+}
+
+/** PII indicator attached to a detected element. Original values are never persisted. */
+export interface PiiIndicator {
+  id: string;
+  kind: PiiKind;
+  confidence: number;
+  matchLocation: PiiMatchLocation;
+  redacted: string;
+  screenId?: string;
+  elementId?: string;
+  traceRef?: IntentTraceRef;
+}
+
+/** Record describing a single redaction decision. */
+export interface IntentRedaction {
+  id: string;
+  indicatorId: string;
+  kind: PiiKind;
+  reason: string;
+  replacement: string;
+}
+
+/** Input field inferred from a screen. */
+export interface DetectedField {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  label: string;
+  type: string;
+  defaultValue?: string;
+  ambiguity?: IntentAmbiguity;
+}
+
+/** Action/control inferred from a screen (e.g. Submit button). */
+export interface DetectedAction {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  label: string;
+  kind: string;
+  ambiguity?: IntentAmbiguity;
+}
+
+/** Validation rule inferred from design hints. */
+export interface DetectedValidation {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  rule: string;
+  targetFieldId?: string;
+  ambiguity?: IntentAmbiguity;
+}
+
+/** Navigation edge inferred from prototype links or equivalent. */
+export interface DetectedNavigation {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  targetScreenId: string;
+  triggerElementId?: string;
+  ambiguity?: IntentAmbiguity;
+}
+
+/** Business-object cluster inferred across one or more fields. */
+export interface InferredBusinessObject {
+  id: string;
+  screenId: string;
+  trace: IntentTraceRef;
+  provenance: IntentProvenance;
+  confidence: number;
+  name: string;
+  fieldIds: string[];
+  ambiguity?: IntentAmbiguity;
+}
+
+/** Per-screen slice of the intent. */
+export interface BusinessTestIntentScreen {
+  screenId: string;
+  screenName: string;
+  screenPath?: string;
+  trace: IntentTraceRef;
+}
+
+/** Metadata about the input that produced the IR. */
+export interface BusinessTestIntentIrSource {
+  kind: "figma_local_json" | "figma_plugin" | "figma_rest" | "hybrid";
+  contentHash: string;
+}
+
+/** Redacted, deterministic test-design IR for a job. */
+export interface BusinessTestIntentIr {
+  version: typeof BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION;
+  source: BusinessTestIntentIrSource;
+  screens: BusinessTestIntentScreen[];
+  detectedFields: DetectedField[];
+  detectedActions: DetectedAction[];
+  detectedValidations: DetectedValidation[];
+  detectedNavigation: DetectedNavigation[];
+  inferredBusinessObjects: InferredBusinessObject[];
+  risks: string[];
+  assumptions: string[];
+  openQuestions: string[];
+  piiIndicators: PiiIndicator[];
+  redactions: IntentRedaction[];
+}
+
+/** Visual-sidecar description produced by a multimodal vision model (Issue #1386). */
+export interface VisualScreenDescription {
+  screenId: string;
+  sidecarDeployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock";
+  regions: Array<{
+    regionId: string;
+    confidence: number;
+    label?: string;
+    controlType?: string;
+    visibleText?: string;
+    stateHints?: string[];
+    validationHints?: string[];
+    ambiguity?: IntentAmbiguity;
+  }>;
+  confidenceSummary: { min: number; max: number; mean: number };
+  screenName?: string;
+  capturedAt?: string;
+  piiFlags?: Array<{
+    regionId: string;
+    kind: PiiKind;
+    confidence: number;
+  }>;
+}
+
+/**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.18.0" as const;
+export const CONTRACT_VERSION = "3.19.0" as const;
