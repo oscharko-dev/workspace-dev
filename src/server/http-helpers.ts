@@ -202,6 +202,9 @@ function normalizeRequestChunk(chunk: unknown): Buffer {
   ) {
     return Buffer.from(String(chunk), "utf8");
   }
+  if (typeof chunk === "object") {
+    return Buffer.from(JSON.stringify(chunk), "utf8");
+  }
   return Buffer.from("", "utf8");
 }
 

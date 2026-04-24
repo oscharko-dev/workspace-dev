@@ -7,6 +7,17 @@ const ROOT_NODE_TYPES = new Set<string>([
   "INSTANCE",
 ]);
 
+const asDiffableFigmaNode = (value: unknown): DiffableFigmaNode | undefined => {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.id !== "string" || typeof record.type !== "string") {
+    return undefined;
+  }
+  return record as unknown as DiffableFigmaNode;
+};
+
 const collectScreenLikeRoots = (
   node: DiffableFigmaNode,
   roots: DiffableFigmaNode[],
@@ -19,19 +30,11 @@ const collectScreenLikeRoots = (
     return;
   }
   for (const child of node.children) {
-    collectScreenLikeRoots(child, roots);
+    const typedChild = asDiffableFigmaNode(child);
+    if (typedChild !== undefined) {
+      collectScreenLikeRoots(typedChild, roots);
+    }
   }
-};
-
-const asDiffableFigmaNode = (value: unknown): DiffableFigmaNode | undefined => {
-  if (typeof value !== "object" || value === null) {
-    return undefined;
-  }
-  const record = value as Record<string, unknown>;
-  if (typeof record.id !== "string" || typeof record.type !== "string") {
-    return undefined;
-  }
-  return record as unknown as DiffableFigmaNode;
 };
 
 export const extractDiffablePasteRoots = (
@@ -60,7 +63,10 @@ export const extractDiffablePasteRoots = (
         }
         if (node.type === "CANVAS" && node.children !== undefined) {
           for (const pageChild of node.children) {
-            collectScreenLikeRoots(pageChild, roots);
+            const typedPageChild = asDiffableFigmaNode(pageChild);
+            if (typedPageChild !== undefined) {
+              collectScreenLikeRoots(typedPageChild, roots);
+            }
           }
           continue;
         }
