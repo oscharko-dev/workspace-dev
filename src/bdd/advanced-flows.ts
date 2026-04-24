@@ -263,9 +263,11 @@ void test("bdd contract: Require approval and single-use confirmation tokens for
     assert.equal(applyResponse.statusCode, 200);
     const applyBody = applyResponse.json<Record<string, unknown>>();
     const firstFile = files[0];
+    const firstFilePath =
+      typeof firstFile?.path === "string" ? firstFile.path : "";
     const writtenFilePath = path.join(
       String(dryRunBody.destinationRoot),
-      ...(typeof firstFile?.path === "string" ? firstFile.path : "").split("/"),
+      ...firstFilePath.split("/"),
     );
     await stat(writtenFilePath);
     assert.equal(
