@@ -80,3 +80,37 @@ export {
   type LlmCapabilityProbeInput,
   type LlmCapabilityProbeResult,
 } from "./llm-capability-probe.js";
+export {
+  validateGeneratedTestCases,
+  type ValidateGeneratedTestCasesInput,
+} from "./test-case-validation.js";
+export {
+  buildTestCaseFingerprint,
+  detectDuplicateTestCases,
+  jaccardSimilarity,
+} from "./test-case-duplicate.js";
+export {
+  computeCoverageReport,
+  type ComputeCoverageReportInput,
+} from "./test-case-coverage.js";
+export {
+  cloneEuBankingDefaultProfile,
+  EU_BANKING_DEFAULT_POLICY_PROFILE,
+} from "./policy-profile.js";
+export {
+  evaluatePolicyGate,
+  type EvaluatePolicyGateInput,
+} from "./policy-gate.js";
+export {
+  validateVisualSidecar,
+  type ValidateVisualSidecarInput,
+} from "./visual-sidecar-validation.js";
+export {
+  runValidationPipeline,
+  runAndPersistValidationPipeline,
+  writeValidationPipelineArtifacts,
+  type RunValidationPipelineInput,
+  type ValidationPipelineArtifacts,
+  type WriteValidationPipelineArtifactsInput,
+  type WriteValidationPipelineArtifactsResult,
+} from "./validation-pipeline.js";

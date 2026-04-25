@@ -31,6 +31,30 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.23.0] - 2026-04-25
+
+### Added (Issue #1364)
+
+- `TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION`, `TEST_CASE_POLICY_REPORT_SCHEMA_VERSION`, `TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION`, `VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION` — version stamps (`"1.0.0"`) for the persisted Wave 1 validation, policy, coverage, and visual-sidecar gate artifacts.
+- `GENERATED_TESTCASES_ARTIFACT_FILENAME`, `TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME`, `TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME`, `TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME`, `VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME` — canonical filenames for the four persisted reports plus the gated test-case payload.
+- `EU_BANKING_DEFAULT_POLICY_PROFILE_ID`, `EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION` — built-in `eu-banking-default` policy profile identity stamp shipped with Wave 1.
+- `ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES` — runtime source-of-truth list of semantic / structural validation issue codes consumed by the validation pipeline.
+- `ALLOWED_TEST_CASE_POLICY_DECISIONS` — runtime list (`approved`, `blocked`, `needs_review`).
+- `ALLOWED_TEST_CASE_POLICY_OUTCOMES` — runtime list of policy outcome codes covering missing-trace, missing-expected-results, PII in test data, missing negative/validation case, missing accessibility/boundary case, schema invalid, duplicate, regulated-risk review, ambiguity review, QC mapping not exportable, low confidence, open questions, plus the visual-sidecar codes (`visual_sidecar_failure`, `visual_sidecar_fallback_used`, `visual_sidecar_low_confidence`, `visual_sidecar_possible_pii`, `visual_sidecar_prompt_injection_text`).
+- `ALLOWED_VISUAL_SIDECAR_VALIDATION_OUTCOMES` — runtime list of visual-sidecar gate outcomes (`ok`, `schema_invalid`, `low_confidence`, `fallback_used`, `possible_pii`, `prompt_injection_like_text`, `conflicts_with_figma_metadata`, `primary_unavailable`).
+- `TestCaseValidationIssue`, `TestCaseValidationReport`, `TestCaseValidationIssueCode`, `TestCaseValidationSeverity` — type surface for the persisted validation diagnostics.
+- `TestCasePolicyDecision`, `TestCasePolicyOutcome`, `TestCasePolicyViolation`, `TestCasePolicyDecisionRecord`, `TestCasePolicyReport`, `TestCasePolicyProfile`, `TestCasePolicyProfileRules` — type surface for the policy gate.
+- `TestCaseCoverageBucket`, `TestCaseCoverageReport`, `TestCaseDuplicatePair` — type surface for the coverage / quality-signals report and duplicate detection.
+- `VisualSidecarValidationOutcome`, `VisualSidecarValidationRecord`, `VisualSidecarValidationReport` — type surface for the visual-sidecar gate.
+
+### Unchanged (Issue #1364)
+
+- No public route, submit parser, runtime schema, or orchestrator wiring changed. The validation, policy, coverage, and visual-sidecar gate live entirely under `src/test-intelligence/` and are consumed by Issue #1365 (review gate) and Issue #1366 (POC fixture / CI evaluation gate) in later waves.
+- The opt-in test-intelligence feature gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE`, `WorkspaceStartOptions.testIntelligence.enabled`) remains the only entry-point gate; no separate validation gate is introduced.
+- The deterministic Figma-to-code pipeline (`llmCodegenMode=deterministic`) is unaffected; the validation pipeline is reachable only from the test-intelligence subsurface.
+
+---
+
 ## [3.22.0] - 2026-04-25
 
 ### Added (Issue #1363 follow-up)

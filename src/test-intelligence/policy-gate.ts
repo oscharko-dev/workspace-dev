@@ -1,0 +1,413 @@
+/**
+ * Policy gate (Issue #1364).
+ *
+ * Evaluates a generated test case list against a `TestCasePolicyProfile`
+ * and emits `TestCasePolicyDecisionRecord` rows. The gate composes:
+ *
+ * - per-case violations from the validation report (PII / missing trace
+ *   / missing expected results / schema_invalid → `blocked`)
+ * - per-case rules from the policy profile (regulated risk → review,
+ *   ambiguity → review, low confidence → review, QC mapping not
+ *   exportable → blocked, too many open questions / assumptions →
+ *   review)
+ * - job-level rules: required fields without negative/validation/boundary
+ *   coverage; screens with form fields without an accessibility case;
+ *   duplicate-pair fingerprints exceeding the profile threshold
+ * - visual-sidecar outcomes (failure / fallback / low confidence /
+ *   possible PII / prompt-injection-like text) propagated as
+ *   `jobLevelViolations`
+ *
+ * The function is pure: it never reads files, never does network IO,
+ * never mutates inputs, and emits decisions in stable order so that the
+ * persisted artifact is byte-deterministic.
+ */
+
+import {
+  TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type BusinessTestIntentIr,
+  type GeneratedTestCase,
+  type GeneratedTestCaseList,
+  type TestCaseCoverageReport,
+  type TestCasePolicyDecision,
+  type TestCasePolicyDecisionRecord,
+  type TestCasePolicyOutcome,
+  type TestCasePolicyProfile,
+  type TestCasePolicyReport,
+  type TestCasePolicyViolation,
+  type TestCaseValidationIssue,
+  type TestCaseValidationIssueCode,
+  type TestCaseValidationReport,
+  type VisualSidecarValidationReport,
+} from "../contracts/index.js";
+
+export interface EvaluatePolicyGateInput {
+  jobId: string;
+  generatedAt: string;
+  list: GeneratedTestCaseList;
+  intent: BusinessTestIntentIr;
+  profile: TestCasePolicyProfile;
+  validation: TestCaseValidationReport;
+  coverage: TestCaseCoverageReport;
+  visual?: VisualSidecarValidationReport;
+}
+
+/** Maximum strength among per-case decisions: blocked > needs_review > approved. */
+const decisionRank: Record<TestCasePolicyDecision, number> = {
+  approved: 0,
+  needs_review: 1,
+  blocked: 2,
+};
+
+const escalate = (
+  current: TestCasePolicyDecision,
+  candidate: TestCasePolicyDecision,
+): TestCasePolicyDecision => {
+  return decisionRank[candidate] > decisionRank[current] ? candidate : current;
+};
+
+const VALIDATION_ISSUE_TO_OUTCOME: Partial<
+  Record<TestCaseValidationIssueCode, TestCasePolicyOutcome>
+> = {
+  schema_invalid: "schema_invalid",
+  missing_trace: "missing_trace",
+  trace_screen_unknown: "missing_trace",
+  missing_expected_results: "missing_expected_results",
+  test_data_pii_detected: "pii_in_test_data",
+  preconditions_pii_detected: "pii_in_test_data",
+  expected_results_pii_detected: "pii_in_test_data",
+  test_data_unredacted_value: "pii_in_test_data",
+  qc_mapping_blocking_reasons_missing: "qc_mapping_not_exportable",
+  qc_mapping_exportable_inconsistent: "qc_mapping_not_exportable",
+  duplicate_test_case_id: "duplicate_test_case",
+  ambiguity_without_review_state: "ambiguity_review_required",
+  open_questions_excessive: "open_questions_review_required",
+  assumptions_excessive: "open_questions_review_required",
+};
+
+const indexValidationByTestCase = (
+  report: TestCaseValidationReport,
+): Map<string, TestCaseValidationIssue[]> => {
+  const out = new Map<string, TestCaseValidationIssue[]>();
+  for (const issue of report.issues) {
+    const id = issue.testCaseId;
+    if (id === undefined) continue;
+    const existing = out.get(id);
+    if (existing === undefined) {
+      out.set(id, [issue]);
+    } else {
+      existing.push(issue);
+    }
+  }
+  return out;
+};
+
+const violationFromIssue = (
+  issue: TestCaseValidationIssue,
+): TestCasePolicyViolation | null => {
+  const outcome = VALIDATION_ISSUE_TO_OUTCOME[issue.code];
+  if (outcome === undefined) return null;
+  const violation: TestCasePolicyViolation = {
+    rule: `validation:${issue.code}`,
+    outcome,
+    severity: issue.severity,
+    reason: issue.message,
+    path: issue.path,
+  };
+  return violation;
+};
+
+const evaluateCase = (
+  testCase: GeneratedTestCase,
+  profile: TestCasePolicyProfile,
+  caseIssues: TestCaseValidationIssue[],
+): TestCasePolicyDecisionRecord => {
+  let decision: TestCasePolicyDecision = "approved";
+  const violations: TestCasePolicyViolation[] = [];
+
+  for (const issue of caseIssues) {
+    const v = violationFromIssue(issue);
+    if (v === null) continue;
+    violations.push(v);
+    decision = escalate(
+      decision,
+      v.severity === "error" ? "blocked" : "needs_review",
+    );
+  }
+
+  // Regulated risk → review even when no other findings.
+  if (profile.rules.reviewOnlyRiskCategories.includes(testCase.riskCategory)) {
+    violations.push({
+      rule: "policy:regulated-risk-requires-review",
+      outcome: "regulated_risk_review_required",
+      severity: "warning",
+      reason: `risk category "${testCase.riskCategory}" requires manual review under profile "${profile.id}"`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+
+  // Ambiguity (independent of review state — covered above only when
+  // mismatched, but a clean ambiguity note still requires review).
+  if (testCase.qualitySignals.ambiguity !== undefined) {
+    violations.push({
+      rule: "policy:ambiguity-requires-review",
+      outcome: "ambiguity_review_required",
+      severity: "warning",
+      reason: `case carries ambiguity note: ${testCase.qualitySignals.ambiguity.reason}`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+
+  // Low confidence → review.
+  if (
+    testCase.qualitySignals.confidence < profile.rules.minConfidence &&
+    testCase.qualitySignals.confidence >= 0
+  ) {
+    violations.push({
+      rule: "policy:low-confidence-requires-review",
+      outcome: "low_confidence_review_required",
+      severity: "warning",
+      reason: `confidence ${testCase.qualitySignals.confidence} is below profile minimum ${profile.rules.minConfidence}`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+
+  // QC mapping not exportable → block.
+  if (!testCase.qcMappingPreview.exportable) {
+    violations.push({
+      rule: "policy:qc-mapping-must-be-exportable",
+      outcome: "qc_mapping_not_exportable",
+      severity: "error",
+      reason: "qcMappingPreview.exportable=false; case cannot reach export",
+    });
+    decision = escalate(decision, "blocked");
+  }
+
+  // Open questions / assumptions thresholds.
+  if (testCase.openQuestions.length > profile.rules.maxOpenQuestionsPerCase) {
+    violations.push({
+      rule: "policy:open-questions-soft-cap",
+      outcome: "open_questions_review_required",
+      severity: "warning",
+      reason: `openQuestions length ${testCase.openQuestions.length} exceeds profile cap ${profile.rules.maxOpenQuestionsPerCase}`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+  if (testCase.assumptions.length > profile.rules.maxAssumptionsPerCase) {
+    violations.push({
+      rule: "policy:assumptions-soft-cap",
+      outcome: "open_questions_review_required",
+      severity: "warning",
+      reason: `assumptions length ${testCase.assumptions.length} exceeds profile cap ${profile.rules.maxAssumptionsPerCase}`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+
+  return {
+    testCaseId: testCase.id,
+    decision,
+    violations,
+  };
+};
+
+const evaluateJobLevel = (
+  list: GeneratedTestCaseList,
+  intent: BusinessTestIntentIr,
+  coverage: TestCaseCoverageReport,
+  profile: TestCasePolicyProfile,
+  visual?: VisualSidecarValidationReport,
+): TestCasePolicyViolation[] => {
+  const violations: TestCasePolicyViolation[] = [];
+
+  // Required-field coverage: each detected validation rule needs at least
+  // one case of type=negative or type=validation that lists the rule's
+  // target field id. Profile flag may turn the check off.
+  if (profile.rules.requireNegativeOrValidationForValidationRules) {
+    const validationRules = intent.detectedValidations;
+    for (const rule of validationRules) {
+      if (rule.targetFieldId === undefined) continue;
+      const hasCovering = list.testCases.some((tc) => {
+        if (tc.type !== "negative" && tc.type !== "validation") return false;
+        if (
+          tc.qualitySignals.coveredValidationIds.includes(rule.id) ||
+          tc.qualitySignals.coveredFieldIds.includes(rule.targetFieldId ?? "")
+        ) {
+          return true;
+        }
+        return false;
+      });
+      if (!hasCovering) {
+        violations.push({
+          rule: "policy:required-field-needs-negative-or-validation",
+          outcome: "missing_negative_or_validation_for_required_field",
+          severity: "error",
+          reason: `validation rule "${rule.id}" (field ${rule.targetFieldId ?? "<unknown>"}) has no covering negative/validation test case`,
+        });
+      }
+    }
+  }
+
+  // Required-field boundary coverage.
+  if (profile.rules.requireBoundaryCaseForRequiredFields) {
+    const fieldIdsWithRequiredRules = new Set<string>();
+    for (const v of intent.detectedValidations) {
+      if (v.targetFieldId !== undefined && /required/i.test(v.rule)) {
+        fieldIdsWithRequiredRules.add(v.targetFieldId);
+      }
+    }
+    for (const fieldId of fieldIdsWithRequiredRules) {
+      const hasBoundary = list.testCases.some(
+        (tc) =>
+          tc.type === "boundary" &&
+          tc.qualitySignals.coveredFieldIds.includes(fieldId),
+      );
+      if (!hasBoundary) {
+        violations.push({
+          rule: "policy:required-field-needs-boundary-case",
+          outcome: "missing_boundary_case",
+          severity: "warning",
+          reason: `required field "${fieldId}" has no covering boundary test case`,
+        });
+      }
+    }
+  }
+
+  // Accessibility coverage when form fields are present.
+  if (profile.rules.requireAccessibilityCaseWhenFormPresent) {
+    const screensWithFields = new Set(
+      intent.detectedFields.map((f) => f.screenId),
+    );
+    for (const screenId of screensWithFields) {
+      const hasA11yCase = list.testCases.some(
+        (tc) =>
+          tc.type === "accessibility" &&
+          tc.figmaTraceRefs.some((r) => r.screenId === screenId),
+      );
+      if (!hasA11yCase) {
+        violations.push({
+          rule: "policy:form-screen-needs-accessibility-case",
+          outcome: "missing_accessibility_case",
+          severity: "error",
+          reason: `screen "${screenId}" carries form fields but has no covering accessibility test case`,
+        });
+      }
+    }
+  }
+
+  // Duplicate fingerprint — coverage reports the pairs; the gate downgrades.
+  for (const pair of coverage.duplicatePairs) {
+    violations.push({
+      rule: "policy:duplicate-test-case",
+      outcome: "duplicate_test_case",
+      severity: "warning",
+      reason: `test cases "${pair.leftTestCaseId}" and "${pair.rightTestCaseId}" share similarity ${pair.similarity}; review for de-duplication`,
+    });
+  }
+
+  // Visual-sidecar outcomes lift to job-level policy outcomes.
+  if (visual !== undefined) {
+    for (const record of visual.records) {
+      for (const outcome of record.outcomes) {
+        const mapped = mapVisualOutcome(outcome);
+        if (mapped === null) continue;
+        violations.push({
+          rule: `policy:visual-sidecar:${outcome}`,
+          outcome: mapped.outcome,
+          severity: mapped.severity,
+          reason: `screen "${record.screenId}" (${record.deployment}): ${outcome}`,
+        });
+      }
+    }
+  }
+
+  return violations;
+};
+
+const mapVisualOutcome = (
+  outcome:
+    | "ok"
+    | "schema_invalid"
+    | "low_confidence"
+    | "fallback_used"
+    | "possible_pii"
+    | "prompt_injection_like_text"
+    | "conflicts_with_figma_metadata"
+    | "primary_unavailable",
+): { outcome: TestCasePolicyOutcome; severity: "error" | "warning" } | null => {
+  switch (outcome) {
+    case "ok":
+      return null;
+    case "schema_invalid":
+    case "conflicts_with_figma_metadata":
+      return { outcome: "visual_sidecar_failure", severity: "error" };
+    case "fallback_used":
+    case "primary_unavailable":
+      return { outcome: "visual_sidecar_fallback_used", severity: "warning" };
+    case "low_confidence":
+      return { outcome: "visual_sidecar_low_confidence", severity: "warning" };
+    case "possible_pii":
+      return { outcome: "visual_sidecar_possible_pii", severity: "error" };
+    case "prompt_injection_like_text":
+      return {
+        outcome: "visual_sidecar_prompt_injection_text",
+        severity: "error",
+      };
+  }
+};
+
+/**
+ * Run the policy gate and produce the persistable
+ * `TestCasePolicyReport` artifact.
+ */
+export const evaluatePolicyGate = (
+  input: EvaluatePolicyGateInput,
+): TestCasePolicyReport => {
+  const validationByCase = indexValidationByTestCase(input.validation);
+  const decisions: TestCasePolicyDecisionRecord[] = [];
+
+  for (const tc of input.list.testCases) {
+    const issues = validationByCase.get(tc.id) ?? [];
+    decisions.push(evaluateCase(tc, input.profile, issues));
+  }
+
+  const jobLevelViolations = evaluateJobLevel(
+    input.list,
+    input.intent,
+    input.coverage,
+    input.profile,
+    input.visual,
+  );
+
+  // Job-level violations of error severity propagate as job-level
+  // blocking; per-case decisions remain unchanged so review tooling can
+  // see the per-case story.
+  let jobBlocked = decisions.some((d) => d.decision === "blocked");
+  if (!jobBlocked) {
+    jobBlocked = jobLevelViolations.some((v) => v.severity === "error");
+  }
+
+  let approved = 0;
+  let blocked = 0;
+  let needsReview = 0;
+  for (const d of decisions) {
+    if (d.decision === "approved") approved += 1;
+    else if (d.decision === "blocked") blocked += 1;
+    else needsReview += 1;
+  }
+
+  return {
+    schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    generatedAt: input.generatedAt,
+    jobId: input.jobId,
+    policyProfileId: input.profile.id,
+    policyProfileVersion: input.profile.version,
+    totalTestCases: input.list.testCases.length,
+    approvedCount: approved,
+    blockedCount: blocked,
+    needsReviewCount: needsReview,
+    blocked: jobBlocked,
+    decisions,
+    jobLevelViolations,
+  };
+};

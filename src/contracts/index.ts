@@ -144,6 +144,314 @@ export const LLM_CAPABILITIES_ARTIFACT_FILENAME =
   "llm-capabilities.json" as const;
 
 /**
+ * Schema version for the persisted test-case validation report artifact (Issue #1364).
+ * Bumped when `TestCaseValidationReport` changes shape.
+ */
+export const TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted policy decision report artifact (Issue #1364). */
+export const TEST_CASE_POLICY_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted coverage / quality-signals report artifact (Issue #1364). */
+export const TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted visual-sidecar validation report artifact (Issue #1364 / #1386). */
+export const VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted test-case payload accepted into review/export. */
+export const GENERATED_TESTCASES_ARTIFACT_FILENAME =
+  "generated-testcases.json" as const;
+
+/** Canonical filename for the persisted validation diagnostics artifact. */
+export const TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME =
+  "validation-report.json" as const;
+
+/** Canonical filename for the persisted policy-gate decision artifact. */
+export const TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME =
+  "policy-report.json" as const;
+
+/** Canonical filename for the persisted coverage / quality-signals artifact. */
+export const TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME =
+  "coverage-report.json" as const;
+
+/** Canonical filename for the persisted visual-sidecar validation artifact. */
+export const VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME =
+  "visual-sidecar-validation-report.json" as const;
+
+/**
+ * Built-in policy profile id for the default EU-banking compliance gate.
+ * Operators may install additional profiles by version stamp; this id is the
+ * one Wave 1 ships with.
+ */
+export const EU_BANKING_DEFAULT_POLICY_PROFILE_ID =
+  "eu-banking-default" as const;
+
+/** Version stamp for the built-in `eu-banking-default` policy profile. */
+export const EU_BANKING_DEFAULT_POLICY_PROFILE_VERSION = "1.0.0" as const;
+
+/**
+ * Allowed test-case validation issue codes (Issue #1364).
+ * The list is the runtime source of truth; new codes plug in here without
+ * altering call sites. Adding a new code is a minor (additive) bump.
+ */
+export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
+  "schema_invalid",
+  "missing_trace",
+  "trace_screen_unknown",
+  "missing_expected_results",
+  "steps_unordered",
+  "steps_indices_non_sequential",
+  "step_action_empty",
+  "step_action_too_long",
+  "duplicate_step_index",
+  "duplicate_test_case_id",
+  "title_empty",
+  "objective_empty",
+  "risk_category_invalid_for_intent",
+  "qc_mapping_blocking_reasons_missing",
+  "qc_mapping_exportable_inconsistent",
+  "quality_signals_confidence_out_of_range",
+  "quality_signals_coverage_unknown_id",
+  "test_data_pii_detected",
+  "test_data_unredacted_value",
+  "preconditions_pii_detected",
+  "expected_results_pii_detected",
+  "assumptions_excessive",
+  "open_questions_excessive",
+  "ambiguity_without_review_state",
+] as const;
+
+export type TestCaseValidationIssueCode =
+  (typeof ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES)[number];
+
+/** Severity surfaced for a single validation issue. */
+export type TestCaseValidationSeverity = "error" | "warning";
+
+/** Single semantic / structural validation issue. */
+export interface TestCaseValidationIssue {
+  testCaseId?: string;
+  path: string;
+  code: TestCaseValidationIssueCode;
+  severity: TestCaseValidationSeverity;
+  message: string;
+}
+
+/** Aggregate validation outcome across one job's generated test cases. */
+export interface TestCaseValidationReport {
+  schemaVersion: typeof TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  totalTestCases: number;
+  errorCount: number;
+  warningCount: number;
+  /** Whether the report blocks downstream review/export (any error => true). */
+  blocked: boolean;
+  issues: TestCaseValidationIssue[];
+}
+
+/**
+ * Allowed policy-gate decisions (Issue #1364).
+ *
+ * - `approved` — case may proceed to review/export as-is.
+ * - `blocked` — case must not reach review or export.
+ * - `needs_review` — case must be reviewed manually before export.
+ */
+export const ALLOWED_TEST_CASE_POLICY_DECISIONS = [
+  "approved",
+  "blocked",
+  "needs_review",
+] as const;
+export type TestCasePolicyDecision =
+  (typeof ALLOWED_TEST_CASE_POLICY_DECISIONS)[number];
+
+/**
+ * Allowed policy outcome codes attached to a single decision row.
+ * Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
+ * gating per the Issue #1364 / #1386 update.
+ */
+export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
+  "missing_trace",
+  "missing_expected_results",
+  "pii_in_test_data",
+  "missing_negative_or_validation_for_required_field",
+  "missing_accessibility_case",
+  "missing_boundary_case",
+  "schema_invalid",
+  "duplicate_test_case",
+  "regulated_risk_review_required",
+  "ambiguity_review_required",
+  "qc_mapping_not_exportable",
+  "low_confidence_review_required",
+  "open_questions_review_required",
+  "visual_sidecar_failure",
+  "visual_sidecar_fallback_used",
+  "visual_sidecar_low_confidence",
+  "visual_sidecar_possible_pii",
+  "visual_sidecar_prompt_injection_text",
+] as const;
+export type TestCasePolicyOutcome =
+  (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
+
+/** Single policy-rule violation surfaced for a generated test case. */
+export interface TestCasePolicyViolation {
+  rule: string;
+  outcome: TestCasePolicyOutcome;
+  severity: TestCaseValidationSeverity;
+  reason: string;
+  /** JSON-pointer-style path inside the test case if applicable. */
+  path?: string;
+}
+
+/** Per-test-case policy decision row. */
+export interface TestCasePolicyDecisionRecord {
+  testCaseId: string;
+  decision: TestCasePolicyDecision;
+  violations: TestCasePolicyViolation[];
+}
+
+/** Aggregate policy report across one job's generated test cases. */
+export interface TestCasePolicyReport {
+  schemaVersion: typeof TEST_CASE_POLICY_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  policyProfileId: string;
+  policyProfileVersion: string;
+  totalTestCases: number;
+  approvedCount: number;
+  blockedCount: number;
+  needsReviewCount: number;
+  /** Whether ANY case was blocked (downstream export gate). */
+  blocked: boolean;
+  decisions: TestCasePolicyDecisionRecord[];
+  /** Job-level policy violations (e.g., job-wide duplicate fingerprint). */
+  jobLevelViolations: TestCasePolicyViolation[];
+}
+
+/** Tunable knobs of a policy profile (defaults shown for `eu-banking-default`). */
+export interface TestCasePolicyProfileRules {
+  /** Risk categories that always require manual review. */
+  reviewOnlyRiskCategories: TestCaseRiskCategory[];
+  /** Risk categories that block export when missing trace/expected/PII checks fail. */
+  strictRiskCategories: TestCaseRiskCategory[];
+  /** Whether a screen with form fields requires at least one accessibility case. */
+  requireAccessibilityCaseWhenFormPresent: boolean;
+  /** Whether each detected validation rule requires at least one negative/validation case. */
+  requireNegativeOrValidationForValidationRules: boolean;
+  /** Whether each required field requires at least one boundary case. */
+  requireBoundaryCaseForRequiredFields: boolean;
+  /** Min generator-side confidence; below this threshold => needs_review. */
+  minConfidence: number;
+  /** Max Jaccard similarity above which two cases are flagged as duplicates. */
+  duplicateSimilarityThreshold: number;
+  /** Max open-question count per case before review is required. */
+  maxOpenQuestionsPerCase: number;
+  /** Max assumption count per case before review is required. */
+  maxAssumptionsPerCase: number;
+}
+
+/** Built-in policy profile shape. Profiles are identified by `id`+`version`. */
+export interface TestCasePolicyProfile {
+  id: string;
+  version: string;
+  description: string;
+  rules: TestCasePolicyProfileRules;
+}
+
+/** Per-element coverage breakdown. */
+export interface TestCaseCoverageBucket {
+  /** Total IR elements of this kind across the job. */
+  total: number;
+  /** Element ids covered by at least one accepted test case. */
+  covered: number;
+  /** Coverage ratio in [0, 1]; 0 when total=0 (no elements => no gap). */
+  ratio: number;
+  /** Element ids that have no covering test case. */
+  uncoveredIds: string[];
+}
+
+/** Coverage/quality signals across one job's generated test cases. */
+export interface TestCaseCoverageReport {
+  schemaVersion: typeof TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  policyProfileId: string;
+  totalTestCases: number;
+  fieldCoverage: TestCaseCoverageBucket;
+  actionCoverage: TestCaseCoverageBucket;
+  validationCoverage: TestCaseCoverageBucket;
+  navigationCoverage: TestCaseCoverageBucket;
+  traceCoverage: { total: number; withTrace: number; ratio: number };
+  negativeCaseCount: number;
+  validationCaseCount: number;
+  boundaryCaseCount: number;
+  accessibilityCaseCount: number;
+  workflowCaseCount: number;
+  positiveCaseCount: number;
+  /** Avg assumptions per case. */
+  assumptionsRatio: number;
+  /** Total open questions across all cases. */
+  openQuestionsCount: number;
+  /** Test-case pairs sharing >= duplicate threshold. */
+  duplicatePairs: TestCaseDuplicatePair[];
+  /** Optional 0..1 rubric score from a downstream rater (Wave 2). */
+  rubricScore?: number;
+}
+
+/** Pair of generated test case ids exceeding the similarity threshold. */
+export interface TestCaseDuplicatePair {
+  leftTestCaseId: string;
+  rightTestCaseId: string;
+  similarity: number;
+}
+
+/**
+ * Allowed visual-sidecar policy outcome codes (Issue #1364 / #1386).
+ *
+ * These mirror the visual-sidecar policy outcomes attached to the policy
+ * report when the multimodal sidecar misbehaves or is downgraded.
+ */
+export const ALLOWED_VISUAL_SIDECAR_VALIDATION_OUTCOMES = [
+  "ok",
+  "schema_invalid",
+  "low_confidence",
+  "fallback_used",
+  "possible_pii",
+  "prompt_injection_like_text",
+  "conflicts_with_figma_metadata",
+  "primary_unavailable",
+] as const;
+export type VisualSidecarValidationOutcome =
+  (typeof ALLOWED_VISUAL_SIDECAR_VALIDATION_OUTCOMES)[number];
+
+/** Single per-screen visual-sidecar validation row. */
+export interface VisualSidecarValidationRecord {
+  screenId: string;
+  deployment: "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock";
+  outcomes: VisualSidecarValidationOutcome[];
+  /** Issues found while structurally validating the description. */
+  issues: TestCaseValidationIssue[];
+  /** Mean confidence reported by the sidecar (0..1). */
+  meanConfidence: number;
+}
+
+/** Aggregate visual-sidecar validation report across a job. */
+export interface VisualSidecarValidationReport {
+  schemaVersion: typeof VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  generatedAt: string;
+  jobId: string;
+  totalScreens: number;
+  screensWithFindings: number;
+  /** Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks generation. */
+  blocked: boolean;
+  records: VisualSidecarValidationRecord[];
+}
+
+/**
  * Allowed gateway roles. Each role is bound to a single deployment to keep the
  * structured test-case generator (`gpt-oss-120b`) strictly separated from the
  * multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-poc`).
@@ -2043,4 +2351,4 @@ export type ReplayCacheLookupResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.22.0" as const;
+export const CONTRACT_VERSION = "3.23.0" as const;
