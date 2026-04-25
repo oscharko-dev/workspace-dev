@@ -23,8 +23,8 @@
  *   - The function NEVER calls `bundle.testGeneration.generate(...)`.
  *   - Persisted artifacts contain only SHA-256 capture identities, NEVER
  *     image bytes (`rawScreenshotsIncluded: false` literal).
- *   - Every error message routed through `sanitizeErrorMessage` +
- *     `redactHighRiskSecrets` before it touches the result envelope.
+ *   - Error classes are recorded as-is; no free-text error messages are
+ *     persisted or surfaced outside the attempt failure envelope.
  *
  * Live Azure path: callers wire real `LlmGatewayClient` instances into
  * the bundle via `createLlmGatewayClientBundle({ visualPrimary: {...},
@@ -36,7 +36,7 @@
  * already exposed by `LlmGatewayRuntime`.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 
@@ -561,7 +561,7 @@ export const writeVisualSidecarResultArtifact = async (
   const serialized = canonicalJson(artifact);
   const bytes = new TextEncoder().encode(serialized);
   await mkdir(dirname(input.destinationPath), { recursive: true });
-  const tmp = `${input.destinationPath}.${process.pid}.tmp`;
+  const tmp = `${input.destinationPath}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, serialized, "utf8");
   await rename(tmp, input.destinationPath);
   return { artifact, bytes };
