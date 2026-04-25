@@ -2285,6 +2285,245 @@ Visual-sidecar description produced by a multimodal vision model (Issue #1386).
 
 ***
 
+### VisualSidecarAttempt
+
+Single attempt against a sidecar deployment. Composes with the gateway
+surface so the policy gate can correlate attempts with the gateway's
+own circuit-breaker telemetry without a translation layer.
+
+#### Properties
+
+##### attempt
+
+> **attempt**: `number`
+
+Sequence index, 1-based across both primary and fallback attempts.
+
+##### deployment
+
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+Sidecar deployment that was attempted.
+
+##### durationMs
+
+> **durationMs**: `number`
+
+Wall-clock duration of the attempt in milliseconds.
+
+##### errorClass?
+
+> `optional` **errorClass?**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"schema_invalid_response"`
+
+Error class when the attempt failed. Absent on a success.
+
+***
+
+### VisualSidecarCaptureIdentity
+
+Identity record for a single capture, persisted alongside the sidecar
+result. Carries no image bytes — only a SHA-256 of the decoded bytes
+plus the byte length. Re-validating a result against the original
+captures requires re-hashing, never re-loading raw screenshot bytes.
+
+#### Properties
+
+##### byteLength
+
+> **byteLength**: `number`
+
+##### mimeType
+
+> **mimeType**: `"image/png"` \| `"image/jpeg"` \| `"image/webp"` \| `"image/gif"`
+
+##### screenId
+
+> **screenId**: `string`
+
+##### sha256
+
+> **sha256**: `string`
+
+SHA-256 hex of the decoded image bytes (NOT of the base64 string).
+
+***
+
+### VisualSidecarCaptureInput
+
+In-memory capture handed to the visual sidecar client. The bytes never
+touch disk: only the SHA-256 hash is persisted into the result artifact.
+
+#### Properties
+
+##### base64Data
+
+> **base64Data**: `string`
+
+Base64-encoded image bytes. Decoded length must be <= the byte bound.
+
+##### capturedAt?
+
+> `optional` **capturedAt?**: `string`
+
+Optional ISO-8601 capture timestamp (sourced from a screenshot pipeline).
+
+##### mimeType
+
+> **mimeType**: `"image/png"` \| `"image/jpeg"` \| `"image/webp"` \| `"image/gif"`
+
+MIME type of the encoded bytes. Must be in the allowlist.
+
+##### screenId
+
+> **screenId**: `string`
+
+Stable identifier matching a `BusinessTestIntentScreen.screenId`.
+
+##### screenName?
+
+> `optional` **screenName?**: `string`
+
+Optional human-readable label.
+
+***
+
+### VisualSidecarFailure
+
+Failure outcome — both primary and fallback exhausted, or pre-flight
+rejected the captures. The `failureClass` is policy-readable so
+upstream gates can decide between "retry later" and "refuse the job".
+
+#### Properties
+
+##### attempts
+
+> **attempts**: [`VisualSidecarAttempt`](#visualsidecarattempt)[]
+
+##### captureIdentities
+
+> **captureIdentities**: [`VisualSidecarCaptureIdentity`](#visualsidecarcaptureidentity)[]
+
+##### failureClass
+
+> **failureClass**: `"primary_unavailable"` \| `"primary_quota_exceeded"` \| `"both_sidecars_failed"` \| `"schema_invalid_response"` \| `"image_payload_too_large"` \| `"image_mime_unsupported"` \| `"duplicate_screen_id"` \| `"empty_screen_capture_set"`
+
+##### failureMessage
+
+> **failureMessage**: `string`
+
+Sanitized human-readable message — never carries tokens or PII.
+
+##### outcome
+
+> **outcome**: `"failure"`
+
+***
+
+### VisualSidecarResultArtifact
+
+Persisted form of the visual sidecar result. Carries schema/contract
+stamps and the hard `rawScreenshotsIncluded: false` literal so that any
+downstream consumer can verify the artifact never re-introduced raw
+screenshot bytes.
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant — image bytes are never embedded in this artifact.
+
+##### result
+
+> **result**: [`VisualSidecarResult`](#visualsidecarresult)
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### visualSidecarSchemaVersion
+
+> **visualSidecarSchemaVersion**: `"1.0.0"`
+
+***
+
+### VisualSidecarSuccess
+
+Successful sidecar outcome — primary or fallback. The downstream
+`VisualScreenDescription[]` is structurally validated by the existing
+`validateVisualSidecar` gate; this type carries the validation report
+verbatim so the caller can persist or refuse on it.
+
+#### Properties
+
+##### attempts
+
+> **attempts**: [`VisualSidecarAttempt`](#visualsidecarattempt)[]
+
+##### captureIdentities
+
+> **captureIdentities**: [`VisualSidecarCaptureIdentity`](#visualsidecarcaptureidentity)[]
+
+##### confidenceSummary
+
+> **confidenceSummary**: `object`
+
+Aggregated confidence summary across every screen description.
+
+###### max
+
+> **max**: `number`
+
+###### mean
+
+> **mean**: `number`
+
+###### min
+
+> **min**: `number`
+
+##### fallbackReason
+
+> **fallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
+
+##### outcome
+
+> **outcome**: `"success"`
+
+##### selectedDeployment
+
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+Deployment that produced the descriptions.
+
+##### validationReport
+
+> **validationReport**: [`VisualSidecarValidationReport`](#visualsidecarvalidationreport)
+
+Verbatim validation report produced by `validateVisualSidecar`. The
+client does NOT silently strip findings — when the report says
+`blocked: true`, the success surfaces the report so the caller can
+persist it for the policy gate to inspect.
+
+##### visual
+
+> **visual**: [`VisualScreenDescription`](#visualscreendescription)[]
+
+***
+
 ### VisualSidecarValidationRecord
 
 Single per-screen visual-sidecar validation row.
@@ -2767,6 +3006,12 @@ Hard invariant: no raw screenshot bytes leak into export artifacts.
 
 Test-intelligence subsurface contract version.
 
+##### visualSidecar?
+
+> `optional` **visualSidecar?**: [`Wave1PocEvidenceVisualSidecarSummary`](#wave1pocevidencevisualsidecarsummary)
+
+Direct visual-sidecar evidence summary when the opt-in sidecar path ran.
+
 ##### visualSidecarSchemaVersion
 
 > **visualSidecarSchemaVersion**: `"1.0.0"`
@@ -2808,6 +3053,44 @@ Filenames whose on-disk byte length differs from the manifest.
 > **unexpected**: `string`[]
 
 Filenames present on disk but not attested by the manifest.
+
+***
+
+### Wave1PocEvidenceVisualSidecarSummary
+
+Visual-sidecar summary duplicated into the Wave 1 evidence manifest.
+
+#### Properties
+
+##### confidenceSummary
+
+> **confidenceSummary**: `object`
+
+###### max
+
+> **max**: `number`
+
+###### mean
+
+> **mean**: `number`
+
+###### min
+
+> **min**: `number`
+
+##### fallbackReason
+
+> **fallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
+
+##### resultArtifactSha256
+
+> **resultArtifactSha256**: `string`
+
+SHA-256 hex of the persisted `visual-sidecar-result.json` artifact.
+
+##### selectedDeployment
+
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
 
 ***
 
@@ -3471,7 +3754,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-25)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-26)
 
 ##### pasteDeltaSummary?
 
@@ -5589,11 +5872,30 @@ is planned to expose the full test-intelligence surface without
 importing it from the root entry point; that export is not wired in
 this wave.
 
+###### artifactRoot?
+
+> `optional` **artifactRoot?**: `string`
+
+Optional override for the directory under which per-job
+test-intelligence artifacts are stored and read by the Inspector
+UI. When omitted, defaults to `<outputRoot>/test-intelligence`.
+The directory is treated as opaque storage; missing artifacts
+surface as empty UI states rather than errors.
+
 ###### enabled
 
 > **enabled**: `boolean`
 
 Whether test-intelligence features may be invoked at runtime. Default: false.
+
+###### reviewBearerToken?
+
+> `optional` **reviewBearerToken?**: `string`
+
+Bearer token accepted by the Inspector test-intelligence review-gate
+write routes (`POST /workspace/test-intelligence/review/...`). When
+omitted or blank, review writes fail closed with `503` until the
+operator configures a token. Reads do not require this token.
 
 ##### unitTestIgnoreFailure?
 
@@ -5672,6 +5974,15 @@ Status of a running workspace-dev instance.
 ##### running
 
 > **running**: `boolean`
+
+##### testIntelligenceEnabled?
+
+> `optional` **testIntelligenceEnabled?**: `boolean`
+
+Whether the test-intelligence Inspector surface is reachable. True only
+when both `WorkspaceStartOptions.testIntelligence.enabled` and
+`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` are satisfied. The Inspector
+UI uses this flag to gate the "Test Intelligence" navigation entry.
 
 ##### uptimeMs
 
@@ -6610,11 +6921,35 @@ Severity surfaced for a single validation issue.
 
 ***
 
+### VisualSidecarFailureClass
+
+> **VisualSidecarFailureClass** = *typeof* [`ALLOWED_VISUAL_SIDECAR_FAILURE_CLASSES`](#allowed_visual_sidecar_failure_classes)\[`number`\]
+
+Discriminant of a `VisualSidecarFailure`.
+
+***
+
 ### VisualSidecarFallbackReason
 
 > **VisualSidecarFallbackReason** = `"primary_unavailable"` \| `"primary_quota_exceeded"` \| `"primary_disabled"` \| `"policy_downgrade"` \| `"none"`
 
 Reason a fallback visual sidecar deployment was selected, if any.
+
+***
+
+### VisualSidecarInputMimeType
+
+> **VisualSidecarInputMimeType** = *typeof* [`ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES`](#allowed_visual_sidecar_input_mime_types)\[`number`\]
+
+Discriminant of an allowed visual sidecar input MIME type.
+
+***
+
+### VisualSidecarResult
+
+> **VisualSidecarResult** = [`VisualSidecarSuccess`](#visualsidecarsuccess) \| [`VisualSidecarFailure`](#visualsidecarfailure)
+
+Discriminated union returned by `describeVisualScreens`.
 
 ***
 
@@ -6626,7 +6961,7 @@ Reason a fallback visual sidecar deployment was selected, if any.
 
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -7091,6 +7426,27 @@ this array must never affect `ALLOWED_LLM_CODEGEN_MODES`.
 
 ***
 
+### ALLOWED\_VISUAL\_SIDECAR\_FAILURE\_CLASSES
+
+> `const` **ALLOWED\_VISUAL\_SIDECAR\_FAILURE\_CLASSES**: readonly \[`"primary_unavailable"`, `"primary_quota_exceeded"`, `"both_sidecars_failed"`, `"schema_invalid_response"`, `"image_payload_too_large"`, `"image_mime_unsupported"`, `"duplicate_screen_id"`, `"empty_screen_capture_set"`\]
+
+Allowed failure classes for the visual sidecar client. The classes are
+disjoint and policy-readable: a downstream policy gate can refuse a job
+by inspecting the failure class without reading sanitized free-form
+messages.
+
+***
+
+### ALLOWED\_VISUAL\_SIDECAR\_INPUT\_MIME\_TYPES
+
+> `const` **ALLOWED\_VISUAL\_SIDECAR\_INPUT\_MIME\_TYPES**: readonly \[`"image/png"`, `"image/jpeg"`, `"image/webp"`, `"image/gif"`\]
+
+Allowed input MIME types for visual sidecar captures. SVG is intentionally
+NOT in the allowlist because SVG is XML and exposes a parser/injection
+surface that the multimodal sidecar should never have to evaluate.
+
+***
+
 ### ALLOWED\_VISUAL\_SIDECAR\_VALIDATION\_OUTCOMES
 
 > `const` **ALLOWED\_VISUAL\_SIDECAR\_VALIDATION\_OUTCOMES**: readonly \[`"ok"`, `"schema_invalid"`, `"low_confidence"`, `"fallback_used"`, `"possible_pii"`, `"prompt_injection_like_text"`, `"conflicts_with_figma_metadata"`, `"primary_unavailable"`\]
@@ -7137,7 +7493,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.25.0"`
+> `const` **CONTRACT\_VERSION**: `"3.27.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -7248,6 +7604,17 @@ Schema version for the persisted `llm-capabilities.json` evidence artifact.
 > `const` **LLM\_GATEWAY\_CONTRACT\_VERSION**: `"1.0.0"`
 
 Contract version for the role-separated LLM gateway client surface (Issue #1363).
+
+***
+
+### MAX\_VISUAL\_SIDECAR\_INPUT\_BYTES
+
+> `const` **MAX\_VISUAL\_SIDECAR\_INPUT\_BYTES**: `number`
+
+Maximum decoded byte size of a single visual sidecar capture. The bound
+is enforced AFTER base64 decoding (i.e. on the actual image bytes the
+gateway would forward). Five MiB matches the conservative ceiling Azure
+OpenAI imposes on multimodal payloads.
 
 ***
 
@@ -7385,6 +7752,26 @@ Environment variable name that gates test-intelligence features at startup.
 > `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.0.0"`
 
 Prompt template version for the test-intelligence prompt family.
+
+***
+
+### VISUAL\_SIDECAR\_RESULT\_ARTIFACT\_FILENAME
+
+> `const` **VISUAL\_SIDECAR\_RESULT\_ARTIFACT\_FILENAME**: `"visual-sidecar-result.json"`
+
+Canonical filename for the persisted visual sidecar result artifact.
+
+***
+
+### VISUAL\_SIDECAR\_RESULT\_SCHEMA\_VERSION
+
+> `const` **VISUAL\_SIDECAR\_RESULT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted multimodal visual sidecar result
+artifact emitted by the visual sidecar client (Issue #1386). Bumped
+independently from `VISUAL_SIDECAR_SCHEMA_VERSION` (which describes the
+sidecar's per-screen output) because this version covers the wrapping
+envelope plus capture identities, attempts, and failure classes.
 
 ***
 

@@ -74,6 +74,8 @@ export interface BuildWave1PocEvidenceManifestInput {
   cacheKeyDigest: string;
   /** Each artifact byte stream attested by this manifest. */
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>;
+  /** Direct visual-sidecar summary when the opt-in sidecar path ran. */
+  visualSidecar?: Wave1PocEvidenceManifest["visualSidecar"];
   /**
    * Hard invariant flag — must be `false` (the contract requires it).
    * Defaulted to `false` so most callers can omit it.
@@ -113,6 +115,14 @@ export const buildWave1PocEvidenceManifest = (
         `buildWave1PocEvidenceManifest: ${hashField} must be a sha256 hex string`,
       );
     }
+  }
+  if (
+    input.visualSidecar !== undefined &&
+    !HEX64.test(input.visualSidecar.resultArtifactSha256)
+  ) {
+    throw new RangeError(
+      "buildWave1PocEvidenceManifest: visualSidecar.resultArtifactSha256 must be a sha256 hex string",
+    );
   }
 
   const seen = new Map<string, Wave1PocEvidenceArtifact>();
@@ -155,6 +165,9 @@ export const buildWave1PocEvidenceManifest = (
     schemaHash: input.schemaHash,
     inputHash: input.inputHash,
     cacheKeyDigest: input.cacheKeyDigest,
+    ...(input.visualSidecar !== undefined
+      ? { visualSidecar: input.visualSidecar }
+      : {}),
     artifacts,
     rawScreenshotsIncluded: false,
     imagePayloadSentToTestGeneration: false,

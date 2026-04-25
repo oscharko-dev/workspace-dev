@@ -31,6 +31,7 @@
  * and by the integration tests; all determinism guarantees flow from it.
  */
 
+import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -75,6 +76,7 @@ import {
   type TestCaseType,
   type VisualScreenDescription,
   type VisualSidecarCaptureInput,
+  type VisualSidecarFailure,
   type VisualSidecarResult,
   type Wave1PocEvidenceManifest,
   type Wave1PocFixtureId,
@@ -190,6 +192,20 @@ export interface Wave1PocRunResult {
    * path so existing call sites remain typed.
    */
   visualSidecar?: VisualSidecarResult;
+}
+
+export class Wave1PocVisualSidecarFailureError extends Error {
+  readonly visualSidecar: VisualSidecarFailure;
+  readonly artifactPath: string;
+
+  constructor(input: { visualSidecar: VisualSidecarFailure; artifactPath: string }) {
+    super(
+      `runWave1Poc: multimodal visual sidecar failed (${input.visualSidecar.failureClass}: ${input.visualSidecar.failureMessage}). The harness refuses to proceed because both visual sidecars are exhausted.`,
+    );
+    this.name = "Wave1PocVisualSidecarFailureError";
+    this.visualSidecar = input.visualSidecar;
+    this.artifactPath = input.artifactPath;
+  }
 }
 
 /**
@@ -680,23 +696,25 @@ export const runWave1Poc = async (
       intent: intentForSidecar,
       primaryDeployment: VISUAL_PRIMARY_DEPLOYMENT,
     });
-    if (sidecarResult.outcome === "success") {
-      sidecarVisual = sidecarResult.visual;
-    } else {
-      throw new Error(
-        `runWave1Poc: multimodal visual sidecar failed (${sidecarResult.failureClass}: ${sidecarResult.failureMessage}). The harness refuses to proceed because both visual sidecars are exhausted.`,
-      );
-    }
+    const sidecarArtifactPath = join(
+      input.runDir,
+      VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+    );
     const written = await writeVisualSidecarResultArtifact({
       result: sidecarResult,
-      destinationPath: join(
-        input.runDir,
-        VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
-      ),
+      destinationPath: sidecarArtifactPath,
       jobId: input.jobId,
       generatedAt: input.generatedAt,
     });
     sidecarArtifactBytes = written.bytes;
+    if (sidecarResult.outcome === "success") {
+      sidecarVisual = sidecarResult.visual;
+    } else {
+      throw new Wave1PocVisualSidecarFailureError({
+        visualSidecar: sidecarResult,
+        artifactPath: sidecarArtifactPath,
+      });
+    }
   }
 
   // 2. Derive Business Test Intent IR. (Step 3 — PII redaction — happens
@@ -973,6 +991,15 @@ export const runWave1Poc = async (
     sidecarResult?.outcome === "success"
       ? sidecarResult.selectedDeployment
       : VISUAL_PRIMARY_DEPLOYMENT;
+  const visualSidecarSummary =
+    sidecarResult?.outcome === "success" && sidecarArtifactBytes !== undefined
+      ? {
+          selectedDeployment: sidecarResult.selectedDeployment,
+          fallbackReason: sidecarResult.fallbackReason,
+          confidenceSummary: sidecarResult.confidenceSummary,
+          resultArtifactSha256: sha256OfBytes(sidecarArtifactBytes),
+        }
+      : undefined;
   const manifest = buildWave1PocEvidenceManifest({
     fixtureId: input.fixtureId,
     jobId: input.jobId,
@@ -989,6 +1016,9 @@ export const runWave1Poc = async (
     schemaHash: compiled.request.hashes.schemaHash,
     inputHash: compiled.request.hashes.inputHash,
     cacheKeyDigest: compiled.request.hashes.cacheKey,
+    ...(visualSidecarSummary !== undefined
+      ? { visualSidecar: visualSidecarSummary }
+      : {}),
     artifacts: [
       {
         filename: BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
@@ -1123,6 +1153,9 @@ const collectExportBytes = async (
 };
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
+
+const sha256OfBytes = (bytes: Uint8Array): string =>
+  createHash("sha256").update(bytes).digest("hex");
 
 /**
  * Best-effort extraction of recorded requests from a bundle's

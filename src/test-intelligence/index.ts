@@ -201,6 +201,7 @@ export {
 export {
   runWave1Poc,
   synthesizeGeneratedTestCases,
+  Wave1PocVisualSidecarFailureError,
   type RunWave1PocInput,
   type Wave1PocRunResult,
 } from "./poc-harness.js";
