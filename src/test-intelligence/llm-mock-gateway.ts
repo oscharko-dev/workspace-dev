@@ -104,6 +104,9 @@ const cloneRequest = (request: LlmGenerationRequest): LlmGenerationRequest => {
   if (request.reasoningEffort !== undefined) {
     cloned.reasoningEffort = request.reasoningEffort;
   }
+  if (request.maxInputTokens !== undefined) {
+    cloned.maxInputTokens = request.maxInputTokens;
+  }
   if (request.maxOutputTokens !== undefined) {
     cloned.maxOutputTokens = request.maxOutputTokens;
   }
@@ -120,6 +123,47 @@ const guardImagePayload = (
       errorClass: "image_payload_rejected",
       message:
         "test_generation role refuses image payloads; route screenshots through a visual sidecar role",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  return undefined;
+};
+
+const guardInputBudget = (
+  request: LlmGenerationRequest,
+): LlmGenerationFailure | undefined => {
+  if (request.maxInputTokens === undefined) return undefined;
+  if (
+    !Number.isSafeInteger(request.maxInputTokens) ||
+    request.maxInputTokens <= 0
+  ) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: "maxInputTokens must be a positive integer",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  const encoder = new TextEncoder();
+  const estimatedTokens = Math.ceil(
+    (encoder.encode(request.systemPrompt).byteLength +
+      encoder.encode(request.userPrompt).byteLength +
+      (request.responseSchema === undefined
+        ? 0
+        : encoder.encode(JSON.stringify(request.responseSchema)).byteLength) +
+      (request.imageInputs ?? []).reduce(
+        (sum, image) => sum + image.base64Data.length,
+        0,
+      )) /
+      4,
+  );
+  if (estimatedTokens > request.maxInputTokens) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: `estimated input tokens ${estimatedTokens} exceeds maxInputTokens ${request.maxInputTokens}`,
       retryable: false,
       attempt: 0,
     };
@@ -183,6 +227,8 @@ export const createMockLlmGatewayClient = (
   ): Promise<LlmGenerationResult> => {
     const guard = guardImagePayload(input.role, request);
     if (guard !== undefined) return guard;
+    const budgetGuard = guardInputBudget(request);
+    if (budgetGuard !== undefined) return budgetGuard;
 
     const decision = breaker.beforeRequest();
     if (!decision.allowRequest) {

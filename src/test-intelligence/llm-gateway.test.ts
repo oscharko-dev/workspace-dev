@@ -162,6 +162,54 @@ test("guards image payloads on test_generation role without making a network cal
   assert.equal(calls, 0);
 });
 
+test("guards oversized input budgets before making a network call", async () => {
+  let calls = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      calls += 1;
+      return okJsonResponse({});
+    },
+    apiKeyProvider: () => "secret-key-value",
+  });
+
+  const result = await client.generate(
+    sampleRequest({
+      userPrompt: "word ".repeat(20_000),
+      maxInputTokens: 100,
+    }),
+  );
+
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /maxInputTokens/);
+  }
+  assert.equal(calls, 0);
+});
+
+test("response-size ceiling rejects oversized gateway bodies before JSON parsing", async () => {
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () =>
+      new Response("{}", {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(1024 * 1024 + 1),
+        },
+      }),
+    apiKeyProvider: () => "secret-key-value",
+  });
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /response body exceeds/);
+    assert.equal(result.retryable, false);
+  }
+});
+
 test("structured-output success: parses JSON content and strips raw text", async () => {
   const fetchImpl: typeof fetch = async () =>
     okJsonResponse(buildChoiceBody({ ack: "ok" }));
@@ -331,6 +379,30 @@ test("rate-limited 429 surfaces rate_limited and retries", async () => {
   }
 });
 
+test("oversized 429 body preserves rate_limited retry classification", async () => {
+  let attempts = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      attempts += 1;
+      if (attempts < 3) {
+        return new Response("ignored", {
+          status: 429,
+          headers: { "content-length": String(1024 * 1024 + 1) },
+        });
+      }
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "k",
+    sleep: async () => undefined,
+    retryBackoffMs: [0, 0, 0],
+  });
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(attempts, 3);
+  assert.equal(result.outcome, "success");
+});
+
 test("5xx surfaces transport-class and retries up to max", async () => {
   let attempts = 0;
   const client = createLlmGatewayClient(baseConfig, {
@@ -349,6 +421,31 @@ test("5xx surfaces transport-class and retries up to max", async () => {
     assert.equal(result.errorClass, "transport");
     assert.equal(result.retryable, true);
     assert.equal(result.attempt, baseConfig.maxRetries + 1);
+  }
+});
+
+test("oversized 5xx body preserves transport retry classification", async () => {
+  let attempts = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      attempts += 1;
+      return new Response("ignored", {
+        status: 503,
+        headers: { "content-length": String(1024 * 1024 + 1) },
+      });
+    },
+    apiKeyProvider: () => "k",
+    sleep: async () => undefined,
+    retryBackoffMs: [0, 0, 0],
+  });
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(attempts, 3);
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "transport");
+    assert.equal(result.retryable, true);
   }
 });
 

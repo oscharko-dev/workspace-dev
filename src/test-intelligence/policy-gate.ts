@@ -119,6 +119,7 @@ const violationFromIssue = (
 
 const evaluateCase = (
   testCase: GeneratedTestCase,
+  intent: BusinessTestIntentIr,
   profile: TestCasePolicyProfile,
   caseIssues: TestCaseValidationIssue[],
 ): TestCasePolicyDecisionRecord => {
@@ -135,13 +136,23 @@ const evaluateCase = (
     );
   }
 
-  // Regulated risk → review even when no other findings.
-  if (profile.rules.reviewOnlyRiskCategories.includes(testCase.riskCategory)) {
+  const intentReviewRisk = findIntentReviewRisk(intent, profile);
+
+  // Regulated risk → review even when no other findings. Intent-derived
+  // regulated risk is treated as authoritative so a forged low case tag cannot
+  // downgrade a regulated design flow.
+  const caseCarriesReviewRisk = profile.rules.reviewOnlyRiskCategories.includes(
+    testCase.riskCategory,
+  );
+  const riskCategory = caseCarriesReviewRisk
+    ? testCase.riskCategory
+    : intentReviewRisk;
+  if (riskCategory !== undefined) {
     violations.push({
       rule: "policy:regulated-risk-requires-review",
       outcome: "regulated_risk_review_required",
       severity: "warning",
-      reason: `risk category "${testCase.riskCategory}" requires manual review under profile "${profile.id}"`,
+      reason: `risk category "${riskCategory}" requires manual review under profile "${profile.id}"`,
     });
     decision = escalate(decision, "needs_review");
   }
@@ -208,6 +219,33 @@ const evaluateCase = (
     decision,
     violations,
   };
+};
+
+const findIntentReviewRisk = (
+  intent: BusinessTestIntentIr,
+  profile: TestCasePolicyProfile,
+): GeneratedTestCase["riskCategory"] | undefined => {
+  const reviewCategories = new Set(profile.rules.reviewOnlyRiskCategories);
+  const normalizedRisks = intent.risks.map((risk) => risk.toLowerCase());
+  for (const category of profile.rules.reviewOnlyRiskCategories) {
+    if (normalizedRisks.includes(category)) return category;
+  }
+  if (intent.piiIndicators.length > 0 && reviewCategories.has("regulated_data")) {
+    return "regulated_data";
+  }
+  if (
+    normalizedRisks.some((risk) => /regulated|pii|personal.?data/.test(risk)) &&
+    reviewCategories.has("regulated_data")
+  ) {
+    return "regulated_data";
+  }
+  if (
+    normalizedRisks.some((risk) => /financial|payment|iban|transaction/.test(risk)) &&
+    reviewCategories.has("financial_transaction")
+  ) {
+    return "financial_transaction";
+  }
+  return undefined;
 };
 
 const evaluateJobLevel = (
@@ -367,7 +405,7 @@ export const evaluatePolicyGate = (
 
   for (const tc of input.list.testCases) {
     const issues = validationByCase.get(tc.id) ?? [];
-    decisions.push(evaluateCase(tc, input.profile, issues));
+    decisions.push(evaluateCase(tc, input.intent, input.profile, issues));
   }
 
   const jobLevelViolations = evaluateJobLevel(

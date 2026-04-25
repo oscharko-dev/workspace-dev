@@ -651,6 +651,8 @@ export interface LlmGenerationRequest {
   imageInputs?: ReadonlyArray<LlmImageInput>;
   seed?: number;
   reasoningEffort?: LlmReasoningEffort;
+  /** Optional client-side input budget; gateway clients fail closed when exceeded. */
+  maxInputTokens?: number;
   maxOutputTokens?: number;
 }
 
@@ -2835,6 +2837,10 @@ export const WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
 /** Filename used for the Wave 1 POC evidence manifest artifact. */
 export const WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
   "wave1-poc-evidence-manifest.json";
+
+/** Filename used for the Wave 1 POC evidence manifest digest witness. */
+export const WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME =
+  "wave1-poc-evidence-manifest.sha256";
 
 /** Schema version for the Wave 1 POC evaluation report envelope. */
 export const WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
