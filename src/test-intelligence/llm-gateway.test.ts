@@ -789,8 +789,13 @@ test("seed, reasoning_effort, and max_output_tokens flags only forward when decl
       apiKeyProvider: () => "k",
     },
   );
-  await noMaxOutputTokensClient.generate(
+  const unsupported = await noMaxOutputTokensClient.generate(
     sampleRequest({ maxOutputTokens: 256 }),
   );
-  assert.equal(observedBodies[1]?.includes("max_completion_tokens"), false);
+  assert.equal(unsupported.outcome, "error");
+  if (unsupported.outcome === "error") {
+    assert.equal(unsupported.errorClass, "schema_invalid");
+    assert.match(unsupported.message, /maxOutputTokensSupport/);
+  }
+  assert.equal(observedBodies.length, 1);
 });

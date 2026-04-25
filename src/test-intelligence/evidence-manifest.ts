@@ -28,7 +28,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import {
   CONTRACT_VERSION,
@@ -67,6 +67,33 @@ const hasControlCharacter = (value: string): boolean => {
     if (code <= 0x1f || code === 0x7f) return true;
   }
   return false;
+};
+
+const isSafeArtifactPath = (value: string): boolean => {
+  if (value.length === 0 || isAbsolute(value) || value.includes("\\")) {
+    return false;
+  }
+  if (hasControlCharacter(value)) return false;
+  if (new TextEncoder().encode(value).byteLength > 512) return false;
+  const parts = value.split("/");
+  if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
+    return false;
+  }
+  return parts.every(
+    (part) => new TextEncoder().encode(part).byteLength <= 255,
+  );
+};
+
+const resolveArtifactPath = (rootDir: string, filename: string): string => {
+  if (!isSafeArtifactPath(filename)) {
+    throw new RangeError(`invalid artifact filename "${filename}"`);
+  }
+  const root = resolve(rootDir);
+  const resolved = resolve(root, filename);
+  if (resolved !== root && !resolved.startsWith(`${root}/`)) {
+    throw new RangeError(`artifact filename escapes run dir "${filename}"`);
+  }
+  return resolved;
 };
 
 /** Input record describing a single artifact attested by the manifest. */
@@ -151,20 +178,10 @@ export const buildWave1PocEvidenceManifest = (
 
   const seen = new Map<string, Wave1PocEvidenceArtifact>();
   for (const record of input.artifacts) {
-    const filename = basename(record.filename);
-    if (filename !== record.filename) {
+    const filename = record.filename;
+    if (!isSafeArtifactPath(filename)) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: artifact filename must be a basename, got "${record.filename}"`,
-      );
-    }
-    if (hasControlCharacter(filename)) {
-      throw new RangeError(
-        "buildWave1PocEvidenceManifest: artifact filename must not contain control characters",
-      );
-    }
-    if (new TextEncoder().encode(filename).byteLength > 255) {
-      throw new RangeError(
-        "buildWave1PocEvidenceManifest: artifact filename must not exceed 255 bytes",
+        `buildWave1PocEvidenceManifest: artifact filename must be a safe relative path, got "${record.filename}"`,
       );
     }
     const bytes = toBytes(record.bytes);
@@ -290,10 +307,7 @@ const isVerifiableArtifact = (
   if (!isRecord(artifact)) return false;
   return (
     typeof artifact["filename"] === "string" &&
-    artifact["filename"].length > 0 &&
-    basename(artifact["filename"]) === artifact["filename"] &&
-    !hasControlCharacter(artifact["filename"]) &&
-    new TextEncoder().encode(artifact["filename"]).byteLength <= 255 &&
+    isSafeArtifactPath(artifact["filename"]) &&
     typeof artifact["sha256"] === "string" &&
     HEX64.test(artifact["sha256"]) &&
     typeof artifact["bytes"] === "number" &&
@@ -392,10 +406,7 @@ const validateManifestMetadata = (
     const filename = record["filename"];
     if (
       typeof filename !== "string" ||
-      filename.length === 0 ||
-      basename(filename) !== filename ||
-      hasControlCharacter(filename) ||
-      new TextEncoder().encode(filename).byteLength > 255
+      !isSafeArtifactPath(filename)
     ) {
       issues.push("artifact filename is invalid");
     }
@@ -444,7 +455,7 @@ export const verifyWave1PocEvidenceManifest = async (
     : [];
 
   for (const artifact of artifacts) {
-    const path = join(input.artifactsDir, artifact.filename);
+    const path = resolveArtifactPath(input.artifactsDir, artifact.filename);
     let bytes: Buffer;
     try {
       bytes = await readFile(path);

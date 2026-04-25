@@ -40,6 +40,8 @@ import {
   EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_JSON_ARTIFACT_FILENAME,
+  FINOPS_ARTIFACT_DIRECTORY,
+  FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   QC_MAPPING_PREVIEW_ARTIFACT_FILENAME,
@@ -113,13 +115,19 @@ import {
   transitionReviewState,
 } from "./review-state-machine.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
+import { executeWithReplayCache, type ReplayCache } from "./replay-cache.js";
 import {
   buildFinOpsBudgetReport,
   createFinOpsUsageRecorder,
   writeFinOpsBudgetReport,
   type FinOpsUsageRecorder,
+  type WriteFinOpsBudgetReportResult,
 } from "./finops-report.js";
-import { DEFAULT_FINOPS_BUDGET_ENVELOPE } from "./finops-budget.js";
+import {
+  DEFAULT_FINOPS_BUDGET_ENVELOPE,
+  resolveFinOpsRequestLimits,
+  validateFinOpsBudgetEnvelope,
+} from "./finops-budget.js";
 
 const TEST_GENERATION_DEPLOYMENT = "gpt-oss-120b-mock";
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
@@ -189,6 +197,11 @@ export interface RunWave1PocInput {
    * observed token counts to produce `estimatedCost`.
    */
   finopsCostRates?: FinOpsCostRateMap;
+  /**
+   * Optional replay cache for the generated test-case list. Cache hits skip
+   * the test-generation gateway call and are surfaced in the FinOps report.
+   */
+  replayCache?: ReplayCache;
 }
 
 export interface Wave1PocRunResult {
@@ -246,6 +259,20 @@ export class Wave1PocVisualSidecarFailureError extends Error {
     );
     this.name = "Wave1PocVisualSidecarFailureError";
     this.visualSidecar = input.visualSidecar;
+    this.artifactPath = input.artifactPath;
+  }
+}
+
+export class Wave1PocFinOpsBudgetExceededError extends Error {
+  readonly report: FinOpsBudgetReport;
+  readonly artifactPath: string;
+
+  constructor(input: { report: FinOpsBudgetReport; artifactPath: string }) {
+    super(
+      `runWave1Poc: FinOps budget exceeded (${input.report.breaches.map((b) => b.rule).join(", ")})`,
+    );
+    this.name = "Wave1PocFinOpsBudgetExceededError";
+    this.report = input.report;
     this.artifactPath = input.artifactPath;
   }
 }
@@ -709,6 +736,12 @@ export const runWave1Poc = async (
   // breach.
   const finopsRecorder = createFinOpsUsageRecorder(input.finopsCostRates);
   const finopsBudget = input.finopsBudget ?? DEFAULT_FINOPS_BUDGET_ENVELOPE;
+  const finopsBudgetValidation = validateFinOpsBudgetEnvelope(finopsBudget);
+  if (!finopsBudgetValidation.valid) {
+    throw new RangeError(
+      `runWave1Poc: invalid FinOps budget envelope (${finopsBudgetValidation.errors.map((e) => `${e.path}: ${e.message}`).join("; ")})`,
+    );
+  }
   let finopsTerminalOutcome: FinOpsJobOutcome | undefined;
 
   // 1. Load fixture.
@@ -746,6 +779,30 @@ export const runWave1Poc = async (
       generatedAt: input.generatedAt,
       intent: intentForSidecar,
       primaryDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+      requestLimits: {
+        visualPrimary: resolveFinOpsRequestLimits(
+          finopsBudget.roles.visual_primary,
+        ),
+        visualFallback: resolveFinOpsRequestLimits(
+          finopsBudget.roles.visual_fallback,
+        ),
+      },
+      maxImageBytesPerRequest: {
+        ...(finopsBudget.roles.visual_primary?.maxImageBytesPerRequest !==
+        undefined
+          ? {
+              visualPrimary:
+                finopsBudget.roles.visual_primary.maxImageBytesPerRequest,
+            }
+          : {}),
+        ...(finopsBudget.roles.visual_fallback?.maxImageBytesPerRequest !==
+        undefined
+          ? {
+              visualFallback:
+                finopsBudget.roles.visual_fallback.maxImageBytesPerRequest,
+            }
+          : {}),
+      },
     });
     const sidecarArtifactPath = join(
       input.runDir,
@@ -761,13 +818,32 @@ export const runWave1Poc = async (
     recordVisualSidecarAttempts({
       recorder: finopsRecorder,
       attempts: sidecarResult.attempts,
-      captureCount: input.visualCaptures.length,
+      captureIdentities: sidecarResult.captureIdentities,
     });
     if (sidecarResult.outcome === "success") {
+      await assertFinOpsBudgetOpen({
+        recorder: finopsRecorder,
+        budget: finopsBudget,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        runDir: input.runDir,
+        ...(input.finopsCostRates !== undefined
+          ? { costRates: input.finopsCostRates }
+          : {}),
+      });
       sidecarVisual = sidecarResult.visual;
     } else {
-      finopsTerminalOutcome = "visual_sidecar_failed";
-      await writeFinOpsBudgetReportForFailure({
+      if (isFinOpsBudgetSidecarFailure(sidecarResult)) {
+        recordVisualImageBudgetBreach({
+          recorder: finopsRecorder,
+          budget: finopsBudget,
+          sidecar: sidecarResult,
+        });
+      }
+      finopsTerminalOutcome = isFinOpsBudgetSidecarFailure(sidecarResult)
+        ? "budget_exceeded"
+        : "visual_sidecar_failed";
+      const finopsFailureWritten = await writeFinOpsBudgetReportForFailure({
         recorder: finopsRecorder,
         budget: finopsBudget,
         jobId: input.jobId,
@@ -787,6 +863,7 @@ export const runWave1Poc = async (
         intent: intentForSidecar,
         sidecarResult,
         sidecarArtifactBytes,
+        finopsReportBytes: finopsFailureWritten.bytes,
         policyProfile: input.policyProfile ?? cloneEuBankingDefaultProfile(),
       });
       throw new Wave1PocVisualSidecarFailureError({
@@ -877,47 +954,97 @@ export const runWave1Poc = async (
     }),
   });
 
-  const result = await mockClient.generate({
+  const generationRequest: LlmGenerationRequest = {
     jobId: compiled.request.jobId,
     systemPrompt: compiled.request.systemPrompt,
     userPrompt: compiled.request.userPrompt,
     responseSchema: compiled.request.responseSchema,
     responseSchemaName: compiled.request.responseSchemaName,
-  });
-  // Record the test_generation attempt deterministically. The mock client
-  // returns immediately with `usage: {0, 0}`; recording `durationMs: 0`
-  // keeps the FinOps report byte-stable. `liveSmoke: false` because the
-  // harness always uses the mock client for the structured generator.
-  finopsRecorder.recordAttempt({
-    role: "test_generation",
-    deployment: TEST_GENERATION_DEPLOYMENT,
-    durationMs: 0,
-    result,
-    liveSmoke: false,
-    fallback: false,
-  });
-  if (result.outcome !== "success") {
-    finopsTerminalOutcome = "gateway_failed";
-    await writeFinOpsBudgetReportForFailure({
+    ...resolveFinOpsRequestLimits(finopsBudget.roles.test_generation),
+  };
+  const generateTestCases = async (): Promise<GeneratedTestCaseList> => {
+    const result = await mockClient.generate(generationRequest);
+    if (isFinOpsBudgetGatewayFailure(result)) {
+      recordGatewayBudgetBreach({
+        recorder: finopsRecorder,
+        result,
+        role: "test_generation",
+      });
+      await assertFinOpsBudgetOpen({
+        recorder: finopsRecorder,
+        budget: finopsBudget,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        runDir: input.runDir,
+        ...(input.finopsCostRates !== undefined
+          ? { costRates: input.finopsCostRates }
+          : {}),
+      });
+    }
+    // Record the test_generation attempt deterministically. The mock client
+    // returns immediately with `usage: {0, 0}`; recording `durationMs: 0`
+    // keeps the FinOps report byte-stable. `liveSmoke: false` because the
+    // harness always uses the mock client for the structured generator.
+    finopsRecorder.recordAttempt({
+      role: "test_generation",
+      deployment: TEST_GENERATION_DEPLOYMENT,
+      durationMs: 0,
+      result,
+      liveSmoke: false,
+      fallback: false,
+    });
+    if (result.outcome !== "success") {
+      finopsTerminalOutcome = "gateway_failed";
+      await writeFinOpsBudgetReportForFailure({
+        recorder: finopsRecorder,
+        budget: finopsBudget,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        runDir: input.runDir,
+        outcome: finopsTerminalOutcome,
+        ...(input.finopsCostRates !== undefined
+          ? { costRates: input.finopsCostRates }
+          : {}),
+      });
+      throw new Error(
+        `runWave1Poc: mock LLM returned a failure (${result.errorClass}: ${result.message})`,
+      );
+    }
+    await assertFinOpsBudgetOpen({
       recorder: finopsRecorder,
       budget: finopsBudget,
       jobId: input.jobId,
       generatedAt: input.generatedAt,
       runDir: input.runDir,
-      outcome: finopsTerminalOutcome,
       ...(input.finopsCostRates !== undefined
         ? { costRates: input.finopsCostRates }
         : {}),
     });
-    throw new Error(
-      `runWave1Poc: mock LLM returned a failure (${result.errorClass}: ${result.message})`,
-    );
+    return result.content as GeneratedTestCaseList;
+  };
+
+  const cacheResult =
+    input.replayCache !== undefined
+      ? await executeWithReplayCache({
+          cache: input.replayCache,
+          cacheKey: compiled.cacheKey,
+          generate: async () => {
+            finopsRecorder.recordCacheMiss({ role: "test_generation" });
+            return generateTestCases();
+          },
+        })
+      : undefined;
+  if (cacheResult?.cacheHit === true) {
+    finopsRecorder.recordCacheHit({
+      role: "test_generation",
+      deployment: TEST_GENERATION_DEPLOYMENT,
+    });
   }
 
   // 6. Parse / accept the structured output. The mock returns the
   //    already-typed list; in a live setting the gateway wire format
   //    would be JSON we would re-parse here.
-  const generatedList = result.content as GeneratedTestCaseList;
+  const generatedList = cacheResult?.testCases ?? (await generateTestCases());
 
   // Defence-in-depth: confirm the recorded request the mock saw did
   // not carry image inputs. The mock strips bytes during recording, but
@@ -1223,17 +1350,13 @@ export const runWave1Poc = async (
         category: "review",
       },
       ...exportArtifactBytes,
+      {
+        filename: `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`,
+        bytes: finopsWritten.bytes,
+        category: "finops",
+      },
     ],
   });
-  // The FinOps budget report (`<runDir>/finops/budget-report.json`) is
-  // intentionally NOT included in the Wave 1 evidence manifest because
-  // the manifest verifier resolves artifacts at the run-dir root only
-  // (filename basename invariant), and the AC requires the FinOps
-  // report to live under a dedicated `finops/` directory. The artifact
-  // ships with its own schema/contract stamps and the negative
-  // invariants (`secretsIncluded: false`, `rawPromptsIncluded: false`,
-  // `rawScreenshotsIncluded: false`) so an operator can verify it
-  // independently with `JSON.parse + canonicalJson + sha256`.
   await writeWave1PocEvidenceManifest({
     manifest,
     destinationDir: input.runDir,
@@ -1272,8 +1395,12 @@ export const runWave1Poc = async (
 const recordVisualSidecarAttempts = (input: {
   recorder: FinOpsUsageRecorder;
   attempts: ReadonlyArray<VisualSidecarAttempt>;
-  captureCount: number;
+  captureIdentities: VisualSidecarResult["captureIdentities"];
 }): void => {
+  const imageBytes = input.captureIdentities.reduce(
+    (sum, identity) => sum + identity.byteLength,
+    0,
+  );
   for (let i = 0; i < input.attempts.length; i += 1) {
     const attempt = input.attempts[i] as VisualSidecarAttempt;
     // Role assignment is driven by the deployment label rather than the
@@ -1311,6 +1438,7 @@ const recordVisualSidecarAttempts = (input: {
       role,
       deployment: attempt.deployment,
       durationMs: attempt.durationMs,
+      imageBytes,
       result,
       fallback: role === "visual_fallback",
       liveSmoke: attempt.deployment !== "mock",
@@ -1351,6 +1479,121 @@ const deriveFinopsOutcomeFromValidation = (
   return undefined;
 };
 
+const isFinOpsBudgetGatewayFailure = (
+  result: LlmGenerationResult,
+): boolean => {
+  if (result.outcome !== "error") return false;
+  return (
+    result.errorClass === "schema_invalid" &&
+    /max(InputTokens|OutputTokens|WallClockMs|Retries)/.test(result.message)
+  );
+};
+
+const isFinOpsBudgetSidecarFailure = (
+  result: VisualSidecarFailure,
+): boolean => {
+  return (
+    result.failureClass === "image_payload_too_large" &&
+    result.failureMessage.includes("FinOps")
+  );
+};
+
+const recordVisualImageBudgetBreach = (input: {
+  recorder: FinOpsUsageRecorder;
+  budget: FinOpsBudgetEnvelope;
+  sidecar: VisualSidecarFailure;
+}): void => {
+  const observed = input.sidecar.captureIdentities.reduce(
+    (total, identity) => total + identity.byteLength,
+    0,
+  );
+  for (const role of ["visual_primary", "visual_fallback"] as const) {
+    const threshold = input.budget.roles[role]?.maxImageBytesPerRequest;
+    if (threshold !== undefined && observed > threshold) {
+      input.recorder.recordBudgetBreach({
+        rule: "max_image_bytes",
+        role,
+        observed,
+        threshold,
+        message: `${role} decoded image bytes ${observed} exceeds maxImageBytesPerRequest ${threshold}`,
+      });
+      return;
+    }
+  }
+};
+
+const recordGatewayBudgetBreach = (input: {
+  recorder: FinOpsUsageRecorder;
+  result: LlmGenerationResult;
+  role: FinOpsRole;
+}): void => {
+  if (input.result.outcome !== "error") return;
+  const message = input.result.message;
+  const inputMatch = /estimated input tokens (\d+) exceeds maxInputTokens (\d+)/.exec(
+    message,
+  );
+  if (inputMatch !== null) {
+    input.recorder.recordBudgetBreach({
+      rule: "max_input_tokens",
+      role: input.role,
+      observed: Number.parseInt(inputMatch[1] as string, 10),
+      threshold: Number.parseInt(inputMatch[2] as string, 10),
+      message,
+    });
+    return;
+  }
+  const outputMatch = /reported output tokens (\d+) exceeds maxOutputTokens (\d+)/.exec(
+    message,
+  );
+  if (outputMatch !== null) {
+    input.recorder.recordBudgetBreach({
+      rule: "max_output_tokens",
+      role: input.role,
+      observed: Number.parseInt(outputMatch[1] as string, 10),
+      threshold: Number.parseInt(outputMatch[2] as string, 10),
+      message,
+    });
+    return;
+  }
+  const wallClockMatch = /maxWallClockMs (\d+)ms/.exec(message);
+  if (wallClockMatch !== null) {
+    const threshold = Number.parseInt(wallClockMatch[1] as string, 10);
+    input.recorder.recordBudgetBreach({
+      rule: "max_wall_clock_ms",
+      role: input.role,
+      observed: threshold,
+      threshold,
+      message,
+    });
+  }
+};
+
+const assertFinOpsBudgetOpen = async (input: {
+  recorder: FinOpsUsageRecorder;
+  budget: FinOpsBudgetEnvelope;
+  jobId: string;
+  generatedAt: string;
+  runDir: string;
+  costRates?: FinOpsCostRateMap;
+}): Promise<void> => {
+  const report = buildFinOpsBudgetReport({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    budget: input.budget,
+    recorder: input.recorder,
+    ...(input.costRates !== undefined ? { costRates: input.costRates } : {}),
+  });
+  if (report.breaches.length === 0) return;
+  const written = await writeFinOpsBudgetReport({
+    report: { ...report, outcome: "budget_exceeded" },
+    runDir: input.runDir,
+  });
+  throw new Wave1PocFinOpsBudgetExceededError({
+    report: { ...report, outcome: "budget_exceeded" },
+    artifactPath: written.artifactPath,
+  });
+};
+
 /**
  * Persist a partial FinOps report when the harness aborts before reaching
  * the normal finalisation step (e.g. visual-sidecar failure or
@@ -1366,7 +1609,7 @@ const writeFinOpsBudgetReportForFailure = async (input: {
   runDir: string;
   outcome: FinOpsJobOutcome;
   costRates?: FinOpsCostRateMap;
-}): Promise<void> => {
+}): Promise<WriteFinOpsBudgetReportResult> => {
   const report = buildFinOpsBudgetReport({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -1375,7 +1618,7 @@ const writeFinOpsBudgetReportForFailure = async (input: {
     outcomeOverride: input.outcome,
     ...(input.costRates !== undefined ? { costRates: input.costRates } : {}),
   });
-  await writeFinOpsBudgetReport({
+  return writeFinOpsBudgetReport({
     report,
     runDir: input.runDir,
   });
@@ -1452,6 +1695,7 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
   intent: BusinessTestIntentIr;
   sidecarResult: VisualSidecarFailure;
   sidecarArtifactBytes: Uint8Array;
+  finopsReportBytes: Uint8Array;
   policyProfile: TestCasePolicyProfile;
 }): Promise<void> => {
   const exportProfile = cloneOpenTextAlmReferenceProfile();
@@ -1490,6 +1734,11 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
         filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
         bytes: input.sidecarArtifactBytes,
         category: "visual_sidecar",
+      },
+      {
+        filename: `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`,
+        bytes: input.finopsReportBytes,
+        category: "finops",
       },
     ],
   });

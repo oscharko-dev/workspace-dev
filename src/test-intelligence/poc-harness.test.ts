@@ -5,6 +5,9 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  FINOPS_ARTIFACT_DIRECTORY,
+  FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+  type FinOpsBudgetReport,
   WAVE1_POC_FIXTURE_IDS,
   type Wave1PocFixtureId,
 } from "../contracts/index.js";
@@ -15,7 +18,9 @@ import {
   COMPILED_PROMPT_ARTIFACT_FILENAME,
   GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
   runWave1Poc,
+  Wave1PocFinOpsBudgetExceededError,
 } from "./poc-harness.js";
+import { createMemoryReplayCache } from "./replay-cache.js";
 
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 
@@ -47,7 +52,8 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     assert.equal(result.fixtureId, fixtureId);
     assert.ok(result.generatedList.testCases.length > 0);
     assert.equal(result.exportArtifacts.refused, false);
-    // Every artifact filename must be a basename and unique.
+    // Every artifact filename must be unique; subdirectory artifacts remain
+    // safe relative paths so they can be attested by the manifest.
     const filenames = result.artifactFilenames;
     assert.equal(new Set(filenames).size, filenames.length);
     assert.ok(filenames.includes(BUSINESS_INTENT_IR_ARTIFACT_FILENAME));
@@ -272,4 +278,180 @@ test("poc-harness: default execution does not touch live gateway fetch", async (
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("poc-harness: FinOps report is returned and persisted with supplied budget and cost rates", async () => {
+  const runDir = await newRunDir();
+  const budget = {
+    budgetId: "test-success-budget",
+    budgetVersion: "2026-04-25",
+    roles: {
+      test_generation: {
+        maxInputTokensPerRequest: 100_000,
+        maxOutputTokensPerRequest: 1_000,
+      },
+    },
+  };
+  const result = await runWave1Poc({
+    fixtureId: "poc-onboarding",
+    jobId: "job-poc-finops-success",
+    generatedAt: GENERATED_AT,
+    runDir,
+    finopsBudget: budget,
+    finopsCostRates: {
+      currencyLabel: "USD",
+      rates: {
+        test_generation: {
+          fixedCostPerAttempt: 0.01,
+        },
+      },
+    },
+  });
+
+  assert.equal(
+    result.finopsArtifactPath,
+    join(
+      runDir,
+      FINOPS_ARTIFACT_DIRECTORY,
+      FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+    ),
+  );
+  assert.equal(result.finopsReport.budget.budgetId, budget.budgetId);
+  assert.equal(result.finopsReport.currencyLabel, "USD");
+  assert.equal(result.finopsReport.outcome, "completed");
+  assert.equal(result.finopsReport.totals.attempts, 1);
+  assert.equal(result.finopsReport.totals.estimatedCost, 0.01);
+  assert.equal(
+    result.manifest.artifacts.find(
+      (artifact) =>
+        artifact.filename ===
+        `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`,
+    )?.category,
+    "finops",
+  );
+
+  const onDisk = JSON.parse(
+    await readFile(result.finopsArtifactPath, "utf8"),
+  ) as FinOpsBudgetReport;
+  assert.deepEqual(onDisk, result.finopsReport);
+  assert.equal(onDisk.secretsIncluded, false);
+  assert.equal(onDisk.rawPromptsIncluded, false);
+  assert.equal(onDisk.rawScreenshotsIncluded, false);
+});
+
+test("poc-harness: FinOps maxInputTokensPerRequest fails closed before downstream artifacts", async () => {
+  const runDir = await newRunDir();
+  await assert.rejects(
+    runWave1Poc({
+      fixtureId: "poc-onboarding",
+      jobId: "job-poc-finops-input-budget",
+      generatedAt: GENERATED_AT,
+      runDir,
+      finopsBudget: {
+        budgetId: "test-tight-input",
+        budgetVersion: "1.0.0",
+        roles: {
+          test_generation: {
+            maxInputTokensPerRequest: 1,
+          },
+        },
+      },
+    }),
+    Wave1PocFinOpsBudgetExceededError,
+  );
+
+  const rawReport = await readFile(
+    join(
+      runDir,
+      FINOPS_ARTIFACT_DIRECTORY,
+      FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+    ),
+    "utf8",
+  );
+  const report = JSON.parse(rawReport) as FinOpsBudgetReport;
+  assert.equal(report.outcome, "budget_exceeded");
+  assert.equal(report.totals.attempts, 0);
+  assert.deepEqual(
+    report.breaches.map((breach) => breach.rule),
+    ["max_input_tokens"],
+  );
+  assert.equal(report.rawPromptsIncluded, false);
+  assert.equal(report.rawScreenshotsIncluded, false);
+  await assert.rejects(
+    readFile(join(runDir, "generated-testcases.json"), "utf8"),
+    /ENOENT/,
+  );
+});
+
+test("poc-harness: aggregate FinOps breaches stop before validation and export", async () => {
+  const runDir = await newRunDir();
+  await assert.rejects(
+    runWave1Poc({
+      fixtureId: "poc-onboarding",
+      jobId: "job-poc-finops-aggregate-budget",
+      generatedAt: GENERATED_AT,
+      runDir,
+      finopsBudget: {
+        budgetId: "test-tight-attempts",
+        budgetVersion: "1.0.0",
+        roles: {
+          test_generation: {
+            maxAttempts: 0,
+          },
+        },
+      },
+    }),
+    Wave1PocFinOpsBudgetExceededError,
+  );
+
+  const report = JSON.parse(
+    await readFile(
+      join(
+        runDir,
+        FINOPS_ARTIFACT_DIRECTORY,
+        FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+      ),
+      "utf8",
+    ),
+  ) as FinOpsBudgetReport;
+  assert.equal(report.outcome, "budget_exceeded");
+  assert.deepEqual(
+    report.breaches.map((breach) => breach.rule),
+    ["max_attempts"],
+  );
+  await assert.rejects(
+    readFile(join(runDir, "test-case-validation-report.json"), "utf8"),
+    /ENOENT/,
+  );
+});
+
+test("poc-harness: replay-cache hit skips generation and reports completed_cache_hit", async () => {
+  const cache = createMemoryReplayCache();
+  const firstDir = await newRunDir();
+  const secondDir = await newRunDir();
+  await runWave1Poc({
+    fixtureId: "poc-onboarding",
+    jobId: "job-poc-cache-hit",
+    generatedAt: GENERATED_AT,
+    runDir: firstDir,
+    replayCache: cache,
+  });
+  const second = await runWave1Poc({
+    fixtureId: "poc-onboarding",
+    jobId: "job-poc-cache-hit",
+    generatedAt: GENERATED_AT,
+    runDir: secondDir,
+    replayCache: cache,
+  });
+
+  assert.equal(second.finopsReport.outcome, "completed_cache_hit");
+  assert.equal(second.finopsReport.totals.attempts, 0);
+  assert.equal(second.finopsReport.totals.cacheHits, 1);
+  assert.equal(second.generatedList.testCases[0]?.audit.cacheHit, true);
+
+  const rawAudit = JSON.parse(
+    await readFile(join(secondDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME), "utf8"),
+  ) as { requestCount: number; imageInputCounts: number[] };
+  assert.equal(rawAudit.requestCount, 0);
+  assert.deepEqual(rawAudit.imageInputCounts, []);
 });

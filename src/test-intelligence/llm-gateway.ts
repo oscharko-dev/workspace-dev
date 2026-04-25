@@ -145,6 +145,8 @@ export const createLlmGatewayClient = (
     if (wallClockError !== undefined) return wallClockError;
     const retriesError = guardMaxRetriesBudget(request);
     if (retriesError !== undefined) return retriesError;
+    const outputBudgetError = guardOutputBudgetSupport(config, request);
+    if (outputBudgetError !== undefined) return outputBudgetError;
 
     // Per-request retry cap (Issue #1371): operator may pin a tighter cap
     // for a single job without rebuilding the client. The effective cap is
@@ -333,6 +335,36 @@ const guardMaxRetriesBudget = (
   return undefined;
 };
 
+const guardOutputBudgetSupport = (
+  config: LlmGatewayClientConfig,
+  request: LlmGenerationRequest,
+): LlmGenerationFailure | undefined => {
+  if (request.maxOutputTokens === undefined) return undefined;
+  if (
+    !Number.isSafeInteger(request.maxOutputTokens) ||
+    request.maxOutputTokens <= 0
+  ) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: "maxOutputTokens must be a positive integer",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  if (!config.declaredCapabilities.maxOutputTokensSupport) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message:
+        "maxOutputTokens budget requires a deployment with maxOutputTokensSupport",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  return undefined;
+};
+
 const estimateInputTokens = (request: LlmGenerationRequest): number => {
   const encoder = new TextEncoder();
   let bytes =
@@ -353,6 +385,33 @@ const isTransientFailure = (errorClass: LlmGatewayErrorClass): boolean => {
     errorClass === "transport" ||
     errorClass === "rate_limited"
   );
+};
+
+const isAbortLikeError = (err: unknown): boolean =>
+  err instanceof Error &&
+  (err.name === "AbortError" || /aborted/i.test(err.message));
+
+const timeoutFailure = (input: {
+  wallClockBudgetCausedTimeout: boolean;
+  effectiveTimeoutMs: number;
+  attempt: number;
+}): LlmGenerationFailure => {
+  if (input.wallClockBudgetCausedTimeout) {
+    return {
+      outcome: "error",
+      errorClass: "timeout",
+      message: `request exceeded maxWallClockMs ${input.effectiveTimeoutMs}ms`,
+      retryable: false,
+      attempt: input.attempt,
+    };
+  }
+  return {
+    outcome: "error",
+    errorClass: "timeout",
+    message: `request timed out after ${input.effectiveTimeoutMs}ms`,
+    retryable: true,
+    attempt: input.attempt,
+  };
 };
 
 const dispatchOnce = async ({
@@ -401,26 +460,12 @@ const dispatchOnce = async ({
     });
   } catch (err) {
     clearTimeout(timer);
-    if (
-      err instanceof Error &&
-      (err.name === "AbortError" || /aborted/i.test(err.message))
-    ) {
-      if (wallClockBudgetCausedTimeout) {
-        return {
-          outcome: "error",
-          errorClass: "timeout",
-          message: `request exceeded maxWallClockMs ${effectiveTimeoutMs}ms`,
-          retryable: false,
-          attempt,
-        };
-      }
-      return {
-        outcome: "error",
-        errorClass: "timeout",
-        message: `request timed out after ${effectiveTimeoutMs}ms`,
-        retryable: true,
+    if (isAbortLikeError(err)) {
+      return timeoutFailure({
+        wallClockBudgetCausedTimeout,
+        effectiveTimeoutMs,
         attempt,
-      };
+      });
     }
     return {
       outcome: "error",
@@ -431,11 +476,20 @@ const dispatchOnce = async ({
       retryable: true,
       attempt,
     };
+  }
+
+  try {
+    return await parseOpenAiChatResponse({
+      response,
+      config,
+      request,
+      attempt,
+      effectiveTimeoutMs,
+      wallClockBudgetCausedTimeout,
+    });
   } finally {
     clearTimeout(timer);
   }
-
-  return parseOpenAiChatResponse({ response, config, request, attempt });
 };
 
 const buildOpenAiChatUrl = (baseUrl: string): string => {
@@ -582,11 +636,15 @@ const parseOpenAiChatResponse = async ({
   config,
   request,
   attempt,
+  effectiveTimeoutMs,
+  wallClockBudgetCausedTimeout,
 }: {
   response: Response;
   config: LlmGatewayClientConfig;
   request: LlmGenerationRequest;
   attempt: number;
+  effectiveTimeoutMs: number;
+  wallClockBudgetCausedTimeout: boolean;
 }): Promise<LlmGenerationResult> => {
   const status = response.status;
   if (status === 429) {
@@ -631,6 +689,13 @@ const parseOpenAiChatResponse = async ({
     }
     bodyText = readResult.text;
   } catch (err) {
+    if (isAbortLikeError(err)) {
+      return timeoutFailure({
+        wallClockBudgetCausedTimeout,
+        effectiveTimeoutMs,
+        attempt,
+      });
+    }
     return {
       outcome: "error",
       errorClass: "transport",
@@ -806,6 +871,28 @@ const parseOpenAiChatResponse = async ({
     typeof usage === "object" && usage !== null
       ? (usage as Record<string, unknown>)
       : {};
+  const outputTokens = usageRecord["completion_tokens"];
+  if (request.maxOutputTokens !== undefined) {
+    if (typeof outputTokens !== "number") {
+      return {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message:
+          "maxOutputTokens budget requires completion_tokens usage from the gateway",
+        retryable: false,
+        attempt,
+      };
+    }
+    if (outputTokens > request.maxOutputTokens) {
+      return {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message: `reported output tokens ${outputTokens} exceeds maxOutputTokens ${request.maxOutputTokens}`,
+        retryable: false,
+        attempt,
+      };
+    }
+  }
 
   const success: LlmGenerationSuccess = {
     outcome: "success",

@@ -113,19 +113,32 @@ test("evidence-manifest: artifacts are sorted by filename and de-duplicated", ()
   assert.equal(a.bytes, utf8("second").byteLength);
 });
 
-test("evidence-manifest: refuses non-basename filenames", () => {
+test("evidence-manifest: accepts safe relative artifact paths", () => {
+  const manifest = buildWave1PocEvidenceManifest(
+    baseInput([
+      {
+        filename: "finops/budget-report.json",
+        bytes: utf8("x"),
+        category: "finops",
+      },
+    ]),
+  );
+  assert.equal(manifest.artifacts[0]?.filename, "finops/budget-report.json");
+});
+
+test("evidence-manifest: refuses unsafe relative filenames", () => {
   assert.throws(
     () =>
       buildWave1PocEvidenceManifest(
         baseInput([
           {
-            filename: "subdir/alpha.json",
+            filename: "../alpha.json",
             bytes: utf8("x"),
             category: "validation",
           },
         ]),
       ),
-    /must be a basename/,
+    /safe relative path/,
   );
 });
 

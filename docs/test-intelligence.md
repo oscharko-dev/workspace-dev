@@ -417,7 +417,7 @@ deterministic budget report under `<runDir>/finops/budget-report.json`.
 | `maxReplayCacheMissRate`                 | Job-wide | Maximum permitted `misses / (hits + misses)` over the run; `[0, 1]`.                       |
 | `maxEstimatedCost`                       | Job-wide | Operator-supplied per-job cost cap (currency-agnostic).                                    |
 | `roles.<role>.maxInputTokensPerRequest`  | Role     | Maps to `LlmGenerationRequest.maxInputTokens` (gateway fail-closed).                       |
-| `roles.<role>.maxOutputTokensPerRequest` | Role     | Maps to `LlmGenerationRequest.maxOutputTokens` (gateway forwards `max_completion_tokens`). |
+| `roles.<role>.maxOutputTokensPerRequest` | Role     | Maps to `LlmGenerationRequest.maxOutputTokens`; gateway fails closed if unsupported or exceeded. |
 | `roles.<role>.maxTotalInputTokens`       | Role     | Aggregate input-token cap across every request the role makes.                             |
 | `roles.<role>.maxTotalOutputTokens`      | Role     | Aggregate output-token cap across every request the role makes.                            |
 | `roles.<role>.maxWallClockMsPerRequest`  | Role     | Per-request wall-clock cap (gateway fail-closed: `retryable: false` on breach).            |
@@ -435,7 +435,7 @@ embed the harness in their own pipelines.
 
 ### Fail-closed semantics
 
-Two controls fail closed (`retryable: false`):
+Configured budgets fail closed before downstream validation/export can proceed:
 
 1. `LlmGenerationRequest.maxWallClockMs` — when the wall-clock budget is
    smaller than the static client `timeoutMs`, the gateway times the request
@@ -445,6 +445,18 @@ Two controls fail closed (`retryable: false`):
    gateway attempts the call exactly once. When non-zero, the effective retry
    cap is `min(config.maxRetries, request.maxRetries)`. The request value is
    validated as a non-negative safe integer.
+3. `LlmGenerationRequest.maxOutputTokens` — the gateway requires a deployment
+   that supports output-token caps and verifies reported completion-token
+   usage after the response. Missing usage or an overrun is non-retryable.
+4. Visual `maxImageBytesPerRequest` — the sidecar preflight rejects oversized
+   decoded image payloads before primary or fallback gateway calls run.
+
+Aggregate role/job caps (`maxAttempts`, total token caps, total wall-clock,
+replay-cache miss rate, live-smoke calls, and estimated cost) are evaluated
+immediately after each recorded LLM/sidecar attempt. On breach,
+`runWave1Poc` writes the current FinOps report with structured breach records,
+throws `Wave1PocFinOpsBudgetExceededError`, and does not continue into
+validation or export.
 
 ### Cache hits and the budget report
 
@@ -453,6 +465,10 @@ A cache hit signals "no LLM call, no token usage" verbatim:
 - `recordCacheHit({ role })` increments only `cacheHits`. Every other counter
   stays at 0 — including `attempts`, `inputTokens`, `outputTokens`,
   `durationMs`, and `imageBytes`.
+- When `runWave1Poc` receives a `replayCache`, it wraps test generation with
+  the existing replay-cache helper. Hits skip the test-generation gateway call,
+  mark generated-case audit metadata as `cacheHit: true`, and produce a
+  `completed_cache_hit` FinOps report.
 - When the only recorded events are cache hits, `outcome` is
   `completed_cache_hit`. Otherwise the outcome is `completed`,
   `budget_exceeded`, `policy_blocked`, `validation_blocked`,
@@ -476,11 +492,12 @@ for identical input.
 - `rawPromptsIncluded: false`
 - `rawScreenshotsIncluded: false`
 
-The recorder never sees prompt text, response content, or image bytes — it
-ingests `LlmGenerationResult.usage`, `VisualSidecarAttempt.durationMs`, role
-labels, and counter increments. The persisted report consequently never
-contains gateway URLs, deployment endpoints, API keys, prompt content, response
-content, or image bytes.
+The recorder never sees prompt text, response content, or raw image bytes — it
+ingests `LlmGenerationResult.usage`, `VisualSidecarAttempt.durationMs`, decoded
+image byte counts, role labels, and counter increments. Persisted report labels
+(`budgetId`, `budgetVersion`, `currencyLabel`, deployment labels, and breach
+messages) are bounded and passed through the shared high-risk-secret redactor
+before serialization.
 
 ### Wiring it into a run
 
@@ -515,10 +532,10 @@ console.log(result.finopsArtifactPath); // "/tmp/job-42/finops/budget-report.jso
 ```
 
 The artifact is intentionally NOT attested by the Wave 1 evidence manifest
-because the manifest verifier resolves artifacts at the run-dir root only
-(basename invariant) and the AC requires the FinOps artifact to live under a
-dedicated `finops/` subdirectory. The artifact's three negative invariants and
-its schema/contract stamps make it independently verifiable.
+No separate attestation step is required: the Wave 1 evidence manifest accepts
+safe relative artifact paths and includes `finops/budget-report.json` with
+category `finops`, while rejecting absolute paths, `..`, empty path segments,
+backslashes, and control characters.
 
 ## 10. Network boundary
 

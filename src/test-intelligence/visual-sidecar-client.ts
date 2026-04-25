@@ -390,6 +390,22 @@ export interface DescribeVisualScreensInput {
    * "policy_downgrade"`.
    */
   forceFallback?: boolean;
+  /** Optional FinOps request limits applied to the primary/fallback gateway calls. */
+  requestLimits?: {
+    visualPrimary?: Pick<
+      LlmGenerationRequest,
+      "maxInputTokens" | "maxOutputTokens" | "maxWallClockMs" | "maxRetries"
+    >;
+    visualFallback?: Pick<
+      LlmGenerationRequest,
+      "maxInputTokens" | "maxOutputTokens" | "maxWallClockMs" | "maxRetries"
+    >;
+  };
+  /** Optional FinOps decoded-image byte caps, enforced before any gateway call. */
+  maxImageBytesPerRequest?: {
+    visualPrimary?: number;
+    visualFallback?: number;
+  };
   /**
    * Optional clock for deterministic attempt timings in tests. Defaults
    * to `performance.now`-equivalent monotonic milliseconds via `Date.now`.
@@ -416,6 +432,12 @@ export const describeVisualScreens = async (
   const orchestration = orchestrateAttempts({
     forceFallback: input.forceFallback === true,
   });
+  const imageBudgetFailure = guardFinOpsImageBudgets({
+    identities: preflight.identities,
+    stages: orchestration.stages,
+    maxImageBytesPerRequest: input.maxImageBytesPerRequest,
+  });
+  if (imageBudgetFailure !== undefined) return imageBudgetFailure;
 
   let primaryFailureCause: PrimaryFailureCause | undefined;
   for (const stage of orchestration.stages) {
@@ -423,6 +445,10 @@ export const describeVisualScreens = async (
       stage === "primary"
         ? input.bundle.visualPrimary
         : input.bundle.visualFallback;
+    const requestLimits =
+      stage === "primary"
+        ? input.requestLimits?.visualPrimary
+        : input.requestLimits?.visualFallback;
     const start = clock();
     const result = await client.generate({
       jobId: input.jobId,
@@ -434,6 +460,7 @@ export const describeVisualScreens = async (
         mimeType: capture.mimeType,
         base64Data: capture.base64Data,
       })),
+      ...(requestLimits ?? {}),
     });
     const durationMs = Math.max(0, clock() - start);
 
@@ -502,6 +529,40 @@ export const describeVisualScreens = async (
     attempts,
     captureIdentities: preflight.identities,
   };
+};
+
+const guardFinOpsImageBudgets = (input: {
+  identities: ReadonlyArray<VisualSidecarCaptureIdentity>;
+  stages: ReadonlyArray<"primary" | "fallback">;
+  maxImageBytesPerRequest:
+    | DescribeVisualScreensInput["maxImageBytesPerRequest"]
+    | undefined;
+}): VisualSidecarFailure | undefined => {
+  if (input.maxImageBytesPerRequest === undefined) return undefined;
+
+  const requestBytes = input.identities.reduce(
+    (sum, identity) => sum + identity.byteLength,
+    0,
+  );
+  for (const stage of input.stages) {
+    const threshold =
+      stage === "primary"
+        ? input.maxImageBytesPerRequest.visualPrimary
+        : input.maxImageBytesPerRequest.visualFallback;
+    if (threshold === undefined) continue;
+    if (requestBytes > threshold) {
+      return {
+        outcome: "failure",
+        failureClass: "image_payload_too_large",
+        failureMessage: redactBoundedFailureMessage(
+          `FinOps ${stage} image budget exceeded: request decoded byte length ${requestBytes} exceeds maxImageBytesPerRequest ${threshold}`,
+        ),
+        attempts: [],
+        captureIdentities: [...input.identities],
+      };
+    }
+  }
+  return undefined;
 };
 
 /** Recorded request walker. */

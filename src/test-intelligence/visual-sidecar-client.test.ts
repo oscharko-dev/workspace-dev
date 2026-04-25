@@ -434,6 +434,39 @@ test("preflight: image too large → image_payload_too_large; no gateway call", 
   assert.equal(primaryCalls, 0);
 });
 
+test("finops preflight: image budget applies to the whole outbound request", async () => {
+  const captureA = randomBytes(80).toString("base64");
+  const captureB = randomBytes(80).toString("base64");
+  const captures: VisualSidecarCaptureInput[] = [
+    { screenId: "s-1", mimeType: "image/png", base64Data: captureA },
+    { screenId: "s-2", mimeType: "image/png", base64Data: captureB },
+  ];
+  let primaryCalls = 0;
+  const bundle = buildBundle({
+    primary: {
+      responder: () => {
+        primaryCalls += 1;
+        throw new Error("must not be called");
+      },
+    },
+  });
+  const result = await describeVisualScreens({
+    bundle,
+    captures,
+    jobId: "job-6b",
+    generatedAt: "2026-04-25T00:00:00.000Z",
+    intent: buildIntent(["s-1", "s-2"]),
+    primaryDeployment: PRIMARY_DEPLOYMENT,
+    maxImageBytesPerRequest: { visualPrimary: 81 },
+  });
+  assert.equal(result.outcome, "failure");
+  if (result.outcome !== "failure") return;
+  assert.equal(result.failureClass, "image_payload_too_large");
+  assert.equal(result.attempts.length, 0);
+  assert.equal(primaryCalls, 0);
+  assert.match(result.failureMessage, /request decoded byte length/);
+});
+
 test("preflight: unsupported MIME (image/svg+xml) → image_mime_unsupported", () => {
   // Direct preflight test — SVG is NOT in the allowlist for XML safety.
   const result = preflightCaptures([

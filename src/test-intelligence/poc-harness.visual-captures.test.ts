@@ -17,6 +17,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  FINOPS_ARTIFACT_DIRECTORY,
+  FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
@@ -24,6 +26,7 @@ import {
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  type FinOpsBudgetReport,
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type VisualScreenDescription,
@@ -422,6 +425,112 @@ test("poc-harness visualCaptures: fallback path — primary timeout, fallback su
   }
 });
 
+test("poc-harness visualCaptures: FinOps image byte budget fails closed before sidecar calls", async () => {
+  const runDir = await newRunDir();
+  try {
+    const { captures } = await loadWave1PocCaptureFixture(FIXTURE_ID);
+    const decodedImageBytes = captures.reduce(
+      (total, capture) =>
+        total + Buffer.byteLength(capture.base64Data, "base64"),
+      0,
+    );
+    const largestImageBytes = Math.max(
+      ...captures.map((capture) =>
+        Buffer.byteLength(capture.base64Data, "base64"),
+      ),
+    );
+    const aggregateOnlyThreshold = largestImageBytes + 1;
+    assert.ok(decodedImageBytes > aggregateOnlyThreshold);
+
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b-mock",
+        modelRevision: "gpt-oss-120b-mock@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: PRIMARY_DEPLOYMENT,
+        modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: () => {
+          throw new Error("primary must not be called after image budget breach");
+        },
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: FALLBACK_DEPLOYMENT,
+        modelRevision: `${FALLBACK_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: () => {
+          throw new Error("fallback must not be called after image budget breach");
+        },
+      },
+    });
+
+    await assert.rejects(
+      runWave1Poc({
+        fixtureId: FIXTURE_ID,
+        jobId: "job-visual-finops-image-budget",
+        generatedAt: GENERATED_AT,
+        runDir,
+        visualCaptures: captures,
+        bundle,
+        finopsBudget: {
+          budgetId: "test-tight-image",
+          budgetVersion: "1.0.0",
+          roles: {
+            visual_primary: {
+              maxImageBytesPerRequest: aggregateOnlyThreshold,
+            },
+            visual_fallback: {
+              maxImageBytesPerRequest: aggregateOnlyThreshold,
+            },
+          },
+        },
+      }),
+      Wave1PocVisualSidecarFailureError,
+    );
+
+    assert.equal(
+      (bundle.visualPrimary as { callCount: () => number }).callCount(),
+      0,
+    );
+    assert.equal(
+      (bundle.visualFallback as { callCount: () => number }).callCount(),
+      0,
+    );
+
+    const rawReport = await readFile(
+      join(
+        runDir,
+        FINOPS_ARTIFACT_DIRECTORY,
+        FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+      ),
+      "utf8",
+    );
+    const report = JSON.parse(rawReport) as FinOpsBudgetReport;
+    assert.equal(report.outcome, "budget_exceeded");
+    assert.equal(report.rawScreenshotsIncluded, false);
+    assert.equal(report.totals.attempts, 0);
+    assert.deepEqual(report.breaches, [
+      {
+        rule: "max_image_bytes",
+        role: "visual_primary",
+        observed: decodedImageBytes,
+        threshold: aggregateOnlyThreshold,
+        message: `visual_primary decoded image bytes ${decodedImageBytes} exceeds maxImageBytesPerRequest ${aggregateOnlyThreshold}`,
+      },
+    ]);
+  } finally {
+    await cleanupRunDir(runDir);
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Test 3: Invalid sidecar JSON — harness aborts cleanly (AC2 / AC5 invariant)
 // ---------------------------------------------------------------------------
@@ -607,6 +716,20 @@ test("poc-harness visualCaptures: both sidecars fail — harness throws, no test
     assert.equal(sidecarArtifact.result.attempts?.length, 2);
     assert.equal(sidecarArtifact.rawScreenshotsIncluded, false);
     await assertFailureManifestAttestsSidecar(runDir);
+
+    const finopsReport = JSON.parse(
+      await readFile(
+        join(
+          runDir,
+          FINOPS_ARTIFACT_DIRECTORY,
+          FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+        ),
+        "utf8",
+      ),
+    ) as FinOpsBudgetReport;
+    assert.equal(finopsReport.outcome, "visual_sidecar_failed");
+    assert.equal(finopsReport.budget.budgetId, "default-permissive");
+    assert.equal(finopsReport.totals.attempts, 2);
 
     // AC5 invariant: NO downstream test cases may be silently generated when
     // both sidecars fail. The harness short-circuits before the LLM

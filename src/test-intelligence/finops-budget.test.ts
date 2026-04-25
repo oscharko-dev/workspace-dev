@@ -341,6 +341,54 @@ test("gateway: timeout without maxWallClockMs stays retryable", async () => {
   assert.equal(dispatchCount, 1);
 });
 
+test("gateway: maxWallClockMs covers delayed response body reads", async () => {
+  let dispatchCount = 0;
+  const fetchImpl: typeof fetch = async (_url, init) => {
+    dispatchCount += 1;
+    const signal = (init as RequestInit | undefined)?.signal;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const timer = setTimeout(() => {
+          controller.enqueue(
+            new TextEncoder().encode(
+              JSON.stringify({
+                choices: [
+                  {
+                    finish_reason: "stop",
+                    message: { content: "ok" },
+                  },
+                ],
+                usage: { prompt_tokens: 1, completion_tokens: 1 },
+              }),
+            ),
+          );
+          controller.close();
+        }, 50);
+        signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          const err = new Error("aborted") as Error & { name: string };
+          err.name = "AbortError";
+          controller.error(err);
+        });
+      },
+    });
+    return new Response(body, { status: 200 });
+  };
+
+  const client = createLlmGatewayClient(
+    baseConfig({ timeoutMs: 60_000, maxRetries: 5 }),
+    { fetchImpl },
+  );
+  const result = await client.generate(baseRequest({ maxWallClockMs: 5 }));
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "timeout");
+    assert.equal(result.retryable, false);
+    assert.match(result.message, /maxWallClockMs/);
+  }
+  assert.equal(dispatchCount, 1);
+});
+
 // ---------------------------------------------------------------------------
 // Gateway: maxRetries cap
 // ---------------------------------------------------------------------------
@@ -397,6 +445,54 @@ test("gateway: invalid maxRetries / maxWallClockMs surface as schema_invalid", a
   if (zeroWall.outcome === "error") {
     assert.equal(zeroWall.errorClass, "schema_invalid");
     assert.equal(zeroWall.retryable, false);
+  }
+});
+
+test("gateway: maxOutputTokens requires provider support", async () => {
+  let dispatchCount = 0;
+  const fetchImpl: typeof fetch = async () => {
+    dispatchCount += 1;
+    return new Response("{}", { status: 200 });
+  };
+  const client = createLlmGatewayClient(
+    baseConfig({
+      declaredCapabilities: {
+        ...NON_VISUAL_CAPS,
+        maxOutputTokensSupport: false,
+      },
+    }),
+    { fetchImpl },
+  );
+  const result = await client.generate(baseRequest({ maxOutputTokens: 1 }));
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.equal(result.retryable, false);
+  }
+  assert.equal(dispatchCount, 0);
+});
+
+test("gateway: reported output token overrun fails closed", async () => {
+  const fetchImpl: typeof fetch = async () =>
+    new Response(
+      JSON.stringify({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { content: "{}" },
+          },
+        ],
+        usage: { prompt_tokens: 1, completion_tokens: 3 },
+      }),
+      { status: 200 },
+    );
+  const client = createLlmGatewayClient(baseConfig(), { fetchImpl });
+  const result = await client.generate(baseRequest({ maxOutputTokens: 2 }));
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /maxOutputTokens/);
+    assert.equal(result.retryable, false);
   }
 });
 
