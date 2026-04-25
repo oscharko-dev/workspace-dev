@@ -52,6 +52,28 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { cloneFinOpsBudgetEnvelope } from "./finops-budget.js";
+import { redactHighRiskSecrets } from "../secret-redaction.js";
+
+const MAX_REPORT_LABEL_LENGTH = 160;
+
+const sanitizeReportString = (input: string): string => {
+  const redacted = redactHighRiskSecrets(input, "[REDACTED]")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (redacted.length <= MAX_REPORT_LABEL_LENGTH) return redacted;
+  return `${redacted.slice(0, MAX_REPORT_LABEL_LENGTH)}...`;
+};
+
+const sanitizeBudgetEnvelope = (
+  input: FinOpsBudgetEnvelope,
+): FinOpsBudgetEnvelope => {
+  const cloned = cloneFinOpsBudgetEnvelope(input);
+  return {
+    ...cloned,
+    budgetId: sanitizeReportString(cloned.budgetId),
+    budgetVersion: sanitizeReportString(cloned.budgetVersion),
+  };
+};
 
 /** Single attempt observation handed to the recorder. */
 export interface FinOpsAttemptObservation {
@@ -125,8 +147,11 @@ export interface FinOpsUsageRecorder {
   recordAttempt(observation: FinOpsAttemptObservation): void;
   recordCacheHit(observation: FinOpsCacheHitObservation): void;
   recordCacheMiss(observation: FinOpsCacheMissObservation): void;
+  recordBudgetBreach(breach: FinOpsBudgetBreach): void;
   /** Snapshot of every role accumulator (immutable copies). */
   snapshot(): FinOpsRoleUsage[];
+  /** Explicit fail-closed budget breaches observed outside aggregate counters. */
+  budgetBreaches(): FinOpsBudgetBreach[];
 }
 
 const ensureFinite = (value: number, fallback = 0): number => {
@@ -149,6 +174,7 @@ const safeIntPositiveOrZero = (value: number | undefined): number => {
 export const createFinOpsUsageRecorder = (
   costRates?: FinOpsCostRateMap,
 ): FinOpsUsageRecorder => {
+  const explicitBreaches: FinOpsBudgetBreach[] = [];
   const accumulators: Record<FinOpsRole, RoleAccumulator> = {
     test_generation: createRoleAccumulator("test_generation"),
     visual_primary: createRoleAccumulator("visual_primary"),
@@ -165,7 +191,7 @@ export const createFinOpsUsageRecorder = (
       typeof observation.deployment === "string" &&
       observation.deployment.length > 0
     ) {
-      acc.deployment = observation.deployment;
+      acc.deployment = sanitizeReportString(observation.deployment);
     }
     acc.durationMs += positiveOrZero(observation.durationMs);
     acc.imageBytes += safeIntPositiveOrZero(observation.imageBytes);
@@ -200,7 +226,7 @@ export const createFinOpsUsageRecorder = (
       acc.deployment.length === 0 &&
       observation.deployment.length > 0
     ) {
-      acc.deployment = observation.deployment;
+      acc.deployment = sanitizeReportString(observation.deployment);
     }
   };
 
@@ -213,12 +239,45 @@ export const createFinOpsUsageRecorder = (
     accumulators[observation.role].cacheMisses += 1;
   };
 
+  const recordBudgetBreach = (breach: FinOpsBudgetBreach): void => {
+    if (!ALLOWED_FINOPS_BUDGET_BREACH_REASONS.includes(breach.rule)) {
+      throw new RangeError(
+        `recordBudgetBreach: unknown rule "${breach.rule}"`,
+      );
+    }
+    if (
+      breach.role !== undefined &&
+      !ALLOWED_FINOPS_ROLES.includes(breach.role)
+    ) {
+      throw new RangeError(
+        `recordBudgetBreach: unknown role "${breach.role}"`,
+      );
+    }
+    explicitBreaches.push({
+      rule: breach.rule,
+      ...(breach.role !== undefined ? { role: breach.role } : {}),
+      observed: ensureFinite(breach.observed),
+      threshold: ensureFinite(breach.threshold),
+      message: sanitizeReportString(breach.message),
+    });
+  };
+
   const snapshot = (): FinOpsRoleUsage[] =>
     ALLOWED_FINOPS_ROLES.map((role) =>
       finalizeAccumulator(accumulators[role], costRates?.rates[role]),
     );
 
-  return { recordAttempt, recordCacheHit, recordCacheMiss, snapshot };
+  const budgetBreaches = (): FinOpsBudgetBreach[] =>
+    explicitBreaches.map((breach) => ({ ...breach }));
+
+  return {
+    recordAttempt,
+    recordCacheHit,
+    recordCacheMiss,
+    recordBudgetBreach,
+    snapshot,
+    budgetBreaches,
+  };
 };
 
 const finalizeAccumulator = (
@@ -309,7 +368,10 @@ export const buildFinOpsBudgetReport = (
   );
 
   const totals = aggregateTotals(sortedUsages);
-  const breaches = detectBreaches(input.budget, sortedUsages, totals);
+  const breaches = sortBreaches([
+    ...detectBreaches(input.budget, sortedUsages, totals),
+    ...input.recorder.budgetBreaches(),
+  ]);
   const outcome =
     input.outcomeOverride !== undefined
       ? input.outcomeOverride
@@ -320,9 +382,9 @@ export const buildFinOpsBudgetReport = (
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
-    budget: cloneFinOpsBudgetEnvelope(input.budget),
+    budget: sanitizeBudgetEnvelope(input.budget),
     ...(input.costRates !== undefined
-      ? { currencyLabel: input.costRates.currencyLabel }
+      ? { currencyLabel: sanitizeReportString(input.costRates.currencyLabel) }
       : {}),
     roles: sortedUsages,
     totals,
@@ -513,11 +575,16 @@ const detectBreaches = (
     }
   }
 
-  // Sort breaches deterministically.
+  return breaches;
+};
+
+const sortBreaches = (
+  breaches: ReadonlyArray<FinOpsBudgetBreach>,
+): FinOpsBudgetBreach[] => {
   const ruleOrder = new Map<FinOpsBudgetBreachReason, number>(
     ALLOWED_FINOPS_BUDGET_BREACH_REASONS.map((r, i) => [r, i]),
   );
-  breaches.sort((a, b) => {
+  return [...breaches].sort((a, b) => {
     const orderA = ruleOrder.get(a.rule) ?? Number.MAX_SAFE_INTEGER;
     const orderB = ruleOrder.get(b.rule) ?? Number.MAX_SAFE_INTEGER;
     if (orderA !== orderB) return orderA - orderB;
@@ -527,7 +594,6 @@ const detectBreaches = (
     if (a.observed !== b.observed) return a.observed - b.observed;
     return 0;
   });
-  return breaches;
 };
 
 const deriveOutcome = (

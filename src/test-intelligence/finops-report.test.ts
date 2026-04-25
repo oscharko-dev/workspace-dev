@@ -174,6 +174,33 @@ test("recorder: rejects unknown roles", () => {
   }, /unknown role/);
 });
 
+test("recorder: explicit budget breaches are copied into the report", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordBudgetBreach({
+    rule: "max_input_tokens",
+    role: "test_generation",
+    observed: 200,
+    threshold: 100,
+    message: "estimated input tokens 200 exceeds maxInputTokens 100",
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  assert.equal(report.outcome, "budget_exceeded");
+  assert.deepEqual(report.breaches, [
+    {
+      rule: "max_input_tokens",
+      role: "test_generation",
+      observed: 200,
+      threshold: 100,
+      message: "estimated input tokens 200 exceeds maxInputTokens 100",
+    },
+  ]);
+});
+
 test("recorder: cache hits do NOT increment any token or attempt counter", () => {
   const recorder = createFinOpsUsageRecorder();
   recorder.recordCacheHit({
@@ -372,6 +399,69 @@ test("buildFinOpsBudgetReport: detects estimated-cost cap breach", () => {
   assert.equal(report.currencyLabel, "USD");
 });
 
+test("buildFinOpsBudgetReport: detects missing operational rules in deterministic order", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordAttempt({
+    role: "visual_primary",
+    deployment: "llama-4-maverick-vision",
+    durationMs: 10,
+    imageBytes: 20,
+    liveSmoke: true,
+    result: successResult(0, 0),
+  });
+  recorder.recordAttempt({
+    role: "visual_primary",
+    deployment: "llama-4-maverick-vision",
+    durationMs: 10,
+    imageBytes: 20,
+    liveSmoke: true,
+    result: successResult(0, 0),
+  });
+  recorder.recordAttempt({
+    role: "visual_fallback",
+    deployment: "phi-4-multimodal-poc",
+    durationMs: 10,
+    imageBytes: 30,
+    result: successResult(0, 0),
+  });
+  recorder.recordAttempt({
+    role: "visual_fallback",
+    deployment: "phi-4-multimodal-poc",
+    durationMs: 10,
+    imageBytes: 30,
+    result: successResult(0, 0),
+  });
+
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: {
+      budgetId: "test-operational-order",
+      budgetVersion: "1.0.0",
+      roles: {
+        visual_primary: {
+          maxAttempts: 1,
+          maxLiveSmokeCalls: 1,
+        },
+        visual_fallback: {
+          maxAttempts: 1,
+        },
+      },
+    },
+    recorder,
+  });
+
+  assert.deepEqual(
+    report.breaches.map((b) => `${b.rule}:${b.role ?? "job"}`),
+    [
+      "max_attempts:visual_fallback",
+      "max_attempts:visual_primary",
+      "max_live_smoke_calls:visual_primary",
+    ],
+  );
+  assert.equal(report.outcome, "budget_exceeded");
+});
+
 test("buildFinOpsBudgetReport: outcomeOverride takes precedence over auto-derived outcome", () => {
   const recorder = createFinOpsUsageRecorder();
   recorder.recordAttempt({
@@ -538,6 +628,34 @@ test("writeFinOpsBudgetReport: artifact never embeds prompt text or image bytes"
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+});
+
+test("buildFinOpsBudgetReport: redacts token-shaped report labels", () => {
+  const secret = "Token: abcdefghijklmnop";
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordAttempt({
+    role: "test_generation",
+    deployment: `gpt ${secret}`,
+    durationMs: 0,
+    result: successResult(0, 0),
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: {
+      budgetId: `budget ${secret}`,
+      budgetVersion: "v1",
+      roles: {},
+    },
+    costRates: {
+      currencyLabel: `USD ${secret}`,
+      rates: {},
+    },
+    recorder,
+  });
+  const raw = canonicalJson(report);
+  assert.equal(raw.includes("abcdefghijklmnop"), false);
+  assert.ok(raw.includes("[REDACTED]"));
 });
 
 test("buildFinOpsBudgetReport: cache-hit job exposes zero LLM call usage and outcome=completed_cache_hit", () => {

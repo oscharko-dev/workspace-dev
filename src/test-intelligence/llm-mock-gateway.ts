@@ -110,6 +110,12 @@ const cloneRequest = (request: LlmGenerationRequest): LlmGenerationRequest => {
   if (request.maxOutputTokens !== undefined) {
     cloned.maxOutputTokens = request.maxOutputTokens;
   }
+  if (request.maxWallClockMs !== undefined) {
+    cloned.maxWallClockMs = request.maxWallClockMs;
+  }
+  if (request.maxRetries !== undefined) {
+    cloned.maxRetries = request.maxRetries;
+  }
   return cloned;
 };
 
@@ -164,6 +170,36 @@ const guardInputBudget = (
       outcome: "error",
       errorClass: "schema_invalid",
       message: `estimated input tokens ${estimatedTokens} exceeds maxInputTokens ${request.maxInputTokens}`,
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  return undefined;
+};
+
+const guardOutputBudget = (
+  request: LlmGenerationRequest,
+  declaredCapabilities: LlmGatewayCapabilities,
+): LlmGenerationFailure | undefined => {
+  if (request.maxOutputTokens === undefined) return undefined;
+  if (
+    !Number.isSafeInteger(request.maxOutputTokens) ||
+    request.maxOutputTokens <= 0
+  ) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: "maxOutputTokens must be a positive integer",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  if (!declaredCapabilities.maxOutputTokensSupport) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message:
+        "maxOutputTokens budget requires a deployment with maxOutputTokensSupport",
       retryable: false,
       attempt: 0,
     };
@@ -229,6 +265,8 @@ export const createMockLlmGatewayClient = (
     if (guard !== undefined) return guard;
     const budgetGuard = guardInputBudget(request);
     if (budgetGuard !== undefined) return budgetGuard;
+    const outputBudgetGuard = guardOutputBudget(request, declaredCapabilities);
+    if (outputBudgetGuard !== undefined) return outputBudgetGuard;
 
     const decision = breaker.beforeRequest();
     if (!decision.allowRequest) {
@@ -251,6 +289,24 @@ export const createMockLlmGatewayClient = (
       result = input.staticResponse;
     } else {
       result = buildDefaultSuccess(request, config, count);
+    }
+
+    if (
+      result.outcome === "success" &&
+      request.maxOutputTokens !== undefined &&
+      (result.usage.outputTokens === undefined ||
+        result.usage.outputTokens > request.maxOutputTokens)
+    ) {
+      result = {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message:
+          result.usage.outputTokens === undefined
+            ? "maxOutputTokens budget requires output token usage from the gateway"
+            : `reported output tokens ${result.usage.outputTokens} exceeds maxOutputTokens ${request.maxOutputTokens}`,
+        retryable: false,
+        attempt: count,
+      };
     }
 
     if (result.outcome === "success") {
