@@ -198,6 +198,7 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     jobDir,
     "business-test-intent-ir.json",
   );
+  const llmCapabilitiesEvidenceDir = path.join(jobDir, "evidence", "llm");
   const figmaJsonFile = path.join(jobDir, "figma.json");
   const reproDir = path.join(jobDir, "repro");
   const storybookTokensFile = path.join(
@@ -288,6 +289,11 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
     key: STAGE_ARTIFACT_KEYS.businessTestIntentIr,
     stage: "ir.derive",
     absolutePath: businessTestIntentIrFile,
+  });
+  await artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
+    stage: "ir.derive",
+    absolutePath: llmCapabilitiesEvidenceDir,
   });
   await artifactStore.setPath({
     key: STAGE_ARTIFACT_KEYS.generatedProject,
@@ -552,6 +558,10 @@ test("syncPublicJobProjection maps stage artifacts back into public job fields a
   assert.equal(
     job.artifacts.businessTestIntentIrFile,
     businessTestIntentIrFile,
+  );
+  assert.equal(
+    job.artifacts.llmCapabilitiesEvidenceDir,
+    llmCapabilitiesEvidenceDir,
   );
   assert.equal(job.artifacts.generatedProjectDir, generatedProjectDir);
   assert.equal(job.artifacts.reproDir, reproDir);

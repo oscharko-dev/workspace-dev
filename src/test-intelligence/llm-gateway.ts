@@ -185,7 +185,7 @@ export const createLlmGatewayClient = (
 
       // Failure path. Decide whether to feed the breaker a transient signal
       // or a non-transient (policy) signal.
-      if (isTransientFailure(result.errorClass)) {
+      if (result.retryable && isTransientFailure(result.errorClass)) {
         breaker.recordTransientFailure();
       } else {
         breaker.recordNonTransientOutcome();
@@ -267,7 +267,7 @@ const dispatchOnce = async ({
 }): Promise<LlmGenerationResult> => {
   // Compatibility mode is enforced eagerly in `validateConfig`; the type
   // system narrows it to the only currently-supported wire protocol here.
-  const url = buildOpenAiChatUrl(config.baseUrl, config.deployment);
+  const url = buildOpenAiChatUrl(config.baseUrl);
   const body = buildOpenAiChatBody(config, request);
   const headers = await buildAuthHeaders(config, apiKeyProvider, attempt);
   if ("error" in headers) return headers.error;
@@ -310,13 +310,12 @@ const dispatchOnce = async ({
     clearTimeout(timer);
   }
 
-  return parseOpenAiChatResponse({ response, config, attempt });
+  return parseOpenAiChatResponse({ response, config, request, attempt });
 };
 
-const buildOpenAiChatUrl = (baseUrl: string, deployment: string): string => {
+const buildOpenAiChatUrl = (baseUrl: string): string => {
   const trimmed = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-  const params = new URLSearchParams({ model: deployment });
-  return `${trimmed}/chat/completions?${params.toString()}`;
+  return `${trimmed}/chat/completions`;
 };
 
 interface OpenAiChatBody {
@@ -328,7 +327,7 @@ interface OpenAiChatBody {
   };
   seed?: number;
   reasoning_effort?: "low" | "medium" | "high";
-  max_output_tokens?: number;
+  max_completion_tokens?: number;
   stream?: boolean;
 }
 
@@ -363,16 +362,18 @@ const buildOpenAiChatBody = (
     messages,
     stream: false,
   };
+  const responseSchema = request.responseSchema;
+  const responseSchemaName = request.responseSchemaName;
   if (
     config.declaredCapabilities.structuredOutputs &&
-    request.responseSchema !== undefined &&
-    request.responseSchemaName !== undefined
+    responseSchema !== undefined &&
+    responseSchemaName !== undefined
   ) {
     body.response_format = {
       type: "json_schema",
       json_schema: {
-        name: request.responseSchemaName,
-        schema: request.responseSchema,
+        name: responseSchemaName,
+        schema: responseSchema,
       },
     };
   }
@@ -389,10 +390,18 @@ const buildOpenAiChatBody = (
     config.declaredCapabilities.maxOutputTokensSupport &&
     request.maxOutputTokens !== undefined
   ) {
-    body.max_output_tokens = request.maxOutputTokens;
+    body.max_completion_tokens = request.maxOutputTokens;
   }
   return body;
 };
+
+const isStructuredOutputRequested = (
+  config: LlmGatewayClientConfig,
+  request: LlmGenerationRequest,
+): boolean =>
+  config.declaredCapabilities.structuredOutputs &&
+  request.responseSchema !== undefined &&
+  request.responseSchemaName !== undefined;
 
 const buildAuthHeaders = async (
   config: LlmGatewayClientConfig,
@@ -446,10 +455,12 @@ const buildAuthHeaders = async (
 const parseOpenAiChatResponse = async ({
   response,
   config,
+  request,
   attempt,
 }: {
   response: Response;
   config: LlmGatewayClientConfig;
+  request: LlmGenerationRequest;
   attempt: number;
 }): Promise<LlmGenerationResult> => {
   const status = response.status;
@@ -586,6 +597,16 @@ const parseOpenAiChatResponse = async ({
     };
   }
 
+  if (finishReason === "tool_calls") {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: "tool-call responses are not supported by the LLM gateway",
+      retryable: false,
+      attempt,
+    };
+  }
+
   const rawContent = message["content"];
   if (typeof rawContent !== "string" || rawContent.length === 0) {
     return {
@@ -614,7 +635,7 @@ const parseOpenAiChatResponse = async ({
   // persisted.
   let content: unknown;
   let rawTextContent: string | undefined;
-  if (config.declaredCapabilities.structuredOutputs) {
+  if (isStructuredOutputRequested(config, request)) {
     try {
       content = JSON.parse(rawContent) as unknown;
     } catch {
@@ -622,6 +643,19 @@ const parseOpenAiChatResponse = async ({
         outcome: "error",
         errorClass: "schema_invalid",
         message: "structured-output content is not valid JSON",
+        retryable: false,
+        attempt,
+      };
+    }
+    const schemaViolation = validateJsonSchemaSubset(
+      content,
+      request.responseSchema,
+    );
+    if (schemaViolation !== undefined) {
+      return {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message: `structured-output content violates response schema: ${schemaViolation}`,
         retryable: false,
         attempt,
       };
@@ -658,6 +692,154 @@ const parseOpenAiChatResponse = async ({
     success.rawTextContent = rawTextContent;
   }
   return success;
+};
+
+const validateJsonSchemaSubset = (
+  value: unknown,
+  schema: Record<string, unknown> | undefined,
+  path = "$",
+): string | undefined => {
+  if (schema === undefined) return undefined;
+
+  const constValue = schema["const"];
+  if (constValue !== undefined && !Object.is(value, constValue)) {
+    return `${path} must equal ${JSON.stringify(constValue)}`;
+  }
+
+  const enumValues = schema["enum"];
+  if (Array.isArray(enumValues) && !enumValues.some((item) => Object.is(item, value))) {
+    return `${path} must be one of the allowed enum values`;
+  }
+
+  const type = schema["type"];
+  if (typeof type === "string") {
+    const typeError = validateJsonSchemaType(value, type, path);
+    if (typeError !== undefined) return typeError;
+  }
+
+  if (type === "object") {
+    const record =
+      typeof value === "object" && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : undefined;
+    if (record === undefined) return `${path} must be an object`;
+
+    const required = schema["required"];
+    if (Array.isArray(required)) {
+      for (const key of required) {
+        if (typeof key === "string" && !(key in record)) {
+          return `${path}.${key} is required`;
+        }
+      }
+    }
+
+    const properties = schema["properties"];
+    if (typeof properties === "object" && properties !== null && !Array.isArray(properties)) {
+      const propertySchemas = properties as Record<string, unknown>;
+      for (const [key, propertySchema] of Object.entries(propertySchemas)) {
+        if (
+          key in record &&
+          typeof propertySchema === "object" &&
+          propertySchema !== null &&
+          !Array.isArray(propertySchema)
+        ) {
+          const nested = validateJsonSchemaSubset(
+            record[key],
+            propertySchema as Record<string, unknown>,
+            `${path}.${key}`,
+          );
+          if (nested !== undefined) return nested;
+        }
+      }
+    }
+
+    if (schema["additionalProperties"] === false) {
+      const allowed = new Set(
+        typeof properties === "object" && properties !== null && !Array.isArray(properties)
+          ? Object.keys(properties)
+          : [],
+      );
+      for (const key of Object.keys(record)) {
+        if (!allowed.has(key)) return `${path}.${key} is not allowed`;
+      }
+    }
+  }
+
+  if (type === "array") {
+    if (!Array.isArray(value)) return `${path} must be an array`;
+    const minItems = schema["minItems"];
+    if (typeof minItems === "number" && value.length < minItems) {
+      return `${path} must contain at least ${minItems} items`;
+    }
+    const items = schema["items"];
+    if (typeof items === "object" && items !== null && !Array.isArray(items)) {
+      for (let index = 0; index < value.length; index += 1) {
+        const nested = validateJsonSchemaSubset(
+          value[index],
+          items as Record<string, unknown>,
+          `${path}[${index}]`,
+        );
+        if (nested !== undefined) return nested;
+      }
+    }
+  }
+
+  if (typeof value === "string") {
+    const minLength = schema["minLength"];
+    if (typeof minLength === "number" && value.length < minLength) {
+      return `${path} must be at least ${minLength} characters`;
+    }
+    const maxLength = schema["maxLength"];
+    if (typeof maxLength === "number" && value.length > maxLength) {
+      return `${path} must be at most ${maxLength} characters`;
+    }
+    const pattern = schema["pattern"];
+    if (typeof pattern === "string" && !new RegExp(pattern).test(value)) {
+      return `${path} must match ${pattern}`;
+    }
+  }
+
+  if (typeof value === "number") {
+    const minimum = schema["minimum"];
+    if (typeof minimum === "number" && value < minimum) {
+      return `${path} must be >= ${minimum}`;
+    }
+    const maximum = schema["maximum"];
+    if (typeof maximum === "number" && value > maximum) {
+      return `${path} must be <= ${maximum}`;
+    }
+  }
+
+  return undefined;
+};
+
+const validateJsonSchemaType = (
+  value: unknown,
+  type: string,
+  path: string,
+): string | undefined => {
+  switch (type) {
+    case "object":
+      return typeof value === "object" && value !== null && !Array.isArray(value)
+        ? undefined
+        : `${path} must be an object`;
+    case "array":
+      return Array.isArray(value) ? undefined : `${path} must be an array`;
+    case "string":
+      return typeof value === "string" ? undefined : `${path} must be a string`;
+    case "number":
+      return typeof value === "number" && Number.isFinite(value)
+        ? undefined
+        : `${path} must be a number`;
+    case "integer":
+      return Number.isInteger(value) ? undefined : `${path} must be an integer`;
+    case "boolean":
+      return typeof value === "boolean" ? undefined : `${path} must be a boolean`;
+    case "null":
+      return value === null ? undefined : `${path} must be null`;
+    default:
+      return undefined;
+  }
 };
 
 const normalizeFinishReason = (value: unknown): LlmFinishReason => {
@@ -708,7 +890,7 @@ const validateConfig = (config: LlmGatewayClientConfig): void => {
   assertNonEmpty(config.gatewayRelease, "gatewayRelease");
   if (
     config.modelWeightsSha256 !== undefined &&
-    !/^[0-9a-f]{64}$/i.test(config.modelWeightsSha256)
+    !/^[0-9a-f]{64}$/.test(config.modelWeightsSha256)
   ) {
     throw new RangeError(
       "LlmGatewayClient: modelWeightsSha256 must be 64 lowercase hex chars",

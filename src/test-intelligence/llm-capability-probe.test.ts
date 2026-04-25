@@ -51,11 +51,20 @@ test("probe: declared capabilities marked supported when responder always succee
     if (record.capability === "imageInputSupport") {
       assert.equal(record.outcome, "untested");
     } else if (record.capability === "streamingSupport") {
-      assert.equal(record.outcome, "supported");
+      assert.equal(record.outcome, "untested");
     } else {
       assert.equal(record.outcome, "supported");
     }
   }
+  assert.equal(
+    records.some(
+      (record) =>
+        record.capability === "textChat" &&
+        record.declared &&
+        record.outcome === "supported",
+    ),
+    true,
+  );
 });
 
 test("probe: probes are sorted alphabetically and deterministic", async () => {
@@ -75,14 +84,16 @@ test("probe: probes are sorted alphabetically and deterministic", async () => {
   const capabilities = records.map((r) => r.capability);
   const sorted = capabilities.slice().sort();
   assert.deepEqual(capabilities, sorted);
-  // every keyof LlmGatewayCapabilities must be represented exactly once
-  const expectedKeys: ReadonlyArray<keyof LlmGatewayCapabilities> = [
+  // every declared capability plus the mandatory text-chat baseline must be
+  // represented exactly once.
+  const expectedKeys = [
     "imageInputSupport",
     "maxOutputTokensSupport",
     "reasoningEffortSupport",
     "seedSupport",
     "streamingSupport",
     "structuredOutputs",
+    "textChat",
   ];
   assert.deepEqual(capabilities, expectedKeys);
 });
@@ -121,10 +132,15 @@ test("probe: undeclared capability is recorded as untested without invoking clie
     jobId: "j",
     generatedAt: "2026-04-25T00:00:00Z",
   });
-  assert.equal(calls, 0);
+  assert.equal(calls, 1);
   for (const record of records) {
-    assert.equal(record.declared, false);
-    assert.equal(record.outcome, "untested");
+    if (record.capability === "textChat") {
+      assert.equal(record.declared, true);
+      assert.equal(record.outcome, "supported");
+    } else {
+      assert.equal(record.declared, false);
+      assert.equal(record.outcome, "untested");
+    }
   }
 });
 

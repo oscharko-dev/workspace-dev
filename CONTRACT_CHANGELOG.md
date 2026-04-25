@@ -31,6 +31,21 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.22.0] - 2026-04-25
+
+### Added (Issue #1363 follow-up)
+
+- `WorkspaceJobArtifacts.llmCapabilitiesEvidenceDir` — optional public artifact pointer for per-role LLM capability evidence written under the job artifact tree.
+- `LlmCapabilityProbeCapability` — probe-row discriminant type that covers declared capability flags plus the mandatory `textChat` baseline probe.
+- `STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence` — internal artifact-store key for role-separated `llm-capabilities.json` evidence directories.
+
+### Changed (Issue #1363 follow-up)
+
+- `LLM_CAPABILITIES_SCHEMA_VERSION` from `"1.0.0"` to `"1.1.0"` because persisted probe rows now include the mandatory `textChat` baseline and no longer mark streaming as supported without network evidence.
+- `openai_chat` request construction now uses the documented chat-completions path shape and Chat Completions token-budget field (`max_completion_tokens`).
+
+---
+
 ## [3.21.0] - 2026-04-25
 
 ### Added (Issue #1363)

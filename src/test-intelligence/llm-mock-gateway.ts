@@ -31,7 +31,10 @@ import {
   createLlmCircuitBreaker,
   type LlmCircuitBreaker,
 } from "./llm-circuit-breaker.js";
-import type { LlmGatewayClient } from "./llm-gateway.js";
+import {
+  isLlmGatewayErrorRetryable,
+  type LlmGatewayClient,
+} from "./llm-gateway.js";
 
 export type MockResponder = (
   request: LlmGenerationRequest,
@@ -207,9 +210,8 @@ export const createMockLlmGatewayClient = (
     if (result.outcome === "success") {
       breaker.recordSuccess();
     } else if (
-      result.errorClass === "timeout" ||
-      result.errorClass === "transport" ||
-      result.errorClass === "rate_limited"
+      result.retryable &&
+      isLlmGatewayErrorRetryable(result.errorClass)
     ) {
       breaker.recordTransientFailure();
     } else {
@@ -229,7 +231,7 @@ export const createMockLlmGatewayClient = (
     generate,
     getCircuitBreaker: () => breaker,
     callCount: () => count,
-    recordedRequests: () => recorded.slice(),
+    recordedRequests: () => recorded.map((request) => structuredClone(request)),
     reset: () => {
       count = 0;
       recorded.length = 0;

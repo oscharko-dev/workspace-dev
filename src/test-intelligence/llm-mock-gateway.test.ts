@@ -127,6 +127,29 @@ test("mock: visual roles accept image payloads", async () => {
   assert.equal(recorded[0]?.imageInputs?.[0]?.base64Data, "[mock:6b]");
 });
 
+test("mock: recordedRequests returns defensive snapshots", async () => {
+  const client = createMockLlmGatewayClient({
+    role: "visual_primary",
+    deployment: "llama-4-maverick-vision",
+    modelRevision: "rev",
+    gatewayRelease: "rel",
+    declaredCapabilities: visualCapabilities,
+  });
+  await client.generate({
+    jobId: "j",
+    systemPrompt: "s",
+    userPrompt: "u",
+    imageInputs: [{ mimeType: "image/png", base64Data: "AAAAAA" }],
+  });
+  const first = client.recordedRequests();
+  first[0]!.imageInputs![0]!.base64Data = "mutated";
+  first[0]!.responseSchema = { mutated: true };
+
+  const second = client.recordedRequests();
+  assert.equal(second[0]?.imageInputs?.[0]?.base64Data, "[mock:6b]");
+  assert.equal(second[0]?.responseSchema, undefined);
+});
+
 test("mock: rejects test_generation role declaring imageInputSupport", () => {
   assert.throws(
     () =>
@@ -168,6 +191,61 @@ test("mock: circuit breaker opens after configured transient failures", async ()
     assert.equal(r.errorClass, "transport");
     assert.match(r.message, /circuit breaker is open/);
   }
+});
+
+test("mock: non-retryable transport failures do not open the circuit breaker", async () => {
+  let calls = 0;
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "gpt-oss-120b",
+    modelRevision: "rev",
+    gatewayRelease: "rel",
+    circuitBreaker: { failureThreshold: 1, resetTimeoutMs: 1_000 },
+    responder: (_req, attempt) => {
+      calls += 1;
+      return {
+        outcome: "error",
+        errorClass: "transport",
+        message: "local config failure",
+        retryable: false,
+        attempt,
+      };
+    },
+  });
+  await client.generate({ jobId: "j", systemPrompt: "s", userPrompt: "u" });
+  const result = await client.generate({
+    jobId: "j",
+    systemPrompt: "s",
+    userPrompt: "u",
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.outcome, "error");
+  assert.equal(client.getCircuitBreaker().getSnapshot().state, "closed");
+});
+
+test("mock: retryable flags on non-transient classes do not open the circuit breaker", async () => {
+  let calls = 0;
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "gpt-oss-120b",
+    modelRevision: "rev",
+    gatewayRelease: "rel",
+    circuitBreaker: { failureThreshold: 1, resetTimeoutMs: 1_000 },
+    responder: (_req, attempt) => {
+      calls += 1;
+      return {
+        outcome: "error",
+        errorClass: "refusal",
+        message: "policy",
+        retryable: true,
+        attempt,
+      };
+    },
+  });
+  await client.generate({ jobId: "j", systemPrompt: "s", userPrompt: "u" });
+  await client.generate({ jobId: "j", systemPrompt: "s", userPrompt: "u" });
+  assert.equal(calls, 2);
+  assert.equal(client.getCircuitBreaker().getSnapshot().state, "closed");
 });
 
 test("mock: reset clears recorded requests and breaker state", async () => {
