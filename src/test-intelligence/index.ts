@@ -114,3 +114,55 @@ export {
   type WriteValidationPipelineArtifactsInput,
   type WriteValidationPipelineArtifactsResult,
 } from "./validation-pipeline.js";
+export {
+  isTerminalReviewState,
+  legalEventKindsFrom,
+  seedReviewStateFromPolicy,
+  transitionReviewState,
+  type ReviewTransitionInput,
+  type ReviewTransitionResult,
+  type ReviewTransitionRefusalCode,
+} from "./review-state-machine.js";
+export {
+  createFileSystemReviewStore,
+  type CreateFileSystemReviewStoreInput,
+  type RecordTransitionInput,
+  type RecordTransitionResult,
+  type ReviewStore,
+} from "./review-store.js";
+export {
+  handleReviewRequest,
+  parseReviewRoute,
+  type ReviewRequestEnvelope,
+  type ReviewRequestErrorBody,
+  type ReviewRequestStateBody,
+  type ReviewRequestSuccessBody,
+  type ReviewResponse,
+} from "./review-handler.js";
+export {
+  buildQcMappingPreview,
+  buildTargetFolderPath,
+  cloneOpenTextAlmReferenceProfile,
+  computeExternalIdCandidate,
+  OPENTEXT_ALM_REFERENCE_PROFILE,
+  type BuildQcMappingPreviewInput,
+} from "./qc-mapping.js";
+export {
+  renderQcCsv,
+  QC_CSV_COLUMNS,
+  type QcCsvColumn,
+} from "./qc-csv-writer.js";
+export {
+  renderQcAlmXml,
+  type RenderQcAlmXmlInput,
+} from "./qc-alm-xml-writer.js";
+export { renderQcXlsx } from "./qc-xlsx-writer.js";
+export {
+  runExportPipeline,
+  runAndPersistExportPipeline,
+  writeExportPipelineArtifacts,
+  type ExportPipelineArtifacts,
+  type RunExportPipelineInput,
+  type WriteExportPipelineArtifactsInput,
+  type WriteExportPipelineArtifactsResult,
+} from "./export-pipeline.js";

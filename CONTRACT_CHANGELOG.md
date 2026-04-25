@@ -31,6 +31,31 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.24.0] - 2026-04-25
+
+### Added (Issue #1365)
+
+- `REVIEW_GATE_SCHEMA_VERSION`, `QC_MAPPING_PREVIEW_SCHEMA_VERSION`, `EXPORT_REPORT_SCHEMA_VERSION`, `ALM_EXPORT_SCHEMA_VERSION` — version stamps (`"1.0.0"`) for the persisted Wave 1 review gate, QC mapping preview, export-report, and OpenText ALM reference XML artifacts.
+- `REVIEW_EVENTS_ARTIFACT_FILENAME`, `REVIEW_STATE_ARTIFACT_FILENAME`, `EXPORT_TESTCASES_JSON_ARTIFACT_FILENAME`, `EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME`, `EXPORT_TESTCASES_XLSX_ARTIFACT_FILENAME`, `EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME`, `QC_MAPPING_PREVIEW_ARTIFACT_FILENAME`, `EXPORT_REPORT_ARTIFACT_FILENAME` — canonical filenames for the eight persisted review-gate and export-only QC artifacts.
+- `OPENTEXT_ALM_REFERENCE_PROFILE_ID`, `OPENTEXT_ALM_REFERENCE_PROFILE_VERSION`, `ALM_EXPORT_XML_NAMESPACE` — built-in OpenText ALM reference export profile identity and root XML namespace.
+- `ALLOWED_REVIEW_STATES` — runtime list (`generated`, `needs_review`, `approved`, `rejected`, `edited`, `exported`, `transferred`).
+- `ALLOWED_REVIEW_EVENT_KINDS` — runtime list (`generated`, `review_started`, `approved`, `rejected`, `edited`, `exported`, `transferred`, `note`).
+- `ALLOWED_EXPORT_REFUSAL_CODES` — runtime list of fail-closed refusal codes covering missing approvals, residual unapproved cases, residual policy-blocked cases, residual schema-invalid cases, blocked visual sidecar, and inconsistent review state.
+- `ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES` — runtime list of declared content types (`application/json`, `text/csv`, `application/xml`, `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`).
+- `ReviewState`, `ReviewEventKind`, `ReviewEvent`, `ReviewSnapshot`, `ReviewGateSnapshot` — type surface for the persisted review-gate event log and snapshot.
+- `ExportRefusalCode`, `ExportArtifactContentType`, `ExportArtifactRecord`, `ExportReportArtifact` — type surface for the persisted export-report artifact, including the hard `rawScreenshotsIncluded: false` invariant.
+- `QcMappingVisualProvenance`, `QcMappingPreviewEntry`, `QcMappingPreviewArtifact` — type surface for the QC mapping preview artifact, including model role names, deployment names, schema versions, evidence hashes, and source trace references.
+- `OpenTextAlmExportProfile` — operator-tunable knobs for the reference ALM XML export.
+
+### Unchanged (Issue #1365)
+
+- No public route, submit parser, runtime schema, or orchestrator wiring changed. The review gate, export pipeline, and bearer-protected handler live entirely under `src/test-intelligence/`. The handler mirrors the import-session governance bearer pattern (`validateImportSessionEventWriteAuth`) but is invoked through an in-process API so the public HTTP surface is unaffected.
+- The opt-in test-intelligence feature gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE`, `WorkspaceStartOptions.testIntelligence.enabled`) remains the only entry-point gate; no separate review or export gate is introduced.
+- The deterministic Figma-to-code pipeline (`llmCodegenMode=deterministic`) is unaffected; review and export logic is reachable only from the test-intelligence subsurface.
+- Production QC/ALM API writes are intentionally out of scope for Wave 1; the export pipeline emits deterministic on-disk artifacts only.
+
+---
+
 ## [3.23.0] - 2026-04-25
 
 ### Added (Issue #1364)

@@ -178,6 +178,57 @@ export const TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME =
 export const VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME =
   "visual-sidecar-validation-report.json" as const;
 
+/** Schema version for the persisted review-gate state and event-log artifacts (Issue #1365). */
+export const REVIEW_GATE_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted QC mapping preview artifact (Issue #1365). */
+export const QC_MAPPING_PREVIEW_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted export-report artifact (Issue #1365). */
+export const EXPORT_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version stamp embedded in the OpenText ALM reference XML export (Issue #1365). */
+export const ALM_EXPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted review-gate event log. */
+export const REVIEW_EVENTS_ARTIFACT_FILENAME = "review-events.json" as const;
+
+/** Canonical filename for the persisted review-gate snapshot. */
+export const REVIEW_STATE_ARTIFACT_FILENAME = "review-state.json" as const;
+
+/** Canonical filename for the persisted JSON export of approved test cases. */
+export const EXPORT_TESTCASES_JSON_ARTIFACT_FILENAME =
+  "testcases.json" as const;
+
+/** Canonical filename for the persisted CSV export of approved test cases. */
+export const EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME = "testcases.csv" as const;
+
+/** Canonical filename for the optional persisted XLSX export of approved test cases. */
+export const EXPORT_TESTCASES_XLSX_ARTIFACT_FILENAME =
+  "testcases.xlsx" as const;
+
+/** Canonical filename for the persisted OpenText ALM reference XML export. */
+export const EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME =
+  "testcases.alm.xml" as const;
+
+/** Canonical filename for the persisted QC mapping preview artifact. */
+export const QC_MAPPING_PREVIEW_ARTIFACT_FILENAME =
+  "qc-mapping-preview.json" as const;
+
+/** Canonical filename for the persisted export-report artifact. */
+export const EXPORT_REPORT_ARTIFACT_FILENAME = "export-report.json" as const;
+
+/** Built-in OpenText ALM reference export profile id (Wave 1). */
+export const OPENTEXT_ALM_REFERENCE_PROFILE_ID =
+  "opentext-alm-default" as const;
+
+/** Version stamp for the built-in OpenText ALM reference export profile. */
+export const OPENTEXT_ALM_REFERENCE_PROFILE_VERSION = "1.0.0" as const;
+
+/** XML namespace embedded in the OpenText ALM reference export root element. */
+export const ALM_EXPORT_XML_NAMESPACE =
+  "https://workspace-dev.local/schema/alm-export/v1" as const;
+
 /**
  * Built-in policy profile id for the default EU-banking compliance gate.
  * Operators may install additional profiles by version stamp; this id is the
@@ -2347,8 +2398,246 @@ export type ReplayCacheLookupResult =
   | { hit: false; key: string };
 
 /**
+ * Review gate + export-only QC artifact surface (Issue #1365).
+ *
+ * The review gate persists per-test-case lifecycle decisions made by a
+ * reviewer (or by the policy gate, when policy auto-approves) so that
+ * downstream export operations can refuse to produce QC/ALM artifacts
+ * for cases that have not been approved. Wave 1 ships:
+ *
+ *   - in-memory state machine (`generated → needs_review → approved |
+ *     rejected | edited → exported → transferred`),
+ *   - file-system review store (event log + snapshot),
+ *   - bearer-protected handler that mirrors the import-session
+ *     governance pattern (`validateImportSessionEventWriteAuth`),
+ *   - deterministic export pipeline emitting `testcases.json`,
+ *     `testcases.csv`, `testcases.alm.xml`, `qc-mapping-preview.json`,
+ *     `export-report.json`, plus optional `testcases.xlsx`.
+ *
+ * No production QC/ALM API write is performed; the surface only
+ * persists artifacts to disk for downstream operators to upload.
+ *
+ * The contract is forward-compatible with four-eyes enforcement
+ * (Wave 2): each `ReviewSnapshot` carries `fourEyesEnforced` so a
+ * future profile can require two distinct approvers without breaking
+ * Wave 1 callers.
+ */
+
+/** Allowed lifecycle states for a generated test case under review. */
+export const ALLOWED_REVIEW_STATES = [
+  "generated",
+  "needs_review",
+  "approved",
+  "rejected",
+  "edited",
+  "exported",
+  "transferred",
+] as const;
+export type ReviewState = (typeof ALLOWED_REVIEW_STATES)[number];
+
+/** Allowed event kinds appended to the review-gate event log. */
+export const ALLOWED_REVIEW_EVENT_KINDS = [
+  "generated",
+  "review_started",
+  "approved",
+  "rejected",
+  "edited",
+  "exported",
+  "transferred",
+  "note",
+] as const;
+export type ReviewEventKind = (typeof ALLOWED_REVIEW_EVENT_KINDS)[number];
+
+/** Allowed reasons the export pipeline may refuse to emit QC artifacts. */
+export const ALLOWED_EXPORT_REFUSAL_CODES = [
+  "no_approved_test_cases",
+  "unapproved_test_cases_present",
+  "policy_blocked_cases_present",
+  "schema_invalid_cases_present",
+  "visual_sidecar_blocked",
+  "review_state_inconsistent",
+] as const;
+export type ExportRefusalCode = (typeof ALLOWED_EXPORT_REFUSAL_CODES)[number];
+
+/** Single immutable event appended to the review-gate event log. */
+export interface ReviewEvent {
+  schemaVersion: typeof REVIEW_GATE_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Globally unique opaque identifier; generated server-side. */
+  id: string;
+  jobId: string;
+  /** Unset when the event is job-level (e.g. seed). */
+  testCaseId?: string;
+  kind: ReviewEventKind;
+  /** ISO-8601 UTC timestamp at the moment of persistence. */
+  at: string;
+  /** Optional opaque actor handle; never an email or token. */
+  actor?: string;
+  /** Optional human-readable note (length-bounded by the store). */
+  note?: string;
+  fromState?: ReviewState;
+  toState?: ReviewState;
+  /** Monotonic 1-based per-job sequence; gap-free. */
+  sequence: number;
+  /** Flat metadata (no nested objects). */
+  metadata?: Record<string, string | number | boolean | null>;
+}
+
+/** Per-test-case review-state snapshot. */
+export interface ReviewSnapshot {
+  testCaseId: string;
+  state: ReviewState;
+  policyDecision: TestCasePolicyDecision;
+  /** Identifier of the most recent event affecting this case. */
+  lastEventId: string;
+  lastEventAt: string;
+  /**
+   * Whether the operator profile requires two distinct approvers. Wave 1
+   * always emits `false`; Wave 2 may flip this to gate the export pipeline
+   * on approver-count without changing the schema.
+   */
+  fourEyesEnforced: boolean;
+  /**
+   * Set of distinct reviewer actors that have approved this case.
+   * Empty list when the case is not yet approved or auto-approved by policy.
+   */
+  approvers: string[];
+}
+
+/** Aggregate per-job review-gate snapshot. */
+export interface ReviewGateSnapshot {
+  schemaVersion: typeof REVIEW_GATE_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  perTestCase: ReviewSnapshot[];
+  /** Number of cases currently in `approved` (or `exported`/`transferred`) state. */
+  approvedCount: number;
+  /** Number of cases currently in `needs_review` state. */
+  needsReviewCount: number;
+  /** Number of cases currently in `rejected` state. */
+  rejectedCount: number;
+}
+
+/** Visual provenance attached to a QC mapping preview entry (Issue #1386). */
+export interface QcMappingVisualProvenance {
+  deployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock"
+    | "none";
+  fallbackReason: VisualSidecarFallbackReason;
+  confidenceMean: number;
+  ambiguityCount: number;
+  /** SHA-256 hex of the visual sidecar response payload (no raw screenshot). */
+  evidenceHash: string;
+}
+
+/** Single per-test-case mapping preview row consumed by QC/ALM operators. */
+export interface QcMappingPreviewEntry {
+  testCaseId: string;
+  /** Deterministic candidate external id used for idempotent later transfer. */
+  externalIdCandidate: string;
+  testName: string;
+  objective: string;
+  priority: TestCasePriority;
+  riskCategory: TestCaseRiskCategory;
+  /** Forward-slash-separated folder path under the profile root. */
+  targetFolderPath: string;
+  preconditions: string[];
+  testData: string[];
+  designSteps: GeneratedTestCaseStep[];
+  expectedResults: string[];
+  /** Subset of figmaTraceRefs sufficient for round-trip provenance. */
+  sourceTraceRefs: GeneratedTestCaseFigmaTrace[];
+  exportable: boolean;
+  blockingReasons: string[];
+  visualProvenance?: QcMappingVisualProvenance;
+}
+
+/** Aggregate QC mapping preview artifact. */
+export interface QcMappingPreviewArtifact {
+  schemaVersion: typeof QC_MAPPING_PREVIEW_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  profileId: string;
+  profileVersion: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  entries: QcMappingPreviewEntry[];
+}
+
+/** Operator-tunable knobs of an OpenText ALM reference export profile. */
+export interface OpenTextAlmExportProfile {
+  id: string;
+  version: string;
+  description: string;
+  /** Folder path prepended to every per-case `targetFolderPath`. */
+  rootFolderPath: string;
+  /**
+   * Whether to wrap the test-case description in a CDATA block so that
+   * embedded markup survives ALM round-trips.
+   */
+  cdataDescription: boolean;
+}
+
+/** Allowed content types declared on an exported artifact record. */
+export const ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES = [
+  "application/json",
+  "text/csv",
+  "application/xml",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+] as const;
+export type ExportArtifactContentType =
+  (typeof ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES)[number];
+
+/** Single artifact bookkeeping row inside `export-report.json`. */
+export interface ExportArtifactRecord {
+  filename: string;
+  /** SHA-256 hex of the on-disk byte stream. */
+  sha256: string;
+  bytes: number;
+  contentType: ExportArtifactContentType;
+}
+
+/** Aggregate export-report artifact. */
+export interface ExportReportArtifact {
+  schemaVersion: typeof EXPORT_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  profileId: string;
+  profileVersion: string;
+  /** Identity of the deployments behind the run. */
+  modelDeployments: {
+    testGeneration: string;
+    visualPrimary?:
+      | "llama-4-maverick-vision"
+      | "phi-4-multimodal-poc"
+      | "mock"
+      | "none";
+    visualFallback?:
+      | "llama-4-maverick-vision"
+      | "phi-4-multimodal-poc"
+      | "mock"
+      | "none";
+  };
+  exportedTestCaseCount: number;
+  /** True when the pipeline refused to emit any non-report artifact. */
+  refused: boolean;
+  refusalCodes: ExportRefusalCode[];
+  /** Sorted by filename for deterministic emission. */
+  artifacts: ExportArtifactRecord[];
+  /** Sorted, de-duplicated. */
+  visualEvidenceHashes: string[];
+  /** Hard invariant: raw screenshots are never embedded into export artifacts. */
+  rawScreenshotsIncluded: false;
+}
+
+/**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.23.0" as const;
+export const CONTRACT_VERSION = "3.24.0" as const;

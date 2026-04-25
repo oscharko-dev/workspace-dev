@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspace-alm-export xmlns="https://workspace-dev.local/schema/alm-export/v1" schemaVersion="1.0.0" contractVersion="1.0.0" jobId="job-1365-golden" generatedAt="2026-04-25T10:00:00.000Z" profileId="opentext-alm-default" profileVersion="1.0.0">
+  <testCases>
+    <testCase id="tc-approved-1" externalId="092bd48eb24b096d" priority="p1" riskCategory="regulated_data" subject="/Subject/Payment-Details/regulated_data" type="MANUAL" exportable="true">
+      <name>Pay with valid IBAN</name>
+      <description><![CDATA[Confirm valid IBAN is accepted]]></description>
+      <preconditions/>
+      <testData/>
+      <expectedResults>
+        <item>Confirmation</item>
+      </expectedResults>
+      <steps>
+        <step index="1">
+          <action>Open form</action>
+          <expected>Form visible</expected>
+        </step>
+        <step index="2">
+          <action>Submit valid IBAN</action>
+          <expected>Accepted</expected>
+        </step>
+      </steps>
+      <traceRefs>
+        <traceRef screenId="s-payment"/>
+      </traceRefs>
+      <provenance deployment="llama-4-maverick-vision" fallbackReason="none" confidenceMean="0.850000" ambiguityCount="0" evidenceHash="1756f0f969b17f8dbb213ae86244ef0f53b8a291ee2e52007b208429df2125ad"/>
+    </testCase>
+    <testCase id="tc-approved-2" externalId="ddd2ebcf0914b2ee" priority="p0" riskCategory="financial_transaction" subject="/Subject/Payment-Details/financial_transaction" type="MANUAL" exportable="true">
+      <name>Reject invalid IBAN</name>
+      <description><![CDATA[Confirm invalid IBAN is rejected with a banner]]></description>
+      <preconditions/>
+      <testData/>
+      <expectedResults>
+        <item>Banner displayed</item>
+      </expectedResults>
+      <steps>
+        <step index="1">
+          <action>Open form</action>
+          <expected>Form visible</expected>
+        </step>
+        <step index="2">
+          <action>Submit invalid IBAN</action>
+          <expected>Banner shown</expected>
+        </step>
+      </steps>
+      <traceRefs>
+        <traceRef screenId="s-payment"/>
+      </traceRefs>
+      <provenance deployment="llama-4-maverick-vision" fallbackReason="none" confidenceMean="0.850000" ambiguityCount="0" evidenceHash="1756f0f969b17f8dbb213ae86244ef0f53b8a291ee2e52007b208429df2125ad"/>
+    </testCase>
+  </testCases>
+</workspace-alm-export>
