@@ -163,6 +163,26 @@ describe("InspectorTestIntelligencePage — empty + loading + ready", () => {
       expect(screen.getByTestId("ti-test-case-list")).toBeInTheDocument();
       expect(screen.getByTestId("ti-coverage-panel")).toBeInTheDocument();
       expect(screen.getByTestId("ti-visual-sidecar-panel")).toBeInTheDocument();
+      expect(screen.getByTestId("ti-export-diagnostics")).toBeInTheDocument();
+      expect(screen.getByTestId("ti-detail-qc-mapping")).toHaveTextContent(
+        "Workspace/Login",
+      );
+    });
+  });
+
+  it("renders the loading state while artifact fetches are pending", async () => {
+    fetchJsonMock.mockImplementation(async ({ url }) => {
+      if (url === "/workspace") {
+        return buildJsonResponse({
+          status: 200,
+          payload: { testIntelligenceEnabled: true },
+        });
+      }
+      return new Promise<JsonResponse<unknown>>(() => {});
+    });
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-page-loading")).toBeInTheDocument();
     });
   });
 
@@ -425,12 +445,12 @@ describe("InspectorTestIntelligencePage — bearer token persists to sessionStor
     fireEvent.change(screen.getByTestId("ti-reviewer-handle-input"), {
       target: { value: "alice" },
     });
-    expect(window.sessionStorage.getItem("workspace-dev:ti-reviewer-bearer:v1")).toBe(
-      "scoped-token",
-    );
-    expect(window.localStorage.getItem("workspace-dev:ti-reviewer-handle:v1")).toBe(
-      "alice",
-    );
+    expect(
+      window.sessionStorage.getItem("workspace-dev:ti-reviewer-bearer:v1"),
+    ).toBe("scoped-token");
+    expect(
+      window.localStorage.getItem("workspace-dev:ti-reviewer-handle:v1"),
+    ).toBe("alice");
     // Bearer token is NOT mirrored into localStorage.
     expect(
       window.localStorage.getItem("workspace-dev:ti-reviewer-bearer:v1"),

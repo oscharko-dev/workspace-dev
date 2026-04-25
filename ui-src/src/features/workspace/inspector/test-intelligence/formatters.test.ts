@@ -76,29 +76,29 @@ describe("formatTestTypeLabel", () => {
 });
 
 describe("formatVisualSidecarOutcomeBadge", () => {
-  it("ranks schema_invalid and prompt_injection_like_text as block", () => {
+  it("ranks policy-blocking outcomes as block", () => {
     expect(formatVisualSidecarOutcomeBadge("schema_invalid").tier).toBe(
       "block",
     );
     expect(
       formatVisualSidecarOutcomeBadge("prompt_injection_like_text").tier,
     ).toBe("block");
-    expect(formatVisualSidecarOutcomeBadge("primary_unavailable").tier).toBe(
-      "block",
-    );
+    expect(formatVisualSidecarOutcomeBadge("possible_pii").tier).toBe("block");
+    expect(
+      formatVisualSidecarOutcomeBadge("conflicts_with_figma_metadata").tier,
+    ).toBe("block");
   });
 
-  it("ranks low_confidence and possible_pii as warn", () => {
+  it("ranks review-only outcomes as warn", () => {
     expect(formatVisualSidecarOutcomeBadge("low_confidence").tier).toBe("warn");
-    expect(formatVisualSidecarOutcomeBadge("possible_pii").tier).toBe("warn");
+    expect(formatVisualSidecarOutcomeBadge("fallback_used").tier).toBe("warn");
+    expect(formatVisualSidecarOutcomeBadge("primary_unavailable").tier).toBe(
+      "warn",
+    );
   });
 
   it("returns good tier for ok", () => {
     expect(formatVisualSidecarOutcomeBadge("ok").tier).toBe("good");
-  });
-
-  it("returns info tier for fallback_used", () => {
-    expect(formatVisualSidecarOutcomeBadge("fallback_used").tier).toBe("info");
   });
 });
 

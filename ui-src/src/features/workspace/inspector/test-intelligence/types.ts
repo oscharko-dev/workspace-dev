@@ -194,10 +194,19 @@ export type VisualSidecarOutcome =
   | "conflicts_with_figma_metadata"
   | "primary_unavailable";
 
+export interface VisualSidecarIssue {
+  testCaseId?: string;
+  path: string;
+  code: string;
+  severity: "error" | "warning";
+  message: string;
+}
+
 export interface VisualSidecarRecord {
   screenId: string;
   deployment: "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock";
   outcomes: VisualSidecarOutcome[];
+  issues: VisualSidecarIssue[];
   meanConfidence: number;
 }
 

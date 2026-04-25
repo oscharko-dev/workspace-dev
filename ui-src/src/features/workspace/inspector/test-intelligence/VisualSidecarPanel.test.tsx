@@ -33,6 +33,7 @@ describe("VisualSidecarPanel", () => {
               screenId: "screen-login",
               deployment: "phi-4-multimodal-poc",
               outcomes: ["fallback_used", "low_confidence"],
+              issues: [],
               meanConfidence: 0.55,
             },
           ],
@@ -63,7 +64,15 @@ describe("VisualSidecarPanel", () => {
             {
               screenId: "screen-login",
               deployment: "mock",
-              outcomes: ["schema_invalid"],
+              outcomes: ["possible_pii"],
+              issues: [
+                {
+                  code: "visible_pii",
+                  severity: "error",
+                  message: "Possible PII visible in the sidecar output",
+                  path: "$.screens[0]",
+                },
+              ],
               meanConfidence: 0,
             },
           ],
@@ -78,6 +87,9 @@ describe("VisualSidecarPanel", () => {
         .getByTestId("ti-visual-sidecar-row-screen-login")
         .getAttribute("data-row-blocked"),
     ).toBe("true");
+    expect(
+      screen.getByTestId("ti-visual-sidecar-issue-screen-login-0"),
+    ).toHaveTextContent("visible_pii");
   });
 
   it("has no blocking a11y violations", async () => {

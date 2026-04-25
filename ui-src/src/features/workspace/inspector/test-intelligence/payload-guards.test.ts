@@ -149,6 +149,45 @@ describe("isTestIntelligenceBundle", () => {
     ).toBe(false);
   });
 
+  it("rejects a visual sidecar record without validated issues", () => {
+    const bundle = buildBundle();
+    expect(
+      isTestIntelligenceBundle({
+        ...bundle,
+        visualSidecarReport: {
+          ...bundle.visualSidecarReport,
+          records: [
+            {
+              screenId: "screen-login",
+              deployment: "mock",
+              outcomes: ["possible_pii"],
+              meanConfidence: 0,
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts QC visual provenance and rejects malformed blocking reasons", () => {
+    const bundle = buildBundle();
+    expect(isTestIntelligenceBundle(bundle)).toBe(true);
+    expect(
+      isTestIntelligenceBundle({
+        ...bundle,
+        qcMappingPreview: {
+          ...bundle.qcMappingPreview,
+          entries: [
+            {
+              ...bundle.qcMappingPreview?.entries[0],
+              blockingReasons: ["missing trace", { nested: true }],
+            },
+          ],
+        },
+      }),
+    ).toBe(false);
+  });
+
   it("rejects a bundle missing the parseErrors array", () => {
     const bundle = buildBundle();
     const { parseErrors: _drop, ...rest } = bundle;

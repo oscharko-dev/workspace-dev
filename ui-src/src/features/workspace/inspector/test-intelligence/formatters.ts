@@ -176,9 +176,9 @@ export function formatVisualSidecarOutcomeBadge(
       };
     case "fallback_used":
       return {
-        className: "bg-sky-950/40 text-sky-200 border-sky-500/30",
+        className: "bg-amber-950/40 text-amber-200 border-amber-500/30",
         label: "Fallback used",
-        tier: "info",
+        tier: "warn",
       };
     case "low_confidence":
       return {
@@ -188,9 +188,9 @@ export function formatVisualSidecarOutcomeBadge(
       };
     case "possible_pii":
       return {
-        className: "bg-amber-950/40 text-amber-200 border-amber-500/30",
+        className: "bg-rose-950/40 text-rose-200 border-rose-500/30",
         label: "Possible PII",
-        tier: "warn",
+        tier: "block",
       };
     case "schema_invalid":
       return {
@@ -206,15 +206,15 @@ export function formatVisualSidecarOutcomeBadge(
       };
     case "conflicts_with_figma_metadata":
       return {
-        className: "bg-amber-950/40 text-amber-200 border-amber-500/30",
+        className: "bg-rose-950/40 text-rose-200 border-rose-500/30",
         label: "Conflicts with Figma",
-        tier: "warn",
+        tier: "block",
       };
     case "primary_unavailable":
       return {
-        className: "bg-rose-950/40 text-rose-200 border-rose-500/30",
+        className: "bg-amber-950/40 text-amber-200 border-amber-500/30",
         label: "Primary unavailable",
-        tier: "block",
+        tier: "warn",
       };
   }
 }

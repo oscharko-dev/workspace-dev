@@ -30,10 +30,14 @@ import {
 } from "./inspector/test-intelligence/safe-storage";
 import { useTestIntelligenceJob } from "./inspector/test-intelligence/useTestIntelligenceJob";
 import type {
+  ExportReport,
   PolicyDecisionRecord,
   PolicyViolation,
+  QcMappingPreviewArtifact,
+  QcMappingPreviewEntry,
   ReviewSnapshotEntry,
   TestIntelligenceJobSummary,
+  VisualSidecarRecord,
 } from "./inspector/test-intelligence/types";
 
 const REVIEWER_HANDLE_STORAGE_KEY = "workspace-dev:ti-reviewer-handle:v1";
@@ -156,6 +160,27 @@ function TestIntelligenceInner({
     : undefined;
   const selectedPolicyViolations: readonly PolicyViolation[] =
     selectedPolicyDecision?.violations ?? [];
+  const selectedScreenIds = useMemo(() => {
+    return new Set(
+      selectedEntry?.testCase.figmaTraceRefs.map((ref) => ref.screenId) ?? [],
+    );
+  }, [selectedEntry]);
+  const selectedVisualRecords = useMemo<readonly VisualSidecarRecord[]>(() => {
+    if (selectedScreenIds.size === 0) return [];
+    return (
+      job.bundle?.visualSidecarReport?.records.filter((record) =>
+        selectedScreenIds.has(record.screenId),
+      ) ?? []
+    );
+  }, [job.bundle?.visualSidecarReport?.records, selectedScreenIds]);
+  const selectedQcMappingEntry = useMemo<
+    QcMappingPreviewEntry | undefined
+  >(() => {
+    if (!selectedEntry) return undefined;
+    return job.bundle?.qcMappingPreview?.entries.find(
+      (entry) => entry.testCaseId === selectedEntry.testCase.id,
+    );
+  }, [job.bundle?.qcMappingPreview?.entries, selectedEntry]);
 
   const handleAction = useCallback(
     ({ action, note }: { action: ReviewActionKind; note?: string }) => {
@@ -297,6 +322,10 @@ function TestIntelligenceInner({
                   }
                   actionError={job.actionError}
                   reviewerHandle={reviewerHandle}
+                  visualRecords={selectedVisualRecords}
+                  {...(selectedQcMappingEntry
+                    ? { qcMappingEntry: selectedQcMappingEntry }
+                    : {})}
                   onAction={handleAction}
                   fourEyesEnforced={selectedSnapshot?.fourEyesEnforced ?? false}
                   approvers={selectedSnapshot?.approvers ?? []}
@@ -311,10 +340,162 @@ function TestIntelligenceInner({
               )}
               <CoveragePanel coverage={job.bundle?.coverageReport} />
               <VisualSidecarPanel report={job.bundle?.visualSidecarReport} />
+              <ExportDiagnosticsPanel
+                mapping={job.bundle?.qcMappingPreview}
+                exportReport={job.bundle?.exportReport}
+              />
             </div>
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+interface ExportDiagnosticsPanelProps {
+  mapping: QcMappingPreviewArtifact | undefined;
+  exportReport: ExportReport | undefined;
+}
+
+function ExportDiagnosticsPanel({
+  mapping,
+  exportReport,
+}: ExportDiagnosticsPanelProps): JSX.Element {
+  if (!mapping && !exportReport) {
+    return (
+      <section
+        data-testid="ti-export-diagnostics"
+        aria-label="QC export diagnostics"
+        className="rounded border border-dashed border-white/10 bg-[#0a0a0a] px-4 py-6 text-center text-[12px] text-white/45"
+      >
+        No QC mapping or export report has been emitted yet.
+      </section>
+    );
+  }
+
+  const blockedMappings =
+    mapping?.entries.filter((entry) => !entry.exportable) ?? [];
+
+  return (
+    <section
+      data-testid="ti-export-diagnostics"
+      aria-label="QC export diagnostics"
+      className={`flex flex-col gap-3 rounded border p-4 ${
+        exportReport?.refused || blockedMappings.length > 0
+          ? "border-rose-500/30 bg-rose-950/15"
+          : "border-white/10 bg-[#171717]"
+      }`}
+    >
+      <header className="flex items-center justify-between gap-2">
+        <h2 className="m-0 text-sm font-semibold text-white">
+          QC export diagnostics
+        </h2>
+        {mapping ? (
+          <span className="text-[10px] text-white/45">
+            profile {mapping.profileId} v{mapping.profileVersion}
+          </span>
+        ) : null}
+      </header>
+
+      <div className="grid gap-2 md:grid-cols-3">
+        <ExportStat
+          label="Mapped cases"
+          value={String(mapping?.entries.length ?? 0)}
+          testId="ti-export-mapped-count"
+        />
+        <ExportStat
+          label="Blocked mappings"
+          value={String(blockedMappings.length)}
+          testId="ti-export-blocked-count"
+        />
+        <ExportStat
+          label="Exported artifacts"
+          value={String(exportReport?.artifacts.length ?? 0)}
+          testId="ti-export-artifact-count"
+        />
+      </div>
+
+      {exportReport?.refused ? (
+        <section
+          data-testid="ti-export-refusal-codes"
+          aria-label="Export refusal codes"
+          className="rounded border border-rose-500/30 bg-rose-950/20 px-3 py-2"
+        >
+          <h3 className="m-0 text-[11px] font-semibold uppercase tracking-wide text-rose-200">
+            Export refused
+          </h3>
+          <ul className="m-0 mt-1 flex list-none flex-col gap-1 p-0">
+            {exportReport.refusalCodes.map((code, index) => (
+              <li
+                key={`${code}-${String(index)}`}
+                data-testid={`ti-export-refusal-code-${index}`}
+                className="break-words font-mono text-[11px] text-white/85"
+              >
+                {code}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {blockedMappings.length > 0 ? (
+        <section
+          data-testid="ti-export-blocked-mappings"
+          aria-label="Blocked QC mappings"
+          className="rounded border border-amber-500/30 bg-amber-950/15 px-3 py-2"
+        >
+          <h3 className="m-0 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
+            Blocking mapping reasons
+          </h3>
+          <ul className="m-0 mt-1 flex list-none flex-col gap-1 p-0">
+            {blockedMappings.map((entry) => (
+              <li
+                key={entry.testCaseId}
+                data-testid={`ti-export-blocked-mapping-${entry.testCaseId}`}
+                className="break-words text-[11px] text-white/85"
+              >
+                <span className="font-mono text-white">{entry.testCaseId}</span>
+                <span className="text-white/35"> · </span>
+                <span>{entry.blockingReasons.join(", ")}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
+      {exportReport && exportReport.visualEvidenceHashes.length > 0 ? (
+        <p
+          data-testid="ti-export-visual-evidence"
+          className="m-0 break-words text-[11px] text-white/55"
+        >
+          Visual evidence hashes:{" "}
+          <span className="font-mono text-white/70">
+            {exportReport.visualEvidenceHashes
+              .map((hash) => hash.slice(0, 12))
+              .join(", ")}
+          </span>
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+interface ExportStatProps {
+  label: string;
+  value: string;
+  testId: string;
+}
+
+function ExportStat({ label, value, testId }: ExportStatProps): JSX.Element {
+  return (
+    <div
+      data-testid={testId}
+      className="rounded border border-white/10 bg-[#0f0f0f] px-3 py-2"
+    >
+      <div className="text-[10px] uppercase tracking-wide text-white/45">
+        {label}
+      </div>
+      <div className="mt-1 text-base font-semibold text-white">{value}</div>
     </div>
   );
 }

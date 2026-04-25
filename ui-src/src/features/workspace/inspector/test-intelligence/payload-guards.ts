@@ -63,6 +63,21 @@ const REVIEW_STATES = new Set([
 ]);
 
 const POLICY_DECISIONS = new Set(["approved", "needs_review", "blocked"]);
+const VISUAL_SIDECAR_OUTCOMES = new Set([
+  "ok",
+  "schema_invalid",
+  "low_confidence",
+  "fallback_used",
+  "possible_pii",
+  "prompt_injection_like_text",
+  "conflicts_with_figma_metadata",
+  "primary_unavailable",
+]);
+const VISUAL_SIDECAR_DEPLOYMENTS = new Set([
+  "llama-4-maverick-vision",
+  "phi-4-multimodal-poc",
+  "mock",
+]);
 
 const isReviewSnapshotEntry = (
   value: unknown,
@@ -207,6 +222,20 @@ const isPolicyReport = (value: unknown): value is PolicyReport => {
   );
 };
 
+const isValidationIssue = (
+  value: unknown,
+): value is ValidationReport["issues"][number] => {
+  if (!isRecord(value)) return false;
+  return (
+    (value["testCaseId"] === undefined ||
+      typeof value["testCaseId"] === "string") &&
+    typeof value["path"] === "string" &&
+    typeof value["code"] === "string" &&
+    (value["severity"] === "error" || value["severity"] === "warning") &&
+    typeof value["message"] === "string"
+  );
+};
+
 const isCoverageReport = (value: unknown): value is CoverageReport => {
   if (!isRecord(value)) return false;
   return (
@@ -231,7 +260,51 @@ const isVisualSidecarReport = (
     typeof value["totalScreens"] === "number" &&
     typeof value["screensWithFindings"] === "number" &&
     typeof value["blocked"] === "boolean" &&
-    Array.isArray(value["records"])
+    Array.isArray(value["records"]) &&
+    value["records"].every((record) => {
+      if (!isRecord(record)) return false;
+      return (
+        typeof record["screenId"] === "string" &&
+        typeof record["deployment"] === "string" &&
+        VISUAL_SIDECAR_DEPLOYMENTS.has(record["deployment"]) &&
+        Array.isArray(record["outcomes"]) &&
+        record["outcomes"].every(
+          (outcome) =>
+            typeof outcome === "string" && VISUAL_SIDECAR_OUTCOMES.has(outcome),
+        ) &&
+        Array.isArray(record["issues"]) &&
+        record["issues"].every(isValidationIssue) &&
+        typeof record["meanConfidence"] === "number"
+      );
+    })
+  );
+};
+
+const isQcMappingEntry = (
+  value: unknown,
+): value is QcMappingPreviewArtifact["entries"][number] => {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value["testCaseId"] !== "string" ||
+    typeof value["externalIdCandidate"] !== "string" ||
+    typeof value["testName"] !== "string" ||
+    typeof value["objective"] !== "string" ||
+    typeof value["priority"] !== "string" ||
+    typeof value["riskCategory"] !== "string" ||
+    typeof value["targetFolderPath"] !== "string" ||
+    typeof value["exportable"] !== "boolean" ||
+    !isStringArray(value["blockingReasons"])
+  ) {
+    return false;
+  }
+  if (value["visualProvenance"] === undefined) return true;
+  if (!isRecord(value["visualProvenance"])) return false;
+  return (
+    typeof value["visualProvenance"]["deployment"] === "string" &&
+    typeof value["visualProvenance"]["fallbackReason"] === "string" &&
+    typeof value["visualProvenance"]["confidenceMean"] === "number" &&
+    typeof value["visualProvenance"]["ambiguityCount"] === "number" &&
+    typeof value["visualProvenance"]["evidenceHash"] === "string"
   );
 };
 
@@ -243,7 +316,8 @@ const isQcMappingPreview = (
     typeof value["jobId"] === "string" &&
     typeof value["profileId"] === "string" &&
     typeof value["profileVersion"] === "string" &&
-    Array.isArray(value["entries"])
+    Array.isArray(value["entries"]) &&
+    value["entries"].every(isQcMappingEntry)
   );
 };
 
