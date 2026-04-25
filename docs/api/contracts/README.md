@@ -842,6 +842,520 @@ Sorted, de-duplicated.
 
 ***
 
+### FinOpsBudgetBreach
+
+Single budget breach record. Multiple breaches may be stamped on a
+single report; the consumer can pick the first by `rule` order.
+
+#### Properties
+
+##### message
+
+> **message**: `string`
+
+Sanitized human-readable message — never carries tokens or PII.
+
+##### observed
+
+> **observed**: `number`
+
+Numeric observed value (encoded as number for comparators).
+
+##### role?
+
+> `optional` **role?**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+
+Affected role, or `undefined` for job-level rules.
+
+##### rule
+
+> **rule**: `"max_input_tokens"` \| `"max_output_tokens"` \| `"max_wall_clock_ms"` \| `"max_retries"` \| `"max_attempts"` \| `"max_image_bytes"` \| `"max_total_input_tokens"` \| `"max_total_output_tokens"` \| `"max_total_wall_clock_ms"` \| `"max_replay_cache_miss_rate"` \| `"max_fallback_attempts"` \| `"max_live_smoke_calls"` \| `"max_estimated_cost"`
+
+##### threshold
+
+> **threshold**: `number`
+
+Numeric threshold that was breached.
+
+***
+
+### FinOpsBudgetEnvelope
+
+Aggregate budget envelope for a job. The envelope is rendered into the
+FinOps report verbatim so an operator can read the limits applied without
+cross-referencing source code.
+
+#### Properties
+
+##### budgetId
+
+> **budgetId**: `string`
+
+Stable identifier for the budget profile (operator-supplied).
+
+##### budgetVersion
+
+> **budgetVersion**: `string`
+
+Free-form version label for the budget profile.
+
+##### maxEstimatedCost?
+
+> `optional` **maxEstimatedCost?**: `number`
+
+Optional per-job estimated cost cap (currency-agnostic — the recorder
+accepts caller-supplied per-1000-token rates). `undefined` disables the
+check.
+
+##### maxJobWallClockMs?
+
+> `optional` **maxJobWallClockMs?**: `number`
+
+Aggregate wall-clock cap across the entire job, all roles combined.
+
+##### maxReplayCacheMissRate?
+
+> `optional` **maxReplayCacheMissRate?**: `number`
+
+Maximum permitted replay-cache miss rate over the job (`misses / total`).
+`undefined` disables the check. Range `[0, 1]`.
+
+##### roles
+
+> **roles**: `object`
+
+Per-role budget records. Missing roles are unconstrained.
+
+###### test\_generation?
+
+> `optional` **test\_generation?**: [`FinOpsRoleBudget`](#finopsrolebudget)
+
+###### visual\_fallback?
+
+> `optional` **visual\_fallback?**: [`FinOpsRoleBudget`](#finopsrolebudget)
+
+###### visual\_primary?
+
+> `optional` **visual\_primary?**: [`FinOpsRoleBudget`](#finopsrolebudget)
+
+***
+
+### FinOpsBudgetReport
+
+FinOps budget report artifact. Persisted under
+`<runDir>/finops/budget-report.json`. The artifact is byte-stable per job
+(sorted role list, deterministic breach order). Cache-hit jobs report no
+gateway usage; the `outcome` reflects this verbatim.
+
+Negative invariants stamped explicitly so absence cannot be inferred:
+  - `secretsIncluded: false`
+  - `rawPromptsIncluded: false`
+  - `rawScreenshotsIncluded: false`
+
+#### Properties
+
+##### breaches
+
+> **breaches**: [`FinOpsBudgetBreach`](#finopsbudgetbreach)[]
+
+Sorted by `(rule, role)`. Empty when no budget was breached.
+
+##### budget
+
+> **budget**: [`FinOpsBudgetEnvelope`](#finopsbudgetenvelope)
+
+Verbatim copy of the budget envelope applied to this job.
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### currencyLabel?
+
+> `optional` **currencyLabel?**: `string`
+
+Caller-supplied currency label. `undefined` when no rate map was supplied.
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### outcome
+
+> **outcome**: `"completed"` \| `"policy_blocked"` \| `"validation_blocked"` \| `"export_refused"` \| `"completed_cache_hit"` \| `"budget_exceeded"` \| `"visual_sidecar_failed"` \| `"gateway_failed"`
+
+Terminal job outcome the report attests.
+
+##### rawPromptsIncluded
+
+> **rawPromptsIncluded**: `false`
+
+Hard invariant — raw prompt or response text is never embedded.
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant — image bytes are never embedded.
+
+##### roles
+
+> **roles**: [`FinOpsRoleUsage`](#finopsroleusage)[]
+
+Sorted by `role`. Always lists every role, even when usage is zero.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### secretsIncluded
+
+> **secretsIncluded**: `false`
+
+Hard invariant — secrets are never embedded in this artifact.
+
+##### totals
+
+> **totals**: `object`
+
+Aggregate counters across every role.
+
+###### attempts
+
+> **attempts**: `number`
+
+###### cacheHits
+
+> **cacheHits**: `number`
+
+###### cacheMisses
+
+> **cacheMisses**: `number`
+
+###### durationMs
+
+> **durationMs**: `number`
+
+###### estimatedCost
+
+> **estimatedCost**: `number`
+
+###### failures
+
+> **failures**: `number`
+
+###### fallbackAttempts
+
+> **fallbackAttempts**: `number`
+
+###### imageBytes
+
+> **imageBytes**: `number`
+
+###### inputTokens
+
+> **inputTokens**: `number`
+
+###### liveSmokeCalls
+
+> **liveSmokeCalls**: `number`
+
+###### outputTokens
+
+> **outputTokens**: `number`
+
+###### replayCacheHitRate
+
+> **replayCacheHitRate**: `number`
+
+`cacheHits / (cacheHits + cacheMisses)` clamped to `[0, 1]`. NaN → 0.
+
+###### replayCacheMissRate
+
+> **replayCacheMissRate**: `number`
+
+`cacheMisses / (cacheHits + cacheMisses)` clamped to `[0, 1]`. NaN → 0.
+
+###### successes
+
+> **successes**: `number`
+
+***
+
+### FinOpsCostRate
+
+Per-attempt cost-rate input. Operators can supply a flat per-1000-token
+rate and a per-attempt fixed cost; the recorder multiplies usage to
+produce `estimatedCost`. Cost is currency-agnostic (the operator chooses
+the unit, e.g. USD or "internal credits"), and the report stamps the
+caller-supplied label so consumers know what the number means.
+
+#### Properties
+
+##### fixedCostPerAttempt?
+
+> `optional` **fixedCostPerAttempt?**: `number`
+
+Fixed per-attempt cost (e.g. minimum-charge / API-call premium).
+
+##### inputTokenCostPer1k?
+
+> `optional` **inputTokenCostPer1k?**: `number`
+
+Cost per 1000 input tokens.
+
+##### outputTokenCostPer1k?
+
+> `optional` **outputTokenCostPer1k?**: `number`
+
+Cost per 1000 output tokens.
+
+***
+
+### FinOpsCostRateMap
+
+Per-role cost rate map. Roles with no rate produce `estimatedCost = 0`.
+
+#### Properties
+
+##### currencyLabel
+
+> **currencyLabel**: `string`
+
+Operator-supplied label describing the unit (e.g. "USD").
+
+##### rates
+
+> **rates**: `object`
+
+###### test\_generation?
+
+> `optional` **test\_generation?**: [`FinOpsCostRate`](#finopscostrate)
+
+###### visual\_fallback?
+
+> `optional` **visual\_fallback?**: [`FinOpsCostRate`](#finopscostrate)
+
+###### visual\_primary?
+
+> `optional` **visual\_primary?**: [`FinOpsCostRate`](#finopscostrate)
+
+***
+
+### FinOpsRoleBudget
+
+Per-role budget envelope. Every limit is optional; `undefined` means the
+limit is not enforced for that role. Counters compare with `>` (strict
+exceedance) — a usage that exactly equals a limit is allowed.
+
+#### Properties
+
+##### maxAttempts?
+
+> `optional` **maxAttempts?**: `number`
+
+Maximum number of gateway attempts the role may make in total
+(success-or-failure). Useful when the live smoke surface should
+fire only N times.
+
+##### maxFallbackAttempts?
+
+> `optional` **maxFallbackAttempts?**: `number`
+
+Maximum number of fallback-deployment attempts the visual role may make.
+Enforced against `visual_fallback` only; ignored for other roles.
+
+##### maxImageBytesPerRequest?
+
+> `optional` **maxImageBytesPerRequest?**: `number`
+
+Cap on the decoded image bytes per request (visual roles only).
+
+##### maxInputTokensPerRequest?
+
+> `optional` **maxInputTokensPerRequest?**: `number`
+
+Cap on the gateway's pre-flight `estimateInputTokens` (per-request).
+
+##### maxLiveSmokeCalls?
+
+> `optional` **maxLiveSmokeCalls?**: `number`
+
+Maximum number of live-smoke calls the role may make. Enforced when
+the operator wires a live-smoke counter into the recorder; otherwise
+treated as not-configured.
+
+##### maxOutputTokensPerRequest?
+
+> `optional` **maxOutputTokensPerRequest?**: `number`
+
+Cap on `max_completion_tokens` forwarded to the gateway (per-request).
+
+##### maxRetriesPerRequest?
+
+> `optional` **maxRetriesPerRequest?**: `number`
+
+Per-request retry cap. Maps to `LlmGenerationRequest.maxRetries`.
+
+##### maxTotalInputTokens?
+
+> `optional` **maxTotalInputTokens?**: `number`
+
+Aggregate input-token cap across every request the role makes.
+
+##### maxTotalOutputTokens?
+
+> `optional` **maxTotalOutputTokens?**: `number`
+
+Aggregate output-token cap across every request the role makes.
+
+##### maxTotalWallClockMs?
+
+> `optional` **maxTotalWallClockMs?**: `number`
+
+Aggregate wall-clock cap across every request the role makes.
+
+##### maxWallClockMsPerRequest?
+
+> `optional` **maxWallClockMsPerRequest?**: `number`
+
+Per-request wall-clock cap. Maps to `LlmGenerationRequest.maxWallClockMs`.
+
+***
+
+### FinOpsRoleUsage
+
+Per-role usage record. Aggregated across every gateway attempt the role
+made during the job. Cache hits do NOT increment any counter except
+`cacheHits`.
+
+#### Properties
+
+##### attempts
+
+> **attempts**: `number`
+
+Total LLM call attempts (success + failure). Cache hits do NOT increment.
+
+##### cacheHits
+
+> **cacheHits**: `number`
+
+Number of replay-cache hits attributed to this role.
+
+##### cacheMisses
+
+> **cacheMisses**: `number`
+
+Number of replay-cache misses attributed to this role.
+
+##### deployment
+
+> **deployment**: `string`
+
+Deployment label observed (e.g. `gpt-oss-120b-mock`). Empty string when no attempt was made.
+
+##### durationMs
+
+> **durationMs**: `number`
+
+Sum of wall-clock duration across attempts, in milliseconds.
+
+##### estimatedCost
+
+> **estimatedCost**: `number`
+
+Estimated cost contribution from this role (currency-agnostic).
+
+##### failures
+
+> **failures**: `number`
+
+Failure attempts (any error class).
+
+##### fallbackAttempts
+
+> **fallbackAttempts**: `number`
+
+Number of attempts that selected a fallback deployment.
+
+##### imageBytes
+
+> **imageBytes**: `number`
+
+Sum of decoded image-input bytes per request (visual roles only; 0 elsewhere).
+
+##### inputTokens
+
+> **inputTokens**: `number`
+
+Sum of input tokens reported by the gateway across all successful attempts.
+
+##### lastErrorClass?
+
+> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"schema_invalid_response"`
+
+Last error class observed (failure path) — `undefined` if no failure.
+
+##### lastFinishReason?
+
+> `optional` **lastFinishReason?**: [`LlmFinishReason`](#llmfinishreason)
+
+Last finish reason observed (success path) — `undefined` if no success.
+
+##### liveSmokeCalls
+
+> **liveSmokeCalls**: `number`
+
+Number of attempts that hit a non-mock gateway (live-smoke counter).
+
+##### outputTokens
+
+> **outputTokens**: `number`
+
+Sum of output tokens reported by the gateway across all successful attempts.
+
+##### role
+
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+
+##### successes
+
+> **successes**: `number`
+
+Successful attempts.
+
+***
+
+### FourEyesPolicy
+
+Operator-tunable four-eyes policy (#1376).
+
+Resolved at startup from `WorkspaceStartOptions.testIntelligence`
+fields; the resolved policy is consulted at review-snapshot seed time
+to stamp `fourEyesEnforced` per test case.
+
+#### Properties
+
+##### requiredRiskCategories
+
+> **requiredRiskCategories**: readonly [`TestCaseRiskCategory`](#testcaseriskcategory)[]
+
+Risk categories that always require four-eyes. Sorted, deduplicated.
+
+##### visualSidecarTriggerOutcomes
+
+> **visualSidecarTriggerOutcomes**: readonly (`"schema_invalid"` \| `"ok"` \| `"low_confidence"` \| `"fallback_used"` \| `"possible_pii"` \| `"prompt_injection_like_text"` \| `"conflicts_with_figma_metadata"` \| `"primary_unavailable"`)[]
+
+Visual-sidecar validation outcomes that trigger four-eyes regardless
+of risk category. Sorted, deduplicated.
+
+***
+
 ### GeneratedTestCase
 
 Single generated test case.
@@ -1481,6 +1995,24 @@ Optional client-side input budget; gateway clients fail closed when exceeded.
 
 > `optional` **maxOutputTokens?**: `number`
 
+##### maxRetries?
+
+> `optional` **maxRetries?**: `number`
+
+Optional per-request retry cap. When set, the gateway uses
+`min(config.maxRetries, request.maxRetries)` so an operator can bound
+retry blast radius for an individual job without rebuilding the client
+(Issue #1371).
+
+##### maxWallClockMs?
+
+> `optional` **maxWallClockMs?**: `number`
+
+Optional per-request wall-clock budget. When set, the request times out
+after `maxWallClockMs` instead of the client config's `timeoutMs` if
+smaller, AND the resulting timeout failure is surfaced with
+`retryable: false` (FinOps fail-closed semantics — Issue #1371).
+
 ##### reasoningEffort?
 
 > `optional` **reasoningEffort?**: [`LlmReasoningEffort`](#llmreasoningeffort)
@@ -2024,7 +2556,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### fromState?
 
-> `optional` **fromState?**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+> `optional` **fromState?**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"pending_secondary_approval"` \| `"edited"` \| `"exported"` \| `"transferred"`
 
 ##### id
 
@@ -2038,7 +2570,7 @@ Globally unique opaque identifier; generated server-side.
 
 ##### kind
 
-> **kind**: `"approved"` \| `"rejected"` \| `"review_started"` \| `"note"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+> **kind**: `"approved"` \| `"rejected"` \| `"review_started"` \| `"note"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"` \| `"primary_approved"` \| `"secondary_approved"`
 
 ##### metadata?
 
@@ -2070,7 +2602,7 @@ Unset when the event is job-level (e.g. seed).
 
 ##### toState?
 
-> `optional` **toState?**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+> `optional` **toState?**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"pending_secondary_approval"` \| `"edited"` \| `"exported"` \| `"transferred"`
 
 ***
 
@@ -2090,6 +2622,14 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 > **contractVersion**: `"1.0.0"`
 
+##### fourEyesPolicy?
+
+> `optional` **fourEyesPolicy?**: [`FourEyesPolicy`](#foureyespolicy)
+
+Resolved four-eyes policy that produced this snapshot. Optional for
+backward compatibility. When present, both arrays are sorted /
+deduplicated (#1376).
+
 ##### generatedAt
 
 > **generatedAt**: `string`
@@ -2103,6 +2643,14 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 > **needsReviewCount**: `number`
 
 Number of cases currently in `needs_review` state.
+
+##### pendingSecondaryApprovalCount?
+
+> `optional` **pendingSecondaryApprovalCount?**: `number`
+
+Number of cases currently awaiting a second distinct approver
+(state = `pending_secondary_approval`). Optional for backward
+compatibility; consumers must treat absence as `0` (#1376).
 
 ##### perTestCase
 
@@ -2132,16 +2680,36 @@ Per-test-case review-state snapshot.
 
 > **approvers**: `string`[]
 
-Set of distinct reviewer actors that have approved this case.
-Empty list when the case is not yet approved or auto-approved by policy.
+Set of distinct reviewer actors that have approved this case in
+sequence. Sorted, deduplicated. For four-eyes-enforced cases the
+first entry is the primary approver, the second the secondary.
 
 ##### fourEyesEnforced
 
 > **fourEyesEnforced**: `boolean`
 
-Whether the operator profile requires two distinct approvers. Wave 1
-always emits `false`; Wave 2 may flip this to gate the export pipeline
-on approver-count without changing the schema.
+Whether the resolved four-eyes policy requires two distinct
+authenticated principals before this case may reach `approved`.
+When `true`, the export pipeline refuses cases not in `approved`,
+`exported`, or `transferred` state (#1376).
+
+##### fourEyesReasons?
+
+> `optional` **fourEyesReasons?**: (`"risk_category"` \| `"visual_low_confidence"` \| `"visual_fallback_used"` \| `"visual_possible_pii"` \| `"visual_prompt_injection"` \| `"visual_metadata_conflict"`)[]
+
+Reasons four-eyes is enforced (#1376). Empty when
+`fourEyesEnforced=false`. Sorted deterministic. Optional for
+backward compatibility; consumers should treat absence as
+"no recorded reasons" (i.e. older snapshots before #1376 shipped).
+
+##### lastEditor?
+
+> `optional` **lastEditor?**: `string`
+
+Identity of the actor who recorded the most recent `edited` event
+for this case, if any. Used by the four-eyes gate to refuse
+approvals submitted by the same principal that authored the edit
+(self-approval refusal).
 
 ##### lastEventAt
 
@@ -2157,9 +2725,36 @@ Identifier of the most recent event affecting this case.
 
 > **policyDecision**: `"approved"` \| `"blocked"` \| `"needs_review"`
 
+##### primaryApprovalAt?
+
+> `optional` **primaryApprovalAt?**: `string`
+
+ISO-8601 UTC timestamp at which the primary approval was recorded.
+
+##### primaryReviewer?
+
+> `optional` **primaryReviewer?**: `string`
+
+Identity of the first distinct approver, recorded when a four-eyes
+case transitions out of `needs_review`/`edited`. Optional for
+non-enforced cases and for snapshots written before any approval.
+
+##### secondaryApprovalAt?
+
+> `optional` **secondaryApprovalAt?**: `string`
+
+ISO-8601 UTC timestamp at which the secondary approval was recorded.
+
+##### secondaryReviewer?
+
+> `optional` **secondaryReviewer?**: `string`
+
+Identity of the second distinct approver, recorded when a four-eyes
+case transitions from `pending_secondary_approval` to `approved`.
+
 ##### state
 
-> **state**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+> **state**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"pending_secondary_approval"` \| `"edited"` \| `"exported"` \| `"transferred"`
 
 ##### testCaseId
 
@@ -2602,6 +3197,32 @@ Whether the report blocks downstream review/export (any error => true).
 ##### warningCount
 
 > **warningCount**: `number`
+
+***
+
+### TestIntelligenceReviewPrincipal
+
+Bearer credential bound to a single review principal.
+
+Used by the test-intelligence review gate when four-eyes review is
+enforced (#1376). The token authenticates the caller; the
+`principalId` is the server-owned reviewer identity persisted on
+review events and snapshots. Never reuse one token for multiple
+principals.
+
+#### Properties
+
+##### bearerToken
+
+> **bearerToken**: `string`
+
+Bearer token accepted for this principal's review-gate write requests.
+
+##### principalId
+
+> **principalId**: `string`
+
+Opaque, non-secret reviewer principal id persisted in review audit logs.
 
 ***
 
@@ -4166,7 +4787,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-27)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-28)
 
 ##### pasteDeltaSummary?
 
@@ -6300,6 +6921,27 @@ surface as empty UI states rather than errors.
 
 Whether test-intelligence features may be invoked at runtime. Default: false.
 
+###### fourEyesRequiredRiskCategories?
+
+> `optional` **fourEyesRequiredRiskCategories?**: [`TestCaseRiskCategory`](#testcaseriskcategory)[]
+
+Risk categories for which the review gate must enforce four-eyes
+approval (#1376). When omitted, defaults to
+`DEFAULT_FOUR_EYES_REQUIRED_RISK_CATEGORIES`. Values outside the
+`TestCaseRiskCategory` taxonomy are ignored. An empty array
+disables risk-driven enforcement (visual-sidecar triggers still
+apply unless `fourEyesVisualSidecarTriggerOutcomes` is also
+empty).
+
+###### fourEyesVisualSidecarTriggerOutcomes?
+
+> `optional` **fourEyesVisualSidecarTriggerOutcomes?**: (`"schema_invalid"` \| `"ok"` \| `"low_confidence"` \| `"fallback_used"` \| `"possible_pii"` \| `"prompt_injection_like_text"` \| `"conflicts_with_figma_metadata"` \| `"primary_unavailable"`)[]
+
+Visual-sidecar validation outcomes that trigger four-eyes review
+for any case whose Figma trace references a screen carrying the
+outcome (#1376, 2026-04-24 multimodal addendum). Defaults to
+`DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS`.
+
 ###### reviewBearerToken?
 
 > `optional` **reviewBearerToken?**: `string`
@@ -6307,7 +6949,17 @@ Whether test-intelligence features may be invoked at runtime. Default: false.
 Bearer token accepted by the Inspector test-intelligence review-gate
 write routes (`POST /workspace/test-intelligence/review/...`). When
 omitted or blank, review writes fail closed with `503` until the
-operator configures a token. Reads do not require this token.
+operator configures a token. Reads do not require this token. This
+legacy token is treated as one authenticated principal; configure
+`reviewPrincipals` for true two-distinct-principal four-eyes approval.
+
+###### reviewPrincipals?
+
+> `optional` **reviewPrincipals?**: [`TestIntelligenceReviewPrincipal`](#testintelligencereviewprincipal)[]
+
+Principal-bound review credentials. When configured, approval actor
+identity is derived from the matching bearer token rather than from
+the request body, preventing forged reviewer identities (#1376).
 
 ##### unitTestIgnoreFailure?
 
@@ -7163,6 +7815,36 @@ Scoring weights for the visual quality composite score.
 
 ***
 
+### FinOpsBudgetBreachReason
+
+> **FinOpsBudgetBreachReason** = *typeof* [`ALLOWED_FINOPS_BUDGET_BREACH_REASONS`](#allowed_finops_budget_breach_reasons)\[`number`\]
+
+Discriminant of a FinOps budget breach reason.
+
+***
+
+### FinOpsJobOutcome
+
+> **FinOpsJobOutcome** = *typeof* [`ALLOWED_FINOPS_JOB_OUTCOMES`](#allowed_finops_job_outcomes)\[`number`\]
+
+Discriminant of the terminal job outcome the FinOps report records.
+
+***
+
+### FinOpsRole
+
+> **FinOpsRole** = *typeof* [`ALLOWED_FINOPS_ROLES`](#allowed_finops_roles)\[`number`\]
+
+Discriminant of an allowed FinOps role.
+
+***
+
+### FourEyesEnforcementReason
+
+> **FourEyesEnforcementReason** = *typeof* [`ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS`](#allowed_four_eyes_enforcement_reasons)\[`number`\]
+
+***
+
 ### GeneratedTestCaseReviewState
 
 > **GeneratedTestCaseReviewState** = `"draft"` \| `"auto_approved"` \| `"needs_review"` \| `"rejected"`
@@ -7403,7 +8085,7 @@ Discriminated union returned by `describeVisualScreens`.
 
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -7774,6 +8456,44 @@ runtime agree.
 
 ***
 
+### ALLOWED\_FINOPS\_BUDGET\_BREACH\_REASONS
+
+> `const` **ALLOWED\_FINOPS\_BUDGET\_BREACH\_REASONS**: readonly \[`"max_input_tokens"`, `"max_output_tokens"`, `"max_wall_clock_ms"`, `"max_retries"`, `"max_attempts"`, `"max_image_bytes"`, `"max_total_input_tokens"`, `"max_total_output_tokens"`, `"max_total_wall_clock_ms"`, `"max_replay_cache_miss_rate"`, `"max_fallback_attempts"`, `"max_live_smoke_calls"`, `"max_estimated_cost"`\]
+
+Allowed budget breach reasons. Discriminated for policy-readable diagnostics.
+
+***
+
+### ALLOWED\_FINOPS\_JOB\_OUTCOMES
+
+> `const` **ALLOWED\_FINOPS\_JOB\_OUTCOMES**: readonly \[`"completed"`, `"completed_cache_hit"`, `"budget_exceeded"`, `"policy_blocked"`, `"validation_blocked"`, `"visual_sidecar_failed"`, `"export_refused"`, `"gateway_failed"`\]
+
+Allowed terminal outcomes for a FinOps-tracked job.
+
+***
+
+### ALLOWED\_FINOPS\_ROLES
+
+> `const` **ALLOWED\_FINOPS\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`\]
+
+Per-role discriminant used inside the FinOps surface. Mirrors the gateway
+roles but is exported as its own list so policy gates can iterate roles
+without depending on the gateway surface.
+
+***
+
+### ALLOWED\_FOUR\_EYES\_ENFORCEMENT\_REASONS
+
+> `const` **ALLOWED\_FOUR\_EYES\_ENFORCEMENT\_REASONS**: readonly \[`"risk_category"`, `"visual_low_confidence"`, `"visual_fallback_used"`, `"visual_possible_pii"`, `"visual_prompt_injection"`, `"visual_metadata_conflict"`\]
+
+Reasons four-eyes review is enforced for a single test case (#1376).
+
+Multiple reasons may apply (e.g. a `regulated_data` case whose visual
+sidecar reported low confidence). Reasons are reported deterministic-
+sorted on the `ReviewSnapshot.fourEyesReasons` field.
+
+***
+
 ### ALLOWED\_LLM\_CODEGEN\_MODES
 
 > `const` **ALLOWED\_LLM\_CODEGEN\_MODES**: readonly \[`"deterministic"`\]
@@ -7858,17 +8578,31 @@ Allowed mapping-profile validation issue codes (Issue #1368). Tracks the
 
 ### ALLOWED\_REVIEW\_EVENT\_KINDS
 
-> `const` **ALLOWED\_REVIEW\_EVENT\_KINDS**: readonly \[`"generated"`, `"review_started"`, `"approved"`, `"rejected"`, `"edited"`, `"exported"`, `"transferred"`, `"note"`\]
+> `const` **ALLOWED\_REVIEW\_EVENT\_KINDS**: readonly \[`"generated"`, `"review_started"`, `"approved"`, `"primary_approved"`, `"secondary_approved"`, `"rejected"`, `"edited"`, `"exported"`, `"transferred"`, `"note"`\]
 
 Allowed event kinds appended to the review-gate event log.
+
+`primary_approved` and `secondary_approved` (added in #1376) are
+emitted in lockstep with four-eyes enforcement: the first distinct
+approver records `primary_approved`; the second distinct approver
+records `secondary_approved`. Clients may also continue to send the
+generic `approved` kind — when the snapshot indicates four-eyes is
+enforced, the store routes the request to the correct primary or
+secondary event kind based on current state, which keeps wire-level
+audit clarity without forcing UI rewrites.
 
 ***
 
 ### ALLOWED\_REVIEW\_STATES
 
-> `const` **ALLOWED\_REVIEW\_STATES**: readonly \[`"generated"`, `"needs_review"`, `"approved"`, `"rejected"`, `"edited"`, `"exported"`, `"transferred"`\]
+> `const` **ALLOWED\_REVIEW\_STATES**: readonly \[`"generated"`, `"needs_review"`, `"pending_secondary_approval"`, `"approved"`, `"rejected"`, `"edited"`, `"exported"`, `"transferred"`\]
 
 Allowed lifecycle states for a generated test case under review.
+
+`pending_secondary_approval` (added in #1376) is the intermediate
+state a four-eyes-enforced case occupies after the first approval and
+before the second distinct approval. Cases not subject to four-eyes
+skip this state entirely.
 
 ***
 
@@ -7984,11 +8718,40 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.28.0"`
+> `const` **CONTRACT\_VERSION**: `"3.30.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
 Package version alignment is documented in VERSIONING.md.
+
+***
+
+### DEFAULT\_FOUR\_EYES\_REQUIRED\_RISK\_CATEGORIES
+
+> `const` **DEFAULT\_FOUR\_EYES\_REQUIRED\_RISK\_CATEGORIES**: readonly [`TestCaseRiskCategory`](#testcaseriskcategory)[]
+
+Default risk categories that require four-eyes review (#1376).
+
+The list spans the existing `TestCaseRiskCategory` taxonomy. Issue
+#1376 names the operator-facing risk classes as
+`payment / authorization / identity / regulatory`; those map onto the
+existing taxonomy as `financial_transaction` (payment) +
+`regulated_data` (identity, regulatory) + `high` (authorization /
+elevated-impact). Operators may override with
+`WorkspaceStartOptions.testIntelligence.fourEyesRequiredRiskCategories`.
+
+***
+
+### DEFAULT\_FOUR\_EYES\_VISUAL\_SIDECAR\_TRIGGERS
+
+> `const` **DEFAULT\_FOUR\_EYES\_VISUAL\_SIDECAR\_TRIGGERS**: readonly [`VisualSidecarValidationOutcome`](#visualsidecarvalidationoutcome)[]
+
+Default visual-sidecar validation outcomes that trigger four-eyes
+enforcement (#1376, 2026-04-24 multimodal addendum).
+
+When ANY screen referenced by a test case carries one of these
+outcomes in `VisualSidecarValidationReport`, the case is enforced as
+four-eyes regardless of risk category.
 
 ***
 
@@ -8071,6 +8834,30 @@ Canonical filename for the persisted JSON export of approved test cases.
 > `const` **EXPORT\_TESTCASES\_XLSX\_ARTIFACT\_FILENAME**: `"testcases.xlsx"`
 
 Canonical filename for the optional persisted XLSX export of approved test cases.
+
+***
+
+### FINOPS\_ARTIFACT\_DIRECTORY
+
+> `const` **FINOPS\_ARTIFACT\_DIRECTORY**: `"finops"`
+
+Subdirectory under a run dir where FinOps artifacts are persisted.
+
+***
+
+### FINOPS\_BUDGET\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **FINOPS\_BUDGET\_REPORT\_ARTIFACT\_FILENAME**: `"budget-report.json"`
+
+Canonical filename for the FinOps budget report artifact.
+
+***
+
+### FINOPS\_BUDGET\_REPORT\_SCHEMA\_VERSION
+
+> `const` **FINOPS\_BUDGET\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted FinOps budget report artifact (Issue #1371).
 
 ***
 

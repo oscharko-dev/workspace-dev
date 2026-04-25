@@ -23,10 +23,12 @@ import type {
   ReviewEvent,
   ReviewEventKind,
   ReviewGateSnapshot,
+  TestIntelligenceReviewPrincipal,
 } from "../contracts/index.js";
 import type { RecordTransitionInput, ReviewStore } from "./review-store.js";
 
 const BEARER_REALM = "workspace-dev-test-intelligence-review";
+const LEGACY_REVIEW_PRINCIPAL_ID = "legacy-review-bearer";
 
 export interface ReviewRequestEnvelope {
   /**
@@ -34,6 +36,11 @@ export interface ReviewRequestEnvelope {
    * for any write action so review writes fail-closed.
    */
   bearerToken: string | undefined;
+  /**
+   * Optional principal-bound bearer credentials. When present, matching
+   * tokens derive the authoritative review actor from `principalId`.
+   */
+  reviewPrincipals?: readonly TestIntelligenceReviewPrincipal[];
   /** Raw `Authorization` header value, if any. */
   authorizationHeader: string | undefined;
   /**
@@ -73,6 +80,7 @@ export interface ReviewRequestErrorBody {
   ok: false;
   error: string;
   message: string;
+  refusalCode?: string;
 }
 
 export interface ReviewResponse {
@@ -175,37 +183,67 @@ const refusalCodeToHttpStatus = (code: string): number => {
   }
 };
 
-const errorBody = (error: string, message: string): ReviewRequestErrorBody => ({
+const errorBody = (
+  error: string,
+  message: string,
+  refusalCode?: string,
+): ReviewRequestErrorBody => ({
   ok: false,
   error,
   message,
+  ...(refusalCode !== undefined ? { refusalCode } : {}),
 });
 
 /** Validate bearer auth fail-closed and return a structured response. */
 const validateAuth = (
   envelope: ReviewRequestEnvelope,
-): ReviewResponse | undefined => {
+): { ok: true; principalId: string } | { ok: false; response: ReviewResponse } => {
   const configured = normalizeConfiguredToken(envelope.bearerToken);
-  if (!configured) {
+  const principals = (envelope.reviewPrincipals ?? [])
+    .map((principal) => ({
+      principalId: principal.principalId.trim(),
+      bearerToken: normalizeConfiguredToken(principal.bearerToken),
+    }))
+    .filter(
+      (
+        principal,
+      ): principal is { principalId: string; bearerToken: string } =>
+        principal.principalId.length > 0 &&
+        principal.bearerToken !== undefined,
+    );
+  if (!configured && principals.length === 0) {
     return {
-      statusCode: 503,
-      body: errorBody(
-        "AUTHENTICATION_UNAVAILABLE",
-        "Review-gate writes are disabled until server bearer authentication is configured.",
-      ),
+      ok: false,
+      response: {
+        statusCode: 503,
+        body: errorBody(
+          "AUTHENTICATION_UNAVAILABLE",
+          "Review-gate writes are disabled until server bearer authentication is configured.",
+        ),
+      },
     };
   }
   const received = readBearerToken(envelope.authorizationHeader);
-  if (received && tokensMatch(configured, received)) {
-    return undefined;
+  if (received) {
+    for (const principal of principals) {
+      if (tokensMatch(principal.bearerToken, received)) {
+        return { ok: true, principalId: principal.principalId };
+      }
+    }
+    if (configured && tokensMatch(configured, received)) {
+      return { ok: true, principalId: LEGACY_REVIEW_PRINCIPAL_ID };
+    }
   }
   return {
-    statusCode: 401,
-    body: errorBody(
-      "UNAUTHORIZED",
-      "Review-gate writes require a valid Bearer token.",
-    ),
-    wwwAuthenticate: `Bearer realm="${BEARER_REALM}"`,
+    ok: false,
+    response: {
+      statusCode: 401,
+      body: errorBody(
+        "UNAUTHORIZED",
+        "Review-gate writes require a valid Bearer token.",
+      ),
+      wwwAuthenticate: `Bearer realm="${BEARER_REALM}"`,
+    },
   };
 };
 
@@ -225,8 +263,12 @@ export const handleReviewRequest = async (
   }
 
   if (writeActionRequiresAuth(envelope.action)) {
-    const authResponse = validateAuth(envelope);
-    if (authResponse) return authResponse;
+    const auth = validateAuth(envelope);
+    if (!auth.ok) return auth.response;
+    envelope = {
+      ...envelope,
+      actor: auth.principalId,
+    };
   }
 
   if (envelope.method === "GET") {
@@ -286,6 +328,7 @@ export const handleReviewRequest = async (
       body: errorBody(
         "TRANSITION_REFUSED",
         `Review-gate ${envelope.action} refused: ${result.code}.`,
+        result.code,
       ),
     };
   }

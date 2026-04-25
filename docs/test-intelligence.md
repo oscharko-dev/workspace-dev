@@ -80,8 +80,31 @@ const options: WorkspaceStartOptions = {
     testIntelligence: {
         enabled: true,
         // Optional: bearer token for review-gate write routes. When omitted or
-        // blank, write routes return 503 fail-closed.
+        // blank, write routes return 503 fail-closed. This legacy token maps
+        // to one principal; configure reviewPrincipals for two-person review.
         reviewBearerToken: process.env.WORKSPACE_TI_REVIEW_BEARER_TOKEN,
+        reviewPrincipals: [
+            {
+                principalId: "reviewer-a",
+                bearerToken: process.env.WORKSPACE_TI_REVIEWER_A_TOKEN ?? "",
+            },
+            {
+                principalId: "reviewer-b",
+                bearerToken: process.env.WORKSPACE_TI_REVIEWER_B_TOKEN ?? "",
+            },
+        ],
+        fourEyesRequiredRiskCategories: [
+            "financial_transaction",
+            "regulated_data",
+            "high",
+        ],
+        fourEyesVisualSidecarTriggerOutcomes: [
+            "low_confidence",
+            "fallback_used",
+            "possible_pii",
+            "prompt_injection_like_text",
+            "conflicts_with_figma_metadata",
+        ],
         // Optional: directory under which test-intelligence artifacts are
         // persisted. Defaults to `<outputRoot>/test-intelligence`.
         artifactRoot: undefined,
@@ -109,16 +132,30 @@ returns `503 FEATURE_DISABLED`.
 | ---------------------------------------------------- | --------------------------------------------------------- |
 | `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` unset        | All test-intelligence Inspector routes return `503`.      |
 | `testIntelligence.enabled` unset or `false`          | All test-intelligence Inspector routes return `503`.      |
-| `testIntelligence.reviewBearerToken` unset or blank  | Review-gate `POST` routes return `503`. Reads still work. |
+| No `reviewBearerToken` or valid `reviewPrincipals`   | Review-gate `POST` routes return `503`. Reads still work. |
 | Bearer token present in request, does not match      | Review-gate `POST` routes return `401`.                   |
 | Review action attempted from a terminal review state | Review-gate `POST` routes return `409 CONFLICT`.          |
 | Approve attempted while policy decision is `blocked` | Review-gate `POST` routes return `409 CONFLICT`.          |
+| Four-eyes case approved by one principal only        | Export refuses with `review_state_inconsistent`.          |
 
-The bearer token is compared with a SHA-256-based timing-safe comparison and is
-never logged. Bearer tokens, API keys, Authorization headers, and Figma access
-tokens are routed through the package-wide secret-redaction helpers
+Bearer tokens are compared with a SHA-256-based timing-safe comparison and are
+never logged. For review writes, the persisted actor is derived from the
+matched server-configured principal, not from the request body. The legacy
+`reviewBearerToken` remains supported for compatibility, but it represents a
+single principal and therefore cannot satisfy both sides of a four-eyes review
+by changing `actor` in the request payload. Bearer tokens, API keys,
+Authorization headers, and Figma access tokens are routed through the
+package-wide secret-redaction helpers
 (`redactHighRiskSecrets`, `sanitizeErrorMessage`) before reaching any error,
 log line, or persisted artifact.
+
+Four-eyes defaults are fail-closed for the existing risk taxonomy:
+`financial_transaction`, `regulated_data`, and `high`. Operators may pass empty
+arrays for `fourEyesRequiredRiskCategories` and
+`fourEyesVisualSidecarTriggerOutcomes` to disable those dimensions explicitly.
+The visual-sidecar defaults also enforce review for low confidence, fallback
+execution, possible PII, prompt-injection-like text, and Figma metadata
+conflicts without storing raw screenshots in the review state.
 
 ## 2. Run the Wave 1 POC from a repository checkout
 
@@ -652,9 +689,13 @@ classification themselves:
 - Pass/fail evaluation report with thresholds (`wave1-poc-eval-report.json`).
 
 The reviewer-driven gate enforces a human-in-the-loop step before any case
-reaches the export pipeline. Customer-specific four-eyes review and high-risk
-category sign-off are operator decisions; relevant follow-ups are tracked
-upstream in the Wave 2 roadmap (Issues #1376, #1379).
+reaches the export pipeline. For cases covered by the resolved four-eyes
+policy, the server requires two distinct authenticated review principals and
+persists primary/secondary reviewer identities plus timestamps. Export refuses
+`pending_secondary_approval` cases and forged `approved` snapshots that do not
+contain a complete two-reviewer audit trail. Broader sign-off authority and
+named-role matrices remain operator decisions; related policy expansion is
+tracked separately in the Wave 2 roadmap (Issue #1379).
 
 ## 13. Gateway operator responsibilities
 

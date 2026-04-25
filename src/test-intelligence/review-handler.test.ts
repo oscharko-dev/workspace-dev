@@ -21,6 +21,8 @@ import {
 import { createFileSystemReviewStore } from "./review-store.js";
 
 const TOKEN = "secret-bearer-token";
+const ALICE_TOKEN = "alice-secret-bearer-token";
+const BOB_TOKEN = "bob-secret-bearer-token";
 const ZERO = "0".repeat(64);
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 
@@ -122,6 +124,20 @@ const baseEnvelope = (
   testCaseId: "tc-1",
   at: GENERATED_AT,
   ...overrides,
+});
+
+const principalEnvelope = (
+  principal: "alice" | "bob",
+  overrides: Partial<ReviewRequestEnvelope> = {},
+): ReviewRequestEnvelope => ({
+  ...baseEnvelope({
+    reviewPrincipals: [
+      { principalId: "alice", bearerToken: ALICE_TOKEN },
+      { principalId: "bob", bearerToken: BOB_TOKEN },
+    ],
+    authorizationHeader: `Bearer ${principal === "alice" ? ALICE_TOKEN : BOB_TOKEN}`,
+    ...overrides,
+  }),
 });
 
 const withTempDir = async (fn: (dir: string) => Promise<void>) => {
@@ -337,7 +353,7 @@ test("handler: approve action on a four-eyes case routes to primary then seconda
   await withTempDir(async (dir) => {
     const store = await seedFourEyesStore(dir, "financial_transaction");
     const first = await handleReviewRequest(
-      baseEnvelope({ action: "approve", actor: "alice" }),
+      principalEnvelope("alice", { action: "approve", actor: "mallory" }),
       store,
     );
     assert.equal(first.statusCode, 200);
@@ -349,11 +365,15 @@ test("handler: approve action on a four-eyes case routes to primary then seconda
     assert.equal(firstBody.event.kind, "primary_approved");
     assert.equal(firstBody.event.toState, "pending_secondary_approval");
     assert.equal(
+      (first.body as { ok: true; event: { actor?: string } }).event.actor,
+      "alice",
+    );
+    assert.equal(
       firstBody.snapshot.perTestCase[0]?.state,
       "pending_secondary_approval",
     );
     const second = await handleReviewRequest(
-      baseEnvelope({ action: "approve", actor: "bob" }),
+      principalEnvelope("bob", { action: "approve" }),
       store,
     );
     assert.equal(second.statusCode, 200);
@@ -366,7 +386,7 @@ test("handler: approve action on a four-eyes case routes to primary then seconda
   });
 });
 
-test("handler: same actor approving twice on a four-eyes case returns 409 self_approval_refused", async () => {
+test("handler: legacy bearer is one principal, so it cannot satisfy four-eyes twice", async () => {
   await withTempDir(async (dir) => {
     const store = await seedFourEyesStore(dir, "regulated_data");
     await handleReviewRequest(
@@ -378,9 +398,33 @@ test("handler: same actor approving twice on a four-eyes case returns 409 self_a
       store,
     );
     assert.equal(second.statusCode, 409);
-    const body = second.body as { ok: false; error: string; message: string };
+    const body = second.body as {
+      ok: false;
+      error: string;
+      message: string;
+      refusalCode?: string;
+    };
     assert.equal(body.ok, false);
+    assert.equal(body.refusalCode, "self_approval_refused");
     assert.match(body.message, /self_approval_refused/);
+  });
+});
+
+test("handler: request body actor cannot impersonate the authenticated principal", async () => {
+  await withTempDir(async (dir) => {
+    const store = await seedFourEyesStore(dir, "regulated_data");
+    const res = await handleReviewRequest(
+      principalEnvelope("alice", { action: "primary-approve", actor: "bob" }),
+      store,
+    );
+    assert.equal(res.statusCode, 200);
+    const body = res.body as {
+      ok: true;
+      event: { actor?: string };
+      snapshot: { perTestCase: { primaryReviewer?: string }[] };
+    };
+    assert.equal(body.event.actor, "alice");
+    assert.equal(body.snapshot.perTestCase[0]?.primaryReviewer, "alice");
   });
 });
 
@@ -388,7 +432,7 @@ test("handler: explicit primary-approve action is accepted on four-eyes cases", 
   await withTempDir(async (dir) => {
     const store = await seedFourEyesStore(dir, "high");
     const res = await handleReviewRequest(
-      baseEnvelope({ action: "primary-approve", actor: "alice" }),
+      principalEnvelope("alice", { action: "primary-approve" }),
       store,
     );
     assert.equal(res.statusCode, 200);
@@ -401,7 +445,7 @@ test("handler: secondary-approve before primary returns 409 primary_approval_req
   await withTempDir(async (dir) => {
     const store = await seedFourEyesStore(dir, "high");
     const res = await handleReviewRequest(
-      baseEnvelope({ action: "secondary-approve", actor: "bob" }),
+      principalEnvelope("bob", { action: "secondary-approve" }),
       store,
     );
     assert.equal(res.statusCode, 409);
@@ -410,13 +454,17 @@ test("handler: secondary-approve before primary returns 409 primary_approval_req
   });
 });
 
-test("handler: primary-approve without an actor returns 400 four_eyes_actor_required", async () => {
+test("handler: primary-approve without any configured principal returns 503", async () => {
   await withTempDir(async (dir) => {
     const store = await seedFourEyesStore(dir, "regulated_data");
     const res = await handleReviewRequest(
-      baseEnvelope({ action: "primary-approve" }),
+      baseEnvelope({
+        action: "primary-approve",
+        bearerToken: undefined,
+        authorizationHeader: undefined,
+      }),
       store,
     );
-    assert.equal(res.statusCode, 400);
+    assert.equal(res.statusCode, 503);
   });
 });

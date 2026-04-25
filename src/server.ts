@@ -11,7 +11,10 @@ import { createServer, type Server } from "node:http";
 import type { Socket } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { WorkspaceStartOptions } from "./contracts/index.js";
+import type {
+  TestIntelligenceReviewPrincipal,
+  WorkspaceStartOptions,
+} from "./contracts/index.js";
 import { createDefaultFigmaMcpEnrichmentLoader } from "./job-engine/figma-hybrid-enrichment.js";
 import { createJobEngine, resolveRuntimeSettings } from "./job-engine.js";
 import type { WorkspaceRuntimeLogger } from "./logging.js";
@@ -86,6 +89,28 @@ const resolveFigmaPasteTempTtlMs = (value: number | undefined): number => {
     return DEFAULT_FIGMA_PASTE_TEMP_TTL_MS;
   }
   return Math.max(0, Math.trunc(value));
+};
+
+const resolveTestIntelligenceReviewPrincipals = (
+  value: readonly TestIntelligenceReviewPrincipal[] | undefined,
+): TestIntelligenceReviewPrincipal[] | undefined => {
+  if (value === undefined) return undefined;
+  const seen = new Set<string>();
+  const principals: TestIntelligenceReviewPrincipal[] = [];
+  for (const principal of value) {
+    const principalId = principal.principalId.trim();
+    const bearerToken = principal.bearerToken.trim();
+    if (
+      principalId.length === 0 ||
+      bearerToken.length === 0 ||
+      seen.has(principalId)
+    ) {
+      continue;
+    }
+    seen.add(principalId);
+    principals.push({ principalId, bearerToken });
+  }
+  return principals.length > 0 ? principals : undefined;
 };
 
 const sweepStaleFigmaPasteTempFiles = async ({
@@ -197,6 +222,10 @@ export const createWorkspaceServer = async (
     options.testIntelligence.reviewBearerToken.trim().length > 0
       ? options.testIntelligence.reviewBearerToken.trim()
       : undefined;
+  const testIntelligenceReviewPrincipals =
+    resolveTestIntelligenceReviewPrincipals(
+      options.testIntelligence?.reviewPrincipals,
+    );
   const outputRoot =
     typeof options.outputRoot === "string" &&
     options.outputRoot.trim().length > 0
@@ -470,6 +499,9 @@ export const createWorkspaceServer = async (
       testIntelligenceEnabled: options.testIntelligence?.enabled === true,
       ...(testIntelligenceReviewBearerToken !== undefined
         ? { testIntelligenceReviewBearerToken }
+        : {}),
+      ...(testIntelligenceReviewPrincipals !== undefined
+        ? { testIntelligenceReviewPrincipals }
         : {}),
       testIntelligenceArtifactRoot,
       logger: runtime.logger,

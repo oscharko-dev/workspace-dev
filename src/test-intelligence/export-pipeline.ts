@@ -132,6 +132,7 @@ const detectRefusalCodes = (
   );
   let unapprovedNonRejectedPresent = false;
   let unknownReviewState = false;
+  let inconsistentFourEyesApproval = false;
   for (const tc of input.list.testCases) {
     const snapshot = reviewById.get(tc.id);
     if (!snapshot) {
@@ -146,11 +147,31 @@ const detectRefusalCodes = (
     ) {
       unapprovedNonRejectedPresent = true;
     }
+    if (
+      snapshot.fourEyesEnforced &&
+      (snapshot.state === "approved" ||
+        snapshot.state === "exported" ||
+        snapshot.state === "transferred")
+    ) {
+      const primary = snapshot.primaryReviewer;
+      const secondary = snapshot.secondaryReviewer;
+      if (
+        primary === undefined ||
+        secondary === undefined ||
+        primary === secondary ||
+        snapshot.primaryApprovalAt === undefined ||
+        snapshot.secondaryApprovalAt === undefined ||
+        !snapshot.approvers.includes(primary) ||
+        !snapshot.approvers.includes(secondary)
+      ) {
+        inconsistentFourEyesApproval = true;
+      }
+    }
   }
   if (unapprovedNonRejectedPresent) {
     codes.add("unapproved_test_cases_present");
   }
-  if (unknownReviewState) {
+  if (unknownReviewState || inconsistentFourEyesApproval) {
     codes.add("review_state_inconsistent");
   }
   return Array.from(codes).sort();

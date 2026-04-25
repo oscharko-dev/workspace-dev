@@ -11,6 +11,7 @@ import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   TEST_INTELLIGENCE_ENV,
+  type TestIntelligenceReviewPrincipal,
   type WorkspaceFigmaSourceMode,
   type WorkspaceImportSessionEvent,
   type WorkspaceImportSessionEventKind,
@@ -580,6 +581,7 @@ interface BuildReviewEnvelopeInput {
   jobId: string;
   testCaseId?: string;
   bearerToken: string | undefined;
+  reviewPrincipals: readonly TestIntelligenceReviewPrincipal[] | undefined;
   authorizationHeader: string | undefined;
 }
 
@@ -671,6 +673,9 @@ function buildReviewEnvelopeFromBody(
     ok: true,
     envelope: {
       bearerToken: input.bearerToken,
+      ...(input.reviewPrincipals !== undefined
+        ? { reviewPrincipals: input.reviewPrincipals }
+        : {}),
       authorizationHeader: input.authorizationHeader,
       method: input.method,
       action: input.action,
@@ -746,6 +751,11 @@ interface CreateWorkspaceRequestHandlerInput {
      * Reads (`GET /workspace/test-intelligence/...`) never require this token.
      */
     testIntelligenceReviewBearerToken?: string;
+    /**
+     * Principal-bound review credentials. When configured, the matching
+     * bearer token determines the persisted review actor.
+     */
+    testIntelligenceReviewPrincipals?: readonly TestIntelligenceReviewPrincipal[];
     /**
      * Absolute path of the directory under which per-job test-intelligence
      * artifacts are stored and surfaced by the Inspector UI. The handler
@@ -1088,6 +1098,12 @@ export function createWorkspaceRequestHandler({
             const reviewResponse = await handleReviewRequest(
               {
                 bearerToken: runtime.testIntelligenceReviewBearerToken,
+                ...(runtime.testIntelligenceReviewPrincipals !== undefined
+                  ? {
+                      reviewPrincipals:
+                        runtime.testIntelligenceReviewPrincipals,
+                    }
+                  : {}),
                 authorizationHeader:
                   typeof request.headers.authorization === "string"
                     ? request.headers.authorization
@@ -1199,6 +1215,7 @@ export function createWorkspaceRequestHandler({
               ? { testCaseId: route.testCaseId }
               : {}),
             bearerToken: runtime.testIntelligenceReviewBearerToken,
+            reviewPrincipals: runtime.testIntelligenceReviewPrincipals,
             authorizationHeader:
               typeof request.headers.authorization === "string"
                 ? request.headers.authorization

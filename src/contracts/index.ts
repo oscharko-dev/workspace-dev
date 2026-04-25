@@ -114,6 +114,22 @@ export const ALLOWED_TEST_INTELLIGENCE_MODES = [
 export type WorkspaceTestIntelligenceMode =
   (typeof ALLOWED_TEST_INTELLIGENCE_MODES)[number];
 
+/**
+ * Bearer credential bound to a single review principal.
+ *
+ * Used by the test-intelligence review gate when four-eyes review is
+ * enforced (#1376). The token authenticates the caller; the
+ * `principalId` is the server-owned reviewer identity persisted on
+ * review events and snapshots. Never reuse one token for multiple
+ * principals.
+ */
+export interface TestIntelligenceReviewPrincipal {
+  /** Opaque, non-secret reviewer principal id persisted in review audit logs. */
+  principalId: string;
+  /** Bearer token accepted for this principal's review-gate write requests. */
+  bearerToken: string;
+}
+
 /** Contract version for the opt-in test-intelligence surface. */
 export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.0.0" as const;
 
@@ -963,9 +979,17 @@ export interface WorkspaceStartOptions {
      * Bearer token accepted by the Inspector test-intelligence review-gate
      * write routes (`POST /workspace/test-intelligence/review/...`). When
      * omitted or blank, review writes fail closed with `503` until the
-     * operator configures a token. Reads do not require this token.
+     * operator configures a token. Reads do not require this token. This
+     * legacy token is treated as one authenticated principal; configure
+     * `reviewPrincipals` for true two-distinct-principal four-eyes approval.
      */
     reviewBearerToken?: string;
+    /**
+     * Principal-bound review credentials. When configured, approval actor
+     * identity is derived from the matching bearer token rather than from
+     * the request body, preventing forged reviewer identities (#1376).
+     */
+    reviewPrincipals?: TestIntelligenceReviewPrincipal[];
     /**
      * Optional override for the directory under which per-job
      * test-intelligence artifacts are stored and read by the Inspector
