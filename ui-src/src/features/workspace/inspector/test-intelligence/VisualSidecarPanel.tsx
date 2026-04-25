@@ -20,14 +20,15 @@ export interface VisualSidecarPanelProps {
 
 const HIGH_RISK_OUTCOMES = new Set<string>([
   "schema_invalid",
-  "primary_unavailable",
+  "possible_pii",
   "prompt_injection_like_text",
+  "conflicts_with_figma_metadata",
 ]);
 
 const REVIEW_OUTCOMES = new Set<string>([
   "low_confidence",
-  "possible_pii",
-  "conflicts_with_figma_metadata",
+  "fallback_used",
+  "primary_unavailable",
 ]);
 
 export function VisualSidecarPanel({
@@ -104,9 +105,10 @@ export function VisualSidecarPanel({
           className="m-0 flex list-none flex-col gap-2 p-0"
         >
           {report.records.map((record) => {
-            const blockedRow = record.outcomes.some((outcome) =>
-              HIGH_RISK_OUTCOMES.has(outcome),
-            );
+            const blockedRow =
+              record.outcomes.some((outcome) =>
+                HIGH_RISK_OUTCOMES.has(outcome),
+              ) || record.issues.some((issue) => issue.severity === "error");
             const reviewRow = record.outcomes.some((outcome) =>
               REVIEW_OUTCOMES.has(outcome),
             );
@@ -154,6 +156,43 @@ export function VisualSidecarPanel({
                     {formatConfidence(record.meanConfidence)}
                   </span>
                 </span>
+                {record.issues.length > 0 ? (
+                  <ul
+                    data-testid={`ti-visual-sidecar-issues-${record.screenId}`}
+                    aria-label={`Visual sidecar issues for ${record.screenId}`}
+                    className="m-0 mt-1 flex list-none flex-col gap-1 p-0"
+                  >
+                    {record.issues.map((issue, index) => (
+                      <li
+                        key={`${record.screenId}-${issue.code}-${String(index)}`}
+                        data-testid={`ti-visual-sidecar-issue-${record.screenId}-${index}`}
+                        className="break-words text-[11px] text-white/80"
+                      >
+                        <span
+                          className={
+                            issue.severity === "error"
+                              ? "font-semibold text-rose-200"
+                              : "font-semibold text-amber-200"
+                          }
+                        >
+                          {issue.code}
+                        </span>
+                        {issue.testCaseId ? (
+                          <span className="ml-1 font-mono text-[10px] text-white/55">
+                            [{issue.testCaseId}]
+                          </span>
+                        ) : null}
+                        <span className="text-white/35"> · </span>
+                        <span>{issue.message}</span>
+                        {issue.path ? (
+                          <span className="ml-1 font-mono text-[10px] text-white/45">
+                            ({issue.path})
+                          </span>
+                        ) : null}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
               </li>
             );
           })}

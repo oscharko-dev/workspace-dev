@@ -1,7 +1,9 @@
 import type {
   CoverageReport,
+  ExportReport,
   GeneratedTestCase,
   PolicyReport,
+  QcMappingPreviewArtifact,
   ReviewSnapshotEntry,
   TestIntelligenceBundle,
   ValidationReport,
@@ -158,9 +160,65 @@ export function buildVisualSidecarReport(
         screenId: "screen-login",
         deployment: "llama-4-maverick-vision",
         outcomes: ["ok"],
+        issues: [],
         meanConfidence: 0.92,
       },
     ],
+    ...overrides,
+  };
+}
+
+export function buildQcMappingPreview(
+  overrides: Partial<QcMappingPreviewArtifact> = {},
+): QcMappingPreviewArtifact {
+  return {
+    jobId: "job-1",
+    profileId: "qc-default",
+    profileVersion: "1.0.0",
+    entries: [
+      {
+        testCaseId: "tc-1",
+        externalIdCandidate: "job-1-tc-1",
+        testName: "Sign in with valid credentials",
+        objective: "Verify the happy-path login flow",
+        priority: "p1",
+        riskCategory: "medium",
+        targetFolderPath: "Workspace/Login",
+        exportable: true,
+        blockingReasons: [],
+        visualProvenance: {
+          deployment: "llama-4-maverick-vision",
+          fallbackReason: "none",
+          confidenceMean: 0.92,
+          ambiguityCount: 0,
+          evidenceHash: "abcdef1234567890",
+        },
+      },
+    ],
+    ...overrides,
+  };
+}
+
+export function buildExportReport(
+  overrides: Partial<ExportReport> = {},
+): ExportReport {
+  return {
+    jobId: "job-1",
+    profileId: "qc-default",
+    profileVersion: "1.0.0",
+    exportedTestCaseCount: 1,
+    refused: false,
+    refusalCodes: [],
+    artifacts: [
+      {
+        filename: "testcases.csv",
+        sha256: "abcdef1234567890",
+        bytes: 128,
+        contentType: "text/csv",
+      },
+    ],
+    visualEvidenceHashes: ["abcdef1234567890"],
+    rawScreenshotsIncluded: false,
     ...overrides,
   };
 }
@@ -176,6 +234,8 @@ export function buildBundle(
     policyReport: buildPolicyReport(),
     coverageReport: buildCoverageReport(),
     visualSidecarReport: buildVisualSidecarReport(),
+    qcMappingPreview: buildQcMappingPreview(),
+    exportReport: buildExportReport(),
     reviewSnapshot: {
       jobId: "job-1",
       generatedAt: ASSEMBLED_AT,

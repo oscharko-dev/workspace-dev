@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { TestCaseDetailPanel } from "./TestCaseDetailPanel";
 import { expectNoBlockingAccessibilityViolations } from "../../../../test/accessibility";
-import { buildReviewSnapshotEntry, buildTestCase } from "./test-fixtures";
+import {
+  buildQcMappingPreview,
+  buildReviewSnapshotEntry,
+  buildTestCase,
+  buildVisualSidecarReport,
+} from "./test-fixtures";
 
 afterEach(() => {
   cleanup();
@@ -17,6 +22,7 @@ const baseProps = {
   pendingAction: null,
   actionError: null,
   reviewerHandle: "alice",
+  visualRecords: [] as const,
   fourEyesEnforced: false,
   approvers: [] as string[],
 };
@@ -74,6 +80,46 @@ describe("TestCaseDetailPanel — content rendering", () => {
     expect(
       screen.getByTestId("ti-detail-policy-violation-0"),
     ).toHaveTextContent("missing_trace");
+  });
+
+  it("renders linked visual observations and QC provenance", () => {
+    render(
+      <TestCaseDetailPanel
+        {...baseProps}
+        visualRecords={
+          buildVisualSidecarReport({
+            records: [
+              {
+                screenId: "screen-login",
+                deployment: "phi-4-multimodal-poc",
+                outcomes: ["fallback_used", "low_confidence"],
+                issues: [
+                  {
+                    code: "ambiguous_claim",
+                    severity: "warning",
+                    message: "Sidecar confidence below threshold",
+                    path: "$.screens[0]",
+                    testCaseId: "tc-1",
+                  },
+                ],
+                meanConfidence: 0.55,
+              },
+            ],
+          }).records
+        }
+        qcMappingEntry={buildQcMappingPreview().entries[0]!}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(
+      screen.getByTestId("ti-detail-visual-observations"),
+    ).toHaveTextContent("visual_sidecar");
+    expect(
+      screen.getByTestId("ti-detail-visual-record-screen-login"),
+    ).toHaveTextContent("phi-4-multimodal-poc");
+    expect(
+      screen.getByTestId("ti-detail-qc-visual-provenance"),
+    ).toHaveTextContent("abcdef123456");
   });
 });
 

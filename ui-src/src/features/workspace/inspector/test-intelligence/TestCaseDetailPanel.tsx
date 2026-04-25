@@ -9,18 +9,22 @@
 
 import { useState, type JSX } from "react";
 import {
+  formatConfidence,
   formatPolicyDecisionBadge,
   formatPriorityBadge,
   formatReviewStateBadge,
   formatRiskCategoryLabel,
   formatTestTypeLabel,
+  formatVisualSidecarOutcomeBadge,
   resolveEffectiveReviewState,
 } from "./formatters";
 import type {
   GeneratedTestCase,
   PolicyDecision,
   PolicyViolation,
+  QcMappingPreviewEntry,
   ReviewSnapshotEntry,
+  VisualSidecarRecord,
 } from "./types";
 
 export type ReviewActionKind =
@@ -54,6 +58,10 @@ export interface TestCaseDetailPanelProps {
   actionError: string | null;
   /** Optional reviewer handle prefilled into action submissions. */
   reviewerHandle?: string;
+  /** Visual sidecar validation rows matching this case's Figma screen refs. */
+  visualRecords: readonly VisualSidecarRecord[];
+  /** QC/export mapping row for this case, when the export preview exists. */
+  qcMappingEntry?: QcMappingPreviewEntry;
   onAction: (input: { action: ReviewActionKind; note?: string }) => void;
   /**
    * Whether the surrounding deployment expects two distinct approvers.
@@ -76,6 +84,8 @@ export function TestCaseDetailPanel({
   pendingAction,
   actionError,
   reviewerHandle,
+  visualRecords,
+  qcMappingEntry,
   onAction,
   fourEyesEnforced,
   approvers,
@@ -287,6 +297,11 @@ export function TestCaseDetailPanel({
         )}
       </section>
 
+      <VisualObservations
+        records={visualRecords}
+        qcMappingEntry={qcMappingEntry}
+      />
+
       <div className="grid gap-4 lg:grid-cols-2">
         <DetailList
           testId="ti-detail-assumptions"
@@ -448,6 +463,173 @@ export function TestCaseDetailPanel({
         </div>
       </section>
     </section>
+  );
+}
+
+interface VisualObservationsProps {
+  records: readonly VisualSidecarRecord[];
+  qcMappingEntry: QcMappingPreviewEntry | undefined;
+}
+
+function VisualObservations({
+  records,
+  qcMappingEntry,
+}: VisualObservationsProps): JSX.Element {
+  const visualProvenance = qcMappingEntry?.visualProvenance;
+
+  if (records.length === 0 && !qcMappingEntry) {
+    return (
+      <section
+        data-testid="ti-detail-visual-observations"
+        aria-label="Visual observations"
+        className="rounded border border-dashed border-white/10 bg-[#0f0f0f] px-3 py-3 text-[12px] text-white/45"
+      >
+        No visual observations or QC mapping preview are linked to this case.
+      </section>
+    );
+  }
+
+  return (
+    <section
+      data-testid="ti-detail-visual-observations"
+      aria-label="Visual observations"
+      className="flex flex-col gap-2 rounded border border-white/10 bg-[#0f0f0f] px-3 py-3"
+    >
+      <h3 className="m-0 text-[11px] font-semibold uppercase tracking-wide text-white/55">
+        Visual observations
+      </h3>
+
+      {records.length > 0 ? (
+        <ul className="m-0 flex list-none flex-col gap-2 p-0">
+          {records.map((record) => (
+            <li
+              key={record.screenId}
+              data-testid={`ti-detail-visual-record-${record.screenId}`}
+              className="rounded border border-white/10 bg-[#0a0a0a] px-3 py-2"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-[11px] text-white">
+                  {record.screenId}
+                </span>
+                <span className="text-[10px] text-white/55">
+                  role{" "}
+                  <span className="font-mono text-white/80">
+                    visual_sidecar
+                  </span>
+                </span>
+                <span className="text-[10px] text-white/55">
+                  deployment{" "}
+                  <span className="font-mono text-white/80">
+                    {record.deployment}
+                  </span>
+                </span>
+                <span className="text-[10px] text-white/55">
+                  confidence{" "}
+                  <span className="font-mono text-white/80">
+                    {formatConfidence(record.meanConfidence)}
+                  </span>
+                </span>
+                <span className="text-[10px] text-white/55">
+                  ambiguity{" "}
+                  <span className="font-mono text-white/80">
+                    {record.issues.length}
+                  </span>
+                </span>
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                {record.outcomes.map((outcome) => {
+                  const badge = formatVisualSidecarOutcomeBadge(outcome);
+                  return (
+                    <span
+                      key={`${record.screenId}-${outcome}`}
+                      className={`inline-flex items-center rounded border px-1.5 py-[1px] text-[10px] font-semibold ${badge.className}`}
+                    >
+                      {badge.label}
+                    </span>
+                  );
+                })}
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {qcMappingEntry ? (
+        <section
+          data-testid="ti-detail-qc-mapping"
+          aria-label="QC mapping preview"
+          className="rounded border border-white/10 bg-[#0a0a0a] px-3 py-2 text-[11px] text-white/65"
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-white/85">
+              QC export preview
+            </span>
+            <span
+              className={
+                qcMappingEntry.exportable ? "text-emerald-200" : "text-rose-200"
+              }
+            >
+              {qcMappingEntry.exportable ? "Exportable" : "Blocked"}
+            </span>
+            <span className="font-mono text-white/55">
+              {qcMappingEntry.targetFolderPath}
+            </span>
+          </div>
+          {qcMappingEntry.blockingReasons.length > 0 ? (
+            <ul className="m-0 mt-1 flex list-none flex-col gap-1 p-0">
+              {qcMappingEntry.blockingReasons.map((reason, index) => (
+                <li
+                  key={`${reason}-${String(index)}`}
+                  data-testid={`ti-detail-qc-blocking-reason-${index}`}
+                  className="break-words text-rose-200"
+                >
+                  {reason}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {visualProvenance ? (
+            <dl
+              data-testid="ti-detail-qc-visual-provenance"
+              className="m-0 mt-2 grid gap-1 text-[10px] sm:grid-cols-2"
+            >
+              <ProvenanceTerm
+                label="Fallback"
+                value={visualProvenance.fallbackReason}
+              />
+              <ProvenanceTerm
+                label="Confidence"
+                value={formatConfidence(visualProvenance.confidenceMean)}
+              />
+              <ProvenanceTerm
+                label="Ambiguity"
+                value={String(visualProvenance.ambiguityCount)}
+              />
+              <ProvenanceTerm
+                label="Evidence"
+                value={visualProvenance.evidenceHash.slice(0, 12)}
+              />
+            </dl>
+          ) : null}
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
+interface ProvenanceTermProps {
+  label: string;
+  value: string;
+}
+
+function ProvenanceTerm({ label, value }: ProvenanceTermProps): JSX.Element {
+  return (
+    <div className="flex min-w-0 gap-1">
+      <dt className="shrink-0 text-white/40">{label}</dt>
+      <dd className="m-0 min-w-0 break-words font-mono text-white/75">
+        {value}
+      </dd>
+    </div>
   );
 }
 
