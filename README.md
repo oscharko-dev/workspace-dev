@@ -95,10 +95,10 @@ import { createWorkspaceServer } from "workspace-dev";
 import type { WorkspaceStartOptions } from "workspace-dev/contracts";
 
 const options: WorkspaceStartOptions = {
-  host: "127.0.0.1",
-  port: 1983,
-  outputRoot: ".workspace-dev",
-  logFormat: "json",
+    host: "127.0.0.1",
+    port: 1983,
+    outputRoot: ".workspace-dev",
+    logFormat: "json",
 };
 
 const server = await createWorkspaceServer(options);
@@ -114,17 +114,17 @@ Use `validateModeLock` before accepting user-supplied mode overrides so invalid 
 import { validateModeLock } from "workspace-dev";
 
 const accepted = validateModeLock({
-  figmaSourceMode: "local_json",
-  llmCodegenMode: "deterministic",
+    figmaSourceMode: "local_json",
+    llmCodegenMode: "deterministic",
 });
 
 if (!accepted.valid) {
-  throw new Error(accepted.errors.join("\n"));
+    throw new Error(accepted.errors.join("\n"));
 }
 
 const rejected = validateModeLock({
-  figmaSourceMode: "mcp",
-  llmCodegenMode: "hybrid",
+    figmaSourceMode: "mcp",
+    llmCodegenMode: "hybrid",
 });
 
 console.log(rejected.valid); // false
@@ -135,10 +135,10 @@ Use the contracts subpath when you only need versioned types and constants witho
 
 ```ts
 import {
-  CONTRACT_VERSION,
-  type WorkspaceFigmaSourceMode,
-  type WorkspaceJobInput,
-  type WorkspaceStartOptions,
+    CONTRACT_VERSION,
+    type WorkspaceFigmaSourceMode,
+    type WorkspaceJobInput,
+    type WorkspaceStartOptions,
 } from "workspace-dev/contracts";
 
 const contractVersion: string = CONTRACT_VERSION;
@@ -146,14 +146,14 @@ const contractVersion: string = CONTRACT_VERSION;
 const preferredMode: WorkspaceFigmaSourceMode = "local_json";
 
 const startOptions: WorkspaceStartOptions = {
-  host: "127.0.0.1",
-  port: 1983,
+    host: "127.0.0.1",
+    port: 1983,
 };
 
 const job: WorkspaceJobInput = {
-  figmaSourceMode: preferredMode,
-  llmCodegenMode: "deterministic",
-  figmaJsonPath: "fixtures/example/figma.json",
+    figmaSourceMode: preferredMode,
+    llmCodegenMode: "deterministic",
+    figmaJsonPath: "fixtures/example/figma.json",
 };
 
 console.log({ contractVersion, startOptions, job });
@@ -189,6 +189,23 @@ Operational constraints for the advanced isolation surface:
 - The parent-process instance registry is owned inside one Node.js process and is not safe to share across `worker_threads` or other concurrent mutation models.
 - Cleanup hooks are opt-in and best-effort; call `registerIsolationProcessCleanup()` only when your host process wants `workspace-dev` to tear down active child instances during process shutdown.
 - If you only need one local runtime, prefer `createWorkspaceServer` instead of managing isolated child processes directly.
+
+## Figma-to-QC test intelligence (opt-in)
+
+`workspace-dev` ships an opt-in subsurface that derives candidate QC test cases
+from a Figma design through a deterministic pipeline with a reviewer-driven
+gate, export-only QC artifacts, and a per-job evidence manifest. The subsurface
+is local-first, fail-closed, and emits machine-verifiable evidence for every
+step.
+
+Both gates must hold to enable it: set
+`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` and pass
+`testIntelligence.enabled: true` in `WorkspaceStartOptions`. The bundled CI
+gate (`pnpm run test:ti-eval`) uses a deterministic mock LLM and fixture
+captures and performs no outbound network calls.
+
+The full operator guide is in [docs/test-intelligence.md](docs/test-intelligence.md).
+For compliance positioning (DORA, GDPR, EU AI Act), see [COMPLIANCE.md](COMPLIANCE.md).
 
 ## Repository layout
 
@@ -283,18 +300,18 @@ Not available:
 ## Required submit input
 
 - `figmaSourceMode=rest`:
-  - `figmaFileKey`
-  - `figmaAccessToken`
+    - `figmaFileKey`
+    - `figmaAccessToken`
 - `figmaSourceMode=hybrid`:
-  - `figmaFileKey`
-  - `figmaAccessToken`
-  - Workspace Dev will attempt authoritative screen-subtree recovery when the direct REST geometry payload is detected as low-fidelity.
+    - `figmaFileKey`
+    - `figmaAccessToken`
+    - Workspace Dev will attempt authoritative screen-subtree recovery when the direct REST geometry payload is detected as low-fidelity.
 - `figmaSourceMode=figma_paste`:
-  - `figmaJsonPayload`
+    - `figmaJsonPayload`
 - `figmaSourceMode=figma_plugin`:
-  - `figmaJsonPayload`
+    - `figmaJsonPayload`
 - `figmaSourceMode=local_json`:
-  - `figmaJsonPath` (local filesystem path to exported Figma JSON)
+    - `figmaJsonPath` (local filesystem path to exported Figma JSON)
 
 `figma_paste` and `figma_plugin` default to a `6 MiB` payload cap and use a larger
 `8 MiB` submit transport limit only on `POST /workspace/submit`. The
@@ -333,19 +350,19 @@ Example:
 
 ```json
 {
-  "quality": {
-    "maxAcceptableNodes": 80,
-    "riskSeverityOverrides": {
-      "large-subtree": "high"
+    "quality": {
+        "maxAcceptableNodes": 80,
+        "riskSeverityOverrides": {
+            "large-subtree": "high"
+        }
+    },
+    "tokens": {
+        "autoAcceptConfidence": 95
+    },
+    "a11y": {
+        "wcagLevel": "AAA",
+        "disabledRules": ["missing-h1"]
     }
-  },
-  "tokens": {
-    "autoAcceptConfidence": 95
-  },
-  "a11y": {
-    "wcagLevel": "AAA",
-    "disabledRules": ["missing-h1"]
-  }
 }
 ```
 
@@ -390,9 +407,9 @@ Response shape:
 
 ```json
 {
-  "jobId": "…",
-  "files": [{ "path": "src/App.tsx", "sizeBytes": 1234 }],
-  "nextCursor": "src/App.tsx"
+    "jobId": "…",
+    "files": [{ "path": "src/App.tsx", "sizeBytes": 1234 }],
+    "nextCursor": "src/App.tsx"
 }
 ```
 
@@ -419,11 +436,11 @@ Response shape:
 `POST /workspace/jobs/:id/sync` supports two request modes:
 
 - Dry-run:
-  - `{"mode":"dry_run","targetPath"?:string}`
-  - Returns per-file plan, summary, destination metadata, and a short-lived `confirmationToken`.
+    - `{"mode":"dry_run","targetPath"?:string}`
+    - Returns per-file plan, summary, destination metadata, and a short-lived `confirmationToken`.
 - Apply:
-  - `{"mode":"apply","confirmationToken":string,"confirmOverwrite":true}`
-  - Requires explicit confirmation and a valid dry-run token; performs writes and returns applied summary.
+    - `{"mode":"apply","confirmationToken":string,"confirmOverwrite":true}`
+    - Requires explicit confirmation and a valid dry-run token; performs writes and returns applied summary.
 
 Sync writes to `<workspaceRoot>/<targetPath>/<boardKey>/...` and is rejected for non-regeneration jobs or non-completed jobs.
 
