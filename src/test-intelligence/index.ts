@@ -27,9 +27,12 @@ export {
   type CompilePromptResult,
 } from "./prompt-compiler.js";
 export {
+  executeWithReplayCache,
   computeReplayCacheKeyDigest,
   createMemoryReplayCache,
   createFileSystemReplayCache,
   ReplayCacheValidationError,
+  type ReplayCacheExecutionInput,
+  type ReplayCacheExecutionResult,
   type ReplayCache,
 } from "./replay-cache.js";
