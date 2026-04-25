@@ -174,6 +174,15 @@ export const syncPublicJobProjection = async ({
       delete job.artifacts.businessTestIntentIrFile;
     },
   });
+  await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
+    assign: (value) => {
+      job.artifacts.llmCapabilitiesEvidenceDir = value;
+    },
+    clear: () => {
+      delete job.artifacts.llmCapabilitiesEvidenceDir;
+    },
+  });
 
   const generatedProjectDir = await artifactStore.getPath(
     STAGE_ARTIFACT_KEYS.generatedProject,

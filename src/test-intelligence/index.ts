@@ -63,6 +63,16 @@ export {
   type MockResponder,
 } from "./llm-mock-gateway.js";
 export {
+  createLlmGatewayClientBundle,
+  createMockLlmGatewayClientBundle,
+  probeLlmGatewayClientBundle,
+  type LlmGatewayBundleProbeArtifact,
+  type LlmGatewayBundleProbeResult,
+  type LlmGatewayClientBundle,
+  type LlmGatewayClientBundleConfigs,
+  type MockLlmGatewayClientBundleInputs,
+} from "./llm-gateway-bundle.js";
+export {
   LLM_CAPABILITIES_ARTIFACT_FILENAME,
   probeLlmCapabilities,
   serializeLlmCapabilitiesArtifact,

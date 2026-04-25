@@ -43,6 +43,7 @@ export const STAGE_ARTIFACT_KEYS = {
   gitPrStatus: "git.pr.status",
   pasteFingerprint: "figma.paste.fingerprint",
   businessTestIntentIr: "test_intelligence.business_intent_ir",
+  llmCapabilitiesEvidence: "test_intelligence.llm_capabilities_evidence",
 } as const;
 
 export type StageArtifactKey =

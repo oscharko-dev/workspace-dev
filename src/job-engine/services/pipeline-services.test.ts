@@ -132,6 +132,7 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   assert.deepEqual(
     plan.find((entry) => entry.service.stageName === "ir.derive")?.artifacts?.optionalWrites,
     [
+      STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
       STAGE_ARTIFACT_KEYS.storybookCatalog,
       STAGE_ARTIFACT_KEYS.storybookEvidence,
       STAGE_ARTIFACT_KEYS.storybookTokens,

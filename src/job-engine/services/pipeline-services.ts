@@ -176,6 +176,7 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.businessTestIntentIr
         ],
         optionalWrites: [
+          STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
           STAGE_ARTIFACT_KEYS.storybookCatalog,
           STAGE_ARTIFACT_KEYS.storybookEvidence,
           STAGE_ARTIFACT_KEYS.storybookTokens,

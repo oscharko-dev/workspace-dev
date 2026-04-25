@@ -19,6 +19,7 @@ import {
   LLM_CAPABILITIES_SCHEMA_VERSION,
   LLM_GATEWAY_CONTRACT_VERSION,
   type LlmCapabilitiesArtifact,
+  type LlmCapabilityProbeCapability,
   type LlmCapabilityProbeOutcome,
   type LlmCapabilityProbeRecord,
   type LlmGatewayCapabilities,
@@ -37,7 +38,8 @@ export interface LlmCapabilityProbeInput {
   /**
    * Override the capability set to probe. Defaults to the client's declared
    * capabilities. Streaming is intentionally never probed: the Wave 1
-   * pipeline consumes only the final structured envelope.
+   * pipeline consumes only the final structured envelope, so it is recorded
+   * as untested even when declared.
    */
   capabilitiesUnderTest?: LlmGatewayCapabilities;
   /**
@@ -45,7 +47,7 @@ export interface LlmCapabilityProbeInput {
    * to assert request shape. The probe builds a minimal prompt by default.
    */
   probePromptBuilder?: (
-    capability: keyof LlmGatewayCapabilities,
+    capability: LlmCapabilityProbeCapability,
   ) => Pick<LlmGenerationRequest, "systemPrompt" | "userPrompt">;
 }
 
@@ -55,12 +57,13 @@ export interface LlmCapabilityProbeResult {
 }
 
 /**
- * The order is fixed so the persisted artifact is deterministic. Streaming
- * is omitted by design — declared support is recorded in the artifact but
- * never network-verified.
+ * The order is fixed so the persisted artifact is deterministic. `textChat`
+ * is a mandatory baseline probe for every role. Streaming is omitted by
+ * design because Wave 1 never consumes streamed chunks.
  */
-const NETWORK_PROBED_CAPABILITIES: ReadonlyArray<keyof LlmGatewayCapabilities> =
+const NETWORK_PROBED_CAPABILITIES: ReadonlyArray<LlmCapabilityProbeCapability> =
   [
+    "textChat",
     "structuredOutputs",
     "seedSupport",
     "reasoningEffortSupport",
@@ -76,7 +79,7 @@ const PROBE_RESPONSE_SCHEMA: Record<string, unknown> = {
 };
 
 const defaultProbePrompt = (
-  capability: keyof LlmGatewayCapabilities,
+  capability: LlmCapabilityProbeCapability,
 ): Pick<LlmGenerationRequest, "systemPrompt" | "userPrompt"> => ({
   systemPrompt:
     "You are a capability-probe sentinel. Reply only with the requested JSON object.",
@@ -88,7 +91,7 @@ const buildProbeRequest = ({
   jobId,
   prompt,
 }: {
-  capability: keyof LlmGatewayCapabilities;
+  capability: LlmCapabilityProbeCapability;
   jobId: string;
   prompt: Pick<LlmGenerationRequest, "systemPrompt" | "userPrompt">;
 }): LlmGenerationRequest => {
@@ -98,6 +101,8 @@ const buildProbeRequest = ({
     userPrompt: prompt.userPrompt,
   };
   switch (capability) {
+    case "textChat":
+      return base;
     case "structuredOutputs":
       base.responseSchema = PROBE_RESPONSE_SCHEMA;
       base.responseSchemaName =
@@ -167,7 +172,7 @@ export const probeLlmCapabilities = async (
   const records: LlmCapabilityProbeRecord[] = [];
 
   for (const capability of NETWORK_PROBED_CAPABILITIES) {
-    const isDeclared = declared[capability];
+    const isDeclared = capability === "textChat" ? true : declared[capability];
     if (!isDeclared) {
       records.push({
         capability,
@@ -205,14 +210,14 @@ export const probeLlmCapabilities = async (
     });
   }
 
-  // Streaming row is recorded but never network-probed: declared = supported,
-  // not declared = untested.
+  // Streaming row is recorded but never network-probed. Do not mark support
+  // without observed evidence.
   records.push({
     capability: "streamingSupport",
     declared: declared.streamingSupport,
-    outcome: declared.streamingSupport ? "supported" : "untested",
+    outcome: "untested",
     detail: declared.streamingSupport
-      ? "declared; streaming is opt-in and not exercised by Wave 1"
+      ? "declared; streaming is opt-in and not network-probed by Wave 1"
       : "capability not declared",
   });
 

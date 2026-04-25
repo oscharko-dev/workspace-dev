@@ -100,6 +100,14 @@ test("config validation: rejects empty deployment / bad sha", () => {
       }),
     RangeError,
   );
+  assert.throws(
+    () =>
+      createLlmGatewayClient({
+        ...baseConfig,
+        modelWeightsSha256: "A".repeat(64),
+      }),
+    /lowercase hex/,
+  );
 });
 
 test("LlmGatewayError discriminates errorClass / retryable / attempt", () => {
@@ -174,6 +182,35 @@ test("structured-output success: parses JSON content and strips raw text", async
   }
 });
 
+test("plain-text success is allowed when no response schema is requested", async () => {
+  let observedBody: string | undefined;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async (_url, init) => {
+      observedBody = init?.body as string | undefined;
+      return okJsonResponse({
+        choices: [
+          {
+            finish_reason: "stop",
+            message: { role: "assistant", content: "plain text probe ok" },
+          },
+        ],
+      });
+    },
+    apiKeyProvider: () => "k",
+  });
+  const result = await client.generate({
+    jobId: "job-1",
+    systemPrompt: "system",
+    userPrompt: "user",
+  });
+  assert.equal(observedBody?.includes("response_format"), false);
+  assert.equal(result.outcome, "success");
+  if (result.outcome === "success") {
+    assert.equal(result.content, "plain text probe ok");
+    assert.equal(result.rawTextContent, "plain text probe ok");
+  }
+});
+
 test("forwards api-key header from provider; never echoes it back", async () => {
   let observedHeaders: Headers | undefined;
   const fetchImpl: typeof fetch = async (_url, init) => {
@@ -240,6 +277,27 @@ test("api_key mode without apiKeyProvider returns transport error and never call
     assert.equal(result.errorClass, "transport");
     assert.equal(result.retryable, false);
   }
+});
+
+test("non-retryable auth failures do not open the circuit breaker", async () => {
+  const client = createLlmGatewayClient(
+    {
+      ...baseConfig,
+      circuitBreaker: { failureThreshold: 1, resetTimeoutMs: 1_000 },
+    },
+    {
+      fetchImpl: async () => okJsonResponse({}),
+    },
+  );
+  const first = await client.generate(sampleRequest());
+  const second = await client.generate(sampleRequest());
+  assert.equal(first.outcome, "error");
+  assert.equal(second.outcome, "error");
+  if (second.outcome === "error") {
+    assert.equal(second.errorClass, "transport");
+    assert.match(second.message, /apiKeyProvider/);
+  }
+  assert.equal(client.getCircuitBreaker().getSnapshot().state, "closed");
 });
 
 test("apiKeyProvider returning empty string is rejected", async () => {
@@ -370,6 +428,29 @@ test("length finish_reason maps to incomplete", async () => {
   }
 });
 
+test("tool_calls finish_reason returns an explicit unsupported response", async () => {
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () =>
+      okJsonResponse({
+        choices: [
+          {
+            finish_reason: "tool_calls",
+            message: { role: "assistant", content: null, tool_calls: [] },
+          },
+        ],
+      }),
+    apiKeyProvider: () => "k",
+    sleep: async () => undefined,
+  });
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /tool-call responses are not supported/);
+    assert.equal(result.retryable, false);
+  }
+});
+
 test("non-JSON content body surfaces schema_invalid", async () => {
   const client = createLlmGatewayClient(baseConfig, {
     fetchImpl: async () =>
@@ -385,6 +466,22 @@ test("non-JSON content body surfaces schema_invalid", async () => {
   assert.equal(result.outcome, "error");
   if (result.outcome === "error") {
     assert.equal(result.errorClass, "schema_invalid");
+  }
+});
+
+test("valid JSON that violates response schema surfaces schema_invalid", async () => {
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => okJsonResponse(buildChoiceBody({ nope: "wrong" })),
+    apiKeyProvider: () => "k",
+    sleep: async () => undefined,
+  });
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /violates response schema/);
+    assert.match(result.message, /\.ack is required/);
+    assert.equal(result.retryable, false);
   }
 });
 
@@ -518,8 +615,9 @@ test("URL composition preserves trailing-slash baseUrl and adds chat/completions
   await client.generate(sampleRequest());
   assert.match(
     observedUrl ?? "",
-    /\/openai\/v1\/chat\/completions\?model=gpt-oss-120b/,
+    /\/openai\/v1\/chat\/completions$/,
   );
+  assert.equal((observedUrl ?? "").includes("?model="), false);
 });
 
 test("visual sidecar role accepts image payloads", async () => {
@@ -535,7 +633,7 @@ test("visual sidecar role accepts image payloads", async () => {
     {
       fetchImpl: async (_u, init) => {
         observedBody = init?.body as string | undefined;
-        return okJsonResponse(buildChoiceBody({ description: "ok" }));
+        return okJsonResponse(buildChoiceBody({ ack: "ok" }));
       },
       apiKeyProvider: () => "k",
     },
@@ -550,8 +648,8 @@ test("visual sidecar role accepts image payloads", async () => {
   assert.match(observedBody ?? "", /data:image\/png;base64,AAAA/);
 });
 
-test("seed and reasoning_effort flags only forwarded when declared", async () => {
-  let observedBody: string | undefined;
+test("seed, reasoning_effort, and max_output_tokens flags only forward when declared", async () => {
+  const observedBodies: string[] = [];
   const client = createLlmGatewayClient(
     {
       ...baseConfig,
@@ -562,14 +660,40 @@ test("seed and reasoning_effort flags only forwarded when declared", async () =>
     },
     {
       fetchImpl: async (_u, init) => {
-        observedBody = init?.body as string | undefined;
+        observedBodies.push(init?.body as string);
         return okJsonResponse(buildChoiceBody({ ack: "ok" }));
       },
       apiKeyProvider: () => "k",
     },
   );
-  await client.generate(sampleRequest({ seed: 42, reasoningEffort: "high" }));
-  assert.ok(observedBody);
-  assert.equal(observedBody?.includes('"seed":42'), true);
-  assert.equal(observedBody?.includes("reasoning_effort"), false);
+  await client.generate(
+    sampleRequest({ seed: 42, reasoningEffort: "high", maxOutputTokens: 256 }),
+  );
+  assert.equal(observedBodies[0]?.includes('"seed":42'), true);
+  assert.equal(
+    observedBodies[0]?.includes('"max_completion_tokens":256'),
+    true,
+  );
+  assert.equal(observedBodies[0]?.includes("reasoning_effort"), false);
+
+  const noMaxOutputTokensClient = createLlmGatewayClient(
+    {
+      ...baseConfig,
+      declaredCapabilities: {
+        ...baseCapabilities,
+        maxOutputTokensSupport: false,
+      },
+    },
+    {
+      fetchImpl: async (_u, init) => {
+        observedBodies.push(init?.body as string);
+        return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+      },
+      apiKeyProvider: () => "k",
+    },
+  );
+  await noMaxOutputTokensClient.generate(
+    sampleRequest({ maxOutputTokens: 256 }),
+  );
+  assert.equal(observedBodies[1]?.includes("max_completion_tokens"), false);
 });

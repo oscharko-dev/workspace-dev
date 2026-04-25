@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.19.0
+ * Contract version: 3.22.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -137,7 +137,7 @@ export const TEST_INTELLIGENCE_ENV =
 export const LLM_GATEWAY_CONTRACT_VERSION = "1.0.0" as const;
 
 /** Schema version for the persisted `llm-capabilities.json` evidence artifact. */
-export const LLM_CAPABILITIES_SCHEMA_VERSION = "1.0.0" as const;
+export const LLM_CAPABILITIES_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Canonical filename for the persisted LLM gateway capability probe artifact. */
 export const LLM_CAPABILITIES_ARTIFACT_FILENAME =
@@ -211,9 +211,14 @@ export type LlmCapabilityProbeOutcome =
   | "untested"
   | "probe_failed";
 
+/** Probe rows can cover declared capability flags plus the mandatory text-chat baseline. */
+export type LlmCapabilityProbeCapability =
+  | keyof LlmGatewayCapabilities
+  | "textChat";
+
 /** One probe row in `llm-capabilities.json`. */
 export interface LlmCapabilityProbeRecord {
-  capability: keyof LlmGatewayCapabilities;
+  capability: LlmCapabilityProbeCapability;
   declared: boolean;
   outcome: LlmCapabilityProbeOutcome;
   detail?: string;
@@ -853,6 +858,7 @@ export interface WorkspaceJobArtifacts {
   designIrFile?: string;
   figmaAnalysisFile?: string;
   businessTestIntentIrFile?: string;
+  llmCapabilitiesEvidenceDir?: string;
   figmaJsonFile?: string;
   storybookTokensFile?: string;
   storybookThemesFile?: string;
@@ -2037,4 +2043,4 @@ export type ReplayCacheLookupResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.21.0" as const;
+export const CONTRACT_VERSION = "3.22.0" as const;
