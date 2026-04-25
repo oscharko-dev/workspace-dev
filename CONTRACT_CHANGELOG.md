@@ -102,7 +102,7 @@ All changes to the public contract surface of `workspace-dev` are documented her
 ### Added (Issue #1366)
 
 - `WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION`, `WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION` — version stamps (`"1.0.0"`) for the persisted Wave 1 POC evidence manifest and evaluation report.
-- `WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME` (`wave1-poc-evidence-manifest.json`), `WAVE1_POC_EVAL_REPORT_ARTIFACT_FILENAME` (`wave1-poc-eval-report.json`) — canonical filenames for the new artifacts.
+- `WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME` (`wave1-poc-evidence-manifest.json`), `WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME` (`wave1-poc-evidence-manifest.sha256`), `WAVE1_POC_EVAL_REPORT_ARTIFACT_FILENAME` (`wave1-poc-eval-report.json`) — canonical filenames for the evidence manifest, its digest witness, and the evaluation report artifacts.
 - `WAVE1_POC_FIXTURE_IDS` — runtime list of public synthetic fixture identifiers (`poc-onboarding`, `poc-payment-auth`).
 - `Wave1PocFixtureId` — discriminated union of the supported fixture identifiers.
 - `Wave1PocEvidenceArtifact`, `Wave1PocEvidenceArtifactCategory`, `Wave1PocEvidenceManifest`, `Wave1PocEvidenceVerificationResult` — type surface for the new evidence manifest, including the hard `rawScreenshotsIncluded: false` and `imagePayloadSentToTestGeneration: false` invariants enforced at the type level.
