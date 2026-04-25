@@ -1,0 +1,171 @@
+/**
+ * Inspector test-intelligence route bridge (Issue #1367).
+ *
+ * Path conventions:
+ *
+ *   GET  /workspace/test-intelligence/jobs                                  → list jobs
+ *   GET  /workspace/test-intelligence/jobs/<jobId>                          → bundle (read)
+ *   GET  /workspace/test-intelligence/review/<jobId>/state                  → review snapshot + events
+ *   POST /workspace/test-intelligence/review/<jobId>/<action>               → job-level write
+ *   POST /workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>  → per-case write
+ *
+ * Reads are unauthenticated (artifact JSON contains no secrets — the
+ * test-intelligence pipeline already redacts PII before persistence).
+ * Writes are bearer-protected fail-closed: missing/blank token → 503.
+ *
+ * The parser is path-only — method dispatch and authorization happen at
+ * the request-handler layer.
+ */
+
+import { isSafeJobId } from "./inspector-bundle.js";
+
+const ROOT = "/workspace/test-intelligence";
+
+export type InspectorTestIntelligenceRoute =
+  | { kind: "list_jobs" }
+  | { kind: "read_bundle"; jobId: string }
+  | { kind: "review_state"; jobId: string }
+  | {
+      kind: "review_action";
+      jobId: string;
+      action: string;
+      testCaseId?: string;
+    };
+
+export interface InspectorTestIntelligenceParseError {
+  kind: "parse_error";
+  reason:
+    | "prefix_mismatch"
+    | "segment_count_invalid"
+    | "empty_segment"
+    | "unsafe_job_id"
+    | "unsafe_test_case_id"
+    | "unknown_subroute";
+}
+
+export type InspectorTestIntelligenceParseResult =
+  | { ok: true; route: InspectorTestIntelligenceRoute }
+  | { ok: false; error: InspectorTestIntelligenceParseError };
+
+const SAFE_ID = /^[A-Za-z0-9_.-]{1,128}$/;
+
+const isSafeId = (value: string): boolean =>
+  SAFE_ID.test(value) && value !== "." && value !== "..";
+
+/**
+ * Parse an Inspector test-intelligence request path. Returns an error
+ * object instead of throwing so the request handler can map to a 4xx
+ * status without try/catch noise.
+ */
+export const parseInspectorTestIntelligenceRoute = (
+  pathname: string,
+): InspectorTestIntelligenceParseResult => {
+  if (!pathname.startsWith(ROOT)) {
+    return {
+      ok: false,
+      error: { kind: "parse_error", reason: "prefix_mismatch" },
+    };
+  }
+  const remainder = pathname.slice(ROOT.length);
+  const segments = remainder.split("/").filter((s) => s.length > 0);
+  if (segments.length === 0) {
+    return {
+      ok: false,
+      error: { kind: "parse_error", reason: "unknown_subroute" },
+    };
+  }
+  const head = segments[0];
+
+  if (head === "jobs") {
+    if (segments.length === 1) {
+      return { ok: true, route: { kind: "list_jobs" } };
+    }
+    if (segments.length !== 2) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "segment_count_invalid" },
+      };
+    }
+    const jobId = segments[1];
+    if (jobId === undefined || jobId.length === 0) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "empty_segment" },
+      };
+    }
+    if (!isSafeJobId(jobId)) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "unsafe_job_id" },
+      };
+    }
+    return { ok: true, route: { kind: "read_bundle", jobId } };
+  }
+
+  if (head === "review") {
+    if (segments.length < 3 || segments.length > 4) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "segment_count_invalid" },
+      };
+    }
+    const jobId = segments[1];
+    const action = segments[2];
+    if (
+      jobId === undefined ||
+      jobId.length === 0 ||
+      action === undefined ||
+      action.length === 0
+    ) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "empty_segment" },
+      };
+    }
+    if (!isSafeJobId(jobId)) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "unsafe_job_id" },
+      };
+    }
+    if (action === "state" && segments.length === 3) {
+      return { ok: true, route: { kind: "review_state", jobId } };
+    }
+    if (segments.length === 4) {
+      const testCaseId = segments[3];
+      if (testCaseId === undefined || testCaseId.length === 0) {
+        return {
+          ok: false,
+          error: { kind: "parse_error", reason: "empty_segment" },
+        };
+      }
+      if (!isSafeId(testCaseId)) {
+        return {
+          ok: false,
+          error: { kind: "parse_error", reason: "unsafe_test_case_id" },
+        };
+      }
+      return {
+        ok: true,
+        route: { kind: "review_action", jobId, action, testCaseId },
+      };
+    }
+    return {
+      ok: true,
+      route: { kind: "review_action", jobId, action },
+    };
+  }
+
+  return {
+    ok: false,
+    error: { kind: "parse_error", reason: "unknown_subroute" },
+  };
+};
+
+/** Whether the parsed action requires bearer authentication (writes only). */
+export const isInspectorTestIntelligenceWriteAction = (
+  route: InspectorTestIntelligenceRoute,
+): boolean => {
+  if (route.kind !== "review_action") return false;
+  return route.action !== "state";
+};

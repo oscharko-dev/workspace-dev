@@ -16,11 +16,24 @@ import { createDefaultFigmaMcpEnrichmentLoader } from "./job-engine/figma-hybrid
 import { createJobEngine, resolveRuntimeSettings } from "./job-engine.js";
 import type { WorkspaceRuntimeLogger } from "./logging.js";
 import { getWorkspaceDefaults } from "./mode-lock.js";
-import { buildApp, closeServer, toAddressList, type WorkspaceServerApp } from "./server/app-inject.js";
-import { DEFAULT_HOST, DEFAULT_OUTPUT_ROOT, DEFAULT_PORT, DEFAULT_RATE_LIMIT_PER_MINUTE } from "./server/constants.js";
+import {
+  buildApp,
+  closeServer,
+  toAddressList,
+  type WorkspaceServerApp,
+} from "./server/app-inject.js";
+import {
+  DEFAULT_HOST,
+  DEFAULT_OUTPUT_ROOT,
+  DEFAULT_PORT,
+  DEFAULT_RATE_LIMIT_PER_MINUTE,
+} from "./server/constants.js";
 import { createWorkspaceRequestHandler } from "./server/request-handler.js";
 
-const MODULE_DIR = typeof __dirname === "string" ? __dirname : path.dirname(fileURLToPath(import.meta.url));
+const MODULE_DIR =
+  typeof __dirname === "string"
+    ? __dirname
+    : path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_FIGMA_PASTE_TEMP_TTL_MS = 24 * 60 * 60_000;
 const FIGMA_PASTE_TEMP_DIR_NAME = "tmp-figma-paste";
 const DEFAULT_SHUTDOWN_TIMEOUT_MS = 10_000;
@@ -33,12 +46,16 @@ export interface WorkspaceServer {
   startedAt: number;
 }
 
-type WorkspaceServerLifecycleState = "starting" | "ready" | "draining" | "stopped";
+type WorkspaceServerLifecycleState =
+  | "starting"
+  | "ready"
+  | "draining"
+  | "stopped";
 
 async function startServer({
   server,
   host,
-  port
+  port,
 }: {
   server: Server;
   host: string;
@@ -75,7 +92,7 @@ const sweepStaleFigmaPasteTempFiles = async ({
   outputRoot,
   ttlMs,
   logger,
-  nowMs = Date.now()
+  nowMs = Date.now(),
 }: {
   outputRoot: string;
   ttlMs: number;
@@ -98,12 +115,15 @@ const sweepStaleFigmaPasteTempFiles = async ({
         try {
           entryStats = await stat(entryPath);
         } catch (error) {
-          const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          const code =
+            typeof error === "object" && error !== null && "code" in error
+              ? error.code
+              : undefined;
           if (code !== "ENOENT") {
             logger.log({
               level: "warn",
               event: "figma_paste_temp_sweep",
-              message: `tmp-figma-paste startup sweep could not stat '${entry.name}': ${getErrorMessage(error)}`
+              message: `tmp-figma-paste startup sweep could not stat '${entry.name}': ${getErrorMessage(error)}`,
             });
           }
           return 0;
@@ -117,26 +137,32 @@ const sweepStaleFigmaPasteTempFiles = async ({
           await rm(entryPath, { force: true });
           return 1;
         } catch (error) {
-          const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+          const code =
+            typeof error === "object" && error !== null && "code" in error
+              ? error.code
+              : undefined;
           if (code !== "ENOENT") {
             logger.log({
               level: "warn",
               event: "figma_paste_temp_sweep",
-              message: `tmp-figma-paste startup sweep could not delete '${entry.name}': ${getErrorMessage(error)}`
+              message: `tmp-figma-paste startup sweep could not delete '${entry.name}': ${getErrorMessage(error)}`,
             });
           }
           return 0;
         }
-      })
+      }),
     );
     deletedCount = deletedEntries.reduce((sum, count) => sum + count, 0);
   } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error ? error.code : undefined;
+    const code =
+      typeof error === "object" && error !== null && "code" in error
+        ? error.code
+        : undefined;
     if (code !== "ENOENT") {
       logger.log({
         level: "warn",
         event: "figma_paste_temp_sweep",
-        message: `tmp-figma-paste startup sweep failed: ${getErrorMessage(error)}`
+        message: `tmp-figma-paste startup sweep failed: ${getErrorMessage(error)}`,
       });
     }
   }
@@ -144,18 +170,21 @@ const sweepStaleFigmaPasteTempFiles = async ({
   logger.log({
     level: "info",
     event: "figma_paste_temp_sweep",
-    message: `tmp-figma-paste startup sweep deleted ${deletedCount} stale file(s); ttlMs=${ttlMs}`
+    message: `tmp-figma-paste startup sweep deleted ${deletedCount} stale file(s); ttlMs=${ttlMs}`,
   });
 
   return deletedCount;
 };
 
-export const createWorkspaceServer = async (options: WorkspaceStartOptions = {}): Promise<WorkspaceServer> => {
+export const createWorkspaceServer = async (
+  options: WorkspaceStartOptions = {},
+): Promise<WorkspaceServer> => {
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
   const workDir = options.workDir ?? process.cwd();
   const rateLimitPerMinute =
-    typeof options.rateLimitPerMinute === "number" && Number.isFinite(options.rateLimitPerMinute)
+    typeof options.rateLimitPerMinute === "number" &&
+    Number.isFinite(options.rateLimitPerMinute)
       ? Math.max(0, Math.min(1000, Math.trunc(options.rateLimitPerMinute)))
       : DEFAULT_RATE_LIMIT_PER_MINUTE;
   const importSessionEventBearerToken =
@@ -163,32 +192,55 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     options.importSessionEventBearerToken.trim().length > 0
       ? options.importSessionEventBearerToken.trim()
       : undefined;
+  const testIntelligenceReviewBearerToken =
+    typeof options.testIntelligence?.reviewBearerToken === "string" &&
+    options.testIntelligence.reviewBearerToken.trim().length > 0
+      ? options.testIntelligence.reviewBearerToken.trim()
+      : undefined;
   const outputRoot =
-    typeof options.outputRoot === "string" && options.outputRoot.trim().length > 0
+    typeof options.outputRoot === "string" &&
+    options.outputRoot.trim().length > 0
       ? options.outputRoot
       : DEFAULT_OUTPUT_ROOT;
   const absoluteOutputRoot = path.isAbsolute(outputRoot)
     ? path.normalize(outputRoot)
     : path.resolve(workDir, outputRoot);
-  const figmaPasteTempTtlMs = resolveFigmaPasteTempTtlMs(options.figmaPasteTempTtlMs);
+  const testIntelligenceArtifactRootOption =
+    typeof options.testIntelligence?.artifactRoot === "string" &&
+    options.testIntelligence.artifactRoot.trim().length > 0
+      ? options.testIntelligence.artifactRoot
+      : undefined;
+  const testIntelligenceArtifactRoot =
+    testIntelligenceArtifactRootOption === undefined
+      ? path.join(absoluteOutputRoot, "test-intelligence")
+      : path.isAbsolute(testIntelligenceArtifactRootOption)
+        ? path.normalize(testIntelligenceArtifactRootOption)
+        : path.resolve(workDir, testIntelligenceArtifactRootOption);
+  const figmaPasteTempTtlMs = resolveFigmaPasteTempTtlMs(
+    options.figmaPasteTempTtlMs,
+  );
   const shutdownTimeoutMs =
-    typeof options.shutdownTimeoutMs === "number" && Number.isFinite(options.shutdownTimeoutMs)
+    typeof options.shutdownTimeoutMs === "number" &&
+    Number.isFinite(options.shutdownTimeoutMs)
       ? Math.max(0, Math.trunc(options.shutdownTimeoutMs))
       : DEFAULT_SHUTDOWN_TIMEOUT_MS;
   const absoluteIconMapFilePath =
-    typeof options.iconMapFilePath === "string" && options.iconMapFilePath.trim().length > 0
+    typeof options.iconMapFilePath === "string" &&
+    options.iconMapFilePath.trim().length > 0
       ? path.isAbsolute(options.iconMapFilePath)
         ? path.normalize(options.iconMapFilePath)
         : path.resolve(workDir, options.iconMapFilePath)
       : undefined;
   const absoluteDesignSystemFilePath =
-    typeof options.designSystemFilePath === "string" && options.designSystemFilePath.trim().length > 0
+    typeof options.designSystemFilePath === "string" &&
+    options.designSystemFilePath.trim().length > 0
       ? path.isAbsolute(options.designSystemFilePath)
         ? path.normalize(options.designSystemFilePath)
         : path.resolve(workDir, options.designSystemFilePath)
       : undefined;
   const absoluteSparkasseTokensFilePath =
-    typeof options.sparkasseTokensFilePath === "string" && options.sparkasseTokensFilePath.trim().length > 0
+    typeof options.sparkasseTokensFilePath === "string" &&
+    options.sparkasseTokensFilePath.trim().length > 0
       ? path.isAbsolute(options.sparkasseTokensFilePath)
         ? path.normalize(options.sparkasseTokensFilePath)
         : path.resolve(workDir, options.sparkasseTokensFilePath)
@@ -197,16 +249,30 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const startedAt = Date.now();
   const defaults = getWorkspaceDefaults();
   const runtime = resolveRuntimeSettings({
-    ...(options.figmaRequestTimeoutMs !== undefined ? { figmaRequestTimeoutMs: options.figmaRequestTimeoutMs } : {}),
-    ...(options.figmaMaxRetries !== undefined ? { figmaMaxRetries: options.figmaMaxRetries } : {}),
+    ...(options.figmaRequestTimeoutMs !== undefined
+      ? { figmaRequestTimeoutMs: options.figmaRequestTimeoutMs }
+      : {}),
+    ...(options.figmaMaxRetries !== undefined
+      ? { figmaMaxRetries: options.figmaMaxRetries }
+      : {}),
     ...(options.figmaCircuitBreakerFailureThreshold !== undefined
-      ? { figmaCircuitBreakerFailureThreshold: options.figmaCircuitBreakerFailureThreshold }
+      ? {
+          figmaCircuitBreakerFailureThreshold:
+            options.figmaCircuitBreakerFailureThreshold,
+        }
       : {}),
     ...(options.figmaCircuitBreakerResetTimeoutMs !== undefined
-      ? { figmaCircuitBreakerResetTimeoutMs: options.figmaCircuitBreakerResetTimeoutMs }
+      ? {
+          figmaCircuitBreakerResetTimeoutMs:
+            options.figmaCircuitBreakerResetTimeoutMs,
+        }
       : {}),
-    ...(options.figmaBootstrapDepth !== undefined ? { figmaBootstrapDepth: options.figmaBootstrapDepth } : {}),
-    ...(options.figmaNodeBatchSize !== undefined ? { figmaNodeBatchSize: options.figmaNodeBatchSize } : {}),
+    ...(options.figmaBootstrapDepth !== undefined
+      ? { figmaBootstrapDepth: options.figmaBootstrapDepth }
+      : {}),
+    ...(options.figmaNodeBatchSize !== undefined
+      ? { figmaNodeBatchSize: options.figmaNodeBatchSize }
+      : {}),
     ...(options.figmaNodeFetchConcurrency !== undefined
       ? { figmaNodeFetchConcurrency: options.figmaNodeFetchConcurrency }
       : {}),
@@ -219,48 +285,96 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.figmaScreenNamePattern !== undefined
       ? { figmaScreenNamePattern: options.figmaScreenNamePattern }
       : {}),
-    ...(options.figmaCacheEnabled !== undefined ? { figmaCacheEnabled: options.figmaCacheEnabled } : {}),
-    ...(options.figmaCacheTtlMs !== undefined ? { figmaCacheTtlMs: options.figmaCacheTtlMs } : {}),
-    ...(options.maxJsonResponseBytes !== undefined ? { maxJsonResponseBytes: options.maxJsonResponseBytes } : {}),
-    ...(options.maxIrCacheEntries !== undefined ? { maxIrCacheEntries: options.maxIrCacheEntries } : {}),
-    ...(options.maxIrCacheBytes !== undefined ? { maxIrCacheBytes: options.maxIrCacheBytes } : {}),
-    ...(absoluteIconMapFilePath !== undefined ? { iconMapFilePath: absoluteIconMapFilePath } : {}),
-    ...(absoluteDesignSystemFilePath !== undefined ? { designSystemFilePath: absoluteDesignSystemFilePath } : {}),
-    ...(options.exportImages !== undefined ? { exportImages: options.exportImages } : {}),
+    ...(options.figmaCacheEnabled !== undefined
+      ? { figmaCacheEnabled: options.figmaCacheEnabled }
+      : {}),
+    ...(options.figmaCacheTtlMs !== undefined
+      ? { figmaCacheTtlMs: options.figmaCacheTtlMs }
+      : {}),
+    ...(options.maxJsonResponseBytes !== undefined
+      ? { maxJsonResponseBytes: options.maxJsonResponseBytes }
+      : {}),
+    ...(options.maxIrCacheEntries !== undefined
+      ? { maxIrCacheEntries: options.maxIrCacheEntries }
+      : {}),
+    ...(options.maxIrCacheBytes !== undefined
+      ? { maxIrCacheBytes: options.maxIrCacheBytes }
+      : {}),
+    ...(absoluteIconMapFilePath !== undefined
+      ? { iconMapFilePath: absoluteIconMapFilePath }
+      : {}),
+    ...(absoluteDesignSystemFilePath !== undefined
+      ? { designSystemFilePath: absoluteDesignSystemFilePath }
+      : {}),
+    ...(options.exportImages !== undefined
+      ? { exportImages: options.exportImages }
+      : {}),
     ...(options.figmaScreenElementBudget !== undefined
       ? { figmaScreenElementBudget: options.figmaScreenElementBudget }
       : {}),
     ...(options.figmaScreenElementMaxDepth !== undefined
       ? { figmaScreenElementMaxDepth: options.figmaScreenElementMaxDepth }
       : {}),
-    ...(options.brandTheme !== undefined ? { brandTheme: options.brandTheme } : {}),
+    ...(options.brandTheme !== undefined
+      ? { brandTheme: options.brandTheme }
+      : {}),
     ...(absoluteSparkasseTokensFilePath !== undefined
       ? { sparkasseTokensFilePath: absoluteSparkasseTokensFilePath }
       : {}),
-    ...(options.generationLocale !== undefined ? { generationLocale: options.generationLocale } : {}),
-    ...(options.routerMode !== undefined ? { routerMode: options.routerMode } : {}),
-    ...(options.commandTimeoutMs !== undefined ? { commandTimeoutMs: options.commandTimeoutMs } : {}),
-    ...(options.commandStdoutMaxBytes !== undefined ? { commandStdoutMaxBytes: options.commandStdoutMaxBytes } : {}),
-    ...(options.commandStderrMaxBytes !== undefined ? { commandStderrMaxBytes: options.commandStderrMaxBytes } : {}),
+    ...(options.generationLocale !== undefined
+      ? { generationLocale: options.generationLocale }
+      : {}),
+    ...(options.routerMode !== undefined
+      ? { routerMode: options.routerMode }
+      : {}),
+    ...(options.commandTimeoutMs !== undefined
+      ? { commandTimeoutMs: options.commandTimeoutMs }
+      : {}),
+    ...(options.commandStdoutMaxBytes !== undefined
+      ? { commandStdoutMaxBytes: options.commandStdoutMaxBytes }
+      : {}),
+    ...(options.commandStderrMaxBytes !== undefined
+      ? { commandStderrMaxBytes: options.commandStderrMaxBytes }
+      : {}),
     ...(options.pipelineDiagnosticMaxCount !== undefined
       ? { pipelineDiagnosticMaxCount: options.pipelineDiagnosticMaxCount }
       : {}),
     ...(options.pipelineDiagnosticTextMaxLength !== undefined
-      ? { pipelineDiagnosticTextMaxLength: options.pipelineDiagnosticTextMaxLength }
+      ? {
+          pipelineDiagnosticTextMaxLength:
+            options.pipelineDiagnosticTextMaxLength,
+        }
       : {}),
     ...(options.pipelineDiagnosticDetailsMaxKeys !== undefined
-      ? { pipelineDiagnosticDetailsMaxKeys: options.pipelineDiagnosticDetailsMaxKeys }
+      ? {
+          pipelineDiagnosticDetailsMaxKeys:
+            options.pipelineDiagnosticDetailsMaxKeys,
+        }
       : {}),
     ...(options.pipelineDiagnosticDetailsMaxItems !== undefined
-      ? { pipelineDiagnosticDetailsMaxItems: options.pipelineDiagnosticDetailsMaxItems }
+      ? {
+          pipelineDiagnosticDetailsMaxItems:
+            options.pipelineDiagnosticDetailsMaxItems,
+        }
       : {}),
     ...(options.pipelineDiagnosticDetailsMaxDepth !== undefined
-      ? { pipelineDiagnosticDetailsMaxDepth: options.pipelineDiagnosticDetailsMaxDepth }
+      ? {
+          pipelineDiagnosticDetailsMaxDepth:
+            options.pipelineDiagnosticDetailsMaxDepth,
+        }
       : {}),
-    ...(options.maxValidationAttempts !== undefined ? { maxValidationAttempts: options.maxValidationAttempts } : {}),
-    ...(options.enableLintAutofix !== undefined ? { enableLintAutofix: options.enableLintAutofix } : {}),
-    ...(options.enablePerfValidation !== undefined ? { enablePerfValidation: options.enablePerfValidation } : {}),
-    ...(options.enableUiValidation !== undefined ? { enableUiValidation: options.enableUiValidation } : {}),
+    ...(options.maxValidationAttempts !== undefined
+      ? { maxValidationAttempts: options.maxValidationAttempts }
+      : {}),
+    ...(options.enableLintAutofix !== undefined
+      ? { enableLintAutofix: options.enableLintAutofix }
+      : {}),
+    ...(options.enablePerfValidation !== undefined
+      ? { enablePerfValidation: options.enablePerfValidation }
+      : {}),
+    ...(options.enableUiValidation !== undefined
+      ? { enableUiValidation: options.enableUiValidation }
+      : {}),
     ...(options.enableVisualQualityValidation !== undefined
       ? { enableVisualQualityValidation: options.enableVisualQualityValidation }
       : {}),
@@ -277,7 +391,10 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       ? { visualQualityViewportHeight: options.visualQualityViewportHeight }
       : {}),
     ...(options.visualQualityDeviceScaleFactor !== undefined
-      ? { visualQualityDeviceScaleFactor: options.visualQualityDeviceScaleFactor }
+      ? {
+          visualQualityDeviceScaleFactor:
+            options.visualQualityDeviceScaleFactor,
+        }
       : {}),
     ...(options.visualQualityBrowsers !== undefined
       ? { visualQualityBrowsers: options.visualQualityBrowsers }
@@ -285,21 +402,39 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     ...(options.enableUnitTestValidation !== undefined
       ? { enableUnitTestValidation: options.enableUnitTestValidation }
       : {}),
-    ...(options.installPreferOffline !== undefined ? { installPreferOffline: options.installPreferOffline } : {}),
-    ...(options.skipInstall !== undefined ? { skipInstall: options.skipInstall } : {}),
-    ...(options.maxConcurrentJobs !== undefined ? { maxConcurrentJobs: options.maxConcurrentJobs } : {}),
-    ...(options.maxQueuedJobs !== undefined ? { maxQueuedJobs: options.maxQueuedJobs } : {}),
+    ...(options.installPreferOffline !== undefined
+      ? { installPreferOffline: options.installPreferOffline }
+      : {}),
+    ...(options.skipInstall !== undefined
+      ? { skipInstall: options.skipInstall }
+      : {}),
+    ...(options.maxConcurrentJobs !== undefined
+      ? { maxConcurrentJobs: options.maxConcurrentJobs }
+      : {}),
+    ...(options.maxQueuedJobs !== undefined
+      ? { maxQueuedJobs: options.maxQueuedJobs }
+      : {}),
     ...(options.logLimit !== undefined ? { logLimit: options.logLimit } : {}),
-    ...(options.maxJobDiskBytes !== undefined ? { maxJobDiskBytes: options.maxJobDiskBytes } : {}),
-    ...(options.logFormat !== undefined ? { logFormat: options.logFormat } : {}),
-    ...(options.enablePreview !== undefined ? { enablePreview: options.enablePreview } : {}),
-    ...(options.fetchImpl !== undefined ? { fetchImpl: options.fetchImpl } : {})
+    ...(options.maxJobDiskBytes !== undefined
+      ? { maxJobDiskBytes: options.maxJobDiskBytes }
+      : {}),
+    ...(options.logFormat !== undefined
+      ? { logFormat: options.logFormat }
+      : {}),
+    ...(options.enablePreview !== undefined
+      ? { enablePreview: options.enablePreview }
+      : {}),
+    ...(options.fetchImpl !== undefined
+      ? { fetchImpl: options.fetchImpl }
+      : {}),
   });
   runtime.figmaMcpEnrichmentLoader ??= createDefaultFigmaMcpEnrichmentLoader({
     timeoutMs: runtime.figmaTimeoutMs,
     maxRetries: runtime.figmaMaxRetries,
     maxScreenCandidates: runtime.figmaMaxScreenCandidates,
-    ...(runtime.figmaScreenNamePattern !== undefined ? { screenNamePattern: runtime.figmaScreenNamePattern } : {})
+    ...(runtime.figmaScreenNamePattern !== undefined
+      ? { screenNamePattern: runtime.figmaScreenNamePattern }
+      : {}),
   });
 
   let resolvedPort = port;
@@ -314,9 +449,9 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       workspaceRoot: path.resolve(workDir),
       outputRoot: absoluteOutputRoot,
       jobsRoot: path.join(absoluteOutputRoot, "jobs"),
-      reprosRoot: path.join(absoluteOutputRoot, "repros")
+      reprosRoot: path.join(absoluteOutputRoot, "repros"),
     },
-    runtime
+    runtime,
   });
 
   const handleRequest = createWorkspaceRequestHandler({
@@ -329,13 +464,19 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
     runtime: {
       previewEnabled: runtime.previewEnabled,
       rateLimitPerMinute,
-      ...(importSessionEventBearerToken !== undefined ? { importSessionEventBearerToken } : {}),
+      ...(importSessionEventBearerToken !== undefined
+        ? { importSessionEventBearerToken }
+        : {}),
       testIntelligenceEnabled: options.testIntelligence?.enabled === true,
-      logger: runtime.logger
+      ...(testIntelligenceReviewBearerToken !== undefined
+        ? { testIntelligenceReviewBearerToken }
+        : {}),
+      testIntelligenceArtifactRoot,
+      logger: runtime.logger,
     },
     getServerLifecycleState: () => lifecycleState,
     jobEngine,
-    moduleDir: MODULE_DIR
+    moduleDir: MODULE_DIR,
   });
 
   const server = createServer((request, response) => {
@@ -375,19 +516,21 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   await sweepStaleFigmaPasteTempFiles({
     outputRoot: absoluteOutputRoot,
     ttlMs: figmaPasteTempTtlMs,
-    logger: runtime.logger
+    logger: runtime.logger,
   });
 
   try {
     await startServer({ server, host, port });
   } catch (error) {
     const isAddrInUse =
-      error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === "EADDRINUSE";
+      error instanceof Error &&
+      "code" in error &&
+      (error as NodeJS.ErrnoException).code === "EADDRINUSE";
     if (isAddrInUse) {
       throw new Error(
         `Port ${port} is already in use. ` +
           `Another instance of workspace-dev or another service may be running on this port. ` +
-          `Use FIGMAPIPE_WORKSPACE_PORT to configure an alternative port.`
+          `Use FIGMAPIPE_WORKSPACE_PORT to configure an alternative port.`,
       );
     }
     throw error;
@@ -403,7 +546,7 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   const baseApp = buildApp({
     server,
     host,
-    port: resolvedPort
+    port: resolvedPort,
   });
   const waitForActiveRequestsToDrain = async (): Promise<void> => {
     if (drainTrackedRequestCount === 0) {
@@ -433,18 +576,25 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
       const shutdownReason = "Server shutdown interrupted in-flight work.";
       const jobShutdownPromise = jobEngine.shutdown({
         reason: shutdownReason,
-        timeoutMs: shutdownTimeoutMs
+        timeoutMs: shutdownTimeoutMs,
       });
       let timedOut = false;
 
       try {
         await Promise.race([
-          Promise.all([waitForActiveRequestsToDrain(), jobShutdownPromise]).then(() => undefined),
+          Promise.all([
+            waitForActiveRequestsToDrain(),
+            jobShutdownPromise,
+          ]).then(() => undefined),
           new Promise<never>((_, reject) => {
             setTimeout(() => {
-              reject(new Error(`Graceful shutdown timed out after ${shutdownTimeoutMs}ms.`));
+              reject(
+                new Error(
+                  `Graceful shutdown timed out after ${shutdownTimeoutMs}ms.`,
+                ),
+              );
             }, shutdownTimeoutMs);
-          })
+          }),
         ]);
       } catch {
         timedOut = true;
@@ -466,8 +616,14 @@ export const createWorkspaceServer = async (options: WorkspaceStartOptions = {})
   };
   const app: WorkspaceServerApp = {
     ...baseApp,
-    close: closeWithDrain
+    close: closeWithDrain,
   };
 
-  return { app, url: `http://${host}:${resolvedPort}`, host, port: resolvedPort, startedAt };
+  return {
+    app,
+    url: `http://${host}:${resolvedPort}`,
+    host,
+    port: resolvedPort,
+    startedAt,
+  };
 };

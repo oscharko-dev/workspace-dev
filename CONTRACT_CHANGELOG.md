@@ -31,6 +31,26 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.26.0] - 2026-04-25
+
+### Added (Issue #1367)
+
+- New optional `WorkspaceStartOptions.testIntelligence.reviewBearerToken` and `WorkspaceStartOptions.testIntelligence.artifactRoot` fields. The bearer token gates `POST /workspace/test-intelligence/review/...` write actions fail-closed (503 when unset). The artifact root overrides the default `<outputRoot>/test-intelligence` directory used by the Inspector UI.
+- New optional `WorkspaceStatus.testIntelligenceEnabled` boolean exposed from `GET /workspace`. The Inspector UI uses this flag to gate the "Test Intelligence" navigation entry.
+- New routes mounted at `/workspace/test-intelligence/...`. All routes return `503 FEATURE_DISABLED` when the existing test-intelligence dual-gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1` + `WorkspaceStartOptions.testIntelligence.enabled`) is not satisfied:
+    - `GET /workspace/test-intelligence/jobs` — list jobs that have on-disk artifacts.
+    - `GET /workspace/test-intelligence/jobs/<jobId>` — composite read of the per-job artifact bundle (generated test cases, validation report, policy report, coverage report, visual sidecar report, QC mapping preview, export report, review snapshot, review events). Returns `404 JOB_NOT_FOUND` when no artifact directory exists for the job.
+    - `GET /workspace/test-intelligence/review/<jobId>/state` — read the review-gate snapshot and event log via the existing in-process review handler.
+    - `POST /workspace/test-intelligence/review/<jobId>/<action>[/<testCaseId>]` — record a review-gate transition (`approve`, `reject`, `edit`, `note`, `review-started`). Bearer-protected fail-closed; rate-limited per IP+jobId.
+
+### Unchanged (Issue #1367)
+
+- Job submission contract is unchanged; `figma_to_qc_test_cases` continues to return `501 NOT_IMPLEMENTED` until a future wave wires the runner.
+- The deterministic Figma-to-code pipeline (`llmCodegenMode=deterministic`) is unaffected.
+- The hard invariant that the structured-test-case generator deployment never receives image payloads remains stamped in every emitted artifact.
+
+---
+
 ## [3.25.0] - 2026-04-25
 
 ### Added (Issue #1366)

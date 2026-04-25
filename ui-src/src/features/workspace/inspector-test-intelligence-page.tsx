@@ -1,0 +1,633 @@
+// ---------------------------------------------------------------------------
+// Test Intelligence Inspector page (Issue #1367)
+//
+// Mounted at `/workspace/ui/inspector/test-intelligence`. Reads jobId from
+// query params or from the picker on the empty state. Renders the test case
+// list, detail panel, policy summary, coverage panel, and visual sidecar
+// panel side-by-side. Handles empty / loading / failed / partial-result
+// states explicitly per Issue #1367 acceptance criteria.
+// ---------------------------------------------------------------------------
+
+import { useCallback, useMemo, useState, type JSX } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "../../lib/http";
+import { CoveragePanel } from "./inspector/test-intelligence/CoveragePanel";
+import { PolicySummaryPanel } from "./inspector/test-intelligence/PolicySummaryPanel";
+import {
+  TestCaseDetailPanel,
+  type ReviewActionKind,
+} from "./inspector/test-intelligence/TestCaseDetailPanel";
+import {
+  TestCaseListPanel,
+  type TestCaseListEntry,
+} from "./inspector/test-intelligence/TestCaseListPanel";
+import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
+import { fetchTestIntelligenceJobs } from "./inspector/test-intelligence/api";
+import { useTestIntelligenceJob } from "./inspector/test-intelligence/useTestIntelligenceJob";
+import type {
+  PolicyDecisionRecord,
+  PolicyViolation,
+  ReviewSnapshotEntry,
+  TestIntelligenceJobSummary,
+} from "./inspector/test-intelligence/types";
+
+const REVIEWER_HANDLE_STORAGE_KEY = "workspace-dev:ti-reviewer-handle:v1";
+const REVIEWER_BEARER_STORAGE_KEY = "workspace-dev:ti-reviewer-bearer:v1";
+
+function BackIcon(): JSX.Element {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-4"
+      aria-hidden="true"
+    >
+      <path
+        fillRule="evenodd"
+        d="M9.78 4.22a.75.75 0 0 1 0 1.06L7.06 8l2.72 2.72a.75.75 0 1 1-1.06 1.06L5.47 8.53a.75.75 0 0 1 0-1.06l3.25-3.25a.75.75 0 0 1 1.06 0Z"
+        clipRule="evenodd"
+      />
+    </svg>
+  );
+}
+
+interface RuntimeStatus {
+  testIntelligenceEnabled?: boolean;
+}
+
+function isRuntimeStatus(value: unknown): value is RuntimeStatus {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+const safeReadStorage = (key: string): string => {
+  try {
+    return window.localStorage.getItem(key) ?? "";
+  } catch {
+    return "";
+  }
+};
+
+const safeWriteStorage = (key: string, value: string): void => {
+  try {
+    if (value.length === 0) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, value);
+  } catch {
+    // localStorage may be unavailable in air-gapped contexts; non-fatal.
+  }
+};
+
+interface TestIntelligenceInnerProps {
+  jobId: string;
+  bearerToken: string;
+  reviewerHandle: string;
+  onBearerTokenChange: (value: string) => void;
+  onReviewerHandleChange: (value: string) => void;
+}
+
+function buildTestCaseListEntries(props: {
+  bundle: ReturnType<typeof useTestIntelligenceJob>["bundle"];
+  reviewSnapshot: Record<string, ReviewSnapshotEntry>;
+  policyByCase: Record<string, PolicyDecisionRecord>;
+}): TestCaseListEntry[] {
+  const cases = props.bundle?.generatedTestCases?.testCases ?? [];
+  return cases.map((testCase) => {
+    const snapshot = props.reviewSnapshot[testCase.id];
+    const policyRecord = props.policyByCase[testCase.id];
+    return {
+      testCase,
+      ...(snapshot ? { reviewState: snapshot.state } : {}),
+      ...(policyRecord ? { policyDecision: policyRecord.decision } : {}),
+      policyBlocked: policyRecord?.decision === "blocked",
+      approverCount: snapshot?.approvers.length ?? 0,
+    };
+  });
+}
+
+function TestIntelligenceInner({
+  jobId,
+  bearerToken,
+  reviewerHandle,
+  onBearerTokenChange,
+  onReviewerHandleChange,
+}: TestIntelligenceInnerProps): JSX.Element {
+  const job = useTestIntelligenceJob({
+    jobId,
+    bearerToken,
+    reviewerHandle,
+  });
+  const [selectedTestCaseId, setSelectedTestCaseId] = useState<string | null>(
+    null,
+  );
+
+  const reviewSnapshotByCase = useMemo<
+    Record<string, ReviewSnapshotEntry>
+  >(() => {
+    const map: Record<string, ReviewSnapshotEntry> = {};
+    const entries =
+      job.reviewState?.snapshot.perTestCase ??
+      job.bundle?.reviewSnapshot?.perTestCase ??
+      [];
+    for (const entry of entries) {
+      map[entry.testCaseId] = entry;
+    }
+    return map;
+  }, [job.bundle?.reviewSnapshot, job.reviewState?.snapshot.perTestCase]);
+
+  const policyByCase = useMemo<Record<string, PolicyDecisionRecord>>(() => {
+    const map: Record<string, PolicyDecisionRecord> = {};
+    for (const decision of job.bundle?.policyReport?.decisions ?? []) {
+      map[decision.testCaseId] = decision;
+    }
+    return map;
+  }, [job.bundle?.policyReport?.decisions]);
+
+  const listEntries = useMemo(
+    () =>
+      buildTestCaseListEntries({
+        bundle: job.bundle,
+        reviewSnapshot: reviewSnapshotByCase,
+        policyByCase,
+      }),
+    [job.bundle, policyByCase, reviewSnapshotByCase],
+  );
+
+  const effectiveSelectedTestCaseId =
+    selectedTestCaseId !== null
+      ? selectedTestCaseId
+      : (listEntries[0]?.testCase.id ?? null);
+  const selectedEntry =
+    listEntries.find(
+      (entry) => entry.testCase.id === effectiveSelectedTestCaseId,
+    ) ?? null;
+  const selectedSnapshot = selectedEntry
+    ? reviewSnapshotByCase[selectedEntry.testCase.id]
+    : undefined;
+  const selectedPolicyDecision = selectedEntry
+    ? policyByCase[selectedEntry.testCase.id]
+    : undefined;
+  const selectedPolicyViolations: readonly PolicyViolation[] =
+    selectedPolicyDecision?.violations ?? [];
+
+  const handleAction = useCallback(
+    ({ action, note }: { action: ReviewActionKind; note?: string }) => {
+      if (!selectedEntry) return;
+      const reviewActionKind =
+        action === "needs-clarification" ? "note" : action;
+      const metadata =
+        action === "needs-clarification"
+          ? ({ needsClarification: true } as const)
+          : undefined;
+      void job.submitAction({
+        action: reviewActionKind,
+        testCaseId: selectedEntry.testCase.id,
+        ...(note !== undefined ? { note } : {}),
+        ...(metadata !== undefined ? { metadata } : {}),
+      });
+    },
+    [job, selectedEntry],
+  );
+
+  const isLoading =
+    job.bundleStatus === "loading" || job.reviewStateStatus === "loading";
+  const bundleErrorIs404 =
+    job.bundleError !== null && job.bundleError.startsWith("JOB_NOT_FOUND");
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-4 px-4 py-4">
+      <ReviewerSettingsBar
+        reviewerHandle={reviewerHandle}
+        bearerToken={bearerToken}
+        onReviewerHandleChange={onReviewerHandleChange}
+        onBearerTokenChange={onBearerTokenChange}
+        onRefresh={() => {
+          void job.refresh();
+        }}
+      />
+
+      {bundleErrorIs404 ? (
+        <section
+          data-testid="ti-page-empty-job"
+          role="status"
+          className="rounded border border-dashed border-white/10 bg-[#0a0a0a] px-4 py-8 text-center text-sm text-white/60"
+        >
+          No test-intelligence artifacts were found for job{" "}
+          <span className="font-mono text-white/85">{jobId}</span>.
+        </section>
+      ) : isLoading && !job.bundle ? (
+        <section
+          data-testid="ti-page-loading"
+          role="status"
+          aria-live="polite"
+          className="rounded border border-dashed border-white/10 bg-[#0a0a0a] px-4 py-8 text-center text-sm text-white/60"
+        >
+          Loading test-intelligence artifacts…
+        </section>
+      ) : job.bundleStatus === "error" ? (
+        <section
+          data-testid="ti-page-error"
+          role="alert"
+          className="rounded border border-rose-500/30 bg-rose-950/20 px-4 py-4 text-sm text-rose-200"
+        >
+          {job.bundleError}
+        </section>
+      ) : (
+        <>
+          {job.bundle && job.bundle.parseErrors.length > 0 ? (
+            <section
+              data-testid="ti-page-parse-errors"
+              role="alert"
+              className="rounded border border-amber-500/30 bg-amber-950/15 px-4 py-3 text-[12px] text-amber-200"
+            >
+              <h2 className="m-0 mb-1 text-[11px] font-semibold uppercase tracking-wide text-amber-200">
+                Partial result
+              </h2>
+              <ul className="m-0 flex list-none flex-col gap-1 p-0">
+                {job.bundle.parseErrors.map((error, index) => (
+                  <li
+                    key={`${error.artifact}-${String(index)}`}
+                    data-testid={`ti-page-parse-error-${index}`}
+                  >
+                    {error.filename}: {error.reason} — {error.message}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          <PolicySummaryPanel
+            policy={job.bundle?.policyReport}
+            validation={job.bundle?.validationReport}
+          />
+
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
+            <div className="flex flex-col gap-3">
+              <header className="flex items-baseline justify-between">
+                <h2 className="m-0 text-sm font-semibold text-white">
+                  Generated test cases
+                </h2>
+                {job.reviewStateError ? (
+                  <span
+                    data-testid="ti-page-review-state-error"
+                    className="rounded border border-amber-500/30 bg-amber-950/20 px-1.5 py-[1px] text-[10px] text-amber-200"
+                  >
+                    Review state unavailable
+                  </span>
+                ) : null}
+              </header>
+              <TestCaseListPanel
+                entries={listEntries}
+                selectedTestCaseId={selectedTestCaseId}
+                onSelect={(id) => {
+                  setSelectedTestCaseId(id);
+                }}
+              />
+            </div>
+
+            <div className="flex flex-col gap-3">
+              {selectedEntry ? (
+                <TestCaseDetailPanel
+                  testCase={selectedEntry.testCase}
+                  {...(selectedSnapshot
+                    ? { reviewSnapshot: selectedSnapshot }
+                    : {})}
+                  {...(selectedPolicyDecision
+                    ? { policyDecision: selectedPolicyDecision.decision }
+                    : {})}
+                  policyViolations={selectedPolicyViolations}
+                  bearerTokenAvailable={bearerToken.length > 0}
+                  pendingAction={
+                    job.pendingAction === null
+                      ? null
+                      : job.pendingAction === "note"
+                        ? "note"
+                        : job.pendingAction === "approve"
+                          ? "approve"
+                          : job.pendingAction === "reject"
+                            ? "reject"
+                            : null
+                  }
+                  actionError={job.actionError}
+                  reviewerHandle={reviewerHandle}
+                  onAction={handleAction}
+                  fourEyesEnforced={selectedSnapshot?.fourEyesEnforced ?? false}
+                  approvers={selectedSnapshot?.approvers ?? []}
+                />
+              ) : (
+                <section
+                  data-testid="ti-page-no-selection"
+                  className="rounded border border-dashed border-white/10 bg-[#0a0a0a] px-4 py-8 text-center text-sm text-white/55"
+                >
+                  Select a test case to inspect its detail.
+                </section>
+              )}
+              <CoveragePanel coverage={job.bundle?.coverageReport} />
+              <VisualSidecarPanel report={job.bundle?.visualSidecarReport} />
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+interface ReviewerSettingsBarProps {
+  reviewerHandle: string;
+  bearerToken: string;
+  onReviewerHandleChange: (value: string) => void;
+  onBearerTokenChange: (value: string) => void;
+  onRefresh: () => void;
+}
+
+function ReviewerSettingsBar({
+  reviewerHandle,
+  bearerToken,
+  onReviewerHandleChange,
+  onBearerTokenChange,
+  onRefresh,
+}: ReviewerSettingsBarProps): JSX.Element {
+  return (
+    <section
+      data-testid="ti-reviewer-settings"
+      aria-label="Reviewer session settings"
+      className="flex flex-wrap items-center gap-3 rounded border border-white/10 bg-[#171717] px-3 py-2 text-[11px] text-white/65"
+    >
+      <label className="flex items-center gap-2">
+        Reviewer
+        <input
+          data-testid="ti-reviewer-handle-input"
+          type="text"
+          value={reviewerHandle}
+          onChange={(event) => {
+            onReviewerHandleChange(event.target.value);
+          }}
+          maxLength={128}
+          placeholder="alice"
+          className="rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 font-mono text-[11px] text-white/85 focus:outline-none focus:ring-1 focus:ring-[#4eba87]/50"
+        />
+      </label>
+      <label className="flex items-center gap-2">
+        Bearer token
+        <input
+          data-testid="ti-reviewer-bearer-input"
+          type="password"
+          value={bearerToken}
+          onChange={(event) => {
+            onBearerTokenChange(event.target.value);
+          }}
+          placeholder="set to enable writes"
+          className="rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 font-mono text-[11px] text-white/85 focus:outline-none focus:ring-1 focus:ring-[#4eba87]/50"
+        />
+      </label>
+      <button
+        type="button"
+        data-testid="ti-refresh-button"
+        onClick={onRefresh}
+        className="cursor-pointer rounded border border-white/15 bg-[#0a0a0a] px-2 py-1 text-[11px] font-medium text-white/65 transition hover:border-[#4eba87]/40 hover:text-[#4eba87]"
+      >
+        Refresh
+      </button>
+    </section>
+  );
+}
+
+interface JobPickerProps {
+  onSelect: (jobId: string) => void;
+}
+
+function JobPicker({ onSelect }: JobPickerProps): JSX.Element {
+  const query = useQuery({
+    queryKey: ["test-intelligence", "job-list"],
+    queryFn: fetchTestIntelligenceJobs,
+  });
+  const [manualJobId, setManualJobId] = useState("");
+
+  return (
+    <section
+      data-testid="ti-page-job-picker"
+      aria-label="Select a test-intelligence job"
+      className="flex flex-col gap-3 rounded border border-white/10 bg-[#171717] p-4"
+    >
+      <h2 className="m-0 text-sm font-semibold text-white">Select a job</h2>
+      <p className="m-0 text-[12px] text-white/55">
+        Pick a test-intelligence job that has artifacts in the local artifact
+        root, or paste a job id manually.
+      </p>
+
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (manualJobId.trim().length > 0) {
+            onSelect(manualJobId.trim());
+          }
+        }}
+      >
+        <input
+          data-testid="ti-job-picker-input"
+          type="text"
+          value={manualJobId}
+          onChange={(event) => {
+            setManualJobId(event.target.value);
+          }}
+          placeholder="job id (e.g. poc-onboarding)"
+          className="flex-1 rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 font-mono text-[11px] text-white/85 focus:outline-none focus:ring-1 focus:ring-[#4eba87]/50"
+        />
+        <button
+          type="submit"
+          data-testid="ti-job-picker-submit"
+          className="cursor-pointer rounded border border-[#4eba87]/40 bg-emerald-950/20 px-2 py-1 text-[11px] font-medium text-[#4eba87] transition hover:bg-emerald-950/40"
+        >
+          Inspect
+        </button>
+      </form>
+
+      {query.isPending ? (
+        <p className="m-0 text-[11px] text-white/55">Loading job list…</p>
+      ) : query.data && query.data.ok ? (
+        query.data.value.length === 0 ? (
+          <p
+            data-testid="ti-job-picker-empty"
+            className="m-0 text-[11px] text-white/55"
+          >
+            No artifacts found in the test-intelligence root yet.
+          </p>
+        ) : (
+          <ul
+            data-testid="ti-job-picker-list"
+            className="m-0 flex list-none flex-col gap-1 p-0"
+          >
+            {query.data.value.map((entry) => (
+              <JobPickerRow
+                key={entry.jobId}
+                entry={entry}
+                onSelect={onSelect}
+              />
+            ))}
+          </ul>
+        )
+      ) : (
+        <p
+          data-testid="ti-job-picker-error"
+          role="alert"
+          className="m-0 rounded border border-amber-500/30 bg-amber-950/15 px-2 py-1 text-[11px] text-amber-200"
+        >
+          {query.data?.ok === false
+            ? query.data.message
+            : "Could not load job list."}
+        </p>
+      )}
+    </section>
+  );
+}
+
+interface JobPickerRowProps {
+  entry: TestIntelligenceJobSummary;
+  onSelect: (jobId: string) => void;
+}
+
+function JobPickerRow({ entry, onSelect }: JobPickerRowProps): JSX.Element {
+  const presentArtifacts = Object.entries(entry.hasArtifacts)
+    .filter(([, present]) => present)
+    .map(([key]) => key);
+  return (
+    <li
+      data-testid={`ti-job-picker-row-${entry.jobId}`}
+      className="rounded border border-white/10 bg-[#0f0f0f] px-3 py-2"
+    >
+      <button
+        type="button"
+        onClick={() => {
+          onSelect(entry.jobId);
+        }}
+        className="flex w-full cursor-pointer flex-col items-start gap-0.5 bg-transparent text-left"
+      >
+        <span className="font-mono text-[12px] text-white">{entry.jobId}</span>
+        <span className="text-[10px] text-white/55">
+          {presentArtifacts.length === 0
+            ? "no artifacts on disk"
+            : presentArtifacts.join(", ")}
+        </span>
+      </button>
+    </li>
+  );
+}
+
+export function InspectorTestIntelligencePage(): JSX.Element {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const jobId = searchParams.get("jobId") ?? "";
+  const [reviewerHandle, setReviewerHandle] = useState(() =>
+    safeReadStorage(REVIEWER_HANDLE_STORAGE_KEY),
+  );
+  const [bearerToken, setBearerToken] = useState(() =>
+    safeReadStorage(REVIEWER_BEARER_STORAGE_KEY),
+  );
+
+  const handleReviewerHandleChange = useCallback((value: string): void => {
+    setReviewerHandle(value);
+    safeWriteStorage(REVIEWER_HANDLE_STORAGE_KEY, value);
+  }, []);
+
+  const handleBearerTokenChange = useCallback((value: string): void => {
+    setBearerToken(value);
+    safeWriteStorage(REVIEWER_BEARER_STORAGE_KEY, value);
+  }, []);
+
+  const runtimeStatus = useQuery({
+    queryKey: ["workspace", "runtime-status"],
+    queryFn: async () => {
+      const response = await fetchJson<RuntimeStatus>({ url: "/workspace" });
+      if (!response.ok || !isRuntimeStatus(response.payload)) {
+        return { testIntelligenceEnabled: false } satisfies RuntimeStatus;
+      }
+      return response.payload;
+    },
+  });
+
+  const featureEnabled = runtimeStatus.data?.testIntelligenceEnabled !== false;
+
+  const handleSelectJob = useCallback(
+    (selectedJobId: string): void => {
+      const next = new URLSearchParams(searchParams);
+      next.set("jobId", selectedJobId);
+      setSearchParams(next, { replace: false });
+    },
+    [searchParams, setSearchParams],
+  );
+
+  return (
+    <div
+      data-testid="ti-page"
+      className="flex h-screen flex-col overflow-hidden bg-[#101010] text-white"
+    >
+      <header className="shrink-0 border-b border-[#000000] bg-[#171717]">
+        <div className="flex w-full items-center justify-between gap-3 px-4 py-2">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                void navigate("/workspace/ui/inspector");
+              }}
+              className="flex cursor-pointer items-center gap-1 rounded-md border border-transparent px-2 py-1 text-xs font-medium text-white/60 transition hover:border-white/10 hover:bg-[#000000] hover:text-[#4eba87]"
+            >
+              <BackIcon />
+              Back
+            </button>
+            <div className="h-4 w-px bg-[#333333]" />
+            <div className="flex items-baseline gap-2">
+              <h1 className="m-0 text-sm font-semibold tracking-tight text-white">
+                Test Intelligence
+              </h1>
+              <span className="text-[10px] uppercase tracking-[0.22em] text-white/35">
+                inspector
+              </span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {jobId ? (
+              <span className="rounded border border-white/10 bg-[#0a0a0a] px-2 py-1 font-mono text-[10px] text-white/55">
+                job {jobId}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </header>
+
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        {!featureEnabled ? (
+          <section
+            data-testid="ti-page-feature-disabled"
+            role="alert"
+            className="m-4 rounded border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-200"
+          >
+            Test Intelligence is disabled on this workspace. Set
+            <span className="font-mono">
+              {" "}
+              FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1{" "}
+            </span>
+            and start the server with
+            <span className="font-mono"> testIntelligence.enabled=true </span>
+            to enable this page.
+          </section>
+        ) : jobId.length === 0 ? (
+          <div className="flex flex-col gap-4 px-4 py-4">
+            <JobPicker onSelect={handleSelectJob} />
+          </div>
+        ) : (
+          <TestIntelligenceInner
+            jobId={jobId}
+            bearerToken={bearerToken}
+            reviewerHandle={reviewerHandle}
+            onBearerTokenChange={handleBearerTokenChange}
+            onReviewerHandleChange={handleReviewerHandleChange}
+          />
+        )}
+      </main>
+    </div>
+  );
+}

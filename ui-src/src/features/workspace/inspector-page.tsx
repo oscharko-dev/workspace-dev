@@ -1,10 +1,7 @@
-import {
-  useCallback,
-  useMemo,
-  useState,
-  type JSX,
-} from "react";
+import { useCallback, useMemo, useState, type JSX } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "../../lib/http";
 import { InspectorPanel } from "./inspector/InspectorPanel";
 import { InspectorErrorBoundary } from "./inspector/InspectorErrorBoundary";
 import { InspectorBootstrap } from "./inspector/InspectorBootstrap";
@@ -130,6 +127,35 @@ function PanelView({
     acceptedRegeneration?.nextJobId === jobId;
   const [openDialog, setOpenDialog] = useState<ConfigDialogKey | null>(null);
 
+  const runtimeStatusQuery = useQuery({
+    queryKey: ["workspace", "runtime-status"],
+    queryFn: async () => {
+      const response = await fetchJson<{ testIntelligenceEnabled?: boolean }>({
+        url: "/workspace",
+      });
+      if (!response.ok) {
+        return { testIntelligenceEnabled: false };
+      }
+      const payload = response.payload;
+      if (
+        typeof payload === "object" &&
+        !Array.isArray(payload) &&
+        "testIntelligenceEnabled" in payload &&
+        typeof (payload as { testIntelligenceEnabled?: unknown })
+          .testIntelligenceEnabled === "boolean"
+      ) {
+        return {
+          testIntelligenceEnabled: (
+            payload as { testIntelligenceEnabled: boolean }
+          ).testIntelligenceEnabled,
+        };
+      }
+      return { testIntelligenceEnabled: false };
+    },
+  });
+  const testIntelligenceEnabled =
+    runtimeStatusQuery.data?.testIntelligenceEnabled === true;
+
   const activePreviewUrl = useMemo(() => {
     return previewUrl;
   }, [previewUrl]);
@@ -189,6 +215,28 @@ function PanelView({
                 {btn.label}
               </button>
             ))}
+            {testIntelligenceEnabled ? (
+              <button
+                type="button"
+                data-testid="inspector-open-test-intelligence"
+                onClick={() => {
+                  const params = new URLSearchParams();
+                  if (jobId.length > 0) {
+                    params.set("jobId", jobId);
+                  }
+                  const search = params.toString();
+                  void navigate(
+                    search.length > 0
+                      ? `/workspace/ui/inspector/test-intelligence?${search}`
+                      : "/workspace/ui/inspector/test-intelligence",
+                  );
+                }}
+                className="flex cursor-pointer items-center gap-1.5 rounded-md border border-transparent bg-transparent px-2.5 py-1 text-[11px] font-medium text-white/55 transition hover:border-white/10 hover:bg-[#000000] hover:text-white"
+              >
+                <SettingsIcon />
+                Test Intelligence
+              </button>
+            ) : null}
           </div>
 
           <div className="flex items-center gap-2">
