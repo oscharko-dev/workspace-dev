@@ -1,0 +1,87 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-payment-amount",
+      "screenName": "Authorize Payment",
+      "nodes": [
+        {
+          "nodeId": "n-iban",
+          "nodeName": "Beneficiary IBAN",
+          "nodeType": "TEXT_INPUT",
+          "text": "Beneficiary IBAN",
+          "defaultValue": "DE02500105170137075030",
+          "validations": ["Required", "IBAN checksum"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bic",
+          "nodeName": "Beneficiary BIC",
+          "nodeType": "TEXT_INPUT",
+          "text": "Beneficiary BIC",
+          "defaultValue": "INGDDEFFXXX",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-amount",
+          "nodeName": "Amount EUR",
+          "nodeType": "TEXT_INPUT",
+          "text": "Amount EUR",
+          "defaultValue": "120.00",
+          "validations": ["Required", "Positive amount", "Max 50000"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-reference",
+          "nodeName": "Reference",
+          "nodeType": "TEXT_INPUT",
+          "text": "Reference",
+          "defaultValue": "Invoice 2026-0042",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-continue",
+          "nodeName": "Continue",
+          "nodeType": "BUTTON",
+          "text": "Continue",
+          "navigationTarget": "s-payment-3ds",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-payment-3ds",
+      "screenName": "Strong Customer Authentication",
+      "nodes": [
+        {
+          "nodeId": "n-otp",
+          "nodeName": "Authentication code",
+          "nodeType": "TEXT_INPUT",
+          "text": "Authentication code",
+          "defaultValue": "987654",
+          "validations": ["Required", "6 digits", "Time-bound 90s"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-cancel",
+          "nodeName": "Cancel",
+          "nodeType": "BUTTON",
+          "text": "Cancel",
+          "navigationTarget": "s-payment-amount",
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-authorize",
+          "nodeName": "Authorize",
+          "nodeType": "BUTTON",
+          "text": "Authorize",
+          "navigationTarget": "s-payment-receipt",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

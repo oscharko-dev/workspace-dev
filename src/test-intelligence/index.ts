@@ -166,3 +166,35 @@ export {
   type WriteExportPipelineArtifactsInput,
   type WriteExportPipelineArtifactsResult,
 } from "./export-pipeline.js";
+export {
+  isWave1PocFixtureId,
+  loadWave1PocFixture,
+  WAVE1_POC_FIXTURE_IDS,
+  type LoadedWave1PocFixture,
+  type Wave1PocFixtureId,
+} from "./poc-fixtures.js";
+export {
+  buildWave1PocEvidenceManifest,
+  verifyWave1PocEvidenceFromDisk,
+  verifyWave1PocEvidenceManifest,
+  writeWave1PocEvidenceManifest,
+  type BuildEvidenceArtifactRecord,
+  type BuildWave1PocEvidenceManifestInput,
+  type VerifyWave1PocEvidenceManifestInput,
+  type WriteWave1PocEvidenceManifestInput,
+} from "./evidence-manifest.js";
+export {
+  runWave1Poc,
+  synthesizeGeneratedTestCases,
+  type RunWave1PocInput,
+  type Wave1PocRunResult,
+} from "./poc-harness.js";
+export {
+  evaluateWave1Poc,
+  evaluateWave1PocFixture,
+  WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,
+  writeWave1PocEvalReport,
+  type EvaluateWave1PocFixtureInput,
+  type EvaluateWave1PocInput,
+  type WriteWave1PocEvalReportInput,
+} from "./poc-eval.js";

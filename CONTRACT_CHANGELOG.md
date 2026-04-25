@@ -31,6 +31,26 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.25.0] - 2026-04-25
+
+### Added (Issue #1366)
+
+- `WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION`, `WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION` — version stamps (`"1.0.0"`) for the persisted Wave 1 POC evidence manifest and evaluation report.
+- `WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME` (`wave1-poc-evidence-manifest.json`), `WAVE1_POC_EVAL_REPORT_ARTIFACT_FILENAME` (`wave1-poc-eval-report.json`) — canonical filenames for the new artifacts.
+- `WAVE1_POC_FIXTURE_IDS` — runtime list of public synthetic fixture identifiers (`poc-onboarding`, `poc-payment-auth`).
+- `Wave1PocFixtureId` — discriminated union of the supported fixture identifiers.
+- `Wave1PocEvidenceArtifact`, `Wave1PocEvidenceArtifactCategory`, `Wave1PocEvidenceManifest`, `Wave1PocEvidenceVerificationResult` — type surface for the new evidence manifest, including the hard `rawScreenshotsIncluded: false` and `imagePayloadSentToTestGeneration: false` invariants enforced at the type level.
+- `Wave1PocEvalThresholds`, `Wave1PocEvalFailure`, `Wave1PocEvalFixtureMetrics`, `Wave1PocEvalFixtureReport`, `Wave1PocEvalReport` — type surface for the evaluation gate covering trace coverage, QC mapping completeness, duplicate similarity, expected results per case, and policy/visual/export gate outcomes.
+
+### Unchanged (Issue #1366)
+
+- No public route, submit parser, runtime schema, or orchestrator wiring changed. The Wave 1 POC harness, evidence manifest builder/verifier, fixture loader, and evaluation gate live entirely under `src/test-intelligence/` and are reached only via the opt-in test-intelligence subsurface.
+- The opt-in test-intelligence feature gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE`, `WorkspaceStartOptions.testIntelligence.enabled`) remains the only entry-point gate.
+- The deterministic Figma-to-code pipeline (`llmCodegenMode=deterministic`) is unaffected.
+- The structured-test-case generator deployment (`gpt-oss-120b`) never receives image payloads; image-bearing payloads only flow into the visual sidecar role. The new manifest stamps this invariant explicitly.
+
+---
+
 ## [3.24.0] - 2026-04-25
 
 ### Added (Issue #1365)

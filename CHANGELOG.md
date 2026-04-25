@@ -11,17 +11,24 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Wave 1 Figma-to-Test end-to-end POC harness, evidence manifest, and CI evaluation gate (#1366):
+    - Two public synthetic fixtures under `src/test-intelligence/fixtures/` — `poc-onboarding` (sign-up + identity verification) and `poc-payment-auth` (SEPA payment + 3-D Secure authorisation) — each shipped with a companion visual sidecar fixture.
+    - `runWave1Poc(input)` composes the full chain (Figma → IR → redacted prompt → mock LLM → validation → review gate → export-only QC artifacts) into a deterministic run directory; replay produces byte-identical artifact hashes for the same fixture.
+    - `wave1-poc-evidence-manifest.json` records SHA-256 + byte length for every emitted artifact, plus the prompt / schema / model / policy / export profile identities used during the run. `verifyWave1PocEvidenceManifest` and `verifyWave1PocEvidenceFromDisk` re-hash artifacts to detect tampering fail-closed.
+    - Two type-level negative invariants are stamped on every manifest: `rawScreenshotsIncluded: false` and `imagePayloadSentToTestGeneration: false`. The harness additionally asserts the recorded mock-LLM requests carried no image payloads — `gpt-oss-120b` never receives screenshots.
+    - `evaluateWave1Poc` enforces threshold-driven pass/fail across trace coverage (fields/actions/validations), QC mapping completeness, duplicate similarity, expected-results-per-case count, and policy/visual/export gate outcomes. Default thresholds match `eu-banking-default`.
+    - New `pnpm run test:ti-eval` script runs the POC end-to-end + golden + verification + threshold tests; wired into the `dev-quality-gate` workflow.
 - Onboarding and troubleshooting guide for the direct Figma import path at [`docs/figma-import.md`](docs/figma-import.md): Figma plugin install steps (Design and Dev Mode), Inspector paste-zone behaviour (paste / drop / upload), SmartBanner intent labels and override flow, payload-size limits, an example `workspace-dev/figma-selection@1` envelope, a REST `JSON_REST_V1` skeleton, FAQ, and a troubleshooting matrix covering "nothing happens on ⌘V/Ctrl+V", invalid JSON, unrecognised component, payload too large, and secure-context requirements. (#990)
 - Incremental delta import scaffolding for Figma paste imports (#992):
-  - Persistent paste-fingerprint store keyed by `{figmaFileKey, rootNodeIds}` under `${outputRoot}/paste-fingerprints/` (LRU + TTL, contract-version gated).
-  - Tree-diff module classifies node changes as `baseline_created`, `no_changes`, `delta`, or `structural_break` with a configurable structural-change threshold (default 0.5).
-  - New submit-time field `WorkspaceJobInput.importMode?: "full" | "delta" | "auto"`; auto mode falls back to full when the diff exceeds the threshold or when no prior manifest exists.
-  - `WorkspaceSubmitAccepted.pasteDeltaSummary` returns mode, strategy, `nodesReused`, `nodesReprocessed`, structural ratio, and paste identity key so clients can render delta insight immediately on accept.
-  - Inspector paste-pipeline now surfaces a "Delta Update" vs "Full Build" badge with an "N/M reused" detail on the pipeline status bar.
+    - Persistent paste-fingerprint store keyed by `{figmaFileKey, rootNodeIds}` under `${outputRoot}/paste-fingerprints/` (LRU + TTL, contract-version gated).
+    - Tree-diff module classifies node changes as `baseline_created`, `no_changes`, `delta`, or `structural_break` with a configurable structural-change threshold (default 0.5).
+    - New submit-time field `WorkspaceJobInput.importMode?: "full" | "delta" | "auto"`; auto mode falls back to full when the diff exceeds the threshold or when no prior manifest exists.
+    - `WorkspaceSubmitAccepted.pasteDeltaSummary` returns mode, strategy, `nodesReused`, `nodesReprocessed`, structural ratio, and paste identity key so clients can render delta insight immediately on accept.
+    - Inspector paste-pipeline now surfaces a "Delta Update" vs "Full Build" badge with an "N/M reused" detail on the pipeline status bar.
 - Template web-performance pipeline:
-  - `perf-budget.json` policy
-  - `scripts/perf-runner.mjs`
-  - scripts `perf:baseline` and `perf:assert`
+    - `perf-budget.json` policy
+    - `scripts/perf-runner.mjs`
+    - scripts `perf:baseline` and `perf:assert`
 - Field metric hook for CWV reporting in template app (`web-vitals` for INP/LCP/CLS).
 - CI `performance-web` jobs in release workflows with artifact upload.
 - Responsive viewport configuration for visual benchmark: declare per-fixture or per-screen viewport lists with `id/width/height/deviceScaleFactor/weight` in `visual-quality.config.json`. Default behavior is a single `desktop` viewport (1280x800) for byte-identical back-compat. Explicit viewports are honored by the `validate-project` service via `visualQualityViewportHeight` + `visualQualityDeviceScaleFactor` runtime fields. (#838)
@@ -60,13 +67,13 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 ### Changed
 
 - Switched generation runtime to parity-aligned deterministic pipeline:
-  - `figma.source`
-  - `ir.derive`
-  - `template.prepare`
-  - `codegen.generate`
-  - `validate.project`
-  - `repro.export`
-  - optional `git.pr`
+    - `figma.source`
+    - `ir.derive`
+    - `template.prepare`
+    - `codegen.generate`
+    - `validate.project`
+    - `repro.export`
+    - optional `git.pr`
 - Bundled Workspace Dev React + TypeScript + MUI v7 template into `workspace-dev`.
 - Replaced simplified generator with parity deterministic IR + codegen core.
 - Added optional Git/PR flow (`enableGitPr`) with contract-safe repo credential handling.
@@ -82,21 +89,21 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 - Added async job polling endpoints (`/workspace/jobs/:id`, `/workspace/jobs/:id/result`).
 - Added integrated local preview serving (`/workspace/repros/:id/*`).
 - Updated UI to reduced but functional workspace flow with required inputs:
-  - `figmaFileKey`
-  - `figmaAccessToken`
-  - `repoUrl`
-  - `repoToken`
+    - `figmaFileKey`
+    - `figmaAccessToken`
+    - `repoUrl`
+    - `repoToken`
 - Added deterministic local artifact pipeline:
-  - Figma REST fetch
-  - IR derivation
-  - local code generation
-  - local preview export
+    - Figma REST fetch
+    - IR derivation
+    - local code generation
+    - local preview export
 
 ### Maintained constraints
 
 - Mode lock remains strict:
-  - `figmaSourceMode=rest`
-  - `llmCodegenMode=deterministic`
+    - `figmaSourceMode=rest`
+    - `llmCodegenMode=deterministic`
 - No MCP, no hybrid, no `llm_strict`.
 - No dependency on Workspace Dev platform backend services.
 
@@ -105,11 +112,11 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 ### Changed
 
 - Hardened npm release readiness for `workspace-dev`:
-  - release governance changelog
-  - `sideEffects` metadata
-  - CJS guard export paths with ESM migration guidance
-  - package quality checks (`publint`, `attw`, `size-limit`)
-  - package-local changesets + OIDC provenance publish
+    - release governance changelog
+    - `sideEffects` metadata
+    - CJS guard export paths with ESM migration guidance
+    - package quality checks (`publint`, `attw`, `size-limit`)
+    - package-local changesets + OIDC provenance publish
 
 ## [0.1.0] - 2026-03-11
 

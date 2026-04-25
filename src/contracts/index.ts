@@ -2635,9 +2635,245 @@ export interface ExportReportArtifact {
   rawScreenshotsIncluded: false;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Wave 1 POC evidence manifest + evaluation report (Issue #1366)     */
+/* ------------------------------------------------------------------ */
+
+/** Schema version for the Wave 1 POC evidence manifest envelope. */
+export const WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Filename used for the Wave 1 POC evidence manifest artifact. */
+export const WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME =
+  "wave1-poc-evidence-manifest.json";
+
+/** Schema version for the Wave 1 POC evaluation report envelope. */
+export const WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Filename used for the Wave 1 POC evaluation report artifact. */
+export const WAVE1_POC_EVAL_REPORT_ARTIFACT_FILENAME =
+  "wave1-poc-eval-report.json";
+
+/**
+ * Allowed Wave 1 POC fixture identifiers.
+ *
+ * `poc-onboarding` — synthetic onboarding-style sign-up flow.
+ * `poc-payment-auth` — synthetic payment + 3-D Secure authorisation flow.
+ *
+ * Both fixtures are public, contain only synthetic data, and ship with a
+ * companion visual sidecar fixture so the Figma → Visual Sidecar →
+ * Business Test Intent IR → structured generation chain is exercised
+ * end-to-end against an air-gapped mock LLM.
+ */
+export const WAVE1_POC_FIXTURE_IDS = [
+  "poc-onboarding",
+  "poc-payment-auth",
+] as const;
+
+/** Identifier of a Wave 1 POC fixture. */
+export type Wave1PocFixtureId = (typeof WAVE1_POC_FIXTURE_IDS)[number];
+
+/** Categorisation of an artifact attested by the evidence manifest. */
+export type Wave1PocEvidenceArtifactCategory =
+  | "intent"
+  | "validation"
+  | "review"
+  | "export"
+  | "manifest";
+
+/** Single artifact attested by the Wave 1 POC evidence manifest. */
+export interface Wave1PocEvidenceArtifact {
+  /** Relative filename inside the run directory. */
+  filename: string;
+  /** SHA-256 of the on-disk byte stream. */
+  sha256: string;
+  /** Byte length on disk at manifest creation time. */
+  bytes: number;
+  category: Wave1PocEvidenceArtifactCategory;
+}
+
+/**
+ * Result of `verifyWave1PocEvidenceManifest` against a directory of artifacts.
+ * Determines whether ALL attested artifacts still hash to the values stored
+ * in the manifest. Any mismatch fails the verification fail-closed.
+ */
+export interface Wave1PocEvidenceVerificationResult {
+  ok: boolean;
+  /** Filenames listed in the manifest that are missing on disk. */
+  missing: string[];
+  /** Filenames whose on-disk SHA-256 differs from the manifest. */
+  mutated: string[];
+  /** Filenames whose on-disk byte length differs from the manifest. */
+  resized: string[];
+  /** Filenames present on disk but not attested by the manifest. */
+  unexpected: string[];
+}
+
+/**
+ * Wave 1 POC evidence manifest. Frozen, deterministic, byte-identical
+ * across runs of the same fixture and mock output. Lists every artifact
+ * the harness emits with its SHA-256 hash and byte length, plus the
+ * contract / template / schema / policy / model identities used during
+ * the run. The manifest itself is also written to disk; verifying its
+ * integrity is performed against the stored copy plus the artifact bytes.
+ *
+ * Two negative invariants are stamped explicitly so they appear in the
+ * evidence audit trail rather than being inferred from absence:
+ *
+ *   - `rawScreenshotsIncluded: false` — no raw screenshot bytes are ever
+ *     embedded in any exported artifact.
+ *   - `imagePayloadSentToTestGeneration: false` — the structured-test-case
+ *     generator deployment (e.g. `gpt-oss-120b`) never received an image
+ *     payload during the run; image-bearing payloads only flow into the
+ *     visual sidecar role.
+ */
+export interface Wave1PocEvidenceManifest {
+  schemaVersion: typeof WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION;
+  /** workspace-dev contract version that produced the artifacts. */
+  contractVersion: string;
+  /** Test-intelligence subsurface contract version. */
+  testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Identifier of the fixture exercised. */
+  fixtureId: Wave1PocFixtureId;
+  jobId: string;
+  generatedAt: string;
+  /** Versions used to compile the prompt and validate the output. */
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  generatedTestCaseSchemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  /** Policy profile identity used by the validation pipeline. */
+  policyProfileId: string;
+  policyProfileVersion: string;
+  /** OpenText ALM (or override) export profile identity. */
+  exportProfileId: string;
+  exportProfileVersion: string;
+  /** Identities of the deployments behind the run. */
+  modelDeployments: {
+    testGeneration: string;
+    visualPrimary?:
+      | "llama-4-maverick-vision"
+      | "phi-4-multimodal-poc"
+      | "mock"
+      | "none";
+    visualFallback?:
+      | "llama-4-maverick-vision"
+      | "phi-4-multimodal-poc"
+      | "mock"
+      | "none";
+  };
+  /** Replay-cache identity hashes for the run (mirrors compiled prompt). */
+  promptHash: string;
+  schemaHash: string;
+  inputHash: string;
+  cacheKeyDigest: string;
+  /** Sorted-by-filename, de-duplicated artifact list. */
+  artifacts: Wave1PocEvidenceArtifact[];
+  /** Hard invariant: no raw screenshot bytes leak into export artifacts. */
+  rawScreenshotsIncluded: false;
+  /**
+   * Hard invariant: the structured-test-case generator deployment never
+   * received an image payload during the run.
+   */
+  imagePayloadSentToTestGeneration: false;
+}
+
+/**
+ * Numeric thresholds applied by the Wave 1 POC evaluation gate. Each
+ * threshold is enforced on a per-fixture basis. Fractions are in `[0, 1]`.
+ */
+export interface Wave1PocEvalThresholds {
+  /** Fraction of detected fields covered by at least one approved test case. */
+  minTraceCoverageFields: number;
+  /** Fraction of detected actions covered by at least one approved test case. */
+  minTraceCoverageActions: number;
+  /** Fraction of detected validations covered by at least one approved test case. */
+  minTraceCoverageValidations: number;
+  /** Fraction of approved cases whose `qcMappingPreview.exportable` is true. */
+  minQcMappingExportableFraction: number;
+  /**
+   * Maximum allowed pairwise duplicate similarity across all generated cases.
+   * Computed by `detectDuplicateTestCases` on case fingerprints.
+   */
+  maxDuplicateSimilarity: number;
+  /** Minimum number of `expectedResults` entries required per approved case. */
+  minExpectedResultsPerCase: number;
+  /** Minimum number of approved cases required after the review gate. */
+  minApprovedCases: number;
+  /** Validation pipeline must not block. */
+  requirePolicyPass: boolean;
+  /** Visual sidecar gate must not block (when sidecar is present). */
+  requireVisualSidecarPass: boolean;
+}
+
+/** Failure record describing a single threshold breach. */
+export interface Wave1PocEvalFailure {
+  rule:
+    | "min_trace_coverage_fields"
+    | "min_trace_coverage_actions"
+    | "min_trace_coverage_validations"
+    | "min_qc_mapping_exportable_fraction"
+    | "max_duplicate_similarity"
+    | "min_expected_results_per_case"
+    | "min_approved_cases"
+    | "policy_blocked"
+    | "visual_sidecar_blocked"
+    | "validation_blocked"
+    | "export_refused";
+  /** Numeric or boolean observed value (encoded as number for comparators). */
+  actual: number;
+  /** Numeric or boolean threshold that was breached. */
+  threshold: number;
+  message: string;
+}
+
+/** Per-fixture metrics computed by the Wave 1 POC evaluation gate. */
+export interface Wave1PocEvalFixtureMetrics {
+  fixtureId: Wave1PocFixtureId;
+  totalGeneratedCases: number;
+  approvedCases: number;
+  blockedCases: number;
+  needsReviewCases: number;
+  detectedFields: number;
+  coveredFields: number;
+  detectedActions: number;
+  coveredActions: number;
+  detectedValidations: number;
+  coveredValidations: number;
+  exportableApprovedCases: number;
+  maxObservedDuplicateSimilarity: number;
+  minObservedExpectedResultsPerCase: number;
+  policyBlocked: boolean;
+  validationBlocked: boolean;
+  visualSidecarBlocked: boolean;
+  exportRefused: boolean;
+}
+
+/** Per-fixture evaluation outcome. */
+export interface Wave1PocEvalFixtureReport {
+  fixtureId: Wave1PocFixtureId;
+  pass: boolean;
+  metrics: Wave1PocEvalFixtureMetrics;
+  failures: Wave1PocEvalFailure[];
+}
+
+/**
+ * Aggregate evaluation report covering one or more fixtures. This artifact
+ * is byte-stable: fixtures and failures are sorted, hashes are not embedded,
+ * and timestamps are caller-provided.
+ */
+export interface Wave1PocEvalReport {
+  schemaVersion: typeof WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION;
+  contractVersion: string;
+  testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  generatedAt: string;
+  thresholds: Wave1PocEvalThresholds;
+  fixtures: Wave1PocEvalFixtureReport[];
+  pass: boolean;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.24.0" as const;
+export const CONTRACT_VERSION = "3.25.0" as const;
