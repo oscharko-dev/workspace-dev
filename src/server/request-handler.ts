@@ -109,6 +109,17 @@ import {
 } from "./routes.js";
 import { loadInspectorPolicy } from "./inspector-policy.js";
 import { getUiAsset, getUiAssets } from "./ui-assets.js";
+import { parseInspectorTestIntelligenceRoute } from "../test-intelligence/inspector-route.js";
+import type { ReviewRequestEnvelope } from "../test-intelligence/review-handler.js";
+import {
+  listInspectorTestIntelligenceJobs,
+  readInspectorTestIntelligenceBundle,
+} from "../test-intelligence/inspector-bundle.js";
+import {
+  createFileSystemReviewStore,
+  type ReviewStore,
+} from "../test-intelligence/review-store.js";
+import { handleReviewRequest } from "../test-intelligence/review-handler.js";
 
 /**
  * Decode a URI component safely, sending a 400 response on malformed input.
@@ -562,6 +573,119 @@ function isFlatEventMetadata(
   return true;
 }
 
+interface BuildReviewEnvelopeInput {
+  body: unknown;
+  method: "POST";
+  action: string;
+  jobId: string;
+  testCaseId?: string;
+  bearerToken: string | undefined;
+  authorizationHeader: string | undefined;
+}
+
+type BuildReviewEnvelopeResult =
+  | {
+      ok: true;
+      envelope: ReviewRequestEnvelope;
+    }
+  | { ok: false; error: string; message: string };
+
+/**
+ * Translate a JSON request body into a `ReviewRequestEnvelope` consumed by
+ * the in-process review handler. The body shape mirrors the import-session
+ * event API (`{ at, actor?, note?, metadata? }`) so reviewers and operators
+ * use a single mental model across surfaces.
+ */
+function buildReviewEnvelopeFromBody(
+  input: BuildReviewEnvelopeInput,
+): BuildReviewEnvelopeResult {
+  if (input.body === null || input.body === undefined) {
+    return {
+      ok: false,
+      error: "INVALID_BODY",
+      message: "Request body must be a JSON object.",
+    };
+  }
+  if (typeof input.body !== "object" || Array.isArray(input.body)) {
+    return {
+      ok: false,
+      error: "INVALID_BODY",
+      message: "Request body must be a JSON object.",
+    };
+  }
+  const candidate = input.body as Record<string, unknown>;
+  const at = candidate["at"];
+  if (typeof at !== "string" || at.length === 0) {
+    return {
+      ok: false,
+      error: "INVALID_BODY",
+      message: "Field 'at' must be a non-empty ISO-8601 string.",
+    };
+  }
+  if (Number.isNaN(Date.parse(at))) {
+    return {
+      ok: false,
+      error: "INVALID_BODY",
+      message: "Field 'at' must be a parseable ISO-8601 timestamp.",
+    };
+  }
+
+  let actor: string | undefined;
+  if (candidate["actor"] !== undefined) {
+    if (typeof candidate["actor"] !== "string") {
+      return {
+        ok: false,
+        error: "INVALID_BODY",
+        message: "Field 'actor' must be a string when present.",
+      };
+    }
+    actor = candidate["actor"];
+  }
+
+  let note: string | undefined;
+  if (candidate["note"] !== undefined) {
+    if (typeof candidate["note"] !== "string") {
+      return {
+        ok: false,
+        error: "INVALID_BODY",
+        message: "Field 'note' must be a string when present.",
+      };
+    }
+    note = candidate["note"];
+  }
+
+  let metadata: Record<string, string | number | boolean | null> | undefined;
+  if (candidate["metadata"] !== undefined) {
+    if (!isFlatEventMetadata(candidate["metadata"])) {
+      return {
+        ok: false,
+        error: "INVALID_BODY",
+        message:
+          "Field 'metadata' must be a flat object of string/number/boolean/null values.",
+      };
+    }
+    metadata = candidate["metadata"];
+  }
+
+  return {
+    ok: true,
+    envelope: {
+      bearerToken: input.bearerToken,
+      authorizationHeader: input.authorizationHeader,
+      method: input.method,
+      action: input.action,
+      jobId: input.jobId,
+      ...(input.testCaseId !== undefined
+        ? { testCaseId: input.testCaseId }
+        : {}),
+      at,
+      ...(actor !== undefined ? { actor } : {}),
+      ...(note !== undefined ? { note } : {}),
+      ...(metadata !== undefined ? { metadata } : {}),
+    },
+  };
+}
+
 interface ProtectedWriteRoute {
   parsedJobRoute?: ReturnType<typeof parseJobRoute>;
   parsedImportSessionRoute?: ReturnType<typeof parseImportSessionRoute>;
@@ -616,6 +740,20 @@ interface CreateWorkspaceRequestHandlerInput {
      * Default (when omitted): false.
      */
     testIntelligenceEnabled?: boolean;
+    /**
+     * Bearer token accepted for `POST /workspace/test-intelligence/review/...`
+     * write actions. When omitted, review-gate writes fail closed with `503`.
+     * Reads (`GET /workspace/test-intelligence/...`) never require this token.
+     */
+    testIntelligenceReviewBearerToken?: string;
+    /**
+     * Absolute path of the directory under which per-job test-intelligence
+     * artifacts are stored and surfaced by the Inspector UI. The handler
+     * never writes here — emitters (validation pipeline, review store,
+     * export pipeline) write per existing conventions, the Inspector route
+     * only reads.
+     */
+    testIntelligenceArtifactRoot?: string;
     logger?: WorkspaceRuntimeLogger;
   };
   getServerLifecycleState?: () => "starting" | "ready" | "draining" | "stopped";
@@ -653,6 +791,28 @@ export function createWorkspaceRequestHandler({
       ),
     }),
   });
+  const testIntelligenceWriteRateLimiter = createIpRateLimiter({
+    ...rateLimiterOptions,
+    store: createFileBackedRateLimitStore({
+      filePath: path.join(
+        absoluteOutputRoot,
+        "rate-limits",
+        "test-intelligence-review-writes.json",
+      ),
+    }),
+  });
+  const testIntelligenceArtifactRoot =
+    runtime.testIntelligenceArtifactRoot ??
+    path.join(absoluteOutputRoot, "test-intelligence");
+  let cachedReviewStore: ReviewStore | undefined;
+  const getReviewStore = (): ReviewStore => {
+    if (!cachedReviewStore) {
+      cachedReviewStore = createFileSystemReviewStore({
+        destinationDir: testIntelligenceArtifactRoot,
+      });
+    }
+    return cachedReviewStore;
+  };
   const resolveLifecycleState = ():
     | "starting"
     | "ready"
@@ -839,6 +999,9 @@ export function createWorkspaceRequestHandler({
 
       if (method === "GET" && pathname === "/workspace") {
         const resolvedPort = getResolvedPort();
+        const testIntelligenceEnabled =
+          resolveTestIntelligenceEnabled() &&
+          runtime.testIntelligenceEnabled === true;
         const status: WorkspaceStatus = {
           running: true,
           url: `http://${host}:${resolvedPort}`,
@@ -849,8 +1012,255 @@ export function createWorkspaceRequestHandler({
           uptimeMs: Date.now() - startedAt,
           outputRoot: absoluteOutputRoot,
           previewEnabled: runtime.previewEnabled,
+          testIntelligenceEnabled,
         };
         sendJson({ response, statusCode: 200, payload: status });
+        return;
+      }
+
+      if (pathname.startsWith("/workspace/test-intelligence")) {
+        const testIntelligenceGatesEnabled =
+          resolveTestIntelligenceEnabled() &&
+          runtime.testIntelligenceEnabled === true;
+        if (!testIntelligenceGatesEnabled) {
+          sendJson({
+            response,
+            statusCode: 503,
+            payload: {
+              error: ErrorCode.FEATURE_DISABLED,
+              message: `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1.`,
+            },
+          });
+          return;
+        }
+
+        const parsed = parseInspectorTestIntelligenceRoute(pathname);
+        if (!parsed.ok) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "NOT_FOUND",
+              message: `Unknown route: ${method} ${pathname}`,
+            },
+          });
+          return;
+        }
+        const route = parsed.route;
+
+        if (method === "GET") {
+          if (route.kind === "list_jobs") {
+            const summaries = await listInspectorTestIntelligenceJobs(
+              testIntelligenceArtifactRoot,
+            );
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: { jobs: summaries },
+            });
+            return;
+          }
+          if (route.kind === "read_bundle") {
+            const result = await readInspectorTestIntelligenceBundle({
+              rootDir: testIntelligenceArtifactRoot,
+              jobId: route.jobId,
+              assembledAt: new Date().toISOString(),
+            });
+            if (!result.ok) {
+              sendJson({
+                response,
+                statusCode: 404,
+                payload: {
+                  error: "JOB_NOT_FOUND",
+                  message: `No test-intelligence artifacts for job '${route.jobId}'.`,
+                },
+              });
+              return;
+            }
+            sendJson({
+              response,
+              statusCode: 200,
+              payload: result.bundle,
+            });
+            return;
+          }
+          if (route.kind === "review_state") {
+            const reviewResponse = await handleReviewRequest(
+              {
+                bearerToken: runtime.testIntelligenceReviewBearerToken,
+                authorizationHeader:
+                  typeof request.headers.authorization === "string"
+                    ? request.headers.authorization
+                    : undefined,
+                method: "GET",
+                action: "state",
+                jobId: route.jobId,
+                at: new Date().toISOString(),
+              },
+              getReviewStore(),
+            );
+            if (reviewResponse.wwwAuthenticate) {
+              response.setHeader(
+                "www-authenticate",
+                reviewResponse.wwwAuthenticate,
+              );
+            }
+            sendJson({
+              response,
+              statusCode: reviewResponse.statusCode,
+              payload: reviewResponse.body,
+            });
+            return;
+          }
+          // review_action under GET is method-not-allowed.
+          response.setHeader("allow", "POST");
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use POST for review actions on '${pathname}'.`,
+            },
+          });
+          return;
+        }
+
+        if (method === "POST") {
+          if (route.kind !== "review_action") {
+            response.setHeader("allow", "GET");
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `POST is not allowed on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              fallbackMessage: "Write request rejected.",
+            });
+            return;
+          }
+
+          const rateLimitResult =
+            await testIntelligenceWriteRateLimiter.consume(
+              resolveRateLimitClientKey(request),
+              route.jobId,
+            );
+          if (!rateLimitResult.allowed) {
+            sendRateLimitExceeded({
+              retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+              message: `Too many test-intelligence review writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+            });
+            return;
+          }
+
+          const bodyResult = await readJsonBody(request, {
+            maxBytes: MAX_SUBMIT_BODY_BYTES,
+          });
+          if (!bodyResult.ok) {
+            sendRequestFailure({
+              statusCode: bodyResult.reason === "OVERSIZE" ? 413 : 400,
+              payload: {
+                error:
+                  bodyResult.reason === "OVERSIZE"
+                    ? "REQUEST_TOO_LARGE"
+                    : "INVALID_BODY",
+                message: bodyResult.error,
+              },
+              fallbackMessage: "Invalid review request body.",
+            });
+            return;
+          }
+
+          const envelope = buildReviewEnvelopeFromBody({
+            body: bodyResult.value,
+            method: "POST",
+            action: route.action,
+            jobId: route.jobId,
+            ...(route.testCaseId !== undefined
+              ? { testCaseId: route.testCaseId }
+              : {}),
+            bearerToken: runtime.testIntelligenceReviewBearerToken,
+            authorizationHeader:
+              typeof request.headers.authorization === "string"
+                ? request.headers.authorization
+                : undefined,
+          });
+          if (!envelope.ok) {
+            sendValidationError({
+              payload: {
+                error: envelope.error,
+                message: envelope.message,
+              },
+              fallbackMessage: "Review request validation failed.",
+            });
+            return;
+          }
+
+          const reviewResponse = await handleReviewRequest(
+            envelope.envelope,
+            getReviewStore(),
+          );
+          if (reviewResponse.wwwAuthenticate) {
+            response.setHeader(
+              "www-authenticate",
+              reviewResponse.wwwAuthenticate,
+            );
+          }
+          sendJson({
+            response,
+            statusCode: reviewResponse.statusCode,
+            payload: reviewResponse.body,
+          });
+          return;
+        }
+
+        if (method === "OPTIONS") {
+          response.setHeader(
+            "allow",
+            route.kind === "review_action" ? "POST" : "GET",
+          );
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Test-intelligence route '${pathname}' does not support cross-origin browser preflight requests.`,
+            },
+          });
+          return;
+        }
+
+        response.setHeader(
+          "allow",
+          route.kind === "review_action" ? "POST" : "GET",
+        );
+        sendJson({
+          response,
+          statusCode: 405,
+          payload: {
+            error: "METHOD_NOT_ALLOWED",
+            message: `Method ${method} is not allowed on '${pathname}'.`,
+          },
+        });
         return;
       }
 
@@ -3548,8 +3958,7 @@ export function createWorkspaceRequestHandler({
             statusCode: 503,
             payload: {
               error: ErrorCode.FEATURE_DISABLED,
-              message:
-                `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1 to use ${rawJobType}.`,
+              message: `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1 to use ${rawJobType}.`,
             },
             fallbackMessage: "Test intelligence feature disabled.",
           });
@@ -3651,8 +4060,7 @@ export function createWorkspaceRequestHandler({
               statusCode: 503,
               payload: {
                 error: ErrorCode.FEATURE_DISABLED,
-                message:
-                  `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1 to use ${parsed.data.jobType}.`,
+                message: `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1 to use ${parsed.data.jobType}.`,
               },
               fallbackMessage: "Test intelligence feature disabled.",
             });
@@ -3663,8 +4071,7 @@ export function createWorkspaceRequestHandler({
             statusCode: 501,
             payload: {
               error: "NOT_IMPLEMENTED",
-              message:
-                `${TEST_INTELLIGENCE_JOB_TYPE} requires an isolated local test-intelligence runner and cannot use the existing Figma-to-code pipeline.`,
+              message: `${TEST_INTELLIGENCE_JOB_TYPE} requires an isolated local test-intelligence runner and cannot use the existing Figma-to-code pipeline.`,
             },
             fallbackMessage: "Test intelligence job execution unavailable.",
           });

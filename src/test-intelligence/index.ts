@@ -198,3 +198,21 @@ export {
   type EvaluateWave1PocInput,
   type WriteWave1PocEvalReportInput,
 } from "./poc-eval.js";
+export {
+  isSafeJobId,
+  listInspectorTestIntelligenceJobs,
+  readInspectorTestIntelligenceBundle,
+  type InspectorBundleArtifactKind,
+  type InspectorBundleParseError,
+  type InspectorTestIntelligenceBundle,
+  type InspectorTestIntelligenceJobSummary,
+  type ReadInspectorBundleInput,
+  type ReadInspectorBundleResult,
+} from "./inspector-bundle.js";
+export {
+  isInspectorTestIntelligenceWriteAction,
+  parseInspectorTestIntelligenceRoute,
+  type InspectorTestIntelligenceParseError,
+  type InspectorTestIntelligenceParseResult,
+  type InspectorTestIntelligenceRoute,
+} from "./inspector-route.js";

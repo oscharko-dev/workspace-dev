@@ -186,6 +186,8 @@ async function createRequestHandlerApp({
   logger = createStubLogger(),
   importSessionEventBearerToken,
   testIntelligenceEnabled,
+  testIntelligenceReviewBearerToken,
+  testIntelligenceArtifactRoot,
   workspaceRoot,
   outputRoot,
   getServerLifecycleState,
@@ -196,6 +198,8 @@ async function createRequestHandlerApp({
   logger?: WorkspaceRuntimeLogger;
   importSessionEventBearerToken?: string;
   testIntelligenceEnabled?: boolean;
+  testIntelligenceReviewBearerToken?: string;
+  testIntelligenceArtifactRoot?: string;
   workspaceRoot?: string;
   outputRoot?: string;
   getServerLifecycleState?: () => "starting" | "ready" | "draining" | "stopped";
@@ -226,6 +230,12 @@ async function createRequestHandlerApp({
       ...(testIntelligenceEnabled === undefined
         ? {}
         : { testIntelligenceEnabled }),
+      ...(testIntelligenceReviewBearerToken === undefined
+        ? {}
+        : { testIntelligenceReviewBearerToken }),
+      ...(testIntelligenceArtifactRoot === undefined
+        ? {}
+        : { testIntelligenceArtifactRoot }),
       logger,
     },
     ...(getServerLifecycleState ? { getServerLifecycleState } : {}),
@@ -6857,6 +6867,468 @@ test("submit figma_to_code path is unaffected when test-intelligence gates are o
       assert.equal(submitJob.mock.callCount(), 2);
     } finally {
       await close();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Inspector test-intelligence routes (Issue #1367)
+// ---------------------------------------------------------------------------
+
+const TI_ASSEMBLED_AT = "2026-04-25T11:00:00.000Z";
+const TI_REVIEW_TOKEN = "test-ti-review-bearer";
+
+const tiAuthHeader = (token: string = TI_REVIEW_TOKEN): { authorization: string } => ({
+  authorization: `Bearer ${token}`,
+});
+
+interface SeedTiJobOptions {
+  generatedAt?: string;
+  policyDecision?: "approved" | "needs_review" | "blocked";
+}
+
+async function seedTiJob(
+  artifactRoot: string,
+  jobId: string,
+  { generatedAt = TI_ASSEMBLED_AT, policyDecision = "needs_review" }: SeedTiJobOptions = {},
+): Promise<void> {
+  const { createFileSystemReviewStore } = await import(
+    "../test-intelligence/review-store.js"
+  );
+  const { writeValidationPipelineArtifacts } = await import(
+    "../test-intelligence/validation-pipeline.js"
+  );
+  const {
+    GENERATED_TEST_CASE_SCHEMA_VERSION,
+    TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION,
+    TEST_INTELLIGENCE_CONTRACT_VERSION,
+    TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+    TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION,
+    VISUAL_SIDECAR_SCHEMA_VERSION,
+  } = await import("../contracts/index.js");
+
+  const list = {
+    schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+    jobId,
+    testCases: [
+      {
+        id: "tc-1",
+        sourceJobId: jobId,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+        promptTemplateVersion: "1.0.0",
+        title: "Sign in happy path",
+        objective: "Verify user can authenticate with valid credentials",
+        level: "system",
+        type: "functional",
+        priority: "p1",
+        riskCategory: "medium",
+        technique: "equivalence_partitioning",
+        preconditions: ["User has an active account"],
+        testData: ["alice@example.test"],
+        steps: [{ index: 1, action: "Open the login form" }],
+        expectedResults: ["The user is authenticated"],
+        figmaTraceRefs: [{ screenId: "screen-login" }],
+        assumptions: [],
+        openQuestions: [],
+        qcMappingPreview: { exportable: true },
+        qualitySignals: {
+          coveredFieldIds: [],
+          coveredActionIds: [],
+          coveredValidationIds: [],
+          coveredNavigationIds: [],
+          confidence: 0.9,
+        },
+        reviewState: "needs_review" as const,
+        audit: {
+          jobId,
+          generatedAt,
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+          schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+          promptTemplateVersion: "1.0.0",
+          redactionPolicyVersion: "1.0.0",
+          visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+          cacheHit: false,
+          cacheKey: "ck-1",
+          inputHash: "00",
+          promptHash: "11",
+          schemaHash: "22",
+        },
+      },
+    ],
+  };
+
+  const policy = {
+    schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    generatedAt,
+    jobId,
+    policyProfileId: "eu-banking-default",
+    policyProfileVersion: "1.0.0",
+    totalTestCases: 1,
+    approvedCount: policyDecision === "approved" ? 1 : 0,
+    blockedCount: policyDecision === "blocked" ? 1 : 0,
+    needsReviewCount: policyDecision === "needs_review" ? 1 : 0,
+    blocked: policyDecision === "blocked",
+    decisions: [
+      { testCaseId: "tc-1", decision: policyDecision, violations: [] },
+    ],
+    jobLevelViolations: [],
+  };
+
+  const validation = {
+    schemaVersion: TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    generatedAt,
+    jobId,
+    totalTestCases: 1,
+    errorCount: 0,
+    warningCount: 0,
+    blocked: false,
+    issues: [],
+  };
+
+  const coverage = {
+    schemaVersion: TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    generatedAt,
+    jobId,
+    policyProfileId: "eu-banking-default",
+    totalTestCases: 1,
+    fieldCoverage: { total: 1, covered: 1, ratio: 1, uncoveredIds: [] },
+    actionCoverage: { total: 1, covered: 1, ratio: 1, uncoveredIds: [] },
+    validationCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
+    navigationCoverage: { total: 0, covered: 0, ratio: 0, uncoveredIds: [] },
+    traceCoverage: { total: 1, withTrace: 1, ratio: 1 },
+    negativeCaseCount: 0,
+    validationCaseCount: 0,
+    boundaryCaseCount: 0,
+    accessibilityCaseCount: 0,
+    workflowCaseCount: 1,
+    positiveCaseCount: 1,
+    assumptionsRatio: 0,
+    openQuestionsCount: 0,
+    duplicatePairs: [],
+  };
+
+  const destinationDir = path.join(artifactRoot, jobId);
+  await mkdir(destinationDir, { recursive: true });
+  await writeValidationPipelineArtifacts({
+    destinationDir,
+    artifacts: { generatedTestCases: list, validation, policy, coverage },
+  });
+  const store = createFileSystemReviewStore({ destinationDir: artifactRoot });
+  await store.seedSnapshot({ jobId, generatedAt, list, policy });
+}
+
+test("test-intelligence: 503 when feature gates are off", async () => {
+  await withTestIntelligenceEnv(undefined, async () => {
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: false,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs",
+      });
+      assert.equal(response.statusCode, 503);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "FEATURE_DISABLED");
+    } finally {
+      await close();
+    }
+  });
+});
+
+test("test-intelligence: GET /jobs returns empty list when artifact root is missing", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), "ti-route-empty-"),
+    );
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: path.join(tempRoot, "missing"),
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs",
+      });
+      assert.equal(response.statusCode, 200);
+      assert.deepEqual(response.json<{ jobs: unknown[] }>().jobs, []);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /jobs/:jobId returns the bundle once artifacts are seeded", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-read-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-read");
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/job-read",
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.jobId, "job-read");
+      const generatedTestCases = body.generatedTestCases as
+        | { testCases: unknown[] }
+        | undefined;
+      assert.equal(generatedTestCases?.testCases.length, 1);
+      const reviewSnapshot = body.reviewSnapshot as
+        | { needsReviewCount: number }
+        | undefined;
+      assert.equal(reviewSnapshot?.needsReviewCount, 1);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /jobs/:jobId returns 404 for unknown job", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-404-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/missing-job",
+      });
+      assert.equal(response.statusCode, 404);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "JOB_NOT_FOUND");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: rejects path-traversal jobIds", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-trav-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/jobs/..",
+      });
+      assert.equal(response.statusCode, 404);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /review/:jobId/state returns snapshot + events", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-state-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-state");
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+    });
+    try {
+      const response = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/review/job-state/state",
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json<{
+        ok: boolean;
+        snapshot: { needsReviewCount: number };
+        events: unknown[];
+      }>();
+      assert.equal(body.ok, true);
+      assert.equal(body.snapshot.needsReviewCount, 1);
+      assert.equal(body.events.length, 1);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST review action returns 503 when bearer token unset", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-noauth-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-noauth");
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/review/job-noauth/approve/tc-1",
+        payload: { at: TI_ASSEMBLED_AT, actor: "alice" },
+      });
+      assert.equal(response.statusCode, 503);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "AUTHENTICATION_UNAVAILABLE");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST review action returns 401 with wrong token", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-401-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-401");
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/review/job-401/approve/tc-1",
+        headers: tiAuthHeader("wrong-token"),
+        payload: { at: TI_ASSEMBLED_AT, actor: "alice" },
+      });
+      assert.equal(response.statusCode, 401);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "UNAUTHORIZED");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST approve transitions and returns updated snapshot", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), "ti-route-approve-"),
+    );
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-approve");
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/review/job-approve/approve/tc-1",
+        headers: tiAuthHeader(),
+        payload: { at: TI_ASSEMBLED_AT, actor: "alice" },
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json<{
+        ok: boolean;
+        snapshot: { approvedCount: number };
+      }>();
+      assert.equal(body.ok, true);
+      assert.equal(body.snapshot.approvedCount, 1);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST refuses approve for policy-blocked test case", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-blocked-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-blocked", { policyDecision: "blocked" });
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/review/job-blocked/approve/tc-1",
+        headers: tiAuthHeader(),
+        payload: { at: TI_ASSEMBLED_AT, actor: "alice" },
+      });
+      assert.equal(response.statusCode, 409);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "TRANSITION_REFUSED");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST returns 400 when body is missing 'at'", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-noat-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-noat");
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/review/job-noat/approve/tc-1",
+        headers: tiAuthHeader(),
+        payload: { actor: "alice" },
+      });
+      assert.equal(response.statusCode, 400);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "INVALID_BODY");
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: GET /workspace exposes testIntelligenceEnabled in status", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-status-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({ method: "GET", url: "/workspace" });
+      assert.equal(response.statusCode, 200);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.testIntelligenceEnabled, true);
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
     }
   });
 });
