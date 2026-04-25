@@ -248,3 +248,28 @@ test("poc-harness: structured-test-case generator never receives image payloads"
     });
   }
 });
+
+test("poc-harness: default execution does not touch live gateway fetch", async () => {
+  const originalFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error("default POC path attempted live fetch");
+  }) as typeof fetch;
+
+  try {
+    const runDir = await newRunDir();
+    const result = await runWave1Poc({
+      fixtureId: "poc-onboarding",
+      jobId: "job-poc-default-no-live-fetch",
+      generatedAt: GENERATED_AT,
+      runDir,
+    });
+
+    assert.equal(result.visualSidecar, undefined);
+    assert.equal(result.manifest.modelDeployments.testGeneration, "gpt-oss-120b-mock");
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

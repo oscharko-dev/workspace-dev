@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.22.0
+ * Contract version: 3.27.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -2899,6 +2899,18 @@ export interface Wave1PocEvidenceVerificationResult {
   unexpected: string[];
 }
 
+/** Visual-sidecar summary duplicated into the Wave 1 evidence manifest. */
+export interface Wave1PocEvidenceVisualSidecarSummary {
+  selectedDeployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock";
+  fallbackReason: VisualSidecarFallbackReason;
+  confidenceSummary: { min: number; max: number; mean: number };
+  /** SHA-256 hex of the persisted `visual-sidecar-result.json` artifact. */
+  resultArtifactSha256: string;
+}
+
 /**
  * Wave 1 POC evidence manifest. Frozen, deterministic, byte-identical
  * across runs of the same fixture and mock output. Lists every artifact
@@ -2957,6 +2969,8 @@ export interface Wave1PocEvidenceManifest {
   schemaHash: string;
   inputHash: string;
   cacheKeyDigest: string;
+  /** Direct visual-sidecar evidence summary when the opt-in sidecar path ran. */
+  visualSidecar?: Wave1PocEvidenceVisualSidecarSummary;
   /** Sorted-by-filename, de-duplicated artifact list. */
   artifacts: Wave1PocEvidenceArtifact[];
   /** Hard invariant: no raw screenshot bytes leak into export artifacts. */

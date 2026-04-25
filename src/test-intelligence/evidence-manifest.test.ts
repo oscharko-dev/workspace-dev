@@ -67,6 +67,31 @@ test("evidence-manifest: stamps schema/contract versions and hard invariants", (
   assert.equal(manifest.imagePayloadSentToTestGeneration, false);
 });
 
+test("evidence-manifest: records direct visual sidecar summary when supplied", () => {
+  const manifest = buildWave1PocEvidenceManifest({
+    ...baseInput([
+      {
+        filename: "visual-sidecar-result.json",
+        bytes: utf8('{"result":{"outcome":"success"}}'),
+        category: "visual_sidecar",
+      },
+    ]),
+    visualSidecar: {
+      selectedDeployment: "llama-4-maverick-vision",
+      fallbackReason: "none",
+      confidenceSummary: { min: 0.9, max: 0.95, mean: 0.92 },
+      resultArtifactSha256: ZERO,
+    },
+  });
+
+  assert.deepEqual(manifest.visualSidecar, {
+    selectedDeployment: "llama-4-maverick-vision",
+    fallbackReason: "none",
+    confidenceSummary: { min: 0.9, max: 0.95, mean: 0.92 },
+    resultArtifactSha256: ZERO,
+  });
+});
+
 test("evidence-manifest: artifacts are sorted by filename and de-duplicated", () => {
   const manifest = buildWave1PocEvidenceManifest(
     baseInput([
@@ -110,6 +135,19 @@ test("evidence-manifest: refuses non-sha256 hash inputs", () => {
         promptHash: "not-a-hash",
       }),
     /must be a sha256 hex string/,
+  );
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest({
+        ...baseInput([]),
+        visualSidecar: {
+          selectedDeployment: "llama-4-maverick-vision",
+          fallbackReason: "none",
+          confidenceSummary: { min: 0.9, max: 0.95, mean: 0.92 },
+          resultArtifactSha256: "not-a-hash",
+        },
+      }),
+    /visualSidecar\.resultArtifactSha256 must be a sha256 hex string/,
   );
 });
 

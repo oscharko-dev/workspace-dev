@@ -31,6 +31,7 @@ import {
   loadWave1PocCaptureFixture,
   runWave1Poc,
   synthesizeGeneratedTestCases,
+  Wave1PocVisualSidecarFailureError,
   type MockResponder,
 } from "./index.js";
 
@@ -230,6 +231,16 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
       "sha256 must be a 64-char hex string",
     );
     assert.ok(manifestEntry.bytes > 0, "bytes must be non-zero");
+    assert.equal(
+      result.manifest.visualSidecar?.resultArtifactSha256,
+      manifestEntry.sha256,
+    );
+    assert.deepEqual(result.manifest.visualSidecar, {
+      selectedDeployment: PRIMARY_DEPLOYMENT,
+      fallbackReason: "none",
+      confidenceSummary: result.visualSidecar.confidenceSummary,
+      resultArtifactSha256: manifestEntry.sha256,
+    });
 
     // --- testGeneration recorded requests carry no image payloads ---
     // The harness's internal mockClient is what actually calls testGeneration.
@@ -422,7 +433,12 @@ test("poc-harness visualCaptures: both sidecars fail — harness throws, no test
           bundle,
         }),
       (err: unknown) => {
-        assert.ok(err instanceof Error, "must throw an Error");
+        assert.ok(
+          err instanceof Wave1PocVisualSidecarFailureError,
+          "must throw a structured visual-sidecar failure error",
+        );
+        assert.equal(err.visualSidecar.outcome, "failure");
+        assert.equal(err.visualSidecar.failureClass, "both_sidecars_failed");
         // The error message references the both-failed condition.
         assert.match(
           err.message,
@@ -433,10 +449,22 @@ test("poc-harness visualCaptures: both sidecars fail — harness throws, no test
       },
     );
 
+    const sidecarArtifactRaw = await readFile(
+      join(runDir, VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME),
+      "utf8",
+    );
+    const sidecarArtifact = JSON.parse(sidecarArtifactRaw) as {
+      result: { outcome: string; failureClass?: string; attempts?: unknown[] };
+      rawScreenshotsIncluded: boolean;
+    };
+    assert.equal(sidecarArtifact.result.outcome, "failure");
+    assert.equal(sidecarArtifact.result.failureClass, "both_sidecars_failed");
+    assert.equal(sidecarArtifact.result.attempts?.length, 2);
+    assert.equal(sidecarArtifact.rawScreenshotsIncluded, false);
+
     // AC5 invariant: NO downstream test cases may be silently generated when
     // both sidecars fail. The harness short-circuits before the LLM
     // test-generation call, so the generated-testcases artifact must not exist.
-    // known: AC5 invariant — see #1386 follow-up
     const generatedTestCasesPath = join(
       runDir,
       GENERATED_TESTCASES_ARTIFACT_FILENAME,
