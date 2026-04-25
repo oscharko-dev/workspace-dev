@@ -20,6 +20,7 @@ import {
   buildGeneratedTestCaseListJsonSchema,
   computeGeneratedTestCaseListSchemaHash,
 } from "./generated-test-case-schema.js";
+import { detectPii } from "./pii-detection.js";
 
 /**
  * Versioned prompt template body. Bump
@@ -72,7 +73,7 @@ export interface CompilePromptResult {
 export const compilePrompt = (
   input: CompilePromptInput,
 ): CompilePromptResult => {
-  const visual = input.visual ?? [];
+  const visual = redactVisualBatch(input.visual ?? []);
   const visualBinding = normalizeVisualBinding(input.visualBinding, visual);
   const responseSchema = buildGeneratedTestCaseListJsonSchema();
   const schemaHash = computeGeneratedTestCaseListSchemaHash();
@@ -227,4 +228,62 @@ const normalizeVisualBinding = (
     normalized.fixtureImageHash = binding.fixtureImageHash;
   }
   return normalized;
+};
+
+const redactVisualBatch = (
+  visual: VisualScreenDescription[],
+): VisualScreenDescription[] => {
+  return visual.map((screen) => {
+    const redactedScreen: VisualScreenDescription = {
+      screenId: redactVisualString(screen.screenId),
+      sidecarDeployment: screen.sidecarDeployment,
+      confidenceSummary: { ...screen.confidenceSummary },
+      regions: screen.regions.map((region) => {
+        const redactedRegion: VisualScreenDescription["regions"][number] = {
+          regionId: redactVisualString(region.regionId),
+          confidence: region.confidence,
+        };
+        if (region.label !== undefined) {
+          redactedRegion.label = redactVisualString(region.label);
+        }
+        if (region.controlType !== undefined) {
+          redactedRegion.controlType = redactVisualString(region.controlType);
+        }
+        if (region.visibleText !== undefined) {
+          redactedRegion.visibleText = redactVisualString(region.visibleText);
+        }
+        if (region.stateHints !== undefined) {
+          redactedRegion.stateHints = region.stateHints.map(redactVisualString);
+        }
+        if (region.validationHints !== undefined) {
+          redactedRegion.validationHints =
+            region.validationHints.map(redactVisualString);
+        }
+        if (region.ambiguity !== undefined) {
+          redactedRegion.ambiguity = {
+            reason: redactVisualString(region.ambiguity.reason),
+          };
+        }
+        return redactedRegion;
+      }),
+    };
+    if (screen.screenName !== undefined) {
+      redactedScreen.screenName = redactVisualString(screen.screenName);
+    }
+    if (screen.capturedAt !== undefined) {
+      redactedScreen.capturedAt = screen.capturedAt;
+    }
+    if (screen.piiFlags !== undefined) {
+      redactedScreen.piiFlags = screen.piiFlags.map((flag) => ({
+        regionId: redactVisualString(flag.regionId),
+        kind: flag.kind,
+        confidence: flag.confidence,
+      }));
+    }
+    return redactedScreen;
+  });
+};
+
+const redactVisualString = (value: string): string => {
+  return detectPii(value)?.redacted ?? value;
 };

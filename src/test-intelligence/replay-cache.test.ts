@@ -25,6 +25,7 @@ import {
   computeReplayCacheKeyDigest,
   createFileSystemReplayCache,
   createMemoryReplayCache,
+  executeWithReplayCache,
   ReplayCacheValidationError,
   type ReplayCache,
 } from "./replay-cache.js";
@@ -195,6 +196,63 @@ const runHitMissCycle = async (cache: ReplayCache): Promise<void> => {
 test("memory cache: miss → store → hit cycle skips the mocked LLM client", async () => {
   const cache = createMemoryReplayCache();
   await runHitMissCycle(cache);
+});
+
+test("replay execution: miss calls LLM once, stores result, and returns cacheHit=false", async () => {
+  const cache = createMemoryReplayCache();
+  const { cacheKey, cacheKeyDigest } = compileForFixture("job-1");
+  const llm = buildMockLlmClient();
+
+  const result = await executeWithReplayCache({
+    cache,
+    cacheKey,
+    generate: async (digest) => {
+      const generated = llm.generate("job-1", digest);
+      return {
+        ...generated,
+        testCases: generated.testCases.map((testCase) => ({
+          ...testCase,
+          audit: { ...testCase.audit, cacheHit: true },
+        })),
+      };
+    },
+  });
+
+  assert.equal(result.cacheHit, false);
+  assert.equal(result.key, cacheKeyDigest);
+  assert.equal(llm.calls.length, 1);
+  assert.equal(result.testCases.testCases[0]!.audit.cacheHit, false);
+
+  const stored = await cache.lookup(cacheKey);
+  assert.equal(stored.hit, true);
+});
+
+test("replay execution: hit skips LLM and returns audit cacheHit=true", async () => {
+  const cache = createMemoryReplayCache();
+  const { cacheKey, cacheKeyDigest } = compileForFixture("job-1");
+  await cache.store(cacheKey, buildList("job-1"));
+  const llm = buildMockLlmClient();
+
+  const result = await executeWithReplayCache({
+    cache,
+    cacheKey,
+    generate: async (digest) => llm.generate("job-1", digest),
+  });
+
+  assert.equal(result.cacheHit, true);
+  assert.equal(result.key, cacheKeyDigest);
+  assert.equal(llm.calls.length, 0, "cache hit must not invoke the LLM client");
+  assert.equal(result.testCases.testCases[0]!.audit.cacheHit, true);
+
+  const stored = await cache.lookup(cacheKey);
+  assert.equal(stored.hit, true);
+  if (stored.hit) {
+    assert.equal(
+      stored.entry.testCases.testCases[0]!.audit.cacheHit,
+      false,
+      "cache storage keeps the original generated artifact immutable",
+    );
+  }
 });
 
 test("memory cache: lookup returns a deep clone (caller cannot poison cache)", async () => {

@@ -21,6 +21,7 @@ import {
   COMPILED_USER_PROMPT_PREAMBLE,
   compilePrompt,
 } from "./prompt-compiler.js";
+import { buildGeneratedTestCaseListJsonSchema } from "./generated-test-case-schema.js";
 import { reconcileSources } from "./reconciliation.js";
 
 const FIXTURES_DIR = join(new URL(".", import.meta.url).pathname, "fixtures");
@@ -231,6 +232,86 @@ test("compiler: artifacts contain only redacted PII (golden snapshot guard)", as
   assert.match(serialized, /\[REDACTED:IBAN\]/);
 });
 
+test("compiler: redacts PII-like values from visual sidecar prompts and artifacts", async () => {
+  const { intent, visual } = await loadFixture();
+  const unsafeVisual: VisualScreenDescription[] = [
+    {
+      ...visual[0]!,
+      screenName: "Max Mustermann payment screen",
+      regions: [
+        {
+          ...visual[0]!.regions[0]!,
+          label: "Card 4111111111111111",
+          visibleText: "max.mustermann@sparkasse.de",
+          stateHints: ["Call +49 221 1234567 after submit"],
+          validationHints: ["Tax ID 86095742719 must be accepted"],
+          ambiguity: { reason: "Owned by Max Mustermann" },
+        },
+      ],
+    },
+  ];
+
+  const result = compilePrompt({
+    jobId: "job-1",
+    intent,
+    visual: unsafeVisual,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+
+  const serialized = JSON.stringify({
+    request: result.request,
+    artifacts: result.artifacts,
+  });
+  for (const pii of PII_SUBSTRINGS) {
+    assert.equal(
+      serialized.includes(pii),
+      false,
+      `PII substring "${pii}" leaked into compiled visual prompt data`,
+    );
+  }
+  assert.match(serialized, /\[REDACTED:PAN\]/);
+  assert.match(serialized, /\[REDACTED:EMAIL\]/);
+  assert.match(serialized, /\[REDACTED:PHONE\]/);
+  assert.match(serialized, /\[REDACTED:TAX_ID\]/);
+  assert.match(serialized, /\[REDACTED:FULL_NAME\]/);
+});
+
+test("compiler: strips unexpected visual sidecar properties from prompts and artifacts", async () => {
+  const { intent, visual } = await loadFixture();
+  const malformedVisual = [
+    {
+      ...visual[0]!,
+      rawSecret: "max.mustermann@sparkasse.de",
+      regions: [
+        {
+          ...visual[0]!.regions[0]!,
+          debugSecret: "4111111111111111",
+        },
+      ],
+    },
+  ] as unknown as VisualScreenDescription[];
+
+  const result = compilePrompt({
+    jobId: "job-1",
+    intent,
+    visual: malformedVisual,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+
+  const serialized = JSON.stringify({
+    request: result.request,
+    artifacts: result.artifacts,
+  });
+  assert.equal(serialized.includes("rawSecret"), false);
+  assert.equal(serialized.includes("debugSecret"), false);
+  assert.equal(serialized.includes("max.mustermann@sparkasse.de"), false);
+  assert.equal(serialized.includes("4111111111111111"), false);
+});
+
 test("compiler: includes versioned breadcrumbs in user prompt body", async () => {
   const { intent, visual } = await loadFixture();
   const { request } = compilePrompt({
@@ -287,6 +368,19 @@ test("compiler: artifacts pin the contract and schema versions", async () => {
   assert.ok(artifacts.userPrompt.startsWith(COMPILED_USER_PROMPT_PREAMBLE));
 });
 
+test("compiler: normalizes visual binding screen count from redacted visual batch", async () => {
+  const { intent, visual } = await loadFixture();
+  const { artifacts } = compilePrompt({
+    jobId: "job-1",
+    intent,
+    visual,
+    modelBinding: sampleModelBinding,
+    visualBinding: { ...sampleVisualBinding, screenCount: 999 },
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.equal(artifacts.visualBinding.screenCount, visual.length);
+});
+
 test("compiler: omits seed and fixtureImageHash from request when absent", async () => {
   const { intent, visual } = await loadFixture();
   const { request, cacheKey } = compilePrompt({
@@ -322,5 +416,20 @@ test("compiler: response schema name is stable", async () => {
   assert.equal(
     request.responseSchemaName,
     `workspace-dev.test-intelligence.generated-test-case-list.v${GENERATED_TEST_CASE_SCHEMA_VERSION}`,
+  );
+});
+
+test("compiler: request schema matches generated test case JSON schema", async () => {
+  const { intent } = await loadFixture();
+  const { request } = compilePrompt({
+    jobId: "job-1",
+    intent,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.deepEqual(
+    request.responseSchema,
+    buildGeneratedTestCaseListJsonSchema(),
   );
 });

@@ -34,6 +34,47 @@ export interface ReplayCache {
   store(key: ReplayCacheKey, testCases: GeneratedTestCaseList): Promise<void>;
 }
 
+export interface ReplayCacheExecutionInput {
+  cache: ReplayCache;
+  cacheKey: ReplayCacheKey;
+  generate: (cacheKeyDigest: string) => Promise<GeneratedTestCaseList>;
+}
+
+export interface ReplayCacheExecutionResult {
+  cacheHit: boolean;
+  key: string;
+  testCases: GeneratedTestCaseList;
+}
+
+/**
+ * Execute generated-test-case production through the replay cache.
+ *
+ * Cache hits never call `generate`; they return a cloned result with the
+ * per-case audit metadata marked as a cache hit for downstream evidence.
+ */
+export const executeWithReplayCache = async ({
+  cache,
+  cacheKey,
+  generate,
+}: ReplayCacheExecutionInput): Promise<ReplayCacheExecutionResult> => {
+  const lookup = await cache.lookup(cacheKey);
+  if (lookup.hit) {
+    return {
+      cacheHit: true,
+      key: lookup.entry.key,
+      testCases: markAuditCacheHit(lookup.entry.testCases, true),
+    };
+  }
+
+  const generated = markAuditCacheHit(await generate(lookup.key), false);
+  await cache.store(cacheKey, generated);
+  return {
+    cacheHit: false,
+    key: lookup.key,
+    testCases: generated,
+  };
+};
+
 /** Compute the canonical sha256 digest for a `ReplayCacheKey`. */
 export const computeReplayCacheKeyDigest = (key: ReplayCacheKey): string => {
   return sha256Hex(key);
@@ -160,6 +201,22 @@ export class ReplayCacheValidationError extends Error {
 
 const cloneEntry = (entry: ReplayCacheEntry): ReplayCacheEntry => {
   return JSON.parse(JSON.stringify(entry)) as ReplayCacheEntry;
+};
+
+const markAuditCacheHit = (
+  testCases: GeneratedTestCaseList,
+  cacheHit: boolean,
+): GeneratedTestCaseList => {
+  return {
+    ...testCases,
+    testCases: testCases.testCases.map((testCase) => ({
+      ...testCase,
+      audit: {
+        ...testCase.audit,
+        cacheHit,
+      },
+    })),
+  };
 };
 
 const decodeEntry = (digest: string, parsed: unknown): ReplayCacheEntry => {
