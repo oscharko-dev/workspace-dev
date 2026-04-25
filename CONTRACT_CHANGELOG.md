@@ -31,6 +31,27 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.27.0] - 2026-04-25
+
+### Added (Issue #1386)
+
+- `VISUAL_SIDECAR_RESULT_SCHEMA_VERSION` (`"1.0.0"`) and `VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME` (`visual-sidecar-result.json`) — version stamp and canonical filename for the persisted multimodal visual sidecar result envelope (covers capture identities, attempts, fallback reason, and the embedded validation report).
+- `ALLOWED_VISUAL_SIDECAR_FAILURE_CLASSES` — runtime list of policy-readable failure classes for the visual sidecar client (`primary_unavailable`, `primary_quota_exceeded`, `both_sidecars_failed`, `schema_invalid_response`, `image_payload_too_large`, `image_mime_unsupported`, `duplicate_screen_id`, `empty_screen_capture_set`).
+- `ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES` — runtime list of MIME types accepted as multimodal sidecar capture input (`image/png`, `image/jpeg`, `image/webp`, `image/gif`). SVG is intentionally excluded because of the XML/injection surface.
+- `MAX_VISUAL_SIDECAR_INPUT_BYTES` (`5 * 1024 * 1024`) — maximum decoded byte size of a single capture, enforced after base64 decoding.
+- New exported types: `VisualSidecarFailureClass`, `VisualSidecarInputMimeType`, `VisualSidecarCaptureInput`, `VisualSidecarCaptureIdentity`, `VisualSidecarAttempt`, `VisualSidecarSuccess`, `VisualSidecarFailure`, `VisualSidecarResult`, `VisualSidecarResultArtifact`.
+- Visual sidecar client (`describeVisualScreens` in `src/test-intelligence/visual-sidecar-client.ts`) — primary→fallback routing over `LlmGatewayClientBundle`, deterministic mock-friendly request shape, hand-rolled JSON-Schema gate on the sidecar envelope, `validateVisualSidecar` integration, atomic artifact persistence, and a defence-in-depth helper `assertNoImagePayloadToTestGeneration` that walks recorded gateway requests for the `test_generation` role.
+- `runWave1Poc` accepts an optional `visualCaptures` + `bundle` pair so the POC can produce `VisualScreenDescription[]` from a multimodal sidecar call instead of a fixture JSON. Emits the new `visual-sidecar-result.json` artifact and adds it to the evidence manifest under the new `visual_sidecar` category. The default fixture-driven path is unchanged.
+- `Wave1PocEvidenceArtifactCategory` gains a new variant `"visual_sidecar"`.
+
+### Unchanged (Issue #1386)
+
+- The hard invariant that the structured-test-case generator (`gpt-oss-120b`) never receives image payloads remains stamped at the type level (`imagePayloadSentToTestGeneration: false`).
+- `rawScreenshotsIncluded: false` is enforced for both the evidence manifest and the new visual sidecar result artifact: only SHA-256 hashes of the captures are persisted, never the raw bytes.
+- Existing `*.visual.json` POC fixtures and golden artifacts are byte-stable; the new sidecar entry point is opt-in.
+
+---
+
 ## [3.26.0] - 2026-04-25
 
 ### Added (Issue #1367)

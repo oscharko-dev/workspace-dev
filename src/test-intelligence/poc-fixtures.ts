@@ -19,9 +19,12 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES,
   WAVE1_POC_FIXTURE_IDS,
-  type Wave1PocFixtureId,
   type VisualScreenDescription,
+  type VisualSidecarCaptureInput,
+  type VisualSidecarInputMimeType,
+  type Wave1PocFixtureId,
 } from "../contracts/index.js";
 import type { IntentDerivationFigmaInput } from "./intent-derivation.js";
 
@@ -109,4 +112,90 @@ export const loadWave1PocFixture = async (
       ? { visualImagePath, visualImageSha256 }
       : {}),
   };
+};
+
+/**
+ * Mapping from a fixture id to the colocated capture image filename and
+ * MIME type. The capture is intentionally tiny (a deterministic 4×4
+ * PNG) so it can be checked in to the repo without inflating the
+ * fixtures directory.
+ */
+const CAPTURE_FIXTURE_MIME: Record<
+  Wave1PocFixtureId,
+  VisualSidecarInputMimeType
+> = {
+  "poc-onboarding": "image/png",
+  "poc-payment-auth": "image/png",
+};
+
+/**
+ * Result of loading the capture-side fixture for a Wave 1 POC fixture.
+ * The captures cover every screen in the companion `*.visual.json`
+ * fixture so the harness's visual-sidecar pipeline can exercise the
+ * same screens the deterministic mock-only path emits.
+ */
+export interface LoadedWave1PocCaptureFixture {
+  fixtureId: Wave1PocFixtureId;
+  captures: VisualSidecarCaptureInput[];
+  /** SHA-256 hex of the original PNG bytes that backs every capture. */
+  imageSha256: string;
+  /** Absolute on-disk path of the capture PNG. */
+  imagePath: string;
+}
+
+/**
+ * Load the deterministic capture fixture for a Wave 1 POC fixture. Each
+ * capture reuses the same single PNG so the test surface is small and
+ * the byte stream is byte-stable across runs. The screen ids match
+ * the companion `*.visual.json` fixture verbatim, which is what lets
+ * the visual-sidecar gate compare sidecar output against the Figma IR.
+ *
+ * Throws if the capture image is missing — callers should fail loudly
+ * rather than silently fall back to the fixture-only path.
+ */
+export const loadWave1PocCaptureFixture = async (
+  fixtureId: Wave1PocFixtureId,
+): Promise<LoadedWave1PocCaptureFixture> => {
+  if (!isWave1PocFixtureId(fixtureId)) {
+    throw new RangeError(
+      `loadWave1PocCaptureFixture: unknown fixtureId "${String(fixtureId)}"`,
+    );
+  }
+  const mimeType = CAPTURE_FIXTURE_MIME[fixtureId];
+  if (
+    !(ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES as readonly string[]).includes(
+      mimeType,
+    )
+  ) {
+    throw new RangeError(
+      `loadWave1PocCaptureFixture: unsupported mime type for ${fixtureId}`,
+    );
+  }
+  const imagePath = join(FIXTURES_DIR, `${fixtureId}.capture.png`);
+  const bytes = await readFile(imagePath);
+  const base64Data = Buffer.from(bytes).toString("base64");
+  const imageSha256 = createHash("sha256").update(bytes).digest("hex");
+
+  // Reuse the screens declared by the visual fixture so the pipeline
+  // covers the same set the deterministic path covers. We only need
+  // screen ids + names to drive the captures.
+  const visualPath = join(FIXTURES_DIR, `${fixtureId}.visual.json`);
+  const visualRaw = await readFile(visualPath, "utf8");
+  const visual = JSON.parse(visualRaw) as VisualScreenDescription[];
+
+  const captures: VisualSidecarCaptureInput[] = visual.map((screen) => {
+    const capture: VisualSidecarCaptureInput = {
+      screenId: screen.screenId,
+      mimeType,
+      base64Data,
+    };
+    if (screen.screenName !== undefined) {
+      capture.screenName = screen.screenName;
+    }
+    if (screen.capturedAt !== undefined) {
+      capture.capturedAt = screen.capturedAt;
+    }
+    return capture;
+  });
+  return { fixtureId, captures, imageSha256, imagePath };
 };

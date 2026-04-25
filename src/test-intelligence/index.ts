@@ -106,6 +106,19 @@ export {
   type ValidateVisualSidecarInput,
 } from "./visual-sidecar-validation.js";
 export {
+  assertNoImagePayloadToTestGeneration,
+  buildVisualSidecarResponseSchema,
+  buildVisualSidecarUserPrompt,
+  describeVisualScreens,
+  preflightCaptures,
+  VISUAL_SIDECAR_RESPONSE_SCHEMA_NAME,
+  VISUAL_SIDECAR_SYSTEM_PROMPT,
+  writeVisualSidecarResultArtifact,
+  type AssertNoImagePayloadInput,
+  type DescribeVisualScreensInput,
+  type WriteVisualSidecarResultArtifactInput,
+} from "./visual-sidecar-client.js";
+export {
   runValidationPipeline,
   runAndPersistValidationPipeline,
   writeValidationPipelineArtifacts,
@@ -168,8 +181,10 @@ export {
 } from "./export-pipeline.js";
 export {
   isWave1PocFixtureId,
+  loadWave1PocCaptureFixture,
   loadWave1PocFixture,
   WAVE1_POC_FIXTURE_IDS,
+  type LoadedWave1PocCaptureFixture,
   type LoadedWave1PocFixture,
   type Wave1PocFixtureId,
 } from "./poc-fixtures.js";
