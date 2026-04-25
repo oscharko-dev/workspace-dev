@@ -111,6 +111,7 @@ const TEST_GENERATION_DEPLOYMENT = "gpt-oss-120b-mock";
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
 const TEST_GENERATION_GATEWAY_RELEASE = "wave1-poc-mock";
 const VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
+const VISUAL_FALLBACK_DEPLOYMENT = "phi-4-multimodal-poc";
 const POLICY_BUNDLE_VERSION = "wave1-poc";
 export const BUSINESS_INTENT_IR_ARTIFACT_FILENAME =
   "business-intent-ir.json" as const;
@@ -198,7 +199,10 @@ export class Wave1PocVisualSidecarFailureError extends Error {
   readonly visualSidecar: VisualSidecarFailure;
   readonly artifactPath: string;
 
-  constructor(input: { visualSidecar: VisualSidecarFailure; artifactPath: string }) {
+  constructor(input: {
+    visualSidecar: VisualSidecarFailure;
+    artifactPath: string;
+  }) {
     super(
       `runWave1Poc: multimodal visual sidecar failed (${input.visualSidecar.failureClass}: ${input.visualSidecar.failureMessage}). The harness refuses to proceed because both visual sidecars are exhausted.`,
     );
@@ -710,6 +714,17 @@ export const runWave1Poc = async (
     if (sidecarResult.outcome === "success") {
       sidecarVisual = sidecarResult.visual;
     } else {
+      await writeVisualSidecarFailureEvidenceManifest({
+        fixtureId: input.fixtureId,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        runDir: input.runDir,
+        bundle: input.bundle,
+        intent: intentForSidecar,
+        sidecarResult,
+        sidecarArtifactBytes,
+        policyProfile: input.policyProfile ?? cloneEuBankingDefaultProfile(),
+      });
       throw new Wave1PocVisualSidecarFailureError({
         visualSidecar: sidecarResult,
         artifactPath: sidecarArtifactPath,
@@ -988,9 +1003,13 @@ export const runWave1Poc = async (
   // 10. Build evidence manifest. The manifest records the on-disk
   //     bytes for every artifact emitted above.
   const manifestVisualPrimary =
-    sidecarResult?.outcome === "success"
-      ? sidecarResult.selectedDeployment
-      : VISUAL_PRIMARY_DEPLOYMENT;
+    input.bundle === undefined
+      ? VISUAL_PRIMARY_DEPLOYMENT
+      : toManifestVisualDeployment(input.bundle.visualPrimary.deployment);
+  const manifestVisualFallback =
+    input.bundle === undefined
+      ? undefined
+      : toManifestVisualDeployment(input.bundle.visualFallback.deployment);
   const visualSidecarSummary =
     sidecarResult?.outcome === "success" && sidecarArtifactBytes !== undefined
       ? {
@@ -1007,6 +1026,9 @@ export const runWave1Poc = async (
     modelDeployments: {
       testGeneration: TEST_GENERATION_DEPLOYMENT,
       visualPrimary: manifestVisualPrimary,
+      ...(manifestVisualFallback !== undefined
+        ? { visualFallback: manifestVisualFallback }
+        : {}),
     },
     policyProfileId: profile.id,
     policyProfileVersion: profile.version,
@@ -1156,6 +1178,79 @@ const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
 
 const sha256OfBytes = (bytes: Uint8Array): string =>
   createHash("sha256").update(bytes).digest("hex");
+
+type ManifestVisualDeployment = NonNullable<
+  Wave1PocEvidenceManifest["modelDeployments"]["visualPrimary"]
+>;
+
+const toManifestVisualDeployment = (
+  deployment: string,
+): ManifestVisualDeployment => {
+  switch (deployment) {
+    case VISUAL_PRIMARY_DEPLOYMENT:
+      return VISUAL_PRIMARY_DEPLOYMENT;
+    case VISUAL_FALLBACK_DEPLOYMENT:
+      return VISUAL_FALLBACK_DEPLOYMENT;
+    default:
+      return "mock";
+  }
+};
+
+const writeVisualSidecarFailureEvidenceManifest = async (input: {
+  fixtureId: Wave1PocFixtureId;
+  jobId: string;
+  generatedAt: string;
+  runDir: string;
+  bundle: LlmGatewayClientBundle;
+  intent: BusinessTestIntentIr;
+  sidecarResult: VisualSidecarFailure;
+  sidecarArtifactBytes: Uint8Array;
+  policyProfile: TestCasePolicyProfile;
+}): Promise<void> => {
+  const exportProfile = cloneOpenTextAlmReferenceProfile();
+  const failureHash = (field: string): string =>
+    sha256Hex({
+      field,
+      fixtureId: input.fixtureId,
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      intent: input.intent,
+      visualSidecar: input.sidecarResult,
+    });
+  const manifest = buildWave1PocEvidenceManifest({
+    fixtureId: input.fixtureId,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    modelDeployments: {
+      testGeneration: TEST_GENERATION_DEPLOYMENT,
+      visualPrimary: toManifestVisualDeployment(
+        input.bundle.visualPrimary.deployment,
+      ),
+      visualFallback: toManifestVisualDeployment(
+        input.bundle.visualFallback.deployment,
+      ),
+    },
+    policyProfileId: input.policyProfile.id,
+    policyProfileVersion: input.policyProfile.version,
+    exportProfileId: exportProfile.id,
+    exportProfileVersion: exportProfile.version,
+    promptHash: failureHash("promptHash:not-generated"),
+    schemaHash: failureHash("schemaHash:not-generated"),
+    inputHash: failureHash("inputHash:visual-sidecar-failure"),
+    cacheKeyDigest: failureHash("cacheKeyDigest:not-generated"),
+    artifacts: [
+      {
+        filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+        bytes: input.sidecarArtifactBytes,
+        category: "visual_sidecar",
+      },
+    ],
+  });
+  await writeWave1PocEvidenceManifest({
+    manifest,
+    destinationDir: input.runDir,
+  });
+};
 
 /**
  * Best-effort extraction of recorded requests from a bundle's
