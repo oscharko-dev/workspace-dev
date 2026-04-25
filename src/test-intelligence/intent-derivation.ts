@@ -9,13 +9,12 @@ import {
   type DetectedValidation,
   type IntentTraceRef,
   type PiiIndicator,
-  type PiiMatchLocation,
   type IntentRedaction,
   type VisualScreenDescription,
 } from "../contracts/index.js";
 import { sha256Hex } from "./content-hash.js";
-import { detectPii, type PiiMatch } from "./pii-detection.js";
 import { reconcileSources } from "./reconciliation.js";
+import { maybeRedact } from "./pii-redaction.js";
 
 /** Narrow, test-friendly input shape consumed by the derivation. */
 export interface IntentDerivationFigmaInput {
@@ -407,53 +406,6 @@ const buildTrace = (
     );
   }
   return trace;
-};
-
-interface MaybeRedactContext {
-  screenId: string;
-  elementId?: string;
-  traceRef: IntentTraceRef;
-  location: PiiMatchLocation;
-}
-
-const maybeRedact = (
-  value: string,
-  ctx: MaybeRedactContext,
-  piiIndicators: PiiIndicator[],
-  redactions: IntentRedaction[],
-): string => {
-  const match = detectPii(value);
-  if (match === null) return value;
-  recordPii(match, ctx, piiIndicators, redactions);
-  return match.redacted;
-};
-
-const recordPii = (
-  match: PiiMatch,
-  ctx: MaybeRedactContext,
-  piiIndicators: PiiIndicator[],
-  redactions: IntentRedaction[],
-): void => {
-  const prefix = ctx.elementId ?? ctx.screenId;
-  const indicatorId = `${prefix}::pii::${match.kind}::${ctx.location}`;
-  const indicator: PiiIndicator = {
-    id: indicatorId,
-    kind: match.kind,
-    confidence: match.confidence,
-    matchLocation: ctx.location,
-    redacted: match.redacted,
-    screenId: ctx.screenId,
-    traceRef: ctx.traceRef,
-  };
-  if (ctx.elementId !== undefined) indicator.elementId = ctx.elementId;
-  piiIndicators.push(indicator);
-  redactions.push({
-    id: `${indicatorId}::redaction`,
-    indicatorId,
-    kind: match.kind,
-    reason: `Detected ${match.kind} in ${ctx.location}`,
-    replacement: match.redacted,
-  });
 };
 
 const sortAllArrays = (ir: BusinessTestIntentIr): BusinessTestIntentIr => {

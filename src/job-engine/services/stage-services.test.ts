@@ -9,6 +9,7 @@ import type {
   WorkspaceBrandTheme,
   WorkspaceFigmaSourceMode,
   WorkspaceFormHandlingMode,
+  BusinessTestIntentIr,
   WorkspaceJobStageName
 } from "../../contracts/index.js";
 import { CONTRACT_VERSION } from "../../contracts/index.js";
@@ -1945,6 +1946,20 @@ test("IrDeriveService writes design.ir and figma.analysis for cleaned local_json
     await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.figmaAnalysis),
     executionContext.paths.figmaAnalysisFile
   );
+  const businessTestIntentIrPath = path.join(
+    executionContext.paths.jobDir,
+    "business-test-intent-ir.json"
+  );
+  assert.equal(
+    await executionContext.artifactStore.getPath(STAGE_ARTIFACT_KEYS.businessTestIntentIr),
+    businessTestIntentIrPath
+  );
+  const businessTestIntentIr = JSON.parse(
+    await readFile(businessTestIntentIrPath, "utf8")
+  ) as BusinessTestIntentIr;
+  assert.equal(businessTestIntentIr.source.kind, "figma_local_json");
+  assert.equal(businessTestIntentIr.screens[0]?.screenId, "screen-1");
+  assert.equal(businessTestIntentIr.detectedFields[0]?.trace.nodeId, "title-1");
   assert.equal((await readFile(executionContext.paths.figmaAnalysisFile, "utf8")).includes("\"artifactVersion\": 1"), true);
 });
 
