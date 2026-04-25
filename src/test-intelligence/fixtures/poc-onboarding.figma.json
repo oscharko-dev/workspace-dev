@@ -1,0 +1,98 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-onboarding-account",
+      "screenName": "Open Account",
+      "nodes": [
+        {
+          "nodeId": "n-given-name",
+          "nodeName": "Given Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Given Name",
+          "defaultValue": "Anna",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-family-name",
+          "nodeName": "Family Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Family Name",
+          "defaultValue": "Beispiel",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-email",
+          "nodeName": "Email",
+          "nodeType": "TEXT_INPUT",
+          "text": "Email",
+          "defaultValue": "anna.beispiel@example.test",
+          "validations": ["Required", "Email format"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-phone",
+          "nodeName": "Mobile Phone",
+          "nodeType": "TEXT_INPUT",
+          "text": "Mobile Phone",
+          "defaultValue": "+49 30 5550199",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-tax-id",
+          "nodeName": "Tax ID",
+          "nodeType": "TEXT_INPUT",
+          "text": "Tax ID",
+          "defaultValue": "65929970489",
+          "validations": ["Required", "Tax ID checksum"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-postcode",
+          "nodeName": "Postcode",
+          "nodeType": "TEXT_INPUT",
+          "text": "Postcode",
+          "defaultValue": "10115",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-continue",
+          "nodeName": "Continue",
+          "nodeType": "BUTTON",
+          "text": "Continue",
+          "navigationTarget": "s-onboarding-verify",
+          "childNodeIds": []
+        }
+      ]
+    },
+    {
+      "screenId": "s-onboarding-verify",
+      "screenName": "Verify Identity",
+      "nodes": [
+        {
+          "nodeId": "n-otp",
+          "nodeName": "One-time code",
+          "nodeType": "TEXT_INPUT",
+          "text": "One-time code",
+          "defaultValue": "123456",
+          "validations": ["Required", "6 digits"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-confirm",
+          "nodeName": "Confirm",
+          "nodeType": "BUTTON",
+          "text": "Confirm",
+          "navigationTarget": "s-onboarding-done",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

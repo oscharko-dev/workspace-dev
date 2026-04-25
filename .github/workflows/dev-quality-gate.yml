@@ -108,6 +108,9 @@ jobs:
       - name: Golden parity fixtures
         run: pnpm run test:golden
 
+      - name: Test-intelligence Wave 1 POC evaluation gate
+        run: pnpm run test:ti-eval
+
       - name: Coverage thresholds
         run: pnpm run test:coverage
 

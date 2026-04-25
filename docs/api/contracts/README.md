@@ -458,6 +458,114 @@ Validation rule inferred from design hints.
 
 ***
 
+### ExportArtifactRecord
+
+Single artifact bookkeeping row inside `export-report.json`.
+
+#### Properties
+
+##### bytes
+
+> **bytes**: `number`
+
+##### contentType
+
+> **contentType**: `"application/json"` \| `"text/csv"` \| `"application/xml"` \| `"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"`
+
+##### filename
+
+> **filename**: `string`
+
+##### sha256
+
+> **sha256**: `string`
+
+SHA-256 hex of the on-disk byte stream.
+
+***
+
+### ExportReportArtifact
+
+Aggregate export-report artifact.
+
+#### Properties
+
+##### artifacts
+
+> **artifacts**: [`ExportArtifactRecord`](#exportartifactrecord)[]
+
+Sorted by filename for deterministic emission.
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### exportedTestCaseCount
+
+> **exportedTestCaseCount**: `number`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### modelDeployments
+
+> **modelDeployments**: `object`
+
+Identity of the deployments behind the run.
+
+###### testGeneration
+
+> **testGeneration**: `string`
+
+###### visualFallback?
+
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+###### visualPrimary?
+
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+##### profileId
+
+> **profileId**: `string`
+
+##### profileVersion
+
+> **profileVersion**: `string`
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant: raw screenshots are never embedded into export artifacts.
+
+##### refusalCodes
+
+> **refusalCodes**: (`"no_approved_test_cases"` \| `"unapproved_test_cases_present"` \| `"policy_blocked_cases_present"` \| `"schema_invalid_cases_present"` \| `"visual_sidecar_blocked"` \| `"review_state_inconsistent"`)[]
+
+##### refused
+
+> **refused**: `boolean`
+
+True when the pipeline refused to emit any non-report artifact.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### visualEvidenceHashes
+
+> **visualEvidenceHashes**: `string`[]
+
+Sorted, de-duplicated.
+
+***
+
 ### GeneratedTestCase
 
 Single generated test case.
@@ -852,6 +960,372 @@ Reference to the Figma node that produced an intent element.
 
 ***
 
+### LlmCapabilitiesArtifact
+
+Persistable capabilities artifact. Contains identity (role, deployment,
+gateway release, model revision, optional model-weights SHA-256) and the
+declared/observed capabilities. NEVER contains tokens, headers, or
+reasoning traces.
+
+#### Properties
+
+##### capabilities
+
+> **capabilities**: [`LlmGatewayCapabilities`](#llmgatewaycapabilities)
+
+##### compatibilityMode
+
+> **compatibilityMode**: `"openai_chat"`
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### deployment
+
+> **deployment**: `string`
+
+##### gatewayRelease
+
+> **gatewayRelease**: `string`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### modelRevision
+
+> **modelRevision**: `string`
+
+##### modelWeightsSha256?
+
+> `optional` **modelWeightsSha256?**: `string`
+
+##### probes
+
+> **probes**: [`LlmCapabilityProbeRecord`](#llmcapabilityproberecord)[]
+
+##### role
+
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.1.0"`
+
+***
+
+### LlmCapabilityProbeRecord
+
+One probe row in `llm-capabilities.json`.
+
+#### Properties
+
+##### capability
+
+> **capability**: [`LlmCapabilityProbeCapability`](#llmcapabilityprobecapability)
+
+##### declared
+
+> **declared**: `boolean`
+
+##### detail?
+
+> `optional` **detail?**: `string`
+
+##### outcome
+
+> **outcome**: [`LlmCapabilityProbeOutcome`](#llmcapabilityprobeoutcome)
+
+***
+
+### LlmGatewayCapabilities
+
+Capability flags declared by the gateway operator and verified at probe
+time. Streaming is disabled by default in Wave 1 — the Figma-to-test
+pipeline consumes only the final structured JSON envelope.
+
+#### Properties
+
+##### imageInputSupport
+
+> **imageInputSupport**: `boolean`
+
+##### maxOutputTokensSupport
+
+> **maxOutputTokensSupport**: `boolean`
+
+##### reasoningEffortSupport
+
+> **reasoningEffortSupport**: `boolean`
+
+##### seedSupport
+
+> **seedSupport**: `boolean`
+
+##### streamingSupport
+
+> **streamingSupport**: `boolean`
+
+##### structuredOutputs
+
+> **structuredOutputs**: `boolean`
+
+***
+
+### LlmGatewayCircuitBreakerConfig
+
+Tunable circuit-breaker thresholds for an LLM gateway client.
+
+#### Properties
+
+##### failureThreshold
+
+> **failureThreshold**: `number`
+
+##### resetTimeoutMs
+
+> **resetTimeoutMs**: `number`
+
+***
+
+### LlmGatewayClientConfig
+
+Construction-time configuration for an LLM gateway client.
+
+API tokens are NEVER in this object. Operators inject a token reader via
+the runtime factory; the reader is invoked once per request and the value
+is held only for the duration of that request.
+
+#### Properties
+
+##### authMode
+
+> **authMode**: `"api_key"` \| `"bearer_token"` \| `"none"`
+
+##### baseUrl
+
+> **baseUrl**: `string`
+
+##### circuitBreaker
+
+> **circuitBreaker**: [`LlmGatewayCircuitBreakerConfig`](#llmgatewaycircuitbreakerconfig)
+
+##### compatibilityMode
+
+> **compatibilityMode**: `"openai_chat"`
+
+##### declaredCapabilities
+
+> **declaredCapabilities**: [`LlmGatewayCapabilities`](#llmgatewaycapabilities)
+
+##### deployment
+
+> **deployment**: `string`
+
+##### gatewayRelease
+
+> **gatewayRelease**: `string`
+
+##### maxRetries
+
+> **maxRetries**: `number`
+
+##### modelRevision
+
+> **modelRevision**: `string`
+
+##### modelWeightsSha256?
+
+> `optional` **modelWeightsSha256?**: `string`
+
+##### role
+
+> **role**: `"test_generation"` \| `"visual_primary"` \| `"visual_fallback"`
+
+##### timeoutMs
+
+> **timeoutMs**: `number`
+
+***
+
+### LlmGenerationFailure
+
+Failure outcome with a redacted message and an explicit retryable flag.
+
+#### Properties
+
+##### attempt
+
+> **attempt**: `number`
+
+##### errorClass
+
+> **errorClass**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"`
+
+##### message
+
+> **message**: `string`
+
+##### outcome
+
+> **outcome**: `"error"`
+
+##### retryable
+
+> **retryable**: `boolean`
+
+***
+
+### LlmGenerationRequest
+
+Wire-shaped request handed to a gateway client.
+
+#### Properties
+
+##### imageInputs?
+
+> `optional` **imageInputs?**: readonly [`LlmImageInput`](#llmimageinput)[]
+
+##### jobId
+
+> **jobId**: `string`
+
+##### maxOutputTokens?
+
+> `optional` **maxOutputTokens?**: `number`
+
+##### reasoningEffort?
+
+> `optional` **reasoningEffort?**: [`LlmReasoningEffort`](#llmreasoningeffort)
+
+##### responseSchema?
+
+> `optional` **responseSchema?**: `Record`\<`string`, `unknown`\>
+
+##### responseSchemaName?
+
+> `optional` **responseSchemaName?**: `string`
+
+##### seed?
+
+> `optional` **seed?**: `number`
+
+##### systemPrompt
+
+> **systemPrompt**: `string`
+
+##### userPrompt
+
+> **userPrompt**: `string`
+
+***
+
+### LlmGenerationSuccess
+
+Success outcome — never includes reasoning/CoT traces.
+
+#### Properties
+
+##### attempt
+
+> **attempt**: `number`
+
+##### content
+
+> **content**: `unknown`
+
+##### finishReason
+
+> **finishReason**: [`LlmFinishReason`](#llmfinishreason)
+
+##### gatewayRelease
+
+> **gatewayRelease**: `string`
+
+##### modelDeployment
+
+> **modelDeployment**: `string`
+
+##### modelRevision
+
+> **modelRevision**: `string`
+
+##### outcome
+
+> **outcome**: `"success"`
+
+##### rawTextContent?
+
+> `optional` **rawTextContent?**: `string`
+
+##### usage
+
+> **usage**: `object`
+
+###### inputTokens?
+
+> `optional` **inputTokens?**: `number`
+
+###### outputTokens?
+
+> `optional` **outputTokens?**: `number`
+
+***
+
+### LlmImageInput
+
+Image payload accepted by visual sidecars. Rejected for `test_generation`.
+
+#### Properties
+
+##### base64Data
+
+> **base64Data**: `string`
+
+##### mimeType
+
+> **mimeType**: `string`
+
+***
+
+### OpenTextAlmExportProfile
+
+Operator-tunable knobs of an OpenText ALM reference export profile.
+
+#### Properties
+
+##### cdataDescription
+
+> **cdataDescription**: `boolean`
+
+Whether to wrap the test-case description in a CDATA block so that
+embedded markup survives ALM round-trips.
+
+##### description
+
+> **description**: `string`
+
+##### id
+
+> **id**: `string`
+
+##### rootFolderPath
+
+> **rootFolderPath**: `string`
+
+Folder path prepended to every per-case `targetFolderPath`.
+
+##### version
+
+> **version**: `string`
+
+***
+
 ### PiiIndicator
 
 PII indicator attached to a detected element. Original values are never persisted.
@@ -889,6 +1363,148 @@ PII indicator attached to a detected element. Original values are never persiste
 ##### traceRef?
 
 > `optional` **traceRef?**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### QcMappingPreviewArtifact
+
+Aggregate QC mapping preview artifact.
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### entries
+
+> **entries**: [`QcMappingPreviewEntry`](#qcmappingpreviewentry)[]
+
+Sorted by `testCaseId` for deterministic emission.
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### profileId
+
+> **profileId**: `string`
+
+##### profileVersion
+
+> **profileVersion**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+***
+
+### QcMappingPreviewEntry
+
+Single per-test-case mapping preview row consumed by QC/ALM operators.
+
+#### Properties
+
+##### blockingReasons
+
+> **blockingReasons**: `string`[]
+
+##### designSteps
+
+> **designSteps**: [`GeneratedTestCaseStep`](#generatedtestcasestep)[]
+
+##### expectedResults
+
+> **expectedResults**: `string`[]
+
+##### exportable
+
+> **exportable**: `boolean`
+
+##### externalIdCandidate
+
+> **externalIdCandidate**: `string`
+
+Deterministic candidate external id used for idempotent later transfer.
+
+##### objective
+
+> **objective**: `string`
+
+##### preconditions
+
+> **preconditions**: `string`[]
+
+##### priority
+
+> **priority**: [`TestCasePriority`](#testcasepriority)
+
+##### riskCategory
+
+> **riskCategory**: [`TestCaseRiskCategory`](#testcaseriskcategory)
+
+##### sourceTraceRefs
+
+> **sourceTraceRefs**: [`GeneratedTestCaseFigmaTrace`](#generatedtestcasefigmatrace)[]
+
+Subset of figmaTraceRefs sufficient for round-trip provenance.
+
+##### targetFolderPath
+
+> **targetFolderPath**: `string`
+
+Forward-slash-separated folder path under the profile root.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+##### testData
+
+> **testData**: `string`[]
+
+##### testName
+
+> **testName**: `string`
+
+##### visualProvenance?
+
+> `optional` **visualProvenance?**: [`QcMappingVisualProvenance`](#qcmappingvisualprovenance)
+
+***
+
+### QcMappingVisualProvenance
+
+Visual provenance attached to a QC mapping preview entry (Issue #1386).
+
+#### Properties
+
+##### ambiguityCount
+
+> **ambiguityCount**: `number`
+
+##### confidenceMean
+
+> **confidenceMean**: `number`
+
+##### deployment
+
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+##### evidenceHash
+
+> **evidenceHash**: `string`
+
+SHA-256 hex of the visual sidecar response payload (no raw screenshot).
+
+##### fallbackReason
+
+> **fallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
 
 ***
 
@@ -969,6 +1585,611 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 ##### visualSidecarSchemaVersion
 
 > **visualSidecarSchemaVersion**: `"1.0.0"`
+
+***
+
+### ReviewEvent
+
+Single immutable event appended to the review-gate event log.
+
+#### Properties
+
+##### actor?
+
+> `optional` **actor?**: `string`
+
+Optional opaque actor handle; never an email or token.
+
+##### at
+
+> **at**: `string`
+
+ISO-8601 UTC timestamp at the moment of persistence.
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### fromState?
+
+> `optional` **fromState?**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+
+##### id
+
+> **id**: `string`
+
+Globally unique opaque identifier; generated server-side.
+
+##### jobId
+
+> **jobId**: `string`
+
+##### kind
+
+> **kind**: `"approved"` \| `"rejected"` \| `"review_started"` \| `"note"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+
+##### metadata?
+
+> `optional` **metadata?**: `Record`\<`string`, `string` \| `number` \| `boolean` \| `null`\>
+
+Flat metadata (no nested objects).
+
+##### note?
+
+> `optional` **note?**: `string`
+
+Optional human-readable note (length-bounded by the store).
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### sequence
+
+> **sequence**: `number`
+
+Monotonic 1-based per-job sequence; gap-free.
+
+##### testCaseId?
+
+> `optional` **testCaseId?**: `string`
+
+Unset when the event is job-level (e.g. seed).
+
+##### toState?
+
+> `optional` **toState?**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+
+***
+
+### ReviewGateSnapshot
+
+Aggregate per-job review-gate snapshot.
+
+#### Properties
+
+##### approvedCount
+
+> **approvedCount**: `number`
+
+Number of cases currently in `approved` (or `exported`/`transferred`) state.
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### needsReviewCount
+
+> **needsReviewCount**: `number`
+
+Number of cases currently in `needs_review` state.
+
+##### perTestCase
+
+> **perTestCase**: [`ReviewSnapshot`](#reviewsnapshot)[]
+
+Sorted by `testCaseId` for deterministic emission.
+
+##### rejectedCount
+
+> **rejectedCount**: `number`
+
+Number of cases currently in `rejected` state.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+***
+
+### ReviewSnapshot
+
+Per-test-case review-state snapshot.
+
+#### Properties
+
+##### approvers
+
+> **approvers**: `string`[]
+
+Set of distinct reviewer actors that have approved this case.
+Empty list when the case is not yet approved or auto-approved by policy.
+
+##### fourEyesEnforced
+
+> **fourEyesEnforced**: `boolean`
+
+Whether the operator profile requires two distinct approvers. Wave 1
+always emits `false`; Wave 2 may flip this to gate the export pipeline
+on approver-count without changing the schema.
+
+##### lastEventAt
+
+> **lastEventAt**: `string`
+
+##### lastEventId
+
+> **lastEventId**: `string`
+
+Identifier of the most recent event affecting this case.
+
+##### policyDecision
+
+> **policyDecision**: `"approved"` \| `"blocked"` \| `"needs_review"`
+
+##### state
+
+> **state**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"edited"` \| `"exported"` \| `"transferred"`
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+***
+
+### TestCaseCoverageBucket
+
+Per-element coverage breakdown.
+
+#### Properties
+
+##### covered
+
+> **covered**: `number`
+
+Element ids covered by at least one accepted test case.
+
+##### ratio
+
+> **ratio**: `number`
+
+Coverage ratio in [0, 1]; 0 when total=0 (no elements => no gap).
+
+##### total
+
+> **total**: `number`
+
+Total IR elements of this kind across the job.
+
+##### uncoveredIds
+
+> **uncoveredIds**: `string`[]
+
+Element ids that have no covering test case.
+
+***
+
+### TestCaseCoverageReport
+
+Coverage/quality signals across one job's generated test cases.
+
+#### Properties
+
+##### accessibilityCaseCount
+
+> **accessibilityCaseCount**: `number`
+
+##### actionCoverage
+
+> **actionCoverage**: [`TestCaseCoverageBucket`](#testcasecoveragebucket)
+
+##### assumptionsRatio
+
+> **assumptionsRatio**: `number`
+
+Avg assumptions per case.
+
+##### boundaryCaseCount
+
+> **boundaryCaseCount**: `number`
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### duplicatePairs
+
+> **duplicatePairs**: [`TestCaseDuplicatePair`](#testcaseduplicatepair)[]
+
+Test-case pairs sharing >= duplicate threshold.
+
+##### fieldCoverage
+
+> **fieldCoverage**: [`TestCaseCoverageBucket`](#testcasecoveragebucket)
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### navigationCoverage
+
+> **navigationCoverage**: [`TestCaseCoverageBucket`](#testcasecoveragebucket)
+
+##### negativeCaseCount
+
+> **negativeCaseCount**: `number`
+
+##### openQuestionsCount
+
+> **openQuestionsCount**: `number`
+
+Total open questions across all cases.
+
+##### policyProfileId
+
+> **policyProfileId**: `string`
+
+##### positiveCaseCount
+
+> **positiveCaseCount**: `number`
+
+##### rubricScore?
+
+> `optional` **rubricScore?**: `number`
+
+Optional 0..1 rubric score from a downstream rater (Wave 2).
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### totalTestCases
+
+> **totalTestCases**: `number`
+
+##### traceCoverage
+
+> **traceCoverage**: `object`
+
+###### ratio
+
+> **ratio**: `number`
+
+###### total
+
+> **total**: `number`
+
+###### withTrace
+
+> **withTrace**: `number`
+
+##### validationCaseCount
+
+> **validationCaseCount**: `number`
+
+##### validationCoverage
+
+> **validationCoverage**: [`TestCaseCoverageBucket`](#testcasecoveragebucket)
+
+##### workflowCaseCount
+
+> **workflowCaseCount**: `number`
+
+***
+
+### TestCaseDuplicatePair
+
+Pair of generated test case ids exceeding the similarity threshold.
+
+#### Properties
+
+##### leftTestCaseId
+
+> **leftTestCaseId**: `string`
+
+##### rightTestCaseId
+
+> **rightTestCaseId**: `string`
+
+##### similarity
+
+> **similarity**: `number`
+
+***
+
+### TestCasePolicyDecisionRecord
+
+Per-test-case policy decision row.
+
+#### Properties
+
+##### decision
+
+> **decision**: `"approved"` \| `"blocked"` \| `"needs_review"`
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+##### violations
+
+> **violations**: [`TestCasePolicyViolation`](#testcasepolicyviolation)[]
+
+***
+
+### TestCasePolicyProfile
+
+Built-in policy profile shape. Profiles are identified by `id`+`version`.
+
+#### Properties
+
+##### description
+
+> **description**: `string`
+
+##### id
+
+> **id**: `string`
+
+##### rules
+
+> **rules**: [`TestCasePolicyProfileRules`](#testcasepolicyprofilerules-1)
+
+##### version
+
+> **version**: `string`
+
+***
+
+### TestCasePolicyProfileRules
+
+Tunable knobs of a policy profile (defaults shown for `eu-banking-default`).
+
+#### Properties
+
+##### duplicateSimilarityThreshold
+
+> **duplicateSimilarityThreshold**: `number`
+
+Max Jaccard similarity above which two cases are flagged as duplicates.
+
+##### maxAssumptionsPerCase
+
+> **maxAssumptionsPerCase**: `number`
+
+Max assumption count per case before review is required.
+
+##### maxOpenQuestionsPerCase
+
+> **maxOpenQuestionsPerCase**: `number`
+
+Max open-question count per case before review is required.
+
+##### minConfidence
+
+> **minConfidence**: `number`
+
+Min generator-side confidence; below this threshold => needs_review.
+
+##### requireAccessibilityCaseWhenFormPresent
+
+> **requireAccessibilityCaseWhenFormPresent**: `boolean`
+
+Whether a screen with form fields requires at least one accessibility case.
+
+##### requireBoundaryCaseForRequiredFields
+
+> **requireBoundaryCaseForRequiredFields**: `boolean`
+
+Whether each required field requires at least one boundary case.
+
+##### requireNegativeOrValidationForValidationRules
+
+> **requireNegativeOrValidationForValidationRules**: `boolean`
+
+Whether each detected validation rule requires at least one negative/validation case.
+
+##### reviewOnlyRiskCategories
+
+> **reviewOnlyRiskCategories**: [`TestCaseRiskCategory`](#testcaseriskcategory)[]
+
+Risk categories that always require manual review.
+
+##### strictRiskCategories
+
+> **strictRiskCategories**: [`TestCaseRiskCategory`](#testcaseriskcategory)[]
+
+Risk categories that block export when missing trace/expected/PII checks fail.
+
+***
+
+### TestCasePolicyReport
+
+Aggregate policy report across one job's generated test cases.
+
+#### Properties
+
+##### approvedCount
+
+> **approvedCount**: `number`
+
+##### blocked
+
+> **blocked**: `boolean`
+
+Whether ANY case was blocked (downstream export gate).
+
+##### blockedCount
+
+> **blockedCount**: `number`
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### decisions
+
+> **decisions**: [`TestCasePolicyDecisionRecord`](#testcasepolicydecisionrecord)[]
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### jobLevelViolations
+
+> **jobLevelViolations**: [`TestCasePolicyViolation`](#testcasepolicyviolation)[]
+
+Job-level policy violations (e.g., job-wide duplicate fingerprint).
+
+##### needsReviewCount
+
+> **needsReviewCount**: `number`
+
+##### policyProfileId
+
+> **policyProfileId**: `string`
+
+##### policyProfileVersion
+
+> **policyProfileVersion**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### totalTestCases
+
+> **totalTestCases**: `number`
+
+***
+
+### TestCasePolicyViolation
+
+Single policy-rule violation surfaced for a generated test case.
+
+#### Properties
+
+##### outcome
+
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"`
+
+##### path?
+
+> `optional` **path?**: `string`
+
+JSON-pointer-style path inside the test case if applicable.
+
+##### reason
+
+> **reason**: `string`
+
+##### rule
+
+> **rule**: `string`
+
+##### severity
+
+> **severity**: [`TestCaseValidationSeverity`](#testcasevalidationseverity)
+
+***
+
+### TestCaseValidationIssue
+
+Single semantic / structural validation issue.
+
+#### Properties
+
+##### code
+
+> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"`
+
+##### message
+
+> **message**: `string`
+
+##### path
+
+> **path**: `string`
+
+##### severity
+
+> **severity**: [`TestCaseValidationSeverity`](#testcasevalidationseverity)
+
+##### testCaseId?
+
+> `optional` **testCaseId?**: `string`
+
+***
+
+### TestCaseValidationReport
+
+Aggregate validation outcome across one job's generated test cases.
+
+#### Properties
+
+##### blocked
+
+> **blocked**: `boolean`
+
+Whether the report blocks downstream review/export (any error => true).
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### errorCount
+
+> **errorCount**: `number`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### issues
+
+> **issues**: [`TestCaseValidationIssue`](#testcasevalidationissue)[]
+
+##### jobId
+
+> **jobId**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### totalTestCases
+
+> **totalTestCases**: `number`
+
+##### warningCount
+
+> **warningCount**: `number`
 
 ***
 
@@ -1061,6 +2282,532 @@ Visual-sidecar description produced by a multimodal vision model (Issue #1386).
 ##### sidecarDeployment
 
 > **sidecarDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+***
+
+### VisualSidecarValidationRecord
+
+Single per-screen visual-sidecar validation row.
+
+#### Properties
+
+##### deployment
+
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+##### issues
+
+> **issues**: [`TestCaseValidationIssue`](#testcasevalidationissue)[]
+
+Issues found while structurally validating the description.
+
+##### meanConfidence
+
+> **meanConfidence**: `number`
+
+Mean confidence reported by the sidecar (0..1).
+
+##### outcomes
+
+> **outcomes**: (`"schema_invalid"` \| `"ok"` \| `"low_confidence"` \| `"fallback_used"` \| `"possible_pii"` \| `"prompt_injection_like_text"` \| `"conflicts_with_figma_metadata"` \| `"primary_unavailable"`)[]
+
+##### screenId
+
+> **screenId**: `string`
+
+***
+
+### VisualSidecarValidationReport
+
+Aggregate visual-sidecar validation report across a job.
+
+#### Properties
+
+##### blocked
+
+> **blocked**: `boolean`
+
+Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks generation.
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### records
+
+> **records**: [`VisualSidecarValidationRecord`](#visualsidecarvalidationrecord)[]
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### screensWithFindings
+
+> **screensWithFindings**: `number`
+
+##### totalScreens
+
+> **totalScreens**: `number`
+
+##### visualSidecarSchemaVersion
+
+> **visualSidecarSchemaVersion**: `"1.0.0"`
+
+***
+
+### Wave1PocEvalFailure
+
+Failure record describing a single threshold breach.
+
+#### Properties
+
+##### actual
+
+> **actual**: `number`
+
+Numeric or boolean observed value (encoded as number for comparators).
+
+##### message
+
+> **message**: `string`
+
+##### rule
+
+> **rule**: `"visual_sidecar_blocked"` \| `"min_trace_coverage_fields"` \| `"min_trace_coverage_actions"` \| `"min_trace_coverage_validations"` \| `"min_qc_mapping_exportable_fraction"` \| `"max_duplicate_similarity"` \| `"min_expected_results_per_case"` \| `"min_approved_cases"` \| `"policy_blocked"` \| `"validation_blocked"` \| `"export_refused"`
+
+##### threshold
+
+> **threshold**: `number`
+
+Numeric or boolean threshold that was breached.
+
+***
+
+### Wave1PocEvalFixtureMetrics
+
+Per-fixture metrics computed by the Wave 1 POC evaluation gate.
+
+#### Properties
+
+##### approvedCases
+
+> **approvedCases**: `number`
+
+##### blockedCases
+
+> **blockedCases**: `number`
+
+##### coveredActions
+
+> **coveredActions**: `number`
+
+##### coveredFields
+
+> **coveredFields**: `number`
+
+##### coveredValidations
+
+> **coveredValidations**: `number`
+
+##### detectedActions
+
+> **detectedActions**: `number`
+
+##### detectedFields
+
+> **detectedFields**: `number`
+
+##### detectedValidations
+
+> **detectedValidations**: `number`
+
+##### exportableApprovedCases
+
+> **exportableApprovedCases**: `number`
+
+##### exportRefused
+
+> **exportRefused**: `boolean`
+
+##### fixtureId
+
+> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+
+##### maxObservedDuplicateSimilarity
+
+> **maxObservedDuplicateSimilarity**: `number`
+
+##### minObservedExpectedResultsPerCase
+
+> **minObservedExpectedResultsPerCase**: `number`
+
+##### needsReviewCases
+
+> **needsReviewCases**: `number`
+
+##### policyBlocked
+
+> **policyBlocked**: `boolean`
+
+##### totalGeneratedCases
+
+> **totalGeneratedCases**: `number`
+
+##### validationBlocked
+
+> **validationBlocked**: `boolean`
+
+##### visualSidecarBlocked
+
+> **visualSidecarBlocked**: `boolean`
+
+***
+
+### Wave1PocEvalFixtureReport
+
+Per-fixture evaluation outcome.
+
+#### Properties
+
+##### failures
+
+> **failures**: [`Wave1PocEvalFailure`](#wave1pocevalfailure)[]
+
+##### fixtureId
+
+> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+
+##### metrics
+
+> **metrics**: [`Wave1PocEvalFixtureMetrics`](#wave1pocevalfixturemetrics)
+
+##### pass
+
+> **pass**: `boolean`
+
+***
+
+### Wave1PocEvalReport
+
+Aggregate evaluation report covering one or more fixtures. This artifact
+is byte-stable: fixtures and failures are sorted, hashes are not embedded,
+and timestamps are caller-provided.
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `string`
+
+##### fixtures
+
+> **fixtures**: [`Wave1PocEvalFixtureReport`](#wave1pocevalfixturereport)[]
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### pass
+
+> **pass**: `boolean`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### testIntelligenceContractVersion
+
+> **testIntelligenceContractVersion**: `"1.0.0"`
+
+##### thresholds
+
+> **thresholds**: [`Wave1PocEvalThresholds`](#wave1pocevalthresholds)
+
+***
+
+### Wave1PocEvalThresholds
+
+Numeric thresholds applied by the Wave 1 POC evaluation gate. Each
+threshold is enforced on a per-fixture basis. Fractions are in `[0, 1]`.
+
+#### Properties
+
+##### maxDuplicateSimilarity
+
+> **maxDuplicateSimilarity**: `number`
+
+Maximum allowed pairwise duplicate similarity across all generated cases.
+Computed by `detectDuplicateTestCases` on case fingerprints.
+
+##### minApprovedCases
+
+> **minApprovedCases**: `number`
+
+Minimum number of approved cases required after the review gate.
+
+##### minExpectedResultsPerCase
+
+> **minExpectedResultsPerCase**: `number`
+
+Minimum number of `expectedResults` entries required per approved case.
+
+##### minQcMappingExportableFraction
+
+> **minQcMappingExportableFraction**: `number`
+
+Fraction of approved cases whose `qcMappingPreview.exportable` is true.
+
+##### minTraceCoverageActions
+
+> **minTraceCoverageActions**: `number`
+
+Fraction of detected actions covered by at least one approved test case.
+
+##### minTraceCoverageFields
+
+> **minTraceCoverageFields**: `number`
+
+Fraction of detected fields covered by at least one approved test case.
+
+##### minTraceCoverageValidations
+
+> **minTraceCoverageValidations**: `number`
+
+Fraction of detected validations covered by at least one approved test case.
+
+##### requirePolicyPass
+
+> **requirePolicyPass**: `boolean`
+
+Validation pipeline must not block.
+
+##### requireVisualSidecarPass
+
+> **requireVisualSidecarPass**: `boolean`
+
+Visual sidecar gate must not block (when sidecar is present).
+
+***
+
+### Wave1PocEvidenceArtifact
+
+Single artifact attested by the Wave 1 POC evidence manifest.
+
+#### Properties
+
+##### bytes
+
+> **bytes**: `number`
+
+Byte length on disk at manifest creation time.
+
+##### category
+
+> **category**: [`Wave1PocEvidenceArtifactCategory`](#wave1pocevidenceartifactcategory-1)
+
+##### filename
+
+> **filename**: `string`
+
+Relative filename inside the run directory.
+
+##### sha256
+
+> **sha256**: `string`
+
+SHA-256 of the on-disk byte stream.
+
+***
+
+### Wave1PocEvidenceManifest
+
+Wave 1 POC evidence manifest. Frozen, deterministic, byte-identical
+across runs of the same fixture and mock output. Lists every artifact
+the harness emits with its SHA-256 hash and byte length, plus the
+contract / template / schema / policy / model identities used during
+the run. The manifest itself is also written to disk; verifying its
+integrity is performed against the stored copy plus the artifact bytes.
+
+Two negative invariants are stamped explicitly so they appear in the
+evidence audit trail rather than being inferred from absence:
+
+  - `rawScreenshotsIncluded: false` — no raw screenshot bytes are ever
+    embedded in any exported artifact.
+  - `imagePayloadSentToTestGeneration: false` — the structured-test-case
+    generator deployment (e.g. `gpt-oss-120b`) never received an image
+    payload during the run; image-bearing payloads only flow into the
+    visual sidecar role.
+
+#### Properties
+
+##### artifacts
+
+> **artifacts**: [`Wave1PocEvidenceArtifact`](#wave1pocevidenceartifact)[]
+
+Sorted-by-filename, de-duplicated artifact list.
+
+##### cacheKeyDigest
+
+> **cacheKeyDigest**: `string`
+
+##### contractVersion
+
+> **contractVersion**: `string`
+
+workspace-dev contract version that produced the artifacts.
+
+##### exportProfileId
+
+> **exportProfileId**: `string`
+
+OpenText ALM (or override) export profile identity.
+
+##### exportProfileVersion
+
+> **exportProfileVersion**: `string`
+
+##### fixtureId
+
+> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+
+Identifier of the fixture exercised.
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### generatedTestCaseSchemaVersion
+
+> **generatedTestCaseSchemaVersion**: `"1.0.0"`
+
+##### imagePayloadSentToTestGeneration
+
+> **imagePayloadSentToTestGeneration**: `false`
+
+Hard invariant: the structured-test-case generator deployment never
+received an image payload during the run.
+
+##### inputHash
+
+> **inputHash**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### modelDeployments
+
+> **modelDeployments**: `object`
+
+Identities of the deployments behind the run.
+
+###### testGeneration
+
+> **testGeneration**: `string`
+
+###### visualFallback?
+
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+###### visualPrimary?
+
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+##### policyProfileId
+
+> **policyProfileId**: `string`
+
+Policy profile identity used by the validation pipeline.
+
+##### policyProfileVersion
+
+> **policyProfileVersion**: `string`
+
+##### promptHash
+
+> **promptHash**: `string`
+
+Replay-cache identity hashes for the run (mirrors compiled prompt).
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+Versions used to compile the prompt and validate the output.
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant: no raw screenshot bytes leak into export artifacts.
+
+##### redactionPolicyVersion
+
+> **redactionPolicyVersion**: `"1.0.0"`
+
+##### schemaHash
+
+> **schemaHash**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### testIntelligenceContractVersion
+
+> **testIntelligenceContractVersion**: `"1.0.0"`
+
+Test-intelligence subsurface contract version.
+
+##### visualSidecarSchemaVersion
+
+> **visualSidecarSchemaVersion**: `"1.0.0"`
+
+***
+
+### Wave1PocEvidenceVerificationResult
+
+Result of `verifyWave1PocEvidenceManifest` against a directory of artifacts.
+Determines whether ALL attested artifacts still hash to the values stored
+in the manifest. Any mismatch fails the verification fail-closed.
+
+#### Properties
+
+##### missing
+
+> **missing**: `string`[]
+
+Filenames listed in the manifest that are missing on disk.
+
+##### mutated
+
+> **mutated**: `string`[]
+
+Filenames whose on-disk SHA-256 differs from the manifest.
+
+##### ok
+
+> **ok**: `boolean`
+
+##### resized
+
+> **resized**: `string`[]
+
+Filenames whose on-disk byte length differs from the manifest.
+
+##### unexpected
+
+> **unexpected**: `string`[]
+
+Filenames present on disk but not attested by the manifest.
 
 ***
 
@@ -1724,7 +3471,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-14)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-25)
 
 ##### pasteDeltaSummary?
 
@@ -1826,6 +3573,10 @@ Artifact paths emitted by autonomous job execution.
 ##### jobDir
 
 > **jobDir**: `string`
+
+##### llmCapabilitiesEvidenceDir?
+
+> `optional` **llmCapabilitiesEvidenceDir?**: `string`
 
 ##### outputRoot
 
@@ -2309,7 +4060,7 @@ Structured job log line.
 
 ##### level
 
-> **level**: `"debug"` \| `"info"` \| `"warn"` \| `"error"`
+> **level**: `"error"` \| `"debug"` \| `"info"` \| `"warn"`
 
 ##### message
 
@@ -4665,6 +6416,18 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### ExportArtifactContentType
+
+> **ExportArtifactContentType** = *typeof* [`ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES`](#allowed_export_artifact_content_types)\[`number`\]
+
+***
+
+### ExportRefusalCode
+
+> **ExportRefusalCode** = *typeof* [`ALLOWED_EXPORT_REFUSAL_CODES`](#allowed_export_refusal_codes)\[`number`\]
+
+***
+
 ### GeneratedTestCaseReviewState
 
 > **GeneratedTestCaseReviewState** = `"draft"` \| `"auto_approved"` \| `"needs_review"` \| `"rejected"`
@@ -4678,6 +6441,70 @@ Review state at the moment the test case is emitted.
 > **IntentProvenance** = `"figma_node"` \| `"visual_sidecar"` \| `"reconciled"`
 
 Where a detected element came from during reconciliation.
+
+***
+
+### LlmCapabilityProbeCapability
+
+> **LlmCapabilityProbeCapability** = keyof [`LlmGatewayCapabilities`](#llmgatewaycapabilities) \| `"textChat"`
+
+Probe rows can cover declared capability flags plus the mandatory text-chat baseline.
+
+***
+
+### LlmCapabilityProbeOutcome
+
+> **LlmCapabilityProbeOutcome** = `"supported"` \| `"unsupported"` \| `"untested"` \| `"probe_failed"`
+
+Per-capability probe verdict carried in the persisted artifact.
+
+***
+
+### LlmFinishReason
+
+> **LlmFinishReason** = `"stop"` \| `"length"` \| `"content_filter"` \| `"tool_calls"` \| `"other"`
+
+Provider finish reasons normalized to a single set.
+
+***
+
+### LlmGatewayAuthMode
+
+> **LlmGatewayAuthMode** = *typeof* [`ALLOWED_LLM_GATEWAY_AUTH_MODES`](#allowed_llm_gateway_auth_modes)\[`number`\]
+
+***
+
+### LlmGatewayCompatibilityMode
+
+> **LlmGatewayCompatibilityMode** = *typeof* [`ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES`](#allowed_llm_gateway_compatibility_modes)\[`number`\]
+
+***
+
+### LlmGatewayErrorClass
+
+> **LlmGatewayErrorClass** = *typeof* [`ALLOWED_LLM_GATEWAY_ERROR_CLASSES`](#allowed_llm_gateway_error_classes)\[`number`\]
+
+***
+
+### LlmGatewayRole
+
+> **LlmGatewayRole** = *typeof* [`ALLOWED_LLM_GATEWAY_ROLES`](#allowed_llm_gateway_roles)\[`number`\]
+
+***
+
+### LlmGenerationResult
+
+> **LlmGenerationResult** = [`LlmGenerationSuccess`](#llmgenerationsuccess) \| [`LlmGenerationFailure`](#llmgenerationfailure)
+
+Discriminated union returned by `LlmGatewayClient.generate`.
+
+***
+
+### LlmReasoningEffort
+
+> **LlmReasoningEffort** = `"low"` \| `"medium"` \| `"high"`
+
+Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true.
 
 ***
 
@@ -4705,11 +6532,35 @@ Cache lookup outcome consumed by the orchestration layer.
 
 ***
 
+### ReviewEventKind
+
+> **ReviewEventKind** = *typeof* [`ALLOWED_REVIEW_EVENT_KINDS`](#allowed_review_event_kinds)\[`number`\]
+
+***
+
+### ReviewState
+
+> **ReviewState** = *typeof* [`ALLOWED_REVIEW_STATES`](#allowed_review_states)\[`number`\]
+
+***
+
 ### TestCaseLevel
 
 > **TestCaseLevel** = `"unit"` \| `"component"` \| `"integration"` \| `"system"` \| `"acceptance"`
 
 Coarse-grain test level.
+
+***
+
+### TestCasePolicyDecision
+
+> **TestCasePolicyDecision** = *typeof* [`ALLOWED_TEST_CASE_POLICY_DECISIONS`](#allowed_test_case_policy_decisions)\[`number`\]
+
+***
+
+### TestCasePolicyOutcome
+
+> **TestCasePolicyOutcome** = *typeof* [`ALLOWED_TEST_CASE_POLICY_OUTCOMES`](#allowed_test_case_policy_outcomes)\[`number`\]
 
 ***
 
@@ -4745,11 +6596,47 @@ Coarse-grain test type.
 
 ***
 
+### TestCaseValidationIssueCode
+
+> **TestCaseValidationIssueCode** = *typeof* [`ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES`](#allowed_test_case_validation_issue_codes)\[`number`\]
+
+***
+
+### TestCaseValidationSeverity
+
+> **TestCaseValidationSeverity** = `"error"` \| `"warning"`
+
+Severity surfaced for a single validation issue.
+
+***
+
 ### VisualSidecarFallbackReason
 
 > **VisualSidecarFallbackReason** = `"primary_unavailable"` \| `"primary_quota_exceeded"` \| `"primary_disabled"` \| `"policy_downgrade"` \| `"none"`
 
 Reason a fallback visual sidecar deployment was selected, if any.
+
+***
+
+### VisualSidecarValidationOutcome
+
+> **VisualSidecarValidationOutcome** = *typeof* [`ALLOWED_VISUAL_SIDECAR_VALIDATION_OUTCOMES`](#allowed_visual_sidecar_validation_outcomes)\[`number`\]
+
+***
+
+### Wave1PocEvidenceArtifactCategory
+
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"`
+
+Categorisation of an artifact attested by the evidence manifest.
+
+***
+
+### Wave1PocFixtureId
+
+> **Wave1PocFixtureId** = *typeof* [`WAVE1_POC_FIXTURE_IDS`](#wave1_poc_fixture_ids)\[`number`\]
+
+Identifier of a Wave 1 POC fixture.
 
 ***
 
@@ -5067,6 +6954,22 @@ Supported visual quality reference sources.
 
 ## Variables
 
+### ALLOWED\_EXPORT\_ARTIFACT\_CONTENT\_TYPES
+
+> `const` **ALLOWED\_EXPORT\_ARTIFACT\_CONTENT\_TYPES**: readonly \[`"application/json"`, `"text/csv"`, `"application/xml"`, `"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"`\]
+
+Allowed content types declared on an exported artifact record.
+
+***
+
+### ALLOWED\_EXPORT\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_EXPORT\_REFUSAL\_CODES**: readonly \[`"no_approved_test_cases"`, `"unapproved_test_cases_present"`, `"policy_blocked_cases_present"`, `"schema_invalid_cases_present"`, `"visual_sidecar_blocked"`, `"review_state_inconsistent"`\]
+
+Allowed reasons the export pipeline may refuse to emit QC artifacts.
+
+***
+
 ### ALLOWED\_FIGMA\_SOURCE\_MODES
 
 > `const` **ALLOWED\_FIGMA\_SOURCE\_MODES**: readonly \[`"rest"`, `"hybrid"`, `"local_json"`, `"figma_paste"`, `"figma_plugin"`\]
@@ -5089,6 +6992,92 @@ runtime agree.
 
 ***
 
+### ALLOWED\_LLM\_GATEWAY\_AUTH\_MODES
+
+> `const` **ALLOWED\_LLM\_GATEWAY\_AUTH\_MODES**: readonly \[`"api_key"`, `"bearer_token"`, `"none"`\]
+
+Authentication strategy for outbound requests to the LLM gateway.
+
+***
+
+### ALLOWED\_LLM\_GATEWAY\_COMPATIBILITY\_MODES
+
+> `const` **ALLOWED\_LLM\_GATEWAY\_COMPATIBILITY\_MODES**: readonly \[`"openai_chat"`\]
+
+Wire-protocol compatibility modes. `openai_chat` is the only mode shipped in
+Wave 1; the array is the source of truth so future modes (`openai_responses`,
+`custom_adapter`) plug in without changing the call sites.
+
+***
+
+### ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES
+
+> `const` **ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES**: readonly \[`"refusal"`, `"schema_invalid"`, `"incomplete"`, `"timeout"`, `"rate_limited"`, `"transport"`, `"image_payload_rejected"`\]
+
+Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
+schema-invalid responses, and image-payload guard rejections are NOT
+retryable; transport, timeout, and rate-limit failures are.
+
+***
+
+### ALLOWED\_LLM\_GATEWAY\_ROLES
+
+> `const` **ALLOWED\_LLM\_GATEWAY\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`\]
+
+Allowed gateway roles. Each role is bound to a single deployment to keep the
+structured test-case generator (`gpt-oss-120b`) strictly separated from the
+multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+
+***
+
+### ALLOWED\_REVIEW\_EVENT\_KINDS
+
+> `const` **ALLOWED\_REVIEW\_EVENT\_KINDS**: readonly \[`"generated"`, `"review_started"`, `"approved"`, `"rejected"`, `"edited"`, `"exported"`, `"transferred"`, `"note"`\]
+
+Allowed event kinds appended to the review-gate event log.
+
+***
+
+### ALLOWED\_REVIEW\_STATES
+
+> `const` **ALLOWED\_REVIEW\_STATES**: readonly \[`"generated"`, `"needs_review"`, `"approved"`, `"rejected"`, `"edited"`, `"exported"`, `"transferred"`\]
+
+Allowed lifecycle states for a generated test case under review.
+
+***
+
+### ALLOWED\_TEST\_CASE\_POLICY\_DECISIONS
+
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_DECISIONS**: readonly \[`"approved"`, `"blocked"`, `"needs_review"`\]
+
+Allowed policy-gate decisions (Issue #1364).
+
+- `approved` — case may proceed to review/export as-is.
+- `blocked` — case must not reach review or export.
+- `needs_review` — case must be reviewed manually before export.
+
+***
+
+### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
+
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`\]
+
+Allowed policy outcome codes attached to a single decision row.
+Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
+gating per the Issue #1364 / #1386 update.
+
+***
+
+### ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES
+
+> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`\]
+
+Allowed test-case validation issue codes (Issue #1364).
+The list is the runtime source of truth; new codes plug in here without
+altering call sites. Adding a new code is a minor (additive) bump.
+
+***
+
 ### ALLOWED\_TEST\_INTELLIGENCE\_MODES
 
 > `const` **ALLOWED\_TEST\_INTELLIGENCE\_MODES**: readonly \[`"deterministic_llm"`, `"offline_eval"`, `"dry_run"`\]
@@ -5102,12 +7091,39 @@ this array must never affect `ALLOWED_LLM_CODEGEN_MODES`.
 
 ***
 
+### ALLOWED\_VISUAL\_SIDECAR\_VALIDATION\_OUTCOMES
+
+> `const` **ALLOWED\_VISUAL\_SIDECAR\_VALIDATION\_OUTCOMES**: readonly \[`"ok"`, `"schema_invalid"`, `"low_confidence"`, `"fallback_used"`, `"possible_pii"`, `"prompt_injection_like_text"`, `"conflicts_with_figma_metadata"`, `"primary_unavailable"`\]
+
+Allowed visual-sidecar policy outcome codes (Issue #1364 / #1386).
+
+These mirror the visual-sidecar policy outcomes attached to the policy
+report when the multimodal sidecar misbehaves or is downgraded.
+
+***
+
 ### ALLOWED\_WORKSPACE\_JOB\_TYPES
 
 > `const` **ALLOWED\_WORKSPACE\_JOB\_TYPES**: readonly \[`"figma_to_code"`, `"figma_to_qc_test_cases"`\]
 
 Runtime source-of-truth for allowed workspace-dev job types.
 Keep this array and `WorkspaceJobType` in lockstep.
+
+***
+
+### ALM\_EXPORT\_SCHEMA\_VERSION
+
+> `const` **ALM\_EXPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version stamp embedded in the OpenText ALM reference XML export (Issue #1365).
+
+***
+
+### ALM\_EXPORT\_XML\_NAMESPACE
+
+> `const` **ALM\_EXPORT\_XML\_NAMESPACE**: `"https://workspace-dev.local/schema/alm-export/v1"`
+
+XML namespace embedded in the OpenText ALM reference export root element.
 
 ***
 
@@ -5121,11 +7137,77 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.20.0"`
+> `const` **CONTRACT\_VERSION**: `"3.25.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
 Package version alignment is documented in VERSIONING.md.
+
+***
+
+### EU\_BANKING\_DEFAULT\_POLICY\_PROFILE\_ID
+
+> `const` **EU\_BANKING\_DEFAULT\_POLICY\_PROFILE\_ID**: `"eu-banking-default"`
+
+Built-in policy profile id for the default EU-banking compliance gate.
+Operators may install additional profiles by version stamp; this id is the
+one Wave 1 ships with.
+
+***
+
+### EU\_BANKING\_DEFAULT\_POLICY\_PROFILE\_VERSION
+
+> `const` **EU\_BANKING\_DEFAULT\_POLICY\_PROFILE\_VERSION**: `"1.0.0"`
+
+Version stamp for the built-in `eu-banking-default` policy profile.
+
+***
+
+### EXPORT\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **EXPORT\_REPORT\_ARTIFACT\_FILENAME**: `"export-report.json"`
+
+Canonical filename for the persisted export-report artifact.
+
+***
+
+### EXPORT\_REPORT\_SCHEMA\_VERSION
+
+> `const` **EXPORT\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted export-report artifact (Issue #1365).
+
+***
+
+### EXPORT\_TESTCASES\_ALM\_XML\_ARTIFACT\_FILENAME
+
+> `const` **EXPORT\_TESTCASES\_ALM\_XML\_ARTIFACT\_FILENAME**: `"testcases.alm.xml"`
+
+Canonical filename for the persisted OpenText ALM reference XML export.
+
+***
+
+### EXPORT\_TESTCASES\_CSV\_ARTIFACT\_FILENAME
+
+> `const` **EXPORT\_TESTCASES\_CSV\_ARTIFACT\_FILENAME**: `"testcases.csv"`
+
+Canonical filename for the persisted CSV export of approved test cases.
+
+***
+
+### EXPORT\_TESTCASES\_JSON\_ARTIFACT\_FILENAME
+
+> `const` **EXPORT\_TESTCASES\_JSON\_ARTIFACT\_FILENAME**: `"testcases.json"`
+
+Canonical filename for the persisted JSON export of approved test cases.
+
+***
+
+### EXPORT\_TESTCASES\_XLSX\_ARTIFACT\_FILENAME
+
+> `const` **EXPORT\_TESTCASES\_XLSX\_ARTIFACT\_FILENAME**: `"testcases.xlsx"`
+
+Canonical filename for the optional persisted XLSX export of approved test cases.
 
 ***
 
@@ -5137,11 +7219,148 @@ Schema version for generated test case payloads.
 
 ***
 
+### GENERATED\_TESTCASES\_ARTIFACT\_FILENAME
+
+> `const` **GENERATED\_TESTCASES\_ARTIFACT\_FILENAME**: `"generated-testcases.json"`
+
+Canonical filename for the persisted test-case payload accepted into review/export.
+
+***
+
+### LLM\_CAPABILITIES\_ARTIFACT\_FILENAME
+
+> `const` **LLM\_CAPABILITIES\_ARTIFACT\_FILENAME**: `"llm-capabilities.json"`
+
+Canonical filename for the persisted LLM gateway capability probe artifact.
+
+***
+
+### LLM\_CAPABILITIES\_SCHEMA\_VERSION
+
+> `const` **LLM\_CAPABILITIES\_SCHEMA\_VERSION**: `"1.1.0"`
+
+Schema version for the persisted `llm-capabilities.json` evidence artifact.
+
+***
+
+### LLM\_GATEWAY\_CONTRACT\_VERSION
+
+> `const` **LLM\_GATEWAY\_CONTRACT\_VERSION**: `"1.0.0"`
+
+Contract version for the role-separated LLM gateway client surface (Issue #1363).
+
+***
+
+### OPENTEXT\_ALM\_REFERENCE\_PROFILE\_ID
+
+> `const` **OPENTEXT\_ALM\_REFERENCE\_PROFILE\_ID**: `"opentext-alm-default"`
+
+Built-in OpenText ALM reference export profile id (Wave 1).
+
+***
+
+### OPENTEXT\_ALM\_REFERENCE\_PROFILE\_VERSION
+
+> `const` **OPENTEXT\_ALM\_REFERENCE\_PROFILE\_VERSION**: `"1.0.0"`
+
+Version stamp for the built-in OpenText ALM reference export profile.
+
+***
+
+### QC\_MAPPING\_PREVIEW\_ARTIFACT\_FILENAME
+
+> `const` **QC\_MAPPING\_PREVIEW\_ARTIFACT\_FILENAME**: `"qc-mapping-preview.json"`
+
+Canonical filename for the persisted QC mapping preview artifact.
+
+***
+
+### QC\_MAPPING\_PREVIEW\_SCHEMA\_VERSION
+
+> `const` **QC\_MAPPING\_PREVIEW\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted QC mapping preview artifact (Issue #1365).
+
+***
+
 ### REDACTION\_POLICY\_VERSION
 
 > `const` **REDACTION\_POLICY\_VERSION**: `"1.0.0"`
 
 Redaction policy bundle version applied before prompt compilation.
+
+***
+
+### REVIEW\_EVENTS\_ARTIFACT\_FILENAME
+
+> `const` **REVIEW\_EVENTS\_ARTIFACT\_FILENAME**: `"review-events.json"`
+
+Canonical filename for the persisted review-gate event log.
+
+***
+
+### REVIEW\_GATE\_SCHEMA\_VERSION
+
+> `const` **REVIEW\_GATE\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted review-gate state and event-log artifacts (Issue #1365).
+
+***
+
+### REVIEW\_STATE\_ARTIFACT\_FILENAME
+
+> `const` **REVIEW\_STATE\_ARTIFACT\_FILENAME**: `"review-state.json"`
+
+Canonical filename for the persisted review-gate snapshot.
+
+***
+
+### TEST\_CASE\_COVERAGE\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **TEST\_CASE\_COVERAGE\_REPORT\_ARTIFACT\_FILENAME**: `"coverage-report.json"`
+
+Canonical filename for the persisted coverage / quality-signals artifact.
+
+***
+
+### TEST\_CASE\_COVERAGE\_REPORT\_SCHEMA\_VERSION
+
+> `const` **TEST\_CASE\_COVERAGE\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted coverage / quality-signals report artifact (Issue #1364).
+
+***
+
+### TEST\_CASE\_POLICY\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **TEST\_CASE\_POLICY\_REPORT\_ARTIFACT\_FILENAME**: `"policy-report.json"`
+
+Canonical filename for the persisted policy-gate decision artifact.
+
+***
+
+### TEST\_CASE\_POLICY\_REPORT\_SCHEMA\_VERSION
+
+> `const` **TEST\_CASE\_POLICY\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted policy decision report artifact (Issue #1364).
+
+***
+
+### TEST\_CASE\_VALIDATION\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **TEST\_CASE\_VALIDATION\_REPORT\_ARTIFACT\_FILENAME**: `"validation-report.json"`
+
+Canonical filename for the persisted validation diagnostics artifact.
+
+***
+
+### TEST\_CASE\_VALIDATION\_REPORT\_SCHEMA\_VERSION
+
+> `const` **TEST\_CASE\_VALIDATION\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted test-case validation report artifact (Issue #1364).
+Bumped when `TestCaseValidationReport` changes shape.
 
 ***
 
@@ -5174,3 +7393,67 @@ Prompt template version for the test-intelligence prompt family.
 > `const` **VISUAL\_SIDECAR\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Visual sidecar schema version consumed by the prompt compiler (Issue #1386).
+
+***
+
+### VISUAL\_SIDECAR\_VALIDATION\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **VISUAL\_SIDECAR\_VALIDATION\_REPORT\_ARTIFACT\_FILENAME**: `"visual-sidecar-validation-report.json"`
+
+Canonical filename for the persisted visual-sidecar validation artifact.
+
+***
+
+### VISUAL\_SIDECAR\_VALIDATION\_REPORT\_SCHEMA\_VERSION
+
+> `const` **VISUAL\_SIDECAR\_VALIDATION\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted visual-sidecar validation report artifact (Issue #1364 / #1386).
+
+***
+
+### WAVE1\_POC\_EVAL\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **WAVE1\_POC\_EVAL\_REPORT\_ARTIFACT\_FILENAME**: `"wave1-poc-eval-report.json"` = `"wave1-poc-eval-report.json"`
+
+Filename used for the Wave 1 POC evaluation report artifact.
+
+***
+
+### WAVE1\_POC\_EVAL\_REPORT\_SCHEMA\_VERSION
+
+> `const` **WAVE1\_POC\_EVAL\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the Wave 1 POC evaluation report envelope.
+
+***
+
+### WAVE1\_POC\_EVIDENCE\_MANIFEST\_ARTIFACT\_FILENAME
+
+> `const` **WAVE1\_POC\_EVIDENCE\_MANIFEST\_ARTIFACT\_FILENAME**: `"wave1-poc-evidence-manifest.json"` = `"wave1-poc-evidence-manifest.json"`
+
+Filename used for the Wave 1 POC evidence manifest artifact.
+
+***
+
+### WAVE1\_POC\_EVIDENCE\_MANIFEST\_SCHEMA\_VERSION
+
+> `const` **WAVE1\_POC\_EVIDENCE\_MANIFEST\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the Wave 1 POC evidence manifest envelope.
+
+***
+
+### WAVE1\_POC\_FIXTURE\_IDS
+
+> `const` **WAVE1\_POC\_FIXTURE\_IDS**: readonly \[`"poc-onboarding"`, `"poc-payment-auth"`\]
+
+Allowed Wave 1 POC fixture identifiers.
+
+`poc-onboarding` — synthetic onboarding-style sign-up flow.
+`poc-payment-auth` — synthetic payment + 3-D Secure authorisation flow.
+
+Both fixtures are public, contain only synthetic data, and ship with a
+companion visual sidecar fixture so the Figma → Visual Sidecar →
+Business Test Intent IR → structured generation chain is exercised
+end-to-end against an air-gapped mock LLM.
