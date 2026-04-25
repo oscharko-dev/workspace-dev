@@ -24,6 +24,10 @@ import {
 } from "./inspector/test-intelligence/TestCaseListPanel";
 import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
 import { fetchTestIntelligenceJobs } from "./inspector/test-intelligence/api";
+import {
+  safeReadStorage,
+  safeWriteStorage,
+} from "./inspector/test-intelligence/safe-storage";
 import { useTestIntelligenceJob } from "./inspector/test-intelligence/useTestIntelligenceJob";
 import type {
   PolicyDecisionRecord,
@@ -60,26 +64,6 @@ interface RuntimeStatus {
 function isRuntimeStatus(value: unknown): value is RuntimeStatus {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-
-const safeReadStorage = (key: string): string => {
-  try {
-    return window.localStorage.getItem(key) ?? "";
-  } catch {
-    return "";
-  }
-};
-
-const safeWriteStorage = (key: string, value: string): void => {
-  try {
-    if (value.length === 0) {
-      window.localStorage.removeItem(key);
-      return;
-    }
-    window.localStorage.setItem(key, value);
-  } catch {
-    // localStorage may be unavailable in air-gapped contexts; non-fatal.
-  }
-};
 
 interface TestIntelligenceInnerProps {
   jobId: string;
@@ -391,6 +375,15 @@ function ReviewerSettingsBar({
       >
         Refresh
       </button>
+      <p
+        data-testid="ti-reviewer-bearer-warning"
+        role="note"
+        className="m-0 basis-full text-[10px] text-amber-200/85"
+      >
+        The bearer token is held in <code>sessionStorage</code> and discarded
+        when this tab closes — never logged, embedded in URLs, or sent to
+        third-party services. Use a short-lived token whenever possible.
+      </p>
     </section>
   );
 }
@@ -522,20 +515,20 @@ export function InspectorTestIntelligencePage(): JSX.Element {
   const [searchParams, setSearchParams] = useSearchParams();
   const jobId = searchParams.get("jobId") ?? "";
   const [reviewerHandle, setReviewerHandle] = useState(() =>
-    safeReadStorage(REVIEWER_HANDLE_STORAGE_KEY),
+    safeReadStorage(REVIEWER_HANDLE_STORAGE_KEY, "local"),
   );
   const [bearerToken, setBearerToken] = useState(() =>
-    safeReadStorage(REVIEWER_BEARER_STORAGE_KEY),
+    safeReadStorage(REVIEWER_BEARER_STORAGE_KEY, "session"),
   );
 
   const handleReviewerHandleChange = useCallback((value: string): void => {
     setReviewerHandle(value);
-    safeWriteStorage(REVIEWER_HANDLE_STORAGE_KEY, value);
+    safeWriteStorage(REVIEWER_HANDLE_STORAGE_KEY, value, "local");
   }, []);
 
   const handleBearerTokenChange = useCallback((value: string): void => {
     setBearerToken(value);
-    safeWriteStorage(REVIEWER_BEARER_STORAGE_KEY, value);
+    safeWriteStorage(REVIEWER_BEARER_STORAGE_KEY, value, "session");
   }, []);
 
   const runtimeStatus = useQuery({

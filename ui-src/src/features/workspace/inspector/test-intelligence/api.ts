@@ -4,13 +4,25 @@
 // Thin async helpers around the `/workspace/test-intelligence/...` routes.
 // Returns structured outcomes so the page components can render empty,
 // loading, failed, and partial-result states without try/catch noise.
+//
+// Every server response is validated by a runtime guard before assignment
+// to its strict TS type — there are no `as`/`as unknown as` casts on the
+// happy path. A schema mismatch surfaces as `INVALID_RESPONSE` so the UI
+// can render an actionable error rather than crashing in a downstream
+// component.
 // ---------------------------------------------------------------------------
 
 import { fetchJson } from "../../../../lib/http";
+import {
+  isReviewActionEnvelope,
+  isReviewStateEnvelope,
+  isTestIntelligenceBundle,
+  isTestIntelligenceJobSummaryArray,
+  type ReviewActionEnvelope,
+  type ReviewStateEnvelope,
+} from "./payload-guards";
 import type {
   ReviewActionInput,
-  ReviewEvent,
-  ReviewGateSnapshot,
   TestIntelligenceBundle,
   TestIntelligenceJobSummary,
 } from "./types";
@@ -40,6 +52,16 @@ const errorOutcomeFromPayload = <T>(
   return { ok: false, status, error: errorCode, message };
 };
 
+const invalidResponse = <T>(
+  status: number,
+  target: string,
+): FetchOutcome<T> => ({
+  ok: false,
+  status,
+  error: "INVALID_RESPONSE",
+  message: `Server returned an unexpected payload for ${target}.`,
+});
+
 export async function fetchTestIntelligenceJobs(): Promise<
   FetchOutcome<TestIntelligenceJobSummary[]>
 > {
@@ -53,18 +75,13 @@ export async function fetchTestIntelligenceJobs(): Promise<
       "Failed to load test-intelligence jobs.",
     );
   }
-  if (!isRecord(response.payload) || !Array.isArray(response.payload["jobs"])) {
-    return {
-      ok: false,
-      status: response.status,
-      error: "INVALID_RESPONSE",
-      message: "Server returned an unexpected payload for the jobs list.",
-    };
+  if (
+    !isRecord(response.payload) ||
+    !isTestIntelligenceJobSummaryArray(response.payload["jobs"])
+  ) {
+    return invalidResponse(response.status, "the jobs list");
   }
-  return {
-    ok: true,
-    value: response.payload["jobs"] as TestIntelligenceJobSummary[],
-  };
+  return { ok: true, value: response.payload["jobs"] };
 }
 
 export async function fetchTestIntelligenceBundle(
@@ -80,37 +97,18 @@ export async function fetchTestIntelligenceBundle(
       "Failed to load test-intelligence bundle.",
     );
   }
-  if (
-    !isRecord(response.payload) ||
-    typeof response.payload["jobId"] !== "string"
-  ) {
-    return {
-      ok: false,
-      status: response.status,
-      error: "INVALID_RESPONSE",
-      message:
-        "Server returned an unexpected payload for the test-intelligence bundle.",
-    };
+  if (!isTestIntelligenceBundle(response.payload)) {
+    return invalidResponse(response.status, "the test-intelligence bundle");
   }
-  return {
-    ok: true,
-    value: response.payload as unknown as TestIntelligenceBundle,
-  };
+  return { ok: true, value: response.payload };
 }
 
-export interface ReviewStateFetchOk {
-  snapshot: ReviewGateSnapshot;
-  events: ReviewEvent[];
-}
+export type ReviewStateFetchOk = ReviewStateEnvelope;
 
 export async function fetchReviewState(
   jobId: string,
 ): Promise<FetchOutcome<ReviewStateFetchOk>> {
-  const response = await fetchJson<{
-    snapshot: ReviewGateSnapshot;
-    events: ReviewEvent[];
-    ok: true;
-  }>({
+  const response = await fetchJson<ReviewStateEnvelope>({
     url: `${ROOT}/review/${encodeURIComponent(jobId)}/state`,
   });
   if (!response.ok) {
@@ -120,33 +118,13 @@ export async function fetchReviewState(
       "Failed to load review-gate state.",
     );
   }
-  if (
-    !isRecord(response.payload) ||
-    !isRecord(response.payload["snapshot"]) ||
-    !Array.isArray(response.payload["events"])
-  ) {
-    return {
-      ok: false,
-      status: response.status,
-      error: "INVALID_RESPONSE",
-      message:
-        "Server returned an unexpected payload for the review-gate state.",
-    };
+  if (!isReviewStateEnvelope(response.payload)) {
+    return invalidResponse(response.status, "the review-gate state");
   }
-  return {
-    ok: true,
-    value: {
-      snapshot: response.payload["snapshot"] as unknown as ReviewGateSnapshot,
-      events: response.payload["events"] as unknown as ReviewEvent[],
-    },
-  };
+  return { ok: true, value: response.payload };
 }
 
-export interface ReviewActionResult {
-  ok: true;
-  snapshot: ReviewGateSnapshot;
-  event: ReviewEvent;
-}
+export type ReviewActionResult = ReviewActionEnvelope;
 
 export interface PostReviewActionInput extends ReviewActionInput {
   bearerToken: string;
@@ -163,7 +141,7 @@ export async function postReviewAction(
   if (input.testCaseId !== undefined) {
     segments.push(encodeURIComponent(input.testCaseId));
   }
-  const response = await fetchJson<ReviewActionResult>({
+  const response = await fetchJson<ReviewActionEnvelope>({
     url: `${ROOT}/${segments.join("/")}`,
     init: {
       method: "POST",
@@ -187,25 +165,8 @@ export async function postReviewAction(
       "Review action was rejected by the server.",
     );
   }
-  if (
-    !isRecord(response.payload) ||
-    response.payload["ok"] !== true ||
-    !isRecord(response.payload["snapshot"]) ||
-    !isRecord(response.payload["event"])
-  ) {
-    return {
-      ok: false,
-      status: response.status,
-      error: "INVALID_RESPONSE",
-      message: "Server returned an unexpected payload for the review action.",
-    };
+  if (!isReviewActionEnvelope(response.payload)) {
+    return invalidResponse(response.status, "the review action");
   }
-  return {
-    ok: true,
-    value: {
-      ok: true,
-      snapshot: response.payload["snapshot"] as unknown as ReviewGateSnapshot,
-      event: response.payload["event"] as unknown as ReviewEvent,
-    },
-  };
+  return { ok: true, value: response.payload };
 }

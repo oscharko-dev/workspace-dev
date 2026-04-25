@@ -336,3 +336,114 @@ describe("InspectorTestIntelligencePage — review action submission", () => {
     });
   });
 });
+
+describe("InspectorTestIntelligencePage — needs-clarification metadata", () => {
+  it("posts a `note` action with metadata.needsClarification when the user clicks Needs clarification", async () => {
+    fetchJsonMock.mockImplementation(async ({ url, init }) => {
+      if (url === "/workspace") {
+        return buildJsonResponse({
+          status: 200,
+          payload: { testIntelligenceEnabled: true },
+        });
+      }
+      if (url === "/workspace/test-intelligence/jobs/job-1") {
+        return buildJsonResponse({ status: 200, payload: buildBundle() });
+      }
+      if (url === "/workspace/test-intelligence/review/job-1/state") {
+        return buildJsonResponse({
+          status: 200,
+          payload: {
+            ok: true,
+            snapshot: buildBundle().reviewSnapshot,
+            events: [],
+          },
+        });
+      }
+      if (
+        url === "/workspace/test-intelligence/review/job-1/note/tc-1" &&
+        init?.method === "POST"
+      ) {
+        const parsed = JSON.parse(init.body as string) as Record<
+          string,
+          unknown
+        >;
+        expect(parsed.metadata).toEqual({ needsClarification: true });
+        return buildJsonResponse({
+          status: 200,
+          payload: {
+            ok: true,
+            snapshot: buildBundle().reviewSnapshot,
+            event: {
+              id: "evt-needs-clarification",
+              jobId: "job-1",
+              testCaseId: "tc-1",
+              kind: "note",
+              at: "2026-04-25T12:00:00.000Z",
+              sequence: 2,
+              metadata: { needsClarification: true },
+            },
+          },
+        });
+      }
+      return buildJsonResponse({
+        status: 404,
+        payload: { error: "NOT_FOUND" },
+      });
+    });
+
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-test-case-list")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTestId("ti-reviewer-bearer-input"), {
+      target: { value: "secret-token" },
+    });
+    fireEvent.click(screen.getByTestId("ti-detail-action-needs-clarification"));
+
+    await waitFor(() => {
+      const calls = fetchJsonMock.mock.calls.filter(
+        ([request]) =>
+          request.url ===
+            "/workspace/test-intelligence/review/job-1/note/tc-1" &&
+          request.init?.method === "POST",
+      );
+      expect(calls.length).toBeGreaterThan(0);
+    });
+  });
+});
+
+describe("InspectorTestIntelligencePage — bearer token persists to sessionStorage", () => {
+  it("stores the bearer token in sessionStorage and the reviewer handle in localStorage", async () => {
+    configureFetchJson({});
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-test-case-list")).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTestId("ti-reviewer-bearer-input"), {
+      target: { value: "scoped-token" },
+    });
+    fireEvent.change(screen.getByTestId("ti-reviewer-handle-input"), {
+      target: { value: "alice" },
+    });
+    expect(window.sessionStorage.getItem("workspace-dev:ti-reviewer-bearer:v1")).toBe(
+      "scoped-token",
+    );
+    expect(window.localStorage.getItem("workspace-dev:ti-reviewer-handle:v1")).toBe(
+      "alice",
+    );
+    // Bearer token is NOT mirrored into localStorage.
+    expect(
+      window.localStorage.getItem("workspace-dev:ti-reviewer-bearer:v1"),
+    ).toBeNull();
+  });
+
+  it("warns reviewers about the storage scope of the bearer token", async () => {
+    configureFetchJson({});
+    renderPage("/workspace/ui/inspector/test-intelligence?jobId=job-1");
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("ti-reviewer-bearer-warning"),
+      ).toHaveTextContent(/sessionStorage/);
+    });
+  });
+});

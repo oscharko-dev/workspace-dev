@@ -12,6 +12,7 @@ import {
 } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { buildApp, type WorkspaceServerApp } from "./app-inject.js";
@@ -6878,7 +6879,9 @@ test("submit figma_to_code path is unaffected when test-intelligence gates are o
 const TI_ASSEMBLED_AT = "2026-04-25T11:00:00.000Z";
 const TI_REVIEW_TOKEN = "test-ti-review-bearer";
 
-const tiAuthHeader = (token: string = TI_REVIEW_TOKEN): { authorization: string } => ({
+const tiAuthHeader = (
+  token: string = TI_REVIEW_TOKEN,
+): { authorization: string } => ({
   authorization: `Bearer ${token}`,
 });
 
@@ -6890,14 +6893,15 @@ interface SeedTiJobOptions {
 async function seedTiJob(
   artifactRoot: string,
   jobId: string,
-  { generatedAt = TI_ASSEMBLED_AT, policyDecision = "needs_review" }: SeedTiJobOptions = {},
+  {
+    generatedAt = TI_ASSEMBLED_AT,
+    policyDecision = "needs_review",
+  }: SeedTiJobOptions = {},
 ): Promise<void> {
-  const { createFileSystemReviewStore } = await import(
-    "../test-intelligence/review-store.js"
-  );
-  const { writeValidationPipelineArtifacts } = await import(
-    "../test-intelligence/validation-pipeline.js"
-  );
+  const { createFileSystemReviewStore } =
+    await import("../test-intelligence/review-store.js");
+  const { writeValidationPipelineArtifacts } =
+    await import("../test-intelligence/validation-pipeline.js");
   const {
     GENERATED_TEST_CASE_SCHEMA_VERSION,
     TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION,
@@ -7042,9 +7046,7 @@ test("test-intelligence: 503 when feature gates are off", async () => {
 
 test("test-intelligence: GET /jobs returns empty list when artifact root is missing", async () => {
   await withTestIntelligenceEnv("1", async () => {
-    const tempRoot = await mkdtemp(
-      path.join(os.tmpdir(), "ti-route-empty-"),
-    );
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-empty-"));
     const { app, close } = await createRequestHandlerApp({
       testIntelligenceEnabled: true,
       testIntelligenceArtifactRoot: path.join(tempRoot, "missing"),
@@ -7226,9 +7228,7 @@ test("test-intelligence: POST review action returns 401 with wrong token", async
 
 test("test-intelligence: POST approve transitions and returns updated snapshot", async () => {
   await withTestIntelligenceEnv("1", async () => {
-    const tempRoot = await mkdtemp(
-      path.join(os.tmpdir(), "ti-route-approve-"),
-    );
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-approve-"));
     const artifactRoot = path.join(tempRoot, "ti");
     await mkdir(artifactRoot, { recursive: true });
     await seedTiJob(artifactRoot, "job-approve");
@@ -7328,6 +7328,270 @@ test("test-intelligence: GET /workspace exposes testIntelligenceEnabled in statu
       assert.equal(body.testIntelligenceEnabled, true);
     } finally {
       await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+// Direct-handler helpers for tests that need to bypass `app.inject` (HTTP+
+// fetch round-trip). These let us drive the dispatcher with a hand-crafted
+// IncomingMessage stream so we can exercise edge cases that race poorly
+// against fetch (early server close on oversize body, parallel writes).
+
+const buildFakeRequest = (input: {
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+}): Readable & {
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+} => {
+  const body = input.body ?? "";
+  const stream = Readable.from(body.length === 0 ? [] : [body]);
+  const headers: Record<string, string> = {
+    host: "127.0.0.1",
+    ...(input.headers ?? {}),
+  };
+  return Object.assign(stream, {
+    method: input.method,
+    url: input.url,
+    headers,
+    socket: { remoteAddress: "127.0.0.1" },
+  });
+};
+
+interface CapturedResponse {
+  statusCode: number;
+  headers: Record<string, string | string[]>;
+  body: string;
+}
+
+const buildFakeResponse = (): {
+  response: import("node:http").ServerResponse;
+  captured: CapturedResponse;
+  done: Promise<void>;
+} => {
+  const captured: CapturedResponse = {
+    statusCode: 0,
+    headers: {},
+    body: "",
+  };
+  let resolveDone: () => void = () => undefined;
+  const done = new Promise<void>((resolve) => {
+    resolveDone = resolve;
+  });
+  const fake: Record<string, unknown> = {
+    headersSent: false,
+    writableEnded: false,
+    setHeader(key: string, value: string | string[]) {
+      captured.headers[key.toLowerCase()] = value;
+    },
+    getHeader(key: string) {
+      return captured.headers[key.toLowerCase()];
+    },
+    removeHeader(key: string) {
+      delete captured.headers[key.toLowerCase()];
+    },
+    hasHeader(key: string): boolean {
+      return key.toLowerCase() in captured.headers;
+    },
+    writeHead(status: number, headers?: Record<string, string | string[]>) {
+      captured.statusCode = status;
+      if (headers) {
+        for (const [key, value] of Object.entries(headers)) {
+          captured.headers[key.toLowerCase()] = value;
+        }
+      }
+    },
+    write(chunk: string | Buffer) {
+      captured.body += chunk.toString();
+    },
+    end(chunk?: string | Buffer) {
+      if (chunk !== undefined) {
+        captured.body += chunk.toString();
+      }
+      this.writableEnded = true;
+      resolveDone();
+    },
+  };
+  Object.defineProperty(fake, "statusCode", {
+    configurable: true,
+    enumerable: true,
+    get(): number {
+      return captured.statusCode;
+    },
+    set(value: number): void {
+      captured.statusCode = value;
+    },
+  });
+  return {
+    response: fake as unknown as import("node:http").ServerResponse,
+    captured,
+    done,
+  };
+};
+
+test("test-intelligence: POST returns 413 when body exceeds the size limit", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-route-413-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-413");
+
+    let resolvedPort = 0;
+    const handler = createWorkspaceRequestHandler({
+      host: "127.0.0.1",
+      getResolvedPort: () => resolvedPort,
+      startedAt: Date.now(),
+      absoluteOutputRoot: tempRoot,
+      workspaceRoot: tempRoot,
+      defaults: { figmaSourceMode: "rest", llmCodegenMode: "deterministic" },
+      runtime: {
+        previewEnabled: false,
+        rateLimitPerMinute: 100,
+        testIntelligenceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+        logger: createStubLogger(),
+      },
+      jobEngine: createStubJobEngine(),
+      moduleDir: path.resolve(import.meta.dirname ?? ".", ".."),
+    });
+    resolvedPort = 1024;
+
+    const oversized = "A".repeat(9_000_000);
+    const payload = JSON.stringify({ at: TI_ASSEMBLED_AT, note: oversized });
+    const request = buildFakeRequest({
+      method: "POST",
+      url: "/workspace/test-intelligence/review/job-413/note/tc-1",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${TI_REVIEW_TOKEN}`,
+        origin: "http://127.0.0.1:1024",
+      },
+      body: payload,
+    });
+    const { response, captured, done } = buildFakeResponse();
+    try {
+      await handler(
+        request as unknown as import("node:http").IncomingMessage,
+        response,
+      );
+      await done;
+      assert.equal(captured.statusCode, 413);
+      const body = JSON.parse(captured.body) as Record<string, unknown>;
+      assert.equal(body.error, "REQUEST_TOO_LARGE");
+    } finally {
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST serializes concurrent review writes via the per-job mutex", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(
+      path.join(os.tmpdir(), "ti-route-concurrent-"),
+    );
+    const artifactRoot = path.join(tempRoot, "ti");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-concurrent", {
+      policyDecision: "approved",
+    });
+
+    let resolvedPort = 0;
+    const handler = createWorkspaceRequestHandler({
+      host: "127.0.0.1",
+      getResolvedPort: () => resolvedPort,
+      startedAt: Date.now(),
+      absoluteOutputRoot: tempRoot,
+      workspaceRoot: tempRoot,
+      defaults: { figmaSourceMode: "rest", llmCodegenMode: "deterministic" },
+      runtime: {
+        previewEnabled: false,
+        rateLimitPerMinute: 100,
+        testIntelligenceEnabled: true,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+        testIntelligenceArtifactRoot: artifactRoot,
+        logger: createStubLogger(),
+      },
+      jobEngine: createStubJobEngine(),
+      moduleDir: path.resolve(import.meta.dirname ?? ".", ".."),
+    });
+    resolvedPort = 1024;
+
+    const buildNotePost = (
+      note: string,
+    ): {
+      request: ReturnType<typeof buildFakeRequest>;
+      response: ReturnType<typeof buildFakeResponse>;
+    } => {
+      const body = JSON.stringify({ at: TI_ASSEMBLED_AT, note });
+      const request = buildFakeRequest({
+        method: "POST",
+        url: "/workspace/test-intelligence/review/job-concurrent/note/tc-1",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${TI_REVIEW_TOKEN}`,
+          origin: "http://127.0.0.1:1024",
+          "content-length": String(Buffer.byteLength(body)),
+        },
+        body,
+      });
+      return { request, response: buildFakeResponse() };
+    };
+
+    try {
+      const cells = [
+        buildNotePost("first"),
+        buildNotePost("second"),
+        buildNotePost("third"),
+      ];
+      await Promise.all(
+        cells.map(async (cell) => {
+          await handler(
+            cell.request as unknown as import("node:http").IncomingMessage,
+            cell.response.response,
+          );
+          await cell.response.done;
+        }),
+      );
+
+      const sequences = cells
+        .map((cell) => {
+          assert.equal(cell.response.captured.statusCode, 200);
+          const parsed = JSON.parse(cell.response.captured.body) as {
+            event: { sequence: number };
+          };
+          return parsed.event.sequence;
+        })
+        .sort((a, b) => a - b);
+      // Seed consumed sequence 1; the three concurrent notes must
+      // serialize into sequences 2, 3, 4 with no holes or duplicates.
+      assert.deepEqual(sequences, [2, 3, 4]);
+
+      // Confirm the persisted event log holds the same sequences.
+      const stateRequest = buildFakeRequest({
+        method: "GET",
+        url: "/workspace/test-intelligence/review/job-concurrent/state",
+      });
+      const stateResponse = buildFakeResponse();
+      await handler(
+        stateRequest as unknown as import("node:http").IncomingMessage,
+        stateResponse.response,
+      );
+      await stateResponse.done;
+      assert.equal(stateResponse.captured.statusCode, 200);
+      const persisted = (
+        JSON.parse(stateResponse.captured.body) as {
+          events: { sequence: number }[];
+        }
+      ).events
+        .map((event) => event.sequence)
+        .sort((a, b) => a - b);
+      assert.deepEqual(persisted, [1, 2, 3, 4]);
+    } finally {
       await rm(tempRoot, { recursive: true, force: true });
     }
   });
