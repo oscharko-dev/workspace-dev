@@ -62,7 +62,6 @@ import {
   type VisualSidecarSuccess,
   type VisualSidecarValidationOutcome,
 } from "../contracts/index.js";
-import { sanitizeErrorMessage } from "../error-sanitization.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 import { canonicalJson } from "./content-hash.js";
 import type { LlmGatewayClient } from "./llm-gateway.js";
@@ -620,7 +619,6 @@ interface AttemptOk {
 interface AttemptFailure {
   kind: "failure";
   errorClass: LlmGatewayErrorClass | "schema_invalid_response";
-  message: string;
 }
 
 type AttemptEvaluation = AttemptOk | AttemptFailure;
@@ -703,10 +701,6 @@ const evaluateAttempt = (input: {
     return {
       kind: "failure",
       errorClass: result.errorClass,
-      message: sanitizeErrorMessage({
-        error: new Error(result.message),
-        fallback: result.errorClass,
-      }),
     };
   }
 
@@ -715,7 +709,6 @@ const evaluateAttempt = (input: {
     return {
       kind: "failure",
       errorClass: "schema_invalid_response",
-      message: envelope.message,
     };
   }
 
@@ -723,7 +716,6 @@ const evaluateAttempt = (input: {
     return {
       kind: "failure",
       errorClass: "schema_invalid_response",
-      message: `screen count ${envelope.screens.length} does not match capture count ${input.capturesCount}`,
     };
   }
 
@@ -742,7 +734,6 @@ const evaluateAttempt = (input: {
     return {
       kind: "failure",
       errorClass: "schema_invalid_response",
-      message: "one or more screen descriptions failed schema validation",
     };
   }
 
