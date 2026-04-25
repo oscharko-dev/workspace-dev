@@ -239,7 +239,8 @@
     "onlyBuiltDependencies": [],
     "overrides": {
       "flatted": "^3.4.2",
-      "vitest>picomatch": "^4.0.4"
+      "vitest>picomatch": "^4.0.4",
+      "postcss": "^8.5.10"
     }
   },
   "keywords": [
