@@ -24,15 +24,19 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
+  GENERATED_TEST_CASE_SCHEMA_VERSION,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
+  TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type GeneratedTestCaseList,
   type TestCaseCoverageReport,
   type TestCasePolicyProfile,
   type TestCasePolicyReport,
+  type TestCasePolicyViolation,
   type TestCaseValidationReport,
   type VisualScreenDescription,
   type VisualSidecarValidationReport,
@@ -60,7 +64,7 @@ export interface RunValidationPipelineInput {
 }
 
 export interface ValidationPipelineArtifacts {
-  /** The generated test case list itself (unchanged from input). */
+  /** Generated test cases accepted by the structural schema gate. */
   generatedTestCases: GeneratedTestCaseList;
   validation: TestCaseValidationReport;
   coverage: TestCaseCoverageReport;
@@ -92,6 +96,39 @@ export const runValidationPipeline = (
     list: input.list,
     intent: input.intent,
   });
+
+  if (hasStructuralErrors(validation)) {
+    const emptyList: GeneratedTestCaseList = {
+      schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+      jobId: input.jobId,
+      testCases: [],
+    };
+    const coverage = computeCoverageReport({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      policyProfileId: profile.id,
+      list: emptyList,
+      intent: input.intent,
+      duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
+      ...(input.rubricScore !== undefined
+        ? { rubricScore: input.rubricScore }
+        : {}),
+    });
+    const policy = buildSchemaInvalidPolicyReport({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      profile,
+      validation,
+    });
+    const artifacts: ValidationPipelineArtifacts = {
+      generatedTestCases: emptyList,
+      validation,
+      coverage,
+      policy,
+      blocked: true,
+    };
+    return artifacts;
+  }
 
   const coverage = computeCoverageReport({
     jobId: input.jobId,
@@ -143,6 +180,42 @@ export const runValidationPipeline = (
   };
   if (visualReport !== undefined) artifacts.visual = visualReport;
   return artifacts;
+};
+
+const hasStructuralErrors = (report: TestCaseValidationReport): boolean =>
+  report.issues.some((issue) => issue.code === "schema_invalid");
+
+const buildSchemaInvalidPolicyReport = (input: {
+  jobId: string;
+  generatedAt: string;
+  profile: TestCasePolicyProfile;
+  validation: TestCaseValidationReport;
+}): TestCasePolicyReport => {
+  const jobLevelViolations: TestCasePolicyViolation[] = input.validation.issues
+    .filter((issue) => issue.code === "schema_invalid")
+    .map((issue) => ({
+      rule: "validation:schema_invalid",
+      outcome: "schema_invalid",
+      severity: "error",
+      reason: issue.message,
+      path: issue.path,
+    }));
+
+  return {
+    schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    generatedAt: input.generatedAt,
+    jobId: input.jobId,
+    policyProfileId: input.profile.id,
+    policyProfileVersion: input.profile.version,
+    totalTestCases: 0,
+    approvedCount: 0,
+    blockedCount: 0,
+    needsReviewCount: 0,
+    blocked: true,
+    decisions: [],
+    jobLevelViolations,
+  };
 };
 
 export interface WriteValidationPipelineArtifactsInput {

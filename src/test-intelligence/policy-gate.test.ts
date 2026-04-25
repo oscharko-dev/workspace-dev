@@ -258,6 +258,59 @@ test("required field with negative coverage satisfies the rule", () => {
   );
 });
 
+test("missing negative or validation coverage for a required field blocks the job", () => {
+  const intent = buildIntent({
+    detectedFields: [
+      {
+        id: "f-iban",
+        screenId: "s-1",
+        trace: { nodeId: "n2" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "IBAN",
+        type: "text",
+      },
+    ],
+    detectedValidations: [
+      {
+        id: "v-iban-required",
+        screenId: "s-1",
+        trace: { nodeId: "n2" },
+        provenance: "figma_node",
+        confidence: 0.85,
+        rule: "Required",
+        targetFieldId: "f-iban",
+      },
+    ],
+  });
+  const ctx = harness(
+    [
+      buildCase({ id: "tc-pos" }),
+      buildCase({
+        id: "tc-a11y",
+        type: "accessibility",
+        title: "Form is keyboard accessible",
+      }),
+    ],
+    intent,
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(
+    report.jobLevelViolations.some(
+      (v) => v.outcome === "missing_negative_or_validation_for_required_field",
+    ),
+  );
+});
+
 test("low confidence triggers needs_review", () => {
   const tc = buildCase({
     qualitySignals: {

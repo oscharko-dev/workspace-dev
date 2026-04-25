@@ -65,6 +65,69 @@ const REVIEW_STATES: readonly GeneratedTestCaseReviewState[] = [
   "rejected",
 ];
 
+const ROOT_KEYS = ["schemaVersion", "jobId", "testCases"] as const;
+const TEST_CASE_KEYS = [
+  "id",
+  "sourceJobId",
+  "contractVersion",
+  "schemaVersion",
+  "promptTemplateVersion",
+  "title",
+  "objective",
+  "level",
+  "type",
+  "priority",
+  "riskCategory",
+  "technique",
+  "preconditions",
+  "testData",
+  "steps",
+  "expectedResults",
+  "figmaTraceRefs",
+  "assumptions",
+  "openQuestions",
+  "qcMappingPreview",
+  "qualitySignals",
+  "reviewState",
+  "audit",
+] as const;
+const STEP_KEYS = ["index", "action", "data", "expected"] as const;
+const FIGMA_TRACE_REF_KEYS = [
+  "screenId",
+  "nodeId",
+  "nodeName",
+  "nodePath",
+] as const;
+const QC_MAPPING_KEYS = [
+  "folderHint",
+  "mappingProfileId",
+  "exportable",
+  "blockingReasons",
+] as const;
+const QUALITY_SIGNAL_KEYS = [
+  "coveredFieldIds",
+  "coveredActionIds",
+  "coveredValidationIds",
+  "coveredNavigationIds",
+  "confidence",
+  "ambiguity",
+] as const;
+const AMBIGUITY_KEYS = ["reason"] as const;
+const AUDIT_KEYS = [
+  "jobId",
+  "generatedAt",
+  "contractVersion",
+  "schemaVersion",
+  "promptTemplateVersion",
+  "redactionPolicyVersion",
+  "visualSidecarSchemaVersion",
+  "cacheHit",
+  "cacheKey",
+  "inputHash",
+  "promptHash",
+  "schemaHash",
+] as const;
+
 /** Stable schema name shared with structured-output gateways. */
 export const GENERATED_TEST_CASE_LIST_SCHEMA_NAME: string = `workspace-dev.test-intelligence.generated-test-case-list.v${GENERATED_TEST_CASE_SCHEMA_VERSION}`;
 
@@ -296,6 +359,7 @@ export const validateGeneratedTestCaseList = (
     return { valid: false, errors };
   }
   const root = value;
+  expectExactKeys(root, ROOT_KEYS, "$", errors);
   if (root["schemaVersion"] !== GENERATED_TEST_CASE_SCHEMA_VERSION) {
     errors.push({
       path: "$.schemaVersion",
@@ -325,6 +389,7 @@ const validateTestCase = (
     return;
   }
   const tc = value;
+  expectExactKeys(tc, TEST_CASE_KEYS, path, errors);
   expectString(tc["id"], `${path}.id`, errors);
   expectString(tc["sourceJobId"], `${path}.sourceJobId`, errors);
   expectConst(
@@ -436,6 +501,7 @@ const expectStepsArray = (
       errors.push({ path: `${path}[${i}]`, message: "expected object" });
       continue;
     }
+    expectExactKeys(step, STEP_KEYS, `${path}[${i}]`, errors);
     if (
       typeof step["index"] !== "number" ||
       !Number.isInteger(step["index"]) ||
@@ -447,6 +513,12 @@ const expectStepsArray = (
       });
     }
     expectString(step["action"], `${path}[${i}].action`, errors);
+    if (step["data"] !== undefined) {
+      expectString(step["data"], `${path}[${i}].data`, errors);
+    }
+    if (step["expected"] !== undefined) {
+      expectString(step["expected"], `${path}[${i}].expected`, errors);
+    }
   }
 };
 
@@ -465,7 +537,17 @@ const expectTraceRefs = (
       errors.push({ path: `${path}[${i}]`, message: "expected object" });
       continue;
     }
+    expectExactKeys(ref, FIGMA_TRACE_REF_KEYS, `${path}[${i}]`, errors);
     expectString(ref["screenId"], `${path}[${i}].screenId`, errors);
+    if (ref["nodeId"] !== undefined) {
+      expectString(ref["nodeId"], `${path}[${i}].nodeId`, errors);
+    }
+    if (ref["nodeName"] !== undefined) {
+      expectString(ref["nodeName"], `${path}[${i}].nodeName`, errors);
+    }
+    if (ref["nodePath"] !== undefined) {
+      expectString(ref["nodePath"], `${path}[${i}].nodePath`, errors);
+    }
   }
 };
 
@@ -478,8 +560,22 @@ const expectQcMapping = (
     errors.push({ path, message: "expected object" });
     return;
   }
+  expectExactKeys(value, QC_MAPPING_KEYS, path, errors);
   if (typeof value["exportable"] !== "boolean") {
     errors.push({ path: `${path}.exportable`, message: "expected boolean" });
+  }
+  if (value["folderHint"] !== undefined) {
+    expectString(value["folderHint"], `${path}.folderHint`, errors);
+  }
+  if (value["mappingProfileId"] !== undefined) {
+    expectString(value["mappingProfileId"], `${path}.mappingProfileId`, errors);
+  }
+  if (value["blockingReasons"] !== undefined) {
+    expectStringArray(
+      value["blockingReasons"],
+      `${path}.blockingReasons`,
+      errors,
+    );
   }
 };
 
@@ -492,6 +588,7 @@ const expectQualitySignals = (
     errors.push({ path, message: "expected object" });
     return;
   }
+  expectExactKeys(value, QUALITY_SIGNAL_KEYS, path, errors);
   expectStringArray(
     value["coveredFieldIds"],
     `${path}.coveredFieldIds`,
@@ -522,6 +619,9 @@ const expectQualitySignals = (
       message: "expected number in [0, 1]",
     });
   }
+  if (value["ambiguity"] !== undefined) {
+    expectAmbiguity(value["ambiguity"], `${path}.ambiguity`, errors);
+  }
 };
 
 const expectAudit = (
@@ -533,6 +633,7 @@ const expectAudit = (
     errors.push({ path, message: "expected object" });
     return;
   }
+  expectExactKeys(value, AUDIT_KEYS, path, errors);
   expectString(value["jobId"], `${path}.jobId`, errors);
   if (
     typeof value["generatedAt"] !== "string" ||
@@ -587,6 +688,37 @@ const expectHash = (
 ): void => {
   if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) {
     errors.push({ path, message: "expected sha256 hex digest" });
+  }
+};
+
+const expectAmbiguity = (
+  value: unknown,
+  path: string,
+  errors: GeneratedTestCaseValidationError[],
+): void => {
+  if (!isObject(value)) {
+    errors.push({ path, message: "expected object" });
+    return;
+  }
+  expectExactKeys(value, AMBIGUITY_KEYS, path, errors);
+  expectString(value["reason"], `${path}.reason`, errors);
+};
+
+const expectExactKeys = (
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  path: string,
+  errors: GeneratedTestCaseValidationError[],
+): void => {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      errors.push({
+        path,
+        message: `unexpected property "${key}"`,
+      });
+      return;
+    }
   }
 };
 

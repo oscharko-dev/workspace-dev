@@ -8,6 +8,7 @@ import {
   VISUAL_SIDECAR_SCHEMA_VERSION,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
+  type GeneratedTestCaseStep,
 } from "../contracts/index.js";
 import {
   GENERATED_TEST_CASE_LIST_SCHEMA_NAME,
@@ -131,6 +132,19 @@ test("validator: accepts a valid GeneratedTestCaseList", () => {
   assert.equal(result.valid, true, JSON.stringify(result.errors));
 });
 
+test("validator: rejects unexpected root properties", () => {
+  const list = {
+    ...buildSampleList(),
+    unexpected: true,
+  } as unknown as GeneratedTestCaseList;
+  const result = validateGeneratedTestCaseList(list);
+  assert.equal(result.valid, false);
+  assert.ok(
+    result.errors.some((error) => error.path === "$"),
+    "expected root property error",
+  );
+});
+
 test("validator: rejects mismatched schema version", () => {
   const list = buildSampleList({
     schemaVersion:
@@ -170,6 +184,93 @@ test("validator: rejects empty steps array", () => {
   assert.ok(
     result.errors.some((error) => error.path === "$.testCases[0].steps"),
     "expected steps error",
+  );
+});
+
+test("validator: rejects unexpected nested properties in a step", () => {
+  const tc = buildSampleTestCase();
+  const list = buildSampleList({
+    testCases: [
+      {
+        ...tc,
+        steps: [
+          {
+            ...tc.steps[0],
+            unexpected: "boom",
+          } as unknown as GeneratedTestCaseStep,
+        ],
+      },
+    ],
+  });
+  const result = validateGeneratedTestCaseList(list);
+  assert.equal(result.valid, false);
+  assert.ok(
+    result.errors.some(
+      (error) => error.path === "$.testCases[0].steps[0]",
+    ),
+    "expected nested step property error",
+  );
+});
+
+test("validator: rejects malformed optional nested fields", () => {
+  const tc = buildSampleTestCase();
+  const list = buildSampleList({
+    testCases: [
+      {
+        ...tc,
+        steps: [
+          {
+            index: 1,
+            action: "Enter IBAN",
+            expected: 42,
+          } as unknown as GeneratedTestCaseStep,
+        ],
+        figmaTraceRefs: [
+          {
+            screenId: "s-payment",
+            nodeName: 42,
+          } as unknown as GeneratedTestCase["figmaTraceRefs"][number],
+        ],
+        qcMappingPreview: {
+          exportable: false,
+          blockingReasons: ["missing folder", 42],
+        } as unknown as GeneratedTestCase["qcMappingPreview"],
+      },
+    ],
+  });
+  const result = validateGeneratedTestCaseList(list);
+  assert.equal(result.valid, false);
+  const paths = result.errors.map((error) => error.path);
+  assert.ok(paths.includes("$.testCases[0].steps[0].expected"));
+  assert.ok(paths.includes("$.testCases[0].figmaTraceRefs[0].nodeName"));
+  assert.ok(
+    paths.includes("$.testCases[0].qcMappingPreview.blockingReasons[1]"),
+  );
+});
+
+test("validator: rejects unexpected nested properties in qualitySignals.ambiguity", () => {
+  const tc = buildSampleTestCase();
+  const list = buildSampleList({
+    testCases: [
+      {
+        ...tc,
+        qualitySignals: {
+          ...tc.qualitySignals,
+          ambiguity: {
+            reason: "needs manual review",
+            unexpected: true,
+          } as unknown as GeneratedTestCase["qualitySignals"]["ambiguity"],
+        },
+      },
+    ],
+  });
+  const result = validateGeneratedTestCaseList(list);
+  assert.equal(result.valid, false);
+  assert.ok(
+    result.errors.some(
+      (error) => error.path === "$.testCases[0].qualitySignals.ambiguity",
+    ),
+    "expected ambiguity property error",
   );
 });
 
