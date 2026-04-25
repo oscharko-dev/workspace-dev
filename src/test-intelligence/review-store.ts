@@ -1,5 +1,5 @@
 /**
- * Review-gate persistent store (Issue #1365).
+ * Review-gate persistent store (Issues #1365 / #1376).
  *
  * Mirrors the import-session-event-store pattern:
  *   - file-per-job event log (`review-events.json`)
@@ -12,6 +12,16 @@
  * snapshot from a validation pipeline output, which carries the policy
  * decisions; only the review handler may transition state via
  * `recordTransition`, and only via the state machine.
+ *
+ * Wave 2 (#1376) adds four-eyes enforcement. The seed accepts a
+ * `FourEyesPolicy` plus the optional visual-sidecar validation report
+ * and stamps each per-case snapshot with `fourEyesEnforced` /
+ * `fourEyesReasons`. `recordTransition` then refuses self-approval,
+ * duplicate-principal approval, approving one's own edit, and
+ * approve-without-actor. The legacy `approved` event kind is preserved
+ * for non-enforced cases and auto-routed to `primary_approved` /
+ * `secondary_approved` for enforced ones, so existing UI clients keep
+ * working without rewiring.
  */
 
 import { randomUUID } from "node:crypto";
@@ -19,12 +29,15 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS,
   ALLOWED_REVIEW_EVENT_KINDS,
   ALLOWED_REVIEW_STATES,
   REVIEW_EVENTS_ARTIFACT_FILENAME,
   REVIEW_GATE_SCHEMA_VERSION,
   REVIEW_STATE_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
+  type FourEyesEnforcementReason,
+  type FourEyesPolicy,
   type GeneratedTestCaseList,
   type ReviewEvent,
   type ReviewEventKind,
@@ -33,8 +46,13 @@ import {
   type ReviewState,
   type TestCasePolicyDecision,
   type TestCasePolicyReport,
+  type VisualSidecarValidationReport,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
+import {
+  cloneFourEyesPolicy,
+  evaluateFourEyesEnforcement,
+} from "./four-eyes-policy.js";
 import {
   seedReviewStateFromPolicy,
   transitionReviewState,
@@ -49,6 +67,9 @@ const REVIEW_EVENT_KINDS: ReadonlySet<ReviewEventKind> = new Set(
 );
 const REVIEW_STATES_SET: ReadonlySet<ReviewState> = new Set(
   ALLOWED_REVIEW_STATES,
+);
+const FOUR_EYES_REASONS_SET: ReadonlySet<FourEyesEnforcementReason> = new Set(
+  ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS,
 );
 
 interface PersistedReviewEventsEnvelope {
@@ -69,6 +90,18 @@ export interface RecordTransitionInput {
   metadata?: Record<string, string | number | boolean | null>;
 }
 
+/**
+ * Refusal codes specific to four-eyes enforcement (#1376). All map to
+ * 409 at the handler layer because they reflect a state/principal
+ * conflict, not a malformed input.
+ */
+export type FourEyesRefusalCode =
+  | "four_eyes_actor_required"
+  | "self_approval_refused"
+  | "duplicate_principal_refused"
+  | "primary_approval_required"
+  | "four_eyes_not_required";
+
 export type RecordTransitionResult =
   | { ok: true; event: ReviewEvent; snapshot: ReviewGateSnapshot }
   | {
@@ -80,20 +113,34 @@ export type RecordTransitionResult =
         | "note_too_long"
         | "actor_too_long"
         | "kind_unknown"
-        | ReviewTransitionRefusalCode;
+        | ReviewTransitionRefusalCode
+        | FourEyesRefusalCode;
     };
+
+export interface SeedSnapshotInput {
+  jobId: string;
+  generatedAt: string;
+  list: GeneratedTestCaseList;
+  policy: TestCasePolicyReport;
+  /**
+   * Optional four-eyes policy. When omitted, no case is enforced
+   * (preserves Wave 1 single-reviewer flow).
+   */
+  fourEyesPolicy?: FourEyesPolicy;
+  /**
+   * Optional visual-sidecar validation report consulted by the
+   * four-eyes evaluator. Cases without matching screen records receive
+   * no visual-driven enforcement.
+   */
+  visualReport?: VisualSidecarValidationReport;
+}
 
 export interface ReviewStore {
   /**
    * Initialize the store for a job from validation pipeline outputs.
    * If a snapshot already exists for the job, returns it as-is.
    */
-  seedSnapshot(input: {
-    jobId: string;
-    generatedAt: string;
-    list: GeneratedTestCaseList;
-    policy: TestCasePolicyReport;
-  }): Promise<ReviewGateSnapshot>;
+  seedSnapshot(input: SeedSnapshotInput): Promise<ReviewGateSnapshot>;
   /** List all events for a job in sequence order. */
   listEvents(jobId: string): Promise<ReviewEvent[]>;
   /** Read the snapshot for a job. */
@@ -193,7 +240,42 @@ const isReviewSnapshotEntry = (value: unknown): value is ReviewSnapshot => {
   ) {
     return false;
   }
+  if (value["fourEyesReasons"] !== undefined) {
+    const reasons = value["fourEyesReasons"];
+    if (
+      !Array.isArray(reasons) ||
+      !reasons.every(
+        (r) =>
+          typeof r === "string" &&
+          FOUR_EYES_REASONS_SET.has(r as FourEyesEnforcementReason),
+      )
+    ) {
+      return false;
+    }
+  }
+  for (const optionalString of [
+    "primaryReviewer",
+    "primaryApprovalAt",
+    "secondaryReviewer",
+    "secondaryApprovalAt",
+    "lastEditor",
+  ] as const) {
+    const v = value[optionalString];
+    if (v !== undefined && typeof v !== "string") {
+      return false;
+    }
+  }
   return true;
+};
+
+const isFourEyesPolicy = (value: unknown): value is FourEyesPolicy => {
+  if (!isRecord(value)) return false;
+  return (
+    Array.isArray(value["requiredRiskCategories"]) &&
+    value["requiredRiskCategories"].every((s) => typeof s === "string") &&
+    Array.isArray(value["visualSidecarTriggerOutcomes"]) &&
+    value["visualSidecarTriggerOutcomes"].every((s) => typeof s === "string")
+  );
 };
 
 const isReviewGateSnapshot = (value: unknown): value is ReviewGateSnapshot => {
@@ -208,6 +290,19 @@ const isReviewGateSnapshot = (value: unknown): value is ReviewGateSnapshot => {
     typeof value["rejectedCount"] !== "number" ||
     !Array.isArray(value["perTestCase"]) ||
     !value["perTestCase"].every(isReviewSnapshotEntry)
+  ) {
+    return false;
+  }
+  if (
+    value["pendingSecondaryApprovalCount"] !== undefined &&
+    (typeof value["pendingSecondaryApprovalCount"] !== "number" ||
+      !Number.isInteger(value["pendingSecondaryApprovalCount"]))
+  ) {
+    return false;
+  }
+  if (
+    value["fourEyesPolicy"] !== undefined &&
+    !isFourEyesPolicy(value["fourEyesPolicy"])
   ) {
     return false;
   }
@@ -240,16 +335,18 @@ const writeAtomicJson = async (
   await rename(tmp, path);
 };
 
-const computeCounts = (
-  perTestCase: ReviewSnapshot[],
-): {
+interface SnapshotCounts {
   approvedCount: number;
   needsReviewCount: number;
   rejectedCount: number;
-} => {
+  pendingSecondaryApprovalCount: number;
+}
+
+const computeCounts = (perTestCase: ReviewSnapshot[]): SnapshotCounts => {
   let approvedCount = 0;
   let needsReviewCount = 0;
   let rejectedCount = 0;
+  let pendingSecondaryApprovalCount = 0;
   for (const entry of perTestCase) {
     if (
       entry.state === "approved" ||
@@ -259,11 +356,18 @@ const computeCounts = (
       approvedCount += 1;
     } else if (entry.state === "needs_review" || entry.state === "edited") {
       needsReviewCount += 1;
+    } else if (entry.state === "pending_secondary_approval") {
+      pendingSecondaryApprovalCount += 1;
     } else if (entry.state === "rejected") {
       rejectedCount += 1;
     }
   }
-  return { approvedCount, needsReviewCount, rejectedCount };
+  return {
+    approvedCount,
+    needsReviewCount,
+    rejectedCount,
+    pendingSecondaryApprovalCount,
+  };
 };
 
 const sortSnapshotEntries = (entries: ReviewSnapshot[]): ReviewSnapshot[] => {
@@ -392,12 +496,7 @@ class FileSystemReviewStore implements ReviewStore {
     return parsed;
   }
 
-  async seedSnapshot(input: {
-    jobId: string;
-    generatedAt: string;
-    list: GeneratedTestCaseList;
-    policy: TestCasePolicyReport;
-  }): Promise<ReviewGateSnapshot> {
+  async seedSnapshot(input: SeedSnapshotInput): Promise<ReviewGateSnapshot> {
     return this.withJobLock(input.jobId, async () => {
       const existing = await this.readSnapshotInternal(input.jobId);
       if (existing) return existing;
@@ -413,11 +512,25 @@ class FileSystemReviewStore implements ReviewStore {
       const perTestCase: ReviewSnapshot[] = [];
       let sequence = 1;
 
+      const fourEyesPolicy = input.fourEyesPolicy;
+      const policyMetadata = fourEyesPolicy
+        ? cloneFourEyesPolicy(fourEyesPolicy)
+        : undefined;
+
       for (const tc of input.list.testCases) {
         const decision: TestCasePolicyDecision =
           decisions.get(tc.id) ?? "needs_review";
         const seedState: ReviewState = seedReviewStateFromPolicy(decision);
         const eventId = randomUUID();
+        const enforcement = fourEyesPolicy
+          ? evaluateFourEyesEnforcement({
+              testCase: tc,
+              policy: fourEyesPolicy,
+              ...(input.visualReport
+                ? { visualReport: input.visualReport }
+                : {}),
+            })
+          : { enforced: false, reasons: [] as FourEyesEnforcementReason[] };
         const seedEvent: ReviewEvent = {
           schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
           contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -433,15 +546,19 @@ class FileSystemReviewStore implements ReviewStore {
         };
         sequence += 1;
         events.push(seedEvent);
-        perTestCase.push({
+        const entry: ReviewSnapshot = {
           testCaseId: tc.id,
           state: seedState,
           policyDecision: decision,
           lastEventId: eventId,
           lastEventAt: input.generatedAt,
-          fourEyesEnforced: false,
+          fourEyesEnforced: enforcement.enforced,
           approvers: [],
-        });
+          ...(enforcement.reasons.length > 0
+            ? { fourEyesReasons: enforcement.reasons.slice() }
+            : {}),
+        };
+        perTestCase.push(entry);
       }
 
       const sortedEntries = sortSnapshotEntries(perTestCase);
@@ -453,6 +570,7 @@ class FileSystemReviewStore implements ReviewStore {
         generatedAt: input.generatedAt,
         perTestCase: sortedEntries,
         ...counts,
+        ...(policyMetadata ? { fourEyesPolicy: policyMetadata } : {}),
       };
 
       const envelope: PersistedReviewEventsEnvelope = {
@@ -514,9 +632,22 @@ class FileSystemReviewStore implements ReviewStore {
       }
 
       const fromState: ReviewState = entry ? entry.state : "generated";
+
+      // Resolve the actual event kind. Four-eyes-enforced cases route
+      // the legacy `approved` action through `primary_approved` /
+      // `secondary_approved`. Non-enforced cases keep `approved`.
+      const resolvedKind = resolveEventKind(input.kind, entry);
+
+      // Four-eyes refusals applied BEFORE state-machine consultation so
+      // operators see a structured cause rather than `transition_not_allowed`.
+      const fourEyesRefusal = applyFourEyesRefusals(input, resolvedKind, entry);
+      if (fourEyesRefusal) {
+        return { ok: false, code: fourEyesRefusal };
+      }
+
       const transition = transitionReviewState({
         from: fromState,
-        kind: input.kind,
+        kind: resolvedKind,
         ...(entry ? { policyDecision: entry.policyDecision } : {}),
       });
       if (!transition.ok) {
@@ -533,7 +664,7 @@ class FileSystemReviewStore implements ReviewStore {
         ...(input.testCaseId !== undefined
           ? { testCaseId: input.testCaseId }
           : {}),
-        kind: input.kind,
+        kind: resolvedKind,
         at: input.at,
         ...(input.actor !== undefined ? { actor: input.actor } : {}),
         ...(input.note !== undefined ? { note: input.note } : {}),
@@ -551,20 +682,15 @@ class FileSystemReviewStore implements ReviewStore {
       };
 
       let nextEntries: ReviewSnapshot[];
-      if (entry && input.kind !== "note") {
-        const updated: ReviewSnapshot = {
-          ...entry,
-          state: toState,
-          lastEventId: eventId,
-          lastEventAt: input.at,
-          ...(input.kind === "approved" && input.actor !== undefined
-            ? {
-                approvers: entry.approvers.includes(input.actor)
-                  ? entry.approvers
-                  : [...entry.approvers, input.actor].sort(),
-              }
-            : {}),
-        };
+      if (entry && resolvedKind !== "note") {
+        const updated = applyEntryEffects({
+          entry,
+          toState,
+          eventId,
+          eventAt: input.at,
+          actor: input.actor,
+          kind: resolvedKind,
+        });
         nextEntries = entries.map((e) =>
           e.testCaseId === entry.testCaseId ? updated : e,
         );
@@ -597,6 +723,162 @@ class FileSystemReviewStore implements ReviewStore {
     });
   }
 }
+
+/**
+ * Map the inbound `kind` to the actual event kind that should be
+ * persisted. Four-eyes-enforced cases reroute `approved` based on the
+ * current state so legacy clients do not need to learn the new event
+ * kinds.
+ */
+const resolveEventKind = (
+  inbound: ReviewEventKind,
+  entry: ReviewSnapshot | undefined,
+): ReviewEventKind => {
+  if (!entry) return inbound;
+  if (inbound !== "approved") return inbound;
+  if (!entry.fourEyesEnforced) return "approved";
+  if (
+    entry.state === "needs_review" ||
+    entry.state === "edited" ||
+    entry.state === "generated"
+  ) {
+    return "primary_approved";
+  }
+  if (entry.state === "pending_secondary_approval") {
+    return "secondary_approved";
+  }
+  // State is approved/exported/transferred/rejected — the state-machine
+  // refusal path will reject the request, so we return the inbound kind
+  // verbatim and let `transitionReviewState` produce the standard code.
+  return "approved";
+};
+
+interface ApplyEntryEffectsInput {
+  entry: ReviewSnapshot;
+  toState: ReviewState;
+  eventId: string;
+  eventAt: string;
+  actor: string | undefined;
+  kind: ReviewEventKind;
+}
+
+/**
+ * Apply the per-case snapshot delta produced by a successful event:
+ * state, last-event pointer, approver tracking, four-eyes principal
+ * binding, and last-editor tracking.
+ */
+const applyEntryEffects = (input: ApplyEntryEffectsInput): ReviewSnapshot => {
+  const { entry, toState, eventId, eventAt, actor, kind } = input;
+  let approvers = entry.approvers;
+  if (
+    (kind === "approved" ||
+      kind === "primary_approved" ||
+      kind === "secondary_approved") &&
+    actor !== undefined &&
+    !approvers.includes(actor)
+  ) {
+    approvers = [...approvers, actor].sort();
+  }
+  const updated: ReviewSnapshot = {
+    ...entry,
+    state: toState,
+    lastEventId: eventId,
+    lastEventAt: eventAt,
+    approvers,
+  };
+  if (kind === "primary_approved" && actor !== undefined) {
+    updated.primaryReviewer = actor;
+    updated.primaryApprovalAt = eventAt;
+  }
+  if (kind === "secondary_approved" && actor !== undefined) {
+    updated.secondaryReviewer = actor;
+    updated.secondaryApprovalAt = eventAt;
+  }
+  if (kind === "edited") {
+    if (actor !== undefined) {
+      updated.lastEditor = actor;
+    } else {
+      // An edit without an actor identity erases any prior tracked
+      // editor so a subsequent approval is not refused on stale data.
+      delete updated.lastEditor;
+    }
+    // Re-edit invalidates the in-progress approval chain.
+    delete updated.primaryReviewer;
+    delete updated.primaryApprovalAt;
+    delete updated.secondaryReviewer;
+    delete updated.secondaryApprovalAt;
+    updated.approvers = [];
+  }
+  if (
+    kind === "review_started" &&
+    (entry.state === "approved" ||
+      entry.state === "pending_secondary_approval" ||
+      entry.state === "edited")
+  ) {
+    // Re-opening a case discards its previously collected approvals so a
+    // subsequent four-eyes round restarts from zero principals.
+    delete updated.primaryReviewer;
+    delete updated.primaryApprovalAt;
+    delete updated.secondaryReviewer;
+    delete updated.secondaryApprovalAt;
+    updated.approvers = [];
+  }
+  return updated;
+};
+
+/**
+ * Apply four-eyes-specific refusals before consulting the state machine.
+ * Returns a refusal code when the request must be denied; otherwise
+ * `undefined` and the caller proceeds to the state-machine check.
+ */
+const applyFourEyesRefusals = (
+  input: RecordTransitionInput,
+  resolvedKind: ReviewEventKind,
+  entry: ReviewSnapshot | undefined,
+): FourEyesRefusalCode | undefined => {
+  if (!entry) return undefined;
+
+  if (
+    resolvedKind === "primary_approved" ||
+    resolvedKind === "secondary_approved"
+  ) {
+    if (!entry.fourEyesEnforced) {
+      return "four_eyes_not_required";
+    }
+    if (input.actor === undefined || input.actor.length === 0) {
+      return "four_eyes_actor_required";
+    }
+  }
+
+  if (resolvedKind === "primary_approved") {
+    if (entry.lastEditor !== undefined && entry.lastEditor === input.actor) {
+      return "self_approval_refused";
+    }
+    if (entry.approvers.includes(input.actor as string)) {
+      return "duplicate_principal_refused";
+    }
+  }
+
+  if (resolvedKind === "secondary_approved") {
+    if (entry.state !== "pending_secondary_approval") {
+      return "primary_approval_required";
+    }
+    if (
+      entry.primaryReviewer !== undefined &&
+      entry.primaryReviewer === input.actor
+    ) {
+      return "self_approval_refused";
+    }
+    if (entry.approvers.includes(input.actor as string)) {
+      return "duplicate_principal_refused";
+    }
+    if (entry.lastEditor !== undefined && entry.lastEditor === input.actor) {
+      return "self_approval_refused";
+    }
+  }
+
+  return undefined;
+};
 
 /** Construct a file-system-backed review store rooted at `destinationDir`. */
 export const createFileSystemReviewStore = (

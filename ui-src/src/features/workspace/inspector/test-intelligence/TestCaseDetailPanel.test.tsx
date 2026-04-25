@@ -209,6 +209,95 @@ describe("TestCaseDetailPanel — actions", () => {
   });
 });
 
+describe("TestCaseDetailPanel — four-eyes (Issue #1376)", () => {
+  it("renders enforcement reasons and the awaiting-secondary message after a primary approval", () => {
+    render(
+      <TestCaseDetailPanel
+        {...baseProps}
+        fourEyesEnforced
+        fourEyesReasons={["risk_category", "visual_low_confidence"]}
+        primaryReviewer="alice"
+        reviewSnapshot={buildReviewSnapshotEntry({
+          state: "pending_secondary_approval",
+          fourEyesEnforced: true,
+          approvers: ["alice"],
+        })}
+        reviewerHandle="bob"
+        approvers={["alice"]}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("ti-detail-four-eyes-notice")).toHaveTextContent(
+      /Four-eyes review enforced/i,
+    );
+    expect(screen.getByTestId("ti-detail-four-eyes-reasons")).toHaveTextContent(
+      "risk_category, visual_low_confidence",
+    );
+    expect(screen.getByTestId("ti-detail-four-eyes-primary")).toHaveTextContent(
+      "alice",
+    );
+    expect(screen.getByTestId("ti-detail-action-approve")).toHaveTextContent(
+      /Approve as second reviewer/i,
+    );
+  });
+
+  it("disables the approve button when the reviewer is the same as the primary", () => {
+    render(
+      <TestCaseDetailPanel
+        {...baseProps}
+        fourEyesEnforced
+        primaryReviewer="alice"
+        reviewSnapshot={buildReviewSnapshotEntry({
+          state: "pending_secondary_approval",
+          fourEyesEnforced: true,
+          approvers: ["alice"],
+        })}
+        reviewerHandle="alice"
+        approvers={["alice"]}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("ti-detail-action-approve")).toBeDisabled();
+    expect(screen.getByTestId("ti-detail-actions-disabled")).toHaveTextContent(
+      /different reviewer/i,
+    );
+  });
+
+  it("disables the approve button when the reviewer is the most recent editor", () => {
+    render(
+      <TestCaseDetailPanel
+        {...baseProps}
+        fourEyesEnforced
+        lastEditor="alice"
+        reviewSnapshot={buildReviewSnapshotEntry({
+          state: "needs_review",
+          fourEyesEnforced: true,
+        })}
+        reviewerHandle="alice"
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("ti-detail-action-approve")).toBeDisabled();
+  });
+
+  it("renders the first-reviewer label before any approval", () => {
+    render(
+      <TestCaseDetailPanel
+        {...baseProps}
+        fourEyesEnforced
+        reviewSnapshot={buildReviewSnapshotEntry({
+          state: "needs_review",
+          fourEyesEnforced: true,
+        })}
+        onAction={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId("ti-detail-action-approve")).toHaveTextContent(
+      /Approve as first reviewer/i,
+    );
+  });
+});
+
 describe("TestCaseDetailPanel — accessibility", () => {
   it("has no blocking a11y violations", async () => {
     const { container } = render(

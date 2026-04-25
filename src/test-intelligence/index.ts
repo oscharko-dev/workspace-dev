@@ -137,11 +137,26 @@ export {
   type ReviewTransitionRefusalCode,
 } from "./review-state-machine.js";
 export {
+  cloneFourEyesPolicy,
+  EU_BANKING_DEFAULT_FOUR_EYES_POLICY,
+  evaluateFourEyesEnforcement,
+  isFourEyesEnforcementReason,
+  resolveFourEyesPolicy,
+  validateFourEyesPolicy,
+  type EvaluateFourEyesEnforcementInput,
+  type FourEyesEnforcementEvaluation,
+  type FourEyesPolicyValidationIssue,
+  type FourEyesPolicyValidationResult,
+  type ResolveFourEyesPolicyInput,
+} from "./four-eyes-policy.js";
+export {
   createFileSystemReviewStore,
   type CreateFileSystemReviewStoreInput,
+  type FourEyesRefusalCode,
   type RecordTransitionInput,
   type RecordTransitionResult,
   type ReviewStore,
+  type SeedSnapshotInput,
 } from "./review-store.js";
 export {
   handleReviewRequest,

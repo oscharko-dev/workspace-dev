@@ -53,6 +53,12 @@ export function formatReviewStateBadge(state: ReviewState): BadgeStyle {
         label: "Needs review",
         tier: "warn",
       };
+    case "pending_secondary_approval":
+      return {
+        className: "bg-amber-950/40 text-amber-200 border-amber-500/30",
+        label: "Awaiting 2nd approver",
+        tier: "warn",
+      };
     case "edited":
       return {
         className: "bg-sky-950/40 text-sky-200 border-sky-500/30",

@@ -11,11 +11,24 @@
 export type ReviewState =
   | "generated"
   | "needs_review"
+  | "pending_secondary_approval"
   | "approved"
   | "rejected"
   | "edited"
   | "exported"
   | "transferred";
+
+/**
+ * Reasons four-eyes review is enforced for a single test case (#1376).
+ * Mirrors the server-side `FourEyesEnforcementReason` discriminant.
+ */
+export type FourEyesEnforcementReason =
+  | "risk_category"
+  | "visual_low_confidence"
+  | "visual_fallback_used"
+  | "visual_possible_pii"
+  | "visual_prompt_injection"
+  | "visual_metadata_conflict";
 
 export type PolicyDecision = "approved" | "needs_review" | "blocked";
 
@@ -226,6 +239,12 @@ export interface ReviewSnapshotEntry {
   lastEventAt: string;
   fourEyesEnforced: boolean;
   approvers: string[];
+  fourEyesReasons?: FourEyesEnforcementReason[];
+  primaryReviewer?: string;
+  primaryApprovalAt?: string;
+  secondaryReviewer?: string;
+  secondaryApprovalAt?: string;
+  lastEditor?: string;
 }
 
 export interface ReviewGateSnapshot {
@@ -234,6 +253,7 @@ export interface ReviewGateSnapshot {
   approvedCount: number;
   needsReviewCount: number;
   rejectedCount: number;
+  pendingSecondaryApprovalCount?: number;
   perTestCase: ReviewSnapshotEntry[];
 }
 
