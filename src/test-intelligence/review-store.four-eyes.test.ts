@@ -297,6 +297,39 @@ test("four-eyes: explicit secondary-approve action with same actor as primary is
   });
 });
 
+test("four-eyes: duplicate explicit primary approval is refused with duplicate_principal_refused", async () => {
+  await withTempDir("four-eyes-duplicate-primary", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({ id: "tc-1", riskCategory: "high" })]),
+      policy: policyWith([
+        { testCaseId: "tc-1", decision: "needs_review", violations: [] },
+      ]),
+      fourEyesPolicy: EU_BANKING_DEFAULT_FOUR_EYES_POLICY,
+    });
+    const first = await store.recordTransition({
+      jobId: "job-1",
+      testCaseId: "tc-1",
+      kind: "primary_approved",
+      at: GENERATED_AT,
+      actor: "alice",
+    });
+    assert.equal(first.ok, true);
+    const duplicate = await store.recordTransition({
+      jobId: "job-1",
+      testCaseId: "tc-1",
+      kind: "primary_approved",
+      at: GENERATED_AT,
+      actor: "alice",
+    });
+    assert.equal(duplicate.ok, false);
+    if (duplicate.ok) return;
+    assert.equal(duplicate.code, "duplicate_principal_refused");
+  });
+});
+
 test("four-eyes: secondary_approved without a primary is refused", async () => {
   await withTempDir("four-eyes-skip-primary", async (dir) => {
     const store = createFileSystemReviewStore({ destinationDir: dir });
@@ -621,4 +654,151 @@ test("four-eyes: export pipeline blocks an enforced case stuck at pending_second
       "unapproved_test_cases_present",
     ]);
   });
+});
+
+test("four-eyes: export pipeline refuses forged approved state without two reviewers", () => {
+  const tc = buildCase({
+    id: "tc-fin",
+    riskCategory: "financial_transaction",
+  });
+  const exportResult = runExportPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    intent: {
+      version: "1.0.0",
+      source: { kind: "figma_local_json", contentHash: ZERO },
+      screens: [
+        {
+          screenId: "s-1",
+          screenName: "Payment",
+          trace: { nodeId: "s-1" },
+        },
+      ],
+      detectedFields: [],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    },
+    list: wrap([tc]),
+    validation: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      generatedAt: GENERATED_AT,
+      jobId: "job-1",
+      totalTestCases: 1,
+      errorCount: 0,
+      warningCount: 0,
+      blocked: false,
+      issues: [],
+    },
+    policy: policyWith([
+      { testCaseId: "tc-fin", decision: "approved", violations: [] },
+    ]),
+    reviewSnapshot: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      approvedCount: 1,
+      needsReviewCount: 0,
+      rejectedCount: 0,
+      pendingSecondaryApprovalCount: 0,
+      perTestCase: [
+        {
+          testCaseId: "tc-fin",
+          state: "approved",
+          policyDecision: "approved",
+          lastEventId: "forged-event",
+          lastEventAt: GENERATED_AT,
+          fourEyesEnforced: true,
+          fourEyesReasons: ["risk_category"],
+          approvers: ["alice"],
+          primaryReviewer: "alice",
+          primaryApprovalAt: GENERATED_AT,
+        },
+      ],
+    },
+  });
+  assert.equal(exportResult.refused, true);
+  assert.deepEqual(exportResult.refusalCodes, ["review_state_inconsistent"]);
+});
+
+test("four-eyes: export pipeline refuses forged approved state with missing secondary timestamp", () => {
+  const tc = buildCase({
+    id: "tc-fin",
+    riskCategory: "financial_transaction",
+  });
+  const exportResult = runExportPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    intent: {
+      version: "1.0.0",
+      source: { kind: "figma_local_json", contentHash: ZERO },
+      screens: [
+        {
+          screenId: "s-1",
+          screenName: "Payment",
+          trace: { nodeId: "s-1" },
+        },
+      ],
+      detectedFields: [],
+      detectedActions: [],
+      detectedValidations: [],
+      detectedNavigation: [],
+      inferredBusinessObjects: [],
+      risks: [],
+      assumptions: [],
+      openQuestions: [],
+      piiIndicators: [],
+      redactions: [],
+    },
+    list: wrap([tc]),
+    validation: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      generatedAt: GENERATED_AT,
+      jobId: "job-1",
+      totalTestCases: 1,
+      errorCount: 0,
+      warningCount: 0,
+      blocked: false,
+      issues: [],
+    },
+    policy: policyWith([
+      { testCaseId: "tc-fin", decision: "approved", violations: [] },
+    ]),
+    reviewSnapshot: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      approvedCount: 1,
+      needsReviewCount: 0,
+      rejectedCount: 0,
+      pendingSecondaryApprovalCount: 0,
+      perTestCase: [
+        {
+          testCaseId: "tc-fin",
+          state: "approved",
+          policyDecision: "approved",
+          lastEventId: "forged-event",
+          lastEventAt: GENERATED_AT,
+          fourEyesEnforced: true,
+          fourEyesReasons: ["risk_category"],
+          approvers: ["alice", "bob"],
+          primaryReviewer: "alice",
+          primaryApprovalAt: GENERATED_AT,
+          secondaryReviewer: "bob",
+        },
+      ],
+    },
+  });
+  assert.equal(exportResult.refused, true);
+  assert.deepEqual(exportResult.refusalCodes, ["review_state_inconsistent"]);
 });
