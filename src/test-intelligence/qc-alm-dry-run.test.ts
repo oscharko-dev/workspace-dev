@@ -248,6 +248,40 @@ test("qc-alm-dry-run: invalid target folder path refuses with folder_resolution_
   assert.equal(result.folderResolution.state, "invalid_path");
 });
 
+test("qc-alm-dry-run: malformed profile target path refuses before folder resolution", async () => {
+  const adapter = createOpenTextAlmDryRunAdapter();
+  const profile = cloneOpenTextAlmDefaultMappingProfile();
+  profile.targetFolderPath = "Subject/missing-leading-slash";
+  let resolverCalls = 0;
+  const result = await adapter.dryRun({
+    jobId: "job-1368",
+    mode: "dry_run",
+    profile,
+    preview: buildPreview([buildCase({})]),
+    clock: createFixedClock(GENERATED_AT),
+    idSource: DEFAULT_DRY_RUN_ID_SOURCE,
+    folderResolver: {
+      assertReadOnly: true,
+      resolve: () => {
+        resolverCalls += 1;
+        return { state: "simulated", evidence: "resolver:should-not-run" };
+      },
+    },
+  });
+  assert.equal(result.refused, true);
+  assert.ok(result.refusalCodes.includes("mapping_profile_invalid"));
+  assert.equal(resolverCalls, 0);
+  assert.ok(
+    result.profileValidation.issues.some(
+      (i) => i.code === "invalid_target_folder_path",
+    ),
+  );
+  assert.equal(
+    result.folderResolution.evidence,
+    "not-resolved:invalid_target_folder_path",
+  );
+});
+
 test("qc-alm-dry-run: provider mismatch refuses with provider_mismatch", async () => {
   const adapter = createOpenTextAlmDryRunAdapter();
   const profile = cloneOpenTextAlmDefaultMappingProfile();
@@ -266,6 +300,7 @@ test("qc-alm-dry-run: provider mismatch refuses with provider_mismatch", async (
 
 test("qc-alm-dry-run: missing-mapped-cases refuses without folder resolution", async () => {
   const adapter = createOpenTextAlmDryRunAdapter();
+  let resolverCalls = 0;
   const result = await adapter.dryRun({
     jobId: "job-1368",
     mode: "dry_run",
@@ -273,10 +308,22 @@ test("qc-alm-dry-run: missing-mapped-cases refuses without folder resolution", a
     preview: buildPreview([]),
     clock: createFixedClock(GENERATED_AT),
     idSource: DEFAULT_DRY_RUN_ID_SOURCE,
+    folderResolver: {
+      assertReadOnly: true,
+      resolve: () => {
+        resolverCalls += 1;
+        return { state: "simulated", evidence: "resolver:should-not-run" };
+      },
+    },
   });
   assert.equal(result.refused, true);
   assert.ok(result.refusalCodes.includes("no_mapped_test_cases"));
+  assert.equal(resolverCalls, 0);
   assert.equal(result.plannedPayloads.length, 0);
+  assert.equal(
+    result.folderResolution.evidence,
+    "not-resolved:no_mapped_test_cases",
+  );
 });
 
 test("qc-alm-dry-run: REGRESSION — folder resolver is read-only and not invoked for write-shaped paths", async () => {
@@ -421,4 +468,32 @@ test("qc-alm-dry-run: resolver throwing degrades to folder_resolution_failed wit
   // The error message is intentionally NOT surfaced to evidence.
   assert.equal(result.folderResolution.evidence, "resolver_threw");
   assert.doesNotMatch(JSON.stringify(result), /token=abc123/);
+});
+
+test("qc-alm-dry-run: resolver evidence is redacted and bounded before report persistence", async () => {
+  const adapter = createOpenTextAlmDryRunAdapter();
+  const longEvidence = `Authorization: Bearer abcdefgh123456789 https://qc.example.test/path ${"x".repeat(300)}`;
+  const result = await adapter.dryRun({
+    jobId: "job-1368",
+    mode: "dry_run",
+    profile: cloneOpenTextAlmDefaultMappingProfile(),
+    preview: buildPreview([buildCase({})]),
+    clock: createFixedClock(GENERATED_AT),
+    idSource: DEFAULT_DRY_RUN_ID_SOURCE,
+    folderResolver: {
+      assertReadOnly: true,
+      resolve: () => ({
+        state: "simulated",
+        evidence: longEvidence,
+      }),
+    },
+  });
+  assert.equal(result.refused, false);
+  assert.match(result.folderResolution.evidence, /\.\.\.$/);
+  assert.ok(result.folderResolution.evidence.length <= 243);
+  assert.doesNotMatch(result.folderResolution.evidence, /abcdefgh123456789/);
+  assert.doesNotMatch(
+    result.folderResolution.evidence,
+    /https:\/\/qc\.example\.test/,
+  );
 });
