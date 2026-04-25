@@ -123,6 +123,12 @@ export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
 /** Prompt template version for the test-intelligence prompt family. */
 export const TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
 
+/** Visual sidecar schema version consumed by the prompt compiler (Issue #1386). */
+export const VISUAL_SIDECAR_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Redaction policy bundle version applied before prompt compilation. */
+export const REDACTION_POLICY_VERSION = "1.0.0" as const;
+
 /** Environment variable name that gates test-intelligence features at startup. */
 export const TEST_INTELLIGENCE_ENV =
   "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE" as const;
@@ -1584,8 +1590,261 @@ export interface VisualScreenDescription {
 }
 
 /**
+ * Generated test case surface (Issue #1362).
+ *
+ * The generator-side artifacts described below model the JSON the LLM is
+ * asked to produce, the redacted compiled prompt request that is persisted
+ * in evidence, and the replay-cache key used to short-circuit identical
+ * jobs without ever reaching the gateway.
+ */
+
+/** ISO/IEC/IEEE 29119-4 technique tags supported by the generator. */
+export type TestCaseTechnique29119 =
+  | "equivalence_partitioning"
+  | "boundary_value_analysis"
+  | "decision_table"
+  | "state_transition"
+  | "use_case"
+  | "exploratory"
+  | "error_guessing"
+  | "syntax_testing"
+  | "classification_tree";
+
+/** Coarse-grain test level. */
+export type TestCaseLevel =
+  | "unit"
+  | "component"
+  | "integration"
+  | "system"
+  | "acceptance";
+
+/** Coarse-grain test type. */
+export type TestCaseType =
+  | "functional"
+  | "negative"
+  | "boundary"
+  | "validation"
+  | "navigation"
+  | "regression"
+  | "exploratory"
+  | "accessibility";
+
+/** Risk band attached to a generated test case. */
+export type TestCaseRiskCategory =
+  | "low"
+  | "medium"
+  | "high"
+  | "regulated_data"
+  | "financial_transaction";
+
+/** Priority band attached to a generated test case. */
+export type TestCasePriority = "p0" | "p1" | "p2" | "p3";
+
+/** Review state at the moment the test case is emitted. */
+export type GeneratedTestCaseReviewState =
+  | "draft"
+  | "auto_approved"
+  | "needs_review"
+  | "rejected";
+
+/** Single ordered step inside a generated test case. */
+export interface GeneratedTestCaseStep {
+  index: number;
+  action: string;
+  data?: string;
+  expected?: string;
+}
+
+/** Reference back to a Figma trace path that motivated a test case. */
+export interface GeneratedTestCaseFigmaTrace {
+  screenId: string;
+  nodeId?: string;
+  nodeName?: string;
+  nodePath?: string;
+}
+
+/** QC/ALM mapping preview emitted alongside the test case. */
+export interface GeneratedTestCaseQcMapping {
+  /** Canonical test-case folder hint inside QC/ALM. */
+  folderHint?: string;
+  /** Canonical mapping profile id this preview was rendered for. */
+  mappingProfileId?: string;
+  /** Whether the case is exportable as-is under the mapping profile. */
+  exportable: boolean;
+  /** Human-readable reasons when exportable=false. */
+  blockingReasons?: string[];
+}
+
+/** Quality signal fields attached to each generated test case. */
+export interface GeneratedTestCaseQualitySignals {
+  coveredFieldIds: string[];
+  coveredActionIds: string[];
+  coveredValidationIds: string[];
+  coveredNavigationIds: string[];
+  /** 0..1 — generator-side confidence in the produced case. */
+  confidence: number;
+  /** Optional ambiguity note. */
+  ambiguity?: IntentAmbiguity;
+}
+
+/** Audit metadata attached to a generated test case. */
+export interface GeneratedTestCaseAuditMetadata {
+  jobId: string;
+  generatedAt: string;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  /** Whether the artifact came from a replay-cache hit. */
+  cacheHit: boolean;
+  cacheKey: string;
+  inputHash: string;
+  promptHash: string;
+  schemaHash: string;
+}
+
+/** Single generated test case. */
+export interface GeneratedTestCase {
+  id: string;
+  sourceJobId: string;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  title: string;
+  objective: string;
+  level: TestCaseLevel;
+  type: TestCaseType;
+  priority: TestCasePriority;
+  riskCategory: TestCaseRiskCategory;
+  technique: TestCaseTechnique29119;
+  preconditions: string[];
+  testData: string[];
+  steps: GeneratedTestCaseStep[];
+  expectedResults: string[];
+  figmaTraceRefs: GeneratedTestCaseFigmaTrace[];
+  assumptions: string[];
+  openQuestions: string[];
+  qcMappingPreview: GeneratedTestCaseQcMapping;
+  qualitySignals: GeneratedTestCaseQualitySignals;
+  reviewState: GeneratedTestCaseReviewState;
+  audit: GeneratedTestCaseAuditMetadata;
+}
+
+/** Wrapper produced by the generator for a single job. */
+export interface GeneratedTestCaseList {
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  jobId: string;
+  testCases: GeneratedTestCase[];
+}
+
+/** Reason a fallback visual sidecar deployment was selected, if any. */
+export type VisualSidecarFallbackReason =
+  | "primary_unavailable"
+  | "primary_quota_exceeded"
+  | "primary_disabled"
+  | "policy_downgrade"
+  | "none";
+
+/**
+ * Identity of the visual sidecar that produced a `VisualScreenDescription`
+ * batch. The compiler hashes this object into the replay-cache key so that
+ * a fallback model swap forces a cache miss.
+ */
+export interface CompiledPromptVisualBinding {
+  schemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  selectedDeployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock";
+  fallbackReason: VisualSidecarFallbackReason;
+  /** Hex digest of the screenshot/fixture used for visual analysis, if any. */
+  fixtureImageHash?: string;
+  /** Number of screens covered by the visual binding. */
+  screenCount: number;
+}
+
+/** Identity of the structured-test-case generator gateway/model pair. */
+export interface CompiledPromptModelBinding {
+  modelRevision: string;
+  gatewayRelease: string;
+  /** Optional deterministic seed the model accepts (provider-dependent). */
+  seed?: number;
+}
+
+/** Hash bundle attached to a compiled prompt. */
+export interface CompiledPromptHashes {
+  inputHash: string;
+  promptHash: string;
+  schemaHash: string;
+  cacheKey: string;
+}
+
+/** Persisted, fully-redacted artifact form of a compiled prompt. */
+export interface CompiledPromptArtifacts {
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  schemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  jobId: string;
+  systemPrompt: string;
+  userPrompt: string;
+  /** Redacted JSON payload that the model will reason over. */
+  payload: {
+    intent: BusinessTestIntentIr;
+    visual: VisualScreenDescription[];
+  };
+  hashes: CompiledPromptHashes;
+  visualBinding: CompiledPromptVisualBinding;
+  modelBinding: CompiledPromptModelBinding;
+  policyBundleVersion: string;
+}
+
+/** Wire-shaped request handed to the LLM gateway client. */
+export interface CompiledPromptRequest {
+  jobId: string;
+  modelBinding: CompiledPromptModelBinding;
+  systemPrompt: string;
+  userPrompt: string;
+  /** JSON schema the gateway must enforce on the response (structured output). */
+  responseSchema: Record<string, unknown>;
+  /** Stable schema name used by some gateways. */
+  responseSchemaName: string;
+  hashes: CompiledPromptHashes;
+}
+
+/** Replay-cache key — the only deterministic-bit-identical replay anchor. */
+export interface ReplayCacheKey {
+  inputHash: string;
+  promptHash: string;
+  schemaHash: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  policyBundleVersion: string;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  visualSelectedDeployment: CompiledPromptVisualBinding["selectedDeployment"];
+  visualFallbackReason: VisualSidecarFallbackReason;
+  fixtureImageHash?: string;
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  seed?: number;
+}
+
+/** Stored cache entry. */
+export interface ReplayCacheEntry {
+  key: string;
+  storedAt: string;
+  testCases: GeneratedTestCaseList;
+}
+
+/** Cache lookup outcome consumed by the orchestration layer. */
+export type ReplayCacheLookupResult =
+  | { hit: true; entry: ReplayCacheEntry }
+  | { hit: false; key: string };
+
+/**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.19.0" as const;
+export const CONTRACT_VERSION = "3.20.0" as const;
