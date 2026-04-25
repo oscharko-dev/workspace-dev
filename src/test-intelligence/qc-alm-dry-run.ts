@@ -62,11 +62,14 @@ import {
   type QcFolderResolverResult,
 } from "./qc-adapter.js";
 import { validateQcMappingProfile } from "./qc-alm-mapping-profile.js";
+import { redactHighRiskSecrets } from "../secret-redaction.js";
 
 const ADAPTER_VERSION = "1.0.0" as const;
 const DEFAULT_VISUAL_CONFIDENCE_THRESHOLD = 0.6;
 const REPORT_ID_LENGTH = 16;
+const MAX_FOLDER_RESOLUTION_EVIDENCE_LENGTH = 240;
 const FOLDER_PATH_REGEX = /^\/Subject(?:\/[A-Za-z0-9._-][A-Za-z0-9._ -]*)+$/;
+const URL_EVIDENCE_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s]+/gi;
 
 /**
  * Default folder resolver. Performs NO I/O — it inspects the profile
@@ -273,8 +276,19 @@ const refusedFolderResolution = (
 ): DryRunFolderResolution => ({
   state,
   path: profile.targetFolderPath,
-  evidence,
+  evidence: sanitizeFolderResolutionEvidence(evidence),
 });
+
+const sanitizeFolderResolutionEvidence = (evidence: string): string => {
+  const redacted = redactHighRiskSecrets(evidence, "[REDACTED]")
+    .replace(URL_EVIDENCE_PATTERN, "[REDACTED_URL]")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (redacted.length <= MAX_FOLDER_RESOLUTION_EVIDENCE_LENGTH) {
+    return redacted;
+  }
+  return `${redacted.slice(0, MAX_FOLDER_RESOLUTION_EVIDENCE_LENGTH)}...`;
+};
 
 const collectErrorIssueMessages = (
   validation: QcMappingProfileValidationResult,
@@ -394,6 +408,18 @@ export const openTextAlmDryRunAdapter: QcAdapter = {
 
     if (input.preview.entries.length === 0) {
       refusalCodes.add("no_mapped_test_cases");
+      return buildRefusedReport(
+        reportId,
+        input.jobId,
+        generatedAt,
+        input.profile,
+        validation,
+        Array.from(refusalCodes),
+        refusedFolderResolution(
+          input.profile,
+          "not-resolved:no_mapped_test_cases",
+        ),
+      );
     }
 
     const resolver = input.folderResolver ?? defaultFolderResolver;
@@ -403,7 +429,7 @@ export const openTextAlmDryRunAdapter: QcAdapter = {
       folderResolution = {
         state: resolved.state,
         path: input.profile.targetFolderPath,
-        evidence: resolved.evidence,
+        evidence: sanitizeFolderResolutionEvidence(resolved.evidence),
       };
     } catch {
       // Resolver-internal failures degrade to a non-refusal "missing"
