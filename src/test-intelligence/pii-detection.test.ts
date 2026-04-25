@@ -21,6 +21,20 @@ test("detectPii flags a BIC/SWIFT-style bank identifier", () => {
   assert.equal(result?.redacted, "[REDACTED:BIC]");
 });
 
+test("detectPii flags a lowercase BIC/SWIFT identifier", () => {
+  const result = detectPii("ingddeffxxx");
+  assert.notEqual(result, null);
+  assert.equal(result?.kind, "bic");
+  assert.equal(result?.redacted, "[REDACTED:BIC]");
+});
+
+test("detectPii flags a mixed-case BIC/SWIFT identifier", () => {
+  const result = detectPii("IngdDeffXXX");
+  assert.notEqual(result, null);
+  assert.equal(result?.kind, "bic");
+  assert.equal(result?.redacted, "[REDACTED:BIC]");
+});
+
 test("detectPii flags a valid Visa PAN (4111 1111 1111 1111)", () => {
   const result = detectPii("Card: 4111 1111 1111 1111");
   assert.notEqual(result, null);

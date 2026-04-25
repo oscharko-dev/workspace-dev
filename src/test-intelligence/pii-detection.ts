@@ -109,7 +109,8 @@ const detectIban = (input: string): PiiMatch | null => {
 };
 
 const detectBic = (input: string): PiiMatch | null => {
-  if (!BIC_CANDIDATE_RE.test(input)) return null;
+  const normalized = input.normalize("NFKC").toUpperCase();
+  if (!BIC_CANDIDATE_RE.test(normalized)) return null;
   BIC_CANDIDATE_RE.lastIndex = 0;
   return {
     kind: "bic",
