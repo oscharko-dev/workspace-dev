@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -8,10 +8,12 @@ import {
   CONTRACT_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
 } from "../contracts/index.js";
 import {
   buildWave1PocEvidenceManifest,
+  computeWave1PocEvidenceManifestDigest,
   verifyWave1PocEvidenceFromDisk,
   verifyWave1PocEvidenceManifest,
   writeWave1PocEvidenceManifest,
@@ -271,6 +273,35 @@ test("evidence-manifest: verify reports unexpected files when rejectUnexpected",
   assert.deepEqual(result.unexpected, ["stray.txt"]);
 });
 
+test("evidence-manifest: malformed artifact metadata fails closed without throwing", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  await writeFile(join(dir, "alpha.json"), '{"a":1}');
+  const manifest = {
+    ...buildWave1PocEvidenceManifest(
+      baseInput([
+        {
+          filename: "alpha.json",
+          bytes: utf8('{"a":1}'),
+          category: "validation",
+        },
+      ]),
+    ),
+    artifacts: [null],
+  } as unknown as Wave1PocEvidenceManifest;
+
+  const result = await verifyWave1PocEvidenceManifest({
+    manifest,
+    artifactsDir: dir,
+    rejectUnexpected: true,
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.mutated, [
+    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  ]);
+  assert.deepEqual(result.unexpected, ["alpha.json"]);
+});
+
 test("evidence-manifest: write + verify round-trip via verifyWave1PocEvidenceFromDisk", async () => {
   const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
   await writeFile(join(dir, "alpha.json"), '{"a":1}');
@@ -298,7 +329,80 @@ test("evidence-manifest: write + verify round-trip via verifyWave1PocEvidenceFro
     reparsed.schemaVersion,
     WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   );
+  const persistedDigest = await readFile(
+    join(dir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+    "utf8",
+  );
+  assert.equal(persistedDigest, `${computeWave1PocEvidenceManifestDigest(manifest)}\n`);
 
   const { result } = await verifyWave1PocEvidenceFromDisk(dir);
   assert.equal(result.ok, true);
+});
+
+test("evidence-manifest: default disk verifier detects valid metadata rewrites via digest witness", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  await writeFile(join(dir, "alpha.json"), '{"a":1}');
+  const manifest = buildWave1PocEvidenceManifest(
+    baseInput([
+      {
+        filename: "alpha.json",
+        bytes: utf8('{"a":1}'),
+        category: "validation",
+      },
+    ]),
+  );
+  const expectedManifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
+  const manifestPath = await writeWave1PocEvidenceManifest({
+    manifest,
+    destinationDir: dir,
+  });
+
+  const tampered = {
+    ...(JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >),
+    modelDeployments: { testGeneration: "gpt-oss-120b" },
+    policyProfileId: "attacker-profile",
+  };
+  await writeFile(manifestPath, JSON.stringify(tampered), "utf8");
+
+  const { result } = await verifyWave1PocEvidenceFromDisk(dir);
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.mutated, [
+    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  ]);
+
+  const explicit = await verifyWave1PocEvidenceFromDisk(dir, {
+    expectedManifestSha256,
+  });
+  assert.deepEqual(explicit.result.mutated, [
+    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  ]);
+});
+
+test("evidence-manifest: missing digest witness fails closed on disk verify", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  await writeFile(join(dir, "alpha.json"), '{"a":1}');
+  const manifest = buildWave1PocEvidenceManifest(
+    baseInput([
+      {
+        filename: "alpha.json",
+        bytes: utf8('{"a":1}'),
+        category: "validation",
+      },
+    ]),
+  );
+  await writeWave1PocEvidenceManifest({
+    manifest,
+    destinationDir: dir,
+  });
+  await rm(join(dir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME));
+
+  const { result } = await verifyWave1PocEvidenceFromDisk(dir);
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.mutated, [
+    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  ]);
 });

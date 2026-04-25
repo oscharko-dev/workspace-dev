@@ -38,6 +38,7 @@ import {
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
   type Wave1PocEvidenceArtifact,
   type Wave1PocEvidenceArtifactCategory,
@@ -48,6 +49,25 @@ import {
 import { canonicalJson } from "./content-hash.js";
 
 const HEX64 = /^[0-9a-f]{64}$/;
+const VISUAL_DEPLOYMENTS = new Set([
+  "llama-4-maverick-vision",
+  "phi-4-multimodal-poc",
+  "mock",
+  "none",
+]);
+const TEST_GENERATION_DEPLOYMENTS = new Set([
+  "gpt-oss-120b",
+  "gpt-oss-120b-mock",
+  "mock",
+]);
+
+const hasControlCharacter = (value: string): boolean => {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+};
 
 /** Input record describing a single artifact attested by the manifest. */
 export interface BuildEvidenceArtifactRecord {
@@ -94,6 +114,10 @@ const sha256OfBytes = (bytes: Uint8Array): string => {
   return createHash("sha256").update(bytes).digest("hex");
 };
 
+export const computeWave1PocEvidenceManifestDigest = (
+  manifest: Wave1PocEvidenceManifest,
+): string => sha256OfBytes(new TextEncoder().encode(canonicalJson(manifest)));
+
 /**
  * Build a deterministic evidence manifest from the input bundle. The
  * artifact list is sorted by filename and de-duplicated; later
@@ -131,6 +155,16 @@ export const buildWave1PocEvidenceManifest = (
     if (filename !== record.filename) {
       throw new RangeError(
         `buildWave1PocEvidenceManifest: artifact filename must be a basename, got "${record.filename}"`,
+      );
+    }
+    if (hasControlCharacter(filename)) {
+      throw new RangeError(
+        "buildWave1PocEvidenceManifest: artifact filename must not contain control characters",
+      );
+    }
+    if (new TextEncoder().encode(filename).byteLength > 255) {
+      throw new RangeError(
+        "buildWave1PocEvidenceManifest: artifact filename must not exceed 255 bytes",
       );
     }
     const bytes = toBytes(record.bytes);
@@ -181,9 +215,8 @@ export interface WriteWave1PocEvidenceManifestInput {
 }
 
 /**
- * Persist the evidence manifest under
- * `<destinationDir>/wave1-poc-evidence-manifest.json` atomically using a
- * `${path}.${pid}.tmp` rename.
+ * Persist the evidence manifest and its digest witness atomically using
+ * `${path}.${pid}.tmp` renames.
  */
 export const writeWave1PocEvidenceManifest = async (
   input: WriteWave1PocEvidenceManifestInput,
@@ -197,6 +230,17 @@ export const writeWave1PocEvidenceManifest = async (
   const tmp = `${path}.${process.pid}.tmp`;
   await writeFile(tmp, serialized, "utf8");
   await rename(tmp, path);
+  const digestPath = join(
+    input.destinationDir,
+    WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+  );
+  const digestTmp = `${digestPath}.${process.pid}.tmp`;
+  await writeFile(
+    digestTmp,
+    `${computeWave1PocEvidenceManifestDigest(input.manifest)}\n`,
+    "utf8",
+  );
+  await rename(digestTmp, digestPath);
   return path;
 };
 
@@ -205,6 +249,12 @@ export interface VerifyWave1PocEvidenceManifestInput {
   manifest: Wave1PocEvidenceManifest;
   /** The directory containing the artifacts the manifest attests. */
   artifactsDir: string;
+  /**
+   * Trusted digest of the canonical manifest from immutable run metadata or an
+   * in-memory pre-write copy. When supplied, valid-looking metadata rewrites
+   * fail closed instead of being treated as authoritative.
+   */
+  expectedManifestSha256?: string;
   /**
    * When true, files in `artifactsDir` that are NOT attested by the
    * manifest are reported under `unexpected`. Defaults to `false` so a
@@ -219,6 +269,151 @@ const isENOENT = (err: unknown): boolean =>
   err !== null &&
   (err as { code?: string }).code === "ENOENT";
 
+const markManifestMutated = (
+  result: Wave1PocEvidenceVerificationResult,
+): Wave1PocEvidenceVerificationResult => {
+  const mutated = new Set(result.mutated);
+  mutated.add(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+  return {
+    ...result,
+    ok: false,
+    mutated: Array.from(mutated).sort(),
+  };
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isVerifiableArtifact = (
+  artifact: unknown,
+): artifact is Wave1PocEvidenceArtifact => {
+  if (!isRecord(artifact)) return false;
+  return (
+    typeof artifact["filename"] === "string" &&
+    artifact["filename"].length > 0 &&
+    basename(artifact["filename"]) === artifact["filename"] &&
+    !hasControlCharacter(artifact["filename"]) &&
+    new TextEncoder().encode(artifact["filename"]).byteLength <= 255 &&
+    typeof artifact["sha256"] === "string" &&
+    HEX64.test(artifact["sha256"]) &&
+    typeof artifact["bytes"] === "number" &&
+    Number.isSafeInteger(artifact["bytes"]) &&
+    artifact["bytes"] >= 0
+  );
+};
+
+const hasOnlyKnownKeys = (
+  value: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+): boolean => Object.keys(value).every((key) => allowed.has(key));
+
+const validateManifestMetadata = (
+  manifest: Wave1PocEvidenceManifest,
+): string[] => {
+  const issues: string[] = [];
+  const raw = manifest as unknown as Record<string, unknown>;
+
+  if (raw["rawScreenshotsIncluded"] !== false) {
+    issues.push("rawScreenshotsIncluded must be false");
+  }
+  if (raw["imagePayloadSentToTestGeneration"] !== false) {
+    issues.push("imagePayloadSentToTestGeneration must be false");
+  }
+  for (const hashField of [
+    "promptHash",
+    "schemaHash",
+    "inputHash",
+    "cacheKeyDigest",
+  ] as const) {
+    if (typeof raw[hashField] !== "string" || !HEX64.test(raw[hashField])) {
+      issues.push(`${hashField} must be a sha256 hex string`);
+    }
+  }
+
+  const deployments = raw["modelDeployments"];
+  if (!isRecord(deployments)) {
+    issues.push("modelDeployments must be an object");
+  } else {
+    const allowedKeys = new Set([
+      "testGeneration",
+      "visualPrimary",
+      "visualFallback",
+    ]);
+    if (!hasOnlyKnownKeys(deployments, allowedKeys)) {
+      issues.push("modelDeployments contains unknown keys");
+    }
+    if (
+      typeof deployments["testGeneration"] !== "string" ||
+      deployments["testGeneration"].length === 0
+    ) {
+      issues.push("modelDeployments.testGeneration must be a non-empty string");
+    } else if (!TEST_GENERATION_DEPLOYMENTS.has(deployments["testGeneration"])) {
+      issues.push("modelDeployments.testGeneration has an unknown deployment");
+    }
+    for (const key of ["visualPrimary", "visualFallback"] as const) {
+      const deployment = deployments[key];
+      if (
+        deployment !== undefined &&
+        (typeof deployment !== "string" || !VISUAL_DEPLOYMENTS.has(deployment))
+      ) {
+        issues.push(`modelDeployments.${key} has an unknown deployment`);
+      }
+    }
+  }
+
+  if (manifest.visualSidecar !== undefined) {
+    const visualSidecar = manifest.visualSidecar as unknown;
+    if (!isRecord(visualSidecar)) {
+      issues.push("visualSidecar must be an object");
+      return issues;
+    }
+    if (
+      typeof visualSidecar["resultArtifactSha256"] !== "string" ||
+      !HEX64.test(visualSidecar["resultArtifactSha256"])
+    ) {
+      issues.push("visualSidecar.resultArtifactSha256 must be a sha256 hex string");
+    }
+    const deployment = visualSidecar["selectedDeployment"];
+    if (typeof deployment !== "string" || !VISUAL_DEPLOYMENTS.has(deployment)) {
+      issues.push("visualSidecar.selectedDeployment has an unknown deployment");
+    }
+  }
+
+  if (!Array.isArray(manifest.artifacts)) {
+    issues.push("artifacts must be an array");
+    return issues;
+  }
+  for (const artifact of manifest.artifacts) {
+    if (!isRecord(artifact)) {
+      issues.push("artifact entry must be an object");
+      continue;
+    }
+    const record = artifact;
+    const filename = record["filename"];
+    if (
+      typeof filename !== "string" ||
+      filename.length === 0 ||
+      basename(filename) !== filename ||
+      hasControlCharacter(filename) ||
+      new TextEncoder().encode(filename).byteLength > 255
+    ) {
+      issues.push("artifact filename is invalid");
+    }
+    if (typeof record["sha256"] !== "string" || !HEX64.test(record["sha256"])) {
+      issues.push(`artifact ${filename} has an invalid sha256`);
+    }
+    if (
+      typeof record["bytes"] !== "number" ||
+      !Number.isSafeInteger(record["bytes"]) ||
+      record["bytes"] < 0
+    ) {
+      issues.push(`artifact ${filename} has an invalid byte length`);
+    }
+  }
+
+  return issues;
+};
+
 /**
  * Verify on-disk artifacts against the attested manifest. Returns a
  * structured result documenting any mismatches; the function NEVER
@@ -231,8 +426,24 @@ export const verifyWave1PocEvidenceManifest = async (
   const missing: string[] = [];
   const mutated: string[] = [];
   const resized: string[] = [];
+  const metadataIssues = validateManifestMetadata(input.manifest);
+  if (metadataIssues.length > 0) {
+    mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+  }
+  if (
+    input.expectedManifestSha256 !== undefined &&
+    computeWave1PocEvidenceManifestDigest(input.manifest) !==
+      input.expectedManifestSha256 &&
+    !mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
+  ) {
+    mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+  }
 
-  for (const artifact of input.manifest.artifacts) {
+  const artifacts = Array.isArray(input.manifest.artifacts)
+    ? input.manifest.artifacts.filter(isVerifiableArtifact)
+    : [];
+
+  for (const artifact of artifacts) {
     const path = join(input.artifactsDir, artifact.filename);
     let bytes: Buffer;
     try {
@@ -256,7 +467,7 @@ export const verifyWave1PocEvidenceManifest = async (
 
   let unexpected: string[] = [];
   if (input.rejectUnexpected === true) {
-    const attested = new Set(input.manifest.artifacts.map((a) => a.filename));
+    const attested = new Set(artifacts.map((a) => a.filename));
     let entries: string[] = [];
     try {
       entries = await readdir(input.artifactsDir);
@@ -265,6 +476,7 @@ export const verifyWave1PocEvidenceManifest = async (
     }
     unexpected = entries
       .filter((name) => name !== WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
+      .filter((name) => name !== WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME)
       .filter((name) => !attested.has(name))
       .sort();
   }
@@ -291,7 +503,7 @@ export const verifyWave1PocEvidenceManifest = async (
  */
 export const verifyWave1PocEvidenceFromDisk = async (
   artifactsDir: string,
-  options: { rejectUnexpected?: boolean } = {},
+  options: { rejectUnexpected?: boolean; expectedManifestSha256?: string } = {},
 ): Promise<{
   manifest: Wave1PocEvidenceManifest;
   result: Wave1PocEvidenceVerificationResult;
@@ -312,12 +524,42 @@ export const verifyWave1PocEvidenceFromDisk = async (
     );
   }
   const parsed = parsedRaw as unknown as Wave1PocEvidenceManifest;
+  let expectedManifestSha256 = options.expectedManifestSha256;
+  let digestWitnessInvalid = false;
+  if (expectedManifestSha256 === undefined) {
+    try {
+      const rawDigest = await readFile(
+        join(artifactsDir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+        "utf8",
+      );
+      const digest = rawDigest.trim();
+      if (HEX64.test(digest)) {
+        expectedManifestSha256 = digest;
+      } else {
+        digestWitnessInvalid = true;
+      }
+    } catch (err) {
+      if (isENOENT(err)) {
+        digestWitnessInvalid = true;
+      } else {
+        throw err;
+      }
+    }
+  }
   const result = await verifyWave1PocEvidenceManifest({
     manifest: parsed,
     artifactsDir,
     ...(options.rejectUnexpected !== undefined
       ? { rejectUnexpected: options.rejectUnexpected }
       : {}),
+    ...(options.expectedManifestSha256 !== undefined
+      ? { expectedManifestSha256: options.expectedManifestSha256 }
+      : expectedManifestSha256 !== undefined
+        ? { expectedManifestSha256 }
+        : {}),
   });
-  return { manifest: parsed, result };
+  return {
+    manifest: parsed,
+    result: digestWitnessInvalid ? markManifestMutated(result) : result,
+  };
 };

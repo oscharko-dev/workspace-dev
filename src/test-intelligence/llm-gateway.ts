@@ -107,6 +107,7 @@ export interface LlmGatewayClient {
 
 const DEFAULT_BACKOFF_MS: ReadonlyArray<number> = [100, 200, 400, 800, 1600];
 const MAX_REDACTED_MESSAGE_LENGTH = 240;
+const MAX_RESPONSE_BYTES = 1024 * 1024;
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -138,6 +139,8 @@ export const createLlmGatewayClient = (
   ): Promise<LlmGenerationResult> => {
     const guardError = guardImagePayload(config.role, request);
     if (guardError !== undefined) return guardError;
+    const budgetError = guardInputBudget(request);
+    if (budgetError !== undefined) return budgetError;
 
     const maxAttempts = Math.max(1, config.maxRetries + 1);
     let lastFailure: LlmGenerationFailure | undefined;
@@ -242,6 +245,49 @@ const guardImagePayload = (
     };
   }
   return undefined;
+};
+
+const guardInputBudget = (
+  request: LlmGenerationRequest,
+): LlmGenerationFailure | undefined => {
+  if (request.maxInputTokens === undefined) return undefined;
+  if (
+    !Number.isSafeInteger(request.maxInputTokens) ||
+    request.maxInputTokens <= 0
+  ) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: "maxInputTokens must be a positive integer",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  const estimatedTokens = estimateInputTokens(request);
+  if (estimatedTokens > request.maxInputTokens) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: `estimated input tokens ${estimatedTokens} exceeds maxInputTokens ${request.maxInputTokens}`,
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  return undefined;
+};
+
+const estimateInputTokens = (request: LlmGenerationRequest): number => {
+  const encoder = new TextEncoder();
+  let bytes =
+    encoder.encode(request.systemPrompt).byteLength +
+    encoder.encode(request.userPrompt).byteLength;
+  if (request.responseSchema !== undefined) {
+    bytes += encoder.encode(JSON.stringify(request.responseSchema)).byteLength;
+  }
+  for (const image of request.imageInputs ?? []) {
+    bytes += image.base64Data.length;
+  }
+  return Math.ceil(bytes / 4);
 };
 
 const isTransientFailure = (errorClass: LlmGatewayErrorClass): boolean => {
@@ -464,21 +510,6 @@ const parseOpenAiChatResponse = async ({
   attempt: number;
 }): Promise<LlmGenerationResult> => {
   const status = response.status;
-  let bodyText: string;
-  try {
-    bodyText = await response.text();
-  } catch (err) {
-    return {
-      outcome: "error",
-      errorClass: "transport",
-      message: redactBoundedMessage(
-        sanitizeErrorMessage({ error: err, fallback: "response read failure" }),
-      ),
-      retryable: true,
-      attempt,
-    };
-  }
-
   if (status === 429) {
     return {
       outcome: "error",
@@ -506,6 +537,32 @@ const parseOpenAiChatResponse = async ({
       attempt,
     };
   }
+
+  let bodyText: string;
+  try {
+    const readResult = await readResponseTextWithLimit(response);
+    if (!readResult.ok) {
+      return {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message: `response body exceeds ${MAX_RESPONSE_BYTES} bytes`,
+        retryable: false,
+        attempt,
+      };
+    }
+    bodyText = readResult.text;
+  } catch (err) {
+    return {
+      outcome: "error",
+      errorClass: "transport",
+      message: redactBoundedMessage(
+        sanitizeErrorMessage({ error: err, fallback: "response read failure" }),
+      ),
+      retryable: true,
+      attempt,
+    };
+  }
+
   if (status >= 400) {
     return {
       outcome: "error",
@@ -692,6 +749,43 @@ const parseOpenAiChatResponse = async ({
     success.rawTextContent = rawTextContent;
   }
   return success;
+};
+
+const readResponseTextWithLimit = async (
+  response: Response,
+): Promise<{ ok: true; text: string } | { ok: false }> => {
+  const contentLength = response.headers.get("content-length");
+  if (contentLength !== null) {
+    const parsedLength = Number.parseInt(contentLength, 10);
+    if (Number.isFinite(parsedLength) && parsedLength > MAX_RESPONSE_BYTES) {
+      return { ok: false };
+    }
+  }
+
+  if (response.body === null) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
+      return { ok: false };
+    }
+    return { ok: true, text };
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = "";
+  for (;;) {
+    const chunk = await reader.read();
+    if (chunk.done) break;
+    totalBytes += chunk.value.byteLength;
+    if (totalBytes > MAX_RESPONSE_BYTES) {
+      await reader.cancel();
+      return { ok: false };
+    }
+    text += decoder.decode(chunk.value, { stream: true });
+  }
+  text += decoder.decode();
+  return { ok: true, text };
 };
 
 const validateJsonSchemaSubset = (

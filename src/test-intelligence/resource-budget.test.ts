@@ -3,7 +3,7 @@
  *
  * Covers:
  *   - maxOutputTokens is forwarded and a mock ceiling enforces it
- *   - maxInputTokens cap: no explicit contract field exists — documented as gap
+ *   - maxInputTokens cap is enforced before gateway work
  *   - AbortController wall-clock timeout via slow responder → errorClass=timeout
  *   - MAX_VISUAL_SIDECAR_INPUT_BYTES enforcement before any gateway call
  *   - writeVisualSidecarResultArtifact: written file never contains base64
@@ -226,16 +226,7 @@ test("resource-budget: mock gateway enforces a synthetic maxOutputTokens ceiling
   }
 });
 
-test("resource-budget: maxInputTokens cap — no explicit contract field (documented gap)", async () => {
-  // GAP DOCUMENTED: The LlmGenerationRequest contract does not expose a
-  // maxInputTokens field. The gateway's token-budget enforcement for input
-  // length is entirely at the deployment/infrastructure level and cannot be
-  // asserted at the client interface. Operators must configure per-deployment
-  // limits in their gateway tier.
-  //
-  // This test records the gap by verifying that a very long prompt (exceeding
-  // any practical input limit) does NOT trigger any contract-level validation
-  // inside the mock client — it is accepted and forwarded as-is.
+test("resource-budget: maxInputTokens cap rejects oversized prompts before gateway work", async () => {
   const client = createMockLlmGatewayClient({
     role: "test_generation",
     deployment: "gpt-oss-120b",
@@ -248,18 +239,22 @@ test("resource-budget: maxInputTokens cap — no explicit contract field (docume
     jobId: "j",
     systemPrompt: "system",
     userPrompt: longPrompt,
+    maxInputTokens: 1_000,
   });
 
-  // The mock client accepts it without error — no client-side input-length cap.
   assert.equal(
     result.outcome,
-    "success",
-    "mock client has no maxInputTokens enforcement — this is a documented gap",
+    "error",
+    "oversized prompt must be rejected by the client-side input budget",
   );
-  const recorded = client.recordedRequests();
-  assert.ok(
-    recorded[0]?.userPrompt.length > 100_000,
-    "long prompt must be recorded as-is",
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "schema_invalid");
+    assert.match(result.message, /maxInputTokens/);
+  }
+  assert.equal(
+    client.recordedRequests().length,
+    0,
+    "rejected oversized prompts must not be recorded or dispatched",
   );
 });
 

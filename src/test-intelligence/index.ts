@@ -190,6 +190,7 @@ export {
 } from "./poc-fixtures.js";
 export {
   buildWave1PocEvidenceManifest,
+  computeWave1PocEvidenceManifestDigest,
   verifyWave1PocEvidenceFromDisk,
   verifyWave1PocEvidenceManifest,
   writeWave1PocEvidenceManifest,

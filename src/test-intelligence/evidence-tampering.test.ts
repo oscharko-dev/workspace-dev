@@ -7,7 +7,7 @@
  *   - Byte-length resize (additive append) is detected
  *   - Byte-length resize (truncate) is detected
  *   - Manifest-mutation (modelDeployments field) is detected
- *   - rawScreenshotsIncluded mutation detectability (negative gap test)
+ *   - rawScreenshotsIncluded mutation detectability
  *   - Filename injection: null byte, directory traversal, >255 bytes
  *   - Hash collision-resistance proxy: identical bytes → identical hashes
  *   - rejectUnexpected catches an extra file in the run dir
@@ -31,6 +31,7 @@ import {
 import { canonicalJson } from "./content-hash.js";
 import {
   buildWave1PocEvidenceManifest,
+  computeWave1PocEvidenceManifestDigest,
   verifyWave1PocEvidenceFromDisk,
   verifyWave1PocEvidenceManifest,
   writeWave1PocEvidenceManifest,
@@ -266,22 +267,8 @@ test("evidence-tampering: byte-length resize (truncate) is detected", async () =
 
 test("evidence-tampering: manifest modelDeployments mutation is detected on re-verify", async () => {
   // An attacker replaces the manifest on disk with a modified version that
-  // changes modelDeployments. When the caller reads the tampered manifest and
-  // re-verifies against the same artifact dir, the artifact hashes still match —
-  // so the artifact-level verification passes. However, the manifest itself
-  // is tampered.
-  //
-  // The current architecture treats artifact-level integrity as the primary
-  // guarantee. The manifest file is NOT self-attesting (it does not hash itself),
-  // so altering the manifest's metadata fields (e.g. modelDeployments) while
-  // keeping artifact bytes unchanged is NOT detectable by verifyWave1PocEvidenceManifest.
-  //
-  // GAP DOCUMENTED: The manifest does not carry a self-hash. An attacker who
-  // can write to the artifact directory can alter modelDeployments, promptHash,
-  // policyProfileId, etc. in the manifest file without the verifier detecting it,
-  // provided they do not change any artifact byte content.
-  //
-  // This test confirms the gap: tampered modelDeployments passes verification.
+  // changes modelDeployments. Artifact bytes still match, so the verifier must
+  // fail closed on the tampered manifest metadata itself.
   await withDir(async (dir) => {
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
@@ -303,15 +290,9 @@ test("evidence-tampering: manifest modelDeployments mutation is detected on re-v
     // Tamper: read manifest from disk, alter modelDeployments, re-write.
     const raw = await readFile(manifestPath, "utf8");
     const parsed = JSON.parse(raw) as Record<string, unknown>;
-    parsed["modelDeployments"] = {
-      testGeneration: "attacker-model",
-      visualPrimary: "attacker-vision",
-    };
+    parsed["modelDeployments"] = { testGeneration: "attacker-model" };
     await writeFile(manifestPath, JSON.stringify(parsed), "utf8");
 
-    // Re-read the tampered manifest and verify. Since the artifact bytes are
-    // unchanged, verification passes — the gap is that metadata tampering is
-    // undetected.
     const tamperedManifest = JSON.parse(
       await readFile(manifestPath, "utf8"),
     ) as Wave1PocEvidenceManifest;
@@ -321,22 +302,78 @@ test("evidence-tampering: manifest modelDeployments mutation is detected on re-v
       artifactsDir: dir,
     });
 
-    // Artifact-level verification still passes (gap: manifest metadata is not self-attested).
     assert.equal(
       result.ok,
-      true,
-      "GAP: manifest metadata mutation (modelDeployments) is not detected by artifact-level verification — manifest is not self-attesting",
+      false,
+      "manifest metadata mutation must fail verification",
+    );
+    assert.ok(
+      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      "tampered manifest metadata must be reported as a manifest mutation",
     );
   });
 });
 
-test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is not detectable (gap)", async () => {
+test("evidence-tampering: valid-looking manifest metadata rewrite is detected by default disk verify", async () => {
+  await withDir(async (dir) => {
+    const content = '{"v":1}';
+    await writeArtifact(dir, "alpha.json", content);
+
+    const manifest = buildWave1PocEvidenceManifest(
+      baseInput([
+        {
+          filename: "alpha.json",
+          bytes: utf8(content),
+          category: "validation",
+        },
+      ]),
+    );
+    const expectedManifestSha256 =
+      computeWave1PocEvidenceManifestDigest(manifest);
+    const manifestPath = await writeWave1PocEvidenceManifest({
+      manifest,
+      destinationDir: dir,
+    });
+
+    const raw = await readFile(manifestPath, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed["modelDeployments"] = { testGeneration: "gpt-oss-120b" };
+    parsed["policyProfileId"] = "attacker-profile";
+    await writeFile(manifestPath, JSON.stringify(parsed), "utf8");
+
+    const defaultVerification = await verifyWave1PocEvidenceFromDisk(dir);
+    const { result } = await verifyWave1PocEvidenceFromDisk(dir, {
+      expectedManifestSha256,
+    });
+
+    assert.equal(
+      defaultVerification.result.ok,
+      false,
+      "valid-looking manifest metadata rewrite must fail default digest-witness verification",
+    );
+    assert.ok(
+      defaultVerification.result.mutated.includes(
+        WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+      ),
+      "default digest mismatch must be reported as a manifest mutation",
+    );
+    assert.equal(
+      result.ok,
+      false,
+      "valid-looking manifest metadata rewrite must fail trusted-digest verification",
+    );
+    assert.ok(
+      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      "trusted digest mismatch must be reported as a manifest mutation",
+    );
+  });
+});
+
+test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is detected", async () => {
   // The manifest carries rawScreenshotsIncluded: false as a hard type-level
   // invariant. An attacker who modifies the JSON file on disk can flip it to
-  // true — the verifier only checks artifact bytes, not manifest fields.
-  //
-  // This test confirms the gap: mutating rawScreenshotsIncluded is undetected
-  // by verifyWave1PocEvidenceManifest because the manifest is not self-attesting.
+  // true; the verifier must reject that metadata mutation even when artifact
+  // bytes still match.
   await withDir(async (dir) => {
     const content = '{"v":1}';
     await writeArtifact(dir, "alpha.json", content);
@@ -375,11 +412,14 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
       artifactsDir: dir,
     });
 
-    // GAP: the mutation passes artifact-level verification.
     assert.equal(
       result.ok,
-      true,
-      "GAP: rawScreenshotsIncluded flip is undetectable by artifact-level verification — manifest self-hash is missing",
+      false,
+      "rawScreenshotsIncluded flip must fail verification",
+    );
+    assert.ok(
+      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      "tampered manifest invariant must be reported as a manifest mutation",
     );
     // Confirm the tampered value is visible.
     assert.equal(
@@ -395,14 +435,8 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
 // Filename injection
 // ---------------------------------------------------------------------------
 
-test("evidence-tampering: filename with null byte is NOT refused — documented gap", () => {
-  // GAP: Node's `basename()` treats the null byte as a regular character;
-  // "valid\x00inject.json" has no path separator so basename === filename and
-  // the builder accepts it. A null byte in a filename would be rejected by the
-  // OS filesystem on write, but the builder itself has no explicit null-byte
-  // guard. This test documents the gap: the builder does NOT throw on a
-  // null-byte filename, contrary to what might be expected.
-  assert.doesNotThrow(
+test("evidence-tampering: filename with null byte is refused", () => {
+  assert.throws(
     () =>
       buildWave1PocEvidenceManifest(
         baseInput([
@@ -413,7 +447,8 @@ test("evidence-tampering: filename with null byte is NOT refused — documented 
           },
         ]),
       ),
-    "GAP: null byte in filename is not rejected by the builder (basename check does not sanitize null bytes)",
+    /control characters/,
+    "null byte in filename must be rejected before filesystem writes",
   );
 });
 
@@ -452,18 +487,8 @@ test("evidence-tampering: filename with nested path separator is refused", () =>
 });
 
 test("evidence-tampering: filename longer than 255 bytes is refused", () => {
-  // node's basename() returns the full value when there is no separator, so a
-  // very long name would pass the basename check. We verify the manifest
-  // builder's rejection of non-basename filenames; an extremely long name is
-  // still a basename so this tests a different invariant.
-  //
-  // The builder does NOT enforce a 255-byte limit today — this test
-  // documents the current behaviour and marks the absence of a length cap
-  // as a potential gap for future hardening.
   const longName = "a".repeat(256) + ".json";
-  // This should NOT throw because the builder only rejects non-basename paths.
-  // If this behaviour changes (length cap added), update this assertion.
-  assert.doesNotThrow(
+  assert.throws(
     () =>
       buildWave1PocEvidenceManifest(
         baseInput([
@@ -474,7 +499,8 @@ test("evidence-tampering: filename longer than 255 bytes is refused", () => {
           },
         ]),
       ),
-    "GAP: filename length >255 is not enforced by the builder — future hardening opportunity",
+    /255 bytes/,
+    "filename length >255 must be refused by the builder",
   );
 });
 

@@ -278,24 +278,15 @@ const withTempDir = async (
 // Tests
 // ---------------------------------------------------------------------------
 
-test("policy-bypass: risk-tag downgrade (regulated→low) — policy still escalates based on case riskCategory", () => {
+test("policy-bypass: risk-tag downgrade (regulated→low) — policy still escalates based on intent risk context", () => {
   // An attacker submits a case claiming riskCategory="low" even though the
-  // screen's intent classification is "regulated_data". The policy gate reads
-  // riskCategory directly from the case — if it were "regulated_data" the gate
-  // would escalate to needs_review.
-  //
-  // This test confirms the current behaviour: the gate trusts the case's own
-  // riskCategory. It also documents the GAP: there is no cross-reference
-  // against the intent's risk classification to detect downgrade attempts.
-  //
-  // GAP: A case can have riskCategory downgraded client-side from
-  // "regulated_data" to "low" and the policy gate will not detect it because
-  // it only reads the case-level tag, not the intent's risk context.
+  // source intent is classified as regulated_data. The policy gate must treat
+  // the source intent as authoritative and force manual review.
 
   const legitimateRegulatedCase = buildCase({ riskCategory: "regulated_data" });
   const tamperedCase = buildCase({ riskCategory: "low" }); // downgraded
 
-  const intent = buildIntent();
+  const intent = buildIntent({ risks: ["regulated_data"] });
   const profile = cloneEuBankingDefaultProfile();
 
   const runForCase = (tc: GeneratedTestCase) => {
@@ -335,21 +326,19 @@ test("policy-bypass: risk-tag downgrade (regulated→low) — policy still escal
     "regulated_data case must be escalated to needs_review",
   );
 
-  // The tampered "low" case is NOT escalated — this is the documented gap.
   assert.equal(
     tamperedReport.decisions[0]?.decision,
-    "approved",
-    "downgraded riskCategory='low' case is NOT escalated — policy trusts case-level tag (documented gap: no intent cross-reference)",
+    "needs_review",
+    "downgraded riskCategory='low' case must still inherit regulated intent review",
   );
 
-  // Confirm no regulated_risk_review_required violation on the tampered case.
   const hasRegulatedViolation = tamperedReport.decisions[0]?.violations.some(
     (v) => v.outcome === "regulated_risk_review_required",
   );
   assert.equal(
     hasRegulatedViolation,
-    false,
-    "tampered low-risk case has no regulated_risk_review_required — cross-reference against intent risks is a documented gap",
+    true,
+    "tampered low-risk case must carry regulated_risk_review_required from intent risks",
   );
 });
 
