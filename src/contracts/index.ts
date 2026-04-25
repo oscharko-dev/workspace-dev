@@ -4,7 +4,7 @@
  * These types define the public API surface for workspace-dev consumers.
  * They must not import from internal services.
  *
- * Contract version: 3.27.0
+ * Contract version: 3.28.0
  * See CONTRACT_CHANGELOG.md for contract change history and VERSIONING.md for
  * package-versus-contract versioning policy.
  */
@@ -3076,9 +3076,241 @@ export interface Wave1PocEvalReport {
   pass: boolean;
 }
 
+/* ------------------------------------------------------------------ */
+/*  QC adapter + dry-run report (Issue #1368)                          */
+/* ------------------------------------------------------------------ */
+
+/** Schema version for the persisted dry-run report artifact (Issue #1368). */
+export const DRY_RUN_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted dry-run report artifact. */
+export const DRY_RUN_REPORT_ARTIFACT_FILENAME = "dry-run-report.json" as const;
+
+/**
+ * Allowed transfer modes recognised by the QC adapter façade.
+ *
+ * - `export_only` — produce on-disk artifacts; no QC API touched.
+ * - `dry_run` — validate target mapping (folder, fields, schema) without
+ *   creating tests in the QC tool.
+ * - `api_transfer` — placeholder for the future production transfer path;
+ *   the dry-run adapter must throw `mode_not_implemented` for this mode.
+ */
+export const ALLOWED_QC_ADAPTER_MODES = [
+  "export_only",
+  "dry_run",
+  "api_transfer",
+] as const;
+export type QcAdapterMode = (typeof ALLOWED_QC_ADAPTER_MODES)[number];
+
+/**
+ * Allowed QC adapter provider discriminators. Wave 2 ships `opentext_alm`;
+ * the rest are stub identifiers reserved so future adapters plug in
+ * without contract churn.
+ */
+export const ALLOWED_QC_ADAPTER_PROVIDERS = [
+  "opentext_alm",
+  "opentext_octane",
+  "opentext_valueedge",
+  "xray",
+  "testrail",
+  "azure_devops_test_plans",
+  "qtest",
+  "custom",
+] as const;
+export type QcAdapterProvider = (typeof ALLOWED_QC_ADAPTER_PROVIDERS)[number];
+
+/**
+ * Allowed mapping-profile validation issue codes (Issue #1368). Tracks the
+ * `ValidationIssue[]` style used elsewhere in test-intelligence.
+ */
+export const ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES = [
+  "missing_base_url_alias",
+  "invalid_base_url_alias",
+  "missing_domain",
+  "missing_project",
+  "missing_target_folder_path",
+  "invalid_target_folder_path",
+  "missing_test_entity_type",
+  "unsupported_test_entity_type",
+  "missing_required_fields",
+  "duplicate_required_field",
+  "missing_design_step_mapping",
+  "design_step_mapping_field_invalid",
+  "credential_like_field_present",
+  "provider_mismatch",
+  "profile_id_mismatch",
+] as const;
+export type QcMappingProfileIssueCode =
+  (typeof ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES)[number];
+
+/** Allowed reasons the QC adapter may refuse to produce a dry-run report. */
+export const ALLOWED_DRY_RUN_REFUSAL_CODES = [
+  "no_mapped_test_cases",
+  "mapping_profile_invalid",
+  "provider_mismatch",
+  "mode_not_implemented",
+  "folder_resolution_failed",
+] as const;
+export type DryRunRefusalCode = (typeof ALLOWED_DRY_RUN_REFUSAL_CODES)[number];
+
+/** Allowed states of a target-folder resolution attempt under `dry_run`. */
+export const ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES = [
+  "resolved",
+  "missing",
+  "simulated",
+  "invalid_path",
+] as const;
+export type DryRunFolderResolutionState =
+  (typeof ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES)[number];
+
+/** Provider-neutral mapping profile shape consumed by all QC adapters. */
+export interface QcMappingProfile {
+  /** Profile identity (e.g. `opentext-alm-default`). */
+  id: string;
+  version: string;
+  /** QC provider this profile targets. */
+  provider: QcAdapterProvider;
+  /**
+   * Symbolic alias for the base URL of the target QC tenant. Adapters
+   * resolve the actual URL from operator-supplied secrets at call time;
+   * the alias never carries credentials and never embeds userinfo.
+   */
+  baseUrlAlias: string;
+  /** Tenant domain (e.g. `DEFAULT`). */
+  domain: string;
+  /** Tenant project (e.g. `payments-checkout`). */
+  project: string;
+  /** Forward-slash-separated `/Subject/...` folder path used as default root. */
+  targetFolderPath: string;
+  /** Test entity type string accepted by the QC tool (e.g. `MANUAL`). */
+  testEntityType: string;
+  /** Required field names enforced on each mapped case. Sorted, deduped. */
+  requiredFields: string[];
+  /**
+   * Per-design-step field mapping. The keys are the GeneratedTestCaseStep
+   * fields that participate in the QC step entity (`action`, `expected`,
+   * `data`); the values are the QC field names they map to.
+   */
+  designStepMapping: {
+    action: string;
+    expected: string;
+    data?: string;
+  };
+}
+
+/** Single mapping-profile validation issue. */
+export interface QcMappingProfileIssue {
+  path: string;
+  code: QcMappingProfileIssueCode;
+  severity: TestCaseValidationSeverity;
+  message: string;
+}
+
+/** Aggregate mapping-profile validation result. */
+export interface QcMappingProfileValidationResult {
+  ok: boolean;
+  errorCount: number;
+  warningCount: number;
+  issues: QcMappingProfileIssue[];
+}
+
+/** Per-test-case completeness row inside the dry-run report. */
+export interface DryRunMappingCompletenessEntry {
+  testCaseId: string;
+  externalIdCandidate: string;
+  /** Required field names whose mapped value was missing on the case. */
+  missingRequiredFields: string[];
+  /** True when every required field is populated AND the entry is exportable. */
+  complete: boolean;
+}
+
+/** Aggregate mapping completeness summary. */
+export interface DryRunMappingCompletenessSummary {
+  totalCases: number;
+  completeCases: number;
+  incompleteCases: number;
+  /** Distinct missing-field names across all cases, sorted. */
+  missingFieldsAcrossCases: string[];
+  perCase: DryRunMappingCompletenessEntry[];
+}
+
+/** Outcome of attempting to resolve a target folder under `dry_run`. */
+export interface DryRunFolderResolution {
+  state: DryRunFolderResolutionState;
+  path: string;
+  /**
+   * Free-form, redacted evidence string supplied by the resolver (e.g.
+   * `"simulated:matched-segments=3"`). Never includes a URL or token.
+   */
+  evidence: string;
+}
+
+/** Per-test-case planned ALM entity payload preview (REDACTED). */
+export interface DryRunPlannedEntityPayload {
+  testCaseId: string;
+  externalIdCandidate: string;
+  testEntityType: string;
+  targetFolderPath: string;
+  /** Mapped QC fields (deterministic, redacted, no credentials). */
+  fields: { name: string; value: string }[];
+  /** Number of design steps in the planned payload. */
+  designStepCount: number;
+}
+
+/**
+ * Visual evidence flag attached to a mapped case when the case's mapping
+ * derives from low-confidence visual-only sidecar observations (Issue
+ * #1386 / #1368).
+ */
+export interface DryRunVisualEvidenceFlag {
+  testCaseId: string;
+  /** Originating screen ids in the visual sidecar that drive the flag. */
+  screenIds: string[];
+  /** Mean sidecar confidence across the matching screen records (0..1). */
+  sidecarConfidence: number;
+  /** Per-screen ambiguity outcome counts contributing to the flag. */
+  ambiguityFlags: VisualSidecarValidationOutcome[];
+  /** Stable trace references — figmaTraceRefs subset that drove the mapping. */
+  traceRefs: GeneratedTestCaseFigmaTrace[];
+  /**
+   * Explicit reason classification:
+   *   - `visual_only_low_confidence_mapping` — mapping derives only from
+   *     sidecar observations whose confidence is below the configured
+   *     threshold; reviewer must validate before transfer.
+   */
+  reason: "visual_only_low_confidence_mapping";
+}
+
+/** Aggregate dry-run report artifact. */
+export interface DryRunReportArtifact {
+  schemaVersion: typeof DRY_RUN_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Deterministic id derived from job + adapter + profile + clock. */
+  reportId: string;
+  jobId: string;
+  generatedAt: string;
+  mode: QcAdapterMode;
+  adapter: { provider: QcAdapterProvider; version: string };
+  profile: { id: string; version: string };
+  /** True iff the adapter refused to produce a usable report. */
+  refused: boolean;
+  refusalCodes: DryRunRefusalCode[];
+  profileValidation: QcMappingProfileValidationResult;
+  completeness: DryRunMappingCompletenessSummary;
+  folderResolution: DryRunFolderResolution;
+  /** Sorted by `testCaseId`. Empty when the report is refused. */
+  plannedPayloads: DryRunPlannedEntityPayload[];
+  /** Sorted by `testCaseId`. */
+  visualEvidenceFlags: DryRunVisualEvidenceFlag[];
+  /** Hard invariant: raw screenshots are never embedded into dry-run payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded into dry-run payloads. */
+  credentialsIncluded: false;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.27.0" as const;
+export const CONTRACT_VERSION = "3.28.0" as const;
