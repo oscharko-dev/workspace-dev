@@ -133,6 +133,196 @@ export const REDACTION_POLICY_VERSION = "1.0.0" as const;
 export const TEST_INTELLIGENCE_ENV =
   "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE" as const;
 
+/** Contract version for the role-separated LLM gateway client surface (Issue #1363). */
+export const LLM_GATEWAY_CONTRACT_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted `llm-capabilities.json` evidence artifact. */
+export const LLM_CAPABILITIES_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted LLM gateway capability probe artifact. */
+export const LLM_CAPABILITIES_ARTIFACT_FILENAME =
+  "llm-capabilities.json" as const;
+
+/**
+ * Allowed gateway roles. Each role is bound to a single deployment to keep the
+ * structured test-case generator (`gpt-oss-120b`) strictly separated from the
+ * multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+ */
+export const ALLOWED_LLM_GATEWAY_ROLES = [
+  "test_generation",
+  "visual_primary",
+  "visual_fallback",
+] as const;
+export type LlmGatewayRole = (typeof ALLOWED_LLM_GATEWAY_ROLES)[number];
+
+/**
+ * Wire-protocol compatibility modes. `openai_chat` is the only mode shipped in
+ * Wave 1; the array is the source of truth so future modes (`openai_responses`,
+ * `custom_adapter`) plug in without changing the call sites.
+ */
+export const ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES = ["openai_chat"] as const;
+export type LlmGatewayCompatibilityMode =
+  (typeof ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES)[number];
+
+/** Authentication strategy for outbound requests to the LLM gateway. */
+export const ALLOWED_LLM_GATEWAY_AUTH_MODES = [
+  "api_key",
+  "bearer_token",
+  "none",
+] as const;
+export type LlmGatewayAuthMode =
+  (typeof ALLOWED_LLM_GATEWAY_AUTH_MODES)[number];
+
+/**
+ * Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
+ * schema-invalid responses, and image-payload guard rejections are NOT
+ * retryable; transport, timeout, and rate-limit failures are.
+ */
+export const ALLOWED_LLM_GATEWAY_ERROR_CLASSES = [
+  "refusal",
+  "schema_invalid",
+  "incomplete",
+  "timeout",
+  "rate_limited",
+  "transport",
+  "image_payload_rejected",
+] as const;
+export type LlmGatewayErrorClass =
+  (typeof ALLOWED_LLM_GATEWAY_ERROR_CLASSES)[number];
+
+/**
+ * Capability flags declared by the gateway operator and verified at probe
+ * time. Streaming is disabled by default in Wave 1 — the Figma-to-test
+ * pipeline consumes only the final structured JSON envelope.
+ */
+export interface LlmGatewayCapabilities {
+  structuredOutputs: boolean;
+  seedSupport: boolean;
+  reasoningEffortSupport: boolean;
+  maxOutputTokensSupport: boolean;
+  streamingSupport: boolean;
+  imageInputSupport: boolean;
+}
+
+/** Per-capability probe verdict carried in the persisted artifact. */
+export type LlmCapabilityProbeOutcome =
+  | "supported"
+  | "unsupported"
+  | "untested"
+  | "probe_failed";
+
+/** One probe row in `llm-capabilities.json`. */
+export interface LlmCapabilityProbeRecord {
+  capability: keyof LlmGatewayCapabilities;
+  declared: boolean;
+  outcome: LlmCapabilityProbeOutcome;
+  detail?: string;
+}
+
+/**
+ * Persistable capabilities artifact. Contains identity (role, deployment,
+ * gateway release, model revision, optional model-weights SHA-256) and the
+ * declared/observed capabilities. NEVER contains tokens, headers, or
+ * reasoning traces.
+ */
+export interface LlmCapabilitiesArtifact {
+  schemaVersion: typeof LLM_CAPABILITIES_SCHEMA_VERSION;
+  contractVersion: typeof LLM_GATEWAY_CONTRACT_VERSION;
+  generatedAt: string;
+  jobId: string;
+  role: LlmGatewayRole;
+  compatibilityMode: LlmGatewayCompatibilityMode;
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  modelWeightsSha256?: string;
+  capabilities: LlmGatewayCapabilities;
+  probes: LlmCapabilityProbeRecord[];
+}
+
+/** Tunable circuit-breaker thresholds for an LLM gateway client. */
+export interface LlmGatewayCircuitBreakerConfig {
+  failureThreshold: number;
+  resetTimeoutMs: number;
+}
+
+/**
+ * Construction-time configuration for an LLM gateway client.
+ *
+ * API tokens are NEVER in this object. Operators inject a token reader via
+ * the runtime factory; the reader is invoked once per request and the value
+ * is held only for the duration of that request.
+ */
+export interface LlmGatewayClientConfig {
+  role: LlmGatewayRole;
+  compatibilityMode: LlmGatewayCompatibilityMode;
+  baseUrl: string;
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  modelWeightsSha256?: string;
+  authMode: LlmGatewayAuthMode;
+  declaredCapabilities: LlmGatewayCapabilities;
+  timeoutMs: number;
+  maxRetries: number;
+  circuitBreaker: LlmGatewayCircuitBreakerConfig;
+}
+
+/** Image payload accepted by visual sidecars. Rejected for `test_generation`. */
+export interface LlmImageInput {
+  mimeType: string;
+  base64Data: string;
+}
+
+/** Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true. */
+export type LlmReasoningEffort = "low" | "medium" | "high";
+
+/** Wire-shaped request handed to a gateway client. */
+export interface LlmGenerationRequest {
+  jobId: string;
+  systemPrompt: string;
+  userPrompt: string;
+  responseSchema?: Record<string, unknown>;
+  responseSchemaName?: string;
+  imageInputs?: ReadonlyArray<LlmImageInput>;
+  seed?: number;
+  reasoningEffort?: LlmReasoningEffort;
+  maxOutputTokens?: number;
+}
+
+/** Provider finish reasons normalized to a single set. */
+export type LlmFinishReason =
+  | "stop"
+  | "length"
+  | "content_filter"
+  | "tool_calls"
+  | "other";
+
+/** Success outcome — never includes reasoning/CoT traces. */
+export interface LlmGenerationSuccess {
+  outcome: "success";
+  content: unknown;
+  rawTextContent?: string;
+  finishReason: LlmFinishReason;
+  usage: { inputTokens?: number; outputTokens?: number };
+  modelDeployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  attempt: number;
+}
+
+/** Failure outcome with a redacted message and an explicit retryable flag. */
+export interface LlmGenerationFailure {
+  outcome: "error";
+  errorClass: LlmGatewayErrorClass;
+  message: string;
+  retryable: boolean;
+  attempt: number;
+}
+
+/** Discriminated union returned by `LlmGatewayClient.generate`. */
+export type LlmGenerationResult = LlmGenerationSuccess | LlmGenerationFailure;
+
 /** Theme brand policy applied during IR token derivation. */
 export type WorkspaceBrandTheme = "derived" | "sparkasse";
 
@@ -1847,4 +2037,4 @@ export type ReplayCacheLookupResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.20.0" as const;
+export const CONTRACT_VERSION = "3.21.0" as const;

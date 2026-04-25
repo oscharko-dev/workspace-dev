@@ -36,3 +36,37 @@ export {
   type ReplayCacheExecutionResult,
   type ReplayCache,
 } from "./replay-cache.js";
+export {
+  createLlmCircuitBreaker,
+  type LlmCircuitBreaker,
+  type LlmCircuitClock,
+  type LlmCircuitDecision,
+  type LlmCircuitSnapshot,
+  type LlmCircuitState,
+  type LlmCircuitTransitionEvent,
+  type LlmCircuitTransitionTrigger,
+} from "./llm-circuit-breaker.js";
+export {
+  createLlmGatewayClient,
+  isLlmGatewayErrorRetryable,
+  LLM_GATEWAY_ERROR_CLASSES,
+  LlmGatewayError,
+  type LlmGatewayApiKeyProvider,
+  type LlmGatewayClient,
+  type LlmGatewayRuntime,
+} from "./llm-gateway.js";
+export {
+  createMockLlmGatewayClient,
+  createMockLlmGatewayClientFromConfig,
+  type CreateMockLlmGatewayClientInput,
+  type MockLlmGatewayClient,
+  type MockResponder,
+} from "./llm-mock-gateway.js";
+export {
+  LLM_CAPABILITIES_ARTIFACT_FILENAME,
+  probeLlmCapabilities,
+  serializeLlmCapabilitiesArtifact,
+  writeLlmCapabilitiesArtifact,
+  type LlmCapabilityProbeInput,
+  type LlmCapabilityProbeResult,
+} from "./llm-capability-probe.js";

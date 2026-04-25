@@ -31,6 +31,30 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.21.0] - 2026-04-25
+
+### Added (Issue #1363)
+
+- `LLM_GATEWAY_CONTRACT_VERSION` — version stamp (`"1.0.0"`) for the role-separated LLM gateway client surface.
+- `LLM_CAPABILITIES_SCHEMA_VERSION` — version stamp (`"1.0.0"`) for the persisted capability probe artifact.
+- `LLM_CAPABILITIES_ARTIFACT_FILENAME` — canonical filename (`"llm-capabilities.json"`) for the persisted capability probe artifact.
+- `ALLOWED_LLM_GATEWAY_ROLES` — runtime source-of-truth list of role discriminants (`test_generation`, `visual_primary`, `visual_fallback`).
+- `ALLOWED_LLM_GATEWAY_COMPATIBILITY_MODES` — runtime source-of-truth list (`openai_chat`); future modes (`openai_responses`, `custom_adapter`) plug in here without changing call sites.
+- `ALLOWED_LLM_GATEWAY_AUTH_MODES` — runtime source-of-truth list (`api_key`, `bearer_token`, `none`).
+- `ALLOWED_LLM_GATEWAY_ERROR_CLASSES` — runtime source-of-truth list (`refusal`, `schema_invalid`, `incomplete`, `timeout`, `rate_limited`, `transport`, `image_payload_rejected`).
+- `LlmGatewayRole`, `LlmGatewayCompatibilityMode`, `LlmGatewayAuthMode`, `LlmGatewayErrorClass` — discriminant types over the allow-lists above.
+- `LlmGatewayCapabilities`, `LlmCapabilityProbeOutcome`, `LlmCapabilityProbeRecord`, `LlmCapabilitiesArtifact` — typed shape of the declared/observed capabilities and the persisted `llm-capabilities.json` evidence artifact.
+- `LlmGatewayCircuitBreakerConfig`, `LlmGatewayClientConfig` — construction-time configuration shapes. The config object never carries an API token; tokens are read at request time via an injected provider callback.
+- `LlmImageInput`, `LlmReasoningEffort`, `LlmGenerationRequest`, `LlmFinishReason`, `LlmGenerationSuccess`, `LlmGenerationFailure`, `LlmGenerationResult` — wire-shaped request/response surface for `LlmGatewayClient.generate`. The success branch never carries chain-of-thought or reasoning traces.
+
+### Unchanged (Issue #1363)
+
+- No runtime schema, submit parser, public route, or orchestrator wiring changed. The gateway client lives entirely under `src/test-intelligence/` and is consumed by Issues #1364 (policy gate), #1365 (review gate), and #1386 (visual sidecar) in later waves.
+- The opt-in test-intelligence feature gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE`, `WorkspaceStartOptions.testIntelligence.enabled`) remains the only entry-point gate; no separate gateway gate is introduced.
+- The deterministic Figma-to-code pipeline (`llmCodegenMode=deterministic`) is unaffected; the gateway client is reachable only from the test-intelligence subsurface.
+
+---
+
 ## [3.20.0] - 2026-04-25
 
 ### Added (Issue #1362)
