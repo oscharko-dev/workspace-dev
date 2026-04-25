@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0.0",
+  "contractVersion": "1.0.0",
+  "jobId": "job-1365-golden",
+  "generatedAt": "2026-04-25T10:00:00.000Z",
+  "profileId": "opentext-alm-default",
+  "profileVersion": "1.0.0",
+  "modelDeployments": {
+    "testGeneration": "gpt-oss-120b",
+    "visualPrimary": "llama-4-maverick-vision"
+  },
+  "exportedTestCaseCount": 2,
+  "refused": false,
+  "refusalCodes": [],
+  "artifacts": [
+    {
+      "filename": "qc-mapping-preview.json",
+      "sha256": "54830f0541cc60ecff0f86894167a3716334cac0a6ea33ede08ad6c45f48497a",
+      "bytes": 1742,
+      "contentType": "application/json"
+    },
+    {
+      "filename": "testcases.alm.xml",
+      "sha256": "0e1be4db33335f59c4d53971bf634291139f70c6460f79841f73645df9d72efa",
+      "bytes": 2385,
+      "contentType": "application/xml"
+    },
+    {
+      "filename": "testcases.csv",
+      "sha256": "1fccabd9860bf915a677bd3557c767fce9177b6f3e7db0601fa9d9f623936f1f",
+      "bytes": 1485,
+      "contentType": "text/csv"
+    },
+    {
+      "filename": "testcases.json",
+      "sha256": "85a50a05a024f461f68c9f509f5f621e936c3a6475d5a87b673bda5d11e24547",
+      "bytes": 2698,
+      "contentType": "application/json"
+    }
+  ],
+  "visualEvidenceHashes": [
+    "1756f0f969b17f8dbb213ae86244ef0f53b8a291ee2e52007b208429df2125ad"
+  ],
+  "rawScreenshotsIncluded": false
+}
