@@ -4,34 +4,66 @@
 
 ## DORA Control Mapping
 
-| Control                                                 | DORA Reference | Implementation                                                                                                                      | Evidence                                                                                   |
-| ------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| ICT risk management and resilient engineering practices | Article 6      | Zero-runtime-dependency architecture, local-only default runtime boundary, package-scoped threat model, deterministic quality gates | `ARCHITECTURE.md`, `THREAT_MODEL.md`, CI quality workflows                                 |
-| Change governance and traceability                      | Article 9      | Changesets release flow, contract changelog discipline, reproducibility gates                                                       | `CHANGELOG.md`, `CONTRACT_CHANGELOG.md`, release workflows                                 |
-| Incident handling and disclosure process                | Article 10     | Security intake + CVSS SLA timelines + coordinated disclosure process                                                               | `SECURITY.md`, `SLA.md`                                                                    |
-| Third-party ICT supply-chain risk                       | Article 28     | OIDC trusted publishing, provenance, SBOM, signature verification, runtime dependency minimization                                  | `.github/workflows/changesets-release.yml`, `sbom:*` scripts, `npm audit signatures` gates |
+| Control                                                 | DORA Reference | Implementation                                                                                                                                                                | Evidence                                                                                                                                                                           |
+| ------------------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ICT risk management and resilient engineering practices | Article 6      | Zero-runtime-dependency architecture, local-only default runtime boundary, package-scoped threat model, deterministic quality gates                                           | `ARCHITECTURE.md`, `THREAT_MODEL.md`, CI quality workflows                                                                                                                         |
+| Change governance and traceability                      | Article 9      | Changesets release flow, contract changelog discipline, reproducibility gates                                                                                                 | `CHANGELOG.md`, `CONTRACT_CHANGELOG.md`, release workflows                                                                                                                         |
+| Incident handling and disclosure process                | Article 10     | Security intake + CVSS SLA timelines + coordinated disclosure process                                                                                                         | `SECURITY.md`, `SLA.md`                                                                                                                                                            |
+| Third-party ICT supply-chain risk                       | Article 28     | OIDC trusted publishing, provenance, SBOM, signature verification, runtime dependency minimization                                                                            | `.github/workflows/changesets-release.yml`, `sbom:*` scripts, `npm audit signatures` gates                                                                                         |
+| Figma-to-QC test-intelligence subsurface                | Articles 6, 9  | Opt-in dual-gate (env + start option), deterministic mock-LLM CI gate, fail-closed bearer governance, schema-versioned artifacts, evidence manifest with SHA-256 verification | `docs/test-intelligence.md`, `wave1-poc-evidence-manifest.json`, `validation-report.json`, `policy-report.json`, `review-events.json`, `export-report.json`, `dry-run-report.json` |
+
+## Figma-to-QC Test Intelligence Subsurface
+
+The opt-in test-intelligence subsurface emits compliance evidence per job. It does not assert customer-specific risk classification; the operator decides how the evidence maps onto their own DORA, GDPR, and EU AI Act obligations. The full operator guide is in [docs/test-intelligence.md](docs/test-intelligence.md).
+
+### GDPR controls
+
+| Concern             | Implementation                                                                                                                                                                                                                                   | Evidence                                                                                                                         |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| Data minimization   | Business-test-intent IR derivation strips structural-only data; `redactPii` runs before prompt compilation; `REDACTION_POLICY_VERSION` is replay-stable                                                                                          | `validation-report.json`, `policy-report.json`, redaction policy version stamped on every manifest                               |
+| PII detection       | Hand-rolled detector emits `test_data_pii_detected`, `preconditions_pii_detected`, `expected_results_pii_detected`, `test_data_unredacted_value`; visual sidecar gate emits `visual_sidecar_possible_pii`; policy gate consumes both             | `validation-report.json`, `visual-sidecar-validation-report.json`                                                                |
+| Screenshot handling | No raw screenshot bytes are persisted; only SHA-256 capture identities are recorded; `rawScreenshotsIncluded: false` is stamped at the type level on the visual sidecar result, the export report, the dry-run report, and the evidence manifest | `visual-sidecar-result.json`, `wave1-poc-evidence-manifest.json`, `export-report.json`, `dry-run-report.json`                    |
+| Retention           | Operator-controlled artifact root; package never deletes artifacts; canonical-JSON plus atomic temp-file rename so replay is byte-identical                                                                                                      | `<artifactRoot>/<jobId>/`                                                                                                        |
+| DPIA-ready evidence | Per-job validation, policy, coverage, review event log, and evidence manifest                                                                                                                                                                    | `validation-report.json`, `policy-report.json`, `coverage-report.json`, `review-events.json`, `wave1-poc-evidence-manifest.json` |
+
+### EU AI Act considerations
+
+Classification under the EU AI Act is context-dependent. The package does not assert that the test-intelligence subsurface is a high-risk AI system; that determination depends on the operator's deployment context, business process, and risk register. The package emits the evidence an operator typically needs to perform that classification themselves:
+
+- Model deployment names and roles per job, captured in `wave1-poc-evidence-manifest.json`.
+- Prompt template version (`TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION`) and JSON-schema digest used to constrain output.
+- Per-case validation, policy, coverage, and visual-sidecar outcomes.
+- Review-state event log with reviewer handles and timestamps (`review-events.json`).
+- Pass/fail evaluation report with thresholds (`wave1-poc-eval-report.json`).
+- Reviewer-driven gate enforces a human-in-the-loop step before any case reaches the export pipeline.
+
+Customer-specific four-eyes review for high-risk categories and signed evidence attestations are out of scope for Wave 2 and are tracked in the upstream roadmap (Issues #1376, #1377, #1379).
+
+### Gateway operator responsibilities
+
+The operator runs the LLM gateway. For the structured-test-case generator role (`gpt-oss-120b` deployment) the operator is responsible for: pinning the model revision, applying change-controlled gateway releases (DORA Article 28), running `probeLlmCapabilities` and persisting `llm-capabilities.json` evidence, choosing a gateway/model combination that honors the hand-rolled JSON-Schema for structured outputs, configuring the gateway with the strictest acceptable retention, and recording auth-mode and compatibility-mode discriminants for audit. The visual sidecar deployments (`llama-4-maverick-vision`, `phi-4-multimodal-poc`) are subject to the same responsibilities, plus the role-separation invariant that `gpt-oss-120b` never receives image payloads.
 
 ## Release Evidence Requirements
 
 Each release candidate must provide:
 
 - Quality gate pass evidence:
-  - `typecheck`
-  - `test`, `test:flaky-retry`, `test:bdd`, `test:property-based`
-  - `lint:boundaries`
-  - `build`
-  - `lint:publint`
-  - `lint:types-publish`
+    - `typecheck`
+    - `test`, `test:flaky-retry`, `test:bdd`, `test:property-based`
+    - `lint:boundaries`
+    - `build`
+    - `lint:publint`
+    - `lint:types-publish`
 - Supply-chain evidence:
-  - CycloneDX SBOM (`artifacts/sbom/workspace-dev.cdx.json`)
-  - SPDX SBOM (`artifacts/sbom/workspace-dev.spdx.json`)
-  - Signature verification (`npm audit signatures`)
-  - Provenance-enabled publish path
+    - CycloneDX SBOM (`artifacts/sbom/workspace-dev.cdx.json`)
+    - SPDX SBOM (`artifacts/sbom/workspace-dev.spdx.json`)
+    - Signature verification (`npm audit signatures`)
+    - Provenance-enabled publish path
 - Operational evidence:
-  - Package threat model and security boundary references (`THREAT_MODEL.md`, `SECURITY.md`, `ARCHITECTURE.md`)
-  - Reproducible build verification report
-  - Offline installation verification
-  - License allowlist verification
+    - Package threat model and security boundary references (`THREAT_MODEL.md`, `SECURITY.md`, `ARCHITECTURE.md`)
+    - Reproducible build verification report
+    - Offline installation verification
+    - License allowlist verification
 
 ## License Allowlist Policy
 

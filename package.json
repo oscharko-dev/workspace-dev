@@ -60,6 +60,7 @@
     "CONTRACT_CHANGELOG.md",
     "docs/migration-guide.md",
     "docs/template-maintenance.md",
+    "docs/test-intelligence.md",
     "PIPELINE.md"
   ],
   "sideEffects": false,

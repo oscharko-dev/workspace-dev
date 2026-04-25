@@ -458,6 +458,282 @@ Validation rule inferred from design hints.
 
 ***
 
+### DryRunFolderResolution
+
+Outcome of attempting to resolve a target folder under `dry_run`.
+
+#### Properties
+
+##### evidence
+
+> **evidence**: `string`
+
+Free-form, redacted evidence string supplied by the resolver (e.g.
+`"simulated:matched-segments=3"`). Never includes a URL or token.
+
+##### path
+
+> **path**: `string`
+
+##### state
+
+> **state**: `"resolved"` \| `"missing"` \| `"simulated"` \| `"invalid_path"`
+
+***
+
+### DryRunMappingCompletenessEntry
+
+Per-test-case completeness row inside the dry-run report.
+
+#### Properties
+
+##### complete
+
+> **complete**: `boolean`
+
+True when every required field is populated AND the entry is exportable.
+
+##### externalIdCandidate
+
+> **externalIdCandidate**: `string`
+
+##### missingRequiredFields
+
+> **missingRequiredFields**: `string`[]
+
+Required field names whose mapped value was missing on the case.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+***
+
+### DryRunMappingCompletenessSummary
+
+Aggregate mapping completeness summary.
+
+#### Properties
+
+##### completeCases
+
+> **completeCases**: `number`
+
+##### incompleteCases
+
+> **incompleteCases**: `number`
+
+##### missingFieldsAcrossCases
+
+> **missingFieldsAcrossCases**: `string`[]
+
+Distinct missing-field names across all cases, sorted.
+
+##### perCase
+
+> **perCase**: [`DryRunMappingCompletenessEntry`](#dryrunmappingcompletenessentry)[]
+
+##### totalCases
+
+> **totalCases**: `number`
+
+***
+
+### DryRunPlannedEntityPayload
+
+Per-test-case planned ALM entity payload preview (REDACTED).
+
+#### Properties
+
+##### designStepCount
+
+> **designStepCount**: `number`
+
+Number of design steps in the planned payload.
+
+##### externalIdCandidate
+
+> **externalIdCandidate**: `string`
+
+##### fields
+
+> **fields**: `object`[]
+
+Mapped QC fields (deterministic, redacted, no credentials).
+
+###### name
+
+> **name**: `string`
+
+###### value
+
+> **value**: `string`
+
+##### targetFolderPath
+
+> **targetFolderPath**: `string`
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+##### testEntityType
+
+> **testEntityType**: `string`
+
+***
+
+### DryRunReportArtifact
+
+Aggregate dry-run report artifact.
+
+#### Properties
+
+##### adapter
+
+> **adapter**: `object`
+
+###### provider
+
+> **provider**: `"opentext_alm"` \| `"opentext_octane"` \| `"opentext_valueedge"` \| `"xray"` \| `"testrail"` \| `"azure_devops_test_plans"` \| `"qtest"` \| `"custom"`
+
+###### version
+
+> **version**: `string`
+
+##### completeness
+
+> **completeness**: [`DryRunMappingCompletenessSummary`](#dryrunmappingcompletenesssummary)
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### credentialsIncluded
+
+> **credentialsIncluded**: `false`
+
+Hard invariant: credentials are never embedded into dry-run payloads.
+
+##### folderResolution
+
+> **folderResolution**: [`DryRunFolderResolution`](#dryrunfolderresolution)
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### mode
+
+> **mode**: `"dry_run"` \| `"export_only"` \| `"api_transfer"`
+
+##### plannedPayloads
+
+> **plannedPayloads**: [`DryRunPlannedEntityPayload`](#dryrunplannedentitypayload)[]
+
+Sorted by `testCaseId`. Empty when the report is refused.
+
+##### profile
+
+> **profile**: `object`
+
+###### id
+
+> **id**: `string`
+
+###### version
+
+> **version**: `string`
+
+##### profileValidation
+
+> **profileValidation**: [`QcMappingProfileValidationResult`](#qcmappingprofilevalidationresult)
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant: raw screenshots are never embedded into dry-run payloads.
+
+##### refusalCodes
+
+> **refusalCodes**: (`"provider_mismatch"` \| `"no_mapped_test_cases"` \| `"mapping_profile_invalid"` \| `"mode_not_implemented"` \| `"folder_resolution_failed"`)[]
+
+##### refused
+
+> **refused**: `boolean`
+
+True iff the adapter refused to produce a usable report.
+
+##### reportId
+
+> **reportId**: `string`
+
+Deterministic id derived from job + adapter + profile + clock.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### visualEvidenceFlags
+
+> **visualEvidenceFlags**: [`DryRunVisualEvidenceFlag`](#dryrunvisualevidenceflag)[]
+
+Sorted by `testCaseId`.
+
+***
+
+### DryRunVisualEvidenceFlag
+
+Visual evidence flag attached to a mapped case when the case's mapping
+derives from low-confidence visual-only sidecar observations (Issue
+#1386 / #1368).
+
+#### Properties
+
+##### ambiguityFlags
+
+> **ambiguityFlags**: (`"schema_invalid"` \| `"ok"` \| `"low_confidence"` \| `"fallback_used"` \| `"possible_pii"` \| `"prompt_injection_like_text"` \| `"conflicts_with_figma_metadata"` \| `"primary_unavailable"`)[]
+
+Per-screen ambiguity outcome counts contributing to the flag.
+
+##### reason
+
+> **reason**: `"visual_only_low_confidence_mapping"`
+
+Explicit reason classification:
+  - `visual_only_low_confidence_mapping` — mapping derives only from
+    sidecar observations whose confidence is below the configured
+    threshold; reviewer must validate before transfer.
+
+##### screenIds
+
+> **screenIds**: `string`[]
+
+Originating screen ids in the visual sidecar that drive the flag.
+
+##### sidecarConfidence
+
+> **sidecarConfidence**: `number`
+
+Mean sidecar confidence across the matching screen records (0..1).
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+##### traceRefs
+
+> **traceRefs**: [`GeneratedTestCaseFigmaTrace`](#generatedtestcasefigmatrace)[]
+
+Stable trace references — figmaTraceRefs subset that drove the mapping.
+
+***
+
 ### ExportArtifactRecord
 
 Single artifact bookkeeping row inside `export-report.json`.
@@ -1195,6 +1471,12 @@ Wire-shaped request handed to a gateway client.
 
 > **jobId**: `string`
 
+##### maxInputTokens?
+
+> `optional` **maxInputTokens?**: `number`
+
+Optional client-side input budget; gateway clients fail closed when exceeded.
+
 ##### maxOutputTokens?
 
 > `optional` **maxOutputTokens?**: `number`
@@ -1475,6 +1757,136 @@ Forward-slash-separated folder path under the profile root.
 ##### visualProvenance?
 
 > `optional` **visualProvenance?**: [`QcMappingVisualProvenance`](#qcmappingvisualprovenance)
+
+***
+
+### QcMappingProfile
+
+Provider-neutral mapping profile shape consumed by all QC adapters.
+
+#### Properties
+
+##### baseUrlAlias
+
+> **baseUrlAlias**: `string`
+
+Symbolic alias for the base URL of the target QC tenant. Adapters
+resolve the actual URL from operator-supplied secrets at call time;
+the alias never carries credentials and never embeds userinfo.
+
+##### designStepMapping
+
+> **designStepMapping**: `object`
+
+Per-design-step field mapping. The keys are the GeneratedTestCaseStep
+fields that participate in the QC step entity (`action`, `expected`,
+`data`); the values are the QC field names they map to.
+
+###### action
+
+> **action**: `string`
+
+###### data?
+
+> `optional` **data?**: `string`
+
+###### expected
+
+> **expected**: `string`
+
+##### domain
+
+> **domain**: `string`
+
+Tenant domain (e.g. `DEFAULT`).
+
+##### id
+
+> **id**: `string`
+
+Profile identity (e.g. `opentext-alm-default`).
+
+##### project
+
+> **project**: `string`
+
+Tenant project (e.g. `payments-checkout`).
+
+##### provider
+
+> **provider**: `"opentext_alm"` \| `"opentext_octane"` \| `"opentext_valueedge"` \| `"xray"` \| `"testrail"` \| `"azure_devops_test_plans"` \| `"qtest"` \| `"custom"`
+
+QC provider this profile targets.
+
+##### requiredFields
+
+> **requiredFields**: `string`[]
+
+Required field names enforced on each mapped case. Sorted, deduped.
+
+##### targetFolderPath
+
+> **targetFolderPath**: `string`
+
+Forward-slash-separated `/Subject/...` folder path used as default root.
+
+##### testEntityType
+
+> **testEntityType**: `string`
+
+Test entity type string accepted by the QC tool (e.g. `MANUAL`).
+
+##### version
+
+> **version**: `string`
+
+***
+
+### QcMappingProfileIssue
+
+Single mapping-profile validation issue.
+
+#### Properties
+
+##### code
+
+> **code**: `"missing_base_url_alias"` \| `"invalid_base_url_alias"` \| `"missing_domain"` \| `"missing_project"` \| `"missing_target_folder_path"` \| `"invalid_target_folder_path"` \| `"missing_test_entity_type"` \| `"unsupported_test_entity_type"` \| `"missing_required_fields"` \| `"duplicate_required_field"` \| `"missing_design_step_mapping"` \| `"design_step_mapping_field_invalid"` \| `"credential_like_field_present"` \| `"provider_mismatch"` \| `"profile_id_mismatch"`
+
+##### message
+
+> **message**: `string`
+
+##### path
+
+> **path**: `string`
+
+##### severity
+
+> **severity**: [`TestCaseValidationSeverity`](#testcasevalidationseverity)
+
+***
+
+### QcMappingProfileValidationResult
+
+Aggregate mapping-profile validation result.
+
+#### Properties
+
+##### errorCount
+
+> **errorCount**: `number`
+
+##### issues
+
+> **issues**: [`QcMappingProfileIssue`](#qcmappingprofileissue)[]
+
+##### ok
+
+> **ok**: `boolean`
+
+##### warningCount
+
+> **warningCount**: `number`
 
 ***
 
@@ -3754,7 +4166,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-26)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-27)
 
 ##### pasteDeltaSummary?
 
@@ -6727,6 +7139,18 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### DryRunFolderResolutionState
+
+> **DryRunFolderResolutionState** = *typeof* [`ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES`](#allowed_dry_run_folder_resolution_states)\[`number`\]
+
+***
+
+### DryRunRefusalCode
+
+> **DryRunRefusalCode** = *typeof* [`ALLOWED_DRY_RUN_REFUSAL_CODES`](#allowed_dry_run_refusal_codes)\[`number`\]
+
+***
+
 ### ExportArtifactContentType
 
 > **ExportArtifactContentType** = *typeof* [`ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES`](#allowed_export_artifact_content_types)\[`number`\]
@@ -6832,6 +7256,24 @@ Known PII-like categories detected in mock form data.
 > **PiiMatchLocation** = `"field_label"` \| `"field_default_value"` \| `"screen_text"` \| `"action_label"` \| `"trace_node_name"` \| `"trace_node_path"` \| `"screen_name"` \| `"screen_path"` \| `"validation_rule"` \| `"navigation_target"`
 
 Location within the input that held a PII-like match.
+
+***
+
+### QcAdapterMode
+
+> **QcAdapterMode** = *typeof* [`ALLOWED_QC_ADAPTER_MODES`](#allowed_qc_adapter_modes)\[`number`\]
+
+***
+
+### QcAdapterProvider
+
+> **QcAdapterProvider** = *typeof* [`ALLOWED_QC_ADAPTER_PROVIDERS`](#allowed_qc_adapter_providers)\[`number`\]
+
+***
+
+### QcMappingProfileIssueCode
+
+> **QcMappingProfileIssueCode** = *typeof* [`ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES`](#allowed_qc_mapping_profile_issue_codes)\[`number`\]
 
 ***
 
@@ -7289,6 +7731,22 @@ Supported visual quality reference sources.
 
 ## Variables
 
+### ALLOWED\_DRY\_RUN\_FOLDER\_RESOLUTION\_STATES
+
+> `const` **ALLOWED\_DRY\_RUN\_FOLDER\_RESOLUTION\_STATES**: readonly \[`"resolved"`, `"missing"`, `"simulated"`, `"invalid_path"`\]
+
+Allowed states of a target-folder resolution attempt under `dry_run`.
+
+***
+
+### ALLOWED\_DRY\_RUN\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_DRY\_RUN\_REFUSAL\_CODES**: readonly \[`"no_mapped_test_cases"`, `"mapping_profile_invalid"`, `"provider_mismatch"`, `"mode_not_implemented"`, `"folder_resolution_failed"`\]
+
+Allowed reasons the QC adapter may refuse to produce a dry-run report.
+
+***
+
 ### ALLOWED\_EXPORT\_ARTIFACT\_CONTENT\_TYPES
 
 > `const` **ALLOWED\_EXPORT\_ARTIFACT\_CONTENT\_TYPES**: readonly \[`"application/json"`, `"text/csv"`, `"application/xml"`, `"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"`\]
@@ -7362,6 +7820,39 @@ retryable; transport, timeout, and rate-limit failures are.
 Allowed gateway roles. Each role is bound to a single deployment to keep the
 structured test-case generator (`gpt-oss-120b`) strictly separated from the
 multimodal visual sidecars (`llama-4-maverick-vision`, `phi-4-multimodal-poc`).
+
+***
+
+### ALLOWED\_QC\_ADAPTER\_MODES
+
+> `const` **ALLOWED\_QC\_ADAPTER\_MODES**: readonly \[`"export_only"`, `"dry_run"`, `"api_transfer"`\]
+
+Allowed transfer modes recognised by the QC adapter façade.
+
+- `export_only` — produce on-disk artifacts; no QC API touched.
+- `dry_run` — validate target mapping (folder, fields, schema) without
+  creating tests in the QC tool.
+- `api_transfer` — placeholder for the future production transfer path;
+  the dry-run adapter must throw `mode_not_implemented` for this mode.
+
+***
+
+### ALLOWED\_QC\_ADAPTER\_PROVIDERS
+
+> `const` **ALLOWED\_QC\_ADAPTER\_PROVIDERS**: readonly \[`"opentext_alm"`, `"opentext_octane"`, `"opentext_valueedge"`, `"xray"`, `"testrail"`, `"azure_devops_test_plans"`, `"qtest"`, `"custom"`\]
+
+Allowed QC adapter provider discriminators. Wave 2 ships `opentext_alm`;
+the rest are stub identifiers reserved so future adapters plug in
+without contract churn.
+
+***
+
+### ALLOWED\_QC\_MAPPING\_PROFILE\_ISSUE\_CODES
+
+> `const` **ALLOWED\_QC\_MAPPING\_PROFILE\_ISSUE\_CODES**: readonly \[`"missing_base_url_alias"`, `"invalid_base_url_alias"`, `"missing_domain"`, `"missing_project"`, `"missing_target_folder_path"`, `"invalid_target_folder_path"`, `"missing_test_entity_type"`, `"unsupported_test_entity_type"`, `"missing_required_fields"`, `"duplicate_required_field"`, `"missing_design_step_mapping"`, `"design_step_mapping_field_invalid"`, `"credential_like_field_present"`, `"provider_mismatch"`, `"profile_id_mismatch"`\]
+
+Allowed mapping-profile validation issue codes (Issue #1368). Tracks the
+`ValidationIssue[]` style used elsewhere in test-intelligence.
 
 ***
 
@@ -7493,11 +7984,27 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.27.0"`
+> `const` **CONTRACT\_VERSION**: `"3.28.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
 Package version alignment is documented in VERSIONING.md.
+
+***
+
+### DRY\_RUN\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **DRY\_RUN\_REPORT\_ARTIFACT\_FILENAME**: `"dry-run-report.json"`
+
+Canonical filename for the persisted dry-run report artifact.
+
+***
+
+### DRY\_RUN\_REPORT\_SCHEMA\_VERSION
+
+> `const` **DRY\_RUN\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted dry-run report artifact (Issue #1368).
 
 ***
 
@@ -7820,6 +8327,14 @@ Schema version for the Wave 1 POC evaluation report envelope.
 > `const` **WAVE1\_POC\_EVIDENCE\_MANIFEST\_ARTIFACT\_FILENAME**: `"wave1-poc-evidence-manifest.json"` = `"wave1-poc-evidence-manifest.json"`
 
 Filename used for the Wave 1 POC evidence manifest artifact.
+
+***
+
+### WAVE1\_POC\_EVIDENCE\_MANIFEST\_DIGEST\_FILENAME
+
+> `const` **WAVE1\_POC\_EVIDENCE\_MANIFEST\_DIGEST\_FILENAME**: `"wave1-poc-evidence-manifest.sha256"` = `"wave1-poc-evidence-manifest.sha256"`
+
+Filename used for the Wave 1 POC evidence manifest digest witness.
 
 ***
 
