@@ -15,8 +15,8 @@ introduce new public APIs beyond what is already documented in
 
 In scope:
 
-- How to enable the subsurface and run the bundled Wave 1 proof-of-concept (POC)
-  against shipped synthetic fixtures.
+- How to enable the subsurface and run the repository Wave 1 proof-of-concept
+  (POC) against synthetic fixtures from a source checkout.
 - Job type and mode namespace for test-intelligence submissions.
 - Artifact tree, schema versions, and persistence guarantees.
 - Reviewer-driven review-gate state machine and bearer-protected write routes.
@@ -120,13 +120,17 @@ tokens are routed through the package-wide secret-redaction helpers
 (`redactHighRiskSecrets`, `sanitizeErrorMessage`) before reaching any error,
 log line, or persisted artifact.
 
-## 2. Run the Wave 1 POC against shipped fixtures
+## 2. Run the Wave 1 POC from a repository checkout
 
 The Wave 1 POC harness composes the full pipeline on synthetic fixtures and
 emits a verifiable evidence manifest. It uses a deterministic mock LLM by
-default and never performs network calls.
+default and never performs network calls. The POC harness and its fixtures are
+repository verification surfaces for maintainers and integrators auditing the
+package from source. Installed-package consumers should use the exported
+`createWorkspaceServer` runtime, the `workspace-dev/contracts` surface, and the
+Inspector routes described in this guide.
 
-Two public fixtures are shipped under `src/test-intelligence/fixtures/`:
+Two repository fixtures are provided under `src/test-intelligence/fixtures/`:
 
 - `poc-onboarding` — sign-up plus identity verification flow.
 - `poc-payment-auth` — SEPA payment plus 3-D Secure authorization flow.
@@ -146,10 +150,12 @@ golden-fixture and evidence verification suites. The script does not require
 network access. Replay produces byte-identical artifact hashes for the same
 fixture and configuration.
 
-For an interactive walk-through, call the harness directly from a Node.js
-script. The harness API is module-level and stable; see the contract API
-reference for `Wave1PocFixtureId`, `Wave1PocEvidenceManifest`,
-`Wave1PocEvalReport`, and the supporting types.
+For an interactive source checkout walk-through, call the harness directly from
+a Node.js script. These helpers are intentionally not exported from the npm
+package today; the stable installed-package surface remains the root runtime
+entry point plus `workspace-dev/contracts`. See the contract API reference for
+`Wave1PocFixtureId`, `Wave1PocEvidenceManifest`, `Wave1PocEvalReport`, and the
+supporting exported types.
 
 ## 3. Job type and mode namespace
 
@@ -175,7 +181,7 @@ Artifacts are persisted under
 `<artifactRoot>/<jobId>/` where `<artifactRoot>` defaults to
 `<outputRoot>/test-intelligence`.
 
-| Filename                                | Schema version constant                                  | Phase             |
+| Filename                                | Schema / contract constant                               | Phase             |
 | --------------------------------------- | -------------------------------------------------------- | ----------------- |
 | `generated-testcases.json`              | `GENERATED_TEST_CASE_SCHEMA_VERSION`                     | Validation        |
 | `validation-report.json`                | `TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION`             | Validation        |
@@ -193,6 +199,7 @@ Artifacts are persisted under
 | `export-report.json`                    | `EXPORT_REPORT_SCHEMA_VERSION`                           | Export            |
 | `dry-run-report.json`                   | `DRY_RUN_REPORT_SCHEMA_VERSION`                          | QC dry-run        |
 | `wave1-poc-evidence-manifest.json`      | `WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION`             | POC               |
+| `wave1-poc-evidence-manifest.sha256`    | `WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME`            | POC               |
 | `wave1-poc-eval-report.json`            | `WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION`                   | POC               |
 | `llm-capabilities.json`                 | `LLM_CAPABILITIES_SCHEMA_VERSION`                        | LLM gateway probe |
 
@@ -336,7 +343,8 @@ The manifest also stamps:
 - the type-level negative invariants `rawScreenshotsIncluded: false` and
   `imagePayloadSentToTestGeneration: false`
 
-Operators verify a manifest with the bundled helpers:
+From a repository checkout, operators and maintainers verify a manifest with
+the bundled helper functions:
 
 - `verifyWave1PocEvidenceManifest(manifest, recomputedArtifacts)` — re-hashes
   artifacts already in memory.
