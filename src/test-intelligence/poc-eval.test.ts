@@ -39,6 +39,26 @@ const toFixtureEvalInput = (run: Wave1PocRunResult) => ({
   exportArtifacts: run.exportArtifacts,
 });
 
+type FixtureEvalInput = ReturnType<typeof toFixtureEvalInput>;
+
+const mutateFirstApprovedCase = (
+  input: FixtureEvalInput,
+  mutate: (caseIndex: number) => void,
+): void => {
+  const approvedIds = new Set(
+    input.reviewSnapshot.perTestCase
+      .filter((entry) =>
+        ["approved", "exported", "transferred"].includes(entry.state),
+      )
+      .map((entry) => entry.testCaseId),
+  );
+  const caseIndex = input.generatedList.testCases.findIndex((testCase) =>
+    approvedIds.has(testCase.id),
+  );
+  assert.notEqual(caseIndex, -1);
+  mutate(caseIndex);
+};
+
 test("poc-eval: default thresholds pass for both shipped fixtures", async () => {
   const runs = await Promise.all(
     WAVE1_POC_FIXTURE_IDS.map((id) => runFixture(id)),
@@ -123,4 +143,100 @@ test("poc-eval: report.pass is the AND of every fixture.pass", async () => {
   });
   assert.equal(failing.pass, false);
   assert.ok(failing.fixtures.every((f) => f.pass === false));
+});
+
+test("poc-eval: each threshold rule fails when its metric is degraded", async () => {
+  const run = await runFixture("poc-payment-auth");
+  const passingInput = toFixtureEvalInput(run);
+
+  const cases: ReadonlyArray<{
+    rule: string;
+    mutate: (input: FixtureEvalInput) => void;
+    thresholds?: typeof WAVE1_POC_DEFAULT_EVAL_THRESHOLDS;
+  }> = [
+    {
+      rule: "min_trace_coverage_actions",
+      mutate: () => {},
+      thresholds: {
+        ...WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,
+        minTraceCoverageActions: 1.0001,
+      },
+    },
+    {
+      rule: "min_trace_coverage_validations",
+      mutate: () => {},
+      thresholds: {
+        ...WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,
+        minTraceCoverageValidations: 1.0001,
+      },
+    },
+    {
+      rule: "min_qc_mapping_exportable_fraction",
+      mutate: (input) => {
+        mutateFirstApprovedCase(input, (caseIndex) => {
+          input.generatedList.testCases[caseIndex]!.qcMappingPreview.exportable =
+            false;
+        });
+      },
+    },
+    {
+      rule: "min_expected_results_per_case",
+      mutate: (input) => {
+        mutateFirstApprovedCase(input, (caseIndex) => {
+          input.generatedList.testCases[caseIndex]!.expectedResults = [];
+        });
+      },
+    },
+    {
+      rule: "min_approved_cases",
+      mutate: () => {},
+      thresholds: {
+        ...WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,
+        minApprovedCases: run.reviewSnapshot.approvedCount + 1,
+      },
+    },
+    {
+      rule: "policy_blocked",
+      mutate: (input) => {
+        input.validation.policy.blocked = true;
+      },
+    },
+    {
+      rule: "validation_blocked",
+      mutate: (input) => {
+        input.validation.validation.blocked = true;
+      },
+    },
+    {
+      rule: "visual_sidecar_blocked",
+      mutate: (input) => {
+        assert.ok(input.validation.visual);
+        input.validation.visual.blocked = true;
+      },
+    },
+    {
+      rule: "export_refused",
+      mutate: (input) => {
+        input.exportArtifacts.refused = true;
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const degradedInput = structuredClone(passingInput);
+    testCase.mutate(degradedInput);
+    const fixture = evaluateWave1PocFixture(
+      degradedInput,
+      testCase.thresholds,
+    );
+    assert.equal(
+      fixture.pass,
+      false,
+      `expected ${testCase.rule} to fail`,
+    );
+    assert.ok(
+      fixture.failures.some((failure) => failure.rule === testCase.rule),
+      `expected ${testCase.rule}, got ${JSON.stringify(fixture.failures)}`,
+    );
+  }
 });

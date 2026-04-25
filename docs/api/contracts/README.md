@@ -6510,7 +6510,7 @@ Reasoning-effort hint forwarded only when `reasoningEffortSupport` is true.
 
 ### PiiKind
 
-> **PiiKind** = `"iban"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"`
+> **PiiKind** = `"iban"` \| `"bic"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"`
 
 Known PII-like categories detected in mock form data.
 

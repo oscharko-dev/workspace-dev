@@ -11,6 +11,7 @@ export interface PiiMatch {
 
 const REDACTION_TOKEN: Record<PiiKind, string> = {
   iban: "[REDACTED:IBAN]",
+  bic: "[REDACTED:BIC]",
   pan: "[REDACTED:PAN]",
   tax_id: "[REDACTED:TAX_ID]",
   email: "[REDACTED:EMAIL]",
@@ -22,6 +23,9 @@ const EMAIL_RE =
   /[\w.!#$%&'*+/=?^`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+/u;
 
 const IBAN_CANDIDATE_RE = /\b([A-Z]{2}\d{2}(?:[\s-]?[A-Z0-9]){11,30})\b/gu;
+
+const BIC_CANDIDATE_RE =
+  /\b[A-Z]{4}(?:DE|AT|CH|FR|GB|US|NL|ES|IT|BE|LU|DK|SE|NO|FI|IE|PT|PL|CZ|SK|HU|RO|BG|GR|CY|MT|EE|LV|LT|SI|HR)[A-Z0-9]{2}(?:[A-Z0-9]{3})?\b/gu;
 
 const PAN_CANDIDATE_RE = /(?:\d[\s-]?){12,18}\d/gu;
 
@@ -61,6 +65,9 @@ export const detectPii = (input: string): PiiMatch | null => {
   const iban = detectIban(normalized);
   if (iban) return iban;
 
+  const bic = detectBic(normalized);
+  if (bic) return bic;
+
   const pan = detectPan(normalized);
   if (pan) return pan;
 
@@ -97,6 +104,31 @@ const detectIban = (input: string): PiiMatch | null => {
         confidence: 0.99,
       };
     }
+  }
+  return null;
+};
+
+const detectBic = (input: string): PiiMatch | null => {
+  const normalized = input.normalize("NFKC");
+  const upper = normalized.toUpperCase();
+  for (const match of upper.matchAll(BIC_CANDIDATE_RE)) {
+    const candidate = match[0];
+    const start = match.index;
+    const end = start + candidate.length;
+    const rawCandidate = normalized.slice(start, end);
+    const before = normalized.slice(0, start).trim();
+    const after = normalized.slice(end).trim();
+    const standalone = before.length === 0 && after.length === 0;
+    const labelled = /(?:bic|swift)\s*[:#-]?\s*$/iu.test(before);
+    const uppercaseToken = rawCandidate === rawCandidate.toUpperCase();
+    const standaloneAccepted =
+      standalone && (uppercaseToken || candidate.length === 11);
+    if (!standaloneAccepted && !labelled) continue;
+    return {
+      kind: "bic",
+      redacted: REDACTION_TOKEN.bic,
+      confidence: 0.9,
+    };
   }
   return null;
 };

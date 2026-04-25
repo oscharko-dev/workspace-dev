@@ -53,3 +53,17 @@ for (const fixtureId of ALL_FIXTURES) {
     }
   });
 }
+
+test("poc-fixtures: ships at least one visual image or mask fixture", async () => {
+  const fixtures = await Promise.all(
+    ALL_FIXTURES.map((fixtureId) => loadWave1PocFixture(fixtureId)),
+  );
+  const withImage = fixtures.filter(
+    (fixture) => fixture.visualImageSha256 !== undefined,
+  );
+  assert.ok(withImage.length > 0, "expected a colocated visual image/mask");
+  for (const fixture of withImage) {
+    assert.match(fixture.visualImagePath ?? "", /\.mask\.svg$/);
+    assert.match(fixture.visualImageSha256 ?? "", /^[0-9a-f]{64}$/);
+  }
+});

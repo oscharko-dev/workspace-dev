@@ -67,6 +67,7 @@ const AMBIGUITY_KEYS = ["reason"] as const;
 const PII_FLAG_KEYS = ["regionId", "kind", "confidence"] as const;
 const PII_KINDS = [
   "iban",
+  "bic",
   "pan",
   "tax_id",
   "email",

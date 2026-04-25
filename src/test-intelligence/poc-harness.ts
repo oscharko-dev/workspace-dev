@@ -101,6 +101,28 @@ const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
 const TEST_GENERATION_GATEWAY_RELEASE = "wave1-poc-mock";
 const VISUAL_PRIMARY_DEPLOYMENT = "llama-4-maverick-vision";
 const POLICY_BUNDLE_VERSION = "wave1-poc";
+export const BUSINESS_INTENT_IR_ARTIFACT_FILENAME =
+  "business-intent-ir.json" as const;
+export const COMPILED_PROMPT_ARTIFACT_FILENAME =
+  "compiled-prompt.json" as const;
+export const GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME =
+  "gateway-request-audit.json" as const;
+
+interface GatewayRequestAuditArtifact {
+  schemaVersion: "1.0.0";
+  jobId: string;
+  role: "test_generation";
+  deployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  requestCount: number;
+  imageInputCounts: number[];
+  imagePayloadSent: false;
+  promptHash: string;
+  schemaHash: string;
+  inputHash: string;
+  cacheKeyDigest: string;
+}
 
 export interface RunWave1PocInput {
   fixtureId: Wave1PocFixtureId;
@@ -615,6 +637,9 @@ export const runWave1Poc = async (
       selectedDeployment: VISUAL_PRIMARY_DEPLOYMENT,
       fallbackReason: "none",
       screenCount: fixture.visual.length,
+      ...(fixture.visualImageSha256 !== undefined
+        ? { fixtureImageHash: fixture.visualImageSha256 }
+        : {}),
     },
   });
 
@@ -683,13 +708,50 @@ export const runWave1Poc = async (
   // not carry image inputs. The mock strips bytes during recording, but
   // it preserves shape — `recordedRequests()[0].imageInputs` would be a
   // non-empty array if the caller had attached images.
-  for (const request of mockClient.recordedRequests()) {
+  const recordedRequests = mockClient.recordedRequests();
+  for (const request of recordedRequests) {
     if (request.imageInputs !== undefined && request.imageInputs.length > 0) {
       throw new Error(
         "runWave1Poc: the test_generation gateway must never receive image payloads",
       );
     }
   }
+
+  const gatewayRequestAudit: GatewayRequestAuditArtifact = {
+    schemaVersion: "1.0.0",
+    jobId: input.jobId,
+    role: "test_generation",
+    deployment: TEST_GENERATION_DEPLOYMENT,
+    modelRevision: TEST_GENERATION_MODEL_REVISION,
+    gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+    requestCount: recordedRequests.length,
+    imageInputCounts: recordedRequests.map((request) =>
+      request.imageInputs?.length ?? 0,
+    ),
+    imagePayloadSent: false,
+    promptHash: compiled.request.hashes.promptHash,
+    schemaHash: compiled.request.hashes.schemaHash,
+    inputHash: compiled.request.hashes.inputHash,
+    cacheKeyDigest: compiled.request.hashes.cacheKey,
+  };
+
+  const intentBytes = utf8(canonicalJson(intent));
+  const compiledPromptBytes = utf8(canonicalJson(compiled.artifacts));
+  const gatewayRequestAuditBytes = utf8(canonicalJson(gatewayRequestAudit));
+  await Promise.all([
+    writeAtomic(
+      join(input.runDir, BUSINESS_INTENT_IR_ARTIFACT_FILENAME),
+      intentBytes,
+    ),
+    writeAtomic(
+      join(input.runDir, COMPILED_PROMPT_ARTIFACT_FILENAME),
+      compiledPromptBytes,
+    ),
+    writeAtomic(
+      join(input.runDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME),
+      gatewayRequestAuditBytes,
+    ),
+  ]);
 
   // 7. Validation pipeline + persist its artifacts.
   const profile = input.policyProfile ?? cloneEuBankingDefaultProfile();
@@ -819,6 +881,21 @@ export const runWave1Poc = async (
     inputHash: compiled.request.hashes.inputHash,
     cacheKeyDigest: compiled.request.hashes.cacheKey,
     artifacts: [
+      {
+        filename: BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
+        bytes: intentBytes,
+        category: "intent",
+      },
+      {
+        filename: COMPILED_PROMPT_ARTIFACT_FILENAME,
+        bytes: compiledPromptBytes,
+        category: "intent",
+      },
+      {
+        filename: GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
+        bytes: gatewayRequestAuditBytes,
+        category: "manifest",
+      },
       {
         filename: GENERATED_TESTCASES_ARTIFACT_FILENAME,
         bytes: generatedTestCasesBytes,
