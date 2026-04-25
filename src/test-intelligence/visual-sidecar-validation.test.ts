@@ -81,6 +81,27 @@ test("clean description returns ok-only outcome", () => {
   assert.deepEqual(report.records[0]?.outcomes, ["ok"]);
 });
 
+test("unexpected root properties are schema_invalid", () => {
+  const report = validateVisualSidecar({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    visual: [
+      {
+        ...buildDescription(),
+        unexpected: true,
+      } as unknown as VisualScreenDescription,
+    ],
+    intent: buildIntent(),
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(
+    report.records[0]?.issues.some(
+      (issue) => issue.path === "$.visual[s-payment]",
+    ),
+  );
+  assert.ok(report.records[0]?.outcomes.includes("schema_invalid"));
+});
+
 test("schema_invalid is detected and is blocking", () => {
   const description = {
     screenId: "",
@@ -95,6 +116,81 @@ test("schema_invalid is detected and is blocking", () => {
     intent: buildIntent(),
   });
   assert.equal(report.blocked, true);
+  assert.ok(report.records[0]?.outcomes.includes("schema_invalid"));
+});
+
+test("unexpected region properties are schema_invalid", () => {
+  const report = validateVisualSidecar({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    visual: [
+      buildDescription({
+        regions: [
+          {
+            regionId: "n-iban",
+            confidence: 0.95,
+            label: "IBAN",
+            controlType: "text_input",
+            unexpected: "boom",
+          } as unknown as VisualScreenDescription["regions"][number],
+        ],
+      }),
+    ],
+    intent: buildIntent(),
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(
+    report.records[0]?.issues.some(
+      (issue) => issue.path === "$.visual[s-payment].regions[0]",
+    ),
+  );
+  assert.ok(report.records[0]?.outcomes.includes("schema_invalid"));
+});
+
+test("malformed ambiguity and piiFlags entries are schema_invalid", () => {
+  const report = validateVisualSidecar({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    visual: [
+      buildDescription({
+        regions: [
+          {
+            regionId: "n-iban",
+            confidence: 0.95,
+            label: "IBAN",
+            ambiguity: {
+              reason: "label is obscured",
+              unexpected: true,
+            } as unknown as VisualScreenDescription["regions"][number][
+              "ambiguity"
+            ],
+          },
+        ],
+        piiFlags: [
+          {
+            regionId: "n-iban",
+            kind: "iban",
+            confidence: 0.9,
+            unexpected: true,
+          } as unknown as NonNullable<
+            VisualScreenDescription["piiFlags"]
+          >[number],
+        ],
+      }),
+    ],
+    intent: buildIntent(),
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(
+    report.records[0]?.issues.some(
+      (issue) => issue.path === "$.visual[s-payment].regions[0].ambiguity",
+    ),
+  );
+  assert.ok(
+    report.records[0]?.issues.some(
+      (issue) => issue.path === "$.visual[s-payment].piiFlags[0]",
+    ),
+  );
   assert.ok(report.records[0]?.outcomes.includes("schema_invalid"));
 });
 
@@ -251,11 +347,14 @@ test("records are sorted by screenId for stable serialization", () => {
     jobId: "job-1",
     generatedAt: GENERATED_AT,
     visual: [
-      buildDescription({ screenId: "s-payment" }),
-      buildDescription({ screenId: "s-payment" }),
+      buildDescription({ screenId: "z-payment" }),
+      buildDescription({ screenId: "a-payment" }),
     ],
     intent: buildIntent(),
   });
   assert.equal(report.records.length, 2);
-  assert.equal(report.records[0]?.screenId, "s-payment");
+  assert.deepEqual(
+    report.records.map((record) => record.screenId),
+    ["a-payment", "z-payment"],
+  );
 });

@@ -43,6 +43,36 @@ const PROMPT_INJECTION_PATTERNS: readonly RegExp[] = [
   /\bjailbreak\b/i,
   /\boverride (this|the) (rule|policy)\b/i,
 ];
+const VISUAL_DESCRIPTION_KEYS = [
+  "screenId",
+  "sidecarDeployment",
+  "regions",
+  "confidenceSummary",
+  "screenName",
+  "capturedAt",
+  "piiFlags",
+] as const;
+const REGION_KEYS = [
+  "regionId",
+  "confidence",
+  "label",
+  "controlType",
+  "visibleText",
+  "stateHints",
+  "validationHints",
+  "ambiguity",
+] as const;
+const CONFIDENCE_SUMMARY_KEYS = ["min", "max", "mean"] as const;
+const AMBIGUITY_KEYS = ["reason"] as const;
+const PII_FLAG_KEYS = ["regionId", "kind", "confidence"] as const;
+const PII_KINDS = [
+  "iban",
+  "pan",
+  "tax_id",
+  "email",
+  "phone",
+  "full_name",
+] as const;
 
 /**
  * Input for `validateVisualSidecar`. The `visual` array is typed as
@@ -150,6 +180,92 @@ const isObject = (value: unknown): value is Record<string, unknown> => {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
+const expectExactKeys = (
+  value: Record<string, unknown>,
+  allowedKeys: readonly string[],
+  path: string,
+  issues: TestCaseValidationIssue[],
+  outcomesSet: Set<VisualSidecarValidationOutcome>,
+): void => {
+  const allowed = new Set(allowedKeys);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) {
+      issues.push({
+        path,
+        code: "schema_invalid",
+        severity: "error",
+        message: `unexpected property "${key}"`,
+      });
+      outcomesSet.add("schema_invalid");
+      return;
+    }
+  }
+};
+
+const expectStringArray = (
+  value: unknown,
+  path: string,
+  issues: TestCaseValidationIssue[],
+  outcomesSet: Set<VisualSidecarValidationOutcome>,
+): void => {
+  if (!Array.isArray(value)) {
+    issues.push({
+      path,
+      code: "schema_invalid",
+      severity: "error",
+      message: "expected an array of strings",
+    });
+    outcomesSet.add("schema_invalid");
+    return;
+  }
+  for (let i = 0; i < value.length; i++) {
+    if (typeof value[i] !== "string") {
+      issues.push({
+        path: `${path}[${i}]`,
+        code: "schema_invalid",
+        severity: "error",
+        message: "expected a string",
+      });
+      outcomesSet.add("schema_invalid");
+    }
+  }
+};
+
+const expectAmbiguity = (
+  value: unknown,
+  path: string,
+  issues: TestCaseValidationIssue[],
+  outcomesSet: Set<VisualSidecarValidationOutcome>,
+): void => {
+  if (!isObject(value)) {
+    issues.push({
+      path,
+      code: "schema_invalid",
+      severity: "error",
+      message: "ambiguity must be an object",
+    });
+    outcomesSet.add("schema_invalid");
+    return;
+  }
+  expectExactKeys(value, AMBIGUITY_KEYS, path, issues, outcomesSet);
+  if (!isNonEmptyString(value["reason"])) {
+    issues.push({
+      path: `${path}.reason`,
+      code: "schema_invalid",
+      severity: "error",
+      message: "ambiguity.reason must be a non-empty string",
+    });
+    outcomesSet.add("schema_invalid");
+  }
+};
+
+const isPiiKind = (value: unknown): value is (typeof PII_KINDS)[number] => {
+  return (
+    typeof value === "string" &&
+    (PII_KINDS as readonly string[]).includes(value)
+  );
+};
+
 const asDeployment = (
   value: unknown,
 ): "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock" | undefined => {
@@ -186,6 +302,13 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
   const screenIdRaw = description["screenId"];
   const screenId = isNonEmptyString(screenIdRaw) ? screenIdRaw : "";
   const basePath = `$.visual[${screenId}]`;
+  expectExactKeys(
+    description,
+    VISUAL_DESCRIPTION_KEYS,
+    basePath,
+    issues,
+    outcomesSet,
+  );
 
   if (!isNonEmptyString(screenIdRaw)) {
     issues.push({
@@ -204,6 +327,31 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
       code: "schema_invalid",
       severity: "error",
       message: `unrecognised deployment "${String(description["sidecarDeployment"])}"`,
+    });
+    outcomesSet.add("schema_invalid");
+  }
+
+  if (
+    description["screenName"] !== undefined &&
+    typeof description["screenName"] !== "string"
+  ) {
+    issues.push({
+      path: `${basePath}.screenName`,
+      code: "schema_invalid",
+      severity: "error",
+      message: "screenName must be a string when present",
+    });
+    outcomesSet.add("schema_invalid");
+  }
+  if (
+    description["capturedAt"] !== undefined &&
+    typeof description["capturedAt"] !== "string"
+  ) {
+    issues.push({
+      path: `${basePath}.capturedAt`,
+      code: "schema_invalid",
+      severity: "error",
+      message: "capturedAt must be a string when present",
     });
     outcomesSet.add("schema_invalid");
   }
@@ -227,6 +375,13 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
     typeof summaryRaw["max"] === "number" &&
     typeof summaryRaw["mean"] === "number"
   ) {
+    expectExactKeys(
+      summaryRaw,
+      CONFIDENCE_SUMMARY_KEYS,
+      `${basePath}.confidenceSummary`,
+      issues,
+      outcomesSet,
+    );
     summary = {
       min: summaryRaw["min"],
       max: summaryRaw["max"],
@@ -274,6 +429,7 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
         continue;
       }
       const regionPath = `${basePath}.regions[${i}]`;
+      expectExactKeys(region, REGION_KEYS, regionPath, issues, outcomesSet);
       const regionIdRaw = region["regionId"];
       if (!isNonEmptyString(regionIdRaw)) {
         issues.push({
@@ -296,6 +452,66 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
       } else if (confidence < LOW_CONFIDENCE_REGION) {
         outcomesSet.add("low_confidence");
       }
+      if (
+        region["label"] !== undefined &&
+        typeof region["label"] !== "string"
+      ) {
+        issues.push({
+          path: `${regionPath}.label`,
+          code: "schema_invalid",
+          severity: "error",
+          message: "region.label must be a string when present",
+        });
+        outcomesSet.add("schema_invalid");
+      }
+      if (
+        region["controlType"] !== undefined &&
+        typeof region["controlType"] !== "string"
+      ) {
+        issues.push({
+          path: `${regionPath}.controlType`,
+          code: "schema_invalid",
+          severity: "error",
+          message: "region.controlType must be a string when present",
+        });
+        outcomesSet.add("schema_invalid");
+      }
+      if (
+        region["visibleText"] !== undefined &&
+        typeof region["visibleText"] !== "string"
+      ) {
+        issues.push({
+          path: `${regionPath}.visibleText`,
+          code: "schema_invalid",
+          severity: "error",
+          message: "region.visibleText must be a string when present",
+        });
+        outcomesSet.add("schema_invalid");
+      }
+      if (region["stateHints"] !== undefined) {
+        expectStringArray(
+          region["stateHints"],
+          `${regionPath}.stateHints`,
+          issues,
+          outcomesSet,
+        );
+      }
+      if (region["validationHints"] !== undefined) {
+        expectStringArray(
+          region["validationHints"],
+          `${regionPath}.validationHints`,
+          issues,
+          outcomesSet,
+        );
+      }
+      if (region["ambiguity"] !== undefined) {
+        expectAmbiguity(
+          region["ambiguity"],
+          `${regionPath}.ambiguity`,
+          issues,
+          outcomesSet,
+        );
+      }
       const visibleText = region["visibleText"];
       if (typeof visibleText === "string") {
         if (containsInjectionLikeText(visibleText)) {
@@ -317,8 +533,67 @@ const validateSingle = (input: SingleInput): VisualSidecarValidationRecord => {
 
   // PII flags carried by the sidecar are always treated as possible PII.
   const piiFlags = description["piiFlags"];
-  if (Array.isArray(piiFlags) && piiFlags.length > 0) {
-    outcomesSet.add("possible_pii");
+  if (piiFlags !== undefined) {
+    if (!Array.isArray(piiFlags)) {
+      issues.push({
+        path: `${basePath}.piiFlags`,
+        code: "schema_invalid",
+        severity: "error",
+        message: "piiFlags must be an array when present",
+      });
+      outcomesSet.add("schema_invalid");
+    } else {
+      const flags = piiFlags as readonly unknown[];
+      for (let i = 0; i < flags.length; i++) {
+        const flag = flags[i];
+        if (!isObject(flag)) {
+          issues.push({
+            path: `${basePath}.piiFlags[${i}]`,
+            code: "schema_invalid",
+            severity: "error",
+            message: "piiFlags entries must be objects",
+          });
+          outcomesSet.add("schema_invalid");
+          continue;
+        }
+        const flagPath = `${basePath}.piiFlags[${i}]`;
+        expectExactKeys(flag, PII_FLAG_KEYS, flagPath, issues, outcomesSet);
+        if (!isNonEmptyString(flag["regionId"])) {
+          issues.push({
+            path: `${flagPath}.regionId`,
+            code: "schema_invalid",
+            severity: "error",
+            message: "piiFlags.regionId must be a non-empty string",
+          });
+          outcomesSet.add("schema_invalid");
+        }
+        if (!isPiiKind(flag["kind"])) {
+          issues.push({
+            path: `${flagPath}.kind`,
+            code: "schema_invalid",
+            severity: "error",
+            message: `piiFlags.kind must be one of ${PII_KINDS.join(", ")}`,
+          });
+          outcomesSet.add("schema_invalid");
+        }
+        if (
+          typeof flag["confidence"] !== "number" ||
+          flag["confidence"] < 0 ||
+          flag["confidence"] > 1
+        ) {
+          issues.push({
+            path: `${flagPath}.confidence`,
+            code: "schema_invalid",
+            severity: "error",
+            message: "piiFlags.confidence must be a number in [0, 1]",
+          });
+          outcomesSet.add("schema_invalid");
+        }
+      }
+      if (flags.length > 0) {
+        outcomesSet.add("possible_pii");
+      }
+    }
   }
 
   if (summary !== undefined && summary.mean < LOW_CONFIDENCE_SUMMARY_MEAN) {
