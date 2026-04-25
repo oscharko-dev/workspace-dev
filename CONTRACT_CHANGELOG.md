@@ -31,6 +31,29 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.28.0] - 2026-04-25
+
+### Added (Issue #1368)
+
+- `DRY_RUN_REPORT_SCHEMA_VERSION` (`"1.0.0"`) and `DRY_RUN_REPORT_ARTIFACT_FILENAME` (`dry-run-report.json`) — version stamp and canonical filename for the persisted QC adapter dry-run report envelope (covers profile validation, mapping completeness, folder resolution state, planned-entity payload preview, and visual evidence flags).
+- `ALLOWED_QC_ADAPTER_MODES` — runtime list of transfer modes recognised by the QC adapter facade (`export_only`, `dry_run`, `api_transfer`). The `api_transfer` mode is intentionally not implemented in Wave 2 and surfaces `mode_not_implemented` so the export pipeline can fail-closed.
+- `ALLOWED_QC_ADAPTER_PROVIDERS` — runtime list of provider discriminators recognised by the QC adapter facade (`opentext_alm`, `opentext_octane`, `opentext_valueedge`, `xray`, `testrail`, `azure_devops_test_plans`, `qtest`, `custom`). Wave 2 ships only the `opentext_alm` adapter; the rest are reserved identifiers so future adapters plug in without contract churn.
+- `ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES` — runtime list of mapping-profile validator codes (`missing_base_url_alias`, `invalid_base_url_alias`, `missing_domain`, `missing_project`, `missing_target_folder_path`, `invalid_target_folder_path`, `missing_test_entity_type`, `unsupported_test_entity_type`, `missing_required_fields`, `duplicate_required_field`, `missing_design_step_mapping`, `design_step_mapping_field_invalid`, `credential_like_field_present`, `provider_mismatch`, `profile_id_mismatch`).
+- `ALLOWED_DRY_RUN_REFUSAL_CODES` — runtime list of refusal codes the dry-run adapter may emit (`no_mapped_test_cases`, `mapping_profile_invalid`, `provider_mismatch`, `mode_not_implemented`, `folder_resolution_failed`).
+- `ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES` — runtime list of folder-resolution states under `dry_run` (`resolved`, `missing`, `simulated`, `invalid_path`).
+- New exported types: `QcAdapterMode`, `QcAdapterProvider`, `QcMappingProfile`, `QcMappingProfileIssue`, `QcMappingProfileIssueCode`, `QcMappingProfileValidationResult`, `DryRunRefusalCode`, `DryRunFolderResolutionState`, `DryRunFolderResolution`, `DryRunMappingCompletenessEntry`, `DryRunMappingCompletenessSummary`, `DryRunPlannedEntityPayload`, `DryRunVisualEvidenceFlag`, `DryRunReportArtifact`.
+- Provider-neutral `QcAdapter` interface (`src/test-intelligence/qc-adapter.ts`) — narrow façade exposing `provider`, `validateProfile`, and `dryRun`. The interface accepts injected `QcAdapterClock`, `QcAdapterIdSource`, and `QcFolderResolver` so dry-run output is bit-identical across runs and never performs I/O on the QC tool.
+- OpenText ALM dry-run adapter (`openTextAlmDryRunAdapter`, `createOpenTextAlmDryRunAdapter`) — implements `QcAdapter` for the `opentext_alm` provider. Validates the supplied mapping profile (rejects credential-shaped fields, validates `/Subject/...` folder paths, surfaces missing required fields), simulates target folder resolution via the injected resolver, and emits a redacted `DryRunReportArtifact` with hard `rawScreenshotsIncluded: false` + `credentialsIncluded: false` invariants stamped at the type level. Visual sidecar evidence flows through as `visualEvidenceFlags` for cases whose mapping derives only from low-confidence sidecar observations.
+- Hand-rolled mapping-profile validator (`validateQcMappingProfile`, `cloneOpenTextAlmDefaultMappingProfile`, `OPENTEXT_ALM_DEFAULT_MAPPING_PROFILE`) — `ValidationIssue[]`-style diagnostics with JSON-pointer-shaped paths and severity-tagged outcomes. Designed to plug into a UI form without re-walking the structure.
+
+### Unchanged (Issue #1368)
+
+- `export_only` pipeline (`runExportPipeline`) is byte-identical to its 3.27.0 emission; the dry-run adapter is a sibling surface, not a rewrite.
+- The hard invariant that no QC credentials, no API URLs, and no raw screenshots are persisted in any artifact remains stamped at the type level on both `ExportReportArtifact` and the new `DryRunReportArtifact`.
+- The `api_transfer` mode is intentionally NOT implemented in Wave 2 — calling it on the dry-run adapter throws `QcAdapterModeNotImplementedError` so callers can surface a deterministic refusal code.
+
+---
+
 ## [3.27.0] - 2026-04-25
 
 ### Added (Issue #1386)

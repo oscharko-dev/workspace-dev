@@ -232,3 +232,26 @@ export {
   type InspectorTestIntelligenceParseResult,
   type InspectorTestIntelligenceRoute,
 } from "./inspector-route.js";
+export {
+  cloneOpenTextAlmDefaultMappingProfile,
+  OPENTEXT_ALM_DEFAULT_MAPPING_PROFILE,
+  validateQcMappingProfile,
+  type ValidateQcMappingProfileInput,
+} from "./qc-alm-mapping-profile.js";
+export {
+  isDryRunMode,
+  QcAdapterModeNotImplementedError,
+  type QcAdapter,
+  type QcAdapterClock,
+  type QcAdapterDryRunInput,
+  type QcAdapterIdSource,
+  type QcFolderResolver,
+  type QcFolderResolverResult,
+} from "./qc-adapter.js";
+export {
+  createFixedClock,
+  createOpenTextAlmDryRunAdapter,
+  DEFAULT_DRY_RUN_ID_SOURCE,
+  DEFAULT_FOLDER_RESOLVER,
+  openTextAlmDryRunAdapter,
+} from "./qc-alm-dry-run.js";
