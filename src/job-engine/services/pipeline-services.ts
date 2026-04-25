@@ -170,7 +170,11 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.figmaCleanedReport
         ],
         optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
-        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis],
+        writes: [
+          STAGE_ARTIFACT_KEYS.designIr,
+          STAGE_ARTIFACT_KEYS.figmaAnalysis,
+          STAGE_ARTIFACT_KEYS.businessTestIntentIr
+        ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.storybookCatalog,
           STAGE_ARTIFACT_KEYS.storybookEvidence,
@@ -282,7 +286,11 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       service: IrDeriveService,
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.regenerationSourceIr, STAGE_ARTIFACT_KEYS.regenerationOverrides],
-        writes: [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis],
+        writes: [
+          STAGE_ARTIFACT_KEYS.designIr,
+          STAGE_ARTIFACT_KEYS.figmaAnalysis,
+          STAGE_ARTIFACT_KEYS.businessTestIntentIr
+        ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.storybookCatalog,
           STAGE_ARTIFACT_KEYS.storybookEvidence,

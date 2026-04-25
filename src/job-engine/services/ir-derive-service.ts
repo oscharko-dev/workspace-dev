@@ -36,6 +36,11 @@ import type {
   ScreenElementIR,
   TruncatedScreenMetric,
 } from "../../parity/types-ir.js";
+import {
+  deriveBusinessTestIntentIr,
+  type IntentDerivationFigmaInput,
+  type IntentDerivationNodeInput,
+} from "../../test-intelligence/index.js";
 import type { FigmaFetchDiagnostics, FigmaFileResponse } from "../types.js";
 import type { CleanFigmaResult } from "../figma-clean.js";
 import type { FigmaMcpEnrichment } from "../../parity/types.js";
@@ -164,6 +169,167 @@ const collectScreenNodeIds = (
     }
   }
   return nodeIds;
+};
+
+const toBusinessIntentSourceKind = (
+  figmaSourceMode: StageRuntimeContext["resolvedFigmaSourceMode"],
+): IntentDerivationFigmaInput["source"]["kind"] => {
+  switch (figmaSourceMode) {
+    case "figma_plugin":
+      return "figma_plugin";
+    case "rest":
+      return "figma_rest";
+    case "hybrid":
+      return "hybrid";
+    case "figma_paste":
+    case "local_json":
+      return "figma_local_json";
+  }
+};
+
+const toIntentNodeType = (element: ScreenElementIR): string => {
+  if (
+    element.type === "input" ||
+    element.type === "select" ||
+    element.type === "checkbox" ||
+    element.type === "radio" ||
+    element.type === "switch" ||
+    element.type === "slider" ||
+    element.type === "rating"
+  ) {
+    return "INPUT";
+  }
+  if (element.type === "button") {
+    return "BUTTON";
+  }
+  if (element.type === "navigation" || element.type === "breadcrumbs") {
+    return "LINK";
+  }
+  return element.nodeType || element.type.toUpperCase();
+};
+
+const collectIntentValidationRules = (
+  element: ScreenElementIR,
+): string[] | undefined => {
+  const rules: string[] = [];
+  if (element.required) {
+    rules.push("required");
+  }
+  if (element.validationType) {
+    rules.push(`type:${element.validationType}`);
+  }
+  if (element.validationMessage) {
+    rules.push(element.validationMessage);
+  }
+  if (element.validationMin !== undefined) {
+    rules.push(`min:${element.validationMin}`);
+  }
+  if (element.validationMax !== undefined) {
+    rules.push(`max:${element.validationMax}`);
+  }
+  if (element.validationMinLength !== undefined) {
+    rules.push(`minLength:${element.validationMinLength}`);
+  }
+  if (element.validationMaxLength !== undefined) {
+    rules.push(`maxLength:${element.validationMaxLength}`);
+  }
+  if (element.validationPattern) {
+    rules.push(`pattern:${element.validationPattern}`);
+  }
+  return rules.length > 0 ? rules : undefined;
+};
+
+const toIntentNodes = ({
+  ancestors,
+  elements,
+}: {
+  ancestors: string[];
+  elements: readonly ScreenElementIR[];
+}): IntentDerivationNodeInput[] => {
+  const nodes: IntentDerivationNodeInput[] = [];
+  for (const element of elements) {
+    const nodePath = [...ancestors, element.name].filter(Boolean).join("/");
+    const node: IntentDerivationNodeInput = {
+      nodeId: element.id,
+      nodeName: element.name,
+      nodeType: toIntentNodeType(element),
+    };
+    if (nodePath.length > 0) {
+      node.nodePath = nodePath;
+    }
+    if (typeof element.text === "string") {
+      node.text = element.text;
+    }
+    const validations = collectIntentValidationRules(element);
+    if (validations !== undefined) {
+      node.validations = validations;
+    }
+    if (element.prototypeNavigation?.targetScreenId) {
+      node.navigationTarget = element.prototypeNavigation.targetScreenId;
+    }
+    if (Array.isArray(element.children) && element.children.length > 0) {
+      node.childNodeIds = element.children.map((child) => child.id);
+    }
+    nodes.push(node);
+    if (Array.isArray(element.children) && element.children.length > 0) {
+      nodes.push(
+        ...toIntentNodes({
+          ancestors: [...ancestors, element.name],
+          elements: element.children,
+        }),
+      );
+    }
+  }
+  return nodes;
+};
+
+const toIntentDerivationInput = ({
+  context,
+  ir,
+}: {
+  context: StageRuntimeContext;
+  ir: DesignIR;
+}): IntentDerivationFigmaInput => {
+  return {
+    source: {
+      kind: toBusinessIntentSourceKind(context.resolvedFigmaSourceMode),
+    },
+    screens: ir.screens.map((screen) => ({
+      screenId: screen.id,
+      screenName: screen.name,
+      screenPath: `${ir.sourceName}/${screen.name}`,
+      nodes: toIntentNodes({
+        ancestors: [screen.name],
+        elements: screen.children,
+      }),
+    })),
+  };
+};
+
+const persistBusinessTestIntentIr = async ({
+  context,
+  ir,
+}: {
+  context: StageRuntimeContext;
+  ir: DesignIR;
+}): Promise<void> => {
+  const businessTestIntentIr = deriveBusinessTestIntentIr({
+    figma: toIntentDerivationInput({ context, ir }),
+  });
+  const businessTestIntentIrFile = path.join(
+    context.paths.jobDir,
+    "business-test-intent-ir.json",
+  );
+  await writeFile(
+    businessTestIntentIrFile,
+    `${JSON.stringify(businessTestIntentIr, null, 2)}\n`,
+    "utf8",
+  );
+  await context.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.businessTestIntentIr,
+    stage: "ir.derive",
+    absolutePath: businessTestIntentIrFile,
+  });
 };
 
 const mergeScreenScopedMetrics = <T extends { screenId: string }>(
@@ -665,6 +831,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         stage: "ir.derive",
         absolutePath: context.paths.figmaAnalysisFile,
       });
+      await persistBusinessTestIntentIr({
+        context,
+        ir: regeneratedIr,
+      });
       return;
     }
 
@@ -1107,6 +1277,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
             stage: "ir.derive",
             absolutePath: context.paths.figmaAnalysisFile,
           });
+          await persistBusinessTestIntentIr({
+            context,
+            ir: sourceIr,
+          });
           const storybookArtifacts =
             await persistStorybookArtifactsIfRequested();
           await persistComponentMatchReportIfAvailable({
@@ -1199,6 +1373,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
                 key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
                 stage: "ir.derive",
                 absolutePath: context.paths.figmaAnalysisFile,
+              });
+              await persistBusinessTestIntentIr({
+                context,
+                ir: mergedIr,
               });
               const storybookArtifacts =
                 await persistStorybookArtifactsIfRequested();
@@ -1332,6 +1510,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
           stage: "ir.derive",
           absolutePath: context.paths.figmaAnalysisFile,
+        });
+        await persistBusinessTestIntentIr({
+          context,
+          ir: cachedIrWithFamilies,
         });
         const storybookArtifacts = await persistStorybookArtifactsIfRequested();
         await persistComponentMatchReportIfAvailable({
@@ -1558,6 +1740,10 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       key: STAGE_ARTIFACT_KEYS.figmaAnalysis,
       stage: "ir.derive",
       absolutePath: context.paths.figmaAnalysisFile,
+    });
+    await persistBusinessTestIntentIr({
+      context,
+      ir: derived,
     });
     const storybookArtifacts = await persistStorybookArtifactsIfRequested();
     await persistComponentMatchReportIfAvailable({

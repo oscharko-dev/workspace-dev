@@ -8,6 +8,502 @@
 
 ## Interfaces
 
+### BusinessTestIntentIr
+
+Redacted, deterministic test-design IR for a job.
+
+#### Properties
+
+##### assumptions
+
+> **assumptions**: `string`[]
+
+##### detectedActions
+
+> **detectedActions**: [`DetectedAction`](#detectedaction)[]
+
+##### detectedFields
+
+> **detectedFields**: [`DetectedField`](#detectedfield)[]
+
+##### detectedNavigation
+
+> **detectedNavigation**: [`DetectedNavigation`](#detectednavigation-1)[]
+
+##### detectedValidations
+
+> **detectedValidations**: [`DetectedValidation`](#detectedvalidation)[]
+
+##### inferredBusinessObjects
+
+> **inferredBusinessObjects**: [`InferredBusinessObject`](#inferredbusinessobject)[]
+
+##### openQuestions
+
+> **openQuestions**: `string`[]
+
+##### piiIndicators
+
+> **piiIndicators**: [`PiiIndicator`](#piiindicator)[]
+
+##### redactions
+
+> **redactions**: [`IntentRedaction`](#intentredaction)[]
+
+##### risks
+
+> **risks**: `string`[]
+
+##### screens
+
+> **screens**: [`BusinessTestIntentScreen`](#businesstestintentscreen)[]
+
+##### source
+
+> **source**: [`BusinessTestIntentIrSource`](#businesstestintentirsource-1)
+
+##### version
+
+> **version**: `"1.0.0"`
+
+***
+
+### BusinessTestIntentIrSource
+
+Metadata about the input that produced the IR.
+
+#### Properties
+
+##### contentHash
+
+> **contentHash**: `string`
+
+##### kind
+
+> **kind**: `"hybrid"` \| `"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"`
+
+***
+
+### BusinessTestIntentScreen
+
+Per-screen slice of the intent.
+
+#### Properties
+
+##### screenId
+
+> **screenId**: `string`
+
+##### screenName
+
+> **screenName**: `string`
+
+##### screenPath?
+
+> `optional` **screenPath?**: `string`
+
+##### trace
+
+> **trace**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### DetectedAction
+
+Action/control inferred from a screen (e.g. Submit button).
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
+
+##### confidence
+
+> **confidence**: `number`
+
+##### id
+
+> **id**: `string`
+
+##### kind
+
+> **kind**: `string`
+
+##### label
+
+> **label**: `string`
+
+##### provenance
+
+> **provenance**: [`IntentProvenance`](#intentprovenance)
+
+##### screenId
+
+> **screenId**: `string`
+
+##### trace
+
+> **trace**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### DetectedField
+
+Input field inferred from a screen.
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
+
+##### confidence
+
+> **confidence**: `number`
+
+##### defaultValue?
+
+> `optional` **defaultValue?**: `string`
+
+##### id
+
+> **id**: `string`
+
+##### label
+
+> **label**: `string`
+
+##### provenance
+
+> **provenance**: [`IntentProvenance`](#intentprovenance)
+
+##### screenId
+
+> **screenId**: `string`
+
+##### trace
+
+> **trace**: [`IntentTraceRef`](#intenttraceref)
+
+##### type
+
+> **type**: `string`
+
+***
+
+### DetectedNavigation
+
+Navigation edge inferred from prototype links or equivalent.
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
+
+##### confidence
+
+> **confidence**: `number`
+
+##### id
+
+> **id**: `string`
+
+##### provenance
+
+> **provenance**: [`IntentProvenance`](#intentprovenance)
+
+##### screenId
+
+> **screenId**: `string`
+
+##### targetScreenId
+
+> **targetScreenId**: `string`
+
+##### trace
+
+> **trace**: [`IntentTraceRef`](#intenttraceref)
+
+##### triggerElementId?
+
+> `optional` **triggerElementId?**: `string`
+
+***
+
+### DetectedValidation
+
+Validation rule inferred from design hints.
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
+
+##### confidence
+
+> **confidence**: `number`
+
+##### id
+
+> **id**: `string`
+
+##### provenance
+
+> **provenance**: [`IntentProvenance`](#intentprovenance)
+
+##### rule
+
+> **rule**: `string`
+
+##### screenId
+
+> **screenId**: `string`
+
+##### targetFieldId?
+
+> `optional` **targetFieldId?**: `string`
+
+##### trace
+
+> **trace**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### InferredBusinessObject
+
+Business-object cluster inferred across one or more fields.
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
+
+##### confidence
+
+> **confidence**: `number`
+
+##### fieldIds
+
+> **fieldIds**: `string`[]
+
+##### id
+
+> **id**: `string`
+
+##### name
+
+> **name**: `string`
+
+##### provenance
+
+> **provenance**: [`IntentProvenance`](#intentprovenance)
+
+##### screenId
+
+> **screenId**: `string`
+
+##### trace
+
+> **trace**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### IntentAmbiguity
+
+Ambiguity note attached to a detected element or PII indicator.
+
+#### Properties
+
+##### reason
+
+> **reason**: `string`
+
+***
+
+### IntentRedaction
+
+Record describing a single redaction decision.
+
+#### Properties
+
+##### id
+
+> **id**: `string`
+
+##### indicatorId
+
+> **indicatorId**: `string`
+
+##### kind
+
+> **kind**: [`PiiKind`](#piikind)
+
+##### reason
+
+> **reason**: `string`
+
+##### replacement
+
+> **replacement**: `string`
+
+***
+
+### IntentTraceRef
+
+Reference to the Figma node that produced an intent element.
+
+#### Properties
+
+##### nodeId?
+
+> `optional` **nodeId?**: `string`
+
+##### nodeName?
+
+> `optional` **nodeName?**: `string`
+
+##### nodePath?
+
+> `optional` **nodePath?**: `string`
+
+***
+
+### PiiIndicator
+
+PII indicator attached to a detected element. Original values are never persisted.
+
+#### Properties
+
+##### confidence
+
+> **confidence**: `number`
+
+##### elementId?
+
+> `optional` **elementId?**: `string`
+
+##### id
+
+> **id**: `string`
+
+##### kind
+
+> **kind**: [`PiiKind`](#piikind)
+
+##### matchLocation
+
+> **matchLocation**: [`PiiMatchLocation`](#piimatchlocation)
+
+##### redacted
+
+> **redacted**: `string`
+
+##### screenId?
+
+> `optional` **screenId?**: `string`
+
+##### traceRef?
+
+> `optional` **traceRef?**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### VisualScreenDescription
+
+Visual-sidecar description produced by a multimodal vision model (Issue #1386).
+
+#### Properties
+
+##### capturedAt?
+
+> `optional` **capturedAt?**: `string`
+
+##### confidenceSummary
+
+> **confidenceSummary**: `object`
+
+###### max
+
+> **max**: `number`
+
+###### mean
+
+> **mean**: `number`
+
+###### min
+
+> **min**: `number`
+
+##### piiFlags?
+
+> `optional` **piiFlags?**: `object`[]
+
+###### confidence
+
+> **confidence**: `number`
+
+###### kind
+
+> **kind**: [`PiiKind`](#piikind)
+
+###### regionId
+
+> **regionId**: `string`
+
+##### regions
+
+> **regions**: `object`[]
+
+###### ambiguity?
+
+> `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
+
+###### confidence
+
+> **confidence**: `number`
+
+###### controlType?
+
+> `optional` **controlType?**: `string`
+
+###### label?
+
+> `optional` **label?**: `string`
+
+###### regionId
+
+> **regionId**: `string`
+
+###### stateHints?
+
+> `optional` **stateHints?**: `string`[]
+
+###### validationHints?
+
+> `optional` **validationHints?**: `string`[]
+
+###### visibleText?
+
+> `optional` **visibleText?**: `string`
+
+##### screenId
+
+> **screenId**: `string`
+
+##### screenName?
+
+> `optional` **screenName?**: `string`
+
+##### sidecarDeployment
+
+> **sidecarDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+***
+
 ### WorkspaceComponentConfidence
 
 Per-component confidence assessment.
@@ -714,6 +1210,10 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 Artifact paths emitted by autonomous job execution.
 
 #### Properties
+
+##### businessTestIntentIrFile?
+
+> `optional` **businessTestIntentIrFile?**: `string`
 
 ##### componentManifestFile?
 
@@ -2987,7 +3487,7 @@ Region result returned as part of a visual audit.
 
 ###### Inherited from
 
-[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-2)
+[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-3)
 
 ##### totalPixels
 
@@ -3605,6 +4105,30 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### IntentProvenance
+
+> **IntentProvenance** = `"figma_node"` \| `"visual_sidecar"` \| `"reconciled"`
+
+Where a detected element came from during reconciliation.
+
+***
+
+### PiiKind
+
+> **PiiKind** = `"iban"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"`
+
+Known PII-like categories detected in mock form data.
+
+***
+
+### PiiMatchLocation
+
+> **PiiMatchLocation** = `"field_label"` \| `"field_default_value"` \| `"screen_text"` \| `"action_label"` \| `"trace_node_name"` \| `"trace_node_path"` \| `"screen_name"` \| `"screen_path"` \| `"validation_rule"` \| `"navigation_target"`
+
+Location within the input that held a PII-like match.
+
+***
+
 ### WorkspaceBrandTheme
 
 > **WorkspaceBrandTheme** = `"derived"` \| `"sparkasse"`
@@ -3963,9 +4487,17 @@ Keep this array and `WorkspaceJobType` in lockstep.
 
 ***
 
+### BUSINESS\_TEST\_INTENT\_IR\_SCHEMA\_VERSION
+
+> `const` **BUSINESS\_TEST\_INTENT\_IR\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for `BusinessTestIntentIr` artifacts.
+
+***
+
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.18.0"`
+> `const` **CONTRACT\_VERSION**: `"3.19.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

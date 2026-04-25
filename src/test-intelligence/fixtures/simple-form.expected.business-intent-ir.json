@@ -122,7 +122,7 @@
       "targetFieldId": "s-payment::field::n-iban"
     },
     {
-      "id": "s-payment::validation::visual::n-iban::Must be a valid IBAN",
+      "id": "s-payment::validation::visual::n-iban::0::Must be a valid IBAN",
       "screenId": "s-payment",
       "trace": {
         "nodeId": "n-iban"

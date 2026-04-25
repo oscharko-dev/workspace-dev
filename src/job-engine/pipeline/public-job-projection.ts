@@ -165,6 +165,15 @@ export const syncPublicJobProjection = async ({
       delete job.artifacts.figmaAnalysisFile;
     },
   });
+  await syncOptionalArtifactPath({
+    key: STAGE_ARTIFACT_KEYS.businessTestIntentIr,
+    assign: (value) => {
+      job.artifacts.businessTestIntentIrFile = value;
+    },
+    clear: () => {
+      delete job.artifacts.businessTestIntentIrFile;
+    },
+  });
 
   const generatedProjectDir = await artifactStore.getPath(
     STAGE_ARTIFACT_KEYS.generatedProject,

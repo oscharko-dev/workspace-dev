@@ -123,7 +123,11 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
   });
   assert.deepEqual(
     plan.find((entry) => entry.service.stageName === "ir.derive")?.artifacts?.writes,
-    [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]
+    [
+      STAGE_ARTIFACT_KEYS.designIr,
+      STAGE_ARTIFACT_KEYS.figmaAnalysis,
+      STAGE_ARTIFACT_KEYS.businessTestIntentIr
+    ]
   );
   assert.deepEqual(
     plan.find((entry) => entry.service.stageName === "ir.derive")?.artifacts?.optionalWrites,
@@ -239,7 +243,11 @@ test("regeneration pipeline plan keeps order and encodes seeded artifact contrac
     STAGE_ARTIFACT_KEYS.regenerationSourceIr,
     STAGE_ARTIFACT_KEYS.regenerationOverrides
   ]);
-  assert.deepEqual(irEntry?.artifacts?.writes, [STAGE_ARTIFACT_KEYS.designIr, STAGE_ARTIFACT_KEYS.figmaAnalysis]);
+  assert.deepEqual(irEntry?.artifacts?.writes, [
+    STAGE_ARTIFACT_KEYS.designIr,
+    STAGE_ARTIFACT_KEYS.figmaAnalysis,
+    STAGE_ARTIFACT_KEYS.businessTestIntentIr
+  ]);
   assert.deepEqual(irEntry?.artifacts?.optionalWrites, [
     STAGE_ARTIFACT_KEYS.storybookCatalog,
     STAGE_ARTIFACT_KEYS.storybookEvidence,

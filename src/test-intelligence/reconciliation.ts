@@ -3,8 +3,12 @@ import type {
   DetectedField,
   DetectedValidation,
   InferredBusinessObject,
+  IntentRedaction,
+  PiiIndicator,
   VisualScreenDescription,
 } from "../contracts/index.js";
+import { redactPii } from "./pii-detection.js";
+import { maybeRedact, recordPiiIndicator } from "./pii-redaction.js";
 
 export interface ReconcileSourcesInput {
   figmaIntent: BusinessTestIntentIr;
@@ -44,14 +48,39 @@ export const reconcileSources = (
     for (const region of screen.regions) {
       const key = `${screen.screenId}::${region.regionId}`;
       const existing = fieldsByScreenAndNode.get(key);
+      recordVisualPiiFlags(
+        screen,
+        region,
+        existing?.id ?? toVisualFieldId(screen.screenId, region.regionId),
+        figmaIntent.piiIndicators,
+        figmaIntent.redactions,
+      );
       if (existing) {
-        reconcileExistingField(existing, region);
+        reconcileExistingField(
+          existing,
+          region,
+          figmaIntent.piiIndicators,
+          figmaIntent.redactions,
+        );
       } else if (region.controlType === "text_input") {
-        newFields.push(buildVisualField(screen.screenId, region));
+        newFields.push(
+          buildVisualField(
+            screen.screenId,
+            region,
+            figmaIntent.piiIndicators,
+            figmaIntent.redactions,
+          ),
+        );
       }
       if (region.validationHints && region.validationHints.length > 0) {
         newValidations.push(
-          ...buildVisualValidations(screen.screenId, region, figmaIntent),
+          ...buildVisualValidations(
+            screen.screenId,
+            region,
+            figmaIntent,
+            figmaIntent.piiIndicators,
+            figmaIntent.redactions,
+          ),
         );
       }
     }
@@ -90,19 +119,43 @@ const indexFieldsByTrace = (
 const reconcileExistingField = (
   field: DetectedField,
   region: VisualScreenDescription["regions"][number],
+  piiIndicators: PiiIndicator[],
+  redactions: IntentRedaction[],
 ): void => {
   const visualLabel = region.label ?? region.visibleText;
   if (visualLabel === undefined) {
     field.provenance = "reconciled";
     return;
   }
+  const visualLabelSource = region.label !== undefined ? "field_label" : "screen_text";
+  const redactedVisualLabel = maybeRedact(
+    visualLabel,
+    {
+      screenId: field.screenId,
+      elementId: field.id,
+      traceRef: field.trace,
+      location: visualLabelSource,
+    },
+    piiIndicators,
+    redactions,
+  );
   if (labelsAgree(field.label, visualLabel)) {
     field.provenance = "reconciled";
     return;
   }
   field.provenance = "reconciled";
   field.ambiguity = {
-    reason: `Visual sidecar label "${visualLabel}" disagrees with Figma label "${field.label}"`,
+    reason: maybeRedact(
+      `Visual sidecar label "${redactedVisualLabel}" disagrees with Figma label "${field.label}"`,
+      {
+        screenId: field.screenId,
+        elementId: field.id,
+        traceRef: field.trace,
+        location: "screen_text",
+      },
+      piiIndicators,
+      redactions,
+    ),
   };
 };
 
@@ -113,25 +166,94 @@ const labelsAgree = (a: string, b: string): boolean => {
 const buildVisualField = (
   screenId: string,
   region: VisualScreenDescription["regions"][number],
+  piiIndicators: PiiIndicator[],
+  redactions: IntentRedaction[],
 ): DetectedField => {
-  const id = `${screenId}::field::visual::${region.regionId}`;
+  const id = toVisualFieldId(screenId, region.regionId);
+  const labelSource =
+    region.label !== undefined
+      ? { text: region.label, location: "field_label" as const }
+      : region.visibleText !== undefined
+        ? { text: region.visibleText, location: "screen_text" as const }
+        : undefined;
   const field: DetectedField = {
     id,
     screenId,
     trace: { nodeId: region.regionId },
     provenance: "visual_sidecar",
     confidence: region.confidence,
-    label: region.label ?? region.visibleText ?? region.regionId,
+    label:
+      labelSource === undefined
+        ? region.regionId
+        : maybeRedact(
+            labelSource.text,
+            {
+              screenId,
+              elementId: id,
+              traceRef: { nodeId: region.regionId },
+              location: labelSource.location,
+            },
+            piiIndicators,
+            redactions,
+          ),
     type: "text",
   };
-  if (region.ambiguity) field.ambiguity = region.ambiguity;
+  if (region.ambiguity) {
+    field.ambiguity = {
+      reason: maybeRedact(
+        region.ambiguity.reason,
+        {
+          screenId,
+          elementId: id,
+          traceRef: { nodeId: region.regionId },
+          location: "screen_text",
+        },
+        piiIndicators,
+        redactions,
+      ),
+    };
+  }
   return field;
+};
+
+const toVisualFieldId = (screenId: string, regionId: string): string => {
+  return `${screenId}::field::visual::${regionId}`;
+};
+
+const recordVisualPiiFlags = (
+  screen: VisualScreenDescription,
+  region: VisualScreenDescription["regions"][number],
+  elementId: string,
+  piiIndicators: PiiIndicator[],
+  redactions: IntentRedaction[],
+): void => {
+  for (const flag of screen.piiFlags ?? []) {
+    if (flag.regionId !== region.regionId) continue;
+    const redacted = redactPii(flag.kind);
+    recordPiiIndicator(
+      {
+        kind: flag.kind,
+        confidence: flag.confidence,
+        redacted,
+      },
+      {
+        screenId: screen.screenId,
+        elementId,
+        traceRef: { nodeId: region.regionId },
+        location: "screen_text",
+      },
+      piiIndicators,
+      redactions,
+    );
+  }
 };
 
 const buildVisualValidations = (
   screenId: string,
   region: VisualScreenDescription["regions"][number],
   figmaIntent: BusinessTestIntentIr,
+  piiIndicators: PiiIndicator[],
+  redactions: IntentRedaction[],
 ): DetectedValidation[] => {
   const hints = region.validationHints ?? [];
   const existingRules = new Set(
@@ -140,15 +262,26 @@ const buildVisualValidations = (
       .map((v) => v.rule.toLowerCase()),
   );
   const out: DetectedValidation[] = [];
-  for (const rule of hints) {
+  for (const [index, rule] of hints.entries()) {
     if (existingRules.has(rule.toLowerCase())) continue;
+    const redactedRule = maybeRedact(
+      rule,
+      {
+        screenId,
+        elementId: `${screenId}::validation::visual::${region.regionId}::${index}`,
+        traceRef: { nodeId: region.regionId },
+        location: "validation_rule",
+      },
+      piiIndicators,
+      redactions,
+    );
     out.push({
-      id: `${screenId}::validation::visual::${region.regionId}::${rule}`,
+      id: `${screenId}::validation::visual::${region.regionId}::${index}::${redactedRule}`,
       screenId,
       trace: { nodeId: region.regionId },
       provenance: "visual_sidecar",
       confidence: region.confidence,
-      rule,
+      rule: redactedRule,
     });
   }
   return out;

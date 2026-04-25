@@ -656,6 +656,7 @@ export interface WorkspaceJobArtifacts {
   generatedProjectDir?: string;
   designIrFile?: string;
   figmaAnalysisFile?: string;
+  businessTestIntentIrFile?: string;
   figmaJsonFile?: string;
   storybookTokensFile?: string;
   storybookThemesFile?: string;
