@@ -208,6 +208,7 @@ const stampSnapshotAsExported = (
   let approvedCount = 0;
   let needsReviewCount = 0;
   let rejectedCount = 0;
+  let pendingSecondaryApprovalCount = 0;
   for (const e of next) {
     if (
       e.state === "approved" ||
@@ -217,6 +218,8 @@ const stampSnapshotAsExported = (
       approvedCount += 1;
     } else if (e.state === "needs_review" || e.state === "edited") {
       needsReviewCount += 1;
+    } else if (e.state === "pending_secondary_approval") {
+      pendingSecondaryApprovalCount += 1;
     } else if (e.state === "rejected") {
       rejectedCount += 1;
     }
@@ -227,6 +230,7 @@ const stampSnapshotAsExported = (
     approvedCount,
     needsReviewCount,
     rejectedCount,
+    pendingSecondaryApprovalCount,
   };
 };
 

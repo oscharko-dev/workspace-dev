@@ -64,13 +64,21 @@ export interface TestCaseDetailPanelProps {
   qcMappingEntry?: QcMappingPreviewEntry;
   onAction: (input: { action: ReviewActionKind; note?: string }) => void;
   /**
-   * Whether the surrounding deployment expects two distinct approvers.
-   * Wave 2 stamps `fourEyesEnforced=true` per case to opt into this UX,
-   * but the backend does not enforce it yet — the affordance is purely
-   * informational.
+   * Whether the resolved server-side four-eyes policy requires two
+   * distinct authenticated principals before the case may reach
+   * `approved`. When `true`, the UI labels the approve button as
+   * primary/secondary based on the current snapshot state and refuses
+   * to send the action when it would obviously be rejected by the
+   * server (same actor / approving an edit they authored).
    */
   fourEyesEnforced: boolean;
   approvers: readonly string[];
+  /** Sorted enforcement reasons surfaced beneath the four-eyes notice. */
+  fourEyesReasons?: readonly string[];
+  /** Identity of the primary approver, when recorded. */
+  primaryReviewer?: string;
+  /** Identity of the actor that recorded the most recent edit, when any. */
+  lastEditor?: string;
 }
 
 const NOTE_MAX_LENGTH = 1024;
@@ -89,6 +97,9 @@ export function TestCaseDetailPanel({
   onAction,
   fourEyesEnforced,
   approvers,
+  fourEyesReasons,
+  primaryReviewer,
+  lastEditor,
 }: TestCaseDetailPanelProps): JSX.Element {
   const [note, setNote] = useState("");
   const reviewBadge = formatReviewStateBadge(
@@ -106,16 +117,39 @@ export function TestCaseDetailPanel({
     (violation) => violation.severity === "warning",
   );
 
+  const currentReviewState = reviewSnapshot?.state;
+  const isAwaitingSecondary =
+    fourEyesEnforced && currentReviewState === "pending_secondary_approval";
+  const approverSelfBlock =
+    fourEyesEnforced &&
+    typeof reviewerHandle === "string" &&
+    reviewerHandle.length > 0 &&
+    ((isAwaitingSecondary && primaryReviewer === reviewerHandle) ||
+      lastEditor === reviewerHandle);
   const approveBlocked =
     !bearerTokenAvailable ||
     policyDecision === "blocked" ||
     blockingViolations.length > 0 ||
-    pendingAction !== null;
+    pendingAction !== null ||
+    approverSelfBlock;
   const writeBlockedReason = !bearerTokenAvailable
     ? "Set the test-intelligence review bearer token to enable review actions."
     : policyDecision === "blocked" || blockingViolations.length > 0
       ? "Policy violations block approval until they are resolved."
-      : null;
+      : approverSelfBlock
+        ? "Four-eyes policy requires a different reviewer for this approval. Switch handle to proceed."
+        : null;
+  const approveLabel = fourEyesEnforced
+    ? isAwaitingSecondary
+      ? pendingAction === "approve"
+        ? "Approving as second reviewer…"
+        : "Approve as second reviewer"
+      : pendingAction === "approve"
+        ? "Approving as first reviewer…"
+        : "Approve as first reviewer"
+    : pendingAction === "approve"
+      ? "Approving…"
+      : "Approve";
 
   const submitAction = (action: ReviewActionKind): void => {
     const trimmedNote = note.trim();
@@ -170,14 +204,34 @@ export function TestCaseDetailPanel({
           {testCase.objective}
         </p>
         {fourEyesEnforced ? (
-          <p
+          <div
             data-testid="ti-detail-four-eyes-notice"
-            className="m-0 rounded border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200"
+            className="m-0 flex flex-col gap-1 rounded border border-amber-500/30 bg-amber-950/20 px-3 py-2 text-[11px] text-amber-200"
           >
-            Four-eyes review preview: this case displays the second-approver
-            affordance. Enforcement ships in a later wave; the backend records
-            approver identities without rejecting single-approver flows yet.
-          </p>
+            <p className="m-0 font-semibold">
+              Four-eyes review enforced. Two distinct approvers are required
+              before this case may be approved.
+            </p>
+            {fourEyesReasons && fourEyesReasons.length > 0 ? (
+              <p
+                data-testid="ti-detail-four-eyes-reasons"
+                className="m-0 text-amber-200/85"
+              >
+                Reason{fourEyesReasons.length > 1 ? "s" : ""}:{" "}
+                {fourEyesReasons.join(", ")}
+              </p>
+            ) : null}
+            {primaryReviewer ? (
+              <p
+                data-testid="ti-detail-four-eyes-primary"
+                className="m-0 text-amber-200/85"
+              >
+                First approver:{" "}
+                <span className="font-mono">{primaryReviewer}</span>. A second
+                distinct approver is required.
+              </p>
+            ) : null}
+          </div>
         ) : null}
         {approvers.length > 0 ? (
           <p
@@ -414,7 +468,7 @@ export function TestCaseDetailPanel({
             }}
             className="cursor-pointer rounded border border-emerald-500/30 bg-emerald-950/30 px-2 py-1 text-[11px] font-medium text-emerald-200 transition hover:border-emerald-400/60 hover:bg-emerald-900/40 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {pendingAction === "approve" ? "Approving…" : "Approve"}
+            {approveLabel}
           </button>
           <button
             type="button"

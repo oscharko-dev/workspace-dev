@@ -94,13 +94,18 @@ test("review-state-machine: only exported -> transferred", () => {
   }
 });
 
-test("review-state-machine: edited can come from needs_review or approved", () => {
+test("review-state-machine: edited can come from needs_review, approved, edited, or pending_secondary_approval", () => {
   for (const from of ALLOWED_REVIEW_STATES) {
     const r = transitionReviewState({
       from,
       kind: "edited",
     });
-    if (from === "needs_review" || from === "approved" || from === "edited") {
+    if (
+      from === "needs_review" ||
+      from === "approved" ||
+      from === "edited" ||
+      from === "pending_secondary_approval"
+    ) {
       assert.equal(r.ok, true);
     } else {
       assert.equal(r.ok, false);
@@ -138,4 +143,125 @@ test("review-state-machine: note never changes state", () => {
     assert.equal(r.ok, true);
     if (r.ok) assert.equal(r.to, from);
   }
+});
+
+test("review-state-machine: primary_approved transitions needs_review → pending_secondary_approval", () => {
+  const r = transitionReviewState({
+    from: "needs_review",
+    kind: "primary_approved",
+    policyDecision: "needs_review",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.to, "pending_secondary_approval");
+});
+
+test("review-state-machine: primary_approved transitions edited → pending_secondary_approval", () => {
+  const r = transitionReviewState({
+    from: "edited",
+    kind: "primary_approved",
+    policyDecision: "needs_review",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.to, "pending_secondary_approval");
+});
+
+test("review-state-machine: primary_approved is refused from generated", () => {
+  const r = transitionReviewState({
+    from: "generated",
+    kind: "primary_approved",
+    policyDecision: "needs_review",
+  });
+  assert.equal(r.ok, false);
+});
+
+test("review-state-machine: primary_approved is refused from approved", () => {
+  const r = transitionReviewState({
+    from: "approved",
+    kind: "primary_approved",
+    policyDecision: "approved",
+  });
+  assert.equal(r.ok, false);
+});
+
+test("review-state-machine: secondary_approved transitions pending_secondary_approval → approved", () => {
+  const r = transitionReviewState({
+    from: "pending_secondary_approval",
+    kind: "secondary_approved",
+    policyDecision: "needs_review",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.to, "approved");
+});
+
+test("review-state-machine: secondary_approved is refused from any non-pending state", () => {
+  for (const from of ALLOWED_REVIEW_STATES) {
+    if (from === "pending_secondary_approval") continue;
+    const r = transitionReviewState({
+      from,
+      kind: "secondary_approved",
+      policyDecision: "needs_review",
+    });
+    assert.equal(
+      r.ok,
+      false,
+      `secondary_approved from ${from} must be refused`,
+    );
+  }
+});
+
+test("review-state-machine: primary_approved is blocked when policy is blocked", () => {
+  const r = transitionReviewState({
+    from: "needs_review",
+    kind: "primary_approved",
+    policyDecision: "blocked",
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.code, "policy_blocks_approval");
+});
+
+test("review-state-machine: secondary_approved is blocked when policy is blocked", () => {
+  const r = transitionReviewState({
+    from: "pending_secondary_approval",
+    kind: "secondary_approved",
+    policyDecision: "blocked",
+  });
+  assert.equal(r.ok, false);
+  if (!r.ok) assert.equal(r.code, "policy_blocks_approval");
+});
+
+test("review-state-machine: pending_secondary_approval is non-terminal and reachable from edited/needs_review", () => {
+  assert.equal(isTerminalReviewState("pending_secondary_approval"), false);
+  const fromNeeds = transitionReviewState({
+    from: "needs_review",
+    kind: "primary_approved",
+    policyDecision: "needs_review",
+  });
+  assert.equal(fromNeeds.ok, true);
+});
+
+test("review-state-machine: pending_secondary_approval can be rejected", () => {
+  const r = transitionReviewState({
+    from: "pending_secondary_approval",
+    kind: "rejected",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.to, "rejected");
+});
+
+test("review-state-machine: pending_secondary_approval can be re-edited", () => {
+  const r = transitionReviewState({
+    from: "pending_secondary_approval",
+    kind: "edited",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.to, "edited");
+});
+
+test("review-state-machine: pending_secondary_approval supports notes", () => {
+  const r = transitionReviewState({
+    from: "pending_secondary_approval",
+    kind: "note",
+  });
+  assert.equal(r.ok, true);
+  if (r.ok) assert.equal(r.to, "pending_secondary_approval");
 });

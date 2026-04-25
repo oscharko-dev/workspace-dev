@@ -329,6 +329,15 @@ function TestIntelligenceInner({
                   onAction={handleAction}
                   fourEyesEnforced={selectedSnapshot?.fourEyesEnforced ?? false}
                   approvers={selectedSnapshot?.approvers ?? []}
+                  {...(selectedSnapshot?.fourEyesReasons
+                    ? { fourEyesReasons: selectedSnapshot.fourEyesReasons }
+                    : {})}
+                  {...(selectedSnapshot?.primaryReviewer
+                    ? { primaryReviewer: selectedSnapshot.primaryReviewer }
+                    : {})}
+                  {...(selectedSnapshot?.lastEditor
+                    ? { lastEditor: selectedSnapshot.lastEditor }
+                    : {})}
                 />
               ) : (
                 <section

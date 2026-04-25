@@ -55,11 +55,21 @@ const isFlatMetadata = (
 const REVIEW_STATES = new Set([
   "generated",
   "needs_review",
+  "pending_secondary_approval",
   "approved",
   "rejected",
   "edited",
   "exported",
   "transferred",
+]);
+
+const FOUR_EYES_REASONS = new Set([
+  "risk_category",
+  "visual_low_confidence",
+  "visual_fallback_used",
+  "visual_possible_pii",
+  "visual_prompt_injection",
+  "visual_metadata_conflict",
 ]);
 
 const POLICY_DECISIONS = new Set(["approved", "needs_review", "blocked"]);
@@ -83,32 +93,71 @@ const isReviewSnapshotEntry = (
   value: unknown,
 ): value is ReviewSnapshotEntry => {
   if (!isRecord(value)) return false;
-  return (
-    typeof value["testCaseId"] === "string" &&
-    typeof value["state"] === "string" &&
-    REVIEW_STATES.has(value["state"]) &&
-    typeof value["policyDecision"] === "string" &&
-    POLICY_DECISIONS.has(value["policyDecision"]) &&
-    typeof value["lastEventId"] === "string" &&
-    typeof value["lastEventAt"] === "string" &&
-    typeof value["fourEyesEnforced"] === "boolean" &&
-    isStringArray(value["approvers"])
-  );
+  if (
+    !(
+      typeof value["testCaseId"] === "string" &&
+      typeof value["state"] === "string" &&
+      REVIEW_STATES.has(value["state"]) &&
+      typeof value["policyDecision"] === "string" &&
+      POLICY_DECISIONS.has(value["policyDecision"]) &&
+      typeof value["lastEventId"] === "string" &&
+      typeof value["lastEventAt"] === "string" &&
+      typeof value["fourEyesEnforced"] === "boolean" &&
+      isStringArray(value["approvers"])
+    )
+  ) {
+    return false;
+  }
+  if (value["fourEyesReasons"] !== undefined) {
+    if (
+      !Array.isArray(value["fourEyesReasons"]) ||
+      !value["fourEyesReasons"].every(
+        (r) => typeof r === "string" && FOUR_EYES_REASONS.has(r),
+      )
+    ) {
+      return false;
+    }
+  }
+  for (const optionalString of [
+    "primaryReviewer",
+    "primaryApprovalAt",
+    "secondaryReviewer",
+    "secondaryApprovalAt",
+    "lastEditor",
+  ] as const) {
+    const v = value[optionalString];
+    if (v !== undefined && typeof v !== "string") {
+      return false;
+    }
+  }
+  return true;
 };
 
 export const isReviewGateSnapshot = (
   value: unknown,
 ): value is ReviewGateSnapshot => {
   if (!isRecord(value)) return false;
-  return (
-    typeof value["jobId"] === "string" &&
-    typeof value["generatedAt"] === "string" &&
-    typeof value["approvedCount"] === "number" &&
-    typeof value["needsReviewCount"] === "number" &&
-    typeof value["rejectedCount"] === "number" &&
-    Array.isArray(value["perTestCase"]) &&
-    value["perTestCase"].every(isReviewSnapshotEntry)
-  );
+  if (
+    !(
+      typeof value["jobId"] === "string" &&
+      typeof value["generatedAt"] === "string" &&
+      typeof value["approvedCount"] === "number" &&
+      typeof value["needsReviewCount"] === "number" &&
+      typeof value["rejectedCount"] === "number" &&
+      Array.isArray(value["perTestCase"]) &&
+      value["perTestCase"].every(isReviewSnapshotEntry)
+    )
+  ) {
+    return false;
+  }
+  if (
+    value["pendingSecondaryApprovalCount"] !== undefined &&
+    (typeof value["pendingSecondaryApprovalCount"] !== "number" ||
+      !Number.isInteger(value["pendingSecondaryApprovalCount"]))
+  ) {
+    return false;
+  }
+  return true;
 };
 
 export const isReviewEvent = (value: unknown): value is ReviewEvent => {

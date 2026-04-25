@@ -65,6 +65,8 @@ import {
   type FinOpsCostRateMap,
   type FinOpsJobOutcome,
   type FinOpsRole,
+  type FourEyesEnforcementReason,
+  type FourEyesPolicy,
   type GeneratedTestCase,
   type GeneratedTestCaseAuditMetadata,
   type GeneratedTestCaseList,
@@ -87,6 +89,7 @@ import {
   type VisualSidecarCaptureInput,
   type VisualSidecarFailure,
   type VisualSidecarResult,
+  type VisualSidecarValidationReport,
   type Wave1PocEvidenceManifest,
   type Wave1PocFixtureId,
 } from "../contracts/index.js";
@@ -110,6 +113,10 @@ import {
 import { cloneOpenTextAlmReferenceProfile } from "./qc-mapping.js";
 import { compilePrompt } from "./prompt-compiler.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
+import {
+  cloneFourEyesPolicy,
+  evaluateFourEyesEnforcement,
+} from "./four-eyes-policy.js";
 import {
   seedReviewStateFromPolicy,
   transitionReviewState,
@@ -202,6 +209,14 @@ export interface RunWave1PocInput {
    * the test-generation gateway call and are surfaced in the FinOps report.
    */
   replayCache?: ReplayCache;
+  /**
+   * Optional four-eyes policy override (Issue #1376). When omitted, the
+   * harness retains the deterministic Wave 1 single-reviewer flow so
+   * fixture replays remain byte-identical. When provided, the harness
+   * stamps `fourEyesEnforced` per case and emits two distinct
+   * deterministic approval events for cases that match the policy.
+   */
+  fourEyesPolicy?: FourEyesPolicy;
 }
 
 export interface Wave1PocRunResult {
@@ -1178,6 +1193,8 @@ export const runWave1Poc = async (
     generatedAt: input.generatedAt,
     list: validation.generatedTestCases,
     decisionsById,
+    ...(input.fourEyesPolicy ? { fourEyesPolicy: input.fourEyesPolicy } : {}),
+    ...(validation.visual ? { visualReport: validation.visual } : {}),
   });
   const snapshot = review.snapshot;
   const reviewEventsBytes = utf8(canonicalJson(review.envelope));
@@ -1479,9 +1496,7 @@ const deriveFinopsOutcomeFromValidation = (
   return undefined;
 };
 
-const isFinOpsBudgetGatewayFailure = (
-  result: LlmGenerationResult,
-): boolean => {
+const isFinOpsBudgetGatewayFailure = (result: LlmGenerationResult): boolean => {
   if (result.outcome !== "error") return false;
   return (
     result.errorClass === "schema_invalid" &&
@@ -1529,9 +1544,8 @@ const recordGatewayBudgetBreach = (input: {
 }): void => {
   if (input.result.outcome !== "error") return;
   const message = input.result.message;
-  const inputMatch = /estimated input tokens (\d+) exceeds maxInputTokens (\d+)/.exec(
-    message,
-  );
+  const inputMatch =
+    /estimated input tokens (\d+) exceeds maxInputTokens (\d+)/.exec(message);
   if (inputMatch !== null) {
     input.recorder.recordBudgetBreach({
       rule: "max_input_tokens",
@@ -1542,9 +1556,8 @@ const recordGatewayBudgetBreach = (input: {
     });
     return;
   }
-  const outputMatch = /reported output tokens (\d+) exceeds maxOutputTokens (\d+)/.exec(
-    message,
-  );
+  const outputMatch =
+    /reported output tokens (\d+) exceeds maxOutputTokens (\d+)/.exec(message);
   if (outputMatch !== null) {
     input.recorder.recordBudgetBreach({
       rule: "max_output_tokens",
@@ -1810,10 +1823,12 @@ const computeReviewCounts = (
   approvedCount: number;
   needsReviewCount: number;
   rejectedCount: number;
+  pendingSecondaryApprovalCount: number;
 } => {
   let approvedCount = 0;
   let needsReviewCount = 0;
   let rejectedCount = 0;
+  let pendingSecondaryApprovalCount = 0;
   for (const entry of perTestCase) {
     if (
       entry.state === "approved" ||
@@ -1823,18 +1838,40 @@ const computeReviewCounts = (
       approvedCount += 1;
     } else if (entry.state === "needs_review" || entry.state === "edited") {
       needsReviewCount += 1;
+    } else if (entry.state === "pending_secondary_approval") {
+      pendingSecondaryApprovalCount += 1;
     } else if (entry.state === "rejected") {
       rejectedCount += 1;
     }
   }
-  return { approvedCount, needsReviewCount, rejectedCount };
+  return {
+    approvedCount,
+    needsReviewCount,
+    rejectedCount,
+    pendingSecondaryApprovalCount,
+  };
 };
+
+/** Deterministic primary approver actor used by the harness fixture. */
+const POC_PRIMARY_REVIEWER = "wave1-poc-harness";
+/**
+ * Deterministic secondary approver actor used by the harness fixture
+ * when four-eyes is enforced. Distinct from the primary so the harness
+ * exercises the two-distinct-principal branch end-to-end.
+ */
+const POC_SECONDARY_REVIEWER = "wave1-poc-harness-secondary";
 
 /**
  * Wave 1 POC convention: seed every test case from the policy decision,
  * then approve every case the policy did not BLOCK. Cases the policy
  * marked `blocked` remain in `needs_review` so a future deliberate-fail
  * fixture can demonstrate the export-refusal path.
+ *
+ * Wave 2 (#1376): when a `fourEyesPolicy` is supplied, cases whose risk
+ * category or visual-sidecar signals trigger enforcement are approved
+ * by two distinct deterministic principals so the export pipeline still
+ * sees them in `approved` state. Cases without enforcement keep the
+ * single-reviewer flow byte-identical to Wave 1.
  *
  * The function is pure and deterministic — event ids are derived from
  * `sha256({jobId, testCaseId, sequence, kind})` so two runs of the same
@@ -1845,15 +1882,27 @@ const buildDeterministicReviewBundle = (input: {
   generatedAt: string;
   list: GeneratedTestCaseList;
   decisionsById: ReadonlyMap<string, TestCasePolicyDecision>;
+  fourEyesPolicy?: FourEyesPolicy;
+  visualReport?: VisualSidecarValidationReport;
 }): DeterministicReviewBundle => {
   const events: ReviewEvent[] = [];
   const perTestCase: ReviewSnapshot[] = [];
   let sequence = 1;
+  const policyMetadata = input.fourEyesPolicy
+    ? cloneFourEyesPolicy(input.fourEyesPolicy)
+    : undefined;
 
   for (const tc of input.list.testCases) {
     const decision: TestCasePolicyDecision =
       input.decisionsById.get(tc.id) ?? "needs_review";
     const seedState: ReviewState = seedReviewStateFromPolicy(decision);
+    const enforcement = input.fourEyesPolicy
+      ? evaluateFourEyesEnforcement({
+          testCase: tc,
+          policy: input.fourEyesPolicy,
+          ...(input.visualReport ? { visualReport: input.visualReport } : {}),
+        })
+      : { enforced: false, reasons: [] as FourEyesEnforcementReason[] };
     const seedEventId = deterministicEventId(
       input.jobId,
       tc.id,
@@ -1878,48 +1927,130 @@ const buildDeterministicReviewBundle = (input: {
     let currentState: ReviewState = seedState;
     let lastEventId = seedEventId;
     let approvers: string[] = [];
+    let primaryReviewer: string | undefined;
+    let primaryApprovalAt: string | undefined;
+    let secondaryReviewer: string | undefined;
+    let secondaryApprovalAt: string | undefined;
     if (seedState !== "approved" && decision !== "blocked") {
-      const transition = transitionReviewState({
-        from: currentState,
-        kind: "approved",
-        policyDecision: decision,
-      });
-      if (transition.ok) {
-        const approveEventId = deterministicEventId(
-          input.jobId,
-          tc.id,
-          sequence,
-          "approved",
-        );
-        approvers = ["wave1-poc-harness"];
-        events.push({
-          schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
-          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
-          id: approveEventId,
-          jobId: input.jobId,
-          testCaseId: tc.id,
-          kind: "approved",
-          at: input.generatedAt,
-          sequence,
-          fromState: currentState,
-          toState: transition.to,
-          actor: "wave1-poc-harness",
+      if (enforcement.enforced) {
+        // Primary approval.
+        const primaryTransition = transitionReviewState({
+          from: currentState,
+          kind: "primary_approved",
+          policyDecision: decision,
         });
-        currentState = transition.to;
-        lastEventId = approveEventId;
-        sequence += 1;
+        if (primaryTransition.ok) {
+          const primaryEventId = deterministicEventId(
+            input.jobId,
+            tc.id,
+            sequence,
+            "primary_approved",
+          );
+          events.push({
+            schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+            contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+            id: primaryEventId,
+            jobId: input.jobId,
+            testCaseId: tc.id,
+            kind: "primary_approved",
+            at: input.generatedAt,
+            sequence,
+            fromState: currentState,
+            toState: primaryTransition.to,
+            actor: POC_PRIMARY_REVIEWER,
+          });
+          currentState = primaryTransition.to;
+          lastEventId = primaryEventId;
+          sequence += 1;
+          approvers = [POC_PRIMARY_REVIEWER];
+          primaryReviewer = POC_PRIMARY_REVIEWER;
+          primaryApprovalAt = input.generatedAt;
+
+          // Secondary approval — fail-closed if the state machine refuses.
+          const secondaryTransition = transitionReviewState({
+            from: currentState,
+            kind: "secondary_approved",
+            policyDecision: decision,
+          });
+          if (secondaryTransition.ok) {
+            const secondaryEventId = deterministicEventId(
+              input.jobId,
+              tc.id,
+              sequence,
+              "secondary_approved",
+            );
+            events.push({
+              schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+              contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+              id: secondaryEventId,
+              jobId: input.jobId,
+              testCaseId: tc.id,
+              kind: "secondary_approved",
+              at: input.generatedAt,
+              sequence,
+              fromState: currentState,
+              toState: secondaryTransition.to,
+              actor: POC_SECONDARY_REVIEWER,
+            });
+            currentState = secondaryTransition.to;
+            lastEventId = secondaryEventId;
+            sequence += 1;
+            approvers = [POC_PRIMARY_REVIEWER, POC_SECONDARY_REVIEWER].sort();
+            secondaryReviewer = POC_SECONDARY_REVIEWER;
+            secondaryApprovalAt = input.generatedAt;
+          }
+        }
+      } else {
+        const transition = transitionReviewState({
+          from: currentState,
+          kind: "approved",
+          policyDecision: decision,
+        });
+        if (transition.ok) {
+          const approveEventId = deterministicEventId(
+            input.jobId,
+            tc.id,
+            sequence,
+            "approved",
+          );
+          approvers = [POC_PRIMARY_REVIEWER];
+          events.push({
+            schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+            contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+            id: approveEventId,
+            jobId: input.jobId,
+            testCaseId: tc.id,
+            kind: "approved",
+            at: input.generatedAt,
+            sequence,
+            fromState: currentState,
+            toState: transition.to,
+            actor: POC_PRIMARY_REVIEWER,
+          });
+          currentState = transition.to;
+          lastEventId = approveEventId;
+          sequence += 1;
+        }
       }
     }
 
-    perTestCase.push({
+    const entry: ReviewSnapshot = {
       testCaseId: tc.id,
       state: currentState,
       policyDecision: decision,
       lastEventId,
       lastEventAt: input.generatedAt,
-      fourEyesEnforced: false,
+      fourEyesEnforced: enforcement.enforced,
       approvers,
-    });
+      ...(enforcement.reasons.length > 0
+        ? { fourEyesReasons: enforcement.reasons.slice() }
+        : {}),
+      ...(primaryReviewer !== undefined ? { primaryReviewer } : {}),
+      ...(primaryApprovalAt !== undefined ? { primaryApprovalAt } : {}),
+      ...(secondaryReviewer !== undefined ? { secondaryReviewer } : {}),
+      ...(secondaryApprovalAt !== undefined ? { secondaryApprovalAt } : {}),
+    };
+    perTestCase.push(entry);
   }
 
   perTestCase.sort((a, b) => a.testCaseId.localeCompare(b.testCaseId));
@@ -1931,6 +2062,7 @@ const buildDeterministicReviewBundle = (input: {
     generatedAt: input.generatedAt,
     perTestCase,
     ...counts,
+    ...(policyMetadata ? { fourEyesPolicy: policyMetadata } : {}),
   };
   const envelope: PersistedReviewEventsEnvelope = {
     schemaVersion: REVIEW_GATE_SCHEMA_VERSION,

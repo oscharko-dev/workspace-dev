@@ -31,6 +31,32 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.30.0] - 2026-04-25
+
+### Added (Issue #1376)
+
+- `pending_secondary_approval` — new value appended to `ALLOWED_REVIEW_STATES` for cases that have received their first distinct approval and are awaiting a second under four-eyes enforcement. Cases not subject to four-eyes never enter this state.
+- `primary_approved` and `secondary_approved` — new values appended to `ALLOWED_REVIEW_EVENT_KINDS`. The store records each four-eyes approval as one of these wire-level kinds for governance auditability; clients may continue to send the generic `approved` action and the store routes it based on snapshot state.
+- `ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS` (`risk_category`, `visual_low_confidence`, `visual_fallback_used`, `visual_possible_pii`, `visual_prompt_injection`, `visual_metadata_conflict`) and discriminant `FourEyesEnforcementReason`.
+- `DEFAULT_FOUR_EYES_REQUIRED_RISK_CATEGORIES` (`financial_transaction`, `regulated_data`, `high`) — operator-overridable default mapping the issue's `payment / authorization / identity / regulatory` surface onto the existing `TestCaseRiskCategory` taxonomy.
+- `DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS` (`low_confidence`, `fallback_used`, `possible_pii`, `prompt_injection_like_text`, `conflicts_with_figma_metadata`) — visual-sidecar outcomes that trigger four-eyes regardless of risk category, per the 2026-04-24 multimodal addendum.
+- New exported type `FourEyesPolicy` — `{ requiredRiskCategories, visualSidecarTriggerOutcomes }`. The policy is resolved at startup from `WorkspaceStartOptions.testIntelligence` and stamped into each `ReviewGateSnapshot.fourEyesPolicy`.
+- New optional fields on `WorkspaceStartOptions.testIntelligence`: `fourEyesRequiredRiskCategories?: TestCaseRiskCategory[]` and `fourEyesVisualSidecarTriggerOutcomes?: VisualSidecarValidationOutcome[]`.
+- New optional fields on `ReviewSnapshot`: `fourEyesReasons?`, `primaryReviewer?`, `primaryApprovalAt?`, `secondaryReviewer?`, `secondaryApprovalAt?`, `lastEditor?`. The previously-required `fourEyesEnforced: boolean` field now actually drives enforcement; older snapshots that emitted `false` continue to validate.
+- New optional fields on `ReviewGateSnapshot`: `pendingSecondaryApprovalCount?: number`, `fourEyesPolicy?: FourEyesPolicy`.
+- New module `src/test-intelligence/four-eyes-policy.ts` — `EU_BANKING_DEFAULT_FOUR_EYES_POLICY`, `cloneFourEyesPolicy`, `resolveFourEyesPolicy` (normalizes operator config), `evaluateFourEyesEnforcement` (returns `{ enforced, reasons }` per case), `validateFourEyesPolicy` (returns `ValidationIssue[]` for invalid risk categories or outcomes).
+- The review store extends `seedSnapshot` with optional `fourEyesPolicy` and `visual` inputs so each test case is stamped at seed time. `recordTransition` now refuses self-approval, duplicate-principal approval, and approving one's own edit with structured codes (`self_approval_refused`, `duplicate_principal_refused`); approving a four-eyes case routes through the `primary_approved` / `secondary_approved` kinds based on current state.
+- The review handler maps two new actions, `primary-approve` and `secondary-approve`, to the matching event kinds for callers that want explicit semantics. The legacy `approve` action remains valid and is auto-routed for four-eyes-enforced cases.
+- The export pipeline already refuses on `unapproved_test_cases_present`; `pending_secondary_approval` is treated as not-approved-not-rejected, so a four-eyes case with only one approval blocks export deterministically.
+
+### Unchanged (Issue #1376)
+
+- The Wave 1 single-reviewer flow (#1365) is preserved bit-identically when `fourEyesEnforced=false` for every case in the snapshot. Existing operator profiles, legacy snapshots, and Wave 1 fixture replays are untouched.
+- No new runtime dependency, telemetry, or external schema library is introduced; validators remain hand-rolled and atomic writes continue to use `${path}.${pid}.tmp` rename.
+- The pre-existing forward-compatibility hint on `ReviewSnapshot.fourEyesEnforced` is honored: prior snapshots that emitted the field default-false validate against the new schema unchanged.
+
+---
+
 ## [3.29.0] - 2026-04-25
 
 ### Added (Issue #1371)

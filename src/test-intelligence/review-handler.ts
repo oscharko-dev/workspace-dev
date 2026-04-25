@@ -87,6 +87,8 @@ export interface ReviewResponse {
 const ACTION_TO_KIND: Record<string, ReviewEventKind> = {
   "review-started": "review_started",
   approve: "approved",
+  "primary-approve": "primary_approved",
+  "secondary-approve": "secondary_approved",
   reject: "rejected",
   edit: "edited",
   export: "exported",
@@ -158,10 +160,15 @@ const refusalCodeToHttpStatus = (code: string): number => {
     case "note_too_long":
     case "actor_too_long":
     case "kind_unknown":
+    case "four_eyes_actor_required":
       return 400;
     case "transition_not_allowed":
     case "policy_blocks_approval":
     case "policy_requires_review":
+    case "self_approval_refused":
+    case "duplicate_principal_refused":
+    case "primary_approval_required":
+    case "four_eyes_not_required":
       return 409;
     default:
       return 400;

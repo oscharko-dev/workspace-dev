@@ -974,6 +974,23 @@ export interface WorkspaceStartOptions {
      * surface as empty UI states rather than errors.
      */
     artifactRoot?: string;
+    /**
+     * Risk categories for which the review gate must enforce four-eyes
+     * approval (#1376). When omitted, defaults to
+     * `DEFAULT_FOUR_EYES_REQUIRED_RISK_CATEGORIES`. Values outside the
+     * `TestCaseRiskCategory` taxonomy are ignored. An empty array
+     * disables risk-driven enforcement (visual-sidecar triggers still
+     * apply unless `fourEyesVisualSidecarTriggerOutcomes` is also
+     * empty).
+     */
+    fourEyesRequiredRiskCategories?: TestCaseRiskCategory[];
+    /**
+     * Visual-sidecar validation outcomes that trigger four-eyes review
+     * for any case whose Figma trace references a screen carrying the
+     * outcome (#1376, 2026-04-24 multimodal addendum). Defaults to
+     * `DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS`.
+     */
+    fourEyesVisualSidecarTriggerOutcomes?: VisualSidecarValidationOutcome[];
   };
 }
 
@@ -2604,12 +2621,12 @@ export type ReplayCacheLookupResult =
   | { hit: false; key: string };
 
 /**
- * Review gate + export-only QC artifact surface (Issue #1365).
+ * Review gate + export-only QC artifact surface (Issue #1365 / #1376).
  *
  * The review gate persists per-test-case lifecycle decisions made by a
  * reviewer (or by the policy gate, when policy auto-approves) so that
  * downstream export operations can refuse to produce QC/ALM artifacts
- * for cases that have not been approved. Wave 1 ships:
+ * for cases that have not been approved. Wave 1 (#1365) ships:
  *
  *   - in-memory state machine (`generated → needs_review → approved |
  *     rejected | edited → exported → transferred`),
@@ -2620,19 +2637,31 @@ export type ReplayCacheLookupResult =
  *     `testcases.csv`, `testcases.alm.xml`, `qc-mapping-preview.json`,
  *     `export-report.json`, plus optional `testcases.xlsx`.
  *
+ * Wave 2 (#1376) adds server-side four-eyes enforcement for cases whose
+ * risk category is configured as high-risk OR whose multimodal visual
+ * sidecar workflow surfaced low-confidence / fallback / PII /
+ * prompt-injection / Figma-conflict signals. When four-eyes is
+ * enforced, two distinct authenticated principals must approve before
+ * the case may transition to `approved`. The intermediate state
+ * `pending_secondary_approval` records the first approval; export and
+ * ALM transfer paths refuse cases that did not reach `approved`.
+ *
  * No production QC/ALM API write is performed; the surface only
  * persists artifacts to disk for downstream operators to upload.
- *
- * The contract is forward-compatible with four-eyes enforcement
- * (Wave 2): each `ReviewSnapshot` carries `fourEyesEnforced` so a
- * future profile can require two distinct approvers without breaking
- * Wave 1 callers.
  */
 
-/** Allowed lifecycle states for a generated test case under review. */
+/**
+ * Allowed lifecycle states for a generated test case under review.
+ *
+ * `pending_secondary_approval` (added in #1376) is the intermediate
+ * state a four-eyes-enforced case occupies after the first approval and
+ * before the second distinct approval. Cases not subject to four-eyes
+ * skip this state entirely.
+ */
 export const ALLOWED_REVIEW_STATES = [
   "generated",
   "needs_review",
+  "pending_secondary_approval",
   "approved",
   "rejected",
   "edited",
@@ -2641,11 +2670,24 @@ export const ALLOWED_REVIEW_STATES = [
 ] as const;
 export type ReviewState = (typeof ALLOWED_REVIEW_STATES)[number];
 
-/** Allowed event kinds appended to the review-gate event log. */
+/**
+ * Allowed event kinds appended to the review-gate event log.
+ *
+ * `primary_approved` and `secondary_approved` (added in #1376) are
+ * emitted in lockstep with four-eyes enforcement: the first distinct
+ * approver records `primary_approved`; the second distinct approver
+ * records `secondary_approved`. Clients may also continue to send the
+ * generic `approved` kind — when the snapshot indicates four-eyes is
+ * enforced, the store routes the request to the correct primary or
+ * secondary event kind based on current state, which keeps wire-level
+ * audit clarity without forcing UI rewrites.
+ */
 export const ALLOWED_REVIEW_EVENT_KINDS = [
   "generated",
   "review_started",
   "approved",
+  "primary_approved",
+  "secondary_approved",
   "rejected",
   "edited",
   "exported",
@@ -2653,6 +2695,72 @@ export const ALLOWED_REVIEW_EVENT_KINDS = [
   "note",
 ] as const;
 export type ReviewEventKind = (typeof ALLOWED_REVIEW_EVENT_KINDS)[number];
+
+/**
+ * Reasons four-eyes review is enforced for a single test case (#1376).
+ *
+ * Multiple reasons may apply (e.g. a `regulated_data` case whose visual
+ * sidecar reported low confidence). Reasons are reported deterministic-
+ * sorted on the `ReviewSnapshot.fourEyesReasons` field.
+ */
+export const ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS = [
+  "risk_category",
+  "visual_low_confidence",
+  "visual_fallback_used",
+  "visual_possible_pii",
+  "visual_prompt_injection",
+  "visual_metadata_conflict",
+] as const;
+export type FourEyesEnforcementReason =
+  (typeof ALLOWED_FOUR_EYES_ENFORCEMENT_REASONS)[number];
+
+/**
+ * Default risk categories that require four-eyes review (#1376).
+ *
+ * The list spans the existing `TestCaseRiskCategory` taxonomy. Issue
+ * #1376 names the operator-facing risk classes as
+ * `payment / authorization / identity / regulatory`; those map onto the
+ * existing taxonomy as `financial_transaction` (payment) +
+ * `regulated_data` (identity, regulatory) + `high` (authorization /
+ * elevated-impact). Operators may override with
+ * `WorkspaceStartOptions.testIntelligence.fourEyesRequiredRiskCategories`.
+ */
+export const DEFAULT_FOUR_EYES_REQUIRED_RISK_CATEGORIES: readonly TestCaseRiskCategory[] =
+  ["financial_transaction", "regulated_data", "high"];
+
+/**
+ * Default visual-sidecar validation outcomes that trigger four-eyes
+ * enforcement (#1376, 2026-04-24 multimodal addendum).
+ *
+ * When ANY screen referenced by a test case carries one of these
+ * outcomes in `VisualSidecarValidationReport`, the case is enforced as
+ * four-eyes regardless of risk category.
+ */
+export const DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS: readonly VisualSidecarValidationOutcome[] =
+  [
+    "low_confidence",
+    "fallback_used",
+    "possible_pii",
+    "prompt_injection_like_text",
+    "conflicts_with_figma_metadata",
+  ];
+
+/**
+ * Operator-tunable four-eyes policy (#1376).
+ *
+ * Resolved at startup from `WorkspaceStartOptions.testIntelligence`
+ * fields; the resolved policy is consulted at review-snapshot seed time
+ * to stamp `fourEyesEnforced` per test case.
+ */
+export interface FourEyesPolicy {
+  /** Risk categories that always require four-eyes. Sorted, deduplicated. */
+  requiredRiskCategories: readonly TestCaseRiskCategory[];
+  /**
+   * Visual-sidecar validation outcomes that trigger four-eyes regardless
+   * of risk category. Sorted, deduplicated.
+   */
+  visualSidecarTriggerOutcomes: readonly VisualSidecarValidationOutcome[];
+}
 
 /** Allowed reasons the export pipeline may refuse to emit QC artifacts. */
 export const ALLOWED_EXPORT_REFUSAL_CODES = [
@@ -2698,16 +2806,47 @@ export interface ReviewSnapshot {
   lastEventId: string;
   lastEventAt: string;
   /**
-   * Whether the operator profile requires two distinct approvers. Wave 1
-   * always emits `false`; Wave 2 may flip this to gate the export pipeline
-   * on approver-count without changing the schema.
+   * Whether the resolved four-eyes policy requires two distinct
+   * authenticated principals before this case may reach `approved`.
+   * When `true`, the export pipeline refuses cases not in `approved`,
+   * `exported`, or `transferred` state (#1376).
    */
   fourEyesEnforced: boolean;
   /**
-   * Set of distinct reviewer actors that have approved this case.
-   * Empty list when the case is not yet approved or auto-approved by policy.
+   * Set of distinct reviewer actors that have approved this case in
+   * sequence. Sorted, deduplicated. For four-eyes-enforced cases the
+   * first entry is the primary approver, the second the secondary.
    */
   approvers: string[];
+  /**
+   * Reasons four-eyes is enforced (#1376). Empty when
+   * `fourEyesEnforced=false`. Sorted deterministic. Optional for
+   * backward compatibility; consumers should treat absence as
+   * "no recorded reasons" (i.e. older snapshots before #1376 shipped).
+   */
+  fourEyesReasons?: FourEyesEnforcementReason[];
+  /**
+   * Identity of the first distinct approver, recorded when a four-eyes
+   * case transitions out of `needs_review`/`edited`. Optional for
+   * non-enforced cases and for snapshots written before any approval.
+   */
+  primaryReviewer?: string;
+  /** ISO-8601 UTC timestamp at which the primary approval was recorded. */
+  primaryApprovalAt?: string;
+  /**
+   * Identity of the second distinct approver, recorded when a four-eyes
+   * case transitions from `pending_secondary_approval` to `approved`.
+   */
+  secondaryReviewer?: string;
+  /** ISO-8601 UTC timestamp at which the secondary approval was recorded. */
+  secondaryApprovalAt?: string;
+  /**
+   * Identity of the actor who recorded the most recent `edited` event
+   * for this case, if any. Used by the four-eyes gate to refuse
+   * approvals submitted by the same principal that authored the edit
+   * (self-approval refusal).
+   */
+  lastEditor?: string;
 }
 
 /** Aggregate per-job review-gate snapshot. */
@@ -2724,6 +2863,18 @@ export interface ReviewGateSnapshot {
   needsReviewCount: number;
   /** Number of cases currently in `rejected` state. */
   rejectedCount: number;
+  /**
+   * Number of cases currently awaiting a second distinct approver
+   * (state = `pending_secondary_approval`). Optional for backward
+   * compatibility; consumers must treat absence as `0` (#1376).
+   */
+  pendingSecondaryApprovalCount?: number;
+  /**
+   * Resolved four-eyes policy that produced this snapshot. Optional for
+   * backward compatibility. When present, both arrays are sorted /
+   * deduplicated (#1376).
+   */
+  fourEyesPolicy?: FourEyesPolicy;
 }
 
 /** Visual provenance attached to a QC mapping preview entry (Issue #1386). */
@@ -3619,4 +3770,4 @@ export interface FinOpsBudgetReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.29.0" as const;
+export const CONTRACT_VERSION = "3.30.0" as const;
