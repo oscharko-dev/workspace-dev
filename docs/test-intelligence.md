@@ -202,6 +202,7 @@ Artifacts are persisted under
 | `wave1-poc-evidence-manifest.sha256`    | `WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME`            | POC               |
 | `wave1-poc-eval-report.json`            | `WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION`                   | POC               |
 | `llm-capabilities.json`                 | `LLM_CAPABILITIES_SCHEMA_VERSION`                        | LLM gateway probe |
+| `finops/budget-report.json`             | `FINOPS_BUDGET_REPORT_SCHEMA_VERSION`                    | FinOps            |
 
 Persistence guarantees:
 
@@ -398,6 +399,126 @@ When both the primary and the fallback sidecar fail, the harness throws
 `Wave1PocVisualSidecarFailureError` and writes no downstream artifacts. The
 visual sidecar result envelope is still persisted with the failure attribution
 so audit replay can see why generation refused to proceed.
+
+## 9a. FinOps budgets and operational controls (Issue #1371)
+
+Wave 2 enterprise hardening. Operators may bound an LLM job's input/output
+tokens, wall-clock duration, retry count, image payload size, replay-cache miss
+rate, and (optionally) estimated cost — per role and per job. Every run emits a
+deterministic budget report under `<runDir>/finops/budget-report.json`.
+
+### Budget envelope
+
+`FinOpsBudgetEnvelope` carries:
+
+| Field                                    | Scope    | Effect                                                                                     |
+| ---------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `maxJobWallClockMs`                      | Job-wide | Total wall-clock cap across every role.                                                    |
+| `maxReplayCacheMissRate`                 | Job-wide | Maximum permitted `misses / (hits + misses)` over the run; `[0, 1]`.                       |
+| `maxEstimatedCost`                       | Job-wide | Operator-supplied per-job cost cap (currency-agnostic).                                    |
+| `roles.<role>.maxInputTokensPerRequest`  | Role     | Maps to `LlmGenerationRequest.maxInputTokens` (gateway fail-closed).                       |
+| `roles.<role>.maxOutputTokensPerRequest` | Role     | Maps to `LlmGenerationRequest.maxOutputTokens` (gateway forwards `max_completion_tokens`). |
+| `roles.<role>.maxTotalInputTokens`       | Role     | Aggregate input-token cap across every request the role makes.                             |
+| `roles.<role>.maxTotalOutputTokens`      | Role     | Aggregate output-token cap across every request the role makes.                            |
+| `roles.<role>.maxWallClockMsPerRequest`  | Role     | Per-request wall-clock cap (gateway fail-closed: `retryable: false` on breach).            |
+| `roles.<role>.maxTotalWallClockMs`       | Role     | Aggregate wall-clock cap across every request the role makes.                              |
+| `roles.<role>.maxRetriesPerRequest`      | Role     | Per-request retry cap; effective cap = `min(config.maxRetries, request.maxRetries)`.       |
+| `roles.<role>.maxAttempts`               | Role     | Total gateway attempts allowed (success + failure).                                        |
+| `roles.<role>.maxImageBytesPerRequest`   | Role     | Decoded image-input bytes per request (visual roles only).                                 |
+| `roles.<role>.maxFallbackAttempts`       | Role     | Maximum fallback-deployment attempts (visual_fallback only).                               |
+| `roles.<role>.maxLiveSmokeCalls`         | Role     | Maximum live-smoke (non-mock) calls.                                                       |
+
+A built-in `EU_BANKING_DEFAULT_FINOPS_BUDGET` profile is provided alongside a
+permissive `DEFAULT_FINOPS_BUDGET_ENVELOPE` baseline. Both are exported through
+`src/test-intelligence/index.ts` and through the public root for callers that
+embed the harness in their own pipelines.
+
+### Fail-closed semantics
+
+Two controls fail closed (`retryable: false`):
+
+1. `LlmGenerationRequest.maxWallClockMs` — when the wall-clock budget is
+   smaller than the static client `timeoutMs`, the gateway times the request
+   out at the per-request budget AND marks the failure non-retryable. Retrying
+   would by definition violate the same budget.
+2. `LlmGenerationRequest.maxRetries` — when the per-request cap is `0`, the
+   gateway attempts the call exactly once. When non-zero, the effective retry
+   cap is `min(config.maxRetries, request.maxRetries)`. The request value is
+   validated as a non-negative safe integer.
+
+### Cache hits and the budget report
+
+A cache hit signals "no LLM call, no token usage" verbatim:
+
+- `recordCacheHit({ role })` increments only `cacheHits`. Every other counter
+  stays at 0 — including `attempts`, `inputTokens`, `outputTokens`,
+  `durationMs`, and `imageBytes`.
+- When the only recorded events are cache hits, `outcome` is
+  `completed_cache_hit`. Otherwise the outcome is `completed`,
+  `budget_exceeded`, `policy_blocked`, `validation_blocked`,
+  `visual_sidecar_failed`, `export_refused`, or `gateway_failed` depending on
+  the run's terminal state.
+
+### Per-role usage snapshot
+
+Each `FinOpsRoleUsage` row carries `attempts`, `successes`, `failures`,
+`inputTokens`, `outputTokens`, `imageBytes`, `cacheHits`, `cacheMisses`,
+`fallbackAttempts`, `liveSmokeCalls`, `durationMs`, `lastFinishReason`,
+`lastErrorClass`, `estimatedCost`, plus the observed `deployment` label. The
+`roles` array is sorted alphabetically so the persisted artifact is byte-stable
+for identical input.
+
+### Hard invariants on the artifact
+
+`FinOpsBudgetReport` stamps three `false` literals at the type level:
+
+- `secretsIncluded: false`
+- `rawPromptsIncluded: false`
+- `rawScreenshotsIncluded: false`
+
+The recorder never sees prompt text, response content, or image bytes — it
+ingests `LlmGenerationResult.usage`, `VisualSidecarAttempt.durationMs`, role
+labels, and counter increments. The persisted report consequently never
+contains gateway URLs, deployment endpoints, API keys, prompt content, response
+content, or image bytes.
+
+### Wiring it into a run
+
+`runWave1Poc` accepts optional `finopsBudget` and `finopsCostRates` inputs:
+
+```ts
+import {
+    cloneEuBankingDefaultFinOpsBudget,
+    runWave1Poc,
+} from "@oscharko-dev/workspace-dev/test-intelligence";
+
+const result = await runWave1Poc({
+    fixtureId: "poc-onboarding",
+    jobId: "job-42",
+    generatedAt: "2026-04-25T10:00:00.000Z",
+    runDir: "/tmp/job-42",
+    finopsBudget: cloneEuBankingDefaultFinOpsBudget(),
+    finopsCostRates: {
+        currencyLabel: "USD",
+        rates: {
+            test_generation: {
+                inputTokenCostPer1k: 0.5,
+                outputTokenCostPer1k: 1.5,
+            },
+            visual_primary: { fixedCostPerAttempt: 0.0008 },
+            visual_fallback: { fixedCostPerAttempt: 0.0004 },
+        },
+    },
+});
+console.log(result.finopsReport.outcome); // "completed" | "budget_exceeded" | …
+console.log(result.finopsArtifactPath); // "/tmp/job-42/finops/budget-report.json"
+```
+
+The artifact is intentionally NOT attested by the Wave 1 evidence manifest
+because the manifest verifier resolves artifacts at the run-dir root only
+(basename invariant) and the AC requires the FinOps artifact to live under a
+dedicated `finops/` subdirectory. The artifact's three negative invariants and
+its schema/contract stamps make it independently verifiable.
 
 ## 10. Network boundary
 

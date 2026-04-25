@@ -207,6 +207,29 @@ export {
   type Wave1PocRunResult,
 } from "./poc-harness.js";
 export {
+  cloneEuBankingDefaultFinOpsBudget,
+  cloneFinOpsBudgetEnvelope,
+  DEFAULT_FINOPS_BUDGET_ENVELOPE,
+  EU_BANKING_DEFAULT_FINOPS_BUDGET,
+  resolveFinOpsRequestLimits,
+  validateFinOpsBudgetEnvelope,
+  type FinOpsBudgetValidationIssue,
+  type FinOpsBudgetValidationResult,
+  type FinOpsResolvedRequestLimits,
+} from "./finops-budget.js";
+export {
+  buildFinOpsBudgetReport,
+  createFinOpsUsageRecorder,
+  writeFinOpsBudgetReport,
+  type BuildFinOpsBudgetReportInput,
+  type FinOpsAttemptObservation,
+  type FinOpsCacheHitObservation,
+  type FinOpsCacheMissObservation,
+  type FinOpsUsageRecorder,
+  type WriteFinOpsBudgetReportInput,
+  type WriteFinOpsBudgetReportResult,
+} from "./finops-report.js";
+export {
   evaluateWave1Poc,
   evaluateWave1PocFixture,
   WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,

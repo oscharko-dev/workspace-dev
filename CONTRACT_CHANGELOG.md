@@ -31,6 +31,30 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.29.0] - 2026-04-25
+
+### Added (Issue #1371)
+
+- `FINOPS_BUDGET_REPORT_SCHEMA_VERSION` (`"1.0.0"`) and `FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME` (`budget-report.json`) — version stamp and canonical filename for the persisted FinOps budget report. The artifact lives under `<runDir>/finops/` (constant `FINOPS_ARTIFACT_DIRECTORY`) so an operator can browse cost reports separately from the Wave 1 evidence artifacts.
+- `ALLOWED_FINOPS_ROLES` (`test_generation`, `visual_primary`, `visual_fallback`) and discriminant `FinOpsRole` — per-role split that the report attests in lockstep with the gateway's role-separated bundle.
+- `ALLOWED_FINOPS_BUDGET_BREACH_REASONS` and discriminant `FinOpsBudgetBreachReason` — policy-readable reasons (`max_input_tokens`, `max_output_tokens`, `max_wall_clock_ms`, `max_retries`, `max_attempts`, `max_image_bytes`, `max_total_input_tokens`, `max_total_output_tokens`, `max_total_wall_clock_ms`, `max_replay_cache_miss_rate`, `max_fallback_attempts`, `max_live_smoke_calls`, `max_estimated_cost`).
+- `ALLOWED_FINOPS_JOB_OUTCOMES` and discriminant `FinOpsJobOutcome` — terminal outcomes the report stamps (`completed`, `completed_cache_hit`, `budget_exceeded`, `policy_blocked`, `validation_blocked`, `visual_sidecar_failed`, `export_refused`, `gateway_failed`).
+- New exported types: `FinOpsRoleBudget`, `FinOpsBudgetEnvelope`, `FinOpsCostRate`, `FinOpsCostRateMap`, `FinOpsRoleUsage`, `FinOpsBudgetBreach`, `FinOpsBudgetReport`. Hard invariants on the report: `secretsIncluded: false`, `rawPromptsIncluded: false`, `rawScreenshotsIncluded: false` (TYPE-LEVEL `false` literals).
+- New optional fields on `LlmGenerationRequest`: `maxWallClockMs` (fail-closed when exceeded — returns `retryable: false`) and `maxRetries` (per-request override capped against the static client config). Both were previously not configurable per request.
+- `Wave1PocEvidenceArtifactCategory` gains a new variant `"finops"` so future Wave 2 manifests can attest the FinOps report category if a verifier extends the manifest's path-resolution surface.
+- New module `src/test-intelligence/finops-budget.ts` — envelope factory, deep-clone, validator (`validateFinOpsBudgetEnvelope`), `EU_BANKING_DEFAULT_FINOPS_BUDGET` profile, `DEFAULT_FINOPS_BUDGET_ENVELOPE` permissive baseline, and `resolveFinOpsRequestLimits` helper that maps a role budget onto the four `LlmGenerationRequest` fields the gateway consumes.
+- New module `src/test-intelligence/finops-report.ts` — `createFinOpsUsageRecorder`, `buildFinOpsBudgetReport`, `writeFinOpsBudgetReport` (atomic `${pid}.${randomUUID()}.tmp` rename). The recorder aggregates per-attempt observations with cache-hit / cache-miss tracking; cache hits never increment token or attempt counters.
+- `runWave1Poc` accepts optional `finopsBudget` and `finopsCostRates` inputs and always emits `<runDir>/finops/budget-report.json`. Result type adds `finopsReport` (the in-memory `FinOpsBudgetReport`) and `finopsArtifactPath` so eval-gate and inspector code can read the report without re-parsing the file.
+- Visual sidecar attempt records flow into the FinOps recorder verbatim: `VisualSidecarAttempt.deployment` decides the role (`llama-4-maverick-vision` → `visual_primary`, `phi-4-multimodal-poc` → `visual_fallback`, `mock` resolves by attempt index).
+
+### Unchanged (Issue #1371)
+
+- The Wave 1 evidence manifest (`Wave1PocEvidenceManifest`) does NOT attest the FinOps artifact because the manifest verifier resolves artifacts at the run-dir root only (basename invariant). The FinOps artifact is verifiable independently via its negative-invariant fields and its own schema/contract stamps.
+- `gpt-oss-120b` (`test_generation`) still NEVER receives image payloads. The new `imageBytes` counter on `FinOpsRoleUsage` is non-zero only for visual roles.
+- Cache-hit jobs report no LLM call and no new token usage: `recordCacheHit()` increments only the cache-hit counter, leaving every other counter at zero.
+
+---
+
 ## [3.28.0] - 2026-04-25
 
 ### Added (Issue #1368)

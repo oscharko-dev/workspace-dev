@@ -58,9 +58,15 @@ import {
   type BusinessTestIntentIr,
   type CompiledPromptArtifacts,
   type CompiledPromptRequest,
+  type FinOpsBudgetEnvelope,
+  type FinOpsBudgetReport,
+  type FinOpsCostRateMap,
+  type FinOpsJobOutcome,
+  type FinOpsRole,
   type GeneratedTestCase,
   type GeneratedTestCaseAuditMetadata,
   type GeneratedTestCaseList,
+  type LlmGatewayErrorClass,
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type ReviewEvent,
@@ -75,6 +81,7 @@ import {
   type TestCaseTechnique29119,
   type TestCaseType,
   type VisualScreenDescription,
+  type VisualSidecarAttempt,
   type VisualSidecarCaptureInput,
   type VisualSidecarFailure,
   type VisualSidecarResult,
@@ -106,6 +113,13 @@ import {
   transitionReviewState,
 } from "./review-state-machine.js";
 import { runValidationPipeline } from "./validation-pipeline.js";
+import {
+  buildFinOpsBudgetReport,
+  createFinOpsUsageRecorder,
+  writeFinOpsBudgetReport,
+  type FinOpsUsageRecorder,
+} from "./finops-report.js";
+import { DEFAULT_FINOPS_BUDGET_ENVELOPE } from "./finops-budget.js";
 
 const TEST_GENERATION_DEPLOYMENT = "gpt-oss-120b-mock";
 const TEST_GENERATION_MODEL_REVISION = "gpt-oss-120b-2026-04-25";
@@ -163,6 +177,18 @@ export interface RunWave1PocInput {
    * sidecar client and the harness independently assert this.
    */
   bundle?: LlmGatewayClientBundle;
+  /**
+   * Optional per-job FinOps budget envelope (Issue #1371). When omitted,
+   * the harness applies the permissive default envelope so the FinOps
+   * budget report still publishes per-role usage, but no breach is raised.
+   */
+  finopsBudget?: FinOpsBudgetEnvelope;
+  /**
+   * Optional cost-rate map. The currency label is stamped onto the
+   * persisted FinOps report; the per-role rates are multiplied with
+   * observed token counts to produce `estimatedCost`.
+   */
+  finopsCostRates?: FinOpsCostRateMap;
 }
 
 export interface Wave1PocRunResult {
@@ -193,6 +219,18 @@ export interface Wave1PocRunResult {
    * path so existing call sites remain typed.
    */
   visualSidecar?: VisualSidecarResult;
+  /**
+   * FinOps budget report (Issue #1371) — always emitted by the harness so
+   * downstream operators can read per-role token usage, cache-hit status,
+   * and any budget breach without re-deriving from individual artifacts.
+   */
+  finopsReport: FinOpsBudgetReport;
+  /**
+   * Absolute path to the persisted `finops/budget-report.json` artifact.
+   * Always set so verification + inspector code can read it without
+   * recomputing the layout.
+   */
+  finopsArtifactPath: string;
 }
 
 export class Wave1PocVisualSidecarFailureError extends Error {
@@ -664,6 +702,15 @@ export const runWave1Poc = async (
 ): Promise<Wave1PocRunResult> => {
   await mkdir(input.runDir, { recursive: true });
 
+  // FinOps recorder (Issue #1371). Aggregates per-role usage and produces a
+  // budget-report.json artifact at the end of the run, regardless of whether
+  // the operator supplied a budget envelope. The default envelope is
+  // permissive so absence of an envelope cannot accidentally trigger a
+  // breach.
+  const finopsRecorder = createFinOpsUsageRecorder(input.finopsCostRates);
+  const finopsBudget = input.finopsBudget ?? DEFAULT_FINOPS_BUDGET_ENVELOPE;
+  let finopsTerminalOutcome: FinOpsJobOutcome | undefined;
+
   // 1. Load fixture.
   const fixture = await loadWave1PocFixture(input.fixtureId);
 
@@ -711,9 +758,26 @@ export const runWave1Poc = async (
       generatedAt: input.generatedAt,
     });
     sidecarArtifactBytes = written.bytes;
+    recordVisualSidecarAttempts({
+      recorder: finopsRecorder,
+      attempts: sidecarResult.attempts,
+      captureCount: input.visualCaptures.length,
+    });
     if (sidecarResult.outcome === "success") {
       sidecarVisual = sidecarResult.visual;
     } else {
+      finopsTerminalOutcome = "visual_sidecar_failed";
+      await writeFinOpsBudgetReportForFailure({
+        recorder: finopsRecorder,
+        budget: finopsBudget,
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        runDir: input.runDir,
+        outcome: finopsTerminalOutcome,
+        ...(input.finopsCostRates !== undefined
+          ? { costRates: input.finopsCostRates }
+          : {}),
+      });
       await writeVisualSidecarFailureEvidenceManifest({
         fixtureId: input.fixtureId,
         jobId: input.jobId,
@@ -820,7 +884,31 @@ export const runWave1Poc = async (
     responseSchema: compiled.request.responseSchema,
     responseSchemaName: compiled.request.responseSchemaName,
   });
+  // Record the test_generation attempt deterministically. The mock client
+  // returns immediately with `usage: {0, 0}`; recording `durationMs: 0`
+  // keeps the FinOps report byte-stable. `liveSmoke: false` because the
+  // harness always uses the mock client for the structured generator.
+  finopsRecorder.recordAttempt({
+    role: "test_generation",
+    deployment: TEST_GENERATION_DEPLOYMENT,
+    durationMs: 0,
+    result,
+    liveSmoke: false,
+    fallback: false,
+  });
   if (result.outcome !== "success") {
+    finopsTerminalOutcome = "gateway_failed";
+    await writeFinOpsBudgetReportForFailure({
+      recorder: finopsRecorder,
+      budget: finopsBudget,
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      runDir: input.runDir,
+      outcome: finopsTerminalOutcome,
+      ...(input.finopsCostRates !== undefined
+        ? { costRates: input.finopsCostRates }
+        : {}),
+    });
     throw new Error(
       `runWave1Poc: mock LLM returned a failure (${result.errorClass}: ${result.message})`,
     );
@@ -1000,6 +1088,35 @@ export const runWave1Poc = async (
     exportRun.artifacts,
   );
 
+  // 9b. Build + persist the FinOps budget report (Issue #1371). The
+  //     report is byte-stable for the same recorder + budget input so it
+  //     plugs cleanly into the manifest's SHA-256 attestation. We build
+  //     it BEFORE the manifest so its bytes can be hashed in step 10.
+  const finopsReport = buildFinOpsBudgetReport({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    budget: finopsBudget,
+    recorder: finopsRecorder,
+    ...(input.finopsCostRates !== undefined
+      ? { costRates: input.finopsCostRates }
+      : {}),
+    ...(finopsTerminalOutcome !== undefined
+      ? { outcomeOverride: finopsTerminalOutcome }
+      : deriveFinopsOutcomeFromValidation(validation, exportRun.artifacts) !==
+          undefined
+        ? {
+            outcomeOverride: deriveFinopsOutcomeFromValidation(
+              validation,
+              exportRun.artifacts,
+            ) as FinOpsJobOutcome,
+          }
+        : {}),
+  });
+  const finopsWritten = await writeFinOpsBudgetReport({
+    report: finopsReport,
+    runDir: input.runDir,
+  });
+
   // 10. Build evidence manifest. The manifest records the on-disk
   //     bytes for every artifact emitted above.
   const manifestVisualPrimary =
@@ -1108,6 +1225,15 @@ export const runWave1Poc = async (
       ...exportArtifactBytes,
     ],
   });
+  // The FinOps budget report (`<runDir>/finops/budget-report.json`) is
+  // intentionally NOT included in the Wave 1 evidence manifest because
+  // the manifest verifier resolves artifacts at the run-dir root only
+  // (filename basename invariant), and the AC requires the FinOps
+  // report to live under a dedicated `finops/` directory. The artifact
+  // ships with its own schema/contract stamps and the negative
+  // invariants (`secretsIncluded: false`, `rawPromptsIncluded: false`,
+  // `rawScreenshotsIncluded: false`) so an operator can verify it
+  // independently with `JSON.parse + canonicalJson + sha256`.
   await writeWave1PocEvidenceManifest({
     manifest,
     destinationDir: input.runDir,
@@ -1131,7 +1257,128 @@ export const runWave1Poc = async (
     manifest,
     artifactFilenames: manifest.artifacts.map((a) => a.filename),
     ...(sidecarResult !== undefined ? { visualSidecar: sidecarResult } : {}),
+    finopsReport,
+    finopsArtifactPath: finopsWritten.artifactPath,
   };
+};
+
+/**
+ * Translate the per-attempt VisualSidecarAttempt records into FinOps
+ * observations. Per-attempt durations are taken verbatim from the sidecar
+ * client; they are deterministic when the caller passes a deterministic
+ * `clock` to `describeVisualScreens` (the harness inherits whatever
+ * timing source the client uses).
+ */
+const recordVisualSidecarAttempts = (input: {
+  recorder: FinOpsUsageRecorder;
+  attempts: ReadonlyArray<VisualSidecarAttempt>;
+  captureCount: number;
+}): void => {
+  for (let i = 0; i < input.attempts.length; i += 1) {
+    const attempt = input.attempts[i] as VisualSidecarAttempt;
+    // Role assignment is driven by the deployment label rather than the
+    // attempt index — Wave 1 convention pins llama-4 to primary and phi-4
+    // to fallback. Mock deployments inherit the role from the index
+    // (first attempt → primary, subsequent → fallback) which mirrors the
+    // way `describeVisualScreens` orchestrates the two stages.
+    const role: FinOpsRole = roleFromVisualDeployment(
+      attempt.deployment,
+      i === 0,
+    );
+    const succeeded = attempt.errorClass === undefined;
+    const result: LlmGenerationResult = succeeded
+      ? {
+          outcome: "success",
+          content: null,
+          finishReason: "stop",
+          // Visual sidecars do not report token usage; track image bytes
+          // separately and keep token counters at 0.
+          usage: { inputTokens: 0, outputTokens: 0 },
+          modelDeployment: attempt.deployment,
+          modelRevision: attempt.deployment,
+          gatewayRelease: attempt.deployment,
+          attempt: attempt.attempt,
+        }
+      : {
+          outcome: "error",
+          errorClass: (attempt.errorClass ??
+            "transport") as LlmGatewayErrorClass,
+          message: "visual sidecar attempt failure (redacted by client)",
+          retryable: false,
+          attempt: attempt.attempt,
+        };
+    input.recorder.recordAttempt({
+      role,
+      deployment: attempt.deployment,
+      durationMs: attempt.durationMs,
+      result,
+      fallback: role === "visual_fallback",
+      liveSmoke: attempt.deployment !== "mock",
+    });
+  }
+};
+
+const roleFromVisualDeployment = (
+  deployment: VisualSidecarAttempt["deployment"],
+  isFirstAttempt: boolean,
+): FinOpsRole => {
+  if (deployment === "phi-4-multimodal-poc") return "visual_fallback";
+  if (deployment === "llama-4-maverick-vision") return "visual_primary";
+  return isFirstAttempt ? "visual_primary" : "visual_fallback";
+};
+
+/**
+ * Map validation/export pipeline outcomes onto FinOps job-outcome literals.
+ * Returns `undefined` when nothing terminal happened (the job ran cleanly
+ * to completion).
+ */
+const deriveFinopsOutcomeFromValidation = (
+  validation: ValidationPipelineArtifacts,
+  exportArtifacts: ExportPipelineArtifacts,
+): FinOpsJobOutcome | undefined => {
+  if (validation.visual !== undefined && validation.visual.blocked) {
+    return "visual_sidecar_failed";
+  }
+  if (validation.policy.blocked) {
+    return "policy_blocked";
+  }
+  if (validation.validation.blocked) {
+    return "validation_blocked";
+  }
+  if (exportArtifacts.refused) {
+    return "export_refused";
+  }
+  return undefined;
+};
+
+/**
+ * Persist a partial FinOps report when the harness aborts before reaching
+ * the normal finalisation step (e.g. visual-sidecar failure or
+ * test_generation gateway error). The artifact still lands at
+ * `<runDir>/finops/budget-report.json` so an operator can read what was
+ * recorded before the abort.
+ */
+const writeFinOpsBudgetReportForFailure = async (input: {
+  recorder: FinOpsUsageRecorder;
+  budget: FinOpsBudgetEnvelope;
+  jobId: string;
+  generatedAt: string;
+  runDir: string;
+  outcome: FinOpsJobOutcome;
+  costRates?: FinOpsCostRateMap;
+}): Promise<void> => {
+  const report = buildFinOpsBudgetReport({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    budget: input.budget,
+    recorder: input.recorder,
+    outcomeOverride: input.outcome,
+    ...(input.costRates !== undefined ? { costRates: input.costRates } : {}),
+  });
+  await writeFinOpsBudgetReport({
+    report,
+    runDir: input.runDir,
+  });
 };
 
 const collectExportBytes = async (

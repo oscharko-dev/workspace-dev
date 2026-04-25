@@ -654,6 +654,20 @@ export interface LlmGenerationRequest {
   /** Optional client-side input budget; gateway clients fail closed when exceeded. */
   maxInputTokens?: number;
   maxOutputTokens?: number;
+  /**
+   * Optional per-request wall-clock budget. When set, the request times out
+   * after `maxWallClockMs` instead of the client config's `timeoutMs` if
+   * smaller, AND the resulting timeout failure is surfaced with
+   * `retryable: false` (FinOps fail-closed semantics — Issue #1371).
+   */
+  maxWallClockMs?: number;
+  /**
+   * Optional per-request retry cap. When set, the gateway uses
+   * `min(config.maxRetries, request.maxRetries)` so an operator can bound
+   * retry blast radius for an individual job without rebuilding the client
+   * (Issue #1371).
+   */
+  maxRetries?: number;
 }
 
 /** Provider finish reasons normalized to a single set. */
@@ -2875,7 +2889,8 @@ export type Wave1PocEvidenceArtifactCategory =
   | "review"
   | "export"
   | "manifest"
-  | "visual_sidecar";
+  | "visual_sidecar"
+  | "finops";
 
 /** Single artifact attested by the Wave 1 POC evidence manifest. */
 export interface Wave1PocEvidenceArtifact {
@@ -3315,8 +3330,293 @@ export interface DryRunReportArtifact {
 }
 
 /**
+ * FinOps budget + operational controls for test-intelligence LLM jobs (Issue #1371).
+ *
+ * The FinOps surface lets an operator bound an LLM job's input/output token
+ * usage, wall-clock duration, retry count, image payload size, and replay-cache
+ * miss rate per role (`test_generation`, `visual_primary`, `visual_fallback`),
+ * and persist a deterministic per-job `budget-report.json` under the job's
+ * `finops/` artifact directory. The artifact is local-only by default and
+ * never carries secrets, raw prompts, or image bytes.
+ *
+ * Hard invariants:
+ *   - Cache hits report zero token usage AND zero LLM call attempts.
+ *   - Wall-clock budget breach is FAIL CLOSED (`retryable: false`).
+ *   - Token / wall-clock budget breach STOPS the job before downstream work.
+ *   - The artifact records SHA-256 hashes of identity inputs only — never
+ *     prompt text, response content, or token strings.
+ */
+
+/** Schema version for the persisted FinOps budget report artifact (Issue #1371). */
+export const FINOPS_BUDGET_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Subdirectory under a run dir where FinOps artifacts are persisted. */
+export const FINOPS_ARTIFACT_DIRECTORY = "finops" as const;
+
+/** Canonical filename for the FinOps budget report artifact. */
+export const FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME =
+  "budget-report.json" as const;
+
+/**
+ * Per-role discriminant used inside the FinOps surface. Mirrors the gateway
+ * roles but is exported as its own list so policy gates can iterate roles
+ * without depending on the gateway surface.
+ */
+export const ALLOWED_FINOPS_ROLES = [
+  "test_generation",
+  "visual_primary",
+  "visual_fallback",
+] as const;
+
+/** Discriminant of an allowed FinOps role. */
+export type FinOpsRole = (typeof ALLOWED_FINOPS_ROLES)[number];
+
+/** Allowed budget breach reasons. Discriminated for policy-readable diagnostics. */
+export const ALLOWED_FINOPS_BUDGET_BREACH_REASONS = [
+  "max_input_tokens",
+  "max_output_tokens",
+  "max_wall_clock_ms",
+  "max_retries",
+  "max_attempts",
+  "max_image_bytes",
+  "max_total_input_tokens",
+  "max_total_output_tokens",
+  "max_total_wall_clock_ms",
+  "max_replay_cache_miss_rate",
+  "max_fallback_attempts",
+  "max_live_smoke_calls",
+  "max_estimated_cost",
+] as const;
+
+/** Discriminant of a FinOps budget breach reason. */
+export type FinOpsBudgetBreachReason =
+  (typeof ALLOWED_FINOPS_BUDGET_BREACH_REASONS)[number];
+
+/** Allowed terminal outcomes for a FinOps-tracked job. */
+export const ALLOWED_FINOPS_JOB_OUTCOMES = [
+  "completed",
+  "completed_cache_hit",
+  "budget_exceeded",
+  "policy_blocked",
+  "validation_blocked",
+  "visual_sidecar_failed",
+  "export_refused",
+  "gateway_failed",
+] as const;
+
+/** Discriminant of the terminal job outcome the FinOps report records. */
+export type FinOpsJobOutcome = (typeof ALLOWED_FINOPS_JOB_OUTCOMES)[number];
+
+/**
+ * Per-role budget envelope. Every limit is optional; `undefined` means the
+ * limit is not enforced for that role. Counters compare with `>` (strict
+ * exceedance) — a usage that exactly equals a limit is allowed.
+ */
+export interface FinOpsRoleBudget {
+  /** Cap on the gateway's pre-flight `estimateInputTokens` (per-request). */
+  maxInputTokensPerRequest?: number;
+  /** Cap on `max_completion_tokens` forwarded to the gateway (per-request). */
+  maxOutputTokensPerRequest?: number;
+  /** Aggregate input-token cap across every request the role makes. */
+  maxTotalInputTokens?: number;
+  /** Aggregate output-token cap across every request the role makes. */
+  maxTotalOutputTokens?: number;
+  /** Per-request wall-clock cap. Maps to `LlmGenerationRequest.maxWallClockMs`. */
+  maxWallClockMsPerRequest?: number;
+  /** Aggregate wall-clock cap across every request the role makes. */
+  maxTotalWallClockMs?: number;
+  /** Per-request retry cap. Maps to `LlmGenerationRequest.maxRetries`. */
+  maxRetriesPerRequest?: number;
+  /**
+   * Maximum number of gateway attempts the role may make in total
+   * (success-or-failure). Useful when the live smoke surface should
+   * fire only N times.
+   */
+  maxAttempts?: number;
+  /** Cap on the decoded image bytes per request (visual roles only). */
+  maxImageBytesPerRequest?: number;
+  /**
+   * Maximum number of fallback-deployment attempts the visual role may make.
+   * Enforced against `visual_fallback` only; ignored for other roles.
+   */
+  maxFallbackAttempts?: number;
+  /**
+   * Maximum number of live-smoke calls the role may make. Enforced when
+   * the operator wires a live-smoke counter into the recorder; otherwise
+   * treated as not-configured.
+   */
+  maxLiveSmokeCalls?: number;
+}
+
+/**
+ * Aggregate budget envelope for a job. The envelope is rendered into the
+ * FinOps report verbatim so an operator can read the limits applied without
+ * cross-referencing source code.
+ */
+export interface FinOpsBudgetEnvelope {
+  /** Stable identifier for the budget profile (operator-supplied). */
+  budgetId: string;
+  /** Free-form version label for the budget profile. */
+  budgetVersion: string;
+  /** Aggregate wall-clock cap across the entire job, all roles combined. */
+  maxJobWallClockMs?: number;
+  /**
+   * Maximum permitted replay-cache miss rate over the job (`misses / total`).
+   * `undefined` disables the check. Range `[0, 1]`.
+   */
+  maxReplayCacheMissRate?: number;
+  /**
+   * Optional per-job estimated cost cap (currency-agnostic — the recorder
+   * accepts caller-supplied per-1000-token rates). `undefined` disables the
+   * check.
+   */
+  maxEstimatedCost?: number;
+  /** Per-role budget records. Missing roles are unconstrained. */
+  roles: {
+    test_generation?: FinOpsRoleBudget;
+    visual_primary?: FinOpsRoleBudget;
+    visual_fallback?: FinOpsRoleBudget;
+  };
+}
+
+/**
+ * Per-attempt cost-rate input. Operators can supply a flat per-1000-token
+ * rate and a per-attempt fixed cost; the recorder multiplies usage to
+ * produce `estimatedCost`. Cost is currency-agnostic (the operator chooses
+ * the unit, e.g. USD or "internal credits"), and the report stamps the
+ * caller-supplied label so consumers know what the number means.
+ */
+export interface FinOpsCostRate {
+  /** Cost per 1000 input tokens. */
+  inputTokenCostPer1k?: number;
+  /** Cost per 1000 output tokens. */
+  outputTokenCostPer1k?: number;
+  /** Fixed per-attempt cost (e.g. minimum-charge / API-call premium). */
+  fixedCostPerAttempt?: number;
+}
+
+/** Per-role cost rate map. Roles with no rate produce `estimatedCost = 0`. */
+export interface FinOpsCostRateMap {
+  /** Operator-supplied label describing the unit (e.g. "USD"). */
+  currencyLabel: string;
+  rates: {
+    test_generation?: FinOpsCostRate;
+    visual_primary?: FinOpsCostRate;
+    visual_fallback?: FinOpsCostRate;
+  };
+}
+
+/**
+ * Per-role usage record. Aggregated across every gateway attempt the role
+ * made during the job. Cache hits do NOT increment any counter except
+ * `cacheHits`.
+ */
+export interface FinOpsRoleUsage {
+  role: FinOpsRole;
+  /** Deployment label observed (e.g. `gpt-oss-120b-mock`). Empty string when no attempt was made. */
+  deployment: string;
+  /** Total LLM call attempts (success + failure). Cache hits do NOT increment. */
+  attempts: number;
+  /** Successful attempts. */
+  successes: number;
+  /** Failure attempts (any error class). */
+  failures: number;
+  /** Sum of input tokens reported by the gateway across all successful attempts. */
+  inputTokens: number;
+  /** Sum of output tokens reported by the gateway across all successful attempts. */
+  outputTokens: number;
+  /** Sum of decoded image-input bytes per request (visual roles only; 0 elsewhere). */
+  imageBytes: number;
+  /** Number of replay-cache hits attributed to this role. */
+  cacheHits: number;
+  /** Number of replay-cache misses attributed to this role. */
+  cacheMisses: number;
+  /** Number of attempts that selected a fallback deployment. */
+  fallbackAttempts: number;
+  /** Number of attempts that hit a non-mock gateway (live-smoke counter). */
+  liveSmokeCalls: number;
+  /** Sum of wall-clock duration across attempts, in milliseconds. */
+  durationMs: number;
+  /** Last finish reason observed (success path) — `undefined` if no success. */
+  lastFinishReason?: LlmFinishReason;
+  /** Last error class observed (failure path) — `undefined` if no failure. */
+  lastErrorClass?: LlmGatewayErrorClass | "schema_invalid_response";
+  /** Estimated cost contribution from this role (currency-agnostic). */
+  estimatedCost: number;
+}
+
+/**
+ * Single budget breach record. Multiple breaches may be stamped on a
+ * single report; the consumer can pick the first by `rule` order.
+ */
+export interface FinOpsBudgetBreach {
+  rule: FinOpsBudgetBreachReason;
+  /** Affected role, or `undefined` for job-level rules. */
+  role?: FinOpsRole;
+  /** Numeric observed value (encoded as number for comparators). */
+  observed: number;
+  /** Numeric threshold that was breached. */
+  threshold: number;
+  /** Sanitized human-readable message — never carries tokens or PII. */
+  message: string;
+}
+
+/**
+ * FinOps budget report artifact. Persisted under
+ * `<runDir>/finops/budget-report.json`. The artifact is byte-stable per job
+ * (sorted role list, deterministic breach order). Cache-hit jobs report no
+ * gateway usage; the `outcome` reflects this verbatim.
+ *
+ * Negative invariants stamped explicitly so absence cannot be inferred:
+ *   - `secretsIncluded: false`
+ *   - `rawPromptsIncluded: false`
+ *   - `rawScreenshotsIncluded: false`
+ */
+export interface FinOpsBudgetReport {
+  schemaVersion: typeof FINOPS_BUDGET_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Verbatim copy of the budget envelope applied to this job. */
+  budget: FinOpsBudgetEnvelope;
+  /** Caller-supplied currency label. `undefined` when no rate map was supplied. */
+  currencyLabel?: string;
+  /** Sorted by `role`. Always lists every role, even when usage is zero. */
+  roles: FinOpsRoleUsage[];
+  /** Aggregate counters across every role. */
+  totals: {
+    inputTokens: number;
+    outputTokens: number;
+    attempts: number;
+    successes: number;
+    failures: number;
+    cacheHits: number;
+    cacheMisses: number;
+    fallbackAttempts: number;
+    liveSmokeCalls: number;
+    durationMs: number;
+    imageBytes: number;
+    estimatedCost: number;
+    /** `cacheHits / (cacheHits + cacheMisses)` clamped to `[0, 1]`. NaN → 0. */
+    replayCacheHitRate: number;
+    /** `cacheMisses / (cacheHits + cacheMisses)` clamped to `[0, 1]`. NaN → 0. */
+    replayCacheMissRate: number;
+  };
+  /** Sorted by `(rule, role)`. Empty when no budget was breached. */
+  breaches: FinOpsBudgetBreach[];
+  /** Terminal job outcome the report attests. */
+  outcome: FinOpsJobOutcome;
+  /** Hard invariant — secrets are never embedded in this artifact. */
+  secretsIncluded: false;
+  /** Hard invariant — raw prompt or response text is never embedded. */
+  rawPromptsIncluded: false;
+  /** Hard invariant — image bytes are never embedded. */
+  rawScreenshotsIncluded: false;
+}
+
+/**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.28.0" as const;
+export const CONTRACT_VERSION = "3.29.0" as const;

@@ -141,8 +141,19 @@ export const createLlmGatewayClient = (
     if (guardError !== undefined) return guardError;
     const budgetError = guardInputBudget(request);
     if (budgetError !== undefined) return budgetError;
+    const wallClockError = guardWallClockBudget(request);
+    if (wallClockError !== undefined) return wallClockError;
+    const retriesError = guardMaxRetriesBudget(request);
+    if (retriesError !== undefined) return retriesError;
 
-    const maxAttempts = Math.max(1, config.maxRetries + 1);
+    // Per-request retry cap (Issue #1371): operator may pin a tighter cap
+    // for a single job without rebuilding the client. The effective cap is
+    // the minimum of the static config and the per-request request value.
+    const effectiveRetries =
+      request.maxRetries !== undefined
+        ? Math.min(config.maxRetries, request.maxRetries)
+        : config.maxRetries;
+    const maxAttempts = Math.max(1, effectiveRetries + 1);
     let lastFailure: LlmGenerationFailure | undefined;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -276,6 +287,52 @@ const guardInputBudget = (
   return undefined;
 };
 
+/**
+ * Validate `request.maxWallClockMs`. The wall-clock budget itself is enforced
+ * inside `dispatchOnce` against an `AbortController`; this guard only rejects
+ * malformed values up-front so the gateway never starts a request with a
+ * structurally invalid budget (Issue #1371).
+ */
+const guardWallClockBudget = (
+  request: LlmGenerationRequest,
+): LlmGenerationFailure | undefined => {
+  if (request.maxWallClockMs === undefined) return undefined;
+  if (
+    !Number.isSafeInteger(request.maxWallClockMs) ||
+    request.maxWallClockMs <= 0
+  ) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: "maxWallClockMs must be a positive integer",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  return undefined;
+};
+
+/**
+ * Validate `request.maxRetries`. The cap is applied via `Math.min` against
+ * the client config inside `generate`; this guard only rejects malformed
+ * values up-front (Issue #1371).
+ */
+const guardMaxRetriesBudget = (
+  request: LlmGenerationRequest,
+): LlmGenerationFailure | undefined => {
+  if (request.maxRetries === undefined) return undefined;
+  if (!Number.isSafeInteger(request.maxRetries) || request.maxRetries < 0) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message: "maxRetries must be a non-negative integer",
+      retryable: false,
+      attempt: 0,
+    };
+  }
+  return undefined;
+};
+
 const estimateInputTokens = (request: LlmGenerationRequest): number => {
   const encoder = new TextEncoder();
   let bytes =
@@ -318,8 +375,21 @@ const dispatchOnce = async ({
   const headers = await buildAuthHeaders(config, apiKeyProvider, attempt);
   if ("error" in headers) return headers.error;
 
+  // Per-request wall-clock budget overrides the static client timeout when
+  // it is smaller. When the breach is attributed to the per-request budget
+  // we mark `retryable: false` (FinOps fail-closed semantics — Issue #1371)
+  // because retrying would by definition violate the same budget.
+  const requestMaxWallClockMs = request.maxWallClockMs;
+  const useRequestBudget =
+    requestMaxWallClockMs !== undefined &&
+    requestMaxWallClockMs < config.timeoutMs;
+  const effectiveTimeoutMs = useRequestBudget
+    ? requestMaxWallClockMs
+    : config.timeoutMs;
+  const wallClockBudgetCausedTimeout = useRequestBudget;
+
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), config.timeoutMs);
+  const timer = setTimeout(() => controller.abort(), effectiveTimeoutMs);
 
   let response: Response;
   try {
@@ -335,10 +405,19 @@ const dispatchOnce = async ({
       err instanceof Error &&
       (err.name === "AbortError" || /aborted/i.test(err.message))
     ) {
+      if (wallClockBudgetCausedTimeout) {
+        return {
+          outcome: "error",
+          errorClass: "timeout",
+          message: `request exceeded maxWallClockMs ${effectiveTimeoutMs}ms`,
+          retryable: false,
+          attempt,
+        };
+      }
       return {
         outcome: "error",
         errorClass: "timeout",
-        message: `request timed out after ${config.timeoutMs}ms`,
+        message: `request timed out after ${effectiveTimeoutMs}ms`,
         retryable: true,
         attempt,
       };
@@ -801,7 +880,10 @@ const validateJsonSchemaSubset = (
   }
 
   const enumValues = schema["enum"];
-  if (Array.isArray(enumValues) && !enumValues.some((item) => Object.is(item, value))) {
+  if (
+    Array.isArray(enumValues) &&
+    !enumValues.some((item) => Object.is(item, value))
+  ) {
     return `${path} must be one of the allowed enum values`;
   }
 
@@ -828,7 +910,11 @@ const validateJsonSchemaSubset = (
     }
 
     const properties = schema["properties"];
-    if (typeof properties === "object" && properties !== null && !Array.isArray(properties)) {
+    if (
+      typeof properties === "object" &&
+      properties !== null &&
+      !Array.isArray(properties)
+    ) {
       const propertySchemas = properties as Record<string, unknown>;
       for (const [key, propertySchema] of Object.entries(propertySchemas)) {
         if (
@@ -849,7 +935,9 @@ const validateJsonSchemaSubset = (
 
     if (schema["additionalProperties"] === false) {
       const allowed = new Set(
-        typeof properties === "object" && properties !== null && !Array.isArray(properties)
+        typeof properties === "object" &&
+          properties !== null &&
+          !Array.isArray(properties)
           ? Object.keys(properties)
           : [],
       );
@@ -914,7 +1002,9 @@ const validateJsonSchemaType = (
 ): string | undefined => {
   switch (type) {
     case "object":
-      return typeof value === "object" && value !== null && !Array.isArray(value)
+      return typeof value === "object" &&
+        value !== null &&
+        !Array.isArray(value)
         ? undefined
         : `${path} must be an object`;
     case "array":
@@ -928,7 +1018,9 @@ const validateJsonSchemaType = (
     case "integer":
       return Number.isInteger(value) ? undefined : `${path} must be an integer`;
     case "boolean":
-      return typeof value === "boolean" ? undefined : `${path} must be a boolean`;
+      return typeof value === "boolean"
+        ? undefined
+        : `${path} must be a boolean`;
     case "null":
       return value === null ? undefined : `${path} must be null`;
     default:
