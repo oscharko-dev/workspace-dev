@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="360" height="220" viewBox="0 0 360 220" role="img" aria-label="Synthetic payment authorization mask fixture">
+  <rect width="360" height="220" fill="#ffffff"/>
+  <rect x="24" y="24" width="312" height="172" rx="12" fill="#f4f6f8" stroke="#1d3557" stroke-width="2"/>
+  <rect x="48" y="54" width="168" height="18" rx="4" fill="#1d3557"/>
+  <rect x="48" y="92" width="264" height="22" rx="4" fill="#bfc7d5"/>
+  <rect x="48" y="126" width="212" height="22" rx="4" fill="#bfc7d5"/>
+  <rect x="48" y="164" width="116" height="28" rx="6" fill="#2a9d8f"/>
+  <rect x="180" y="164" width="132" height="28" rx="6" fill="#e63946"/>
+</svg>

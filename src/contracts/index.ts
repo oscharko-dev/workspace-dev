@@ -1970,6 +1970,7 @@ export const BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION = "1.0.0" as const;
 /** Known PII-like categories detected in mock form data. */
 export type PiiKind =
   | "iban"
+  | "bic"
   | "pan"
   | "tax_id"
   | "email"

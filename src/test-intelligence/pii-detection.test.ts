@@ -14,6 +14,13 @@ test("detectPii rejects an IBAN with a bad checksum", () => {
   assert.equal(result, null);
 });
 
+test("detectPii flags a BIC/SWIFT-style bank identifier", () => {
+  const result = detectPii("INGDDEFFXXX");
+  assert.notEqual(result, null);
+  assert.equal(result?.kind, "bic");
+  assert.equal(result?.redacted, "[REDACTED:BIC]");
+});
+
 test("detectPii flags a valid Visa PAN (4111 1111 1111 1111)", () => {
   const result = detectPii("Card: 4111 1111 1111 1111");
   assert.notEqual(result, null);
@@ -65,6 +72,7 @@ test("detectPii rejects clean action labels", () => {
 test("detectPii redaction tokens never contain the original value", () => {
   const cases = [
     { input: "DE89 3704 0044 0532 0130 00", kind: "iban" },
+    { input: "INGDDEFFXXX", kind: "bic" },
     { input: "4111 1111 1111 1111", kind: "pan" },
     { input: "max.mustermann@sparkasse.de", kind: "email" },
     { input: "+49 221 1234567", kind: "phone" },
@@ -100,6 +108,7 @@ test("detectPii is idempotent across repeated calls (no stateful regex lastIndex
 
 test("redactPii returns the stable token per kind", () => {
   assert.equal(redactPii("iban"), "[REDACTED:IBAN]");
+  assert.equal(redactPii("bic"), "[REDACTED:BIC]");
   assert.equal(redactPii("pan"), "[REDACTED:PAN]");
   assert.equal(redactPii("email"), "[REDACTED:EMAIL]");
   assert.equal(redactPii("phone"), "[REDACTED:PHONE]");

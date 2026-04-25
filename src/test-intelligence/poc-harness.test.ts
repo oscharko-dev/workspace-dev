@@ -10,7 +10,12 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { verifyWave1PocEvidenceFromDisk } from "./evidence-manifest.js";
-import { runWave1Poc } from "./poc-harness.js";
+import {
+  BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
+  COMPILED_PROMPT_ARTIFACT_FILENAME,
+  GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
+  runWave1Poc,
+} from "./poc-harness.js";
 
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 
@@ -45,6 +50,9 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     // Every artifact filename must be a basename and unique.
     const filenames = result.artifactFilenames;
     assert.equal(new Set(filenames).size, filenames.length);
+    assert.ok(filenames.includes(BUSINESS_INTENT_IR_ARTIFACT_FILENAME));
+    assert.ok(filenames.includes(COMPILED_PROMPT_ARTIFACT_FILENAME));
+    assert.ok(filenames.includes(GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME));
     // Manifest invariants.
     assert.equal(result.manifest.rawScreenshotsIncluded, false);
     assert.equal(result.manifest.imagePayloadSentToTestGeneration, false);
@@ -152,6 +160,63 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     );
   });
 }
+
+test("poc-harness: seals request audit proof that test generation received no images", async () => {
+  const runDir = await newRunDir();
+  const result = await runWave1Poc({
+    fixtureId: "poc-payment-auth",
+    jobId: "job-poc-payment-auth-request-audit",
+    generatedAt: GENERATED_AT,
+    runDir,
+  });
+  const raw = await readFile(
+    join(runDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME),
+    "utf8",
+  );
+  const audit = JSON.parse(raw) as {
+    deployment: string;
+    requestCount: number;
+    imageInputCounts: number[];
+    imagePayloadSent: boolean;
+    promptHash: string;
+    schemaHash: string;
+    inputHash: string;
+    cacheKeyDigest: string;
+  };
+  assert.equal(audit.deployment, "gpt-oss-120b-mock");
+  assert.equal(audit.requestCount, 1);
+  assert.deepEqual(audit.imageInputCounts, [0]);
+  assert.equal(audit.imagePayloadSent, false);
+  assert.equal(audit.promptHash, result.compiledPrompt.request.hashes.promptHash);
+  assert.equal(audit.schemaHash, result.compiledPrompt.request.hashes.schemaHash);
+  assert.equal(audit.inputHash, result.compiledPrompt.request.hashes.inputHash);
+  assert.equal(
+    audit.cacheKeyDigest,
+    result.compiledPrompt.request.hashes.cacheKey,
+  );
+  const attested = result.manifest.artifacts.find(
+    (artifact) => artifact.filename === GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
+  );
+  assert.equal(attested?.category, "manifest");
+});
+
+test("poc-harness: visual mask hash participates in compiled prompt identity", async () => {
+  const runDir = await newRunDir();
+  const result = await runWave1Poc({
+    fixtureId: "poc-payment-auth",
+    jobId: "job-poc-payment-auth-mask",
+    generatedAt: GENERATED_AT,
+    runDir,
+  });
+  const fixtureImageHash =
+    result.compiledPrompt.artifacts.visualBinding.fixtureImageHash;
+  assert.match(fixtureImageHash ?? "", /^[0-9a-f]{64}$/);
+  assert.equal(
+    result.compiledPrompt.request.userPrompt.includes(fixtureImageHash ?? ""),
+    false,
+    "compiled prompt should carry visual image provenance by hash identity, not prompt text",
+  );
+});
 
 test("poc-harness: visual sidecar gate must not block on shipped fixtures", async () => {
   for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
