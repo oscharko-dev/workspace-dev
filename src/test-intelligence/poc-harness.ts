@@ -51,6 +51,7 @@ import {
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
@@ -73,6 +74,8 @@ import {
   type TestCaseTechnique29119,
   type TestCaseType,
   type VisualScreenDescription,
+  type VisualSidecarCaptureInput,
+  type VisualSidecarResult,
   type Wave1PocEvidenceManifest,
   type Wave1PocFixtureId,
 } from "../contracts/index.js";
@@ -85,8 +88,14 @@ import {
 } from "./evidence-manifest.js";
 import { runAndPersistExportPipeline } from "./export-pipeline.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
+import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { loadWave1PocFixture } from "./poc-fixtures.js";
+import {
+  assertNoImagePayloadToTestGeneration,
+  describeVisualScreens,
+  writeVisualSidecarResultArtifact,
+} from "./visual-sidecar-client.js";
 import { cloneOpenTextAlmReferenceProfile } from "./qc-mapping.js";
 import { compilePrompt } from "./prompt-compiler.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
@@ -133,6 +142,24 @@ export interface RunWave1PocInput {
   runDir: string;
   /** Optional override for the eu-banking-default profile. */
   policyProfile?: TestCasePolicyProfile;
+  /**
+   * Optional in-memory captures driving the multimodal visual sidecar
+   * (Issue #1386). When supplied (alongside `bundle`), the harness runs
+   * `describeVisualScreens` to produce `VisualScreenDescription[]` from
+   * the captures instead of reading the on-disk `*.visual.json` fixture.
+   * Pre-flight + sidecar routing + validation gate run end-to-end.
+   *
+   * The default fixture-driven path (omit this field) remains byte-stable.
+   */
+  visualCaptures?: ReadonlyArray<VisualSidecarCaptureInput>;
+  /**
+   * Optional gateway bundle. Required when `visualCaptures` is supplied;
+   * its `visualPrimary` and `visualFallback` clients carry the deployment
+   * identity that the resulting evidence manifest attests. The bundle
+   * must NOT declare `imageInputSupport` on `testGeneration`; the visual
+   * sidecar client and the harness independently assert this.
+   */
+  bundle?: LlmGatewayClientBundle;
 }
 
 export interface Wave1PocRunResult {
@@ -157,6 +184,12 @@ export interface Wave1PocRunResult {
    * manifest.
    */
   artifactFilenames: string[];
+  /**
+   * When `visualCaptures` was supplied, the structured outcome of the
+   * multimodal sidecar pipeline. `undefined` for the legacy fixture-only
+   * path so existing call sites remain typed.
+   */
+  visualSidecar?: VisualSidecarResult;
 }
 
 /**
@@ -614,19 +647,80 @@ export const runWave1Poc = async (
   // 1. Load fixture.
   const fixture = await loadWave1PocFixture(input.fixtureId);
 
+  // 1b. Optional: run multimodal visual sidecar. When `visualCaptures` is
+  //     supplied along with a `bundle`, the harness asks the visual
+  //     sidecar client for `VisualScreenDescription[]` instead of using
+  //     the fixture's pre-baked sidecar JSON. The captures are decoded
+  //     in-memory only — only their SHA-256 identities reach disk.
+  let sidecarVisual: VisualScreenDescription[] | undefined;
+  let sidecarResult: VisualSidecarResult | undefined;
+  let sidecarArtifactBytes: Uint8Array | undefined;
+  if (input.visualCaptures !== undefined && input.visualCaptures.length > 0) {
+    if (input.bundle === undefined) {
+      throw new RangeError(
+        "runWave1Poc: visualCaptures requires bundle (an LlmGatewayClientBundle) to route the multimodal request",
+      );
+    }
+    if (input.bundle.testGeneration.declaredCapabilities.imageInputSupport) {
+      throw new RangeError(
+        "runWave1Poc: bundle.testGeneration must not declare imageInputSupport=true",
+      );
+    }
+    // The intent built from Figma alone is enough for the sidecar gate
+    // to detect screen-id conflicts; the harness re-derives intent below
+    // with the sidecar's visual array as the authoritative observation.
+    const intentForSidecar = deriveBusinessTestIntentIr({
+      figma: fixture.figma,
+    });
+    sidecarResult = await describeVisualScreens({
+      bundle: input.bundle,
+      captures: input.visualCaptures,
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      intent: intentForSidecar,
+      primaryDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+    });
+    if (sidecarResult.outcome === "success") {
+      sidecarVisual = sidecarResult.visual;
+    } else {
+      throw new Error(
+        `runWave1Poc: multimodal visual sidecar failed (${sidecarResult.failureClass}: ${sidecarResult.failureMessage}). The harness refuses to proceed because both visual sidecars are exhausted.`,
+      );
+    }
+    const written = await writeVisualSidecarResultArtifact({
+      result: sidecarResult,
+      destinationPath: join(
+        input.runDir,
+        VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+      ),
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+    });
+    sidecarArtifactBytes = written.bytes;
+  }
+
   // 2. Derive Business Test Intent IR. (Step 3 — PII redaction — happens
   //    inside derivation; the harness later asserts the absence of raw
   //    PII substrings in persisted artifacts via tests.)
+  const visualForDerivation = sidecarVisual ?? fixture.visual;
   const intent = deriveBusinessTestIntentIr({
     figma: fixture.figma,
-    visual: fixture.visual,
+    visual: visualForDerivation,
   });
 
   // 4. Compile prompt.
+  const visualBindingDeployment =
+    sidecarResult?.outcome === "success"
+      ? sidecarResult.selectedDeployment
+      : VISUAL_PRIMARY_DEPLOYMENT;
+  const visualBindingFallbackReason =
+    sidecarResult?.outcome === "success"
+      ? sidecarResult.fallbackReason
+      : "none";
   const compiled = compilePrompt({
     jobId: input.jobId,
     intent,
-    visual: fixture.visual,
+    visual: visualForDerivation,
     modelBinding: {
       modelRevision: TEST_GENERATION_MODEL_REVISION,
       gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
@@ -634,9 +728,9 @@ export const runWave1Poc = async (
     policyBundleVersion: POLICY_BUNDLE_VERSION,
     visualBinding: {
       schemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
-      selectedDeployment: VISUAL_PRIMARY_DEPLOYMENT,
-      fallbackReason: "none",
-      screenCount: fixture.visual.length,
+      selectedDeployment: visualBindingDeployment,
+      fallbackReason: visualBindingFallbackReason,
+      screenCount: visualForDerivation.length,
       ...(fixture.visualImageSha256 !== undefined
         ? { fixtureImageHash: fixture.visualImageSha256 }
         : {}),
@@ -707,13 +801,24 @@ export const runWave1Poc = async (
   // Defence-in-depth: confirm the recorded request the mock saw did
   // not carry image inputs. The mock strips bytes during recording, but
   // it preserves shape — `recordedRequests()[0].imageInputs` would be a
-  // non-empty array if the caller had attached images.
+  // non-empty array if the caller had attached images. The same
+  // assertion runs against the supplied bundle's testGeneration client
+  // when one is available, so the live-gateway path is also covered.
   const recordedRequests = mockClient.recordedRequests();
   for (const request of recordedRequests) {
     if (request.imageInputs !== undefined && request.imageInputs.length > 0) {
       throw new Error(
         "runWave1Poc: the test_generation gateway must never receive image payloads",
       );
+    }
+  }
+  if (input.bundle !== undefined) {
+    const bundleRecords = extractRecordedRequests(input.bundle);
+    if (bundleRecords !== undefined) {
+      assertNoImagePayloadToTestGeneration({
+        bundle: input.bundle,
+        recordedRequests: bundleRecords,
+      });
     }
   }
 
@@ -725,8 +830,8 @@ export const runWave1Poc = async (
     modelRevision: TEST_GENERATION_MODEL_REVISION,
     gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
     requestCount: recordedRequests.length,
-    imageInputCounts: recordedRequests.map((request) =>
-      request.imageInputs?.length ?? 0,
+    imageInputCounts: recordedRequests.map(
+      (request) => request.imageInputs?.length ?? 0,
     ),
     imagePayloadSent: false,
     promptHash: compiled.request.hashes.promptHash,
@@ -760,7 +865,7 @@ export const runWave1Poc = async (
     generatedAt: input.generatedAt,
     list: generatedList,
     intent,
-    visual: fixture.visual,
+    visual: visualForDerivation,
     profile,
     primaryVisualDeployment: VISUAL_PRIMARY_DEPLOYMENT,
   });
@@ -864,13 +969,17 @@ export const runWave1Poc = async (
 
   // 10. Build evidence manifest. The manifest records the on-disk
   //     bytes for every artifact emitted above.
+  const manifestVisualPrimary =
+    sidecarResult?.outcome === "success"
+      ? sidecarResult.selectedDeployment
+      : VISUAL_PRIMARY_DEPLOYMENT;
   const manifest = buildWave1PocEvidenceManifest({
     fixtureId: input.fixtureId,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     modelDeployments: {
       testGeneration: TEST_GENERATION_DEPLOYMENT,
-      visualPrimary: VISUAL_PRIMARY_DEPLOYMENT,
+      visualPrimary: manifestVisualPrimary,
     },
     policyProfileId: profile.id,
     policyProfileVersion: profile.version,
@@ -925,6 +1034,15 @@ export const runWave1Poc = async (
             },
           ]
         : []),
+      ...(sidecarArtifactBytes !== undefined
+        ? [
+            {
+              filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+              bytes: sidecarArtifactBytes,
+              category: "visual_sidecar" as const,
+            },
+          ]
+        : []),
       {
         filename: REVIEW_EVENTS_ARTIFACT_FILENAME,
         bytes: reviewEventsBytes,
@@ -949,7 +1067,7 @@ export const runWave1Poc = async (
     generatedAt: input.generatedAt,
     runDir: input.runDir,
     intent,
-    visual: fixture.visual,
+    visual: visualForDerivation,
     compiledPrompt: {
       request: compiled.request,
       artifacts: compiled.artifacts,
@@ -960,6 +1078,7 @@ export const runWave1Poc = async (
     exportArtifacts: exportRun.artifacts,
     manifest,
     artifactFilenames: manifest.artifacts.map((a) => a.filename),
+    ...(sidecarResult !== undefined ? { visualSidecar: sidecarResult } : {}),
   };
 };
 
@@ -1004,6 +1123,26 @@ const collectExportBytes = async (
 };
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
+
+/**
+ * Best-effort extraction of recorded requests from a bundle's
+ * `testGeneration` client. Returns `undefined` for live gateway clients
+ * which do not expose a recording surface — in that case the only
+ * defence against image-payload leakage is the gateway's static
+ * declaredCapabilities check (which the helper also performs).
+ */
+const extractRecordedRequests = (
+  bundle: LlmGatewayClientBundle,
+): ReadonlyArray<LlmGenerationRequest> | undefined => {
+  const candidate =
+    bundle.testGeneration as LlmGatewayClientBundle["testGeneration"] & {
+      recordedRequests?: () => ReadonlyArray<LlmGenerationRequest>;
+    };
+  if (typeof candidate.recordedRequests === "function") {
+    return candidate.recordedRequests();
+  }
+  return undefined;
+};
 
 const writeAtomic = async (
   destinationPath: string,

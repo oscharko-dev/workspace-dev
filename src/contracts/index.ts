@@ -2325,6 +2325,173 @@ export type VisualSidecarFallbackReason =
   | "none";
 
 /**
+ * Schema version for the persisted multimodal visual sidecar result
+ * artifact emitted by the visual sidecar client (Issue #1386). Bumped
+ * independently from `VISUAL_SIDECAR_SCHEMA_VERSION` (which describes the
+ * sidecar's per-screen output) because this version covers the wrapping
+ * envelope plus capture identities, attempts, and failure classes.
+ */
+export const VISUAL_SIDECAR_RESULT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted visual sidecar result artifact. */
+export const VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME =
+  "visual-sidecar-result.json" as const;
+
+/**
+ * Allowed failure classes for the visual sidecar client. The classes are
+ * disjoint and policy-readable: a downstream policy gate can refuse a job
+ * by inspecting the failure class without reading sanitized free-form
+ * messages.
+ */
+export const ALLOWED_VISUAL_SIDECAR_FAILURE_CLASSES = [
+  "primary_unavailable",
+  "primary_quota_exceeded",
+  "both_sidecars_failed",
+  "schema_invalid_response",
+  "image_payload_too_large",
+  "image_mime_unsupported",
+  "duplicate_screen_id",
+  "empty_screen_capture_set",
+] as const;
+
+/** Discriminant of a `VisualSidecarFailure`. */
+export type VisualSidecarFailureClass =
+  (typeof ALLOWED_VISUAL_SIDECAR_FAILURE_CLASSES)[number];
+
+/**
+ * Allowed input MIME types for visual sidecar captures. SVG is intentionally
+ * NOT in the allowlist because SVG is XML and exposes a parser/injection
+ * surface that the multimodal sidecar should never have to evaluate.
+ */
+export const ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/gif",
+] as const;
+
+/** Discriminant of an allowed visual sidecar input MIME type. */
+export type VisualSidecarInputMimeType =
+  (typeof ALLOWED_VISUAL_SIDECAR_INPUT_MIME_TYPES)[number];
+
+/**
+ * Maximum decoded byte size of a single visual sidecar capture. The bound
+ * is enforced AFTER base64 decoding (i.e. on the actual image bytes the
+ * gateway would forward). Five MiB matches the conservative ceiling Azure
+ * OpenAI imposes on multimodal payloads.
+ */
+export const MAX_VISUAL_SIDECAR_INPUT_BYTES: number = 5 * 1024 * 1024;
+
+/**
+ * In-memory capture handed to the visual sidecar client. The bytes never
+ * touch disk: only the SHA-256 hash is persisted into the result artifact.
+ */
+export interface VisualSidecarCaptureInput {
+  /** Stable identifier matching a `BusinessTestIntentScreen.screenId`. */
+  screenId: string;
+  /** MIME type of the encoded bytes. Must be in the allowlist. */
+  mimeType: VisualSidecarInputMimeType;
+  /** Base64-encoded image bytes. Decoded length must be <= the byte bound. */
+  base64Data: string;
+  /** Optional human-readable label. */
+  screenName?: string;
+  /** Optional ISO-8601 capture timestamp (sourced from a screenshot pipeline). */
+  capturedAt?: string;
+}
+
+/**
+ * Identity record for a single capture, persisted alongside the sidecar
+ * result. Carries no image bytes — only a SHA-256 of the decoded bytes
+ * plus the byte length. Re-validating a result against the original
+ * captures requires re-hashing, never re-loading raw screenshot bytes.
+ */
+export interface VisualSidecarCaptureIdentity {
+  screenId: string;
+  mimeType: VisualSidecarInputMimeType;
+  byteLength: number;
+  /** SHA-256 hex of the decoded image bytes (NOT of the base64 string). */
+  sha256: string;
+}
+
+/**
+ * Single attempt against a sidecar deployment. Composes with the gateway
+ * surface so the policy gate can correlate attempts with the gateway's
+ * own circuit-breaker telemetry without a translation layer.
+ */
+export interface VisualSidecarAttempt {
+  /** Sidecar deployment that was attempted. */
+  deployment: "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock";
+  /** Sequence index, 1-based across both primary and fallback attempts. */
+  attempt: number;
+  /** Wall-clock duration of the attempt in milliseconds. */
+  durationMs: number;
+  /** Error class when the attempt failed. Absent on a success. */
+  errorClass?: LlmGatewayErrorClass | "schema_invalid_response";
+}
+
+/**
+ * Successful sidecar outcome — primary or fallback. The downstream
+ * `VisualScreenDescription[]` is structurally validated by the existing
+ * `validateVisualSidecar` gate; this type carries the validation report
+ * verbatim so the caller can persist or refuse on it.
+ */
+export interface VisualSidecarSuccess {
+  outcome: "success";
+  /** Deployment that produced the descriptions. */
+  selectedDeployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock";
+  fallbackReason: VisualSidecarFallbackReason;
+  visual: VisualScreenDescription[];
+  captureIdentities: VisualSidecarCaptureIdentity[];
+  attempts: VisualSidecarAttempt[];
+  /** Aggregated confidence summary across every screen description. */
+  confidenceSummary: { min: number; max: number; mean: number };
+  /**
+   * Verbatim validation report produced by `validateVisualSidecar`. The
+   * client does NOT silently strip findings — when the report says
+   * `blocked: true`, the success surfaces the report so the caller can
+   * persist it for the policy gate to inspect.
+   */
+  validationReport: VisualSidecarValidationReport;
+}
+
+/**
+ * Failure outcome — both primary and fallback exhausted, or pre-flight
+ * rejected the captures. The `failureClass` is policy-readable so
+ * upstream gates can decide between "retry later" and "refuse the job".
+ */
+export interface VisualSidecarFailure {
+  outcome: "failure";
+  failureClass: VisualSidecarFailureClass;
+  /** Sanitized human-readable message — never carries tokens or PII. */
+  failureMessage: string;
+  attempts: VisualSidecarAttempt[];
+  captureIdentities: VisualSidecarCaptureIdentity[];
+}
+
+/** Discriminated union returned by `describeVisualScreens`. */
+export type VisualSidecarResult = VisualSidecarSuccess | VisualSidecarFailure;
+
+/**
+ * Persisted form of the visual sidecar result. Carries schema/contract
+ * stamps and the hard `rawScreenshotsIncluded: false` literal so that any
+ * downstream consumer can verify the artifact never re-introduced raw
+ * screenshot bytes.
+ */
+export interface VisualSidecarResultArtifact {
+  schemaVersion: typeof VISUAL_SIDECAR_RESULT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  jobId: string;
+  generatedAt: string;
+  result: VisualSidecarResult;
+  /** Hard invariant — image bytes are never embedded in this artifact. */
+  rawScreenshotsIncluded: false;
+}
+
+/**
  * Identity of the visual sidecar that produced a `VisualScreenDescription`
  * batch. The compiler hashes this object into the replay-cache key so that
  * a fallback model swap forces a cache miss.
@@ -2701,7 +2868,8 @@ export type Wave1PocEvidenceArtifactCategory =
   | "validation"
   | "review"
   | "export"
-  | "manifest";
+  | "manifest"
+  | "visual_sidecar";
 
 /** Single artifact attested by the Wave 1 POC evidence manifest. */
 export interface Wave1PocEvidenceArtifact {
@@ -2899,4 +3067,4 @@ export interface Wave1PocEvalReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.26.0" as const;
+export const CONTRACT_VERSION = "3.27.0" as const;
