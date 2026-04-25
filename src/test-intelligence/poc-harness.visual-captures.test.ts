@@ -6,7 +6,8 @@
  * Three scenarios:
  *   1. Happy path — primary wins, artefacts land on disk.
  *   2. Fallback path — primary times out, fallback succeeds.
- *   3. Both fail — harness throws; no downstream test cases are produced.
+ *   3. Invalid sidecar JSON — harness throws; no downstream test cases are produced.
+ *   4. Both fail — harness throws; no downstream test cases are produced.
  */
 
 import assert from "node:assert/strict";
@@ -22,6 +23,7 @@ import {
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
+  WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type VisualScreenDescription,
@@ -31,6 +33,7 @@ import {
   loadWave1PocCaptureFixture,
   runWave1Poc,
   synthesizeGeneratedTestCases,
+  verifyWave1PocEvidenceFromDisk,
   Wave1PocVisualSidecarFailureError,
   type MockResponder,
 } from "./index.js";
@@ -60,6 +63,29 @@ const newRunDir = async (): Promise<string> => {
 
 const cleanupRunDir = async (runDir: string): Promise<void> => {
   await rm(runDir, { recursive: true }).catch(() => undefined);
+};
+
+const assertFailureManifestAttestsSidecar = async (
+  runDir: string,
+): Promise<void> => {
+  const { manifest, result } = await verifyWave1PocEvidenceFromDisk(runDir);
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(manifest.rawScreenshotsIncluded, false);
+  assert.equal(manifest.imagePayloadSentToTestGeneration, false);
+  assert.equal(manifest.modelDeployments.visualPrimary, PRIMARY_DEPLOYMENT);
+  assert.equal(manifest.modelDeployments.visualFallback, FALLBACK_DEPLOYMENT);
+  const sidecarEntry = manifest.artifacts.find(
+    (artifact) => artifact.filename === VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+  );
+  assert.ok(sidecarEntry, "failure manifest must attest visual sidecar result");
+  assert.equal(sidecarEntry.category, "visual_sidecar");
+  assert.ok(
+    manifest.artifacts.some(
+      (artifact) =>
+        artifact.filename === WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    ) === false,
+    "manifest should attest emitted artifacts, not recursively attest itself",
+  );
 };
 
 /**
@@ -207,6 +233,14 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
     // --- manifest invariants ---
     assert.equal(result.manifest.rawScreenshotsIncluded, false);
     assert.equal(result.manifest.imagePayloadSentToTestGeneration, false);
+    assert.equal(
+      result.manifest.modelDeployments.visualPrimary,
+      PRIMARY_DEPLOYMENT,
+    );
+    assert.equal(
+      result.manifest.modelDeployments.visualFallback,
+      FALLBACK_DEPLOYMENT,
+    );
 
     // --- visual-sidecar-result.json artifact on disk ---
     const sidecarArtifactPath = join(
@@ -355,6 +389,22 @@ test("poc-harness visualCaptures: fallback path — primary timeout, fallback su
     if (result.visualSidecar.outcome !== "success") return;
     assert.equal(result.visualSidecar.fallbackReason, "primary_unavailable");
     assert.equal(result.visualSidecar.selectedDeployment, FALLBACK_DEPLOYMENT);
+    assert.equal(
+      result.manifest.modelDeployments.visualPrimary,
+      PRIMARY_DEPLOYMENT,
+    );
+    assert.equal(
+      result.manifest.modelDeployments.visualFallback,
+      FALLBACK_DEPLOYMENT,
+    );
+    assert.equal(
+      result.manifest.visualSidecar?.selectedDeployment,
+      FALLBACK_DEPLOYMENT,
+    );
+    assert.equal(
+      result.manifest.visualSidecar?.fallbackReason,
+      "primary_unavailable",
+    );
 
     // --- run still completed end-to-end ---
     assert.ok(result.generatedList.testCases.length > 0);
@@ -373,7 +423,102 @@ test("poc-harness visualCaptures: fallback path — primary timeout, fallback su
 });
 
 // ---------------------------------------------------------------------------
-// Test 3: Both visual sidecars fail — harness aborts cleanly (AC5 invariant)
+// Test 3: Invalid sidecar JSON — harness aborts cleanly (AC2 / AC5 invariant)
+// ---------------------------------------------------------------------------
+
+test("poc-harness visualCaptures: invalid sidecar JSON — harness throws, no test cases produced", async () => {
+  const runDir = await newRunDir();
+  try {
+    const { captures } = await loadWave1PocCaptureFixture(FIXTURE_ID);
+
+    const invalidResponder =
+      (deployment: typeof PRIMARY_DEPLOYMENT | typeof FALLBACK_DEPLOYMENT) =>
+      (_request: LlmGenerationRequest, attempt: number): LlmGenerationResult =>
+        buildSuccessResult("{bad json", deployment, attempt);
+
+    const bundle = createMockLlmGatewayClientBundle({
+      testGeneration: {
+        role: "test_generation",
+        deployment: "gpt-oss-120b-mock",
+        modelRevision: "gpt-oss-120b-mock@test",
+        gatewayRelease: "mock",
+        declaredCapabilities: TEST_GENERATION_CAPS,
+      },
+      visualPrimary: {
+        role: "visual_primary",
+        deployment: PRIMARY_DEPLOYMENT,
+        modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: invalidResponder(PRIMARY_DEPLOYMENT),
+      },
+      visualFallback: {
+        role: "visual_fallback",
+        deployment: FALLBACK_DEPLOYMENT,
+        modelRevision: `${FALLBACK_DEPLOYMENT}@test`,
+        gatewayRelease: "mock",
+        declaredCapabilities: VISUAL_CAPS,
+        responder: invalidResponder(FALLBACK_DEPLOYMENT),
+      },
+    });
+
+    await assert.rejects(
+      () =>
+        runWave1Poc({
+          fixtureId: FIXTURE_ID,
+          jobId: "job-visual-invalid-json",
+          generatedAt: GENERATED_AT,
+          runDir,
+          visualCaptures: captures,
+          bundle,
+        }),
+      (err: unknown) => {
+        assert.ok(
+          err instanceof Wave1PocVisualSidecarFailureError,
+          "must throw a structured visual-sidecar failure error",
+        );
+        assert.equal(err.visualSidecar.outcome, "failure");
+        assert.equal(err.visualSidecar.failureClass, "schema_invalid_response");
+        return true;
+      },
+    );
+
+    const sidecarArtifactRaw = await readFile(
+      join(runDir, VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME),
+      "utf8",
+    );
+    const sidecarArtifact = JSON.parse(sidecarArtifactRaw) as {
+      result: { outcome: string; failureClass?: string; attempts?: unknown[] };
+      rawScreenshotsIncluded: boolean;
+    };
+    assert.equal(sidecarArtifact.result.outcome, "failure");
+    assert.equal(
+      sidecarArtifact.result.failureClass,
+      "schema_invalid_response",
+    );
+    assert.equal(sidecarArtifact.result.attempts?.length, 2);
+    assert.equal(sidecarArtifact.rawScreenshotsIncluded, false);
+    await assertFailureManifestAttestsSidecar(runDir);
+
+    await assert.rejects(
+      () => readFile(join(runDir, GENERATED_TESTCASES_ARTIFACT_FILENAME)),
+      (err: unknown) => {
+        assert.ok(
+          typeof err === "object" &&
+            err !== null &&
+            (err as { code?: string }).code === "ENOENT",
+          "generated-testcases.json must not exist when sidecar JSON is invalid",
+        );
+        return true;
+      },
+    );
+  } finally {
+    await cleanupRunDir(runDir);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Test 4: Both visual sidecars fail — harness aborts cleanly (AC5 invariant)
 // ---------------------------------------------------------------------------
 
 test("poc-harness visualCaptures: both sidecars fail — harness throws, no test cases produced", async () => {
@@ -461,6 +606,7 @@ test("poc-harness visualCaptures: both sidecars fail — harness throws, no test
     assert.equal(sidecarArtifact.result.failureClass, "both_sidecars_failed");
     assert.equal(sidecarArtifact.result.attempts?.length, 2);
     assert.equal(sidecarArtifact.rawScreenshotsIncluded, false);
+    await assertFailureManifestAttestsSidecar(runDir);
 
     // AC5 invariant: NO downstream test cases may be silently generated when
     // both sidecars fail. The harness short-circuits before the LLM
