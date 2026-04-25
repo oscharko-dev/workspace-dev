@@ -108,6 +108,192 @@ Per-screen slice of the intent.
 
 ***
 
+### CompiledPromptArtifacts
+
+Persisted, fully-redacted artifact form of a compiled prompt.
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### hashes
+
+> **hashes**: [`CompiledPromptHashes`](#compiledprompthashes)
+
+##### jobId
+
+> **jobId**: `string`
+
+##### modelBinding
+
+> **modelBinding**: [`CompiledPromptModelBinding`](#compiledpromptmodelbinding)
+
+##### payload
+
+> **payload**: `object`
+
+Redacted JSON payload that the model will reason over.
+
+###### intent
+
+> **intent**: [`BusinessTestIntentIr`](#businesstestintentir)
+
+###### visual
+
+> **visual**: [`VisualScreenDescription`](#visualscreendescription)[]
+
+##### policyBundleVersion
+
+> **policyBundleVersion**: `string`
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+##### redactionPolicyVersion
+
+> **redactionPolicyVersion**: `"1.0.0"`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### systemPrompt
+
+> **systemPrompt**: `string`
+
+##### userPrompt
+
+> **userPrompt**: `string`
+
+##### visualBinding
+
+> **visualBinding**: [`CompiledPromptVisualBinding`](#compiledpromptvisualbinding)
+
+***
+
+### CompiledPromptHashes
+
+Hash bundle attached to a compiled prompt.
+
+#### Properties
+
+##### cacheKey
+
+> **cacheKey**: `string`
+
+##### inputHash
+
+> **inputHash**: `string`
+
+##### promptHash
+
+> **promptHash**: `string`
+
+##### schemaHash
+
+> **schemaHash**: `string`
+
+***
+
+### CompiledPromptModelBinding
+
+Identity of the structured-test-case generator gateway/model pair.
+
+#### Properties
+
+##### gatewayRelease
+
+> **gatewayRelease**: `string`
+
+##### modelRevision
+
+> **modelRevision**: `string`
+
+##### seed?
+
+> `optional` **seed?**: `number`
+
+Optional deterministic seed the model accepts (provider-dependent).
+
+***
+
+### CompiledPromptRequest
+
+Wire-shaped request handed to the LLM gateway client.
+
+#### Properties
+
+##### hashes
+
+> **hashes**: [`CompiledPromptHashes`](#compiledprompthashes)
+
+##### jobId
+
+> **jobId**: `string`
+
+##### modelBinding
+
+> **modelBinding**: [`CompiledPromptModelBinding`](#compiledpromptmodelbinding)
+
+##### responseSchema
+
+> **responseSchema**: `Record`\<`string`, `unknown`\>
+
+JSON schema the gateway must enforce on the response (structured output).
+
+##### responseSchemaName
+
+> **responseSchemaName**: `string`
+
+Stable schema name used by some gateways.
+
+##### systemPrompt
+
+> **systemPrompt**: `string`
+
+##### userPrompt
+
+> **userPrompt**: `string`
+
+***
+
+### CompiledPromptVisualBinding
+
+Identity of the visual sidecar that produced a `VisualScreenDescription`
+batch. The compiler hashes this object into the replay-cache key so that
+a fallback model swap forces a cache miss.
+
+#### Properties
+
+##### fallbackReason
+
+> **fallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
+
+##### fixtureImageHash?
+
+> `optional` **fixtureImageHash?**: `string`
+
+Hex digest of the screenshot/fixture used for visual analysis, if any.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### screenCount
+
+> **screenCount**: `number`
+
+Number of screens covered by the visual binding.
+
+##### selectedDeployment
+
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+***
+
 ### DetectedAction
 
 Action/control inferred from a screen (e.g. Submit button).
@@ -272,6 +458,300 @@ Validation rule inferred from design hints.
 
 ***
 
+### GeneratedTestCase
+
+Single generated test case.
+
+#### Properties
+
+##### assumptions
+
+> **assumptions**: `string`[]
+
+##### audit
+
+> **audit**: [`GeneratedTestCaseAuditMetadata`](#generatedtestcaseauditmetadata)
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### expectedResults
+
+> **expectedResults**: `string`[]
+
+##### figmaTraceRefs
+
+> **figmaTraceRefs**: [`GeneratedTestCaseFigmaTrace`](#generatedtestcasefigmatrace)[]
+
+##### id
+
+> **id**: `string`
+
+##### level
+
+> **level**: [`TestCaseLevel`](#testcaselevel)
+
+##### objective
+
+> **objective**: `string`
+
+##### openQuestions
+
+> **openQuestions**: `string`[]
+
+##### preconditions
+
+> **preconditions**: `string`[]
+
+##### priority
+
+> **priority**: [`TestCasePriority`](#testcasepriority)
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+##### qcMappingPreview
+
+> **qcMappingPreview**: [`GeneratedTestCaseQcMapping`](#generatedtestcaseqcmapping)
+
+##### qualitySignals
+
+> **qualitySignals**: [`GeneratedTestCaseQualitySignals`](#generatedtestcasequalitysignals-1)
+
+##### reviewState
+
+> **reviewState**: [`GeneratedTestCaseReviewState`](#generatedtestcasereviewstate-1)
+
+##### riskCategory
+
+> **riskCategory**: [`TestCaseRiskCategory`](#testcaseriskcategory)
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### sourceJobId
+
+> **sourceJobId**: `string`
+
+##### steps
+
+> **steps**: [`GeneratedTestCaseStep`](#generatedtestcasestep)[]
+
+##### technique
+
+> **technique**: [`TestCaseTechnique29119`](#testcasetechnique29119)
+
+##### testData
+
+> **testData**: `string`[]
+
+##### title
+
+> **title**: `string`
+
+##### type
+
+> **type**: [`TestCaseType`](#testcasetype)
+
+***
+
+### GeneratedTestCaseAuditMetadata
+
+Audit metadata attached to a generated test case.
+
+#### Properties
+
+##### cacheHit
+
+> **cacheHit**: `boolean`
+
+Whether the artifact came from a replay-cache hit.
+
+##### cacheKey
+
+> **cacheKey**: `string`
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### inputHash
+
+> **inputHash**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### promptHash
+
+> **promptHash**: `string`
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+##### redactionPolicyVersion
+
+> **redactionPolicyVersion**: `"1.0.0"`
+
+##### schemaHash
+
+> **schemaHash**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### visualSidecarSchemaVersion
+
+> **visualSidecarSchemaVersion**: `"1.0.0"`
+
+***
+
+### GeneratedTestCaseFigmaTrace
+
+Reference back to a Figma trace path that motivated a test case.
+
+#### Properties
+
+##### nodeId?
+
+> `optional` **nodeId?**: `string`
+
+##### nodeName?
+
+> `optional` **nodeName?**: `string`
+
+##### nodePath?
+
+> `optional` **nodePath?**: `string`
+
+##### screenId
+
+> **screenId**: `string`
+
+***
+
+### GeneratedTestCaseList
+
+Wrapper produced by the generator for a single job.
+
+#### Properties
+
+##### jobId
+
+> **jobId**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### testCases
+
+> **testCases**: [`GeneratedTestCase`](#generatedtestcase)[]
+
+***
+
+### GeneratedTestCaseQcMapping
+
+QC/ALM mapping preview emitted alongside the test case.
+
+#### Properties
+
+##### blockingReasons?
+
+> `optional` **blockingReasons?**: `string`[]
+
+Human-readable reasons when exportable=false.
+
+##### exportable
+
+> **exportable**: `boolean`
+
+Whether the case is exportable as-is under the mapping profile.
+
+##### folderHint?
+
+> `optional` **folderHint?**: `string`
+
+Canonical test-case folder hint inside QC/ALM.
+
+##### mappingProfileId?
+
+> `optional` **mappingProfileId?**: `string`
+
+Canonical mapping profile id this preview was rendered for.
+
+***
+
+### GeneratedTestCaseQualitySignals
+
+Quality signal fields attached to each generated test case.
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: [`IntentAmbiguity`](#intentambiguity)
+
+Optional ambiguity note.
+
+##### confidence
+
+> **confidence**: `number`
+
+0..1 — generator-side confidence in the produced case.
+
+##### coveredActionIds
+
+> **coveredActionIds**: `string`[]
+
+##### coveredFieldIds
+
+> **coveredFieldIds**: `string`[]
+
+##### coveredNavigationIds
+
+> **coveredNavigationIds**: `string`[]
+
+##### coveredValidationIds
+
+> **coveredValidationIds**: `string`[]
+
+***
+
+### GeneratedTestCaseStep
+
+Single ordered step inside a generated test case.
+
+#### Properties
+
+##### action
+
+> **action**: `string`
+
+##### data?
+
+> `optional` **data?**: `string`
+
+##### expected?
+
+> `optional` **expected?**: `string`
+
+##### index
+
+> **index**: `number`
+
+***
+
 ### InferredBusinessObject
 
 Business-object cluster inferred across one or more fields.
@@ -409,6 +889,86 @@ PII indicator attached to a detected element. Original values are never persiste
 ##### traceRef?
 
 > `optional` **traceRef?**: [`IntentTraceRef`](#intenttraceref)
+
+***
+
+### ReplayCacheEntry
+
+Stored cache entry.
+
+#### Properties
+
+##### key
+
+> **key**: `string`
+
+##### storedAt
+
+> **storedAt**: `string`
+
+##### testCases
+
+> **testCases**: [`GeneratedTestCaseList`](#generatedtestcaselist)
+
+***
+
+### ReplayCacheKey
+
+Replay-cache key — the only deterministic-bit-identical replay anchor.
+
+#### Properties
+
+##### fixtureImageHash?
+
+> `optional` **fixtureImageHash?**: `string`
+
+##### gatewayRelease
+
+> **gatewayRelease**: `string`
+
+##### inputHash
+
+> **inputHash**: `string`
+
+##### modelRevision
+
+> **modelRevision**: `string`
+
+##### policyBundleVersion
+
+> **policyBundleVersion**: `string`
+
+##### promptHash
+
+> **promptHash**: `string`
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+##### redactionPolicyVersion
+
+> **redactionPolicyVersion**: `"1.0.0"`
+
+##### schemaHash
+
+> **schemaHash**: `string`
+
+##### seed?
+
+> `optional` **seed?**: `number`
+
+##### visualFallbackReason
+
+> **visualFallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
+
+##### visualSelectedDeployment
+
+> **visualSelectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+##### visualSidecarSchemaVersion
+
+> **visualSidecarSchemaVersion**: `"1.0.0"`
 
 ***
 
@@ -1164,7 +1724,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-10)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-14)
 
 ##### pasteDeltaSummary?
 
@@ -4105,6 +4665,14 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### GeneratedTestCaseReviewState
+
+> **GeneratedTestCaseReviewState** = `"draft"` \| `"auto_approved"` \| `"needs_review"` \| `"rejected"`
+
+Review state at the moment the test case is emitted.
+
+***
+
 ### IntentProvenance
 
 > **IntentProvenance** = `"figma_node"` \| `"visual_sidecar"` \| `"reconciled"`
@@ -4126,6 +4694,62 @@ Known PII-like categories detected in mock form data.
 > **PiiMatchLocation** = `"field_label"` \| `"field_default_value"` \| `"screen_text"` \| `"action_label"` \| `"trace_node_name"` \| `"trace_node_path"` \| `"screen_name"` \| `"screen_path"` \| `"validation_rule"` \| `"navigation_target"`
 
 Location within the input that held a PII-like match.
+
+***
+
+### ReplayCacheLookupResult
+
+> **ReplayCacheLookupResult** = \{ `entry`: [`ReplayCacheEntry`](#replaycacheentry); `hit`: `true`; \} \| \{ `hit`: `false`; `key`: `string`; \}
+
+Cache lookup outcome consumed by the orchestration layer.
+
+***
+
+### TestCaseLevel
+
+> **TestCaseLevel** = `"unit"` \| `"component"` \| `"integration"` \| `"system"` \| `"acceptance"`
+
+Coarse-grain test level.
+
+***
+
+### TestCasePriority
+
+> **TestCasePriority** = `"p0"` \| `"p1"` \| `"p2"` \| `"p3"`
+
+Priority band attached to a generated test case.
+
+***
+
+### TestCaseRiskCategory
+
+> **TestCaseRiskCategory** = `"low"` \| `"medium"` \| `"high"` \| `"regulated_data"` \| `"financial_transaction"`
+
+Risk band attached to a generated test case.
+
+***
+
+### TestCaseTechnique29119
+
+> **TestCaseTechnique29119** = `"equivalence_partitioning"` \| `"boundary_value_analysis"` \| `"decision_table"` \| `"state_transition"` \| `"use_case"` \| `"exploratory"` \| `"error_guessing"` \| `"syntax_testing"` \| `"classification_tree"`
+
+ISO/IEC/IEEE 29119-4 technique tags supported by the generator.
+
+***
+
+### TestCaseType
+
+> **TestCaseType** = `"functional"` \| `"negative"` \| `"boundary"` \| `"validation"` \| `"navigation"` \| `"regression"` \| `"exploratory"` \| `"accessibility"`
+
+Coarse-grain test type.
+
+***
+
+### VisualSidecarFallbackReason
+
+> **VisualSidecarFallbackReason** = `"primary_unavailable"` \| `"primary_quota_exceeded"` \| `"primary_disabled"` \| `"policy_downgrade"` \| `"none"`
+
+Reason a fallback visual sidecar deployment was selected, if any.
 
 ***
 
@@ -4497,7 +5121,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.19.0"`
+> `const` **CONTRACT\_VERSION**: `"3.20.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -4510,6 +5134,14 @@ Package version alignment is documented in VERSIONING.md.
 > `const` **GENERATED\_TEST\_CASE\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version for generated test case payloads.
+
+***
+
+### REDACTION\_POLICY\_VERSION
+
+> `const` **REDACTION\_POLICY\_VERSION**: `"1.0.0"`
+
+Redaction policy bundle version applied before prompt compilation.
 
 ***
 
@@ -4534,3 +5166,11 @@ Environment variable name that gates test-intelligence features at startup.
 > `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.0.0"`
 
 Prompt template version for the test-intelligence prompt family.
+
+***
+
+### VISUAL\_SIDECAR\_SCHEMA\_VERSION
+
+> `const` **VISUAL\_SIDECAR\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Visual sidecar schema version consumed by the prompt compiler (Issue #1386).

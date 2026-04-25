@@ -31,6 +31,22 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.20.0] - 2026-04-25
+
+### Added (Issue #1362)
+
+- `VISUAL_SIDECAR_SCHEMA_VERSION` — schema version constant (`"1.0.0"`) consumed by the prompt compiler to bind a `VisualScreenDescription` payload to a replay-cache key.
+- `REDACTION_POLICY_VERSION` — version stamp (`"1.0.0"`) for the redaction policy bundle hashed into compiled prompt artifacts and replay-cache keys.
+- `GeneratedTestCase`, `GeneratedTestCaseList`, `GeneratedTestCaseStep`, `GeneratedTestCaseFigmaTrace`, `GeneratedTestCaseQcMapping`, `GeneratedTestCaseQualitySignals`, `GeneratedTestCaseAuditMetadata`, `GeneratedTestCaseReviewState`, `TestCaseLevel`, `TestCaseType`, `TestCasePriority`, `TestCaseRiskCategory`, `TestCaseTechnique29119` — type surface modeling the structured test-case payload the LLM gateway must produce.
+- `CompiledPromptRequest`, `CompiledPromptArtifacts`, `CompiledPromptHashes`, `CompiledPromptVisualBinding`, `CompiledPromptModelBinding`, `VisualSidecarFallbackReason` — type surface emitted by the prompt compiler. The artifacts variant holds only redacted material safe to persist as evidence.
+- `ReplayCacheKey`, `ReplayCacheEntry`, `ReplayCacheLookupResult` — type surface for the replay-cache layer. Cache hits are the only guaranteed bit-identical replay path; lookup keys hash input IR, prompt template, JSON schema, model revision, gateway release, policy bundle, redaction policy, visual sidecar binding, fixture image hash, prompt template version, and seed.
+
+### Unchanged (Issue #1362)
+
+- No runtime schema, submit parser, or orchestrator wiring changed. `src/test-intelligence/prompt-compiler.ts`, `src/test-intelligence/generated-test-case-schema.ts`, and `src/test-intelligence/replay-cache.ts` are pure helper surfaces that the LLM gateway client (Issue #1363) and the policy gate (Issue #1364) will compose with in later waves.
+
+---
+
 ## [3.19.0] - 2026-04-24
 
 ### Added (Issue #1361)
