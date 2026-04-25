@@ -35,6 +35,17 @@ test("detectPii flags a mixed-case BIC/SWIFT identifier", () => {
   assert.equal(result?.redacted, "[REDACTED:BIC]");
 });
 
+test("detectPii flags a labelled BIC/SWIFT identifier", () => {
+  const result = detectPii("BIC: ingddeffxxx");
+  assert.notEqual(result, null);
+  assert.equal(result?.kind, "bic");
+});
+
+test("detectPii does not treat ordinary words as BIC/SWIFT identifiers", () => {
+  assert.equal(detectPii("Accepted"), null);
+  assert.equal(detectPii("Field accepts the minimum boundary value"), null);
+});
+
 test("detectPii flags a valid Visa PAN (4111 1111 1111 1111)", () => {
   const result = detectPii("Card: 4111 1111 1111 1111");
   assert.notEqual(result, null);

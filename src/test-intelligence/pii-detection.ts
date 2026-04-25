@@ -109,14 +109,28 @@ const detectIban = (input: string): PiiMatch | null => {
 };
 
 const detectBic = (input: string): PiiMatch | null => {
-  const normalized = input.normalize("NFKC").toUpperCase();
-  if (!BIC_CANDIDATE_RE.test(normalized)) return null;
-  BIC_CANDIDATE_RE.lastIndex = 0;
-  return {
-    kind: "bic",
-    redacted: REDACTION_TOKEN.bic,
-    confidence: 0.9,
-  };
+  const normalized = input.normalize("NFKC");
+  const upper = normalized.toUpperCase();
+  for (const match of upper.matchAll(BIC_CANDIDATE_RE)) {
+    const candidate = match[0];
+    const start = match.index;
+    const end = start + candidate.length;
+    const rawCandidate = normalized.slice(start, end);
+    const before = normalized.slice(0, start).trim();
+    const after = normalized.slice(end).trim();
+    const standalone = before.length === 0 && after.length === 0;
+    const labelled = /(?:bic|swift)\s*[:#-]?\s*$/iu.test(before);
+    const uppercaseToken = rawCandidate === rawCandidate.toUpperCase();
+    const standaloneAccepted =
+      standalone && (uppercaseToken || candidate.length === 11);
+    if (!standaloneAccepted && !labelled) continue;
+    return {
+      kind: "bic",
+      redacted: REDACTION_TOKEN.bic,
+      confidence: 0.9,
+    };
+  }
+  return null;
 };
 
 const detectPan = (input: string): PiiMatch | null => {
