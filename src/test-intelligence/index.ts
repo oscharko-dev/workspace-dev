@@ -398,3 +398,21 @@ export {
   DEFAULT_FOLDER_RESOLVER,
   openTextAlmDryRunAdapter,
 } from "./qc-alm-dry-run.js";
+export {
+  buildTransferRollbackGuidance,
+  createUnconfiguredQcApiTransferClient,
+  isApiTransferMode,
+  NO_CLIENT_CONFIGURED_ERROR_DETAIL,
+  QcApiTransferError,
+  runOpenTextAlmApiTransfer,
+  type QcApiCreatedEntity,
+  type QcApiDesignStepRequest,
+  type QcApiFolderHandle,
+  type QcApiLookupResult,
+  type QcApiTransferClient,
+  type RunOpenTextAlmApiTransferInput,
+  type RunOpenTextAlmApiTransferResult,
+  type TransferReviewEventSink,
+  type TransferRollbackGuidance,
+  type TransferRollbackHint,
+} from "./qc-alm-api-transfer.js";
