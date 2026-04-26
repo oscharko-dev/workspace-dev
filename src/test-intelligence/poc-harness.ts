@@ -44,6 +44,8 @@ import {
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  LBOM_ARTIFACT_DIRECTORY,
+  LBOM_ARTIFACT_FILENAME,
   QC_MAPPING_PREVIEW_ARTIFACT_FILENAME,
   REDACTION_POLICY_VERSION,
   REVIEW_EVENTS_ARTIFACT_FILENAME,
@@ -94,6 +96,8 @@ import {
   type Wave1PocAttestationSummary,
   type Wave1PocEvidenceManifest,
   type Wave1PocFixtureId,
+  type Wave1PocLbomDocument,
+  type Wave1PocLbomSummary,
 } from "../contracts/index.js";
 import type { ExportPipelineArtifacts } from "./export-pipeline.js";
 import type { ValidationPipelineArtifacts } from "./validation-pipeline.js";
@@ -142,6 +146,12 @@ import {
   type FinOpsUsageRecorder,
   type WriteFinOpsBudgetReportResult,
 } from "./finops-report.js";
+import {
+  buildLbomDocument,
+  summarizeLbomArtifact,
+  validateLbomDocument,
+  writeLbomArtifact,
+} from "./lbom-emitter.js";
 import {
   DEFAULT_FINOPS_BUDGET_ENVELOPE,
   resolveFinOpsRequestLimits,
@@ -292,6 +302,17 @@ export interface Wave1PocRunResult {
    * SHA-256 of the persisted envelope and bundle.
    */
   attestation: Wave1PocAttestationSummary;
+  /**
+   * Per-job CycloneDX 1.6 ML-BOM (Issue #1378). The harness always emits
+   * the LBOM under `<runDir>/lbom/ai-bom.cdx.json` so an operator can
+   * inventory the model chain, the curated few-shot bundle, and the
+   * active policy profile that produced the run's structured test cases.
+   */
+  lbom: Wave1PocLbomDocument;
+  /** Audit-timeline summary of the per-job LBOM artifact. */
+  lbomSummary: Wave1PocLbomSummary;
+  /** Absolute path of the persisted `lbom/ai-bom.cdx.json` artifact. */
+  lbomArtifactPath: string;
 }
 
 export class Wave1PocVisualSidecarFailureError extends Error {
@@ -1294,8 +1315,11 @@ export const runWave1Poc = async (
     runDir: input.runDir,
   });
 
-  // 10. Build evidence manifest. The manifest records the on-disk
-  //     bytes for every artifact emitted above.
+  // 9c. Build + persist the per-job LBOM (CycloneDX 1.6 ML-BOM, Issue
+  //     #1378). The LBOM enumerates the model chain, the curated
+  //     few-shot bundle, and the active policy profile that produced
+  //     this job's structured test cases. The artifact is always emitted
+  //     so the manifest entry is stable across fixture replays.
   const manifestVisualPrimary =
     input.bundle === undefined
       ? VISUAL_PRIMARY_DEPLOYMENT
@@ -1304,6 +1328,53 @@ export const runWave1Poc = async (
     input.bundle === undefined
       ? undefined
       : toManifestVisualDeployment(input.bundle.visualFallback.deployment);
+  const lbomDocument = buildLbomDocument({
+    fixtureId: input.fixtureId,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    modelDeployments: {
+      testGeneration: TEST_GENERATION_DEPLOYMENT,
+      visualPrimary: manifestVisualPrimary,
+      ...(manifestVisualFallback !== undefined
+        ? { visualFallback: manifestVisualFallback }
+        : { visualFallback: VISUAL_FALLBACK_DEPLOYMENT }),
+    },
+    policyProfile: profile,
+    exportProfile: { id: exportProfile.id, version: exportProfile.version },
+    hashes: {
+      promptHash: compiled.request.hashes.promptHash,
+      schemaHash: compiled.request.hashes.schemaHash,
+      inputHash: compiled.request.hashes.inputHash,
+      cacheKeyDigest: compiled.request.hashes.cacheKey,
+    },
+    testGenerationBinding: {
+      modelRevision: TEST_GENERATION_MODEL_REVISION,
+      gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+    },
+    ...(sidecarResult !== undefined ? { visualSidecar: sidecarResult } : {}),
+    redactionPolicyVersion: REDACTION_POLICY_VERSION,
+  });
+  const lbomValidation = validateLbomDocument(lbomDocument);
+  if (!lbomValidation.valid) {
+    const summary = lbomValidation.issues
+      .slice(0, 5)
+      .map((issue) => `${issue.path}: ${issue.message}`)
+      .join("; ");
+    throw new Error(
+      `runWave1Poc: refusing to persist invalid LBOM (${summary})`,
+    );
+  }
+  const lbomWritten = await writeLbomArtifact({
+    document: lbomDocument,
+    runDir: input.runDir,
+  });
+  const lbomSummary = summarizeLbomArtifact({
+    document: lbomDocument,
+    bytes: lbomWritten.bytes,
+  });
+
+  // 10. Build evidence manifest. The manifest records the on-disk
+  //     bytes for every artifact emitted above.
   const visualSidecarSummary =
     sidecarResult?.outcome === "success" && sidecarArtifactBytes !== undefined
       ? {
@@ -1405,6 +1476,11 @@ export const runWave1Poc = async (
         bytes: finopsWritten.bytes,
         category: "finops",
       },
+      {
+        filename: `${LBOM_ARTIFACT_DIRECTORY}/${LBOM_ARTIFACT_FILENAME}`,
+        bytes: lbomWritten.bytes,
+        category: "lbom",
+      },
     ],
   });
   await writeWave1PocEvidenceManifest({
@@ -1486,6 +1562,9 @@ export const runWave1Poc = async (
     finopsReport,
     finopsArtifactPath: finopsWritten.artifactPath,
     attestation: attestationSummary,
+    lbom: lbomDocument,
+    lbomSummary,
+    lbomArtifactPath: lbomWritten.artifactPath,
   };
 };
 

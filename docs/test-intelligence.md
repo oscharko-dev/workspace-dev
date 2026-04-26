@@ -218,28 +218,29 @@ Artifacts are persisted under
 `<artifactRoot>/<jobId>/` where `<artifactRoot>` defaults to
 `<outputRoot>/test-intelligence`.
 
-| Filename                                | Schema / contract constant                               | Phase             |
-| --------------------------------------- | -------------------------------------------------------- | ----------------- |
-| `generated-testcases.json`              | `GENERATED_TEST_CASE_SCHEMA_VERSION`                     | Validation        |
-| `validation-report.json`                | `TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION`             | Validation        |
-| `policy-report.json`                    | `TEST_CASE_POLICY_REPORT_SCHEMA_VERSION`                 | Validation        |
-| `coverage-report.json`                  | `TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION`               | Validation        |
-| `visual-sidecar-validation-report.json` | `VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION`        | Validation        |
-| `visual-sidecar-result.json`            | `VISUAL_SIDECAR_RESULT_SCHEMA_VERSION`                   | Visual sidecar    |
-| `review-state.json`                     | `REVIEW_GATE_SCHEMA_VERSION`                             | Review            |
-| `review-events.json`                    | `REVIEW_GATE_SCHEMA_VERSION`                             | Review            |
-| `qc-mapping-preview.json`               | `QC_MAPPING_PREVIEW_SCHEMA_VERSION`                      | Export            |
-| `testcases.json`                        | (canonical JSON of approved cases)                       | Export            |
-| `testcases.csv`                         | (QC CSV column contract)                                 | Export            |
-| `testcases.xlsx`                        | (hand-rolled OOXML, optional)                            | Export            |
-| `testcases.alm.xml`                     | `ALM_EXPORT_SCHEMA_VERSION` + `ALM_EXPORT_XML_NAMESPACE` | Export            |
-| `export-report.json`                    | `EXPORT_REPORT_SCHEMA_VERSION`                           | Export            |
-| `dry-run-report.json`                   | `DRY_RUN_REPORT_SCHEMA_VERSION`                          | QC dry-run        |
-| `wave1-poc-evidence-manifest.json`      | `WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION`             | POC               |
-| `wave1-poc-evidence-manifest.sha256`    | `WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME`            | POC               |
-| `wave1-poc-eval-report.json`            | `WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION`                   | POC               |
-| `llm-capabilities.json`                 | `LLM_CAPABILITIES_SCHEMA_VERSION`                        | LLM gateway probe |
-| `finops/budget-report.json`             | `FINOPS_BUDGET_REPORT_SCHEMA_VERSION`                    | FinOps            |
+| Filename                                | Schema / contract constant                                     | Phase             |
+| --------------------------------------- | -------------------------------------------------------------- | ----------------- |
+| `generated-testcases.json`              | `GENERATED_TEST_CASE_SCHEMA_VERSION`                           | Validation        |
+| `validation-report.json`                | `TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION`                   | Validation        |
+| `policy-report.json`                    | `TEST_CASE_POLICY_REPORT_SCHEMA_VERSION`                       | Validation        |
+| `coverage-report.json`                  | `TEST_CASE_COVERAGE_REPORT_SCHEMA_VERSION`                     | Validation        |
+| `visual-sidecar-validation-report.json` | `VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION`              | Validation        |
+| `visual-sidecar-result.json`            | `VISUAL_SIDECAR_RESULT_SCHEMA_VERSION`                         | Visual sidecar    |
+| `review-state.json`                     | `REVIEW_GATE_SCHEMA_VERSION`                                   | Review            |
+| `review-events.json`                    | `REVIEW_GATE_SCHEMA_VERSION`                                   | Review            |
+| `qc-mapping-preview.json`               | `QC_MAPPING_PREVIEW_SCHEMA_VERSION`                            | Export            |
+| `testcases.json`                        | (canonical JSON of approved cases)                             | Export            |
+| `testcases.csv`                         | (QC CSV column contract)                                       | Export            |
+| `testcases.xlsx`                        | (hand-rolled OOXML, optional)                                  | Export            |
+| `testcases.alm.xml`                     | `ALM_EXPORT_SCHEMA_VERSION` + `ALM_EXPORT_XML_NAMESPACE`       | Export            |
+| `export-report.json`                    | `EXPORT_REPORT_SCHEMA_VERSION`                                 | Export            |
+| `dry-run-report.json`                   | `DRY_RUN_REPORT_SCHEMA_VERSION`                                | QC dry-run        |
+| `wave1-poc-evidence-manifest.json`      | `WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION`                   | POC               |
+| `wave1-poc-evidence-manifest.sha256`    | `WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME`                  | POC               |
+| `wave1-poc-eval-report.json`            | `WAVE1_POC_EVAL_REPORT_SCHEMA_VERSION`                         | POC               |
+| `llm-capabilities.json`                 | `LLM_CAPABILITIES_SCHEMA_VERSION`                              | LLM gateway probe |
+| `finops/budget-report.json`             | `FINOPS_BUDGET_REPORT_SCHEMA_VERSION`                          | FinOps            |
+| `lbom/ai-bom.cdx.json`                  | `LBOM_ARTIFACT_SCHEMA_VERSION` + `LBOM_CYCLONEDX_SPEC_VERSION` | LBOM              |
 
 Persistence guarantees:
 
@@ -461,22 +462,22 @@ deterministic budget report under `<runDir>/finops/budget-report.json`.
 
 `FinOpsBudgetEnvelope` carries:
 
-| Field                                    | Scope    | Effect                                                                                     |
-| ---------------------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `maxJobWallClockMs`                      | Job-wide | Total wall-clock cap across every role.                                                    |
-| `maxReplayCacheMissRate`                 | Job-wide | Maximum permitted `misses / (hits + misses)` over the run; `[0, 1]`.                       |
-| `maxEstimatedCost`                       | Job-wide | Operator-supplied per-job cost cap (currency-agnostic).                                    |
-| `roles.<role>.maxInputTokensPerRequest`  | Role     | Maps to `LlmGenerationRequest.maxInputTokens` (gateway fail-closed).                       |
+| Field                                    | Scope    | Effect                                                                                           |
+| ---------------------------------------- | -------- | ------------------------------------------------------------------------------------------------ |
+| `maxJobWallClockMs`                      | Job-wide | Total wall-clock cap across every role.                                                          |
+| `maxReplayCacheMissRate`                 | Job-wide | Maximum permitted `misses / (hits + misses)` over the run; `[0, 1]`.                             |
+| `maxEstimatedCost`                       | Job-wide | Operator-supplied per-job cost cap (currency-agnostic).                                          |
+| `roles.<role>.maxInputTokensPerRequest`  | Role     | Maps to `LlmGenerationRequest.maxInputTokens` (gateway fail-closed).                             |
 | `roles.<role>.maxOutputTokensPerRequest` | Role     | Maps to `LlmGenerationRequest.maxOutputTokens`; gateway fails closed if unsupported or exceeded. |
-| `roles.<role>.maxTotalInputTokens`       | Role     | Aggregate input-token cap across every request the role makes.                             |
-| `roles.<role>.maxTotalOutputTokens`      | Role     | Aggregate output-token cap across every request the role makes.                            |
-| `roles.<role>.maxWallClockMsPerRequest`  | Role     | Per-request wall-clock cap (gateway fail-closed: `retryable: false` on breach).            |
-| `roles.<role>.maxTotalWallClockMs`       | Role     | Aggregate wall-clock cap across every request the role makes.                              |
-| `roles.<role>.maxRetriesPerRequest`      | Role     | Per-request retry cap; effective cap = `min(config.maxRetries, request.maxRetries)`.       |
-| `roles.<role>.maxAttempts`               | Role     | Total gateway attempts allowed (success + failure).                                        |
-| `roles.<role>.maxImageBytesPerRequest`   | Role     | Decoded image-input bytes per request (visual roles only).                                 |
-| `roles.<role>.maxFallbackAttempts`       | Role     | Maximum fallback-deployment attempts (visual_fallback only).                               |
-| `roles.<role>.maxLiveSmokeCalls`         | Role     | Maximum live-smoke (non-mock) calls.                                                       |
+| `roles.<role>.maxTotalInputTokens`       | Role     | Aggregate input-token cap across every request the role makes.                                   |
+| `roles.<role>.maxTotalOutputTokens`      | Role     | Aggregate output-token cap across every request the role makes.                                  |
+| `roles.<role>.maxWallClockMsPerRequest`  | Role     | Per-request wall-clock cap (gateway fail-closed: `retryable: false` on breach).                  |
+| `roles.<role>.maxTotalWallClockMs`       | Role     | Aggregate wall-clock cap across every request the role makes.                                    |
+| `roles.<role>.maxRetriesPerRequest`      | Role     | Per-request retry cap; effective cap = `min(config.maxRetries, request.maxRetries)`.             |
+| `roles.<role>.maxAttempts`               | Role     | Total gateway attempts allowed (success + failure).                                              |
+| `roles.<role>.maxImageBytesPerRequest`   | Role     | Decoded image-input bytes per request (visual roles only).                                       |
+| `roles.<role>.maxFallbackAttempts`       | Role     | Maximum fallback-deployment attempts (visual_fallback only).                                     |
+| `roles.<role>.maxLiveSmokeCalls`         | Role     | Maximum live-smoke (non-mock) calls.                                                             |
 
 A built-in `EU_BANKING_DEFAULT_FINOPS_BUDGET` profile is provided alongside a
 permissive `DEFAULT_FINOPS_BUDGET_ENVELOPE` baseline. Both are exported through
@@ -585,6 +586,62 @@ The artifact is attested by the Wave 1 evidence manifest and the sibling
 in-toto DSSE attestation: the manifest accepts safe relative artifact paths and
 includes `finops/budget-report.json` with category `finops`, while rejecting
 absolute paths, `..`, empty path segments, backslashes, and control characters.
+
+## 9b. Per-job LBOM (Issue #1378)
+
+Every completed Wave 1 POC run emits a per-job LLM Bill of Materials in
+CycloneDX 1.6 ML-BOM format under `<runDir>/lbom/ai-bom.cdx.json`. The
+artifact inventories the model chain (`gpt-oss-120b` test generator,
+`llama-4-maverick-vision` visual primary, `phi-4-multimodal-poc` visual
+fallback), the curated few-shot prompt bundle, and the active policy
+profile. The repository ships a reference template at
+[`docs/figma-to-test/lbom-template.cdx.json`](./figma-to-test/lbom-template.cdx.json)
+that documents the exact field shape an operator should expect to find
+under each run directory.
+
+Composition:
+
+- One `machine-learning-model` component per role (`test_generation`,
+  `visual_primary`, `visual_fallback`). The `name` is the canonical model
+  id; the active deployment label, gateway release, and image-input
+  capability are stamped as `workspace-dev:*` properties so the LBOM
+  remains stable across mock and live runs.
+- One `data` component for the curated few-shot bundle, hashed via the
+  prompt-compiler `promptHash` plus the bound generated-test-case
+  `schemaHash`.
+- One `data` component for the active policy profile, hashed via the
+  canonical SHA-256 of the profile object.
+- A `dependencies` graph rooting the run subject (`job:<jobId>`) at the
+  three model components and the two data bundles.
+
+Hard invariants stamped on the document (TYPE-LEVEL `false`):
+`secretsIncluded`, `rawPromptsIncluded`, `rawScreenshotsIncluded`. The
+LBOM never carries API keys, bearer tokens, signer material, prompt
+text, response text, or decoded image bytes. Capture identity is
+recorded only as SHA-256 inside the visual sidecar result, not in the
+LBOM.
+
+Schema validation:
+
+- The hand-rolled `validateLbomDocument` runs structural and
+  domain-aware checks anchored on the CycloneDX 1.6 spec — bomFormat /
+  specVersion / version / serialNumber pinning, RFC-4122 UUID format,
+  ISO-8601 timestamp format, single-algorithm hash entries (`SHA-256`),
+  unique `bom-ref` set, dependency-graph closure, and a property-value
+  scan that refuses values matching the `redactHighRiskSecrets`
+  high-risk patterns. The validator runs before the artifact is
+  persisted; any failure aborts the harness fail-closed.
+- The CycloneDX 1.6 + JSF + SPDX schema family is referenced by the
+  template; the validator emits the same field shape the template
+  documents so a downstream operator can use either the template or the
+  CycloneDX reference suite to audit the artifact.
+
+Manifest + attestation coverage:
+
+- The Wave 1 evidence manifest attests `lbom/ai-bom.cdx.json` with
+  SHA-256 + byte length under category `lbom`.
+- The sibling in-toto DSSE attestation transitively covers the LBOM
+  because it covers the manifest digest.
 
 ## 10. Network boundary
 
