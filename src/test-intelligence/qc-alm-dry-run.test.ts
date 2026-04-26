@@ -497,3 +497,76 @@ test("qc-alm-dry-run: resolver evidence is redacted and bounded before report pe
     /https:\/\/qc\.example\.test/,
   );
 });
+
+test("qc-alm-dry-run: planned payloads carry visual provenance fields when sidecar matches (Issue #1374)", async () => {
+  const adapter = createOpenTextAlmDryRunAdapter();
+  const visual = visualReport(0.42, ["low_confidence", "fallback_used"]);
+  const result = await adapter.dryRun({
+    jobId: "job-1374",
+    mode: "dry_run",
+    profile: cloneOpenTextAlmDefaultMappingProfile(),
+    preview: buildPreview([buildCase({})], visual),
+    visual,
+    clock: createFixedClock(GENERATED_AT),
+    idSource: DEFAULT_DRY_RUN_ID_SOURCE,
+  });
+  assert.equal(result.refused, false);
+  assert.equal(result.plannedPayloads.length, 1);
+  const payload = result.plannedPayloads[0];
+  assert.ok(payload);
+  assert.equal(Object.hasOwn(payload, "visualConfidence"), true);
+  assert.equal(Object.hasOwn(payload, "visualAmbiguityFlags"), true);
+  assert.equal(Object.hasOwn(payload, "visualFallbackUsed"), true);
+  assert.equal(Object.hasOwn(payload, "visualEvidenceRefs"), true);
+  assert.equal(payload.visualConfidence, 0.42);
+  assert.deepEqual(payload.visualAmbiguityFlags, ["low_confidence"]);
+  assert.equal(payload.visualFallbackUsed, true);
+  assert.equal(payload.visualEvidenceRefs?.length, 1);
+  const ref = payload.visualEvidenceRefs?.[0];
+  assert.ok(ref);
+  assert.deepEqual(Object.keys(ref).sort(), [
+    "evidenceHash",
+    "modelDeployment",
+    "screenId",
+  ]);
+  assert.equal(ref.screenId, "s-payment");
+  assert.equal(ref.modelDeployment, "llama-4-maverick-vision");
+  assert.match(ref.evidenceHash, /^[0-9a-f]{64}$/);
+});
+
+test("qc-alm-dry-run: planned payloads omit visual provenance keys when no sidecar records match (Issue #1374)", async () => {
+  const adapter = createOpenTextAlmDryRunAdapter();
+  const result = await adapter.dryRun({
+    jobId: "job-1374",
+    mode: "dry_run",
+    profile: cloneOpenTextAlmDefaultMappingProfile(),
+    preview: buildPreview([buildCase({})]),
+    clock: createFixedClock(GENERATED_AT),
+    idSource: DEFAULT_DRY_RUN_ID_SOURCE,
+  });
+  assert.equal(result.refused, false);
+  assert.equal(result.plannedPayloads.length, 1);
+  const payload = result.plannedPayloads[0];
+  assert.ok(payload);
+  assert.equal(Object.hasOwn(payload, "visualConfidence"), false);
+  assert.equal(Object.hasOwn(payload, "visualAmbiguityFlags"), false);
+  assert.equal(Object.hasOwn(payload, "visualFallbackUsed"), false);
+  assert.equal(Object.hasOwn(payload, "visualEvidenceRefs"), false);
+});
+
+test("qc-alm-dry-run: visual provenance confidence is rounded to 4 decimals (Issue #1374)", async () => {
+  const adapter = createOpenTextAlmDryRunAdapter();
+  const visual = visualReport(0.123456789, ["ok"]);
+  const result = await adapter.dryRun({
+    jobId: "job-1374",
+    mode: "dry_run",
+    profile: cloneOpenTextAlmDefaultMappingProfile(),
+    preview: buildPreview([buildCase({})], visual),
+    visual,
+    clock: createFixedClock(GENERATED_AT),
+    idSource: DEFAULT_DRY_RUN_ID_SOURCE,
+  });
+  const payload = result.plannedPayloads[0];
+  assert.ok(payload);
+  assert.equal(payload.visualConfidence, 0.1235);
+});

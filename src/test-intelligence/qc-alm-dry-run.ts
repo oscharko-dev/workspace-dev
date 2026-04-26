@@ -180,25 +180,122 @@ const computeCompleteness = (
   };
 };
 
+const VISUAL_CONFIDENCE_PRECISION = 10000;
+
+/** Round a 0..1 confidence to 4 decimals for byte-stable emission. */
+const roundVisualConfidence = (value: number): number =>
+  Math.round(value * VISUAL_CONFIDENCE_PRECISION) / VISUAL_CONFIDENCE_PRECISION;
+
+/**
+ * Compute a derivative identity hash for a visual-sidecar validation
+ * record (Issue #1374 multimodal addendum, 2026-04-24).
+ *
+ * The dry-run adapter never receives raw screenshot bytes — those live on
+ * the upstream `VisualSidecarSuccess` artifact (`captureIdentities`). To
+ * still let reviewers correlate a planned-payload provenance ref back to
+ * the per-screen validation record, we hash the canonical record
+ * identity tuple. The result is byte-stable, redaction-safe, and
+ * intentionally distinct from the screenshot byte hash.
+ */
+const computeVisualEvidenceHash = (
+  record: VisualSidecarValidationRecord,
+): string => {
+  const sortedOutcomes = [...record.outcomes].sort().join(",");
+  const rounded = roundVisualConfidence(record.meanConfidence);
+  return sha256Hex(
+    `${record.screenId}|${record.deployment}|${sortedOutcomes}|${rounded}`,
+  );
+};
+
+interface VisualProvenance {
+  visualConfidence: number;
+  visualAmbiguityFlags: VisualSidecarValidationOutcome[];
+  visualFallbackUsed: boolean;
+  visualEvidenceRefs: {
+    screenId: string;
+    modelDeployment: string;
+    evidenceHash: string;
+  }[];
+}
+
+/**
+ * Build the four visual-provenance fields for a single planned payload.
+ * Returns `null` when the case has no matching visual records — the
+ * caller must then OMIT the keys entirely (not assign `undefined`).
+ */
+const buildVisualProvenance = (
+  entry: QcMappingPreviewEntry,
+  visual: VisualSidecarValidationReport | undefined,
+): VisualProvenance | null => {
+  const matching = matchVisualRecords(entry, visual);
+  if (matching.length === 0) return null;
+
+  let confidenceSum = 0;
+  for (const m of matching) confidenceSum += m.meanConfidence;
+  const meanConfidence = confidenceSum / matching.length;
+
+  const ambiguity = Array.from(
+    new Set(
+      matching
+        .flatMap((m) => m.outcomes)
+        .filter(
+          (o): o is VisualSidecarValidationOutcome =>
+            o !== "ok" && o !== "fallback_used",
+        ),
+    ),
+  ).sort();
+
+  const fallbackUsed = matching.some((m) =>
+    m.outcomes.includes("fallback_used"),
+  );
+
+  const refs = matching
+    .map((record) => ({
+      screenId: record.screenId,
+      modelDeployment: record.deployment,
+      evidenceHash: computeVisualEvidenceHash(record),
+    }))
+    .sort((a, b) => a.screenId.localeCompare(b.screenId));
+
+  return {
+    visualConfidence: roundVisualConfidence(meanConfidence),
+    visualAmbiguityFlags: ambiguity,
+    visualFallbackUsed: fallbackUsed,
+    visualEvidenceRefs: refs,
+  };
+};
+
 const buildPlannedPayloads = (
   profile: QcMappingProfile,
   preview: QcMappingPreviewArtifact,
+  visual: VisualSidecarValidationReport | undefined,
 ): DryRunPlannedEntityPayload[] => {
   const requiredFields = Array.from(new Set(profile.requiredFields)).sort();
   return preview.entries
     .slice()
     .sort((a, b) => a.testCaseId.localeCompare(b.testCaseId))
-    .map((entry) => ({
-      testCaseId: entry.testCaseId,
-      externalIdCandidate: entry.externalIdCandidate,
-      testEntityType: profile.testEntityType,
-      targetFolderPath: entry.targetFolderPath,
-      fields: requiredFields.map((field) => ({
-        name: field,
-        value: buildFieldValue(field, entry),
-      })),
-      designStepCount: entry.designSteps.length,
-    }));
+    .map((entry) => {
+      const provenance = buildVisualProvenance(entry, visual);
+      const base: DryRunPlannedEntityPayload = {
+        testCaseId: entry.testCaseId,
+        externalIdCandidate: entry.externalIdCandidate,
+        testEntityType: profile.testEntityType,
+        targetFolderPath: entry.targetFolderPath,
+        fields: requiredFields.map((field) => ({
+          name: field,
+          value: buildFieldValue(field, entry),
+        })),
+        designStepCount: entry.designSteps.length,
+      };
+      if (provenance === null) return base;
+      return {
+        ...base,
+        visualConfidence: provenance.visualConfidence,
+        visualAmbiguityFlags: provenance.visualAmbiguityFlags,
+        visualFallbackUsed: provenance.visualFallbackUsed,
+        visualEvidenceRefs: provenance.visualEvidenceRefs,
+      };
+    });
 };
 
 const matchVisualRecords = (
@@ -463,7 +560,11 @@ export const openTextAlmDryRunAdapter: QcAdapter = {
     }
 
     const completeness = computeCompleteness(input.profile, input.preview);
-    const plannedPayloads = buildPlannedPayloads(input.profile, input.preview);
+    const plannedPayloads = buildPlannedPayloads(
+      input.profile,
+      input.preview,
+      input.visual,
+    );
     const threshold =
       typeof input.visualConfidenceThreshold === "number"
         ? input.visualConfidenceThreshold

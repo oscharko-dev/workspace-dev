@@ -4071,15 +4071,52 @@ export const ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES = [
 export type QcMappingProfileIssueCode =
   (typeof ALLOWED_QC_MAPPING_PROFILE_ISSUE_CODES)[number];
 
-/** Allowed reasons the QC adapter may refuse to produce a dry-run report. */
+/**
+ * Allowed reasons the QC adapter may refuse to produce a dry-run report.
+ *
+ * `provider_not_implemented` (Issue #1374) is appended at the end so the
+ * ordinal positions of prior codes stay byte-stable for callers that pin
+ * to a known index. The code is emitted by the dry-run-only stub adapter
+ * for non-ALM providers that have no real implementation yet.
+ */
 export const ALLOWED_DRY_RUN_REFUSAL_CODES = [
   "no_mapped_test_cases",
   "mapping_profile_invalid",
   "provider_mismatch",
   "mode_not_implemented",
   "folder_resolution_failed",
+  "provider_not_implemented",
 ] as const;
 export type DryRunRefusalCode = (typeof ALLOWED_DRY_RUN_REFUSAL_CODES)[number];
+
+/**
+ * Allowed QC provider operations (Issue #1374).
+ *
+ * Each builtin provider descriptor advertises which of these operations its
+ * adapter implements. The registry uses the matrix to surface "what does
+ * this provider support" without coupling to a concrete adapter:
+ *
+ *   - `validate_profile` — pure structural validator runs against the
+ *     supplied mapping profile.
+ *   - `resolve_target_folder` — adapter knows how to validate a target
+ *     folder path against its provider (read-only resolver).
+ *   - `dry_run` — adapter can produce a `DryRunReportArtifact` (potentially
+ *     a fail-closed stub).
+ *   - `export_only` — adapter can emit export-only artifacts.
+ *   - `api_transfer` — adapter can perform controlled API writes.
+ *   - `register_custom` — caller may register a custom adapter under this
+ *     provider id (only true for the reserved `custom` slot).
+ */
+export const ALLOWED_QC_PROVIDER_OPERATIONS = [
+  "validate_profile",
+  "resolve_target_folder",
+  "dry_run",
+  "export_only",
+  "api_transfer",
+  "register_custom",
+] as const;
+export type QcProviderOperation =
+  (typeof ALLOWED_QC_PROVIDER_OPERATIONS)[number];
 
 /** Allowed states of a target-folder resolution attempt under `dry_run`. */
 export const ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES = [
@@ -4142,6 +4179,61 @@ export interface QcMappingProfileValidationResult {
   issues: QcMappingProfileIssue[];
 }
 
+/**
+ * Capability matrix for a QC provider (Issue #1374).
+ *
+ * Each flag mirrors a `QcProviderOperation`. Wave 3 ships only the
+ * `opentext_alm` provider with the full matrix `true`; the other six
+ * builtin providers advertise dry-run + validate only and refuse writes.
+ * The reserved `custom` slot is published with every flag `false` until a
+ * caller registers a concrete adapter.
+ *
+ * The shape is a closed product type so a future operation cannot be
+ * silently introduced without a contract bump — every consumer reading the
+ * matrix today is guaranteed to see exactly these six fields.
+ */
+export interface QcProviderCapabilities {
+  /** Adapter exposes a structural `validateProfile` pass. */
+  validateProfile: boolean;
+  /** Adapter knows how to validate a target folder path (read-only). */
+  resolveTargetFolder: boolean;
+  /** Adapter can emit a `DryRunReportArtifact` (concrete or fail-closed stub). */
+  dryRun: boolean;
+  /** Adapter can emit export-only artifacts (CSV/XLSX/XML). */
+  exportOnly: boolean;
+  /** Adapter can perform controlled API writes against the live tool. */
+  apiTransfer: boolean;
+  /** Caller may register a concrete custom adapter under this provider id. */
+  registerCustom: boolean;
+}
+
+/**
+ * Descriptor for a builtin or custom-registered QC provider (Issue #1374).
+ *
+ * Descriptors are returned by the registry so a UI or operator audit can
+ * answer "which providers are wired up and what can they do?" without
+ * loading any adapter implementation. They carry no credentials, no URLs,
+ * and no runtime mutable state.
+ */
+export interface QcProviderDescriptor {
+  /** Provider discriminator from `ALLOWED_QC_ADAPTER_PROVIDERS`. */
+  provider: QcAdapterProvider;
+  /** Short human-readable label, e.g. `"OpenText ALM"`. */
+  label: string;
+  /** Semver-shaped descriptor version, bumped when the matrix changes. */
+  version: string;
+  /** True for the eight in-tree descriptors; false for caller-registered slots. */
+  builtin: boolean;
+  /** Capability matrix advertised for this provider. */
+  capabilities: QcProviderCapabilities;
+  /**
+   * Optional pointer to the mapping-profile factory id a caller can use to
+   * seed a fresh profile (e.g. `opentext-alm-default`). Absent when the
+   * provider has no in-tree default profile yet.
+   */
+  mappingProfileSeedId?: string;
+}
+
 /** Per-test-case completeness row inside the dry-run report. */
 export interface DryRunMappingCompletenessEntry {
   testCaseId: string;
@@ -4183,6 +4275,52 @@ export interface DryRunPlannedEntityPayload {
   fields: { name: string; value: string }[];
   /** Number of design steps in the planned payload. */
   designStepCount: number;
+  /**
+   * Mean visual-sidecar confidence (0..1) across matching screen records,
+   * rounded to 4 decimals for byte-stability. Issue #1374 multimodal
+   * addendum (2026-04-24). Absent (no key set) when the case has no
+   * matching visual records or when emitted by the dry-run stub adapter.
+   */
+  visualConfidence?: number;
+  /**
+   * Sorted, de-duplicated set of non-`ok` outcome codes contributing to the
+   * matching visual records. Surfaces ambiguity reasons (`low_confidence`,
+   * `schema_invalid`, etc.) without re-emitting the raw issue text. Absent
+   * when no records match. Issue #1374.
+   */
+  visualAmbiguityFlags?: VisualSidecarValidationOutcome[];
+  /**
+   * True when at least one matching visual record carries the
+   * `fallback_used` outcome — i.e. the secondary multimodal deployment
+   * produced the description the case relies on. Absent when no records
+   * match. Issue #1374.
+   */
+  visualFallbackUsed?: boolean;
+  /**
+   * Sorted (by `screenId`) per-record provenance refs. Each ref carries a
+   * derivative identity hash that lets a reviewer correlate the planned
+   * payload back to the per-screen validation record without re-importing
+   * raw screenshot bytes. Absent when no records match. Issue #1374.
+   *
+   * Field semantics:
+   *   - `screenId` — matching `VisualSidecarValidationRecord.screenId`.
+   *   - `modelDeployment` — sourced verbatim from
+   *     `VisualSidecarValidationRecord.deployment`. The contract historically
+   *     uses the field name `deployment` on the record; this ref re-exposes
+   *     it under `modelDeployment` to align with the broader replay-cache
+   *     idiom (see `SelfVerifyRubricReplayCacheKey.modelDeployment`).
+   *   - `evidenceHash` — `sha256` hex of the canonical validation-record
+   *     identity tuple `(screenId|deployment|sortedOutcomes|roundedConfidence)`.
+   *     Note this is NOT a hash of screenshot bytes — the dry-run adapter
+   *     never receives image bytes. The `VisualSidecarCaptureIdentity.sha256`
+   *     (image-byte hash) lives only on the upstream
+   *     `VisualSidecarSuccess` artifact, which dry-run does not consume.
+   */
+  visualEvidenceRefs?: {
+    screenId: string;
+    modelDeployment: string;
+    evidenceHash: string;
+  }[];
 }
 
 /**
@@ -5568,4 +5706,4 @@ export interface TraceabilityMatrix {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.10.0" as const;
+export const CONTRACT_VERSION = "4.11.0" as const;
