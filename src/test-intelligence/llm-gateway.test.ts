@@ -138,6 +138,7 @@ test("isLlmGatewayErrorRetryable: only transient classes retry", () => {
   assert.equal(isLlmGatewayErrorRetryable("schema_invalid"), false);
   assert.equal(isLlmGatewayErrorRetryable("incomplete"), false);
   assert.equal(isLlmGatewayErrorRetryable("image_payload_rejected"), false);
+  assert.equal(isLlmGatewayErrorRetryable("input_budget_exceeded"), false);
 });
 
 test("guards image payloads on test_generation role without making a network call", async () => {
@@ -181,10 +182,81 @@ test("guards oversized input budgets before making a network call", async () => 
 
   assert.equal(result.outcome, "error");
   if (result.outcome === "error") {
-    assert.equal(result.errorClass, "schema_invalid");
+    assert.equal(result.errorClass, "input_budget_exceeded");
+    assert.equal(result.retryable, false);
     assert.match(result.message, /maxInputTokens/);
   }
   assert.equal(calls, 0);
+});
+
+test("rejects malformed maxInputTokens with schema_invalid", async () => {
+  let calls = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      calls += 1;
+      return okJsonResponse({});
+    },
+    apiKeyProvider: () => "secret-key-value",
+  });
+
+  for (const bad of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    const result = await client.generate(
+      sampleRequest({ maxInputTokens: bad }),
+    );
+    assert.equal(result.outcome, "error");
+    if (result.outcome === "error") {
+      assert.equal(result.errorClass, "schema_invalid");
+      assert.equal(result.retryable, false);
+      assert.match(result.message, /maxInputTokens must be a positive integer/);
+    }
+  }
+  assert.equal(calls, 0);
+});
+
+test("input budget at the cap succeeds; one byte over fails closed", async () => {
+  let calls = 0;
+  const client = createLlmGatewayClient(baseConfig, {
+    fetchImpl: async () => {
+      calls += 1;
+      return okJsonResponse(buildChoiceBody({ ack: "ok" }));
+    },
+    apiKeyProvider: () => "secret-key-value",
+  });
+
+  // Estimator: ceil(bytes/4). With systemPrompt="system" (6) + userPrompt
+  // length L + responseSchema JSON length (computed below), we pick L so
+  // the estimate equals the cap exactly.
+  const schemaBytes = JSON.stringify(sampleRequest().responseSchema).length;
+  const cap = 200;
+  const targetBytes = cap * 4;
+  const userBytes = targetBytes - 6 - schemaBytes; // 6 = "system"
+  assert.ok(userBytes > 0, "fixture must yield a positive userPrompt length");
+
+  const ok = await client.generate(
+    sampleRequest({
+      userPrompt: "x".repeat(userBytes),
+      maxInputTokens: cap,
+    }),
+  );
+  assert.equal(ok.outcome, "success");
+  assert.equal(calls, 1);
+
+  const tooBig = await client.generate(
+    sampleRequest({
+      userPrompt: "x".repeat(userBytes + 4),
+      maxInputTokens: cap,
+    }),
+  );
+  assert.equal(tooBig.outcome, "error");
+  if (tooBig.outcome === "error") {
+    assert.equal(tooBig.errorClass, "input_budget_exceeded");
+    assert.equal(tooBig.retryable, false);
+  }
+  assert.equal(
+    calls,
+    1,
+    "rejection at the cap must not dispatch a network call",
+  );
 });
 
 test("response-size ceiling rejects oversized gateway bodies before JSON parsing", async () => {
@@ -710,10 +782,7 @@ test("URL composition preserves trailing-slash baseUrl and adds chat/completions
     },
   );
   await client.generate(sampleRequest());
-  assert.match(
-    observedUrl ?? "",
-    /\/openai\/v1\/chat\/completions$/,
-  );
+  assert.match(observedUrl ?? "", /\/openai\/v1\/chat\/completions$/);
   assert.equal((observedUrl ?? "").includes("?model="), false);
 });
 

@@ -248,7 +248,12 @@ test("resource-budget: maxInputTokens cap rejects oversized prompts before gatew
     "oversized prompt must be rejected by the client-side input budget",
   );
   if (result.outcome === "error") {
-    assert.equal(result.errorClass, "schema_invalid");
+    assert.equal(
+      result.errorClass,
+      "input_budget_exceeded",
+      "oversized prompts must surface as input_budget_exceeded (Issue #1415)",
+    );
+    assert.equal(result.retryable, false);
     assert.match(result.message, /maxInputTokens/);
   }
   assert.equal(

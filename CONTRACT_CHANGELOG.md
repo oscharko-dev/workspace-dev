@@ -31,6 +31,18 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.6.0] - 2026-04-26
+
+### Added (Issue #1415)
+
+- New `LlmGatewayErrorClass` literal `"input_budget_exceeded"` added to `ALLOWED_LLM_GATEWAY_ERROR_CLASSES`. Surfaced by `LlmGatewayClient.generate` (real and mock) when an outgoing `LlmGenerationRequest` carries a `maxInputTokens` cap and the client-side estimate of the prompt size (system prompt + user prompt + structured-output schema + image base64 payloads, divided by 4 bytes/token) exceeds that cap. The failure is `retryable: false` and is recorded by the circuit breaker as a non-transient outcome — retrying would by definition violate the same budget.
+- The `maxInputTokens` field on `LlmGenerationRequest` (introduced in 3.29.0 as a FinOps surface) is now load-bearing on the gateway transport: the cap is evaluated **before** any network call, before `apiKeyProvider` is invoked, and before the request body is serialized. Mock gateway honours the same guard so CI fixtures observe identical fail-closed semantics. Negative, zero, non-integer, or non-safe-integer values continue to be rejected as `schema_invalid` (structurally invalid budgets, distinct from a budget breach).
+- `runWave1Poc` recognises the new error class as a FinOps gateway-budget failure and routes it through the existing `Wave1PocFinOpsBudgetExceededError` path (no downstream artifacts emitted).
+
+### Changed
+
+- Consumers that switch on `errorClass` must extend their handling to cover `"input_budget_exceeded"`. Behavior continues to be `retryable: false`; treat it as a non-transient policy outcome (operator-set cap was breached). Existing matchers that key on the human-readable message (`/estimated input tokens \d+ exceeds maxInputTokens \d+/`) still apply unchanged — only the `errorClass` discriminant moved from `"schema_invalid"` to `"input_budget_exceeded"`.
+
 ## [4.5.0] - 2026-04-26
 
 ### Added (Issue #1412)

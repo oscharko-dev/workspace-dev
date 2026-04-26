@@ -280,7 +280,7 @@ const guardInputBudget = (
   if (estimatedTokens > request.maxInputTokens) {
     return {
       outcome: "error",
-      errorClass: "schema_invalid",
+      errorClass: "input_budget_exceeded",
       message: `estimated input tokens ${estimatedTokens} exceeds maxInputTokens ${request.maxInputTokens}`,
       retryable: false,
       attempt: 0,
