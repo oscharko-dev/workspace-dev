@@ -314,16 +314,18 @@ const runExternalProbe = async (
   findings.sort((a, b) =>
     a.testCaseId < b.testCaseId ? -1 : a.testCaseId > b.testCaseId ? 1 : 0,
   );
-  // The probe is `unconfigured` only when EVERY case failed to
-  // produce a usable result — at least one `missing` or `found`
-  // verdict means the probe successfully exercised its surface.
-  // Empty input lists (no cases to probe) inherit the same
-  // unconfigured fail-closed semantics so an operator cannot
-  // accidentally certify an empty-input run as "executed".
-  if (
-    completedLookups === 0 &&
-    (unavailableNote !== undefined || input.testCases.length === 0)
-  ) {
+  if (unavailableNote !== undefined && completedLookups > 0) {
+    return {
+      state: "partial_failure",
+      cases: input.testCases.length,
+      note: unavailableNote,
+      findings,
+    };
+  }
+  // The probe is `unconfigured` when no case produced a usable result.
+  // Empty input lists inherit the same fail-closed semantics so an
+  // operator cannot certify an empty-input run as "executed".
+  if (unavailableNote !== undefined || input.testCases.length === 0) {
     return {
       state: "unconfigured",
       cases: input.testCases.length,
@@ -335,7 +337,6 @@ const runExternalProbe = async (
     state: "executed",
     cases: input.testCases.length,
     findings,
-    ...(unavailableNote !== undefined ? { note: unavailableNote } : {}),
   };
 };
 

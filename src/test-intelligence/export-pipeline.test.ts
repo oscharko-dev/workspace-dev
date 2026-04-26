@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  DEDUPE_REPORT_ARTIFACT_FILENAME,
   EXPORT_REPORT_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME,
@@ -17,6 +18,7 @@ import {
   TEST_CASE_VALIDATION_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  TRACEABILITY_MATRIX_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION,
   type BusinessTestIntentIr,
@@ -410,6 +412,8 @@ test("export-pipeline: writes only export-report.json on refusal", async () => {
     assert.equal(paths.testcasesAlmXmlPath, undefined);
     assert.equal(paths.testcasesXlsxPath, undefined);
     assert.equal(paths.qcMappingPreviewPath, undefined);
+    assert.equal(paths.dedupeReportPath, undefined);
+    assert.equal(paths.traceabilityMatrixPath, undefined);
     const reportRaw = await readFile(paths.exportReportPath, "utf8");
     assert.match(reportRaw, /"refused":true/);
     assert.match(reportRaw, /"rawScreenshotsIncluded":false/);
@@ -456,6 +460,14 @@ test("export-pipeline: emits all required artifacts when every case is approved 
     assert.ok(paths.testcasesAlmXmlPath);
     assert.ok(paths.testcasesXlsxPath);
     assert.ok(paths.qcMappingPreviewPath);
+    assert.equal(
+      paths.dedupeReportPath,
+      join(dir, DEDUPE_REPORT_ARTIFACT_FILENAME),
+    );
+    assert.equal(
+      paths.traceabilityMatrixPath,
+      join(dir, TRACEABILITY_MATRIX_ARTIFACT_FILENAME),
+    );
     // Verify each persisted file matches the in-memory bytes.
     const jsonBytes = await readFile(paths.testcasesJsonPath ?? "");
     const expectedJsonLength = artifacts.payloads.json?.length ?? -1;

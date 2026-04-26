@@ -5171,6 +5171,10 @@ export const TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 export const INTENT_DELTA_REPORT_ARTIFACT_FILENAME =
   "intent-delta-report.json" as const;
 
+/** Canonical filename for the persisted test-case delta artifact. */
+export const TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME =
+  "test-case-delta-report.json" as const;
+
 /** Schema version for the persisted dedupe artifact (Issue #1373). */
 export const DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 
@@ -5387,11 +5391,14 @@ export interface DedupeExternalFinding {
  * - `disabled` — caller did not configure an `externalProbe`.
  * - `unconfigured` — probe was supplied but reported its own
  *   `unconfigured` verdict (e.g. air-gapped client). Fail-closed.
+ * - `partial_failure` — at least one external lookup succeeded, but
+ *   one or more cases could not be checked. Fail-closed.
  * - `executed` — probe ran and returned per-case verdicts.
  */
 export const ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES = [
   "disabled",
   "unconfigured",
+  "partial_failure",
   "executed",
 ] as const;
 export type DedupeExternalProbeState =
@@ -5479,6 +5486,8 @@ export interface TraceabilityMatrixRow {
   transferOutcome?: TransferEntityOutcome;
   /** Per-screen visual sidecar observations relevant to this case. */
   visualObservations: TraceabilityVisualObservation[];
+  /** Per-step traceability rows derived from generated and QC design steps. */
+  steps: TraceabilityStepRow[];
   /** Reconciliation decisions: one row per IR element with explicit provenance. */
   reconciliationDecisions: TraceabilityReconciliationDecision[];
   /** Per-case validation outcome — `error` if any error issue was raised. */
@@ -5489,6 +5498,27 @@ export interface TraceabilityMatrixRow {
   policyOutcomes: TestCasePolicyOutcome[];
   /** Review-state snapshot at the moment the matrix was built. */
   reviewState?: ReviewState;
+}
+
+/** Single ordered step row inside a traceability matrix row. */
+export interface TraceabilityStepRow {
+  stepIndex: number;
+  action: string;
+  expected?: string;
+  /** Sorted Figma screen ids inherited from the test-case trace refs. */
+  figmaScreenIds: string[];
+  /** Sorted Figma node ids inherited from the test-case trace refs. */
+  figmaNodeIds: string[];
+  /** Matching QC design-step index when the mapping preview carries one. */
+  qcDesignStepIndex?: number;
+  /** Per-screen visual sidecar observations available for the step's case. */
+  visualObservations: TraceabilityVisualObservation[];
+  /** Per-case validation outcome at the time this step row was built. */
+  validationOutcome: "ok" | "warning" | "error";
+  /** Per-case policy decision at the time this step row was built. */
+  policyDecision?: TestCasePolicyDecision;
+  /** Per-case sorted, deduplicated policy outcomes at the time this step row was built. */
+  policyOutcomes: TestCasePolicyOutcome[];
 }
 
 /** Single per-screen visual observation row inside the matrix. */
@@ -5538,4 +5568,4 @@ export interface TraceabilityMatrix {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.9.0" as const;
+export const CONTRACT_VERSION = "4.10.0" as const;

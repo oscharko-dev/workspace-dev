@@ -323,7 +323,7 @@ test("external probe disabled sentinel → state=executed, no findings", async (
   assert.equal(out.externalFindings.length, 0);
 });
 
-test("external probe throws on a case → other cases continue, sanitised note recorded", async () => {
+test("external probe throws on a case → partial_failure with sanitised note", async () => {
   const probe: ExternalDedupeProbe = {
     identifier: "throws-once",
     lookup: ({ testCase }) => {
@@ -342,7 +342,7 @@ test("external probe throws on a case → other cases continue, sanitised note r
     lexicalThreshold: 0.99,
     externalProbe: probe,
   });
-  assert.equal(out.externalProbe.state, "executed");
+  assert.equal(out.externalProbe.state, "partial_failure");
   assert.equal(out.externalFindings.length, 0);
   // Note must collapse whitespace.
   assert.ok(out.externalProbe.note);

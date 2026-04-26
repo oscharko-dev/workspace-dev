@@ -31,6 +31,30 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.10.0] - 2026-04-26
+
+### Added (Issue #1373 follow-up)
+
+- `TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME = "test-case-delta-report.json"`
+  is now exported from the public contract surface alongside the other Wave 3
+  artifact filenames.
+- `TraceabilityMatrixRow.steps` records ordered per-step traceability rows.
+  Each row carries inherited Figma screen/node metadata, matching QC design-step
+  index when available, visual-sidecar observations, and the validation/policy
+  outcomes that governed the parent test case.
+- The persisted export pipeline now emits `dedupe-report.json` and
+  `traceability-matrix.json` for successful export runs so duplicate evidence
+  and export-only traceability are produced by the normal workflow, not only by
+  manually composing helper functions.
+- The controlled OpenText ALM API transfer pipeline accepts optional
+  traceability lineage inputs and persists a transfer-aware
+  `traceability-matrix.json` beside `transfer-report.json` when those inputs and
+  an artifact root are supplied.
+- `DedupeExternalProbeState` now includes `partial_failure` for runs where an
+  external duplicate probe produced at least one usable lookup but one or more
+  case lookups failed. This keeps partial external coverage fail-closed while
+  preserving sanitized findings for operator evidence.
+
 ## [4.9.0] - 2026-04-26
 
 ### Added (Issue #1373)

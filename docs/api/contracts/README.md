@@ -294,6 +294,98 @@ Number of screens covered by the visual binding.
 
 ***
 
+### DedupeCaseVerdict
+
+Per-case verdict computed from the dedupe pipeline.
+
+#### Properties
+
+##### isDuplicate
+
+> **isDuplicate**: `boolean`
+
+`true` when the case has at least one internal duplicate
+finding above the configured threshold OR an external
+lookup match.
+
+##### matchedSources
+
+> **matchedSources**: (`"lexical"` \| `"embedding"` \| `"external_lookup"`)[]
+
+Sorted-and-deduplicated list of similarity sources that fired.
+
+##### maxInternalSimilarity
+
+> **maxInternalSimilarity**: `number`
+
+Highest similarity observed for this case across internal sources.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+***
+
+### DedupeExternalFinding
+
+Single external duplicate finding (against an external QC folder).
+
+#### Properties
+
+##### externalIdCandidate
+
+> **externalIdCandidate**: `string`
+
+##### matchedEntityId?
+
+> `optional` **matchedEntityId?**: `string`
+
+Stable opaque identifier of the matched entity in the target
+system. Treated as opaque — never logged or persisted alongside
+any URL or token.
+
+##### matchedFolderPath?
+
+> `optional` **matchedFolderPath?**: `string`
+
+Resolved folder path of the existing entity in the target system.
+
+##### source
+
+> **source**: `"external_lookup"`
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+***
+
+### DedupeInternalFinding
+
+Single internal duplicate finding (within the current job).
+
+#### Properties
+
+##### leftTestCaseId
+
+> **leftTestCaseId**: `string`
+
+##### rightTestCaseId
+
+> **rightTestCaseId**: `string`
+
+##### similarity
+
+> **similarity**: `number`
+
+Similarity in [0, 1], rounded to 6 digits.
+
+##### source
+
+> **source**: `"lexical"` \| `"embedding"`
+
+***
+
 ### DetectedAction
 
 Action/control inferred from a screen (e.g. Submit button).
@@ -1881,6 +1973,132 @@ Ambiguity note attached to a detected element or PII indicator.
 ##### reason
 
 > **reason**: `string`
+
+***
+
+### IntentDeltaEntry
+
+Single delta entry inside `IntentDeltaReport.entries`.
+
+#### Properties
+
+##### changeType
+
+> **changeType**: `"added"` \| `"removed"` \| `"changed"` \| `"confidence_dropped"` \| `"ambiguity_increased"`
+
+##### currentHash?
+
+> `optional` **currentHash?**: `string`
+
+SHA-256 hex of the current canonical projection, when present.
+
+##### detail?
+
+> `optional` **detail?**: `string`
+
+Optional sanitized human-readable detail (no PII, no tokens).
+
+##### elementId
+
+> **elementId**: `string`
+
+Stable identifier inside the IR (e.g. `screenId`, `field.id`).
+
+##### kind
+
+> **kind**: `"validation"` \| `"navigation"` \| `"screen"` \| `"field"` \| `"action"` \| `"visual_screen"`
+
+##### priorHash?
+
+> `optional` **priorHash?**: `string`
+
+SHA-256 hex of the prior canonical projection, when present.
+
+##### screenId?
+
+> `optional` **screenId?**: `string`
+
+Owning screen id, when the entry is screen-scoped.
+
+***
+
+### IntentDeltaReport
+
+Hard-invariant intent-delta report artifact (Issue #1373).
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### currentIntentHash
+
+> **currentIntentHash**: `string`
+
+SHA-256 of the canonical current IR (anchors the comparison).
+
+##### entries
+
+> **entries**: [`IntentDeltaEntry`](#intentdeltaentry)[]
+
+Sorted-by-(kind,elementId,changeType) deterministic entries.
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### priorIntentHash
+
+> **priorIntentHash**: `string`
+
+SHA-256 of the canonical prior IR (anchors the comparison).
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant: image bytes are NEVER embedded into this artifact.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### secretsIncluded
+
+> **secretsIncluded**: `false`
+
+Hard invariant: tokens / credentials are NEVER embedded.
+
+##### totals
+
+> **totals**: `object`
+
+Aggregate counts, computed deterministically from `entries`.
+
+###### added
+
+> **added**: `number`
+
+###### ambiguityIncreased
+
+> **ambiguityIncreased**: `number`
+
+###### changed
+
+> **changed**: `number`
+
+###### confidenceDropped
+
+> **confidenceDropped**: `number`
+
+###### removed
+
+> **removed**: `number`
 
 ***
 
@@ -3942,6 +4160,216 @@ Optional 0..1 rubric score from a downstream rater (Wave 2).
 
 ***
 
+### TestCaseDedupeReport
+
+Aggregate dedupe report artifact (Issue #1373).
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### embeddingProvider
+
+> **embeddingProvider**: `object`
+
+Whether the embedding path participated in the run.
+
+###### configured
+
+> **configured**: `boolean`
+
+###### identifier?
+
+> `optional` **identifier?**: `string`
+
+##### embeddingThreshold?
+
+> `optional` **embeddingThreshold?**: `number`
+
+Threshold above which embedding similarity is reported (0..1).
+
+##### externalFindings
+
+> **externalFindings**: [`DedupeExternalFinding`](#dedupeexternalfinding)[]
+
+##### externalProbe
+
+> **externalProbe**: `object`
+
+###### cases
+
+> **cases**: `number`
+
+Number of test cases probed; zero on `disabled`/`unconfigured`.
+
+###### note?
+
+> `optional` **note?**: `string`
+
+Sanitized informational note when the probe declined to run.
+
+###### state
+
+> **state**: `"executed"` \| `"disabled"` \| `"unconfigured"` \| `"partial_failure"`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### internalFindings
+
+> **internalFindings**: [`DedupeInternalFinding`](#dedupeinternalfinding)[]
+
+##### jobId
+
+> **jobId**: `string`
+
+##### lexicalThreshold
+
+> **lexicalThreshold**: `number`
+
+Threshold above which lexical similarity is reported (0..1).
+
+##### perCase
+
+> **perCase**: [`DedupeCaseVerdict`](#dedupecaseverdict)[]
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### secretsIncluded
+
+> **secretsIncluded**: `false`
+
+##### totals
+
+> **totals**: `object`
+
+###### duplicates
+
+> **duplicates**: `number`
+
+###### externalMatches
+
+> **externalMatches**: `number`
+
+###### internalEmbedding
+
+> **internalEmbedding**: `number`
+
+###### internalLexical
+
+> **internalLexical**: `number`
+
+***
+
+### TestCaseDeltaReport
+
+Aggregate test-case delta report (always paired with `IntentDeltaReport`).
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+##### rows
+
+> **rows**: [`TestCaseDeltaRow`](#testcasedeltarow)[]
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### secretsIncluded
+
+> **secretsIncluded**: `false`
+
+##### totals
+
+> **totals**: `object`
+
+###### changed
+
+> **changed**: `number`
+
+###### new
+
+> **new**: `number`
+
+###### obsolete
+
+> **obsolete**: `number`
+
+###### requiresReview
+
+> **requiresReview**: `number`
+
+###### unchanged
+
+> **unchanged**: `number`
+
+***
+
+### TestCaseDeltaRow
+
+Single per-case classification row.
+
+#### Properties
+
+##### affectedScreenIds
+
+> **affectedScreenIds**: `string`[]
+
+Sorted figma screen ids implicated by this row.
+
+##### currentFingerprintHash?
+
+> `optional` **currentFingerprintHash?**: `string`
+
+SHA-256 hex of the current fingerprint when present.
+
+##### priorFingerprintHash?
+
+> `optional` **priorFingerprintHash?**: `string`
+
+SHA-256 hex of the prior fingerprint when present.
+
+##### reasons
+
+> **reasons**: (`"absent_in_current"` \| `"absent_in_prior"` \| `"fingerprint_changed"` \| `"trace_screen_changed"` \| `"trace_screen_removed"` \| `"visual_ambiguity_increased"` \| `"visual_confidence_dropped"` \| `"reconciliation_conflict"`)[]
+
+Sorted, deduplicated reasons that fired.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+##### verdict
+
+> **verdict**: `"unchanged"` \| `"changed"` \| `"new"` \| `"obsolete"` \| `"requires_review"`
+
+***
+
 ### TestCaseDuplicatePair
 
 Pair of generated test case ids exceeding the similarity threshold.
@@ -4324,6 +4752,338 @@ Bearer token accepted for this principal's API transfer requests.
 > **principalId**: `string`
 
 Opaque, non-secret operator principal id persisted in transfer audit logs.
+
+***
+
+### TraceabilityMatrix
+
+Aggregate traceability-matrix artifact (Issue #1373).
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### exportProfile?
+
+> `optional` **exportProfile?**: `object`
+
+Identity of the export profile in play, when one is supplied.
+
+###### id
+
+> **id**: `string`
+
+###### version
+
+> **version**: `string`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### policyProfile?
+
+> `optional` **policyProfile?**: `object`
+
+Identity of the policy profile in play, when one is supplied.
+
+###### id
+
+> **id**: `string`
+
+###### version
+
+> **version**: `string`
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+##### rows
+
+> **rows**: [`TraceabilityMatrixRow`](#traceabilitymatrixrow)[]
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### secretsIncluded
+
+> **secretsIncluded**: `false`
+
+##### totals
+
+> **totals**: `object`
+
+###### failed
+
+> **failed**: `number`
+
+###### refused
+
+> **refused**: `number`
+
+###### rows
+
+> **rows**: `number`
+
+###### skippedDuplicate
+
+> **skippedDuplicate**: `number`
+
+###### transferred
+
+> **transferred**: `number`
+
+***
+
+### TraceabilityMatrixRow
+
+Single row inside the traceability matrix. Joins the lifecycle
+of one generated test case across its Figma source, IR
+elements, QC mapping, transfer outcome, visual sidecar
+observations, and validation/policy outcomes.
+
+#### Properties
+
+##### externalIdCandidate?
+
+> `optional` **externalIdCandidate?**: `string`
+
+Deterministic external-id candidate for the QC mapping.
+
+##### figmaNodeIds
+
+> **figmaNodeIds**: `string`[]
+
+Sorted Figma node ids that motivated the case. Empty when no
+trace ref carries a node id.
+
+##### figmaScreenIds
+
+> **figmaScreenIds**: `string`[]
+
+Sorted Figma screen ids that motivated the case.
+
+##### intentActionIds
+
+> **intentActionIds**: `string`[]
+
+Sorted IR action ids covered by this case.
+
+##### intentFieldIds
+
+> **intentFieldIds**: `string`[]
+
+Sorted IR field ids covered by this case.
+
+##### intentNavigationIds
+
+> **intentNavigationIds**: `string`[]
+
+Sorted IR navigation ids covered by this case.
+
+##### intentValidationIds
+
+> **intentValidationIds**: `string`[]
+
+Sorted IR validation ids covered by this case.
+
+##### policyDecision?
+
+> `optional` **policyDecision?**: `"approved"` \| `"blocked"` \| `"needs_review"`
+
+Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`).
+
+##### policyOutcomes
+
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"`)[]
+
+Per-case sorted, deduplicated policy outcome codes that fired.
+
+##### qcEntityId?
+
+> `optional` **qcEntityId?**: `string`
+
+Resolved QC entity id when the case was transferred.
+
+##### qcFolderPath?
+
+> `optional` **qcFolderPath?**: `string`
+
+Resolved target QC folder path under the export profile.
+
+##### reconciliationDecisions
+
+> **reconciliationDecisions**: [`TraceabilityReconciliationDecision`](#traceabilityreconciliationdecision)[]
+
+Reconciliation decisions: one row per IR element with explicit provenance.
+
+##### reviewState?
+
+> `optional` **reviewState?**: `"approved"` \| `"needs_review"` \| `"rejected"` \| `"generated"` \| `"pending_secondary_approval"` \| `"edited"` \| `"exported"` \| `"transferred"`
+
+Review-state snapshot at the moment the matrix was built.
+
+##### steps
+
+> **steps**: [`TraceabilityStepRow`](#traceabilitysteprow)[]
+
+Per-step traceability rows derived from generated and QC design steps.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+##### title
+
+> **title**: `string`
+
+Title at the moment the matrix was built.
+
+##### transferOutcome?
+
+> `optional` **transferOutcome?**: `"failed"` \| `"created"` \| `"skipped_duplicate"` \| `"refused"`
+
+Outcome of the transfer pipeline for this case, when known.
+
+##### validationOutcome
+
+> **validationOutcome**: `"error"` \| `"warning"` \| `"ok"`
+
+Per-case validation outcome — `error` if any error issue was raised.
+
+##### visualObservations
+
+> **visualObservations**: [`TraceabilityVisualObservation`](#traceabilityvisualobservation)[]
+
+Per-screen visual sidecar observations relevant to this case.
+
+***
+
+### TraceabilityReconciliationDecision
+
+Single reconciliation decision row inside the matrix.
+
+#### Properties
+
+##### ambiguity?
+
+> `optional` **ambiguity?**: `string`
+
+Sanitized ambiguity reason, when present.
+
+##### confidence
+
+> **confidence**: `number`
+
+##### elementId
+
+> **elementId**: `string`
+
+##### provenance
+
+> **provenance**: [`IntentProvenance`](#intentprovenance)
+
+IR provenance after reconciliation.
+
+##### screenId
+
+> **screenId**: `string`
+
+***
+
+### TraceabilityStepRow
+
+Single ordered step row inside a traceability matrix row.
+
+#### Properties
+
+##### action
+
+> **action**: `string`
+
+##### expected?
+
+> `optional` **expected?**: `string`
+
+##### figmaNodeIds
+
+> **figmaNodeIds**: `string`[]
+
+Sorted Figma node ids inherited from the test-case trace refs.
+
+##### figmaScreenIds
+
+> **figmaScreenIds**: `string`[]
+
+Sorted Figma screen ids inherited from the test-case trace refs.
+
+##### policyDecision?
+
+> `optional` **policyDecision?**: `"approved"` \| `"blocked"` \| `"needs_review"`
+
+Per-case policy decision at the time this step row was built.
+
+##### policyOutcomes
+
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"`)[]
+
+Per-case sorted, deduplicated policy outcomes at the time this step row was built.
+
+##### qcDesignStepIndex?
+
+> `optional` **qcDesignStepIndex?**: `number`
+
+Matching QC design-step index when the mapping preview carries one.
+
+##### stepIndex
+
+> **stepIndex**: `number`
+
+##### validationOutcome
+
+> **validationOutcome**: `"error"` \| `"warning"` \| `"ok"`
+
+Per-case validation outcome at the time this step row was built.
+
+##### visualObservations
+
+> **visualObservations**: [`TraceabilityVisualObservation`](#traceabilityvisualobservation)[]
+
+Per-screen visual sidecar observations available for the step's case.
+
+***
+
+### TraceabilityVisualObservation
+
+Single per-screen visual observation row inside the matrix.
+
+#### Properties
+
+##### deployment
+
+> **deployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+##### meanConfidence
+
+> **meanConfidence**: `number`
+
+##### outcomes
+
+> **outcomes**: (`"schema_invalid"` \| `"ok"` \| `"low_confidence"` \| `"fallback_used"` \| `"possible_pii"` \| `"prompt_injection_like_text"` \| `"conflicts_with_figma_metadata"` \| `"primary_unavailable"`)[]
+
+Sorted, deduplicated outcome codes that fired on the screen.
+
+##### screenId
+
+> **screenId**: `string`
 
 ***
 
@@ -6833,7 +7593,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-33)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-37)
 
 ##### pasteDeltaSummary?
 
@@ -9870,6 +10630,18 @@ Scoring weights for the visual quality composite score.
 
 ## Type Aliases
 
+### DedupeExternalProbeState
+
+> **DedupeExternalProbeState** = *typeof* [`ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES`](#allowed_dedupe_external_probe_states)\[`number`\]
+
+***
+
+### DedupeSimilaritySource
+
+> **DedupeSimilaritySource** = *typeof* [`ALLOWED_DEDUPE_SIMILARITY_SOURCES`](#allowed_dedupe_similarity_sources)\[`number`\]
+
+***
+
 ### DryRunFolderResolutionState
 
 > **DryRunFolderResolutionState** = *typeof* [`ALLOWED_DRY_RUN_FOLDER_RESOLUTION_STATES`](#allowed_dry_run_folder_resolution_states)\[`number`\]
@@ -9947,6 +10719,18 @@ Discriminant of an allowed FinOps role.
 > **GeneratedTestCaseReviewState** = `"draft"` \| `"auto_approved"` \| `"needs_review"` \| `"rejected"`
 
 Review state at the moment the test case is emitted.
+
+***
+
+### IntentDeltaChangeType
+
+> **IntentDeltaChangeType** = *typeof* [`ALLOWED_INTENT_DELTA_CHANGE_TYPES`](#allowed_intent_delta_change_types)\[`number`\]
+
+***
+
+### IntentDeltaKind
+
+> **IntentDeltaKind** = *typeof* [`ALLOWED_INTENT_DELTA_KINDS`](#allowed_intent_delta_kinds)\[`number`\]
 
 ***
 
@@ -10124,6 +10908,18 @@ Single multimodal visual subscore kind.
 
 ***
 
+### TestCaseDeltaReason
+
+> **TestCaseDeltaReason** = *typeof* [`ALLOWED_TEST_CASE_DELTA_REASONS`](#allowed_test_case_delta_reasons)\[`number`\]
+
+***
+
+### TestCaseDeltaVerdict
+
+> **TestCaseDeltaVerdict** = *typeof* [`ALLOWED_TEST_CASE_DELTA_VERDICTS`](#allowed_test_case_delta_verdicts)\[`number`\]
+
+***
+
 ### TestCaseLevel
 
 > **TestCaseLevel** = `"unit"` \| `"component"` \| `"integration"` \| `"system"` \| `"acceptance"`
@@ -10267,7 +11063,7 @@ supplied integration with Fulcio + Rekor).
 
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"` \| `"intent_delta"` \| `"dedupe_report"` \| `"traceability_matrix"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -10595,6 +11391,39 @@ Supported visual quality reference sources.
 
 ## Variables
 
+### ALLOWED\_DEDUPE\_EXTERNAL\_PROBE\_STATES
+
+> `const` **ALLOWED\_DEDUPE\_EXTERNAL\_PROBE\_STATES**: readonly \[`"disabled"`, `"unconfigured"`, `"partial_failure"`, `"executed"`\]
+
+Allowed informational outcomes of an external dedup probe.
+
+- `disabled` — caller did not configure an `externalProbe`.
+- `unconfigured` — probe was supplied but reported its own
+  `unconfigured` verdict (e.g. air-gapped client). Fail-closed.
+- `partial_failure` — at least one external lookup succeeded, but
+  one or more cases could not be checked. Fail-closed.
+- `executed` — probe ran and returned per-case verdicts.
+
+***
+
+### ALLOWED\_DEDUPE\_SIMILARITY\_SOURCES
+
+> `const` **ALLOWED\_DEDUPE\_SIMILARITY\_SOURCES**: readonly \[`"lexical"`, `"embedding"`, `"external_lookup"`\]
+
+Allowed similarity sources for a duplicate finding inside the
+dedupe report.
+
+- `lexical` — Jaccard over the existing lexical fingerprint
+  (`buildTestCaseFingerprint`). Always available.
+- `embedding` — cosine similarity over a caller-supplied
+  embedding vector. Only fires when an `EmbeddingProvider` is
+  injected.
+- `external_lookup` — duplicate of an existing entity in an
+  external QC folder, surfaced via an injected probe. Only
+  fires when the optional probe is configured.
+
+***
+
 ### ALLOWED\_DRY\_RUN\_FOLDER\_RESOLUTION\_STATES
 
 > `const` **ALLOWED\_DRY\_RUN\_FOLDER\_RESOLUTION\_STATES**: readonly \[`"resolved"`, `"missing"`, `"simulated"`, `"invalid_path"`\]
@@ -10673,6 +11502,32 @@ Reasons four-eyes review is enforced for a single test case (#1376).
 Multiple reasons may apply (e.g. a `regulated_data` case whose visual
 sidecar reported low confidence). Reasons are reported deterministic-
 sorted on the `ReviewSnapshot.fourEyesReasons` field.
+
+***
+
+### ALLOWED\_INTENT\_DELTA\_CHANGE\_TYPES
+
+> `const` **ALLOWED\_INTENT\_DELTA\_CHANGE\_TYPES**: readonly \[`"added"`, `"removed"`, `"changed"`, `"confidence_dropped"`, `"ambiguity_increased"`\]
+
+Allowed change types on a single delta entry.
+
+- `added` — present in current, absent in prior.
+- `removed` — present in prior, absent in current.
+- `changed` — present in both, but the canonical-hash differs.
+- `confidence_dropped` — visual confidence (mean) fell more than
+  the configured drift threshold.
+- `ambiguity_increased` — visual ambiguity / open-question count
+  grew between revisions.
+
+***
+
+### ALLOWED\_INTENT\_DELTA\_KINDS
+
+> `const` **ALLOWED\_INTENT\_DELTA\_KINDS**: readonly \[`"screen"`, `"field"`, `"action"`, `"validation"`, `"navigation"`, `"visual_screen"`\]
+
+Allowed kinds of delta entries inside the intent-delta report.
+Sorted, additive — additional kinds may be appended in future
+minors.
 
 ***
 
@@ -10834,6 +11689,35 @@ subscores are: visible-control coverage, state/validation coverage,
 ambiguity handling, and the unsupported-visual-claims penalty (the
 latter is interpreted as `1 - penalty` so all subscores remain in
 `[0, 1]` where higher is better).
+
+***
+
+### ALLOWED\_TEST\_CASE\_DELTA\_REASONS
+
+> `const` **ALLOWED\_TEST\_CASE\_DELTA\_REASONS**: readonly \[`"absent_in_current"`, `"absent_in_prior"`, `"fingerprint_changed"`, `"trace_screen_changed"`, `"trace_screen_removed"`, `"visual_ambiguity_increased"`, `"visual_confidence_dropped"`, `"reconciliation_conflict"`\]
+
+Allowed reasons attached to a test-case delta verdict. Sorted,
+additive. Multiple reasons may apply to the same verdict.
+
+***
+
+### ALLOWED\_TEST\_CASE\_DELTA\_VERDICTS
+
+> `const` **ALLOWED\_TEST\_CASE\_DELTA\_VERDICTS**: readonly \[`"new"`, `"unchanged"`, `"changed"`, `"obsolete"`, `"requires_review"`\]
+
+Per-test-case verdict produced by the test-case delta classifier.
+
+- `new` — case id present in current generation, absent from
+  prior generation.
+- `unchanged` — case id present in both with identical
+  fingerprint AND no upstream IR delta touching its trace screens.
+- `changed` — case id present in both, fingerprint differs OR
+  an IR delta touches one of the case's `figmaTraceRefs`.
+- `obsolete` — case id present in prior generation but EVERY
+  trace screen is absent from the current IR. Reported only —
+  never destructively removed from QC (per Issue #1373 AC3).
+- `requires_review` — visual confidence dropped below threshold
+  OR a reconciliation conflict surfaced.
 
 ***
 
@@ -11007,11 +11891,27 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.8.0"`
+> `const` **CONTRACT\_VERSION**: `"4.10.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
 Package version alignment is documented in VERSIONING.md.
+
+***
+
+### DEDUPE\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **DEDUPE\_REPORT\_ARTIFACT\_FILENAME**: `"dedupe-report.json"`
+
+Canonical filename for the persisted dedupe artifact.
+
+***
+
+### DEDUPE\_REPORT\_SCHEMA\_VERSION
+
+> `const` **DEDUPE\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted dedupe artifact (Issue #1373).
 
 ***
 
@@ -11173,6 +12073,22 @@ Schema version for generated test case payloads.
 > `const` **GENERATED\_TESTCASES\_ARTIFACT\_FILENAME**: `"generated-testcases.json"`
 
 Canonical filename for the persisted test-case payload accepted into review/export.
+
+***
+
+### INTENT\_DELTA\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **INTENT\_DELTA\_REPORT\_ARTIFACT\_FILENAME**: `"intent-delta-report.json"`
+
+Canonical filename for the persisted intent-delta artifact.
+
+***
+
+### INTENT\_DELTA\_REPORT\_SCHEMA\_VERSION
+
+> `const` **INTENT\_DELTA\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted intent-delta artifact (Issue #1373).
 
 ***
 
@@ -11390,6 +12306,22 @@ Schema version for the persisted coverage / quality-signals report artifact (Iss
 
 ***
 
+### TEST\_CASE\_DELTA\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **TEST\_CASE\_DELTA\_REPORT\_ARTIFACT\_FILENAME**: `"test-case-delta-report.json"`
+
+Canonical filename for the persisted test-case delta artifact.
+
+***
+
+### TEST\_CASE\_DELTA\_REPORT\_SCHEMA\_VERSION
+
+> `const` **TEST\_CASE\_DELTA\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted test-case delta report artifact (Issue #1373).
+
+***
+
 ### TEST\_CASE\_POLICY\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **TEST\_CASE\_POLICY\_REPORT\_ARTIFACT\_FILENAME**: `"policy-report.json"`
@@ -11444,6 +12376,22 @@ Environment variable name that gates test-intelligence features at startup.
 > `const` **TEST\_INTELLIGENCE\_PROMPT\_TEMPLATE\_VERSION**: `"1.0.0"`
 
 Prompt template version for the test-intelligence prompt family.
+
+***
+
+### TRACEABILITY\_MATRIX\_ARTIFACT\_FILENAME
+
+> `const` **TRACEABILITY\_MATRIX\_ARTIFACT\_FILENAME**: `"traceability-matrix.json"`
+
+Canonical filename for the persisted traceability-matrix artifact.
+
+***
+
+### TRACEABILITY\_MATRIX\_SCHEMA\_VERSION
+
+> `const` **TRACEABILITY\_MATRIX\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted traceability-matrix artifact (Issue #1373).
 
 ***
 

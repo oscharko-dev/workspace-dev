@@ -86,6 +86,10 @@ import {
   type TransferFailureClass,
   type TransferRefusalCode,
   type TransferReportArtifact,
+  type BusinessTestIntentIr,
+  type GeneratedTestCaseList,
+  type TestCasePolicyReport,
+  type TestCaseValidationReport,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
@@ -97,6 +101,10 @@ import {
   type QcFolderResolverResult,
 } from "./qc-adapter.js";
 import { validateQcMappingProfile } from "./qc-alm-mapping-profile.js";
+import {
+  persistTransferTraceabilityMatrix,
+  type PersistTraceabilityMatrixResult,
+} from "./traceability-pipeline.js";
 
 const ADAPTER_VERSION = "1.0.0" as const;
 const ADAPTER_PROVIDER: QcAdapterProvider = "opentext_alm";
@@ -278,6 +286,15 @@ export interface RunOpenTextAlmApiTransferInput {
   actor?: string;
   /** Optional hash-only upstream artifact references for audit lineage. */
   evidenceReferences?: Partial<TransferEvidenceReferences>;
+  /** Optional lineage inputs used to update `traceability-matrix.json` after transfer. */
+  traceability?: {
+    intent: BusinessTestIntentIr;
+    list: GeneratedTestCaseList;
+    validation?: TestCaseValidationReport;
+    policy?: TestCasePolicyReport;
+    exportProfile?: { id: string; version: string };
+    policyProfile?: { id: string; version: string };
+  };
 }
 
 /** Adapter for appending review events without depending on `ReviewStore`. */
@@ -301,6 +318,8 @@ export interface RunOpenTextAlmApiTransferResult {
   reportPath?: string;
   /** Absolute path of the persisted qc-created-entities. Undefined when no `artifactRoot`. */
   createdEntitiesPath?: string;
+  /** Absolute path of the persisted transfer-aware traceability matrix. */
+  traceabilityMatrixPath?: string;
   /** True when the pipeline refused to perform any write. */
   refused: boolean;
   /** Sorted, deduplicated refusal codes that fired. */
@@ -828,6 +847,36 @@ const persistArtifacts = async (
   return { reportPath, createdEntitiesPath };
 };
 
+const persistOptionalTraceability = async (
+  input: RunOpenTextAlmApiTransferInput,
+  report: TransferReportArtifact,
+): Promise<PersistTraceabilityMatrixResult | undefined> => {
+  if (!input.artifactRoot || !input.traceability) return undefined;
+  return persistTransferTraceabilityMatrix({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    intent: input.traceability.intent,
+    list: input.traceability.list,
+    qcMapping: input.preview,
+    ...(input.traceability.validation !== undefined
+      ? { validation: input.traceability.validation }
+      : {}),
+    ...(input.traceability.policy !== undefined
+      ? { policy: input.traceability.policy }
+      : {}),
+    ...(input.visual !== undefined ? { visual: input.visual } : {}),
+    reviewSnapshot: input.reviewSnapshot,
+    transferReport: report,
+    ...(input.traceability.exportProfile !== undefined
+      ? { exportProfile: input.traceability.exportProfile }
+      : {}),
+    ...(input.traceability.policyProfile !== undefined
+      ? { policyProfile: input.traceability.policyProfile }
+      : {}),
+    destinationDir: input.artifactRoot,
+  });
+};
+
 const sortPreviewEntries = (
   preview: QcMappingPreviewArtifact,
   snapshotIndex: Map<string, ReviewSnapshot>,
@@ -1077,10 +1126,14 @@ export const runOpenTextAlmApiTransfer = async (
       report,
       createdEntities,
     );
+    const traceability = await persistOptionalTraceability(input, report);
     return {
       report,
       createdEntities,
       ...persisted,
+      ...(traceability !== undefined
+        ? { traceabilityMatrixPath: traceability.paths.artifactPath }
+        : {}),
       refused: true,
       refusalCodes: report.refusalCodes,
     };
@@ -1147,11 +1200,15 @@ export const runOpenTextAlmApiTransfer = async (
       report,
       createdEntities,
     );
+    const traceability = await persistOptionalTraceability(input, report);
     void error;
     return {
       report,
       createdEntities,
       ...persisted,
+      ...(traceability !== undefined
+        ? { traceabilityMatrixPath: traceability.paths.artifactPath }
+        : {}),
       refused: true,
       refusalCodes: refusalSummary(["folder_resolution_failed"]),
     };
@@ -1259,11 +1316,15 @@ export const runOpenTextAlmApiTransfer = async (
     report,
     createdEntities,
   );
+  const traceability = await persistOptionalTraceability(input, report);
 
   return {
     report,
     createdEntities,
     ...persisted,
+    ...(traceability !== undefined
+      ? { traceabilityMatrixPath: traceability.paths.artifactPath }
+      : {}),
     refused: false,
     refusalCodes: [],
   };

@@ -34,6 +34,7 @@ import {
   REVIEW_GATE_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  TRACEABILITY_MATRIX_ARTIFACT_FILENAME,
   TRANSFER_REPORT_ARTIFACT_FILENAME,
   TRANSFER_REPORT_SCHEMA_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
@@ -1198,7 +1199,15 @@ test("api-transfer: artifacts persist atomically under artifactRoot", async () =
   try {
     const { client } = buildMockClient();
     const result = await runOpenTextAlmApiTransfer(
-      baseInput({ client, artifactRoot: dir }),
+      baseInput({
+        client,
+        artifactRoot: dir,
+        traceability: {
+          intent: buildIntent(),
+          list: buildList([buildCase({})]),
+          policyProfile: { id: "eu-banking-default", version: "1.0.0" },
+        },
+      }),
     );
     assert.equal(
       result.reportPath,
@@ -1208,8 +1217,13 @@ test("api-transfer: artifacts persist atomically under artifactRoot", async () =
       result.createdEntitiesPath,
       join(dir, QC_CREATED_ENTITIES_ARTIFACT_FILENAME),
     );
+    assert.equal(
+      result.traceabilityMatrixPath,
+      join(dir, TRACEABILITY_MATRIX_ARTIFACT_FILENAME),
+    );
     const reportRaw = await readFile(result.reportPath!, "utf8");
     const createdRaw = await readFile(result.createdEntitiesPath!, "utf8");
+    const traceabilityRaw = await readFile(result.traceabilityMatrixPath!, "utf8");
     for (const raw of [reportRaw, createdRaw]) {
       assert.equal(raw.includes("secret-bearer"), false);
       assert.equal(raw.includes("Bearer "), false);
@@ -1224,6 +1238,10 @@ test("api-transfer: artifacts persist atomically under artifactRoot", async () =
     assert.equal(report.transferUrlIncluded, false);
     assert.equal(created.transferUrlIncluded, false);
     assert.equal(report.audit.dryRunReportId, "dry-run-fixture-id");
+    const traceability = JSON.parse(traceabilityRaw);
+    assert.equal(traceability.rows[0]?.qcEntityId, "qc-id-1");
+    assert.equal(traceability.rows[0]?.transferOutcome, "created");
+    assert.equal(traceability.rows[0]?.steps.length, 2);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

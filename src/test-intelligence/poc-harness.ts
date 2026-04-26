@@ -38,6 +38,7 @@ import { dirname, join } from "node:path";
 import {
   ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS,
   ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES,
+  DEDUPE_REPORT_ARTIFACT_FILENAME,
   EXPORT_REPORT_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME,
@@ -61,6 +62,7 @@ import {
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  TRACEABILITY_MATRIX_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
@@ -2110,13 +2112,13 @@ const collectExportBytes = async (
   Array<{
     filename: string;
     bytes: Uint8Array;
-    category: "export";
+    category: "dedupe_report" | "export" | "traceability_matrix";
   }>
 > => {
   const out: Array<{
     filename: string;
     bytes: Uint8Array;
-    category: "export";
+    category: "dedupe_report" | "export" | "traceability_matrix";
   }> = [];
   const reportPath = join(exportDir, EXPORT_REPORT_ARTIFACT_FILENAME);
   out.push({
@@ -2125,18 +2127,32 @@ const collectExportBytes = async (
     category: "export",
   });
   if (!artifacts.refused) {
-    const candidates = [
-      EXPORT_TESTCASES_JSON_ARTIFACT_FILENAME,
-      EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME,
-      EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME,
-      QC_MAPPING_PREVIEW_ARTIFACT_FILENAME,
+    const candidates: Array<{
+      filename: string;
+      category: "dedupe_report" | "export" | "traceability_matrix";
+    }> = [
+      { filename: EXPORT_TESTCASES_JSON_ARTIFACT_FILENAME, category: "export" },
+      { filename: EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME, category: "export" },
+      {
+        filename: EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME,
+        category: "export",
+      },
+      { filename: QC_MAPPING_PREVIEW_ARTIFACT_FILENAME, category: "export" },
+      {
+        filename: DEDUPE_REPORT_ARTIFACT_FILENAME,
+        category: "dedupe_report",
+      },
+      {
+        filename: TRACEABILITY_MATRIX_ARTIFACT_FILENAME,
+        category: "traceability_matrix",
+      },
     ];
-    for (const filename of candidates) {
+    for (const { filename, category } of candidates) {
       const path = join(exportDir, filename);
       out.push({
         filename,
         bytes: await readFile(path),
-        category: "export",
+        category,
       });
     }
   }
