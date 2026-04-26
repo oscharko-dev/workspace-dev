@@ -57,7 +57,7 @@
 
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   ALLOWED_TRANSFER_FAILURE_CLASSES,
@@ -449,7 +449,7 @@ const refusalSummary = (
   );
 
 const writeAtomicJson = async (path: string, value: unknown): Promise<void> => {
-  await mkdir(path.substring(0, path.lastIndexOf("/")), { recursive: true });
+  await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, `${JSON.stringify(value, null, 2)}\n`, "utf8");
   await rename(tmp, path);
