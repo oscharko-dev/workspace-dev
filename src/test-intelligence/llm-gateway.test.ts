@@ -165,12 +165,16 @@ test("guards image payloads on test_generation role without making a network cal
 
 test("guards oversized input budgets before making a network call", async () => {
   let calls = 0;
+  let keyReads = 0;
   const client = createLlmGatewayClient(baseConfig, {
     fetchImpl: async () => {
       calls += 1;
       return okJsonResponse({});
     },
-    apiKeyProvider: () => "secret-key-value",
+    apiKeyProvider: () => {
+      keyReads += 1;
+      return "secret-key-value";
+    },
   });
 
   const result = await client.generate(
@@ -187,6 +191,7 @@ test("guards oversized input budgets before making a network call", async () => 
     assert.match(result.message, /maxInputTokens/);
   }
   assert.equal(calls, 0);
+  assert.equal(keyReads, 0);
 });
 
 test("rejects malformed maxInputTokens with schema_invalid", async () => {
