@@ -151,6 +151,12 @@ export {
   type WriteTraceabilityMatrixResult,
 } from "./traceability-matrix.js";
 export {
+  persistExportTraceabilityMatrix,
+  persistTransferTraceabilityMatrix,
+  type PersistExportTraceabilityMatrixInput,
+  type PersistTraceabilityMatrixResult,
+} from "./traceability-pipeline.js";
+export {
   computeCoverageReport,
   type ComputeCoverageReportInput,
 } from "./test-case-coverage.js";

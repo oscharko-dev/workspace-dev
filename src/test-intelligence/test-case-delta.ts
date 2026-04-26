@@ -29,7 +29,6 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  INTENT_DELTA_REPORT_ARTIFACT_FILENAME,
   INTENT_DELTA_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type BusinessTestIntentIr,
@@ -47,9 +46,9 @@ import { buildTestCaseFingerprint } from "./test-case-duplicate.js";
 
 /**
  * Canonical filename for the persisted test-case delta artifact.
- * Distinct from {@link INTENT_DELTA_REPORT_ARTIFACT_FILENAME}; the
- * two reports cover different surfaces and are typically written
- * to the same run directory.
+ * Distinct from `intent-delta-report.json`; the two reports cover
+ * different surfaces and are typically written to the same run
+ * directory.
  */
 export const TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME =
   "test-case-delta-report.json" as const;
@@ -323,7 +322,7 @@ const computeTotals = (
     else if (r.verdict === "unchanged") totals.unchanged += 1;
     else if (r.verdict === "changed") totals.changed += 1;
     else if (r.verdict === "obsolete") totals.obsolete += 1;
-    else if (r.verdict === "requires_review") totals.requiresReview += 1;
+    else totals.requiresReview += 1;
   }
   return totals;
 };
