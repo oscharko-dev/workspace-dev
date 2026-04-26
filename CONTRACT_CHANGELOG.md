@@ -31,6 +31,21 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.4.0] - 2026-04-26
+
+### Added (Issue #1413)
+
+- New `TestCaseValidationIssueCode` literal `"semantic_suspicious_content"` added to `ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES`. Emitted by `validateGeneratedTestCases` when a deny-list pattern (shell metacharacters in suspicious sequences, JNDI / log4shell payloads, long base64 / hex runs, `<script>` tags, inline event handlers, `javascript:` / `data:` URLs) is found inside `steps[n].action`, `steps[n].expected`, top-level `expectedResults[n]`, `preconditions[n]`, or `testData[n]`. Severity is `error`, so the validation report blocks the pipeline by default.
+- New `TestCasePolicyOutcome` literal `"semantic_suspicious_content"` added to `ALLOWED_TEST_CASE_POLICY_OUTCOMES`. Mapped from the matching validation issue code by `evaluatePolicyGate`.
+- New module `src/test-intelligence/semantic-content-sanitization.ts` with documented deny-list patterns, the pure detector `detectSuspiciousContent`, the runtime constants `SEMANTIC_SUSPICION_CATEGORIES` and `SEMANTIC_CONTENT_OVERRIDE_NOTE_KIND`, the per-case override types `SemanticContentOverride` / `SemanticContentOverrideInput` / `SemanticContentOverrideMap`, the operator entry point `recordSemanticContentOverride` (records a structured `note` review event with `metadata.overrideKind = "semantic_suspicious_content"` plus a non-empty justification), the auditor entry point `extractSemanticContentOverrides` (rebuilds the active override map from a persisted review-event log so it is replay-safe), and the pure helper `effectiveSemanticContentBlock` (computes the post-override `blocked` flag for downstream gates without mutating the validation report).
+- New optional input `evaluatePolicyGate({ ..., semanticContentOverrides })`. When a `(testCaseId, path)` pair is in the override map, the corresponding `semantic_suspicious_content` validation finding is recorded as a `warning`-severity violation rather than a blocking `error`, the per-case decision is downgraded from `blocked` to `needs_review`, and the violation `rule` is annotated with `:overridden`. Cases with no override behave exactly as before. The validation report itself is preserved unchanged so the audit history carries the original finding.
+- New optional input `runValidationPipeline({ ..., semanticContentOverrides })`. Forwards overrides into the policy gate and recomputes the pipeline-level `blocked` flag using `effectiveSemanticContentBlock`, so an overridden case no longer blocks downstream review/export gates while the validation artifact retains the original error finding.
+
+### Compatibility (Issue #1413)
+
+- Additive only. Existing call sites that omit `semanticContentOverrides` see no behavior change for any test case that does not contain semantically suspicious content. Test cases that previously passed validation continue to pass; only newly detected injection-shape content blocks where it would have previously slipped through.
+- New runtime exports surface through `src/test-intelligence/index.ts` only (the test-intelligence sub-module entry point): `SEMANTIC_SUSPICION_CATEGORIES`, `SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE`, `SEMANTIC_CONTENT_OVERRIDE_MAX_JUSTIFICATION_LENGTH`, `SEMANTIC_CONTENT_OVERRIDE_METADATA_*` keys, `SEMANTIC_CONTENT_OVERRIDE_NOTE_KIND`, `detectSuspiciousContent`, `recordSemanticContentOverride`, `extractSemanticContentOverrides`, `listSemanticContentOverrides`, and `effectiveSemanticContentBlock`. The root `src/index.ts` snapshot in `contract-version.test.ts` is unchanged because the root module re-exports only from `src/contracts/index.ts`.
+
 ## [4.3.0] - 2026-04-26
 
 ### Added (Issue #1411)

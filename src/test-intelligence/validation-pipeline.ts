@@ -46,6 +46,10 @@ import { canonicalJson } from "./content-hash.js";
 import { evaluatePolicyGate } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import {
+  effectiveSemanticContentBlock,
+  type SemanticContentOverrideMap,
+} from "./semantic-content-sanitization.js";
+import {
   runSelfVerifyRubricPass,
   writeSelfVerifyRubricReportArtifact,
   type SelfVerifyRubricPipelineOptions,
@@ -67,6 +71,15 @@ export interface RunValidationPipelineInput {
   rubricScore?: number;
   /** Optional primary visual deployment, used for fallback detection. */
   primaryVisualDeployment?: "llama-4-maverick-vision" | "phi-4-multimodal-poc";
+  /**
+   * Optional reviewer overrides for `semantic_suspicious_content` findings
+   * (Issue #1413). Forwarded into the policy gate; also applied when
+   * computing the pipeline-level `blocked` flag so an overridden case no
+   * longer blocks downstream gates. The `validation` artifact in the
+   * returned bundle is preserved unchanged so the audit history retains
+   * the original error finding.
+   */
+  semanticContentOverrides?: SemanticContentOverrideMap;
 }
 
 export interface ValidationPipelineArtifacts {
@@ -177,10 +190,21 @@ export const runValidationPipeline = (
     validation,
     coverage,
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
+    ...(input.semanticContentOverrides !== undefined
+      ? { semanticContentOverrides: input.semanticContentOverrides }
+      : {}),
   });
 
+  const validationBlockedAfterOverrides =
+    input.semanticContentOverrides === undefined
+      ? validation.blocked
+      : effectiveSemanticContentBlock(
+          validation,
+          input.semanticContentOverrides,
+        );
+
   const blocked =
-    validation.blocked ||
+    validationBlockedAfterOverrides ||
     policy.blocked ||
     (visualReport !== undefined && visualReport.blocked);
 
@@ -457,10 +481,21 @@ export const runValidationPipelineWithSelfVerify = async (
     validation,
     coverage,
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
+    ...(input.semanticContentOverrides !== undefined
+      ? { semanticContentOverrides: input.semanticContentOverrides }
+      : {}),
   });
 
+  const validationBlockedAfterOverrides =
+    input.semanticContentOverrides === undefined
+      ? validation.blocked
+      : effectiveSemanticContentBlock(
+          validation,
+          input.semanticContentOverrides,
+        );
+
   const blocked =
-    validation.blocked ||
+    validationBlockedAfterOverrides ||
     policy.blocked ||
     (visualReport !== undefined && visualReport.blocked);
 

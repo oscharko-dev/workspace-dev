@@ -40,6 +40,7 @@ import {
   type TestCaseValidationReport,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
+import type { SemanticContentOverrideMap } from "./semantic-content-sanitization.js";
 
 export interface EvaluatePolicyGateInput {
   jobId: string;
@@ -50,6 +51,17 @@ export interface EvaluatePolicyGateInput {
   validation: TestCaseValidationReport;
   coverage: TestCaseCoverageReport;
   visual?: VisualSidecarValidationReport;
+  /**
+   * Active reviewer overrides for `semantic_suspicious_content` findings,
+   * keyed by `testCaseId → set of validation issue paths`. When a finding's
+   * `(testCaseId, path)` pair is present in the map, the corresponding
+   * violation is recorded as a `warning`-severity decision rather than a
+   * blocking `error`, the per-case decision is downgraded from `blocked` to
+   * `needs_review`, and the violation `rule` is annotated with `:overridden`.
+   * The validation report is preserved unchanged so audit history retains
+   * the original finding.
+   */
+  semanticContentOverrides?: SemanticContentOverrideMap;
 }
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
@@ -83,6 +95,7 @@ const VALIDATION_ISSUE_TO_OUTCOME: Partial<
   ambiguity_without_review_state: "ambiguity_review_required",
   open_questions_excessive: "open_questions_review_required",
   assumptions_excessive: "open_questions_review_required",
+  semantic_suspicious_content: "semantic_suspicious_content",
 };
 
 const indexValidationByTestCase = (
@@ -104,17 +117,34 @@ const indexValidationByTestCase = (
 
 const violationFromIssue = (
   issue: TestCaseValidationIssue,
+  overridden: boolean,
 ): TestCasePolicyViolation | null => {
   const outcome = VALIDATION_ISSUE_TO_OUTCOME[issue.code];
   if (outcome === undefined) return null;
+  const baseRule = `validation:${issue.code}`;
   const violation: TestCasePolicyViolation = {
-    rule: `validation:${issue.code}`,
+    rule: overridden ? `${baseRule}:overridden` : baseRule,
     outcome,
-    severity: issue.severity,
-    reason: issue.message,
+    severity: overridden ? "warning" : issue.severity,
+    reason: overridden
+      ? `${issue.message} (reviewer override active)`
+      : issue.message,
     path: issue.path,
   };
   return violation;
+};
+
+const isSemanticOverrideActive = (
+  issue: TestCaseValidationIssue,
+  overrides: SemanticContentOverrideMap | undefined,
+): boolean => {
+  if (overrides === undefined) return false;
+  if (issue.code !== "semantic_suspicious_content") return false;
+  const id = issue.testCaseId;
+  if (id === undefined) return false;
+  const paths = overrides.get(id);
+  if (paths === undefined) return false;
+  return paths.has(issue.path);
 };
 
 const evaluateCase = (
@@ -122,12 +152,14 @@ const evaluateCase = (
   intent: BusinessTestIntentIr,
   profile: TestCasePolicyProfile,
   caseIssues: TestCaseValidationIssue[],
+  overrides: SemanticContentOverrideMap | undefined,
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
   const violations: TestCasePolicyViolation[] = [];
 
   for (const issue of caseIssues) {
-    const v = violationFromIssue(issue);
+    const overridden = isSemanticOverrideActive(issue, overrides);
+    const v = violationFromIssue(issue, overridden);
     if (v === null) continue;
     violations.push(v);
     decision = escalate(
@@ -230,7 +262,10 @@ const findIntentReviewRisk = (
   for (const category of profile.rules.reviewOnlyRiskCategories) {
     if (normalizedRisks.includes(category)) return category;
   }
-  if (intent.piiIndicators.length > 0 && reviewCategories.has("regulated_data")) {
+  if (
+    intent.piiIndicators.length > 0 &&
+    reviewCategories.has("regulated_data")
+  ) {
     return "regulated_data";
   }
   if (
@@ -240,7 +275,9 @@ const findIntentReviewRisk = (
     return "regulated_data";
   }
   if (
-    normalizedRisks.some((risk) => /financial|payment|iban|transaction/.test(risk)) &&
+    normalizedRisks.some((risk) =>
+      /financial|payment|iban|transaction/.test(risk),
+    ) &&
     reviewCategories.has("financial_transaction")
   ) {
     return "financial_transaction";
@@ -405,7 +442,15 @@ export const evaluatePolicyGate = (
 
   for (const tc of input.list.testCases) {
     const issues = validationByCase.get(tc.id) ?? [];
-    decisions.push(evaluateCase(tc, input.intent, input.profile, issues));
+    decisions.push(
+      evaluateCase(
+        tc,
+        input.intent,
+        input.profile,
+        issues,
+        input.semanticContentOverrides,
+      ),
+    );
   }
 
   const jobLevelViolations = evaluateJobLevel(

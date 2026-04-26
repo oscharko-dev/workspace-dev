@@ -322,6 +322,7 @@ export const ALLOWED_TEST_CASE_VALIDATION_ISSUE_CODES = [
   "assumptions_excessive",
   "open_questions_excessive",
   "ambiguity_without_review_state",
+  "semantic_suspicious_content",
 ] as const;
 
 export type TestCaseValidationIssueCode =
@@ -392,6 +393,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_low_confidence",
   "visual_sidecar_possible_pii",
   "visual_sidecar_prompt_injection_text",
+  "semantic_suspicious_content",
 ] as const;
 export type TestCasePolicyOutcome =
   (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
@@ -4815,4 +4817,4 @@ export interface EvidenceVerifyResponse {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.3.0" as const;
+export const CONTRACT_VERSION = "4.4.0" as const;
