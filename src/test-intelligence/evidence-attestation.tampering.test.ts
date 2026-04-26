@@ -132,6 +132,9 @@ test("attestation-tampering: subject digest mismatch when artifact is mutated", 
     "expected subject_digest_mismatch for validation-report.json",
   );
   assert.match(failure.message, /validation-report\.json/);
+  assert.ok(
+    failure.message.includes(join(fx.runDir, "validation-report.json")),
+  );
 });
 
 test("attestation-tampering: payload byte mutation invalidates signature (sigstore)", async (t) => {

@@ -391,10 +391,23 @@ the bundled helper functions:
   pass/fail per artifact and an overall verdict.
 - `computeWave1PocEvidenceManifestDigest(manifest)` — returns a single
   manifest-level digest suitable for inclusion in a downstream attestation.
+- `verifyWave1PocAttestationFromDisk(runDirectory, manifest, manifestDigest)` —
+  verifies the sibling in-toto DSSE envelope under `evidence/attestations/` and,
+  when signing mode is `sigstore`, the local Sigstore-shaped bundle under
+  `evidence/signatures/`.
 
 These helpers fail closed: any digest mismatch, missing artifact, additive
 append, truncation, or filename injection is reported as a verification
 failure.
+
+The default attestation mode is `unsigned`, which writes a deterministic DSSE
+envelope with an empty `signatures` array and makes no network calls. Operators
+who explicitly set `attestationSigningMode: "sigstore"` must supply a signer;
+the built-in key-bound signer uses local ECDSA P-256 material, while the
+keyless scaffold delegates Fulcio/Rekor/OIDC work to operator code. The POC
+harness returns a compact audit summary with signing mode, optional signer
+reference, and SHA-256 identifiers; it never records keys, bearer tokens, or
+gateway credentials.
 
 ## 9. Multimodal visual sidecar
 
@@ -568,11 +581,10 @@ console.log(result.finopsReport.outcome); // "completed" | "budget_exceeded" | �
 console.log(result.finopsArtifactPath); // "/tmp/job-42/finops/budget-report.json"
 ```
 
-The artifact is intentionally NOT attested by the Wave 1 evidence manifest
-No separate attestation step is required: the Wave 1 evidence manifest accepts
-safe relative artifact paths and includes `finops/budget-report.json` with
-category `finops`, while rejecting absolute paths, `..`, empty path segments,
-backslashes, and control characters.
+The artifact is attested by the Wave 1 evidence manifest and the sibling
+in-toto DSSE attestation: the manifest accepts safe relative artifact paths and
+includes `finops/budget-report.json` with category `finops`, while rejecting
+absolute paths, `..`, empty path segments, backslashes, and control characters.
 
 ## 10. Network boundary
 

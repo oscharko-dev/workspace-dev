@@ -37,7 +37,7 @@ Classification under the EU AI Act is context-dependent. The package does not as
 - Pass/fail evaluation report with thresholds (`wave1-poc-eval-report.json`).
 - Reviewer-driven gate enforces a human-in-the-loop step before any case reaches the export pipeline.
 
-Customer-specific four-eyes review for high-risk categories and signed evidence attestations are out of scope for Wave 2 and are tracked in the upstream roadmap (Issues #1376, #1377, #1379).
+Customer-specific HSM/KMS integrations and enforced signing requirements are out of scope for Wave 2 and remain operator responsibilities. The Wave 2 test-intelligence POC does emit sibling in-toto DSSE attestations for evidence manifests by default in unsigned mode, with opt-in local Sigstore-shaped signing for operators that explicitly supply signing material (Issue #1377).
 
 ### Gateway operator responsibilities
 
