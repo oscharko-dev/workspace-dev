@@ -1,5 +1,4 @@
 {
-  "$comment": "Reference template for the per-job CycloneDX 1.6 ML-BOM (LBOM) emitted by `runWave1Poc`. Issue #1378. Field shapes mirror what `src/test-intelligence/lbom-emitter.ts` produces — see CONTRACT_CHANGELOG.md `[3.32.0]` for the full surface. This template documents the shape; do not load it as runtime input.",
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
   "version": 1,
@@ -11,7 +10,7 @@
         {
           "type": "application",
           "name": "workspace-dev",
-          "version": "3.32.0",
+          "version": "3.32.1",
           "publisher": "workspace-dev",
           "description": "workspace-dev air-gapped Figma-to-Test test-intelligence harness."
         }
@@ -19,9 +18,9 @@
     },
     "component": {
       "type": "application",
-      "bom-ref": "job:<jobId>",
+      "bom-ref": "job:job-template",
       "name": "workspace-dev-test-intelligence-job",
-      "version": "<jobId>",
+      "version": "job-template",
       "description": "Wave 1 POC test-intelligence job. Composes the model chain, the curated few-shot bundle, and the active policy profile that produced the run's structured test cases.",
       "properties": [
         {
@@ -30,16 +29,31 @@
         },
         { "name": "workspace-dev:exportProfileVersion", "value": "1.0.0" },
         { "name": "workspace-dev:fixtureId", "value": "poc-onboarding" },
-        { "name": "workspace-dev:jobId", "value": "<jobId>" }
+        { "name": "workspace-dev:jobId", "value": "job-template" }
       ]
     },
     "properties": [
-      { "name": "workspace-dev:cacheKeyDigest", "value": "<sha256>" },
-      { "name": "workspace-dev:contractVersion", "value": "3.32.0" },
-      { "name": "workspace-dev:inputHash", "value": "<sha256>" },
-      { "name": "workspace-dev:promptHash", "value": "<sha256>" },
+      {
+        "name": "workspace-dev:cacheKeyDigest",
+        "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      { "name": "workspace-dev:contractVersion", "value": "3.32.1" },
+      {
+        "name": "workspace-dev:inputHash",
+        "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      },
+      {
+        "name": "workspace-dev:promptHash",
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      { "name": "workspace-dev:rawPromptsIncluded", "value": "false" },
+      { "name": "workspace-dev:rawScreenshotsIncluded", "value": "false" },
       { "name": "workspace-dev:redactionPolicyVersion", "value": "1.0.0" },
-      { "name": "workspace-dev:schemaHash", "value": "<sha256>" },
+      {
+        "name": "workspace-dev:schemaHash",
+        "value": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      },
+      { "name": "workspace-dev:secretsIncluded", "value": "false" },
       {
         "name": "workspace-dev:testIntelligenceContractVersion",
         "value": "1.0.0"
@@ -58,15 +72,18 @@
       "type": "machine-learning-model",
       "bom-ref": "model:test_generation",
       "name": "gpt-oss-120b",
-      "version": "<modelRevision>",
+      "version": "gpt-oss-120b-2026-04-25",
       "description": "Structured test-case generator. Receives redacted Business Test Intent IR + visual sidecar JSON, emits a GeneratedTestCaseList that the validation pipeline gates. Never receives image payloads.",
       "publisher": "workspace-dev",
       "group": "workspace-dev:test-intelligence",
       "properties": [
         { "name": "workspace-dev:deployment", "value": "gpt-oss-120b-mock" },
         { "name": "workspace-dev:fallbackUsed", "value": "false" },
+        { "name": "workspace-dev:format", "value": "openai_chat" },
         { "name": "workspace-dev:gatewayRelease", "value": "wave1-poc-mock" },
         { "name": "workspace-dev:imageInputSupport", "value": "false" },
+        { "name": "workspace-dev:licenseStatus", "value": "unknown" },
+        { "name": "workspace-dev:provider", "value": "unknown" },
         { "name": "workspace-dev:role", "value": "test_generation" }
       ],
       "modelCard": {
@@ -84,8 +101,14 @@
             "Output is gated by a hand-written JSON schema; non-conforming responses are rejected at the validation pipeline."
           ],
           "ethicalConsiderations": [
-            "Inputs are PII-redacted by upstream `pii-redaction.ts`; the generator never sees plaintext PII.",
-            "Outputs are gated by the eu-banking-default policy profile to prevent regulated-data and high-risk leakage."
+            {
+              "name": "PII exposure",
+              "mitigationStrategy": "Inputs are PII-redacted by upstream `pii-redaction.ts`; the generator never sees plaintext PII."
+            },
+            {
+              "name": "Regulated-data leakage",
+              "mitigationStrategy": "Outputs are gated by the eu-banking-default policy profile to prevent regulated-data and high-risk leakage."
+            }
           ],
           "performanceTradeoffs": [
             "Determinism is prioritised over generation diversity: the replay cache short-circuits identical inputs to byte-stable artifacts."
@@ -97,7 +120,7 @@
       "type": "machine-learning-model",
       "bom-ref": "model:visual_primary",
       "name": "llama-4-maverick-vision",
-      "version": "<deploymentVersion>",
+      "version": "unknown",
       "description": "Primary multimodal sidecar that derives a structured visual screen description from a UI capture. Subject to byte caps and MIME allowlists at preflight.",
       "publisher": "workspace-dev",
       "group": "workspace-dev:test-intelligence",
@@ -108,8 +131,11 @@
         },
         { "name": "workspace-dev:fallbackReason", "value": "none" },
         { "name": "workspace-dev:fallbackUsed", "value": "false" },
-        { "name": "workspace-dev:gatewayRelease", "value": "<gatewayRelease>" },
+        { "name": "workspace-dev:format", "value": "unknown" },
+        { "name": "workspace-dev:gatewayRelease", "value": "unknown" },
         { "name": "workspace-dev:imageInputSupport", "value": "true" },
+        { "name": "workspace-dev:licenseStatus", "value": "unknown" },
+        { "name": "workspace-dev:provider", "value": "unknown" },
         { "name": "workspace-dev:role", "value": "visual_primary" }
       ],
       "modelCard": {
@@ -126,7 +152,10 @@
             "Cannot persist raw screenshot bytes downstream; capture identity is recorded as SHA-256 only."
           ],
           "ethicalConsiderations": [
-            "Captures are scanned for visible PII flags before being routed; the validation gate refuses sidecars whose `piiFlags` exceed policy."
+            {
+              "name": "Visible PII exposure",
+              "mitigationStrategy": "Captures are scanned for visible PII flags before being routed; the validation gate refuses sidecars whose `piiFlags` exceed policy."
+            }
           ],
           "performanceTradeoffs": [
             "Higher fidelity than the fallback at the cost of latency and quota pressure under burst load."
@@ -138,7 +167,7 @@
       "type": "machine-learning-model",
       "bom-ref": "model:visual_fallback",
       "name": "phi-4-multimodal-poc",
-      "version": "<deploymentVersion>",
+      "version": "unknown",
       "description": "Fallback multimodal sidecar invoked when the primary deployment is unavailable, quota-throttled, or when an operator forces a policy downgrade.",
       "publisher": "workspace-dev",
       "group": "workspace-dev:test-intelligence",
@@ -146,8 +175,11 @@
         { "name": "workspace-dev:deployment", "value": "phi-4-multimodal-poc" },
         { "name": "workspace-dev:fallbackReason", "value": "none" },
         { "name": "workspace-dev:fallbackUsed", "value": "false" },
-        { "name": "workspace-dev:gatewayRelease", "value": "<gatewayRelease>" },
+        { "name": "workspace-dev:format", "value": "unknown" },
+        { "name": "workspace-dev:gatewayRelease", "value": "unknown" },
         { "name": "workspace-dev:imageInputSupport", "value": "true" },
+        { "name": "workspace-dev:licenseStatus", "value": "unknown" },
+        { "name": "workspace-dev:provider", "value": "unknown" },
         { "name": "workspace-dev:role", "value": "visual_fallback" }
       ],
       "modelCard": {
@@ -163,7 +195,10 @@
             "Capabilities are a strict subset of the primary deployment; a fallback selection signals a degraded path the policy gate logs."
           ],
           "ethicalConsiderations": [
-            "Captures are scanned for visible PII flags before being routed; the validation gate refuses sidecars whose `piiFlags` exceed policy."
+            {
+              "name": "Visible PII exposure",
+              "mitigationStrategy": "Captures are scanned for visible PII flags before being routed; the validation gate refuses sidecars whose `piiFlags` exceed policy."
+            }
           ],
           "performanceTradeoffs": [
             "Lower fidelity than the primary; surfaces fallback-used signal so policy can gate sensitive jobs."
@@ -175,21 +210,27 @@
       "type": "data",
       "bom-ref": "data:few-shot-bundle",
       "name": "test-intelligence-prompt-bundle",
-      "version": "<promptTemplateVersion>",
+      "version": "1.0.0",
       "description": "Curated workspace-dev prompt bundle: deterministic system + user preamble plus the bound generated-test-case JSON schema. The bundle hash is the prompt-compiler `promptHash`.",
       "hashes": [
-        { "alg": "SHA-256", "content": "<promptHash>" },
-        { "alg": "SHA-256", "content": "<schemaHash>" }
+        {
+          "alg": "SHA-256",
+          "content": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "alg": "SHA-256",
+          "content": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
       ],
       "properties": [
         { "name": "workspace-dev:bundleKind", "value": "few_shot_bundle" },
         {
           "name": "workspace-dev:generatedTestCaseSchemaVersion",
-          "value": "<schemaVersion>"
+          "value": "1.0.0"
         },
         {
           "name": "workspace-dev:promptTemplateVersion",
-          "value": "<promptTemplateVersion>"
+          "value": "1.0.0"
         }
       ]
     },
@@ -199,7 +240,12 @@
       "name": "eu-banking-default",
       "version": "1.0.0",
       "description": "Active workspace-dev test-case policy profile applied to the run's validation pipeline. The hash is the canonical SHA-256 of the profile object.",
-      "hashes": [{ "alg": "SHA-256", "content": "<policyHash>" }],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        }
+      ],
       "properties": [
         { "name": "workspace-dev:bundleKind", "value": "policy_profile" },
         {
@@ -212,7 +258,7 @@
   ],
   "dependencies": [
     {
-      "ref": "job:<jobId>",
+      "ref": "job:job-template",
       "dependsOn": [
         "model:test_generation",
         "model:visual_primary",
@@ -227,8 +273,5 @@
     },
     { "ref": "model:visual_primary", "dependsOn": ["data:policy-profile"] },
     { "ref": "model:visual_fallback", "dependsOn": ["data:policy-profile"] }
-  ],
-  "secretsIncluded": false,
-  "rawPromptsIncluded": false,
-  "rawScreenshotsIncluded": false
+  ]
 }

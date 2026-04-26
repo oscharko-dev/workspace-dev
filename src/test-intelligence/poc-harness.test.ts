@@ -58,6 +58,11 @@ const newRunDir = async (): Promise<string> => {
   return mkdtemp(join(tmpdir(), "ti-poc-run-"));
 };
 
+const lbomPropertyMap = (
+  lbom: Wave1PocLbomDocument,
+): Map<string, string> =>
+  new Map(lbom.metadata.properties.map((property) => [property.name, property.value]));
+
 for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
   test(`poc-harness: ${fixtureId} runs end-to-end without external network`, async () => {
     const runDir = await newRunDir();
@@ -103,9 +108,13 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     // attests it via SHA-256 + byte length.
     assert.equal(result.lbom.bomFormat, "CycloneDX");
     assert.equal(result.lbom.specVersion, LBOM_CYCLONEDX_SPEC_VERSION);
-    assert.equal(result.lbom.secretsIncluded, false);
-    assert.equal(result.lbom.rawPromptsIncluded, false);
-    assert.equal(result.lbom.rawScreenshotsIncluded, false);
+    const lbomProps = lbomPropertyMap(result.lbom);
+    assert.equal(lbomProps.get("workspace-dev:secretsIncluded"), "false");
+    assert.equal(lbomProps.get("workspace-dev:rawPromptsIncluded"), "false");
+    assert.equal(
+      lbomProps.get("workspace-dev:rawScreenshotsIncluded"),
+      "false",
+    );
     assert.equal(
       result.lbomSummary.schemaVersion,
       LBOM_ARTIFACT_SCHEMA_VERSION,

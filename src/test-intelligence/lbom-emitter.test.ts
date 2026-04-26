@@ -4,7 +4,7 @@
  * Covers:
  *   - Document shape (CycloneDX 1.6 ML-BOM): bomFormat, specVersion, version,
  *     serialNumber, metadata, model + data components, dependencies graph.
- *   - Hard invariants: TYPE-LEVEL `false` for secretsIncluded /
+ *   - Hard invariants: CycloneDX metadata properties for secretsIncluded /
  *     rawPromptsIncluded / rawScreenshotsIncluded.
  *   - Validator: positive run on a freshly built document and negative
  *     diagnostics for malformed documents (bad bomFormat / specVersion /
@@ -80,6 +80,10 @@ const findComponent = (
 ): Wave1PocLbomDocument["components"][number] | undefined =>
   doc.components.find((component) => component["bom-ref"] === bomRef);
 
+const propertyMap = (
+  properties: ReadonlyArray<{ name: string; value: string }>,
+): Map<string, string> => new Map(properties.map((p) => [p.name, p.value]));
+
 test("buildLbomDocument: emits a CycloneDX 1.6 ML-BOM with all required roots", () => {
   const doc = buildLbomDocument(baseInput());
   assert.equal(doc.bomFormat, "CycloneDX");
@@ -93,9 +97,13 @@ test("buildLbomDocument: emits a CycloneDX 1.6 ML-BOM with all required roots", 
   assert.equal(doc.metadata.tools.components[0]?.name, "workspace-dev");
   assert.equal(doc.metadata.tools.components[0]?.version, CONTRACT_VERSION);
   assert.equal(doc.metadata.component["bom-ref"], "job:job-test-1378");
-  assert.equal(doc.secretsIncluded, false);
-  assert.equal(doc.rawPromptsIncluded, false);
-  assert.equal(doc.rawScreenshotsIncluded, false);
+  const metadataProps = propertyMap(doc.metadata.properties);
+  assert.equal(metadataProps.get("workspace-dev:secretsIncluded"), "false");
+  assert.equal(metadataProps.get("workspace-dev:rawPromptsIncluded"), "false");
+  assert.equal(
+    metadataProps.get("workspace-dev:rawScreenshotsIncluded"),
+    "false",
+  );
 });
 
 test("buildLbomDocument: emits exactly the three required model roles + two data components", () => {
@@ -121,10 +129,13 @@ test("buildLbomDocument: model components carry deployment + role + image-input 
   assert.ok(generator);
   assert.equal(generator?.name, "gpt-oss-120b");
   if (generator?.type === "machine-learning-model") {
-    const propMap = new Map(generator.properties.map((p) => [p.name, p.value]));
+    const propMap = propertyMap(generator.properties);
     assert.equal(propMap.get("workspace-dev:role"), "test_generation");
     assert.equal(propMap.get("workspace-dev:deployment"), "gpt-oss-120b-mock");
+    assert.equal(propMap.get("workspace-dev:format"), "unknown");
     assert.equal(propMap.get("workspace-dev:imageInputSupport"), "false");
+    assert.equal(propMap.get("workspace-dev:licenseStatus"), "unknown");
+    assert.equal(propMap.get("workspace-dev:provider"), "unknown");
     assert.equal(propMap.get("workspace-dev:fallbackUsed"), "false");
     assert.equal(
       generator.modelCard.modelParameters?.task,
@@ -134,20 +145,62 @@ test("buildLbomDocument: model components carry deployment + role + image-input 
       (generator.modelCard.considerations?.useCases ?? []).length > 0,
       "considerations.useCases must be populated",
     );
+    assert.ok(
+      (generator.modelCard.considerations?.ethicalConsiderations ?? []).every(
+        (risk) => typeof risk.name === "string" && risk.name.length > 0,
+      ),
+      "ethical considerations must use CycloneDX risk objects",
+    );
   } else {
     assert.fail("expected test_generation to be machine-learning-model");
   }
 
   const visualPrimary = findComponent(doc, "model:visual_primary");
   if (visualPrimary?.type === "machine-learning-model") {
-    const propMap = new Map(
-      visualPrimary.properties.map((p) => [p.name, p.value]),
-    );
+    const propMap = propertyMap(visualPrimary.properties);
     assert.equal(propMap.get("workspace-dev:imageInputSupport"), "true");
     assert.equal(propMap.get("workspace-dev:role"), "visual_primary");
   } else {
     assert.fail("expected visual_primary component");
   }
+});
+
+test("buildLbomDocument: optional visual model identity and weights flow into components", () => {
+  const doc = buildLbomDocument(
+    baseInput({
+      visualModelBindings: {
+        visual_primary: {
+          modelRevision: "llama-4-maverick-vision@test",
+          gatewayRelease: "mock@2026.04",
+          compatibilityMode: "openai_chat",
+          provider: "operator-configured",
+          licenseStatus: "unknown",
+        },
+        visual_fallback: {
+          modelRevision: "phi-4-multimodal-poc@test",
+          gatewayRelease: "mock@2026.04",
+          compatibilityMode: "openai_chat",
+          provider: "operator-configured",
+          licenseStatus: "unknown",
+        },
+      },
+      weightsSha256: {
+        visual_primary: "a".repeat(64),
+        visual_fallback: "b".repeat(64),
+      },
+    }),
+  );
+
+  const primary = findComponent(doc, "model:visual_primary");
+  assert.equal(primary?.type, "machine-learning-model");
+  if (primary?.type !== "machine-learning-model") return;
+  const props = propertyMap(primary.properties);
+  assert.equal(primary.version, "llama-4-maverick-vision@test");
+  assert.equal(props.get("workspace-dev:gatewayRelease"), "mock@2026.04");
+  assert.equal(props.get("workspace-dev:format"), "openai_chat");
+  assert.equal(props.get("workspace-dev:provider"), "operator-configured");
+  assert.equal(props.get("workspace-dev:licenseStatus"), "unknown");
+  assert.equal(primary.hashes?.[0]?.content, "a".repeat(64));
 });
 
 test("buildLbomDocument: few-shot bundle component carries promptHash + schemaHash", () => {
@@ -232,7 +285,7 @@ test("buildLbomDocument: visual sidecar success with fallback flips metadata + c
     } as VisualSidecarResult extends { validationReport: infer V } ? V : never,
   } as VisualSidecarResult;
   const doc = buildLbomDocument(baseInput({ visualSidecar: sidecar }));
-  const props = new Map(doc.metadata.properties.map((p) => [p.name, p.value]));
+  const props = propertyMap(doc.metadata.properties);
   assert.equal(props.get("workspace-dev:visualFallbackUsed"), "true");
   assert.equal(
     props.get("workspace-dev:visualFallbackReason"),
@@ -244,9 +297,7 @@ test("buildLbomDocument: visual sidecar success with fallback flips metadata + c
   );
   const fallback = findComponent(doc, "model:visual_fallback");
   if (fallback?.type === "machine-learning-model") {
-    const fallbackProps = new Map(
-      fallback.properties.map((p) => [p.name, p.value]),
-    );
+    const fallbackProps = propertyMap(fallback.properties);
     assert.equal(fallbackProps.get("workspace-dev:fallbackUsed"), "true");
   }
 });
@@ -344,10 +395,24 @@ test("validateLbomDocument: catches dangling dependency refs", () => {
 
 test("validateLbomDocument: catches a flipped invariant", () => {
   const doc = buildLbomDocument(baseInput());
-  const tampered = { ...doc, secretsIncluded: true };
+  const tampered = {
+    ...doc,
+    metadata: {
+      ...doc.metadata,
+      properties: doc.metadata.properties.map((property) =>
+        property.name === "workspace-dev:secretsIncluded"
+          ? { ...property, value: "true" }
+          : property,
+      ),
+    },
+  };
   const result = validateLbomDocument(tampered);
   assert.equal(result.valid, false);
-  assert.ok(result.issues.some((i) => i.path === "secretsIncluded"));
+  assert.ok(
+    result.issues.some(
+      (i) => i.path === "metadata.properties.workspace-dev:secretsIncluded",
+    ),
+  );
 });
 
 test("validateLbomDocument: catches raw `contents` payload on a data component", () => {
@@ -403,9 +468,7 @@ test("buildLbomDocument: redacts a deployment label that smells like a secret", 
   );
   const visualPrimary = findComponent(doc, "model:visual_primary");
   if (visualPrimary?.type === "machine-learning-model") {
-    const props = new Map(
-      visualPrimary.properties.map((p) => [p.name, p.value]),
-    );
+    const props = propertyMap(visualPrimary.properties);
     const deployment = props.get("workspace-dev:deployment") ?? "";
     assert.ok(
       !deployment.includes("abcdef0123456789"),
@@ -443,7 +506,14 @@ test("writeLbomArtifact: refuses to persist an invalid document", async () => {
   const doc = buildLbomDocument(baseInput()) as Wave1PocLbomDocument;
   const tampered = {
     ...doc,
-    secretsIncluded: true,
+    metadata: {
+      ...doc.metadata,
+      properties: doc.metadata.properties.map((property) =>
+        property.name === "workspace-dev:secretsIncluded"
+          ? { ...property, value: "true" }
+          : property,
+      ),
+    },
   } as unknown as Wave1PocLbomDocument;
   await assert.rejects(
     () => writeLbomArtifact({ document: tampered, runDir }),
