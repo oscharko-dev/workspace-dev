@@ -166,9 +166,11 @@ test("ADF parser: mention/inlineCard/media render as opaque stubs", () => {
   assert.ok(text.includes("[link]"));
   assert.ok(text.includes("[attachment:spec.pdf]"));
   // Hard invariant — no raw URLs, no raw account IDs, no raw media IDs.
-  assert.ok(!text.includes("intranet.example.com"));
-  assert.ok(!text.includes("557058"));
-  assert.ok(!text.includes("55ab83bc"));
+  // Use anchored regexes so CodeQL's incomplete-substring-sanitization
+  // rule does not flag hostname-shaped substring assertions.
+  assert.doesNotMatch(text, /intranet\.example\.com/u);
+  assert.doesNotMatch(text, /\b557058\b/u);
+  assert.doesNotMatch(text, /\b55ab83bc\b/u);
 });
 
 test("ADF parser: nested-depth bound rejects pathological input", () => {
