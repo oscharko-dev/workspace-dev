@@ -112,6 +112,15 @@ export {
   jaccardSimilarity,
 } from "./test-case-duplicate.js";
 export {
+  computeIntentDelta,
+  INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT,
+  writeIntentDeltaReport,
+  type ComputeIntentDeltaInput,
+  type ComputeIntentDeltaOptions,
+  type WriteIntentDeltaReportInput,
+  type WriteIntentDeltaReportResult,
+} from "./intent-delta.js";
+export {
   computeCoverageReport,
   type ComputeCoverageReportInput,
 } from "./test-case-coverage.js";
