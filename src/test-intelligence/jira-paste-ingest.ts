@@ -558,7 +558,6 @@ const stripMarkdownToPlain = (body: string): string => {
   out = out.replace(/^#{1,6}\s+/gmu, "");
   out = out.replace(/^\s{0,3}(?:[-*+]|\d+[.)])\s+/gmu, "");
   out = out.replace(/[*_~`]+/gu, "");
-  out = out.replace(/<[^>]+>/gu, "");
   return out.trim();
 };
 
