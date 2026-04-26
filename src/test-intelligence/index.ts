@@ -144,6 +144,13 @@ export {
   type WriteTestCaseDedupeReportResult,
 } from "./test-case-dedupe.js";
 export {
+  buildTraceabilityMatrix,
+  writeTraceabilityMatrix,
+  type BuildTraceabilityMatrixInput,
+  type WriteTraceabilityMatrixInput,
+  type WriteTraceabilityMatrixResult,
+} from "./traceability-matrix.js";
+export {
   computeCoverageReport,
   type ComputeCoverageReportInput,
 } from "./test-case-coverage.js";
