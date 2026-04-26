@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { JIRA_ISSUE_IR_SCHEMA_VERSION } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import { buildJiraIssueIr, type JiraAdfSource } from "./jira-issue-ir.js";
 
@@ -47,7 +48,7 @@ test("Jira IR snapshot: canonical-JSON byte-stable for a fixed input", () => {
   assert.equal(json1, json2);
   // Spot-check a few invariants in the serialized form
   const parsed = JSON.parse(json1);
-  assert.equal(parsed.version, "1.0.0");
+  assert.equal(parsed.version, JIRA_ISSUE_IR_SCHEMA_VERSION);
   assert.equal(parsed.issueKey, "PAY-1234");
   assert.equal(parsed.issueType, "story");
   assert.equal(parsed.priority, "High");

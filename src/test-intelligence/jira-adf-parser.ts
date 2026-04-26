@@ -242,7 +242,7 @@ const traverseBlockNode = (
     case "mediaGroup":
       return emitContainer(obj, ctx, path, depth);
     case "media":
-      return emitMediaStub(obj, ctx, path);
+      return emitMediaStub(obj, ctx);
     // Inline-only types should not appear at the block level — they are
     // walked from inside `collectInlineText`. Reject if we see them
     // standalone to avoid ambiguous ordering.
@@ -331,10 +331,10 @@ const emitContainerAsBlock = (
   const beforeBlocks = ctx.blocks.length;
   const rej = emitContainer(obj, ctx, path, depth);
   if (rej !== null) return rej;
-  // Re-collapse the plain-text contribution into a single container
-  // block while preserving inner blocks for downstream consumers.
+  // Add a container summary block while preserving inner blocks for
+  // downstream consumers that inspect nested structure.
   const innerText = ctx.plainText.slice(before).replace(/\n+$/u, "");
-  ctx.blocks.splice(beforeBlocks, ctx.blocks.length - beforeBlocks, {
+  ctx.blocks.splice(beforeBlocks, 0, {
     kind,
     text: innerText,
   });
@@ -398,7 +398,7 @@ const emitCodeBlock = (
   if (content !== undefined && !Array.isArray(content)) {
     return { code: "jira_adf_node_shape_invalid", path: `${path}.content` };
   }
-  const text = collectCodeText(content, path);
+  const text = collectCodeText(content, ctx, path);
   if (typeof text !== "string") return text;
   const block: JiraAdfBlock = { kind: "code_block", text };
   if (language !== undefined) block.language = language;
@@ -411,11 +411,18 @@ const emitCodeBlock = (
 
 const collectCodeText = (
   content: JsonValue[] | undefined,
+  ctx: TraversalCtx,
   path: string,
 ): string | JiraAdfRejection => {
   if (content === undefined) return "";
   let out = "";
   for (let i = 0; i < content.length; i++) {
+    if (++ctx.nodeCount > MAX_JIRA_ADF_NODE_COUNT) {
+      return {
+        code: "jira_adf_max_node_count_exceeded",
+        path: `${path}.content[${i}]`,
+      };
+    }
     const child = content[i] as JsonValue;
     if (!isPlainObject(child)) {
       return {
@@ -497,7 +504,6 @@ const emitTableCell = (
 const emitMediaStub = (
   obj: JsonObject,
   ctx: TraversalCtx,
-  _path: string,
 ): JiraAdfRejection | null => {
   const attrs = isPlainObject(obj.attrs) ? (obj.attrs as JsonObject) : {};
   const altRaw = attrs.alt;
@@ -639,7 +645,7 @@ const validateMarks = (
     return { code: "jira_adf_node_shape_invalid", path };
   }
   for (let i = 0; i < marks.length; i++) {
-    const mark = marks[i];
+    const mark: unknown = marks[i];
     if (!isPlainObject(mark)) {
       return { code: "jira_adf_node_shape_invalid", path: `${path}[${i}]` };
     }
