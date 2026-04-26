@@ -57,7 +57,8 @@ core test-intelligence pipeline to OpenText ALM.
   (sorted, deduplicated non-`ok` outcomes), `visualFallbackUsed?: boolean`
   (true when a matching record carries `fallback_used`), and
   `visualEvidenceRefs?: { screenId; modelDeployment; evidenceHash }[]`
-  (sorted by `screenId`; `evidenceHash` is the canonical
+  (sorted by `screenId`, `modelDeployment`, then `evidenceHash`;
+  `evidenceHash` is the canonical
   `(screenId|deployment|sortedOutcomes|roundedConfidence)` SHA-256, never
   a screenshot-byte hash). All four keys are absent — not `undefined` —
   on payloads without sidecar coverage and on stub-adapter output, so
@@ -68,15 +69,19 @@ core test-intelligence pipeline to OpenText ALM.
   `resolveQcProviderAdapter`, `getQcProviderDescriptor`,
   `getQcProviderEntry`, `listQcProviderDescriptors`, plus the structured
   refusal enum `ALLOWED_QC_PROVIDER_REGISTRATION_REFUSAL_CODES` (members:
-  `duplicate_provider_id`, `unknown_provider_id`,
-  `provider_mismatch_on_adapter`, `register_custom_not_supported`).
+  `duplicate_provider_id`, `custom_descriptor_required`,
+  `unknown_provider_id`, `provider_mismatch_on_adapter`,
+  `register_custom_not_supported`).
   Eight builtin descriptors are wired up: `opentext_alm` exposes the full
   matrix and binds the existing `openTextAlmDryRunAdapter`; the six
   non-ALM providers (`opentext_octane`, `opentext_valueedge`, `xray`,
   `testrail`, `azure_devops_test_plans`, `qtest`) advertise
   `validateProfile` + `dryRun` only and bind the dry-run-only stub; the
   reserved `custom` slot publishes every flag `false` until a caller
-  registers a concrete adapter via `registerQcProviderAdapter`.
+  registers a concrete adapter and descriptor via
+  `registerQcProviderAdapter`. Registry snapshots expose only read
+  operations and clone entries on read so caller mutation cannot bypass
+  registration checks.
 - New module `src/test-intelligence/qc-provider-stub.ts` shipping
   `createDryRunStubAdapter`, `DEFAULT_DRY_RUN_STUB_ID_SOURCE`, and
   `DRY_RUN_STUB_ADAPTER_VERSION = "1.0.0"`. The stub honors the

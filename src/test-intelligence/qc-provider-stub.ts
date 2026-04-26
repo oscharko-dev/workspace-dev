@@ -79,11 +79,9 @@ const buildStubReportId = (
   profile: QcMappingProfile,
   generatedAt: string,
 ): string =>
-  idSource
-    .newReportId(
-      `${jobId}|${provider}|${version}|${profile.id}|${profile.version}|${generatedAt}`,
-    )
-    .slice(0, REPORT_ID_LENGTH);
+  idSource.newReportId(
+    `${jobId}|${provider}|${version}|${profile.id}|${profile.version}|${generatedAt}`,
+  );
 
 /** Input shape for `createDryRunStubAdapter`. */
 export interface CreateDryRunStubAdapterInput {

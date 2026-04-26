@@ -534,6 +534,44 @@ test("qc-alm-dry-run: planned payloads carry visual provenance fields when sidec
   assert.match(ref.evidenceHash, /^[0-9a-f]{64}$/);
 });
 
+test("qc-alm-dry-run: visual evidence refs use total deterministic ordering", async () => {
+  const adapter = createOpenTextAlmDryRunAdapter();
+  const visual = visualReport(0.5, ["fallback_used"]);
+  visual.records = [
+    {
+      screenId: "s-payment",
+      deployment: "vision-b",
+      outcomes: ["ok"],
+      issues: [],
+      meanConfidence: 0.8,
+    },
+    {
+      screenId: "s-payment",
+      deployment: "vision-a",
+      outcomes: ["fallback_used"],
+      issues: [],
+      meanConfidence: 0.6,
+    },
+  ];
+  const result = await adapter.dryRun({
+    jobId: "job-1374",
+    mode: "dry_run",
+    profile: cloneOpenTextAlmDefaultMappingProfile(),
+    preview: buildPreview([buildCase({})], visual),
+    visual,
+    clock: createFixedClock(GENERATED_AT),
+    idSource: DEFAULT_DRY_RUN_ID_SOURCE,
+  });
+  const payload = result.plannedPayloads[0];
+  assert.ok(payload);
+  assert.deepEqual(
+    payload.visualEvidenceRefs?.map((ref) => ref.modelDeployment),
+    ["vision-a", "vision-b"],
+  );
+  assert.equal(payload.visualConfidence, 0.7);
+  assert.equal(payload.visualFallbackUsed, true);
+});
+
 test("qc-alm-dry-run: planned payloads omit visual provenance keys when no sidecar records match (Issue #1374)", async () => {
   const adapter = createOpenTextAlmDryRunAdapter();
   const result = await adapter.dryRun({

@@ -255,7 +255,12 @@ const buildVisualProvenance = (
       modelDeployment: record.deployment,
       evidenceHash: computeVisualEvidenceHash(record),
     }))
-    .sort((a, b) => a.screenId.localeCompare(b.screenId));
+    .sort(
+      (a, b) =>
+        a.screenId.localeCompare(b.screenId) ||
+        a.modelDeployment.localeCompare(b.modelDeployment) ||
+        a.evidenceHash.localeCompare(b.evidenceHash),
+    );
 
   return {
     visualConfidence: roundVisualConfidence(meanConfidence),
@@ -308,7 +313,12 @@ const matchVisualRecords = (
   return visual.records
     .filter((r) => screenIds.has(r.screenId))
     .slice()
-    .sort((a, b) => a.screenId.localeCompare(b.screenId));
+    .sort(
+      (a, b) =>
+        a.screenId.localeCompare(b.screenId) ||
+        a.deployment.localeCompare(b.deployment) ||
+        computeVisualEvidenceHash(a).localeCompare(computeVisualEvidenceHash(b)),
+    );
 };
 
 const buildVisualEvidenceFlags = (

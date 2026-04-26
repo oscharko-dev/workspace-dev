@@ -383,29 +383,30 @@ a caller registers a concrete adapter:
 
 ```ts
 import {
+    createDryRunStubAdapter,
     createQcProviderRegistry,
     registerQcProviderAdapter,
     resolveQcProviderAdapter,
-    type QcAdapter,
-    type QcAdapterDryRunInput,
-    type DryRunReportArtifact,
-    type QcMappingProfile,
-    type QcMappingProfileValidationResult,
 } from "workspace-dev/test-intelligence";
+import type { QcProviderDescriptor } from "workspace-dev/contracts";
 
-const customAdapter: QcAdapter = {
+const customAdapter = createDryRunStubAdapter({
     provider: "custom",
     version: "1.0.0",
-    validateProfile(
-        profile: QcMappingProfile,
-    ): QcMappingProfileValidationResult {
-        return { ok: true, errorCount: 0, warningCount: 0, issues: [] };
-    },
-    async dryRun(input: QcAdapterDryRunInput): Promise<DryRunReportArtifact> {
-        // build a deterministic, fail-closed report shape — see qc-provider-stub.ts
-        // for a reference template that satisfies the type-level invariants
-        // (`rawScreenshotsIncluded: false`, `credentialsIncluded: false`).
-        throw new Error("not implemented");
+});
+
+const customDescriptor: QcProviderDescriptor = {
+    provider: "custom",
+    label: "Internal regulated-QA adapter",
+    version: "1.0.0",
+    builtin: false,
+    capabilities: {
+        validateProfile: true,
+        resolveTargetFolder: false,
+        dryRun: true,
+        exportOnly: false,
+        apiTransfer: false,
+        registerCustom: false,
     },
 };
 
@@ -413,20 +414,25 @@ const registry = createQcProviderRegistry();
 const registration = registerQcProviderAdapter({
     registry,
     adapter: customAdapter,
+    descriptor: customDescriptor,
 });
 if (!registration.ok) throw new Error(registration.refusalCode);
 const adapter = resolveQcProviderAdapter(registration.registry, "custom");
 ```
 
-Registration is fail-closed: `unknown_provider_id` (provider not in
+The first registration into the builtin `custom` slot must include a descriptor
+with the capabilities consumers should render after registration. Registration
+is fail-closed: `unknown_provider_id` (provider not in
 `ALLOWED_QC_ADAPTER_PROVIDERS`), `provider_mismatch_on_adapter` (descriptor
-provider does not equal adapter provider), `register_custom_not_supported`
-(slot's descriptor declares `capabilities.registerCustom === false` — only
-the reserved `custom` slot is registerable), and `duplicate_provider_id`
-(slot already carries a non-null adapter) each surface as structured
-refusal codes the caller can branch on without parsing strings. Registry
-state is value-typed: `registerQcProviderAdapter` returns a fresh registry
-view rather than mutating the input.
+provider does not equal adapter provider), `custom_descriptor_required` (the
+builtin placeholder slot is being filled without concrete metadata),
+`register_custom_not_supported` (slot's descriptor declares
+`capabilities.registerCustom === false` — only the reserved `custom` slot is
+registerable), and `duplicate_provider_id` (slot already carries a non-null
+adapter) each surface as structured refusal codes the caller can branch on
+without parsing strings. Registry state is value-typed:
+`registerQcProviderAdapter` returns a fresh registry view rather than mutating
+the input.
 
 ## 8. Evidence verification
 

@@ -43,6 +43,7 @@ import {
 /** Refusal codes surfaced by `registerQcProviderAdapter`. */
 export const ALLOWED_QC_PROVIDER_REGISTRATION_REFUSAL_CODES = [
   "duplicate_provider_id",
+  "custom_descriptor_required",
   "unknown_provider_id",
   "provider_mismatch_on_adapter",
   "register_custom_not_supported",
@@ -149,9 +150,9 @@ export const BUILTIN_QC_PROVIDER_DESCRIPTORS: readonly QcProviderDescriptor[] =
 /** Read-only registry surface returned by `createQcProviderRegistry`. */
 export interface QcProviderRegistry {
   /**
-   * Snapshot map keyed by provider id. Values are entry copies; mutating
-   * them does NOT mutate the registry. Re-call `getQcProviderEntry` to
-   * read the live state.
+   * Snapshot keyed by provider id. The runtime value intentionally exposes
+   * only `ReadonlyMap` methods; each read returns entry copies, so mutating
+   * them does NOT mutate the registry.
    */
   readonly snapshot: ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry>;
 }
@@ -169,6 +170,122 @@ const cloneDescriptor = (d: QcProviderDescriptor): QcProviderDescriptor => ({
   ...(d.mappingProfileSeedId !== undefined
     ? { mappingProfileSeedId: d.mappingProfileSeedId }
     : {}),
+});
+
+const cloneEntry = (entry: QcProviderRegistryEntry): QcProviderRegistryEntry => ({
+  descriptor: cloneDescriptor(entry.descriptor),
+  adapter: entry.adapter,
+});
+
+const freezeDescriptor = (d: QcProviderDescriptor): QcProviderDescriptor =>
+  Object.freeze({
+    ...cloneDescriptor(d),
+    capabilities: Object.freeze({ ...d.capabilities }),
+  });
+
+const freezeEntry = (entry: QcProviderRegistryEntry): QcProviderRegistryEntry =>
+  Object.freeze({
+    descriptor: freezeDescriptor(entry.descriptor),
+    adapter: entry.adapter,
+  });
+
+const createReadonlySnapshot = (
+  entries: ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry>,
+): ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry> => {
+  const copy = new Map<QcAdapterProvider, QcProviderRegistryEntry>();
+  for (const [provider, entry] of entries) {
+    copy.set(provider, freezeEntry(entry));
+  }
+
+  const facade = Object.freeze({
+    get size(): number {
+      return copy.size;
+    },
+    get(provider: QcAdapterProvider): QcProviderRegistryEntry | undefined {
+      const entry = copy.get(provider);
+      return entry ? cloneEntry(entry) : undefined;
+    },
+    has(provider: QcAdapterProvider): boolean {
+      return copy.has(provider);
+    },
+    entries(): IterableIterator<[QcAdapterProvider, QcProviderRegistryEntry]> {
+      return Array.from(
+        copy.entries(),
+        ([provider, entry]): [QcAdapterProvider, QcProviderRegistryEntry] => [
+          provider,
+          cloneEntry(entry),
+        ],
+      )[Symbol.iterator]();
+    },
+    keys(): IterableIterator<QcAdapterProvider> {
+      return Array.from(copy.keys())[Symbol.iterator]();
+    },
+    values(): IterableIterator<QcProviderRegistryEntry> {
+      return Array.from(copy.values(), cloneEntry)[Symbol.iterator]();
+    },
+    forEach(
+      callbackfn: (
+        value: QcProviderRegistryEntry,
+        key: QcAdapterProvider,
+        map: ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry>,
+      ) => void,
+      thisArg?: unknown,
+    ): void {
+      for (const [provider, entry] of copy) {
+        callbackfn.call(
+          thisArg,
+          cloneEntry(entry),
+          provider,
+          facade as ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry>,
+        );
+      }
+    },
+    [Symbol.iterator](): IterableIterator<
+      [QcAdapterProvider, QcProviderRegistryEntry]
+    > {
+      return this.entries();
+    },
+  });
+
+  return facade as ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry>;
+};
+
+const REGISTRY_STATE = new WeakMap<
+  QcProviderRegistry,
+  ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry>
+>();
+
+const createRegistryFromEntries = (
+  entries: ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry>,
+): QcProviderRegistry => {
+  const state = new Map<QcAdapterProvider, QcProviderRegistryEntry>();
+  for (const [provider, entry] of entries) {
+    state.set(provider, freezeEntry(entry));
+  }
+  const registry = Object.freeze({
+    snapshot: createReadonlySnapshot(entries),
+  });
+  REGISTRY_STATE.set(registry, state);
+  return registry;
+};
+
+const getRegistryState = (
+  registry: QcProviderRegistry,
+): ReadonlyMap<QcAdapterProvider, QcProviderRegistryEntry> =>
+  REGISTRY_STATE.get(registry) ?? registry.snapshot;
+
+const normalizeRegisteredCustomDescriptor = (
+  descriptor: QcProviderDescriptor,
+): QcProviderDescriptor => ({
+  ...cloneDescriptor({ ...descriptor, builtin: false }),
+  capabilities: {
+    validateProfile: true,
+    resolveTargetFolder: false,
+    dryRun: true,
+    exportOnly: false,
+    apiTransfer: false,
+    registerCustom: false,
+  },
 });
 
 const buildBuiltinAdapter = (provider: QcAdapterProvider): QcAdapter | null => {
@@ -232,11 +349,7 @@ export const createQcProviderRegistry = (
   // applies the full conflict matrix.
   void input.extraAdapters;
 
-  // Freeze the snapshot view so callers cannot mutate via casting.
-  const snapshot = new Map(state.entries);
-  return Object.freeze({
-    snapshot,
-  });
+  return createRegistryFromEntries(state.entries);
 };
 
 /**
@@ -268,6 +381,8 @@ export interface RegisterQcProviderAdapterInput {
  *     registry's snapshot at all.
  *   - `provider_mismatch_on_adapter` — `descriptor.provider` does not
  *     equal `adapter.provider`.
+ *   - `custom_descriptor_required` — the caller is filling the builtin
+ *     placeholder `custom` slot without supplying concrete capabilities.
  *   - `register_custom_not_supported` — the slot's descriptor declares
  *     `capabilities.registerCustom === false`. Today this protects every
  *     non-`custom` builtin from being shadowed.
@@ -279,12 +394,16 @@ export const registerQcProviderAdapter = (
   input: RegisterQcProviderAdapterInput,
 ): RegisterQcProviderAdapterResult => {
   const { adapter, descriptor } = input;
-  const entry = input.registry.snapshot.get(adapter.provider);
+  const state = getRegistryState(input.registry);
+  const entry = state.get(adapter.provider);
   if (!entry) {
     return { ok: false, refusalCode: "unknown_provider_id" };
   }
   if (descriptor !== undefined && descriptor.provider !== adapter.provider) {
     return { ok: false, refusalCode: "provider_mismatch_on_adapter" };
+  }
+  if (entry.adapter !== null && adapter.provider === "custom") {
+    return { ok: false, refusalCode: "duplicate_provider_id" };
   }
   if (!entry.descriptor.capabilities.registerCustom) {
     return { ok: false, refusalCode: "register_custom_not_supported" };
@@ -292,19 +411,22 @@ export const registerQcProviderAdapter = (
   if (entry.adapter !== null) {
     return { ok: false, refusalCode: "duplicate_provider_id" };
   }
+  if (entry.descriptor.builtin && descriptor === undefined) {
+    return { ok: false, refusalCode: "custom_descriptor_required" };
+  }
 
   const nextDescriptor: QcProviderDescriptor =
     descriptor !== undefined
-      ? cloneDescriptor({ ...descriptor, builtin: false })
+      ? normalizeRegisteredCustomDescriptor(descriptor)
       : cloneDescriptor(entry.descriptor);
-  const nextSnapshot = new Map(input.registry.snapshot);
+  const nextSnapshot = new Map(state);
   nextSnapshot.set(adapter.provider, {
     descriptor: nextDescriptor,
     adapter,
   });
   return {
     ok: true,
-    registry: Object.freeze({ snapshot: nextSnapshot }),
+    registry: createRegistryFromEntries(nextSnapshot),
   };
 };
 
@@ -313,7 +435,7 @@ export const getQcProviderDescriptor = (
   registry: QcProviderRegistry,
   provider: QcAdapterProvider,
 ): QcProviderDescriptor | null => {
-  const entry = registry.snapshot.get(provider);
+  const entry = getRegistryState(registry).get(provider);
   return entry ? cloneDescriptor(entry.descriptor) : null;
 };
 
@@ -325,7 +447,7 @@ export const listQcProviderDescriptors = (
   registry: QcProviderRegistry,
 ): QcProviderDescriptor[] => {
   const out: QcProviderDescriptor[] = [];
-  for (const entry of registry.snapshot.values()) {
+  for (const entry of getRegistryState(registry).values()) {
     out.push(cloneDescriptor(entry.descriptor));
   }
   return out.sort((a, b) => a.provider.localeCompare(b.provider));
@@ -339,7 +461,7 @@ export const resolveQcProviderAdapter = (
   registry: QcProviderRegistry,
   provider: QcAdapterProvider,
 ): QcAdapter | null => {
-  const entry = registry.snapshot.get(provider);
+  const entry = getRegistryState(registry).get(provider);
   return entry ? entry.adapter : null;
 };
 
@@ -348,7 +470,7 @@ export const getQcProviderEntry = (
   registry: QcProviderRegistry,
   provider: QcAdapterProvider,
 ): QcProviderRegistryEntry | null => {
-  const entry = registry.snapshot.get(provider);
+  const entry = getRegistryState(registry).get(provider);
   return entry
     ? { descriptor: cloneDescriptor(entry.descriptor), adapter: entry.adapter }
     : null;

@@ -673,6 +673,69 @@ Mapped QC fields (deterministic, redacted, no credentials).
 
 > **testEntityType**: `string`
 
+##### visualAmbiguityFlags?
+
+> `optional` **visualAmbiguityFlags?**: (`"schema_invalid"` \| `"ok"` \| `"low_confidence"` \| `"fallback_used"` \| `"possible_pii"` \| `"prompt_injection_like_text"` \| `"conflicts_with_figma_metadata"` \| `"primary_unavailable"`)[]
+
+Sorted, de-duplicated set of non-`ok` outcome codes contributing to the
+matching visual records. Surfaces ambiguity reasons (`low_confidence`,
+`schema_invalid`, etc.) without re-emitting the raw issue text. Absent
+when no records match. Issue #1374.
+
+##### visualConfidence?
+
+> `optional` **visualConfidence?**: `number`
+
+Mean visual-sidecar confidence (0..1) across matching screen records,
+rounded to 4 decimals for byte-stability. Issue #1374 multimodal
+addendum (2026-04-24). Absent (no key set) when the case has no
+matching visual records or when emitted by the dry-run stub adapter.
+
+##### visualEvidenceRefs?
+
+> `optional` **visualEvidenceRefs?**: `object`[]
+
+Sorted by `screenId`, `modelDeployment`, then `evidenceHash`.
+Each ref carries a derivative identity hash that lets a reviewer
+correlate the planned payload back to the per-screen validation record
+without re-importing raw screenshot bytes. Absent when no records match.
+Issue #1374.
+
+Field semantics:
+  - `screenId` — matching `VisualSidecarValidationRecord.screenId`.
+  - `modelDeployment` — sourced verbatim from
+    `VisualSidecarValidationRecord.deployment`. The contract historically
+    uses the field name `deployment` on the record; this ref re-exposes
+    it under `modelDeployment` to align with the broader replay-cache
+    idiom (see `SelfVerifyRubricReplayCacheKey.modelDeployment`).
+  - `evidenceHash` — `sha256` hex of the canonical validation-record
+    identity tuple `(screenId|deployment|sortedOutcomes|roundedConfidence)`.
+    Note this is NOT a hash of screenshot bytes — the dry-run adapter
+    never receives image bytes. The `VisualSidecarCaptureIdentity.sha256`
+    (image-byte hash) lives only on the upstream
+    `VisualSidecarSuccess` artifact, which dry-run does not consume.
+
+###### evidenceHash
+
+> **evidenceHash**: `string`
+
+###### modelDeployment
+
+> **modelDeployment**: `string`
+
+###### screenId
+
+> **screenId**: `string`
+
+##### visualFallbackUsed?
+
+> `optional` **visualFallbackUsed?**: `boolean`
+
+True when at least one matching visual record carries the
+`fallback_used` outcome — i.e. the secondary multimodal deployment
+produced the description the case relies on. Absent when no records
+match. Issue #1374.
+
 ***
 
 ### DryRunReportArtifact
@@ -753,7 +816,7 @@ Hard invariant: raw screenshots are never embedded into dry-run payloads.
 
 ##### refusalCodes
 
-> **refusalCodes**: (`"provider_mismatch"` \| `"no_mapped_test_cases"` \| `"mapping_profile_invalid"` \| `"mode_not_implemented"` \| `"folder_resolution_failed"`)[]
+> **refusalCodes**: (`"provider_mismatch"` \| `"no_mapped_test_cases"` \| `"mapping_profile_invalid"` \| `"mode_not_implemented"` \| `"folder_resolution_failed"` \| `"provider_not_implemented"`)[]
 
 ##### refused
 
@@ -3381,11 +3444,118 @@ Visual provenance attached to a QC mapping preview entry (Issue #1386).
 
 > **evidenceHash**: `string`
 
-SHA-256 hex of the visual sidecar response payload (no raw screenshot).
+SHA-256 hex of the derived validation-record identity tuple
+`(screenId|deployment|sortedOutcomes|roundedConfidence)`. This is not a
+raw screenshot hash and does not include request headers or secrets.
 
 ##### fallbackReason
 
 > **fallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
+
+***
+
+### QcProviderCapabilities
+
+Capability matrix for a QC provider (Issue #1374).
+
+Each flag mirrors a `QcProviderOperation`. Wave 3 ships only the
+`opentext_alm` provider with the full matrix `true`; the other six
+builtin providers advertise dry-run + validate only and refuse writes.
+The reserved `custom` slot is published with every flag `false` until a
+caller registers a concrete adapter.
+
+The shape is a closed product type so a future operation cannot be
+silently introduced without a contract bump — every consumer reading the
+matrix today is guaranteed to see exactly these six fields.
+
+#### Properties
+
+##### apiTransfer
+
+> **apiTransfer**: `boolean`
+
+Adapter can perform controlled API writes against the live tool.
+
+##### dryRun
+
+> **dryRun**: `boolean`
+
+Adapter can emit a `DryRunReportArtifact` (concrete or fail-closed stub).
+
+##### exportOnly
+
+> **exportOnly**: `boolean`
+
+Adapter can emit export-only artifacts (CSV/XLSX/XML).
+
+##### registerCustom
+
+> **registerCustom**: `boolean`
+
+Caller may register a concrete custom adapter under this provider id.
+
+##### resolveTargetFolder
+
+> **resolveTargetFolder**: `boolean`
+
+Adapter knows how to validate a target folder path (read-only).
+
+##### validateProfile
+
+> **validateProfile**: `boolean`
+
+Adapter exposes a structural `validateProfile` pass.
+
+***
+
+### QcProviderDescriptor
+
+Descriptor for a builtin or custom-registered QC provider (Issue #1374).
+
+Descriptors are returned by the registry so a UI or operator audit can
+answer "which providers are wired up and what can they do?" without
+loading any adapter implementation. They carry no credentials, no URLs,
+and no runtime mutable state.
+
+#### Properties
+
+##### builtin
+
+> **builtin**: `boolean`
+
+True for the eight in-tree descriptors; false for caller-registered slots.
+
+##### capabilities
+
+> **capabilities**: [`QcProviderCapabilities`](#qcprovidercapabilities)
+
+Capability matrix advertised for this provider.
+
+##### label
+
+> **label**: `string`
+
+Short human-readable label, e.g. `"OpenText ALM"`.
+
+##### mappingProfileSeedId?
+
+> `optional` **mappingProfileSeedId?**: `string`
+
+Optional pointer to the mapping-profile factory id a caller can use to
+seed a fresh profile (e.g. `opentext-alm-default`). Absent when the
+provider has no in-tree default profile yet.
+
+##### provider
+
+> **provider**: `"opentext_alm"` \| `"opentext_octane"` \| `"opentext_valueedge"` \| `"xray"` \| `"testrail"` \| `"azure_devops_test_plans"` \| `"qtest"` \| `"custom"`
+
+Provider discriminator from `ALLOWED_QC_ADAPTER_PROVIDERS`.
+
+##### version
+
+> **version**: `string`
+
+Semver-shaped descriptor version, bumped when the matrix changes.
 
 ***
 
@@ -10856,6 +11026,12 @@ Location within the input that held a PII-like match.
 
 ***
 
+### QcProviderOperation
+
+> **QcProviderOperation** = *typeof* [`ALLOWED_QC_PROVIDER_OPERATIONS`](#allowed_qc_provider_operations)\[`number`\]
+
+***
+
 ### ReplayCacheLookupResult
 
 > **ReplayCacheLookupResult** = \{ `entry`: [`ReplayCacheEntry`](#replaycacheentry); `hit`: `true`; \} \| \{ `hit`: `false`; `key`: `string`; \}
@@ -11434,9 +11610,14 @@ Allowed states of a target-folder resolution attempt under `dry_run`.
 
 ### ALLOWED\_DRY\_RUN\_REFUSAL\_CODES
 
-> `const` **ALLOWED\_DRY\_RUN\_REFUSAL\_CODES**: readonly \[`"no_mapped_test_cases"`, `"mapping_profile_invalid"`, `"provider_mismatch"`, `"mode_not_implemented"`, `"folder_resolution_failed"`\]
+> `const` **ALLOWED\_DRY\_RUN\_REFUSAL\_CODES**: readonly \[`"no_mapped_test_cases"`, `"mapping_profile_invalid"`, `"provider_mismatch"`, `"mode_not_implemented"`, `"folder_resolution_failed"`, `"provider_not_implemented"`\]
 
 Allowed reasons the QC adapter may refuse to produce a dry-run report.
+
+`provider_not_implemented` (Issue #1374) is appended at the end so the
+ordinal positions of prior codes stay byte-stable for callers that pin
+to a known index. The code is emitted by the dry-run-only stub adapter
+for non-ALM providers that have no real implementation yet.
 
 ***
 
@@ -11621,6 +11802,29 @@ without contract churn.
 
 Allowed mapping-profile validation issue codes (Issue #1368). Tracks the
 `ValidationIssue[]` style used elsewhere in test-intelligence.
+
+***
+
+### ALLOWED\_QC\_PROVIDER\_OPERATIONS
+
+> `const` **ALLOWED\_QC\_PROVIDER\_OPERATIONS**: readonly \[`"validate_profile"`, `"resolve_target_folder"`, `"dry_run"`, `"export_only"`, `"api_transfer"`, `"register_custom"`\]
+
+Allowed QC provider operations (Issue #1374).
+
+Each builtin provider descriptor advertises which of these operations its
+adapter implements. The registry uses the matrix to surface "what does
+this provider support" without coupling to a concrete adapter:
+
+  - `validate_profile` — pure structural validator runs against the
+    supplied mapping profile.
+  - `resolve_target_folder` — adapter knows how to validate a target
+    folder path against its provider (read-only resolver).
+  - `dry_run` — adapter can produce a `DryRunReportArtifact` (potentially
+    a fail-closed stub).
+  - `export_only` — adapter can emit export-only artifacts.
+  - `api_transfer` — adapter can perform controlled API writes.
+  - `register_custom` — caller may register a custom adapter under this
+    provider id (only true for the reserved `custom` slot).
 
 ***
 
@@ -11891,7 +12095,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.10.0"`
+> `const` **CONTRACT\_VERSION**: `"4.11.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
