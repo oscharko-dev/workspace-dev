@@ -33,6 +33,7 @@ import {
   createPrivateKey,
   createPublicKey,
   generateKeyPairSync,
+  randomUUID,
   sign as cryptoSign,
   verify as cryptoVerify,
   type KeyObject,
@@ -58,6 +59,7 @@ import {
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   WAVE1_POC_SIGNATURES_DIRECTORY,
   type Wave1PocAttestationBundle,
+  type Wave1PocAttestationCertificateChainMaterial,
   type Wave1PocAttestationDsseEnvelope,
   type Wave1PocAttestationPredicate,
   type Wave1PocAttestationPublicKeyMaterial,
@@ -67,6 +69,7 @@ import {
   type Wave1PocAttestationSubject,
   type Wave1PocAttestationSummary,
   type Wave1PocAttestationVerificationFailure,
+  type Wave1PocAttestationVerificationMaterial,
   type Wave1PocAttestationVerificationResult,
   type Wave1PocEvidenceManifest,
 } from "../contracts/index.js";
@@ -316,8 +319,14 @@ export const buildUnsignedWave1PocAttestationEnvelope = (
 export interface Wave1PocAttestationSigner {
   /** Stable signer identity, used for `keyid` and audit-timeline output. */
   readonly signerReference: string;
-  /** Public-key material exposed to verifiers. */
-  readonly publicKeyMaterial: Wave1PocAttestationPublicKeyMaterial;
+  /**
+   * Verification material exposed to verifiers. Discriminated:
+   *   - `{ publicKey }` — key-bound signing (the air-gapped default).
+   *   - `{ x509CertificateChain }` — Sigstore keyless flow (the leaf
+   *     certificate's subject public key is used to verify the
+   *     signature; operator pins their trust root separately).
+   */
+  readonly verificationMaterial: Wave1PocAttestationVerificationMaterial;
   /** Sign the PAE-encoded payload. */
   signPreAuthenticatedBytes(
     paeBytes: Uint8Array,
@@ -370,6 +379,107 @@ const ecdsaPrivateKeyFromPem = (privateKeyPem: string): KeyObject => {
     );
   }
   return key;
+};
+
+const PEM_CERT_BLOCK_PATTERN =
+  /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g;
+const PEM_LEAF_CERT_PATTERN =
+  /^[\s]*-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----[\s\S]*$/;
+
+/**
+ * Extract the leaf certificate's subject public key (as PEM SPKI) from
+ * a PEM-encoded certificate chain. The chain may include zero or more
+ * intermediate / root certificates; only the leaf (first) is used to
+ * derive the verification key. The full-chain trust validation (Fulcio
+ * → operator-pinned root) is OUT OF SCOPE for this module — operators
+ * who need it pin a trust root and run that check before invoking the
+ * verifier.
+ */
+const subjectPublicKeyFromCertificateChain = (
+  certificateChainPem: string,
+): { ok: true; publicKeyPem: string } | { ok: false; reason: string } => {
+  if (!PEM_LEAF_CERT_PATTERN.test(certificateChainPem)) {
+    return {
+      ok: false,
+      reason:
+        "certificateChainPem must contain at least one PEM CERTIFICATE block",
+    };
+  }
+  const matches = certificateChainPem.match(PEM_CERT_BLOCK_PATTERN) ?? [];
+  if (matches.length === 0) {
+    return {
+      ok: false,
+      reason: "no PEM CERTIFICATE blocks parsed",
+    };
+  }
+  const leafPem = matches[0] as string;
+  let publicKey: KeyObject;
+  try {
+    const cert = createPublicKey({ key: leafPem, format: "pem" });
+    publicKey = cert;
+  } catch (err) {
+    return {
+      ok: false,
+      reason: `leaf certificate is not a valid public-key carrier: ${(err as Error).message}`,
+    };
+  }
+  if (publicKey.asymmetricKeyType !== "ec") {
+    return {
+      ok: false,
+      reason: "leaf certificate public key must be ECDSA (P-256)",
+    };
+  }
+  const details = publicKey.asymmetricKeyDetails;
+  if (
+    details === undefined ||
+    details.namedCurve === undefined ||
+    details.namedCurve !== "prime256v1"
+  ) {
+    return {
+      ok: false,
+      reason:
+        "leaf certificate public key must use the prime256v1 (P-256) curve",
+    };
+  }
+  return {
+    ok: true,
+    publicKeyPem: publicKey
+      .export({ format: "pem", type: "spki" })
+      .toString()
+      .trim(),
+  };
+};
+
+const derivePublicKeyFromBundleMaterial = (
+  material: Wave1PocAttestationVerificationMaterial,
+):
+  | { ok: true; material: Wave1PocAttestationPublicKeyMaterial }
+  | { ok: false; failure: Wave1PocAttestationVerificationFailure } => {
+  if ("publicKey" in material) {
+    return { ok: true, material: material.publicKey };
+  }
+  const chain = material.x509CertificateChain;
+  const extracted = subjectPublicKeyFromCertificateChain(
+    chain.certificateChainPem,
+  );
+  if (!extracted.ok) {
+    return {
+      ok: false,
+      failure: {
+        code: "bundle_public_key_missing",
+        reference: chain.hint,
+        message: `bundle x509CertificateChain is invalid: ${extracted.reason}`,
+      },
+    };
+  }
+  return {
+    ok: true,
+    material: {
+      hint: chain.hint,
+      publicKeyPem: extracted.publicKeyPem,
+      algorithm: chain.algorithm,
+    },
+  };
 };
 
 export interface CreateKeyBoundSigstoreSignerInput {
@@ -443,7 +553,7 @@ export const createKeyBoundSigstoreSigner = (
   };
   return {
     signerReference: input.signerReference,
-    publicKeyMaterial,
+    verificationMaterial: { publicKey: publicKeyMaterial },
     signPreAuthenticatedBytes: async (paeBytes) => {
       const signature = cryptoSign("sha256", paeBytes, privateKey);
       return {
@@ -483,6 +593,114 @@ export const generateWave1PocAttestationKeyPair = (): {
       .toString()
       .trim(),
   };
+};
+
+/**
+ * Operator-supplied callback that produces a Sigstore keyless signature
+ * over the DSSE PAE bytes. The implementation is the integration point
+ * for Fulcio/Rekor: typically the operator obtains an OIDC token,
+ * negotiates an ephemeral keypair, sends the public key to Fulcio for
+ * a leaf certificate, signs the PAE bytes with the ephemeral private
+ * key, and submits the signed envelope to Rekor for transparency
+ * logging.
+ *
+ * The repo deliberately does NOT vendor that flow — it requires
+ * network access and operator-managed trust roots that fall outside
+ * the air-gap baseline. Operators who need keyless wire this callback
+ * to their preferred Sigstore client (e.g., `sigstore-js`, `cosign`).
+ */
+export type Wave1PocKeylessSignerCallback = (input: {
+  paeBytes: Uint8Array;
+}) => Promise<{
+  signature: Uint8Array;
+  /** PEM-encoded leaf certificate + intermediates (chain order: leaf → root). */
+  certificateChainPem: string;
+  /** Optional Rekor inclusion proof reference (log index). */
+  rekorLogIndex?: number;
+}>;
+
+export interface CreateKeylessSigstoreSignerInput {
+  /** Stable, non-secret signer reference (e.g., the OIDC subject). */
+  signerReference: string;
+  /** Operator-supplied function producing signature + cert chain. */
+  callback: Wave1PocKeylessSignerCallback;
+}
+
+/**
+ * Build a Sigstore-keyless-flavoured signer that delegates the
+ * certificate-issuance + signing concerns to an operator-supplied
+ * `callback`. The repo does not invoke any network code itself; the
+ * callback is the only place network egress can occur.
+ *
+ * The returned signer presents an `x509CertificateChain` verification
+ * material on the bundle, so verifiers extract the leaf certificate's
+ * subject public key automatically. Trust-root validation (chain → an
+ * operator-pinned root) is OUT OF SCOPE here — operators run that
+ * validation before invoking `verifyWave1PocAttestation`.
+ *
+ * The scaffold is fully exercised by tests via a stub callback so the
+ * signer/verifier round-trip is validated end-to-end without network.
+ */
+export const createKeylessSigstoreSignerScaffold = (
+  input: CreateKeylessSigstoreSignerInput,
+): Wave1PocAttestationSigner => {
+  if (!isPositiveLengthString(input.signerReference)) {
+    throw new RangeError(
+      "createKeylessSigstoreSignerScaffold: signerReference must be a non-empty string",
+    );
+  }
+  if (!KEYID_PATTERN.test(input.signerReference)) {
+    throw new RangeError(
+      "createKeylessSigstoreSignerScaffold: signerReference contains disallowed characters",
+    );
+  }
+  // The verification material on the signer is opaque until the first
+  // signature is produced — Fulcio mints the cert at signing time.
+  // We hold a placeholder that the bundle build path replaces after
+  // `signPreAuthenticatedBytes` resolves.
+  let materializedChain:
+    | Wave1PocAttestationCertificateChainMaterial
+    | undefined;
+  const signer: Wave1PocAttestationSigner = {
+    signerReference: input.signerReference,
+    get verificationMaterial(): Wave1PocAttestationVerificationMaterial {
+      if (materializedChain === undefined) {
+        throw new Error(
+          "createKeylessSigstoreSignerScaffold: verificationMaterial accessed before signPreAuthenticatedBytes resolved",
+        );
+      }
+      return { x509CertificateChain: materializedChain };
+    },
+    signPreAuthenticatedBytes: async (paeBytes) => {
+      const result = await input.callback({ paeBytes });
+      if (!(result.signature instanceof Uint8Array)) {
+        throw new TypeError(
+          "createKeylessSigstoreSignerScaffold: callback must return a Uint8Array signature",
+        );
+      }
+      const extracted = subjectPublicKeyFromCertificateChain(
+        result.certificateChainPem,
+      );
+      if (!extracted.ok) {
+        throw new Error(
+          `createKeylessSigstoreSignerScaffold: callback returned invalid certificateChainPem (${extracted.reason})`,
+        );
+      }
+      materializedChain = {
+        hint: input.signerReference,
+        certificateChainPem: result.certificateChainPem.trim(),
+        algorithm: "ecdsa-p256-sha256",
+        ...(result.rekorLogIndex !== undefined
+          ? { rekorLogIndex: result.rekorLogIndex }
+          : {}),
+      };
+      return {
+        keyid: input.signerReference,
+        sig: bytesToBase64(result.signature),
+      };
+    },
+  };
+  return signer;
 };
 
 export interface BuildSignedWave1PocAttestationInput {
@@ -526,9 +744,7 @@ export const buildSignedWave1PocAttestation = async (
   const bundle: Wave1PocAttestationBundle = {
     mediaType: WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE,
     dsseEnvelope: envelope,
-    verificationMaterial: {
-      publicKey: input.signer.publicKeyMaterial,
-    },
+    verificationMaterial: input.signer.verificationMaterial,
   };
   return { envelope, bundle };
 };
@@ -560,7 +776,10 @@ const writeAtomic = async (
   contents: string,
 ): Promise<{ path: string; bytes: Uint8Array }> => {
   const path = join(destinationDir, filename);
-  const tmp = `${path}.${process.pid}.${Date.now()}.tmp`;
+  // Use randomUUID() instead of Date.now() so concurrent same-pid same-ms
+  // writers (e.g., parallel runs in a test runner) cannot collide on
+  // the temp filename. Mirrors the FinOps writer idiom in #1371.
+  const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, contents, "utf8");
   await rename(tmp, path);
   return { path, bytes: utf8(contents) };
@@ -586,8 +805,9 @@ export interface PersistedWave1PocAttestation {
  * Persist the DSSE envelope under `<runDir>/evidence/attestations/...`
  * and (when supplied) the Sigstore bundle under
  * `<runDir>/evidence/signatures/...`. Writes are atomic via the
- * `${pid}.${ts}.tmp` rename idiom so concurrent runs do not corrupt
- * each other's artifacts.
+ * `${pid}.${randomUUID()}.tmp` rename idiom so concurrent runs (even
+ * within the same process / millisecond) cannot corrupt each other's
+ * artifacts.
  */
 export const persistWave1PocAttestation = async (
   input: PersistWave1PocAttestationInput,
@@ -1161,7 +1381,14 @@ export const verifyWave1PocAttestation = async (
         });
       }
       if (publicKey === undefined) {
-        publicKey = input.bundle.verificationMaterial.publicKey;
+        const derived = derivePublicKeyFromBundleMaterial(
+          input.bundle.verificationMaterial,
+        );
+        if (derived.ok) {
+          publicKey = derived.material;
+        } else {
+          failures.push(derived.failure);
+        }
       }
     }
     if (publicKey === undefined) {

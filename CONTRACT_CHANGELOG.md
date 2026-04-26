@@ -33,6 +33,16 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ## [3.31.0] - 2026-04-26
 
+### Added (Issue #1377 follow-up — quality-gate)
+
+- New exported type `Wave1PocAttestationCertificateChainMaterial` (`hint`, `certificateChainPem`, `algorithm: "ecdsa-p256-sha256"`, optional `rekorLogIndex`) and discriminated union `Wave1PocAttestationVerificationMaterial = { publicKey } | { x509CertificateChain }` so signed bundles can carry either an in-line public key (key-bound flow) or an X.509 certificate chain (Sigstore keyless flow). Existing key-bound bundles continue to round-trip unchanged.
+- `Wave1PocAttestationBundle.verificationMaterial` widens from `{ publicKey: ... }` to `Wave1PocAttestationVerificationMaterial`. The verifier extracts the leaf certificate's subject public key automatically when keyless material is present; trust-root validation (chain → operator-pinned root) remains operator-managed and is OUT OF SCOPE for this module.
+- `Wave1PocAttestationSigner.publicKeyMaterial` is renamed to `verificationMaterial` (same union type) so a single field carries either form. Built-in `createKeyBoundSigstoreSigner` now exposes `verificationMaterial: { publicKey: ... }`.
+- New module exports: `createKeylessSigstoreSignerScaffold`, `Wave1PocKeylessSignerCallback`, `CreateKeylessSigstoreSignerInput` — operator-pluggable scaffold for Sigstore keyless signing. The repo never invokes Fulcio / Rekor itself; the operator-supplied callback is the only place network egress can occur. The scaffold is exercised end-to-end by tests via a self-signed leaf cert generated entirely in `node:crypto`.
+- Atomic-write idiom in `persistWave1PocAttestation` strengthened to `${path}.${pid}.${randomUUID()}.tmp` so concurrent same-pid same-millisecond writers cannot collide on the temp filename. Mirrors the FinOps writer idiom in #1371.
+- `evidence-manifest.ts` filename validator (`validateArtifactPath`) now returns a discriminated `{ ok, reason }` so the builder can throw a specific diagnostic (`control_characters`, `path_traversal`, `absolute`, `backslash`, `segment_exceeds_byte_length`, `exceeds_total_byte_length`, `empty`) instead of a generic message.
+- 14 new tests across `evidence-attestation.keyless.test.ts` (5), `evidence-attestation.fuzz.test.ts` (8), `evidence-attestation.concurrency.test.ts` (1). The 4 stale filename-injection tests in `evidence-tampering.test.ts` are repaired (test 10's assertion is updated to reflect the post-#1371 multi-segment path policy).
+
 ### Added (Issue #1377)
 
 - `WAVE1_POC_ATTESTATION_SCHEMA_VERSION` (`"1.0.0"`) — schema version stamp for the in-toto v1 attestation produced per job by the Wave 1 POC harness.

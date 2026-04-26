@@ -464,25 +464,29 @@ test("evidence-tampering: filename with directory traversal (../) is refused", (
           },
         ]),
       ),
-    /must be a basename/,
+    /path traversal/,
     "directory traversal filename must be refused",
   );
 });
 
-test("evidence-tampering: filename with nested path separator is refused", () => {
+test("evidence-tampering: absolute filename is refused", () => {
+  // Multi-segment relative paths are allowed since #1371 (FinOps writes
+  // `finops/budget-report.json`); the security boundary is "must be
+  // relative + no traversal", not "must be a basename". Absolute paths
+  // remain refused.
   assert.throws(
     () =>
       buildWave1PocEvidenceManifest(
         baseInput([
           {
-            filename: "subdir/artifact.json",
-            bytes: utf8("x"),
+            filename: "/etc/passwd",
+            bytes: utf8("root:x:0:0"),
             category: "validation",
           },
         ]),
       ),
-    /must be a basename/,
-    "path-separator in filename must be refused",
+    /must be a relative path/,
+    "absolute filename must be refused",
   );
 });
 
