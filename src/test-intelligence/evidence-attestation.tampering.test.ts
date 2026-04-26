@@ -137,6 +137,68 @@ test("attestation-tampering: subject digest mismatch when artifact is mutated", 
   );
 });
 
+test("attestation-tampering: unsafe artifact filenames fail closed with escaped diagnostics", async (t) => {
+  const fx = await setupScenario();
+  t.after(() => fx.cleanup());
+  const statement = buildWave1PocAttestationStatement({
+    manifest: fx.manifest,
+    manifestSha256: fx.manifestSha256,
+    signingMode: "unsigned",
+  });
+  for (const { unsafeFilename, escapedReference } of [
+    {
+      unsafeFilename: "validation\nreport.json",
+      escapedReference: '"validation\\nreport.json"',
+    },
+    {
+      unsafeFilename: "validation\u007freport.json",
+      escapedReference: '"validation\\u007freport.json"',
+    },
+  ]) {
+    const tamperedManifest = {
+      ...fx.manifest,
+      artifacts: fx.manifest.artifacts.map((artifact) =>
+        artifact.filename === "validation-report.json"
+          ? { ...artifact, filename: unsafeFilename }
+          : artifact,
+      ),
+    } as Wave1PocEvidenceManifest;
+    const tamperedStatement = {
+      ...statement,
+      subject: statement.subject.map((subject) =>
+        subject.name === "validation-report.json"
+          ? { ...subject, name: unsafeFilename }
+          : subject,
+      ),
+    };
+    const envelope = buildUnsignedWave1PocAttestationEnvelope(tamperedStatement);
+
+    const result = await verifyWave1PocAttestation({
+      envelope,
+      manifest: tamperedManifest,
+      manifestSha256: fx.manifestSha256,
+      artifactsDir: fx.runDir,
+      expectedSigningMode: "unsigned",
+    });
+
+    assert.equal(result.ok, false);
+    const failures = result.failures.filter(
+      (failure) =>
+        failure.code === "statement_predicate_invalid" &&
+        failure.reference === escapedReference,
+    );
+    assert.ok(
+      failures.length >= 1,
+      "unsafe subject or manifest artifact filename must fail closed",
+    );
+    for (const failure of failures) {
+      assert.equal(failure.message.includes(escapedReference), true);
+      assert.equal(failure.message.includes(unsafeFilename), false);
+      assert.equal(failure.reference.includes(unsafeFilename), false);
+    }
+  }
+});
+
 test("attestation-tampering: payload byte mutation invalidates signature (sigstore)", async (t) => {
   const fx = await setupScenario();
   t.after(() => fx.cleanup());

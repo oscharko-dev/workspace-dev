@@ -29,7 +29,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, posix, relative, resolve, win32 } from "node:path";
 
 import {
   CONTRACT_VERSION,
@@ -66,6 +66,7 @@ const HIGH_SURROGATE_START = 0xd800;
 const HIGH_SURROGATE_END = 0xdbff;
 const LOW_SURROGATE_START = 0xdc00;
 const LOW_SURROGATE_END = 0xdfff;
+const WINDOWS_DRIVE_DESIGNATOR = /^[A-Za-z]:/;
 
 const hasControlCharacter = (value: string): boolean => {
   for (let i = 0; i < value.length; i += 1) {
@@ -106,7 +107,7 @@ const hasLoneSurrogate = (value: string): boolean => {
  * "invalid filename" string. The boolean form `isSafeArtifactPath` is
  * preserved for the verifier hot path where the reason is irrelevant.
  */
-const validateArtifactPath = (
+export const validateWave1PocEvidenceArtifactPath = (
   value: string,
 ):
   | { ok: true }
@@ -123,7 +124,13 @@ const validateArtifactPath = (
         | "segment_exceeds_byte_length";
     } => {
   if (value.length === 0) return { ok: false, reason: "empty" };
-  if (isAbsolute(value)) return { ok: false, reason: "absolute" };
+  if (
+    posix.isAbsolute(value) ||
+    win32.isAbsolute(value) ||
+    WINDOWS_DRIVE_DESIGNATOR.test(value)
+  ) {
+    return { ok: false, reason: "absolute" };
+  }
   if (value.includes("\\")) return { ok: false, reason: "backslash" };
   if (hasControlCharacter(value)) {
     return { ok: false, reason: "control_characters" };
@@ -147,7 +154,10 @@ const validateArtifactPath = (
 };
 
 const REASON_DIAGNOSTIC: Record<
-  Exclude<ReturnType<typeof validateArtifactPath>, { ok: true }>["reason"],
+  Exclude<
+    ReturnType<typeof validateWave1PocEvidenceArtifactPath>,
+    { ok: true }
+  >["reason"],
   string
 > = {
   empty: "filename must not be empty",
@@ -162,19 +172,32 @@ const REASON_DIAGNOSTIC: Record<
 };
 
 const isSafeArtifactPath = (value: string): boolean =>
-  validateArtifactPath(value).ok;
+  validateWave1PocEvidenceArtifactPath(value).ok;
 
-const resolveArtifactPath = (rootDir: string, filename: string): string => {
-  const check = validateArtifactPath(filename);
+export const formatWave1PocEvidenceArtifactPathForDiagnostic = (
+  value: string,
+): string => JSON.stringify(value).replaceAll("\u007f", "\\u007f");
+
+export const resolveWave1PocEvidenceArtifactPath = (
+  rootDir: string,
+  filename: string,
+): string => {
+  const check = validateWave1PocEvidenceArtifactPath(filename);
   if (!check.ok) {
     throw new RangeError(
-      `invalid artifact filename "${filename}": ${REASON_DIAGNOSTIC[check.reason]}`,
+      `invalid artifact filename ${formatWave1PocEvidenceArtifactPathForDiagnostic(filename)}: ${REASON_DIAGNOSTIC[check.reason]}`,
     );
   }
   const root = resolve(rootDir);
   const resolved = resolve(root, filename);
-  if (resolved !== root && !resolved.startsWith(`${root}/`)) {
-    throw new RangeError(`artifact filename escapes run dir "${filename}"`);
+  const relativePath = relative(root, resolved);
+  if (
+    relativePath !== "" &&
+    (relativePath.startsWith("..") || isAbsolute(relativePath))
+  ) {
+    throw new RangeError(
+      `artifact filename escapes run dir ${formatWave1PocEvidenceArtifactPathForDiagnostic(filename)}`,
+    );
   }
   return resolved;
 };
@@ -288,10 +311,10 @@ export const buildWave1PocEvidenceManifest = (
   const seen = new Map<string, Wave1PocEvidenceArtifact>();
   for (const record of input.artifacts) {
     const filename = record.filename;
-    const check = validateArtifactPath(filename);
+    const check = validateWave1PocEvidenceArtifactPath(filename);
     if (!check.ok) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: invalid artifact filename "${record.filename}" — ${REASON_DIAGNOSTIC[check.reason]}`,
+        `buildWave1PocEvidenceManifest: invalid artifact filename ${formatWave1PocEvidenceArtifactPathForDiagnostic(record.filename)} — ${REASON_DIAGNOSTIC[check.reason]}`,
       );
     }
     const bytes = toBytes(record.bytes);
@@ -644,7 +667,10 @@ export const verifyWave1PocEvidenceManifest = async (
     : [];
 
   for (const artifact of artifacts) {
-    const path = resolveArtifactPath(input.artifactsDir, artifact.filename);
+    const path = resolveWave1PocEvidenceArtifactPath(
+      input.artifactsDir,
+      artifact.filename,
+    );
     let bytes: Buffer;
     try {
       bytes = await readFile(path);

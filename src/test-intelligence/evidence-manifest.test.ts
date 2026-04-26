@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -142,6 +142,34 @@ test("evidence-manifest: accepts safe relative artifact paths", () => {
   assert.equal(manifest.artifacts[0]?.filename, "finops/budget-report.json");
 });
 
+test("evidence-manifest: verifies safe nested artifact paths on disk", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  try {
+    await mkdir(join(dir, "finops"), { recursive: true });
+    await writeFile(join(dir, "finops", "budget-report.json"), "x");
+    const manifest = buildWave1PocEvidenceManifest(
+      baseInput([
+        {
+          filename: "finops/budget-report.json",
+          bytes: utf8("x"),
+          category: "finops",
+        },
+      ]),
+    );
+    const result = await verifyWave1PocEvidenceManifest({
+      manifest,
+      artifactsDir: dir,
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.missing, []);
+    assert.deepEqual(result.mutated, []);
+    assert.deepEqual(result.resized, []);
+    assert.deepEqual(result.unexpected, []);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
 test("evidence-manifest: refuses unsafe relative filenames", () => {
   assert.throws(
     () =>
@@ -155,6 +183,84 @@ test("evidence-manifest: refuses unsafe relative filenames", () => {
         ]),
       ),
     /path traversal/,
+  );
+});
+
+test("evidence-manifest: refuses Windows-shaped artifact paths on every host", () => {
+  for (const filename of [
+    "C:/Windows/System32/config.json",
+    "C:relative.json",
+    "\\\\server\\share\\artifact.json",
+  ]) {
+    assert.throws(
+      () =>
+        buildWave1PocEvidenceManifest(
+          baseInput([
+            {
+              filename,
+              bytes: utf8("x"),
+              category: "validation",
+            },
+          ]),
+        ),
+      /relative path, not absolute/,
+      `${filename} must be rejected deterministically`,
+    );
+  }
+});
+
+test("evidence-manifest: invalid filename diagnostics escape unsafe code units", () => {
+  let newlineError: Error | undefined;
+  try {
+    buildWave1PocEvidenceManifest(
+      baseInput([
+        {
+          filename: "line\nbreak.json",
+          bytes: utf8("x"),
+          category: "validation",
+        },
+      ]),
+    );
+  } catch (err) {
+    newlineError = err as Error;
+  }
+  assert.ok(newlineError);
+  assert.match(
+    newlineError.message,
+    /"line\\nbreak\.json".*control characters/,
+  );
+  assert.equal(newlineError.message.includes("line\nbreak"), false);
+
+  let delError: Error | undefined;
+  try {
+    buildWave1PocEvidenceManifest(
+      baseInput([
+        {
+          filename: "del\u007f.json",
+          bytes: utf8("x"),
+          category: "validation",
+        },
+      ]),
+    );
+  } catch (err) {
+    delError = err as Error;
+  }
+  assert.ok(delError);
+  assert.match(delError.message, /"del\\u007f\.json".*control characters/);
+  assert.equal(delError.message.includes("\u007f"), false);
+
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest(
+        baseInput([
+          {
+            filename: `bad${String.fromCharCode(0xd800)}name.json`,
+            bytes: utf8("x"),
+            category: "validation",
+          },
+        ]),
+      ),
+    /"bad\\ud800name\.json".*lone UTF-16 surrogate/,
   );
 });
 
