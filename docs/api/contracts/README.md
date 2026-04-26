@@ -1479,7 +1479,7 @@ Sum of input tokens reported by the gateway across all successful attempts.
 
 ##### lastErrorClass?
 
-> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"`
+> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"`
 
 Last error class observed (failure path) — `undefined` if no failure.
 
@@ -2528,6 +2528,22 @@ is held only for the duration of that request.
 
 > **gatewayRelease**: `string`
 
+##### maxResponseBytes?
+
+> `optional` **maxResponseBytes?**: `number`
+
+Hard upper bound on the gateway response body, in bytes. The transport
+counts decoded bytes during read and aborts the stream the moment the
+running total exceeds this cap; the failure surfaces as
+`errorClass: "response_too_large"` with `retryable: false` (Issue #1414).
+The cap is enforced both via the `Content-Length` header (pre-read
+short-circuit) and via streaming byte accounting (so a missing or
+mendacious header still cannot exhaust memory). Defaults to
+`8 * 1024 * 1024` (8 MiB) when omitted; positive integer values up to
+`Number.MAX_SAFE_INTEGER` are accepted, anything else throws at
+client construction. The mock gateway has no transport and ignores
+this field.
+
 ##### maxRetries
 
 > **maxRetries**: `number`
@@ -2562,7 +2578,7 @@ Failure outcome with a redacted message and an explicit retryable flag.
 
 ##### errorClass
 
-> **errorClass**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"`
+> **errorClass**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"`
 
 ##### message
 
@@ -4317,7 +4333,7 @@ Wall-clock duration of the attempt in milliseconds.
 
 ##### errorClass?
 
-> `optional` **errorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"`
+> `optional` **errorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"` \| `"response_too_large"`
 
 Error class when the attempt failed. Absent on a success.
 
@@ -10270,7 +10286,7 @@ Wave 1; the array is the source of truth so future modes (`openai_responses`,
 
 ### ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES
 
-> `const` **ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES**: readonly \[`"refusal"`, `"schema_invalid"`, `"incomplete"`, `"timeout"`, `"rate_limited"`, `"transport"`, `"image_payload_rejected"`, `"input_budget_exceeded"`\]
+> `const` **ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES**: readonly \[`"refusal"`, `"schema_invalid"`, `"incomplete"`, `"timeout"`, `"rate_limited"`, `"transport"`, `"image_payload_rejected"`, `"input_budget_exceeded"`, `"response_too_large"`\]
 
 Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
 schema-invalid responses, and image-payload guard rejections are NOT
@@ -10518,7 +10534,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.6.0"`
+> `const` **CONTRACT\_VERSION**: `"4.7.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -10739,7 +10755,7 @@ Schema version for the persisted `llm-capabilities.json` evidence artifact.
 
 > `const` **LLM\_GATEWAY\_CONTRACT\_VERSION**: `"1.0.0"`
 
-Contract version for the role-separated LLM gateway client surface (Issue #1363).
+Version stamp for persisted role-separated LLM gateway evidence artifacts.
 
 ***
 

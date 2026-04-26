@@ -655,6 +655,7 @@ const parseOpenAiChatResponse = async ({
 }): Promise<LlmGenerationResult> => {
   const status = response.status;
   if (status === 429) {
+    await cancelResponseBody(response);
     return {
       outcome: "error",
       errorClass: "rate_limited",
@@ -664,6 +665,7 @@ const parseOpenAiChatResponse = async ({
     };
   }
   if (status >= 500 && status <= 599) {
+    await cancelResponseBody(response);
     return {
       outcome: "error",
       errorClass: "transport",
@@ -673,6 +675,7 @@ const parseOpenAiChatResponse = async ({
     };
   }
   if (status === 408) {
+    await cancelResponseBody(response);
     return {
       outcome: "error",
       errorClass: "timeout",
@@ -937,6 +940,7 @@ const readResponseTextWithLimit = async (
   if (contentLength !== null) {
     const parsedLength = Number.parseInt(contentLength, 10);
     if (Number.isFinite(parsedLength) && parsedLength > maxResponseBytes) {
+      await cancelResponseBody(response);
       return { ok: false };
     }
   }
@@ -965,6 +969,14 @@ const readResponseTextWithLimit = async (
   }
   text += decoder.decode();
   return { ok: true, text };
+};
+
+const cancelResponseBody = async (response: Response): Promise<void> => {
+  try {
+    await response.body?.cancel();
+  } catch {
+    // Best-effort resource release only; preserve the primary gateway result.
+  }
 };
 
 const validateJsonSchemaSubset = (

@@ -149,7 +149,7 @@ export const REDACTION_POLICY_VERSION = "1.0.0" as const;
 export const TEST_INTELLIGENCE_ENV =
   "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE" as const;
 
-/** Contract version for the role-separated LLM gateway client surface (Issue #1363). */
+/** Version stamp for persisted role-separated LLM gateway evidence artifacts. */
 export const LLM_GATEWAY_CONTRACT_VERSION = "1.0.0" as const;
 
 /** Schema version for the persisted `llm-capabilities.json` evidence artifact. */
