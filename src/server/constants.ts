@@ -1,4 +1,7 @@
-import { TEST_INTELLIGENCE_ENV } from "../contracts/index.js";
+import {
+  TEST_INTELLIGENCE_ENV,
+  TEST_INTELLIGENCE_MULTISOURCE_ENV,
+} from "../contracts/index.js";
 
 export const DEFAULT_HOST = "127.0.0.1";
 export const DEFAULT_PORT = 1983;
@@ -54,6 +57,31 @@ export function resolveTestIntelligenceEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
   const raw = env[TEST_INTELLIGENCE_ENV];
+  if (raw === undefined) {
+    return false;
+  }
+  const normalized = raw.trim().toLowerCase();
+  return (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "yes" ||
+    normalized === "on"
+  );
+}
+
+/**
+ * Environment-variable feature gate for the Wave 4 multi-source ingestion
+ * surface (Issue #1431). Returns `true` only when
+ * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE` is set to a recognised
+ * truthy value. The gate is strictly nested behind
+ * {@link resolveTestIntelligenceEnabled}: callers MUST verify the parent
+ * gate before consulting this resolver. The `multiSourceEnabled` startup
+ * option provides the third nested predicate.
+ */
+export function resolveTestIntelligenceMultiSourceEnvEnabled(
+  env: NodeJS.ProcessEnv = process.env,
+): boolean {
+  const raw = env[TEST_INTELLIGENCE_MULTISOURCE_ENV];
   if (raw === undefined) {
     return false;
   }

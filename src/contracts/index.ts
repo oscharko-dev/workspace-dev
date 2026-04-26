@@ -145,7 +145,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.0.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.1.0" as const;
 
 /** Schema version for generated test case payloads. */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
@@ -162,6 +162,23 @@ export const REDACTION_POLICY_VERSION = "1.0.0" as const;
 /** Environment variable name that gates test-intelligence features at startup. */
 export const TEST_INTELLIGENCE_ENV =
   "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE" as const;
+
+/**
+ * Environment variable name for the Wave 4 multi-source ingestion gate
+ * (Issue #1431). Strictly nested behind {@link TEST_INTELLIGENCE_ENV}; the
+ * resolver requires both gates _and_ the parent startup option to be enabled
+ * before a job may compose more than one test-design source.
+ */
+export const TEST_INTELLIGENCE_MULTISOURCE_ENV =
+  "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE" as const;
+
+/**
+ * Schema version for the {@link MultiSourceTestIntentEnvelope} aggregate
+ * (Issue #1431). Bumped on any breaking change to the envelope shape, the
+ * source-ref shape, or the aggregate-hash construction.
+ */
+export const MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION =
+  "1.0.0" as const;
 
 /** Version stamp for persisted role-separated LLM gateway evidence artifacts. */
 export const LLM_GATEWAY_CONTRACT_VERSION = "1.0.0" as const;
@@ -1268,6 +1285,17 @@ export interface WorkspaceStartOptions {
     /** Whether test-intelligence features may be invoked at runtime. Default: false. */
     enabled: boolean;
     /**
+     * Whether the Wave 4 multi-source ingestion gate (Issue #1431) is
+     * permitted at runtime. Default: false. Strictly nested inside
+     * {@link enabled}: even when this flag is true, multi-source
+     * ingestion still fails closed unless `enabled === true` _and_ the
+     * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` /
+     * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE` environment
+     * gates are both set. Operators may flip this off at startup to
+     * halt multi-source ingestion without redeploying.
+     */
+    multiSourceEnabled?: boolean;
+    /**
      * Bearer token accepted by the Inspector test-intelligence review-gate
      * write routes (`POST /workspace/test-intelligence/review/...`). When
      * omitted or blank, review writes fail closed with `503` until the
@@ -1355,6 +1383,14 @@ export interface WorkspaceStatus {
    * UI uses this flag to gate the "Test Intelligence" navigation entry.
    */
   testIntelligenceEnabled?: boolean;
+  /**
+   * Whether the Wave 4 multi-source ingestion gate (Issue #1431) is
+   * reachable. True only when {@link testIntelligenceEnabled} is true,
+   * `WorkspaceStartOptions.testIntelligence.multiSourceEnabled` is true,
+   * and `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE=1` is set.
+   * Independent of mode-lock isolation, which is enforced per request.
+   */
+  testIntelligenceMultiSourceEnabled?: boolean;
 }
 
 /** Submission payload accepted by workspace-dev. */
@@ -2391,11 +2427,27 @@ export type PiiMatchLocation =
   | "validation_rule"
   | "navigation_target";
 
-/** Reference to the Figma node that produced an intent element. */
+/**
+ * Reference to the Figma node that produced an intent element.
+ *
+ * Wave 4 (Issue #1431) extends this trace with an optional array of
+ * contributing {@link TestIntentSourceRef} entries so a single trace may
+ * record multiple sources that agreed on (or conflicted over) a field.
+ * The legacy `nodeId` / `nodeName` / `nodePath` fields keep working for
+ * single-source Figma traces.
+ */
 export interface IntentTraceRef {
   nodeId?: string;
   nodeName?: string;
   nodePath?: string;
+  /**
+   * Contributing source references for this trace (Issue #1431).
+   * Optional — omitted for legacy single-source Figma jobs to keep
+   * artifacts byte-stable. When present, each entry MUST match an entry
+   * in the surrounding {@link MultiSourceTestIntentEnvelope.sources}
+   * array by `sourceId`.
+   */
+  sourceRefs?: TestIntentSourceRef[];
 }
 
 /** Ambiguity note attached to a detected element or PII indicator. */
@@ -2424,7 +2476,14 @@ export interface IntentRedaction {
   replacement: string;
 }
 
-/** Input field inferred from a screen. */
+/**
+ * Input field inferred from a screen.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array so the
+ * derivation pipeline can record every source that contributed to this
+ * field. The legacy singular `trace` and `provenance` fields keep
+ * working unchanged for single-source jobs.
+ */
 export interface DetectedField {
   id: string;
   screenId: string;
@@ -2435,9 +2494,16 @@ export interface DetectedField {
   type: string;
   defaultValue?: string;
   ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
 }
 
-/** Action/control inferred from a screen (e.g. Submit button). */
+/**
+ * Action/control inferred from a screen (e.g. Submit button).
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
 export interface DetectedAction {
   id: string;
   screenId: string;
@@ -2447,9 +2513,16 @@ export interface DetectedAction {
   label: string;
   kind: string;
   ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
 }
 
-/** Validation rule inferred from design hints. */
+/**
+ * Validation rule inferred from design hints.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
 export interface DetectedValidation {
   id: string;
   screenId: string;
@@ -2459,9 +2532,16 @@ export interface DetectedValidation {
   rule: string;
   targetFieldId?: string;
   ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
 }
 
-/** Navigation edge inferred from prototype links or equivalent. */
+/**
+ * Navigation edge inferred from prototype links or equivalent.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
 export interface DetectedNavigation {
   id: string;
   screenId: string;
@@ -2471,9 +2551,16 @@ export interface DetectedNavigation {
   targetScreenId: string;
   triggerElementId?: string;
   ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
 }
 
-/** Business-object cluster inferred across one or more fields. */
+/**
+ * Business-object cluster inferred across one or more fields.
+ *
+ * Wave 4 (Issue #1431) adds the optional `sourceRefs` array; see
+ * {@link DetectedField} for backward-compat semantics.
+ */
 export interface InferredBusinessObject {
   id: string;
   screenId: string;
@@ -2483,6 +2570,8 @@ export interface InferredBusinessObject {
   name: string;
   fieldIds: string[];
   ambiguity?: IntentAmbiguity;
+  /** Contributing sources (Issue #1431). Optional, additive. */
+  sourceRefs?: TestIntentSourceRef[];
 }
 
 /** Per-screen slice of the intent. */
@@ -2493,13 +2582,29 @@ export interface BusinessTestIntentScreen {
   trace: IntentTraceRef;
 }
 
-/** Metadata about the input that produced the IR. */
+/**
+ * Metadata about the input that produced the IR.
+ *
+ * Wave 4 (Issue #1431) generalises this single-source descriptor into a
+ * discriminated union of seven source kinds carried inside the
+ * {@link MultiSourceTestIntentEnvelope}. The legacy `source` field on
+ * {@link BusinessTestIntentIr} is kept additive for one minor cycle so
+ * single-source Figma jobs that have not opted into the multi-source gate
+ * keep producing bit-identical artifacts.
+ */
 export interface BusinessTestIntentIrSource {
   kind: "figma_local_json" | "figma_plugin" | "figma_rest" | "hybrid";
   contentHash: string;
 }
 
-/** Redacted, deterministic test-design IR for a job. */
+/**
+ * Redacted, deterministic test-design IR for a job.
+ *
+ * Wave 4 (Issue #1431) introduces an additive {@link sourceEnvelope} field
+ * carrying the multi-source aggregate. The legacy {@link source} singleton
+ * is preserved for backward-compat: single-source Figma jobs that have not
+ * opted into the multi-source gate keep emitting it as-is.
+ */
 export interface BusinessTestIntentIr {
   version: typeof BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION;
   source: BusinessTestIntentIrSource;
@@ -2514,6 +2619,275 @@ export interface BusinessTestIntentIr {
   openQuestions: string[];
   piiIndicators: PiiIndicator[];
   redactions: IntentRedaction[];
+  /**
+   * Aggregate envelope of contributing test-design sources (Issue #1431).
+   *
+   * Optional and additive: omitted for legacy single-source Figma jobs to
+   * preserve byte-stable artifacts and replay-cache hits. Populated only
+   * when both the parent {@link TEST_INTELLIGENCE_ENV} gate and the
+   * {@link TEST_INTELLIGENCE_MULTISOURCE_ENV} gate are enabled, and the
+   * parent test-intelligence startup option allows multi-source ingestion.
+   */
+  sourceEnvelope?: MultiSourceTestIntentEnvelope;
+}
+
+/**
+ * Source kinds recognised by the multi-source Test Intent ingestion
+ * pipeline (Issue #1431). The first three are existing Figma kinds; the
+ * remaining four are introduced by Wave 4 issues 4.B–4.E.
+ */
+export const ALLOWED_TEST_INTENT_SOURCE_KINDS = [
+  "figma_local_json",
+  "figma_plugin",
+  "figma_rest",
+  "jira_rest",
+  "jira_paste",
+  "custom_text",
+  "custom_structured",
+] as const;
+
+/** Discriminated source-kind alias derived from {@link ALLOWED_TEST_INTENT_SOURCE_KINDS}. */
+export type TestIntentSourceKind =
+  (typeof ALLOWED_TEST_INTENT_SOURCE_KINDS)[number];
+
+/**
+ * Primary source kinds — at least one of these must be present in any
+ * envelope. A custom-only envelope must fail validation with
+ * `primary_source_required` (Issue #1431, source-mix hardening addendum).
+ */
+export const PRIMARY_TEST_INTENT_SOURCE_KINDS = [
+  "figma_local_json",
+  "figma_plugin",
+  "figma_rest",
+  "jira_rest",
+  "jira_paste",
+] as const;
+
+/** Subset alias for primary source kinds. */
+export type PrimaryTestIntentSourceKind =
+  (typeof PRIMARY_TEST_INTENT_SOURCE_KINDS)[number];
+
+/**
+ * Supporting (non-primary) source kinds — may only appear alongside at
+ * least one primary source.
+ */
+export const SUPPORTING_TEST_INTENT_SOURCE_KINDS = [
+  "custom_text",
+  "custom_structured",
+] as const;
+
+/** Subset alias for supporting source kinds. */
+export type SupportingTestIntentSourceKind =
+  (typeof SUPPORTING_TEST_INTENT_SOURCE_KINDS)[number];
+
+/**
+ * Conflict-resolution policy discriminant carried on every envelope.
+ *
+ * - `priority` — apply {@link MultiSourceTestIntentEnvelope.priorityOrder}
+ *   when sources disagree on a field. The aggregate hash MUST encode the
+ *   priority order so swapping it forces a cache miss.
+ * - `reviewer_decides` — surface conflicts to the reviewer and keep both
+ *   variants until the reviewer chooses one.
+ * - `keep_both` — emit independent test cases per source without merging.
+ */
+export const ALLOWED_CONFLICT_RESOLUTION_POLICIES = [
+  "priority",
+  "reviewer_decides",
+  "keep_both",
+] as const;
+
+/** Conflict-resolution policy alias. */
+export type ConflictResolutionPolicy =
+  (typeof ALLOWED_CONFLICT_RESOLUTION_POLICIES)[number];
+
+/**
+ * Recognised input formats for `custom_text` / `custom_structured` sources
+ * (Markdown-aware addendum, 2026-04-26). Markdown is treated as
+ * user-provided supporting evidence and is NEVER trusted as instructions
+ * to the model or runtime.
+ */
+export const ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS = [
+  "plain_text",
+  "markdown",
+  "structured_json",
+] as const;
+
+/** Custom input-format alias. */
+export type TestIntentCustomInputFormat =
+  (typeof ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS)[number];
+
+/**
+ * Reference to a single contributing source inside a
+ * {@link MultiSourceTestIntentEnvelope}. References are stable per envelope
+ * and never carry raw source bytes — only redacted hashes and structured
+ * provenance hints.
+ */
+export interface TestIntentSourceRef {
+  /** Stable identifier per envelope, e.g. `"src.0"`, `"src.1"`. */
+  sourceId: string;
+  /** Discriminated source kind. */
+  kind: TestIntentSourceKind;
+  /** SHA-256 of the canonicalised source bytes (lowercase hex, 64 chars). */
+  contentHash: string;
+  /** ISO-8601 UTC capture timestamp (millisecond precision, `Z` suffix). */
+  capturedAt: string;
+  /**
+   * Opaque, non-PII operator handle for paste/custom sources. Never store
+   * raw email addresses or full names — callers MUST redact before set.
+   */
+  authorHandle?: string;
+  /**
+   * Input format for `custom_text` / `custom_structured`. Required for
+   * those kinds, MUST be omitted for primary kinds.
+   */
+  inputFormat?: TestIntentCustomInputFormat;
+  /**
+   * Note-entry id for Markdown-authored custom sources (Markdown
+   * addendum). Lets provenance references identify the source row in the
+   * reviewer note store. Optional, ignored for non-Markdown sources.
+   */
+  noteEntryId?: string;
+  /**
+   * Markdown section path (heading / table / list context) for Markdown
+   * custom sources, e.g. `"# Risks > ## PII handling"`. Optional and
+   * ignored for non-Markdown sources.
+   */
+  markdownSectionPath?: string;
+}
+
+/**
+ * Aggregate envelope of contributing sources (Issue #1431).
+ *
+ * The envelope is a pure value object; ingestion logic, reconciliation,
+ * and orchestration live in downstream Wave 4 issues (4.B / 4.C / 4.D /
+ * 4.E / 4.F / 4.H). The envelope guarantees:
+ *
+ *   1. At least one source.
+ *   2. At least one primary source (primary-source-required rule).
+ *   3. Stable {@link aggregateContentHash} that is invariant under source
+ *      reordering when {@link conflictResolutionPolicy} is not `priority`,
+ *      and changes when source content actually changes.
+ *   4. When `conflictResolutionPolicy="priority"`, a non-empty
+ *      {@link priorityOrder} listing every source kind present in the
+ *      envelope (no extras).
+ */
+export interface MultiSourceTestIntentEnvelope {
+  /** Schema version stamp. */
+  version: typeof MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION;
+  /** Ordered list of contributing sources (length ≥ 1). */
+  sources: TestIntentSourceRef[];
+  /**
+   * Stable aggregate hash of the contributing sources. Computed via
+   * `sha256Hex` of the canonical-sorted (`contentHash`, `kind`) pairs by
+   * default, with the `priorityOrder` mixed in when the resolution policy
+   * is `priority`.
+   */
+  aggregateContentHash: string;
+  /** Resolution discriminant for cross-source disagreement. */
+  conflictResolutionPolicy: ConflictResolutionPolicy;
+  /**
+   * Required when {@link conflictResolutionPolicy} is `priority`: an
+   * ordered, deduplicated list of source kinds covering every kind that
+   * appears in {@link sources}. The list participates in the aggregate
+   * hash so a different priority order produces a different hash.
+   */
+  priorityOrder?: TestIntentSourceKind[];
+}
+
+/**
+ * Refusal codes emitted by the multi-source envelope validator
+ * (Issue #1431). Stable, locale-independent strings safe to ship to
+ * automation.
+ */
+export const ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES = [
+  "envelope_missing",
+  "envelope_version_mismatch",
+  "sources_empty",
+  "duplicate_source_id",
+  "invalid_source_id",
+  "invalid_source_kind",
+  "invalid_content_hash",
+  "invalid_captured_at",
+  "invalid_author_handle",
+  "primary_source_required",
+  "duplicate_jira_paste_collision",
+  "custom_input_format_required",
+  "custom_input_format_invalid",
+  "primary_source_input_format_invalid",
+  "markdown_metadata_only_for_custom",
+  "invalid_conflict_resolution_policy",
+  "priority_order_required",
+  "priority_order_invalid_kind",
+  "priority_order_incomplete",
+  "priority_order_duplicate",
+  "aggregate_hash_mismatch",
+] as const;
+
+/** Refusal code alias for the multi-source envelope validator. */
+export type MultiSourceEnvelopeRefusalCode =
+  (typeof ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES)[number];
+
+/**
+ * A single validation issue surfaced by the multi-source envelope
+ * validator. `path` is a JSON-pointer-shaped locator (e.g.
+ * `"sources[2].contentHash"`).
+ */
+export interface MultiSourceEnvelopeIssue {
+  code: MultiSourceEnvelopeRefusalCode;
+  path?: string;
+  detail?: string;
+}
+
+/**
+ * Result of multi-source envelope validation (Issue #1431). Hand-rolled
+ * to keep workspace-dev free of external schema libraries.
+ */
+export type MultiSourceEnvelopeValidationResult =
+  | { ok: true; envelope: MultiSourceTestIntentEnvelope }
+  | { ok: false; issues: MultiSourceEnvelopeIssue[] };
+
+/**
+ * Refusal codes for the multi-source mode gate (Issue #1431). The gate
+ * enforces three nested invariants before any multi-source ingestion is
+ * permitted:
+ *
+ *   1. Parent test-intelligence env + startup option enabled.
+ *   2. Multi-source env + startup option enabled.
+ *   3. `llmCodegenMode === "deterministic"`.
+ *
+ * Any failed check fails closed with zero side effects and surfaces a
+ * structured diagnostic.
+ */
+export const ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES = [
+  "test_intelligence_disabled",
+  "multi_source_env_disabled",
+  "multi_source_startup_option_disabled",
+  "llm_codegen_mode_locked",
+] as const;
+
+/** Refusal-code alias for the multi-source mode gate. */
+export type MultiSourceModeGateRefusalCode =
+  (typeof ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES)[number];
+
+/** Inputs accepted by `evaluateMultiSourceModeGate`. */
+export interface MultiSourceModeGateInput {
+  testIntelligenceEnvEnabled: boolean;
+  testIntelligenceStartupEnabled: boolean;
+  multiSourceEnvEnabled: boolean;
+  multiSourceStartupEnabled: boolean;
+  llmCodegenMode?: string;
+}
+
+/** Single refusal entry on a {@link MultiSourceModeGateDecision}. */
+export interface MultiSourceModeGateRefusal {
+  code: MultiSourceModeGateRefusalCode;
+  detail: string;
+}
+
+/** Decision produced by `evaluateMultiSourceModeGate`. */
+export interface MultiSourceModeGateDecision {
+  allowed: boolean;
+  refusals: MultiSourceModeGateRefusal[];
 }
 
 /** Visual-sidecar description produced by a multimodal vision model (Issue #1386). */
@@ -5711,4 +6085,4 @@ export interface TraceabilityMatrix {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.11.0" as const;
+export const CONTRACT_VERSION = "4.12.0" as const;

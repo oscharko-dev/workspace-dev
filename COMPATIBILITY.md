@@ -17,7 +17,7 @@
 <!-- prettier-ignore -->
 | Area | workspace-dev |
 | --- | --- |
-| Contract version | `4.11.0` |
+| Contract version | `4.12.0` |
 | `figmaSourceMode=rest` | Supported |
 | `figmaSourceMode=local_json` | Supported |
 | `figmaSourceMode=figma_paste` | Supported |
@@ -27,6 +27,25 @@
 | `llmCodegenMode=deterministic` | Supported |
 | `llmCodegenMode=hybrid` | Blocked |
 | `llmCodegenMode=llm_strict` | Blocked |
+
+## Multi-Source Test Intent Source Mix Matrix (Issue #1431)
+
+The matrix below documents which combinations of multi-source kinds are
+accepted by `validateMultiSourceTestIntentEnvelope`. At least one **primary**
+source kind is always required; **supporting** kinds may only appear
+alongside a primary source.
+
+<!-- prettier-ignore -->
+| Source mix | Validated | Notes |
+| --- | --- | --- |
+| Figma-only (any of `figma_local_json`, `figma_plugin`, `figma_rest`) | Accepted | Wave 1 baseline preserved bit-identically when the multi-source gate is off. |
+| Jira REST only | Accepted | Wave 4.C populates the actual REST adapter. |
+| Jira paste only | Accepted | Wave 4.D populates the paste-collision routing. |
+| Figma + Jira REST | Accepted | Reconciliation lives in Wave 4.F. |
+| Figma + Jira paste | Accepted | Reconciliation lives in Wave 4.F. |
+| Jira REST + Jira paste | Accepted | Duplicate `contentHash` between Jira sources is reported as `duplicate_jira_paste_collision`. |
+| Any of the above + `custom_text` and/or `custom_structured` | Accepted | Custom kinds are supporting evidence. Markdown metadata only valid when `inputFormat="markdown"`. |
+| Custom-only (any combination of `custom_text` / `custom_structured`) | **Refused** with `primary_source_required` | Enforced before any artifact is persisted. |
 
 ## Notes
 
