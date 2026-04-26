@@ -26,15 +26,11 @@ test("property: sanitizeJqlFragment rejects curated JQL injection vectors", () =
 
 test("property: sanitizeJqlFragment preserves safe identifiers and values", () => {
   fc.assert(
-    fc.property(fc.stringMatching(/^[A-Za-z0-9_.-]{1,50}$/), (fragment) => {
+    fc.property(fc.stringMatching(/^[A-Z][A-Z0-9_]{1,8}-[1-9][0-9]{0,5}$/), (issueKey) => {
+      const fragment = `issueKey = ${issueKey}`;
       const result = sanitizeJqlFragment(fragment);
-      // It might be rejected if it contains SQL-like keywords, but plain alphanumeric should pass
-      // Wait, sanitizeJqlFragment is designed to sanitize JQL fragments. Let's see what it does.
-      // Actually, testing random strings might hit some reserved keywords.
-      if (result.ok) {
-        assert.equal(result.sanitized.includes("\n"), false);
-      }
-      return true;
+      assert.equal(result.ok, true);
+      if (result.ok) assert.equal(result.sanitized, fragment);
     }),
     { numRuns: 100 }
   );

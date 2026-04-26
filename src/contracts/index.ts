@@ -6575,6 +6575,12 @@ export interface JiraGatewayConfig {
   maxWallClockMs?: number;
   maxRetries?: number;
   maxResponseBytes?: number;
+  /**
+   * Exact hostnames or `*.example.com` suffix patterns allowed for Bearer
+   * token/Data Center calls. Cloud Basic and OAuth gateway hosts are validated
+   * by auth-mode-specific rules; Data Center endpoints must be allow-listed.
+   */
+  allowedHostPatterns?: readonly string[];
 }
 
 /**
@@ -6588,6 +6594,24 @@ export interface JiraFetchRequest {
   linkExpansionDepth?: 0 | 1 | 2;
   fieldSelection?: Partial<JiraFieldSelectionProfile>;
   maxWallClockMs?: number;
+  maxRetries?: number;
+  /** Enables deterministic on-disk gateway artifacts under `<runDir>/sources/<sourceId>/`. */
+  runDir?: string;
+  /** Source namespace used for replay/cache artifacts when `runDir` is set. */
+  sourceId?: string;
+  /** When true, load the cached Jira API response and issue zero outbound fetches. */
+  replayMode?: boolean;
+  /** Deterministic capture timestamp for generated IR; defaults to Unix epoch. */
+  capturedAt?: string;
+}
+
+/** Structured diagnostic emitted by the Jira gateway failure path. */
+export interface JiraGatewayDiagnostic {
+  code: string;
+  message: string;
+  retryable: boolean;
+  status?: number;
+  rateLimitReason?: string;
 }
 
 /**
@@ -6599,6 +6623,8 @@ export interface JiraFetchResult {
   responseHash: string;
   retryable: boolean;
   attempts: number;
+  diagnostic?: JiraGatewayDiagnostic;
+  cacheHit?: boolean;
 }
 
 /**
