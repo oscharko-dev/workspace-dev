@@ -76,6 +76,26 @@ const buildChoiceBody = (
   usage: { prompt_tokens: 10, completion_tokens: 5 },
 });
 
+const cancellableResponse = ({
+  status,
+  headers,
+  onCancel,
+}: {
+  status: number;
+  headers?: HeadersInit;
+  onCancel: () => void;
+}): Response => {
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      controller.enqueue(new TextEncoder().encode("ignored"));
+    },
+    cancel() {
+      onCancel();
+    },
+  });
+  return new Response(stream, { status, headers });
+};
+
 test("config validation: rejects test_generation with imageInputSupport", () => {
   assert.throws(
     () =>
@@ -266,16 +286,17 @@ test("input budget at the cap succeeds; one byte over fails closed", async () =>
 
 test("response-size ceiling: Content-Length over default cap is rejected", async () => {
   const overCap = 8 * 1024 * 1024 + 1;
+  let cancelled = false;
   const client = createLlmGatewayClient(baseConfig, {
-    // Use a plain string body — the runtime sets `content-length` from the
-    // declared header below; we are asserting the header-driven short-circuit
-    // path returns before JSON parsing.
     fetchImpl: async () =>
-      new Response("{}", {
+      cancellableResponse({
         status: 200,
         headers: {
           "content-type": "application/json",
           "content-length": String(overCap),
+        },
+        onCancel: () => {
+          cancelled = true;
         },
       }),
     apiKeyProvider: () => "secret-key-value",
@@ -293,6 +314,7 @@ test("response-size ceiling: Content-Length over default cap is rejected", async
     assert.equal(result.retryable, false);
     assert.equal(isLlmGatewayErrorRetryable(result.errorClass), false);
   }
+  assert.equal(cancelled, true, "declared-oversized body must be cancelled");
 });
 
 test("response-size ceiling: streaming guard aborts when chunk total exceeds cap", async () => {
@@ -581,13 +603,17 @@ test("rate-limited 429 surfaces rate_limited and retries", async () => {
 
 test("oversized 429 body preserves rate_limited retry classification", async () => {
   let attempts = 0;
+  let cancellations = 0;
   const client = createLlmGatewayClient(baseConfig, {
     fetchImpl: async () => {
       attempts += 1;
       if (attempts < 3) {
-        return new Response("ignored", {
+        return cancellableResponse({
           status: 429,
           headers: { "content-length": String(1024 * 1024 + 1) },
+          onCancel: () => {
+            cancellations += 1;
+          },
         });
       }
       return okJsonResponse(buildChoiceBody({ ack: "ok" }));
@@ -600,6 +626,7 @@ test("oversized 429 body preserves rate_limited retry classification", async () 
   const result = await client.generate(sampleRequest());
 
   assert.equal(attempts, 3);
+  assert.equal(cancellations, 2);
   assert.equal(result.outcome, "success");
 });
 
@@ -626,12 +653,16 @@ test("5xx surfaces transport-class and retries up to max", async () => {
 
 test("oversized 5xx body preserves transport retry classification", async () => {
   let attempts = 0;
+  let cancellations = 0;
   const client = createLlmGatewayClient(baseConfig, {
     fetchImpl: async () => {
       attempts += 1;
-      return new Response("ignored", {
+      return cancellableResponse({
         status: 503,
         headers: { "content-length": String(1024 * 1024 + 1) },
+        onCancel: () => {
+          cancellations += 1;
+        },
       });
     },
     apiKeyProvider: () => "k",
@@ -642,9 +673,37 @@ test("oversized 5xx body preserves transport retry classification", async () => 
   const result = await client.generate(sampleRequest());
 
   assert.equal(attempts, 3);
+  assert.equal(cancellations, 3);
   assert.equal(result.outcome, "error");
   if (result.outcome === "error") {
     assert.equal(result.errorClass, "transport");
+    assert.equal(result.retryable, true);
+  }
+});
+
+test("408 response body is cancelled while preserving timeout classification", async () => {
+  let cancelled = false;
+  const client = createLlmGatewayClient(
+    { ...baseConfig, maxRetries: 0 },
+    {
+      fetchImpl: async () =>
+        cancellableResponse({
+          status: 408,
+          onCancel: () => {
+            cancelled = true;
+          },
+        }),
+      apiKeyProvider: () => "k",
+      sleep: async () => undefined,
+    },
+  );
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(cancelled, true);
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "timeout");
     assert.equal(result.retryable, true);
   }
 });
