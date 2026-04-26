@@ -31,6 +31,73 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.9.0] - 2026-04-26
+
+### Added (Issue #1373)
+
+- New schema constants for the Wave 3 delta + dedupe + traceability surface:
+    - `INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    - `INTENT_DELTA_REPORT_ARTIFACT_FILENAME = "intent-delta-report.json"`,
+    - `DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    - `DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json"`,
+    - `TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0"`,
+    - `TRACEABILITY_MATRIX_ARTIFACT_FILENAME = "traceability-matrix.json"`.
+- New enums (additive):
+    - `ALLOWED_INTENT_DELTA_KINDS` / `IntentDeltaKind`: `screen`, `field`,
+      `action`, `validation`, `navigation`, `visual_screen`.
+    - `ALLOWED_INTENT_DELTA_CHANGE_TYPES` / `IntentDeltaChangeType`: `added`,
+      `removed`, `changed`, `confidence_dropped`, `ambiguity_increased`.
+    - `ALLOWED_TEST_CASE_DELTA_VERDICTS` / `TestCaseDeltaVerdict`: `new`,
+      `unchanged`, `changed`, `obsolete`, `requires_review`.
+    - `ALLOWED_TEST_CASE_DELTA_REASONS` / `TestCaseDeltaReason`:
+      `absent_in_prior`, `fingerprint_changed`, `trace_screen_changed`,
+      `trace_screen_removed`, `visual_confidence_dropped`,
+      `visual_ambiguity_increased`, `reconciliation_conflict`.
+    - `ALLOWED_DEDUPE_SIMILARITY_SOURCES` / `DedupeSimilaritySource`:
+      `lexical`, `embedding`, `external_lookup`.
+    - `ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES` / `DedupeExternalProbeState`:
+      `disabled`, `unconfigured`, `executed`.
+- New artifact types (additive):
+    - `IntentDeltaReport` + `IntentDeltaEntry` + `TestCaseDeltaReport` +
+      `TestCaseDeltaRow` carrying type-level invariants
+      `rawScreenshotsIncluded: false`, `secretsIncluded: false`.
+    - `TestCaseDedupeReport` + `DedupeInternalFinding` +
+      `DedupeExternalFinding` + `DedupeCaseVerdict` carrying the same
+      type-level invariants.
+    - `TraceabilityMatrix` + `TraceabilityMatrixRow` +
+      `TraceabilityVisualObservation` + `TraceabilityReconciliationDecision`
+      carrying the same type-level invariants.
+- Extended `Wave1PocEvidenceArtifactCategory` union (additive) with three
+  new literal categories: `intent_delta`, `dedupe_report`,
+  `traceability_matrix`. Existing manifests continue to validate.
+- New public modules under `src/test-intelligence/`:
+    - `intent-delta.ts` exporting `computeIntentDelta`,
+      `writeIntentDeltaReport`, `INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT`.
+    - `test-case-delta.ts` exporting `classifyTestCaseDelta`,
+      `writeTestCaseDeltaReport`.
+    - `test-case-dedupe.ts` exporting `detectTestCaseDuplicatesExtended`,
+      `cosineSimilarity`, `writeTestCaseDedupeReport`,
+      `createDisabledExternalDedupeProbe`,
+      `createUnconfiguredExternalDedupeProbe`, plus the
+      `EmbeddingProvider` and `ExternalDedupeProbe` interfaces.
+    - `traceability-matrix.ts` exporting `buildTraceabilityMatrix`,
+      `writeTraceabilityMatrix`.
+
+### Behaviour notes
+
+- All new surfaces are OPT-IN: existing pipelines (`runValidationPipeline`,
+  `runExportPipeline`, `runOpenTextAlmApiTransfer`) keep their pre-#1373
+  behaviour byte-for-byte. A caller invokes the new helpers explicitly to
+  produce the artifacts.
+- Air-gapped flow is preserved: `EmbeddingProvider` defaults to absent,
+  `ExternalDedupeProbe` defaults to `disabled`. When the embedding path is
+  unavailable the lexical fingerprint path still surfaces duplicates.
+- Obsolete cases are reported via `TestCaseDeltaVerdict = "obsolete"` only
+  — never destructively removed from QC (per AC3).
+- Visual hashes participate in delta detection so unchanged screens avoid
+  unnecessary visual-sidecar calls (per the 2026-04-24 multimodal
+  addendum).
+
 ## [4.8.0] - 2026-04-26
 
 ### Added (Issue #1372)
