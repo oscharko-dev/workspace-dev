@@ -3246,7 +3246,11 @@ export interface QcMappingVisualProvenance {
   fallbackReason: VisualSidecarFallbackReason;
   confidenceMean: number;
   ambiguityCount: number;
-  /** SHA-256 hex of the visual sidecar response payload (no raw screenshot). */
+  /**
+   * SHA-256 hex of the derived validation-record identity tuple
+   * `(screenId|deployment|sortedOutcomes|roundedConfidence)`. This is not a
+   * raw screenshot hash and does not include request headers or secrets.
+   */
   evidenceHash: string;
 }
 
@@ -4297,10 +4301,11 @@ export interface DryRunPlannedEntityPayload {
    */
   visualFallbackUsed?: boolean;
   /**
-   * Sorted (by `screenId`) per-record provenance refs. Each ref carries a
-   * derivative identity hash that lets a reviewer correlate the planned
-   * payload back to the per-screen validation record without re-importing
-   * raw screenshot bytes. Absent when no records match. Issue #1374.
+   * Sorted by `screenId`, `modelDeployment`, then `evidenceHash`.
+   * Each ref carries a derivative identity hash that lets a reviewer
+   * correlate the planned payload back to the per-screen validation record
+   * without re-importing raw screenshot bytes. Absent when no records match.
+   * Issue #1374.
    *
    * Field semantics:
    *   - `screenId` — matching `VisualSidecarValidationRecord.screenId`.

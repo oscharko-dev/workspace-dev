@@ -209,6 +209,24 @@ test("qc-provider-stub: same input produces deterministic reportId", async () =>
   assert.equal(c.reportId, a.reportId);
 });
 
+test("qc-provider-stub: custom idSource controls reportId shape", async () => {
+  const provider: QcAdapterProvider = "xray";
+  const profile = cloneOpenTextAlmDefaultMappingProfile();
+  profile.provider = provider;
+  const stub = createDryRunStubAdapter({ provider });
+  const result = await stub.dryRun({
+    jobId: JOB_ID,
+    mode: "dry_run",
+    profile,
+    preview: emptyPreview(JOB_ID),
+    clock: createFixedClock(GENERATED_AT),
+    idSource: {
+      newReportId: () => "operator-controlled-report-id",
+    },
+  });
+  assert.equal(result.reportId, "operator-controlled-report-id");
+});
+
 test("qc-provider-stub: provider_not_implemented exists on the contract refusal enum", () => {
   assert.ok(
     (ALLOWED_DRY_RUN_REFUSAL_CODES as readonly string[]).includes(

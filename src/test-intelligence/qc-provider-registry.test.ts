@@ -25,10 +25,14 @@ import test from "node:test";
 import {
   ALLOWED_QC_ADAPTER_PROVIDERS,
   ALLOWED_QC_PROVIDER_OPERATIONS,
+  DRY_RUN_REPORT_SCHEMA_VERSION,
+  QC_MAPPING_PREVIEW_SCHEMA_VERSION,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
   type DryRunReportArtifact,
   type QcAdapterProvider,
   type QcMappingProfile,
   type QcMappingProfileValidationResult,
+  type QcProviderDescriptor,
 } from "../contracts/index.js";
 import type { QcAdapter, QcAdapterDryRunInput } from "./qc-adapter.js";
 import {
@@ -66,8 +70,8 @@ const buildCustomAdapter = (
   },
   async dryRun(input: QcAdapterDryRunInput): Promise<DryRunReportArtifact> {
     return {
-      schemaVersion: "1.0.0",
-      contractVersion: "1.0.0",
+      schemaVersion: DRY_RUN_REPORT_SCHEMA_VERSION,
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
       reportId: `custom-${refusalReason}`,
       jobId: input.jobId,
       generatedAt: input.clock.now(),
@@ -100,6 +104,24 @@ const buildCustomAdapter = (
       credentialsIncluded: false,
     };
   },
+});
+
+const buildCustomDescriptor = (
+  options: Partial<QcProviderDescriptor> = {},
+): QcProviderDescriptor => ({
+  provider: "custom",
+  label: "Custom test adapter",
+  version: "0.0.1",
+  builtin: false,
+  capabilities: {
+    validateProfile: true,
+    resolveTargetFolder: false,
+    dryRun: true,
+    exportOnly: false,
+    apiTransfer: false,
+    registerCustom: true,
+  },
+  ...options,
 });
 
 test("qc-provider-registry: all 8 builtin descriptors are present", () => {
@@ -248,6 +270,7 @@ test("qc-provider-registry: custom adapter registers, resolves, and survives sib
   const result = registerQcProviderAdapter({
     registry: initial,
     adapter,
+    descriptor: buildCustomDescriptor(),
   });
   assert.equal(result.ok, true);
   assert.notStrictEqual(result.ok && result.registry, initial);
@@ -256,6 +279,13 @@ test("qc-provider-registry: custom adapter registers, resolves, and survives sib
   assert.ok(registered);
   assert.equal(registered?.provider, "custom");
   assert.equal(registered?.version, "0.0.1");
+  const registeredDescriptor = getQcProviderDescriptor(
+    result.registry,
+    "custom",
+  );
+  assert.equal(registeredDescriptor?.capabilities.validateProfile, true);
+  assert.equal(registeredDescriptor?.capabilities.dryRun, true);
+  assert.equal(registeredDescriptor?.capabilities.registerCustom, false);
 
   // Sanity: smoke-running the adapter does not change the registry.
   const profile = cloneOpenTextAlmDefaultMappingProfile();
@@ -265,8 +295,8 @@ test("qc-provider-registry: custom adapter registers, resolves, and survives sib
     mode: "dry_run",
     profile,
     preview: {
-      schemaVersion: "1.0.0",
-      contractVersion: "1.0.0",
+      schemaVersion: QC_MAPPING_PREVIEW_SCHEMA_VERSION,
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
       jobId: "job-1374-custom",
       generatedAt: "2026-04-26T10:00:00.000Z",
       profileId: profile.id,
@@ -289,12 +319,14 @@ test("qc-provider-registry: duplicate custom registration refuses", () => {
   const first = registerQcProviderAdapter({
     registry: initial,
     adapter: buildCustomAdapter(),
+    descriptor: buildCustomDescriptor(),
   });
   assert.equal(first.ok, true);
   if (!first.ok) return;
   const second = registerQcProviderAdapter({
     registry: first.registry,
     adapter: buildCustomAdapter("second"),
+    descriptor: buildCustomDescriptor({ version: "0.0.2" }),
   });
   assert.equal(second.ok, false);
   if (second.ok) return;
@@ -311,8 +343,8 @@ test("qc-provider-registry: shadowing a builtin refuses with register_custom_not
     },
     async dryRun(input) {
       return {
-        schemaVersion: "1.0.0",
-        contractVersion: "1.0.0",
+        schemaVersion: DRY_RUN_REPORT_SCHEMA_VERSION,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
         reportId: "shadow",
         jobId: input.jobId,
         generatedAt: input.clock.now(),
@@ -353,6 +385,18 @@ test("qc-provider-registry: shadowing a builtin refuses with register_custom_not
   assert.equal(result.ok, false);
   if (result.ok) return;
   assert.equal(result.refusalCode, "register_custom_not_supported");
+});
+
+test("qc-provider-registry: registering into builtin custom slot requires descriptor", () => {
+  const initial = createQcProviderRegistry();
+  const result = registerQcProviderAdapter({
+    registry: initial,
+    adapter: buildCustomAdapter(),
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.refusalCode, "custom_descriptor_required");
+  assert.equal(resolveQcProviderAdapter(initial, "custom"), null);
 });
 
 test("qc-provider-registry: registering with descriptor whose provider differs refuses", () => {
@@ -456,6 +500,39 @@ test("qc-provider-registry: getQcProviderEntry returns descriptor + adapter", ()
   const custom = getQcProviderEntry(registry, "custom");
   assert.ok(custom);
   assert.equal(custom?.adapter, null);
+});
+
+test("qc-provider-registry: snapshot cannot mutate registry state", () => {
+  const registry = createQcProviderRegistry();
+  const runtimeSnapshot = registry.snapshot as ReadonlyMap<
+    QcAdapterProvider,
+    unknown
+  > & {
+    set?: unknown;
+    delete?: unknown;
+    clear?: unknown;
+  };
+
+  assert.equal(runtimeSnapshot.set, undefined);
+  assert.equal(runtimeSnapshot.delete, undefined);
+  assert.equal(runtimeSnapshot.clear, undefined);
+  assert.throws(() =>
+    Map.prototype.set.call(runtimeSnapshot, "custom", {
+      descriptor: buildCustomDescriptor(),
+      adapter: buildCustomAdapter(),
+    }),
+  );
+
+  const custom = registry.snapshot.get("custom");
+  assert.ok(custom);
+  custom.descriptor.capabilities.registerCustom = false;
+  custom.adapter = buildCustomAdapter();
+
+  assert.equal(resolveQcProviderAdapter(registry, "custom"), null);
+  assert.equal(
+    getQcProviderDescriptor(registry, "custom")?.capabilities.registerCustom,
+    true,
+  );
 });
 
 test("qc-provider-registry: opentext_alm carries the mappingProfileSeedId", () => {
