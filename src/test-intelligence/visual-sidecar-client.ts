@@ -701,6 +701,8 @@ const derivePrimaryFailureCause = (
     case "refusal":
     case "incomplete":
     case "image_payload_rejected":
+    case "input_budget_exceeded":
+    case "response_too_large":
       return { fallbackReason: "primary_unavailable" };
     default:
       return { fallbackReason: "primary_unavailable" };

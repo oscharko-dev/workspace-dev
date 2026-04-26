@@ -682,3 +682,95 @@ test("llm-failure-modes: oversized response does not crash pipeline", () => {
     );
   }
 });
+
+test("llm-failure-modes: gateway transport caps response bytes (#1414)", async () => {
+  // Closes the Wave 1 / #1369 gap: the validation pipeline tolerates
+  // structurally-invalid 2 MB envelopes, but the *transport* must refuse
+  // a runaway response body before it reaches the parser. The real client
+  // streams + counts bytes against `maxResponseBytes` and aborts with a
+  // dedicated `response_too_large` error class so callers can distinguish
+  // policy-shaped JSON malformation from a memory-exhaustion attempt.
+  const { createLlmGatewayClient, isLlmGatewayErrorRetryable } =
+    await import("./llm-gateway.js");
+  const cap = 1024;
+  let cancelled = false;
+  let chunksDelivered = 0;
+  const client = createLlmGatewayClient(
+    {
+      role: "test_generation",
+      compatibilityMode: "openai_chat",
+      baseUrl: "https://example.cognitiveservices.azure.com/openai/v1",
+      deployment: "gpt-oss-120b",
+      modelRevision: "gpt-oss-120b@2026-04-25",
+      gatewayRelease: "azure-ai-foundry@2026.04",
+      authMode: "api_key",
+      declaredCapabilities: {
+        structuredOutputs: true,
+        seedSupport: true,
+        reasoningEffortSupport: false,
+        maxOutputTokensSupport: true,
+        streamingSupport: false,
+        imageInputSupport: false,
+      },
+      timeoutMs: 5_000,
+      maxRetries: 0,
+      circuitBreaker: { failureThreshold: 3, resetTimeoutMs: 1_000 },
+      maxResponseBytes: cap,
+    },
+    {
+      fetchImpl: async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            // Try to enqueue an unbounded amount of bytes. The transport
+            // must abort the stream before it walks off the cliff.
+            if (chunksDelivered >= 1024) {
+              controller.close();
+              return;
+            }
+            chunksDelivered += 1;
+            controller.enqueue(new Uint8Array(512));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      apiKeyProvider: () => "k",
+    },
+  );
+
+  const result = await client.generate({
+    jobId: "job-1",
+    systemPrompt: "s",
+    userPrompt: "u",
+  });
+
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(
+      result.errorClass,
+      "response_too_large",
+      "oversized body must surface as response_too_large, not schema_invalid",
+    );
+    assert.equal(
+      result.retryable,
+      false,
+      "non-retryable: re-asking would hit the same cap",
+    );
+    assert.equal(isLlmGatewayErrorRetryable(result.errorClass), false);
+    assert.match(result.message, /maxResponseBytes/);
+  }
+  assert.equal(
+    cancelled,
+    true,
+    "stream must be cancelled to release the socket",
+  );
+  assert.ok(
+    chunksDelivered <= 8,
+    `streaming guard must abort early; delivered=${chunksDelivered}`,
+  );
+});
