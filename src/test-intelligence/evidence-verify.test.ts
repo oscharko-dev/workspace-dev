@@ -16,6 +16,7 @@ import fc from "fast-check";
 import {
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   WAVE1_POC_SIGNATURES_DIRECTORY,
 } from "../contracts/index.js";
@@ -175,14 +176,204 @@ test("verifyJobEvidence: tampered manifest field surfaces digest_witness failure
     assert.equal(result.status, "ok");
     if (result.status !== "ok") return;
     assert.equal(result.body.ok, false);
+    assert.deepEqual(
+      result.body.checks.find((c) => c.kind === "manifest_metadata"),
+      {
+        kind: "manifest_metadata",
+        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ok: true,
+      },
+    );
+    assert.deepEqual(
+      result.body.checks.find((c) => c.kind === "manifest_digest_witness"),
+      {
+        kind: "manifest_digest_witness",
+        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ok: false,
+        failureCode: "manifest_digest_witness_invalid",
+      },
+    );
     assert.ok(
       result.body.failures.some(
         (f) =>
-          (f.code === "manifest_digest_witness_invalid" ||
-            f.code === "manifest_metadata_invalid") &&
+          f.code === "manifest_digest_witness_invalid" &&
           f.reference === WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
       ),
       JSON.stringify(result.body.failures, null, 2),
+    );
+  } finally {
+    await seed.cleanup();
+  }
+});
+
+test("verifyJobEvidence: schema-mismatched manifest returns manifest_unparseable", async () => {
+  const seed = await seedHarnessRun("schema-mismatch");
+  try {
+    const manifestPath = join(
+      seed.runDir,
+      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    );
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    manifest["schemaVersion"] = "999.0.0";
+    await writeFile(manifestPath, JSON.stringify(manifest), "utf8");
+
+    const result = await verifyJobEvidence({
+      artifactsRoot: seed.artifactsRoot,
+      jobId: seed.jobId,
+      verifiedAt: VERIFIED_AT,
+    });
+    assert.equal(result.status, "ok");
+    if (result.status !== "ok") return;
+    assert.equal(result.body.ok, false);
+    assert.equal(result.body.manifestSha256, "");
+    assert.deepEqual(result.body.failures, [
+      {
+        code: "manifest_unparseable",
+        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        message:
+          "Evidence manifest 'wave1-poc-evidence-manifest.json' is missing, malformed, or carries a mismatched schema/contract version.",
+      },
+    ]);
+  } finally {
+    await seed.cleanup();
+  }
+});
+
+test("verifyJobEvidence: digest witness failure does not mark manifest metadata failed", async () => {
+  const seed = await seedHarnessRun("digest-witness");
+  try {
+    await writeFile(
+      join(seed.runDir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+      `${"0".repeat(64)}\n`,
+      "utf8",
+    );
+
+    const result = await verifyJobEvidence({
+      artifactsRoot: seed.artifactsRoot,
+      jobId: seed.jobId,
+      verifiedAt: VERIFIED_AT,
+    });
+    assert.equal(result.status, "ok");
+    if (result.status !== "ok") return;
+    assert.equal(result.body.ok, false);
+    assert.deepEqual(
+      result.body.checks.find((c) => c.kind === "manifest_metadata"),
+      {
+        kind: "manifest_metadata",
+        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ok: true,
+      },
+    );
+    assert.deepEqual(
+      result.body.checks.find((c) => c.kind === "manifest_digest_witness"),
+      {
+        kind: "manifest_digest_witness",
+        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ok: false,
+        failureCode: "manifest_digest_witness_invalid",
+      },
+    );
+    assert.ok(
+      result.body.failures.some(
+        (f) => f.code === "manifest_digest_witness_invalid",
+      ),
+      JSON.stringify(result.body.failures, null, 2),
+    );
+    assert.equal(
+      result.body.failures.some(
+        (f) => f.code === "manifest_metadata_invalid",
+      ),
+      false,
+    );
+  } finally {
+    await seed.cleanup();
+  }
+});
+
+test("verifyJobEvidence: malformed versioned manifest returns ok=false instead of throwing", async () => {
+  const seed = await seedHarnessRun("malformed-versioned");
+  try {
+    const manifestPath = join(
+      seed.runDir,
+      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    );
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    delete manifest["artifacts"];
+    await writeFile(manifestPath, JSON.stringify(manifest), "utf8");
+
+    const result = await verifyJobEvidence({
+      artifactsRoot: seed.artifactsRoot,
+      jobId: seed.jobId,
+      verifiedAt: VERIFIED_AT,
+    });
+    assert.equal(result.status, "ok");
+    if (result.status !== "ok") return;
+    assert.equal(result.body.ok, false);
+    assert.ok(
+      result.body.failures.some(
+        (f) => f.code === "manifest_metadata_invalid",
+      ),
+      JSON.stringify(result.body.failures, null, 2),
+    );
+  } finally {
+    await seed.cleanup();
+  }
+});
+
+test("verifyJobEvidence: metadata failure with a matching digest witness is classified independently", async () => {
+  const seed = await seedHarnessRun("metadata-only");
+  try {
+    const manifestPath = join(
+      seed.runDir,
+      WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+    );
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    manifest["rawScreenshotsIncluded"] = true;
+    await writeFile(manifestPath, JSON.stringify(manifest), "utf8");
+    const { computeWave1PocEvidenceManifestDigest } =
+      await import("./evidence-manifest.js");
+    const digest = computeWave1PocEvidenceManifestDigest(
+      manifest as Parameters<typeof computeWave1PocEvidenceManifestDigest>[0],
+    );
+    await writeFile(
+      join(seed.runDir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
+      `${digest}\n`,
+      "utf8",
+    );
+
+    const result = await verifyJobEvidence({
+      artifactsRoot: seed.artifactsRoot,
+      jobId: seed.jobId,
+      verifiedAt: VERIFIED_AT,
+    });
+    assert.equal(result.status, "ok");
+    if (result.status !== "ok") return;
+    assert.equal(result.body.ok, false);
+    assert.deepEqual(
+      result.body.checks.find((c) => c.kind === "manifest_metadata"),
+      {
+        kind: "manifest_metadata",
+        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ok: false,
+        failureCode: "manifest_metadata_invalid",
+      },
+    );
+    assert.deepEqual(
+      result.body.checks.find((c) => c.kind === "manifest_digest_witness"),
+      {
+        kind: "manifest_digest_witness",
+        reference: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+        ok: true,
+      },
     );
   } finally {
     await seed.cleanup();

@@ -56,7 +56,7 @@ All changes to the public contract surface of `workspace-dev` are documented her
 ### Unchanged (Issue #1380)
 
 - Read-only route: no write side effects, no artifact mutation, no attestation re-signing or manifest patching.
-- Response body never contains tokens, prompt bodies, reasoning traces, raw test-case payloads, environment values, signer secret material, or absolute paths — only filenames (basenames), SHA-256 digests, and identity stamps surface.
+- Response body never contains tokens, prompt bodies, reasoning traces, raw test-case payloads, environment values, signer secret material, or absolute paths — only safe manifest-relative filenames, SHA-256 digests, and identity stamps surface.
 - The route is HTTP-level only; the underlying `verifyWave1PocEvidenceFromDisk` / `verifyWave1PocAttestationFromDisk` primitives from #1366 / #1377 are unchanged. No new dependency, telemetry, or external schema library is introduced.
 
 ## [4.1.0] - 2026-04-26

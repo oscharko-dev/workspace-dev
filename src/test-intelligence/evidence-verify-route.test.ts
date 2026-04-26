@@ -134,12 +134,10 @@ describe("parseEvidenceVerifyRoute", () => {
     }
   });
 
-  test("rejects a path with a trailing slash (extra empty segment is filtered)", () => {
+  test("accepts a path with a trailing slash", () => {
     const result = parseEvidenceVerifyRoute(
       "/workspace/jobs/job-1/evidence/verify/",
     );
-    // The trailing slash after the verify segment yields an empty
-    // segment which we filter, so this still parses to verify_evidence.
     assert.equal(result.ok, true);
     if (result.ok) {
       assert.equal(result.route.jobId, "job-1");
@@ -148,6 +146,16 @@ describe("parseEvidenceVerifyRoute", () => {
 
   test("rejects an empty jobId between two slashes", () => {
     const result = parseEvidenceVerifyRoute("/workspace/jobs//evidence/verify");
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "empty_segment");
+    }
+  });
+
+  test("rejects an empty middle segment", () => {
+    const result = parseEvidenceVerifyRoute(
+      "/workspace/jobs/job-1//evidence/verify",
+    );
     assert.equal(result.ok, false);
     if (!result.ok) {
       assert.equal(result.error.reason, "segment_count_invalid");

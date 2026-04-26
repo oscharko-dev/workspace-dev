@@ -52,12 +52,28 @@ export const parseEvidenceVerifyRoute = (
     };
   }
   const remainder = pathname.slice(ROOT.length);
-  const segments = remainder.split("/").filter((s) => s.length > 0);
+  const rawSegments = remainder.split("/");
+  if (rawSegments[0] !== "") {
+    return {
+      ok: false,
+      error: { kind: "parse_error", reason: "prefix_mismatch" },
+    };
+  }
+  const segments = rawSegments.slice(1);
+  if (segments.at(-1) === "") {
+    segments.pop();
+  }
   // Expect exactly: [jobId, "evidence", "verify"]
   if (segments.length !== 3) {
     return {
       ok: false,
       error: { kind: "parse_error", reason: "segment_count_invalid" },
+    };
+  }
+  if (segments.some((segment) => segment.length === 0)) {
+    return {
+      ok: false,
+      error: { kind: "parse_error", reason: "empty_segment" },
     };
   }
   const jobId = segments[0];

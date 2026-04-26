@@ -357,6 +357,22 @@ export interface VerifyWave1PocEvidenceManifestInput {
   rejectUnexpected?: boolean;
 }
 
+export class Wave1PocEvidenceManifestLoadError extends Error {
+  readonly reason:
+    | "manifest_missing"
+    | "manifest_unparseable"
+    | "manifest_schema_mismatch";
+
+  constructor(
+    reason: Wave1PocEvidenceManifestLoadError["reason"],
+    manifestPath: string,
+  ) {
+    super(`verifyWave1PocEvidenceFromDisk: ${reason} in ${manifestPath}`);
+    this.name = "Wave1PocEvidenceManifestLoadError";
+    this.reason = reason;
+  }
+}
+
 const isENOENT = (err: unknown): boolean =>
   typeof err === "object" &&
   err !== null &&
@@ -397,7 +413,7 @@ const hasOnlyKnownKeys = (
   allowed: ReadonlySet<string>,
 ): boolean => Object.keys(value).every((key) => allowed.has(key));
 
-const validateManifestMetadata = (
+export const validateWave1PocEvidenceManifestMetadata = (
   manifest: Wave1PocEvidenceManifest,
 ): string[] => {
   const issues: string[] = [];
@@ -565,7 +581,9 @@ export const verifyWave1PocEvidenceManifest = async (
   const missing: string[] = [];
   const mutated: string[] = [];
   const resized: string[] = [];
-  const metadataIssues = validateManifestMetadata(input.manifest);
+  const metadataIssues = validateWave1PocEvidenceManifestMetadata(
+    input.manifest,
+  );
   const manifestIntegrity = evaluateManifestIntegrity(input.manifest);
   if (metadataIssues.length > 0) {
     mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
@@ -660,15 +678,35 @@ export const verifyWave1PocEvidenceFromDisk = async (
     artifactsDir,
     WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   );
-  const raw = await readFile(manifestPath, "utf8");
-  const parsedRaw = JSON.parse(raw) as Record<string, unknown>;
+  let raw: string;
+  try {
+    raw = await readFile(manifestPath, "utf8");
+  } catch (err) {
+    if (isENOENT(err)) {
+      throw new Wave1PocEvidenceManifestLoadError(
+        "manifest_missing",
+        manifestPath,
+      );
+    }
+    throw err;
+  }
+  let parsedRaw: Record<string, unknown>;
+  try {
+    parsedRaw = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    throw new Wave1PocEvidenceManifestLoadError(
+      "manifest_unparseable",
+      manifestPath,
+    );
+  }
   if (
     parsedRaw["schemaVersion"] !== WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION ||
     parsedRaw["testIntelligenceContractVersion"] !==
       TEST_INTELLIGENCE_CONTRACT_VERSION
   ) {
-    throw new Error(
-      `verifyWave1PocEvidenceFromDisk: manifest schema/contract mismatch in ${manifestPath}`,
+    throw new Wave1PocEvidenceManifestLoadError(
+      "manifest_schema_mismatch",
+      manifestPath,
     );
   }
   const parsed = parsedRaw as unknown as Wave1PocEvidenceManifest;

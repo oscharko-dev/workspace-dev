@@ -1303,7 +1303,8 @@ export function createWorkspaceRequestHandler({
       // is test-intelligence-only.
       if (
         pathname.startsWith("/workspace/jobs/") &&
-        pathname.endsWith("/evidence/verify")
+        (pathname.endsWith("/evidence/verify") ||
+          pathname.endsWith("/evidence/verify/"))
       ) {
         const testIntelligenceGatesEnabled =
           resolveTestIntelligenceEnabled() &&

@@ -4746,7 +4746,7 @@ export type EvidenceVerifyCheckKind =
  */
 export interface EvidenceVerifyCheck {
   kind: EvidenceVerifyCheckKind;
-  /** Artifact filename basename or stable check identifier. */
+  /** Safe manifest-relative artifact filename or stable check identifier. */
   reference: string;
   ok: boolean;
   /** Failure code when `ok === false`. Omitted when `ok === true`. */
@@ -4758,7 +4758,7 @@ export interface EvidenceVerifyCheck {
 /** One row in the `failures` array. Flat, sorted by reference + code. */
 export interface EvidenceVerifyFailure {
   code: EvidenceVerifyFailureCode;
-  /** Artifact filename basename or stable check identifier. */
+  /** Safe manifest-relative artifact filename or stable check identifier. */
   reference: string;
   /** Operator-readable diagnostic. Never includes absolute paths or secrets. */
   message: string;
@@ -4769,8 +4769,8 @@ export interface EvidenceVerifyFailure {
  * with HTTP status 200. Status 200 means "verification completed",
  * regardless of pass/fail outcome — `ok` carries the verdict. The body
  * never contains absolute paths, bearer tokens, prompt bodies, raw
- * test-case payloads, env values, or signer secret material; only
- * filenames (basenames), SHA-256 digests, and identity stamps appear.
+ * test-case payloads, env values, or signer secret material; only safe
+ * manifest-relative filenames, SHA-256 digests, and identity stamps appear.
  */
 export interface EvidenceVerifyResponse {
   schemaVersion: typeof EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION;
