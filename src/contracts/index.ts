@@ -3065,7 +3065,9 @@ export type Wave1PocEvidenceArtifactCategory =
   | "export"
   | "manifest"
   | "visual_sidecar"
-  | "finops";
+  | "finops"
+  | "attestation"
+  | "signature";
 
 /** Single artifact attested by the Wave 1 POC evidence manifest. */
 export interface Wave1PocEvidenceArtifact {
@@ -3270,6 +3272,296 @@ export interface Wave1PocEvalReport {
   thresholds: Wave1PocEvalThresholds;
   fixtures: Wave1PocEvalFixtureReport[];
   pass: boolean;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Wave 1 POC in-toto attestation + Sigstore signing (Issue #1377)    */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Schema version for the in-toto v1 attestation envelope produced per
+ * job by the Wave 1 POC harness. Bumped on any breaking change to the
+ * statement payload, predicate shape, or DSSE encoding.
+ */
+export const WAVE1_POC_ATTESTATION_SCHEMA_VERSION = "1.0.0" as const;
+
+/** in-toto v1 statement type URI. */
+export const WAVE1_POC_ATTESTATION_STATEMENT_TYPE =
+  "https://in-toto.io/Statement/v1" as const;
+
+/**
+ * Predicate type URI identifying the Wave 1 POC evidence shape. Bumped
+ * in lockstep with the schema version when the predicate fields change.
+ */
+export const WAVE1_POC_ATTESTATION_PREDICATE_TYPE =
+  "https://workspace-dev.figmapipe.dev/test-intelligence/wave1-poc-evidence/v1" as const;
+
+/**
+ * DSSE `payloadType` stamped onto every in-toto attestation. The pre-
+ * authentication encoding (PAE) hashes this value alongside the payload
+ * bytes so it is bound to the signature.
+ */
+export const WAVE1_POC_ATTESTATION_PAYLOAD_TYPE =
+  "application/vnd.in-toto+json" as const;
+
+/** Filename of the persisted in-toto DSSE envelope. */
+export const WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME =
+  "wave1-poc-attestation.intoto.json" as const;
+
+/** Filename of the persisted Sigstore bundle when signing is enabled. */
+export const WAVE1_POC_ATTESTATION_BUNDLE_FILENAME =
+  "wave1-poc-attestation.bundle.json" as const;
+
+/** Subdirectory under a run dir where attestation envelopes are persisted. */
+export const WAVE1_POC_ATTESTATIONS_DIRECTORY =
+  "evidence/attestations" as const;
+
+/** Subdirectory under a run dir where Sigstore signature bundles are persisted. */
+export const WAVE1_POC_SIGNATURES_DIRECTORY = "evidence/signatures" as const;
+
+/** Sigstore bundle media type — pinned to the v0.3 envelope shape. */
+export const WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE =
+  "application/vnd.dev.sigstore.bundle.v0.3+json" as const;
+
+/**
+ * Allowed signing modes for the Wave 1 POC attestation.
+ *
+ * - `unsigned` (default) — emit DSSE envelope with empty `signatures`,
+ *   no Sigstore bundle. Always works air-gapped without network access.
+ * - `sigstore` — emit DSSE envelope with one or more signatures and a
+ *   Sigstore bundle alongside. The signer is operator-supplied; the
+ *   built-in key-bound signer uses ECDSA P-256 from `node:crypto` so
+ *   tests and verifiers run without external network calls. A keyless
+ *   flow (Fulcio + Rekor) plugs into the same signer interface but is
+ *   never invoked by default.
+ */
+export const ALLOWED_WAVE1_POC_ATTESTATION_SIGNING_MODES = [
+  "unsigned",
+  "sigstore",
+] as const;
+
+/** Discriminant of the active signing mode. */
+export type Wave1PocAttestationSigningMode =
+  (typeof ALLOWED_WAVE1_POC_ATTESTATION_SIGNING_MODES)[number];
+
+/** Subject record inside the in-toto v1 statement. */
+export interface Wave1PocAttestationSubject {
+  /** Relative artifact path inside the run directory (no leading slash). */
+  name: string;
+  /** Subject digest map. Always populated with at least `sha256`. */
+  digest: { sha256: string };
+}
+
+/**
+ * Visual-sidecar identity carried into the attestation predicate so an
+ * auditor can verify the multimodal chain of custody (Issue #1386
+ * addendum to #1377). Mirrors the fields already attested on the
+ * evidence manifest but pinned to the predicate version.
+ */
+export interface Wave1PocAttestationVisualSidecarIdentity {
+  selectedDeployment:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock";
+  fallbackReason: VisualSidecarFallbackReason;
+  visualPrimary?:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock"
+    | "none";
+  visualFallback?:
+    | "llama-4-maverick-vision"
+    | "phi-4-multimodal-poc"
+    | "mock"
+    | "none";
+  resultArtifactSha256: string;
+}
+
+/**
+ * Predicate body of the Wave 1 POC attestation. The predicate carries
+ * pipeline-identity facts (model deployments, prompt template, schema,
+ * policy, export profile) plus the manifest's own SHA-256 so the
+ * statement attests both the artifact subjects and the metadata
+ * envelope used to produce them. No secrets, prompts, or response
+ * bodies are embedded — only identity hashes and version stamps.
+ */
+export interface Wave1PocAttestationPredicate {
+  schemaVersion: typeof WAVE1_POC_ATTESTATION_SCHEMA_VERSION;
+  contractVersion: string;
+  testIntelligenceContractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  fixtureId: Wave1PocFixtureId;
+  jobId: string;
+  generatedAt: string;
+  /** Versions stamped by the harness at run time. */
+  promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
+  generatedTestCaseSchemaVersion: typeof GENERATED_TEST_CASE_SCHEMA_VERSION;
+  visualSidecarSchemaVersion: typeof VISUAL_SIDECAR_SCHEMA_VERSION;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  /** Policy bundle identity (validation gate). */
+  policyProfileId: string;
+  policyProfileVersion: string;
+  /** Export profile identity (export-only QC pipeline). */
+  exportProfileId: string;
+  exportProfileVersion: string;
+  /** Replay-cache identity hashes. */
+  promptHash: string;
+  schemaHash: string;
+  inputHash: string;
+  cacheKeyDigest: string;
+  /** Identity of every model role active during the run. */
+  modelDeployments: {
+    testGeneration: string;
+    visualPrimary?:
+      | "llama-4-maverick-vision"
+      | "phi-4-multimodal-poc"
+      | "mock"
+      | "none";
+    visualFallback?:
+      | "llama-4-maverick-vision"
+      | "phi-4-multimodal-poc"
+      | "mock"
+      | "none";
+  };
+  /** Visual-sidecar chain-of-custody identity (when present). */
+  visualSidecar?: Wave1PocAttestationVisualSidecarIdentity;
+  /** Active signing mode; mirrored from the run input for auditability. */
+  signingMode: Wave1PocAttestationSigningMode;
+  /** SHA-256 of the canonical evidence manifest the attestation covers. */
+  manifestSha256: string;
+  /** Filename of the manifest artifact (relative to the run dir). */
+  manifestFilename: typeof WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
+  /** Hard invariant — no raw screenshot bytes attested. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant — no API keys / bearer tokens attested. */
+  secretsIncluded: false;
+  /** Hard invariant — test_generation never received an image payload. */
+  imagePayloadSentToTestGeneration: false;
+}
+
+/** in-toto v1 statement envelope (the DSSE payload after base64 decode). */
+export interface Wave1PocAttestationStatement {
+  _type: typeof WAVE1_POC_ATTESTATION_STATEMENT_TYPE;
+  predicateType: typeof WAVE1_POC_ATTESTATION_PREDICATE_TYPE;
+  /** Sorted-by-name, de-duplicated subject list. */
+  subject: Wave1PocAttestationSubject[];
+  predicate: Wave1PocAttestationPredicate;
+}
+
+/** A single signature attached to a DSSE envelope. */
+export interface Wave1PocAttestationSignature {
+  /** Stable, non-secret identifier for the signing key. */
+  keyid: string;
+  /** Base64 (RFC 4648 §4) encoded signature bytes. */
+  sig: string;
+}
+
+/**
+ * DSSE envelope (canonical form). When `signatures` is empty the
+ * envelope represents an unsigned attestation. When populated, each
+ * signature is an ECDSA P-256 signature over the PAE-encoded
+ * (payloadType, payload) tuple, base64-encoded into `sig`.
+ */
+export interface Wave1PocAttestationDsseEnvelope {
+  /** Base64 (RFC 4648 §4) encoded `Wave1PocAttestationStatement` JSON. */
+  payload: string;
+  payloadType: typeof WAVE1_POC_ATTESTATION_PAYLOAD_TYPE;
+  signatures: Wave1PocAttestationSignature[];
+}
+
+/**
+ * Public-key verification material. The repo ships the in-line
+ * `publicKey` form so air-gapped verification can succeed without
+ * additional trust roots. Operators wiring a real Sigstore keyless
+ * flow may replace this with a certificate-chain bundle.
+ */
+export interface Wave1PocAttestationPublicKeyMaterial {
+  /** Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`). */
+  hint: string;
+  /** PEM-encoded SubjectPublicKeyInfo for the matching public key. */
+  publicKeyPem: string;
+  /** Signing algorithm used to produce the DSSE signatures. */
+  algorithm: "ecdsa-p256-sha256";
+}
+
+/** Sigstore-shaped bundle persisted alongside a signed attestation. */
+export interface Wave1PocAttestationBundle {
+  mediaType: typeof WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE;
+  /**
+   * The DSSE envelope this bundle witnesses. Identical bytes to the
+   * `evidence/attestations/...` artifact; duplication is intentional so
+   * the bundle is self-contained.
+   */
+  dsseEnvelope: Wave1PocAttestationDsseEnvelope;
+  /** Verification material — public key form for air-gapped verifiers. */
+  verificationMaterial: {
+    publicKey: Wave1PocAttestationPublicKeyMaterial;
+  };
+}
+
+/**
+ * Audit-timeline summary surfaced on the harness result. Carries only
+ * non-secret identifiers and digests so callers can render signing
+ * provenance without re-reading on-disk artifacts.
+ */
+export interface Wave1PocAttestationSummary {
+  signingMode: Wave1PocAttestationSigningMode;
+  /** Stable signer identifier (matches `keyid`). `undefined` when unsigned. */
+  signerReference?: string;
+  /** Relative path of the persisted in-toto envelope. */
+  attestationFilename: string;
+  /** SHA-256 of the canonical envelope bytes. */
+  attestationSha256: string;
+  /** Relative path of the Sigstore bundle. `undefined` when unsigned. */
+  bundleFilename?: string;
+  /** SHA-256 of the canonical bundle bytes. `undefined` when unsigned. */
+  bundleSha256?: string;
+}
+
+/**
+ * Failure record produced by `verifyWave1PocAttestation`. Each failure
+ * names the specific subject / signature / metadata field that failed
+ * so an auditor can pinpoint the mismatch without re-running the
+ * harness.
+ */
+export interface Wave1PocAttestationVerificationFailure {
+  /** Stable failure code. */
+  code:
+    | "envelope_unparseable"
+    | "envelope_payload_type_mismatch"
+    | "envelope_payload_decode_failed"
+    | "statement_unparseable"
+    | "statement_type_mismatch"
+    | "statement_predicate_type_mismatch"
+    | "statement_predicate_invalid"
+    | "subject_missing_artifact"
+    | "subject_digest_mismatch"
+    | "subject_unattested_artifact"
+    | "signing_mode_mismatch"
+    | "signature_required"
+    | "signature_unsigned_envelope_carries_signatures"
+    | "signature_invalid_keyid"
+    | "signature_invalid_encoding"
+    | "signature_unverified"
+    | "bundle_missing"
+    | "bundle_envelope_mismatch"
+    | "bundle_public_key_missing"
+    | "manifest_sha256_mismatch";
+  /** Subject / artifact / field that triggered the failure. */
+  reference: string;
+  /** Human-readable diagnostic. Never includes secrets. */
+  message: string;
+}
+
+/** Result of `verifyWave1PocAttestation`. */
+export interface Wave1PocAttestationVerificationResult {
+  ok: boolean;
+  signingMode: Wave1PocAttestationSigningMode;
+  /** Number of signatures present (0 for unsigned). */
+  signatureCount: number;
+  /** True iff every present signature verified against `publicKey`. */
+  signaturesVerified: boolean;
+  /** Structured failure list — empty when `ok === true`. */
+  failures: Wave1PocAttestationVerificationFailure[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -3794,4 +4086,4 @@ export interface FinOpsBudgetReport {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.30.0" as const;
+export const CONTRACT_VERSION = "3.31.0" as const;

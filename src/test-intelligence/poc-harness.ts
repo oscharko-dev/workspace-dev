@@ -90,6 +90,8 @@ import {
   type VisualSidecarFailure,
   type VisualSidecarResult,
   type VisualSidecarValidationReport,
+  type Wave1PocAttestationSigningMode,
+  type Wave1PocAttestationSummary,
   type Wave1PocEvidenceManifest,
   type Wave1PocFixtureId,
 } from "../contracts/index.js";
@@ -98,8 +100,18 @@ import type { ValidationPipelineArtifacts } from "./validation-pipeline.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import {
   buildWave1PocEvidenceManifest,
+  computeWave1PocEvidenceManifestDigest,
   writeWave1PocEvidenceManifest,
 } from "./evidence-manifest.js";
+import {
+  buildSignedWave1PocAttestation,
+  buildUnsignedWave1PocAttestationEnvelope,
+  buildWave1PocAttestationStatement,
+  listWave1PocAttestationArtifactPaths,
+  persistWave1PocAttestation,
+  summarizeWave1PocAttestation,
+  type Wave1PocAttestationSigner,
+} from "./evidence-attestation.js";
 import { runAndPersistExportPipeline } from "./export-pipeline.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
@@ -217,6 +229,20 @@ export interface RunWave1PocInput {
    * deterministic approval events for cases that match the policy.
    */
   fourEyesPolicy?: FourEyesPolicy;
+  /**
+   * Optional signing mode for the in-toto v1 attestation (Issue #1377).
+   * Defaults to `"unsigned"` so the air-gapped POC fixture path remains
+   * byte-stable and never invokes a signer. When set to `"sigstore"`,
+   * `attestationSigner` MUST be supplied.
+   */
+  attestationSigningMode?: Wave1PocAttestationSigningMode;
+  /**
+   * Operator-supplied signer used when `attestationSigningMode` is
+   * `"sigstore"`. The harness invokes the signer exactly once per run,
+   * never logs the signer's secret material, and only records the
+   * `signerReference` in the audit timeline.
+   */
+  attestationSigner?: Wave1PocAttestationSigner;
 }
 
 export interface Wave1PocRunResult {
@@ -259,6 +285,13 @@ export interface Wave1PocRunResult {
    * recomputing the layout.
    */
   finopsArtifactPath: string;
+  /**
+   * Audit-timeline summary of the in-toto attestation produced by this
+   * run (Issue #1377). Always present; carries the active signing
+   * mode, the non-secret signer reference (when signed), and the
+   * SHA-256 of the persisted envelope and bundle.
+   */
+  attestation: Wave1PocAttestationSummary;
 }
 
 export class Wave1PocVisualSidecarFailureError extends Error {
@@ -1379,6 +1412,59 @@ export const runWave1Poc = async (
     destinationDir: input.runDir,
   });
 
+  const attestationSigningMode: Wave1PocAttestationSigningMode =
+    input.attestationSigningMode ?? "unsigned";
+  if (
+    attestationSigningMode === "sigstore" &&
+    input.attestationSigner === undefined
+  ) {
+    throw new Error(
+      'runWave1Poc: attestationSigningMode="sigstore" requires an attestationSigner',
+    );
+  }
+  if (
+    attestationSigningMode === "unsigned" &&
+    input.attestationSigner !== undefined
+  ) {
+    throw new Error(
+      'runWave1Poc: attestationSigner must not be supplied when attestationSigningMode="unsigned"',
+    );
+  }
+  const manifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
+  const attestationStatement = buildWave1PocAttestationStatement({
+    manifest,
+    manifestSha256,
+    signingMode: attestationSigningMode,
+  });
+  let attestationEnvelope;
+  let attestationBundle;
+  let signerReference: string | undefined;
+  if (attestationSigningMode === "sigstore" && input.attestationSigner) {
+    const signed = await buildSignedWave1PocAttestation({
+      statement: attestationStatement,
+      signer: input.attestationSigner,
+    });
+    attestationEnvelope = signed.envelope;
+    attestationBundle = signed.bundle;
+    signerReference = input.attestationSigner.signerReference;
+  } else {
+    attestationEnvelope =
+      buildUnsignedWave1PocAttestationEnvelope(attestationStatement);
+  }
+  const persistedAttestation = await persistWave1PocAttestation({
+    envelope: attestationEnvelope,
+    ...(attestationBundle !== undefined ? { bundle: attestationBundle } : {}),
+    runDir: input.runDir,
+  });
+  // Reference the path lister so verifier-driven callers can stay in
+  // sync with the harness layout without duplicating constants.
+  void listWave1PocAttestationArtifactPaths(attestationSigningMode);
+  const attestationSummary = summarizeWave1PocAttestation({
+    signingMode: attestationSigningMode,
+    ...(signerReference !== undefined ? { signerReference } : {}),
+    persisted: persistedAttestation,
+  });
+
   return {
     fixtureId: input.fixtureId,
     jobId: input.jobId,
@@ -1399,6 +1485,7 @@ export const runWave1Poc = async (
     ...(sidecarResult !== undefined ? { visualSidecar: sidecarResult } : {}),
     finopsReport,
     finopsArtifactPath: finopsWritten.artifactPath,
+    attestation: attestationSummary,
   };
 };
 

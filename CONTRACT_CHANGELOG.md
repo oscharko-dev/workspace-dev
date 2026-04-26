@@ -31,6 +31,31 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [3.31.0] - 2026-04-26
+
+### Added (Issue #1377)
+
+- `WAVE1_POC_ATTESTATION_SCHEMA_VERSION` (`"1.0.0"`) — schema version stamp for the in-toto v1 attestation produced per job by the Wave 1 POC harness.
+- `WAVE1_POC_ATTESTATION_STATEMENT_TYPE` (`"https://in-toto.io/Statement/v1"`) and `WAVE1_POC_ATTESTATION_PREDICATE_TYPE` (`"https://workspace-dev.figmapipe.dev/test-intelligence/wave1-poc-evidence/v1"`) — pinned URIs identifying the attestation envelope and predicate shape.
+- `WAVE1_POC_ATTESTATION_PAYLOAD_TYPE` (`"application/vnd.in-toto+json"`) — DSSE `payloadType` bound into the pre-authentication encoding (PAE) so a signature cannot be replayed against a different payload type.
+- `WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME` (`"wave1-poc-attestation.intoto.json"`) and `WAVE1_POC_ATTESTATION_BUNDLE_FILENAME` (`"wave1-poc-attestation.bundle.json"`) — canonical filenames for the persisted DSSE envelope and the optional Sigstore bundle.
+- `WAVE1_POC_ATTESTATIONS_DIRECTORY` (`"evidence/attestations"`) and `WAVE1_POC_SIGNATURES_DIRECTORY` (`"evidence/signatures"`) — run-dir-relative subdirectories where the envelope and (when signed) the Sigstore bundle are written.
+- `WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE` (`"application/vnd.dev.sigstore.bundle.v0.3+json"`) — pinned Sigstore bundle media type embedded in every signed bundle.
+- `ALLOWED_WAVE1_POC_ATTESTATION_SIGNING_MODES` (`unsigned`, `sigstore`) and discriminant `Wave1PocAttestationSigningMode` — `unsigned` is the default and is the only mode exercised by the POC fixture path; `sigstore` requires an operator-supplied signer.
+- New exported types: `Wave1PocAttestationStatement`, `Wave1PocAttestationSubject`, `Wave1PocAttestationPredicate`, `Wave1PocAttestationVisualSidecarIdentity`, `Wave1PocAttestationDsseEnvelope`, `Wave1PocAttestationSignature`, `Wave1PocAttestationBundle`, `Wave1PocAttestationPublicKeyMaterial`, `Wave1PocAttestationSummary`, `Wave1PocAttestationVerificationFailure`, `Wave1PocAttestationVerificationResult`. Hard invariants on the predicate: `rawScreenshotsIncluded: false`, `secretsIncluded: false`, `imagePayloadSentToTestGeneration: false` (TYPE-LEVEL `false` literals).
+- `Wave1PocEvidenceArtifactCategory` gains two new variants: `"attestation"` and `"signature"` — reserved so future verifiers may attest the envelope and bundle inside the existing manifest. The default Wave 1 manifest keeps the attestation as a sibling artifact under `evidence/attestations/...` and `evidence/signatures/...`; the manifest's basename-driven `unexpected` check is unaffected.
+- New module `src/test-intelligence/evidence-attestation.ts` — `buildWave1PocAttestationStatement` (canonical statement builder), `encodeWave1PocAttestationPayload` (canonical JSON + UTF-8 encode), `encodeDssePreAuth` (PAE bytes), `buildUnsignedWave1PocAttestationEnvelope`, `buildSignedWave1PocAttestation`, `createKeyBoundSigstoreSigner` (ECDSA P-256 signer using `node:crypto`, no network), `generateWave1PocAttestationKeyPair`, `persistWave1PocAttestation` (atomic `${pid}.${ts}.tmp` rename), `summarizeWave1PocAttestation`, `listWave1PocAttestationArtifactPaths`, `verifyWave1PocAttestation`, `verifyWave1PocAttestationFromDisk`, `computeWave1PocAttestationEnvelopeDigest`. The verifier returns a structured `Wave1PocAttestationVerificationResult` with per-failure `code` + `reference` + `message`; tampered subjects fail with `subject_digest_mismatch` and the mismatched artifact path under `reference`.
+- `runWave1Poc` accepts optional `attestationSigningMode` and `attestationSigner`. Always emits `<runDir>/evidence/attestations/wave1-poc-attestation.intoto.json`; when the signing mode is `sigstore`, also emits `<runDir>/evidence/signatures/wave1-poc-attestation.bundle.json`. Result type extended with `attestation: Wave1PocAttestationSummary` so the audit timeline surfaces signing mode, signer reference, and artifact SHA-256 without re-reading the on-disk envelope.
+
+### Unchanged (Issue #1377)
+
+- The Wave 1 evidence manifest from #1366 (`Wave1PocEvidenceManifest`) and its on-disk verification (`verifyWave1PocEvidenceManifest`, `verifyWave1PocEvidenceFromDisk`) continue to behave exactly as before. The attestation is a sibling layer; existing Merkle-style hash + byte-length checks, manifest-mutation detection, and digest-witness validation are preserved bit-identically.
+- The default signing mode is `unsigned` and never invokes a signer. The unsigned path is fully air-gapped: no network calls, no private-key operations, deterministic byte output for byte-stable fixture replays.
+- No new runtime dependency, telemetry, or external schema library is introduced. DSSE encoding and ECDSA P-256 signing/verification use `node:crypto` only; the canonical JSON helper is the existing `canonicalJson` from `content-hash.ts`.
+- API keys, bearer tokens, OIDC tokens, prompt text, and response bytes are NEVER attested. Predicate fields carry only identity hashes, deployment names, and version stamps.
+
+---
+
 ## [3.30.0] - 2026-04-25
 
 ### Added (Issue #1376)
