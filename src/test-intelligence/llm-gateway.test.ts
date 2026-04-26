@@ -264,14 +264,18 @@ test("input budget at the cap succeeds; one byte over fails closed", async () =>
   );
 });
 
-test("response-size ceiling rejects oversized gateway bodies before JSON parsing", async () => {
+test("response-size ceiling: Content-Length over default cap is rejected", async () => {
+  const overCap = 8 * 1024 * 1024 + 1;
   const client = createLlmGatewayClient(baseConfig, {
+    // Use a plain string body — the runtime sets `content-length` from the
+    // declared header below; we are asserting the header-driven short-circuit
+    // path returns before JSON parsing.
     fetchImpl: async () =>
       new Response("{}", {
         status: 200,
         headers: {
           "content-type": "application/json",
-          "content-length": String(1024 * 1024 + 1),
+          "content-length": String(overCap),
         },
       }),
     apiKeyProvider: () => "secret-key-value",
@@ -281,10 +285,129 @@ test("response-size ceiling rejects oversized gateway bodies before JSON parsing
 
   assert.equal(result.outcome, "error");
   if (result.outcome === "error") {
-    assert.equal(result.errorClass, "schema_invalid");
-    assert.match(result.message, /response body exceeds/);
+    assert.equal(result.errorClass, "response_too_large");
+    assert.match(
+      result.message,
+      /response body exceeds maxResponseBytes 8388608/,
+    );
+    assert.equal(result.retryable, false);
+    assert.equal(isLlmGatewayErrorRetryable(result.errorClass), false);
+  }
+});
+
+test("response-size ceiling: streaming guard aborts when chunk total exceeds cap", async () => {
+  const cap = 4 * 1024;
+  const chunkBytes = 1024;
+  let chunksDelivered = 0;
+  let cancelled = false;
+  const client = createLlmGatewayClient(
+    { ...baseConfig, maxResponseBytes: cap },
+    {
+      fetchImpl: async () => {
+        const stream = new ReadableStream<Uint8Array>({
+          pull(controller) {
+            if (chunksDelivered >= 16) {
+              controller.close();
+              return;
+            }
+            chunksDelivered += 1;
+            controller.enqueue(new Uint8Array(chunkBytes));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      },
+      apiKeyProvider: () => "k",
+    },
+  );
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "response_too_large");
+    assert.match(result.message, new RegExp(`maxResponseBytes ${cap}`));
     assert.equal(result.retryable, false);
   }
+  assert.equal(
+    cancelled,
+    true,
+    "stream must be cancelled when cap is exceeded",
+  );
+  assert.ok(
+    chunksDelivered <= 6,
+    `streaming guard must abort early (delivered=${chunksDelivered})`,
+  );
+});
+
+test("response-size ceiling: streaming guard catches lying Content-Length", async () => {
+  const cap = 1024;
+  const oversized = "x".repeat(cap * 4);
+  const client = createLlmGatewayClient(
+    { ...baseConfig, maxResponseBytes: cap },
+    {
+      fetchImpl: async () =>
+        new Response(oversized, {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+            "content-length": "16",
+          },
+        }),
+      apiKeyProvider: () => "k",
+    },
+  );
+
+  const result = await client.generate(sampleRequest());
+
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "response_too_large");
+  }
+});
+
+test("response-size ceiling: response just at the cap boundary succeeds", async () => {
+  const cap = 4 * 1024;
+  const body = JSON.stringify(buildChoiceBody({ ack: "ok" }));
+  assert.ok(
+    new TextEncoder().encode(body).byteLength < cap,
+    "fixture must fit under the cap",
+  );
+  const client = createLlmGatewayClient(
+    { ...baseConfig, maxResponseBytes: cap },
+    {
+      fetchImpl: async () =>
+        new Response(body, {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+      apiKeyProvider: () => "k",
+    },
+  );
+
+  const result = await client.generate(sampleRequest());
+  assert.equal(result.outcome, "success");
+});
+
+test("config validation: rejects non-positive / non-integer maxResponseBytes", () => {
+  for (const bad of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.throws(
+      () => createLlmGatewayClient({ ...baseConfig, maxResponseBytes: bad }),
+      /maxResponseBytes/,
+      `value ${String(bad)} must be rejected`,
+    );
+  }
+});
+
+test("response_too_large is registered in the error-class enum and is non-retryable", () => {
+  assert.ok(LLM_GATEWAY_ERROR_CLASSES.has("response_too_large"));
+  assert.ok(ALLOWED_LLM_GATEWAY_ERROR_CLASSES.includes("response_too_large"));
+  assert.equal(isLlmGatewayErrorRetryable("response_too_large"), false);
 });
 
 test("structured-output success: parses JSON content and strips raw text", async () => {

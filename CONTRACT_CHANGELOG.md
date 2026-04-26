@@ -31,6 +31,21 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.7.0] - 2026-04-26
+
+### Added (Issue #1414)
+
+- New `LlmGatewayErrorClass` literal `"response_too_large"` added to `ALLOWED_LLM_GATEWAY_ERROR_CLASSES`. Surfaced by `LlmGatewayClient.generate` when the gateway response body exceeds the configured `maxResponseBytes` cap. The failure is `retryable: false` (re-issuing the request would by definition breach the same cap); the transport cancels the underlying `ReadableStream` so the socket is released without buffering the remaining bytes.
+- New optional `maxResponseBytes?: number` field on `LlmGatewayClientConfig`. Defaults to `8 * 1024 * 1024` (8 MiB) when omitted. Accepts any positive safe integer; invalid values (zero, negative, non-integer, `NaN`, infinite) throw `RangeError` at client construction. The mock gateway has no transport and ignores the field — fixtures that need to model this failure mode emit it directly through a `responder`.
+- The transport enforces the cap via two layers: a `Content-Length` header pre-read short-circuit (so a header-declared oversized body never even pulls bytes from the socket) and a chunk-by-chunk byte counter against the streaming reader (so a missing or mendacious header still cannot exhaust memory). The streaming guard calls `reader.cancel()` the moment the running total exceeds the cap.
+
+### Changed
+
+- Consumers that switch on `errorClass` should extend their handling to cover `"response_too_large"`. Behavior is `retryable: false`; `llm-capability-probe` classifies the outcome as `unsupported` (the gateway responded but its body shape is incompatible with the cap), and `visual-sidecar-client` treats it as `primary_unavailable` so the multimodal fallback chain still fires.
+- The previous internal `MAX_RESPONSE_BYTES = 1 MiB` constant in `llm-gateway.ts` and its `errorClass: "schema_invalid"` failure are replaced by the configurable cap and the dedicated `response_too_large` discriminant. Clients that did not override the cap see the default raised from 1 MiB to 8 MiB; callers that previously matched on `errorClass === "schema_invalid"` plus the `/response body exceeds/` message must now match `errorClass === "response_too_large"` (the human-readable message remains `/response body exceeds maxResponseBytes \d+/`).
+
+---
+
 ## [4.6.0] - 2026-04-26
 
 ### Added (Issue #1415)

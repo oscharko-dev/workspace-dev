@@ -816,6 +816,7 @@ export const ALLOWED_LLM_GATEWAY_ERROR_CLASSES = [
   "transport",
   "image_payload_rejected",
   "input_budget_exceeded",
+  "response_too_large",
 ] as const;
 export type LlmGatewayErrorClass =
   (typeof ALLOWED_LLM_GATEWAY_ERROR_CLASSES)[number];
@@ -901,6 +902,20 @@ export interface LlmGatewayClientConfig {
   timeoutMs: number;
   maxRetries: number;
   circuitBreaker: LlmGatewayCircuitBreakerConfig;
+  /**
+   * Hard upper bound on the gateway response body, in bytes. The transport
+   * counts decoded bytes during read and aborts the stream the moment the
+   * running total exceeds this cap; the failure surfaces as
+   * `errorClass: "response_too_large"` with `retryable: false` (Issue #1414).
+   * The cap is enforced both via the `Content-Length` header (pre-read
+   * short-circuit) and via streaming byte accounting (so a missing or
+   * mendacious header still cannot exhaust memory). Defaults to
+   * `8 * 1024 * 1024` (8 MiB) when omitted; positive integer values up to
+   * `Number.MAX_SAFE_INTEGER` are accepted, anything else throws at
+   * client construction. The mock gateway has no transport and ignores
+   * this field.
+   */
+  maxResponseBytes?: number;
 }
 
 /** Image payload accepted by visual sidecars. Rejected for `test_generation`. */
@@ -4841,4 +4856,4 @@ export interface EvidenceVerifyResponse {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.6.0" as const;
+export const CONTRACT_VERSION = "4.7.0" as const;

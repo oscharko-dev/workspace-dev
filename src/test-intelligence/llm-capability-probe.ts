@@ -144,7 +144,9 @@ const outcomeFromResult = (
     result.errorClass === "image_payload_rejected" ||
     result.errorClass === "schema_invalid" ||
     result.errorClass === "refusal" ||
-    result.errorClass === "incomplete"
+    result.errorClass === "incomplete" ||
+    result.errorClass === "input_budget_exceeded" ||
+    result.errorClass === "response_too_large"
   ) {
     return {
       outcome: "unsupported",

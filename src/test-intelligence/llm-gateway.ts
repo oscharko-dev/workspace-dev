@@ -107,7 +107,14 @@ export interface LlmGatewayClient {
 
 const DEFAULT_BACKOFF_MS: ReadonlyArray<number> = [100, 200, 400, 800, 1600];
 const MAX_REDACTED_MESSAGE_LENGTH = 240;
-const MAX_RESPONSE_BYTES = 1024 * 1024;
+/**
+ * Default ceiling on a gateway response body, in bytes. Covers a worst-case
+ * structured envelope (≈4k cases × ≈1.5 KiB each) with headroom and stays an
+ * order of magnitude below typical Node heap sizes so a runaway stream can
+ * never exhaust memory. Operators can lower or raise the cap per client via
+ * `LlmGatewayClientConfig.maxResponseBytes` (Issue #1414).
+ */
+const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 const defaultSleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
@@ -676,13 +683,18 @@ const parseOpenAiChatResponse = async ({
   }
 
   let bodyText: string;
+  const maxResponseBytes =
+    config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
   try {
-    const readResult = await readResponseTextWithLimit(response);
+    const readResult = await readResponseTextWithLimit(
+      response,
+      maxResponseBytes,
+    );
     if (!readResult.ok) {
       return {
         outcome: "error",
-        errorClass: "schema_invalid",
-        message: `response body exceeds ${MAX_RESPONSE_BYTES} bytes`,
+        errorClass: "response_too_large",
+        message: `response body exceeds maxResponseBytes ${maxResponseBytes}`,
         retryable: false,
         attempt,
       };
@@ -919,18 +931,19 @@ const parseOpenAiChatResponse = async ({
 
 const readResponseTextWithLimit = async (
   response: Response,
+  maxResponseBytes: number,
 ): Promise<{ ok: true; text: string } | { ok: false }> => {
   const contentLength = response.headers.get("content-length");
   if (contentLength !== null) {
     const parsedLength = Number.parseInt(contentLength, 10);
-    if (Number.isFinite(parsedLength) && parsedLength > MAX_RESPONSE_BYTES) {
+    if (Number.isFinite(parsedLength) && parsedLength > maxResponseBytes) {
       return { ok: false };
     }
   }
 
   if (response.body === null) {
     const text = await response.text();
-    if (new TextEncoder().encode(text).byteLength > MAX_RESPONSE_BYTES) {
+    if (new TextEncoder().encode(text).byteLength > maxResponseBytes) {
       return { ok: false };
     }
     return { ok: true, text };
@@ -944,7 +957,7 @@ const readResponseTextWithLimit = async (
     const chunk = await reader.read();
     if (chunk.done) break;
     totalBytes += chunk.value.byteLength;
-    if (totalBytes > MAX_RESPONSE_BYTES) {
+    if (totalBytes > maxResponseBytes) {
       await reader.cancel();
       return { ok: false };
     }
@@ -1201,6 +1214,15 @@ const validateConfig = (config: LlmGatewayClientConfig): void => {
   ) {
     throw new RangeError(
       "LlmGatewayClient: circuitBreaker.resetTimeoutMs must be non-negative",
+    );
+  }
+  if (
+    config.maxResponseBytes !== undefined &&
+    (!Number.isSafeInteger(config.maxResponseBytes) ||
+      config.maxResponseBytes <= 0)
+  ) {
+    throw new RangeError(
+      "LlmGatewayClient: maxResponseBytes must be a positive integer",
     );
   }
 };
