@@ -145,7 +145,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.1.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.2.0" as const;
 
 /** Schema version for generated test case payloads. */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
@@ -2401,7 +2401,19 @@ export interface WorkspaceJobConfidence {
 /** Schema version for `BusinessTestIntentIr` artifacts. */
 export const BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION = "1.0.0" as const;
 
-/** Known PII-like categories detected in mock form data. */
+/**
+ * Known PII-like categories detected in mock form data and Jira payloads.
+ *
+ * Wave 4.B (Issue #1432) extended this union with three Jira-aware
+ * categories: `internal_hostname` (corporate hostname patterns surfaced
+ * inside ADF text), `jira_mention` (Confluence/Jira `@user` mentions and
+ * raw account ids), and `customer_name_placeholder` (full-name-shaped
+ * values pulled from common Jira customer-facing custom-field names).
+ *
+ * Adding new union members is treated as a minor contract bump per
+ * `CONTRACT_CHANGELOG.md`'s versioning rules — consumers reading the IR
+ * may receive previously-unseen `kind` values.
+ */
 export type PiiKind =
   | "iban"
   | "bic"
@@ -2409,12 +2421,21 @@ export type PiiKind =
   | "tax_id"
   | "email"
   | "phone"
-  | "full_name";
+  | "full_name"
+  | "internal_hostname"
+  | "jira_mention"
+  | "customer_name_placeholder";
 
 /** Where a detected element came from during reconciliation. */
 export type IntentProvenance = "figma_node" | "visual_sidecar" | "reconciled";
 
-/** Location within the input that held a PII-like match. */
+/**
+ * Location within the input that held a PII-like match.
+ *
+ * Wave 4.B (Issue #1432) extends this union with Jira-IR-specific
+ * locations so adversarial-fixture and audit code can attribute every
+ * indicator back to the exact field it was sourced from.
+ */
 export type PiiMatchLocation =
   | "field_label"
   | "field_default_value"
@@ -2425,7 +2446,17 @@ export type PiiMatchLocation =
   | "screen_name"
   | "screen_path"
   | "validation_rule"
-  | "navigation_target";
+  | "navigation_target"
+  | "jira_summary"
+  | "jira_description"
+  | "jira_acceptance_criterion"
+  | "jira_comment_body"
+  | "jira_custom_field_name"
+  | "jira_custom_field_value"
+  | "jira_attachment_filename"
+  | "jira_link_relationship"
+  | "jira_label"
+  | "jira_component";
 
 /**
  * Reference to the Figma node that produced an intent element.
@@ -2925,6 +2956,411 @@ export interface MultiSourceModeGateRefusal {
 export interface MultiSourceModeGateDecision {
   allowed: boolean;
   refusals: MultiSourceModeGateRefusal[];
+}
+
+/**
+ * Jira issue intermediate representation (Issue #1432, Wave 4.B).
+ *
+ * The Jira IR is the canonical, PII-redacted, deterministically-hashed
+ * surface produced from raw Jira issue payloads — independent of whether
+ * the payload arrived via REST (Wave 4.C) or copy-paste (Wave 4.D). Wave
+ * 4.F's reconciliation engine and the LLM prompt compiler consume only
+ * this IR; raw Jira payloads, raw ADF rich-text, attachment bytes, user
+ * account IDs, internal hostnames, and Jira `self`/avatar/download URLs
+ * MUST never reach a persisted artifact or a model prompt.
+ *
+ * The IR is data-minimized by default: comments, attachments, linked
+ * issues, and unknown custom fields are excluded unless the caller
+ * explicitly opts each field group in. Every inclusion / exclusion /
+ * cap / redaction decision is recorded in {@link JiraIssueIrDataMinimization}
+ * so audits can prove what was collected and why.
+ */
+
+/** Schema version stamp for the {@link JiraIssueIr} artifact. */
+export const JIRA_ISSUE_IR_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Run-dir-relative subdirectory under which per-source Jira IR artifacts
+ * are persisted, namespaced by {@link TestIntentSourceRef.sourceId}.
+ *
+ * Layout: `<runDir>/sources/<sourceId>/jira-issue-ir.json`.
+ */
+export const JIRA_ISSUE_IR_ARTIFACT_DIRECTORY = "sources" as const;
+
+/** Canonical filename for the persisted Jira IR artifact. */
+export const JIRA_ISSUE_IR_ARTIFACT_FILENAME = "jira-issue-ir.json" as const;
+
+/**
+ * Hard pre-parse byte cap on the serialized ADF JSON document. Inputs
+ * exceeding this are rejected with `jira_adf_payload_too_large` before
+ * any tree traversal — the parser MUST NOT allocate proportional to the
+ * payload above this bound.
+ */
+export const MAX_JIRA_ADF_INPUT_BYTES = 1_048_576 as const;
+
+/**
+ * Hard cap on the UTF-8 byte length of {@link JiraIssueIr.descriptionPlain}
+ * after ADF normalization + PII redaction. Over-cap descriptions are
+ * truncated and the truncation is recorded in {@link JiraIssueIrDataMinimization.descriptionTruncated}.
+ */
+export const MAX_JIRA_DESCRIPTION_PLAIN_BYTES = 32_768 as const;
+
+/**
+ * Hard cap on the UTF-8 byte length of any single normalized + redacted
+ * Jira comment body. Over-cap comments are truncated and counted in
+ * {@link JiraIssueIrDataMinimization.commentsCapped}.
+ */
+export const MAX_JIRA_COMMENT_BODY_BYTES = 4_096 as const;
+
+/**
+ * Hard cap on the number of Jira comments persisted in a single IR.
+ * Over-cap comments are dropped and counted in
+ * {@link JiraIssueIrDataMinimization.commentsDropped}.
+ */
+export const MAX_JIRA_COMMENT_COUNT = 50 as const;
+
+/**
+ * Hard cap on the number of Jira attachments persisted in a single IR.
+ * Attachment bytes are NEVER persisted — only metadata.
+ */
+export const MAX_JIRA_ATTACHMENT_COUNT = 50 as const;
+
+/** Hard cap on the number of Jira linked-issue refs persisted in a single IR. */
+export const MAX_JIRA_LINK_COUNT = 50 as const;
+
+/** Hard cap on the number of custom fields persisted in a single IR. */
+export const MAX_JIRA_CUSTOM_FIELD_COUNT = 50 as const;
+
+/** Hard cap on the UTF-8 byte length of a single normalized + redacted custom-field value. */
+export const MAX_JIRA_CUSTOM_FIELD_VALUE_BYTES = 2_048 as const;
+
+/**
+ * Allow-listed Jira issue type discriminants. Anything outside this set
+ * collapses to `"other"` so the IR cannot be tricked into smuggling a
+ * free-form issue-type string into the prompt or downstream prompts.
+ */
+export const ALLOWED_JIRA_ISSUE_TYPES = [
+  "story",
+  "task",
+  "bug",
+  "epic",
+  "subtask",
+  "other",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ISSUE_TYPES}. */
+export type JiraIssueType = (typeof ALLOWED_JIRA_ISSUE_TYPES)[number];
+
+/**
+ * Allow-listed Atlassian Document Format node `type` discriminants. The
+ * parser fails closed on any node whose `type` is not in this set
+ * (`jira_adf_unknown_node_type`).
+ */
+export const ALLOWED_JIRA_ADF_NODE_TYPES = [
+  "doc",
+  "paragraph",
+  "heading",
+  "blockquote",
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "codeBlock",
+  "rule",
+  "panel",
+  "table",
+  "tableRow",
+  "tableHeader",
+  "tableCell",
+  "mediaSingle",
+  "mediaGroup",
+  "media",
+  "text",
+  "hardBreak",
+  "mention",
+  "emoji",
+  "inlineCard",
+  "status",
+  "date",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ADF_NODE_TYPES}. */
+export type JiraAdfNodeType = (typeof ALLOWED_JIRA_ADF_NODE_TYPES)[number];
+
+/**
+ * Allow-listed Atlassian Document Format `mark.type` discriminants. Marks
+ * carry inline annotation (e.g. `strong`, `link`) on `text` nodes. Marks
+ * outside this set are rejected with `jira_adf_unknown_mark_type`.
+ */
+export const ALLOWED_JIRA_ADF_MARK_TYPES = [
+  "strong",
+  "em",
+  "code",
+  "strike",
+  "underline",
+  "link",
+  "subsup",
+  "textColor",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ADF_MARK_TYPES}. */
+export type JiraAdfMarkType = (typeof ALLOWED_JIRA_ADF_MARK_TYPES)[number];
+
+/**
+ * Refusal codes emitted by the ADF parser (`parseJiraAdfDocument`). The
+ * parser never throws — it returns a discriminated union and these codes
+ * are stable, locale-independent strings safe to ship to automation.
+ */
+export const ALLOWED_JIRA_ADF_REJECTION_CODES = [
+  "jira_adf_payload_too_large",
+  "jira_adf_input_not_string",
+  "jira_adf_input_not_json",
+  "jira_adf_root_not_object",
+  "jira_adf_root_type_invalid",
+  "jira_adf_unknown_node_type",
+  "jira_adf_unknown_mark_type",
+  "jira_adf_node_shape_invalid",
+  "jira_adf_text_node_invalid",
+  "jira_adf_max_depth_exceeded",
+  "jira_adf_max_node_count_exceeded",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_ADF_REJECTION_CODES}. */
+export type JiraAdfRejectionCode =
+  (typeof ALLOWED_JIRA_ADF_REJECTION_CODES)[number];
+
+/**
+ * Refusal codes emitted by the Jira IR builder (`buildJiraIssueIr`) and
+ * by the Jira-issue-key / JQL-fragment validators. Stable and
+ * locale-independent.
+ */
+export const ALLOWED_JIRA_IR_REFUSAL_CODES = [
+  "jira_issue_key_invalid",
+  "jira_issue_key_too_long",
+  "jira_issue_type_invalid",
+  "jira_summary_invalid",
+  "jira_description_invalid",
+  "jira_acceptance_criterion_invalid",
+  "jira_comment_invalid",
+  "jira_attachment_invalid",
+  "jira_link_invalid",
+  "jira_custom_field_invalid",
+  "jira_custom_field_id_invalid",
+  "jira_status_invalid",
+  "jira_priority_invalid",
+  "jira_field_selection_profile_invalid",
+  "jira_captured_at_invalid",
+  "jira_field_unknown_excluded",
+  "jira_jql_fragment_disallowed_token",
+  "jira_jql_fragment_control_character",
+  "jira_jql_fragment_too_long",
+] as const;
+
+/** Discriminated alias for {@link ALLOWED_JIRA_IR_REFUSAL_CODES}. */
+export type JiraIrRefusalCode = (typeof ALLOWED_JIRA_IR_REFUSAL_CODES)[number];
+
+/** Single normalized acceptance criterion derived from a Jira issue. */
+export interface JiraAcceptanceCriterion {
+  /** Stable per-issue id, e.g. `"ac.0"`, `"ac.1"`. */
+  id: string;
+  /** Plain-text criterion body, PII-redacted. */
+  text: string;
+  /** Original Jira field id this criterion was sourced from (e.g. `"customfield_10042"`). */
+  sourceFieldId?: string;
+}
+
+/** Single PII-redacted Jira comment carried into the IR (opt-in only). */
+export interface JiraComment {
+  /** Stable per-issue id, e.g. `"comment.0"`. */
+  id: string;
+  /**
+   * Opaque non-PII author handle (never raw email, full name, or Jira
+   * accountId). Resolution is the caller's responsibility before the
+   * comment reaches the builder.
+   */
+  authorHandle?: string;
+  /** ISO-8601 UTC timestamp of the original Jira comment. */
+  createdAt: string;
+  /** PII-redacted comment body. May be truncated to the configured byte cap. */
+  body: string;
+  /** True when the body was truncated to fit {@link MAX_JIRA_COMMENT_BODY_BYTES}. */
+  bodyTruncated: boolean;
+}
+
+/**
+ * Metadata reference to a Jira attachment. The IR NEVER carries
+ * attachment bytes — only the redacted filename, MIME type, and byte
+ * size. Download URLs are stripped by the builder.
+ */
+export interface JiraAttachmentRef {
+  /** Stable per-issue id, e.g. `"attachment.0"`. */
+  id: string;
+  /** PII-redacted attachment filename. */
+  filename: string;
+  /** Reported MIME type, normalised to lowercase. */
+  mimeType?: string;
+  /** Reported byte size, if known. */
+  byteSize?: number;
+}
+
+/** Reference to another Jira issue linked from this one (opt-in). */
+export interface JiraLinkRef {
+  /** Stable per-issue id, e.g. `"link.0"`. */
+  id: string;
+  /** Validated Jira issue key of the linked issue. */
+  targetIssueKey: string;
+  /** Normalized link relationship label (e.g. `"blocks"`, `"relates_to"`). */
+  relationship: string;
+}
+
+/** Single PII-redacted custom field included in the IR (opt-in only). */
+export interface JiraIssueIrCustomField {
+  /** Jira custom-field id (e.g. `"customfield_10042"`). */
+  id: string;
+  /** PII-redacted custom-field display name. */
+  nameRedacted: string;
+  /** PII-redacted, byte-capped, normalized scalar value. */
+  valuePlain: string;
+  /** True when the value was truncated to fit {@link MAX_JIRA_CUSTOM_FIELD_VALUE_BYTES}. */
+  valueTruncated: boolean;
+}
+
+/**
+ * Field-selection profile applied by the Jira IR builder. The default is
+ * data-minimized: comments, attachments, linked issues, and custom fields
+ * are excluded unless the caller opts each group in. Unknown custom-field
+ * ids are always excluded — there is no opt-in path for "all custom
+ * fields".
+ */
+export interface JiraFieldSelectionProfile {
+  /** Include the description body (default `true`). */
+  includeDescription: boolean;
+  /** Include comments (default `false`). */
+  includeComments: boolean;
+  /** Include attachment metadata (default `false`). */
+  includeAttachments: boolean;
+  /** Include linked-issue refs (default `false`). */
+  includeLinks: boolean;
+  /**
+   * Allow-list of Jira custom-field ids whose values are persisted on
+   * the IR. Anything outside this list is excluded and counted in
+   * {@link JiraIssueIrDataMinimization.unknownCustomFieldsExcluded}.
+   */
+  customFieldAllowList: readonly string[];
+  /**
+   * Allow-list of Jira custom-field ids interpreted as acceptance
+   * criteria. The builder reads these fields, parses them as ADF when
+   * appropriate, and emits {@link JiraAcceptanceCriterion} entries.
+   */
+  acceptanceCriterionFieldIds: readonly string[];
+}
+
+/**
+ * Default Jira field selection profile — data-minimized by default. No
+ * comments, no attachments, no linked issues, no unknown custom fields.
+ * Description is included; acceptance criteria require explicit
+ * configuration.
+ */
+export const DEFAULT_JIRA_FIELD_SELECTION_PROFILE: JiraFieldSelectionProfile =
+  Object.freeze({
+    includeDescription: true,
+    includeComments: false,
+    includeAttachments: false,
+    includeLinks: false,
+    customFieldAllowList: Object.freeze([]) as readonly string[],
+    acceptanceCriterionFieldIds: Object.freeze([]) as readonly string[],
+  });
+
+/**
+ * Audit metadata recording how the data-minimization profile was applied
+ * to a single IR build. Lets reviewers verify that opt-in field groups
+ * were turned on intentionally, that over-large bodies were capped before
+ * persistence, and that unknown custom fields were excluded by default.
+ */
+export interface JiraIssueIrDataMinimization {
+  /** True when the description body was included on the IR. */
+  descriptionIncluded: boolean;
+  /** True when the description body was truncated to fit the byte cap. */
+  descriptionTruncated: boolean;
+  /** True when comments were included on the IR (opt-in). */
+  commentsIncluded: boolean;
+  /** Count of comments dropped because the count cap was exceeded. */
+  commentsDropped: number;
+  /** Count of comments whose body was truncated to fit the byte cap. */
+  commentsCapped: number;
+  /** True when attachment metadata was included on the IR (opt-in). */
+  attachmentsIncluded: boolean;
+  /** Count of attachments dropped because the count cap was exceeded. */
+  attachmentsDropped: number;
+  /** True when linked-issue refs were included on the IR (opt-in). */
+  linksIncluded: boolean;
+  /** Count of links dropped because the count cap was exceeded. */
+  linksDropped: number;
+  /** Count of custom fields included via the explicit allow-list. */
+  customFieldsIncluded: number;
+  /** Count of custom fields excluded because they were not on the allow-list. */
+  unknownCustomFieldsExcluded: number;
+  /** Count of custom-field values truncated to fit the per-field byte cap. */
+  customFieldsCapped: number;
+}
+
+/**
+ * Canonical, PII-redacted, deterministically-hashed Jira issue IR. Wave
+ * 4.F's reconciliation engine and the LLM prompt compiler consume only
+ * this IR — raw Jira payloads never reach prompt compilation.
+ *
+ * Hard invariants enforced by the builder:
+ *
+ *   1. `issueKey` is validated (`^[A-Z][A-Z0-9_]+-[1-9][0-9]*$`, ≤ 64 chars).
+ *   2. `descriptionPlain`, `summary`, comment bodies, custom-field values,
+ *      attachment filenames, and link relationships are all PII-redacted
+ *      before persistence.
+ *   3. No Jira `self` URL, account id, avatar URL, attachment download
+ *      URL, or raw `names`/`schema` map is present anywhere on the IR.
+ *   4. `contentHash` is the SHA-256 of the canonical JSON serialization
+ *      of the IR with `contentHash` itself stripped.
+ *   5. Audit/data-minimization metadata is always present.
+ */
+export interface JiraIssueIr {
+  /** Schema version stamp. */
+  version: typeof JIRA_ISSUE_IR_SCHEMA_VERSION;
+  /** Validated Jira issue key, e.g. `"PAY-1234"`. */
+  issueKey: string;
+  /** Allow-listed issue type discriminant. Free-form types collapse to `"other"`. */
+  issueType: JiraIssueType;
+  /** PII-redacted summary line. */
+  summary: string;
+  /** PII-redacted plain-text description, capped at {@link MAX_JIRA_DESCRIPTION_PLAIN_BYTES}. */
+  descriptionPlain: string;
+  /** Acceptance criteria parsed from explicitly configured custom fields. */
+  acceptanceCriteria: JiraAcceptanceCriterion[];
+  /** Sorted, deduplicated, PII-redacted labels. */
+  labels: string[];
+  /** Sorted, deduplicated, PII-redacted component names. */
+  components: string[];
+  /** Sorted, deduplicated fix-version names. */
+  fixVersions: string[];
+  /** Issue status name (e.g. `"In Progress"`). */
+  status: string;
+  /** Optional priority name (e.g. `"High"`). */
+  priority?: string;
+  /** Allow-listed custom fields with PII-redacted values (opt-in). */
+  customFields: JiraIssueIrCustomField[];
+  /** PII-redacted comments (opt-in only). */
+  comments: JiraComment[];
+  /** Attachment metadata only — NEVER bytes (opt-in only). */
+  attachments: JiraAttachmentRef[];
+  /** Linked-issue refs (opt-in only). */
+  links: JiraLinkRef[];
+  /** PII indicators surfaced during redaction. */
+  piiIndicators: PiiIndicator[];
+  /** Redaction records corresponding to {@link piiIndicators}. */
+  redactions: IntentRedaction[];
+  /** Data-minimization audit metadata. */
+  dataMinimization: JiraIssueIrDataMinimization;
+  /** ISO-8601 UTC timestamp at which the IR was built (`Z` suffix). */
+  capturedAt: string;
+  /** SHA-256 of the canonical IR with `contentHash` stripped. Lowercase, 64 hex. */
+  contentHash: string;
 }
 
 /** Visual-sidecar description produced by a multimodal vision model (Issue #1386). */
@@ -6122,4 +6558,4 @@ export interface TraceabilityMatrix {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.12.0" as const;
+export const CONTRACT_VERSION = "4.13.0" as const;

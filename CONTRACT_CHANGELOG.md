@@ -31,6 +31,73 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.13.0] - 2026-04-26
+
+### Added (Issue #1432, Wave 4.B)
+
+Jira issue intermediate representation, hand-rolled Atlassian Document
+Format (ADF) parser, and Jira-specific PII detection / redaction
+extensions. Purely additive — existing single-source Figma jobs and
+Wave 4.A multi-source consumers are unchanged.
+
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped from `1.1.0` to `1.2.0`.
+- New schema constant `JIRA_ISSUE_IR_SCHEMA_VERSION = "1.0.0"`.
+- New artifact constants `JIRA_ISSUE_IR_ARTIFACT_DIRECTORY = "sources"` and
+  `JIRA_ISSUE_IR_ARTIFACT_FILENAME = "jira-issue-ir.json"`. The Jira IR is
+  persisted at `<runDir>/sources/<sourceId>/jira-issue-ir.json` per
+  contributing source.
+- New byte-cap constants: `MAX_JIRA_ADF_INPUT_BYTES = 1 MiB` (pre-parse
+  hard cap on raw ADF JSON), `MAX_JIRA_DESCRIPTION_PLAIN_BYTES = 32 KiB`,
+  `MAX_JIRA_COMMENT_BODY_BYTES = 4 KiB`, `MAX_JIRA_CUSTOM_FIELD_VALUE_BYTES = 2 KiB`.
+- New count-cap constants: `MAX_JIRA_COMMENT_COUNT = 50`,
+  `MAX_JIRA_ATTACHMENT_COUNT = 50`, `MAX_JIRA_LINK_COUNT = 50`,
+  `MAX_JIRA_CUSTOM_FIELD_COUNT = 50`.
+- New runtime enums:
+    - `ALLOWED_JIRA_ISSUE_TYPES` (`story|task|bug|epic|subtask|other`).
+    - `ALLOWED_JIRA_ADF_NODE_TYPES` (24 allow-listed ADF node types).
+    - `ALLOWED_JIRA_ADF_MARK_TYPES` (8 allow-listed ADF mark types).
+    - `ALLOWED_JIRA_ADF_REJECTION_CODES` (11 codes including
+      `jira_adf_payload_too_large`, `jira_adf_unknown_node_type`).
+    - `ALLOWED_JIRA_IR_REFUSAL_CODES` (19 codes including
+      `jira_issue_key_invalid`, `jira_jql_fragment_disallowed_token`,
+      `jira_field_unknown_excluded`).
+- New types: `JiraIssueIr`, `JiraAcceptanceCriterion`, `JiraComment`,
+  `JiraAttachmentRef`, `JiraLinkRef`, `JiraIssueIrCustomField`,
+  `JiraFieldSelectionProfile`, `JiraIssueIrDataMinimization`,
+  `JiraAdfNodeType`, `JiraAdfMarkType`, `JiraAdfRejectionCode`,
+  `JiraIrRefusalCode`, `JiraIssueType`.
+- New value-typed `DEFAULT_JIRA_FIELD_SELECTION_PROFILE` — comments,
+  attachments, linked issues, and unknown custom fields are excluded by
+  default. Inclusion of each opt-in group is recorded in the IR's
+  `dataMinimization` audit metadata.
+- `PiiKind` extended (additive) with `internal_hostname`, `jira_mention`,
+  `customer_name_placeholder`. `PiiMatchLocation` extended with
+  Jira-specific locations (`jira_summary`, `jira_description`,
+  `jira_acceptance_criterion`, `jira_comment_body`,
+  `jira_custom_field_name`, `jira_custom_field_value`,
+  `jira_attachment_filename`, `jira_link_relationship`, `jira_label`,
+  `jira_component`).
+- New module `src/test-intelligence/jira-adf-parser.ts` —
+  `parseJiraAdfDocument` (pure, fail-closed, allow-list-only). Strips
+  `mention` / `inlineCard` / `media` / `mediaSingle` / `mediaGroup` to
+  text-only stubs (`@user`, `[link]`, `[attachment:filename.ext]`).
+  Bounds traversal depth (32) and node count (5_000). Byte-stable across
+  runs.
+- New module `src/test-intelligence/jira-issue-ir.ts` — `buildJiraIssueIr`
+  (pure builder), `writeJiraIssueIr` (atomic temp-rename persistence),
+  `isValidJiraIssueKey`, `sanitizeJqlFragment` (rejects `;`, backticks,
+  `--`, control characters, `OR 1=1` / `AND 1=1` hijack patterns,
+  oversize keys).
+- New PII-detection helpers: `detectCustomerNameInLabelledField`,
+  `isCustomerNameShapedFieldName`. The Jira-specific detectors fire on
+  internal-hostname-like strings (`*.intranet.*`, `*.corp.*`,
+  `*.internal`, `*.local`, `*.lan`, `*.atlassian.net`, `*.jira.com`),
+  Confluence/Jira `[~accountid:...]` markup + bare account ids, and
+  customer-name-shaped placeholders inside well-known customer-name Jira
+  custom-field labels.
+- Zero new runtime dependencies. No telemetry. No fetch. The parser and
+  the IR builder are both pure value-object code.
+
 ## [4.12.0] - 2026-04-26
 
 ### Added (Issue #1431, Wave 4.A)

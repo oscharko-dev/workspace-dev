@@ -17,6 +17,9 @@ const REDACTION_TOKEN: Record<PiiKind, string> = {
   email: "[REDACTED:EMAIL]",
   phone: "[REDACTED:PHONE]",
   full_name: "[REDACTED:FULL_NAME]",
+  internal_hostname: "[REDACTED:INTERNAL_HOSTNAME]",
+  jira_mention: "[REDACTED:JIRA_MENTION]",
+  customer_name_placeholder: "[REDACTED:CUSTOMER_NAME]",
 };
 
 const EMAIL_RE =
@@ -79,6 +82,12 @@ export const detectPii = (input: string): PiiMatch | null => {
 
   const phone = detectPhone(normalized);
   if (phone) return phone;
+
+  const mention = detectJiraMention(normalized);
+  if (mention) return mention;
+
+  const hostname = detectInternalHostname(normalized);
+  if (hostname) return hostname;
 
   const name = detectFullName(normalized);
   if (name) return name;
@@ -204,6 +213,121 @@ const detectFullName = (input: string): PiiMatch | null => {
         confidence: 0.7,
       };
     }
+  }
+  return null;
+};
+
+// --- Jira-aware detectors (Issue #1432) -------------------------------------
+
+/**
+ * Internal-hostname detector. Catches corporate-shaped hostnames that
+ * commonly leak into Jira description / comment bodies: `*.intranet.*`,
+ * `*.corp.*`, `*.internal`, `*.local`, `*.lan`, plus URLs targeting Jira
+ * cloud sites (`<tenant>.atlassian.net`, `<tenant>.jira.com`) so a paste
+ * of a Jira `self` URL cannot survive redaction. Public domains
+ * (`.com`, `.de`, `.io`, …) without an internal-marker label are not
+ * matched here — the email detector handles `name@public.com`.
+ */
+const INTERNAL_HOSTNAME_RE =
+  /(?<![A-Za-z0-9])(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+(?:intranet|corp|internal|local|lan|atlassian\.net|jira\.com)(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*(?![A-Za-z0-9])/iu;
+
+const detectInternalHostname = (input: string): PiiMatch | null => {
+  if (!INTERNAL_HOSTNAME_RE.test(input)) return null;
+  return {
+    kind: "internal_hostname",
+    redacted: REDACTION_TOKEN.internal_hostname,
+    confidence: 0.85,
+  };
+};
+
+/**
+ * Jira/Confluence mention detector. Matches:
+ *
+ *   - ADF-emitted mention placeholders left in stringified payloads, e.g.
+ *     `@user-mention`, `@mention[123]`, `@accountId:5b10ac8d82e05b22cc7d4ec5`.
+ *   - Raw Atlassian cloud account ids (24-32 hex chars after `account`/`user` token).
+ *   - Confluence-style `[~accountid:...]` markup.
+ *
+ * Public-handle shapes like `@alice` (≤ 24 chars without colon/hex) are
+ * intentionally NOT matched — the redaction profile would otherwise hit
+ * every reviewer alias in plain prose. Callers route alias-shaped
+ * tokens through `recordJiraMention` instead when ADF parser already
+ * stubbed a mention.
+ */
+const JIRA_MENTION_RE =
+  /(?:\[~accountid:[A-Za-z0-9:_-]+\])|(?:@(?:account(?:id)?|user-mention|mention)[\s:[(=-]+[A-Za-z0-9:_-]{4,64}\]?)|(?:[0-9a-f]{24,32}(?=\s|$|[^A-Za-z0-9]))/iu;
+
+const detectJiraMention = (input: string): PiiMatch | null => {
+  if (!JIRA_MENTION_RE.test(input)) return null;
+  return {
+    kind: "jira_mention",
+    redacted: REDACTION_TOKEN.jira_mention,
+    confidence: 0.9,
+  };
+};
+
+/**
+ * Customer-name-shaped placeholders pulled from common Jira customer
+ * facing custom-field names. Returns a `customer_name_placeholder`
+ * match when the input is a non-empty, name-shaped string AND the
+ * caller signalled (via {@link detectCustomerNameInLabelledField}) that
+ * the field carrying it is one of the customer-name-shaped Jira
+ * fields. Generic full names without that signal still flow through
+ * the existing {@link detectFullName} path.
+ */
+const CUSTOMER_NAME_FIELD_NAMES: ReadonlySet<string> = new Set([
+  "customer name",
+  "customer full name",
+  "customer first name",
+  "customer last name",
+  "customer fullname",
+  "client name",
+  "account holder",
+  "account holder name",
+  "account owner",
+  "primary contact",
+  "primary contact name",
+  "beneficiary",
+  "beneficiary name",
+  "beneficial owner",
+  "policy holder",
+  "card holder",
+  "cardholder",
+  "cardholder name",
+  "name on card",
+  "name on account",
+]);
+
+const NAME_SHAPED_RE =
+  /^[A-ZÀ-ſ][A-Za-zÀ-ſ'.-]{1,40}(?:\s+[A-ZÀ-ſ][A-Za-zÀ-ſ'.-]{1,40}){1,4}$/u;
+
+/**
+ * Returns true when the (case-insensitive, trimmed) Jira field display
+ * name is one of the well-known customer-name-shaped fields. Used by
+ * the Jira IR redaction profile to escalate `full_name`-shaped values
+ * inside customer-name fields into `customer_name_placeholder` matches.
+ */
+export const isCustomerNameShapedFieldName = (fieldName: string): boolean => {
+  return CUSTOMER_NAME_FIELD_NAMES.has(fieldName.trim().toLowerCase());
+};
+
+/**
+ * Detect a customer-name-shaped placeholder. Returns a non-null match
+ * when the caller has already established (via {@link isCustomerNameShapedFieldName})
+ * that the surrounding Jira field is a customer-name field, AND the
+ * value text is name-shaped or already a known full-name placeholder.
+ */
+export const detectCustomerNameInLabelledField = (
+  value: string,
+): PiiMatch | null => {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return null;
+  if (NAME_SHAPED_RE.test(trimmed) || detectFullName(trimmed) !== null) {
+    return {
+      kind: "customer_name_placeholder",
+      redacted: REDACTION_TOKEN.customer_name_placeholder,
+      confidence: 0.92,
+    };
   }
   return null;
 };
