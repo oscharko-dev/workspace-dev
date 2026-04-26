@@ -31,6 +31,17 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.5.0] - 2026-04-26
+
+### Added (Issue #1412)
+
+- New `TestCasePolicyOutcome` literal `"risk_tag_downgrade_detected"` added to `ALLOWED_TEST_CASE_POLICY_OUTCOMES`. Emitted by `evaluatePolicyGate` (per-case and job-level) when the case-level `riskCategory` is outside the active profile's `reviewOnlyRiskCategories` set while the Business Test Intent IR derives a review-only classification for a screen referenced in the case's `figmaTraceRefs`. Per-case violations carry `severity: "warning"` and force the per-case decision to `needs_review`; a deduplicated set of job-level violations records the same drift for audit. The `risk_tag_downgrade_detected` outcome is additive to the existing `regulated_risk_review_required` violation, which continues to fire so per-case review tooling preserves its prior behavior.
+- New optional field `enforceRiskTagDowngradeDetection?: boolean` on `TestCasePolicyProfileRules`. The secure default is `true` (treat `undefined` as `true`); the `eu-banking-default` profile sets the flag explicitly. Setting it to `false` disables the new gate behavior so legacy consumers remain backward-compatible.
+
+### Changed
+
+- `evaluatePolicyGate` now derives an effective intent risk classification per generated test case by intersecting `BusinessTestIntentIr.piiIndicators` with the case's `figmaTraceRefs.screenId` set (PII indicators without a `screenId` continue to be treated as global, fail-closed). Top-level `intent.risks` strings continue to be considered globally because the intent IR does not yet model per-screen risk strings.
+
 ## [4.4.0] - 2026-04-26
 
 ### Added (Issue #1413)
