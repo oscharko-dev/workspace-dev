@@ -1887,6 +1887,53 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
       intent: input.intent,
       visualSidecar: input.sidecarResult,
     });
+  const failureHashes = {
+    promptHash: failureHash("promptHash:not-generated"),
+    schemaHash: failureHash("schemaHash:not-generated"),
+    inputHash: failureHash("inputHash:visual-sidecar-failure"),
+    cacheKeyDigest: failureHash("cacheKeyDigest:not-generated"),
+  };
+  // Issue #1378 — even on a refused run, emit a per-job LBOM so an
+  // operator can audit the model chain that was attempted before the
+  // sidecar exhaustion. The LBOM is built with failure-mode identity
+  // hashes (the prompt was never compiled) and recorded under the same
+  // `lbom/ai-bom.cdx.json` path the success path uses.
+  const lbomDocument = buildLbomDocument({
+    fixtureId: input.fixtureId,
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    modelDeployments: {
+      testGeneration: TEST_GENERATION_DEPLOYMENT,
+      visualPrimary: toManifestVisualDeployment(
+        input.bundle.visualPrimary.deployment,
+      ),
+      visualFallback: toManifestVisualDeployment(
+        input.bundle.visualFallback.deployment,
+      ),
+    },
+    policyProfile: input.policyProfile,
+    exportProfile: { id: exportProfile.id, version: exportProfile.version },
+    hashes: failureHashes,
+    testGenerationBinding: {
+      modelRevision: TEST_GENERATION_MODEL_REVISION,
+      gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+    },
+    redactionPolicyVersion: REDACTION_POLICY_VERSION,
+  });
+  const lbomValidation = validateLbomDocument(lbomDocument);
+  if (!lbomValidation.valid) {
+    const summary = lbomValidation.issues
+      .slice(0, 5)
+      .map((issue) => `${issue.path}: ${issue.message}`)
+      .join("; ");
+    throw new Error(
+      `runWave1Poc: refusing to persist invalid failure-mode LBOM (${summary})`,
+    );
+  }
+  const lbomWritten = await writeLbomArtifact({
+    document: lbomDocument,
+    runDir: input.runDir,
+  });
   const manifest = buildWave1PocEvidenceManifest({
     fixtureId: input.fixtureId,
     jobId: input.jobId,
@@ -1904,10 +1951,10 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
     policyProfileVersion: input.policyProfile.version,
     exportProfileId: exportProfile.id,
     exportProfileVersion: exportProfile.version,
-    promptHash: failureHash("promptHash:not-generated"),
-    schemaHash: failureHash("schemaHash:not-generated"),
-    inputHash: failureHash("inputHash:visual-sidecar-failure"),
-    cacheKeyDigest: failureHash("cacheKeyDigest:not-generated"),
+    promptHash: failureHashes.promptHash,
+    schemaHash: failureHashes.schemaHash,
+    inputHash: failureHashes.inputHash,
+    cacheKeyDigest: failureHashes.cacheKeyDigest,
     artifacts: [
       {
         filename: VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
@@ -1918,6 +1965,11 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
         filename: `${FINOPS_ARTIFACT_DIRECTORY}/${FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME}`,
         bytes: input.finopsReportBytes,
         category: "finops",
+      },
+      {
+        filename: `${LBOM_ARTIFACT_DIRECTORY}/${LBOM_ARTIFACT_FILENAME}`,
+        bytes: lbomWritten.bytes,
+        category: "lbom",
       },
     ],
   });

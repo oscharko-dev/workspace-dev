@@ -43,6 +43,7 @@ All changes to the public contract surface of `workspace-dev` are documented her
 - `Wave1PocEvidenceArtifactCategory` adds `"lbom"`. The `runWave1Poc` evidence manifest now attests `lbom/ai-bom.cdx.json` with SHA-256 + byte length, so the existing in-toto attestation transitively covers the LBOM through the manifest digest.
 - `Wave1PocRunResult` adds `lbom: Wave1PocLbomDocument`, `lbomSummary: Wave1PocLbomSummary`, and `lbomArtifactPath: string`. All three are always present — the LBOM emit is part of the evidence-seal flow on every completed Wave 1 POC run.
 - New documentation template at `docs/figma-to-test/lbom-template.cdx.json` referenced from `docs/test-intelligence.md`. The template describes the document shape an operator should expect to find under each run directory.
+- The visual-sidecar-failure path also emits `lbom/ai-bom.cdx.json`. Even on a refused run an operator can audit the model chain (test-generation deployment, primary + fallback visual sidecars) and the active policy profile that were attempted before the sidecar exhaustion. The failure-mode LBOM uses the same identity-hash convention as the failure evidence manifest (deterministic SHA-256 over fixture / job / sidecar identity, `failureHash:not-generated` for prompt/schema fields) and is attested by the failure manifest under category `lbom`.
 
 ## [3.31.0] - 2026-04-26
 

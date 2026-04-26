@@ -20,6 +20,8 @@ import {
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   GENERATED_TESTCASES_ARTIFACT_FILENAME,
+  LBOM_ARTIFACT_DIRECTORY,
+  LBOM_ARTIFACT_FILENAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
@@ -30,7 +32,9 @@ import {
   type LlmGenerationRequest,
   type LlmGenerationResult,
   type VisualScreenDescription,
+  type Wave1PocLbomDocument,
 } from "../contracts/index.js";
+import { validateLbomDocument } from "./lbom-emitter.js";
 import {
   createMockLlmGatewayClientBundle,
   loadWave1PocCaptureFixture,
@@ -89,6 +93,26 @@ const assertFailureManifestAttestsSidecar = async (
     ) === false,
     "manifest should attest emitted artifacts, not recursively attest itself",
   );
+  // Issue #1378 — even on a refused run, the failure manifest must attest
+  // the per-job LBOM so an operator can audit the model chain that was
+  // attempted before the sidecar exhaustion.
+  const lbomFilename = `${LBOM_ARTIFACT_DIRECTORY}/${LBOM_ARTIFACT_FILENAME}`;
+  const lbomEntry = manifest.artifacts.find(
+    (artifact) => artifact.filename === lbomFilename,
+  );
+  assert.ok(lbomEntry, "failure manifest must attest the per-job LBOM");
+  assert.equal(lbomEntry.category, "lbom");
+  const lbomRaw = await readFile(join(runDir, lbomFilename), "utf8");
+  const parsedLbom = JSON.parse(lbomRaw) as Wave1PocLbomDocument;
+  const lbomValidation = validateLbomDocument(parsedLbom);
+  assert.equal(
+    lbomValidation.valid,
+    true,
+    JSON.stringify(lbomValidation.issues, null, 2),
+  );
+  assert.equal(parsedLbom.secretsIncluded, false);
+  assert.equal(parsedLbom.rawPromptsIncluded, false);
+  assert.equal(parsedLbom.rawScreenshotsIncluded, false);
 };
 
 /**
@@ -457,7 +481,9 @@ test("poc-harness visualCaptures: FinOps image byte budget fails closed before s
         gatewayRelease: "mock",
         declaredCapabilities: VISUAL_CAPS,
         responder: () => {
-          throw new Error("primary must not be called after image budget breach");
+          throw new Error(
+            "primary must not be called after image budget breach",
+          );
         },
       },
       visualFallback: {
@@ -467,7 +493,9 @@ test("poc-harness visualCaptures: FinOps image byte budget fails closed before s
         gatewayRelease: "mock",
         declaredCapabilities: VISUAL_CAPS,
         responder: () => {
-          throw new Error("fallback must not be called after image budget breach");
+          throw new Error(
+            "fallback must not be called after image budget breach",
+          );
         },
       },
     });
