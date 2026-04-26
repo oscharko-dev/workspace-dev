@@ -7,9 +7,9 @@
  * sits between `testcase.validate` and `testcase.policy` in the
  * validation pipeline and emits:
  *
- *   - per-case `qualitySignals.rubricScore` (rounded to 6 digits) on a
- *     freshly-cloned `GeneratedTestCaseList` so the replay-cache
- *     identity for the test-generation pass remains decoupled,
+ *   - per-case `rubricScore` rows in the persisted rubric report and
+ *     `TestCaseQualitySignalRubric[]` projection, keeping the strict
+ *     generated-test-case schema and replay-cache identity decoupled,
  *   - a job-level `SelfVerifyRubricReport` persisted under
  *     `<runDir>/testcases/self-verify-rubric.json`,
  *   - a `coverage-report.json#rubricScore` aggregate (via the
@@ -52,6 +52,7 @@ import {
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type LlmGenerationRequest,
+  type LlmGatewayCompatibilityMode,
   type SelfVerifyRubricAggregateScores,
   type SelfVerifyRubricCaseEvaluation,
   type SelfVerifyRubricDimension,
@@ -264,6 +265,8 @@ const buildCacheKey = (input: {
   list: GeneratedTestCaseList;
   intent: BusinessTestIntentIr;
   visual?: ReadonlyArray<VisualScreenDescription>;
+  modelDeployment: string;
+  compatibilityMode: LlmGatewayCompatibilityMode;
   modelRevision: string;
   gatewayRelease: string;
   policyBundleVersion: string;
@@ -281,6 +284,8 @@ const buildCacheKey = (input: {
     inputHash,
     promptHash,
     schemaHash,
+    modelDeployment: input.modelDeployment,
+    compatibilityMode: input.compatibilityMode,
     modelRevision: input.modelRevision,
     gatewayRelease: input.gatewayRelease,
     policyBundleVersion: input.policyBundleVersion,
@@ -454,6 +459,9 @@ const projectTestCaseForRubric = (
   return out;
 };
 
+const redactPromptJson = (value: unknown): string =>
+  redactHighRiskSecrets(canonicalJson(value), "[REDACTED]");
+
 /** Compose the user-prompt body. Pure and deterministic. */
 export const buildSelfVerifyRubricUserPrompt = (input: {
   list: GeneratedTestCaseList;
@@ -468,11 +476,11 @@ export const buildSelfVerifyRubricUserPrompt = (input: {
     `Redaction policy version: ${REDACTION_POLICY_VERSION}.`,
     `Visual sidecar batch present: ${input.visual !== undefined && input.visual.length > 0 ? "true" : "false"}.`,
     "Business Test Intent IR (canonical JSON):",
-    canonicalJson(input.intent),
+    redactPromptJson(input.intent),
     "Generated test cases (canonical JSON; project to required fields only):",
-    canonicalJson(projectedCases),
+    redactPromptJson(projectedCases),
     "Visual sidecar batch (canonical JSON):",
-    canonicalJson(input.visual ?? []),
+    redactPromptJson(input.visual ?? []),
   ];
   return sections.join("\n");
 };
@@ -1082,6 +1090,8 @@ export const runSelfVerifyRubricPass = async (
     list: input.list,
     intent: input.intent,
     ...(input.visual !== undefined ? { visual: input.visual } : {}),
+    modelDeployment: input.modelBinding.deployment,
+    compatibilityMode: input.client.compatibilityMode,
     modelRevision: input.modelBinding.modelRevision,
     gatewayRelease: input.modelBinding.gatewayRelease,
     policyBundleVersion: input.policyBundleVersion,
@@ -1099,6 +1109,17 @@ export const runSelfVerifyRubricPass = async (
         code: "image_payload_attempted",
         message:
           "self-verify rubric pass refuses to use a non-test_generation gateway role",
+      },
+    });
+  }
+  const bindingMismatch = validateClientModelBinding(input);
+  if (bindingMismatch !== undefined) {
+    return refusalResult({
+      input,
+      cacheKeyDigest,
+      refusal: {
+        code: "model_binding_mismatch",
+        message: bindingMismatch,
       },
     });
   }
@@ -1261,6 +1282,23 @@ const refusalResult = (input: {
     aggregate,
   };
   return { report, caseQualitySignals: [], cacheHit: false };
+};
+
+const validateClientModelBinding = (
+  input: RunSelfVerifyRubricPassInput,
+): string | undefined => {
+  const compatibilityMode: string = input.client.compatibilityMode;
+  if (compatibilityMode !== "openai_chat") {
+    return "self-verify rubric pass requires openai_chat compatibility mode";
+  }
+  if (
+    input.client.deployment !== input.modelBinding.deployment ||
+    input.client.modelRevision !== input.modelBinding.modelRevision ||
+    input.client.gatewayRelease !== input.modelBinding.gatewayRelease
+  ) {
+    return "self-verify rubric modelBinding must match the gateway client identity";
+  }
+  return undefined;
 };
 
 const stampReportIdentity = (

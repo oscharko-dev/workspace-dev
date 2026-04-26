@@ -557,6 +557,7 @@ export type SelfVerifyRubricVisualSubscoreKind =
 export const ALLOWED_SELF_VERIFY_RUBRIC_REFUSAL_CODES = [
   "feature_disabled",
   "gateway_failure",
+  "model_binding_mismatch",
   "schema_invalid_response",
   "score_out_of_range",
   "missing_test_case_score",
@@ -678,6 +679,10 @@ export interface SelfVerifyRubricReplayCacheKey {
   promptHash: string;
   /** SHA-256 of the rubric response JSON schema. */
   schemaHash: string;
+  /** Deployment identity used for the rubric pass. */
+  modelDeployment: string;
+  /** Gateway compatibility mode; Issue #1379 pins this to `openai_chat`. */
+  compatibilityMode: LlmGatewayCompatibilityMode;
   modelRevision: string;
   gatewayRelease: string;
   policyBundleVersion: string;

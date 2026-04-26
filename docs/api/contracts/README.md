@@ -1297,7 +1297,7 @@ Sum of input tokens reported by the gateway across all successful attempts.
 
 ##### lastErrorClass?
 
-> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"schema_invalid_response"`
+> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"`
 
 Last error class observed (failure path) — `undefined` if no failure.
 
@@ -3187,6 +3187,323 @@ case transitions from `pending_secondary_approval` to `approved`.
 
 ***
 
+### SelfVerifyRubricAggregateScores
+
+Job-level aggregate of the rubric pass.
+
+#### Properties
+
+##### dimensionScores
+
+> **dimensionScores**: [`SelfVerifyRubricDimensionScore`](#selfverifyrubricdimensionscore)[]
+
+Job-level mean per rubric dimension; sorted by dimension name.
+
+##### jobLevelRubricScore
+
+> **jobLevelRubricScore**: `number`
+
+Mean of the per-case `rubricScore` values across the job.
+
+##### visualSubscores?
+
+> `optional` **visualSubscores?**: [`SelfVerifyRubricVisualSubscore`](#selfverifyrubricvisualsubscore)[]
+
+Job-level mean per visual subscore when the rubric pass scored visuals.
+
+***
+
+### SelfVerifyRubricCaseEvaluation
+
+Per-test-case rubric evaluation row.
+
+#### Properties
+
+##### citations
+
+> **citations**: [`SelfVerifyRubricRuleCitation`](#selfverifyrubricrulecitation)[]
+
+Sorted by `ruleId` for byte stability. Empty array when no rule fired.
+
+##### dimensions
+
+> **dimensions**: [`SelfVerifyRubricDimensionScore`](#selfverifyrubricdimensionscore)[]
+
+Sorted by dimension name for byte stability.
+
+##### rubricScore
+
+> **rubricScore**: `number`
+
+Aggregate per-case rubric score in `[0, 1]`. Arithmetic mean of the
+dimensions and visual subscores; rounded to 6 digits in the artifact.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+##### visualSubscores?
+
+> `optional` **visualSubscores?**: [`SelfVerifyRubricVisualSubscore`](#selfverifyrubricvisualsubscore)[]
+
+Visual subscores when the rubric pass had a visual sidecar input.
+
+***
+
+### SelfVerifyRubricDimensionScore
+
+Single dimension score in the persisted rubric report.
+
+#### Properties
+
+##### dimension
+
+> **dimension**: `"schema_conformance"` \| `"source_trace_completeness"` \| `"assumption_open_question_marking"` \| `"expected_result_coverage"` \| `"negative_boundary_presence"` \| `"duplication_flag_consistency"`
+
+##### score
+
+> **score**: `number`
+
+Score in `[0, 1]`; rounded to 6 digits in the persisted artifact.
+
+***
+
+### SelfVerifyRubricRefusal
+
+Refusal record emitted when the rubric pass cannot publish scores.
+
+#### Properties
+
+##### code
+
+> **code**: `"feature_disabled"` \| `"gateway_failure"` \| `"model_binding_mismatch"` \| `"schema_invalid_response"` \| `"score_out_of_range"` \| `"missing_test_case_score"` \| `"extra_test_case_score"` \| `"duplicate_test_case_score"` \| `"image_payload_attempted"`
+
+##### message
+
+> **message**: `string`
+
+Sanitized + truncated message; no secrets, no chain-of-thought.
+
+***
+
+### SelfVerifyRubricReplayCacheEntry
+
+Stored cache entry for a rubric report.
+
+#### Properties
+
+##### key
+
+> **key**: `string`
+
+##### report
+
+> **report**: [`SelfVerifyRubricReport`](#selfverifyrubricreport)
+
+##### storedAt
+
+> **storedAt**: `string`
+
+***
+
+### SelfVerifyRubricReplayCacheKey
+
+Replay-cache key for the self-verify rubric pass. The key carries a
+hard discriminator (`passKind`) so it can never collide with the
+test-generation replay cache key, even when other identity fields
+happen to match.
+
+#### Properties
+
+##### compatibilityMode
+
+> **compatibilityMode**: `"openai_chat"`
+
+Gateway compatibility mode; Issue #1379 pins this to `openai_chat`.
+
+##### gatewayRelease
+
+> **gatewayRelease**: `string`
+
+##### inputHash
+
+> **inputHash**: `string`
+
+SHA-256 of the rubric input (test cases + intent + visual descriptions).
+
+##### modelDeployment
+
+> **modelDeployment**: `string`
+
+Deployment identity used for the rubric pass.
+
+##### modelRevision
+
+> **modelRevision**: `string`
+
+##### passKind
+
+> **passKind**: `"self_verify_rubric"`
+
+##### policyBundleVersion
+
+> **policyBundleVersion**: `string`
+
+##### promptHash
+
+> **promptHash**: `string`
+
+SHA-256 of the rubric prompt + response schema identity.
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+##### redactionPolicyVersion
+
+> **redactionPolicyVersion**: `"1.0.0"`
+
+##### rubricSchemaVersion
+
+> **rubricSchemaVersion**: `"1.0.0"`
+
+##### schemaHash
+
+> **schemaHash**: `string`
+
+SHA-256 of the rubric response JSON schema.
+
+##### seed?
+
+> `optional` **seed?**: `number`
+
+***
+
+### SelfVerifyRubricReport
+
+Persisted self-verify rubric pass artifact (Issue #1379).
+
+Sibling to `validation-report.json` and `coverage-report.json` under
+`<runDir>/testcases/self-verify-rubric.json`. Always byte-stable: per
+case evaluations are sorted by `testCaseId`, dimension lists are
+sorted by dimension name, and citations are sorted by rule id.
+
+When a `refusal` is present, `caseEvaluations` is empty and the
+`aggregate` carries `0` job/dimension scores; downstream policy gates
+MUST treat the refusal as a soft signal (it does not by itself block
+a job) and surface it on the inspector for operator review.
+
+#### Properties
+
+##### aggregate
+
+> **aggregate**: [`SelfVerifyRubricAggregateScores`](#selfverifyrubricaggregatescores)
+
+##### cacheHit
+
+> **cacheHit**: `boolean`
+
+Whether the rubric replay cache served the result without invoking the LLM.
+
+##### cacheKeyDigest
+
+> **cacheKeyDigest**: `string`
+
+Hex-encoded SHA-256 digest of the rubric replay-cache key.
+
+##### caseEvaluations
+
+> **caseEvaluations**: [`SelfVerifyRubricCaseEvaluation`](#selfverifyrubriccaseevaluation)[]
+
+Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
+
+##### contractVersion
+
+> **contractVersion**: `"1.0.0"`
+
+##### gatewayRelease
+
+> **gatewayRelease**: `string`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### modelDeployment
+
+> **modelDeployment**: `string`
+
+Identity stamps of the deployment that produced (or would have produced) the scores.
+
+##### modelRevision
+
+> **modelRevision**: `string`
+
+##### policyProfileId
+
+> **policyProfileId**: `string`
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+##### refusal?
+
+> `optional` **refusal?**: [`SelfVerifyRubricRefusal`](#selfverifyrubricrefusal)
+
+Set when the pass refused to publish scores.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+***
+
+### SelfVerifyRubricRuleCitation
+
+Short, structured rule citation attached to a per-case evaluation. The
+citation surfaces the rubric rule the rater applied and a short
+audit-grade message. No chain-of-thought is persisted — `message` is
+a single sentence the rater produced when grading the case.
+
+#### Properties
+
+##### message
+
+> **message**: `string`
+
+Audit-grade short message; sanitized + truncated by the parser.
+
+##### ruleId
+
+> **ruleId**: `string`
+
+Stable rule identifier (e.g. `"schema_conformance.required_fields"`).
+
+***
+
+### SelfVerifyRubricVisualSubscore
+
+Single visual subscore in the persisted rubric report.
+
+#### Properties
+
+##### score
+
+> **score**: `number`
+
+Score in `[0, 1]`; rounded to 6 digits in the persisted artifact.
+
+##### subscore
+
+> **subscore**: `"visible_control_coverage"` \| `"state_validation_coverage"` \| `"ambiguity_handling"` \| `"unsupported_visual_claims"`
+
+***
+
 ### TestCaseCoverageBucket
 
 Per-element coverage breakdown.
@@ -3551,6 +3868,31 @@ JSON-pointer-style path inside the test case if applicable.
 
 ***
 
+### TestCaseQualitySignalRubric
+
+Per-test-case rubric quality signal emitted by the self-verify pass
+(Issue #1379). The signal is reported via the `self-verify-rubric.json`
+artifact rather than mutated onto the cached `GeneratedTestCase` so
+the strict generated-test-case JSON schema and the replay-cache
+identity remain byte-stable. Each row mirrors one
+`SelfVerifyRubricCaseEvaluation` from the rubric report and is
+surfaced on the inspector + the audit-timeline as a quality signal of
+the underlying test case.
+
+#### Properties
+
+##### rubricScore
+
+> **rubricScore**: `number`
+
+0..1 aggregate rubric score for this case (rounded to 6 digits).
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+***
+
 ### TestCaseValidationIssue
 
 Single semantic / structural validation issue.
@@ -3771,7 +4113,7 @@ Wall-clock duration of the attempt in milliseconds.
 
 ##### errorClass?
 
-> `optional` **errorClass?**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"schema_invalid_response"`
+> `optional` **errorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"`
 
 Error class when the attempt failed. Absent on a success.
 
@@ -3863,7 +4205,7 @@ upstream gates can decide between "retry later" and "refuse the job".
 
 ##### failureClass
 
-> **failureClass**: `"primary_unavailable"` \| `"primary_quota_exceeded"` \| `"both_sidecars_failed"` \| `"schema_invalid_response"` \| `"image_payload_too_large"` \| `"image_mime_unsupported"` \| `"duplicate_screen_id"` \| `"empty_screen_capture_set"`
+> **failureClass**: `"schema_invalid_response"` \| `"primary_unavailable"` \| `"primary_quota_exceeded"` \| `"both_sidecars_failed"` \| `"image_payload_too_large"` \| `"image_mime_unsupported"` \| `"duplicate_screen_id"` \| `"empty_screen_capture_set"`
 
 ##### failureMessage
 
@@ -4567,7 +4909,7 @@ Numeric or boolean observed value (encoded as number for comparators).
 
 ##### rule
 
-> **rule**: `"visual_sidecar_blocked"` \| `"min_trace_coverage_fields"` \| `"min_trace_coverage_actions"` \| `"min_trace_coverage_validations"` \| `"min_qc_mapping_exportable_fraction"` \| `"max_duplicate_similarity"` \| `"min_expected_results_per_case"` \| `"min_approved_cases"` \| `"policy_blocked"` \| `"validation_blocked"` \| `"export_refused"`
+> **rule**: `"visual_sidecar_blocked"` \| `"min_trace_coverage_fields"` \| `"min_trace_coverage_actions"` \| `"min_trace_coverage_validations"` \| `"min_qc_mapping_exportable_fraction"` \| `"max_duplicate_similarity"` \| `"min_expected_results_per_case"` \| `"min_approved_cases"` \| `"policy_blocked"` \| `"validation_blocked"` \| `"export_refused"` \| `"min_job_rubric_score"` \| `"rubric_pass_refused"`
 
 ##### threshold
 
@@ -4627,6 +4969,14 @@ Per-fixture metrics computed by the Wave 1 POC evaluation gate.
 
 > **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
 
+##### jobRubricScore?
+
+> `optional` **jobRubricScore?**: `number`
+
+Optional job-level self-verify rubric score (Issue #1379). Only
+present when the rubric pass ran for the fixture. Mirrors the value
+stored on `coverage-report.json#rubricScore` (rounded to 6 digits).
+
 ##### maxObservedDuplicateSimilarity
 
 > **maxObservedDuplicateSimilarity**: `number`
@@ -4642,6 +4992,14 @@ Per-fixture metrics computed by the Wave 1 POC evaluation gate.
 ##### policyBlocked
 
 > **policyBlocked**: `boolean`
+
+##### rubricRefused?
+
+> `optional` **rubricRefused?**: `boolean`
+
+Whether the rubric pass attached a `refusal` to its report
+(Issue #1379). `true` when the LLM gateway refused, the response
+failed schema validation, or the per-case score set was incomplete.
 
 ##### totalGeneratedCases
 
@@ -4745,6 +5103,15 @@ Minimum number of approved cases required after the review gate.
 
 Minimum number of `expectedResults` entries required per approved case.
 
+##### minJobRubricScore?
+
+> `optional` **minJobRubricScore?**: `number`
+
+Optional minimum job-level self-verify rubric score in `[0, 1]`
+(Issue #1379). When set, the eval gate fails the run if the rubric
+pass produced a `jobLevelRubricScore` strictly below this threshold.
+When omitted, the rubric job-level score is informational only.
+
 ##### minQcMappingExportableFraction
 
 > **minQcMappingExportableFraction**: `number`
@@ -4774,6 +5141,15 @@ Fraction of detected validations covered by at least one approved test case.
 > **requirePolicyPass**: `boolean`
 
 Validation pipeline must not block.
+
+##### requireRubricPass?
+
+> `optional` **requireRubricPass?**: `boolean`
+
+When `true`, the eval gate also fails when the self-verify rubric
+pass attached a `refusal` to its report. Defaulted to `false` so
+the eval gate stays byte-stable for fixtures that do not exercise
+the opt-in pass.
 
 ##### requireVisualSidecarPass
 
@@ -5799,7 +6175,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-29)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-30)
 
 ##### pasteDeltaSummary?
 
@@ -9007,6 +9383,38 @@ Cache lookup outcome consumed by the orchestration layer.
 
 ***
 
+### SelfVerifyRubricDimension
+
+> **SelfVerifyRubricDimension** = *typeof* [`ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS`](#allowed_self_verify_rubric_dimensions)\[`number`\]
+
+Single rubric scoring dimension.
+
+***
+
+### SelfVerifyRubricRefusalCode
+
+> **SelfVerifyRubricRefusalCode** = *typeof* [`ALLOWED_SELF_VERIFY_RUBRIC_REFUSAL_CODES`](#allowed_self_verify_rubric_refusal_codes)\[`number`\]
+
+Single rubric pass refusal classification.
+
+***
+
+### SelfVerifyRubricReplayCacheLookupResult
+
+> **SelfVerifyRubricReplayCacheLookupResult** = \{ `entry`: [`SelfVerifyRubricReplayCacheEntry`](#selfverifyrubricreplaycacheentry); `hit`: `true`; \} \| \{ `hit`: `false`; `key`: `string`; \}
+
+Cache lookup outcome consumed by the rubric pass orchestration layer.
+
+***
+
+### SelfVerifyRubricVisualSubscoreKind
+
+> **SelfVerifyRubricVisualSubscoreKind** = *typeof* [`ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES`](#allowed_self_verify_rubric_visual_subscores)\[`number`\]
+
+Single multimodal visual subscore kind.
+
+***
+
 ### TestCaseLevel
 
 > **TestCaseLevel** = `"unit"` \| `"component"` \| `"integration"` \| `"system"` \| `"acceptance"`
@@ -9132,7 +9540,7 @@ supplied integration with Fulcio + Rekor).
 
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"` \| `"self_verify_rubric"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -9663,6 +10071,44 @@ skip this state entirely.
 
 ***
 
+### ALLOWED\_SELF\_VERIFY\_RUBRIC\_DIMENSIONS
+
+> `const` **ALLOWED\_SELF\_VERIFY\_RUBRIC\_DIMENSIONS**: readonly \[`"schema_conformance"`, `"source_trace_completeness"`, `"assumption_open_question_marking"`, `"expected_result_coverage"`, `"negative_boundary_presence"`, `"duplication_flag_consistency"`\]
+
+Allowed scoring dimensions evaluated by the self-verify rubric pass
+(Issue #1379). Each dimension is scored in `[0, 1]` per test case;
+the per-case rubric score is the arithmetic mean of the supplied
+dimensions (and visual subscores when present). The discriminant is
+the runtime source of truth — adding a new dimension is a minor
+(additive) bump per the contract versioning rules.
+
+***
+
+### ALLOWED\_SELF\_VERIFY\_RUBRIC\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_SELF\_VERIFY\_RUBRIC\_REFUSAL\_CODES**: readonly \[`"feature_disabled"`, `"gateway_failure"`, `"model_binding_mismatch"`, `"schema_invalid_response"`, `"score_out_of_range"`, `"missing_test_case_score"`, `"extra_test_case_score"`, `"duplicate_test_case_score"`, `"image_payload_attempted"`\]
+
+Allowed refusal codes reported by the self-verify rubric pass when the
+pass cannot publish a complete per-case evaluation. The code is
+load-bearing: callers that gate on rubric output check this code and
+fall back to the unscored coverage path. No two refusal codes overlap.
+
+***
+
+### ALLOWED\_SELF\_VERIFY\_RUBRIC\_VISUAL\_SUBSCORES
+
+> `const` **ALLOWED\_SELF\_VERIFY\_RUBRIC\_VISUAL\_SUBSCORES**: readonly \[`"visible_control_coverage"`, `"state_validation_coverage"`, `"ambiguity_handling"`, `"unsupported_visual_claims"`\]
+
+Allowed multimodal visual subscores layered onto the rubric pass when
+a validated `VisualScreenDescription` batch is supplied alongside the
+test cases (Issue #1379, multimodal addendum 2026-04-24). The four
+subscores are: visible-control coverage, state/validation coverage,
+ambiguity handling, and the unsupported-visual-claims penalty (the
+latter is interpreted as `1 - penalty` so all subscores remain in
+`[0, 1]` where higher is better).
+
+***
+
 ### ALLOWED\_TEST\_CASE\_POLICY\_DECISIONS
 
 > `const` **ALLOWED\_TEST\_CASE\_POLICY\_DECISIONS**: readonly \[`"approved"`, `"blocked"`, `"needs_review"`\]
@@ -9792,7 +10238,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.0.0"`
+> `const` **CONTRACT\_VERSION**: `"4.1.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -10079,6 +10525,57 @@ Schema version for the persisted review-gate state and event-log artifacts (Issu
 > `const` **REVIEW\_STATE\_ARTIFACT\_FILENAME**: `"review-state.json"`
 
 Canonical filename for the persisted review-gate snapshot.
+
+***
+
+### SELF\_VERIFY\_RUBRIC\_ARTIFACT\_DIRECTORY
+
+> `const` **SELF\_VERIFY\_RUBRIC\_ARTIFACT\_DIRECTORY**: `"testcases"`
+
+Run-dir-relative subdirectory under which the self-verify rubric artifact
+is persisted. Sibling to the validation reports so consumers can locate
+the test-case quality signals next to the cases they describe.
+
+***
+
+### SELF\_VERIFY\_RUBRIC\_PROMPT\_TEMPLATE\_VERSION
+
+> `const` **SELF\_VERIFY\_RUBRIC\_PROMPT\_TEMPLATE\_VERSION**: `"1.0.0"`
+
+Prompt template version stamp for the rubric-only prompt family. Bumped
+on any change to the system prompt, user-prompt preamble, or the JSON
+response schema; the version stamp participates in the rubric replay-cache
+key so any template change forces a cache miss.
+
+***
+
+### SELF\_VERIFY\_RUBRIC\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **SELF\_VERIFY\_RUBRIC\_REPORT\_ARTIFACT\_FILENAME**: `"self-verify-rubric.json"`
+
+Canonical filename for the persisted self-verify rubric report
+(Issue #1379). The artifact is emitted under
+`<runDir>/testcases/self-verify-rubric.json` when the opt-in pass runs.
+
+***
+
+### SELF\_VERIFY\_RUBRIC\_REPORT\_SCHEMA\_VERSION
+
+> `const` **SELF\_VERIFY\_RUBRIC\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted self-verify rubric pass artifact (Issue #1379).
+
+Bumped on any breaking change to the per-case evaluation shape, the
+job-level aggregate shape, the rubric-dimension union, or the JSON
+response shape consumed by the rubric prompt.
+
+***
+
+### SELF\_VERIFY\_RUBRIC\_RESPONSE\_SCHEMA\_NAME
+
+> `const` **SELF\_VERIFY\_RUBRIC\_RESPONSE\_SCHEMA\_NAME**: `"SelfVerifyRubricReport"`
+
+Stable JSON schema name attached to the structured rubric response.
 
 ***
 
