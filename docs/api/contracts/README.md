@@ -3906,6 +3906,22 @@ Tunable knobs of a policy profile (defaults shown for `eu-banking-default`).
 
 Max Jaccard similarity above which two cases are flagged as duplicates.
 
+##### enforceRiskTagDowngradeDetection?
+
+> `optional` **enforceRiskTagDowngradeDetection?**: `boolean`
+
+Whether the policy gate must cross-reference each generated test case's
+declared `riskCategory` against the risk classification derivable from the
+Business Test Intent IR for the screens referenced in the case's
+`figmaTraceRefs`. When enabled (the secure default), any case that
+declares a risk category outside `reviewOnlyRiskCategories` while the
+intent IR derives a review-only classification for one of its screens
+raises a `risk_tag_downgrade_detected` outcome at both per-case and
+job-level. The case is escalated to `needs_review` (defense-in-depth
+against an out-of-band caller submitting forged low-risk tags).
+
+Optional for backward compatibility. Treat `undefined` as `true`.
+
 ##### maxAssumptionsPerCase
 
 > **maxAssumptionsPerCase**: `number`
@@ -4028,7 +4044,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"`
 
 ##### path?
 
@@ -10381,7 +10397,7 @@ Allowed policy-gate decisions (Issue #1364).
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -10496,7 +10512,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.4.0"`
+> `const` **CONTRACT\_VERSION**: `"4.5.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

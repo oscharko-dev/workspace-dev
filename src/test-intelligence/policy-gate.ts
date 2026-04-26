@@ -319,19 +319,29 @@ const deriveScreenIntentRisk = (
   testCase: GeneratedTestCase,
   profile: TestCasePolicyProfile,
 ): TestCaseRiskCategory | undefined => {
-  const reviewSet = new Set(profile.rules.reviewOnlyRiskCategories);
   const caseScreenIds = collectCaseScreenIds(testCase);
+  return findIntentReviewRiskForIndicators(intent, profile, (indicator) => {
+    if (indicator.screenId === undefined) return true;
+    return caseScreenIds.has(indicator.screenId);
+  });
+};
+
+const findIntentReviewRiskForIndicators = (
+  intent: BusinessTestIntentIr,
+  profile: TestCasePolicyProfile,
+  piiApplies: (indicator: BusinessTestIntentIr["piiIndicators"][number]) => boolean,
+): TestCaseRiskCategory | undefined => {
+  const reviewSet = new Set(profile.rules.reviewOnlyRiskCategories);
   const normalizedRisks = intent.risks.map((risk) => risk.toLowerCase());
 
   for (const category of profile.rules.reviewOnlyRiskCategories) {
     if (normalizedRisks.includes(category)) return category;
   }
 
-  const screenScopedPii = intent.piiIndicators.some((indicator) => {
-    if (indicator.screenId === undefined) return true;
-    return caseScreenIds.has(indicator.screenId);
-  });
-  if (screenScopedPii && reviewSet.has("regulated_data")) {
+  if (
+    intent.piiIndicators.some((indicator) => piiApplies(indicator)) &&
+    reviewSet.has("regulated_data")
+  ) {
     return "regulated_data";
   }
   if (
@@ -355,32 +365,7 @@ const findIntentReviewRisk = (
   intent: BusinessTestIntentIr,
   profile: TestCasePolicyProfile,
 ): GeneratedTestCase["riskCategory"] | undefined => {
-  const reviewCategories = new Set(profile.rules.reviewOnlyRiskCategories);
-  const normalizedRisks = intent.risks.map((risk) => risk.toLowerCase());
-  for (const category of profile.rules.reviewOnlyRiskCategories) {
-    if (normalizedRisks.includes(category)) return category;
-  }
-  if (
-    intent.piiIndicators.length > 0 &&
-    reviewCategories.has("regulated_data")
-  ) {
-    return "regulated_data";
-  }
-  if (
-    normalizedRisks.some((risk) => /regulated|pii|personal.?data/.test(risk)) &&
-    reviewCategories.has("regulated_data")
-  ) {
-    return "regulated_data";
-  }
-  if (
-    normalizedRisks.some((risk) =>
-      /financial|payment|iban|transaction/.test(risk),
-    ) &&
-    reviewCategories.has("financial_transaction")
-  ) {
-    return "financial_transaction";
-  }
-  return undefined;
+  return findIntentReviewRiskForIndicators(intent, profile, () => true);
 };
 
 const evaluateJobLevel = (
@@ -491,7 +476,7 @@ const evaluateJobLevel = (
       const intentRisk = deriveScreenIntentRisk(intent, tc, profile);
       if (intentRisk === undefined) continue;
       if (reviewSet.has(tc.riskCategory)) continue;
-      const key = `${tc.id} ${intentRisk} ${tc.riskCategory}`;
+      const key = JSON.stringify([tc.id, intentRisk, tc.riskCategory]);
       if (seen.has(key)) continue;
       seen.add(key);
       const screenIds = collectCaseScreenIds(tc);
