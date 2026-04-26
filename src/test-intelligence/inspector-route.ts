@@ -9,6 +9,7 @@
  *   POST /workspace/test-intelligence/review/<jobId>/<action>               → job-level write
  *   POST /workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>  → per-case write
  *   POST /workspace/test-intelligence/sources/<jobId>/jira-paste            → Jira paste source ingest
+ *   POST /workspace/test-intelligence/sources/<jobId>/custom-context        → custom context source ingest
  *
  * Reads are unauthenticated (artifact JSON contains no secrets — the
  * test-intelligence pipeline already redacts PII before persistence).
@@ -27,6 +28,7 @@ export type InspectorTestIntelligenceRoute =
   | { kind: "read_bundle"; jobId: string }
   | { kind: "review_state"; jobId: string }
   | { kind: "jira_paste_source"; jobId: string }
+  | { kind: "custom_context_source"; jobId: string }
   | {
       kind: "review_action";
       jobId: string;
@@ -184,13 +186,18 @@ export const parseInspectorTestIntelligenceRoute = (
         error: { kind: "parse_error", reason: "unsafe_job_id" },
       };
     }
-    if (sourceKind !== "jira-paste") {
+    if (sourceKind === "jira-paste") {
+      return { ok: true, route: { kind: "jira_paste_source", jobId } };
+    }
+    if (sourceKind === "custom-context") {
+      return { ok: true, route: { kind: "custom_context_source", jobId } };
+    }
+    {
       return {
         ok: false,
         error: { kind: "parse_error", reason: "unknown_subroute" },
       };
     }
-    return { ok: true, route: { kind: "jira_paste_source", jobId } };
   }
 
   return {
@@ -204,6 +211,7 @@ export const isInspectorTestIntelligenceWriteAction = (
   route: InspectorTestIntelligenceRoute,
 ): boolean => {
   if (route.kind === "jira_paste_source") return true;
+  if (route.kind === "custom_context_source") return true;
   if (route.kind !== "review_action") return false;
   return route.action !== "state";
 };

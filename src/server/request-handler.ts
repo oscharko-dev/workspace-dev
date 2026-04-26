@@ -130,6 +130,8 @@ import {
   MAX_JIRA_PASTE_INPUT_BYTES,
   type JiraPasteDeclaredFormat,
 } from "../test-intelligence/jira-paste-ingest.js";
+import { validateCustomContextInput } from "../test-intelligence/custom-context-input.js";
+import { persistCustomContext } from "../test-intelligence/custom-context-store.js";
 
 /**
  * Decode a URI component safely, sending a 400 response on malformed input.
@@ -457,7 +459,8 @@ type WorkspaceAuditEvent =
   | "workspace.remap_suggest.completed"
   | "workspace.token_decisions.persisted"
   | "workspace.evidence.verify.completed"
-  | "workspace.jira_paste_source.ingested";
+  | "workspace.jira_paste_source.ingested"
+  | "workspace.custom_context_source.ingested";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
@@ -530,6 +533,9 @@ const ALLOWED_JIRA_PASTE_REQUEST_FIELDS = new Set([
   "paste",
   "authorHandle",
 ]);
+const CUSTOM_CONTEXT_REQUEST_ENVELOPE_OVERHEAD_BYTES = 4096;
+const MAX_CUSTOM_CONTEXT_REQUEST_BODY_BYTES =
+  32 * 1024 + CUSTOM_CONTEXT_REQUEST_ENVELOPE_OVERHEAD_BYTES;
 const LEGACY_TEST_INTELLIGENCE_REVIEW_PRINCIPAL_ID = "legacy-review-bearer";
 
 interface PersistedTokenDecisions {
@@ -724,7 +730,10 @@ type TestIntelligenceSourceAuthResult =
   | {
       ok: false;
       statusCode: 401 | 503;
-      payload: { error: "UNAUTHORIZED" | "AUTHENTICATION_UNAVAILABLE"; message: string };
+      payload: {
+        error: "UNAUTHORIZED" | "AUTHENTICATION_UNAVAILABLE";
+        message: string;
+      };
       wwwAuthenticate?: string;
     };
 
@@ -810,7 +819,7 @@ function resolveProtectedWriteRoute(
   }
   if (
     method === "POST" &&
-    /^\/workspace\/test-intelligence\/sources\/[A-Za-z0-9_.-]{1,128}\/jira-paste$/u.test(
+    /^\/workspace\/test-intelligence\/sources\/[A-Za-z0-9_.-]{1,128}\/(?:jira-paste|custom-context)$/u.test(
       pathname,
     )
   ) {
@@ -1436,6 +1445,209 @@ export function createWorkspaceRequestHandler({
                 jiraIssueIr: `sources/${ingest.result.sourceId}/jira-issue-ir.json`,
                 pasteProvenance: `sources/${ingest.result.sourceId}/paste-provenance.json`,
                 rawPastePersisted: false,
+              },
+            },
+          });
+          return;
+        }
+
+        if (route.kind === "custom_context_source") {
+          response.setHeader("allow", "POST");
+          if (method !== "POST") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for custom context source ingestion on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+
+          const multiSourceEnabled =
+            resolveTestIntelligenceMultiSourceEnvEnabled() &&
+            runtime.testIntelligenceMultiSourceEnabled === true;
+          if (!multiSourceEnabled) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: ErrorCode.FEATURE_DISABLED,
+                message:
+                  "Custom context source ingestion requires the multi-source test-intelligence gate.",
+                refusals: [
+                  ...(!resolveTestIntelligenceMultiSourceEnvEnabled()
+                    ? ["multi_source_env_disabled"]
+                    : []),
+                  ...(runtime.testIntelligenceMultiSourceEnabled === true
+                    ? []
+                    : ["multi_source_startup_option_disabled"]),
+                ],
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Custom context source ingestion disabled.",
+            });
+            return;
+          }
+
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              jobId: route.jobId,
+              fallbackMessage: "Custom context write request rejected.",
+            });
+            return;
+          }
+
+          const auth = validateTestIntelligenceSourceAuth({
+            request,
+            ...(runtime.testIntelligenceReviewBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceReviewBearerToken }
+              : {}),
+            ...(runtime.testIntelligenceReviewPrincipals !== undefined
+              ? { reviewPrincipals: runtime.testIntelligenceReviewPrincipals }
+              : {}),
+            routeLabel: "Custom context source ingestion",
+          });
+          if (!auth.ok) {
+            if (auth.wwwAuthenticate) {
+              response.setHeader("www-authenticate", auth.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: auth.statusCode,
+              payload: auth.payload,
+              event:
+                auth.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: auth.statusCode === 401 ? "warn" : "error",
+              jobId: route.jobId,
+              fallbackMessage: "Custom context source ingestion rejected.",
+            });
+            return;
+          }
+
+          const rateLimitResult =
+            await testIntelligenceSourceWriteRateLimiter.consume(
+              resolveRateLimitClientKey(request),
+              route.jobId,
+            );
+          if (!rateLimitResult.allowed) {
+            sendRateLimitExceeded({
+              retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+              message: `Too many test-intelligence source writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+            });
+            return;
+          }
+
+          const bodyResult = await readJsonBody(request, {
+            maxBytes: MAX_CUSTOM_CONTEXT_REQUEST_BODY_BYTES,
+          });
+          if (!bodyResult.ok) {
+            sendRequestFailure({
+              statusCode: bodyResult.reason === "OVERSIZE" ? 413 : 400,
+              payload: {
+                error:
+                  bodyResult.reason === "OVERSIZE"
+                    ? "REQUEST_TOO_LARGE"
+                    : "INVALID_BODY",
+                message: bodyResult.error,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Invalid custom context request body.",
+            });
+            return;
+          }
+
+          const validated = validateCustomContextInput(bodyResult.value);
+          if (!validated.ok) {
+            sendValidationError({
+              statusCode: 422,
+              payload: {
+                error: "INVALID_BODY",
+                message: "Custom context request failed validation.",
+                issues: validated.issues,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Custom context request validation failed.",
+            });
+            return;
+          }
+
+          const runDir = path.join(testIntelligenceArtifactRoot, route.jobId);
+          const persisted = await persistCustomContext({
+            runDir,
+            authorHandle: auth.authorHandle,
+            ...(validated.value.markdown !== undefined
+              ? { markdown: validated.value.markdown }
+              : {}),
+            ...(validated.value.attributes !== undefined
+              ? { attributes: validated.value.attributes }
+              : {}),
+          });
+          if (!persisted.ok) {
+            const payload: Record<string, unknown> = {
+              error: persisted.code,
+              message: persisted.message,
+            };
+            if (persisted.issues !== undefined) {
+              payload.issues = persisted.issues;
+            }
+            if (persisted.statusCode >= 500) {
+              sendRequestFailure({
+                statusCode: persisted.statusCode,
+                payload,
+                jobId: route.jobId,
+                fallbackMessage: "Custom context source ingestion failed.",
+              });
+            } else {
+              sendValidationError({
+                statusCode: persisted.statusCode,
+                payload,
+                jobId: route.jobId,
+                fallbackMessage: "Custom context request validation failed.",
+              });
+            }
+            return;
+          }
+
+          logAuditEvent({
+            event: "workspace.custom_context_source.ingested",
+            statusCode: 200,
+            jobId: route.jobId,
+            message: `Custom context source ingested for job '${route.jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              ok: true,
+              jobId: route.jobId,
+              sourceRefs: persisted.result.sourceRefs,
+              sourceEnvelope: persisted.result.sourceEnvelope,
+              customContext: persisted.result.customContext,
+              policySignals: persisted.result.policySignals,
+              artifacts: {
+                customContext: persisted.result.artifactPaths.map(
+                  (artifactPath) =>
+                    path
+                      .relative(runDir, artifactPath)
+                      .replaceAll(path.sep, "/"),
+                ),
+                rawMarkdownPersisted: false,
+                unsanitizedInputPersisted: false,
               },
             },
           });

@@ -140,7 +140,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### hashes
 
@@ -159,6 +159,10 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 > **payload**: `object`
 
 Redacted JSON payload that the model will reason over.
+
+###### customContext?
+
+> `optional` **customContext?**: [`CompiledPromptCustomContext`](#compiledpromptcustomcontext)
 
 ###### intent
 
@@ -195,6 +199,66 @@ Redacted JSON payload that the model will reason over.
 ##### visualBinding
 
 > **visualBinding**: [`CompiledPromptVisualBinding`](#compiledpromptvisualbinding)
+
+***
+
+### CompiledPromptCustomContext
+
+Sanitized custom supporting context visible to prompt compilation.
+
+#### Properties
+
+##### markdownSections
+
+> **markdownSections**: `object`[]
+
+###### bodyMarkdown
+
+> **bodyMarkdown**: `string`
+
+###### bodyPlain
+
+> **bodyPlain**: `string`
+
+###### entryId
+
+> **entryId**: `string`
+
+###### markdownContentHash
+
+> **markdownContentHash**: `string`
+
+###### plainContentHash
+
+> **plainContentHash**: `string`
+
+###### sourceId
+
+> **sourceId**: `string`
+
+##### structuredAttributes
+
+> **structuredAttributes**: `object`[]
+
+###### contentHash
+
+> **contentHash**: `string`
+
+###### entryId
+
+> **entryId**: `string`
+
+###### key
+
+> **key**: `string`
+
+###### sourceId
+
+> **sourceId**: `string`
+
+###### value
+
+> **value**: `string`
 
 ***
 
@@ -315,6 +379,166 @@ Number of screens covered by the visual binding.
 ##### selectedDeployment
 
 > **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+***
+
+### CustomContextNoteEntry
+
+PII-redacted Markdown note persisted as custom supporting context.
+
+#### Properties
+
+##### authorHandle
+
+> **authorHandle**: `string`
+
+##### bodyMarkdown
+
+> **bodyMarkdown**: `string`
+
+Canonical allowlist Markdown after PII redaction.
+
+##### bodyPlain
+
+> **bodyPlain**: `string`
+
+Deterministic plain-text derivative of [bodyMarkdown](#bodymarkdown).
+
+##### capturedAt
+
+> **capturedAt**: `string`
+
+##### entryId
+
+> **entryId**: `string`
+
+##### inputFormat
+
+> **inputFormat**: `"markdown"`
+
+##### markdownContentHash
+
+> **markdownContentHash**: `string`
+
+##### piiIndicators
+
+> **piiIndicators**: [`PiiIndicator`](#piiindicator)[]
+
+##### plainContentHash
+
+> **plainContentHash**: `string`
+
+##### redactions
+
+> **redactions**: [`IntentRedaction`](#intentredaction)[]
+
+***
+
+### CustomContextPolicySignal
+
+Policy signal derived from recognized custom structured attributes.
+
+#### Properties
+
+##### attributeKey
+
+> **attributeKey**: `string`
+
+##### attributeValue
+
+> **attributeValue**: `string`
+
+##### contentHash
+
+> **contentHash**: `string`
+
+##### entryId
+
+> **entryId**: `string`
+
+##### reason
+
+> **reason**: `string`
+
+##### riskCategory
+
+> **riskCategory**: [`TestCaseRiskCategory`](#testcaseriskcategory)
+
+##### sourceId
+
+> **sourceId**: `string`
+
+***
+
+### CustomContextSource
+
+Persisted custom-context source artifact.
+
+#### Properties
+
+##### aggregateContentHash
+
+> **aggregateContentHash**: `string`
+
+##### noteEntries
+
+> **noteEntries**: [`CustomContextNoteEntry`](#customcontextnoteentry)[]
+
+##### sourceKind
+
+> **sourceKind**: `"custom_text"` \| `"custom_structured"`
+
+##### structuredEntries
+
+> **structuredEntries**: [`CustomContextStructuredEntry`](#customcontextstructuredentry)[]
+
+##### version
+
+> **version**: `"1.0.0"`
+
+***
+
+### CustomContextStructuredEntry
+
+Validated machine-checkable custom supporting attributes.
+
+#### Properties
+
+##### attributes
+
+> **attributes**: `object`[]
+
+###### key
+
+> **key**: `string`
+
+###### value
+
+> **value**: `string`
+
+##### authorHandle
+
+> **authorHandle**: `string`
+
+##### capturedAt
+
+> **capturedAt**: `string`
+
+##### contentHash
+
+> **contentHash**: `string`
+
+##### entryId
+
+> **entryId**: `string`
+
+##### piiIndicators
+
+> **piiIndicators**: [`PiiIndicator`](#piiindicator)[]
+
+##### redactions
+
+> **redactions**: [`IntentRedaction`](#intentredaction)[]
 
 ***
 
@@ -824,7 +1048,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### credentialsIncluded
 
@@ -1173,7 +1397,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### exportedTestCaseCount
 
@@ -1367,7 +1591,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### currencyLabel?
 
@@ -1771,7 +1995,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### expectedResults
 
@@ -1873,7 +2097,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### generatedAt
 
@@ -2164,7 +2388,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### currentIntentHash
 
@@ -2297,6 +2521,621 @@ Optional — omitted for legacy single-source Figma jobs to keep
 artifacts byte-stable. When present, each entry MUST match an entry
 in the surrounding [MultiSourceTestIntentEnvelope.sources](#sources)
 array by `sourceId`.
+
+***
+
+### JiraAcceptanceCriterion
+
+Single normalized acceptance criterion derived from a Jira issue.
+
+#### Properties
+
+##### id
+
+> **id**: `string`
+
+Stable per-issue id, e.g. `"ac.0"`, `"ac.1"`.
+
+##### sourceFieldId?
+
+> `optional` **sourceFieldId?**: `string`
+
+Original Jira field id this criterion was sourced from (e.g. `"customfield_10042"`).
+
+##### text
+
+> **text**: `string`
+
+Plain-text criterion body, PII-redacted.
+
+***
+
+### JiraAttachmentRef
+
+Metadata reference to a Jira attachment. The IR NEVER carries
+attachment bytes — only the redacted filename, MIME type, and byte
+size. Download URLs are stripped by the builder.
+
+#### Properties
+
+##### byteSize?
+
+> `optional` **byteSize?**: `number`
+
+Reported byte size, if known.
+
+##### filename
+
+> **filename**: `string`
+
+PII-redacted attachment filename.
+
+##### id
+
+> **id**: `string`
+
+Stable per-issue id, e.g. `"attachment.0"`.
+
+##### mimeType?
+
+> `optional` **mimeType?**: `string`
+
+Reported MIME type, normalised to lowercase.
+
+***
+
+### JiraCapabilityProbe
+
+Jira capability probe result.
+
+#### Properties
+
+##### adfSupported
+
+> **adfSupported**: `boolean`
+
+##### deploymentType
+
+> **deploymentType**: `"unknown"` \| `"Cloud"` \| `"Server"` \| `"DataCenter"`
+
+##### version
+
+> **version**: `string`
+
+***
+
+### JiraComment
+
+Single PII-redacted Jira comment carried into the IR (opt-in only).
+
+#### Properties
+
+##### authorHandle?
+
+> `optional` **authorHandle?**: `string`
+
+Opaque non-PII author handle (never raw email, full name, or Jira
+accountId). Resolution is the caller's responsibility before the
+comment reaches the builder.
+
+##### body
+
+> **body**: `string`
+
+PII-redacted comment body. May be truncated to the configured byte cap.
+
+##### bodyTruncated
+
+> **bodyTruncated**: `boolean`
+
+True when the body was truncated to fit [MAX\_JIRA\_COMMENT\_BODY\_BYTES](#max_jira_comment_body_bytes).
+
+##### createdAt
+
+> **createdAt**: `string`
+
+ISO-8601 UTC timestamp of the original Jira comment.
+
+##### id
+
+> **id**: `string`
+
+Stable per-issue id, e.g. `"comment.0"`.
+
+***
+
+### JiraFetchRequest
+
+Outbound fetch request shape for the Jira gateway.
+
+#### Properties
+
+##### capturedAt?
+
+> `optional` **capturedAt?**: `string`
+
+Deterministic capture timestamp for generated IR; defaults to Unix epoch.
+
+##### expand?
+
+> `optional` **expand?**: readonly (`"renderedFields"` \| `"names"` \| `"schema"`)[]
+
+##### fieldSelection?
+
+> `optional` **fieldSelection?**: `Partial`\<[`JiraFieldSelectionProfile`](#jirafieldselectionprofile)\>
+
+##### linkExpansionDepth?
+
+> `optional` **linkExpansionDepth?**: `0` \| `1` \| `2`
+
+##### maxRetries?
+
+> `optional` **maxRetries?**: `number`
+
+##### maxWallClockMs?
+
+> `optional` **maxWallClockMs?**: `number`
+
+##### query
+
+> **query**: \{ `jql`: `string`; `kind`: `"jql"`; `maxResults`: `number`; \} \| \{ `issueKeys`: `string`[]; `kind`: `"issueKeys"`; \}
+
+##### replayMode?
+
+> `optional` **replayMode?**: `boolean`
+
+When true, load the cached Jira API response and issue zero outbound fetches.
+
+##### runDir?
+
+> `optional` **runDir?**: `string`
+
+Enables deterministic on-disk gateway artifacts under `<runDir>/sources/<sourceId>/`.
+
+##### sourceId?
+
+> `optional` **sourceId?**: `string`
+
+Source namespace used for replay/cache artifacts when `runDir` is set.
+
+***
+
+### JiraFetchResult
+
+Result returned by the Jira gateway.
+
+#### Properties
+
+##### attempts
+
+> **attempts**: `number`
+
+##### cacheHit?
+
+> `optional` **cacheHit?**: `boolean`
+
+##### capability
+
+> **capability**: [`JiraCapabilityProbe`](#jiracapabilityprobe)
+
+##### diagnostic?
+
+> `optional` **diagnostic?**: [`JiraGatewayDiagnostic`](#jiragatewaydiagnostic)
+
+##### issues
+
+> **issues**: [`JiraIssueIr`](#jiraissueir)[]
+
+##### responseHash
+
+> **responseHash**: `string`
+
+##### retryable
+
+> **retryable**: `boolean`
+
+***
+
+### JiraFieldSelectionProfile
+
+Field-selection profile applied by the Jira IR builder. The default is
+data-minimized: comments, attachments, linked issues, and custom fields
+are excluded unless the caller opts each group in. Unknown custom-field
+ids are always excluded — there is no opt-in path for "all custom
+fields".
+
+#### Properties
+
+##### acceptanceCriterionFieldIds
+
+> **acceptanceCriterionFieldIds**: readonly `string`[]
+
+Allow-list of Jira custom-field ids interpreted as acceptance
+criteria. The builder reads these fields, parses them as ADF when
+appropriate, and emits [JiraAcceptanceCriterion](#jiraacceptancecriterion) entries.
+
+##### customFieldAllowList
+
+> **customFieldAllowList**: readonly `string`[]
+
+Allow-list of Jira custom-field ids whose values are persisted on
+the IR. Anything outside this list is excluded and counted in
+[JiraIssueIrDataMinimization.unknownCustomFieldsExcluded](#unknowncustomfieldsexcluded).
+
+##### includeAttachments
+
+> **includeAttachments**: `boolean`
+
+Include attachment metadata (default `false`).
+
+##### includeComments
+
+> **includeComments**: `boolean`
+
+Include comments (default `false`).
+
+##### includeDescription
+
+> **includeDescription**: `boolean`
+
+Include the description body (default `true`).
+
+##### includeLinks
+
+> **includeLinks**: `boolean`
+
+Include linked-issue refs (default `false`).
+
+***
+
+### JiraGatewayConfig
+
+Client configuration for the Jira REST gateway (Wave 4.C).
+
+#### Properties
+
+##### allowedHostPatterns?
+
+> `optional` **allowedHostPatterns?**: readonly `string`[]
+
+Exact hostnames or `*.example.com` suffix patterns allowed for Bearer
+token/Data Center calls. Cloud Basic and OAuth gateway hosts are validated
+by auth-mode-specific rules; Data Center endpoints must be allow-listed.
+
+##### auth
+
+> **auth**: \{ `kind`: `"bearer"`; `token`: `string`; \} \| \{ `apiToken`: `string`; `email`: `string`; `kind`: `"basic"`; \} \| \{ `accessToken`: `string`; `kind`: `"oauth2_3lo"`; \}
+
+##### baseUrl
+
+> **baseUrl**: `string`
+
+##### maxResponseBytes?
+
+> `optional` **maxResponseBytes?**: `number`
+
+##### maxRetries?
+
+> `optional` **maxRetries?**: `number`
+
+##### maxWallClockMs?
+
+> `optional` **maxWallClockMs?**: `number`
+
+##### userAgent
+
+> **userAgent**: `string`
+
+***
+
+### JiraGatewayDiagnostic
+
+Structured diagnostic emitted by the Jira gateway failure path.
+
+#### Properties
+
+##### code
+
+> **code**: `string`
+
+##### message
+
+> **message**: `string`
+
+##### rateLimitReason?
+
+> `optional` **rateLimitReason?**: `string`
+
+##### retryable
+
+> **retryable**: `boolean`
+
+##### status?
+
+> `optional` **status?**: `number`
+
+***
+
+### JiraIssueIr
+
+Canonical, PII-redacted, deterministically-hashed Jira issue IR. Wave
+4.F's reconciliation engine and the LLM prompt compiler consume only
+this IR — raw Jira payloads never reach prompt compilation.
+
+Hard invariants enforced by the builder:
+
+  1. `issueKey` is validated (`^[A-Z][A-Z0-9_]+-[1-9][0-9]*$`, ≤ 64 chars).
+  2. `descriptionPlain`, `summary`, comment bodies, custom-field values,
+     attachment filenames, and link relationships are all PII-redacted
+     before persistence.
+  3. No Jira `self` URL, account id, avatar URL, attachment download
+     URL, or raw `names`/`schema` map is present anywhere on the IR.
+  4. `contentHash` is the SHA-256 of the canonical JSON serialization
+     of the IR with `contentHash` itself stripped.
+  5. Audit/data-minimization metadata is always present.
+
+#### Properties
+
+##### acceptanceCriteria
+
+> **acceptanceCriteria**: [`JiraAcceptanceCriterion`](#jiraacceptancecriterion)[]
+
+Acceptance criteria parsed from explicitly configured custom fields.
+
+##### attachments
+
+> **attachments**: [`JiraAttachmentRef`](#jiraattachmentref)[]
+
+Attachment metadata only — NEVER bytes (opt-in only).
+
+##### capturedAt
+
+> **capturedAt**: `string`
+
+ISO-8601 UTC timestamp at which the IR was built (`Z` suffix).
+
+##### comments
+
+> **comments**: [`JiraComment`](#jiracomment)[]
+
+PII-redacted comments (opt-in only).
+
+##### components
+
+> **components**: `string`[]
+
+Sorted, deduplicated, PII-redacted component names.
+
+##### contentHash
+
+> **contentHash**: `string`
+
+SHA-256 of the canonical IR with `contentHash` stripped. Lowercase, 64 hex.
+
+##### customFields
+
+> **customFields**: [`JiraIssueIrCustomField`](#jiraissueircustomfield)[]
+
+Allow-listed custom fields with PII-redacted values (opt-in).
+
+##### dataMinimization
+
+> **dataMinimization**: [`JiraIssueIrDataMinimization`](#jiraissueirdataminimization-1)
+
+Data-minimization audit metadata.
+
+##### descriptionPlain
+
+> **descriptionPlain**: `string`
+
+PII-redacted plain-text description, capped at [MAX\_JIRA\_DESCRIPTION\_PLAIN\_BYTES](#max_jira_description_plain_bytes).
+
+##### fixVersions
+
+> **fixVersions**: `string`[]
+
+Sorted, deduplicated fix-version names.
+
+##### issueKey
+
+> **issueKey**: `string`
+
+Validated Jira issue key, e.g. `"PAY-1234"`.
+
+##### issueType
+
+> **issueType**: `"other"` \| `"story"` \| `"task"` \| `"bug"` \| `"epic"` \| `"subtask"`
+
+Allow-listed issue type discriminant. Free-form types collapse to `"other"`.
+
+##### labels
+
+> **labels**: `string`[]
+
+Sorted, deduplicated, PII-redacted labels.
+
+##### links
+
+> **links**: [`JiraLinkRef`](#jiralinkref)[]
+
+Linked-issue refs (opt-in only).
+
+##### piiIndicators
+
+> **piiIndicators**: [`PiiIndicator`](#piiindicator)[]
+
+PII indicators surfaced during redaction.
+
+##### priority?
+
+> `optional` **priority?**: `string`
+
+Optional priority name (e.g. `"High"`).
+
+##### redactions
+
+> **redactions**: [`IntentRedaction`](#intentredaction)[]
+
+Redaction records corresponding to [piiIndicators](#piiindicators-3).
+
+##### status
+
+> **status**: `string`
+
+Issue status name (e.g. `"In Progress"`).
+
+##### summary
+
+> **summary**: `string`
+
+PII-redacted summary line.
+
+##### version
+
+> **version**: `"1.0.0"`
+
+Schema version stamp.
+
+***
+
+### JiraIssueIrCustomField
+
+Single PII-redacted custom field included in the IR (opt-in only).
+
+#### Properties
+
+##### id
+
+> **id**: `string`
+
+Jira custom-field id (e.g. `"customfield_10042"`).
+
+##### nameRedacted
+
+> **nameRedacted**: `string`
+
+PII-redacted custom-field display name.
+
+##### valuePlain
+
+> **valuePlain**: `string`
+
+PII-redacted, byte-capped, normalized scalar value.
+
+##### valueTruncated
+
+> **valueTruncated**: `boolean`
+
+True when the value was truncated to fit [MAX\_JIRA\_CUSTOM\_FIELD\_VALUE\_BYTES](#max_jira_custom_field_value_bytes).
+
+***
+
+### JiraIssueIrDataMinimization
+
+Audit metadata recording how the data-minimization profile was applied
+to a single IR build. Lets reviewers verify that opt-in field groups
+were turned on intentionally, that over-large bodies were capped before
+persistence, and that unknown custom fields were excluded by default.
+
+#### Properties
+
+##### attachmentsDropped
+
+> **attachmentsDropped**: `number`
+
+Count of attachments dropped because the count cap was exceeded.
+
+##### attachmentsIncluded
+
+> **attachmentsIncluded**: `boolean`
+
+True when attachment metadata was included on the IR (opt-in).
+
+##### commentsCapped
+
+> **commentsCapped**: `number`
+
+Count of comments whose body was truncated to fit the byte cap.
+
+##### commentsDropped
+
+> **commentsDropped**: `number`
+
+Count of comments dropped because the count cap was exceeded.
+
+##### commentsIncluded
+
+> **commentsIncluded**: `boolean`
+
+True when comments were included on the IR (opt-in).
+
+##### customFieldsCapped
+
+> **customFieldsCapped**: `number`
+
+Count of custom-field values truncated to fit the per-field byte cap.
+
+##### customFieldsIncluded
+
+> **customFieldsIncluded**: `number`
+
+Count of custom fields included via the explicit allow-list.
+
+##### descriptionIncluded
+
+> **descriptionIncluded**: `boolean`
+
+True when the description body was included on the IR.
+
+##### descriptionTruncated
+
+> **descriptionTruncated**: `boolean`
+
+True when the description body was truncated to fit the byte cap.
+
+##### linksDropped
+
+> **linksDropped**: `number`
+
+Count of links dropped because the count cap was exceeded.
+
+##### linksIncluded
+
+> **linksIncluded**: `boolean`
+
+True when linked-issue refs were included on the IR (opt-in).
+
+##### unknownCustomFieldsExcluded
+
+> **unknownCustomFieldsExcluded**: `number`
+
+Count of custom fields excluded because they were not on the allow-list.
+
+***
+
+### JiraLinkRef
+
+Reference to another Jira issue linked from this one (opt-in).
+
+#### Properties
+
+##### id
+
+> **id**: `string`
+
+Stable per-issue id, e.g. `"link.0"`.
+
+##### relationship
+
+> **relationship**: `string`
+
+Normalized link relationship label (e.g. `"blocks"`, `"relates_to"`).
+
+##### targetIssueKey
+
+> **targetIssueKey**: `string`
+
+Validated Jira issue key of the linked issue.
 
 ***
 
@@ -3196,7 +4035,7 @@ and orchestration live in downstream Wave 4 issues (4.B / 4.C / 4.D /
 
   1. At least one source.
   2. At least one primary source (primary-source-required rule).
-  3. Stable [aggregateContentHash](#aggregatecontenthash) that is invariant under source
+  3. Stable [aggregateContentHash](#aggregatecontenthash-1) that is invariant under source
      reordering when [conflictResolutionPolicy](#conflictresolutionpolicy) is not `priority`,
      and changes when source content actually changes.
   4. When `conflictResolutionPolicy="priority"`, a non-empty
@@ -3352,7 +4191,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### entities
 
@@ -3442,7 +4281,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### entries
 
@@ -3913,7 +4752,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### fromState?
 
@@ -3981,7 +4820,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### fourEyesPolicy?
 
@@ -4355,7 +5194,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### gatewayRelease
 
@@ -4440,6 +5279,30 @@ Score in `[0, 1]`; rounded to 6 digits in the persisted artifact.
 
 ***
 
+### SuggestedCustomContextAttribute
+
+Recognized custom attribute and its intended downstream consumer.
+
+#### Properties
+
+##### description
+
+> **description**: `string`
+
+##### downstreamConsumer
+
+> **downstreamConsumer**: `string`
+
+##### key
+
+> **key**: `string`
+
+##### label
+
+> **label**: `string`
+
+***
+
 ### TestCaseCoverageBucket
 
 Per-element coverage breakdown.
@@ -4498,7 +5361,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### duplicatePairs
 
@@ -4592,7 +5455,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### embeddingProvider
 
@@ -4702,7 +5565,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### generatedAt
 
@@ -4958,7 +5821,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### decisions
 
@@ -5008,7 +5871,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"`
 
 ##### path?
 
@@ -5097,7 +5960,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### errorCount
 
@@ -5276,7 +6139,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### exportProfile?
 
@@ -5416,7 +6279,7 @@ Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`).
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"`)[]
 
 Per-case sorted, deduplicated policy outcome codes that fired.
 
@@ -5546,7 +6409,7 @@ Per-case policy decision at the time this step row was built.
 
 ##### policyOutcomes
 
-> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"`)[]
+> **policyOutcomes**: (`"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"` \| `"risk_tag_downgrade_detected"` \| `"custom_context_risk_escalation"`)[]
 
 Per-case sorted, deduplicated policy outcomes at the time this step row was built.
 
@@ -5770,7 +6633,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### createdCount
 
@@ -6103,7 +6966,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### generatedAt
 
@@ -6243,7 +7106,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.1.0"`
+> **contractVersion**: `"1.2.0"`
 
 ##### generatedAt
 
@@ -6513,7 +7376,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.1.0"`
+> **testIntelligenceContractVersion**: `"1.2.0"`
 
 ##### visualSidecar?
 
@@ -6942,7 +7805,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.1.0"`
+> **testIntelligenceContractVersion**: `"1.2.0"`
 
 ##### thresholds
 
@@ -7206,7 +8069,7 @@ Hard invariant: no raw screenshot bytes leak into export artifacts.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.1.0"`
+> **testIntelligenceContractVersion**: `"1.2.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -8133,7 +8996,7 @@ Present only when `figmaSourceMode === "figma_paste" | "figma_plugin"` and diff 
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-12)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`status`](#status-14)
 
 ***
 
@@ -11286,6 +12149,46 @@ Where a detected element came from during reconciliation.
 
 ***
 
+### JiraAdfMarkType
+
+> **JiraAdfMarkType** = *typeof* [`ALLOWED_JIRA_ADF_MARK_TYPES`](#allowed_jira_adf_mark_types)\[`number`\]
+
+Discriminated alias for [ALLOWED\_JIRA\_ADF\_MARK\_TYPES](#allowed_jira_adf_mark_types).
+
+***
+
+### JiraAdfNodeType
+
+> **JiraAdfNodeType** = *typeof* [`ALLOWED_JIRA_ADF_NODE_TYPES`](#allowed_jira_adf_node_types)\[`number`\]
+
+Discriminated alias for [ALLOWED\_JIRA\_ADF\_NODE\_TYPES](#allowed_jira_adf_node_types).
+
+***
+
+### JiraAdfRejectionCode
+
+> **JiraAdfRejectionCode** = *typeof* [`ALLOWED_JIRA_ADF_REJECTION_CODES`](#allowed_jira_adf_rejection_codes)\[`number`\]
+
+Discriminated alias for [ALLOWED\_JIRA\_ADF\_REJECTION\_CODES](#allowed_jira_adf_rejection_codes).
+
+***
+
+### JiraIrRefusalCode
+
+> **JiraIrRefusalCode** = *typeof* [`ALLOWED_JIRA_IR_REFUSAL_CODES`](#allowed_jira_ir_refusal_codes)\[`number`\]
+
+Discriminated alias for [ALLOWED\_JIRA\_IR\_REFUSAL\_CODES](#allowed_jira_ir_refusal_codes).
+
+***
+
+### JiraIssueType
+
+> **JiraIssueType** = *typeof* [`ALLOWED_JIRA_ISSUE_TYPES`](#allowed_jira_issue_types)\[`number`\]
+
+Discriminated alias for [ALLOWED\_JIRA\_ISSUE\_TYPES](#allowed_jira_issue_types).
+
+***
+
 ### LbomDataKind
 
 > **LbomDataKind** = `"few_shot_bundle"` \| `"policy_profile"`
@@ -11393,17 +12296,31 @@ Refusal-code alias for the multi-source mode gate.
 
 ### PiiKind
 
-> **PiiKind** = `"iban"` \| `"bic"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"`
+> **PiiKind** = `"iban"` \| `"bic"` \| `"pan"` \| `"tax_id"` \| `"email"` \| `"phone"` \| `"full_name"` \| `"internal_hostname"` \| `"jira_mention"` \| `"customer_name_placeholder"`
 
-Known PII-like categories detected in mock form data.
+Known PII-like categories detected in mock form data and Jira payloads.
+
+Wave 4.B (Issue #1432) extended this union with three Jira-aware
+categories: `internal_hostname` (corporate hostname patterns surfaced
+inside ADF text), `jira_mention` (Confluence/Jira `@user` mentions and
+raw account ids), and `customer_name_placeholder` (full-name-shaped
+values pulled from common Jira customer-facing custom-field names).
+
+Adding new union members is treated as a minor contract bump per
+`CONTRACT_CHANGELOG.md`'s versioning rules — consumers reading the IR
+may receive previously-unseen `kind` values.
 
 ***
 
 ### PiiMatchLocation
 
-> **PiiMatchLocation** = `"field_label"` \| `"field_default_value"` \| `"screen_text"` \| `"action_label"` \| `"trace_node_name"` \| `"trace_node_path"` \| `"screen_name"` \| `"screen_path"` \| `"validation_rule"` \| `"navigation_target"`
+> **PiiMatchLocation** = `"field_label"` \| `"field_default_value"` \| `"screen_text"` \| `"action_label"` \| `"trace_node_name"` \| `"trace_node_path"` \| `"screen_name"` \| `"screen_path"` \| `"validation_rule"` \| `"navigation_target"` \| `"jira_summary"` \| `"jira_description"` \| `"jira_acceptance_criterion"` \| `"jira_comment_body"` \| `"jira_custom_field_name"` \| `"jira_custom_field_value"` \| `"jira_attachment_filename"` \| `"jira_link_relationship"` \| `"jira_label"` \| `"jira_component"` \| `"custom_context_markdown"` \| `"custom_context_attribute"`
 
 Location within the input that held a PII-like match.
+
+Wave 4.B (Issue #1432) extends this union with Jira-IR-specific
+locations so adversarial-fixture and audit code can attribute every
+indicator back to the exact field it was sourced from.
 
 ***
 
@@ -12158,6 +13075,56 @@ minors.
 
 ***
 
+### ALLOWED\_JIRA\_ADF\_MARK\_TYPES
+
+> `const` **ALLOWED\_JIRA\_ADF\_MARK\_TYPES**: readonly \[`"strong"`, `"em"`, `"code"`, `"strike"`, `"underline"`, `"link"`, `"subsup"`, `"textColor"`\]
+
+Allow-listed Atlassian Document Format `mark.type` discriminants. Marks
+carry inline annotation (e.g. `strong`, `link`) on `text` nodes. Marks
+outside this set are rejected with `jira_adf_unknown_mark_type`.
+
+***
+
+### ALLOWED\_JIRA\_ADF\_NODE\_TYPES
+
+> `const` **ALLOWED\_JIRA\_ADF\_NODE\_TYPES**: readonly \[`"doc"`, `"paragraph"`, `"heading"`, `"blockquote"`, `"bulletList"`, `"orderedList"`, `"listItem"`, `"codeBlock"`, `"rule"`, `"panel"`, `"table"`, `"tableRow"`, `"tableHeader"`, `"tableCell"`, `"mediaSingle"`, `"mediaGroup"`, `"media"`, `"text"`, `"hardBreak"`, `"mention"`, `"emoji"`, `"inlineCard"`, `"status"`, `"date"`\]
+
+Allow-listed Atlassian Document Format node `type` discriminants. The
+parser fails closed on any node whose `type` is not in this set
+(`jira_adf_unknown_node_type`).
+
+***
+
+### ALLOWED\_JIRA\_ADF\_REJECTION\_CODES
+
+> `const` **ALLOWED\_JIRA\_ADF\_REJECTION\_CODES**: readonly \[`"jira_adf_payload_too_large"`, `"jira_adf_input_not_string"`, `"jira_adf_input_not_json"`, `"jira_adf_root_not_object"`, `"jira_adf_root_type_invalid"`, `"jira_adf_unknown_node_type"`, `"jira_adf_unknown_mark_type"`, `"jira_adf_node_shape_invalid"`, `"jira_adf_text_node_invalid"`, `"jira_adf_max_depth_exceeded"`, `"jira_adf_max_node_count_exceeded"`\]
+
+Refusal codes emitted by the ADF parser (`parseJiraAdfDocument`). The
+parser never throws — it returns a discriminated union and these codes
+are stable, locale-independent strings safe to ship to automation.
+
+***
+
+### ALLOWED\_JIRA\_IR\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_JIRA\_IR\_REFUSAL\_CODES**: readonly \[`"jira_issue_key_invalid"`, `"jira_issue_key_too_long"`, `"jira_issue_type_invalid"`, `"jira_summary_invalid"`, `"jira_description_invalid"`, `"jira_acceptance_criterion_invalid"`, `"jira_comment_invalid"`, `"jira_attachment_invalid"`, `"jira_link_invalid"`, `"jira_custom_field_invalid"`, `"jira_custom_field_id_invalid"`, `"jira_status_invalid"`, `"jira_priority_invalid"`, `"jira_field_selection_profile_invalid"`, `"jira_captured_at_invalid"`, `"jira_field_unknown_excluded"`, `"jira_jql_fragment_disallowed_token"`, `"jira_jql_fragment_control_character"`, `"jira_jql_fragment_too_long"`\]
+
+Refusal codes emitted by the Jira IR builder (`buildJiraIssueIr`) and
+by the Jira-issue-key / JQL-fragment validators. Stable and
+locale-independent.
+
+***
+
+### ALLOWED\_JIRA\_ISSUE\_TYPES
+
+> `const` **ALLOWED\_JIRA\_ISSUE\_TYPES**: readonly \[`"story"`, `"task"`, `"bug"`, `"epic"`, `"subtask"`, `"other"`\]
+
+Allow-listed Jira issue type discriminants. Anything outside this set
+collapses to `"other"` so the IR cannot be tricked into smuggling a
+free-form issue-type string into the prompt or downstream prompts.
+
+***
+
 ### ALLOWED\_LBOM\_MODEL\_ROLES
 
 > `const` **ALLOWED\_LBOM\_MODEL\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`\]
@@ -12412,7 +13379,7 @@ Allowed policy-gate decisions (Issue #1364).
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`, `"risk_tag_downgrade_detected"`, `"custom_context_risk_escalation"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -12589,11 +13556,43 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.12.0"`
+> `const` **CONTRACT\_VERSION**: `"4.13.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
 Package version alignment is documented in VERSIONING.md.
+
+***
+
+### CUSTOM\_CONTEXT\_ARTIFACT\_FILENAME
+
+> `const` **CUSTOM\_CONTEXT\_ARTIFACT\_FILENAME**: `"custom-context.json"`
+
+Canonical filename for a persisted custom-context supporting source.
+
+***
+
+### CUSTOM\_CONTEXT\_MARKDOWN\_SOURCE\_ID
+
+> `const` **CUSTOM\_CONTEXT\_MARKDOWN\_SOURCE\_ID**: `"custom-context-markdown"`
+
+Stable source id for Markdown-authored custom context.
+
+***
+
+### CUSTOM\_CONTEXT\_SCHEMA\_VERSION
+
+> `const` **CUSTOM\_CONTEXT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted custom-context supporting source artifacts.
+
+***
+
+### CUSTOM\_CONTEXT\_STRUCTURED\_SOURCE\_ID
+
+> `const` **CUSTOM\_CONTEXT\_STRUCTURED\_SOURCE\_ID**: `"custom-context-structured"`
+
+Stable source id for structured-attribute custom context.
 
 ***
 
@@ -12639,6 +13638,17 @@ enforcement (#1376, 2026-04-24 multimodal addendum).
 When ANY screen referenced by a test case carries one of these
 outcomes in `VisualSidecarValidationReport`, the case is enforced as
 four-eyes regardless of risk category.
+
+***
+
+### DEFAULT\_JIRA\_FIELD\_SELECTION\_PROFILE
+
+> `const` **DEFAULT\_JIRA\_FIELD\_SELECTION\_PROFILE**: [`JiraFieldSelectionProfile`](#jirafieldselectionprofile)
+
+Default Jira field selection profile — data-minimized by default. No
+comments, no attachments, no linked issues, no unknown custom fields.
+Description is included; acceptance criteria require explicit
+configuration.
 
 ***
 
@@ -12790,6 +13800,33 @@ Schema version for the persisted intent-delta artifact (Issue #1373).
 
 ***
 
+### JIRA\_ISSUE\_IR\_ARTIFACT\_DIRECTORY
+
+> `const` **JIRA\_ISSUE\_IR\_ARTIFACT\_DIRECTORY**: `"sources"`
+
+Run-dir-relative subdirectory under which per-source Jira IR artifacts
+are persisted, namespaced by [TestIntentSourceRef.sourceId](#sourceid-2).
+
+Layout: `<runDir>/sources/<sourceId>/jira-issue-ir.json`.
+
+***
+
+### JIRA\_ISSUE\_IR\_ARTIFACT\_FILENAME
+
+> `const` **JIRA\_ISSUE\_IR\_ARTIFACT\_FILENAME**: `"jira-issue-ir.json"`
+
+Canonical filename for the persisted Jira IR artifact.
+
+***
+
+### JIRA\_ISSUE\_IR\_SCHEMA\_VERSION
+
+> `const` **JIRA\_ISSUE\_IR\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version stamp for the [JiraIssueIr](#jiraissueir) artifact.
+
+***
+
 ### LBOM\_ARTIFACT\_DIRECTORY
 
 > `const` **LBOM\_ARTIFACT\_DIRECTORY**: `"lbom"`
@@ -12843,6 +13880,80 @@ Schema version for the persisted `llm-capabilities.json` evidence artifact.
 > `const` **LLM\_GATEWAY\_CONTRACT\_VERSION**: `"1.0.0"`
 
 Version stamp for persisted role-separated LLM gateway evidence artifacts.
+
+***
+
+### MAX\_JIRA\_ADF\_INPUT\_BYTES
+
+> `const` **MAX\_JIRA\_ADF\_INPUT\_BYTES**: `1048576`
+
+Hard pre-parse byte cap on the serialized ADF JSON document. Inputs
+exceeding this are rejected with `jira_adf_payload_too_large` before
+any tree traversal — the parser MUST NOT allocate proportional to the
+payload above this bound.
+
+***
+
+### MAX\_JIRA\_ATTACHMENT\_COUNT
+
+> `const` **MAX\_JIRA\_ATTACHMENT\_COUNT**: `50`
+
+Hard cap on the number of Jira attachments persisted in a single IR.
+Attachment bytes are NEVER persisted — only metadata.
+
+***
+
+### MAX\_JIRA\_COMMENT\_BODY\_BYTES
+
+> `const` **MAX\_JIRA\_COMMENT\_BODY\_BYTES**: `4096`
+
+Hard cap on the UTF-8 byte length of any single normalized + redacted
+Jira comment body. Over-cap comments are truncated and counted in
+[JiraIssueIrDataMinimization.commentsCapped](#commentscapped).
+
+***
+
+### MAX\_JIRA\_COMMENT\_COUNT
+
+> `const` **MAX\_JIRA\_COMMENT\_COUNT**: `50`
+
+Hard cap on the number of Jira comments persisted in a single IR.
+Over-cap comments are dropped and counted in
+[JiraIssueIrDataMinimization.commentsDropped](#commentsdropped).
+
+***
+
+### MAX\_JIRA\_CUSTOM\_FIELD\_COUNT
+
+> `const` **MAX\_JIRA\_CUSTOM\_FIELD\_COUNT**: `50`
+
+Hard cap on the number of custom fields persisted in a single IR.
+
+***
+
+### MAX\_JIRA\_CUSTOM\_FIELD\_VALUE\_BYTES
+
+> `const` **MAX\_JIRA\_CUSTOM\_FIELD\_VALUE\_BYTES**: `2048`
+
+Hard cap on the UTF-8 byte length of a single normalized + redacted custom-field value.
+
+***
+
+### MAX\_JIRA\_DESCRIPTION\_PLAIN\_BYTES
+
+> `const` **MAX\_JIRA\_DESCRIPTION\_PLAIN\_BYTES**: `32768`
+
+Hard cap on the UTF-8 byte length of [JiraIssueIr.descriptionPlain](#descriptionplain)
+after ADF normalization + PII redaction. Over-cap descriptions are
+truncated and the truncation is recorded in [JiraIssueIrDataMinimization.descriptionTruncated](#descriptiontruncated).
+
+***
+
+### MAX\_JIRA\_LINK\_COUNT
+
+> `const` **MAX\_JIRA\_LINK\_COUNT**: `50`
+
+Hard cap on the number of Jira linked-issue refs persisted in a single IR.
 
 ***
 
@@ -13008,6 +14119,14 @@ Stable JSON schema name attached to the structured rubric response.
 
 ***
 
+### SUGGESTED\_CUSTOM\_CONTEXT\_ATTRIBUTES
+
+> `const` **SUGGESTED\_CUSTOM\_CONTEXT\_ATTRIBUTES**: readonly [`SuggestedCustomContextAttribute`](#suggestedcustomcontextattribute)[]
+
+Curated structured-attribute schema surfaced to API and UI consumers.
+
+***
+
 ### SUPPORTING\_TEST\_INTENT\_SOURCE\_KINDS
 
 > `const` **SUPPORTING\_TEST\_INTENT\_SOURCE\_KINDS**: readonly \[`"custom_text"`, `"custom_structured"`\]
@@ -13084,7 +14203,7 @@ Bumped when `TestCaseValidationReport` changes shape.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.1.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.2.0"`
 
 Contract version for the opt-in test-intelligence surface.
 

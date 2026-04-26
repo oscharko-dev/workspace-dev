@@ -129,6 +129,18 @@ describe("parseInspectorTestIntelligenceRoute", () => {
     }
   });
 
+  test("parses /sources/<jobId>/custom-context as custom_context_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/sources/job-1/custom-context",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "custom_context_source") {
+      assert.equal(result.route.jobId, "job-1");
+    } else {
+      assert.fail("expected custom_context_source");
+    }
+  });
+
   test("rejects unknown source ingestion subroutes", () => {
     const result = parseInspectorTestIntelligenceRoute(
       "/workspace/test-intelligence/sources/job-1/unknown",
@@ -209,6 +221,16 @@ describe("isInspectorTestIntelligenceWriteAction", () => {
     assert.equal(
       isInspectorTestIntelligenceWriteAction({
         kind: "jira_paste_source",
+        jobId: "job-1",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for custom_context_source", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "custom_context_source",
         jobId: "job-1",
       }),
       true,

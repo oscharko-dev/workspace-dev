@@ -27,8 +27,13 @@ import type {
   WorkspaceRuntimeLogger,
 } from "../logging.js";
 import {
+  BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+  CUSTOM_CONTEXT_ARTIFACT_FILENAME,
+  CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+  CUSTOM_CONTEXT_STRUCTURED_SOURCE_ID,
   TEST_INTELLIGENCE_ENV,
   TEST_INTELLIGENCE_MULTISOURCE_ENV,
+  type BusinessTestIntentIr,
   type TestIntelligenceReviewPrincipal,
 } from "../contracts/index.js";
 
@@ -6921,6 +6926,34 @@ const tiAuthHeader = (
   authorization: `Bearer ${token}`,
 });
 
+const writeTiPrimaryIntent = async (
+  artifactRoot: string,
+  jobId: string,
+): Promise<void> => {
+  const destinationDir = path.join(artifactRoot, jobId);
+  await mkdir(destinationDir, { recursive: true });
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "a".repeat(64) },
+    screens: [],
+    detectedFields: [],
+    detectedActions: [],
+    detectedValidations: [],
+    detectedNavigation: [],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+  await writeFile(
+    path.join(destinationDir, "business-intent-ir.json"),
+    JSON.stringify(intent),
+    "utf8",
+  );
+};
+
 interface SeedTiJobOptions {
   generatedAt?: string;
   policyDecision?: "approved" | "needs_review" | "blocked";
@@ -7553,7 +7586,10 @@ test("test-intelligence: POST jira-paste source returns 503 when multi-source ga
           },
         });
         assert.equal(response.statusCode, 503);
-        assert.equal(response.json<Record<string, unknown>>().error, "FEATURE_DISABLED");
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "FEATURE_DISABLED",
+        );
         await assert.rejects(
           () => readdir(path.join(artifactRoot, "job-paste")),
           /ENOENT/u,
@@ -7614,7 +7650,10 @@ test("test-intelligence: POST jira-paste source follows bearer fail-closed polic
           },
         });
         assert.equal(response.statusCode, 401);
-        assert.equal(response.json<Record<string, unknown>>().error, "UNAUTHORIZED");
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "UNAUTHORIZED",
+        );
         assert.match(
           String(response.headers["www-authenticate"] ?? ""),
           /Bearer realm="workspace-dev"/u,
@@ -7738,7 +7777,10 @@ test("test-intelligence: POST jira-paste source rejects unsupported request fiel
           },
         });
         assert.equal(response.statusCode, 400);
-        const body = response.json<{ error: string; issues: Array<{ path: string }> }>();
+        const body = response.json<{
+          error: string;
+          issues: Array<{ path: string }>;
+        }>();
         assert.equal(body.error, "INVALID_BODY");
         assert.equal(body.issues[0]?.path, "ignored");
         await assert.rejects(
@@ -7791,13 +7833,143 @@ test("test-intelligence: POST jira-paste source never persists raw bearer-shaped
           "sources",
           body.sourceId,
         );
-        const ir = await readFile(path.join(sourceDir, "jira-issue-ir.json"), "utf8");
+        const ir = await readFile(
+          path.join(sourceDir, "jira-issue-ir.json"),
+          "utf8",
+        );
         const provenance = await readFile(
           path.join(sourceDir, "paste-provenance.json"),
           "utf8",
         );
         assert.equal(ir.includes(secret), false);
         assert.equal(provenance.includes(secret), false);
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST custom-context source persists only redacted supporting artifacts", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-custom-context-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      await writeTiPrimaryIntent(artifactRoot, "job-context");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewPrincipals: [
+          { principalId: "alice", bearerToken: "alice-token" },
+          { principalId: "bob", bearerToken: "bob-token" },
+        ],
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-context/custom-context",
+          headers: tiAuthHeader("bob-token"),
+          payload: {
+            markdown: "# Customer Max Mustermann\n\n- Exercise checkout-v2.",
+            attributes: [{ key: "dataClass", value: "PCI-DSS-3" }],
+          },
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<{
+          ok: boolean;
+          sourceRefs: Array<{ sourceId: string; kind: string }>;
+          policySignals: Array<{
+            riskCategory: string;
+            attributeKey: string;
+          }>;
+          artifacts: {
+            rawMarkdownPersisted: boolean;
+            unsanitizedInputPersisted: boolean;
+          };
+        }>();
+        assert.equal(body.ok, true);
+        assert.equal(body.artifacts.rawMarkdownPersisted, false);
+        assert.equal(body.artifacts.unsanitizedInputPersisted, false);
+        assert.equal(
+          body.sourceRefs.some((ref) => ref.kind === "custom_text"),
+          true,
+        );
+        assert.equal(
+          body.sourceRefs.some((ref) => ref.kind === "custom_structured"),
+          true,
+        );
+        assert.equal(body.policySignals[0]?.attributeKey, "data_class");
+        assert.equal(body.policySignals[0]?.riskCategory, "regulated_data");
+
+        const markdownArtifact = await readFile(
+          path.join(
+            artifactRoot,
+            "job-context",
+            "sources",
+            CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+            CUSTOM_CONTEXT_ARTIFACT_FILENAME,
+          ),
+          "utf8",
+        );
+        assert.equal(markdownArtifact.includes("Max Mustermann"), false);
+        assert.equal(markdownArtifact.includes("[REDACTED:FULL_NAME]"), true);
+        assert.equal(markdownArtifact.includes("bob"), true);
+
+        const structuredArtifact = await readFile(
+          path.join(
+            artifactRoot,
+            "job-context",
+            "sources",
+            CUSTOM_CONTEXT_STRUCTURED_SOURCE_ID,
+            CUSTOM_CONTEXT_ARTIFACT_FILENAME,
+          ),
+          "utf8",
+        );
+        assert.equal(structuredArtifact.includes("PCI-DSS-3"), true);
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST custom-context source rejects custom-only jobs without partial artifacts", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-custom-context-only-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-context/custom-context",
+          headers: tiAuthHeader(),
+          payload: {
+            markdown: "# Supporting note",
+            attributes: [{ key: "priorityHint", value: "p1" }],
+          },
+        });
+        assert.equal(response.statusCode, 409);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "primary_source_required",
+        );
+        await assert.rejects(
+          () => readdir(path.join(artifactRoot, "job-context")),
+          /ENOENT/u,
+        );
       } finally {
         await close();
         await rm(tempRoot, { recursive: true, force: true });

@@ -674,3 +674,43 @@ test("Issue #1412: job-level downgrade entries are deduplicated per (testCaseId,
     "regulated_data-tagged case must not appear in the job-level summary",
   );
 });
+
+test("custom context policy signal escalates low-risk cases and records policy report evidence", () => {
+  const ctx = harness([buildCase({ riskCategory: "low" })], buildIntent());
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+    customContextPolicySignals: [
+      {
+        sourceId: "custom-context-structured",
+        entryId: "entry-1",
+        attributeKey: "data_class",
+        attributeValue: "PCI-DSS-3",
+        riskCategory: "regulated_data",
+        reason:
+          'custom context data_class "PCI-DSS-3" requires regulated-data review',
+        contentHash: "c".repeat(64),
+      },
+    ],
+  });
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (violation) => violation.outcome === "custom_context_risk_escalation",
+    ),
+    true,
+  );
+  assert.equal(
+    report.jobLevelViolations.some(
+      (violation) =>
+        violation.outcome === "custom_context_risk_escalation" &&
+        violation.reason.includes("custom-context-structured"),
+    ),
+    true,
+  );
+});

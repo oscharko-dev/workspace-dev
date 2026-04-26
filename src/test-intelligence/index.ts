@@ -70,6 +70,35 @@ export {
   type JiraPasteSourceMixHint,
 } from "./jira-paste-ingest.js";
 export {
+  normalizeAttributeKey,
+  validateCustomContextAttributes,
+  validateCustomContextInput,
+  RECOGNIZED_CUSTOM_CONTEXT_ATTRIBUTE_KEYS,
+  type CustomContextAttribute,
+  type CustomContextInputIssue,
+  type CustomContextInputIssueCode,
+  type ValidateCustomContextInputResult,
+  type ValidatedCustomContextInput,
+} from "./custom-context-input.js";
+export {
+  canonicalizeCustomContextMarkdown,
+  MAX_CUSTOM_CONTEXT_CANONICAL_MARKDOWN_BYTES,
+  MAX_CUSTOM_CONTEXT_PLAIN_BYTES,
+  MAX_CUSTOM_CONTEXT_RAW_MARKDOWN_BYTES,
+  type CanonicalCustomContextMarkdown,
+  type CanonicalizeCustomContextMarkdownResult,
+  type CustomContextMarkdownIssue,
+  type CustomContextMarkdownRefusalCode,
+} from "./custom-context-markdown.js";
+export { deriveCustomContextPolicySignals } from "./custom-context-policy.js";
+export {
+  persistCustomContext,
+  type CustomContextPersistRefusalCode,
+  type PersistCustomContextInput,
+  type PersistCustomContextOutcome,
+  type PersistCustomContextResult,
+} from "./custom-context-store.js";
+export {
   detectSuspiciousContent,
   effectiveSemanticContentBlock,
   extractSemanticContentOverrides,
