@@ -121,6 +121,56 @@ test("ADF parser: code block carries language and text", () => {
   assert.equal(codeBlock?.text, "const x = 1;");
 });
 
+test("ADF parser: code block text children count toward traversal cap", () => {
+  const doc = adf([
+    {
+      type: "codeBlock",
+      content: Array.from({ length: 5_000 }, (_, i) => ({
+        type: "text",
+        text: String(i % 10),
+      })),
+    },
+  ]);
+  const result = parseJiraAdfDocument(doc);
+  assert.equal(result.ok, false);
+  if (!result.ok)
+    assert.equal(result.rejection.code, "jira_adf_max_node_count_exceeded");
+});
+
+test("ADF parser: panel summary preserves nested structural blocks", () => {
+  const doc = adf([
+    {
+      type: "panel",
+      content: [
+        para("Panel intro."),
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [para("Nested criterion.")],
+            },
+          ],
+        },
+      ],
+    },
+  ]);
+  const result = parseJiraAdfDocument(doc);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.ok(
+    result.document.blocks.some(
+      (block) => block.kind === "panel" && block.text.includes("Panel intro."),
+    ),
+  );
+  assert.ok(
+    result.document.blocks.some(
+      (block) =>
+        block.kind === "list_item" && block.text === "Nested criterion.",
+    ),
+  );
+});
+
 test("ADF parser: mention/inlineCard/media render as opaque stubs", () => {
   const doc = adf([
     {
