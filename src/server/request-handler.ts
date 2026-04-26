@@ -116,6 +116,8 @@ import {
   listInspectorTestIntelligenceJobs,
   readInspectorTestIntelligenceBundle,
 } from "../test-intelligence/inspector-bundle.js";
+import { parseEvidenceVerifyRoute } from "../test-intelligence/evidence-verify-route.js";
+import { verifyJobEvidence } from "../test-intelligence/evidence-verify.js";
 import {
   createFileSystemReviewStore,
   type ReviewStore,
@@ -446,7 +448,8 @@ type WorkspaceAuditEvent =
   | "workspace.create_pr.completed"
   | "workspace.stale_check.completed"
   | "workspace.remap_suggest.completed"
-  | "workspace.token_decisions.persisted";
+  | "workspace.token_decisions.persisted"
+  | "workspace.evidence.verify.completed";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
@@ -808,6 +811,16 @@ export function createWorkspaceRequestHandler({
         absoluteOutputRoot,
         "rate-limits",
         "test-intelligence-review-writes.json",
+      ),
+    }),
+  });
+  const evidenceVerifyReadRateLimiter = createIpRateLimiter({
+    ...rateLimiterOptions,
+    store: createFileBackedRateLimitStore({
+      filePath: path.join(
+        absoluteOutputRoot,
+        "rate-limits",
+        "evidence-verify-reads.json",
       ),
     }),
   });
@@ -1277,6 +1290,163 @@ export function createWorkspaceRequestHandler({
             error: "METHOD_NOT_ALLOWED",
             message: `Method ${method} is not allowed on '${pathname}'.`,
           },
+        });
+        return;
+      }
+
+      // Issue #1380: GET /workspace/jobs/:jobId/evidence/verify — read-only
+      // governance audit endpoint that wraps the local Wave 1 POC evidence
+      // verifier (#1366) and (when present) the in-toto attestation
+      // verifier (#1377). Bearer-protected per the existing governance
+      // convention; per-IP rate limited; feature-gated identically to
+      // /workspace/test-intelligence/... since the underlying capability
+      // is test-intelligence-only.
+      if (
+        pathname.startsWith("/workspace/jobs/") &&
+        pathname.endsWith("/evidence/verify")
+      ) {
+        const testIntelligenceGatesEnabled =
+          resolveTestIntelligenceEnabled() &&
+          runtime.testIntelligenceEnabled === true;
+        if (!testIntelligenceGatesEnabled) {
+          sendJson({
+            response,
+            statusCode: 503,
+            payload: {
+              error: ErrorCode.FEATURE_DISABLED,
+              message: `Test intelligence is disabled. Enable WorkspaceStartOptions.testIntelligence.enabled and set ${TEST_INTELLIGENCE_ENV}=1.`,
+            },
+          });
+          return;
+        }
+
+        const parsed = parseEvidenceVerifyRoute(pathname);
+        if (!parsed.ok) {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "NOT_FOUND",
+              message: `Unknown route: ${method} ${pathname}`,
+            },
+          });
+          return;
+        }
+        const route = parsed.route;
+
+        if (method !== "GET") {
+          response.setHeader("allow", "GET");
+          sendJson({
+            response,
+            statusCode: 405,
+            payload: {
+              error: "METHOD_NOT_ALLOWED",
+              message: `Use GET for evidence verification on '${pathname}'.`,
+            },
+          });
+          return;
+        }
+
+        const routeLabel = "Workspace evidence verification";
+        const configuredBearerToken = runtime.testIntelligenceReviewBearerToken;
+        const trimmedBearerToken =
+          typeof configuredBearerToken === "string"
+            ? configuredBearerToken.trim()
+            : "";
+        if (trimmedBearerToken.length === 0) {
+          sendAuditedError({
+            statusCode: 503,
+            payload: {
+              error: "AUTHENTICATION_UNAVAILABLE",
+              message: `${routeLabel} reads are disabled until server bearer authentication is configured.`,
+            },
+            event: "workspace.request.failed",
+            level: "error",
+            jobId: route.jobId,
+            fallbackMessage: `${routeLabel} read rejected.`,
+          });
+          return;
+        }
+        const bearerAuth = validateImportSessionEventWriteAuth({
+          request,
+          bearerToken: trimmedBearerToken,
+          routeLabel,
+        });
+        if (!bearerAuth.ok) {
+          if (bearerAuth.wwwAuthenticate) {
+            response.setHeader("www-authenticate", bearerAuth.wwwAuthenticate);
+          }
+          const auditMessage =
+            bearerAuth.payload.error === "UNAUTHORIZED"
+              ? `${routeLabel} reads require a valid Bearer token.`
+              : bearerAuth.payload.message;
+          sendAuditedError({
+            statusCode: bearerAuth.statusCode,
+            payload: {
+              error: bearerAuth.payload.error,
+              message: auditMessage,
+            },
+            event:
+              bearerAuth.payload.error === "UNAUTHORIZED"
+                ? "security.request.unauthorized"
+                : "workspace.request.failed",
+            level: bearerAuth.statusCode === 401 ? "warn" : "error",
+            jobId: route.jobId,
+            fallbackMessage: `${routeLabel} read rejected.`,
+          });
+          return;
+        }
+
+        const rateLimitResult = await evidenceVerifyReadRateLimiter.consume(
+          resolveRateLimitClientKey(request),
+          route.jobId,
+        );
+        if (!rateLimitResult.allowed) {
+          sendRateLimitExceeded({
+            retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+            message: `Too many evidence verification requests from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+          });
+          return;
+        }
+
+        const verifyResult = await verifyJobEvidence({
+          artifactsRoot: testIntelligenceArtifactRoot,
+          jobId: route.jobId,
+          verifiedAt: new Date().toISOString(),
+        });
+        if (verifyResult.status === "job_not_found") {
+          sendJson({
+            response,
+            statusCode: 404,
+            payload: {
+              error: "JOB_NOT_FOUND",
+              message: `No evidence for job '${route.jobId}'.`,
+            },
+          });
+          return;
+        }
+        if (verifyResult.status === "no_evidence") {
+          sendJson({
+            response,
+            statusCode: 409,
+            payload: {
+              error: "EVIDENCE_NOT_AVAILABLE",
+              message: `Evidence has not been written for job '${route.jobId}'.`,
+            },
+          });
+          return;
+        }
+        logAuditEvent({
+          event: "workspace.evidence.verify.completed",
+          message: `Evidence verification ${verifyResult.body.ok ? "passed" : "FAILED"} for job '${route.jobId}' (${verifyResult.body.failures.length} failure(s), ${verifyResult.body.checks.length} check(s)).`,
+          jobId: route.jobId,
+          statusCode: 200,
+          level: verifyResult.body.ok ? "info" : "warn",
+        });
+        sendJson({
+          response,
+          statusCode: 200,
+          payload: verifyResult.body,
         });
         return;
       }

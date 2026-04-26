@@ -335,6 +335,23 @@ export {
   type InspectorTestIntelligenceRoute,
 } from "./inspector-route.js";
 export {
+  parseEvidenceVerifyRoute,
+  type EvidenceVerifyParseError,
+  type EvidenceVerifyParseResult,
+  type EvidenceVerifyRoute,
+} from "./evidence-verify-route.js";
+export {
+  EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION,
+  verifyJobEvidence,
+  type EvidenceVerifyCheck,
+  type EvidenceVerifyCheckKind,
+  type EvidenceVerifyFailure,
+  type EvidenceVerifyFailureCode,
+  type EvidenceVerifyResponse,
+  type EvidenceVerifyResult,
+  type VerifyJobEvidenceInput,
+} from "./evidence-verify.js";
+export {
   cloneOpenTextAlmDefaultMappingProfile,
   OPENTEXT_ALM_DEFAULT_MAPPING_PROFILE,
   validateQcMappingProfile,
