@@ -121,6 +121,15 @@ export {
   type WriteIntentDeltaReportResult,
 } from "./intent-delta.js";
 export {
+  classifyTestCaseDelta,
+  TEST_CASE_DELTA_DEFAULT_VISUAL_CONFIDENCE_FLOOR,
+  TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME,
+  writeTestCaseDeltaReport,
+  type ClassifyTestCaseDeltaInput,
+  type WriteTestCaseDeltaReportInput,
+  type WriteTestCaseDeltaReportResult,
+} from "./test-case-delta.js";
+export {
   computeCoverageReport,
   type ComputeCoverageReportInput,
 } from "./test-case-coverage.js";
