@@ -1,0 +1,14 @@
+---
+"workspace-dev": minor
+---
+
+Add the optional self-verify rubric pass for Issue #1379.
+
+- New module `src/test-intelligence/self-verify-rubric.ts` with `runSelfVerifyRubricPass`, hand-rolled rubric response schema, dimension + visual-subscore aggregation, secret-redacted refusal classification, and a dedicated rubric replay cache (`createMemorySelfVerifyRubricReplayCache`, `createFileSystemSelfVerifyRubricReplayCache`) keyed by `passKind: "self_verify_rubric"` so it cannot collide with the test-generation cache.
+- Six rubric dimensions (`schema_conformance`, `source_trace_completeness`, `assumption_open_question_marking`, `expected_result_coverage`, `negative_boundary_presence`, `duplication_flag_consistency`) plus four multimodal visual subscores (`visible_control_coverage`, `state_validation_coverage`, `ambiguity_handling`, `unsupported_visual_claims`) per the 2026-04-24 multimodal addendum.
+- New async `runValidationPipelineWithSelfVerify` / `runAndPersistValidationPipelineWithSelfVerify` entrypoints insert the rubric pass between `testcase.validate` and `testcase.policy`. The synchronous `runValidationPipeline` path stays byte-identical when the opt-in is omitted.
+- Per-job rubric score is mirrored onto `coverage-report.json#rubricScore`; per-case rubric scores live in the new `<runDir>/testcases/self-verify-rubric.json` artifact and `TestCaseQualitySignalRubric[]` projection. The strict generated-test-case JSON schema is intentionally NOT widened, so cached test cases and replay-cache files remain byte-stable.
+- `runWave1Poc` accepts opt-in `selfVerifyRubric: { enabled: true; cache?, mockResponder?, ... }`. Default fixture-only POC runs are byte-identical to the pre-#1379 baseline; when enabled the harness builds a deterministic perfect-score mock client (role `test_generation`, deployment `gpt-oss-120b-mock`) and the resulting `self-verify-rubric.json` is attested by the evidence manifest under category `self_verify_rubric`.
+- `Wave1PocEvalThresholds` gains optional `minJobRubricScore` and `requireRubricPass` fields; the eval gate emits new `min_job_rubric_score` and `rubric_pass_refused` failure rules when those thresholds breach.
+- Rubric prompt + response schema + cache key are hand-rolled per the workspace-dev zero-runtime-deps policy. Refusal messages and rule citations are routed through `redactHighRiskSecrets` + bounded truncation; image inputs are refused at the gateway boundary so the `imagePayloadSentToTestGeneration: false` invariant from #1366 holds across the rubric call too.
+- 47 new tests across `self-verify-rubric.test.ts`, `self-verify-rubric.fuzz.test.ts`, and `validation-pipeline.self-verify.test.ts` covering enabled / disabled, refusal, cache-hit, secret redaction, rubric-prompt determinism, score bounds, missing / duplicate / extra ids, and structurally-invalid skip-the-rubric-pass cases. Wired into `pnpm run test:ti-eval` (367/367 green) plus the property-based suite (31/31).

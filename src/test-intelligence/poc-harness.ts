@@ -33,9 +33,11 @@
 
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
+  ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS,
+  ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES,
   EXPORT_REPORT_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_ALM_XML_ARTIFACT_FILENAME,
   EXPORT_TESTCASES_CSV_ARTIFACT_FILENAME,
@@ -51,6 +53,9 @@ import {
   REVIEW_EVENTS_ARTIFACT_FILENAME,
   REVIEW_GATE_SCHEMA_VERSION,
   REVIEW_STATE_ARTIFACT_FILENAME,
+  SELF_VERIFY_RUBRIC_ARTIFACT_DIRECTORY,
+  SELF_VERIFY_RUBRIC_REPORT_ARTIFACT_FILENAME,
+  SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME,
   TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_VALIDATION_REPORT_ARTIFACT_FILENAME,
@@ -92,6 +97,7 @@ import {
   type VisualSidecarFailure,
   type VisualSidecarResult,
   type VisualSidecarValidationReport,
+  type SelfVerifyRubricReport,
   type Wave1PocAttestationSigningMode,
   type Wave1PocAttestationSummary,
   type Wave1PocEvidenceManifest,
@@ -118,6 +124,7 @@ import {
 } from "./evidence-attestation.js";
 import { runAndPersistExportPipeline } from "./export-pipeline.js";
 import { deriveBusinessTestIntentIr } from "./intent-derivation.js";
+import type { LlmGatewayClient } from "./llm-gateway.js";
 import type { LlmGatewayClientBundle } from "./llm-gateway-bundle.js";
 import { createMockLlmGatewayClient } from "./llm-mock-gateway.js";
 import { loadWave1PocFixture } from "./poc-fixtures.js";
@@ -137,7 +144,11 @@ import {
   seedReviewStateFromPolicy,
   transitionReviewState,
 } from "./review-state-machine.js";
-import { runValidationPipeline } from "./validation-pipeline.js";
+import {
+  runValidationPipeline,
+  runValidationPipelineWithSelfVerify,
+} from "./validation-pipeline.js";
+import { type SelfVerifyRubricReplayCache } from "./self-verify-rubric.js";
 import { executeWithReplayCache, type ReplayCache } from "./replay-cache.js";
 import {
   buildFinOpsBudgetReport,
@@ -253,6 +264,51 @@ export interface RunWave1PocInput {
    * `signerReference` in the audit timeline.
    */
   attestationSigner?: Wave1PocAttestationSigner;
+  /**
+   * Opt-in self-verify rubric pass (Issue #1379). When omitted the
+   * harness skips the rubric pass entirely and the run remains
+   * byte-identical to the pre-#1379 baseline. When set to
+   * `{ enabled: true }`, the harness threads the rubric pass through
+   * the validation pipeline (between `testcase.validate` and
+   * `testcase.policy`) and persists `<runDir>/testcases/self-verify-rubric.json`.
+   * The deterministic POC default uses a synthesized perfect-score mock
+   * responder so fixture replays remain byte-stable.
+   */
+  selfVerifyRubric?: Wave1PocSelfVerifyRubricInput;
+}
+
+/**
+ * Optional rubric-pass inputs accepted by `runWave1Poc` (Issue #1379).
+ *
+ * `client`, when supplied, MUST carry role `test_generation` per the
+ * non-goal "no use of a second model different from the generator". When
+ * omitted, the harness builds a deterministic perfect-score mock client
+ * inline so fixture replays stay byte-stable.
+ */
+export interface Wave1PocSelfVerifyRubricInput {
+  enabled: true;
+  /** Optional override; defaults to a synthesized perfect-score mock client. */
+  client?: LlmGatewayClient;
+  /** Optional rubric replay cache. */
+  cache?: SelfVerifyRubricReplayCache;
+  /** Forwarded to `LlmGenerationRequest.maxOutputTokens`. */
+  maxOutputTokens?: number;
+  /** Forwarded to `LlmGenerationRequest.maxWallClockMs`. */
+  maxWallClockMs?: number;
+  /** Forwarded to `LlmGenerationRequest.maxRetries`. */
+  maxRetries?: number;
+  /** Forwarded to `LlmGenerationRequest.maxInputTokens`. */
+  maxInputTokens?: number;
+  /**
+   * Optional override for the rubric-mock responder. When omitted the
+   * harness uses `synthesizePerfectRubricResponse` (every dimension and
+   * visual subscore returns 1.0) so the deterministic POC fixture
+   * replays remain byte-stable.
+   */
+  mockResponder?: (
+    request: LlmGenerationRequest,
+    attempt: number,
+  ) => LlmGenerationResult | Promise<LlmGenerationResult>;
 }
 
 export interface Wave1PocRunResult {
@@ -313,6 +369,18 @@ export interface Wave1PocRunResult {
   lbomSummary: Wave1PocLbomSummary;
   /** Absolute path of the persisted `lbom/ai-bom.cdx.json` artifact. */
   lbomArtifactPath: string;
+  /**
+   * Self-verify rubric report (Issue #1379) when the opt-in pass ran
+   * for this run. Mirrors `validation.rubric` for callers that prefer a
+   * top-level handle.
+   */
+  selfVerifyRubric?: SelfVerifyRubricReport;
+  /**
+   * Absolute path of the persisted `<runDir>/testcases/self-verify-rubric.json`
+   * artifact when the rubric pass ran. `undefined` when the pass was
+   * not enabled.
+   */
+  selfVerifyRubricArtifactPath?: string;
 }
 
 export class Wave1PocVisualSidecarFailureError extends Error {
@@ -661,6 +729,113 @@ const stableSlug = (input: string): string => {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
+};
+
+/**
+ * Build a deterministic rubric mock LLM gateway client used by the
+ * Wave 1 POC harness when `selfVerifyRubric: { enabled: true }` is set
+ * without an explicit `client`. The responder synthesizes a
+ * perfect-score rubric response (every dimension and visual subscore
+ * scores `1`) keyed off the `testCaseId` set extracted from the user
+ * prompt. This keeps fixture replays byte-stable while still
+ * exercising the full validation + parsing path.
+ */
+const buildWave1PocRubricMockClient = (input: {
+  responder?: (
+    request: LlmGenerationRequest,
+    attempt: number,
+  ) => LlmGenerationResult | Promise<LlmGenerationResult>;
+}): LlmGatewayClient => {
+  const responder = input.responder ?? synthesizeWave1PocPerfectRubricResponse;
+  return createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: TEST_GENERATION_DEPLOYMENT,
+    modelRevision: TEST_GENERATION_MODEL_REVISION,
+    gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+    responder,
+  });
+};
+
+const RUBRIC_ID_PATTERN = /"id"\s*:\s*"([^"\\]+)"/g;
+
+const collectTestCaseIdsFromUserPrompt = (userPrompt: string): string[] => {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  RUBRIC_ID_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = RUBRIC_ID_PATTERN.exec(userPrompt)) !== null) {
+    const id = match[1];
+    if (id === undefined || seen.has(id)) continue;
+    // Heuristic: the prompt also embeds Figma node ids, which are
+    // typically numeric (e.g. "n-iban" or "1:23"). The synth filter
+    // keeps any id that does not look like a Figma node ref so we
+    // capture only test-case ids. Test-case ids in the synthesized POC
+    // bundle start with `tc::` per `buildSyntheticCase`.
+    if (id.startsWith("tc::")) {
+      seen.add(id);
+      out.push(id);
+    }
+  }
+  return out;
+};
+
+/**
+ * Default deterministic rubric responder: every supplied test case
+ * receives a perfect 1.0 across all dimensions and visual subscores.
+ * Used when `selfVerifyRubric.mockResponder` is omitted so the
+ * deterministic POC fixture replays remain byte-stable.
+ */
+const synthesizeWave1PocPerfectRubricResponse = (
+  request: LlmGenerationRequest,
+): LlmGenerationResult => {
+  if (request.responseSchemaName !== SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME) {
+    return {
+      outcome: "error",
+      errorClass: "schema_invalid",
+      message:
+        "synthesizeWave1PocPerfectRubricResponse: unexpected responseSchemaName",
+      retryable: false,
+      attempt: 1,
+    };
+  }
+  const ids = collectTestCaseIdsFromUserPrompt(request.userPrompt);
+  const visualPresent = /Visual sidecar batch present:\s*true/.test(
+    request.userPrompt,
+  );
+  const caseEvaluations = ids.map((id) => {
+    const dimensions = [...ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS]
+      .sort()
+      .map((dimension) => ({ dimension, score: 1 }));
+    const evaluation: Record<string, unknown> = {
+      testCaseId: id,
+      dimensions,
+      citations: [
+        {
+          ruleId: "wave1.synth.default",
+          message:
+            "Synthesized perfect score for the deterministic Wave 1 POC fixture",
+        },
+      ],
+    };
+    if (visualPresent) {
+      evaluation["visualSubscores"] = [
+        ...ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES,
+      ]
+        .sort()
+        .map((subscore) => ({ subscore, score: 1 }));
+    }
+    return evaluation;
+  });
+  return {
+    outcome: "success",
+    content: { caseEvaluations },
+    finishReason: "stop",
+    usage: { inputTokens: 0, outputTokens: 0 },
+    modelDeployment: TEST_GENERATION_DEPLOYMENT,
+    modelRevision: TEST_GENERATION_MODEL_REVISION,
+    gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+    attempt: 1,
+  };
 };
 
 const deriveRiskCategoryForLabel = (label: string): TestCaseRiskCategory => {
@@ -1175,17 +1350,70 @@ export const runWave1Poc = async (
     ),
   ]);
 
-  // 7. Validation pipeline + persist its artifacts.
+  // 7. Validation pipeline + persist its artifacts. When the opt-in
+  //    self-verify rubric pass (Issue #1379) is enabled the harness
+  //    threads the rubric pass through the validation pipeline; when
+  //    omitted the synchronous pre-#1379 pipeline runs unchanged.
   const profile = input.policyProfile ?? cloneEuBankingDefaultProfile();
-  const validation = runValidationPipeline({
-    jobId: input.jobId,
-    generatedAt: input.generatedAt,
-    list: generatedList,
-    intent,
-    visual: visualForDerivation,
-    profile,
-    primaryVisualDeployment: VISUAL_PRIMARY_DEPLOYMENT,
-  });
+  let validation: ValidationPipelineArtifacts;
+  if (input.selfVerifyRubric?.enabled === true) {
+    const rubricClient =
+      input.selfVerifyRubric.client ??
+      buildWave1PocRubricMockClient(
+        input.selfVerifyRubric.mockResponder !== undefined
+          ? { responder: input.selfVerifyRubric.mockResponder }
+          : {},
+      );
+    if (rubricClient.role !== "test_generation") {
+      throw new RangeError(
+        "runWave1Poc: selfVerifyRubric.client must declare role test_generation",
+      );
+    }
+    validation = await runValidationPipelineWithSelfVerify({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      list: generatedList,
+      intent,
+      visual: visualForDerivation,
+      profile,
+      primaryVisualDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+      selfVerify: {
+        enabled: true,
+        client: rubricClient,
+        modelBinding: {
+          deployment: rubricClient.deployment,
+          modelRevision: rubricClient.modelRevision,
+          gatewayRelease: rubricClient.gatewayRelease,
+        },
+        policyBundleVersion: POLICY_BUNDLE_VERSION,
+        ...(input.selfVerifyRubric.cache !== undefined
+          ? { cache: input.selfVerifyRubric.cache }
+          : {}),
+        ...(input.selfVerifyRubric.maxOutputTokens !== undefined
+          ? { maxOutputTokens: input.selfVerifyRubric.maxOutputTokens }
+          : {}),
+        ...(input.selfVerifyRubric.maxWallClockMs !== undefined
+          ? { maxWallClockMs: input.selfVerifyRubric.maxWallClockMs }
+          : {}),
+        ...(input.selfVerifyRubric.maxRetries !== undefined
+          ? { maxRetries: input.selfVerifyRubric.maxRetries }
+          : {}),
+        ...(input.selfVerifyRubric.maxInputTokens !== undefined
+          ? { maxInputTokens: input.selfVerifyRubric.maxInputTokens }
+          : {}),
+      },
+    });
+  } else {
+    validation = runValidationPipeline({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      list: generatedList,
+      intent,
+      visual: visualForDerivation,
+      profile,
+      primaryVisualDeployment: VISUAL_PRIMARY_DEPLOYMENT,
+    });
+  }
   const validationDir = input.runDir;
   // Serialize/persist directly so the harness controls the on-disk
   // byte stream that the manifest will later attest. We mirror what
@@ -1200,6 +1428,18 @@ export const runWave1Poc = async (
   const visualReportBytes =
     validation.visual !== undefined
       ? utf8(canonicalJson(validation.visual))
+      : undefined;
+  const rubricReportBytes =
+    validation.rubric !== undefined
+      ? utf8(canonicalJson(validation.rubric))
+      : undefined;
+  const rubricArtifactPath =
+    rubricReportBytes !== undefined
+      ? join(
+          validationDir,
+          SELF_VERIFY_RUBRIC_ARTIFACT_DIRECTORY,
+          SELF_VERIFY_RUBRIC_REPORT_ARTIFACT_FILENAME,
+        )
       : undefined;
   await Promise.all([
     writeAtomic(
@@ -1227,6 +1467,14 @@ export const runWave1Poc = async (
             ),
             visualReportBytes,
           ),
+        ]
+      : []),
+    ...(rubricReportBytes !== undefined && rubricArtifactPath !== undefined
+      ? [
+          (async () => {
+            await mkdir(dirname(rubricArtifactPath), { recursive: true });
+            await writeAtomic(rubricArtifactPath, rubricReportBytes);
+          })(),
         ]
       : []),
   ]);
@@ -1351,14 +1599,12 @@ export const runWave1Poc = async (
       : {
           ...(input.bundle.visualPrimary.modelWeightsSha256 !== undefined
             ? {
-                visual_primary:
-                  input.bundle.visualPrimary.modelWeightsSha256,
+                visual_primary: input.bundle.visualPrimary.modelWeightsSha256,
               }
             : {}),
           ...(input.bundle.visualFallback.modelWeightsSha256 !== undefined
             ? {
-                visual_fallback:
-                  input.bundle.visualFallback.modelWeightsSha256,
+                visual_fallback: input.bundle.visualFallback.modelWeightsSha256,
               }
             : {}),
         };
@@ -1523,6 +1769,15 @@ export const runWave1Poc = async (
         bytes: lbomWritten.bytes,
         category: "lbom",
       },
+      ...(rubricReportBytes !== undefined
+        ? [
+            {
+              filename: `${SELF_VERIFY_RUBRIC_ARTIFACT_DIRECTORY}/${SELF_VERIFY_RUBRIC_REPORT_ARTIFACT_FILENAME}`,
+              bytes: rubricReportBytes,
+              category: "self_verify_rubric" as const,
+            },
+          ]
+        : []),
     ],
   });
   await writeWave1PocEvidenceManifest({
@@ -1607,6 +1862,12 @@ export const runWave1Poc = async (
     lbom: lbomDocument,
     lbomSummary,
     lbomArtifactPath: lbomWritten.artifactPath,
+    ...(validation.rubric !== undefined
+      ? { selfVerifyRubric: validation.rubric }
+      : {}),
+    ...(rubricArtifactPath !== undefined
+      ? { selfVerifyRubricArtifactPath: rubricArtifactPath }
+      : {}),
   };
 };
 

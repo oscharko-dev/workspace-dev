@@ -194,6 +194,42 @@ export const TEST_CASE_COVERAGE_REPORT_ARTIFACT_FILENAME =
 export const VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME =
   "visual-sidecar-validation-report.json" as const;
 
+/**
+ * Schema version for the persisted self-verify rubric pass artifact (Issue #1379).
+ *
+ * Bumped on any breaking change to the per-case evaluation shape, the
+ * job-level aggregate shape, the rubric-dimension union, or the JSON
+ * response shape consumed by the rubric prompt.
+ */
+export const SELF_VERIFY_RUBRIC_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Canonical filename for the persisted self-verify rubric report
+ * (Issue #1379). The artifact is emitted under
+ * `<runDir>/testcases/self-verify-rubric.json` when the opt-in pass runs.
+ */
+export const SELF_VERIFY_RUBRIC_REPORT_ARTIFACT_FILENAME =
+  "self-verify-rubric.json" as const;
+
+/**
+ * Run-dir-relative subdirectory under which the self-verify rubric artifact
+ * is persisted. Sibling to the validation reports so consumers can locate
+ * the test-case quality signals next to the cases they describe.
+ */
+export const SELF_VERIFY_RUBRIC_ARTIFACT_DIRECTORY = "testcases" as const;
+
+/**
+ * Prompt template version stamp for the rubric-only prompt family. Bumped
+ * on any change to the system prompt, user-prompt preamble, or the JSON
+ * response schema; the version stamp participates in the rubric replay-cache
+ * key so any template change forces a cache miss.
+ */
+export const SELF_VERIFY_RUBRIC_PROMPT_TEMPLATE_VERSION = "1.0.0" as const;
+
+/** Stable JSON schema name attached to the structured rubric response. */
+export const SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME =
+  "SelfVerifyRubricReport" as const;
+
 /** Schema version for the persisted review-gate state and event-log artifacts (Issue #1365). */
 export const REVIEW_GATE_SCHEMA_VERSION = "1.0.0" as const;
 
@@ -466,6 +502,202 @@ export interface TestCaseCoverageReport {
   /** Optional 0..1 rubric score from a downstream rater (Wave 2). */
   rubricScore?: number;
 }
+
+/* ------------------------------------------------------------------ */
+/*  Self-verify rubric pass (Issue #1379)                              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Allowed scoring dimensions evaluated by the self-verify rubric pass
+ * (Issue #1379). Each dimension is scored in `[0, 1]` per test case;
+ * the per-case rubric score is the arithmetic mean of the supplied
+ * dimensions (and visual subscores when present). The discriminant is
+ * the runtime source of truth — adding a new dimension is a minor
+ * (additive) bump per the contract versioning rules.
+ */
+export const ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS = [
+  "schema_conformance",
+  "source_trace_completeness",
+  "assumption_open_question_marking",
+  "expected_result_coverage",
+  "negative_boundary_presence",
+  "duplication_flag_consistency",
+] as const;
+
+/** Single rubric scoring dimension. */
+export type SelfVerifyRubricDimension =
+  (typeof ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS)[number];
+
+/**
+ * Allowed multimodal visual subscores layered onto the rubric pass when
+ * a validated `VisualScreenDescription` batch is supplied alongside the
+ * test cases (Issue #1379, multimodal addendum 2026-04-24). The four
+ * subscores are: visible-control coverage, state/validation coverage,
+ * ambiguity handling, and the unsupported-visual-claims penalty (the
+ * latter is interpreted as `1 - penalty` so all subscores remain in
+ * `[0, 1]` where higher is better).
+ */
+export const ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES = [
+  "visible_control_coverage",
+  "state_validation_coverage",
+  "ambiguity_handling",
+  "unsupported_visual_claims",
+] as const;
+
+/** Single multimodal visual subscore kind. */
+export type SelfVerifyRubricVisualSubscoreKind =
+  (typeof ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES)[number];
+
+/**
+ * Allowed refusal codes reported by the self-verify rubric pass when the
+ * pass cannot publish a complete per-case evaluation. The code is
+ * load-bearing: callers that gate on rubric output check this code and
+ * fall back to the unscored coverage path. No two refusal codes overlap.
+ */
+export const ALLOWED_SELF_VERIFY_RUBRIC_REFUSAL_CODES = [
+  "feature_disabled",
+  "gateway_failure",
+  "schema_invalid_response",
+  "score_out_of_range",
+  "missing_test_case_score",
+  "extra_test_case_score",
+  "duplicate_test_case_score",
+  "image_payload_attempted",
+] as const;
+
+/** Single rubric pass refusal classification. */
+export type SelfVerifyRubricRefusalCode =
+  (typeof ALLOWED_SELF_VERIFY_RUBRIC_REFUSAL_CODES)[number];
+
+/** Single dimension score in the persisted rubric report. */
+export interface SelfVerifyRubricDimensionScore {
+  dimension: SelfVerifyRubricDimension;
+  /** Score in `[0, 1]`; rounded to 6 digits in the persisted artifact. */
+  score: number;
+}
+
+/** Single visual subscore in the persisted rubric report. */
+export interface SelfVerifyRubricVisualSubscore {
+  subscore: SelfVerifyRubricVisualSubscoreKind;
+  /** Score in `[0, 1]`; rounded to 6 digits in the persisted artifact. */
+  score: number;
+}
+
+/**
+ * Short, structured rule citation attached to a per-case evaluation. The
+ * citation surfaces the rubric rule the rater applied and a short
+ * audit-grade message. No chain-of-thought is persisted — `message` is
+ * a single sentence the rater produced when grading the case.
+ */
+export interface SelfVerifyRubricRuleCitation {
+  /** Stable rule identifier (e.g. `"schema_conformance.required_fields"`). */
+  ruleId: string;
+  /** Audit-grade short message; sanitized + truncated by the parser. */
+  message: string;
+}
+
+/** Per-test-case rubric evaluation row. */
+export interface SelfVerifyRubricCaseEvaluation {
+  testCaseId: string;
+  /** Sorted by dimension name for byte stability. */
+  dimensions: SelfVerifyRubricDimensionScore[];
+  /** Visual subscores when the rubric pass had a visual sidecar input. */
+  visualSubscores?: SelfVerifyRubricVisualSubscore[];
+  /** Sorted by `ruleId` for byte stability. Empty array when no rule fired. */
+  citations: SelfVerifyRubricRuleCitation[];
+  /**
+   * Aggregate per-case rubric score in `[0, 1]`. Arithmetic mean of the
+   * dimensions and visual subscores; rounded to 6 digits in the artifact.
+   */
+  rubricScore: number;
+}
+
+/** Job-level aggregate of the rubric pass. */
+export interface SelfVerifyRubricAggregateScores {
+  /** Mean of the per-case `rubricScore` values across the job. */
+  jobLevelRubricScore: number;
+  /** Job-level mean per rubric dimension; sorted by dimension name. */
+  dimensionScores: SelfVerifyRubricDimensionScore[];
+  /** Job-level mean per visual subscore when the rubric pass scored visuals. */
+  visualSubscores?: SelfVerifyRubricVisualSubscore[];
+}
+
+/** Refusal record emitted when the rubric pass cannot publish scores. */
+export interface SelfVerifyRubricRefusal {
+  code: SelfVerifyRubricRefusalCode;
+  /** Sanitized + truncated message; no secrets, no chain-of-thought. */
+  message: string;
+}
+
+/**
+ * Persisted self-verify rubric pass artifact (Issue #1379).
+ *
+ * Sibling to `validation-report.json` and `coverage-report.json` under
+ * `<runDir>/testcases/self-verify-rubric.json`. Always byte-stable: per
+ * case evaluations are sorted by `testCaseId`, dimension lists are
+ * sorted by dimension name, and citations are sorted by rule id.
+ *
+ * When a `refusal` is present, `caseEvaluations` is empty and the
+ * `aggregate` carries `0` job/dimension scores; downstream policy gates
+ * MUST treat the refusal as a soft signal (it does not by itself block
+ * a job) and surface it on the inspector for operator review.
+ */
+export interface SelfVerifyRubricReport {
+  schemaVersion: typeof SELF_VERIFY_RUBRIC_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  promptTemplateVersion: typeof SELF_VERIFY_RUBRIC_PROMPT_TEMPLATE_VERSION;
+  generatedAt: string;
+  jobId: string;
+  policyProfileId: string;
+  /** Whether the rubric replay cache served the result without invoking the LLM. */
+  cacheHit: boolean;
+  /** Hex-encoded SHA-256 digest of the rubric replay-cache key. */
+  cacheKeyDigest: string;
+  /** Identity stamps of the deployment that produced (or would have produced) the scores. */
+  modelDeployment: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  /** Set when the pass refused to publish scores. */
+  refusal?: SelfVerifyRubricRefusal;
+  /** Sorted by `testCaseId` for byte stability. Empty when `refusal` is set. */
+  caseEvaluations: SelfVerifyRubricCaseEvaluation[];
+  aggregate: SelfVerifyRubricAggregateScores;
+}
+
+/**
+ * Replay-cache key for the self-verify rubric pass. The key carries a
+ * hard discriminator (`passKind`) so it can never collide with the
+ * test-generation replay cache key, even when other identity fields
+ * happen to match.
+ */
+export interface SelfVerifyRubricReplayCacheKey {
+  passKind: "self_verify_rubric";
+  /** SHA-256 of the rubric input (test cases + intent + visual descriptions). */
+  inputHash: string;
+  /** SHA-256 of the rubric prompt + response schema identity. */
+  promptHash: string;
+  /** SHA-256 of the rubric response JSON schema. */
+  schemaHash: string;
+  modelRevision: string;
+  gatewayRelease: string;
+  policyBundleVersion: string;
+  redactionPolicyVersion: typeof REDACTION_POLICY_VERSION;
+  promptTemplateVersion: typeof SELF_VERIFY_RUBRIC_PROMPT_TEMPLATE_VERSION;
+  rubricSchemaVersion: typeof SELF_VERIFY_RUBRIC_REPORT_SCHEMA_VERSION;
+  seed?: number;
+}
+
+/** Stored cache entry for a rubric report. */
+export interface SelfVerifyRubricReplayCacheEntry {
+  key: string;
+  storedAt: string;
+  report: SelfVerifyRubricReport;
+}
+
+/** Cache lookup outcome consumed by the rubric pass orchestration layer. */
+export type SelfVerifyRubricReplayCacheLookupResult =
+  | { hit: true; entry: SelfVerifyRubricReplayCacheEntry }
+  | { hit: false; key: string };
 
 /** Pair of generated test case ids exceeding the similarity threshold. */
 export interface TestCaseDuplicatePair {
@@ -2322,6 +2554,22 @@ export interface GeneratedTestCaseQualitySignals {
   ambiguity?: IntentAmbiguity;
 }
 
+/**
+ * Per-test-case rubric quality signal emitted by the self-verify pass
+ * (Issue #1379). The signal is reported via the `self-verify-rubric.json`
+ * artifact rather than mutated onto the cached `GeneratedTestCase` so
+ * the strict generated-test-case JSON schema and the replay-cache
+ * identity remain byte-stable. Each row mirrors one
+ * `SelfVerifyRubricCaseEvaluation` from the rubric report and is
+ * surfaced on the inspector + the audit-timeline as a quality signal of
+ * the underlying test case.
+ */
+export interface TestCaseQualitySignalRubric {
+  testCaseId: string;
+  /** 0..1 aggregate rubric score for this case (rounded to 6 digits). */
+  rubricScore: number;
+}
+
 /** Audit metadata attached to a generated test case. */
 export interface GeneratedTestCaseAuditMetadata {
   jobId: string;
@@ -3068,7 +3316,8 @@ export type Wave1PocEvidenceArtifactCategory =
   | "finops"
   | "attestation"
   | "signature"
-  | "lbom";
+  | "lbom"
+  | "self_verify_rubric";
 
 /** Single artifact attested by the Wave 1 POC evidence manifest. */
 export interface Wave1PocEvidenceArtifact {
@@ -3207,6 +3456,20 @@ export interface Wave1PocEvalThresholds {
   requirePolicyPass: boolean;
   /** Visual sidecar gate must not block (when sidecar is present). */
   requireVisualSidecarPass: boolean;
+  /**
+   * Optional minimum job-level self-verify rubric score in `[0, 1]`
+   * (Issue #1379). When set, the eval gate fails the run if the rubric
+   * pass produced a `jobLevelRubricScore` strictly below this threshold.
+   * When omitted, the rubric job-level score is informational only.
+   */
+  minJobRubricScore?: number;
+  /**
+   * When `true`, the eval gate also fails when the self-verify rubric
+   * pass attached a `refusal` to its report. Defaulted to `false` so
+   * the eval gate stays byte-stable for fixtures that do not exercise
+   * the opt-in pass.
+   */
+  requireRubricPass?: boolean;
 }
 
 /** Failure record describing a single threshold breach. */
@@ -3222,7 +3485,9 @@ export interface Wave1PocEvalFailure {
     | "policy_blocked"
     | "visual_sidecar_blocked"
     | "validation_blocked"
-    | "export_refused";
+    | "export_refused"
+    | "min_job_rubric_score"
+    | "rubric_pass_refused";
   /** Numeric or boolean observed value (encoded as number for comparators). */
   actual: number;
   /** Numeric or boolean threshold that was breached. */
@@ -3250,6 +3515,18 @@ export interface Wave1PocEvalFixtureMetrics {
   validationBlocked: boolean;
   visualSidecarBlocked: boolean;
   exportRefused: boolean;
+  /**
+   * Optional job-level self-verify rubric score (Issue #1379). Only
+   * present when the rubric pass ran for the fixture. Mirrors the value
+   * stored on `coverage-report.json#rubricScore` (rounded to 6 digits).
+   */
+  jobRubricScore?: number;
+  /**
+   * Whether the rubric pass attached a `refusal` to its report
+   * (Issue #1379). `true` when the LLM gateway refused, the response
+   * failed schema validation, or the per-case score set was incomplete.
+   */
+  rubricRefused?: boolean;
 }
 
 /** Per-fixture evaluation outcome. */
@@ -4383,4 +4660,4 @@ export interface Wave1PocLbomSummary {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.0.0" as const;
+export const CONTRACT_VERSION = "4.1.0" as const;

@@ -33,6 +33,7 @@ import {
   VISUAL_SIDECAR_VALIDATION_REPORT_ARTIFACT_FILENAME,
   type BusinessTestIntentIr,
   type GeneratedTestCaseList,
+  type SelfVerifyRubricReport,
   type TestCaseCoverageReport,
   type TestCasePolicyProfile,
   type TestCasePolicyReport,
@@ -44,6 +45,11 @@ import {
 import { canonicalJson } from "./content-hash.js";
 import { evaluatePolicyGate } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
+import {
+  runSelfVerifyRubricPass,
+  writeSelfVerifyRubricReportArtifact,
+  type SelfVerifyRubricPipelineOptions,
+} from "./self-verify-rubric.js";
 import { computeCoverageReport } from "./test-case-coverage.js";
 import { validateGeneratedTestCases } from "./test-case-validation.js";
 import { validateVisualSidecar } from "./visual-sidecar-validation.js";
@@ -70,6 +76,13 @@ export interface ValidationPipelineArtifacts {
   coverage: TestCaseCoverageReport;
   policy: TestCasePolicyReport;
   visual?: VisualSidecarValidationReport;
+  /**
+   * Self-verify rubric pass output (Issue #1379). Populated only by
+   * `runValidationPipelineWithSelfVerify`. The synchronous
+   * `runValidationPipeline` never sets this field so its disabled-path
+   * artifacts remain byte-identical to the pre-#1379 baseline.
+   */
+  rubric?: SelfVerifyRubricReport;
   /**
    * Final blocking decision. True when ANY of:
    *   - validation reported errors
@@ -230,6 +243,8 @@ export interface WriteValidationPipelineArtifactsResult {
   policyReportPath: string;
   coverageReportPath: string;
   visualSidecarValidationReportPath?: string;
+  /** Path of the persisted self-verify rubric report when present (Issue #1379). */
+  selfVerifyRubricReportPath?: string;
 }
 
 /**
@@ -284,6 +299,14 @@ export const writeValidationPipelineArtifacts = async (
     result.visualSidecarValidationReportPath = visualPath;
   }
 
+  if (input.artifacts.rubric !== undefined) {
+    const rubricPaths = await writeSelfVerifyRubricReportArtifact({
+      report: input.artifacts.rubric,
+      runDir: input.destinationDir,
+    });
+    result.selfVerifyRubricReportPath = rubricPaths.artifactPath;
+  }
+
   return result;
 };
 
@@ -309,6 +332,160 @@ export const runAndPersistValidationPipeline = async (
   paths: WriteValidationPipelineArtifactsResult;
 }> => {
   const artifacts = runValidationPipeline(input);
+  const paths = await writeValidationPipelineArtifacts({
+    artifacts,
+    destinationDir: input.destinationDir,
+  });
+  return { artifacts, paths };
+};
+
+/* -------------------------------------------------------------------- */
+/*  Self-verify rubric variant (Issue #1379)                             */
+/* -------------------------------------------------------------------- */
+
+/**
+ * Inputs for the self-verify-aware pipeline. The required `selfVerify`
+ * options carry the gateway client, model identity, and (optional)
+ * rubric replay cache. Apart from this opt-in, the rest of the pipeline
+ * inputs match `RunValidationPipelineInput` exactly.
+ */
+export interface RunValidationPipelineWithSelfVerifyInput extends RunValidationPipelineInput {
+  selfVerify: SelfVerifyRubricPipelineOptions;
+}
+
+/**
+ * Run the validation pipeline with the optional self-verify rubric pass
+ * inserted between `testcase.validate` and `testcase.policy`
+ * (Issue #1379). On a structurally-invalid validation report the rubric
+ * pass is skipped and the result mirrors `runValidationPipeline`'s
+ * disabled path. On a successful rubric pass:
+ *
+ *   - per-case `qualitySignals.rubricScore` is stamped onto a freshly
+ *     cloned `GeneratedTestCaseList`,
+ *   - `coverage-report.json#rubricScore` carries the job-level score,
+ *   - the policy gate sees the rubric-scored list (so any future
+ *     policy rule that gates on rubric score has a stable input),
+ *   - the resulting artifact bundle gains a `rubric` field which is
+ *     persisted by `writeValidationPipelineArtifacts`.
+ *
+ * Refusals (gateway errors, schema-invalid responses, missing scores)
+ * are captured on `rubric.refusal` rather than thrown — the upstream
+ * pipeline still publishes a complete artifact set so an operator can
+ * audit the failed run.
+ */
+export const runValidationPipelineWithSelfVerify = async (
+  input: RunValidationPipelineWithSelfVerifyInput,
+): Promise<ValidationPipelineArtifacts> => {
+  const profile = input.profile ?? cloneEuBankingDefaultProfile();
+  const validation = validateGeneratedTestCases({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    list: input.list,
+    intent: input.intent,
+  });
+
+  if (hasStructuralErrors(validation)) {
+    return runValidationPipeline({ ...input, profile });
+  }
+
+  const rubricRun = await runSelfVerifyRubricPass({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    list: input.list,
+    intent: input.intent,
+    ...(input.visual !== undefined ? { visual: input.visual } : {}),
+    policyProfileId: profile.id,
+    policyBundleVersion: input.selfVerify.policyBundleVersion,
+    client: input.selfVerify.client,
+    modelBinding: input.selfVerify.modelBinding,
+    ...(input.selfVerify.cache !== undefined
+      ? { cache: input.selfVerify.cache }
+      : {}),
+    ...(input.selfVerify.maxOutputTokens !== undefined
+      ? { maxOutputTokens: input.selfVerify.maxOutputTokens }
+      : {}),
+    ...(input.selfVerify.maxWallClockMs !== undefined
+      ? { maxWallClockMs: input.selfVerify.maxWallClockMs }
+      : {}),
+    ...(input.selfVerify.maxRetries !== undefined
+      ? { maxRetries: input.selfVerify.maxRetries }
+      : {}),
+    ...(input.selfVerify.maxInputTokens !== undefined
+      ? { maxInputTokens: input.selfVerify.maxInputTokens }
+      : {}),
+  });
+
+  const rubricReport = rubricRun.report;
+  const aggregateScore = rubricReport.aggregate.jobLevelRubricScore;
+  const rubricScoreInput =
+    rubricReport.refusal === undefined ? aggregateScore : input.rubricScore;
+
+  const coverage = computeCoverageReport({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    policyProfileId: profile.id,
+    list: input.list,
+    intent: input.intent,
+    duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
+    ...(rubricScoreInput !== undefined
+      ? { rubricScore: rubricScoreInput }
+      : {}),
+  });
+
+  let visualReport: VisualSidecarValidationReport | undefined;
+  if (input.visual !== undefined) {
+    visualReport = validateVisualSidecar({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      visual: input.visual,
+      intent: input.intent,
+      ...(input.primaryVisualDeployment !== undefined
+        ? { primaryDeployment: input.primaryVisualDeployment }
+        : {}),
+    });
+  }
+
+  const policy = evaluatePolicyGate({
+    jobId: input.jobId,
+    generatedAt: input.generatedAt,
+    list: input.list,
+    intent: input.intent,
+    profile,
+    validation,
+    coverage,
+    ...(visualReport !== undefined ? { visual: visualReport } : {}),
+  });
+
+  const blocked =
+    validation.blocked ||
+    policy.blocked ||
+    (visualReport !== undefined && visualReport.blocked);
+
+  const artifacts: ValidationPipelineArtifacts = {
+    generatedTestCases: input.list,
+    validation,
+    coverage,
+    policy,
+    rubric: rubricReport,
+    blocked,
+  };
+  if (visualReport !== undefined) artifacts.visual = visualReport;
+  return artifacts;
+};
+
+/**
+ * Convenience: run the self-verify-aware pipeline AND persist the
+ * artifacts (including `self-verify-rubric.json`) under
+ * `destinationDir`. The result mirrors
+ * `runAndPersistValidationPipeline`.
+ */
+export const runAndPersistValidationPipelineWithSelfVerify = async (
+  input: RunValidationPipelineWithSelfVerifyInput & { destinationDir: string },
+): Promise<{
+  artifacts: ValidationPipelineArtifacts;
+  paths: WriteValidationPipelineArtifactsResult;
+}> => {
+  const artifacts = await runValidationPipelineWithSelfVerify(input);
   const paths = await writeValidationPipelineArtifacts({
     artifacts,
     destinationDir: input.destinationDir,
