@@ -35,6 +35,7 @@ import {
   detectSuspiciousContent,
   effectiveSemanticContentBlock,
   extractSemanticContentOverrides,
+  filterSemanticContentOverridesForValidation,
   listSemanticContentOverrides,
   recordSemanticContentOverride,
   SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
@@ -391,6 +392,12 @@ test("extractSemanticContentOverrides: ignores non-override notes; later events 
   assert.ok(paths !== undefined);
   assert.equal(paths.size, 1);
   assert.ok(paths.has("$.testCases[0].steps[0].action"));
+  assert.equal(
+    paths instanceof Map
+      ? paths.get("$.testCases[0].steps[0].action")
+      : undefined,
+    "shell_metacharacters",
+  );
 
   const list = listSemanticContentOverrides([earlier, later, irrelevantNote]);
   assert.equal(list.length, 1);
@@ -507,6 +514,49 @@ test("effectiveSemanticContentBlock: non-semantic error always keeps blocking", 
     ["tc-1", new Set(["$.testCases[0].steps[0].action"])],
   ]);
   assert.equal(effectiveSemanticContentBlock(report, map), true);
+});
+
+test("filterSemanticContentOverridesForValidation: drops stale or non-semantic paths", () => {
+  const report = buildValidationReport([
+    semanticIssue("$.testCases[0].steps[0].action"),
+    {
+      testCaseId: "tc-1",
+      path: "$.testCases[0].title",
+      code: "title_empty",
+      severity: "error",
+      message: "title must not be whitespace-only",
+    },
+  ]);
+  const stale = new Map<string, Set<string>>([
+    [
+      "tc-1",
+      new Set([
+        "$.testCases[0].steps[0].action",
+        "$.testCases[0].title",
+        "$.testCases[0].expectedResults[0]",
+      ]),
+    ],
+    ["tc-unknown", new Set(["$.testCases[9].steps[0].action"])],
+  ]);
+  const filtered = filterSemanticContentOverridesForValidation(report, stale);
+  assert.deepEqual(
+    [...(filtered.get("tc-1")?.keys() ?? [])],
+    ["$.testCases[0].steps[0].action"],
+  );
+  assert.equal(filtered.has("tc-unknown"), false);
+});
+
+test("effectiveSemanticContentBlock: category-mismatched replay override stays blocking", () => {
+  const report = buildValidationReport([
+    semanticIssue("$.testCases[0].steps[0].action"),
+  ]);
+  const categoryMismatch = new Map([
+    [
+      "tc-1",
+      new Map([["$.testCases[0].steps[0].action", "script_tag" as const]]),
+    ],
+  ]);
+  assert.equal(effectiveSemanticContentBlock(report, categoryMismatch), true);
 });
 
 const buildCoverage = (): TestCaseCoverageReport => ({

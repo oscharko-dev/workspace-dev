@@ -47,6 +47,7 @@ import { evaluatePolicyGate } from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import {
   effectiveSemanticContentBlock,
+  filterSemanticContentOverridesForValidation,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
 import {
@@ -181,6 +182,14 @@ export const runValidationPipeline = (
     });
   }
 
+  const semanticContentOverrides =
+    input.semanticContentOverrides === undefined
+      ? undefined
+      : filterSemanticContentOverridesForValidation(
+          validation,
+          input.semanticContentOverrides,
+        );
+
   const policy = evaluatePolicyGate({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -190,18 +199,15 @@ export const runValidationPipeline = (
     validation,
     coverage,
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
-    ...(input.semanticContentOverrides !== undefined
-      ? { semanticContentOverrides: input.semanticContentOverrides }
+    ...(semanticContentOverrides !== undefined
+      ? { semanticContentOverrides }
       : {}),
   });
 
   const validationBlockedAfterOverrides =
-    input.semanticContentOverrides === undefined
+    semanticContentOverrides === undefined
       ? validation.blocked
-      : effectiveSemanticContentBlock(
-          validation,
-          input.semanticContentOverrides,
-        );
+      : effectiveSemanticContentBlock(validation, semanticContentOverrides);
 
   const blocked =
     validationBlockedAfterOverrides ||
@@ -472,6 +478,14 @@ export const runValidationPipelineWithSelfVerify = async (
       : {}),
   });
 
+  const semanticContentOverrides =
+    input.semanticContentOverrides === undefined
+      ? undefined
+      : filterSemanticContentOverridesForValidation(
+          validation,
+          input.semanticContentOverrides,
+        );
+
   const policy = evaluatePolicyGate({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -481,18 +495,15 @@ export const runValidationPipelineWithSelfVerify = async (
     validation,
     coverage,
     ...(visualReport !== undefined ? { visual: visualReport } : {}),
-    ...(input.semanticContentOverrides !== undefined
-      ? { semanticContentOverrides: input.semanticContentOverrides }
+    ...(semanticContentOverrides !== undefined
+      ? { semanticContentOverrides }
       : {}),
   });
 
   const validationBlockedAfterOverrides =
-    input.semanticContentOverrides === undefined
+    semanticContentOverrides === undefined
       ? validation.blocked
-      : effectiveSemanticContentBlock(
-          validation,
-          input.semanticContentOverrides,
-        );
+      : effectiveSemanticContentBlock(validation, semanticContentOverrides);
 
   const blocked =
     validationBlockedAfterOverrides ||

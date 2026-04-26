@@ -4028,7 +4028,7 @@ Single policy-rule violation surfaced for a generated test case.
 
 ##### outcome
 
-> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"`
+> **outcome**: `"schema_invalid"` \| `"missing_trace"` \| `"missing_expected_results"` \| `"semantic_suspicious_content"` \| `"pii_in_test_data"` \| `"missing_negative_or_validation_for_required_field"` \| `"missing_accessibility_case"` \| `"missing_boundary_case"` \| `"duplicate_test_case"` \| `"regulated_risk_review_required"` \| `"ambiguity_review_required"` \| `"qc_mapping_not_exportable"` \| `"low_confidence_review_required"` \| `"open_questions_review_required"` \| `"visual_sidecar_failure"` \| `"visual_sidecar_fallback_used"` \| `"visual_sidecar_low_confidence"` \| `"visual_sidecar_possible_pii"` \| `"visual_sidecar_prompt_injection_text"`
 
 ##### path?
 
@@ -4083,7 +4083,7 @@ Single semantic / structural validation issue.
 
 ##### code
 
-> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"`
+> **code**: `"schema_invalid"` \| `"missing_trace"` \| `"trace_screen_unknown"` \| `"missing_expected_results"` \| `"steps_unordered"` \| `"steps_indices_non_sequential"` \| `"step_action_empty"` \| `"step_action_too_long"` \| `"duplicate_step_index"` \| `"duplicate_test_case_id"` \| `"title_empty"` \| `"objective_empty"` \| `"risk_category_invalid_for_intent"` \| `"qc_mapping_blocking_reasons_missing"` \| `"qc_mapping_exportable_inconsistent"` \| `"quality_signals_confidence_out_of_range"` \| `"quality_signals_coverage_unknown_id"` \| `"test_data_pii_detected"` \| `"test_data_unredacted_value"` \| `"preconditions_pii_detected"` \| `"expected_results_pii_detected"` \| `"assumptions_excessive"` \| `"open_questions_excessive"` \| `"ambiguity_without_review_state"` \| `"semantic_suspicious_content"`
 
 ##### message
 
@@ -10381,7 +10381,7 @@ Allowed policy-gate decisions (Issue #1364).
 
 ### ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES
 
-> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`\]
+> `const` **ALLOWED\_TEST\_CASE\_POLICY\_OUTCOMES**: readonly \[`"missing_trace"`, `"missing_expected_results"`, `"pii_in_test_data"`, `"missing_negative_or_validation_for_required_field"`, `"missing_accessibility_case"`, `"missing_boundary_case"`, `"schema_invalid"`, `"duplicate_test_case"`, `"regulated_risk_review_required"`, `"ambiguity_review_required"`, `"qc_mapping_not_exportable"`, `"low_confidence_review_required"`, `"open_questions_review_required"`, `"visual_sidecar_failure"`, `"visual_sidecar_fallback_used"`, `"visual_sidecar_low_confidence"`, `"visual_sidecar_possible_pii"`, `"visual_sidecar_prompt_injection_text"`, `"semantic_suspicious_content"`\]
 
 Allowed policy outcome codes attached to a single decision row.
 Visual-sidecar codes (`visual_*`) come from the multimodal sidecar
@@ -10391,7 +10391,7 @@ gating per the Issue #1364 / #1386 update.
 
 ### ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES
 
-> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`\]
+> `const` **ALLOWED\_TEST\_CASE\_VALIDATION\_ISSUE\_CODES**: readonly \[`"schema_invalid"`, `"missing_trace"`, `"trace_screen_unknown"`, `"missing_expected_results"`, `"steps_unordered"`, `"steps_indices_non_sequential"`, `"step_action_empty"`, `"step_action_too_long"`, `"duplicate_step_index"`, `"duplicate_test_case_id"`, `"title_empty"`, `"objective_empty"`, `"risk_category_invalid_for_intent"`, `"qc_mapping_blocking_reasons_missing"`, `"qc_mapping_exportable_inconsistent"`, `"quality_signals_confidence_out_of_range"`, `"quality_signals_coverage_unknown_id"`, `"test_data_pii_detected"`, `"test_data_unredacted_value"`, `"preconditions_pii_detected"`, `"expected_results_pii_detected"`, `"assumptions_excessive"`, `"open_questions_excessive"`, `"ambiguity_without_review_state"`, `"semantic_suspicious_content"`\]
 
 Allowed test-case validation issue codes (Issue #1364).
 The list is the runtime source of truth; new codes plug in here without
@@ -10496,7 +10496,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.3.0"`
+> `const` **CONTRACT\_VERSION**: `"4.4.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

@@ -53,6 +53,11 @@ import {
 import { renderQcAlmXml } from "./qc-alm-xml-writer.js";
 import { renderQcCsv } from "./qc-csv-writer.js";
 import { renderQcXlsx } from "./qc-xlsx-writer.js";
+import {
+  effectiveSemanticContentBlock,
+  filterSemanticContentOverridesForValidation,
+  type SemanticContentOverrideMap,
+} from "./semantic-content-sanitization.js";
 
 const utf8Encoder = new TextEncoder();
 
@@ -71,6 +76,12 @@ export interface RunExportPipelineInput {
   enableXlsx?: boolean;
   /** Identity of the structured-test-case generator deployment. */
   testGenerationDeployment?: string;
+  /**
+   * Active reviewer overrides for semantic suspicious-content findings. The
+   * raw validation report remains audit-preserving; export uses this map only
+   * to compute whether validation is still effectively blocking.
+   */
+  semanticContentOverrides?: SemanticContentOverrideMap;
 }
 
 export interface ExportPipelineArtifacts {
@@ -112,7 +123,17 @@ const detectRefusalCodes = (
   input: RunExportPipelineInput,
 ): ExportRefusalCode[] => {
   const codes = new Set<ExportRefusalCode>();
-  if (input.validation.blocked) {
+  const validationBlocked =
+    input.semanticContentOverrides === undefined
+      ? input.validation.blocked
+      : effectiveSemanticContentBlock(
+          input.validation,
+          filterSemanticContentOverridesForValidation(
+            input.validation,
+            input.semanticContentOverrides,
+          ),
+        );
+  if (validationBlocked) {
     codes.add("schema_invalid_cases_present");
   }
   if (input.policy.blocked) {
