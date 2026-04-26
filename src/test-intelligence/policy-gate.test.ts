@@ -534,6 +534,51 @@ test("Issue #1412: PII bound to a different screen does not flag the case", () =
   );
 });
 
+test("Issue #1412: PII bound to the referenced screen flags a low-tagged case", () => {
+  const intent = buildIntent({
+    screens: [
+      { screenId: "s-1", screenName: "Login", trace: { nodeId: "s-1" } },
+      { screenId: "s-2", screenName: "Profile", trace: { nodeId: "s-2" } },
+    ],
+    piiIndicators: [
+      {
+        id: "pii-1",
+        kind: "email",
+        confidence: 0.9,
+        matchLocation: "label",
+        redacted: "[REDACTED:email]",
+        screenId: "s-2",
+      },
+    ],
+  });
+  const ctx = harness(
+    [buildCase({ riskCategory: "low", figmaTraceRefs: [{ screenId: "s-2" }] })],
+    intent,
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  const perCase = report.decisions[0]?.violations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(perCase);
+  assert.equal(perCase.severity, "warning");
+  assert.match(perCase.reason, /regulated_data/);
+  const job = report.jobLevelViolations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(job);
+  assert.equal(job.severity, "warning");
+});
+
 test("Issue #1412: PII without a screenId falls through to global (fail-closed)", () => {
   const intent = buildIntent({
     piiIndicators: [
