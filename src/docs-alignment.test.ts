@@ -3,9 +3,16 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { CONTRACT_VERSION } from "./contracts/index.js";
+import {
+  CONTRACT_VERSION,
+  TEST_INTELLIGENCE_MULTISOURCE_ENV,
+} from "./contracts/index.js";
 import * as publicApi from "./index.js";
-import { getAllowedFigmaSourceModes, getAllowedLlmCodegenModes, getWorkspaceDefaults } from "./mode-lock.js";
+import {
+  getAllowedFigmaSourceModes,
+  getAllowedLlmCodegenModes,
+  getWorkspaceDefaults,
+} from "./mode-lock.js";
 import { PASTE_ERROR_CATALOG } from "../ui-src/src/features/workspace/inspector/paste-error-catalog.ts";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,10 +32,7 @@ const extractMarkdownSection = (
 ): string | null => {
   const escapedHeading = escapeRegExp(heading);
   const match = markdown.match(
-    new RegExp(
-      `^### ${escapedHeading}$([\\s\\S]*?)(?=^## |^### |\\Z)`,
-      "m",
-    ),
+    new RegExp(`^### ${escapedHeading}$([\\s\\S]*?)(?=^## |^### |\\Z)`, "m"),
   );
   return match ? match[0] : null;
 };
@@ -39,10 +43,7 @@ const extractMarkdownTopLevelSection = (
 ): string | null => {
   const escapedHeading = escapeRegExp(heading);
   const match = markdown.match(
-    new RegExp(
-      `^## ${escapedHeading}$([\\s\\S]*?)(?=^## |\\Z)`,
-      "m",
-    ),
+    new RegExp(`^## ${escapedHeading}$([\\s\\S]*?)(?=^## |\\Z)`, "m"),
   );
   return match ? match[0] : null;
 };
@@ -126,14 +127,23 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   const escapedContractVersion = escapeRegExp(CONTRACT_VERSION);
 
   assert.match(architectureDoc, /MODE_LOCK_VIOLATION/);
-  assert.match(architectureDoc, /single-threaded Node\.js event loop invariant/i);
+  assert.match(
+    architectureDoc,
+    /single-threaded Node\.js event loop invariant/i,
+  );
   assert.match(architectureDoc, /not safe for `worker_threads`/i);
-  assert.match(architectureDoc, /waits up to 3 seconds for process exit, then falls back to `SIGKILL`/i);
+  assert.match(
+    architectureDoc,
+    /waits up to 3 seconds for process exit, then falls back to `SIGKILL`/i,
+  );
   assert.match(architectureDoc, /best-effort `SIGTERM`/i);
   assert.match(architectureDoc, new RegExp(escapeRegExp(figmaModeLock)));
   assert.match(architectureDoc, new RegExp(escapeRegExp(codegenModeLock)));
   assert.match(architectureDoc, /template\/react-mui-app\/pnpm-lock\.yaml/);
-  assert.match(architectureDoc, /package\.json[` ]+`files`|`package\.json` `files`|package\.json `files`/);
+  assert.match(
+    architectureDoc,
+    /package\.json[` ]+`files`|`package\.json` `files`|package\.json `files`/,
+  );
   assert.match(architectureDoc, /template:install|--frozen-lockfile/);
   assert.match(architectureDoc, /verify:airgap/);
   assert.match(architectureDoc, /verify:reproducible-build/);
@@ -141,23 +151,38 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
     localRuntimeDoc,
     new RegExp(
       escapeRegExp(
-        `Enforce mode lock (\`${getAllowedFigmaSourceModes().join("|")}\` + \`${getAllowedLlmCodegenModes().join("|")}\`)`
-      )
-    )
+        `Enforce mode lock (\`${getAllowedFigmaSourceModes().join("|")}\` + \`${getAllowedLlmCodegenModes().join("|")}\`)`,
+      ),
+    ),
   );
   assert.match(tsconfigDoc, /"moduleResolution": "node16"/);
   assert.match(complianceDoc, /`\.github\/workflows\/changesets-release\.yml`/);
   assert.match(complianceDoc, /`THREAT_MODEL\.md`/);
   assert.doesNotMatch(complianceDoc, /npm-publish\.yml/);
-  assert.match(compatibilityDoc, new RegExp(`\\| Contract version \\| \`${escapedContractVersion}\` \\|`));
-  assert.match(compatibilityDoc, /\| TypeScript consumer compiler \| 5\.0\.0 \| >=5\.0\.0 \|/);
-  assert.match(compatibilityDoc, /TypeScript 4\.x consumers are unsupported and must upgrade to TypeScript `>=5\.0\.0`/);
+  assert.match(
+    compatibilityDoc,
+    new RegExp(`\\| Contract version \\| \`${escapedContractVersion}\` \\|`),
+  );
+  assert.match(
+    compatibilityDoc,
+    /\| TypeScript consumer compiler \| 5\.0\.0 \| >=5\.0\.0 \|/,
+  );
+  assert.match(
+    compatibilityDoc,
+    /TypeScript 4\.x consumers are unsupported and must upgrade to TypeScript `>=5\.0\.0`/,
+  );
   assert.match(compatibilityDoc, /\| `figmaSourceMode=hybrid` \| Supported \|/);
   for (const figmaMode of getAllowedFigmaSourceModes()) {
-    assert.match(readmeDoc, new RegExp(escapeRegExp(`\`figmaSourceMode=${figmaMode}\``)));
+    assert.match(
+      readmeDoc,
+      new RegExp(escapeRegExp(`\`figmaSourceMode=${figmaMode}\``)),
+    );
   }
   for (const codegenMode of getAllowedLlmCodegenModes()) {
-    assert.match(readmeDoc, new RegExp(escapeRegExp(`\`llmCodegenMode=${codegenMode}\``)));
+    assert.match(
+      readmeDoc,
+      new RegExp(escapeRegExp(`\`llmCodegenMode=${codegenMode}\``)),
+    );
   }
   assert.match(contributingDoc, /feature branch from `dev`/);
   assert.match(contributingDoc, /PR targeting `dev`/);
@@ -168,9 +193,18 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(contributingDoc, /formatZodError/);
   assert.match(contributingDoc, /unexpected-property rejection/);
   assert.match(schemasSource, /Validation conventions in this module:/);
-  assert.match(schemasSource, /Guard unknown input with `isRecord` before reading object fields\./);
-  assert.match(schemasSource, /Define an explicit `allowedKeys` set for each object schema and reject/);
-  assert.match(schemasSource, /Collect failures in `ValidationIssue\[\]` with stable paths and messages/);
+  assert.match(
+    schemasSource,
+    /Guard unknown input with `isRecord` before reading object fields\./,
+  );
+  assert.match(
+    schemasSource,
+    /Define an explicit `allowedKeys` set for each object schema and reject/,
+  );
+  assert.match(
+    schemasSource,
+    /Collect failures in `ValidationIssue\[\]` with stable paths and messages/,
+  );
   assert.match(packageManifest, /"THREAT_MODEL\.md"/);
   assert.match(packageManifest, /"GOVERNANCE\.md"/);
   assert.match(readmeDoc, /## Repository branch flow/i);
@@ -179,21 +213,28 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
   assert.match(readmeDoc, /`main` is the release branch/i);
   assert.match(readmeDoc, /\[GOVERNANCE\.md\]\(GOVERNANCE\.md\)/);
   assert.match(readmeDoc, /`THREAT_MODEL\.md`/);
-  assert.match(readmeDoc, /TypeScript `>=5\.0\.0` for typed package consumption/);
-  assert.match(readmeDoc, /published dual ESM\/CJS type surface is validated only for TypeScript 5\+ consumers/i);
+  assert.match(
+    readmeDoc,
+    /TypeScript `>=5\.0\.0` for typed package consumption/,
+  );
+  assert.match(
+    readmeDoc,
+    /published dual ESM\/CJS type surface is validated only for TypeScript 5\+ consumers/i,
+  );
   assert.match(securityDoc, /`THREAT_MODEL\.md`/);
   assert.match(
     securityDoc,
     new RegExp(
-      escapeRegExp(
-        `figmaSourceMode=${getAllowedFigmaSourceModes().join("|")}`
-      )
-    )
+      escapeRegExp(`figmaSourceMode=${getAllowedFigmaSourceModes().join("|")}`),
+    ),
   );
   assert.match(threatModelDoc, /^# THREAT_MODEL/m);
   assert.match(threatModelDoc, /^## Trust Boundaries$/m);
   assert.match(threatModelDoc, /^## Attack Surfaces$/m);
-  assert.match(threatModelDoc, /^## Threats, Mitigations, and Residual Risks$/m);
+  assert.match(
+    threatModelDoc,
+    /^## Threats, Mitigations, and Residual Risks$/m,
+  );
   assert.match(threatModelDoc, /^## Residual Risks and Operator Assumptions$/m);
   assert.match(threatModelDoc, /src\/server\/request-security\.ts/);
   assert.match(threatModelDoc, /src\/job-engine\/local-sync\.ts/);
@@ -205,7 +246,9 @@ test("docs: mode lock docs stay aligned with runtime constraints", async () => {
 
 test("docs: validation and app template source contain expected pipeline patterns", async () => {
   const validationSource = await readRepoFile("src/job-engine/validation.ts");
-  const appTemplateSource = await readRepoFile("src/parity/templates/app-template.ts");
+  const appTemplateSource = await readRepoFile(
+    "src/parity/templates/app-template.ts",
+  );
 
   assert.match(validationSource, /args: \["lint", "--fix"\]/);
   assert.match(validationSource, /args: \["run", "test"\]/);
@@ -221,10 +264,22 @@ test("docs: troubleshooting guide is linked from README and included in the publ
   };
   const readmeDoc = await readRepoFile("README.md");
   const troubleshootingDoc = await readRepoFile("TROUBLESHOOTING.md");
-  const nodeSection = extractMarkdownTopLevelSection(troubleshootingDoc, "Node.js Version Mismatch");
-  const pnpmSection = extractMarkdownTopLevelSection(troubleshootingDoc, "pnpm Install / Cache Failures");
-  const portSection = extractMarkdownTopLevelSection(troubleshootingDoc, "Port 1983 Collision");
-  const figmaSourceModeSection = extractMarkdownTopLevelSection(troubleshootingDoc, "figmaSourceMode Input Errors");
+  const nodeSection = extractMarkdownTopLevelSection(
+    troubleshootingDoc,
+    "Node.js Version Mismatch",
+  );
+  const pnpmSection = extractMarkdownTopLevelSection(
+    troubleshootingDoc,
+    "pnpm Install / Cache Failures",
+  );
+  const portSection = extractMarkdownTopLevelSection(
+    troubleshootingDoc,
+    "Port 1983 Collision",
+  );
+  const figmaSourceModeSection = extractMarkdownTopLevelSection(
+    troubleshootingDoc,
+    "figmaSourceMode Input Errors",
+  );
   const validateProjectSection = extractMarkdownTopLevelSection(
     troubleshootingDoc,
     "Validation Stage Failures (`validate.project`)",
@@ -256,12 +311,27 @@ test("docs: troubleshooting guide is linked from README and included in the publ
   assert.match(pnpmSection ?? "", /pnpm store prune/);
   assert.match(portSection ?? "", /lsof -i :1983/);
   assert.match(portSection ?? "", /FIGMAPIPE_WORKSPACE_PORT=21983/);
-  assert.match(figmaSourceModeSection ?? "", /use only `rest`, `hybrid`, or `local_json`/);
-  assert.match(figmaSourceModeSection ?? "", /test -f \/absolute\/path\/to\/figma\.json/);
-  assert.match(validateProjectSection ?? "", /TypeScript errors, ESLint violations, or generated-project install failures/);
+  assert.match(
+    figmaSourceModeSection ?? "",
+    /use only `rest`, `hybrid`, or `local_json`/,
+  );
+  assert.match(
+    figmaSourceModeSection ?? "",
+    /test -f \/absolute\/path\/to\/figma\.json/,
+  );
+  assert.match(
+    validateProjectSection ?? "",
+    /TypeScript errors, ESLint violations, or generated-project install failures/,
+  );
   assert.match(validateProjectSection ?? "", /pnpm run template:install/);
-  assert.match(templateDependencySection ?? "", /template\/react-mui-app\/pnpm-lock\.yaml/);
-  assert.match(templateDependencySection ?? "", /pnpm install --frozen-lockfile/);
+  assert.match(
+    templateDependencySection ?? "",
+    /template\/react-mui-app\/pnpm-lock\.yaml/,
+  );
+  assert.match(
+    templateDependencySection ?? "",
+    /pnpm install --frozen-lockfile/,
+  );
 });
 
 test("docs: versioning policy stays aligned across README and changelogs", async () => {
@@ -274,24 +344,33 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   const architectureDoc = await readRepoFile("ARCHITECTURE.md");
   const publicApiSource = await readRepoFile("src/index.ts");
   const isolationAdr = await readRepoFile(
-    "docs/decisions/2026-04-18-issue-611-isolation-public-api-surface.md"
+    "docs/decisions/2026-04-18-issue-611-isolation-public-api-surface.md",
   );
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
     exports: Record<string, unknown>;
     files?: string[];
   };
-  const actualIsolationExports = EXPECTED_ISOLATION_RUNTIME_EXPORTS.filter((exportName) =>
-    Object.prototype.hasOwnProperty.call(publicApi, exportName)
+  const actualIsolationExports = EXPECTED_ISOLATION_RUNTIME_EXPORTS.filter(
+    (exportName) => Object.prototype.hasOwnProperty.call(publicApi, exportName),
   ).sort();
 
   assert.match(readmeDoc, /## Versioning strategy/i);
   assert.match(readmeDoc, /`VERSIONING\.md`/);
-  assert.match(readmeDoc, /Pin the npm package version in your own `package\.json`/);
+  assert.match(
+    readmeDoc,
+    /Pin the npm package version in your own `package\.json`/,
+  );
   assert.match(readmeDoc, /Use `CONTRACT_VERSION` for compatibility audits/i);
   assert.match(readmeDoc, /`CHANGELOG\.md` tracks package release history/i);
-  assert.match(readmeDoc, /`CONTRACT_CHANGELOG\.md` tracks public contract history/i);
+  assert.match(
+    readmeDoc,
+    /`CONTRACT_CHANGELOG\.md` tracks public contract history/i,
+  );
   assert.match(readmeDoc, /## Migration/i);
-  assert.match(readmeDoc, /\[contract migration guide\]\(docs\/migration-guide\.md\)/i);
+  assert.match(
+    readmeDoc,
+    /\[contract migration guide\]\(docs\/migration-guide\.md\)/i,
+  );
   assert.ok(packageManifest.files?.includes("docs/migration-guide.md"));
   assert.match(migrationGuide, /CONTRACT_VERSION/);
   assert.match(migrationGuide, /workspace-dev\/contracts/);
@@ -302,35 +381,80 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(migrationGuide, /Rollback/i);
 
   assert.match(versioningDoc, /two independent version tracks/i);
-  assert.match(versioningDoc, /consumers install and pin in their own `package\.json`/i);
+  assert.match(
+    versioningDoc,
+    /consumers install and pin in their own `package\.json`/i,
+  );
   assert.match(versioningDoc, /do not need to match numerically/i);
-  assert.match(versioningDoc, /Every public contract change must bump `CONTRACT_VERSION`/);
-  assert.match(versioningDoc, /npm and GitHub Releases are the authoritative sources for published package versions/i);
-  assert.match(versioningDoc, /root `workspace-dev` entrypoint is also a semver-governed public API surface/i);
-  assert.match(versioningDoc, /Breaking changes to existing root exports are governed by package semver/i);
-  assert.match(versioningDoc, /`CONTRACT_VERSION` and `CONTRACT_CHANGELOG\.md` govern versioned contract changes in `src\/contracts\/`/);
+  assert.match(
+    versioningDoc,
+    /Every public contract change must bump `CONTRACT_VERSION`/,
+  );
+  assert.match(
+    versioningDoc,
+    /npm and GitHub Releases are the authoritative sources for published package versions/i,
+  );
+  assert.match(
+    versioningDoc,
+    /root `workspace-dev` entrypoint is also a semver-governed public API surface/i,
+  );
+  assert.match(
+    versioningDoc,
+    /Breaking changes to existing root exports are governed by package semver/i,
+  );
+  assert.match(
+    versioningDoc,
+    /`CONTRACT_VERSION` and `CONTRACT_CHANGELOG\.md` govern versioned contract changes in `src\/contracts\/`/,
+  );
 
-  assert.match(contributingDoc, /All contract-versioned public types must be defined in `src\/contracts\/`\./);
   assert.match(
     contributingDoc,
-    /Semver-governed runtime types exported from the root `workspace-dev` entrypoint[\s\S]*may live outside `src\/contracts\/`/
+    /All contract-versioned public types must be defined in `src\/contracts\/`\./,
+  );
+  assert.match(
+    contributingDoc,
+    /Semver-governed runtime types exported from the root `workspace-dev` entrypoint[\s\S]*may live outside `src\/contracts\/`/,
   );
   assert.match(contributingDoc, /Public contract changes require:/);
-  assert.match(contributingDoc, /Public package\/root-entrypoint API changes require:/);
-  assert.match(contributingDoc, /Explicit package semver treatment through Changesets and release notes/);
+  assert.match(
+    contributingDoc,
+    /Public package\/root-entrypoint API changes require:/,
+  );
+  assert.match(
+    contributingDoc,
+    /Explicit package semver treatment through Changesets and release notes/,
+  );
 
   assert.match(contractChangelog, /### Package alignment policy/);
   assert.match(contractChangelog, /intentionally independent version tracks/i);
-  assert.match(contractChangelog, /does not require the checked-in `package\.json` version to change immediately/i);
-  assert.match(contractChangelog, /Consumers pin the package version from npm, not `CONTRACT_VERSION`\./);
-  assert.match(contractChangelog, /See `VERSIONING\.md` for the full package-versus-contract versioning policy\./);
+  assert.match(
+    contractChangelog,
+    /does not require the checked-in `package\.json` version to change immediately/i,
+  );
+  assert.match(
+    contractChangelog,
+    /Consumers pin the package version from npm, not `CONTRACT_VERSION`\./,
+  );
+  assert.match(
+    contractChangelog,
+    /See `VERSIONING\.md` for the full package-versus-contract versioning policy\./,
+  );
 
   assert.match(readmeDoc, /## Public API entrypoints/i);
   assert.match(readmeDoc, /## Programmatic API/i);
   assert.match(readmeDoc, /`workspace-dev\/contracts`/);
-  assert.match(readmeDoc, /import \{ createWorkspaceServer \} from "workspace-dev";/);
-  assert.match(readmeDoc, /import type \{ WorkspaceStartOptions \} from "workspace-dev\/contracts";/);
-  assert.match(readmeDoc, /import \{ validateModeLock \} from "workspace-dev";/);
+  assert.match(
+    readmeDoc,
+    /import \{ createWorkspaceServer \} from "workspace-dev";/,
+  );
+  assert.match(
+    readmeDoc,
+    /import type \{ WorkspaceStartOptions \} from "workspace-dev\/contracts";/,
+  );
+  assert.match(
+    readmeDoc,
+    /import \{ validateModeLock \} from "workspace-dev";/,
+  );
   assert.match(readmeDoc, /figmaSourceMode: "mcp"/);
   assert.match(readmeDoc, /CONTRACT_VERSION/);
   assert.match(readmeDoc, /type WorkspaceJobInput/);
@@ -343,26 +467,90 @@ test("docs: versioning policy stays aligned across README and changelogs", async
   assert.match(readmeDoc, /not experimental or internal-only today/i);
   assert.match(readmeDoc, /## Operational Hardening/i);
   assert.match(readmeDoc, /default loopback bind \(`127\.0\.0\.1:1983`\)/i);
-  assert.match(readmeDoc, /`local_json` is the preferred air-gap and firewall-friendly source mode/i);
-  assert.match(readmeDoc, /repository-only verification fixtures, test suites, and\s+template `node_modules` do not ship/i);
+  assert.match(
+    readmeDoc,
+    /`local_json` is the preferred air-gap and firewall-friendly source mode/i,
+  );
+  assert.match(
+    readmeDoc,
+    /repository-only verification fixtures, test suites, and\s+template `node_modules` do not ship/i,
+  );
 
-  assert.match(isolationAdr, /^# ADR: Issue #611 Isolation Public API Surface/m);
-  assert.match(isolationAdr, /Keep the isolation helpers on the root `workspace-dev` entrypoint/);
+  assert.match(
+    isolationAdr,
+    /^# ADR: Issue #611 Isolation Public API Surface/m,
+  );
+  assert.match(
+    isolationAdr,
+    /Keep the isolation helpers on the root `workspace-dev` entrypoint/,
+  );
   assert.match(isolationAdr, /Moved in this decision:\s*\n\s*-\s*None/);
-  assert.match(isolationAdr, /Advanced stable surface for embedders and orchestration hosts:/);
-  assert.match(isolationAdr, /`workspace-dev\/isolation` does not exist today/i);
+  assert.match(
+    isolationAdr,
+    /Advanced stable surface for embedders and orchestration hosts:/,
+  );
+  assert.match(
+    isolationAdr,
+    /`workspace-dev\/isolation` does not exist today/i,
+  );
   assert.match(isolationAdr, /## Isolation API Classification/);
 
-  assert.match(architectureDoc, /supported public API, but they are an advanced orchestration surface/i);
-  assert.match(architectureDoc, /Typical consumers should prefer `createWorkspaceServer`/);
-  assert.match(architectureDoc, /future move to a dedicated subpath must be treated as a compatibility-managed public API change/i);
+  assert.match(
+    architectureDoc,
+    /supported public API, but they are an advanced orchestration surface/i,
+  );
+  assert.match(
+    architectureDoc,
+    /Typical consumers should prefer `createWorkspaceServer`/,
+  );
+  assert.match(
+    architectureDoc,
+    /future move to a dedicated subpath must be treated as a compatibility-managed public API change/i,
+  );
 
   assert.deepEqual(actualIsolationExports, EXPECTED_ISOLATION_RUNTIME_EXPORTS);
-  assert.match(publicApiSource, /export type \{ ProjectInstance \} from "\.\/isolation\.js";/);
-  assert.deepEqual(Object.keys(packageManifest.exports).sort(), [".", "./contracts"]);
-  assert.ok(!Object.prototype.hasOwnProperty.call(packageManifest.exports, "./isolation"));
+  assert.match(
+    publicApiSource,
+    /export type \{ ProjectInstance \} from "\.\/isolation\.js";/,
+  );
+  assert.deepEqual(Object.keys(packageManifest.exports).sort(), [
+    ".",
+    "./contracts",
+  ]);
+  assert.ok(
+    !Object.prototype.hasOwnProperty.call(
+      packageManifest.exports,
+      "./isolation",
+    ),
+  );
 
   assert.match(contractsSource, /VERSIONING\.md/);
+});
+
+test("docs: multi-source env-var gate stays aligned across contracts and docs", async () => {
+  const contractChangelog = await readRepoFile("CONTRACT_CHANGELOG.md");
+  const contractsSource = await readRepoFile("src/contracts/index.ts");
+  const testIntelligenceDoc = await readRepoFile("docs/test-intelligence.md");
+  const envLiteral = TEST_INTELLIGENCE_MULTISOURCE_ENV;
+
+  assert.match(
+    contractsSource,
+    /export const TEST_INTELLIGENCE_MULTISOURCE_ENV/,
+  );
+  assert.match(contractsSource, new RegExp(escapeRegExp(envLiteral)));
+  assert.match(contractChangelog, /`TEST_INTELLIGENCE_MULTISOURCE_ENV`/);
+  assert.match(
+    contractChangelog,
+    new RegExp(escapeRegExp(`\`${envLiteral}\``)),
+  );
+  assert.match(
+    testIntelligenceDoc,
+    new RegExp(escapeRegExp(`\`${envLiteral}\``)),
+  );
+  assert.match(
+    testIntelligenceDoc,
+    /fails closed before source artifacts are persisted/,
+  );
 });
 
 test("docs: generated API reference stays wired to the public entrypoints", async () => {
@@ -373,12 +561,23 @@ test("docs: generated API reference stays wired to the public entrypoints", asyn
   const typedocConfig = await readRepoFile("typedoc.json");
   const apiReferenceIndex = await readRepoFile("docs/api/README.md");
   const rootApiReference = await readRepoFile("docs/api/index/README.md");
-  const contractsApiReference = await readRepoFile("docs/api/contracts/README.md");
+  const contractsApiReference = await readRepoFile(
+    "docs/api/contracts/README.md",
+  );
 
-  assert.equal(packageManifest.scripts?.["docs:api"], "node scripts/generate-api-docs.mjs");
-  assert.equal(packageManifest.scripts?.["docs:api:check"], "node scripts/check-api-docs.mjs");
+  assert.equal(
+    packageManifest.scripts?.["docs:api"],
+    "node scripts/generate-api-docs.mjs",
+  );
+  assert.equal(
+    packageManifest.scripts?.["docs:api:check"],
+    "node scripts/check-api-docs.mjs",
+  );
   assert.match(readmeDoc, /\[docs\/api\/README\.md\]\(docs\/api\/README\.md\)/);
-  assert.match(typedocConfig, /"entryPoints": \["src\/index\.ts", "src\/contracts\/index\.ts"\]/);
+  assert.match(
+    typedocConfig,
+    /"entryPoints": \["src\/index\.ts", "src\/contracts\/index\.ts"\]/,
+  );
   assert.match(typedocConfig, /"disableSources": true/);
   assert.match(apiReferenceIndex, /^# workspace-dev$/m);
   assert.match(apiReferenceIndex, /\[contracts\]\(contracts\/README\.md\)/);
@@ -399,13 +598,28 @@ test("docs: generated API reference stays wired to the public entrypoints", asyn
   assert.match(contractsApiReference, /^### WorkspaceJobType$/m);
   assert.match(contractsApiReference, /^### WorkspaceTestIntelligenceMode$/m);
   assert.match(contractsApiReference, /^## Variables$/m);
-  assert.match(contractsApiReference, /^### ALLOWED\\_TEST\\_INTELLIGENCE\\_MODES$/m);
-  assert.match(contractsApiReference, /^### ALLOWED\\_WORKSPACE\\_JOB\\_TYPES$/m);
+  assert.match(
+    contractsApiReference,
+    /^### ALLOWED\\_TEST\\_INTELLIGENCE\\_MODES$/m,
+  );
+  assert.match(
+    contractsApiReference,
+    /^### ALLOWED\\_WORKSPACE\\_JOB\\_TYPES$/m,
+  );
   assert.match(contractsApiReference, /^### CONTRACT\\_VERSION$/m);
-  assert.match(contractsApiReference, /^### GENERATED\\_TEST\\_CASE\\_SCHEMA\\_VERSION$/m);
-  assert.match(contractsApiReference, /^### TEST\\_INTELLIGENCE\\_CONTRACT\\_VERSION$/m);
+  assert.match(
+    contractsApiReference,
+    /^### GENERATED\\_TEST\\_CASE\\_SCHEMA\\_VERSION$/m,
+  );
+  assert.match(
+    contractsApiReference,
+    /^### TEST\\_INTELLIGENCE\\_CONTRACT\\_VERSION$/m,
+  );
   assert.match(contractsApiReference, /^### TEST\\_INTELLIGENCE\\_ENV$/m);
-  assert.match(contractsApiReference, /^### TEST\\_INTELLIGENCE\\_PROMPT\\_TEMPLATE\\_VERSION$/m);
+  assert.match(
+    contractsApiReference,
+    /^### TEST\\_INTELLIGENCE\\_PROMPT\\_TEMPLATE\\_VERSION$/m,
+  );
 });
 
 test("docs: figma direct-import guide stays aligned with inspector submit flow", async () => {
@@ -455,7 +669,10 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.match(figmaImportDoc, /`AUTH_REQUIRED`/);
   assert.match(figmaImportDoc, /`MCP_RATE_LIMITED`/);
   assert.match(figmaImportDoc, /`MCP_UNAVAILABLE`/);
-  assert.ok(errorCodeReferenceSection, "missing Inspector error-code reference section");
+  assert.ok(
+    errorCodeReferenceSection,
+    "missing Inspector error-code reference section",
+  );
   for (const errorCode of Object.keys(PASTE_ERROR_CATALOG).sort()) {
     assert.match(
       errorCodeReferenceSection,
@@ -488,7 +705,10 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
     figmaImportDoc,
     /\[`CODEGEN_PARTIAL`\]\(#error-code-codegen-partial\)/,
   );
-  assert.match(figmaImportDoc, /\[`STAGE_FAILED`\]\(#error-code-stage-failed\)/);
+  assert.match(
+    figmaImportDoc,
+    /\[`STAGE_FAILED`\]\(#error-code-stage-failed\)/,
+  );
   assert.match(figmaImportDoc, /\[`JOB_FAILED`\]\(#error-code-job-failed\)/);
   assert.match(
     figmaImportDoc,
@@ -522,9 +742,15 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.match(figmaImportDoc, /`Regenerate selected`/);
   assert.match(figmaImportDoc, /`Create new`/);
   assert.match(figmaImportDoc, /`Update diff`/);
-  assert.match(figmaImportDoc, /`Added` \/ `Modified` \/ `Removed` \/ `Unchanged`/);
+  assert.match(
+    figmaImportDoc,
+    /`Added` \/ `Modified` \/ `Removed` \/ `Unchanged`/,
+  );
   assert.match(figmaImportDoc, /latest 20 import sessions/i);
-  assert.match(figmaImportDoc, /`<outputRoot>\/import-sessions\/import-sessions\.json`/);
+  assert.match(
+    figmaImportDoc,
+    /`<outputRoot>\/import-sessions\/import-sessions\.json`/,
+  );
   assert.match(
     figmaImportDoc,
     /`\.workspace-dev\/import-sessions\/import-sessions\.json`/,
@@ -534,7 +760,10 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.match(figmaImportDoc, /`Open design`/);
   assert.match(figmaImportDoc, /legacy `https:\/\/figma\.com\/file\/\.\.\.`/i);
   assert.match(figmaImportDoc, /branch urls are accepted/i);
-  assert.match(figmaImportDoc, /FigJam, Figma Make, and community URLs are rejected/i);
+  assert.match(
+    figmaImportDoc,
+    /FigJam, Figma Make, and community URLs are rejected/i,
+  );
   assert.match(figmaImportDoc, /`<outputRoot>\/paste-fingerprints\/`/);
   assert.match(figmaImportDoc, /`\.workspace-dev\/paste-fingerprints\/`/);
   assert.match(figmaImportDoc, /`strategy: baseline_created`/);
@@ -559,14 +788,23 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
   assert.match(figmaImportDoc, /`Accept all`/);
   assert.match(figmaImportDoc, /`Reject all`/);
   assert.match(figmaImportDoc, /Import → Review → Approve → Apply/);
-  assert.match(figmaImportDoc, /`GET \/workspace\/import-sessions\/:id\/events`/);
-  assert.match(figmaImportDoc, /`POST \/workspace\/import-sessions\/:id\/approve`/);
+  assert.match(
+    figmaImportDoc,
+    /`GET \/workspace\/import-sessions\/:id\/events`/,
+  );
+  assert.match(
+    figmaImportDoc,
+    /`POST \/workspace\/import-sessions\/:id\/approve`/,
+  );
   assert.match(figmaImportDoc, /local-only/i);
   assert.match(
     figmaImportDoc,
     /does not upload the design or[\s\S]*generated code to an LLM/i,
   );
-  assert.match(figmaImportDoc, /ARCHITECTURE\.md#import-session-governance-994/);
+  assert.match(
+    figmaImportDoc,
+    /ARCHITECTURE\.md#import-session-governance-994/,
+  );
   assert.match(
     figmaImportDoc,
     /case-insensitive literal substring matches[\s\S]*Regex-like entries are dropped with a warning/i,
@@ -580,10 +818,7 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
     readmeDoc,
     /`GET \/workspace\/inspector-policy` - repo-backed inspector policy loader payload \(`\{ policy, validation, warning\? \}`\)/,
   );
-  assert.match(
-    contributingDoc,
-    /not\s+MCP setup flows/i,
-  );
+  assert.match(contributingDoc, /not\s+MCP setup flows/i);
   assert.match(
     contributingDoc,
     /`WORKSPACEDEV_FIGMA_TOKEN`, `VISUAL_BENCHMARK_FIGMA_TOKEN`, or `FIGMA_ACCESS_TOKEN`/,
@@ -601,23 +836,45 @@ test("docs: figma direct-import guide stays aligned with inspector submit flow",
 test("docs: security governance docs stay aligned with GHSA workflow", async () => {
   const securityDoc = await readRepoFile("SECURITY.md");
   const securityPointer = await readRepoFile(".github/SECURITY.yml");
-  const issueTemplateConfig = await readRepoFile(".github/ISSUE_TEMPLATE/config.yml");
-  const pullRequestTemplate = await readRepoFile(".github/pull_request_template.md");
+  const issueTemplateConfig = await readRepoFile(
+    ".github/ISSUE_TEMPLATE/config.yml",
+  );
+  const pullRequestTemplate = await readRepoFile(
+    ".github/pull_request_template.md",
+  );
 
   assert.match(securityDoc, /GitHub private vulnerability reporting/i);
-  assert.match(securityDoc, /Do not disclose unpublished vulnerabilities in public issues, PRs, or commit messages\./);
+  assert.match(
+    securityDoc,
+    /Do not disclose unpublished vulnerabilities in public issues, PRs, or commit messages\./,
+  );
   assert.match(securityDoc, /## GHSA Maintainer Checklist/);
   assert.match(securityDoc, /draft GitHub Security Advisory \(GHSA\)/);
   assert.match(securityDoc, /affected version ranges/i);
   assert.match(securityDoc, /Request or attach a CVE/i);
-  assert.match(securityDoc, /Publish the patched release before disclosure whenever possible/i);
-  assert.match(securityPointer, /GitHub recognizes SECURITY\.md as the repository security policy surface\./);
-  assert.match(securityPointer, /private vulnerability reporting, GHSA workflow, CVE handling, and coordinated disclosure guidance/i);
+  assert.match(
+    securityDoc,
+    /Publish the patched release before disclosure whenever possible/i,
+  );
+  assert.match(
+    securityPointer,
+    /GitHub recognizes SECURITY\.md as the repository security policy surface\./,
+  );
+  assert.match(
+    securityPointer,
+    /private vulnerability reporting, GHSA workflow, CVE handling, and coordinated disclosure guidance/i,
+  );
   assert.match(securityPointer, /canonical_policy: SECURITY\.md/);
   assert.match(issueTemplateConfig, /blank_issues_enabled:\s*false/);
   assert.match(issueTemplateConfig, /name:\s*Security disclosures/);
   assert.match(issueTemplateConfig, /mailto:security@oscharko\.dev/);
   assert.match(issueTemplateConfig, /Do not open public security issues\./);
-  assert.match(pullRequestTemplate, /If this PR fixes a publicly disclosed security issue, link the GHSA here\./);
-  assert.match(pullRequestTemplate, /If the fix is not yet public, do not disclose details in this template; follow `SECURITY\.md`\./);
+  assert.match(
+    pullRequestTemplate,
+    /If this PR fixes a publicly disclosed security issue, link the GHSA here\./,
+  );
+  assert.match(
+    pullRequestTemplate,
+    /If the fix is not yet public, do not disclose details in this template; follow `SECURITY\.md`\./,
+  );
 });

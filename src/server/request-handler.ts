@@ -93,6 +93,7 @@ import {
   MAX_SUBMIT_BODY_BYTES,
   WORKSPACE_UI_CONTENT_SECURITY_POLICY,
   resolveTestIntelligenceEnabled,
+  resolveTestIntelligenceMultiSourceEnvEnabled,
 } from "./constants.js";
 import { ErrorCode } from "./error-codes.js";
 import { INVALID_PATH_ENCODING, safeDecode } from "./route-params.js";
@@ -749,6 +750,13 @@ interface CreateWorkspaceRequestHandlerInput {
      */
     testIntelligenceEnabled?: boolean;
     /**
+     * Startup feature gate for Wave 4 multi-source ingestion. Combined with
+     * the parent test-intelligence env/startup gates and the
+     * `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE` env var.
+     * Default (when omitted): false.
+     */
+    testIntelligenceMultiSourceEnabled?: boolean;
+    /**
      * Bearer token accepted for `POST /workspace/test-intelligence/review/...`
      * write actions. When omitted, review-gate writes fail closed with `503`.
      * Reads (`GET /workspace/test-intelligence/...`) never require this token.
@@ -1025,6 +1033,10 @@ export function createWorkspaceRequestHandler({
         const testIntelligenceEnabled =
           resolveTestIntelligenceEnabled() &&
           runtime.testIntelligenceEnabled === true;
+        const testIntelligenceMultiSourceEnabled =
+          testIntelligenceEnabled &&
+          resolveTestIntelligenceMultiSourceEnvEnabled() &&
+          runtime.testIntelligenceMultiSourceEnabled === true;
         const status: WorkspaceStatus = {
           running: true,
           url: `http://${host}:${resolvedPort}`,
@@ -1036,6 +1048,7 @@ export function createWorkspaceRequestHandler({
           outputRoot: absoluteOutputRoot,
           previewEnabled: runtime.previewEnabled,
           testIntelligenceEnabled,
+          testIntelligenceMultiSourceEnabled,
         };
         sendJson({ response, statusCode: 200, payload: status });
         return;

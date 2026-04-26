@@ -60,6 +60,8 @@ const customMarkdownRef = (id: string, seed = id): TestIntentSourceRef => ({
   inputFormat: "markdown",
   noteEntryId: `note.${id}`,
   markdownSectionPath: "# Risks > ## PII",
+  redactedMarkdownHash: HEX(`${seed}:redacted-markdown`),
+  plainTextDerivativeHash: HEX(`${seed}:plain-text`),
 });
 const customTextRef = (id: string, seed = id): TestIntentSourceRef => ({
   sourceId: id,
@@ -128,6 +130,38 @@ test("buildMultiSourceTestIntentEnvelope produces a stable schema version", () =
   assert.equal(envelope.version, "1.0.0");
   assert.equal(envelope.conflictResolutionPolicy, "keep_both");
   assert.equal(envelope.sources.length, 1);
+});
+
+test("buildMultiSourceTestIntentEnvelope omits priorityOrder for non-priority policies", () => {
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [figmaRef("src.0", "a")],
+    conflictResolutionPolicy: "keep_both",
+    priorityOrder: ["figma_local_json"],
+  });
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(envelope, "priorityOrder"),
+    false,
+  );
+  assert.equal(validateMultiSourceTestIntentEnvelope(envelope).ok, true);
+});
+
+test("buildMultiSourceTestIntentEnvelope preserves valid sourceMixPlan hook", () => {
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [figmaRef("src.0", "a")],
+    conflictResolutionPolicy: "keep_both",
+    sourceMixPlan: {
+      ownerIssue: "#1441",
+      planHash: HEX("source-mix-plan"),
+    },
+  });
+  const result = validateMultiSourceTestIntentEnvelope(envelope);
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(result.envelope.sourceMixPlan, {
+      ownerIssue: "#1441",
+      planHash: HEX("source-mix-plan"),
+    });
+  }
 });
 
 test("aggregate hash is invariant under source reordering for non-priority policy", () => {
@@ -264,6 +298,29 @@ test("validator rejects malformed content hash and bad capturedAt", () => {
   }
 });
 
+test("validator rejects impossible calendar dates in capturedAt", () => {
+  const env = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        ...figmaRef("src.0", "x"),
+        capturedAt: "2026-02-31T12:00:00.000Z",
+      },
+    ],
+    conflictResolutionPolicy: "keep_both",
+  });
+  const result = validateMultiSourceTestIntentEnvelope(env);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.ok(
+      result.issues.some(
+        (i) =>
+          i.code === "invalid_captured_at" &&
+          i.path === "sources[0].capturedAt",
+      ),
+    );
+  }
+});
+
 test("validator rejects duplicate source IDs", () => {
   const env = buildMultiSourceTestIntentEnvelope({
     sources: [figmaRef("dup.id", "a"), jiraRestRef("dup.id", "b")],
@@ -276,9 +333,12 @@ test("validator rejects duplicate source IDs", () => {
   }
 });
 
-test("validator detects duplicate Jira paste-collision content hashes", () => {
+test("validator detects duplicate Jira paste-collision issue keys", () => {
   const env = buildMultiSourceTestIntentEnvelope({
-    sources: [jiraRestRef("src.0", "same"), jiraPasteRef("src.1", "same")],
+    sources: [
+      { ...jiraRestRef("src.0", "rest"), canonicalIssueKey: "PAY-1234" },
+      { ...jiraPasteRef("src.1", "paste"), canonicalIssueKey: "PAY-1234" },
+    ],
     conflictResolutionPolicy: "reviewer_decides",
   });
   const result = validateMultiSourceTestIntentEnvelope(env);
@@ -286,6 +346,30 @@ test("validator detects duplicate Jira paste-collision content hashes", () => {
   if (!result.ok) {
     assert.ok(
       result.issues.some((i) => i.code === "duplicate_jira_paste_collision"),
+    );
+  }
+});
+
+test("validator reports Jira paste-collision paths using original source indexes", () => {
+  const env = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      figmaRef("src.0", "figma"),
+      { ...jiraRestRef("src.1", "rest"), canonicalIssueKey: "PAY-1234" },
+      customTextRef("src.2", "custom"),
+      { ...jiraPasteRef("src.3", "paste"), canonicalIssueKey: "PAY-1234" },
+    ],
+    conflictResolutionPolicy: "reviewer_decides",
+  });
+  const result = validateMultiSourceTestIntentEnvelope(env);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.deepEqual(
+      result.issues.find((i) => i.code === "duplicate_jira_paste_collision"),
+      {
+        code: "duplicate_jira_paste_collision",
+        path: "sources[3].canonicalIssueKey",
+        detail: "collides_with_sources[1]",
+      },
     );
   }
 });
@@ -368,6 +452,61 @@ test("validator accepts markdown metadata on markdown custom source", () => {
   });
   const result = validateMultiSourceTestIntentEnvelope(env);
   assert.equal(result.ok, true);
+});
+
+test("validator requires deterministic hashes for markdown custom sources", () => {
+  const env = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      figmaRef("src.0"),
+      {
+        sourceId: "src.1",
+        kind: "custom_text",
+        contentHash: HEX("md"),
+        capturedAt: ISO,
+        inputFormat: "markdown",
+        noteEntryId: "note.src.1",
+        markdownSectionPath: "# Scope",
+      },
+    ],
+    conflictResolutionPolicy: "keep_both",
+  });
+  const result = validateMultiSourceTestIntentEnvelope(env);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.deepEqual(
+      result.issues
+        .filter((i) => i.code === "markdown_hash_required")
+        .map((i) => i.path)
+        .sort(),
+      ["sources[1].plainTextDerivativeHash", "sources[1].redactedMarkdownHash"],
+    );
+  }
+});
+
+test("validator rejects Jira issue keys on non-Jira sources", () => {
+  const env = buildMultiSourceTestIntentEnvelope({
+    sources: [{ ...figmaRef("src.0"), canonicalIssueKey: "PAY-1234" }],
+    conflictResolutionPolicy: "keep_both",
+  });
+  const result = validateMultiSourceTestIntentEnvelope(env);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.ok(
+      result.issues.some((i) => i.code === "jira_issue_key_only_for_jira"),
+    );
+  }
+});
+
+test("validator rejects non-canonical Jira issue keys", () => {
+  const env = buildMultiSourceTestIntentEnvelope({
+    sources: [{ ...jiraRestRef("src.0"), canonicalIssueKey: "pay-1234" }],
+    conflictResolutionPolicy: "keep_both",
+  });
+  const result = validateMultiSourceTestIntentEnvelope(env);
+  assert.equal(result.ok, false);
+  if (!result.ok) {
+    assert.ok(result.issues.some((i) => i.code === "jira_issue_key_invalid"));
+  }
 });
 
 test("validator catches aggregate hash mismatch", () => {
@@ -576,6 +715,10 @@ test("evaluateMultiSourceModeGate refuses when test-intelligence parent disabled
   assert.equal(decision.allowed, false);
   assert.ok(
     decision.refusals.some((r) => r.code === "test_intelligence_disabled"),
+  );
+  assert.ok(
+    decision.refusals.every((r) => !r.detail.includes("not set")),
+    "mode-gate diagnostics should cover unset and explicitly disabled gates",
   );
 });
 

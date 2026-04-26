@@ -2753,6 +2753,36 @@ export interface TestIntentSourceRef {
    * ignored for non-Markdown sources.
    */
   markdownSectionPath?: string;
+  /**
+   * Canonical Jira issue key for `jira_rest` / `jira_paste` sources, e.g.
+   * `"PAY-1234"`. When both REST and paste sources carry the same key, the
+   * validator reports `duplicate_jira_paste_collision` so downstream Wave 4.D
+   * routing can resolve the paste collision explicitly.
+   */
+  canonicalIssueKey?: string;
+  /**
+   * SHA-256 hash of the canonical redacted Markdown for Markdown-authored
+   * custom sources. Raw Markdown is never stored in the envelope.
+   */
+  redactedMarkdownHash?: string;
+  /**
+   * SHA-256 hash of the deterministic plain-text derivative produced from the
+   * redacted Markdown. This lets prompt-isolation code audit what evidence was
+   * made available without treating Markdown as instructions.
+   */
+  plainTextDerivativeHash?: string;
+}
+
+/**
+ * Forward reference for source-mix orchestration owned by Issue #1441. Wave
+ * 4.A validates the shape only; pipeline routing and reconciliation remain in
+ * the downstream source-mix issue.
+ */
+export interface MultiSourceTestIntentSourceMixPlanRef {
+  /** Stable hash of the source-mix plan payload owned by Issue #1441. */
+  planHash: string;
+  /** Ownership marker for downstream orchestration. */
+  ownerIssue: "#1441";
 }
 
 /**
@@ -2792,6 +2822,8 @@ export interface MultiSourceTestIntentEnvelope {
    * hash so a different priority order produces a different hash.
    */
   priorityOrder?: TestIntentSourceKind[];
+  /** Optional source-mix plan hook owned by Issue #1441. */
+  sourceMixPlan?: MultiSourceTestIntentSourceMixPlanRef;
 }
 
 /**
@@ -2815,12 +2847,17 @@ export const ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES = [
   "custom_input_format_invalid",
   "primary_source_input_format_invalid",
   "markdown_metadata_only_for_custom",
+  "markdown_hash_required",
+  "markdown_hash_only_for_markdown",
+  "jira_issue_key_invalid",
+  "jira_issue_key_only_for_jira",
   "invalid_conflict_resolution_policy",
   "priority_order_required",
   "priority_order_invalid_kind",
   "priority_order_incomplete",
   "priority_order_duplicate",
   "aggregate_hash_mismatch",
+  "source_mix_plan_invalid",
 ] as const;
 
 /** Refusal code alias for the multi-source envelope validator. */
@@ -2829,7 +2866,7 @@ export type MultiSourceEnvelopeRefusalCode =
 
 /**
  * A single validation issue surfaced by the multi-source envelope
- * validator. `path` is a JSON-pointer-shaped locator (e.g.
+ * validator. `path` is a JS property-path-like locator (e.g.
  * `"sources[2].contentHash"`).
  */
 export interface MultiSourceEnvelopeIssue {

@@ -14,20 +14,20 @@
  *   3. Source IDs are unique within an envelope and shaped as
  *      `^[A-Za-z0-9._-]{1,64}$`.
  *   4. Content hashes are lowercase 64-hex SHA-256 strings.
- *   5. `capturedAt` is a strict ISO-8601 UTC timestamp ending in `Z`.
+ *   5. `capturedAt` is a strict, real ISO-8601 UTC timestamp ending in `Z`.
  *   6. `inputFormat` is required for `custom_text` / `custom_structured`
  *      and forbidden for primary kinds.
  *   7. Markdown-section metadata (`markdownSectionPath`, `noteEntryId`)
  *      may only appear on `custom_text` / `custom_structured` sources
  *      with `inputFormat = "markdown"`.
- *   8. When two `jira_*` sources share a duplicate normalized issue key
- *      (encoded as a `JIRA-1234@<contentHash>` shaped `sourceId` is NOT
- *      attempted by this module — duplicate detection here is keyed off
- *      `sourceId`, leaving Jira-issue-key duplicate routing to the
- *      Wave 4.D paste-collision path).
- *   9. `priority` policy requires a `priorityOrder` covering exactly the
+ *   8. Markdown sources carry redacted Markdown and plain-text derivative
+ *      hashes; raw Markdown never enters the envelope.
+ *   9. When two `jira_*` sources share a duplicate canonical issue key,
+ *      route them to the paste-collision path instead of silently
+ *      deduplicating.
+ *  10. `priority` policy requires a `priorityOrder` covering exactly the
  *      kinds present in the envelope, no extras and no duplicates.
- *  10. `aggregateContentHash` is reproducible from the inputs and is
+ *  11. `aggregateContentHash` is reproducible from the inputs and is
  *      invariant under source reordering when the policy is not
  *      `priority`. When the policy IS `priority`, the priority list is
  *      mixed in so swapping it forces a cache miss.
@@ -45,6 +45,7 @@ import {
   MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
   PRIMARY_TEST_INTENT_SOURCE_KINDS,
   SUPPORTING_TEST_INTENT_SOURCE_KINDS,
+  TEST_INTELLIGENCE_MULTISOURCE_ENV,
   type BusinessTestIntentIrSource,
   type ConflictResolutionPolicy,
   type MultiSourceEnvelopeIssue,
@@ -65,6 +66,7 @@ import { canonicalJson, sha256Hex } from "./content-hash.js";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const SOURCE_ID = /^[A-Za-z0-9._-]{1,64}$/;
+const JIRA_ISSUE_KEY = /^[A-Z][A-Z0-9]+-[1-9][0-9]*$/;
 const ISO_UTC =
   /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,3})?Z$/;
 const AUTHOR_HANDLE = /^[A-Za-z0-9._-]{1,64}$/;
@@ -130,7 +132,7 @@ export const computeAggregateContentHash = (input: {
 };
 
 /**
- * Build a frozen multi-source envelope. The function trusts its inputs
+ * Build a multi-source envelope. The function trusts its inputs
  * structurally (use {@link validateMultiSourceTestIntentEnvelope} for
  * untrusted input) but always recomputes the aggregate hash.
  */
@@ -138,6 +140,7 @@ export const buildMultiSourceTestIntentEnvelope = (input: {
   sources: readonly TestIntentSourceRef[];
   conflictResolutionPolicy: ConflictResolutionPolicy;
   priorityOrder?: readonly TestIntentSourceKind[];
+  sourceMixPlan?: MultiSourceTestIntentEnvelope["sourceMixPlan"];
 }): MultiSourceTestIntentEnvelope => {
   const sources = input.sources.map(cloneSourceRef);
   const aggregateContentHash = computeAggregateContentHash(
@@ -157,8 +160,12 @@ export const buildMultiSourceTestIntentEnvelope = (input: {
     sources,
     aggregateContentHash,
     conflictResolutionPolicy: input.conflictResolutionPolicy,
-    ...(input.priorityOrder !== undefined
+    ...(input.conflictResolutionPolicy === "priority" &&
+    input.priorityOrder !== undefined
       ? { priorityOrder: [...input.priorityOrder] }
+      : {}),
+    ...(input.sourceMixPlan !== undefined
+      ? { sourceMixPlan: { ...input.sourceMixPlan } }
       : {}),
   };
   return envelope;
@@ -182,6 +189,15 @@ const cloneSourceRef = (ref: TestIntentSourceRef): TestIntentSourceRef => {
   }
   if (ref.markdownSectionPath !== undefined) {
     next.markdownSectionPath = ref.markdownSectionPath;
+  }
+  if (ref.canonicalIssueKey !== undefined) {
+    next.canonicalIssueKey = ref.canonicalIssueKey;
+  }
+  if (ref.redactedMarkdownHash !== undefined) {
+    next.redactedMarkdownHash = ref.redactedMarkdownHash;
+  }
+  if (ref.plainTextDerivativeHash !== undefined) {
+    next.plainTextDerivativeHash = ref.plainTextDerivativeHash;
   }
   return next;
 };
@@ -233,7 +249,10 @@ export const validateMultiSourceTestIntentEnvelope = (
     issues.push({ code: "sources_empty", path: "sources" });
     return finalize(candidate, issues);
   }
-  const validatedSources: TestIntentSourceRef[] = [];
+  const validatedSourceEntries: Array<{
+    ref: TestIntentSourceRef;
+    originalIndex: number;
+  }> = [];
   const sourceIdSeen = new Set<string>();
   for (let index = 0; index < sourcesRaw.length; index += 1) {
     const ref: unknown = sourcesRaw[index];
@@ -269,6 +288,15 @@ export const validateMultiSourceTestIntentEnvelope = (
       if (typeof ref.markdownSectionPath === "string") {
         accepted.markdownSectionPath = ref.markdownSectionPath;
       }
+      if (typeof ref.canonicalIssueKey === "string") {
+        accepted.canonicalIssueKey = ref.canonicalIssueKey;
+      }
+      if (typeof ref.redactedMarkdownHash === "string") {
+        accepted.redactedMarkdownHash = ref.redactedMarkdownHash;
+      }
+      if (typeof ref.plainTextDerivativeHash === "string") {
+        accepted.plainTextDerivativeHash = ref.plainTextDerivativeHash;
+      }
       if (sourceIdSeen.has(accepted.sourceId)) {
         issues.push({
           code: "duplicate_source_id",
@@ -278,16 +306,17 @@ export const validateMultiSourceTestIntentEnvelope = (
       } else {
         sourceIdSeen.add(accepted.sourceId);
       }
-      validatedSources.push(accepted);
+      validatedSourceEntries.push({ ref: accepted, originalIndex: index });
     }
   }
+  const validatedSources = validatedSourceEntries.map(({ ref }) => ref);
   if (
     validatedSources.length > 0 &&
     !validatedSources.some((ref) => PRIMARY_KINDS.has(ref.kind))
   ) {
     issues.push({ code: "primary_source_required", path: "sources" });
   }
-  detectDuplicateJiraPasteCollision(validatedSources, issues);
+  detectDuplicateJiraPasteCollision(validatedSourceEntries, issues);
   if (policyValid) {
     const policyTyped = policy as ConflictResolutionPolicy;
     validatePriorityOrder(
@@ -296,6 +325,10 @@ export const validateMultiSourceTestIntentEnvelope = (
       validatedSources,
       issues,
     );
+  }
+  const sourceMixPlanIssues = validateSourceMixPlan(candidate.sourceMixPlan);
+  for (const issue of sourceMixPlanIssues) {
+    issues.push(issue);
   }
   if (
     issues.length === 0 &&
@@ -345,6 +378,9 @@ export const validateMultiSourceTestIntentEnvelope = (
           ],
         }
       : {}),
+    ...(isValidSourceMixPlan(candidate.sourceMixPlan)
+      ? { sourceMixPlan: { ...candidate.sourceMixPlan } }
+      : {}),
   };
   return { ok: true, envelope };
 };
@@ -375,20 +411,11 @@ const validateSourceRef = (
       path: `sources[${index}].contentHash`,
     });
   }
-  if (typeof ref.capturedAt !== "string" || !ISO_UTC.test(ref.capturedAt)) {
+  if (typeof ref.capturedAt !== "string" || !isStrictIsoUtc(ref.capturedAt)) {
     result.push({
       code: "invalid_captured_at",
       path: `sources[${index}].capturedAt`,
     });
-  } else {
-    const parsed = Date.parse(ref.capturedAt);
-    if (!Number.isFinite(parsed)) {
-      result.push({
-        code: "invalid_captured_at",
-        path: `sources[${index}].capturedAt`,
-        detail: "unparseable",
-      });
-    }
   }
   if (ref.authorHandle !== undefined) {
     if (
@@ -438,6 +465,37 @@ const validateSourceRef = (
             detail: "markdown_format_required",
           });
         }
+        if (ref.redactedMarkdownHash !== undefined) {
+          result.push({
+            code: "markdown_hash_only_for_markdown",
+            path: `sources[${index}].redactedMarkdownHash`,
+          });
+        }
+        if (ref.plainTextDerivativeHash !== undefined) {
+          result.push({
+            code: "markdown_hash_only_for_markdown",
+            path: `sources[${index}].plainTextDerivativeHash`,
+          });
+        }
+      } else {
+        if (
+          typeof ref.redactedMarkdownHash !== "string" ||
+          !HEX64.test(ref.redactedMarkdownHash)
+        ) {
+          result.push({
+            code: "markdown_hash_required",
+            path: `sources[${index}].redactedMarkdownHash`,
+          });
+        }
+        if (
+          typeof ref.plainTextDerivativeHash !== "string" ||
+          !HEX64.test(ref.plainTextDerivativeHash)
+        ) {
+          result.push({
+            code: "markdown_hash_required",
+            path: `sources[${index}].plainTextDerivativeHash`,
+          });
+        }
       }
     } else {
       if (ref.inputFormat !== undefined) {
@@ -458,35 +516,113 @@ const validateSourceRef = (
           path: `sources[${index}].noteEntryId`,
         });
       }
+      if (ref.redactedMarkdownHash !== undefined) {
+        result.push({
+          code: "markdown_hash_only_for_markdown",
+          path: `sources[${index}].redactedMarkdownHash`,
+        });
+      }
+      if (ref.plainTextDerivativeHash !== undefined) {
+        result.push({
+          code: "markdown_hash_only_for_markdown",
+          path: `sources[${index}].plainTextDerivativeHash`,
+        });
+      }
+    }
+    const isJira = kind === "jira_rest" || kind === "jira_paste";
+    if (isJira) {
+      if (
+        ref.canonicalIssueKey !== undefined &&
+        (typeof ref.canonicalIssueKey !== "string" ||
+          !JIRA_ISSUE_KEY.test(ref.canonicalIssueKey))
+      ) {
+        result.push({
+          code: "jira_issue_key_invalid",
+          path: `sources[${index}].canonicalIssueKey`,
+        });
+      }
+    } else if (ref.canonicalIssueKey !== undefined) {
+      result.push({
+        code: "jira_issue_key_only_for_jira",
+        path: `sources[${index}].canonicalIssueKey`,
+      });
     }
   }
   return result;
 };
 
 const detectDuplicateJiraPasteCollision = (
-  sources: readonly TestIntentSourceRef[],
+  sources: readonly {
+    ref: TestIntentSourceRef;
+    originalIndex: number;
+  }[],
   issues: MultiSourceEnvelopeIssue[],
 ): void => {
   const jiraSources = sources.filter(
-    (ref) => ref.kind === "jira_rest" || ref.kind === "jira_paste",
+    ({ ref }) => ref.kind === "jira_rest" || ref.kind === "jira_paste",
   );
   if (jiraSources.length < 2) {
     return;
   }
   const seen = new Map<string, number>();
-  jiraSources.forEach((ref, idx) => {
-    const key = ref.contentHash;
+  jiraSources.forEach(({ ref, originalIndex }) => {
+    const key = ref.canonicalIssueKey;
+    if (key === undefined) {
+      return;
+    }
     if (seen.has(key)) {
       const firstIdx = seen.get(key);
       issues.push({
         code: "duplicate_jira_paste_collision",
-        path: `sources[${idx}].contentHash`,
+        path: `sources[${originalIndex}].canonicalIssueKey`,
         detail: `collides_with_sources[${firstIdx}]`,
       });
     } else {
-      seen.set(key, idx);
+      seen.set(key, originalIndex);
     }
   });
+};
+
+const isStrictIsoUtc = (value: string): boolean => {
+  const match = ISO_UTC.exec(value);
+  if (match === null) {
+    return false;
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return false;
+  }
+  const canonical = new Date(parsed).toISOString();
+  const normalized = value.includes(".")
+    ? value.replace(
+        /\.(\d{1,3})Z$/,
+        (_fraction, digits: string) => `.${digits.padEnd(3, "0")}Z`,
+      )
+    : value.replace("Z", ".000Z");
+  return canonical === normalized;
+};
+
+const isValidSourceMixPlan = (
+  value: unknown,
+): value is NonNullable<MultiSourceTestIntentEnvelope["sourceMixPlan"]> =>
+  isPlainObject(value) &&
+  value.ownerIssue === "#1441" &&
+  typeof value.planHash === "string" &&
+  HEX64.test(value.planHash);
+
+const validateSourceMixPlan = (value: unknown): MultiSourceEnvelopeIssue[] => {
+  if (value === undefined) {
+    return [];
+  }
+  if (!isValidSourceMixPlan(value)) {
+    return [
+      {
+        code: "source_mix_plan_invalid",
+        path: "sourceMixPlan",
+      },
+    ];
+  }
+  return [];
 };
 
 const validatePriorityOrder = (
@@ -613,11 +749,11 @@ export const legacySourceFromMultiSourceEnvelope = (
 
 const REFUSAL_DETAIL: Record<MultiSourceModeGateRefusalCode, string> = {
   test_intelligence_disabled:
-    "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE env var or testIntelligence.enabled startup option is not set.",
+    "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE env var or testIntelligence.enabled startup option is not enabled.",
   multi_source_env_disabled:
-    "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE env var is not set.",
+    "FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE env var is not enabled.",
   multi_source_startup_option_disabled:
-    "testIntelligence.multiSourceEnabled startup option is not set.",
+    "testIntelligence.multiSourceEnabled startup option is not enabled.",
   llm_codegen_mode_locked:
     "Multi-source ingestion requires llmCodegenMode=deterministic; refused.",
 };
@@ -708,7 +844,7 @@ export class MultiSourceModeGateError extends Error {
 export const resolveTestIntelligenceMultiSourceEnvEnabled = (
   env: NodeJS.ProcessEnv = process.env,
 ): boolean => {
-  const raw = env["FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE"];
+  const raw = env[TEST_INTELLIGENCE_MULTISOURCE_ENV];
   if (raw === undefined) {
     return false;
   }

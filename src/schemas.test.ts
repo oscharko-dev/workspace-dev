@@ -927,6 +927,8 @@ test("schema: valid workspace status parses", () => {
     uptimeMs: 1234,
     outputRoot: "/tmp/.workspace-dev",
     previewEnabled: true,
+    testIntelligenceEnabled: true,
+    testIntelligenceMultiSourceEnabled: false,
   });
   assert.equal(result.success, true);
   if (result.success) {
@@ -940,6 +942,8 @@ test("schema: valid workspace status parses", () => {
       uptimeMs: 1234,
       outputRoot: "/tmp/.workspace-dev",
       previewEnabled: true,
+      testIntelligenceEnabled: true,
+      testIntelligenceMultiSourceEnabled: false,
     });
   }
 });
@@ -1054,6 +1058,8 @@ test("schema: workspace status rejects non-object and invalid field types with e
     uptimeMs: -1,
     outputRoot: "",
     previewEnabled: "no",
+    testIntelligenceEnabled: "yes",
+    testIntelligenceMultiSourceEnabled: 1,
   });
   assert.equal(invalid.success, false);
   if (!invalid.success) {
@@ -1094,6 +1100,14 @@ test("schema: workspace status rejects non-object and invalid field types with e
       {
         path: ["previewEnabled"],
         message: "previewEnabled must be a boolean",
+      },
+      {
+        path: ["testIntelligenceEnabled"],
+        message: "testIntelligenceEnabled must be a boolean",
+      },
+      {
+        path: ["testIntelligenceMultiSourceEnabled"],
+        message: "testIntelligenceMultiSourceEnabled must be a boolean",
       },
     ]);
   }
@@ -2144,8 +2158,7 @@ test("schema: figma_paste mode rejects under-cap envelopes with too many selecti
 });
 
 test("schema: figma_paste mode rejects envelopes whose normalized wrapper nodes exceed the node budget", () => {
-  const selectionChildCount =
-    DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT / 2 - 1;
+  const selectionChildCount = DEFAULT_FIGMA_PASTE_MAX_NODE_COUNT / 2 - 1;
   const envelope = {
     kind: "workspace-dev/figma-selection@1",
     pluginVersion: "1.0.0",
@@ -2155,12 +2168,15 @@ test("schema: figma_paste mode rejects envelopes whose normalized wrapper nodes 
         id: `selection-${selectionIndex}`,
         type: "FRAME",
         name: `Selection ${selectionIndex + 1}`,
-        children: Array.from({ length: selectionChildCount }, (_, childIndex) => ({
-          id: `${selectionIndex}:${childIndex + 1}`,
-          type: "FRAME",
-          name: `Child ${childIndex + 1}`,
-          children: [],
-        })),
+        children: Array.from(
+          { length: selectionChildCount },
+          (_, childIndex) => ({
+            id: `${selectionIndex}:${childIndex + 1}`,
+            type: "FRAME",
+            name: `Child ${childIndex + 1}`,
+            children: [],
+          }),
+        ),
       },
       components: {},
       componentSets: {},

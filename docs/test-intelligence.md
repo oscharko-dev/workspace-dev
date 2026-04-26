@@ -959,7 +959,23 @@ The visual sidecar deployments (`llama-4-maverick-vision`,
 package additionally enforces the role-separation invariants described in
 Section 9.
 
-## 14. Public API references
+## 14. Wave 4 multi-source gate
+
+Wave 4 multi-source ingestion is guarded by
+`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE` and remains strictly nested
+behind the parent `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` gate. Runtime callers
+must also set `WorkspaceStartOptions.testIntelligence.multiSourceEnabled=true`
+and keep `llmCodegenMode=deterministic`; any missing or disabled predicate
+fails closed before source artifacts are persisted.
+
+The public source contract is source-mix aware but orchestration-free in Wave
+4.A. Jira sources may expose a canonical `canonicalIssueKey`, and duplicate
+keys route to `duplicate_jira_paste_collision`. Markdown custom sources expose
+only deterministic hashes (`redactedMarkdownHash` and
+`plainTextDerivativeHash`) plus note/section provenance; raw Markdown remains
+outside the envelope and is never trusted as runtime instructions.
+
+## 15. Public API references
 
 - [CONTRACT_CHANGELOG.md](../CONTRACT_CHANGELOG.md) — authoritative public
   contract surface, including every test-intelligence schema-version constant,

@@ -67,25 +67,29 @@ and replay-cache hits.
       `reviewer_decides`, `keep_both`. Type alias `ConflictResolutionPolicy`.
     - `ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS` — `plain_text`, `markdown`,
       `structured_json`. Type alias `TestIntentCustomInputFormat`.
-    - `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES` — 21 stable refusal
+    - `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES` — 26 stable refusal
       codes covering envelope shape, source-mix, conflict policy, priority
-      order, and aggregate-hash mismatch checks.
+      order, Markdown hash, Jira issue-key, source-mix-plan, and
+      aggregate-hash mismatch checks.
     - `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` — four stable refusal
       codes for the runtime mode gate (parent gate, env, startup option,
       `llmCodegenMode` lock).
 - New types:
     - `TestIntentSourceRef` (`sourceId`, `kind`, `contentHash`, `capturedAt`,
       optional `authorHandle`, `inputFormat`, `noteEntryId`,
-      `markdownSectionPath`).
+      `markdownSectionPath`, `canonicalIssueKey`, `redactedMarkdownHash`,
+      `plainTextDerivativeHash`).
     - `MultiSourceTestIntentEnvelope` (`version`, `sources`,
       `aggregateContentHash`, `conflictResolutionPolicy`, optional
-      `priorityOrder`).
+      `priorityOrder`, `sourceMixPlan`).
+    - `MultiSourceTestIntentSourceMixPlanRef` (`ownerIssue`, `planHash`) as the
+      #1441-owned source-mix orchestration hook.
     - `MultiSourceEnvelopeIssue`, `MultiSourceEnvelopeRefusalCode`,
       `MultiSourceEnvelopeValidationResult`.
     - `MultiSourceModeGateInput`, `MultiSourceModeGateRefusal`,
       `MultiSourceModeGateRefusalCode`, `MultiSourceModeGateDecision`.
-- New optional `BusinessTestIntentIr.sourceEnvelope?:
-MultiSourceTestIntentEnvelope`. Legacy `source: BusinessTestIntentIrSource`
+- New optional `BusinessTestIntentIr.sourceEnvelope?: MultiSourceTestIntentEnvelope`.
+  Legacy `source: BusinessTestIntentIrSource`
   is preserved for one minor cycle.
 - Per-element provenance types extended additively with
   `sourceRefs?: TestIntentSourceRef[]` on `IntentTraceRef`, `DetectedField`,
@@ -115,8 +119,10 @@ The validator enforces the customer-facing source matrix explicitly:
 - Figma is optional. Jira-REST-only and Jira-paste-only envelopes are valid
   when the multi-source gate is enabled.
 - Jira REST and Jira paste may both appear in one envelope; duplicate
-  content hashes route through `duplicate_jira_paste_collision` rather than
+  canonical issue keys route through `duplicate_jira_paste_collision` rather than
   silently deduplicating.
+- Optional `sourceMixPlan` references are shape-validated only; #1441 owns
+  orchestration and reconciliation.
 - The `priority` policy requires a `priorityOrder` covering exactly the
   kinds present in the envelope (no extras, no duplicates, no missing).
 
@@ -124,9 +130,12 @@ The validator enforces the customer-facing source matrix explicitly:
 
 `custom_text` / `custom_structured` sources may carry
 `inputFormat: "markdown"` and (only then) `markdownSectionPath` /
-`noteEntryId` provenance hints. Markdown is treated as user-provided
-supporting evidence and is never trusted as instructions to the model or
-runtime — downstream issues are responsible for the prompt-isolation
+`noteEntryId` provenance hints. Markdown sources must also carry
+`redactedMarkdownHash` and `plainTextDerivativeHash` so downstream prompt
+isolation can audit canonical redacted Markdown and the deterministic
+plain-text derivative without storing raw Markdown. Markdown is treated as
+user-provided supporting evidence and is never trusted as instructions to the
+model or runtime — downstream issues are responsible for the prompt-isolation
 plumbing.
 
 ### Production-ready baseline (2026-04-26 addendum)

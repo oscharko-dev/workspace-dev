@@ -25,7 +25,10 @@ import type {
   WorkspaceRuntimeLogInput,
   WorkspaceRuntimeLogger,
 } from "../logging.js";
-import { TEST_INTELLIGENCE_ENV } from "../contracts/index.js";
+import {
+  TEST_INTELLIGENCE_ENV,
+  TEST_INTELLIGENCE_MULTISOURCE_ENV,
+} from "../contracts/index.js";
 
 const pasteFixtureRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -187,6 +190,7 @@ async function createRequestHandlerApp({
   logger = createStubLogger(),
   importSessionEventBearerToken,
   testIntelligenceEnabled,
+  testIntelligenceMultiSourceEnabled,
   testIntelligenceReviewBearerToken,
   testIntelligenceArtifactRoot,
   workspaceRoot,
@@ -199,6 +203,7 @@ async function createRequestHandlerApp({
   logger?: WorkspaceRuntimeLogger;
   importSessionEventBearerToken?: string;
   testIntelligenceEnabled?: boolean;
+  testIntelligenceMultiSourceEnabled?: boolean;
   testIntelligenceReviewBearerToken?: string;
   testIntelligenceArtifactRoot?: string;
   workspaceRoot?: string;
@@ -231,6 +236,9 @@ async function createRequestHandlerApp({
       ...(testIntelligenceEnabled === undefined
         ? {}
         : { testIntelligenceEnabled }),
+      ...(testIntelligenceMultiSourceEnabled === undefined
+        ? {}
+        : { testIntelligenceMultiSourceEnabled }),
       ...(testIntelligenceReviewBearerToken === undefined
         ? {}
         : { testIntelligenceReviewBearerToken }),
@@ -6681,6 +6689,27 @@ async function withTestIntelligenceEnv<T>(
   }
 }
 
+async function withTestIntelligenceMultiSourceEnv<T>(
+  value: string | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = process.env[TEST_INTELLIGENCE_MULTISOURCE_ENV];
+  if (value === undefined) {
+    delete process.env[TEST_INTELLIGENCE_MULTISOURCE_ENV];
+  } else {
+    process.env[TEST_INTELLIGENCE_MULTISOURCE_ENV] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[TEST_INTELLIGENCE_MULTISOURCE_ENV];
+    } else {
+      process.env[TEST_INTELLIGENCE_MULTISOURCE_ENV] = previous;
+    }
+  }
+}
+
 test("submit figma_to_qc_test_cases returns 503 FEATURE_DISABLED when both gates are off", async () => {
   await withTestIntelligenceEnv(undefined, async () => {
     const submitJob = test.mock.fn();
@@ -7330,6 +7359,56 @@ test("test-intelligence: GET /workspace exposes testIntelligenceEnabled in statu
       await close();
       await rm(tempRoot, { recursive: true, force: true });
     }
+  });
+});
+
+test("test-intelligence: GET /workspace exposes nested multi-source status", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-route-multisource-status-"),
+      );
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: tempRoot,
+      });
+      try {
+        const response = await app.inject({ method: "GET", url: "/workspace" });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.testIntelligenceEnabled, true);
+        assert.equal(body.testIntelligenceMultiSourceEnabled, true);
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: GET /workspace keeps multi-source disabled unless every nested gate is enabled", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv(undefined, async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-route-multisource-off-status-"),
+      );
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: tempRoot,
+      });
+      try {
+        const response = await app.inject({ method: "GET", url: "/workspace" });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<Record<string, unknown>>();
+        assert.equal(body.testIntelligenceEnabled, true);
+        assert.equal(body.testIntelligenceMultiSourceEnabled, false);
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
   });
 });
 

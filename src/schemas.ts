@@ -1609,6 +1609,9 @@ function parseWorkspaceStatus(
   const uptimeMs = input.uptimeMs;
   const outputRoot = input.outputRoot;
   const previewEnabled = input.previewEnabled;
+  const testIntelligenceEnabled = input.testIntelligenceEnabled;
+  const testIntelligenceMultiSourceEnabled =
+    input.testIntelligenceMultiSourceEnabled;
 
   if (typeof running !== "boolean")
     pushIssue(issues, ["running"], "running must be a boolean");
@@ -1648,24 +1651,53 @@ function parseWorkspaceStatus(
   if (typeof previewEnabled !== "boolean") {
     pushIssue(issues, ["previewEnabled"], "previewEnabled must be a boolean");
   }
+  if (
+    testIntelligenceEnabled !== undefined &&
+    typeof testIntelligenceEnabled !== "boolean"
+  ) {
+    pushIssue(
+      issues,
+      ["testIntelligenceEnabled"],
+      "testIntelligenceEnabled must be a boolean",
+    );
+  }
+  if (
+    testIntelligenceMultiSourceEnabled !== undefined &&
+    typeof testIntelligenceMultiSourceEnabled !== "boolean"
+  ) {
+    pushIssue(
+      issues,
+      ["testIntelligenceMultiSourceEnabled"],
+      "testIntelligenceMultiSourceEnabled must be a boolean",
+    );
+  }
 
   if (issues.length > 0) {
     return { success: false, error: { issues } };
   }
 
+  const data: WorkspaceStatus = {
+    running: running as boolean,
+    url: url as string,
+    host: host as string,
+    port: port as number,
+    figmaSourceMode: figmaSourceMode as WorkspaceFigmaSourceMode,
+    llmCodegenMode: "deterministic",
+    uptimeMs: uptimeMs as number,
+    outputRoot: outputRoot as string,
+    previewEnabled: previewEnabled as boolean,
+  };
+  if (testIntelligenceEnabled !== undefined) {
+    data.testIntelligenceEnabled = testIntelligenceEnabled as boolean;
+  }
+  if (testIntelligenceMultiSourceEnabled !== undefined) {
+    data.testIntelligenceMultiSourceEnabled =
+      testIntelligenceMultiSourceEnabled as boolean;
+  }
+
   return {
     success: true,
-    data: {
-      running: running as boolean,
-      url: url as string,
-      host: host as string,
-      port: port as number,
-      figmaSourceMode: figmaSourceMode as WorkspaceFigmaSourceMode,
-      llmCodegenMode: "deterministic",
-      uptimeMs: uptimeMs as number,
-      outputRoot: outputRoot as string,
-      previewEnabled: previewEnabled as boolean,
-    },
+    data,
   };
 }
 

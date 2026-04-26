@@ -497,6 +497,8 @@ export const createWorkspaceServer = async (
         ? { importSessionEventBearerToken }
         : {}),
       testIntelligenceEnabled: options.testIntelligence?.enabled === true,
+      testIntelligenceMultiSourceEnabled:
+        options.testIntelligence?.multiSourceEnabled === true,
       ...(testIntelligenceReviewBearerToken !== undefined
         ? { testIntelligenceReviewBearerToken }
         : {}),

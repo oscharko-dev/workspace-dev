@@ -43,7 +43,7 @@ alongside a primary source.
 | Jira paste only | Accepted | Wave 4.D populates the paste-collision routing. |
 | Figma + Jira REST | Accepted | Reconciliation lives in Wave 4.F. |
 | Figma + Jira paste | Accepted | Reconciliation lives in Wave 4.F. |
-| Jira REST + Jira paste | Accepted | Duplicate `contentHash` between Jira sources is reported as `duplicate_jira_paste_collision`. |
+| Jira REST + Jira paste | Accepted | Duplicate `canonicalIssueKey` between Jira sources is reported as `duplicate_jira_paste_collision`. |
 | Any of the above + `custom_text` and/or `custom_structured` | Accepted | Custom kinds are supporting evidence. Markdown metadata only valid when `inputFormat="markdown"`. |
 | Custom-only (any combination of `custom_text` / `custom_structured`) | **Refused** with `primary_source_required` | Enforced before any artifact is persisted. |
 
