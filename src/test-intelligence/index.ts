@@ -130,6 +130,20 @@ export {
   type WriteTestCaseDeltaReportResult,
 } from "./test-case-delta.js";
 export {
+  cosineSimilarity,
+  createDisabledExternalDedupeProbe,
+  createUnconfiguredExternalDedupeProbe,
+  detectTestCaseDuplicatesExtended,
+  writeTestCaseDedupeReport,
+  type DetectTestCaseDuplicatesExtendedInput,
+  type EmbeddingProvider,
+  type ExternalDedupeProbe,
+  type ExternalDedupeProbeCaseContext,
+  type ExternalDedupeProbeLookupResult,
+  type WriteTestCaseDedupeReportInput,
+  type WriteTestCaseDedupeReportResult,
+} from "./test-case-dedupe.js";
+export {
   computeCoverageReport,
   type ComputeCoverageReportInput,
 } from "./test-case-coverage.js";
