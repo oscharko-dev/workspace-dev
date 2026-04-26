@@ -156,6 +156,38 @@ test("four-eyes: snapshot stamps fourEyesEnforced + reasons for high-risk case",
   });
 });
 
+test("four-eyes: custom-context regulated escalation enforces when regulated_data is configured", async () => {
+  await withTempDir("four-eyes-custom-context", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    const snapshot = await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({ id: "tc-context", riskCategory: "low" })]),
+      policy: policyWith([
+        {
+          testCaseId: "tc-context",
+          decision: "needs_review",
+          violations: [
+            {
+              rule: "policy:custom-context-risk-escalation",
+              outcome: "custom_context_risk_escalation",
+              severity: "warning",
+              reason:
+                "custom context entry custom-context-structured flagged data_class=PCI-DSS-3 as regulated_data",
+            },
+          ],
+        },
+      ]),
+      fourEyesPolicy: EU_BANKING_DEFAULT_FOUR_EYES_POLICY,
+    });
+    const entry = snapshot.perTestCase.find(
+      (e) => e.testCaseId === "tc-context",
+    );
+    assert.equal(entry?.fourEyesEnforced, true);
+    assert.deepEqual(entry?.fourEyesReasons, ["risk_category"]);
+  });
+});
+
 test("four-eyes: high-risk case cannot reach approved with a single approver", async () => {
   await withTempDir("four-eyes-single-rejected", async (dir) => {
     const store = createFileSystemReviewStore({ destinationDir: dir });

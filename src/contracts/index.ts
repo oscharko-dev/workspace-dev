@@ -180,6 +180,20 @@ export const TEST_INTELLIGENCE_MULTISOURCE_ENV =
 export const MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION =
   "1.0.0" as const;
 
+/** Schema version for persisted custom-context supporting source artifacts. */
+export const CUSTOM_CONTEXT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for a persisted custom-context supporting source. */
+export const CUSTOM_CONTEXT_ARTIFACT_FILENAME = "custom-context.json" as const;
+
+/** Stable source id for Markdown-authored custom context. */
+export const CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID =
+  "custom-context-markdown" as const;
+
+/** Stable source id for structured-attribute custom context. */
+export const CUSTOM_CONTEXT_STRUCTURED_SOURCE_ID =
+  "custom-context-structured" as const;
+
 /** Version stamp for persisted role-separated LLM gateway evidence artifacts. */
 export const LLM_GATEWAY_CONTRACT_VERSION = "1.0.0" as const;
 
@@ -426,6 +440,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_prompt_injection_text",
   "semantic_suspicious_content",
   "risk_tag_downgrade_detected",
+  "custom_context_risk_escalation",
 ] as const;
 export type TestCasePolicyOutcome =
   (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
@@ -2456,7 +2471,9 @@ export type PiiMatchLocation =
   | "jira_attachment_filename"
   | "jira_link_relationship"
   | "jira_label"
-  | "jira_component";
+  | "jira_component"
+  | "custom_context_markdown"
+  | "custom_context_attribute";
 
 /**
  * Reference to the Figma node that produced an intent element.
@@ -2802,6 +2819,102 @@ export interface TestIntentSourceRef {
    * made available without treating Markdown as instructions.
    */
   plainTextDerivativeHash?: string;
+}
+
+/** PII-redacted Markdown note persisted as custom supporting context. */
+export interface CustomContextNoteEntry {
+  entryId: string;
+  authorHandle: string;
+  capturedAt: string;
+  inputFormat: "markdown";
+  /** Canonical allowlist Markdown after PII redaction. */
+  bodyMarkdown: string;
+  /** Deterministic plain-text derivative of {@link bodyMarkdown}. */
+  bodyPlain: string;
+  markdownContentHash: string;
+  plainContentHash: string;
+  piiIndicators: PiiIndicator[];
+  redactions: IntentRedaction[];
+}
+
+/** Validated machine-checkable custom supporting attributes. */
+export interface CustomContextStructuredEntry {
+  entryId: string;
+  authorHandle: string;
+  capturedAt: string;
+  attributes: Array<{ key: string; value: string }>;
+  contentHash: string;
+  piiIndicators: PiiIndicator[];
+  redactions: IntentRedaction[];
+}
+
+/** Persisted custom-context source artifact. */
+export interface CustomContextSource {
+  version: typeof CUSTOM_CONTEXT_SCHEMA_VERSION;
+  sourceKind: "custom_text" | "custom_structured";
+  noteEntries: CustomContextNoteEntry[];
+  structuredEntries: CustomContextStructuredEntry[];
+  aggregateContentHash: string;
+}
+
+/** Recognized custom attribute and its intended downstream consumer. */
+export interface SuggestedCustomContextAttribute {
+  key: string;
+  label: string;
+  downstreamConsumer: string;
+  description: string;
+}
+
+/** Curated structured-attribute schema surfaced to API and UI consumers. */
+export const SUGGESTED_CUSTOM_CONTEXT_ATTRIBUTES: readonly SuggestedCustomContextAttribute[] =
+  [
+    {
+      key: "regulatory_scope",
+      label: "regulatoryScope",
+      downstreamConsumer: "policy_gate.risk_classifier",
+      description: "Regulatory scope hints such as PSD2 or GDPR.",
+    },
+    {
+      key: "test_environment",
+      label: "testEnvironment",
+      downstreamConsumer: "prompt_context",
+      description: "Target execution environment such as preprod-eu.",
+    },
+    {
+      key: "data_class",
+      label: "dataClass",
+      downstreamConsumer: "policy_gate.risk_classifier",
+      description: "Sensitive data classification such as PCI-DSS-3.",
+    },
+    {
+      key: "priority_hint",
+      label: "priorityHint",
+      downstreamConsumer: "prompt_context",
+      description: "Reviewer priority hint for generated coverage.",
+    },
+    {
+      key: "feature_flag",
+      label: "featureFlag",
+      downstreamConsumer: "prompt_context.qc_export",
+      description: "Feature flag context such as NEW_CHECKOUT=on.",
+    },
+    {
+      key: "non_functional_profile",
+      label: "nonFunctionalProfile",
+      downstreamConsumer: "prompt_context",
+      description: "Non-functional testing profile such as latency or a11y.",
+    },
+  ];
+
+/** Policy signal derived from recognized custom structured attributes. */
+export interface CustomContextPolicySignal {
+  sourceId: string;
+  entryId: string;
+  attributeKey: string;
+  attributeValue: string;
+  riskCategory: TestCaseRiskCategory;
+  reason: string;
+  contentHash: string;
 }
 
 /**
@@ -3764,6 +3877,25 @@ export interface CompiledPromptHashes {
   cacheKey: string;
 }
 
+/** Sanitized custom supporting context visible to prompt compilation. */
+export interface CompiledPromptCustomContext {
+  markdownSections: Array<{
+    sourceId: string;
+    entryId: string;
+    bodyMarkdown: string;
+    bodyPlain: string;
+    markdownContentHash: string;
+    plainContentHash: string;
+  }>;
+  structuredAttributes: Array<{
+    sourceId: string;
+    entryId: string;
+    key: string;
+    value: string;
+    contentHash: string;
+  }>;
+}
+
 /** Persisted, fully-redacted artifact form of a compiled prompt. */
 export interface CompiledPromptArtifacts {
   contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
@@ -3777,6 +3909,7 @@ export interface CompiledPromptArtifacts {
   payload: {
     intent: BusinessTestIntentIr;
     visual: VisualScreenDescription[];
+    customContext?: CompiledPromptCustomContext;
   };
   hashes: CompiledPromptHashes;
   visualBinding: CompiledPromptVisualBinding;

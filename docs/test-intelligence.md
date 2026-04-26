@@ -280,6 +280,7 @@ Inspector HTTP routes (mounted under `/workspace/test-intelligence`):
 | `/workspace/test-intelligence/jobs`                                 | GET    | none   | List jobs that have on-disk test-intelligence artifacts |
 | `/workspace/test-intelligence/jobs/<jobId>`                         | GET    | none   | Composite read of the per-job artifact bundle           |
 | `/workspace/test-intelligence/sources/<jobId>/jira-paste`           | POST   | bearer | Ingest a Jira paste as a primary multi-source artifact  |
+| `/workspace/test-intelligence/sources/<jobId>/custom-context`       | POST   | bearer | Ingest Markdown/structured supporting context           |
 | `/workspace/test-intelligence/review/<jobId>/state`                 | GET    | none   | Read review snapshot and event log                      |
 | `/workspace/test-intelligence/review/<jobId>/<action>`              | POST   | bearer | Job-level review transition                             |
 | `/workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>` | POST   | bearer | Per-case review transition                              |
@@ -990,8 +991,8 @@ Request body:
 
 ```json
 {
-  "format": "auto",
-  "body": "Key: PAY-1434\nSummary: Paste-only payment approval\nStatus: Open"
+    "format": "auto",
+    "body": "Key: PAY-1434\nSummary: Paste-only payment approval\nStatus: Open"
 }
 ```
 
@@ -1015,6 +1016,71 @@ The raw paste body is never persisted. High-risk bearer/API-key shaped strings
 are redacted before IR construction, while the provenance `contentHash` remains
 the hash of the original paste bytes so auditors can prove which paste was
 captured without storing it.
+
+### Custom context supporting source ingestion
+
+`POST /workspace/test-intelligence/sources/<jobId>/custom-context` accepts
+reviewer-provided supporting context for a job that already has at least one
+primary Figma or Jira source. Custom context is enrichment evidence only; it
+cannot replace Figma or Jira as the source of test intent. A custom-only request
+fails before persistence with `primary_source_required`.
+
+The route is available only when the parent test-intelligence gate and nested
+multi-source gate are enabled. It follows the same JSON same-origin/write,
+bearer-token, rate-limit, and fail-closed governance pattern as review writes
+and Jira paste ingestion. The persisted `authorHandle` is derived from the
+matched server-side bearer principal; client-supplied author fields are
+unsupported.
+
+Request body:
+
+```json
+{
+    "markdown": "## Operational notes\n\n- Expected results must use ISO 4217 currency codes only.",
+    "attributes": [
+        { "key": "dataClass", "value": "PCI-DSS-3" },
+        { "key": "feature_flag", "value": "NEW_CHECKOUT=on" }
+    ]
+}
+```
+
+`markdown` is capped at 32 KiB before parsing. The canonical redacted Markdown
+and deterministic plain-text derivative are each capped at 16 KiB. The runtime
+allows only a strict Markdown subset: headings, paragraphs, ordered/unordered
+lists, task-list checkboxes, tables, blockquotes, inline code, fenced code
+blocks, emphasis, strong, and links with redacted hrefs. Raw HTML, embedded
+SVG/iframe/script content, images, `javascript:`/`data:` URLs, private or
+link-local HTTP targets, MDX/JSX, frontmatter, Mermaid/diagram execution, and
+autolinked internal hosts are rejected fail-closed before persistence. PII
+redaction runs before persistence and before prompt compilation across Markdown
+text, tables, lists, blockquotes, links, and code fences.
+
+Structured attributes are optional but, when present, must contain 1 to 64
+entries. Canonical wire keys match `^[a-z][a-z0-9_]{0,63}$`; public camelCase
+labels such as `dataClass`, `regulatoryScope`, and `featureFlag` are accepted
+as aliases and persisted as `data_class`, `regulatory_scope`, and
+`feature_flag`. Values are normalized UTF-8 text, bounded to 256 characters,
+must not contain line breaks, and are PII-redacted before validation returns or
+the store computes deterministic hashes. This same normalization is repeated in
+the persistence layer so direct store callers cannot bypass redaction or create
+order-dependent structured hashes.
+
+Successful ingestion writes minimized canonical artifacts under
+`<artifactRoot>/<jobId>/sources/<sourceId>/custom-context.json`:
+
+- `sources/custom-context-markdown/custom-context.json` — canonical
+  PII-redacted Markdown entries, deterministic plain-text derivatives, hashes,
+  redaction indicators, and bearer-derived audit stamps.
+- `sources/custom-context-structured/custom-context.json` — validated
+  PII-redacted structured attributes, deterministic content hashes, redaction
+  indicators, and bearer-derived audit stamps.
+
+The response includes `sourceRefs`, a validated `sourceEnvelope`,
+`policySignals`, and artifact paths. Recognized policy attributes such as
+`data_class=PCI-DSS-3` produce a `custom_context_risk_escalation` policy signal,
+escalate generated cases to `needs_review` under the policy gate, and are
+recorded in `policy-report.json` for downstream review and four-eyes
+configuration.
 
 ## 15. Public API references
 

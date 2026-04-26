@@ -26,6 +26,7 @@ import {
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type BusinessTestIntentIr,
+  type CustomContextPolicySignal,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type TestCaseCoverageReport,
@@ -66,6 +67,8 @@ export interface EvaluatePolicyGateInput {
    * the original finding.
    */
   semanticContentOverrides?: SemanticContentOverrideMap;
+  /** Recognized custom supporting-context attributes that escalate risk. */
+  customContextPolicySignals?: readonly CustomContextPolicySignal[];
 }
 
 /** Maximum strength among per-case decisions: blocked > needs_review > approved. */
@@ -157,6 +160,7 @@ const evaluateCase = (
   profile: TestCasePolicyProfile,
   caseIssues: TestCaseValidationIssue[],
   overrides: SemanticContentOverrideMap | undefined,
+  customContextPolicySignals: readonly CustomContextPolicySignal[],
 ): TestCasePolicyDecisionRecord => {
   let decision: TestCasePolicyDecision = "approved";
   const violations: TestCasePolicyViolation[] = [];
@@ -173,6 +177,10 @@ const evaluateCase = (
   }
 
   const intentReviewRisk = findIntentReviewRisk(intent, profile);
+  const customContextReviewRisk = findCustomContextReviewRisk(
+    customContextPolicySignals,
+    profile,
+  );
   const caseCarriesReviewRisk = profile.rules.reviewOnlyRiskCategories.includes(
     testCase.riskCategory,
   );
@@ -211,13 +219,26 @@ const evaluateCase = (
   // downgrade a regulated design flow.
   const riskCategory = caseCarriesReviewRisk
     ? testCase.riskCategory
-    : intentReviewRisk;
+    : (customContextReviewRisk ?? intentReviewRisk);
   if (riskCategory !== undefined) {
     violations.push({
       rule: "policy:regulated-risk-requires-review",
       outcome: "regulated_risk_review_required",
       severity: "warning",
       reason: `risk category "${riskCategory}" requires manual review under profile "${profile.id}"`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
+
+  for (const signal of customContextPolicySignals) {
+    if (!profile.rules.reviewOnlyRiskCategories.includes(signal.riskCategory)) {
+      continue;
+    }
+    violations.push({
+      rule: "policy:custom-context-risk-escalation",
+      outcome: "custom_context_risk_escalation",
+      severity: "warning",
+      reason: signal.reason,
     });
     decision = escalate(decision, "needs_review");
   }
@@ -329,7 +350,9 @@ const deriveScreenIntentRisk = (
 const findIntentReviewRiskForIndicators = (
   intent: BusinessTestIntentIr,
   profile: TestCasePolicyProfile,
-  piiApplies: (indicator: BusinessTestIntentIr["piiIndicators"][number]) => boolean,
+  piiApplies: (
+    indicator: BusinessTestIntentIr["piiIndicators"][number],
+  ) => boolean,
 ): TestCaseRiskCategory | undefined => {
   const reviewSet = new Set(profile.rules.reviewOnlyRiskCategories);
   const normalizedRisks = intent.risks.map((risk) => risk.toLowerCase());
@@ -368,12 +391,24 @@ const findIntentReviewRisk = (
   return findIntentReviewRiskForIndicators(intent, profile, () => true);
 };
 
+const findCustomContextReviewRisk = (
+  signals: readonly CustomContextPolicySignal[],
+  profile: TestCasePolicyProfile,
+): TestCaseRiskCategory | undefined => {
+  const reviewSet = new Set(profile.rules.reviewOnlyRiskCategories);
+  for (const signal of signals) {
+    if (reviewSet.has(signal.riskCategory)) return signal.riskCategory;
+  }
+  return undefined;
+};
+
 const evaluateJobLevel = (
   list: GeneratedTestCaseList,
   intent: BusinessTestIntentIr,
   coverage: TestCaseCoverageReport,
   profile: TestCasePolicyProfile,
   visual?: VisualSidecarValidationReport,
+  customContextPolicySignals: readonly CustomContextPolicySignal[] = [],
 ): TestCasePolicyViolation[] => {
   const violations: TestCasePolicyViolation[] = [];
 
@@ -505,6 +540,18 @@ const evaluateJobLevel = (
     }
   }
 
+  for (const signal of customContextPolicySignals) {
+    if (!profile.rules.reviewOnlyRiskCategories.includes(signal.riskCategory)) {
+      continue;
+    }
+    violations.push({
+      rule: "policy:custom-context-risk-escalation",
+      outcome: "custom_context_risk_escalation",
+      severity: "warning",
+      reason: `${signal.reason} (source ${signal.sourceId}, entry ${signal.entryId}, hash ${signal.contentHash})`,
+    });
+  }
+
   return violations;
 };
 
@@ -566,6 +613,7 @@ export const evaluatePolicyGate = (
         input.profile,
         issues,
         semanticContentOverrides,
+        input.customContextPolicySignals ?? [],
       ),
     );
   }
@@ -576,6 +624,7 @@ export const evaluatePolicyGate = (
     input.coverage,
     input.profile,
     input.visual,
+    input.customContextPolicySignals ?? [],
   );
 
   // Job-level violations of error severity propagate as job-level

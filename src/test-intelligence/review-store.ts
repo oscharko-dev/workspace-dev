@@ -535,8 +535,17 @@ class FileSystemReviewStore implements ReviewStore {
       await mkdir(this.jobDir(input.jobId), { recursive: true });
 
       const decisions = new Map<string, TestCasePolicyDecision>();
+      const customContextEscalated = new Set<string>();
       for (const decision of input.policy.decisions) {
         decisions.set(decision.testCaseId, decision.decision);
+        if (
+          decision.violations.some(
+            (violation) =>
+              violation.outcome === "custom_context_risk_escalation",
+          )
+        ) {
+          customContextEscalated.add(decision.testCaseId);
+        }
       }
 
       const events: ReviewEvent[] = [];
@@ -562,6 +571,15 @@ class FileSystemReviewStore implements ReviewStore {
                 : {}),
             })
           : { enforced: false, reasons: [] as FourEyesEnforcementReason[] };
+        const enforcementReasons = new Set(enforcement.reasons);
+        if (
+          fourEyesPolicy &&
+          customContextEscalated.has(tc.id) &&
+          fourEyesPolicy.requiredRiskCategories.includes("regulated_data")
+        ) {
+          enforcementReasons.add("risk_category");
+        }
+        const sortedEnforcementReasons = Array.from(enforcementReasons).sort();
         const seedEvent: ReviewEvent = {
           schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
           contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -583,10 +601,10 @@ class FileSystemReviewStore implements ReviewStore {
           policyDecision: decision,
           lastEventId: eventId,
           lastEventAt: input.generatedAt,
-          fourEyesEnforced: enforcement.enforced,
+          fourEyesEnforced: sortedEnforcementReasons.length > 0,
           approvers: [],
-          ...(enforcement.reasons.length > 0
-            ? { fourEyesReasons: enforcement.reasons.slice() }
+          ...(sortedEnforcementReasons.length > 0
+            ? { fourEyesReasons: sortedEnforcementReasons }
             : {}),
         };
         perTestCase.push(entry);

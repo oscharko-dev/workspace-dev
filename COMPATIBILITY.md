@@ -47,6 +47,14 @@ alongside a primary source.
 | Any of the above + `custom_text` and/or `custom_structured` | Accepted | Custom kinds are supporting evidence. Markdown metadata only valid when `inputFormat="markdown"`. |
 | Custom-only (any combination of `custom_text` / `custom_structured`) | **Refused** with `primary_source_required` | Enforced before any artifact is persisted. |
 
+`POST /workspace/test-intelligence/sources/<jobId>/custom-context` is the
+runtime ingestion surface for the supporting custom kinds. It remains behind
+the parent test-intelligence gate and nested multi-source gate, persists only
+PII-redacted canonical Markdown and validated structured attributes, and
+requires an existing primary Figma or Jira source before writing artifacts.
+Structured attributes are normalized, sorted, and PII-redacted in both the HTTP
+validator and persistence layer so replay hashes do not depend on caller order.
+
 ## Notes
 
 - TypeScript 4.x consumers are unsupported and must upgrade to TypeScript `>=5.0.0`; `workspace-dev` does not publish `typesVersions` fallback paths.

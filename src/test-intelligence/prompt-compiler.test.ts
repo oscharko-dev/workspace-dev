@@ -8,6 +8,7 @@ import {
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   VISUAL_SIDECAR_SCHEMA_VERSION,
+  type CompiledPromptCustomContext,
   type CompiledPromptModelBinding,
   type CompiledPromptVisualBinding,
   type VisualScreenDescription,
@@ -186,6 +187,59 @@ test("compiler: hash differs when fixture image hash changes", async () => {
     policyBundleVersion: "policy-2026-04-25",
   });
   assert.notEqual(a.request.hashes.cacheKey, b.request.hashes.cacheKey);
+});
+
+test("compiler: includes sanitized custom context in prompt and replay identity", async () => {
+  const { intent, visual } = await loadFixture();
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "custom-context-markdown",
+        entryId: "note-1",
+        bodyMarkdown:
+          "# Supporting evidence\n\n- Expected currency codes only.\n",
+        bodyPlain: "Supporting evidence\nExpected currency codes only.\n",
+        markdownContentHash: "a".repeat(64),
+        plainContentHash: "b".repeat(64),
+      },
+    ],
+    structuredAttributes: [
+      {
+        sourceId: "custom-context-structured",
+        entryId: "structured-1",
+        key: "data_class",
+        value: "PCI-DSS-3",
+        contentHash: "c".repeat(64),
+      },
+    ],
+  };
+  const withContext = compilePrompt({
+    jobId: "job-1",
+    intent,
+    visual,
+    customContext,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  const withoutContext = compilePrompt({
+    jobId: "job-1",
+    intent,
+    visual,
+    modelBinding: sampleModelBinding,
+    visualBinding: sampleVisualBinding,
+    policyBundleVersion: "policy-2026-04-25",
+  });
+  assert.notEqual(
+    withContext.request.hashes.cacheKey,
+    withoutContext.request.hashes.cacheKey,
+  );
+  assert.match(
+    withContext.request.userPrompt,
+    /CUSTOM_CONTEXT_MARKDOWN_SUPPORTING_EVIDENCE/,
+  );
+  assert.match(withContext.request.userPrompt, /PCI-DSS-3/);
+  assert.deepEqual(withContext.artifacts.payload.customContext, customContext);
 });
 
 test("compiler: jobId does NOT participate in cache key (hash invariant)", async () => {
