@@ -124,6 +124,14 @@ export {
   reconcileSources,
   type ReconcileSourcesInput,
 } from "./reconciliation.js";
+export {
+  reconcileMultiSourceIntent,
+  writeMultiSourceReconciliationReport,
+  type ReconcileMultiSourceIntentInput,
+  type ReconcileMultiSourceIntentResult,
+  type WriteMultiSourceReconciliationReportInput,
+  type WriteMultiSourceReconciliationReportResult,
+} from "./multi-source-reconciliation.js";
 export { canonicalJson, sha256Hex } from "./content-hash.js";
 export {
   buildGeneratedTestCaseListJsonSchema,
