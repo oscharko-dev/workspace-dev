@@ -22,6 +22,8 @@ In scope:
 - Reviewer-driven review-gate state machine and bearer-protected write routes.
 - Export-only QC artifact emission.
 - OpenText ALM dry-run adapter (Wave 2).
+- Controlled OpenText ALM API transfer kernel (Wave 3), gated by export,
+  dry-run, review, policy, admin, bearer-token, and visual-sidecar checks.
 - Evidence manifest and operator-side verification.
 - Multimodal visual sidecar role separation.
 - Network boundary, secret handling, and zero-telemetry behavior.
@@ -31,9 +33,11 @@ In scope:
 
 Out of scope:
 
-- Production write-back to QC, ALM, or test-management systems. Wave 2 ships an
-  `export_only` pipeline plus a `dry_run` adapter only; `api_transfer` is a
-  reserved mode that returns a deterministic refusal.
+- Provider write adapters other than OpenText ALM, and client-supplied transfer
+  state. The Wave 3 `api_transfer` kernel accepts only server-reviewed
+  artifacts and an injected OpenText client; callers must still keep the admin
+  gate disabled unless their controlled environment has approved credentials,
+  dry-run evidence, and rollback procedures.
 - Customer-specific compliance decisions (risk classification, retention
   policies, residency, four-eyes review, sign-off authority). The package emits
   evidence; the operator decides what is acceptable.
@@ -354,9 +358,17 @@ opentext_alm, opentext_octane, opentext_valueedge, xray, testrail,
 azure_devops_test_plans, qtest, custom
 ```
 
-The `api_transfer` mode is a reserved identifier on `ALLOWED_QC_ADAPTER_MODES`
-that throws `QcAdapterModeNotImplementedError` so callers can surface a
-deterministic `mode_not_implemented` refusal until a future wave wires it.
+The `api_transfer` mode is implemented by
+`runOpenTextAlmApiTransfer`, not by the dry-run adapter facade. Calling
+`openTextAlmDryRunAdapter.dryRun({ mode: "api_transfer", ... })` still throws
+`QcAdapterModeNotImplementedError`; controlled transfer callers use the Wave 3
+orchestrator with an explicit `QcApiTransferClient` so no network write can
+happen implicitly.
+
+The transfer report records hash-only audit references for the QC mapping
+preview, dry-run report, visual-sidecar validation report, optional generated
+test-case artifact, and optional reconciled intent IR. It never embeds raw
+sidecar prompts, screenshots, bearer tokens, or transfer URLs.
 
 ## 8. Evidence verification
 

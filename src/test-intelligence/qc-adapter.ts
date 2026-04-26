@@ -11,9 +11,10 @@
  *   - `dryRun` — produces a `DryRunReportArtifact` from approved+mapped
  *     test cases without performing any write to the QC tool.
  *
- * Wave 2 ships the `opentext_alm` adapter only; the `api_transfer` mode
- * is intentionally not implemented and must throw a typed error so the
- * pipeline can surface a deterministic refusal code.
+ * Wave 2 ships the `opentext_alm` dry-run adapter. Wave 3 implements
+ * controlled `api_transfer` in `qc-alm-api-transfer.ts` instead of this
+ * dry-run facade, so direct dry-run calls with `api_transfer` still throw
+ * a typed error.
  */
 
 import {

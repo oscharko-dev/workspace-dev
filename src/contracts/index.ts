@@ -4016,8 +4016,9 @@ export const DRY_RUN_REPORT_ARTIFACT_FILENAME = "dry-run-report.json" as const;
  * - `export_only` — produce on-disk artifacts; no QC API touched.
  * - `dry_run` — validate target mapping (folder, fields, schema) without
  *   creating tests in the QC tool.
- * - `api_transfer` — placeholder for the future production transfer path;
- *   the dry-run adapter must throw `mode_not_implemented` for this mode.
+ * - `api_transfer` — controlled OpenText ALM write path implemented by the
+ *   Wave 3 transfer orchestrator. The dry-run adapter still throws
+ *   `mode_not_implemented` when called directly with this mode.
  */
 export const ALLOWED_QC_ADAPTER_MODES = [
   "export_only",
@@ -4263,7 +4264,7 @@ export interface DryRunReportArtifact {
  */
 
 /** Schema version for the persisted transfer-report artifact (Issue #1372). */
-export const TRANSFER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+export const TRANSFER_REPORT_SCHEMA_VERSION = "1.1.0" as const;
 
 /** Canonical filename for the persisted transfer-report artifact. */
 export const TRANSFER_REPORT_ARTIFACT_FILENAME =
@@ -4314,8 +4315,9 @@ export type TransferRefusalCode =
  * - `created` — the entity did not exist; create call succeeded.
  * - `skipped_duplicate` — the entity already exists for this
  *   `externalIdCandidate` + folder; no write performed.
- * - `failed` — adapter or transport error; no partial entity left
- *   behind on the server (the adapter must clean up on failure).
+ * - `failed` — adapter or transport error. When `qcEntityId` is
+ *   non-empty, the tenant may contain a partially created entity and the
+ *   rollback guidance must include it for operator cleanup.
  * - `refused` — pipeline-level refusal (e.g. unapproved); no call
  *   was attempted.
  */
@@ -4346,6 +4348,22 @@ export const ALLOWED_TRANSFER_FAILURE_CLASSES = [
 export type TransferFailureClass =
   (typeof ALLOWED_TRANSFER_FAILURE_CLASSES)[number];
 
+/** Hash-only evidence references that bind transfer to upstream artifacts. */
+export interface TransferEvidenceReferences {
+  /** SHA-256 hex of the QC mapping preview consumed by transfer. */
+  qcMappingPreviewHash: string;
+  /** SHA-256 hex of the dry-run report consumed by transfer. */
+  dryRunReportHash: string;
+  /** SHA-256 hex of the visual-sidecar validation report, when present. */
+  visualSidecarReportHash: string;
+  /** Sorted hash-only references to sidecar evidence used by mapped cases. */
+  visualSidecarEvidenceHashes: string[];
+  /** Optional SHA-256 hex of the generated test-case artifact. */
+  generationOutputHash?: string;
+  /** Optional SHA-256 hex of the reconciled intent IR artifact. */
+  reconciledIntentIrHash?: string;
+}
+
 /** Audit metadata describing the operator/principal that authorised the run. */
 export interface TransferAuditMetadata {
   /** Opaque actor handle; never an email or token. */
@@ -4361,6 +4379,8 @@ export interface TransferAuditMetadata {
   fourEyesReasons: FourEyesEnforcementReason[];
   /** Identity of the dry-run report consumed; binds the run to a validation. */
   dryRunReportId: string;
+  /** Hash-only upstream artifact references; never raw prompts, screenshots, or credentials. */
+  evidenceReferences: TransferEvidenceReferences;
 }
 
 /** Per-entity record inside the transfer report. */
@@ -4370,8 +4390,8 @@ export interface TransferEntityRecord {
   targetFolderPath: string;
   outcome: TransferEntityOutcome;
   /**
-   * Resolved QC entity id when the outcome is `created` or
-   * `skipped_duplicate`. Empty string for `failed` / `refused`.
+   * Resolved QC entity id when the outcome is `created`, `skipped_duplicate`,
+   * or a failed attempt left a partial tenant entity. Empty for `refused`.
    */
   qcEntityId: string;
   /** Number of design steps the adapter created for this entity. */

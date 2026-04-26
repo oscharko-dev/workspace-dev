@@ -36,7 +36,7 @@ All changes to the public contract surface of `workspace-dev` are documented her
 ### Added (Issue #1372)
 
 - New schema constants for the controlled OpenText ALM API transfer pipeline:
-    - `TRANSFER_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    - `TRANSFER_REPORT_SCHEMA_VERSION = "1.1.0"`,
     - `TRANSFER_REPORT_ARTIFACT_FILENAME = "transfer-report.json"`,
     - `QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0"`,
     - `QC_CREATED_ENTITIES_ARTIFACT_FILENAME = "qc-created-entities.json"`.
@@ -63,7 +63,8 @@ All changes to the public contract surface of `workspace-dev` are documented her
       `refusedCount`) and `audit: TransferAuditMetadata`.
     - `QcCreatedEntitiesArtifact` with type-level invariant
       `transferUrlIncluded: false`.
-    - `TransferEntityRecord`, `QcCreatedEntity`, `TransferAuditMetadata`.
+    - `TransferEntityRecord`, `QcCreatedEntity`, `TransferAuditMetadata`,
+      and `TransferEvidenceReferences`.
 - New optional fields on `WorkspaceStartOptions.testIntelligence`:
     - `allowApiTransfer?: boolean` (default `false` — fail-closed admin gate),
     - `transferBearerToken?: string` (legacy single-principal token),
@@ -75,6 +76,13 @@ All changes to the public contract surface of `workspace-dev` are documented her
   `createUnconfiguredQcApiTransferClient`, `isApiTransferMode`,
   `QcApiTransferError`, plus the `QcApiTransferClient` interface.
 
+### Changed (Issue #1372)
+
+- `TRANSFER_REPORT_SCHEMA_VERSION` is `"1.1.0"` because transfer audit
+  metadata now includes required hash-only `evidenceReferences`. Consumers of
+  schema `"1.0.0"` reports should treat missing `audit.evidenceReferences` as
+  a legacy artifact and should not infer Wave 3 evidence binding from it.
+
 ### Behaviour notes
 
 - The `api_transfer` mode is fail-closed by default. Every gate
@@ -83,8 +91,13 @@ All changes to the public contract surface of `workspace-dev` are documented her
   must succeed before any write leaves the process. Refusal codes are
   recorded together so an operator can address them in one cycle.
 - Idempotency is enforced via `lookupByExternalId` against the resolved
-  folder before any create call. Re-running on an unchanged approved
-  set never produces duplicate entities.
+  folder path before any create call. Re-running on an unchanged approved
+  set never produces duplicate entities; distinct target folders are
+  resolved deterministically before any entity write starts.
+- Transfer audit metadata carries hash-only evidence references for the
+  mapping preview, dry-run report, visual-sidecar validation report, and
+  optional generated test-case / reconciled intent artifacts. Raw prompts,
+  screenshots, bearer tokens, and transfer URLs are never embedded.
 - The pipeline writes `transfer-report.json` and
   `qc-created-entities.json` atomically using
   `${pid}.${randomUUID()}.tmp` so concurrent transfers on the same

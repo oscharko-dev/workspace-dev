@@ -66,6 +66,9 @@ const looksCredentialLike = (raw: string): boolean => {
   return false;
 };
 
+const hasDotOnlyFolderSegment = (path: string): boolean =>
+  path.split("/").some((segment) => segment === "." || segment === "..");
+
 const issue = (
   path: string,
   code: QcMappingProfileIssueCode,
@@ -128,7 +131,7 @@ const validateFolderPath = (path: unknown): QcMappingProfileIssue[] => {
       ),
     ];
   }
-  if (!FOLDER_PATH_REGEX.test(path)) {
+  if (!FOLDER_PATH_REGEX.test(path) || hasDotOnlyFolderSegment(path)) {
     return [
       issue(
         "/targetFolderPath",

@@ -69,6 +69,7 @@ import {
   DEFAULT_DRY_RUN_ID_SOURCE,
   createOpenTextAlmDryRunAdapter,
 } from "./qc-alm-dry-run.js";
+import { sha256Hex } from "./content-hash.js";
 import { cloneOpenTextAlmDefaultMappingProfile } from "./qc-alm-mapping-profile.js";
 
 const ZERO = "0".repeat(64);
@@ -178,6 +179,13 @@ const buildPreview = (cases: GeneratedTestCase[]): QcMappingPreviewArtifact =>
     list: buildList(cases),
     intent: buildIntent(),
     policy: { ...emptyPolicy(), totalTestCases: cases.length },
+    profile: {
+      id: PROFILE.id,
+      version: PROFILE.version,
+      description: "OpenText ALM API transfer fixture profile",
+      rootFolderPath: PROFILE.targetFolderPath,
+      cdataDescription: true,
+    },
   });
 
 const snapshotEntry = (overrides: Partial<ReviewSnapshot>): ReviewSnapshot => ({
@@ -238,10 +246,28 @@ const visualReport = (): VisualSidecarValidationReport => ({
   ],
 });
 
+const visualEvidenceHash = (
+  visual: VisualSidecarValidationReport = visualReport(),
+): string =>
+  sha256Hex(
+    visual.records
+      .slice()
+      .sort((a, b) => a.screenId.localeCompare(b.screenId))
+      .map(
+        (record) =>
+          `${record.screenId}|${record.deployment}|${record.outcomes
+            .slice()
+            .sort()
+            .join(",")}|${record.meanConfidence.toFixed(6)}`,
+      )
+      .join("\n"),
+  );
+
 interface MockClientCallLog {
   resolveFolderCalls: number;
-  lookupCalls: { externalId: string }[];
-  createTestEntityCalls: { externalId: string }[];
+  resolvedFolderPaths: string[];
+  lookupCalls: { externalId: string; folderPath: string }[];
+  createTestEntityCalls: { externalId: string; folderPath: string }[];
   createDesignStepCalls: { qcEntityId: string; index: number }[];
 }
 
@@ -262,23 +288,30 @@ const buildMockClient = (
 ): { client: QcApiTransferClient; log: MockClientCallLog } => {
   const log: MockClientCallLog = {
     resolveFolderCalls: 0,
+    resolvedFolderPaths: [],
     lookupCalls: [],
     createTestEntityCalls: [],
     createDesignStepCalls: [],
   };
-  const folder: QcApiFolderHandle = {
-    qcFolderId: "qc-folder-deterministic",
-    resolvedPath: PROFILE.targetFolderPath,
-  };
   let counter = 0;
   const seed = options.qcEntityIdSeed ?? "qc-id";
   const client: QcApiTransferClient = {
-    resolveFolder: () => {
+    resolveFolder: ({ targetFolderPath }) => {
       log.resolveFolderCalls += 1;
-      return folder;
+      log.resolvedFolderPaths.push(targetFolderPath);
+      return {
+        qcFolderId: `qc-folder-${log.resolveFolderCalls}`,
+        resolvedPath: targetFolderPath,
+      };
     },
-    lookupByExternalId: ({ externalIdCandidate }): QcApiLookupResult => {
-      log.lookupCalls.push({ externalId: externalIdCandidate });
+    lookupByExternalId: ({
+      externalIdCandidate,
+      folder,
+    }): QcApiLookupResult => {
+      log.lookupCalls.push({
+        externalId: externalIdCandidate,
+        folderPath: folder.resolvedPath,
+      });
       if (
         options.failOnLookup &&
         options.failOnLookup.externalId === externalIdCandidate
@@ -292,8 +325,11 @@ const buildMockClient = (
       if (hit) return { kind: "found", qcEntityId: hit };
       return { kind: "missing" };
     },
-    createTestEntity: ({ entry }): QcApiCreatedEntity => {
-      log.createTestEntityCalls.push({ externalId: entry.externalIdCandidate });
+    createTestEntity: ({ entry, folder }): QcApiCreatedEntity => {
+      log.createTestEntityCalls.push({
+        externalId: entry.externalIdCandidate,
+        folderPath: folder.resolvedPath,
+      });
       if (
         options.failOnCreate &&
         options.failOnCreate.externalId === entry.externalIdCandidate
@@ -332,6 +368,7 @@ const buildMockClient = (
 };
 
 const buildDryRun = (
+  preview: QcMappingPreviewArtifact = buildPreview([buildCase({})]),
   overrides?: Partial<DryRunReportArtifact>,
 ): DryRunReportArtifact => {
   const adapter = createOpenTextAlmDryRunAdapter();
@@ -351,8 +388,8 @@ const buildDryRun = (
     refusalCodes: [],
     profileValidation: { ok: true, errorCount: 0, warningCount: 0, issues: [] },
     completeness: {
-      totalCases: 1,
-      completeCases: 1,
+      totalCases: preview.entries.length,
+      completeCases: preview.entries.length,
       incompleteCases: 0,
       missingFieldsAcrossCases: [],
       perCase: [],
@@ -362,7 +399,14 @@ const buildDryRun = (
       path: PROFILE.targetFolderPath,
       evidence: "simulated:matched-segments=2",
     },
-    plannedPayloads: [],
+    plannedPayloads: preview.entries.map((entry) => ({
+      testCaseId: entry.testCaseId,
+      externalIdCandidate: entry.externalIdCandidate,
+      testEntityType: PROFILE.testEntityType,
+      targetFolderPath: entry.targetFolderPath,
+      fields: [],
+      designStepCount: entry.designSteps.length,
+    })),
     visualEvidenceFlags: [],
     rawScreenshotsIncluded: false,
     credentialsIncluded: false,
@@ -374,12 +418,16 @@ const baseInput = (
   overrides: Partial<RunOpenTextAlmApiTransferInput> = {},
 ): RunOpenTextAlmApiTransferInput => {
   const { client } = buildMockClient();
+  const preview = overrides.preview ?? buildPreview([buildCase({})]);
+  const dryRun = Object.hasOwn(overrides, "dryRun")
+    ? overrides.dryRun
+    : buildDryRun(preview);
   return {
     jobId: JOB_ID,
     generatedAt: GENERATED_AT,
     profile: PROFILE,
-    preview: buildPreview([buildCase({})]),
-    dryRun: buildDryRun(),
+    preview,
+    dryRun,
     reviewSnapshot: buildSnapshot([snapshotEntry({})]),
     visual: visualReport(),
     featureEnabled: true,
@@ -428,6 +476,8 @@ test("api-transfer: admin gate disabled fails closed", async () => {
   );
   assert.equal(result.refused, true);
   assert.equal(result.refusalCodes.includes("admin_gate_disabled"), true);
+  assert.equal(log.resolveFolderCalls, 0);
+  assert.equal(log.lookupCalls.length, 0);
   assert.equal(log.createTestEntityCalls.length, 0);
 });
 
@@ -442,6 +492,11 @@ test("api-transfer: bearer token missing fails closed (token never configured)",
   );
   assert.equal(result.refused, true);
   assert.equal(result.refusalCodes.includes("bearer_token_missing"), true);
+  assert.equal(
+    result.report.audit.authPrincipalId,
+    "transfer-principal:unconfigured",
+  );
+  assert.equal(log.resolveFolderCalls, 0);
   assert.equal(log.createTestEntityCalls.length, 0);
   assert.equal(result.report.audit.bearerTokenAccepted, false);
 });
@@ -457,6 +512,11 @@ test("api-transfer: bearer token mismatch fails closed (forged caller token)", a
   );
   assert.equal(result.refused, true);
   assert.equal(result.refusalCodes.includes("bearer_token_missing"), true);
+  assert.equal(
+    result.report.audit.authPrincipalId,
+    "transfer-principal:anonymous",
+  );
+  assert.equal(log.resolveFolderCalls, 0);
   assert.equal(log.createTestEntityCalls.length, 0);
 });
 
@@ -507,7 +567,7 @@ test("api-transfer: refused dry-run report fails closed", async () => {
   const { client } = buildMockClient();
   const result = await runOpenTextAlmApiTransfer(
     baseInput({
-      dryRun: buildDryRun({
+      dryRun: buildDryRun(undefined, {
         refused: true,
         refusalCodes: ["folder_resolution_failed"],
       }),
@@ -522,7 +582,7 @@ test("api-transfer: dry-run profile mismatch fails closed", async () => {
   const { client } = buildMockClient();
   const result = await runOpenTextAlmApiTransfer(
     baseInput({
-      dryRun: buildDryRun({
+      dryRun: buildDryRun(undefined, {
         profile: { id: "other-profile", version: "9.9.9" },
       }),
       client,
@@ -542,6 +602,111 @@ test("api-transfer: provider mismatch on profile fails closed", async () => {
   );
   assert.equal(result.refused, true);
   assert.equal(result.refusalCodes.includes("provider_mismatch"), true);
+});
+
+test("api-transfer: invalid mapping profile fails closed before folder resolution", async () => {
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      profile: { ...PROFILE, targetFolderPath: "Subject/missing-leading-slash" },
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(result.refusalCodes.includes("mapping_profile_invalid"), true);
+  assert.equal(result.refusalCodes.includes("folder_resolution_failed"), true);
+  assert.equal(log.resolveFolderCalls, 0);
+  assert.equal(log.lookupCalls.length, 0);
+  assert.equal(log.createTestEntityCalls.length, 0);
+});
+
+test("api-transfer: invalid per-entry target folder fails closed before resolution", async () => {
+  const preview = buildPreview([buildCase({})]);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    targetFolderPath: "Subject/tampered",
+  };
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(result.refusalCodes.includes("folder_resolution_failed"), true);
+  assert.equal(log.resolveFolderCalls, 0);
+  assert.equal(log.lookupCalls.length, 0);
+  assert.equal(log.createTestEntityCalls.length, 0);
+});
+
+test("api-transfer: out-of-root per-entry target folder fails closed before resolution", async () => {
+  const preview = buildPreview([buildCase({})]);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    targetFolderPath: "/Subject/OtherProject/Beta",
+  };
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(result.refusalCodes.includes("folder_resolution_failed"), true);
+  assert.equal(log.resolveFolderCalls, 0);
+  assert.equal(log.lookupCalls.length, 0);
+  assert.equal(log.createTestEntityCalls.length, 0);
+});
+
+test("api-transfer: dot-only per-entry target folder segments fail closed before resolution", async () => {
+  for (const targetFolderPath of [
+    "/Subject/Imported/../Other",
+    "/Subject/Imported/.",
+  ]) {
+    const preview = buildPreview([buildCase({})]);
+    preview.entries[0] = {
+      ...preview.entries[0]!,
+      targetFolderPath,
+    };
+    const { client, log } = buildMockClient();
+    const result = await runOpenTextAlmApiTransfer(
+      baseInput({
+        preview,
+        client,
+      }),
+    );
+    assert.equal(result.refused, true);
+    assert.equal(result.refusalCodes.includes("folder_resolution_failed"), true);
+    assert.equal(log.resolveFolderCalls, 0);
+    assert.equal(log.lookupCalls.length, 0);
+    assert.equal(log.createTestEntityCalls.length, 0);
+  }
+});
+
+test("api-transfer: dry-run payload mismatch fails closed before resolution", async () => {
+  const preview = buildPreview([buildCase({})]);
+  const dryRun = buildDryRun(preview, {
+    plannedPayloads: [
+      {
+        ...buildDryRun(preview).plannedPayloads[0]!,
+        externalIdCandidate: "tampered-external-id",
+      },
+    ],
+  });
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      dryRun,
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(result.refusalCodes.includes("dry_run_refused"), true);
+  assert.equal(log.resolveFolderCalls, 0);
+  assert.equal(log.lookupCalls.length, 0);
 });
 
 test("api-transfer: empty preview fails closed (no_mapped_test_cases)", async () => {
@@ -570,6 +735,8 @@ test("api-transfer: needs_review case fails closed (unapproved_test_cases_presen
     result.refusalCodes.includes("unapproved_test_cases_present"),
     true,
   );
+  assert.deepEqual(result.refusalCodes, ["unapproved_test_cases_present"]);
+  assert.equal(log.resolveFolderCalls, 0);
   assert.equal(log.createTestEntityCalls.length, 0);
 });
 
@@ -639,6 +806,8 @@ test("api-transfer: forged review state with policy_decision=approved but state=
     result.refusalCodes.includes("unapproved_test_cases_present"),
     true,
   );
+  assert.deepEqual(result.refusalCodes, ["unapproved_test_cases_present"]);
+  assert.equal(log.resolveFolderCalls, 0);
   assert.equal(log.createTestEntityCalls.length, 0);
 });
 
@@ -652,6 +821,11 @@ test("api-transfer: happy path — exported case is created with deterministic s
   assert.equal(result.report.createdCount, 1);
   assert.equal(result.report.skippedDuplicateCount, 0);
   assert.equal(result.report.failedCount, 0);
+  assert.notEqual(result.report.audit.evidenceReferences.dryRunReportHash, "");
+  assert.notEqual(
+    result.report.audit.evidenceReferences.qcMappingPreviewHash,
+    "",
+  );
   assert.equal(result.createdEntities.entities.length, 1);
   assert.equal(result.createdEntities.entities[0]?.preExisting, false);
   assert.equal(log.lookupCalls.length, 1);
@@ -666,6 +840,43 @@ test("api-transfer: happy path — exported case is created with deterministic s
   assert.equal(result.report.credentialsIncluded, false);
   assert.equal(result.report.transferUrlIncluded, false);
   assert.equal(result.createdEntities.transferUrlIncluded, false);
+});
+
+test("api-transfer: resolves distinct target folders before deterministic transfer", async () => {
+  const cases = [buildCase({ id: "tc-1" }), buildCase({ id: "tc-2" })];
+  const preview = buildPreview(cases);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    targetFolderPath: "/Subject/Imported/Alpha",
+  };
+  preview.entries[1] = {
+    ...preview.entries[1]!,
+    targetFolderPath: "/Subject/Imported/Beta",
+  };
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      reviewSnapshot: buildSnapshot([
+        snapshotEntry({ testCaseId: "tc-1" }),
+        snapshotEntry({ testCaseId: "tc-2" }),
+      ]),
+      client,
+    }),
+  );
+  assert.equal(result.refused, false);
+  assert.deepEqual(log.resolvedFolderPaths, [
+    "/Subject/Imported/Alpha",
+    "/Subject/Imported/Beta",
+  ]);
+  assert.deepEqual(
+    log.lookupCalls.map((call) => call.folderPath),
+    ["/Subject/Imported/Alpha", "/Subject/Imported/Beta"],
+  );
+  assert.deepEqual(
+    result.report.records.map((record) => record.targetFolderPath),
+    ["/Subject/Imported/Alpha", "/Subject/Imported/Beta"],
+  );
 });
 
 test("api-transfer: idempotent re-run skips duplicate entities and never creates", async () => {
@@ -735,6 +946,9 @@ test("api-transfer: per-step failure records partial designStepsCreated count", 
   assert.equal(result.report.records[0]?.outcome, "failed");
   assert.equal(result.report.records[0]?.designStepsCreated, 1);
   assert.equal(result.report.records[0]?.failureClass, "server_error");
+  const guidance = buildTransferRollbackGuidance(result.report);
+  assert.equal(guidance.removalHints.length, 1);
+  assert.equal(guidance.removalHints[0]?.qcEntityId, "qc-id-1");
   // The entity already exists on the tenant because createTestEntity
   // succeeded; the caller MUST run rollback or rely on idempotency on
   // the next attempt — neither is the orchestrator's responsibility.
@@ -767,7 +981,7 @@ test("api-transfer: visual sidecar evidence missing for visual-driven case fails
       fallbackReason: "primary_used",
       confidenceMean: 0.9,
       ambiguityCount: 0,
-      evidenceHash: ZERO,
+      evidenceHash: visualEvidenceHash(),
     },
   };
   const { client } = buildMockClient();
@@ -782,6 +996,163 @@ test("api-transfer: visual sidecar evidence missing for visual-driven case fails
   assert.equal(
     result.refusalCodes.includes("visual_sidecar_evidence_missing"),
     true,
+  );
+});
+
+test("api-transfer: blocked visual sidecar report fails closed", async () => {
+  const preview = buildPreview([buildCase({})]);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    visualProvenance: {
+      deployment: "llama-4-maverick-vision",
+      fallbackReason: "primary_used",
+      confidenceMean: 0.9,
+      ambiguityCount: 0,
+      evidenceHash: visualEvidenceHash(),
+    },
+  };
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      visual: { ...visualReport(), blocked: true },
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(result.refusalCodes.includes("visual_sidecar_blocked"), true);
+  assert.equal(log.resolveFolderCalls, 0);
+});
+
+test("api-transfer: visual provenance without trace refs fails closed", async () => {
+  const preview = buildPreview([buildCase({})]);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    sourceTraceRefs: [],
+    visualProvenance: {
+      deployment: "llama-4-maverick-vision",
+      fallbackReason: "primary_used",
+      confidenceMean: 0.9,
+      ambiguityCount: 0,
+      evidenceHash: visualEvidenceHash(),
+    },
+  };
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(
+    result.refusalCodes.includes("visual_sidecar_evidence_missing"),
+    true,
+  );
+  assert.equal(log.resolveFolderCalls, 0);
+  assert.equal(log.lookupCalls.length, 0);
+  assert.equal(log.createTestEntityCalls.length, 0);
+});
+
+test("api-transfer: stale visual sidecar evidence hash fails closed", async () => {
+  const preview = buildPreview([buildCase({})]);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    visualProvenance: {
+      deployment: "llama-4-maverick-vision",
+      fallbackReason: "primary_used",
+      confidenceMean: 0.9,
+      ambiguityCount: 0,
+      evidenceHash: visualEvidenceHash(),
+    },
+  };
+  const staleVisual = {
+    ...visualReport(),
+    records: [{ ...visualReport().records[0]!, meanConfidence: 0.5 }],
+  };
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      visual: staleVisual,
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(
+    result.refusalCodes.includes("visual_sidecar_evidence_missing"),
+    true,
+  );
+  assert.equal(log.resolveFolderCalls, 0);
+});
+
+test("api-transfer: stale same-screen visual report from different job fails closed", async () => {
+  const staleVisual = { ...visualReport(), jobId: "old-job" };
+  const preview = buildPreview([buildCase({})]);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    visualProvenance: {
+      deployment: "llama-4-maverick-vision",
+      fallbackReason: "primary_used",
+      confidenceMean: 0.9,
+      ambiguityCount: 0,
+      evidenceHash: visualEvidenceHash(staleVisual),
+    },
+  };
+  const { client, log } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      visual: staleVisual,
+      client,
+    }),
+  );
+  assert.equal(result.refused, true);
+  assert.equal(
+    result.refusalCodes.includes("visual_sidecar_evidence_missing"),
+    true,
+  );
+  assert.equal(log.resolveFolderCalls, 0);
+  assert.equal(log.lookupCalls.length, 0);
+  assert.equal(log.createTestEntityCalls.length, 0);
+});
+
+test("api-transfer: visual-driven case transfers when sidecar evidence matches", async () => {
+  const preview = buildPreview([buildCase({})]);
+  preview.entries[0] = {
+    ...preview.entries[0]!,
+    visualProvenance: {
+      deployment: "llama-4-maverick-vision",
+      fallbackReason: "primary_used",
+      confidenceMean: 0.9,
+      ambiguityCount: 0,
+      evidenceHash: visualEvidenceHash(),
+    },
+  };
+  const { client } = buildMockClient();
+  const result = await runOpenTextAlmApiTransfer(
+    baseInput({
+      preview,
+      client,
+      evidenceReferences: {
+        generationOutputHash: "1".repeat(64),
+        reconciledIntentIrHash: "2".repeat(64),
+      },
+    }),
+  );
+  assert.equal(result.refused, false);
+  assert.equal(result.report.createdCount, 1);
+  assert.deepEqual(
+    result.report.audit.evidenceReferences.visualSidecarEvidenceHashes,
+    [visualEvidenceHash()],
+  );
+  assert.equal(
+    result.report.audit.evidenceReferences.generationOutputHash,
+    "1".repeat(64),
+  );
+  assert.equal(
+    result.report.audit.evidenceReferences.reconciledIntentIrHash,
+    "2".repeat(64),
   );
 });
 
@@ -839,6 +1210,11 @@ test("api-transfer: artifacts persist atomically under artifactRoot", async () =
     );
     const reportRaw = await readFile(result.reportPath!, "utf8");
     const createdRaw = await readFile(result.createdEntitiesPath!, "utf8");
+    for (const raw of [reportRaw, createdRaw]) {
+      assert.equal(raw.includes("secret-bearer"), false);
+      assert.equal(raw.includes("Bearer "), false);
+      assert.equal(/https?:\/\//.test(raw), false);
+    }
     const report = JSON.parse(reportRaw);
     const created = JSON.parse(createdRaw);
     assert.equal(report.schemaVersion, TRANSFER_REPORT_SCHEMA_VERSION);
@@ -848,6 +1224,47 @@ test("api-transfer: artifacts persist atomically under artifactRoot", async () =
     assert.equal(report.transferUrlIncluded, false);
     assert.equal(created.transferUrlIncluded, false);
     assert.equal(report.audit.dryRunReportId, "dry-run-fixture-id");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("api-transfer: evidence reference overrides must be sha256 hashes", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "api-transfer-evidence-"));
+  try {
+    const { client } = buildMockClient();
+    const result = await runOpenTextAlmApiTransfer(
+      baseInput({
+        client,
+        artifactRoot: dir,
+        evidenceReferences: {
+          qcMappingPreviewHash: "5".repeat(64),
+          dryRunReportHash: "6".repeat(64),
+          visualSidecarReportHash: "7".repeat(64),
+          visualSidecarEvidenceHashes: [
+            "Bearer secret-bearer",
+            "3".repeat(64),
+          ],
+          generationOutputHash: "https://example.invalid/generated",
+          reconciledIntentIrHash: "4".repeat(64),
+        },
+      }),
+    );
+    const reportRaw = await readFile(result.reportPath!, "utf8");
+    assert.equal(reportRaw.includes("secret-bearer"), false);
+    assert.equal(reportRaw.includes("Bearer "), false);
+    assert.equal(/https?:\/\//.test(reportRaw), false);
+
+    const refs = JSON.parse(reportRaw).audit.evidenceReferences;
+    assert.match(refs.qcMappingPreviewHash, /^[a-f0-9]{64}$/);
+    assert.match(refs.dryRunReportHash, /^[a-f0-9]{64}$/);
+    assert.match(refs.visualSidecarReportHash, /^[a-f0-9]{64}$/);
+    assert.notEqual(refs.qcMappingPreviewHash, "5".repeat(64));
+    assert.notEqual(refs.dryRunReportHash, "6".repeat(64));
+    assert.notEqual(refs.visualSidecarReportHash, "7".repeat(64));
+    assert.deepEqual(refs.visualSidecarEvidenceHashes, []);
+    assert.equal("generationOutputHash" in refs, false);
+    assert.equal(refs.reconciledIntentIrHash, "4".repeat(64));
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

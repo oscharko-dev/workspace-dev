@@ -85,6 +85,18 @@ test("qc-mapping-profile: invalid path: trailing slash and empty segments", () =
   assert.ok(codesOf(r2).includes("invalid_target_folder_path"));
 });
 
+test("qc-mapping-profile: invalid path: dot-only segments", () => {
+  for (const targetFolderPath of [
+    "/Subject/Imported/../Other",
+    "/Subject/Imported/.",
+  ]) {
+    const profile = cloneOpenTextAlmDefaultMappingProfile();
+    profile.targetFolderPath = targetFolderPath;
+    const result = validateQcMappingProfile({ profile });
+    assert.ok(codesOf(result).includes("invalid_target_folder_path"));
+  }
+});
+
 test("qc-mapping-profile: provider mismatch produces a single error", () => {
   const profile = cloneOpenTextAlmDefaultMappingProfile();
   profile.provider = "xray";

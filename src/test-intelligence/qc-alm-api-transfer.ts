@@ -82,6 +82,7 @@ import {
   type TestIntelligenceTransferPrincipal,
   type TransferAuditMetadata,
   type TransferEntityRecord,
+  type TransferEvidenceReferences,
   type TransferFailureClass,
   type TransferRefusalCode,
   type TransferReportArtifact,
@@ -102,6 +103,7 @@ const ADAPTER_PROVIDER: QcAdapterProvider = "opentext_alm";
 const REPORT_ID_LENGTH = 16;
 const MAX_FAILURE_DETAIL_LENGTH = 240;
 const URL_DETAIL_PATTERN = /\b[a-z][a-z0-9+.-]*:\/\/[^\s]+/gi;
+const SHA256_HEX_PATTERN = /^[a-f0-9]{64}$/;
 const FOLDER_PATH_REGEX = /^\/Subject(?:\/[A-Za-z0-9._-][A-Za-z0-9._ -]*)+$/;
 const TRANSFER_REFUSAL_CODES: ReadonlySet<TransferRefusalCode> = new Set(
   ALLOWED_TRANSFER_REFUSAL_CODES,
@@ -274,6 +276,8 @@ export interface RunOpenTextAlmApiTransferInput {
   reviewEventSink?: TransferReviewEventSink;
   /** Optional opaque actor handle persisted on the audit metadata. */
   actor?: string;
+  /** Optional hash-only upstream artifact references for audit lineage. */
+  evidenceReferences?: Partial<TransferEvidenceReferences>;
 }
 
 /** Adapter for appending review events without depending on `ReviewStore`. */
@@ -468,6 +472,59 @@ const sanitizeFolderEvidence = (raw: string): string => {
 const hasBlockingPolicyDecision = (decision: TestCasePolicyDecision): boolean =>
   decision === "blocked";
 
+const isSha256Hex = (value: unknown): value is string =>
+  typeof value === "string" && SHA256_HEX_PATTERN.test(value);
+
+const hasDotOnlyFolderSegment = (path: string): boolean =>
+  path.split("/").some((segment) => segment === "." || segment === "..");
+
+const isValidFolderPath = (path: string): boolean =>
+  FOLDER_PATH_REGEX.test(path) && !hasDotOnlyFolderSegment(path);
+
+const isFolderPathUnderRoot = (path: string, root: string): boolean =>
+  path === root || path.startsWith(`${root}/`);
+
+const dryRunPayloadsMatchPreview = (
+  dryRun: DryRunReportArtifact,
+  preview: QcMappingPreviewArtifact,
+): boolean => {
+  if (dryRun.plannedPayloads.length !== preview.entries.length) return false;
+  const plannedById = new Map(
+    dryRun.plannedPayloads.map((payload) => [payload.testCaseId, payload]),
+  );
+  for (const entry of preview.entries) {
+    const planned = plannedById.get(entry.testCaseId);
+    if (!planned) return false;
+    if (planned.externalIdCandidate !== entry.externalIdCandidate) return false;
+    if (planned.targetFolderPath !== entry.targetFolderPath) return false;
+    if (planned.designStepCount !== entry.designSteps.length) return false;
+  }
+  return true;
+};
+
+const visualEvidenceHashForEntry = (
+  entry: QcMappingPreviewEntry,
+  visual: VisualSidecarValidationReport,
+): string | undefined => {
+  const screenIds = new Set(entry.sourceTraceRefs.map((ref) => ref.screenId));
+  if (screenIds.size === 0) return undefined;
+  const matching = visual.records
+    .filter((record) => screenIds.has(record.screenId))
+    .slice()
+    .sort((a, b) => a.screenId.localeCompare(b.screenId));
+  if (matching.length === 0) return undefined;
+  const provenanceSeed = matching
+    .map(
+      (record) =>
+        `${record.screenId}|${record.deployment}|${record.outcomes
+          .slice()
+          .sort()
+          .join(",")}|${record.meanConfidence.toFixed(6)}`,
+    )
+    .join("\n");
+  return sha256Hex(provenanceSeed);
+};
+
 /* ------------------------------------------------------------------ */
 /*  Orchestrator                                                        */
 /* ------------------------------------------------------------------ */
@@ -478,6 +535,7 @@ const buildAuditMetadata = (input: {
   fourEyesReasons: FourEyesEnforcementReason[];
   dryRunReportId: string;
   actor: string | undefined;
+  evidenceReferences: TransferEvidenceReferences;
 }): TransferAuditMetadata => ({
   actor:
     input.actor && input.actor.length > 0 ? input.actor : input.authPrincipalId,
@@ -485,6 +543,7 @@ const buildAuditMetadata = (input: {
   bearerTokenAccepted: input.bearerTokenAccepted,
   fourEyesReasons: sortedUnique(input.fourEyesReasons),
   dryRunReportId: input.dryRunReportId,
+  evidenceReferences: input.evidenceReferences,
 });
 
 const buildEmptyReport = (
@@ -530,12 +589,37 @@ const buildEmptyCreatedEntities = (
 const callFolderResolver = async (
   resolver: QcFolderResolver,
   profile: QcMappingProfile,
+  targetFolderPath: string,
 ): Promise<QcFolderResolverResult> => {
   const out = resolver.resolve({
-    profile,
-    targetFolderPath: profile.targetFolderPath,
+    profile: { ...profile, targetFolderPath },
+    targetFolderPath,
   });
   return out instanceof Promise ? await out : out;
+};
+
+const buildEvidenceReferences = (
+  input: RunOpenTextAlmApiTransferInput,
+): TransferEvidenceReferences => {
+  const overrides = input.evidenceReferences;
+  const visualSidecarEvidenceHashes = sortedUnique([
+    ...input.preview.entries
+      .map((entry) => entry.visualProvenance?.evidenceHash)
+      .filter(isSha256Hex),
+  ]);
+  const out: TransferEvidenceReferences = {
+    qcMappingPreviewHash: sha256Hex(input.preview),
+    dryRunReportHash: input.dryRun ? sha256Hex(input.dryRun) : "",
+    visualSidecarReportHash: input.visual ? sha256Hex(input.visual) : "",
+    visualSidecarEvidenceHashes,
+  };
+  if (isSha256Hex(overrides?.generationOutputHash)) {
+    out.generationOutputHash = overrides.generationOutputHash;
+  }
+  if (isSha256Hex(overrides?.reconciledIntentIrHash)) {
+    out.reconciledIntentIrHash = overrides.reconciledIntentIrHash;
+  }
+  return out;
 };
 
 const collectGateRefusals = (
@@ -563,8 +647,19 @@ const collectGateRefusals = (
   if (input.profile.provider !== ADAPTER_PROVIDER) {
     refusalCodes.add("provider_mismatch");
   }
-  if (!FOLDER_PATH_REGEX.test(input.profile.targetFolderPath)) {
+  if (!isValidFolderPath(input.profile.targetFolderPath)) {
     refusalCodes.add("folder_resolution_failed");
+  }
+  for (const entry of input.preview.entries) {
+    if (
+      !isValidFolderPath(entry.targetFolderPath) ||
+      !isFolderPathUnderRoot(
+        entry.targetFolderPath,
+        input.profile.targetFolderPath,
+      )
+    ) {
+      refusalCodes.add("folder_resolution_failed");
+    }
   }
 
   const dryRun = input.dryRun;
@@ -574,12 +669,29 @@ const collectGateRefusals = (
   } else {
     dryRunReportId = dryRun.reportId;
     if (
+      dryRun.jobId !== input.jobId ||
+      dryRun.mode !== "dry_run" ||
+      dryRun.adapter.provider !== ADAPTER_PROVIDER ||
+      input.preview.profileId !== input.profile.id ||
+      input.preview.profileVersion !== input.profile.version ||
       dryRun.profile.id !== input.profile.id ||
       dryRun.profile.version !== input.profile.version
     ) {
       refusalCodes.add("dry_run_missing");
     }
     if (dryRun.refused) refusalCodes.add("dry_run_refused");
+    if (
+      dryRun.folderResolution.state !== "resolved" &&
+      dryRun.folderResolution.state !== "simulated"
+    ) {
+      refusalCodes.add("dry_run_refused");
+    }
+    if (dryRun.completeness.incompleteCases > 0) {
+      refusalCodes.add("dry_run_refused");
+    }
+    if (!dryRunPayloadsMatchPreview(dryRun, input.preview)) {
+      refusalCodes.add("dry_run_refused");
+    }
   }
 
   if (input.preview.entries.length === 0) {
@@ -591,7 +703,8 @@ const collectGateRefusals = (
   let unapprovedPresent = false;
   let policyBlockedPresent = false;
   let schemaInvalidPresent = false;
-  let visualBlockedPresent = false;
+  let visualSidecarBlockedPresent = false;
+  let visualEvidenceMissingPresent = false;
   let fourEyesPendingPresent = false;
   let inconsistent = false;
 
@@ -607,6 +720,13 @@ const collectGateRefusals = (
     }
     if (!entry.exportable) {
       schemaInvalidPresent = true;
+      continue;
+    }
+    if (
+      entry.visualProvenance &&
+      !isSha256Hex(entry.visualProvenance.evidenceHash)
+    ) {
+      visualEvidenceMissingPresent = true;
       continue;
     }
     if (isFourEyesPending(snapshot)) {
@@ -627,6 +747,12 @@ const collectGateRefusals = (
   }
 
   if (input.visual) {
+    if (input.visual.blocked) {
+      visualSidecarBlockedPresent = true;
+    }
+    if (input.visual.jobId !== input.jobId) {
+      visualEvidenceMissingPresent = true;
+    }
     const visualScreens = collectVisualScreenIds(input.visual);
     for (const entry of input.preview.entries) {
       const snapshot = snapshotIndex.get(entry.testCaseId);
@@ -635,21 +761,36 @@ const collectGateRefusals = (
       const referenced = entry.sourceTraceRefs.filter((ref) =>
         visualScreens.has(ref.screenId),
       );
-      if (entry.sourceTraceRefs.length === 0) continue;
+      if (entry.sourceTraceRefs.length === 0) {
+        if (entry.visualProvenance) {
+          visualEvidenceMissingPresent = true;
+        }
+        continue;
+      }
       if (referenced.length === 0 && entry.visualProvenance) {
-        visualBlockedPresent = true;
+        visualEvidenceMissingPresent = true;
+      }
+      if (
+        entry.visualProvenance &&
+        visualEvidenceHashForEntry(entry, input.visual) !==
+          entry.visualProvenance.evidenceHash
+      ) {
+        visualEvidenceMissingPresent = true;
       }
     }
   } else {
     for (const entry of input.preview.entries) {
       if (entry.visualProvenance) {
-        visualBlockedPresent = true;
+        visualEvidenceMissingPresent = true;
         break;
       }
     }
   }
 
-  if (visualBlockedPresent) refusalCodes.add("visual_sidecar_evidence_missing");
+  if (visualSidecarBlockedPresent) refusalCodes.add("visual_sidecar_blocked");
+  if (visualEvidenceMissingPresent) {
+    refusalCodes.add("visual_sidecar_evidence_missing");
+  }
   if (unapprovedPresent) refusalCodes.add("unapproved_test_cases_present");
   if (policyBlockedPresent) refusalCodes.add("policy_blocked_cases_present");
   if (schemaInvalidPresent) refusalCodes.add("schema_invalid_cases_present");
@@ -658,7 +799,11 @@ const collectGateRefusals = (
   if (
     approvedCount === 0 &&
     !refusalCodes.has("no_mapped_test_cases") &&
-    !refusalCodes.has("review_state_inconsistent")
+    !refusalCodes.has("review_state_inconsistent") &&
+    !unapprovedPresent &&
+    !policyBlockedPresent &&
+    !schemaInvalidPresent &&
+    !fourEyesPendingPresent
   ) {
     refusalCodes.add("no_approved_test_cases");
   }
@@ -699,7 +844,11 @@ const sortPreviewEntries = (
       );
     })
     .slice()
-    .sort((a, b) => a.testCaseId.localeCompare(b.testCaseId));
+    .sort(
+      (a, b) =>
+        a.targetFolderPath.localeCompare(b.targetFolderPath) ||
+        a.testCaseId.localeCompare(b.testCaseId),
+    );
 
 const sortedDesignSteps = (
   entry: QcMappingPreviewEntry,
@@ -912,6 +1061,7 @@ export const runOpenTextAlmApiTransfer = async (
     fourEyesReasons: Array.from(fourEyesReasons),
     dryRunReportId,
     actor: input.actor,
+    evidenceReferences: buildEvidenceReferences(input),
   });
 
   if (refusalCodes.size > 0) {
@@ -939,60 +1089,47 @@ export const runOpenTextAlmApiTransfer = async (
   const snapshotIndex = buildSnapshotIndex(input.reviewSnapshot);
   const eligible = sortPreviewEntries(input.preview, snapshotIndex);
 
-  // Resolve folder via either the optional folder resolver (for tests)
-  // or the API client. Failures degrade to a fail-closed refusal.
-  let folderHandle: QcApiFolderHandle;
+  // Resolve every distinct target folder before creating any test entity.
+  // This preserves the external-id + folder-path idempotency boundary and
+  // keeps folder failures fail-closed with no partial tenant writes.
+  const folderByPath = new Map<string, QcApiFolderHandle>();
   try {
-    if (input.folderResolver) {
-      const resolverOut = await callFolderResolver(
-        input.folderResolver,
-        input.profile,
-      );
-      if (
-        resolverOut.state !== "resolved" &&
-        resolverOut.state !== "simulated"
-      ) {
-        // The resolver's evidence string is intentionally NOT persisted
-        // — it can carry arbitrary text from operator code paths and the
-        // sanitiser is the only thing keeping URLs/secrets out. The
-        // refusal code itself is sufficient for the operator UI to
-        // surface a remediation hint.
-        void sanitizeFolderEvidence(resolverOut.evidence);
-        const failureRefusal = new Set<TransferRefusalCode>([
-          "folder_resolution_failed",
-        ]);
-        const report = buildEmptyReport(
-          input,
-          reportId,
-          Array.from(failureRefusal),
-          audit,
+    const targetFolderPaths = sortedUnique(
+      eligible.map((entry) => entry.targetFolderPath),
+    );
+    for (const targetFolderPath of targetFolderPaths) {
+      if (input.folderResolver) {
+        const resolverOut = await callFolderResolver(
+          input.folderResolver,
+          input.profile,
+          targetFolderPath,
         );
-        report.records = [];
-        const createdEntities = buildEmptyCreatedEntities(input);
-        const persisted = await persistArtifacts(
-          input.artifactRoot,
-          report,
-          createdEntities,
-        );
-        return {
-          report,
-          createdEntities,
-          ...persisted,
-          refused: true,
-          refusalCodes: refusalSummary(["folder_resolution_failed"]),
-        };
+        if (
+          resolverOut.state !== "resolved" &&
+          resolverOut.state !== "simulated"
+        ) {
+          void sanitizeFolderEvidence(resolverOut.evidence);
+          throw new QcApiTransferError(
+            "validation_rejected",
+            "folder_resolution_failed",
+          );
+        }
+        const folderSeed = `${input.profile.id}|${input.profile.version}|${targetFolderPath}`;
+        folderByPath.set(targetFolderPath, {
+          qcFolderId: `simulated:${sha256Hex(folderSeed).slice(0, 16)}`,
+          resolvedPath: targetFolderPath,
+        });
+        continue;
       }
-      folderHandle = {
-        qcFolderId: `simulated:${sha256Hex(`${input.profile.id}|${input.profile.version}|${input.profile.targetFolderPath}`).slice(0, 16)}`,
-        resolvedPath: input.profile.targetFolderPath,
-      };
-    } else {
       const out = input.client.resolveFolder({
-        profile: input.profile,
-        targetFolderPath: input.profile.targetFolderPath,
+        profile: { ...input.profile, targetFolderPath },
+        targetFolderPath,
         bearerToken: input.callerBearerToken ?? "",
       });
-      folderHandle = out instanceof Promise ? await out : out;
+      folderByPath.set(
+        targetFolderPath,
+        out instanceof Promise ? await out : out,
+      );
     }
   } catch (error) {
     const failureRefusal = new Set<TransferRefusalCode>([
@@ -1024,6 +1161,12 @@ export const runOpenTextAlmApiTransfer = async (
   const created: QcCreatedEntity[] = [];
 
   for (const entry of eligible) {
+    const folderHandle = folderByPath.get(entry.targetFolderPath);
+    if (!folderHandle) {
+      throw new Error(
+        `runOpenTextAlmApiTransfer: missing resolved folder for ${entry.targetFolderPath}`,
+      );
+    }
     const recordedAt = input.clock.now();
     const attempt = await attemptTransfer(
       input.client,
@@ -1144,7 +1287,7 @@ export interface TransferRollbackGuidance {
   jobId: string;
   reportId: string;
   generatedAt: string;
-  /** Forward-looking: per-entity removal hints for `created` outcomes. */
+  /** Forward-looking: per-entity removal hints for created or partial entities. */
   removalHints: TransferRollbackHint[];
   /** Per-entity audit hints for `skipped_duplicate` outcomes. */
   auditHints: TransferRollbackHint[];
@@ -1162,7 +1305,7 @@ export interface TransferRollbackHint {
 const TEST_ENVIRONMENT_ROLLBACK_NOTES: readonly string[] = [
   "Only run rollback against a non-production OpenText ALM tenant.",
   "Use the operator runbook to delete entities by qcEntityId; do NOT delete by external-id alone.",
-  "After deletion, re-run the transfer pipeline so the review events update from `transferred` back to `exported`.",
+  "After deletion, preserve the transfer report and append an operator reconciliation note through the review/audit system.",
   "Verify the audit log on the tenant records the operator that authorised the rollback.",
 ];
 
@@ -1176,7 +1319,11 @@ export const buildTransferRollbackGuidance = (
   report: TransferReportArtifact,
 ): TransferRollbackGuidance => {
   const removalHints: TransferRollbackHint[] = report.records
-    .filter((r) => r.outcome === "created")
+    .filter(
+      (r) =>
+        r.outcome === "created" ||
+        (r.outcome === "failed" && r.qcEntityId.length > 0),
+    )
     .map((r) => ({
       testCaseId: r.testCaseId,
       externalIdCandidate: r.externalIdCandidate,
