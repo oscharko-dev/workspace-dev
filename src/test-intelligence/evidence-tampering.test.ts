@@ -1,5 +1,5 @@
 /**
- * Evidence integrity tests (Issue #1369 Part B).
+ * Evidence integrity tests (Issue #1369 Part B + Issue #1410 hardening).
  *
  * Covers:
  *   - Round-trip success: build + write + verify returns ok
@@ -8,7 +8,9 @@
  *   - Byte-length resize (truncate) is detected
  *   - Manifest-mutation (modelDeployments field) is detected
  *   - rawScreenshotsIncluded mutation detectability
- *   - Filename injection: null byte, directory traversal, >255 bytes
+ *   - Filename injection: null byte, every C0 control + DEL, lone UTF-16
+ *     surrogates, directory traversal, >255 bytes, plus a property-based
+ *     fuzz over the unsafe code-point range (Issue #1410)
  *   - Hash collision-resistance proxy: identical bytes → identical hashes
  *   - rejectUnexpected catches an extra file in the run dir
  *   - Missing artifact (deleted post-write) is detected
@@ -20,6 +22,8 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+
+import fc from "fast-check";
 
 import {
   CONTRACT_VERSION,
@@ -481,6 +485,274 @@ test("evidence-tampering: filename with null byte is refused", () => {
     /control characters/,
     "null byte in filename must be rejected before filesystem writes",
   );
+});
+
+// Issue #1410 — every C0 control + DEL must be rejected at the contract
+// boundary so the failure mode is deterministic and platform-independent
+// (filesystems on Windows/Linux/macOS disagree about which of these the
+// kernel itself rejects). The test uses the exhaustive 0x00..=0x1F + 0x7F
+// set rather than a sample, so the property holds for every code unit.
+test("evidence-tampering: every C0 control character (0x00–0x1F) + DEL (0x7F) in filename is refused", () => {
+  const codes: number[] = [];
+  for (let c = 0x00; c <= 0x1f; c += 1) codes.push(c);
+  codes.push(0x7f);
+
+  for (const code of codes) {
+    const ch = String.fromCharCode(code);
+    assert.throws(
+      () =>
+        buildWave1PocEvidenceManifest(
+          baseInput([
+            {
+              filename: `valid${ch}inject.json`,
+              bytes: utf8("x"),
+              category: "validation",
+            },
+          ]),
+        ),
+      /control characters/,
+      `code 0x${code.toString(16).padStart(2, "0")} must be rejected as a control character`,
+    );
+  }
+});
+
+// Issue #1410 — common whitespace controls (tab, LF, CR, VT, FF) get a
+// dedicated test because they are the most likely vector when an attacker
+// crafts a filename via JSON injection or copy/paste from a misencoded
+// source.
+test("evidence-tampering: whitespace control chars (tab, LF, CR, VT, FF) in filename are refused", () => {
+  for (const ch of ["\t", "\n", "\r", "\v", "\f"]) {
+    assert.throws(
+      () =>
+        buildWave1PocEvidenceManifest(
+          baseInput([
+            {
+              filename: `name${ch}.json`,
+              bytes: utf8("x"),
+              category: "validation",
+            },
+          ]),
+        ),
+      /control characters/,
+      `whitespace control ${JSON.stringify(ch)} must be rejected`,
+    );
+  }
+});
+
+// Issue #1410 — lone UTF-16 surrogates encode invalid Unicode and produce
+// replacement characters or throw when re-encoded as UTF-8 by external
+// systems (filesystems, JSON consumers, downstream auditors). Reject them
+// at the contract boundary.
+test("evidence-tampering: filename with a lone high surrogate is refused", () => {
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest(
+        baseInput([
+          {
+            filename: `valid${String.fromCharCode(0xd800)}inject.json`,
+            bytes: utf8("x"),
+            category: "validation",
+          },
+        ]),
+      ),
+    /lone UTF-16 surrogate/,
+    "lone high surrogate must be rejected",
+  );
+});
+
+test("evidence-tampering: filename with a lone low surrogate is refused", () => {
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest(
+        baseInput([
+          {
+            filename: `valid${String.fromCharCode(0xdc00)}inject.json`,
+            bytes: utf8("x"),
+            category: "validation",
+          },
+        ]),
+      ),
+    /lone UTF-16 surrogate/,
+    "lone low surrogate must be rejected",
+  );
+});
+
+test("evidence-tampering: filename ending with an unpaired high surrogate is refused", () => {
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest(
+        baseInput([
+          {
+            filename: `tail${String.fromCharCode(0xd800)}`,
+            bytes: utf8("x"),
+            category: "validation",
+          },
+        ]),
+      ),
+    /lone UTF-16 surrogate/,
+    "trailing high surrogate must be rejected (no following low surrogate)",
+  );
+});
+
+test("evidence-tampering: filename with a high surrogate followed by a non-low-surrogate is refused", () => {
+  // High surrogate followed by an ordinary BMP character (not a low
+  // surrogate) is invalid.
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest(
+        baseInput([
+          {
+            filename: `mid${String.fromCharCode(0xd800)}A.json`,
+            bytes: utf8("x"),
+            category: "validation",
+          },
+        ]),
+      ),
+    /lone UTF-16 surrogate/,
+    "high surrogate not followed by a low surrogate must be rejected",
+  );
+});
+
+// Counter-example: a properly-paired surrogate (an astral-plane character
+// such as an emoji) is *not* lone and must be accepted, so the validator
+// does not over-reject legitimate Unicode filenames.
+test("evidence-tampering: filename with a valid astral character (paired surrogates) is accepted", () => {
+  const manifest = buildWave1PocEvidenceManifest(
+    baseInput([
+      // U+1F512 LOCK — encoded as the surrogate pair D83D DD12. Length 2 in
+      // UTF-16 code units; valid Unicode.
+      {
+        filename: "lock-\u{1F512}.json",
+        bytes: utf8("x"),
+        category: "validation",
+      },
+    ]),
+  );
+  assert.equal(manifest.artifacts.length, 1);
+  assert.equal(manifest.artifacts[0]?.filename, "lock-\u{1F512}.json");
+});
+
+// Issue #1410 — fast-check property: for any code unit in the unsafe
+// ranges (C0 controls, DEL, lone surrogates), splicing it into an
+// otherwise-valid filename must cause a RangeError. The randomly-picked
+// position exercises start, middle, and end placements without enumerating
+// them by hand.
+test("evidence-tampering: property — any unsafe code unit in any position is refused", () => {
+  fc.assert(
+    fc.property(
+      fc.oneof(
+        fc.integer({ min: 0x00, max: 0x1f }),
+        fc.constant(0x7f),
+        fc.integer({ min: 0xd800, max: 0xdfff }),
+      ),
+      fc.nat({ max: 16 }),
+      (code, rawPos) => {
+        const base = "alpha-beta.json";
+        const pos = rawPos % (base.length + 1);
+        const filename =
+          base.slice(0, pos) + String.fromCharCode(code) + base.slice(pos);
+        try {
+          buildWave1PocEvidenceManifest(
+            baseInput([{ filename, bytes: utf8("x"), category: "validation" }]),
+          );
+        } catch (err) {
+          if (!(err instanceof RangeError)) return false;
+          return /control characters|lone UTF-16 surrogate/.test(err.message);
+        }
+        return false;
+      },
+    ),
+    { numRuns: 256 },
+  );
+});
+
+// Issue #1410 — fail-closed defence in depth: a manifest in which the
+// builder check has been bypassed (e.g. an attacker rewrote the JSON file
+// on disk to inject a control-char filename) must still be rejected by
+// the verifier path so the integrity report is fail-closed.
+test("evidence-tampering: verifier rejects manifests whose artifact entries carry unsafe filenames", async () => {
+  await withDir(async (dir) => {
+    const content = '{"v":1}';
+    await writeArtifact(dir, "alpha.json", content);
+    const validManifest = buildWave1PocEvidenceManifest(
+      baseInput([
+        {
+          filename: "alpha.json",
+          bytes: utf8(content),
+          category: "validation",
+        },
+      ]),
+    );
+
+    // Forge a sibling manifest whose artifact filename contains a null
+    // byte. Because the constructor refuses this input, build a plain
+    // object that mirrors the schema and cast it through `unknown`.
+    const tampered = {
+      ...validManifest,
+      artifacts: [
+        {
+          ...validManifest.artifacts[0],
+          filename: "alpha\x00.json",
+        },
+      ],
+    } as unknown as Wave1PocEvidenceManifest;
+
+    const result = await verifyWave1PocEvidenceManifest({
+      manifest: tampered,
+      artifactsDir: dir,
+    });
+
+    assert.equal(
+      result.ok,
+      false,
+      "manifest carrying a control-char filename must fail verification",
+    );
+    assert.ok(
+      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      "tampered filename must be reported as a manifest mutation",
+    );
+  });
+});
+
+test("evidence-tampering: verifier rejects manifests whose artifact entries carry lone surrogates", async () => {
+  await withDir(async (dir) => {
+    const content = '{"v":1}';
+    await writeArtifact(dir, "alpha.json", content);
+    const validManifest = buildWave1PocEvidenceManifest(
+      baseInput([
+        {
+          filename: "alpha.json",
+          bytes: utf8(content),
+          category: "validation",
+        },
+      ]),
+    );
+
+    const tampered = {
+      ...validManifest,
+      artifacts: [
+        {
+          ...validManifest.artifacts[0],
+          filename: `alpha${String.fromCharCode(0xd800)}.json`,
+        },
+      ],
+    } as unknown as Wave1PocEvidenceManifest;
+
+    const result = await verifyWave1PocEvidenceManifest({
+      manifest: tampered,
+      artifactsDir: dir,
+    });
+
+    assert.equal(
+      result.ok,
+      false,
+      "manifest carrying a lone surrogate filename must fail verification",
+    );
+    assert.ok(
+      result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
+      "lone-surrogate filename must be reported as a manifest mutation",
+    );
+  });
 });
 
 test("evidence-tampering: filename with directory traversal (../) is refused", () => {

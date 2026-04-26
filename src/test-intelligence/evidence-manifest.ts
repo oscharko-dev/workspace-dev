@@ -62,10 +62,40 @@ const TEST_GENERATION_DEPLOYMENTS = new Set([
   "mock",
 ]);
 
+const HIGH_SURROGATE_START = 0xd800;
+const HIGH_SURROGATE_END = 0xdbff;
+const LOW_SURROGATE_START = 0xdc00;
+const LOW_SURROGATE_END = 0xdfff;
+
 const hasControlCharacter = (value: string): boolean => {
   for (let i = 0; i < value.length; i += 1) {
     const code = value.charCodeAt(i);
     if (code <= 0x1f || code === 0x7f) return true;
+  }
+  return false;
+};
+
+/**
+ * Detect lone UTF-16 surrogates. A high surrogate (0xD800–0xDBFF) is
+ * lone unless immediately followed by a low surrogate (0xDC00–0xDFFF);
+ * a low surrogate is always lone if it is not preceded by a high
+ * surrogate. JS strings are UTF-16 code-unit sequences, so lone
+ * surrogates encode invalid Unicode and will produce replacement
+ * characters or throw when re-encoded as UTF-8 by external systems.
+ * They are rejected at the contract boundary so the failure mode is
+ * deterministic and platform-independent.
+ */
+const hasLoneSurrogate = (value: string): boolean => {
+  for (let i = 0; i < value.length; i += 1) {
+    const code = value.charCodeAt(i);
+    if (code >= HIGH_SURROGATE_START && code <= HIGH_SURROGATE_END) {
+      if (i + 1 >= value.length) return true;
+      const next = value.charCodeAt(i + 1);
+      if (next < LOW_SURROGATE_START || next > LOW_SURROGATE_END) return true;
+      i += 1;
+      continue;
+    }
+    if (code >= LOW_SURROGATE_START && code <= LOW_SURROGATE_END) return true;
   }
   return false;
 };
@@ -87,6 +117,7 @@ const validateArtifactPath = (
         | "absolute"
         | "backslash"
         | "control_characters"
+        | "lone_surrogate"
         | "exceeds_total_byte_length"
         | "path_traversal"
         | "segment_exceeds_byte_length";
@@ -96,6 +127,9 @@ const validateArtifactPath = (
   if (value.includes("\\")) return { ok: false, reason: "backslash" };
   if (hasControlCharacter(value)) {
     return { ok: false, reason: "control_characters" };
+  }
+  if (hasLoneSurrogate(value)) {
+    return { ok: false, reason: "lone_surrogate" };
   }
   if (new TextEncoder().encode(value).byteLength > 512) {
     return { ok: false, reason: "exceeds_total_byte_length" };
@@ -120,6 +154,7 @@ const REASON_DIAGNOSTIC: Record<
   absolute: "filename must be a relative path, not absolute",
   backslash: "filename contains backslash (must be POSIX-style)",
   control_characters: "filename contains control characters",
+  lone_surrogate: "filename contains a lone UTF-16 surrogate (invalid Unicode)",
   exceeds_total_byte_length: "filename exceeds 512 bytes",
   path_traversal:
     "filename contains path traversal segment (`.`, `..`, or empty)",
