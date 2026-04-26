@@ -6554,6 +6554,54 @@ export interface TraceabilityMatrix {
 }
 
 /**
+ * Jira capability probe result.
+ */
+export interface JiraCapabilityProbe {
+  version: string;
+  deploymentType: "Cloud" | "Server" | "DataCenter" | "unknown";
+  adfSupported: boolean;
+}
+
+/**
+ * Client configuration for the Jira REST gateway (Wave 4.C).
+ */
+export interface JiraGatewayConfig {
+  baseUrl: string;
+  auth:
+    | { kind: "bearer"; token: string }
+    | { kind: "basic"; email: string; apiToken: string }
+    | { kind: "oauth2_3lo"; accessToken: string };
+  userAgent: string;
+  maxWallClockMs?: number;
+  maxRetries?: number;
+  maxResponseBytes?: number;
+}
+
+/**
+ * Outbound fetch request shape for the Jira gateway.
+ */
+export interface JiraFetchRequest {
+  query:
+    | { kind: "jql"; jql: string; maxResults: number }
+    | { kind: "issueKeys"; issueKeys: string[] };
+  expand?: ReadonlyArray<"renderedFields" | "names" | "schema">;
+  linkExpansionDepth?: 0 | 1 | 2;
+  fieldSelection?: Partial<JiraFieldSelectionProfile>;
+  maxWallClockMs?: number;
+}
+
+/**
+ * Result returned by the Jira gateway.
+ */
+export interface JiraFetchResult {
+  issues: JiraIssueIr[];
+  capability: JiraCapabilityProbe;
+  responseHash: string;
+  retryable: boolean;
+  attempts: number;
+}
+
+/**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.

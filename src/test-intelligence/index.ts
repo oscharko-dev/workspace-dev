@@ -529,3 +529,19 @@ export {
   type TransferRollbackGuidance,
   type TransferRollbackHint,
 } from "./qc-alm-api-transfer.js";
+export {
+  createJiraGatewayClient,
+  type JiraGatewayClient,
+  type JiraGatewayRuntime,
+} from "./jira-gateway-client.js";
+export {
+  createMockJiraGatewayClient,
+  type CreateMockJiraGatewayClientInput,
+  type MockJiraGatewayClient,
+  type MockJiraResponder,
+} from "./jira-mock-gateway.js";
+export {
+  probeJiraCapability,
+  buildJiraAuthHeaders,
+  type JiraCapabilityProbeResult,
+} from "./jira-capability-probe.js";
