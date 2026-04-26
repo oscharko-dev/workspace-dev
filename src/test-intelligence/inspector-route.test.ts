@@ -117,6 +117,28 @@ describe("parseInspectorTestIntelligenceRoute", () => {
     }
   });
 
+  test("parses /sources/<jobId>/jira-paste as jira_paste_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/sources/job-1/jira-paste",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "jira_paste_source") {
+      assert.equal(result.route.jobId, "job-1");
+    } else {
+      assert.fail("expected jira_paste_source");
+    }
+  });
+
+  test("rejects unknown source ingestion subroutes", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/sources/job-1/unknown",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unknown_subroute");
+    }
+  });
+
   test("rejects path traversal inside testCaseId", () => {
     const result = parseInspectorTestIntelligenceRoute(
       "/workspace/test-intelligence/review/job-1/approve/..",
@@ -178,6 +200,16 @@ describe("isInspectorTestIntelligenceWriteAction", () => {
         kind: "review_action",
         jobId: "job-1",
         action: "note",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for jira_paste_source", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "jira_paste_source",
+        jobId: "job-1",
       }),
       true,
     );

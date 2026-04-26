@@ -279,6 +279,7 @@ Inspector HTTP routes (mounted under `/workspace/test-intelligence`):
 | ------------------------------------------------------------------- | ------ | ------ | ------------------------------------------------------- |
 | `/workspace/test-intelligence/jobs`                                 | GET    | none   | List jobs that have on-disk test-intelligence artifacts |
 | `/workspace/test-intelligence/jobs/<jobId>`                         | GET    | none   | Composite read of the per-job artifact bundle           |
+| `/workspace/test-intelligence/sources/<jobId>/jira-paste`           | POST   | bearer | Ingest a Jira paste as a primary multi-source artifact  |
 | `/workspace/test-intelligence/review/<jobId>/state`                 | GET    | none   | Read review snapshot and event log                      |
 | `/workspace/test-intelligence/review/<jobId>/<action>`              | POST   | bearer | Job-level review transition                             |
 | `/workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>` | POST   | bearer | Per-case review transition                              |
@@ -974,6 +975,46 @@ keys route to `duplicate_jira_paste_collision`. Markdown custom sources expose
 only deterministic hashes (`redactedMarkdownHash` and
 `plainTextDerivativeHash`) plus note/section provenance; raw Markdown remains
 outside the envelope and is never trusted as runtime instructions.
+
+### Jira paste source ingestion
+
+`POST /workspace/test-intelligence/sources/<jobId>/jira-paste` is the
+paste-only Jira ingestion path for restricted and air-gapped environments. It
+is available only when the parent test-intelligence gate and the nested
+multi-source gate are both enabled, and it follows the same JSON
+same-origin/write and bearer-token governance checks as review writes. When the
+bearer token is unconfigured the route fails closed with `503`; when a token is
+present but mismatched it returns `401`.
+
+Request body:
+
+```json
+{
+  "format": "auto",
+  "body": "Key: PAY-1434\nSummary: Paste-only payment approval\nStatus: Open"
+}
+```
+
+`format` may be `auto`, `adf_json`, `plain_text`, or `markdown`. `auto`
+deterministically detects top-level ADF JSON, markdown markers, or plain text.
+Pastes are capped at 256 KiB before parsing and rejected when they contain
+executable HTML/JavaScript markers such as `<script`, `javascript:`, or inline
+`on*=` attributes. Provenance uses only the matched server-side bearer
+principal; client-supplied author fields are ignored for auditability.
+
+Successful ingestion writes only minimized canonical artifacts under
+`<artifactRoot>/<jobId>/sources/<sourceId>/`:
+
+- `jira-issue-ir.json` — the existing canonical Jira IR, with the IR timestamp
+  kept deterministic for REST/paste replay equivalence.
+- `paste-provenance.json` — paste session UUID, authenticated author handle,
+  server capture timestamp, detected format, and SHA-256 of the original paste
+  bytes.
+
+The raw paste body is never persisted. High-risk bearer/API-key shaped strings
+are redacted before IR construction, while the provenance `contentHash` remains
+the hash of the original paste bytes so auditors can prove which paste was
+captured without storing it.
 
 ## 15. Public API references
 

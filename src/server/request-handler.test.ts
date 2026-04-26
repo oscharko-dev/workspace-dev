@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import {
   mkdtemp,
   mkdir,
+  readFile,
   readdir,
   rm,
   symlink,
@@ -28,6 +29,7 @@ import type {
 import {
   TEST_INTELLIGENCE_ENV,
   TEST_INTELLIGENCE_MULTISOURCE_ENV,
+  type TestIntelligenceReviewPrincipal,
 } from "../contracts/index.js";
 
 const pasteFixtureRoot = path.resolve(
@@ -192,6 +194,7 @@ async function createRequestHandlerApp({
   testIntelligenceEnabled,
   testIntelligenceMultiSourceEnabled,
   testIntelligenceReviewBearerToken,
+  testIntelligenceReviewPrincipals,
   testIntelligenceArtifactRoot,
   workspaceRoot,
   outputRoot,
@@ -205,6 +208,7 @@ async function createRequestHandlerApp({
   testIntelligenceEnabled?: boolean;
   testIntelligenceMultiSourceEnabled?: boolean;
   testIntelligenceReviewBearerToken?: string;
+  testIntelligenceReviewPrincipals?: readonly TestIntelligenceReviewPrincipal[];
   testIntelligenceArtifactRoot?: string;
   workspaceRoot?: string;
   outputRoot?: string;
@@ -242,6 +246,9 @@ async function createRequestHandlerApp({
       ...(testIntelligenceReviewBearerToken === undefined
         ? {}
         : { testIntelligenceReviewBearerToken }),
+      ...(testIntelligenceReviewPrincipals === undefined
+        ? {}
+        : { testIntelligenceReviewPrincipals }),
       ...(testIntelligenceArtifactRoot === undefined
         ? {}
         : { testIntelligenceArtifactRoot }),
@@ -7404,6 +7411,393 @@ test("test-intelligence: GET /workspace keeps multi-source disabled unless every
         const body = response.json<Record<string, unknown>>();
         assert.equal(body.testIntelligenceEnabled, true);
         assert.equal(body.testIntelligenceMultiSourceEnabled, false);
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source persists IR and provenance", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-paste-"));
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader(),
+          payload: {
+            format: "plain_text",
+            authorHandle: "alice",
+            body: [
+              "Key: PAY-1434",
+              "Summary: Paste-only payment approval",
+              "Issue Type: Story",
+              "Status: In Progress",
+              "Description: Reviewer pastes Jira content with no network access.",
+            ].join("\n"),
+          },
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<{
+          ok: boolean;
+          sourceId: string;
+          jiraIssueIr: { issueKey: string };
+          provenance: { authorHandle: string; sourceKind: string };
+          sourceEnvelope: { sources: Array<{ kind: string }> };
+          artifacts: { rawPastePersisted: boolean };
+        }>();
+        assert.equal(body.ok, true);
+        assert.equal(body.jiraIssueIr.issueKey, "PAY-1434");
+        assert.equal(body.provenance.authorHandle, "legacy-review-bearer");
+        assert.equal(body.provenance.sourceKind, "jira_paste");
+        assert.equal(body.sourceEnvelope.sources[0]?.kind, "jira_paste");
+        assert.equal(body.artifacts.rawPastePersisted, false);
+
+        const sourceDir = path.join(
+          artifactRoot,
+          "job-paste",
+          "sources",
+          body.sourceId,
+        );
+        const files = await readdir(sourceDir);
+        assert.deepEqual(files.sort(), [
+          "jira-issue-ir.json",
+          "paste-provenance.json",
+        ]);
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source stamps matched review principal", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-principal-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewPrincipals: [
+          { principalId: "alice", bearerToken: "alice-token" },
+          { principalId: "bob", bearerToken: "bob-token" },
+        ],
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader("bob-token"),
+          payload: {
+            format: "plain_text",
+            authorHandle: "mallory",
+            body: [
+              "Key: PAY-1434",
+              "Summary: Paste-only payment approval",
+              "Issue Type: Story",
+              "Status: In Progress",
+              "Description: Principal token determines provenance.",
+            ].join("\n"),
+          },
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<{
+          provenance: { authorHandle: string; sourceKind: string };
+        }>();
+        assert.equal(body.provenance.authorHandle, "bob");
+        assert.equal(body.provenance.sourceKind, "jira_paste");
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source returns 503 when multi-source gate is off", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv(undefined, async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-paste-gate-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader(),
+          payload: {
+            format: "plain_text",
+            body: "Key: PAY-1434\nSummary: x\nStatus: Open",
+          },
+        });
+        assert.equal(response.statusCode, 503);
+        assert.equal(response.json<Record<string, unknown>>().error, "FEATURE_DISABLED");
+        await assert.rejects(
+          () => readdir(path.join(artifactRoot, "job-paste")),
+          /ENOENT/u,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source follows bearer fail-closed policy", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-paste-auth-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app: noAuthApp, close: closeNoAuth } =
+        await createRequestHandlerApp({
+          testIntelligenceEnabled: true,
+          testIntelligenceMultiSourceEnabled: true,
+          testIntelligenceArtifactRoot: artifactRoot,
+        });
+      try {
+        const response = await noAuthApp.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          payload: {
+            format: "plain_text",
+            body: "Key: PAY-1434\nSummary: x\nStatus: Open",
+          },
+        });
+        assert.equal(response.statusCode, 503);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "AUTHENTICATION_UNAVAILABLE",
+        );
+      } finally {
+        await closeNoAuth();
+      }
+
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader("wrong-token"),
+          payload: {
+            format: "plain_text",
+            body: "Key: PAY-1434\nSummary: x\nStatus: Open",
+          },
+        });
+        assert.equal(response.statusCode, 401);
+        assert.equal(response.json<Record<string, unknown>>().error, "UNAUTHORIZED");
+        assert.match(
+          String(response.headers["www-authenticate"] ?? ""),
+          /Bearer realm="workspace-dev"/u,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source rejects injection without partial artifacts", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-paste-injection-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader(),
+          payload: {
+            format: "markdown",
+            body: [
+              "# PAY-1434",
+              "Summary: injected",
+              "Status: Open",
+              "![x](javascript:alert(1))",
+            ].join("\n"),
+          },
+        });
+        assert.equal(response.statusCode, 400);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "paste_html_injection_refused",
+        );
+        await assert.rejects(
+          () => readdir(path.join(artifactRoot, "job-paste")),
+          /ENOENT/u,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source rejects oversized JSON envelopes before parsing", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-paste-envelope-cap-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader(),
+          payload: {
+            format: "plain_text",
+            body: "Key: PAY-1434\nSummary: x\nStatus: Open",
+            padding: "x".repeat(300 * 1024),
+          },
+        });
+        assert.equal(response.statusCode, 413);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "REQUEST_TOO_LARGE",
+        );
+        await assert.rejects(
+          () => readdir(path.join(artifactRoot, "job-paste")),
+          /ENOENT/u,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source rejects unsupported request fields", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-paste-unknown-field-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader(),
+          payload: {
+            format: "plain_text",
+            body: "Key: PAY-1434\nSummary: x\nStatus: Open",
+            ignored: "not allowed",
+          },
+        });
+        assert.equal(response.statusCode, 400);
+        const body = response.json<{ error: string; issues: Array<{ path: string }> }>();
+        assert.equal(body.error, "INVALID_BODY");
+        assert.equal(body.issues[0]?.path, "ignored");
+        await assert.rejects(
+          () => readdir(path.join(artifactRoot, "job-paste")),
+          /ENOENT/u,
+        );
+      } finally {
+        await close();
+        await rm(tempRoot, { recursive: true, force: true });
+      }
+    });
+  });
+});
+
+test("test-intelligence: POST jira-paste source never persists raw bearer-shaped paste bytes", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    await withTestIntelligenceMultiSourceEnv("1", async () => {
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-jira-paste-secret-"),
+      );
+      const artifactRoot = path.join(tempRoot, "ti");
+      const { app, close } = await createRequestHandlerApp({
+        testIntelligenceEnabled: true,
+        testIntelligenceMultiSourceEnabled: true,
+        testIntelligenceArtifactRoot: artifactRoot,
+        testIntelligenceReviewBearerToken: TI_REVIEW_TOKEN,
+      });
+      try {
+        // pragma: allowlist secret -- synthetic bearer-shaped string for redaction regression
+        const secret = "pasteSecretToken123";
+        const response = await app.inject({
+          method: "POST",
+          url: "/workspace/test-intelligence/sources/job-paste/jira-paste",
+          headers: tiAuthHeader(),
+          payload: {
+            format: "plain_text",
+            body: [
+              "Key: PAY-1434",
+              "Summary: Secret redaction",
+              "Status: Open",
+              `Description: Authorization: Bearer ${secret}`,
+            ].join("\n"),
+          },
+        });
+        assert.equal(response.statusCode, 200);
+        const body = response.json<{ sourceId: string }>();
+        const sourceDir = path.join(
+          artifactRoot,
+          "job-paste",
+          "sources",
+          body.sourceId,
+        );
+        const ir = await readFile(path.join(sourceDir, "jira-issue-ir.json"), "utf8");
+        const provenance = await readFile(
+          path.join(sourceDir, "paste-provenance.json"),
+          "utf8",
+        );
+        assert.equal(ir.includes(secret), false);
+        assert.equal(provenance.includes(secret), false);
       } finally {
         await close();
         await rm(tempRoot, { recursive: true, force: true });
