@@ -31,6 +31,18 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.3.0] - 2026-04-26
+
+### Added (Issue #1411)
+
+- `Wave1PocEvidenceManifest.manifestIntegrity?: { algorithm: "sha256"; hash: string }` — new optional self-attestation field for Wave 1 evidence manifests. New manifests stamp `algorithm: "sha256"` plus the SHA-256 of the canonical manifest JSON with `manifestIntegrity` omitted, so metadata-only rewrites to fields such as `modelDeployments`, `rawScreenshotsIncluded`, `promptHash`, or `policyProfileId` are detected by `verifyWave1PocEvidenceManifest` without requiring artifact-byte changes.
+- `Wave1PocEvidenceVerificationResult.manifestIntegrity?` — structured verification details for the self-attestation check (`algorithm`, `actualHash`, optional `expectedHash`, `ok`). Current-version manifests that omit `manifestIntegrity` fail closed; legacy manifests remain parseable and continue to rely on the existing digest witness / trusted digest path.
+
+### Unchanged (Issue #1411)
+
+- The sibling `wave1-poc-evidence-manifest.sha256` digest witness remains in place and is still used by `verifyWave1PocEvidenceFromDisk`. The self-attestation field is additive defense-in-depth for direct manifest verification, not a replacement for external digest witnesses or signed in-toto attestations.
+- No runtime dependency, telemetry, network call, signer, or external schema library is introduced. Hashing continues to use `node:crypto` and the existing canonical JSON helper.
+
 ## [4.2.0] - 2026-04-26
 
 ### Added (Issue #1380)

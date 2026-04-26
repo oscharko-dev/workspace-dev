@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -19,11 +20,20 @@ import {
   writeWave1PocEvidenceManifest,
   type BuildEvidenceArtifactRecord,
 } from "./evidence-manifest.js";
+import { canonicalJson } from "./content-hash.js";
 
 const ZERO = "0".repeat(64);
 const GENERATED_AT = "2026-04-25T10:00:00.000Z";
 
 const utf8 = (value: string): Uint8Array => new TextEncoder().encode(value);
+
+const manifestIntegrityPayloadDigest = (
+  manifest: ReturnType<typeof buildWave1PocEvidenceManifest>,
+): string => {
+  const payload = { ...manifest };
+  delete payload.manifestIntegrity;
+  return createHash("sha256").update(canonicalJson(payload)).digest("hex");
+};
 
 const baseInput = (
   artifacts: ReadonlyArray<BuildEvidenceArtifactRecord>,
@@ -67,6 +77,12 @@ test("evidence-manifest: stamps schema/contract versions and hard invariants", (
   );
   assert.equal(manifest.rawScreenshotsIncluded, false);
   assert.equal(manifest.imagePayloadSentToTestGeneration, false);
+  assert.deepEqual(manifest.manifestIntegrity?.algorithm, "sha256");
+  assert.match(manifest.manifestIntegrity?.hash ?? "", /^[0-9a-f]{64}$/);
+  assert.equal(
+    manifest.manifestIntegrity?.hash,
+    manifestIntegrityPayloadDigest(manifest),
+  );
 });
 
 test("evidence-manifest: records direct visual sidecar summary when supplied", () => {
@@ -353,6 +369,7 @@ test("evidence-manifest: write + verify round-trip via verifyWave1PocEvidenceFro
 
   const { result } = await verifyWave1PocEvidenceFromDisk(dir);
   assert.equal(result.ok, true);
+  assert.equal(result.manifestIntegrity?.ok, true);
 });
 
 test("evidence-manifest: default disk verifier detects valid metadata rewrites via digest witness", async () => {
@@ -389,6 +406,15 @@ test("evidence-manifest: default disk verifier detects valid metadata rewrites v
   assert.deepEqual(result.mutated, [
     WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
+  assert.equal(result.manifestIntegrity?.ok, false);
+  assert.equal(
+    result.manifestIntegrity?.expectedHash,
+    manifest.manifestIntegrity?.hash,
+  );
+  assert.notEqual(
+    result.manifestIntegrity?.actualHash,
+    manifest.manifestIntegrity?.hash,
+  );
 
   const explicit = await verifyWave1PocEvidenceFromDisk(dir, {
     expectedManifestSha256,
@@ -396,6 +422,73 @@ test("evidence-manifest: default disk verifier detects valid metadata rewrites v
   assert.deepEqual(explicit.result.mutated, [
     WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   ]);
+});
+
+test("evidence-manifest: direct verifier detects valid-looking metadata rewrite via self-attestation", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  await writeFile(join(dir, "alpha.json"), '{"a":1}');
+  const manifest = buildWave1PocEvidenceManifest(
+    baseInput([
+      {
+        filename: "alpha.json",
+        bytes: utf8('{"a":1}'),
+        category: "validation",
+      },
+    ]),
+  );
+  const tamperedManifest = {
+    ...manifest,
+    modelDeployments: { testGeneration: "gpt-oss-120b" },
+    policyProfileId: "attacker-profile",
+  } as Wave1PocEvidenceManifest;
+
+  const result = await verifyWave1PocEvidenceManifest({
+    manifest: tamperedManifest,
+    artifactsDir: dir,
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.mutated, [
+    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  ]);
+  assert.equal(result.manifestIntegrity?.ok, false);
+  assert.equal(
+    result.manifestIntegrity?.expectedHash,
+    manifest.manifestIntegrity?.hash,
+  );
+  assert.notEqual(
+    result.manifestIntegrity?.actualHash,
+    manifest.manifestIntegrity?.hash,
+  );
+});
+
+test("evidence-manifest: current manifest missing self-attestation fails closed", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  await writeFile(join(dir, "alpha.json"), '{"a":1}');
+  const manifest = buildWave1PocEvidenceManifest(
+    baseInput([
+      {
+        filename: "alpha.json",
+        bytes: utf8('{"a":1}'),
+        category: "validation",
+      },
+    ]),
+  );
+  const manifestWithoutIntegrity = { ...manifest };
+  delete manifestWithoutIntegrity.manifestIntegrity;
+
+  const result = await verifyWave1PocEvidenceManifest({
+    manifest: manifestWithoutIntegrity,
+    artifactsDir: dir,
+  });
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.mutated, [
+    WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+  ]);
+  assert.equal(result.manifestIntegrity?.ok, false);
+  assert.equal(result.manifestIntegrity?.expectedHash, undefined);
+  assert.match(result.manifestIntegrity?.actualHash ?? "", /^[0-9a-f]{64}$/);
 });
 
 test("evidence-manifest: missing digest witness fails closed on disk verify", async () => {

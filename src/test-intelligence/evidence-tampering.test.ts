@@ -111,6 +111,7 @@ test("evidence-tampering: round-trip success — build + write + verify returns 
     assert.deepEqual(result.mutated, []);
     assert.deepEqual(result.resized, []);
     assert.deepEqual(result.unexpected, []);
+    assert.equal(result.manifestIntegrity?.ok, true);
   });
 });
 
@@ -311,6 +312,21 @@ test("evidence-tampering: manifest modelDeployments mutation is detected on re-v
       result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "tampered manifest metadata must be reported as a manifest mutation",
     );
+    assert.equal(
+      result.manifestIntegrity?.ok,
+      false,
+      "manifest self-attestation must reject the metadata rewrite",
+    );
+    assert.equal(
+      result.manifestIntegrity?.expectedHash,
+      manifest.manifestIntegrity?.hash,
+      "self-attestation must compare against the original stamped manifest hash",
+    );
+    assert.notEqual(
+      result.manifestIntegrity?.actualHash,
+      manifest.manifestIntegrity?.hash,
+      "tampered manifest metadata must recompute to a different hash",
+    );
   });
 });
 
@@ -358,6 +374,11 @@ test("evidence-tampering: valid-looking manifest metadata rewrite is detected by
       "default digest mismatch must be reported as a manifest mutation",
     );
     assert.equal(
+      defaultVerification.result.manifestIntegrity?.ok,
+      false,
+      "default disk verify must reject the self-attestation mismatch",
+    );
+    assert.equal(
       result.ok,
       false,
       "valid-looking manifest metadata rewrite must fail trusted-digest verification",
@@ -365,6 +386,11 @@ test("evidence-tampering: valid-looking manifest metadata rewrite is detected by
     assert.ok(
       result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "trusted digest mismatch must be reported as a manifest mutation",
+    );
+    assert.equal(
+      result.manifestIntegrity?.ok,
+      false,
+      "trusted-digest verify must also report the self-attestation mismatch",
     );
   });
 });
@@ -420,6 +446,11 @@ test("evidence-tampering: rawScreenshotsIncluded mutation from false to true is 
     assert.ok(
       result.mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME),
       "tampered manifest invariant must be reported as a manifest mutation",
+    );
+    assert.equal(
+      result.manifestIntegrity?.ok,
+      false,
+      "manifest self-attestation must reject the invariant rewrite",
     );
     // Confirm the tampered value is visible.
     assert.equal(

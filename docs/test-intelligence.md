@@ -379,6 +379,8 @@ The manifest also stamps:
 - model deployment names per role
 - policy profile id and version
 - export profile id and version
+- `manifestIntegrity: { algorithm: "sha256", hash }`, where `hash` is the
+  SHA-256 of canonical manifest JSON with the `manifestIntegrity` field omitted
 - the type-level negative invariants `rawScreenshotsIncluded: false` and
   `imagePayloadSentToTestGeneration: false`
 
@@ -386,10 +388,12 @@ From a repository checkout, operators and maintainers verify a manifest with
 the bundled helper functions:
 
 - `verifyWave1PocEvidenceManifest(manifest, recomputedArtifacts)` — re-hashes
-  artifacts already in memory.
+  artifacts already in memory and validates the manifest self-attestation when
+  present.
 - `verifyWave1PocEvidenceFromDisk(runDirectory)` — re-reads each artifact and
   recomputes the SHA-256, returning `Wave1PocEvidenceVerificationResult` with
-  pass/fail per artifact and an overall verdict.
+  pass/fail per artifact, manifest self-attestation details, and an overall
+  verdict. It also checks the sibling digest witness.
 - `computeWave1PocEvidenceManifestDigest(manifest)` — returns a single
   manifest-level digest suitable for inclusion in a downstream attestation.
 - `verifyWave1PocAttestationFromDisk(runDirectory, manifest, manifestDigest)` —
@@ -397,9 +401,9 @@ the bundled helper functions:
   when signing mode is `sigstore`, the local Sigstore-shaped bundle under
   `evidence/signatures/`.
 
-These helpers fail closed: any digest mismatch, missing artifact, additive
-append, truncation, or filename injection is reported as a verification
-failure.
+These helpers fail closed: any manifest self-attestation mismatch, digest
+witness mismatch, missing artifact, additive append, truncation, or filename
+injection is reported as a verification failure.
 
 The default attestation mode is `unsigned`, which writes a deterministic DSSE
 envelope with an empty `signatures` array and makes no network calls. Operators
