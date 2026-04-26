@@ -31,6 +31,67 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.8.0] - 2026-04-26
+
+### Added (Issue #1372)
+
+- New schema constants for the controlled OpenText ALM API transfer pipeline:
+    - `TRANSFER_REPORT_SCHEMA_VERSION = "1.0.0"`,
+    - `TRANSFER_REPORT_ARTIFACT_FILENAME = "transfer-report.json"`,
+    - `QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0"`,
+    - `QC_CREATED_ENTITIES_ARTIFACT_FILENAME = "qc-created-entities.json"`.
+- New enums (additive):
+    - `ALLOWED_TRANSFER_REFUSAL_CODES` / `TransferRefusalCode` covering
+      `feature_disabled`, `admin_gate_disabled`, `bearer_token_missing`,
+      `mapping_profile_invalid`, `provider_mismatch`, `no_mapped_test_cases`,
+      `no_approved_test_cases`, `unapproved_test_cases_present`,
+      `policy_blocked_cases_present`, `schema_invalid_cases_present`,
+      `visual_sidecar_blocked`, `visual_sidecar_evidence_missing`,
+      `review_state_inconsistent`, `four_eyes_pending`, `dry_run_refused`,
+      `dry_run_missing`, `folder_resolution_failed`, `mode_not_implemented`.
+    - `ALLOWED_TRANSFER_ENTITY_OUTCOMES` / `TransferEntityOutcome`:
+      `created`, `skipped_duplicate`, `failed`, `refused`.
+    - `ALLOWED_TRANSFER_FAILURE_CLASSES` / `TransferFailureClass`:
+      `transport_error`, `auth_failed`, `permission_denied`,
+      `validation_rejected`, `conflict_unresolved`, `rate_limited`,
+      `server_error`, `unknown`.
+- New artifact types (additive):
+    - `TransferReportArtifact` with type-level invariants
+      `rawScreenshotsIncluded: false`, `credentialsIncluded: false`,
+      `transferUrlIncluded: false`, plus deterministic counts
+      (`createdCount`, `skippedDuplicateCount`, `failedCount`,
+      `refusedCount`) and `audit: TransferAuditMetadata`.
+    - `QcCreatedEntitiesArtifact` with type-level invariant
+      `transferUrlIncluded: false`.
+    - `TransferEntityRecord`, `QcCreatedEntity`, `TransferAuditMetadata`.
+- New optional fields on `WorkspaceStartOptions.testIntelligence`:
+    - `allowApiTransfer?: boolean` (default `false` — fail-closed admin gate),
+    - `transferBearerToken?: string` (legacy single-principal token),
+    - `transferPrincipals?: TestIntelligenceTransferPrincipal[]`
+      (multi-principal idempotent audit lineage).
+- New exported type `TestIntelligenceTransferPrincipal`.
+- New public module `src/test-intelligence/qc-alm-api-transfer.ts`
+  exporting `runOpenTextAlmApiTransfer`, `buildTransferRollbackGuidance`,
+  `createUnconfiguredQcApiTransferClient`, `isApiTransferMode`,
+  `QcApiTransferError`, plus the `QcApiTransferClient` interface.
+
+### Behaviour notes
+
+- The `api_transfer` mode is fail-closed by default. Every gate
+  (feature flag, admin flag, bearer token, mapping profile, dry-run
+  report, review state, four-eyes, visual sidecar, policy decisions)
+  must succeed before any write leaves the process. Refusal codes are
+  recorded together so an operator can address them in one cycle.
+- Idempotency is enforced via `lookupByExternalId` against the resolved
+  folder before any create call. Re-running on an unchanged approved
+  set never produces duplicate entities.
+- The pipeline writes `transfer-report.json` and
+  `qc-created-entities.json` atomically using
+  `${pid}.${randomUUID()}.tmp` so concurrent transfers on the same
+  artifact root cannot tear a JSON file. Failure detail strings are
+  redacted through the same secret + URL strip used by the dry-run
+  report.
+
 ## [4.7.0] - 2026-04-26
 
 ### Added (Issue #1414)

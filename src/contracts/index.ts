@@ -130,6 +130,20 @@ export interface TestIntelligenceReviewPrincipal {
   bearerToken: string;
 }
 
+/**
+ * Principal-bound credentials used by the controlled OpenText ALM API
+ * transfer pipeline (#1372). The token authenticates the caller; the
+ * `principalId` is the server-owned operator identity persisted in
+ * `transfer-report.json` so audit lineage survives token rotation.
+ * Never reuse one token for multiple principals.
+ */
+export interface TestIntelligenceTransferPrincipal {
+  /** Opaque, non-secret operator principal id persisted in transfer audit logs. */
+  principalId: string;
+  /** Bearer token accepted for this principal's API transfer requests. */
+  bearerToken: string;
+}
+
 /** Contract version for the opt-in test-intelligence surface. */
 export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.0.0" as const;
 
@@ -1293,6 +1307,33 @@ export interface WorkspaceStartOptions {
      * `DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS`.
      */
     fourEyesVisualSidecarTriggerOutcomes?: VisualSidecarValidationOutcome[];
+    /**
+     * Whether the controlled OpenText ALM API transfer pipeline (#1372)
+     * is allowed at runtime. Defaults to `false` (fail-closed). Even
+     * when `true`, every other gate (feature flag, bearer token, dry-run
+     * report, four-eyes, policy) must still pass before any write
+     * leaves the process. Operators may flip this off to halt transfer
+     * without redeploying.
+     */
+    allowApiTransfer?: boolean;
+    /**
+     * Bearer token accepted by the controlled OpenText ALM API transfer
+     * pipeline (#1372) when `allowApiTransfer=true`. When omitted or
+     * blank, every transfer attempt fails closed with
+     * `bearer_token_missing`. The token is matched against the
+     * caller-supplied bearer using a SHA-256 timing-safe compare so
+     * incorrect lengths do not leak via timing. The token is treated as
+     * a single authenticated principal; configure `transferPrincipals`
+     * for multi-principal idempotent transfer audit trails.
+     */
+    transferBearerToken?: string;
+    /**
+     * Principal-bound transfer credentials (#1372). When configured,
+     * the principal id of the matching token is recorded in
+     * `transfer-report.json` audit metadata, enabling per-operator
+     * audit lineage on top of the bearer-token check.
+     */
+    transferPrincipals?: TestIntelligenceTransferPrincipal[];
   };
 }
 
@@ -4191,6 +4232,225 @@ export interface DryRunReportArtifact {
   credentialsIncluded: false;
 }
 
+/* ------------------------------------------------------------------ */
+/*  QC adapter API transfer report (Issue #1372 — Wave 3)              */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Controlled OpenText ALM API transfer surface (Issue #1372).
+ *
+ * Wave 3 introduces the production-capable `api_transfer` mode for the
+ * QC adapter. Unlike `dry_run` (no I/O) or `export_only` (artifact write
+ * only), `api_transfer` performs real writes against an OpenText ALM
+ * tenant — but only after every Wave 1/2 gate has been satisfied:
+ *
+ *   1. Feature gate (`FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1`).
+ *   2. Admin/startup gate (`allowApiTransfer=true`).
+ *   3. Bearer token configured + accepted on the server-side caller.
+ *   4. Test cases reached `approved` (or already `exported`/`transferred`).
+ *   5. Policy decisions are not `blocked`.
+ *   6. Dry-run report for the same profile reports `refused: false`.
+ *   7. Visual-sidecar evidence present for visual-driven cases (#1386).
+ *   8. Four-eyes approval recorded when enforced (#1376).
+ *
+ * Transfer is idempotent: re-running on the same approved set never
+ * creates duplicates (lookup by `externalIdCandidate` + `targetFolderPath`).
+ *
+ * Hard invariants stamped at the type level on every emitted artifact:
+ *   - `rawScreenshotsIncluded: false`
+ *   - `credentialsIncluded: false`
+ *   - `transferUrlIncluded: false`
+ */
+
+/** Schema version for the persisted transfer-report artifact (Issue #1372). */
+export const TRANSFER_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted transfer-report artifact. */
+export const TRANSFER_REPORT_ARTIFACT_FILENAME =
+  "transfer-report.json" as const;
+
+/** Schema version for the persisted qc-created-entities artifact (Issue #1372). */
+export const QC_CREATED_ENTITIES_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted qc-created-entities artifact. */
+export const QC_CREATED_ENTITIES_ARTIFACT_FILENAME =
+  "qc-created-entities.json" as const;
+
+/**
+ * Allowed reasons the QC adapter may refuse to perform an API transfer.
+ *
+ * These are evaluated in fail-closed order — the first refusal stops the
+ * pipeline before any state-mutating call leaves the process. The
+ * `transfer-report.json` artifact records every refusal that fired so
+ * the operator can address them all in one cycle.
+ */
+export const ALLOWED_TRANSFER_REFUSAL_CODES = [
+  "feature_disabled",
+  "admin_gate_disabled",
+  "bearer_token_missing",
+  "mapping_profile_invalid",
+  "provider_mismatch",
+  "no_mapped_test_cases",
+  "no_approved_test_cases",
+  "unapproved_test_cases_present",
+  "policy_blocked_cases_present",
+  "schema_invalid_cases_present",
+  "visual_sidecar_blocked",
+  "visual_sidecar_evidence_missing",
+  "review_state_inconsistent",
+  "four_eyes_pending",
+  "dry_run_refused",
+  "dry_run_missing",
+  "folder_resolution_failed",
+  "mode_not_implemented",
+] as const;
+export type TransferRefusalCode =
+  (typeof ALLOWED_TRANSFER_REFUSAL_CODES)[number];
+
+/**
+ * Per-test-case outcome of an API transfer attempt. Discriminated so
+ * report consumers can sort + count without re-deriving the state.
+ *
+ * - `created` — the entity did not exist; create call succeeded.
+ * - `skipped_duplicate` — the entity already exists for this
+ *   `externalIdCandidate` + folder; no write performed.
+ * - `failed` — adapter or transport error; no partial entity left
+ *   behind on the server (the adapter must clean up on failure).
+ * - `refused` — pipeline-level refusal (e.g. unapproved); no call
+ *   was attempted.
+ */
+export const ALLOWED_TRANSFER_ENTITY_OUTCOMES = [
+  "created",
+  "skipped_duplicate",
+  "failed",
+  "refused",
+] as const;
+export type TransferEntityOutcome =
+  (typeof ALLOWED_TRANSFER_ENTITY_OUTCOMES)[number];
+
+/**
+ * Allowed failure classes for a per-entity transfer failure. Mirrors the
+ * gateway taxonomy so transport faults stay distinguishable from
+ * server-side validation faults.
+ */
+export const ALLOWED_TRANSFER_FAILURE_CLASSES = [
+  "transport_error",
+  "auth_failed",
+  "permission_denied",
+  "validation_rejected",
+  "conflict_unresolved",
+  "rate_limited",
+  "server_error",
+  "unknown",
+] as const;
+export type TransferFailureClass =
+  (typeof ALLOWED_TRANSFER_FAILURE_CLASSES)[number];
+
+/** Audit metadata describing the operator/principal that authorised the run. */
+export interface TransferAuditMetadata {
+  /** Opaque actor handle; never an email or token. */
+  actor: string;
+  /** Stable id for the operator-supplied bearer-token principal. */
+  authPrincipalId: string;
+  /**
+   * Whether the operator-supplied bearer token matched a configured
+   * principal. `true` is required for the transfer to proceed.
+   */
+  bearerTokenAccepted: boolean;
+  /** Reasons four-eyes review applied to one or more cases (sorted, deduped). */
+  fourEyesReasons: FourEyesEnforcementReason[];
+  /** Identity of the dry-run report consumed; binds the run to a validation. */
+  dryRunReportId: string;
+}
+
+/** Per-entity record inside the transfer report. */
+export interface TransferEntityRecord {
+  testCaseId: string;
+  externalIdCandidate: string;
+  targetFolderPath: string;
+  outcome: TransferEntityOutcome;
+  /**
+   * Resolved QC entity id when the outcome is `created` or
+   * `skipped_duplicate`. Empty string for `failed` / `refused`.
+   */
+  qcEntityId: string;
+  /** Number of design steps the adapter created for this entity. */
+  designStepsCreated: number;
+  /** Wall-clock timestamp at which the adapter recorded the outcome. */
+  recordedAt: string;
+  /** Failure class when `outcome === "failed"`; absent otherwise. */
+  failureClass?: TransferFailureClass;
+  /** Sanitised, length-bounded failure detail; never carries URLs/tokens. */
+  failureDetail?: string;
+}
+
+/** Single created QC entity row in `qc-created-entities.json`. */
+export interface QcCreatedEntity {
+  testCaseId: string;
+  externalIdCandidate: string;
+  qcEntityId: string;
+  /** Forward-slash-separated folder path under the profile root. */
+  targetFolderPath: string;
+  /** ISO-8601 UTC timestamp at which the entity was first created. */
+  createdAt: string;
+  /** Number of design steps persisted alongside the entity. */
+  designStepCount: number;
+  /**
+   * `true` when the entity already existed on a prior transfer run for
+   * the same `(externalIdCandidate, targetFolderPath)` tuple. Idempotent
+   * re-runs preserve this flag so audit logs document the lineage.
+   */
+  preExisting: boolean;
+}
+
+/** Aggregate `qc-created-entities.json` artifact (Issue #1372). */
+export interface QcCreatedEntitiesArtifact {
+  schemaVersion: typeof QC_CREATED_ENTITIES_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  profileId: string;
+  profileVersion: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  entities: QcCreatedEntity[];
+  /** Hard invariant: never carries the resolved transfer URL. */
+  transferUrlIncluded: false;
+}
+
+/** Aggregate `transfer-report.json` artifact (Issue #1372). */
+export interface TransferReportArtifact {
+  schemaVersion: typeof TRANSFER_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  /** Deterministic id derived from job + adapter + profile + clock. */
+  reportId: string;
+  jobId: string;
+  generatedAt: string;
+  mode: QcAdapterMode;
+  adapter: { provider: QcAdapterProvider; version: string };
+  profile: { id: string; version: string };
+  /** True iff the pipeline refused to perform any write. */
+  refused: boolean;
+  refusalCodes: TransferRefusalCode[];
+  /** Sorted by `testCaseId`. Empty when refused before any attempt. */
+  records: TransferEntityRecord[];
+  /** Number of records whose outcome is `created`. */
+  createdCount: number;
+  /** Number of records whose outcome is `skipped_duplicate`. */
+  skippedDuplicateCount: number;
+  /** Number of records whose outcome is `failed`. */
+  failedCount: number;
+  /** Number of records whose outcome is `refused`. */
+  refusedCount: number;
+  /** Audit metadata for the run. */
+  audit: TransferAuditMetadata;
+  /** Hard invariant: raw screenshots are never embedded into transfer payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded into transfer payloads. */
+  credentialsIncluded: false;
+  /** Hard invariant: never carries the resolved transfer URL. */
+  transferUrlIncluded: false;
+}
+
 /**
  * FinOps budget + operational controls for test-intelligence LLM jobs (Issue #1371).
  *
@@ -4856,4 +5116,4 @@ export interface EvidenceVerifyResponse {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.7.0" as const;
+export const CONTRACT_VERSION = "4.8.0" as const;
