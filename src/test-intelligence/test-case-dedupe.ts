@@ -392,8 +392,9 @@ export const detectTestCaseDuplicatesExtended = async (
   }
   // Touch the lexical fingerprint helper so callers cannot accidentally
   // skip it (and so the function stays inert when no test cases exist).
-  if (input.testCases.length > 0) {
-    buildTestCaseFingerprint(input.testCases[0] as GeneratedTestCase);
+  const warmupCase = input.testCases[0];
+  if (warmupCase !== undefined) {
+    buildTestCaseFingerprint(warmupCase);
   }
 
   const lexicalPairs = detectDuplicateTestCases({

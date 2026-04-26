@@ -555,3 +555,98 @@ test("QC_CREATED_ENTITIES_SCHEMA_VERSION reachable (sanity link)", () => {
   // references created-entities indirectly via TransferReportArtifact.
   assert.equal(typeof QC_CREATED_ENTITIES_SCHEMA_VERSION, "string");
 });
+
+test("buildTraceabilityMatrix: 50×50 correctness — each test case resolves the right QC entry and transfer record", () => {
+  const N = 50;
+  const cases = Array.from({ length: N }, (_, i) =>
+    buildCase({
+      id: `tc-${String(i).padStart(3, "0")}`,
+      figmaTraceRefs: [{ screenId: "screen-a", nodeId: "node-1" }],
+    }),
+  );
+
+  const qcMapping: QcMappingPreviewArtifact = {
+    schemaVersion: QC_MAPPING_PREVIEW_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    profileId: "opentext-alm-default",
+    profileVersion: "1.0.0",
+    entries: cases.map((tc) => ({
+      testCaseId: tc.id,
+      externalIdCandidate: `ext-${tc.id}`,
+      testName: tc.title,
+      objective: tc.objective,
+      priority: tc.priority,
+      riskCategory: tc.riskCategory,
+      targetFolderPath: `/folder/${tc.id}`,
+      preconditions: [],
+      testData: [],
+      designSteps: [{ index: 1, action: "open screen" }],
+      expectedResults: ["ok"],
+      sourceTraceRefs: tc.figmaTraceRefs,
+      exportable: true,
+      blockingReasons: [],
+    })),
+  };
+
+  const transfer: TransferReportArtifact = {
+    schemaVersion: TRANSFER_REPORT_SCHEMA_VERSION,
+    contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+    reportId: "rep-big",
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    mode: "api_transfer",
+    adapter: { provider: "opentext_alm", version: "1.0.0" },
+    profile: { id: "opentext-alm-default", version: "1.0.0" },
+    refused: false,
+    refusalCodes: [],
+    records: cases.map((tc) => ({
+      testCaseId: tc.id,
+      externalIdCandidate: `ext-${tc.id}`,
+      targetFolderPath: `/folder/${tc.id}`,
+      outcome: "created" as const,
+      qcEntityId: `qc-${tc.id}`,
+      designStepsCreated: 1,
+      recordedAt: "2026-04-26T00:00:00.000Z",
+    })),
+    createdCount: N,
+    skippedDuplicateCount: 0,
+    failedCount: 0,
+    refusedCount: 0,
+    audit: {
+      actor: "actor",
+      authPrincipalId: "transfer-principal:test",
+      bearerTokenAccepted: true,
+      fourEyesReasons: [],
+      dryRunReportId: "drid",
+      evidenceReferences: {
+        qcMappingPreviewHash: ZERO,
+        dryRunReportHash: ZERO,
+        visualSidecarReportHash: ZERO,
+        visualSidecarEvidenceHashes: [],
+      },
+    },
+    rawScreenshotsIncluded: false,
+    credentialsIncluded: false,
+    transferUrlIncluded: false,
+  };
+
+  const matrix = buildTraceabilityMatrix({
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    intent: intentWithFields(),
+    list: list(cases),
+    qcMapping,
+    transferReport: transfer,
+  });
+
+  assert.equal(matrix.rows.length, N);
+  for (const row of matrix.rows) {
+    assert.equal(row.externalIdCandidate, `ext-${row.testCaseId}`);
+    assert.equal(row.qcFolderPath, `/folder/${row.testCaseId}`);
+    assert.equal(row.qcEntityId, `qc-${row.testCaseId}`);
+    assert.equal(row.transferOutcome, "created");
+  }
+  assert.equal(matrix.totals.transferred, N);
+});

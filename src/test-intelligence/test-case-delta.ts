@@ -29,7 +29,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
-  INTENT_DELTA_REPORT_SCHEMA_VERSION,
+  TEST_CASE_DELTA_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type BusinessTestIntentIr,
   type GeneratedTestCase,
@@ -112,6 +112,9 @@ export const classifyTestCaseDelta = (
   );
   const changedScreenIds = collectChangedScreenIds(input.intentDelta);
   const removedScreenIds = collectRemovedScreenIds(input.intentDelta);
+  const ambiguityIncreasedScreenIds = collectAmbiguityIncreasedScreenIds(
+    input.intentDelta,
+  );
   const visualByScreen = new Map<
     string,
     {
@@ -142,6 +145,7 @@ export const classifyTestCaseDelta = (
         currentScreenIds,
         changedScreenIds,
         removedScreenIds,
+        ambiguityIncreasedScreenIds,
         visualByScreen,
         visualFloor,
       }),
@@ -158,6 +162,7 @@ export const classifyTestCaseDelta = (
         currentScreenIds,
         changedScreenIds,
         removedScreenIds,
+        ambiguityIncreasedScreenIds,
         visualByScreen,
         visualFloor,
       }),
@@ -171,7 +176,7 @@ export const classifyTestCaseDelta = (
   const totals = computeTotals(rows);
 
   return {
-    schemaVersion: INTENT_DELTA_REPORT_SCHEMA_VERSION,
+    schemaVersion: TEST_CASE_DELTA_REPORT_SCHEMA_VERSION,
     contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
     jobId: input.jobId,
     generatedAt: input.generatedAt,
@@ -208,6 +213,19 @@ const collectRemovedScreenIds = (
   return out;
 };
 
+const collectAmbiguityIncreasedScreenIds = (
+  delta: IntentDeltaReport | undefined,
+): Set<string> => {
+  const out = new Set<string>();
+  if (delta === undefined) return out;
+  for (const e of delta.entries) {
+    if (e.changeType === "ambiguity_increased" && e.screenId !== undefined) {
+      out.add(e.screenId);
+    }
+  }
+  return out;
+};
+
 interface ClassifyOneInput {
   id: string;
   priorCase: GeneratedTestCase | undefined;
@@ -215,6 +233,7 @@ interface ClassifyOneInput {
   currentScreenIds: ReadonlySet<string>;
   changedScreenIds: ReadonlySet<string>;
   removedScreenIds: ReadonlySet<string>;
+  ambiguityIncreasedScreenIds: ReadonlySet<string>;
   visualByScreen: ReadonlyMap<
     string,
     { meanConfidence: number; conflict: boolean }
@@ -253,7 +272,7 @@ const classifyOne = (input: ClassifyOneInput): TestCaseDeltaRow => {
       // that's an "absent" change, not yet obsolete. Mark obsolete
       // so the operator can prune; never deletes from QC.
       verdict = "obsolete";
-      reasons.add("absent_in_prior");
+      reasons.add("absent_in_current");
     }
   } else if (input.currentCase !== undefined && input.priorCase === undefined) {
     verdict = "new";
@@ -278,17 +297,23 @@ const classifyOne = (input: ClassifyOneInput): TestCaseDeltaRow => {
 
   // Visual signals always layered on top: even an `unchanged` case
   // can be escalated to `requires_review` when the visual sidecar
-  // reports low confidence or a Figma conflict on its trace screens.
+  // reports low confidence or a Figma conflict on its trace screens,
+  // or when the intent delta records ambiguity growth on a trace screen.
   let escalate = false;
   for (const screenId of affectedScreenIds) {
     const visual = input.visualByScreen.get(screenId);
-    if (visual === undefined) continue;
-    if (visual.meanConfidence < input.visualFloor) {
-      reasons.add("visual_confidence_dropped");
-      escalate = true;
+    if (visual !== undefined) {
+      if (visual.meanConfidence < input.visualFloor) {
+        reasons.add("visual_confidence_dropped");
+        escalate = true;
+      }
+      if (visual.conflict) {
+        reasons.add("reconciliation_conflict");
+        escalate = true;
+      }
     }
-    if (visual.conflict) {
-      reasons.add("reconciliation_conflict");
+    if (input.ambiguityIncreasedScreenIds.has(screenId)) {
+      reasons.add("visual_ambiguity_increased");
       escalate = true;
     }
   }

@@ -7,15 +7,16 @@ import test from "node:test";
 import {
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   INTENT_DELTA_REPORT_SCHEMA_VERSION,
+  TEST_CASE_DELTA_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  VISUAL_SIDECAR_SCHEMA_VERSION,
   VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION,
   type BusinessTestIntentIr,
   type GeneratedTestCase,
   type GeneratedTestCaseList,
   type IntentDeltaReport,
   type VisualSidecarValidationReport,
-  VISUAL_SIDECAR_SCHEMA_VERSION,
 } from "../contracts/index.js";
 import {
   classifyTestCaseDelta,
@@ -378,6 +379,129 @@ test("invariant flags are stamped at runtime", () => {
   });
   assert.equal(out.rawScreenshotsIncluded, false);
   assert.equal(out.secretsIncluded, false);
+});
+
+test("schemaVersion is TEST_CASE_DELTA_REPORT_SCHEMA_VERSION", () => {
+  const out = classifyTestCaseDelta({
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    prior: list([]),
+    current: list([]),
+    currentIntent: intentWithScreens([]),
+  });
+  assert.equal(out.schemaVersion, TEST_CASE_DELTA_REPORT_SCHEMA_VERSION);
+});
+
+test("absent_in_current fires when case is dropped from generation but screens still exist", () => {
+  // Prior has tc-1, current generation omits it, but screen-a is still in IR.
+  const prior = buildCase({
+    id: "tc-1",
+    figmaTraceRefs: [{ screenId: "screen-a" }],
+  });
+  const out = classifyTestCaseDelta({
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    prior: list([prior]),
+    current: list([]),
+    currentIntent: intentWithScreens(["screen-a"]),
+    intentDelta: emptyDelta,
+  });
+  assert.equal(out.rows[0]?.verdict, "obsolete");
+  assert.ok(out.rows[0]?.reasons.includes("absent_in_current"));
+  assert.ok(!out.rows[0]?.reasons.includes("absent_in_prior"));
+});
+
+test("absent_in_current does NOT fire for genuinely obsolete case (every trace screen removed)", () => {
+  const prior = buildCase({
+    id: "tc-1",
+    figmaTraceRefs: [{ screenId: "screen-removed" }],
+  });
+  const out = classifyTestCaseDelta({
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    prior: list([prior]),
+    current: list([]),
+    currentIntent: intentWithScreens([]),
+    intentDelta: emptyDelta,
+  });
+  assert.equal(out.rows[0]?.verdict, "obsolete");
+  assert.ok(out.rows[0]?.reasons.includes("trace_screen_removed"));
+  assert.ok(!out.rows[0]?.reasons.includes("absent_in_current"));
+});
+
+test("visual_ambiguity_increased fires when intent delta records ambiguity growth on a trace screen", () => {
+  const tc = buildCase({
+    id: "tc-1",
+    figmaTraceRefs: [{ screenId: "screen-a" }],
+  });
+  const delta: IntentDeltaReport = {
+    ...emptyDelta,
+    entries: [
+      {
+        kind: "visual_screen",
+        changeType: "ambiguity_increased",
+        elementId: "screen-a",
+        screenId: "screen-a",
+      },
+    ],
+    totals: { ...emptyDelta.totals, ambiguityIncreased: 1 },
+  };
+  const out = classifyTestCaseDelta({
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    prior: list([tc]),
+    current: list([tc]),
+    currentIntent: intentWithScreens(["screen-a"]),
+    intentDelta: delta,
+  });
+  assert.equal(out.rows[0]?.verdict, "requires_review");
+  assert.ok(out.rows[0]?.reasons.includes("visual_ambiguity_increased"));
+});
+
+test("visual_ambiguity_increased does NOT fire when ambiguity delta is on an unrelated screen", () => {
+  const tc = buildCase({
+    id: "tc-1",
+    figmaTraceRefs: [{ screenId: "screen-a" }],
+  });
+  const delta: IntentDeltaReport = {
+    ...emptyDelta,
+    entries: [
+      {
+        kind: "visual_screen",
+        changeType: "ambiguity_increased",
+        elementId: "screen-other",
+        screenId: "screen-other",
+      },
+    ],
+    totals: { ...emptyDelta.totals, ambiguityIncreased: 1 },
+  };
+  const out = classifyTestCaseDelta({
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    prior: list([tc]),
+    current: list([tc]),
+    currentIntent: intentWithScreens(["screen-a"]),
+    intentDelta: delta,
+  });
+  assert.equal(out.rows[0]?.verdict, "unchanged");
+  assert.ok(!out.rows[0]?.reasons.includes("visual_ambiguity_increased"));
+});
+
+test("visual_ambiguity_increased does NOT fire when no ambiguity_increased entries in delta", () => {
+  const tc = buildCase({
+    id: "tc-1",
+    figmaTraceRefs: [{ screenId: "screen-a" }],
+  });
+  const out = classifyTestCaseDelta({
+    jobId: "job-1",
+    generatedAt: "2026-04-26T00:00:00.000Z",
+    prior: list([tc]),
+    current: list([tc]),
+    currentIntent: intentWithScreens(["screen-a"]),
+    intentDelta: emptyDelta,
+  });
+  assert.equal(out.rows[0]?.verdict, "unchanged");
+  assert.ok(!out.rows[0]?.reasons.includes("visual_ambiguity_increased"));
 });
 
 test("writeTestCaseDeltaReport persists deterministic canonical JSON atomically", async () => {

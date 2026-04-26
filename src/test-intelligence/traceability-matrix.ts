@@ -237,10 +237,12 @@ interface QcLinks {
 
 const buildQcLinks = (
   testCase: GeneratedTestCase,
-  qcMapping: QcMappingPreviewArtifact | undefined,
+  qcMappingIndex: ReadonlyMap<
+    string,
+    QcMappingPreviewArtifact["entries"][number]
+  >,
 ): QcLinks => {
-  if (qcMapping === undefined) return {};
-  const entry = qcMapping.entries.find((e) => e.testCaseId === testCase.id);
+  const entry = qcMappingIndex.get(testCase.id);
   if (entry === undefined) return {};
   return {
     externalIdCandidate: entry.externalIdCandidate,
@@ -250,13 +252,12 @@ const buildQcLinks = (
 
 const buildTransferLinks = (
   testCaseId: string,
-  transfer: TransferReportArtifact | undefined,
+  transferIndex: ReadonlyMap<string, TransferEntityRecord>,
 ): {
   qcEntityId?: string;
   transferOutcome?: TransferEntityRecord["outcome"];
 } => {
-  if (transfer === undefined) return {};
-  const record = transfer.records.find((r) => r.testCaseId === testCaseId);
+  const record = transferIndex.get(testCaseId);
   if (record === undefined) return {};
   const out: {
     qcEntityId?: string;
@@ -298,8 +299,11 @@ const buildReviewIndex = (
 const buildRow = (
   testCase: GeneratedTestCase,
   ctx: {
-    qcMapping: QcMappingPreviewArtifact | undefined;
-    transfer: TransferReportArtifact | undefined;
+    qcMappingIndex: ReadonlyMap<
+      string,
+      QcMappingPreviewArtifact["entries"][number]
+    >;
+    transferIndex: ReadonlyMap<string, TransferEntityRecord>;
     visual: VisualSidecarValidationReport | undefined;
     validationIndex: ReadonlyMap<string, ValidationVerdict>;
     policyIndex: ReadonlyMap<string, PolicyVerdict>;
@@ -316,8 +320,8 @@ const buildRow = (
       .filter((id): id is string => typeof id === "string" && id.length > 0),
   );
   const coverage = buildIntentCoverageRow(testCase);
-  const qcLinks = buildQcLinks(testCase, ctx.qcMapping);
-  const transferLinks = buildTransferLinks(testCase.id, ctx.transfer);
+  const qcLinks = buildQcLinks(testCase, ctx.qcMappingIndex);
+  const transferLinks = buildTransferLinks(testCase.id, ctx.transferIndex);
   const visualObservations = buildVisualObservations(testCase, ctx.visual);
   const reconciliation = buildReconciliationDecisions(testCase, ctx.irElements);
   const validationVerdict =
@@ -372,6 +376,24 @@ const computeTotals = (
   return totals;
 };
 
+const buildQcMappingIndex = (
+  qcMapping: QcMappingPreviewArtifact | undefined,
+): Map<string, QcMappingPreviewArtifact["entries"][number]> => {
+  const out = new Map<string, QcMappingPreviewArtifact["entries"][number]>();
+  if (qcMapping === undefined) return out;
+  for (const entry of qcMapping.entries) out.set(entry.testCaseId, entry);
+  return out;
+};
+
+const buildTransferIndex = (
+  transfer: TransferReportArtifact | undefined,
+): Map<string, TransferEntityRecord> => {
+  const out = new Map<string, TransferEntityRecord>();
+  if (transfer === undefined) return out;
+  for (const record of transfer.records) out.set(record.testCaseId, record);
+  return out;
+};
+
 /** Pure builder for a deterministic traceability matrix. */
 export const buildTraceabilityMatrix = (
   input: BuildTraceabilityMatrixInput,
@@ -380,14 +402,16 @@ export const buildTraceabilityMatrix = (
   const policyIndex = buildPolicyIndex(input.policy);
   const reviewIndex = buildReviewIndex(input.reviewSnapshot);
   const irElements = collectIntentElements(input.intent);
+  const qcMappingIndex = buildQcMappingIndex(input.qcMapping);
+  const transferIndex = buildTransferIndex(input.transferReport);
 
   const rows: TraceabilityMatrixRow[] = input.list.testCases
     .slice()
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((tc) =>
       buildRow(tc, {
-        qcMapping: input.qcMapping,
-        transfer: input.transferReport,
+        qcMappingIndex,
+        transferIndex,
         visual: input.visual,
         validationIndex,
         policyIndex,

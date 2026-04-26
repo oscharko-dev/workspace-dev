@@ -38,6 +38,7 @@ All changes to the public contract surface of `workspace-dev` are documented her
 - New schema constants for the Wave 3 delta + dedupe + traceability surface:
     - `INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
     - `INTENT_DELTA_REPORT_ARTIFACT_FILENAME = "intent-delta-report.json"`,
+    - `TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0"`,
     - `DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0"`,
     - `DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json"`,
     - `TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0"`,
@@ -50,9 +51,10 @@ All changes to the public contract surface of `workspace-dev` are documented her
     - `ALLOWED_TEST_CASE_DELTA_VERDICTS` / `TestCaseDeltaVerdict`: `new`,
       `unchanged`, `changed`, `obsolete`, `requires_review`.
     - `ALLOWED_TEST_CASE_DELTA_REASONS` / `TestCaseDeltaReason`:
-      `absent_in_prior`, `fingerprint_changed`, `trace_screen_changed`,
-      `trace_screen_removed`, `visual_confidence_dropped`,
-      `visual_ambiguity_increased`, `reconciliation_conflict`.
+      `absent_in_current`, `absent_in_prior`, `fingerprint_changed`,
+      `trace_screen_changed`, `trace_screen_removed`,
+      `visual_ambiguity_increased`, `visual_confidence_dropped`,
+      `reconciliation_conflict`.
     - `ALLOWED_DEDUPE_SIMILARITY_SOURCES` / `DedupeSimilaritySource`:
       `lexical`, `embedding`, `external_lookup`.
     - `ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES` / `DedupeExternalProbeState`:

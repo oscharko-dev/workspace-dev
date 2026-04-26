@@ -5164,6 +5164,9 @@ export interface EvidenceVerifyResponse {
 /** Schema version for the persisted intent-delta artifact (Issue #1373). */
 export const INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
 
+/** Schema version for the persisted test-case delta report artifact (Issue #1373). */
+export const TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
 /** Canonical filename for the persisted intent-delta artifact. */
 export const INTENT_DELTA_REPORT_ARTIFACT_FILENAME =
   "intent-delta-report.json" as const;
@@ -5289,12 +5292,13 @@ export type TestCaseDeltaVerdict =
  * additive. Multiple reasons may apply to the same verdict.
  */
 export const ALLOWED_TEST_CASE_DELTA_REASONS = [
+  "absent_in_current",
   "absent_in_prior",
   "fingerprint_changed",
   "trace_screen_changed",
   "trace_screen_removed",
-  "visual_confidence_dropped",
   "visual_ambiguity_increased",
+  "visual_confidence_dropped",
   "reconciliation_conflict",
 ] as const;
 export type TestCaseDeltaReason =
@@ -5316,7 +5320,7 @@ export interface TestCaseDeltaRow {
 
 /** Aggregate test-case delta report (always paired with `IntentDeltaReport`). */
 export interface TestCaseDeltaReport {
-  schemaVersion: typeof INTENT_DELTA_REPORT_SCHEMA_VERSION;
+  schemaVersion: typeof TEST_CASE_DELTA_REPORT_SCHEMA_VERSION;
   contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
   jobId: string;
   generatedAt: string;
