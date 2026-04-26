@@ -53,6 +53,23 @@ export {
   type WriteJiraIssueIrResult,
 } from "./jira-issue-ir.js";
 export {
+  buildJiraPasteOnlyEnvelope,
+  detectJiraPasteFormat,
+  ingestAndPersistJiraPaste,
+  ingestJiraPaste,
+  JIRA_PASTE_PROVENANCE_ARTIFACT_FILENAME,
+  MAX_JIRA_PASTE_INPUT_BYTES,
+  sanitizeJiraPasteAuthorHandle,
+  type JiraPasteDeclaredFormat,
+  type JiraPasteDetectedFormat,
+  type JiraPasteIngestOutcome,
+  type JiraPasteIngestRequest,
+  type JiraPasteIngestResult,
+  type JiraPasteIngestRefusalCode,
+  type JiraPasteProvenance,
+  type JiraPasteSourceMixHint,
+} from "./jira-paste-ingest.js";
+export {
   detectSuspiciousContent,
   effectiveSemanticContentBlock,
   extractSemanticContentOverrides,

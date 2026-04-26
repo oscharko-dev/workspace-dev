@@ -124,6 +124,12 @@ import {
   type ReviewStore,
 } from "../test-intelligence/review-store.js";
 import { handleReviewRequest } from "../test-intelligence/review-handler.js";
+import {
+  buildJiraPasteOnlyEnvelope,
+  ingestAndPersistJiraPaste,
+  MAX_JIRA_PASTE_INPUT_BYTES,
+  type JiraPasteDeclaredFormat,
+} from "../test-intelligence/jira-paste-ingest.js";
 
 /**
  * Decode a URI component safely, sending a 400 response on malformed input.
@@ -450,7 +456,8 @@ type WorkspaceAuditEvent =
   | "workspace.stale_check.completed"
   | "workspace.remap_suggest.completed"
   | "workspace.token_decisions.persisted"
-  | "workspace.evidence.verify.completed";
+  | "workspace.evidence.verify.completed"
+  | "workspace.jira_paste_source.ingested";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
@@ -514,6 +521,16 @@ const PROTECTED_POST_ACTIONS = new Set([
 ]);
 
 const TOKEN_DECISIONS_FILE_NAME = "token-decisions.json";
+const JIRA_PASTE_REQUEST_ENVELOPE_OVERHEAD_BYTES = 4096;
+const MAX_JIRA_PASTE_REQUEST_BODY_BYTES =
+  MAX_JIRA_PASTE_INPUT_BYTES + JIRA_PASTE_REQUEST_ENVELOPE_OVERHEAD_BYTES;
+const ALLOWED_JIRA_PASTE_REQUEST_FIELDS = new Set([
+  "format",
+  "body",
+  "paste",
+  "authorHandle",
+]);
+const LEGACY_TEST_INTELLIGENCE_REVIEW_PRINCIPAL_ID = "legacy-review-bearer";
 
 interface PersistedTokenDecisions {
   jobId: string;
@@ -695,6 +712,90 @@ function buildReviewEnvelopeFromBody(
   };
 }
 
+interface JiraPasteRequestBody {
+  format?: unknown;
+  body?: unknown;
+  paste?: unknown;
+  authorHandle?: unknown;
+}
+
+type TestIntelligenceSourceAuthResult =
+  | { ok: true; authorHandle: string }
+  | {
+      ok: false;
+      statusCode: 401 | 503;
+      payload: { error: "UNAUTHORIZED" | "AUTHENTICATION_UNAVAILABLE"; message: string };
+      wwwAuthenticate?: string;
+    };
+
+function validateTestIntelligenceSourceAuth({
+  request,
+  bearerToken,
+  reviewPrincipals,
+  routeLabel,
+}: {
+  request: IncomingMessage;
+  bearerToken?: string;
+  reviewPrincipals?: readonly TestIntelligenceReviewPrincipal[];
+  routeLabel: string;
+}): TestIntelligenceSourceAuthResult {
+  const principals = reviewPrincipals ?? [];
+  for (const principal of principals) {
+    const auth = validateImportSessionEventWriteAuth({
+      request,
+      bearerToken: principal.bearerToken,
+      routeLabel,
+    });
+    if (auth.ok) {
+      return { ok: true, authorHandle: principal.principalId };
+    }
+  }
+
+  if (bearerToken !== undefined) {
+    const auth = validateImportSessionEventWriteAuth({
+      request,
+      bearerToken,
+      routeLabel,
+    });
+    if (auth.ok) {
+      return {
+        ok: true,
+        authorHandle: LEGACY_TEST_INTELLIGENCE_REVIEW_PRINCIPAL_ID,
+      };
+    }
+    return auth;
+  }
+
+  if (principals.length > 0) {
+    const firstPrincipal = principals[0];
+    if (firstPrincipal === undefined) {
+      const auth = validateImportSessionEventWriteAuth({ request, routeLabel });
+      return auth.ok
+        ? {
+            ok: true,
+            authorHandle: LEGACY_TEST_INTELLIGENCE_REVIEW_PRINCIPAL_ID,
+          }
+        : auth;
+    }
+    const auth = validateImportSessionEventWriteAuth({
+      request,
+      bearerToken: firstPrincipal.bearerToken,
+      routeLabel,
+    });
+    return auth.ok
+      ? { ok: true, authorHandle: firstPrincipal.principalId }
+      : auth;
+  }
+
+  const auth = validateImportSessionEventWriteAuth({ request, routeLabel });
+  return auth.ok
+    ? {
+        ok: true,
+        authorHandle: LEGACY_TEST_INTELLIGENCE_REVIEW_PRINCIPAL_ID,
+      }
+    : auth;
+}
+
 interface ProtectedWriteRoute {
   parsedJobRoute?: ReturnType<typeof parseJobRoute>;
   parsedImportSessionRoute?: ReturnType<typeof parseImportSessionRoute>;
@@ -705,6 +806,14 @@ function resolveProtectedWriteRoute(
   method: string,
 ): ProtectedWriteRoute | null {
   if (pathname === "/workspace/submit") {
+    return {};
+  }
+  if (
+    method === "POST" &&
+    /^\/workspace\/test-intelligence\/sources\/[A-Za-z0-9_.-]{1,128}\/jira-paste$/u.test(
+      pathname,
+    )
+  ) {
     return {};
   }
 
@@ -819,6 +928,16 @@ export function createWorkspaceRequestHandler({
         absoluteOutputRoot,
         "rate-limits",
         "test-intelligence-review-writes.json",
+      ),
+    }),
+  });
+  const testIntelligenceSourceWriteRateLimiter = createIpRateLimiter({
+    ...rateLimiterOptions,
+    store: createFileBackedRateLimitStore({
+      filePath: path.join(
+        absoluteOutputRoot,
+        "rate-limits",
+        "test-intelligence-source-writes.json",
       ),
     }),
   });
@@ -1083,6 +1202,245 @@ export function createWorkspaceRequestHandler({
           return;
         }
         const route = parsed.route;
+
+        if (route.kind === "jira_paste_source") {
+          response.setHeader("allow", "POST");
+          if (method !== "POST") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use POST for Jira paste source ingestion on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+
+          const multiSourceEnabled =
+            resolveTestIntelligenceMultiSourceEnvEnabled() &&
+            runtime.testIntelligenceMultiSourceEnabled === true;
+          if (!multiSourceEnabled) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: ErrorCode.FEATURE_DISABLED,
+                message:
+                  "Jira paste source ingestion requires the multi-source test-intelligence gate.",
+                refusals: [
+                  ...(!resolveTestIntelligenceMultiSourceEnvEnabled()
+                    ? ["multi_source_env_disabled"]
+                    : []),
+                  ...(runtime.testIntelligenceMultiSourceEnabled === true
+                    ? []
+                    : ["multi_source_startup_option_disabled"]),
+                ],
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira paste source ingestion disabled.",
+            });
+            return;
+          }
+
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              jobId: route.jobId,
+              fallbackMessage: "Jira paste write request rejected.",
+            });
+            return;
+          }
+
+          const auth = validateTestIntelligenceSourceAuth({
+            request,
+            ...(runtime.testIntelligenceReviewBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceReviewBearerToken }
+              : {}),
+            ...(runtime.testIntelligenceReviewPrincipals !== undefined
+              ? { reviewPrincipals: runtime.testIntelligenceReviewPrincipals }
+              : {}),
+            routeLabel: "Jira paste source ingestion",
+          });
+          if (!auth.ok) {
+            if (auth.wwwAuthenticate) {
+              response.setHeader("www-authenticate", auth.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: auth.statusCode,
+              payload: auth.payload,
+              event:
+                auth.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: auth.statusCode === 401 ? "warn" : "error",
+              jobId: route.jobId,
+              fallbackMessage: "Jira paste source ingestion rejected.",
+            });
+            return;
+          }
+
+          const rateLimitResult =
+            await testIntelligenceSourceWriteRateLimiter.consume(
+              resolveRateLimitClientKey(request),
+              route.jobId,
+            );
+          if (!rateLimitResult.allowed) {
+            sendRateLimitExceeded({
+              retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+              message: `Too many test-intelligence source writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+            });
+            return;
+          }
+
+          const bodyResult = await readJsonBody(request, {
+            maxBytes: MAX_JIRA_PASTE_REQUEST_BODY_BYTES,
+          });
+          if (!bodyResult.ok) {
+            sendRequestFailure({
+              statusCode: bodyResult.reason === "OVERSIZE" ? 413 : 400,
+              payload: {
+                error:
+                  bodyResult.reason === "OVERSIZE"
+                    ? "REQUEST_TOO_LARGE"
+                    : "INVALID_BODY",
+                message: bodyResult.error,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Invalid Jira paste request body.",
+            });
+            return;
+          }
+
+          if (
+            typeof bodyResult.value !== "object" ||
+            bodyResult.value === null ||
+            Array.isArray(bodyResult.value)
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message: "Jira paste request body must be a JSON object.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira paste request validation failed.",
+            });
+            return;
+          }
+          const body = bodyResult.value as JiraPasteRequestBody;
+          const unknownFields = Object.keys(body).filter(
+            (key) => !ALLOWED_JIRA_PASTE_REQUEST_FIELDS.has(key),
+          );
+          if (unknownFields.length > 0) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message:
+                  "Jira paste request contains unsupported top-level fields.",
+                issues: unknownFields.map((field) => ({
+                  path: field,
+                  message: "Unsupported field.",
+                })),
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira paste request validation failed.",
+            });
+            return;
+          }
+          const pasteBody = body.body ?? body.paste;
+          const format = body.format ?? "auto";
+          if (
+            typeof pasteBody !== "string" ||
+            typeof format !== "string" ||
+            !["auto", "adf_json", "plain_text", "markdown"].includes(format)
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message:
+                  "Jira paste request requires body:string and format:auto|adf_json|plain_text|markdown.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira paste request validation failed.",
+            });
+            return;
+          }
+
+          const runDir = path.join(testIntelligenceArtifactRoot, route.jobId);
+          const ingest = await ingestAndPersistJiraPaste({
+            runDir,
+            authorHandle: auth.authorHandle,
+            request: {
+              jobId: route.jobId,
+              body: pasteBody,
+              format: format as JiraPasteDeclaredFormat,
+            },
+          });
+          if (!ingest.ok) {
+            const payload: Record<string, unknown> = {
+              error: ingest.code,
+              message: ingest.message,
+            };
+            if (ingest.detail !== undefined) payload.detail = ingest.detail;
+            if (ingest.statusCode >= 500) {
+              sendRequestFailure({
+                statusCode: ingest.statusCode,
+                payload,
+                jobId: route.jobId,
+                fallbackMessage: "Jira paste source ingestion failed.",
+              });
+            } else {
+              sendValidationError({
+                statusCode: ingest.statusCode,
+                payload,
+                jobId: route.jobId,
+                fallbackMessage: "Jira paste request validation failed.",
+              });
+            }
+            return;
+          }
+
+          const sourceEnvelope = buildJiraPasteOnlyEnvelope(
+            ingest.result.sourceRef,
+          );
+          logAuditEvent({
+            event: "workspace.jira_paste_source.ingested",
+            statusCode: 200,
+            jobId: route.jobId,
+            message: `Jira paste source '${ingest.result.sourceId}' ingested for job '${route.jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              ok: true,
+              jobId: route.jobId,
+              sourceId: ingest.result.sourceId,
+              jiraIssueIr: ingest.result.jiraIssueIr,
+              provenance: ingest.result.provenance,
+              sourceRef: ingest.result.sourceRef,
+              sourceEnvelope,
+              sourceMixHint: ingest.result.sourceMixHint,
+              artifacts: {
+                jiraIssueIr: `sources/${ingest.result.sourceId}/jira-issue-ir.json`,
+                pasteProvenance: `sources/${ingest.result.sourceId}/paste-provenance.json`,
+                rawPastePersisted: false,
+              },
+            },
+          });
+          return;
+        }
 
         if (method === "GET") {
           if (route.kind === "list_jobs") {

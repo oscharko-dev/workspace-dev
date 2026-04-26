@@ -8,6 +8,7 @@
  *   GET  /workspace/test-intelligence/review/<jobId>/state                  → review snapshot + events
  *   POST /workspace/test-intelligence/review/<jobId>/<action>               → job-level write
  *   POST /workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>  → per-case write
+ *   POST /workspace/test-intelligence/sources/<jobId>/jira-paste            → Jira paste source ingest
  *
  * Reads are unauthenticated (artifact JSON contains no secrets — the
  * test-intelligence pipeline already redacts PII before persistence).
@@ -25,6 +26,7 @@ export type InspectorTestIntelligenceRoute =
   | { kind: "list_jobs" }
   | { kind: "read_bundle"; jobId: string }
   | { kind: "review_state"; jobId: string }
+  | { kind: "jira_paste_source"; jobId: string }
   | {
       kind: "review_action";
       jobId: string;
@@ -156,6 +158,41 @@ export const parseInspectorTestIntelligenceRoute = (
     };
   }
 
+  if (head === "sources") {
+    if (segments.length !== 3) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "segment_count_invalid" },
+      };
+    }
+    const jobId = segments[1];
+    const sourceKind = segments[2];
+    if (
+      jobId === undefined ||
+      jobId.length === 0 ||
+      sourceKind === undefined ||
+      sourceKind.length === 0
+    ) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "empty_segment" },
+      };
+    }
+    if (!isSafeJobId(jobId)) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "unsafe_job_id" },
+      };
+    }
+    if (sourceKind !== "jira-paste") {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "unknown_subroute" },
+      };
+    }
+    return { ok: true, route: { kind: "jira_paste_source", jobId } };
+  }
+
   return {
     ok: false,
     error: { kind: "parse_error", reason: "unknown_subroute" },
@@ -166,6 +203,7 @@ export const parseInspectorTestIntelligenceRoute = (
 export const isInspectorTestIntelligenceWriteAction = (
   route: InspectorTestIntelligenceRoute,
 ): boolean => {
+  if (route.kind === "jira_paste_source") return true;
   if (route.kind !== "review_action") return false;
   return route.action !== "state";
 };
