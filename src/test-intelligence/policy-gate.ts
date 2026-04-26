@@ -35,6 +35,7 @@ import {
   type TestCasePolicyProfile,
   type TestCasePolicyReport,
   type TestCasePolicyViolation,
+  type TestCaseRiskCategory,
   type TestCaseValidationIssue,
   type TestCaseValidationIssueCode,
   type TestCaseValidationReport,
@@ -172,13 +173,42 @@ const evaluateCase = (
   }
 
   const intentReviewRisk = findIntentReviewRisk(intent, profile);
+  const caseCarriesReviewRisk = profile.rules.reviewOnlyRiskCategories.includes(
+    testCase.riskCategory,
+  );
+
+  // Risk-tag downgrade detection (Issue #1412): cross-reference the case's
+  // declared `riskCategory` against the classification derivable from the
+  // Business Test Intent IR for the screens referenced in the case's
+  // `figmaTraceRefs`. When the intent classifies the screen as review-only
+  // but the case declares a non-review category, this is a defense-in-depth
+  // signal that an out-of-band caller may have submitted a forged low-risk
+  // tag. Per-case violation is `warning` so the case escalates to
+  // `needs_review` (the issue's specified posture); the matching job-level
+  // violation is emitted in `evaluateJobLevel`.
+  const enforceDowngrade =
+    profile.rules.enforceRiskTagDowngradeDetection ?? true;
+  const screenIntentRisk = enforceDowngrade
+    ? deriveScreenIntentRisk(intent, testCase, profile)
+    : undefined;
+  if (
+    enforceDowngrade &&
+    screenIntentRisk !== undefined &&
+    !caseCarriesReviewRisk
+  ) {
+    const screenIds = collectCaseScreenIds(testCase);
+    violations.push({
+      rule: "policy:risk-tag-downgrade-detected",
+      outcome: "risk_tag_downgrade_detected",
+      severity: "warning",
+      reason: `case-level riskCategory "${testCase.riskCategory}" is below intent-derived classification "${screenIntentRisk}" for screen(s) ${formatScreenList(screenIds)}; treating as needs_review`,
+    });
+    decision = escalate(decision, "needs_review");
+  }
 
   // Regulated risk → review even when no other findings. Intent-derived
   // regulated risk is treated as authoritative so a forged low case tag cannot
   // downgrade a regulated design flow.
-  const caseCarriesReviewRisk = profile.rules.reviewOnlyRiskCategories.includes(
-    testCase.riskCategory,
-  );
   const riskCategory = caseCarriesReviewRisk
     ? testCase.riskCategory
     : intentReviewRisk;
@@ -254,6 +284,71 @@ const evaluateCase = (
     decision,
     violations,
   };
+};
+
+const collectCaseScreenIds = (testCase: GeneratedTestCase): Set<string> => {
+  const ids = new Set<string>();
+  for (const ref of testCase.figmaTraceRefs) {
+    if (ref.screenId.length > 0) ids.add(ref.screenId);
+  }
+  return ids;
+};
+
+const formatScreenList = (screenIds: ReadonlySet<string>): string => {
+  if (screenIds.size === 0) return "<none>";
+  return [...screenIds]
+    .sort()
+    .map((id) => `"${id}"`)
+    .join(", ");
+};
+
+/**
+ * Derive the effective intent-IR risk classification for the screens that a
+ * given test case references via its `figmaTraceRefs`. Issue #1412
+ * defense-in-depth: PII indicators with a `screenId` are filtered to the
+ * case's screens; PII indicators without a `screenId` are treated as global
+ * (fail-closed). Top-level `intent.risks` strings are evaluated globally
+ * because the IR does not yet model per-screen risk strings.
+ *
+ * Returns the strongest review-only risk derivable from the intent, or
+ * `undefined` when no review-only category applies. Severity ordering
+ * mirrors `findIntentReviewRisk` so the two helpers stay consistent.
+ */
+const deriveScreenIntentRisk = (
+  intent: BusinessTestIntentIr,
+  testCase: GeneratedTestCase,
+  profile: TestCasePolicyProfile,
+): TestCaseRiskCategory | undefined => {
+  const reviewSet = new Set(profile.rules.reviewOnlyRiskCategories);
+  const caseScreenIds = collectCaseScreenIds(testCase);
+  const normalizedRisks = intent.risks.map((risk) => risk.toLowerCase());
+
+  for (const category of profile.rules.reviewOnlyRiskCategories) {
+    if (normalizedRisks.includes(category)) return category;
+  }
+
+  const screenScopedPii = intent.piiIndicators.some((indicator) => {
+    if (indicator.screenId === undefined) return true;
+    return caseScreenIds.has(indicator.screenId);
+  });
+  if (screenScopedPii && reviewSet.has("regulated_data")) {
+    return "regulated_data";
+  }
+  if (
+    normalizedRisks.some((risk) => /regulated|pii|personal.?data/.test(risk)) &&
+    reviewSet.has("regulated_data")
+  ) {
+    return "regulated_data";
+  }
+  if (
+    normalizedRisks.some((risk) =>
+      /financial|payment|iban|transaction/.test(risk),
+    ) &&
+    reviewSet.has("financial_transaction")
+  ) {
+    return "financial_transaction";
+  }
+  return undefined;
 };
 
 const findIntentReviewRisk = (
@@ -380,6 +475,33 @@ const evaluateJobLevel = (
       severity: "warning",
       reason: `test cases "${pair.leftTestCaseId}" and "${pair.rightTestCaseId}" share similarity ${pair.similarity}; review for de-duplication`,
     });
+  }
+
+  // Risk-tag downgrade detection (Issue #1412): emit a deduplicated set of
+  // job-level violations describing the per-case drift between the declared
+  // `riskCategory` and the intent-derived classification for the case's
+  // screens. The per-case violation is already emitted by `evaluateCase`; the
+  // job-level entries provide a stable audit summary keyed by `(testCaseId,
+  // intentRisk, declaredRisk)` so review tooling can list the offenders
+  // without scanning every decision row.
+  if (profile.rules.enforceRiskTagDowngradeDetection ?? true) {
+    const reviewSet = new Set(profile.rules.reviewOnlyRiskCategories);
+    const seen = new Set<string>();
+    for (const tc of list.testCases) {
+      const intentRisk = deriveScreenIntentRisk(intent, tc, profile);
+      if (intentRisk === undefined) continue;
+      if (reviewSet.has(tc.riskCategory)) continue;
+      const key = `${tc.id} ${intentRisk} ${tc.riskCategory}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const screenIds = collectCaseScreenIds(tc);
+      violations.push({
+        rule: "policy:risk-tag-downgrade-detected",
+        outcome: "risk_tag_downgrade_detected",
+        severity: "warning",
+        reason: `case "${tc.id}" declared riskCategory "${tc.riskCategory}" but intent IR derives "${intentRisk}" for screen(s) ${formatScreenList(screenIds)}`,
+      });
+    }
   }
 
   // Visual-sidecar outcomes lift to job-level policy outcomes.

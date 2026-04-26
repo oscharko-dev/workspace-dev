@@ -29,6 +29,7 @@ const EU_BANKING_DEFAULT_RULES: TestCasePolicyProfileRules = {
   duplicateSimilarityThreshold: 0.92,
   maxOpenQuestionsPerCase: 5,
   maxAssumptionsPerCase: 8,
+  enforceRiskTagDowngradeDetection: true,
 };
 
 /** Default `eu-banking-default` policy profile (deep-frozen). */
@@ -55,33 +56,42 @@ export const EU_BANKING_DEFAULT_POLICY_PROFILE: Readonly<TestCasePolicyProfile> 
  * frozen module-level constant.
  */
 export const cloneEuBankingDefaultProfile = (): TestCasePolicyProfile => {
+  const rules: TestCasePolicyProfileRules = {
+    reviewOnlyRiskCategories: [
+      ...EU_BANKING_DEFAULT_POLICY_PROFILE.rules.reviewOnlyRiskCategories,
+    ],
+    strictRiskCategories: [
+      ...EU_BANKING_DEFAULT_POLICY_PROFILE.rules.strictRiskCategories,
+    ],
+    requireAccessibilityCaseWhenFormPresent:
+      EU_BANKING_DEFAULT_POLICY_PROFILE.rules
+        .requireAccessibilityCaseWhenFormPresent,
+    requireNegativeOrValidationForValidationRules:
+      EU_BANKING_DEFAULT_POLICY_PROFILE.rules
+        .requireNegativeOrValidationForValidationRules,
+    requireBoundaryCaseForRequiredFields:
+      EU_BANKING_DEFAULT_POLICY_PROFILE.rules
+        .requireBoundaryCaseForRequiredFields,
+    minConfidence: EU_BANKING_DEFAULT_POLICY_PROFILE.rules.minConfidence,
+    duplicateSimilarityThreshold:
+      EU_BANKING_DEFAULT_POLICY_PROFILE.rules.duplicateSimilarityThreshold,
+    maxOpenQuestionsPerCase:
+      EU_BANKING_DEFAULT_POLICY_PROFILE.rules.maxOpenQuestionsPerCase,
+    maxAssumptionsPerCase:
+      EU_BANKING_DEFAULT_POLICY_PROFILE.rules.maxAssumptionsPerCase,
+  };
+  // Preserve the optional flag only when the source has it set, so callers
+  // that explicitly set `false` round-trip cleanly under
+  // `exactOptionalPropertyTypes`.
+  const enforceFlag =
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.enforceRiskTagDowngradeDetection;
+  if (enforceFlag !== undefined) {
+    rules.enforceRiskTagDowngradeDetection = enforceFlag;
+  }
   return {
     id: EU_BANKING_DEFAULT_POLICY_PROFILE.id,
     version: EU_BANKING_DEFAULT_POLICY_PROFILE.version,
     description: EU_BANKING_DEFAULT_POLICY_PROFILE.description,
-    rules: {
-      reviewOnlyRiskCategories: [
-        ...EU_BANKING_DEFAULT_POLICY_PROFILE.rules.reviewOnlyRiskCategories,
-      ],
-      strictRiskCategories: [
-        ...EU_BANKING_DEFAULT_POLICY_PROFILE.rules.strictRiskCategories,
-      ],
-      requireAccessibilityCaseWhenFormPresent:
-        EU_BANKING_DEFAULT_POLICY_PROFILE.rules
-          .requireAccessibilityCaseWhenFormPresent,
-      requireNegativeOrValidationForValidationRules:
-        EU_BANKING_DEFAULT_POLICY_PROFILE.rules
-          .requireNegativeOrValidationForValidationRules,
-      requireBoundaryCaseForRequiredFields:
-        EU_BANKING_DEFAULT_POLICY_PROFILE.rules
-          .requireBoundaryCaseForRequiredFields,
-      minConfidence: EU_BANKING_DEFAULT_POLICY_PROFILE.rules.minConfidence,
-      duplicateSimilarityThreshold:
-        EU_BANKING_DEFAULT_POLICY_PROFILE.rules.duplicateSimilarityThreshold,
-      maxOpenQuestionsPerCase:
-        EU_BANKING_DEFAULT_POLICY_PROFILE.rules.maxOpenQuestionsPerCase,
-      maxAssumptionsPerCase:
-        EU_BANKING_DEFAULT_POLICY_PROFILE.rules.maxAssumptionsPerCase,
-    },
+    rules,
   };
 };

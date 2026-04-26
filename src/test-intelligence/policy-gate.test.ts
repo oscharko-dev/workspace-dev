@@ -401,3 +401,231 @@ test("counters reflect mixed decisions deterministically", () => {
   assert.equal(report.blockedCount, 1);
   assert.equal(report.needsReviewCount, 1);
 });
+
+test("Issue #1412: low-tagged case under regulated intent raises risk_tag_downgrade_detected per-case and job-level", () => {
+  const intent = buildIntent({ risks: ["regulated_data"] });
+  const ctx = harness([buildCase({ riskCategory: "low" })], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.equal(report.blocked, false);
+
+  const perCase = report.decisions[0]?.violations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(perCase, "per-case downgrade violation present");
+  assert.equal(perCase.severity, "warning");
+  assert.equal(perCase.rule, "policy:risk-tag-downgrade-detected");
+
+  const job = report.jobLevelViolations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(job, "job-level downgrade violation present");
+  assert.equal(job.severity, "warning");
+});
+
+test("Issue #1412: high-tagged case under regulated intent still flagged (high is outside review-only set)", () => {
+  const intent = buildIntent({ risks: ["regulated_data"] });
+  const ctx = harness([buildCase({ riskCategory: "high" })], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.ok(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+  );
+});
+
+test("Issue #1412: regulated_data-tagged case does not raise downgrade detection", () => {
+  const intent = buildIntent({ risks: ["regulated_data"] });
+  const ctx = harness([buildCase({ riskCategory: "regulated_data" })], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+  );
+  assert.equal(
+    report.jobLevelViolations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+  );
+});
+
+test("Issue #1412: financial intent classifies a low-tagged case as downgraded", () => {
+  const intent = buildIntent({ risks: ["payment processing"] });
+  const ctx = harness([buildCase({ riskCategory: "low" })], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  const perCase = report.decisions[0]?.violations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(perCase);
+  assert.match(perCase.reason, /financial_transaction/);
+});
+
+test("Issue #1412: PII bound to a different screen does not flag the case", () => {
+  const intent = buildIntent({
+    screens: [
+      { screenId: "s-1", screenName: "Login", trace: { nodeId: "s-1" } },
+      { screenId: "s-2", screenName: "Profile", trace: { nodeId: "s-2" } },
+    ],
+    piiIndicators: [
+      {
+        id: "pii-1",
+        kind: "email",
+        confidence: 0.9,
+        matchLocation: "label",
+        redacted: "[REDACTED:email]",
+        screenId: "s-2",
+      },
+    ],
+  });
+  const ctx = harness(
+    [buildCase({ riskCategory: "low", figmaTraceRefs: [{ screenId: "s-1" }] })],
+    intent,
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+  );
+});
+
+test("Issue #1412: PII without a screenId falls through to global (fail-closed)", () => {
+  const intent = buildIntent({
+    piiIndicators: [
+      {
+        id: "pii-unbound",
+        kind: "email",
+        confidence: 0.9,
+        matchLocation: "label",
+        redacted: "[REDACTED:email]",
+      },
+    ],
+  });
+  const ctx = harness([buildCase({ riskCategory: "low" })], intent);
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  assert.ok(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+  );
+});
+
+test("Issue #1412: feature flag false suppresses downgrade detection only", () => {
+  const intent = buildIntent({ risks: ["regulated_data"] });
+  const ctx = harness([buildCase({ riskCategory: "low" })], intent);
+  ctx.profile.rules.enforceRiskTagDowngradeDetection = false;
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  // Downgrade outcome suppressed.
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+  );
+  assert.equal(
+    report.jobLevelViolations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+  );
+  // Existing regulated-risk pathway still escalates the case.
+  assert.equal(report.decisions[0]?.decision, "needs_review");
+  assert.ok(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "regulated_risk_review_required",
+    ),
+  );
+});
+
+test("Issue #1412: job-level downgrade entries are deduplicated per (testCaseId, intentRisk, declaredRisk)", () => {
+  const intent = buildIntent({
+    risks: ["regulated_data", "regulated personal data"],
+  });
+  const ctx = harness(
+    [
+      buildCase({ id: "tc-a", riskCategory: "low" }),
+      buildCase({ id: "tc-b", riskCategory: "medium" }),
+      buildCase({ id: "tc-c", riskCategory: "regulated_data" }),
+    ],
+    intent,
+  );
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: ctx.list,
+    intent: ctx.intent,
+    profile: ctx.profile,
+    validation: ctx.validation,
+    coverage: ctx.coverage,
+  });
+  const job = report.jobLevelViolations.filter(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.equal(job.length, 2, "exactly one entry per offending case");
+  assert.deepEqual(
+    job.map((v) => v.reason).filter((r) => /tc-c/.test(r)),
+    [],
+    "regulated_data-tagged case must not appear in the job-level summary",
+  );
+});

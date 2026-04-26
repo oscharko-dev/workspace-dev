@@ -41,6 +41,15 @@ test("clone is mutable and isolated from the frozen default", () => {
   assert.equal(EU_BANKING_DEFAULT_POLICY_PROFILE.rules.minConfidence, 0.6);
 });
 
+test("default profile enables risk-tag downgrade detection (Issue #1412)", () => {
+  assert.equal(
+    EU_BANKING_DEFAULT_POLICY_PROFILE.rules.enforceRiskTagDowngradeDetection,
+    true,
+  );
+  const cloned = cloneEuBankingDefaultProfile();
+  assert.equal(cloned.rules.enforceRiskTagDowngradeDetection, true);
+});
+
 test("default profile is deep-frozen", () => {
   assert.ok(Object.isFrozen(EU_BANKING_DEFAULT_POLICY_PROFILE));
   assert.ok(Object.isFrozen(EU_BANKING_DEFAULT_POLICY_PROFILE.rules));

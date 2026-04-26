@@ -278,10 +278,16 @@ const withTempDir = async (
 // Tests
 // ---------------------------------------------------------------------------
 
-test("policy-bypass: risk-tag downgrade (regulated→low) — policy still escalates based on intent risk context", () => {
+test("policy-bypass: risk-tag downgrade (regulated→low) — policy raises risk_tag_downgrade_detected (Issue #1412)", () => {
   // An attacker submits a case claiming riskCategory="low" even though the
   // source intent is classified as regulated_data. The policy gate must treat
-  // the source intent as authoritative and force manual review.
+  // the source intent as authoritative, force the case to needs_review, AND
+  // surface the drift explicitly via the `risk_tag_downgrade_detected`
+  // outcome at both per-case and job-level (Issue #1412 inverted gap test).
+  //
+  // A legitimate case that already carries `riskCategory: "regulated_data"`
+  // must NOT raise `risk_tag_downgrade_detected` — it's only intended to
+  // catch silent downgrades.
 
   const legitimateRegulatedCase = buildCase({ riskCategory: "regulated_data" });
   const tamperedCase = buildCase({ riskCategory: "low" }); // downgraded
@@ -319,26 +325,243 @@ test("policy-bypass: risk-tag downgrade (regulated→low) — policy still escal
   const legitimateReport = runForCase(legitimateRegulatedCase);
   const tamperedReport = runForCase(tamperedCase);
 
-  // A legitimate regulated_data case escalates to needs_review.
+  // A legitimate regulated_data case escalates to needs_review on its own
+  // tag and does NOT raise the downgrade outcome.
   assert.equal(
     legitimateReport.decisions[0]?.decision,
     "needs_review",
     "regulated_data case must be escalated to needs_review",
   );
+  assert.equal(
+    legitimateReport.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+    "legitimate regulated_data case must NOT raise risk_tag_downgrade_detected",
+  );
+  assert.equal(
+    legitimateReport.jobLevelViolations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+    "legitimate regulated_data case must NOT raise a job-level downgrade signal",
+  );
 
+  // The tampered case must still escalate to needs_review and now MUST also
+  // carry the explicit `risk_tag_downgrade_detected` signal both per-case
+  // and job-level (Issue #1412).
   assert.equal(
     tamperedReport.decisions[0]?.decision,
     "needs_review",
     "downgraded riskCategory='low' case must still inherit regulated intent review",
   );
-
-  const hasRegulatedViolation = tamperedReport.decisions[0]?.violations.some(
-    (v) => v.outcome === "regulated_risk_review_required",
-  );
   assert.equal(
-    hasRegulatedViolation,
+    tamperedReport.decisions[0]?.violations.some(
+      (v) => v.outcome === "regulated_risk_review_required",
+    ),
     true,
     "tampered low-risk case must carry regulated_risk_review_required from intent risks",
+  );
+  const perCaseDowngrade = tamperedReport.decisions[0]?.violations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(
+    perCaseDowngrade,
+    "tampered low-risk case must carry per-case risk_tag_downgrade_detected violation",
+  );
+  assert.equal(
+    perCaseDowngrade.severity,
+    "warning",
+    "downgrade detection must be `warning` so it escalates to needs_review (not blocked)",
+  );
+  assert.equal(
+    perCaseDowngrade.rule,
+    "policy:risk-tag-downgrade-detected",
+    "per-case downgrade rule label must be stable (`policy:risk-tag-downgrade-detected`)",
+  );
+
+  const jobDowngrade = tamperedReport.jobLevelViolations.find(
+    (v) => v.outcome === "risk_tag_downgrade_detected",
+  );
+  assert.ok(
+    jobDowngrade,
+    "tampered low-risk case must surface a job-level risk_tag_downgrade_detected entry",
+  );
+  assert.equal(
+    jobDowngrade.severity,
+    "warning",
+    "job-level downgrade must be `warning` so the report stays unblocked while signalling drift",
+  );
+  // Job-level blocked must NOT flip on this signal alone — issue #1412
+  // calls for `needs_review`, not `blocked`.
+  assert.equal(
+    tamperedReport.blocked,
+    false,
+    "downgrade-only drift must surface as needs_review, never as a blocking job-level decision",
+  );
+});
+
+test("policy-bypass: risk-tag downgrade detection respects screen scoping for PII (Issue #1412)", () => {
+  // PII indicators bound to a screen the case does NOT reference must not
+  // trigger the downgrade signal (intent IR provides screen-level context).
+  // PII indicators without a `screenId` are treated as global and DO trigger
+  // the signal (fail-closed defense-in-depth).
+
+  const profile = cloneEuBankingDefaultProfile();
+  const piiOnOtherScreen = buildIntent({
+    screens: [
+      { screenId: "s-1", screenName: "Login", trace: { nodeId: "s-1" } },
+      { screenId: "s-2", screenName: "Profile", trace: { nodeId: "s-2" } },
+    ],
+    piiIndicators: [
+      {
+        id: "pii-1",
+        kind: "email",
+        confidence: 0.9,
+        matchLocation: "label",
+        redacted: "[REDACTED:email]",
+        screenId: "s-2",
+      },
+    ],
+  });
+  const caseOnLoginScreen = buildCase({
+    riskCategory: "low",
+    figmaTraceRefs: [{ screenId: "s-1" }],
+  });
+  const list1 = buildList([caseOnLoginScreen]);
+  const validation1 = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: list1,
+    intent: piiOnOtherScreen,
+  });
+  const coverage1 = computeCoverageReport({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    policyProfileId: profile.id,
+    list: list1,
+    intent: piiOnOtherScreen,
+    duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
+  });
+  const reportA = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: list1,
+    intent: piiOnOtherScreen,
+    profile,
+    validation: validation1,
+    coverage: coverage1,
+  });
+  assert.equal(
+    reportA.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+    "PII tied to a screen the case does not reference must NOT trigger downgrade detection",
+  );
+
+  // Now move the same PII indicator to be unbound (no screenId). The case
+  // must inherit the regulated_data classification fail-closed.
+  const piiUnbound = buildIntent({
+    piiIndicators: [
+      {
+        id: "pii-2",
+        kind: "email",
+        confidence: 0.9,
+        matchLocation: "label",
+        redacted: "[REDACTED:email]",
+      },
+    ],
+  });
+  const list2 = buildList([buildCase({ riskCategory: "low" })]);
+  const validation2 = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: list2,
+    intent: piiUnbound,
+  });
+  const coverage2 = computeCoverageReport({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    policyProfileId: profile.id,
+    list: list2,
+    intent: piiUnbound,
+    duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
+  });
+  const reportB = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list: list2,
+    intent: piiUnbound,
+    profile,
+    validation: validation2,
+    coverage: coverage2,
+  });
+  assert.equal(
+    reportB.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    true,
+    "unbound PII indicator must trigger downgrade detection (fail-closed)",
+  );
+});
+
+test("policy-bypass: risk-tag downgrade detection can be disabled via profile flag (Issue #1412)", () => {
+  // Operators that cannot accept the additional review escalation may opt
+  // out by setting `enforceRiskTagDowngradeDetection: false`. The case must
+  // still escalate via the existing `regulated_risk_review_required`
+  // violation, but the new `risk_tag_downgrade_detected` outcome must NOT
+  // appear.
+
+  const profile = cloneEuBankingDefaultProfile();
+  profile.rules.enforceRiskTagDowngradeDetection = false;
+
+  const intent = buildIntent({ risks: ["regulated_data"] });
+  const list = buildList([buildCase({ riskCategory: "low" })]);
+  const validation = validateGeneratedTestCases({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent,
+  });
+  const coverage = computeCoverageReport({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    policyProfileId: profile.id,
+    list,
+    intent,
+    duplicateSimilarityThreshold: profile.rules.duplicateSimilarityThreshold,
+  });
+  const report = evaluatePolicyGate({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent,
+    profile,
+    validation,
+    coverage,
+  });
+
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+    "disabled flag must suppress per-case downgrade outcome",
+  );
+  assert.equal(
+    report.jobLevelViolations.some(
+      (v) => v.outcome === "risk_tag_downgrade_detected",
+    ),
+    false,
+    "disabled flag must suppress job-level downgrade outcome",
+  );
+  assert.equal(
+    report.decisions[0]?.violations.some(
+      (v) => v.outcome === "regulated_risk_review_required",
+    ),
+    true,
+    "existing regulated_risk_review_required pathway must continue to fire",
   );
 });
 

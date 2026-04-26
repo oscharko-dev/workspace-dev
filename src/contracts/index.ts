@@ -394,6 +394,7 @@ export const ALLOWED_TEST_CASE_POLICY_OUTCOMES = [
   "visual_sidecar_possible_pii",
   "visual_sidecar_prompt_injection_text",
   "semantic_suspicious_content",
+  "risk_tag_downgrade_detected",
 ] as const;
 export type TestCasePolicyOutcome =
   (typeof ALLOWED_TEST_CASE_POLICY_OUTCOMES)[number];
@@ -454,6 +455,20 @@ export interface TestCasePolicyProfileRules {
   maxOpenQuestionsPerCase: number;
   /** Max assumption count per case before review is required. */
   maxAssumptionsPerCase: number;
+  /**
+   * Whether the policy gate must cross-reference each generated test case's
+   * declared `riskCategory` against the risk classification derivable from the
+   * Business Test Intent IR for the screens referenced in the case's
+   * `figmaTraceRefs`. When enabled (the secure default), any case that
+   * declares a risk category outside `reviewOnlyRiskCategories` while the
+   * intent IR derives a review-only classification for one of its screens
+   * raises a `risk_tag_downgrade_detected` outcome at both per-case and
+   * job-level. The case is escalated to `needs_review` (defense-in-depth
+   * against an out-of-band caller submitting forged low-risk tags).
+   *
+   * Optional for backward compatibility. Treat `undefined` as `true`.
+   */
+  enforceRiskTagDowngradeDetection?: boolean;
 }
 
 /** Built-in policy profile shape. Profiles are identified by `id`+`version`. */
@@ -4817,4 +4832,4 @@ export interface EvidenceVerifyResponse {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.4.0" as const;
+export const CONTRACT_VERSION = "4.5.0" as const;
