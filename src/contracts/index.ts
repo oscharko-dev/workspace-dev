@@ -4136,19 +4136,18 @@ export interface FinOpsBudgetReport {
  * `scripts/generate-cyclonedx.mjs`), the LBOM is per-job and lives under
  * the run directory.
  *
- * Hard invariants stamped on the persisted artifact (TYPE-LEVEL `false`):
- *   - `secretsIncluded: false` — no API keys, bearer tokens, or signer
- *     material.
- *   - `rawPromptsIncluded: false` — no system or user prompt text. Only
- *     hash digests participate.
- *   - `rawScreenshotsIncluded: false` — no decoded image bytes. Capture
- *     identity is recorded as SHA-256 only.
+ * Hard invariants are stamped as CycloneDX metadata properties:
+ *   - `workspace-dev:secretsIncluded = false` — no API keys, bearer
+ *     tokens, or signer material.
+ *   - `workspace-dev:rawPromptsIncluded = false` — no system or user
+ *     prompt text. Only hash digests participate.
+ *   - `workspace-dev:rawScreenshotsIncluded = false` — no decoded image
+ *     bytes. Capture identity is recorded as SHA-256 only.
  *
  * The artifact validates against the CycloneDX 1.6 schema family
- * (CycloneDX 1.6 + JSF + SPDX-encoded license identifiers) using the
- * hand-rolled validator in `src/test-intelligence/lbom-emitter.ts`. The
- * package's zero-runtime-dep policy forbids ajv at runtime; the validator
- * is a structural check anchored on the fields the LBOM actually emits.
+ * (CycloneDX 1.6 + JSF + SPDX-encoded license identifiers) in CI. Runtime
+ * persistence still uses the zero-runtime-dependency structural validator
+ * in `src/test-intelligence/lbom-emitter.ts`.
  */
 
 /** CycloneDX spec version targeted by the per-job LBOM. */
@@ -4224,7 +4223,10 @@ export interface LbomModelConsiderations {
   useCases?: string[];
   technicalLimitations?: string[];
   performanceTradeoffs?: string[];
-  ethicalConsiderations?: string[];
+  ethicalConsiderations?: Array<{
+    name: string;
+    mitigationStrategy?: string;
+  }>;
   fairnessAssessments?: string[];
 }
 
@@ -4325,12 +4327,6 @@ export interface Wave1PocLbomDocument {
   metadata: LbomMetadata;
   components: Array<LbomModelComponent | LbomDataComponent>;
   dependencies: LbomDependency[];
-  /** Hard invariant: no API keys / tokens / signer material. */
-  secretsIncluded: false;
-  /** Hard invariant: no prompt text — only hash digests. */
-  rawPromptsIncluded: false;
-  /** Hard invariant: no decoded image bytes — only capture-identity hashes. */
-  rawScreenshotsIncluded: false;
 }
 
 /** Validation issue surfaced by `validateLbomDocument`. */
@@ -4387,4 +4383,4 @@ export interface Wave1PocLbomSummary {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "3.32.0" as const;
+export const CONTRACT_VERSION = "4.0.0" as const;

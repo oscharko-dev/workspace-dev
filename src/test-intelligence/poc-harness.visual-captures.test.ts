@@ -110,9 +110,15 @@ const assertFailureManifestAttestsSidecar = async (
     true,
     JSON.stringify(lbomValidation.issues, null, 2),
   );
-  assert.equal(parsedLbom.secretsIncluded, false);
-  assert.equal(parsedLbom.rawPromptsIncluded, false);
-  assert.equal(parsedLbom.rawScreenshotsIncluded, false);
+  const lbomProps = new Map(
+    parsedLbom.metadata.properties.map((property) => [
+      property.name,
+      property.value,
+    ]),
+  );
+  assert.equal(lbomProps.get("workspace-dev:secretsIncluded"), "false");
+  assert.equal(lbomProps.get("workspace-dev:rawPromptsIncluded"), "false");
+  assert.equal(lbomProps.get("workspace-dev:rawScreenshotsIncluded"), "false");
 };
 
 /**
@@ -223,6 +229,7 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
         deployment: PRIMARY_DEPLOYMENT,
         modelRevision: `${PRIMARY_DEPLOYMENT}@test`,
         gatewayRelease: "mock",
+        modelWeightsSha256: "a".repeat(64),
         declaredCapabilities: VISUAL_CAPS,
         responder: primaryResponder,
       },
@@ -231,6 +238,7 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
         deployment: FALLBACK_DEPLOYMENT,
         modelRevision: `${FALLBACK_DEPLOYMENT}@test`,
         gatewayRelease: "mock",
+        modelWeightsSha256: "b".repeat(64),
         declaredCapabilities: VISUAL_CAPS,
         // fallback is wired but must never be called on the happy path
         responder: (_req: LlmGenerationRequest, attempt: number) => {
@@ -268,6 +276,24 @@ test("poc-harness visualCaptures: happy path — primary succeeds, artifacts lan
       result.manifest.modelDeployments.visualFallback,
       FALLBACK_DEPLOYMENT,
     );
+
+    // --- LBOM carries gateway identity that was known on the bundle ---
+    const visualPrimaryLbom = result.lbom.components.find(
+      (component) => component["bom-ref"] === "model:visual_primary",
+    );
+    assert.equal(visualPrimaryLbom?.type, "machine-learning-model");
+    if (visualPrimaryLbom?.type === "machine-learning-model") {
+      const props = new Map(
+        visualPrimaryLbom.properties.map((property) => [
+          property.name,
+          property.value,
+        ]),
+      );
+      assert.equal(visualPrimaryLbom.version, `${PRIMARY_DEPLOYMENT}@test`);
+      assert.equal(props.get("workspace-dev:gatewayRelease"), "mock");
+      assert.equal(props.get("workspace-dev:format"), "openai_chat");
+      assert.equal(visualPrimaryLbom.hashes?.[0]?.content, "a".repeat(64));
+    }
 
     // --- visual-sidecar-result.json artifact on disk ---
     const sidecarArtifactPath = join(

@@ -31,13 +31,34 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.0.0] - 2026-04-26
+
+### Changed (Issue #1378 follow-up — schema conformance) — BREAKING
+
+- `CONTRACT_VERSION` from `3.32.0` to `4.0.0` (Major bump: field removals +
+  type change per the versioning rules table above).
+- **Removed** `Wave1PocLbomDocument.secretsIncluded`, `rawPromptsIncluded`,
+  and `rawScreenshotsIncluded` (non-standard top-level fields). The same
+  invariants are now carried as CycloneDX `metadata.properties`:
+  `workspace-dev:secretsIncluded`, `workspace-dev:rawPromptsIncluded`, and
+  `workspace-dev:rawScreenshotsIncluded`. Consumers that read these fields
+  must switch to `metadata.properties`.
+- **Changed** `LbomModelConsiderations.ethicalConsiderations` from
+  `string[]` to `Array<{ name: string; mitigationStrategy?: string }>`,
+  matching the CycloneDX 1.6 model-card risk-object schema.
+- Per-job LBOM documents now validate directly against the pinned CycloneDX
+  1.6 JSON schema family (`bom-1.6`, SPDX, and JSF).
+- New CI-covered schema test validates both emitted LBOM artifacts and
+  `docs/figma-to-test/lbom-template.cdx.json` against pinned local
+  CycloneDX 1.6 + SPDX + JSF schemas.
+
 ## [3.32.0] - 2026-04-26
 
 ### Added (Issue #1378)
 
 - New per-job CycloneDX 1.6 ML-BOM (LBOM) artifact emitted by `runWave1Poc` under `<runDir>/lbom/ai-bom.cdx.json`. The artifact inventories the model chain (`gpt-oss-120b` test-generation, `llama-4-maverick-vision` visual primary, `phi-4-multimodal-poc` visual fallback), the curated few-shot prompt bundle (hashed via the prompt compiler's `promptHash` + `schemaHash`), and the active policy profile (hashed via canonical SHA-256). The visual sidecar fallback usage is recorded as a metadata + per-component property so an operator can detect degraded paths without re-parsing the visual sidecar result.
 - New constants: `LBOM_CYCLONEDX_SPEC_VERSION` (`"1.6"`), `LBOM_ARTIFACT_SCHEMA_VERSION` (`"1.0.0"`), `LBOM_ARTIFACT_DIRECTORY` (`"lbom"`), `LBOM_ARTIFACT_FILENAME` (`"ai-bom.cdx.json"`), and `ALLOWED_LBOM_MODEL_ROLES` (`["test_generation", "visual_primary", "visual_fallback"]`).
-- New exported types describing the persisted LBOM document: `Wave1PocLbomDocument`, `LbomMetadata`, `LbomToolComponent`, `LbomSubjectComponent`, `LbomModelComponent`, `LbomDataComponent`, `LbomDependency`, `LbomHash`, `LbomProperty`, `LbomExternalReference`, `LbomLicenseEntry`, `LbomModelCard`, `LbomModelParameters`, `LbomModelConsiderations`, `LbomPerformanceMetric`, `LbomModelRole`, `LbomDataKind`. Document carries TYPE-LEVEL `false` literals on `secretsIncluded`, `rawPromptsIncluded`, and `rawScreenshotsIncluded`.
+- New exported types describing the persisted LBOM document: `Wave1PocLbomDocument`, `LbomMetadata`, `LbomToolComponent`, `LbomSubjectComponent`, `LbomModelComponent`, `LbomDataComponent`, `LbomDependency`, `LbomHash`, `LbomProperty`, `LbomExternalReference`, `LbomLicenseEntry`, `LbomModelCard`, `LbomModelParameters`, `LbomModelConsiderations`, `LbomPerformanceMetric`, `LbomModelRole`, `LbomDataKind`.
 - New exported types `Wave1PocLbomSummary`, `LbomValidationIssue`, `LbomValidationResult` for audit-timeline summary + structured validator diagnostics.
 - New module `src/test-intelligence/lbom-emitter.ts` with `buildLbomDocument`, `validateLbomDocument`, `writeLbomArtifact`, `summarizeLbomArtifact`, `lbomDataKindFromBomRef`, and `isAllowedVisualFallbackReason`. Validator is hand-rolled (workspace-dev zero-runtime-deps policy — see `repo_zero_deps.md`) and enforces CycloneDX 1.6 structural shape, single-algorithm hash entries (`SHA-256` only), unique `bom-ref` set, dependency-graph closure, RFC-4122 serial number, ISO-8601 timestamp, no raw `contents` payloads on data components, and no high-risk secret patterns in any property value.
 - `Wave1PocEvidenceArtifactCategory` adds `"lbom"`. The `runWave1Poc` evidence manifest now attests `lbom/ai-bom.cdx.json` with SHA-256 + byte length, so the existing in-toto attestation transitively covers the LBOM through the manifest digest.

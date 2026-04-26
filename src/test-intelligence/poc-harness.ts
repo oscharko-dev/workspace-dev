@@ -1328,6 +1328,40 @@ export const runWave1Poc = async (
     input.bundle === undefined
       ? undefined
       : toManifestVisualDeployment(input.bundle.visualFallback.deployment);
+  const lbomVisualModelBindings =
+    input.bundle === undefined
+      ? undefined
+      : {
+          visual_primary: {
+            modelRevision: input.bundle.visualPrimary.modelRevision,
+            gatewayRelease: input.bundle.visualPrimary.gatewayRelease,
+            compatibilityMode: input.bundle.visualPrimary.compatibilityMode,
+            licenseStatus: "unknown",
+          },
+          visual_fallback: {
+            modelRevision: input.bundle.visualFallback.modelRevision,
+            gatewayRelease: input.bundle.visualFallback.gatewayRelease,
+            compatibilityMode: input.bundle.visualFallback.compatibilityMode,
+            licenseStatus: "unknown",
+          },
+        };
+  const lbomWeightsSha256 =
+    input.bundle === undefined
+      ? undefined
+      : {
+          ...(input.bundle.visualPrimary.modelWeightsSha256 !== undefined
+            ? {
+                visual_primary:
+                  input.bundle.visualPrimary.modelWeightsSha256,
+              }
+            : {}),
+          ...(input.bundle.visualFallback.modelWeightsSha256 !== undefined
+            ? {
+                visual_fallback:
+                  input.bundle.visualFallback.modelWeightsSha256,
+              }
+            : {}),
+        };
   const lbomDocument = buildLbomDocument({
     fixtureId: input.fixtureId,
     jobId: input.jobId,
@@ -1350,7 +1384,15 @@ export const runWave1Poc = async (
     testGenerationBinding: {
       modelRevision: TEST_GENERATION_MODEL_REVISION,
       gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+      compatibilityMode: "openai_chat",
+      licenseStatus: "unknown",
     },
+    ...(lbomVisualModelBindings !== undefined
+      ? { visualModelBindings: lbomVisualModelBindings }
+      : {}),
+    ...(lbomWeightsSha256 !== undefined
+      ? { weightsSha256: lbomWeightsSha256 }
+      : {}),
     ...(sidecarResult !== undefined ? { visualSidecar: sidecarResult } : {}),
     redactionPolicyVersion: REDACTION_POLICY_VERSION,
   });
@@ -1917,6 +1959,30 @@ const writeVisualSidecarFailureEvidenceManifest = async (input: {
     testGenerationBinding: {
       modelRevision: TEST_GENERATION_MODEL_REVISION,
       gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
+      compatibilityMode: "openai_chat",
+      licenseStatus: "unknown",
+    },
+    visualModelBindings: {
+      visual_primary: {
+        modelRevision: input.bundle.visualPrimary.modelRevision,
+        gatewayRelease: input.bundle.visualPrimary.gatewayRelease,
+        compatibilityMode: input.bundle.visualPrimary.compatibilityMode,
+        licenseStatus: "unknown",
+      },
+      visual_fallback: {
+        modelRevision: input.bundle.visualFallback.modelRevision,
+        gatewayRelease: input.bundle.visualFallback.gatewayRelease,
+        compatibilityMode: input.bundle.visualFallback.compatibilityMode,
+        licenseStatus: "unknown",
+      },
+    },
+    weightsSha256: {
+      ...(input.bundle.visualPrimary.modelWeightsSha256 !== undefined
+        ? { visual_primary: input.bundle.visualPrimary.modelWeightsSha256 }
+        : {}),
+      ...(input.bundle.visualFallback.modelWeightsSha256 !== undefined
+        ? { visual_fallback: input.bundle.visualFallback.modelWeightsSha256 }
+        : {}),
     },
     redactionPolicyVersion: REDACTION_POLICY_VERSION,
   });

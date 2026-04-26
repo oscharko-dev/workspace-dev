@@ -1750,6 +1750,431 @@ Reference to the Figma node that produced an intent element.
 
 ***
 
+### LbomDataComponent
+
+CycloneDX 1.6 component entry — data variant (bundle / policy).
+
+#### Properties
+
+##### bom-ref
+
+> **bom-ref**: `string`
+
+##### description
+
+> **description**: `string`
+
+##### hashes
+
+> **hashes**: [`LbomHash`](#lbomhash)[]
+
+##### name
+
+> **name**: `string`
+
+##### properties
+
+> **properties**: [`LbomProperty`](#lbomproperty)[]
+
+##### type
+
+> **type**: `"data"`
+
+##### version
+
+> **version**: `string`
+
+***
+
+### LbomDependency
+
+CycloneDX 1.6 dependency edge.
+
+#### Properties
+
+##### dependsOn
+
+> **dependsOn**: `string`[]
+
+##### ref
+
+> **ref**: `string`
+
+***
+
+### LbomExternalReference
+
+External reference entry on a CycloneDX 1.6 component.
+
+#### Properties
+
+##### type
+
+> **type**: `"documentation"` \| `"vcs"` \| `"evidence"` \| `"model-card"` \| `"configuration"` \| `"license"`
+
+##### url
+
+> **url**: `string`
+
+***
+
+### LbomHash
+
+Hash entry on a CycloneDX 1.6 component.
+
+#### Properties
+
+##### alg
+
+> **alg**: `"SHA-256"`
+
+Hash algorithm — workspace-dev only emits `SHA-256`.
+
+##### content
+
+> **content**: `string`
+
+Lowercase hex digest.
+
+***
+
+### LbomLicenseEntry
+
+License entry — workspace-dev exclusively emits SPDX identifiers.
+
+#### Properties
+
+##### license
+
+> **license**: `object`
+
+###### id
+
+> **id**: `string`
+
+***
+
+### LbomMetadata
+
+CycloneDX 1.6 metadata block as emitted by workspace-dev.
+
+#### Properties
+
+##### component
+
+> **component**: [`LbomSubjectComponent`](#lbomsubjectcomponent)
+
+##### properties
+
+> **properties**: [`LbomProperty`](#lbomproperty)[]
+
+##### timestamp
+
+> **timestamp**: `string`
+
+##### tools
+
+> **tools**: `object`
+
+###### components
+
+> **components**: [`LbomToolComponent`](#lbomtoolcomponent)[]
+
+***
+
+### LbomModelCard
+
+CycloneDX 1.6 modelCard surface as emitted by workspace-dev.
+
+#### Properties
+
+##### considerations?
+
+> `optional` **considerations?**: [`LbomModelConsiderations`](#lbommodelconsiderations)
+
+##### modelParameters?
+
+> `optional` **modelParameters?**: [`LbomModelParameters`](#lbommodelparameters)
+
+##### properties?
+
+> `optional` **properties?**: [`LbomProperty`](#lbomproperty)[]
+
+##### quantitativeAnalysis?
+
+> `optional` **quantitativeAnalysis?**: `object`
+
+###### performanceMetrics
+
+> **performanceMetrics**: [`LbomPerformanceMetric`](#lbomperformancemetric)[]
+
+***
+
+### LbomModelComponent
+
+CycloneDX 1.6 component entry — model variant.
+
+#### Properties
+
+##### bom-ref
+
+> **bom-ref**: `string`
+
+##### description
+
+> **description**: `string`
+
+##### externalReferences?
+
+> `optional` **externalReferences?**: [`LbomExternalReference`](#lbomexternalreference)[]
+
+##### group?
+
+> `optional` **group?**: `string`
+
+##### hashes?
+
+> `optional` **hashes?**: [`LbomHash`](#lbomhash)[]
+
+##### licenses?
+
+> `optional` **licenses?**: [`LbomLicenseEntry`](#lbomlicenseentry)[]
+
+##### modelCard
+
+> **modelCard**: [`LbomModelCard`](#lbommodelcard)
+
+##### name
+
+> **name**: `string`
+
+##### properties
+
+> **properties**: [`LbomProperty`](#lbomproperty)[]
+
+##### publisher?
+
+> `optional` **publisher?**: `string`
+
+##### type
+
+> **type**: `"machine-learning-model"`
+
+##### version
+
+> **version**: `string`
+
+***
+
+### LbomModelConsiderations
+
+CycloneDX 1.6 modelCard.considerations surface as emitted by workspace-dev.
+
+#### Properties
+
+##### ethicalConsiderations?
+
+> `optional` **ethicalConsiderations?**: `object`[]
+
+###### mitigationStrategy?
+
+> `optional` **mitigationStrategy?**: `string`
+
+###### name
+
+> **name**: `string`
+
+##### fairnessAssessments?
+
+> `optional` **fairnessAssessments?**: `string`[]
+
+##### performanceTradeoffs?
+
+> `optional` **performanceTradeoffs?**: `string`[]
+
+##### technicalLimitations?
+
+> `optional` **technicalLimitations?**: `string`[]
+
+##### useCases?
+
+> `optional` **useCases?**: `string`[]
+
+##### users?
+
+> `optional` **users?**: `string`[]
+
+***
+
+### LbomModelParameters
+
+CycloneDX 1.6 modelCard.modelParameters surface as emitted by workspace-dev.
+
+#### Properties
+
+##### architectureFamily?
+
+> `optional` **architectureFamily?**: `string`
+
+##### modelArchitecture?
+
+> `optional` **modelArchitecture?**: `string`
+
+##### task
+
+> **task**: `string`
+
+***
+
+### LbomPerformanceMetric
+
+CycloneDX 1.6 modelCard.quantitativeAnalysis.performanceMetrics entry.
+Values are encoded as strings per the CycloneDX 1.6 spec.
+
+#### Properties
+
+##### confidenceInterval?
+
+> `optional` **confidenceInterval?**: `object`
+
+###### lowerBound
+
+> **lowerBound**: `string`
+
+###### upperBound
+
+> **upperBound**: `string`
+
+##### slice?
+
+> `optional` **slice?**: `string`
+
+##### type
+
+> **type**: `string`
+
+##### value
+
+> **value**: `string`
+
+***
+
+### LbomProperty
+
+Property entry on a CycloneDX 1.6 component (or root metadata).
+
+#### Properties
+
+##### name
+
+> **name**: `string`
+
+##### value
+
+> **value**: `string`
+
+***
+
+### LbomSubjectComponent
+
+CycloneDX 1.6 metadata.component entry — the BOM subject.
+
+#### Properties
+
+##### bom-ref
+
+> **bom-ref**: `string`
+
+##### description
+
+> **description**: `string`
+
+##### name
+
+> **name**: `string`
+
+##### properties
+
+> **properties**: [`LbomProperty`](#lbomproperty)[]
+
+##### type
+
+> **type**: `"application"`
+
+##### version
+
+> **version**: `string`
+
+***
+
+### LbomToolComponent
+
+CycloneDX 1.6 metadata.tools entry.
+
+#### Properties
+
+##### description
+
+> **description**: `string`
+
+##### name
+
+> **name**: `string`
+
+##### publisher
+
+> **publisher**: `string`
+
+##### type
+
+> **type**: `"application"`
+
+##### version
+
+> **version**: `string`
+
+***
+
+### LbomValidationIssue
+
+Validation issue surfaced by `validateLbomDocument`.
+
+#### Properties
+
+##### code
+
+> **code**: `"missing_required_field"` \| `"invalid_value"` \| `"invalid_hash"` \| `"invalid_type"` \| `"invalid_serial_number"` \| `"invalid_timestamp"` \| `"duplicate_bom_ref"` \| `"unknown_dependency_ref"` \| `"raw_prompt_leak"` \| `"raw_screenshot_leak"` \| `"secret_leak"`
+
+Stable diagnostic code consumers can switch on.
+
+##### message
+
+> **message**: `string`
+
+##### path
+
+> **path**: `string`
+
+Dotted JSON path of the offending field.
+
+***
+
+### LbomValidationResult
+
+Result of `validateLbomDocument`.
+
+#### Properties
+
+##### issues
+
+> **issues**: [`LbomValidationIssue`](#lbomvalidationissue)[]
+
+##### valid
+
+> **valid**: `boolean`
+
+***
+
 ### LlmCapabilitiesArtifact
 
 Persistable capabilities artifact. Contains identity (role, deployment,
@@ -4613,6 +5038,104 @@ SHA-256 hex of the persisted `visual-sidecar-result.json` artifact.
 ##### selectedDeployment
 
 > **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+***
+
+### Wave1PocLbomDocument
+
+Per-job LLM Bill of Materials document (CycloneDX 1.6 ML-BOM, Issue #1378).
+
+The shape mirrors the CycloneDX 1.6 JSON spec for fields workspace-dev
+actually populates. Optional CycloneDX fields workspace-dev does not use
+are intentionally omitted from the type to keep emission and validation
+aligned with what callers can audit.
+
+#### Properties
+
+##### bomFormat
+
+> **bomFormat**: `"CycloneDX"`
+
+##### components
+
+> **components**: ([`LbomModelComponent`](#lbommodelcomponent) \| [`LbomDataComponent`](#lbomdatacomponent))[]
+
+##### dependencies
+
+> **dependencies**: [`LbomDependency`](#lbomdependency)[]
+
+##### metadata
+
+> **metadata**: [`LbomMetadata`](#lbommetadata)
+
+##### serialNumber
+
+> **serialNumber**: `string`
+
+RFC-4122 UUID URN, deterministic from job identity.
+
+##### specVersion
+
+> **specVersion**: `"1.6"`
+
+##### version
+
+> **version**: `1`
+
+CycloneDX-required document version. workspace-dev always emits `1`.
+
+***
+
+### Wave1PocLbomSummary
+
+Audit-timeline summary of the per-job LBOM emit. Carries the on-disk
+filename, byte length, the canonical SHA-256 (matches the manifest
+attestation), and a count of components by kind so a verifier can spot
+"only one model row" regression without re-parsing the artifact.
+
+#### Properties
+
+##### bytes
+
+> **bytes**: `number`
+
+Byte length of the persisted canonical JSON.
+
+##### componentCounts
+
+> **componentCounts**: `object`
+
+Component-kind counts.
+
+###### data
+
+> **data**: `number`
+
+###### models
+
+> **models**: `number`
+
+##### filename
+
+> **filename**: `string`
+
+Relative filename inside the run directory (`lbom/ai-bom.cdx.json`).
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### sha256
+
+> **sha256**: `string`
+
+SHA-256 of the persisted canonical JSON (hex, lowercase).
+
+##### visualFallbackUsed
+
+> **visualFallbackUsed**: `boolean`
+
+Whether the visual sidecar fallback path was taken in the run.
 
 ***
 
@@ -7662,7 +8185,7 @@ Region result returned as part of a visual audit.
 
 ###### Inherited from
 
-[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-4)
+[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-9)
 
 ##### totalPixels
 
@@ -8350,6 +8873,22 @@ Where a detected element came from during reconciliation.
 
 ***
 
+### LbomDataKind
+
+> **LbomDataKind** = `"few_shot_bundle"` \| `"policy_profile"`
+
+Discriminant of an LBOM data-component kind.
+
+***
+
+### LbomModelRole
+
+> **LbomModelRole** = *typeof* [`ALLOWED_LBOM_MODEL_ROLES`](#allowed_lbom_model_roles)\[`number`\]
+
+Discriminant of an LBOM model role.
+
+***
+
 ### LlmCapabilityProbeCapability
 
 > **LlmCapabilityProbeCapability** = keyof [`LlmGatewayCapabilities`](#llmgatewaycapabilities) \| `"textChat"`
@@ -8593,7 +9132,7 @@ supplied integration with Fulcio + Rekor).
 
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"` \| `"lbom"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -9002,6 +9541,16 @@ sorted on the `ReviewSnapshot.fourEyesReasons` field.
 
 ***
 
+### ALLOWED\_LBOM\_MODEL\_ROLES
+
+> `const` **ALLOWED\_LBOM\_MODEL\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`\]
+
+Allowed roles for an LBOM machine-learning-model component. Mirrors the
+gateway role surface so a single artifact can describe the entire model
+chain that produced a job's test cases.
+
+***
+
 ### ALLOWED\_LLM\_CODEGEN\_MODES
 
 > `const` **ALLOWED\_LLM\_CODEGEN\_MODES**: readonly \[`"deterministic"`\]
@@ -9243,7 +9792,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.31.0"`
+> `const` **CONTRACT\_VERSION**: `"4.0.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -9399,6 +9948,38 @@ Schema version for generated test case payloads.
 > `const` **GENERATED\_TESTCASES\_ARTIFACT\_FILENAME**: `"generated-testcases.json"`
 
 Canonical filename for the persisted test-case payload accepted into review/export.
+
+***
+
+### LBOM\_ARTIFACT\_DIRECTORY
+
+> `const` **LBOM\_ARTIFACT\_DIRECTORY**: `"lbom"`
+
+Subdirectory under a run dir where the per-job LBOM is persisted.
+
+***
+
+### LBOM\_ARTIFACT\_FILENAME
+
+> `const` **LBOM\_ARTIFACT\_FILENAME**: `"ai-bom.cdx.json"`
+
+Canonical filename for the per-job LBOM artifact.
+
+***
+
+### LBOM\_ARTIFACT\_SCHEMA\_VERSION
+
+> `const` **LBOM\_ARTIFACT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted per-job LBOM artifact.
+
+***
+
+### LBOM\_CYCLONEDX\_SPEC\_VERSION
+
+> `const` **LBOM\_CYCLONEDX\_SPEC\_VERSION**: `"1.6"`
+
+CycloneDX spec version targeted by the per-job LBOM.
 
 ***
 

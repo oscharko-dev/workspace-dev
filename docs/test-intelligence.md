@@ -605,7 +605,11 @@ Composition:
   `visual_primary`, `visual_fallback`). The `name` is the canonical model
   id; the active deployment label, gateway release, and image-input
   capability are stamped as `workspace-dev:*` properties so the LBOM
-  remains stable across mock and live runs.
+  remains stable across mock and live runs. When a gateway bundle supplies
+  model revision, compatibility format, or optional weights SHA-256 for a
+  visual sidecar, those known values are carried into the corresponding
+  model component; provider and license are marked `unknown` unless a
+  concrete operator-supplied value is available.
 - One `data` component for the curated few-shot bundle, hashed via the
   prompt-compiler `promptHash` plus the bound generated-test-case
   `schemaHash`.
@@ -614,8 +618,10 @@ Composition:
 - A `dependencies` graph rooting the run subject (`job:<jobId>`) at the
   three model components and the two data bundles.
 
-Hard invariants stamped on the document (TYPE-LEVEL `false`):
-`secretsIncluded`, `rawPromptsIncluded`, `rawScreenshotsIncluded`. The
+Hard invariants stamped on the document as CycloneDX metadata
+properties: `workspace-dev:secretsIncluded`,
+`workspace-dev:rawPromptsIncluded`, and
+`workspace-dev:rawScreenshotsIncluded`, each with value `"false"`. The
 LBOM never carries API keys, bearer tokens, signer material, prompt
 text, response text, or decoded image bytes. Capture identity is
 recorded only as SHA-256 inside the visual sidecar result, not in the
@@ -631,10 +637,10 @@ Schema validation:
   scan that refuses values matching the `redactHighRiskSecrets`
   high-risk patterns. The validator runs before the artifact is
   persisted; any failure aborts the harness fail-closed.
-- The CycloneDX 1.6 + JSF + SPDX schema family is referenced by the
-  template; the validator emits the same field shape the template
-  documents so a downstream operator can use either the template or the
-  CycloneDX reference suite to audit the artifact.
+- The CycloneDX 1.6 + JSF + SPDX schema family is pinned under
+  `scripts/schemas/cyclonedx-1.6/` and exercised by
+  `src/test-intelligence/lbom-cyclonedx-schema.test.ts` for both emitted
+  artifacts and the checked-in template.
 
 Manifest + attestation coverage:
 
