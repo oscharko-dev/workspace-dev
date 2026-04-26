@@ -31,20 +31,23 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
-## [3.32.1] - 2026-04-26
+## [4.0.0] - 2026-04-26
 
-### Changed (Issue #1378 follow-up — schema conformance)
+### Changed (Issue #1378 follow-up — schema conformance) — BREAKING
 
-- `CONTRACT_VERSION` from `3.32.0` to `3.32.1`.
+- `CONTRACT_VERSION` from `3.32.0` to `4.0.0` (Major bump: field removals +
+  type change per the versioning rules table above).
+- **Removed** `Wave1PocLbomDocument.secretsIncluded`, `rawPromptsIncluded`,
+  and `rawScreenshotsIncluded` (non-standard top-level fields). The same
+  invariants are now carried as CycloneDX `metadata.properties`:
+  `workspace-dev:secretsIncluded`, `workspace-dev:rawPromptsIncluded`, and
+  `workspace-dev:rawScreenshotsIncluded`. Consumers that read these fields
+  must switch to `metadata.properties`.
+- **Changed** `LbomModelConsiderations.ethicalConsiderations` from
+  `string[]` to `Array<{ name: string; mitigationStrategy?: string }>`,
+  matching the CycloneDX 1.6 model-card risk-object schema.
 - Per-job LBOM documents now validate directly against the pinned CycloneDX
-  1.6 JSON schema family (`bom-1.6`, SPDX, and JSF). The workspace-dev
-  negative invariants moved from non-standard top-level fields into
-  CycloneDX `metadata.properties`: `workspace-dev:secretsIncluded`,
-  `workspace-dev:rawPromptsIncluded`, and
-  `workspace-dev:rawScreenshotsIncluded`.
-- `LbomModelConsiderations.ethicalConsiderations` now uses CycloneDX risk
-  objects (`name` plus optional `mitigationStrategy`) instead of strings,
-  matching the CycloneDX 1.6 model-card schema.
+  1.6 JSON schema family (`bom-1.6`, SPDX, and JSF).
 - New CI-covered schema test validates both emitted LBOM artifacts and
   `docs/figma-to-test/lbom-template.cdx.json` against pinned local
   CycloneDX 1.6 + SPDX + JSF schemas.
