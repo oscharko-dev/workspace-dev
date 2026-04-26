@@ -370,6 +370,64 @@ preview, dry-run report, visual-sidecar validation report, optional generated
 test-case artifact, and optional reconciled intent IR. It never embeds raw
 sidecar prompts, screenshots, bearer tokens, or transfer URLs.
 
+### Registering a custom QC/ALM adapter (Issue #1374)
+
+Wave 3 stabilizes the provider-neutral adapter surface so a downstream
+consumer can register a custom adapter without modifying the core package.
+Eight provider ids are wired up by default — `opentext_alm` ships the full
+matrix, six others (`opentext_octane`, `opentext_valueedge`, `xray`,
+`testrail`, `azure_devops_test_plans`, `qtest`) advertise validate + dry-run
+only and refuse writes through the `provider_not_implemented` refusal code,
+and the reserved `custom` slot publishes every capability flag `false` until
+a caller registers a concrete adapter:
+
+```ts
+import {
+    createQcProviderRegistry,
+    registerQcProviderAdapter,
+    resolveQcProviderAdapter,
+    type QcAdapter,
+    type QcAdapterDryRunInput,
+    type DryRunReportArtifact,
+    type QcMappingProfile,
+    type QcMappingProfileValidationResult,
+} from "workspace-dev/test-intelligence";
+
+const customAdapter: QcAdapter = {
+    provider: "custom",
+    version: "1.0.0",
+    validateProfile(
+        profile: QcMappingProfile,
+    ): QcMappingProfileValidationResult {
+        return { ok: true, errorCount: 0, warningCount: 0, issues: [] };
+    },
+    async dryRun(input: QcAdapterDryRunInput): Promise<DryRunReportArtifact> {
+        // build a deterministic, fail-closed report shape — see qc-provider-stub.ts
+        // for a reference template that satisfies the type-level invariants
+        // (`rawScreenshotsIncluded: false`, `credentialsIncluded: false`).
+        throw new Error("not implemented");
+    },
+};
+
+const registry = createQcProviderRegistry();
+const registration = registerQcProviderAdapter({
+    registry,
+    adapter: customAdapter,
+});
+if (!registration.ok) throw new Error(registration.refusalCode);
+const adapter = resolveQcProviderAdapter(registration.registry, "custom");
+```
+
+Registration is fail-closed: `unknown_provider_id` (provider not in
+`ALLOWED_QC_ADAPTER_PROVIDERS`), `provider_mismatch_on_adapter` (descriptor
+provider does not equal adapter provider), `register_custom_not_supported`
+(slot's descriptor declares `capabilities.registerCustom === false` — only
+the reserved `custom` slot is registerable), and `duplicate_provider_id`
+(slot already carries a non-null adapter) each surface as structured
+refusal codes the caller can branch on without parsing strings. Registry
+state is value-typed: `registerQcProviderAdapter` returns a fresh registry
+view rather than mutating the input.
+
 ## 8. Evidence verification
 
 The Wave 1 POC harness emits `wave1-poc-evidence-manifest.json` next to the

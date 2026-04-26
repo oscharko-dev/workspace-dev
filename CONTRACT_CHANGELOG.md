@@ -31,6 +31,75 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.11.0] - 2026-04-26
+
+### Added (Issue #1374)
+
+Wave 3 stabilizes the provider-neutral QC/ALM adapter surface so non-ALM
+providers and caller-registered custom adapters plug in without coupling the
+core test-intelligence pipeline to OpenText ALM.
+
+- New runtime enum `ALLOWED_QC_PROVIDER_OPERATIONS` with members
+  `validate_profile`, `resolve_target_folder`, `dry_run`, `export_only`,
+  `api_transfer`, `register_custom`. Type alias `QcProviderOperation`.
+  Re-exported from the package root.
+- New types `QcProviderCapabilities` (closed product type, six boolean
+  flags mirroring `QcProviderOperation`) and `QcProviderDescriptor`
+  (`provider`, `label`, `version`, `builtin`, `capabilities`,
+  `mappingProfileSeedId?`).
+- New refusal-code literal `provider_not_implemented` appended to the end
+  of `ALLOWED_DRY_RUN_REFUSAL_CODES`. Existing ordinal positions of prior
+  codes are preserved byte-for-byte.
+- New optional fields on `DryRunPlannedEntityPayload` exposing normalized
+  visual provenance per the 2026-04-24 multimodal addendum:
+  `visualConfidence?: number` (mean sidecar confidence, rounded to four
+  decimals), `visualAmbiguityFlags?: VisualSidecarValidationOutcome[]`
+  (sorted, deduplicated non-`ok` outcomes), `visualFallbackUsed?: boolean`
+  (true when a matching record carries `fallback_used`), and
+  `visualEvidenceRefs?: { screenId; modelDeployment; evidenceHash }[]`
+  (sorted by `screenId`; `evidenceHash` is the canonical
+  `(screenId|deployment|sortedOutcomes|roundedConfidence)` SHA-256, never
+  a screenshot-byte hash). All four keys are absent — not `undefined` —
+  on payloads without sidecar coverage and on stub-adapter output, so
+  pre-#1374 byte-stable artifacts remain byte-stable.
+- New module `src/test-intelligence/qc-provider-registry.ts` shipping
+  `BUILTIN_QC_PROVIDER_DESCRIPTORS` (frozen, sorted by provider id),
+  `createQcProviderRegistry`, `registerQcProviderAdapter`,
+  `resolveQcProviderAdapter`, `getQcProviderDescriptor`,
+  `getQcProviderEntry`, `listQcProviderDescriptors`, plus the structured
+  refusal enum `ALLOWED_QC_PROVIDER_REGISTRATION_REFUSAL_CODES` (members:
+  `duplicate_provider_id`, `unknown_provider_id`,
+  `provider_mismatch_on_adapter`, `register_custom_not_supported`).
+  Eight builtin descriptors are wired up: `opentext_alm` exposes the full
+  matrix and binds the existing `openTextAlmDryRunAdapter`; the six
+  non-ALM providers (`opentext_octane`, `opentext_valueedge`, `xray`,
+  `testrail`, `azure_devops_test_plans`, `qtest`) advertise
+  `validateProfile` + `dryRun` only and bind the dry-run-only stub; the
+  reserved `custom` slot publishes every flag `false` until a caller
+  registers a concrete adapter via `registerQcProviderAdapter`.
+- New module `src/test-intelligence/qc-provider-stub.ts` shipping
+  `createDryRunStubAdapter`, `DEFAULT_DRY_RUN_STUB_ID_SOURCE`, and
+  `DRY_RUN_STUB_ADAPTER_VERSION = "1.0.0"`. The stub honors the
+  `QcAdapter` interface, refuses every dry-run with the new
+  `provider_not_implemented` code, throws
+  `QcAdapterModeNotImplementedError` for non-`dry_run` modes, performs no
+  I/O, and emits a deterministic `reportId` so replay/evidence pipelines
+  remain byte-stable.
+- Existing `openTextAlmDryRunAdapter` populates the four new visual
+  provenance fields on every planned payload whose case has matching
+  sidecar records. Cases without matching records continue to emit the
+  prior shape unchanged (no extra keys).
+
+### Backward compatibility
+
+- All public exports retain prior names and signatures. New types,
+  enum members, and fields are additive only.
+- `provider_not_implemented` is appended to the end of
+  `ALLOWED_DRY_RUN_REFUSAL_CODES`; pre-#1374 ordinals are stable.
+- ALM dry-run reports for cases without sidecar coverage are byte-stable
+  with 4.10.0 output; the new visual provenance fields are omitted (not
+  set to `undefined`).
+
 ## [4.10.0] - 2026-04-26
 
 ### Added (Issue #1373 follow-up)

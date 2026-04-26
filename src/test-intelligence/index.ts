@@ -444,6 +444,28 @@ export {
   openTextAlmDryRunAdapter,
 } from "./qc-alm-dry-run.js";
 export {
+  createDryRunStubAdapter,
+  DEFAULT_DRY_RUN_STUB_ID_SOURCE,
+  DRY_RUN_STUB_ADAPTER_VERSION,
+  type CreateDryRunStubAdapterInput,
+} from "./qc-provider-stub.js";
+export {
+  ALLOWED_QC_PROVIDER_REGISTRATION_REFUSAL_CODES,
+  BUILTIN_QC_PROVIDER_DESCRIPTORS,
+  createQcProviderRegistry,
+  getQcProviderDescriptor,
+  getQcProviderEntry,
+  listQcProviderDescriptors,
+  registerQcProviderAdapter,
+  resolveQcProviderAdapter,
+  type CreateQcProviderRegistryInput,
+  type QcProviderRegistrationRefusalCode,
+  type QcProviderRegistry,
+  type QcProviderRegistryEntry,
+  type RegisterQcProviderAdapterInput,
+  type RegisterQcProviderAdapterResult,
+} from "./qc-provider-registry.js";
+export {
   buildTransferRollbackGuidance,
   createUnconfiguredQcApiTransferClient,
   isApiTransferMode,
