@@ -31,6 +31,112 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.12.0] - 2026-04-26
+
+### Added (Issue #1431, Wave 4.A)
+
+Wave 4 multi-source Test Intent ingestion contracts, feature gate, and
+mode-lock isolation. Purely additive — single-source Figma jobs that have
+not opted into the multi-source gate keep producing bit-identical artifacts
+and replay-cache hits.
+
+- New env var `TEST_INTELLIGENCE_MULTISOURCE_ENV` (literal
+  `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE`) gating Wave 4
+  multi-source ingestion. Strictly nested behind `TEST_INTELLIGENCE_ENV`:
+  the gate fails closed unless _both_ env vars and the parent
+  `WorkspaceStartOptions.testIntelligence.enabled` startup option are set.
+- New optional startup option
+  `WorkspaceStartOptions.testIntelligence.multiSourceEnabled?: boolean`
+  (default `false`). Provides operator runtime toggle without redeploys.
+- New optional status field
+  `WorkspaceStatus.testIntelligenceMultiSourceEnabled?: boolean`. True only
+  when all three nested gates are satisfied.
+- `TEST_INTELLIGENCE_CONTRACT_VERSION` bumped `1.0.0` → `1.1.0`.
+- New schema-version constant
+  `MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION = "1.0.0"`.
+- New runtime enums:
+    - `ALLOWED_TEST_INTENT_SOURCE_KINDS` — `figma_local_json`,
+      `figma_plugin`, `figma_rest`, `jira_rest`, `jira_paste`, `custom_text`,
+      `custom_structured`. Type alias `TestIntentSourceKind`.
+    - `PRIMARY_TEST_INTENT_SOURCE_KINDS` — the five kinds (Figma trio plus
+      `jira_rest`, `jira_paste`) at least one of which must be present in
+      every envelope. Type alias `PrimaryTestIntentSourceKind`.
+    - `SUPPORTING_TEST_INTENT_SOURCE_KINDS` — `custom_text`,
+      `custom_structured`. Type alias `SupportingTestIntentSourceKind`.
+    - `ALLOWED_CONFLICT_RESOLUTION_POLICIES` — `priority`,
+      `reviewer_decides`, `keep_both`. Type alias `ConflictResolutionPolicy`.
+    - `ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS` — `plain_text`, `markdown`,
+      `structured_json`. Type alias `TestIntentCustomInputFormat`.
+    - `ALLOWED_MULTI_SOURCE_ENVELOPE_REFUSAL_CODES` — 21 stable refusal
+      codes covering envelope shape, source-mix, conflict policy, priority
+      order, and aggregate-hash mismatch checks.
+    - `ALLOWED_MULTI_SOURCE_MODE_GATE_REFUSAL_CODES` — four stable refusal
+      codes for the runtime mode gate (parent gate, env, startup option,
+      `llmCodegenMode` lock).
+- New types:
+    - `TestIntentSourceRef` (`sourceId`, `kind`, `contentHash`, `capturedAt`,
+      optional `authorHandle`, `inputFormat`, `noteEntryId`,
+      `markdownSectionPath`).
+    - `MultiSourceTestIntentEnvelope` (`version`, `sources`,
+      `aggregateContentHash`, `conflictResolutionPolicy`, optional
+      `priorityOrder`).
+    - `MultiSourceEnvelopeIssue`, `MultiSourceEnvelopeRefusalCode`,
+      `MultiSourceEnvelopeValidationResult`.
+    - `MultiSourceModeGateInput`, `MultiSourceModeGateRefusal`,
+      `MultiSourceModeGateRefusalCode`, `MultiSourceModeGateDecision`.
+- New optional `BusinessTestIntentIr.sourceEnvelope?:
+MultiSourceTestIntentEnvelope`. Legacy `source: BusinessTestIntentIrSource`
+  is preserved for one minor cycle.
+- Per-element provenance types extended additively with
+  `sourceRefs?: TestIntentSourceRef[]` on `IntentTraceRef`, `DetectedField`,
+  `DetectedAction`, `DetectedValidation`, `DetectedNavigation`, and
+  `InferredBusinessObject`. Existing single-source fields (`trace`,
+  `provenance`) keep working unchanged for legacy single-source jobs.
+- New module `src/test-intelligence/multi-source-envelope.ts` with
+  hand-rolled validators (zero new runtime deps). Public exports:
+  `buildMultiSourceTestIntentEnvelope`, `computeAggregateContentHash`,
+  `validateMultiSourceTestIntentEnvelope`, `evaluateMultiSourceModeGate`,
+  `enforceMultiSourceModeGate`, `MultiSourceModeGateError`,
+  `legacySourceFromMultiSourceEnvelope`,
+  `resolveTestIntelligenceMultiSourceEnvEnabled`,
+  `canonicalizeMultiSourceEnvelope`, `isPrimaryTestIntentSourceKind`,
+  `isSupportingTestIntentSourceKind`, `isMultiSourceEnvelopeRefusalCode`,
+  `isMultiSourceModeGateRefusalCode`.
+- New env-var resolver `resolveTestIntelligenceMultiSourceEnvEnabled` in
+  `src/server/constants.ts` mirroring the existing test-intelligence
+  resolver.
+
+### Source-mix contract hardening (2026-04-26 addendum)
+
+The validator enforces the customer-facing source matrix explicitly:
+
+- At least one primary source per envelope. A custom-only envelope is
+  rejected with `primary_source_required` before any artifact is persisted.
+- Figma is optional. Jira-REST-only and Jira-paste-only envelopes are valid
+  when the multi-source gate is enabled.
+- Jira REST and Jira paste may both appear in one envelope; duplicate
+  content hashes route through `duplicate_jira_paste_collision` rather than
+  silently deduplicating.
+- The `priority` policy requires a `priorityOrder` covering exactly the
+  kinds present in the envelope (no extras, no duplicates, no missing).
+
+### Markdown-aware custom source contract (2026-04-26 addendum)
+
+`custom_text` / `custom_structured` sources may carry
+`inputFormat: "markdown"` and (only then) `markdownSectionPath` /
+`noteEntryId` provenance hints. Markdown is treated as user-provided
+supporting evidence and is never trusted as instructions to the model or
+runtime — downstream issues are responsible for the prompt-isolation
+plumbing.
+
+### Production-ready baseline (2026-04-26 addendum)
+
+This issue ships as production-ready enterprise software for regulated
+financial deployment: hand-rolled validators, fail-closed gates, zero
+runtime deps, no telemetry, and full byte-stable backward compatibility.
+
+---
+
 ## [4.11.0] - 2026-04-26
 
 ### Added (Issue #1374)

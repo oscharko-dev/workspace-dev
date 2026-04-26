@@ -5,6 +5,21 @@ export {
   type IntentDerivationNodeInput,
   type IntentDerivationScreenInput,
 } from "./intent-derivation.js";
+export {
+  buildMultiSourceTestIntentEnvelope,
+  canonicalizeMultiSourceEnvelope,
+  computeAggregateContentHash,
+  enforceMultiSourceModeGate,
+  evaluateMultiSourceModeGate,
+  isMultiSourceEnvelopeRefusalCode,
+  isMultiSourceModeGateRefusalCode,
+  isPrimaryTestIntentSourceKind,
+  isSupportingTestIntentSourceKind,
+  legacySourceFromMultiSourceEnvelope,
+  MultiSourceModeGateError,
+  resolveTestIntelligenceMultiSourceEnvEnabled,
+  validateMultiSourceTestIntentEnvelope,
+} from "./multi-source-envelope.js";
 export { detectPii, redactPii, type PiiMatch } from "./pii-detection.js";
 export {
   detectSuspiciousContent,
