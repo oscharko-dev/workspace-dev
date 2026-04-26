@@ -3635,6 +3635,495 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ***
 
+### Wave1PocAttestationBundle
+
+Sigstore-shaped bundle persisted alongside a signed attestation.
+
+#### Properties
+
+##### dsseEnvelope
+
+> **dsseEnvelope**: [`Wave1PocAttestationDsseEnvelope`](#wave1pocattestationdsseenvelope)
+
+The DSSE envelope this bundle witnesses. Identical bytes to the
+`evidence/attestations/...` artifact; duplication is intentional so
+the bundle is self-contained.
+
+##### mediaType
+
+> **mediaType**: `"application/vnd.dev.sigstore.bundle.v0.3+json"`
+
+##### verificationMaterial
+
+> **verificationMaterial**: [`Wave1PocAttestationVerificationMaterial`](#wave1pocattestationverificationmaterial)
+
+Verification material — public key OR x509 certificate chain.
+
+***
+
+### Wave1PocAttestationCertificateChainMaterial
+
+X.509 certificate-chain verification material. Used by the Sigstore
+keyless signing flow: the leaf certificate carries the OIDC-bound
+subject identity and is signed by Fulcio. Verifiers reconstruct the
+public key from the leaf certificate, then validate it through the
+chain to a trust root the operator pins.
+
+The repo does not vendor Fulcio root certificates — operators wire
+the trust root themselves. The cert-chain shape is provided here as
+a load-bearing type so the Sigstore bundle media type can carry
+keyless signatures end-to-end without breaking changes.
+
+#### Properties
+
+##### algorithm
+
+> **algorithm**: `"ecdsa-p256-sha256"`
+
+Signing algorithm used to produce the DSSE signatures.
+
+##### certificateChainPem
+
+> **certificateChainPem**: `string`
+
+PEM-encoded certificate chain, leaf first. The leaf certificate's
+subject public key is used to verify the DSSE signature. Operators
+wiring full Sigstore keyless flow include the Fulcio-issued leaf
+(with the OIDC subject as a SAN extension) and any intermediate(s)
+up to a trust root.
+
+##### hint
+
+> **hint**: `string`
+
+Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`).
+
+##### rekorLogIndex?
+
+> `optional` **rekorLogIndex?**: `number`
+
+Optional Rekor transparency-log inclusion proof reference. When
+present, a verifier MAY consult its trusted Rekor instance to
+confirm the entry is logged. The repo never fetches Rekor by
+default; the field is opaque metadata.
+
+***
+
+### Wave1PocAttestationDsseEnvelope
+
+DSSE envelope (canonical form). When `signatures` is empty the
+envelope represents an unsigned attestation. When populated, each
+signature is an ECDSA P-256 signature over the PAE-encoded
+(payloadType, payload) tuple, base64-encoded into `sig`.
+
+#### Properties
+
+##### payload
+
+> **payload**: `string`
+
+Base64 (RFC 4648 §4) encoded `Wave1PocAttestationStatement` JSON.
+
+##### payloadType
+
+> **payloadType**: `"application/vnd.in-toto+json"`
+
+##### signatures
+
+> **signatures**: [`Wave1PocAttestationSignature`](#wave1pocattestationsignature)[]
+
+***
+
+### Wave1PocAttestationPredicate
+
+Predicate body of the Wave 1 POC attestation. The predicate carries
+pipeline-identity facts (model deployments, prompt template, schema,
+policy, export profile) plus the manifest's own SHA-256 so the
+statement attests both the artifact subjects and the metadata
+envelope used to produce them. No secrets, prompts, or response
+bodies are embedded — only identity hashes and version stamps.
+
+#### Properties
+
+##### cacheKeyDigest
+
+> **cacheKeyDigest**: `string`
+
+##### contractVersion
+
+> **contractVersion**: `string`
+
+##### exportProfileId
+
+> **exportProfileId**: `string`
+
+Export profile identity (export-only QC pipeline).
+
+##### exportProfileVersion
+
+> **exportProfileVersion**: `string`
+
+##### fixtureId
+
+> **fixtureId**: `"poc-onboarding"` \| `"poc-payment-auth"`
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### generatedTestCaseSchemaVersion
+
+> **generatedTestCaseSchemaVersion**: `"1.0.0"`
+
+##### imagePayloadSentToTestGeneration
+
+> **imagePayloadSentToTestGeneration**: `false`
+
+Hard invariant — test_generation never received an image payload.
+
+##### inputHash
+
+> **inputHash**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### manifestFilename
+
+> **manifestFilename**: `"wave1-poc-evidence-manifest.json"`
+
+Filename of the manifest artifact (relative to the run dir).
+
+##### manifestSha256
+
+> **manifestSha256**: `string`
+
+SHA-256 of the canonical evidence manifest the attestation covers.
+
+##### modelDeployments
+
+> **modelDeployments**: `object`
+
+Identity of every model role active during the run.
+
+###### testGeneration
+
+> **testGeneration**: `string`
+
+###### visualFallback?
+
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+###### visualPrimary?
+
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+##### policyProfileId
+
+> **policyProfileId**: `string`
+
+Policy bundle identity (validation gate).
+
+##### policyProfileVersion
+
+> **policyProfileVersion**: `string`
+
+##### promptHash
+
+> **promptHash**: `string`
+
+Replay-cache identity hashes.
+
+##### promptTemplateVersion
+
+> **promptTemplateVersion**: `"1.0.0"`
+
+Versions stamped by the harness at run time.
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant — no raw screenshot bytes attested.
+
+##### redactionPolicyVersion
+
+> **redactionPolicyVersion**: `"1.0.0"`
+
+##### schemaHash
+
+> **schemaHash**: `string`
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### secretsIncluded
+
+> **secretsIncluded**: `false`
+
+Hard invariant — no API keys / bearer tokens attested.
+
+##### signingMode
+
+> **signingMode**: `"unsigned"` \| `"sigstore"`
+
+Active signing mode; mirrored from the run input for auditability.
+
+##### testIntelligenceContractVersion
+
+> **testIntelligenceContractVersion**: `"1.0.0"`
+
+##### visualSidecar?
+
+> `optional` **visualSidecar?**: [`Wave1PocAttestationVisualSidecarIdentity`](#wave1pocattestationvisualsidecaridentity)
+
+Visual-sidecar chain-of-custody identity (when present).
+
+##### visualSidecarSchemaVersion
+
+> **visualSidecarSchemaVersion**: `"1.0.0"`
+
+***
+
+### Wave1PocAttestationPublicKeyMaterial
+
+Public-key verification material. Used by the key-bound Sigstore
+signing flow (and by air-gapped verifiers that pin a single signer
+key). The PEM-encoded public key MUST be a SubjectPublicKeyInfo over
+the prime256v1 (P-256) curve.
+
+#### Properties
+
+##### algorithm
+
+> **algorithm**: `"ecdsa-p256-sha256"`
+
+Signing algorithm used to produce the DSSE signatures.
+
+##### hint
+
+> **hint**: `string`
+
+Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`).
+
+##### publicKeyPem
+
+> **publicKeyPem**: `string`
+
+PEM-encoded SubjectPublicKeyInfo for the matching public key.
+
+***
+
+### Wave1PocAttestationSignature
+
+A single signature attached to a DSSE envelope.
+
+#### Properties
+
+##### keyid
+
+> **keyid**: `string`
+
+Stable, non-secret identifier for the signing key.
+
+##### sig
+
+> **sig**: `string`
+
+Base64 (RFC 4648 §4) encoded signature bytes.
+
+***
+
+### Wave1PocAttestationStatement
+
+in-toto v1 statement envelope (the DSSE payload after base64 decode).
+
+#### Properties
+
+##### \_type
+
+> **\_type**: `"https://in-toto.io/Statement/v1"`
+
+##### predicate
+
+> **predicate**: [`Wave1PocAttestationPredicate`](#wave1pocattestationpredicate)
+
+##### predicateType
+
+> **predicateType**: `"https://workspace-dev.figmapipe.dev/test-intelligence/wave1-poc-evidence/v1"`
+
+##### subject
+
+> **subject**: [`Wave1PocAttestationSubject`](#wave1pocattestationsubject)[]
+
+Sorted-by-name, de-duplicated subject list.
+
+***
+
+### Wave1PocAttestationSubject
+
+Subject record inside the in-toto v1 statement.
+
+#### Properties
+
+##### digest
+
+> **digest**: `object`
+
+Subject digest map. Always populated with at least `sha256`.
+
+###### sha256
+
+> **sha256**: `string`
+
+##### name
+
+> **name**: `string`
+
+Relative artifact path inside the run directory (no leading slash).
+
+***
+
+### Wave1PocAttestationSummary
+
+Audit-timeline summary surfaced on the harness result. Carries only
+non-secret identifiers and digests so callers can render signing
+provenance without re-reading on-disk artifacts.
+
+#### Properties
+
+##### attestationFilename
+
+> **attestationFilename**: `string`
+
+Relative path of the persisted in-toto envelope.
+
+##### attestationSha256
+
+> **attestationSha256**: `string`
+
+SHA-256 of the canonical envelope bytes.
+
+##### bundleFilename?
+
+> `optional` **bundleFilename?**: `string`
+
+Relative path of the Sigstore bundle. `undefined` when unsigned.
+
+##### bundleSha256?
+
+> `optional` **bundleSha256?**: `string`
+
+SHA-256 of the canonical bundle bytes. `undefined` when unsigned.
+
+##### signerReference?
+
+> `optional` **signerReference?**: `string`
+
+Stable signer identifier (matches `keyid`). `undefined` when unsigned.
+
+##### signingMode
+
+> **signingMode**: `"unsigned"` \| `"sigstore"`
+
+***
+
+### Wave1PocAttestationVerificationFailure
+
+Failure record produced by `verifyWave1PocAttestation`. Each failure
+names the specific subject / signature / metadata field that failed
+so an auditor can pinpoint the mismatch without re-running the
+harness.
+
+#### Properties
+
+##### code
+
+> **code**: `"envelope_unparseable"` \| `"envelope_payload_type_mismatch"` \| `"envelope_payload_decode_failed"` \| `"statement_unparseable"` \| `"statement_type_mismatch"` \| `"statement_predicate_type_mismatch"` \| `"statement_predicate_invalid"` \| `"subject_missing_artifact"` \| `"subject_digest_mismatch"` \| `"subject_unattested_artifact"` \| `"signing_mode_mismatch"` \| `"signature_required"` \| `"signature_unsigned_envelope_carries_signatures"` \| `"signature_invalid_keyid"` \| `"signature_invalid_encoding"` \| `"signature_unverified"` \| `"bundle_missing"` \| `"bundle_envelope_mismatch"` \| `"bundle_public_key_missing"` \| `"manifest_sha256_mismatch"`
+
+Stable failure code.
+
+##### message
+
+> **message**: `string`
+
+Human-readable diagnostic. Never includes secrets.
+
+##### reference
+
+> **reference**: `string`
+
+Subject / artifact / field that triggered the failure.
+
+***
+
+### Wave1PocAttestationVerificationResult
+
+Result of `verifyWave1PocAttestation`.
+
+#### Properties
+
+##### failures
+
+> **failures**: [`Wave1PocAttestationVerificationFailure`](#wave1pocattestationverificationfailure)[]
+
+Structured failure list — empty when `ok === true`.
+
+##### ok
+
+> **ok**: `boolean`
+
+##### signatureCount
+
+> **signatureCount**: `number`
+
+Number of signatures present (0 for unsigned).
+
+##### signaturesVerified
+
+> **signaturesVerified**: `boolean`
+
+True iff every present signature verified against `publicKey`.
+
+##### signingMode
+
+> **signingMode**: `"unsigned"` \| `"sigstore"`
+
+***
+
+### Wave1PocAttestationVisualSidecarIdentity
+
+Visual-sidecar identity carried into the attestation predicate so an
+auditor can verify the multimodal chain of custody (Issue #1386
+addendum to #1377). Mirrors the fields already attested on the
+evidence manifest but pinned to the predicate version.
+
+#### Properties
+
+##### fallbackReason
+
+> **fallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
+
+##### resultArtifactSha256
+
+> **resultArtifactSha256**: `string`
+
+##### selectedDeployment
+
+> **selectedDeployment**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"`
+
+##### visualFallback?
+
+> `optional` **visualFallback?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+##### visualPrimary?
+
+> `optional` **visualPrimary?**: `"llama-4-maverick-vision"` \| `"phi-4-multimodal-poc"` \| `"mock"` \| `"none"`
+
+***
+
 ### Wave1PocEvalFailure
 
 Failure record describing a single threshold breach.
@@ -4787,7 +5276,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-28)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-29)
 
 ##### pasteDeltaSummary?
 
@@ -7173,7 +7662,7 @@ Region result returned as part of a visual audit.
 
 ###### Inherited from
 
-[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-3)
+[`WorkspaceVisualDiffRegion`](#workspacevisualdiffregion).[`name`](#name-4)
 
 ##### totalPixels
 
@@ -8083,9 +8572,28 @@ Discriminated union returned by `describeVisualScreens`.
 
 ***
 
+### Wave1PocAttestationSigningMode
+
+> **Wave1PocAttestationSigningMode** = *typeof* [`ALLOWED_WAVE1_POC_ATTESTATION_SIGNING_MODES`](#allowed_wave1_poc_attestation_signing_modes)\[`number`\]
+
+Discriminant of the active signing mode.
+
+***
+
+### Wave1PocAttestationVerificationMaterial
+
+> **Wave1PocAttestationVerificationMaterial** = \{ `publicKey`: [`Wave1PocAttestationPublicKeyMaterial`](#wave1pocattestationpublickeymaterial); \} \| \{ `x509CertificateChain`: [`Wave1PocAttestationCertificateChainMaterial`](#wave1pocattestationcertificatechainmaterial); \}
+
+Sigstore bundle verification material. Discriminated by which form
+the operator wires: `publicKey` for key-bound signing (the repo's
+default), `x509CertificateChain` for keyless signing (operator-
+supplied integration with Fulcio + Rekor).
+
+***
+
 ### Wave1PocEvidenceArtifactCategory
 
-> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"`
+> **Wave1PocEvidenceArtifactCategory** = `"intent"` \| `"validation"` \| `"review"` \| `"export"` \| `"manifest"` \| `"visual_sidecar"` \| `"finops"` \| `"attestation"` \| `"signature"`
 
 Categorisation of an artifact attested by the evidence manifest.
 
@@ -8683,6 +9191,23 @@ report when the multimodal sidecar misbehaves or is downgraded.
 
 ***
 
+### ALLOWED\_WAVE1\_POC\_ATTESTATION\_SIGNING\_MODES
+
+> `const` **ALLOWED\_WAVE1\_POC\_ATTESTATION\_SIGNING\_MODES**: readonly \[`"unsigned"`, `"sigstore"`\]
+
+Allowed signing modes for the Wave 1 POC attestation.
+
+- `unsigned` (default) — emit DSSE envelope with empty `signatures`,
+  no Sigstore bundle. Always works air-gapped without network access.
+- `sigstore` — emit DSSE envelope with one or more signatures and a
+  Sigstore bundle alongside. The signer is operator-supplied; the
+  built-in key-bound signer uses ECDSA P-256 from `node:crypto` so
+  tests and verifiers run without external network calls. A keyless
+  flow (Fulcio + Rekor) plugs into the same signer interface but is
+  never invoked by default.
+
+***
+
 ### ALLOWED\_WORKSPACE\_JOB\_TYPES
 
 > `const` **ALLOWED\_WORKSPACE\_JOB\_TYPES**: readonly \[`"figma_to_code"`, `"figma_to_qc_test_cases"`\]
@@ -8718,7 +9243,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"3.30.0"`
+> `const` **CONTRACT\_VERSION**: `"3.31.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -9093,6 +9618,75 @@ Schema version for the persisted visual-sidecar validation report artifact (Issu
 
 ***
 
+### WAVE1\_POC\_ATTESTATION\_ARTIFACT\_FILENAME
+
+> `const` **WAVE1\_POC\_ATTESTATION\_ARTIFACT\_FILENAME**: `"wave1-poc-attestation.intoto.json"`
+
+Filename of the persisted in-toto DSSE envelope.
+
+***
+
+### WAVE1\_POC\_ATTESTATION\_BUNDLE\_FILENAME
+
+> `const` **WAVE1\_POC\_ATTESTATION\_BUNDLE\_FILENAME**: `"wave1-poc-attestation.bundle.json"`
+
+Filename of the persisted Sigstore bundle when signing is enabled.
+
+***
+
+### WAVE1\_POC\_ATTESTATION\_BUNDLE\_MEDIA\_TYPE
+
+> `const` **WAVE1\_POC\_ATTESTATION\_BUNDLE\_MEDIA\_TYPE**: `"application/vnd.dev.sigstore.bundle.v0.3+json"`
+
+Sigstore bundle media type — pinned to the v0.3 envelope shape.
+
+***
+
+### WAVE1\_POC\_ATTESTATION\_PAYLOAD\_TYPE
+
+> `const` **WAVE1\_POC\_ATTESTATION\_PAYLOAD\_TYPE**: `"application/vnd.in-toto+json"`
+
+DSSE `payloadType` stamped onto every in-toto attestation. The pre-
+authentication encoding (PAE) hashes this value alongside the payload
+bytes so it is bound to the signature.
+
+***
+
+### WAVE1\_POC\_ATTESTATION\_PREDICATE\_TYPE
+
+> `const` **WAVE1\_POC\_ATTESTATION\_PREDICATE\_TYPE**: `"https://workspace-dev.figmapipe.dev/test-intelligence/wave1-poc-evidence/v1"`
+
+Predicate type URI identifying the Wave 1 POC evidence shape. Bumped
+in lockstep with the schema version when the predicate fields change.
+
+***
+
+### WAVE1\_POC\_ATTESTATION\_SCHEMA\_VERSION
+
+> `const` **WAVE1\_POC\_ATTESTATION\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the in-toto v1 attestation envelope produced per
+job by the Wave 1 POC harness. Bumped on any breaking change to the
+statement payload, predicate shape, or DSSE encoding.
+
+***
+
+### WAVE1\_POC\_ATTESTATION\_STATEMENT\_TYPE
+
+> `const` **WAVE1\_POC\_ATTESTATION\_STATEMENT\_TYPE**: `"https://in-toto.io/Statement/v1"`
+
+in-toto v1 statement type URI.
+
+***
+
+### WAVE1\_POC\_ATTESTATIONS\_DIRECTORY
+
+> `const` **WAVE1\_POC\_ATTESTATIONS\_DIRECTORY**: `"evidence/attestations"`
+
+Subdirectory under a run dir where attestation envelopes are persisted.
+
+***
+
 ### WAVE1\_POC\_EVAL\_REPORT\_ARTIFACT\_FILENAME
 
 > `const` **WAVE1\_POC\_EVAL\_REPORT\_ARTIFACT\_FILENAME**: `"wave1-poc-eval-report.json"` = `"wave1-poc-eval-report.json"`
@@ -9146,3 +9740,11 @@ Both fixtures are public, contain only synthetic data, and ship with a
 companion visual sidecar fixture so the Figma → Visual Sidecar →
 Business Test Intent IR → structured generation chain is exercised
 end-to-end against an air-gapped mock LLM.
+
+***
+
+### WAVE1\_POC\_SIGNATURES\_DIRECTORY
+
+> `const` **WAVE1\_POC\_SIGNATURES\_DIRECTORY**: `"evidence/signatures"`
+
+Subdirectory under a run dir where Sigstore signature bundles are persisted.

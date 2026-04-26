@@ -8,11 +8,23 @@ import {
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   type FinOpsBudgetReport,
+  WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
+  WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
+  WAVE1_POC_ATTESTATIONS_DIRECTORY,
   WAVE1_POC_FIXTURE_IDS,
+  WAVE1_POC_SIGNATURES_DIRECTORY,
   type Wave1PocFixtureId,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
-import { verifyWave1PocEvidenceFromDisk } from "./evidence-manifest.js";
+import {
+  createKeyBoundSigstoreSigner,
+  generateWave1PocAttestationKeyPair,
+  verifyWave1PocAttestationFromDisk,
+} from "./evidence-attestation.js";
+import {
+  computeWave1PocEvidenceManifestDigest,
+  verifyWave1PocEvidenceFromDisk,
+} from "./evidence-manifest.js";
 import {
   BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
   COMPILED_PROMPT_ARTIFACT_FILENAME,
@@ -70,6 +82,15 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
       result.manifest.modelDeployments.visualPrimary,
       "llama-4-maverick-vision",
     );
+    assert.equal(result.attestation.signingMode, "unsigned");
+    assert.equal(result.attestation.signerReference, undefined);
+    assert.equal(
+      result.attestation.attestationFilename,
+      `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`,
+    );
+    assert.match(result.attestation.attestationSha256, /^[0-9a-f]{64}$/);
+    assert.equal(result.attestation.bundleFilename, undefined);
+    assert.equal(result.attestation.bundleSha256, undefined);
   });
 
   test(`poc-harness: ${fixtureId} produces deterministic artifacts on replay`, async () => {
@@ -204,6 +225,46 @@ test("poc-harness: seals request audit proof that test generation received no im
     (artifact) => artifact.filename === GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
   );
   assert.equal(attested?.category, "manifest");
+});
+
+test("poc-harness: sigstore signing returns summary and verifies from disk", async () => {
+  const runDir = await newRunDir();
+  const { privateKeyPem, publicKeyPem } = generateWave1PocAttestationKeyPair();
+  const signer = createKeyBoundSigstoreSigner({
+    signerReference: "poc-harness-signer",
+    privateKeyPem,
+    publicKeyPem,
+  });
+  const run = await runWave1Poc({
+    fixtureId: "poc-onboarding",
+    jobId: "job-poc-onboarding-signed",
+    generatedAt: GENERATED_AT,
+    runDir,
+    attestationSigningMode: "sigstore",
+    attestationSigner: signer,
+  });
+
+  assert.equal(run.attestation.signingMode, "sigstore");
+  assert.equal(run.attestation.signerReference, "poc-harness-signer");
+  assert.equal(
+    run.attestation.attestationFilename,
+    `${WAVE1_POC_ATTESTATIONS_DIRECTORY}/${WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME}`,
+  );
+  assert.equal(
+    run.attestation.bundleFilename,
+    `${WAVE1_POC_SIGNATURES_DIRECTORY}/${WAVE1_POC_ATTESTATION_BUNDLE_FILENAME}`,
+  );
+  assert.match(run.attestation.attestationSha256, /^[0-9a-f]{64}$/);
+  assert.match(run.attestation.bundleSha256 ?? "", /^[0-9a-f]{64}$/);
+
+  const verification = await verifyWave1PocAttestationFromDisk(
+    runDir,
+    run.manifest,
+    computeWave1PocEvidenceManifestDigest(run.manifest),
+    { expectedSigningMode: "sigstore" },
+  );
+  assert.equal(verification.ok, true, JSON.stringify(verification.failures));
+  assert.equal(verification.signaturesVerified, true);
 });
 
 test("poc-harness: visual mask hash participates in compiled prompt identity", async () => {

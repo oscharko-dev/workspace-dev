@@ -149,12 +149,15 @@ const isPositiveLengthString = (value: unknown): value is string =>
 const validateManifestForAttestation = (
   manifest: Wave1PocEvidenceManifest,
 ): void => {
-  if (manifest.rawScreenshotsIncluded !== false) {
+  const rawScreenshotsIncluded = manifest.rawScreenshotsIncluded as boolean;
+  const imagePayloadSentToTestGeneration =
+    manifest.imagePayloadSentToTestGeneration as boolean;
+  if (rawScreenshotsIncluded) {
     throw new RangeError(
       "buildWave1PocAttestationStatement: manifest.rawScreenshotsIncluded must be false",
     );
   }
-  if (manifest.imagePayloadSentToTestGeneration !== false) {
+  if (imagePayloadSentToTestGeneration) {
     throw new RangeError(
       "buildWave1PocAttestationStatement: manifest.imagePayloadSentToTestGeneration must be false",
     );
@@ -206,7 +209,8 @@ export const buildWave1PocAttestationStatement = (
       "buildWave1PocAttestationStatement: manifestSha256 must be a sha256 hex string",
     );
   }
-  if (input.signingMode !== "unsigned" && input.signingMode !== "sigstore") {
+  const signingMode = input.signingMode as string;
+  if (signingMode !== "unsigned" && signingMode !== "sigstore") {
     throw new RangeError(
       `buildWave1PocAttestationStatement: unknown signingMode "${input.signingMode}"`,
     );
@@ -445,7 +449,6 @@ const subjectPublicKeyFromCertificateChain = (
     ok: true,
     publicKeyPem: publicKey
       .export({ format: "pem", type: "spki" })
-      .toString()
       .trim(),
   };
 };
@@ -531,13 +534,11 @@ export const createKeyBoundSigstoreSigner = (
     publicKey = createPublicKey(privateKey);
     publicKeyPem = publicKey
       .export({ format: "pem", type: "spki" })
-      .toString()
       .trim();
   }
   // Cross-check: derived public key matches when supplied externally.
   const derivedPem = createPublicKey(privateKey)
     .export({ format: "pem", type: "spki" })
-    .toString()
     .trim();
   if (stripPemHeaders(derivedPem) !== stripPemHeaders(publicKeyPem)) {
     throw new RangeError(
@@ -586,11 +587,9 @@ export const generateWave1PocAttestationKeyPair = (): {
   return {
     privateKeyPem: privateKey
       .export({ format: "pem", type: "pkcs8" })
-      .toString()
       .trim(),
     publicKeyPem: publicKey
       .export({ format: "pem", type: "spki" })
-      .toString()
       .trim(),
   };
 };
@@ -1266,7 +1265,7 @@ const verifySubjectsAgainstDisk = async (
       failures.push({
         code: "subject_digest_mismatch",
         reference: artifact.filename,
-        message: `on-disk SHA-256 ${actual} does not match attested ${subjectDigest} for ${artifact.filename}`,
+        message: `on-disk SHA-256 ${actual} does not match attested ${subjectDigest} for ${artifact.filename} at ${path}`,
       });
     }
   }
@@ -1297,7 +1296,7 @@ export const verifyWave1PocAttestation = async (
     return {
       ok: false,
       signingMode: input.expectedSigningMode,
-      signatureCount: Array.isArray(input.envelope?.signatures)
+      signatureCount: Array.isArray(input.envelope.signatures)
         ? input.envelope.signatures.length
         : 0,
       signaturesVerified: false,
