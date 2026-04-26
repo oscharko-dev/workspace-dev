@@ -333,11 +333,43 @@ export const SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE =
 /** Maximum justification length accepted by `recordSemanticContentOverride`. */
 export const SEMANTIC_CONTENT_OVERRIDE_MAX_JUSTIFICATION_LENGTH = 512;
 
-/** Active overrides for one job — `testCaseId → set of overridden paths`. */
+/**
+ * Active overrides for one job. Values may be a path set (for compatibility
+ * with direct callers) or a path-to-category map (used by event-log replay).
+ */
 export type SemanticContentOverrideMap = ReadonlyMap<
   string,
-  ReadonlySet<string>
+  ReadonlySet<string> | ReadonlyMap<string, SemanticSuspicionCategory>
 >;
+
+const isCategoryOverrideMap = (
+  value: ReadonlySet<string> | ReadonlyMap<string, SemanticSuspicionCategory>,
+): value is ReadonlyMap<string, SemanticSuspicionCategory> =>
+  typeof (value as { get?: unknown }).get === "function";
+
+const categoryFromValidationMessage = (
+  message: string,
+): SemanticSuspicionCategory | undefined => {
+  const separatorIndex = message.indexOf(":");
+  if (separatorIndex <= 0) return undefined;
+  const category = message.slice(0, separatorIndex);
+  return isSemanticSuspicionCategory(category) ? category : undefined;
+};
+
+const issueHasSemanticContentOverride = (
+  issue: TestCaseValidationReport["issues"][number],
+  overrides: SemanticContentOverrideMap,
+): boolean => {
+  if (issue.testCaseId === undefined) return false;
+  const paths = overrides.get(issue.testCaseId);
+  if (paths === undefined) return false;
+  if (!isCategoryOverrideMap(paths)) {
+    return paths.has(issue.path);
+  }
+  const overrideCategory = paths.get(issue.path);
+  if (overrideCategory === undefined) return false;
+  return overrideCategory === categoryFromValidationMessage(issue.message);
+};
 
 /**
  * Audit-friendly view of a single override extracted from the event log.
@@ -500,7 +532,7 @@ export const extractSemanticContentOverrides = (
       eventId: event.id,
     });
   }
-  const grouped = new Map<string, Set<string>>();
+  const grouped = new Map<string, Map<string, SemanticSuspicionCategory>>();
   const sorted = [...latestByKey.values()].sort((a, b) => {
     if (a.testCaseId !== b.testCaseId) {
       return a.testCaseId.localeCompare(b.testCaseId);
@@ -508,12 +540,12 @@ export const extractSemanticContentOverrides = (
     return a.path.localeCompare(b.path);
   });
   for (const override of sorted) {
-    let set = grouped.get(override.testCaseId);
-    if (set === undefined) {
-      set = new Set<string>();
-      grouped.set(override.testCaseId, set);
+    let paths = grouped.get(override.testCaseId);
+    if (paths === undefined) {
+      paths = new Map<string, SemanticSuspicionCategory>();
+      grouped.set(override.testCaseId, paths);
     }
-    set.add(override.path);
+    paths.set(override.path, override.category);
   }
   return grouped;
 };
@@ -572,11 +604,48 @@ export const effectiveSemanticContentBlock = (
   for (const issue of validation.issues) {
     if (issue.severity !== "error") continue;
     if (issue.code !== "semantic_suspicious_content") return true;
-    const tcId = issue.testCaseId;
-    if (tcId === undefined) return true;
-    const paths = overrides.get(tcId);
-    if (paths === undefined) return true;
-    if (!paths.has(issue.path)) return true;
+    if (!issueHasSemanticContentOverride(issue, overrides)) {
+      return true;
+    }
   }
   return false;
+};
+
+/**
+ * Join an override map against the current validation report, keeping only
+ * overrides that target an actual `semantic_suspicious_content` issue. This
+ * prevents stale, misspelled, or future-path notes from influencing downstream
+ * gates while preserving the simple `testCaseId -> paths` map shape.
+ */
+export const filterSemanticContentOverridesForValidation = (
+  validation: TestCaseValidationReport,
+  overrides: SemanticContentOverrideMap,
+): SemanticContentOverrideMap => {
+  const allowed = new Map<string, Map<string, SemanticSuspicionCategory>>();
+  for (const issue of validation.issues) {
+    if (issue.code !== "semantic_suspicious_content") continue;
+    if (!issueHasSemanticContentOverride(issue, overrides)) {
+      continue;
+    }
+    const testCaseId = issue.testCaseId;
+    if (testCaseId === undefined) continue;
+    const category = categoryFromValidationMessage(issue.message);
+    if (category === undefined) continue;
+    let paths = allowed.get(testCaseId);
+    if (paths === undefined) {
+      paths = new Map<string, SemanticSuspicionCategory>();
+      allowed.set(testCaseId, paths);
+    }
+    paths.set(issue.path, category);
+  }
+
+  const sorted = [...allowed.entries()].sort(([a], [b]) => a.localeCompare(b));
+  return new Map(
+    sorted.map(([testCaseId, paths]) => [
+      testCaseId,
+      new Map(
+        [...paths.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      ),
+    ]),
+  );
 };

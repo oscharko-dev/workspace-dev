@@ -313,6 +313,53 @@ test("export-pipeline: refuses when validation reports schema_invalid", () => {
   assert.ok(result.refusalCodes.includes("schema_invalid_cases_present"));
 });
 
+test("export-pipeline: semantic override permits export with audit-blocked validation report", () => {
+  const overridePath = "$.testCases[0].steps[0].action";
+  const result = runExportPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    intent: buildIntent(),
+    list: buildList([buildCase({})]),
+    validation: buildValidation({
+      blocked: true,
+      errorCount: 1,
+      issues: [
+        {
+          testCaseId: "tc-1",
+          path: overridePath,
+          code: "semantic_suspicious_content",
+          severity: "error",
+          message:
+            "shell_metacharacters: matches destructive shell-command shape",
+        },
+      ],
+    }),
+    policy: buildPolicy([
+      {
+        testCaseId: "tc-1",
+        decision: "needs_review",
+        violations: [
+          {
+            rule: "validation:semantic_suspicious_content:overridden",
+            outcome: "semantic_suspicious_content",
+            severity: "warning",
+            reason:
+              "shell_metacharacters: matches destructive shell-command shape (reviewer override active)",
+            path: overridePath,
+          },
+        ],
+      },
+    ]),
+    reviewSnapshot: buildSnapshot([
+      snapshotEntry({ state: "approved", policyDecision: "needs_review" }),
+    ]),
+    semanticContentOverrides: new Map([["tc-1", new Set([overridePath])]]),
+  });
+  assert.equal(result.refused, false);
+  assert.equal(result.refusalCodes.length, 0);
+  assert.equal(result.exportedTestCases.length, 1);
+});
+
 test("export-pipeline: refuses when visual sidecar is blocked", () => {
   const visual = visualReportApproved();
   visual.blocked = true;

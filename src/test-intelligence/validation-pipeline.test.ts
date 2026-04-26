@@ -229,6 +229,58 @@ test("blocking flows propagate end-to-end", () => {
   assert.equal(result.policy.blocked, true);
 });
 
+test("semantic override clears effective pipeline block while preserving validation artifact", () => {
+  const list = richList();
+  list.testCases[0] = {
+    ...list.testCases[0]!,
+    steps: [
+      {
+        index: 1,
+        action: "rm -rf /",
+        expected: "destructive-command detector fired",
+      },
+    ],
+  };
+  const overridePath = "$.testCases[0].steps[0].action";
+  const result = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent: buildIntent(),
+    semanticContentOverrides: new Map([
+      ["tc-pos", new Set([overridePath, "$.testCases[0].steps[0].data"])],
+    ]),
+  });
+  assert.equal(
+    result.validation.blocked,
+    true,
+    "raw validation report preserves the original blocking finding",
+  );
+  assert.equal(result.policy.blocked, false);
+  assert.equal(result.blocked, false);
+  const decision = result.policy.decisions.find((d) => d.testCaseId === "tc-pos");
+  assert.equal(decision?.decision, "needs_review");
+  assert.ok(
+    decision?.violations.some(
+      (v) =>
+        v.rule === "validation:semantic_suspicious_content:overridden" &&
+        v.severity === "warning",
+    ),
+  );
+
+  const staleOverride = runValidationPipeline({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent: buildIntent(),
+    semanticContentOverrides: new Map([
+      ["tc-pos", new Set(["$.testCases[0].expectedResults[0]"])],
+    ]),
+  });
+  assert.equal(staleOverride.blocked, true);
+  assert.equal(staleOverride.policy.blocked, true);
+});
+
 test("schema-invalid generated output returns blocked diagnostics", () => {
   const list = {
     schemaVersion: "wrong",

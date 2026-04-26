@@ -10,6 +10,7 @@
  * - trace refs that resolve to known intent screens
  * - QC mapping consistency (`exportable=false` => non-empty `blockingReasons`)
  * - PII pattern leakage in `testData`, `preconditions`, `expectedResults`
+ * - suspicious payload shapes in generated strings that reach QC artifacts
  * - cross-case duplicate ids
  * - quality-signal coverage ids that reference known intent ids
  *
@@ -190,6 +191,7 @@ const validateSemanticSuspiciousContent = (
     const step = testCase.steps[i];
     if (step === undefined) continue;
     scanString(step.action, `${basePath}.steps[${i}].action`);
+    scanString(step.data, `${basePath}.steps[${i}].data`);
     scanString(step.expected, `${basePath}.steps[${i}].expected`);
   }
   scanList(testCase.expectedResults, `${basePath}.expectedResults`);

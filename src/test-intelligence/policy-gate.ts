@@ -40,7 +40,10 @@ import {
   type TestCaseValidationReport,
   type VisualSidecarValidationReport,
 } from "../contracts/index.js";
-import type { SemanticContentOverrideMap } from "./semantic-content-sanitization.js";
+import {
+  filterSemanticContentOverridesForValidation,
+  type SemanticContentOverrideMap,
+} from "./semantic-content-sanitization.js";
 
 export interface EvaluatePolicyGateInput {
   jobId: string;
@@ -437,6 +440,13 @@ const mapVisualOutcome = (
 export const evaluatePolicyGate = (
   input: EvaluatePolicyGateInput,
 ): TestCasePolicyReport => {
+  const semanticContentOverrides =
+    input.semanticContentOverrides === undefined
+      ? undefined
+      : filterSemanticContentOverridesForValidation(
+          input.validation,
+          input.semanticContentOverrides,
+        );
   const validationByCase = indexValidationByTestCase(input.validation);
   const decisions: TestCasePolicyDecisionRecord[] = [];
 
@@ -448,7 +458,7 @@ export const evaluatePolicyGate = (
         input.intent,
         input.profile,
         issues,
-        input.semanticContentOverrides,
+        semanticContentOverrides,
       ),
     );
   }

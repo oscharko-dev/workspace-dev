@@ -135,6 +135,29 @@ export interface SeedSnapshotInput {
   visualReport?: VisualSidecarValidationReport;
 }
 
+export interface RefreshPolicyDecisionsInput {
+  jobId: string;
+  /** Timestamp for the audit note and touched snapshot entries. */
+  at: string;
+  /** Override-aware policy report produced for the same generated list. */
+  policy: TestCasePolicyReport;
+}
+
+export type RefreshPolicyDecisionsResult =
+  | {
+      ok: true;
+      snapshot: ReviewGateSnapshot;
+      changedCount: number;
+      event?: ReviewEvent;
+    }
+  | {
+      ok: false;
+      code:
+        | "snapshot_missing"
+        | "policy_report_job_mismatch"
+        | "policy_report_test_case_mismatch";
+    };
+
 export interface ReviewStore {
   /**
    * Initialize the store for a job from validation pipeline outputs.
@@ -145,6 +168,14 @@ export interface ReviewStore {
   listEvents(jobId: string): Promise<ReviewEvent[]>;
   /** Read the snapshot for a job. */
   readSnapshot(jobId: string): Promise<ReviewGateSnapshot | undefined>;
+  /**
+   * Refresh per-case policy decisions from a newly evaluated policy report
+   * after appending an audit note. Affected entries point at that refresh
+   * event so later approvals can be tied to the policy re-evaluation.
+   */
+  refreshPolicyDecisions(
+    input: RefreshPolicyDecisionsInput,
+  ): Promise<RefreshPolicyDecisionsResult>;
   /** Record a state transition. Fail-closed when the transition is illegal. */
   recordTransition(
     input: RecordTransitionInput,
@@ -595,6 +626,117 @@ class FileSystemReviewStore implements ReviewStore {
 
   async readSnapshot(jobId: string): Promise<ReviewGateSnapshot | undefined> {
     return this.readSnapshotInternal(jobId);
+  }
+
+  async refreshPolicyDecisions(
+    input: RefreshPolicyDecisionsInput,
+  ): Promise<RefreshPolicyDecisionsResult> {
+    return this.withJobLock(input.jobId, async () => {
+      const envelope = await this.readEnvelope(input.jobId);
+      const snapshot = await this.readSnapshotInternal(input.jobId);
+      if (!envelope || !snapshot) {
+        return { ok: false, code: "snapshot_missing" };
+      }
+
+      if (input.policy.jobId !== input.jobId) {
+        return { ok: false, code: "policy_report_job_mismatch" };
+      }
+      if (input.policy.totalTestCases !== snapshot.perTestCase.length) {
+        return { ok: false, code: "policy_report_test_case_mismatch" };
+      }
+
+      const knownTestCaseIds = new Set(
+        snapshot.perTestCase.map((entry) => entry.testCaseId),
+      );
+      const decisions = new Map<string, TestCasePolicyDecision>();
+      for (const decision of input.policy.decisions) {
+        if (
+          !knownTestCaseIds.has(decision.testCaseId) ||
+          decisions.has(decision.testCaseId)
+        ) {
+          return { ok: false, code: "policy_report_test_case_mismatch" };
+        }
+        decisions.set(decision.testCaseId, decision.decision);
+      }
+
+      const changedEntries: ReviewSnapshot[] = [];
+      for (const entry of snapshot.perTestCase) {
+        const nextDecision = decisions.get(entry.testCaseId);
+        if (nextDecision === undefined) continue;
+        if (entry.policyDecision !== nextDecision) {
+          changedEntries.push({ ...entry, policyDecision: nextDecision });
+        }
+      }
+      if (changedEntries.length === 0) {
+        return { ok: true, snapshot, changedCount: 0 };
+      }
+
+      const eventId = randomUUID();
+      const event: ReviewEvent = {
+        schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+        contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+        id: eventId,
+        jobId: input.jobId,
+        kind: "note",
+        at: input.at,
+        note: "Policy decisions refreshed from override-aware policy report.",
+        sequence: envelope.nextSequence,
+        metadata: {
+          policyDecisionRefresh: "semantic_content_overrides",
+          changedCount: changedEntries.length,
+          policyProfileId: input.policy.policyProfileId,
+          policyProfileVersion: input.policy.policyProfileVersion,
+        },
+      };
+      const changedById = new Map(
+        changedEntries.map((entry) => [entry.testCaseId, entry]),
+      );
+      const nextEntries = snapshot.perTestCase.map((entry) => {
+        const changed = changedById.get(entry.testCaseId);
+        if (changed === undefined) return entry;
+        const next: ReviewSnapshot = {
+          ...changed,
+          lastEventId: eventId,
+          lastEventAt: input.at,
+        };
+        if (
+          next.policyDecision === "blocked" &&
+          (next.state === "approved" ||
+            next.state === "pending_secondary_approval" ||
+            next.state === "edited")
+        ) {
+          next.state = "needs_review";
+          next.approvers = [];
+          delete next.primaryReviewer;
+          delete next.primaryApprovalAt;
+          delete next.secondaryReviewer;
+          delete next.secondaryApprovalAt;
+        }
+        return next;
+      });
+      const sorted = sortSnapshotEntries(nextEntries);
+      const counts = computeCounts(sorted);
+      const nextSnapshot: ReviewGateSnapshot = {
+        ...snapshot,
+        perTestCase: sorted,
+        ...counts,
+      };
+      const nextEnvelope: PersistedReviewEventsEnvelope = {
+        ...envelope,
+        events: envelope.events.concat(event),
+        nextSequence: envelope.nextSequence + 1,
+      };
+
+      await writeAtomicJson(this.eventsPath(input.jobId), nextEnvelope);
+      await writeAtomicJson(this.snapshotPath(input.jobId), nextSnapshot);
+
+      return {
+        ok: true,
+        snapshot: nextSnapshot,
+        changedCount: changedEntries.length,
+        event,
+      };
+    });
   }
 
   async recordTransition(

@@ -10,6 +10,7 @@ export {
   detectSuspiciousContent,
   effectiveSemanticContentBlock,
   extractSemanticContentOverrides,
+  filterSemanticContentOverridesForValidation,
   listSemanticContentOverrides,
   recordSemanticContentOverride,
   SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
@@ -202,6 +203,8 @@ export {
   type FourEyesRefusalCode,
   type RecordTransitionInput,
   type RecordTransitionResult,
+  type RefreshPolicyDecisionsInput,
+  type RefreshPolicyDecisionsResult,
   type ReviewStore,
   type SeedSnapshotInput,
 } from "./review-store.js";

@@ -77,6 +77,7 @@ const wrap = (cases: GeneratedTestCase[]): GeneratedTestCaseList => ({
 
 const policyWith = (
   decisions: TestCasePolicyReport["decisions"],
+  overrides: Partial<TestCasePolicyReport> = {},
 ): TestCasePolicyReport => ({
   schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
   contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
@@ -92,6 +93,7 @@ const policyWith = (
   blocked: decisions.some((d) => d.decision === "blocked"),
   decisions,
   jobLevelViolations: [],
+  ...overrides,
 });
 
 const withTempDir = async (
@@ -236,6 +238,148 @@ test("review-store: rejects approval transition when policy is blocked", async (
     assert.equal(result.ok, false);
     if (result.ok) return;
     assert.equal(result.code, "policy_blocks_approval");
+  });
+});
+
+test("review-store: refreshPolicyDecisions lets an override-aware policy unblock approval", async () => {
+  await withTempDir("rev-refresh-policy", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({})]),
+      policy: policyWith([
+        { testCaseId: "tc-1", decision: "blocked", violations: [] },
+      ]),
+    });
+    const blocked = await store.recordTransition({
+      jobId: "job-1",
+      testCaseId: "tc-1",
+      kind: "approved",
+      at: GENERATED_AT,
+      actor: "alice",
+    });
+    assert.equal(blocked.ok, false);
+
+    const refreshed = await store.refreshPolicyDecisions({
+      jobId: "job-1",
+      at: "2026-04-25T11:00:00.000Z",
+      policy: policyWith([
+        { testCaseId: "tc-1", decision: "needs_review", violations: [] },
+      ]),
+    });
+    assert.equal(refreshed.ok, true);
+    if (!refreshed.ok) return;
+    assert.equal(refreshed.changedCount, 1);
+    assert.equal(refreshed.event?.kind, "note");
+    assert.equal(
+      refreshed.snapshot.perTestCase[0]?.policyDecision,
+      "needs_review",
+    );
+
+    const approved = await store.recordTransition({
+      jobId: "job-1",
+      testCaseId: "tc-1",
+      kind: "approved",
+      at: "2026-04-25T11:05:00.000Z",
+      actor: "alice",
+    });
+    assert.equal(approved.ok, true);
+    if (!approved.ok) return;
+    assert.equal(approved.snapshot.perTestCase[0]?.state, "approved");
+  });
+});
+
+test("review-store: refreshPolicyDecisions preserves missing decisions fail-closed", async () => {
+  await withTempDir("rev-refresh-partial", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({})]),
+      policy: policyWith([
+        { testCaseId: "tc-1", decision: "blocked", violations: [] },
+      ]),
+    });
+
+    const refreshed = await store.refreshPolicyDecisions({
+      jobId: "job-1",
+      at: "2026-04-25T11:00:00.000Z",
+      policy: policyWith([], { totalTestCases: 1 }),
+    });
+    assert.equal(refreshed.ok, true);
+    if (!refreshed.ok) return;
+    assert.equal(refreshed.changedCount, 0);
+    assert.equal(
+      refreshed.snapshot.perTestCase[0]?.policyDecision,
+      "blocked",
+    );
+
+    const approved = await store.recordTransition({
+      jobId: "job-1",
+      testCaseId: "tc-1",
+      kind: "approved",
+      at: "2026-04-25T11:05:00.000Z",
+      actor: "alice",
+    });
+    assert.equal(approved.ok, false);
+    if (approved.ok) return;
+    assert.equal(approved.code, "policy_blocks_approval");
+  });
+});
+
+test("review-store: refreshPolicyDecisions rejects mismatched policy reports", async () => {
+  await withTempDir("rev-refresh-mismatch", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({})]),
+      policy: policyWith([
+        { testCaseId: "tc-1", decision: "blocked", violations: [] },
+      ]),
+    });
+
+    const wrongJob = await store.refreshPolicyDecisions({
+      jobId: "job-1",
+      at: "2026-04-25T11:00:00.000Z",
+      policy: policyWith(
+        [{ testCaseId: "tc-1", decision: "needs_review", violations: [] }],
+        { jobId: "other-job" },
+      ),
+    });
+    assert.equal(wrongJob.ok, false);
+    if (wrongJob.ok) return;
+    assert.equal(wrongJob.code, "policy_report_job_mismatch");
+
+    const wrongCases = await store.refreshPolicyDecisions({
+      jobId: "job-1",
+      at: "2026-04-25T11:01:00.000Z",
+      policy: policyWith(
+        [
+          {
+            testCaseId: "tc-unknown",
+            decision: "needs_review",
+            violations: [],
+          },
+        ],
+        { totalTestCases: 1 },
+      ),
+    });
+    assert.equal(wrongCases.ok, false);
+    if (wrongCases.ok) return;
+    assert.equal(wrongCases.code, "policy_report_test_case_mismatch");
+
+    const approved = await store.recordTransition({
+      jobId: "job-1",
+      testCaseId: "tc-1",
+      kind: "approved",
+      at: "2026-04-25T11:05:00.000Z",
+      actor: "alice",
+    });
+    assert.equal(approved.ok, false);
+    if (approved.ok) return;
+    assert.equal(approved.code, "policy_blocks_approval");
   });
 });
 
