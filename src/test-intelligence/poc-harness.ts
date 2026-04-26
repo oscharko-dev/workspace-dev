@@ -1963,6 +1963,7 @@ const deriveFinopsOutcomeFromValidation = (
 
 const isFinOpsBudgetGatewayFailure = (result: LlmGenerationResult): boolean => {
   if (result.outcome !== "error") return false;
+  if (result.errorClass === "input_budget_exceeded") return true;
   return (
     result.errorClass === "schema_invalid" &&
     /max(InputTokens|OutputTokens|WallClockMs|Retries)/.test(result.message)

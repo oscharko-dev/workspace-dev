@@ -815,6 +815,7 @@ export const ALLOWED_LLM_GATEWAY_ERROR_CLASSES = [
   "rate_limited",
   "transport",
   "image_payload_rejected",
+  "input_budget_exceeded",
 ] as const;
 export type LlmGatewayErrorClass =
   (typeof ALLOWED_LLM_GATEWAY_ERROR_CLASSES)[number];
@@ -921,7 +922,15 @@ export interface LlmGenerationRequest {
   imageInputs?: ReadonlyArray<LlmImageInput>;
   seed?: number;
   reasoningEffort?: LlmReasoningEffort;
-  /** Optional client-side input budget; gateway clients fail closed when exceeded. */
+  /**
+   * Optional client-side input-token budget. Gateway clients estimate the
+   * outgoing prompt size (system + user prompt + structured-output schema +
+   * any image payloads) and reject the request before transport with
+   * `errorClass: "input_budget_exceeded"` (`retryable: false`) when the
+   * estimate exceeds this cap (Issue #1415). Operators set the cap to bound
+   * cost and to keep maliciously expanded Figma metadata from reaching the
+   * gateway. Negative or non-integer values are rejected as `schema_invalid`.
+   */
   maxInputTokens?: number;
   maxOutputTokens?: number;
   /**
@@ -4832,4 +4841,4 @@ export interface EvidenceVerifyResponse {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.5.0" as const;
+export const CONTRACT_VERSION = "4.6.0" as const;
