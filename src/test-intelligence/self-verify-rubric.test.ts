@@ -226,6 +226,8 @@ test("rubric cache key digest changes when input changes", () => {
     inputHash,
     promptHash,
     schemaHash,
+    modelDeployment: "gpt-oss-120b-mock",
+    compatibilityMode: "openai_chat" as const,
     modelRevision: "r",
     gatewayRelease: "g",
     policyBundleVersion: "wave1",
@@ -240,6 +242,39 @@ test("rubric cache key digest changes when input changes", () => {
   });
   assert.notEqual(a, b);
   assert.match(a, /^[a-f0-9]{64}$/);
+});
+
+test("rubric cache key digest changes when deployment or compatibility changes", () => {
+  const intent = buildIntent();
+  const list = buildList([buildCase({ id: "tc-1" })]);
+  const baseKey = {
+    passKind: "self_verify_rubric" as const,
+    inputHash: computeSelfVerifyRubricInputHash({ list, intent }),
+    promptHash: computeSelfVerifyRubricPromptHash(),
+    schemaHash: computeSelfVerifyRubricSchemaHash(),
+    modelDeployment: "gpt-oss-120b-mock",
+    compatibilityMode: "openai_chat" as const,
+    modelRevision: "r",
+    gatewayRelease: "g",
+    policyBundleVersion: "wave1",
+    redactionPolicyVersion: REDACTION_POLICY_VERSION,
+    promptTemplateVersion: SELF_VERIFY_RUBRIC_PROMPT_TEMPLATE_VERSION,
+    rubricSchemaVersion: SELF_VERIFY_RUBRIC_REPORT_SCHEMA_VERSION,
+  };
+  assert.notEqual(
+    computeSelfVerifyRubricCacheKeyDigest(baseKey),
+    computeSelfVerifyRubricCacheKeyDigest({
+      ...baseKey,
+      modelDeployment: "different-deployment",
+    }),
+  );
+  assert.notEqual(
+    computeSelfVerifyRubricCacheKeyDigest(baseKey),
+    computeSelfVerifyRubricCacheKeyDigest({
+      ...baseKey,
+      compatibilityMode: "responses_api" as never,
+    }),
+  );
 });
 
 /* ============================================================== */
@@ -608,6 +643,48 @@ test("runSelfVerifyRubricPass refuses when client uses a non-test_generation rol
   assert.equal(result.report.refusal?.code, "image_payload_attempted");
 });
 
+test("runSelfVerifyRubricPass refuses before LLM call when model binding mismatches client", async () => {
+  const list = buildList([buildCase({ id: "tc-1" })]);
+  const intent = buildIntent();
+  const client = buildPerfectMockClient(false);
+  const result = await runSelfVerifyRubricPass({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent,
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    policyBundleVersion: "wave1",
+    client,
+    modelBinding: { ...RUBRIC_BINDING, modelRevision: "different-rev" },
+  });
+  assert.equal(result.report.refusal?.code, "model_binding_mismatch");
+  assert.equal(client.callCount(), 0);
+});
+
+test("runSelfVerifyRubricPass refuses non-openai_chat compatibility before LLM call", async () => {
+  const list = buildList([buildCase({ id: "tc-1" })]);
+  const intent = buildIntent();
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "gpt-oss-120b-mock",
+    modelRevision: "rev-1",
+    gatewayRelease: "rel-1",
+    compatibilityMode: "responses_api" as never,
+  });
+  const result = await runSelfVerifyRubricPass({
+    jobId: "job-1",
+    generatedAt: GENERATED_AT,
+    list,
+    intent,
+    policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+    policyBundleVersion: "wave1",
+    client,
+    modelBinding: RUBRIC_BINDING,
+  });
+  assert.equal(result.report.refusal?.code, "model_binding_mismatch");
+  assert.equal(client.callCount(), 0);
+});
+
 test("runSelfVerifyRubricPass redacts secret-like substrings from refusal messages", async () => {
   const list = buildList([buildCase({ id: "tc-1" })]);
   const intent = buildIntent();
@@ -781,6 +858,37 @@ test("rubric user prompt embeds the test case ids", () => {
   });
   assert.ok(prompt.includes("tc-alpha"));
   assert.ok(prompt.includes("tc-beta"));
+});
+
+test("rubric user prompt redacts secret-like strings before the gateway call", () => {
+  const secret = "sk-ant-api01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  const list = buildList([
+    buildCase({
+      id: "tc-secret",
+      testData: [`apiKey=${secret}`],
+      expectedResults: [`Authorization: Bearer ${secret}`],
+    }),
+  ]);
+  const prompt = buildSelfVerifyRubricUserPrompt({
+    list,
+    intent: buildIntent(),
+    visual: [
+      {
+        screenId: "s-1",
+        sidecarDeployment: "mock",
+        regions: [
+          {
+            regionId: "r-1",
+            confidence: 0.9,
+            visibleText: `Token ${secret}`,
+          },
+        ],
+        confidenceSummary: { min: 0.9, max: 0.9, mean: 0.9 },
+      },
+    ],
+  });
+  assert.equal(prompt.includes(secret), false);
+  assert.ok(prompt.includes("[REDACTED]"));
 });
 
 test("rubric request never carries imageInputs (image-payload guarantee)", async () => {

@@ -141,14 +141,17 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
 }
 
 test("poc-harness rubric: disabled run produces no rubric artifact (byte-stable disabled path)", async () => {
-  const runDir = await newRunDir("disabled");
+  const runA = await newRunDir("disabled-a");
+  const runB = await newRunDir("disabled-b");
   try {
-    const result = await runWave1Poc({
+    const commonInput = {
       fixtureId: WAVE1_POC_FIXTURE_IDS[0] as Wave1PocFixtureId,
       jobId: "job-rubric-disabled",
       generatedAt: GENERATED_AT,
-      runDir,
-    });
+    };
+    const result = await runWave1Poc({ ...commonInput, runDir: runA });
+    const baseline = await runWave1Poc({ ...commonInput, runDir: runB });
+
     assert.equal(result.selfVerifyRubric, undefined);
     assert.equal(result.selfVerifyRubricArtifactPath, undefined);
     const rubricEntry = result.manifest.artifacts.find(
@@ -161,7 +164,25 @@ test("poc-harness rubric: disabled run produces no rubric artifact (byte-stable 
     );
     assert.equal(result.validation.rubric, undefined);
     assert.equal(result.validation.coverage.rubricScore, undefined);
+    assert.equal(
+      computeWave1PocEvidenceManifestDigest(result.manifest),
+      computeWave1PocEvidenceManifestDigest(baseline.manifest),
+    );
+    assert.deepEqual(
+      result.manifest.artifacts.map((artifact) => artifact.filename).sort(),
+      baseline.manifest.artifacts.map((artifact) => artifact.filename).sort(),
+    );
+    for (const artifact of result.manifest.artifacts) {
+      const left = await readFile(join(runA, artifact.filename));
+      const right = await readFile(join(runB, artifact.filename));
+      assert.deepEqual(
+        left,
+        right,
+        `${artifact.filename} must stay byte-stable`,
+      );
+    }
   } finally {
-    await rm(runDir, { recursive: true, force: true });
+    await rm(runA, { recursive: true, force: true });
+    await rm(runB, { recursive: true, force: true });
   }
 });

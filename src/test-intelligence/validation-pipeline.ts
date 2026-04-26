@@ -360,11 +360,9 @@ export interface RunValidationPipelineWithSelfVerifyInput extends RunValidationP
  * pass is skipped and the result mirrors `runValidationPipeline`'s
  * disabled path. On a successful rubric pass:
  *
- *   - per-case `qualitySignals.rubricScore` is stamped onto a freshly
- *     cloned `GeneratedTestCaseList`,
+ *   - per-case `rubricScore` rows are published in the rubric report
+ *     and flat `TestCaseQualitySignalRubric[]` projection,
  *   - `coverage-report.json#rubricScore` carries the job-level score,
- *   - the policy gate sees the rubric-scored list (so any future
- *     policy rule that gates on rubric score has a stable input),
  *   - the resulting artifact bundle gains a `rubric` field which is
  *     persisted by `writeValidationPipelineArtifacts`.
  *
@@ -388,12 +386,30 @@ export const runValidationPipelineWithSelfVerify = async (
     return runValidationPipeline({ ...input, profile });
   }
 
+  let visualReport: VisualSidecarValidationReport | undefined;
+  if (input.visual !== undefined) {
+    visualReport = validateVisualSidecar({
+      jobId: input.jobId,
+      generatedAt: input.generatedAt,
+      visual: input.visual,
+      intent: input.intent,
+      ...(input.primaryVisualDeployment !== undefined
+        ? { primaryDeployment: input.primaryVisualDeployment }
+        : {}),
+    });
+  }
+
+  const rubricVisual: ReadonlyArray<VisualScreenDescription> =
+    visualReport !== undefined && !visualReport.blocked
+      ? (input.visual ?? [])
+      : [];
+
   const rubricRun = await runSelfVerifyRubricPass({
     jobId: input.jobId,
     generatedAt: input.generatedAt,
     list: input.list,
     intent: input.intent,
-    ...(input.visual !== undefined ? { visual: input.visual } : {}),
+    ...(rubricVisual.length > 0 ? { visual: rubricVisual } : {}),
     policyProfileId: profile.id,
     policyBundleVersion: input.selfVerify.policyBundleVersion,
     client: input.selfVerify.client,
@@ -431,19 +447,6 @@ export const runValidationPipelineWithSelfVerify = async (
       ? { rubricScore: rubricScoreInput }
       : {}),
   });
-
-  let visualReport: VisualSidecarValidationReport | undefined;
-  if (input.visual !== undefined) {
-    visualReport = validateVisualSidecar({
-      jobId: input.jobId,
-      generatedAt: input.generatedAt,
-      visual: input.visual,
-      intent: input.intent,
-      ...(input.primaryVisualDeployment !== undefined
-        ? { primaryDeployment: input.primaryVisualDeployment }
-        : {}),
-    });
-  }
 
   const policy = evaluatePolicyGate({
     jobId: input.jobId,
