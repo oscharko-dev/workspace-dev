@@ -734,6 +734,188 @@ Stable trace references — figmaTraceRefs subset that drove the mapping.
 
 ***
 
+### EvidenceVerifyCheck
+
+One row in the `checks` array. Carries enough context for an auditor
+to identify which artifact / check passed or failed and (when failed)
+why. Sorted deterministically so the response body is byte-stable
+across consecutive verifications of the same on-disk run.
+
+#### Properties
+
+##### failureCode?
+
+> `optional` **failureCode?**: [`EvidenceVerifyFailureCode`](#evidenceverifyfailurecode-1)
+
+Failure code when `ok === false`. Omitted when `ok === true`.
+
+##### kind
+
+> **kind**: [`EvidenceVerifyCheckKind`](#evidenceverifycheckkind-1)
+
+##### ok
+
+> **ok**: `boolean`
+
+##### reference
+
+> **reference**: `string`
+
+Artifact filename basename or stable check identifier.
+
+##### signingMode?
+
+> `optional` **signingMode?**: `"unsigned"` \| `"sigstore"`
+
+Optional structured detail attached to attestation checks.
+
+***
+
+### EvidenceVerifyFailure
+
+One row in the `failures` array. Flat, sorted by reference + code.
+
+#### Properties
+
+##### code
+
+> **code**: [`EvidenceVerifyFailureCode`](#evidenceverifyfailurecode-1)
+
+##### message
+
+> **message**: `string`
+
+Operator-readable diagnostic. Never includes absolute paths or secrets.
+
+##### reference
+
+> **reference**: `string`
+
+Artifact filename basename or stable check identifier.
+
+***
+
+### EvidenceVerifyResponse
+
+Response body returned by `GET /workspace/jobs/:jobId/evidence/verify`
+with HTTP status 200. Status 200 means "verification completed",
+regardless of pass/fail outcome — `ok` carries the verdict. The body
+never contains absolute paths, bearer tokens, prompt bodies, raw
+test-case payloads, env values, or signer secret material; only
+filenames (basenames), SHA-256 digests, and identity stamps appear.
+
+#### Properties
+
+##### attestation?
+
+> `optional` **attestation?**: `object`
+
+Attestation summary when an attestation envelope is on disk.
+
+###### present
+
+> **present**: `boolean`
+
+###### signatureCount
+
+> **signatureCount**: `number`
+
+###### signaturesVerified
+
+> **signaturesVerified**: `boolean`
+
+###### signingMode
+
+> **signingMode**: `"unsigned"` \| `"sigstore"`
+
+##### checks
+
+> **checks**: [`EvidenceVerifyCheck`](#evidenceverifycheck)[]
+
+Per-artifact + per-check verification results.
+
+##### failures
+
+> **failures**: [`EvidenceVerifyFailure`](#evidenceverifyfailure)[]
+
+Flat list of every failed check, sorted by `reference`+`code`.
+
+##### jobId
+
+> **jobId**: `string`
+
+##### manifestSchemaVersion?
+
+> `optional` **manifestSchemaVersion?**: `string`
+
+Mirrors `manifest.schemaVersion` when readable.
+
+##### manifestSha256
+
+> **manifestSha256**: `string`
+
+SHA-256 of the canonical manifest bytes (computed in memory).
+
+##### modelDeployments?
+
+> `optional` **modelDeployments?**: `object`
+
+Model deployment names per role from the manifest.
+
+###### testGeneration
+
+> **testGeneration**: `string`
+
+###### visualFallback?
+
+> `optional` **visualFallback?**: `string`
+
+###### visualPrimary?
+
+> `optional` **visualPrimary?**: `string`
+
+##### ok
+
+> **ok**: `boolean`
+
+Overall verdict: true iff `failures.length === 0`.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### testIntelligenceContractVersion?
+
+> `optional` **testIntelligenceContractVersion?**: `string`
+
+Mirrors `manifest.testIntelligenceContractVersion` when readable.
+
+##### verifiedAt
+
+> **verifiedAt**: `string`
+
+ISO-8601 timestamp the verification completed at.
+
+##### visualSidecar?
+
+> `optional` **visualSidecar?**: `object`
+
+Visual sidecar metadata when the manifest carries it.
+
+###### fallbackUsed
+
+> **fallbackUsed**: `boolean`
+
+###### resultArtifactSha256?
+
+> `optional` **resultArtifactSha256?**: `string`
+
+###### selectedDeployment?
+
+> `optional` **selectedDeployment?**: `string`
+
+***
+
 ### ExportArtifactRecord
 
 Single artifact bookkeeping row inside `export-report.json`.
@@ -5265,6 +5447,14 @@ received an image payload during the run.
 
 > **jobId**: `string`
 
+##### manifestIntegrity?
+
+> `optional` **manifestIntegrity?**: [`Wave1PocEvidenceManifestIntegrity`](#wave1pocevidencemanifestintegrity)
+
+Self-attestation over the canonical manifest metadata and artifact list.
+New manifests stamp this field; it remains optional so legacy manifests can
+still be parsed and verified with their existing digest witness.
+
 ##### modelDeployments
 
 > **modelDeployments**: `object`
@@ -5341,6 +5531,48 @@ Direct visual-sidecar evidence summary when the opt-in sidecar path ran.
 
 ***
 
+### Wave1PocEvidenceManifestIntegrity
+
+Self-attestation stamped into the Wave 1 evidence manifest.
+
+#### Properties
+
+##### algorithm
+
+> **algorithm**: `"sha256"`
+
+##### hash
+
+> **hash**: `string`
+
+SHA-256 of canonical manifest JSON with `manifestIntegrity` omitted.
+
+***
+
+### Wave1PocEvidenceManifestIntegrityVerification
+
+Structured verification result for the manifest self-attestation.
+
+#### Properties
+
+##### actualHash
+
+> **actualHash**: `string`
+
+##### algorithm
+
+> **algorithm**: `"sha256"`
+
+##### expectedHash?
+
+> `optional` **expectedHash?**: `string`
+
+##### ok
+
+> **ok**: `boolean`
+
+***
+
 ### Wave1PocEvidenceVerificationResult
 
 Result of `verifyWave1PocEvidenceManifest` against a directory of artifacts.
@@ -5348,6 +5580,14 @@ Determines whether ALL attested artifacts still hash to the values stored
 in the manifest. Any mismatch fails the verification fail-closed.
 
 #### Properties
+
+##### manifestIntegrity?
+
+> `optional` **manifestIntegrity?**: [`Wave1PocEvidenceManifestIntegrityVerification`](#wave1pocevidencemanifestintegrityverification)
+
+Manifest self-attestation result when the manifest carries a
+`manifestIntegrity` block, or when a current-version manifest is missing
+the block and therefore fails closed.
 
 ##### missing
 
@@ -6175,7 +6415,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-30)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-31)
 
 ##### pasteDeltaSummary?
 
@@ -9191,6 +9431,24 @@ Scoring weights for the visual quality composite score.
 
 ***
 
+### EvidenceVerifyCheckKind
+
+> **EvidenceVerifyCheckKind** = `"artifact_sha256"` \| `"manifest_metadata"` \| `"manifest_digest_witness"` \| `"visual_sidecar_evidence"` \| `"attestation_envelope"` \| `"attestation_signatures"`
+
+Stable check-kind labels surfaced in the `EvidenceVerifyResponse.checks` array.
+
+***
+
+### EvidenceVerifyFailureCode
+
+> **EvidenceVerifyFailureCode** = `"manifest_unparseable"` \| `"manifest_metadata_invalid"` \| `"manifest_digest_witness_invalid"` \| `"artifact_missing"` \| `"artifact_mutated"` \| `"artifact_resized"` \| `"unexpected_artifact"` \| `"visual_sidecar_evidence_missing"` \| `"envelope_unparseable"` \| `"envelope_payload_type_mismatch"` \| `"envelope_payload_decode_failed"` \| `"statement_unparseable"` \| `"statement_type_mismatch"` \| `"statement_predicate_type_mismatch"` \| `"statement_predicate_invalid"` \| `"subject_missing_artifact"` \| `"subject_digest_mismatch"` \| `"subject_unattested_artifact"` \| `"signing_mode_mismatch"` \| `"signature_required"` \| `"signature_unsigned_envelope_carries_signatures"` \| `"signature_invalid_keyid"` \| `"signature_invalid_encoding"` \| `"signature_unverified"` \| `"bundle_missing"` \| `"bundle_envelope_mismatch"` \| `"bundle_public_key_missing"` \| `"manifest_sha256_mismatch"`
+
+Stable failure-code surface for evidence verification. Re-uses the
+existing `Wave1PocAttestationVerificationFailureCode` literals where
+applicable so a single auditor can route on a unified vocabulary.
+
+***
+
 ### ExportArtifactContentType
 
 > **ExportArtifactContentType** = *typeof* [`ALLOWED_EXPORT_ARTIFACT_CONTENT_TYPES`](#allowed_export_artifact_content_types)\[`number`\]
@@ -10238,7 +10496,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.1.0"`
+> `const` **CONTRACT\_VERSION**: `"4.3.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -10306,6 +10564,16 @@ one Wave 1 ships with.
 > `const` **EU\_BANKING\_DEFAULT\_POLICY\_PROFILE\_VERSION**: `"1.0.0"`
 
 Version stamp for the built-in `eu-banking-default` policy profile.
+
+***
+
+### EVIDENCE\_VERIFY\_RESPONSE\_SCHEMA\_VERSION
+
+> `const` **EVIDENCE\_VERIFY\_RESPONSE\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the `EvidenceVerifyResponse` envelope returned by
+`GET /workspace/jobs/:jobId/evidence/verify` (Issue #1380). Bump when a
+backwards-incompatible field shape change ships.
 
 ***
 

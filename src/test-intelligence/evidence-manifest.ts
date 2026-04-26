@@ -4,7 +4,8 @@
  * The manifest is an attestation of the artifacts a POC run produced:
  * for each artifact it stores the SHA-256 of the on-disk byte stream and
  * the byte length, plus the contract / template / schema / policy / model
- * identities that were active during the run. The manifest is itself
+ * identities that were active during the run. The manifest carries a
+ * self-attestation hash over its own metadata and artifact list, and is
  * persisted alongside the artifacts so a future verifier can detect
  * tampering by re-hashing each file and comparing against the manifest.
  *
@@ -192,6 +193,32 @@ export const computeWave1PocEvidenceManifestDigest = (
   manifest: Wave1PocEvidenceManifest,
 ): string => sha256OfBytes(new TextEncoder().encode(canonicalJson(manifest)));
 
+const omitManifestIntegrity = (
+  manifest: Wave1PocEvidenceManifest,
+): Omit<Wave1PocEvidenceManifest, "manifestIntegrity"> => {
+  const unsignedManifest = { ...manifest };
+  delete unsignedManifest.manifestIntegrity;
+  return unsignedManifest;
+};
+
+const computeWave1PocEvidenceManifestIntegrityHash = (
+  manifest: Wave1PocEvidenceManifest,
+): string =>
+  sha256OfBytes(
+    new TextEncoder().encode(canonicalJson(omitManifestIntegrity(manifest))),
+  );
+
+const withWave1PocEvidenceManifestIntegrity = (
+  manifest: Wave1PocEvidenceManifest,
+): Wave1PocEvidenceManifest => {
+  const unsignedManifest = omitManifestIntegrity(manifest);
+  const hash = computeWave1PocEvidenceManifestIntegrityHash(manifest);
+  return {
+    ...unsignedManifest,
+    manifestIntegrity: { algorithm: "sha256", hash },
+  };
+};
+
 /**
  * Build a deterministic evidence manifest from the input bundle. The
  * artifact list is sorted by filename and de-duplicated; later
@@ -271,7 +298,7 @@ export const buildWave1PocEvidenceManifest = (
     rawScreenshotsIncluded: false,
     imagePayloadSentToTestGeneration: false,
   };
-  return manifest;
+  return withWave1PocEvidenceManifestIntegrity(manifest);
 };
 
 export interface WriteWave1PocEvidenceManifestInput {
@@ -291,7 +318,8 @@ export const writeWave1PocEvidenceManifest = async (
     input.destinationDir,
     WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   );
-  const serialized = canonicalJson(input.manifest);
+  const manifest = withWave1PocEvidenceManifestIntegrity(input.manifest);
+  const serialized = canonicalJson(manifest);
   const tmp = `${path}.${process.pid}.tmp`;
   await writeFile(tmp, serialized, "utf8");
   await rename(tmp, path);
@@ -302,7 +330,7 @@ export const writeWave1PocEvidenceManifest = async (
   const digestTmp = `${digestPath}.${process.pid}.tmp`;
   await writeFile(
     digestTmp,
-    `${computeWave1PocEvidenceManifestDigest(input.manifest)}\n`,
+    `${computeWave1PocEvidenceManifestDigest(manifest)}\n`,
     "utf8",
   );
   await rename(digestTmp, digestPath);
@@ -474,6 +502,57 @@ const validateManifestMetadata = (
   return issues;
 };
 
+const evaluateManifestIntegrity = (
+  manifest: Wave1PocEvidenceManifest,
+):
+  | {
+      algorithm: "sha256";
+      actualHash: string;
+      expectedHash?: string;
+      ok: boolean;
+    }
+  | undefined => {
+  const actualHash = computeWave1PocEvidenceManifestIntegrityHash(manifest);
+  const raw = manifest as unknown as Record<string, unknown>;
+  const integrity = raw["manifestIntegrity"];
+
+  if (integrity === undefined) {
+    if (manifest.contractVersion === CONTRACT_VERSION) {
+      return { algorithm: "sha256", actualHash, ok: false };
+    }
+    return undefined;
+  }
+
+  if (!isRecord(integrity)) {
+    return { algorithm: "sha256", actualHash, ok: false };
+  }
+
+  if (!hasOnlyKnownKeys(integrity, new Set(["algorithm", "hash"]))) {
+    return { algorithm: "sha256", actualHash, ok: false };
+  }
+
+  const algorithm = integrity["algorithm"];
+  const expectedHash = integrity["hash"];
+  if (algorithm !== "sha256" || typeof expectedHash !== "string") {
+    return { algorithm: "sha256", actualHash, ok: false };
+  }
+  if (!HEX64.test(expectedHash)) {
+    return {
+      algorithm: "sha256",
+      actualHash,
+      expectedHash,
+      ok: false,
+    };
+  }
+
+  return {
+    algorithm: "sha256",
+    actualHash,
+    expectedHash,
+    ok: expectedHash === actualHash,
+  };
+};
+
 /**
  * Verify on-disk artifacts against the attested manifest. Returns a
  * structured result documenting any mismatches; the function NEVER
@@ -487,7 +566,15 @@ export const verifyWave1PocEvidenceManifest = async (
   const mutated: string[] = [];
   const resized: string[] = [];
   const metadataIssues = validateManifestMetadata(input.manifest);
+  const manifestIntegrity = evaluateManifestIntegrity(input.manifest);
   if (metadataIssues.length > 0) {
+    mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
+  }
+  if (
+    manifestIntegrity !== undefined &&
+    !manifestIntegrity.ok &&
+    !mutated.includes(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME)
+  ) {
     mutated.push(WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME);
   }
   if (
@@ -553,6 +640,7 @@ export const verifyWave1PocEvidenceManifest = async (
     mutated: mutated.sort(),
     resized: resized.sort(),
     unexpected,
+    ...(manifestIntegrity !== undefined ? { manifestIntegrity } : {}),
   };
 };
 

@@ -3350,6 +3350,27 @@ export interface Wave1PocEvidenceVerificationResult {
   resized: string[];
   /** Filenames present on disk but not attested by the manifest. */
   unexpected: string[];
+  /**
+   * Manifest self-attestation result when the manifest carries a
+   * `manifestIntegrity` block, or when a current-version manifest is missing
+   * the block and therefore fails closed.
+   */
+  manifestIntegrity?: Wave1PocEvidenceManifestIntegrityVerification;
+}
+
+/** Self-attestation stamped into the Wave 1 evidence manifest. */
+export interface Wave1PocEvidenceManifestIntegrity {
+  algorithm: "sha256";
+  /** SHA-256 of canonical manifest JSON with `manifestIntegrity` omitted. */
+  hash: string;
+}
+
+/** Structured verification result for the manifest self-attestation. */
+export interface Wave1PocEvidenceManifestIntegrityVerification {
+  algorithm: "sha256";
+  actualHash: string;
+  expectedHash?: string;
+  ok: boolean;
 }
 
 /** Visual-sidecar summary duplicated into the Wave 1 evidence manifest. */
@@ -3424,6 +3445,12 @@ export interface Wave1PocEvidenceManifest {
   cacheKeyDigest: string;
   /** Direct visual-sidecar evidence summary when the opt-in sidecar path ran. */
   visualSidecar?: Wave1PocEvidenceVisualSidecarSummary;
+  /**
+   * Self-attestation over the canonical manifest metadata and artifact list.
+   * New manifests stamp this field; it remains optional so legacy manifests can
+   * still be parsed and verified with their existing digest witness.
+   */
+  manifestIntegrity?: Wave1PocEvidenceManifestIntegrity;
   /** Sorted-by-filename, de-duplicated artifact list. */
   artifacts: Wave1PocEvidenceArtifact[];
   /** Hard invariant: no raw screenshot bytes leak into export artifacts. */
@@ -4788,4 +4815,4 @@ export interface EvidenceVerifyResponse {
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.2.0" as const;
+export const CONTRACT_VERSION = "4.3.0" as const;
