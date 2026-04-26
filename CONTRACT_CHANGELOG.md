@@ -31,6 +31,22 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.2.0] - 2026-04-26
+
+### Added (Issue #1380)
+
+- New endpoint `GET /workspace/jobs/:jobId/evidence/verify` exposing the local Wave 1 POC evidence-verification capability (#1366) as a read-only HTTP route so operators and auditors can verify a completed job's evidence integrity without touching artifacts directly on disk. Status codes: `404` for unknown job IDs, `409` when no evidence has been written yet, `200` on verification completion regardless of pass/fail outcome (the body carries `ok`). The route is feature-gated by the same dual `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE` + `WorkspaceStartOptions.testIntelligence.enabled` check as `/workspace/test-intelligence/...`. Bearer-protected per the existing governance-route convention (fail-closed `503 AUTHENTICATION_UNAVAILABLE` when `testIntelligence.reviewBearerToken` is unset, `401 UNAUTHORIZED` on missing/invalid token). Per-IP rate limiter `evidence-verify-reads.json` consumed per `(client, jobId)`. Method-locked to `GET` (returns `405 METHOD_NOT_ALLOWED` with `Allow: GET` for other methods). Invocations are audit-logged.
+- New constant `EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION` (`"1.0.0"`).
+- New exported types `EvidenceVerifyResponse`, `EvidenceVerifyCheck`, `EvidenceVerifyFailure`, `EvidenceVerifyCheckKind`, `EvidenceVerifyFailureCode` describing the `200` response body. The body carries `schemaVersion`, `verifiedAt`, `jobId`, `ok`, `manifestSha256`, `manifestSchemaVersion`, `testIntelligenceContractVersion`, `modelDeployments`, optional `visualSidecar` summary (`selectedDeployment`, `fallbackUsed`, `resultArtifactSha256`), optional `attestation` summary (`present`, `signingMode`, `signatureCount`, `signaturesVerified`), and the deterministic `checks[]` + `failures[]` arrays. `checks[]` is sorted by `(kind, reference)`; `failures[]` is sorted by `(reference, code)` so consecutive verifications of the same on-disk run produce byte-stable bodies (modulo `verifiedAt`).
+- New module `src/test-intelligence/evidence-verify.ts` exporting `verifyJobEvidence({ artifactsRoot, jobId, verifiedAt })` plus the discriminated `EvidenceVerifyResult` (`{ status: "ok"; body }` | `{ status: "job_not_found" }` | `{ status: "no_evidence" }`). The orchestrator wraps `verifyWave1PocEvidenceFromDisk` (per-artifact SHA-256 + manifest digest witness) and, when an in-toto attestation is present at `<runDir>/evidence/attestations/wave1-poc-attestation.intoto.json`, also calls `verifyWave1PocAttestationFromDisk` with the signing mode auto-detected from the on-disk presence of the matching Sigstore bundle. Visual-sidecar evidence is detected as missing when the manifest carries a `visualSidecar` summary but the on-disk result artifact is absent / failed, when the manifest attests the result artifact but never wires the summary block, or when `generated-testcases.json` references screen-only `visualEvidenceRefs` without a backing `visualSidecar` summary.
+- New module `src/test-intelligence/evidence-verify-route.ts` exporting `parseEvidenceVerifyRoute` plus the `EvidenceVerifyRoute` / `EvidenceVerifyParseResult` / `EvidenceVerifyParseError` types. Path parser is method-agnostic; the request handler dispatches on method and applies bearer + rate-limit guards.
+
+### Unchanged (Issue #1380)
+
+- Read-only route: no write side effects, no artifact mutation, no attestation re-signing or manifest patching.
+- Response body never contains tokens, prompt bodies, reasoning traces, raw test-case payloads, environment values, signer secret material, or absolute paths — only filenames (basenames), SHA-256 digests, and identity stamps surface.
+- The route is HTTP-level only; the underlying `verifyWave1PocEvidenceFromDisk` / `verifyWave1PocAttestationFromDisk` primitives from #1366 / #1377 are unchanged. No new dependency, telemetry, or external schema library is introduced.
+
 ## [4.1.0] - 2026-04-26
 
 ### Added (Issue #1379)

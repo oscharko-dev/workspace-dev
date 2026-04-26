@@ -4661,8 +4661,131 @@ export interface Wave1PocLbomSummary {
 }
 
 /**
+ * Schema version for the `EvidenceVerifyResponse` envelope returned by
+ * `GET /workspace/jobs/:jobId/evidence/verify` (Issue #1380). Bump when a
+ * backwards-incompatible field shape change ships.
+ */
+export const EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION = "1.0.0" as const;
+
+/**
+ * Stable failure-code surface for evidence verification. Re-uses the
+ * existing `Wave1PocAttestationVerificationFailureCode` literals where
+ * applicable so a single auditor can route on a unified vocabulary.
+ */
+export type EvidenceVerifyFailureCode =
+  | "manifest_unparseable"
+  | "manifest_metadata_invalid"
+  | "manifest_digest_witness_invalid"
+  | "artifact_missing"
+  | "artifact_mutated"
+  | "artifact_resized"
+  | "unexpected_artifact"
+  | "visual_sidecar_evidence_missing"
+  | "envelope_unparseable"
+  | "envelope_payload_type_mismatch"
+  | "envelope_payload_decode_failed"
+  | "statement_unparseable"
+  | "statement_type_mismatch"
+  | "statement_predicate_type_mismatch"
+  | "statement_predicate_invalid"
+  | "subject_missing_artifact"
+  | "subject_digest_mismatch"
+  | "subject_unattested_artifact"
+  | "signing_mode_mismatch"
+  | "signature_required"
+  | "signature_unsigned_envelope_carries_signatures"
+  | "signature_invalid_keyid"
+  | "signature_invalid_encoding"
+  | "signature_unverified"
+  | "bundle_missing"
+  | "bundle_envelope_mismatch"
+  | "bundle_public_key_missing"
+  | "manifest_sha256_mismatch";
+
+/** Stable check-kind labels surfaced in the `EvidenceVerifyResponse.checks` array. */
+export type EvidenceVerifyCheckKind =
+  | "artifact_sha256"
+  | "manifest_metadata"
+  | "manifest_digest_witness"
+  | "visual_sidecar_evidence"
+  | "attestation_envelope"
+  | "attestation_signatures";
+
+/**
+ * One row in the `checks` array. Carries enough context for an auditor
+ * to identify which artifact / check passed or failed and (when failed)
+ * why. Sorted deterministically so the response body is byte-stable
+ * across consecutive verifications of the same on-disk run.
+ */
+export interface EvidenceVerifyCheck {
+  kind: EvidenceVerifyCheckKind;
+  /** Artifact filename basename or stable check identifier. */
+  reference: string;
+  ok: boolean;
+  /** Failure code when `ok === false`. Omitted when `ok === true`. */
+  failureCode?: EvidenceVerifyFailureCode;
+  /** Optional structured detail attached to attestation checks. */
+  signingMode?: Wave1PocAttestationSigningMode;
+}
+
+/** One row in the `failures` array. Flat, sorted by reference + code. */
+export interface EvidenceVerifyFailure {
+  code: EvidenceVerifyFailureCode;
+  /** Artifact filename basename or stable check identifier. */
+  reference: string;
+  /** Operator-readable diagnostic. Never includes absolute paths or secrets. */
+  message: string;
+}
+
+/**
+ * Response body returned by `GET /workspace/jobs/:jobId/evidence/verify`
+ * with HTTP status 200. Status 200 means "verification completed",
+ * regardless of pass/fail outcome — `ok` carries the verdict. The body
+ * never contains absolute paths, bearer tokens, prompt bodies, raw
+ * test-case payloads, env values, or signer secret material; only
+ * filenames (basenames), SHA-256 digests, and identity stamps appear.
+ */
+export interface EvidenceVerifyResponse {
+  schemaVersion: typeof EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION;
+  /** ISO-8601 timestamp the verification completed at. */
+  verifiedAt: string;
+  jobId: string;
+  /** Overall verdict: true iff `failures.length === 0`. */
+  ok: boolean;
+  /** SHA-256 of the canonical manifest bytes (computed in memory). */
+  manifestSha256: string;
+  /** Mirrors `manifest.schemaVersion` when readable. */
+  manifestSchemaVersion?: string;
+  /** Mirrors `manifest.testIntelligenceContractVersion` when readable. */
+  testIntelligenceContractVersion?: string;
+  /** Model deployment names per role from the manifest. */
+  modelDeployments?: {
+    testGeneration: string;
+    visualPrimary?: string;
+    visualFallback?: string;
+  };
+  /** Visual sidecar metadata when the manifest carries it. */
+  visualSidecar?: {
+    selectedDeployment?: string;
+    fallbackUsed: boolean;
+    resultArtifactSha256?: string;
+  };
+  /** Attestation summary when an attestation envelope is on disk. */
+  attestation?: {
+    present: boolean;
+    signingMode: Wave1PocAttestationSigningMode;
+    signatureCount: number;
+    signaturesVerified: boolean;
+  };
+  /** Per-artifact + per-check verification results. */
+  checks: EvidenceVerifyCheck[];
+  /** Flat list of every failed check, sorted by `reference`+`code`. */
+  failures: EvidenceVerifyFailure[];
+}
+
+/**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.1.0" as const;
+export const CONTRACT_VERSION = "4.2.0" as const;

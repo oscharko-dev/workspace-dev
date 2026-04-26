@@ -410,6 +410,74 @@ harness returns a compact audit summary with signing mode, optional signer
 reference, and SHA-256 identifiers; it never records keys, bearer tokens, or
 gateway credentials.
 
+### Operator-facing HTTP route (Issue #1380)
+
+When the test-intelligence subsurface is enabled, the workspace-dev server
+exposes a read-only audit route that wraps the verifiers above so operators and
+auditors can verify a completed job's evidence integrity without touching
+artifacts directly on disk:
+
+```
+GET /workspace/jobs/<jobId>/evidence/verify
+Authorization: Bearer <testIntelligence.reviewBearerToken>
+```
+
+Response (`200 OK`, `application/json`, `EvidenceVerifyResponse` shape):
+
+```jsonc
+{
+    "schemaVersion": "1.0.0",
+    "verifiedAt": "2026-04-26T10:00:00.000Z",
+    "jobId": "wave1-poc-onboarding",
+    "ok": true,
+    "manifestSha256": "<64-char hex>",
+    "manifestSchemaVersion": "1.0.0",
+    "testIntelligenceContractVersion": "1.0.0",
+    "modelDeployments": { "testGeneration": "gpt-oss-120b-mock" },
+    "visualSidecar": {
+        /* optional, only when manifest carries it */
+    },
+    "attestation": {
+        /* optional, only when on-disk envelope is present */
+    },
+    "checks": [
+        /* sorted by (kind, reference) */
+    ],
+    "failures": [
+        /* sorted by (reference, code); empty when ok=true */
+    ],
+}
+```
+
+Status codes:
+
+- `200` — verification completed. The body's `ok` carries the verdict;
+  `failures` is empty on success and populated on any digest mismatch, missing
+  artifact, additive append, truncation, manifest-metadata invariant breach,
+  attestation envelope failure, or visual-sidecar evidence inconsistency.
+- `404 JOB_NOT_FOUND` — no job directory exists under the configured
+  `testIntelligenceArtifactRoot`. The response carries no path information.
+- `409 EVIDENCE_NOT_AVAILABLE` — the job directory exists but no
+  `wave1-poc-evidence-manifest.json` has been written yet.
+- `401 UNAUTHORIZED` — missing or invalid Bearer token; the response includes a
+  `WWW-Authenticate: Bearer realm="workspace-dev"` header.
+- `503 AUTHENTICATION_UNAVAILABLE` — `testIntelligence.reviewBearerToken` is
+  unset or blank; the route fails closed.
+- `503 FEATURE_DISABLED` — either feature gate (env or runtime option) is off.
+- `405 METHOD_NOT_ALLOWED` — any method other than `GET`. The response includes
+  an `Allow: GET` header.
+- `429 RATE_LIMIT_EXCEEDED` — per-IP read rate limit exceeded. The response
+  includes a `Retry-After` header. Per-`(client, jobId)` limiter state is
+  persisted under `<outputRoot>/rate-limits/evidence-verify-reads.json`.
+
+The route is read-only: no artifacts are mutated, no attestation is re-signed,
+and no manifest is patched. The response body never contains tokens, prompt
+bodies, reasoning traces, raw test-case payloads, environment values, signer
+secret material, or absolute paths — only filenames (basenames), SHA-256
+digests, and identity stamps appear. Each invocation is audit-logged with the
+`workspace.evidence.verify.completed` event carrying jobId, status code, and
+the failure / check counts.
+
 ## 9. Multimodal visual sidecar
 
 The visual sidecar workflow exists only because design screenshots add evidence
