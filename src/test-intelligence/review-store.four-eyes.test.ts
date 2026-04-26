@@ -188,6 +188,39 @@ test("four-eyes: custom-context regulated escalation enforces when regulated_dat
   });
 });
 
+test("four-eyes: multi-source conflict policy outcome stamps the dedicated enforcement reason", async () => {
+  await withTempDir("four-eyes-multi-source-conflict", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    const snapshot = await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({ id: "tc-conflict", riskCategory: "low" })]),
+      policy: policyWith([
+        {
+          testCaseId: "tc-conflict",
+          decision: "needs_review",
+          violations: [
+            {
+              rule: "policy:multi-source-conflict-present",
+              outcome: "multi_source_conflict_present",
+              severity: "warning",
+              reason: "multi-source conflict(s) abc affect this case",
+            },
+          ],
+        },
+      ]),
+      fourEyesPolicy: EU_BANKING_DEFAULT_FOUR_EYES_POLICY,
+    });
+    const entry = snapshot.perTestCase.find(
+      (value) => value.testCaseId === "tc-conflict",
+    );
+    assert.equal(entry?.fourEyesEnforced, true);
+    assert.deepEqual(entry?.fourEyesReasons, [
+      "multi_source_conflict_present",
+    ]);
+  });
+});
+
 test("four-eyes: high-risk case cannot reach approved with a single approver", async () => {
   await withTempDir("four-eyes-single-rejected", async (dir) => {
     const store = createFileSystemReviewStore({ destinationDir: dir });

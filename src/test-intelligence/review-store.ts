@@ -536,6 +536,7 @@ class FileSystemReviewStore implements ReviewStore {
 
       const decisions = new Map<string, TestCasePolicyDecision>();
       const customContextEscalated = new Set<string>();
+      const multiSourceConflictEscalated = new Set<string>();
       for (const decision of input.policy.decisions) {
         decisions.set(decision.testCaseId, decision.decision);
         if (
@@ -545,6 +546,14 @@ class FileSystemReviewStore implements ReviewStore {
           )
         ) {
           customContextEscalated.add(decision.testCaseId);
+        }
+        if (
+          decision.violations.some(
+            (violation) =>
+              violation.outcome === "multi_source_conflict_present",
+          )
+        ) {
+          multiSourceConflictEscalated.add(decision.testCaseId);
         }
       }
 
@@ -578,6 +587,9 @@ class FileSystemReviewStore implements ReviewStore {
           fourEyesPolicy.requiredRiskCategories.includes("regulated_data")
         ) {
           enforcementReasons.add("risk_category");
+        }
+        if (multiSourceConflictEscalated.has(tc.id)) {
+          enforcementReasons.add("multi_source_conflict_present");
         }
         const sortedEnforcementReasons = Array.from(enforcementReasons).sort();
         const seedEvent: ReviewEvent = {
