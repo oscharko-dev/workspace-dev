@@ -10,7 +10,7 @@
         {
           "type": "application",
           "name": "workspace-dev",
-          "version": "3.32.1",
+          "version": "4.0.0",
           "publisher": "workspace-dev",
           "description": "workspace-dev air-gapped Figma-to-Test test-intelligence harness."
         }
@@ -37,7 +37,7 @@
         "name": "workspace-dev:cacheKeyDigest",
         "value": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
       },
-      { "name": "workspace-dev:contractVersion", "value": "3.32.1" },
+      { "name": "workspace-dev:contractVersion", "value": "4.0.0" },
       {
         "name": "workspace-dev:inputHash",
         "value": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
