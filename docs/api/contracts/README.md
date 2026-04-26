@@ -761,7 +761,7 @@ Failure code when `ok === false`. Omitted when `ok === true`.
 
 > **reference**: `string`
 
-Artifact filename basename or stable check identifier.
+Safe manifest-relative artifact filename or stable check identifier.
 
 ##### signingMode?
 
@@ -791,7 +791,7 @@ Operator-readable diagnostic. Never includes absolute paths or secrets.
 
 > **reference**: `string`
 
-Artifact filename basename or stable check identifier.
+Safe manifest-relative artifact filename or stable check identifier.
 
 ***
 
@@ -801,8 +801,8 @@ Response body returned by `GET /workspace/jobs/:jobId/evidence/verify`
 with HTTP status 200. Status 200 means "verification completed",
 regardless of pass/fail outcome — `ok` carries the verdict. The body
 never contains absolute paths, bearer tokens, prompt bodies, raw
-test-case payloads, env values, or signer secret material; only
-filenames (basenames), SHA-256 digests, and identity stamps appear.
+test-case payloads, env values, or signer secret material; only safe
+manifest-relative filenames, SHA-256 digests, and identity stamps appear.
 
 #### Properties
 

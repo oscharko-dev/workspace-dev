@@ -10,7 +10,14 @@
  * body.
  */
 import assert from "node:assert/strict";
-import { appendFile, mkdir, mkdtemp, rm } from "node:fs/promises";
+import {
+  appendFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -203,6 +210,24 @@ test("e2e #1380: GET evidence/verify returns 200 ok=true for an untouched POC ru
   }
 });
 
+test("e2e #1380: GET evidence/verify accepts the parser-supported trailing slash", async () => {
+  const handle = await startTestServer();
+  try {
+    const response = await fetch(`${verifyUrl(handle.baseUrl, handle.jobId)}/`, {
+      method: "GET",
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${TEST_BEARER_TOKEN}`,
+      },
+    });
+    assert.equal(response.status, 200);
+    const body = (await response.json()) as Record<string, unknown>;
+    assert.equal(body.ok, true);
+  } finally {
+    await handle.close();
+  }
+});
+
 test("e2e #1380: GET evidence/verify returns 200 ok=false after artifact tampering", async () => {
   const handle = await startTestServer();
   try {
@@ -222,6 +247,35 @@ test("e2e #1380: GET evidence/verify returns 200 ok=false after artifact tamperi
     assert.ok(
       codes.includes("artifact_resized") || codes.includes("artifact_mutated"),
       `expected artifact_resized or artifact_mutated, saw: ${codes.join(",")}`,
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("e2e #1380: GET evidence/verify returns 200 ok=false for a malformed versioned manifest", async () => {
+  const handle = await startTestServer();
+  try {
+    const manifestPath = join(
+      handle.artifactsRoot,
+      handle.jobId,
+      "wave1-poc-evidence-manifest.json",
+    );
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<
+      string,
+      unknown
+    >;
+    delete manifest["artifacts"];
+    await writeFile(manifestPath, JSON.stringify(manifest), "utf8");
+
+    const result = await fetchVerify(handle.baseUrl, handle.jobId);
+    assert.equal(result.status, 200);
+    const body = result.body as Record<string, unknown>;
+    assert.equal(body.ok, false);
+    const failures = body.failures as Array<Record<string, unknown>>;
+    assert.ok(
+      failures.some((failure) => failure.code === "manifest_metadata_invalid"),
+      JSON.stringify(failures, null, 2),
     );
   } finally {
     await handle.close();

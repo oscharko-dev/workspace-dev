@@ -477,10 +477,10 @@ Status codes:
 The route is read-only: no artifacts are mutated, no attestation is re-signed,
 and no manifest is patched. The response body never contains tokens, prompt
 bodies, reasoning traces, raw test-case payloads, environment values, signer
-secret material, or absolute paths — only filenames (basenames), SHA-256
-digests, and identity stamps appear. Each invocation is audit-logged with the
-`workspace.evidence.verify.completed` event carrying jobId, status code, and
-the failure / check counts.
+secret material, or absolute paths — only safe manifest-relative filenames,
+SHA-256 digests, and identity stamps appear. Each invocation is audit-logged
+with the `workspace.evidence.verify.completed` event carrying jobId, status
+code, and the failure / check counts.
 
 ## 9. Multimodal visual sidecar
 

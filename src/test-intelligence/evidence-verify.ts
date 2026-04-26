@@ -18,8 +18,8 @@
  *     "verification completed", regardless of outcome.
  *   - The response body never contains absolute paths, bearer tokens,
  *     prompt bodies, raw test-case payloads, env values, or signer
- *     secret material. Only filenames (basenames), SHA-256 digests,
- *     and identity stamps appear.
+ *     secret material. Only safe manifest-relative filenames, SHA-256
+ *     digests, and identity stamps appear.
  */
 
 import { readdir, readFile, stat } from "node:fs/promises";
@@ -27,11 +27,11 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 
 import {
   EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION,
-  TEST_INTELLIGENCE_CONTRACT_VERSION,
   VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
   WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
   WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
   WAVE1_POC_ATTESTATIONS_DIRECTORY,
+  WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   WAVE1_POC_SIGNATURES_DIRECTORY,
   type EvidenceVerifyCheck,
@@ -44,6 +44,8 @@ import {
 } from "../contracts/index.js";
 import {
   computeWave1PocEvidenceManifestDigest,
+  validateWave1PocEvidenceManifestMetadata,
+  Wave1PocEvidenceManifestLoadError,
   verifyWave1PocEvidenceFromDisk,
 } from "./evidence-manifest.js";
 import { verifyWave1PocAttestationFromDisk } from "./evidence-attestation.js";
@@ -102,17 +104,21 @@ const sortFailures = (
 };
 
 /**
- * Pull the (basename) reference from a verification failure produced
- * by `verifyWave1PocAttestation`. The upstream `reference` field may
- * already be a basename, but a manifest-relative path could include
- * directory segments, so we normalize to the leaf name to keep the
- * response body free of any path information.
+ * Keep verifier references safe for the HTTP response. Manifest
+ * artifacts may use POSIX relative paths (`lbom/ai-bom.cdx.json`);
+ * those are useful audit identifiers and are not host path leakage.
+ * Absolute or malformed references are collapsed to their leaf name.
  */
 const safeReference = (value: string): string => {
   if (value.length === 0) return value;
   if (isAbsolute(value)) return basename(value);
-  if (value.includes("/")) {
-    const parts = value.split("/");
+  if (value.includes("\\") || value.includes("\0")) return basename(value);
+  const parts = value.split("/");
+  if (
+    parts.some(
+      (part) => part.length === 0 || part === "." || part === "..",
+    )
+  ) {
     return parts[parts.length - 1] ?? value;
   }
   return value;
@@ -190,6 +196,25 @@ const fileExists = async (path: string): Promise<boolean> => {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
 
+const isManifestReadOrParseError = (err: unknown): boolean => {
+  return err instanceof Wave1PocEvidenceManifestLoadError;
+};
+
+const readManifestDigestWitness = async (
+  artifactsDir: string,
+): Promise<string | undefined> => {
+  const digestPath = join(
+    artifactsDir,
+    WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
+  );
+  try {
+    return (await readFile(digestPath, "utf8")).trim();
+  } catch (err) {
+    if (isENOENT(err)) return undefined;
+    throw err;
+  }
+};
+
 /**
  * Detect "missing or inconsistent visual-sidecar evidence" by checking
  * the manifest's stamped visual-sidecar identity against the on-disk
@@ -221,9 +246,16 @@ const detectVisualSidecarEvidenceMissing = async (
   manifest: Wave1PocEvidenceManifest,
 ): Promise<string | undefined> => {
   const manifestVisualSidecar = manifest.visualSidecar;
-  const attestedVisualResult = manifest.artifacts.find(
-    (artifact) => artifact.filename === VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
-  );
+  const rawArtifacts = (manifest as unknown as Record<string, unknown>)[
+    "artifacts"
+  ];
+  const attestedVisualResult = Array.isArray(rawArtifacts)
+    ? rawArtifacts.some(
+        (artifact: unknown) =>
+          isRecord(artifact) &&
+          artifact["filename"] === VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME,
+      )
+    : false;
 
   // Case A: manifest claims a sidecar summary — the on-disk artifact
   // must exist AND the result must be a success outcome.
@@ -252,8 +284,7 @@ const detectVisualSidecarEvidenceMissing = async (
   // Case B: manifest attests the result artifact but leaves the
   // `visualSidecar` summary block unset.
   if (
-    attestedVisualResult !== undefined &&
-    manifestVisualSidecar === undefined
+    attestedVisualResult && manifestVisualSidecar === undefined
   ) {
     return VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME;
   }
@@ -276,7 +307,7 @@ const detectVisualSidecarEvidenceMissing = async (
   });
   if (
     visualOnlyReferenced &&
-    (manifestVisualSidecar === undefined || attestedVisualResult === undefined)
+    (manifestVisualSidecar === undefined || !attestedVisualResult)
   ) {
     return VISUAL_SIDECAR_RESULT_ARTIFACT_FILENAME;
   }
@@ -387,11 +418,10 @@ export const verifyJobEvidence = async (
     return { status: "no_evidence" };
   }
 
-  // Try to verify; the only documented throw path is an
-  // unparseable / contract-mismatched manifest. Surface that as a
-  // 200 body with `manifest_unparseable`.
+  // Try to verify; only manifest read/parse/schema failures are
+  // converted into a completed verification response. Operational
+  // filesystem errors still bubble to the HTTP layer as server errors.
   let manifest: Wave1PocEvidenceManifest;
-  let verificationOk: boolean;
   let missing: string[] = [];
   let mutated: string[] = [];
   let resized: string[] = [];
@@ -401,12 +431,12 @@ export const verifyJobEvidence = async (
       rejectUnexpected: false,
     });
     manifest = verifyResult.manifest;
-    verificationOk = verifyResult.result.ok;
     missing = verifyResult.result.missing;
     mutated = verifyResult.result.mutated;
     resized = verifyResult.result.resized;
     unexpected = verifyResult.result.unexpected;
-  } catch {
+  } catch (err) {
+    if (!isManifestReadOrParseError(err)) throw err;
     return {
       status: "ok",
       body: buildEmptyManifestResponse(input),
@@ -416,13 +446,25 @@ export const verifyJobEvidence = async (
   const manifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
   const checks: EvidenceVerifyCheck[] = [];
   const failures: EvidenceVerifyFailure[] = [];
+  const manifestMetadataIssues =
+    validateWave1PocEvidenceManifestMetadata(manifest);
+  const manifestMetadataOk = manifestMetadataIssues.length === 0;
+  const manifestDigestWitness = await readManifestDigestWitness(artifactsDir);
+  const manifestDigestWitnessOk = manifestDigestWitness === manifestSha256;
+  const manifestRecord = manifest as unknown as Record<string, unknown>;
+  const artifacts = Array.isArray(manifestRecord["artifacts"])
+    ? manifest.artifacts
+    : [];
 
   // Per-artifact SHA-256 checks. Sorted by filename below.
-  for (const artifact of manifest.artifacts) {
-    const ref = artifact.filename;
+  for (const artifact of artifacts) {
+    if (!isRecord(artifact)) continue;
+    const rawRef = artifact["filename"];
+    if (typeof rawRef !== "string") continue;
+    const ref = safeReference(rawRef);
     let ok = true;
     let failureCode: EvidenceVerifyFailureCode | undefined;
-    if (missing.includes(ref)) {
+    if (missing.includes(rawRef)) {
       ok = false;
       failureCode = "artifact_missing";
       pushIfAbsent(failures, {
@@ -430,7 +472,7 @@ export const verifyJobEvidence = async (
         reference: ref,
         message: failureMessageFor("artifact_missing", ref),
       });
-    } else if (mutated.includes(ref)) {
+    } else if (mutated.includes(rawRef)) {
       ok = false;
       failureCode = "artifact_mutated";
       pushIfAbsent(failures, {
@@ -438,7 +480,7 @@ export const verifyJobEvidence = async (
         reference: ref,
         message: failureMessageFor("artifact_mutated", ref),
       });
-    } else if (resized.includes(ref)) {
+    } else if (resized.includes(rawRef)) {
       ok = false;
       failureCode = "artifact_resized";
       pushIfAbsent(failures, {
@@ -453,92 +495,58 @@ export const verifyJobEvidence = async (
     checks.push(check);
   }
 
-  // Independently mark resized artifacts that did not also mutate
-  // (the underlying verifier reports both lists, but the per-artifact
-  // loop above only emits one failure per filename — record the second
-  // failure so auditors see both signals).
+  // Independently mark resized+mutated artifacts. The per-artifact
+  // check row carries one primary failure code, while failures[] keeps
+  // both signals visible to auditors.
   for (const filename of resized) {
     if (mutated.includes(filename)) {
+      const ref = safeReference(filename);
       pushIfAbsent(failures, {
         code: "artifact_resized",
-        reference: filename,
-        message: failureMessageFor("artifact_resized", filename),
-      });
-    }
-  }
-  for (const filename of mutated) {
-    if (resized.includes(filename)) {
-      pushIfAbsent(failures, {
-        code: "artifact_mutated",
-        reference: filename,
-        message: failureMessageFor("artifact_mutated", filename),
+        reference: ref,
+        message: failureMessageFor("artifact_resized", ref),
       });
     }
   }
 
-  // Manifest-level checks. The underlying verifier signals a manifest
-  // metadata or digest-witness failure by adding the manifest filename
-  // to `mutated`.
+  // Manifest-level checks are classified independently: metadata
+  // invariants come from the manifest verifier, while the digest
+  // witness is compared against the canonical manifest digest.
   const manifestRef = WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME;
-  const manifestFailureSignaled = mutated.includes(manifestRef);
-  // Heuristic split: the static `Wave1PocEvidenceManifest` type narrows
-  // these fields to literal `"1.0.0"` / `false` values, but at runtime
-  // the manifest came from `JSON.parse` and may carry anything — so
-  // treat the loaded manifest as `Record<string, unknown>` for the
-  // invariant probe. When any of the literal invariants is runtime-
-  // violated, surface as `manifest_metadata_invalid`; otherwise the
-  // upstream signal is a digest-witness mismatch.
-  const manifestRecord = manifest as unknown as Record<string, unknown>;
-  const metadataInvariantsLook =
-    manifestRecord["testIntelligenceContractVersion"] ===
-      TEST_INTELLIGENCE_CONTRACT_VERSION &&
-    manifestRecord["rawScreenshotsIncluded"] === false &&
-    manifestRecord["imagePayloadSentToTestGeneration"] === false;
-  if (manifestFailureSignaled && !metadataInvariantsLook) {
-    checks.push({
-      kind: "manifest_metadata",
-      reference: manifestRef,
-      ok: false,
-      failureCode: "manifest_metadata_invalid",
-    });
+  checks.push({
+    kind: "manifest_metadata",
+    reference: manifestRef,
+    ok: manifestMetadataOk,
+    ...(manifestMetadataOk
+      ? {}
+      : { failureCode: "manifest_metadata_invalid" as const }),
+  });
+  if (!manifestMetadataOk) {
     pushIfAbsent(failures, {
       code: "manifest_metadata_invalid",
       reference: manifestRef,
       message: failureMessageFor("manifest_metadata_invalid", manifestRef),
     });
-  } else {
-    checks.push({
-      kind: "manifest_metadata",
-      reference: manifestRef,
-      ok: !manifestFailureSignaled,
-      ...(manifestFailureSignaled
-        ? { failureCode: "manifest_digest_witness_invalid" as const }
-        : {}),
-    });
-    if (manifestFailureSignaled) {
-      pushIfAbsent(failures, {
-        code: "manifest_digest_witness_invalid",
-        reference: manifestRef,
-        message: failureMessageFor(
-          "manifest_digest_witness_invalid",
-          manifestRef,
-        ),
-      });
-    }
   }
 
-  // Manifest digest witness — emit a stable check row regardless of
-  // outcome. The underlying verifier folded the witness check into
-  // `mutated`; the manifest-metadata branch above already emitted a
-  // failure for either case, so this row mirrors that ok-state.
   checks.push({
     kind: "manifest_digest_witness",
     reference: manifestRef,
-    ok: !manifestFailureSignaled,
-    ...(manifestFailureSignaled
-      ? { failureCode: "manifest_digest_witness_invalid" as const }
-      : {}),
+    ok: manifestDigestWitnessOk,
+    ...(manifestDigestWitnessOk
+      ? {}
+      : { failureCode: "manifest_digest_witness_invalid" as const }),
   });
+  if (!manifestDigestWitnessOk) {
+    pushIfAbsent(failures, {
+      code: "manifest_digest_witness_invalid",
+      reference: manifestRef,
+      message: failureMessageFor(
+        "manifest_digest_witness_invalid",
+        manifestRef,
+      ),
+    });
+  }
 
   // Visual-sidecar evidence presence check.
   const visualSidecarMissingFor = await detectVisualSidecarEvidenceMissing(
@@ -569,10 +577,11 @@ export const verifyJobEvidence = async (
   // pass `rejectUnexpected: false` so this list stays empty for normal
   // runs).
   for (const filename of unexpected) {
+    const ref = safeReference(filename);
     pushIfAbsent(failures, {
       code: "unexpected_artifact",
-      reference: filename,
-      message: failureMessageFor("unexpected_artifact", filename),
+      reference: ref,
+      message: failureMessageFor("unexpected_artifact", ref),
     });
   }
 
@@ -583,7 +592,7 @@ export const verifyJobEvidence = async (
     WAVE1_POC_ATTESTATIONS_DIRECTORY,
     WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
   );
-  if (await fileExists(attestationPath)) {
+  if ((await fileExists(attestationPath)) && manifestMetadataOk) {
     const expectedSigningMode =
       await detectAttestationSigningMode(artifactsDir);
     const attestationResult = await verifyWave1PocAttestationFromDisk(
@@ -651,13 +660,6 @@ export const verifyJobEvidence = async (
     }
   }
 
-  // Determine the manifest's known artifact set; when `verifyResult`
-  // signaled `ok: true`, the upstream verification passed clean — the
-  // manifest filenames must all appear as `ok: true` artifact_sha256
-  // rows. (Defensive: if the on-disk run dir contains files unrelated
-  // to the attested set we leave them alone unless rejectUnexpected
-  // surfaces them.)
-  void verificationOk;
   // Defensive read: confirm the artifacts dir is still readable. We
   // do not surface its content; this catches catastrophic permission
   // failures that the underlying verifiers would otherwise hide.
@@ -667,13 +669,34 @@ export const verifyJobEvidence = async (
   const sortedFailures = sortFailures(failures);
   const ok = sortedFailures.length === 0;
 
-  const visualSidecarSummary = manifest.visualSidecar
+  const visualSidecar = manifestRecord["visualSidecar"];
+  const visualSidecarSummary = isRecord(visualSidecar)
     ? {
-        selectedDeployment: manifest.visualSidecar.selectedDeployment,
-        fallbackUsed: manifest.visualSidecar.fallbackReason !== "none",
-        resultArtifactSha256: manifest.visualSidecar.resultArtifactSha256,
+        ...(typeof visualSidecar["selectedDeployment"] === "string"
+          ? { selectedDeployment: visualSidecar["selectedDeployment"] }
+          : {}),
+        fallbackUsed: visualSidecar["fallbackReason"] !== "none",
+        ...(typeof visualSidecar["resultArtifactSha256"] === "string"
+          ? { resultArtifactSha256: visualSidecar["resultArtifactSha256"] }
+          : {}),
       }
     : undefined;
+  const modelDeployments = manifestRecord["modelDeployments"];
+  let modelDeploymentSummary: EvidenceVerifyResponse["modelDeployments"];
+  if (
+    isRecord(modelDeployments) &&
+    typeof modelDeployments["testGeneration"] === "string"
+  ) {
+    modelDeploymentSummary = {
+      testGeneration: modelDeployments["testGeneration"],
+      ...(typeof modelDeployments["visualPrimary"] === "string"
+        ? { visualPrimary: modelDeployments["visualPrimary"] }
+        : {}),
+      ...(typeof modelDeployments["visualFallback"] === "string"
+        ? { visualFallback: modelDeployments["visualFallback"] }
+        : {}),
+    };
+  }
 
   const body: EvidenceVerifyResponse = {
     schemaVersion: EVIDENCE_VERIFY_RESPONSE_SCHEMA_VERSION,
@@ -683,15 +706,9 @@ export const verifyJobEvidence = async (
     manifestSha256,
     manifestSchemaVersion: manifest.schemaVersion,
     testIntelligenceContractVersion: manifest.testIntelligenceContractVersion,
-    modelDeployments: {
-      testGeneration: manifest.modelDeployments.testGeneration,
-      ...(manifest.modelDeployments.visualPrimary !== undefined
-        ? { visualPrimary: manifest.modelDeployments.visualPrimary }
-        : {}),
-      ...(manifest.modelDeployments.visualFallback !== undefined
-        ? { visualFallback: manifest.modelDeployments.visualFallback }
-        : {}),
-    },
+    ...(modelDeploymentSummary !== undefined
+      ? { modelDeployments: modelDeploymentSummary }
+      : {}),
     ...(visualSidecarSummary !== undefined
       ? { visualSidecar: visualSidecarSummary }
       : {}),
