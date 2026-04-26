@@ -188,7 +188,7 @@ test("resource-budget: mock gateway enforces a synthetic maxOutputTokens ceiling
         outcome: "success",
         content: { ok: true },
         finishReason: "stop",
-        usage: {},
+        usage: { outputTokens: 128 },
         modelDeployment: "gpt-oss-120b",
         modelRevision: "rev",
         gatewayRelease: "mock",

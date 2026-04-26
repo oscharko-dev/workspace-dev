@@ -1479,7 +1479,7 @@ Sum of input tokens reported by the gateway across all successful attempts.
 
 ##### lastErrorClass?
 
-> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"`
+> `optional` **lastErrorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"`
 
 Last error class observed (failure path) — `undefined` if no failure.
 
@@ -2562,7 +2562,7 @@ Failure outcome with a redacted message and an explicit retryable flag.
 
 ##### errorClass
 
-> **errorClass**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"`
+> **errorClass**: `"schema_invalid"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"`
 
 ##### message
 
@@ -2596,7 +2596,13 @@ Wire-shaped request handed to a gateway client.
 
 > `optional` **maxInputTokens?**: `number`
 
-Optional client-side input budget; gateway clients fail closed when exceeded.
+Optional client-side input-token budget. Gateway clients estimate the
+outgoing prompt size (system + user prompt + structured-output schema +
+any image payloads) and reject the request before transport with
+`errorClass: "input_budget_exceeded"` (`retryable: false`) when the
+estimate exceeds this cap (Issue #1415). Operators set the cap to bound
+cost and to keep maliciously expanded Figma metadata from reaching the
+gateway. Negative or non-integer values are rejected as `schema_invalid`.
 
 ##### maxOutputTokens?
 
@@ -4311,7 +4317,7 @@ Wall-clock duration of the attempt in milliseconds.
 
 ##### errorClass?
 
-> `optional` **errorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"`
+> `optional` **errorClass?**: `"schema_invalid"` \| `"schema_invalid_response"` \| `"refusal"` \| `"incomplete"` \| `"timeout"` \| `"rate_limited"` \| `"transport"` \| `"image_payload_rejected"` \| `"input_budget_exceeded"`
 
 Error class when the attempt failed. Absent on a success.
 
@@ -10264,7 +10270,7 @@ Wave 1; the array is the source of truth so future modes (`openai_responses`,
 
 ### ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES
 
-> `const` **ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES**: readonly \[`"refusal"`, `"schema_invalid"`, `"incomplete"`, `"timeout"`, `"rate_limited"`, `"transport"`, `"image_payload_rejected"`\]
+> `const` **ALLOWED\_LLM\_GATEWAY\_ERROR\_CLASSES**: readonly \[`"refusal"`, `"schema_invalid"`, `"incomplete"`, `"timeout"`, `"rate_limited"`, `"transport"`, `"image_payload_rejected"`, `"input_budget_exceeded"`\]
 
 Disjoint failure classes surfaced by `LlmGatewayClient.generate`. Refusals,
 schema-invalid responses, and image-payload guard rejections are NOT
@@ -10512,7 +10518,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.5.0"`
+> `const` **CONTRACT\_VERSION**: `"4.6.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.

@@ -107,6 +107,43 @@ test("mock: image guard rejects payload to test_generation without invoking resp
   }
 });
 
+test("mock: input budget rejects oversized prompts without invoking responder", async () => {
+  let invoked = 0;
+  const client = createMockLlmGatewayClient({
+    role: "test_generation",
+    deployment: "gpt-oss-120b",
+    modelRevision: "rev",
+    gatewayRelease: "rel",
+    responder: () => {
+      invoked += 1;
+      return {
+        outcome: "success",
+        content: {},
+        finishReason: "stop",
+        usage: {},
+        modelDeployment: "x",
+        modelRevision: "x",
+        gatewayRelease: "x",
+        attempt: 1,
+      };
+    },
+  });
+  const result = await client.generate({
+    jobId: "j",
+    systemPrompt: "s",
+    userPrompt: "word ".repeat(20_000),
+    maxInputTokens: 100,
+  });
+
+  assert.equal(invoked, 0);
+  assert.equal(client.recordedRequests().length, 0);
+  assert.equal(result.outcome, "error");
+  if (result.outcome === "error") {
+    assert.equal(result.errorClass, "input_budget_exceeded");
+    assert.equal(result.retryable, false);
+  }
+});
+
 test("mock: visual roles accept image payloads", async () => {
   const client = createMockLlmGatewayClient({
     role: "visual_primary",
