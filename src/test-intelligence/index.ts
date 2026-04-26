@@ -20,7 +20,38 @@ export {
   resolveTestIntelligenceMultiSourceEnvEnabled,
   validateMultiSourceTestIntentEnvelope,
 } from "./multi-source-envelope.js";
-export { detectPii, redactPii, type PiiMatch } from "./pii-detection.js";
+export {
+  detectCustomerNameInLabelledField,
+  detectPii,
+  isCustomerNameShapedFieldName,
+  redactPii,
+  type PiiMatch,
+} from "./pii-detection.js";
+export {
+  parseJiraAdfDocument,
+  type JiraAdfBlock,
+  type JiraAdfBlockKind,
+  type JiraAdfNormalizedDocument,
+  type JiraAdfParseResult,
+  type JiraAdfRejection,
+} from "./jira-adf-parser.js";
+export {
+  buildJiraIssueIr,
+  isValidJiraIssueKey,
+  sanitizeJqlFragment,
+  writeJiraIssueIr,
+  type BuildJiraIssueIrInput,
+  type BuildJiraIssueIrResult,
+  type JiraAdfInputObject,
+  type JiraAdfSource,
+  type JiraAttachmentInput,
+  type JiraCommentInput,
+  type JiraCustomFieldInput,
+  type JiraLinkInput,
+  type SanitizeJqlFragmentResult,
+  type WriteJiraIssueIrInput,
+  type WriteJiraIssueIrResult,
+} from "./jira-issue-ir.js";
 export {
   detectSuspiciousContent,
   effectiveSemanticContentBlock,
