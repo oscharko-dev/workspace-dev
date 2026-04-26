@@ -29,6 +29,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import {
+  TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_DELTA_REPORT_SCHEMA_VERSION,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type BusinessTestIntentIr,
@@ -43,15 +44,6 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import { buildTestCaseFingerprint } from "./test-case-duplicate.js";
-
-/**
- * Canonical filename for the persisted test-case delta artifact.
- * Distinct from `intent-delta-report.json`; the two reports cover
- * different surfaces and are typically written to the same run
- * directory.
- */
-export const TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME =
-  "test-case-delta-report.json" as const;
 
 export interface ClassifyTestCaseDeltaInput {
   jobId: string;
@@ -88,6 +80,8 @@ export interface ClassifyTestCaseDeltaInput {
  * visual sidecar record is escalated to `requires_review`.
  */
 export const TEST_CASE_DELTA_DEFAULT_VISUAL_CONFIDENCE_FLOOR = 0.7;
+
+export { TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME };
 
 /** Pure compare of prior + current generations into a deterministic delta report. */
 export const classifyTestCaseDelta = (

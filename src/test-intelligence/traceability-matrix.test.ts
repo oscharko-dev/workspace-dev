@@ -138,6 +138,10 @@ test("buildTraceabilityMatrix: minimal export-only mode joins Figma → IR → c
   assert.deepEqual(row?.figmaScreenIds, ["screen-a"]);
   assert.deepEqual(row?.figmaNodeIds, ["node-1"]);
   assert.deepEqual(row?.intentFieldIds, ["screen-a::field::node-1"]);
+  assert.equal(row?.steps.length, 1);
+  assert.equal(row?.steps[0]?.stepIndex, 1);
+  assert.deepEqual(row?.steps[0]?.figmaScreenIds, ["screen-a"]);
+  assert.deepEqual(row?.steps[0]?.figmaNodeIds, ["node-1"]);
   assert.equal(row?.reconciliationDecisions.length, 1);
   assert.equal(
     row?.reconciliationDecisions[0]?.elementId,
@@ -186,6 +190,7 @@ test("buildTraceabilityMatrix: with qcMapping populates externalIdCandidate + qc
   const row = matrix.rows[0];
   assert.equal(row?.externalIdCandidate, "abcd1234");
   assert.equal(row?.qcFolderPath, "/Subject/Login/low");
+  assert.equal(row?.steps[0]?.qcDesignStepIndex, 1);
 });
 
 test("buildTraceabilityMatrix: transfer-aware mode populates qcEntityId + transferOutcome", () => {
@@ -296,6 +301,8 @@ test("buildTraceabilityMatrix: visual sidecar observations attached only for mat
   assert.equal(row?.visualObservations.length, 1);
   assert.equal(row?.visualObservations[0]?.screenId, "screen-a");
   assert.equal(row?.visualObservations[0]?.meanConfidence, 0.92);
+  assert.equal(row?.steps[0]?.visualObservations.length, 1);
+  assert.equal(row?.steps[0]?.visualObservations[0]?.screenId, "screen-a");
 });
 
 test("buildTraceabilityMatrix: validation report aggregates to per-case error/warning/ok", () => {

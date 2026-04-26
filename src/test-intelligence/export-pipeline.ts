@@ -31,6 +31,7 @@ import {
   EXPORT_TESTCASES_XLSX_ARTIFACT_FILENAME,
   GENERATED_TEST_CASE_SCHEMA_VERSION,
   QC_MAPPING_PREVIEW_ARTIFACT_FILENAME,
+  TRACEABILITY_MATRIX_ARTIFACT_FILENAME,
   TEST_INTELLIGENCE_CONTRACT_VERSION,
   type BusinessTestIntentIr,
   type ExportArtifactRecord,
@@ -58,6 +59,15 @@ import {
   filterSemanticContentOverridesForValidation,
   type SemanticContentOverrideMap,
 } from "./semantic-content-sanitization.js";
+import {
+  detectTestCaseDuplicatesExtended,
+  writeTestCaseDedupeReport,
+  type WriteTestCaseDedupeReportResult,
+} from "./test-case-dedupe.js";
+import {
+  persistExportTraceabilityMatrix,
+  type PersistTraceabilityMatrixResult,
+} from "./traceability-pipeline.js";
 
 const utf8Encoder = new TextEncoder();
 
@@ -498,6 +508,8 @@ export interface WriteExportPipelineArtifactsResult {
   testcasesXlsxPath?: string;
   testcasesAlmXmlPath?: string;
   qcMappingPreviewPath?: string;
+  dedupeReportPath?: string;
+  traceabilityMatrixPath?: string;
 }
 
 const writeAtomic = async (
@@ -597,11 +609,70 @@ export const runAndPersistExportPipeline = async (
 ): Promise<{
   artifacts: ExportPipelineArtifacts;
   paths: WriteExportPipelineArtifactsResult;
+  dedupe?: WriteTestCaseDedupeReportResult;
+  traceability?: PersistTraceabilityMatrixResult;
 }> => {
   const artifacts = runExportPipeline(input);
+  const dedupe = artifacts.refused
+    ? undefined
+    : await detectTestCaseDuplicatesExtended({
+        jobId: input.jobId,
+        generatedAt: input.generatedAt,
+        testCases: input.list.testCases,
+        lexicalThreshold: 0.85,
+      });
   const paths = await writeExportPipelineArtifacts({
     artifacts,
     destinationDir: input.destinationDir,
   });
-  return { artifacts, paths };
+  if (dedupe !== undefined) {
+    const dedupePaths = await writeTestCaseDedupeReport({
+      report: dedupe,
+      destinationDir: input.destinationDir,
+    });
+    paths.dedupeReportPath = dedupePaths.artifactPath;
+  }
+  const traceability =
+    !artifacts.refused
+      ? await persistExportTraceabilityMatrix({
+          jobId: input.jobId,
+          generatedAt: input.generatedAt,
+          intent: input.intent,
+          list: input.list,
+          qcMapping: artifacts.preview,
+          validation: input.validation,
+          policy: input.policy,
+          ...(input.visual !== undefined ? { visual: input.visual } : {}),
+          reviewSnapshot: artifacts.reviewSnapshot,
+          exportProfile: {
+            id: artifacts.report.profileId,
+            version: artifacts.report.profileVersion,
+          },
+          policyProfile: {
+            id: input.policy.policyProfileId,
+            version: input.policy.policyProfileVersion,
+          },
+          destinationDir: input.destinationDir,
+        })
+      : undefined;
+  if (traceability !== undefined) {
+    paths.traceabilityMatrixPath = traceability.paths.artifactPath;
+    const expectedPath = join(
+      input.destinationDir,
+      TRACEABILITY_MATRIX_ARTIFACT_FILENAME,
+    );
+    if (paths.traceabilityMatrixPath !== expectedPath) {
+      throw new Error(
+        `export-pipeline: traceability path mismatch (expected ${expectedPath}, got ${paths.traceabilityMatrixPath})`,
+      );
+    }
+  }
+  return {
+    artifacts,
+    paths,
+    ...(dedupe !== undefined
+      ? { dedupe: { artifactPath: paths.dedupeReportPath as string } }
+      : {}),
+    ...(traceability !== undefined ? { traceability } : {}),
+  };
 };

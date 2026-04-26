@@ -47,6 +47,7 @@ import {
   type TraceabilityMatrix,
   type TraceabilityMatrixRow,
   type TraceabilityReconciliationDecision,
+  type TraceabilityStepRow,
   type TraceabilityVisualObservation,
   type TransferEntityRecord,
   type TransferReportArtifact,
@@ -267,6 +268,42 @@ const buildTransferLinks = (
   return out;
 };
 
+const buildStepRows = (
+  input: {
+    testCase: GeneratedTestCase;
+    qcEntry: QcMappingPreviewArtifact["entries"][number] | undefined;
+    figmaScreenIds: string[];
+    figmaNodeIds: string[];
+    visualObservations: TraceabilityVisualObservation[];
+    validationOutcome: "ok" | "warning" | "error";
+    policyVerdict: PolicyVerdict | undefined;
+  },
+): TraceabilityStepRow[] => {
+  const qcStepIndexes = new Set(
+    input.qcEntry?.designSteps.map((step) => step.index) ?? [],
+  );
+  return input.testCase.steps
+    .slice()
+    .sort((a, b) => a.index - b.index)
+    .map((step) => {
+      const row: TraceabilityStepRow = {
+        stepIndex: step.index,
+        action: step.action,
+        figmaScreenIds: input.figmaScreenIds,
+        figmaNodeIds: input.figmaNodeIds,
+        visualObservations: input.visualObservations,
+        validationOutcome: input.validationOutcome,
+        policyOutcomes: input.policyVerdict?.outcomes ?? [],
+      };
+      if (step.expected !== undefined) row.expected = step.expected;
+      if (qcStepIndexes.has(step.index)) row.qcDesignStepIndex = step.index;
+      if (input.policyVerdict !== undefined) {
+        row.policyDecision = input.policyVerdict.decision;
+      }
+      return row;
+    });
+};
+
 interface PolicyVerdict {
   decision: TestCasePolicyDecision;
   outcomes: TestCasePolicyOutcome[];
@@ -328,6 +365,16 @@ const buildRow = (
     ctx.validationIndex.get(testCase.id)?.outcome ?? "ok";
   const policyVerdict = ctx.policyIndex.get(testCase.id);
   const review = ctx.reviewIndex.get(testCase.id);
+  const qcEntry = ctx.qcMappingIndex.get(testCase.id);
+  const stepRows = buildStepRows({
+    testCase,
+    qcEntry,
+    figmaScreenIds,
+    figmaNodeIds,
+    visualObservations,
+    validationOutcome: validationVerdict,
+    policyVerdict,
+  });
 
   const row: TraceabilityMatrixRow = {
     testCaseId: testCase.id,
@@ -339,6 +386,7 @@ const buildRow = (
     intentValidationIds: coverage.validationIds,
     intentNavigationIds: coverage.navigationIds,
     visualObservations,
+    steps: stepRows,
     reconciliationDecisions: reconciliation,
     validationOutcome: validationVerdict,
     policyOutcomes: policyVerdict?.outcomes ?? [],
