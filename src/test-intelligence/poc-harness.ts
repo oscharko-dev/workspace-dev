@@ -734,81 +734,74 @@ const stableSlug = (input: string): string => {
 /**
  * Build a deterministic rubric mock LLM gateway client used by the
  * Wave 1 POC harness when `selfVerifyRubric: { enabled: true }` is set
- * without an explicit `client`. The responder synthesizes a
- * perfect-score rubric response (every dimension and visual subscore
- * scores `1`) keyed off the `testCaseId` set extracted from the user
- * prompt. This keeps fixture replays byte-stable while still
- * exercising the full validation + parsing path.
+ * without an explicit `client`. Test case ids are passed in by the
+ * harness via closure capture (NOT parsed back out of the prompt) so
+ * the responder is robust to any future change in prompt rendering and
+ * works for callers that supply non-default test case id schemes.
+ *
+ * Each test case receives a perfect 1.0 across all six rubric
+ * dimensions, plus the four visual subscores when `visualPresent` is
+ * true. This keeps fixture replays byte-stable while still exercising
+ * the full validation + parsing path.
  */
 const buildWave1PocRubricMockClient = (input: {
+  expectedTestCaseIds: ReadonlyArray<string>;
+  visualPresent: boolean;
   responder?: (
     request: LlmGenerationRequest,
     attempt: number,
   ) => LlmGenerationResult | Promise<LlmGenerationResult>;
 }): LlmGatewayClient => {
-  const responder = input.responder ?? synthesizeWave1PocPerfectRubricResponse;
+  const defaultResponder = (
+    request: LlmGenerationRequest,
+  ): LlmGenerationResult => {
+    if (
+      request.responseSchemaName !== SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME
+    ) {
+      return {
+        outcome: "error",
+        errorClass: "schema_invalid",
+        message:
+          "Wave1Poc rubric mock: unexpected responseSchemaName on rubric request",
+        retryable: false,
+        attempt: 1,
+      };
+    }
+    return synthesizePerfectWave1PocRubricResponse({
+      expectedTestCaseIds: input.expectedTestCaseIds,
+      visualPresent: input.visualPresent,
+    });
+  };
   return createMockLlmGatewayClient({
     role: "test_generation",
     deployment: TEST_GENERATION_DEPLOYMENT,
     modelRevision: TEST_GENERATION_MODEL_REVISION,
     gatewayRelease: TEST_GENERATION_GATEWAY_RELEASE,
-    responder,
+    responder: input.responder ?? defaultResponder,
   });
 };
 
-const RUBRIC_ID_PATTERN = /"id"\s*:\s*"([^"\\]+)"/g;
-
-const collectTestCaseIdsFromUserPrompt = (userPrompt: string): string[] => {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  RUBRIC_ID_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
-  while ((match = RUBRIC_ID_PATTERN.exec(userPrompt)) !== null) {
-    const id = match[1];
-    if (id === undefined || seen.has(id)) continue;
-    // Heuristic: the prompt also embeds Figma node ids, which are
-    // typically numeric (e.g. "n-iban" or "1:23"). The synth filter
-    // keeps any id that does not look like a Figma node ref so we
-    // capture only test-case ids. Test-case ids in the synthesized POC
-    // bundle start with `tc::` per `buildSyntheticCase`.
-    if (id.startsWith("tc::")) {
-      seen.add(id);
-      out.push(id);
-    }
-  }
-  return out;
-};
-
 /**
- * Default deterministic rubric responder: every supplied test case
- * receives a perfect 1.0 across all dimensions and visual subscores.
- * Used when `selfVerifyRubric.mockResponder` is omitted so the
- * deterministic POC fixture replays remain byte-stable.
+ * Synthesize a perfect-score rubric response for the supplied test
+ * case ids. Pure: identical inputs produce byte-identical responses,
+ * which is what guarantees the rubric replay-cache hit path documented
+ * on Issue #1379 stays byte-stable for the POC fixtures.
  */
-const synthesizeWave1PocPerfectRubricResponse = (
-  request: LlmGenerationRequest,
-): LlmGenerationResult => {
-  if (request.responseSchemaName !== SELF_VERIFY_RUBRIC_RESPONSE_SCHEMA_NAME) {
-    return {
-      outcome: "error",
-      errorClass: "schema_invalid",
-      message:
-        "synthesizeWave1PocPerfectRubricResponse: unexpected responseSchemaName",
-      retryable: false,
-      attempt: 1,
-    };
-  }
-  const ids = collectTestCaseIdsFromUserPrompt(request.userPrompt);
-  const visualPresent = /Visual sidecar batch present:\s*true/.test(
-    request.userPrompt,
-  );
-  const caseEvaluations = ids.map((id) => {
-    const dimensions = [...ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS]
-      .sort()
-      .map((dimension) => ({ dimension, score: 1 }));
+const synthesizePerfectWave1PocRubricResponse = (input: {
+  expectedTestCaseIds: ReadonlyArray<string>;
+  visualPresent: boolean;
+}): LlmGenerationResult => {
+  const sortedDimensions = [...ALLOWED_SELF_VERIFY_RUBRIC_DIMENSIONS].sort();
+  const sortedSubscores = [
+    ...ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES,
+  ].sort();
+  const caseEvaluations = input.expectedTestCaseIds.map((id) => {
     const evaluation: Record<string, unknown> = {
       testCaseId: id,
-      dimensions,
+      dimensions: sortedDimensions.map((dimension) => ({
+        dimension,
+        score: 1,
+      })),
       citations: [
         {
           ruleId: "wave1.synth.default",
@@ -817,12 +810,11 @@ const synthesizeWave1PocPerfectRubricResponse = (
         },
       ],
     };
-    if (visualPresent) {
-      evaluation["visualSubscores"] = [
-        ...ALLOWED_SELF_VERIFY_RUBRIC_VISUAL_SUBSCORES,
-      ]
-        .sort()
-        .map((subscore) => ({ subscore, score: 1 }));
+    if (input.visualPresent) {
+      evaluation["visualSubscores"] = sortedSubscores.map((subscore) => ({
+        subscore,
+        score: 1,
+      }));
     }
     return evaluation;
   });
@@ -1357,13 +1349,17 @@ export const runWave1Poc = async (
   const profile = input.policyProfile ?? cloneEuBankingDefaultProfile();
   let validation: ValidationPipelineArtifacts;
   if (input.selfVerifyRubric?.enabled === true) {
+    const expectedRubricIds = generatedList.testCases.map((c) => c.id);
+    const rubricVisualPresent = visualForDerivation.length > 0;
     const rubricClient =
       input.selfVerifyRubric.client ??
-      buildWave1PocRubricMockClient(
-        input.selfVerifyRubric.mockResponder !== undefined
+      buildWave1PocRubricMockClient({
+        expectedTestCaseIds: expectedRubricIds,
+        visualPresent: rubricVisualPresent,
+        ...(input.selfVerifyRubric.mockResponder !== undefined
           ? { responder: input.selfVerifyRubric.mockResponder }
-          : {},
-      );
+          : {}),
+      });
     if (rubricClient.role !== "test_generation") {
       throw new RangeError(
         "runWave1Poc: selfVerifyRubric.client must declare role test_generation",
