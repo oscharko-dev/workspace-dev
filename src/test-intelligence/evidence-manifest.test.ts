@@ -138,7 +138,7 @@ test("evidence-manifest: refuses unsafe relative filenames", () => {
           },
         ]),
       ),
-    /safe relative path/,
+    /path traversal/,
   );
 });
 
@@ -346,7 +346,10 @@ test("evidence-manifest: write + verify round-trip via verifyWave1PocEvidenceFro
     join(dir, WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME),
     "utf8",
   );
-  assert.equal(persistedDigest, `${computeWave1PocEvidenceManifestDigest(manifest)}\n`);
+  assert.equal(
+    persistedDigest,
+    `${computeWave1PocEvidenceManifestDigest(manifest)}\n`,
+  );
 
   const { result } = await verifyWave1PocEvidenceFromDisk(dir);
   assert.equal(result.ok, true);
@@ -364,7 +367,8 @@ test("evidence-manifest: default disk verifier detects valid metadata rewrites v
       },
     ]),
   );
-  const expectedManifestSha256 = computeWave1PocEvidenceManifestDigest(manifest);
+  const expectedManifestSha256 =
+    computeWave1PocEvidenceManifestDigest(manifest);
   const manifestPath = await writeWave1PocEvidenceManifest({
     manifest,
     destinationDir: dir,

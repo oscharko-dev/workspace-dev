@@ -69,24 +69,71 @@ const hasControlCharacter = (value: string): boolean => {
   return false;
 };
 
-const isSafeArtifactPath = (value: string): boolean => {
-  if (value.length === 0 || isAbsolute(value) || value.includes("\\")) {
-    return false;
+/**
+ * Why-detail-bearing filename validator. Returns a discriminated result
+ * so callers can render a specific diagnostic instead of a generic
+ * "invalid filename" string. The boolean form `isSafeArtifactPath` is
+ * preserved for the verifier hot path where the reason is irrelevant.
+ */
+const validateArtifactPath = (
+  value: string,
+):
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | "empty"
+        | "absolute"
+        | "backslash"
+        | "control_characters"
+        | "exceeds_total_byte_length"
+        | "path_traversal"
+        | "segment_exceeds_byte_length";
+    } => {
+  if (value.length === 0) return { ok: false, reason: "empty" };
+  if (isAbsolute(value)) return { ok: false, reason: "absolute" };
+  if (value.includes("\\")) return { ok: false, reason: "backslash" };
+  if (hasControlCharacter(value)) {
+    return { ok: false, reason: "control_characters" };
   }
-  if (hasControlCharacter(value)) return false;
-  if (new TextEncoder().encode(value).byteLength > 512) return false;
+  if (new TextEncoder().encode(value).byteLength > 512) {
+    return { ok: false, reason: "exceeds_total_byte_length" };
+  }
   const parts = value.split("/");
-  if (parts.some((part) => part.length === 0 || part === "." || part === "..")) {
-    return false;
+  if (
+    parts.some((part) => part.length === 0 || part === "." || part === "..")
+  ) {
+    return { ok: false, reason: "path_traversal" };
   }
-  return parts.every(
-    (part) => new TextEncoder().encode(part).byteLength <= 255,
-  );
+  if (parts.some((part) => new TextEncoder().encode(part).byteLength > 255)) {
+    return { ok: false, reason: "segment_exceeds_byte_length" };
+  }
+  return { ok: true };
 };
 
+const REASON_DIAGNOSTIC: Record<
+  Exclude<ReturnType<typeof validateArtifactPath>, { ok: true }>["reason"],
+  string
+> = {
+  empty: "filename must not be empty",
+  absolute: "filename must be a relative path, not absolute",
+  backslash: "filename contains backslash (must be POSIX-style)",
+  control_characters: "filename contains control characters",
+  exceeds_total_byte_length: "filename exceeds 512 bytes",
+  path_traversal:
+    "filename contains path traversal segment (`.`, `..`, or empty)",
+  segment_exceeds_byte_length: "filename segment exceeds 255 bytes",
+};
+
+const isSafeArtifactPath = (value: string): boolean =>
+  validateArtifactPath(value).ok;
+
 const resolveArtifactPath = (rootDir: string, filename: string): string => {
-  if (!isSafeArtifactPath(filename)) {
-    throw new RangeError(`invalid artifact filename "${filename}"`);
+  const check = validateArtifactPath(filename);
+  if (!check.ok) {
+    throw new RangeError(
+      `invalid artifact filename "${filename}": ${REASON_DIAGNOSTIC[check.reason]}`,
+    );
   }
   const root = resolve(rootDir);
   const resolved = resolve(root, filename);
@@ -179,9 +226,10 @@ export const buildWave1PocEvidenceManifest = (
   const seen = new Map<string, Wave1PocEvidenceArtifact>();
   for (const record of input.artifacts) {
     const filename = record.filename;
-    if (!isSafeArtifactPath(filename)) {
+    const check = validateArtifactPath(filename);
+    if (!check.ok) {
       throw new RangeError(
-        `buildWave1PocEvidenceManifest: artifact filename must be a safe relative path, got "${record.filename}"`,
+        `buildWave1PocEvidenceManifest: invalid artifact filename "${record.filename}" — ${REASON_DIAGNOSTIC[check.reason]}`,
       );
     }
     const bytes = toBytes(record.bytes);
@@ -361,7 +409,9 @@ const validateManifestMetadata = (
       deployments["testGeneration"].length === 0
     ) {
       issues.push("modelDeployments.testGeneration must be a non-empty string");
-    } else if (!TEST_GENERATION_DEPLOYMENTS.has(deployments["testGeneration"])) {
+    } else if (
+      !TEST_GENERATION_DEPLOYMENTS.has(deployments["testGeneration"])
+    ) {
       issues.push("modelDeployments.testGeneration has an unknown deployment");
     }
     for (const key of ["visualPrimary", "visualFallback"] as const) {
@@ -385,7 +435,9 @@ const validateManifestMetadata = (
       typeof visualSidecar["resultArtifactSha256"] !== "string" ||
       !HEX64.test(visualSidecar["resultArtifactSha256"])
     ) {
-      issues.push("visualSidecar.resultArtifactSha256 must be a sha256 hex string");
+      issues.push(
+        "visualSidecar.resultArtifactSha256 must be a sha256 hex string",
+      );
     }
     const deployment = visualSidecar["selectedDeployment"];
     if (typeof deployment !== "string" || !VISUAL_DEPLOYMENTS.has(deployment)) {
@@ -404,10 +456,7 @@ const validateManifestMetadata = (
     }
     const record = artifact;
     const filename = record["filename"];
-    if (
-      typeof filename !== "string" ||
-      !isSafeArtifactPath(filename)
-    ) {
+    if (typeof filename !== "string" || !isSafeArtifactPath(filename)) {
       issues.push("artifact filename is invalid");
     }
     if (typeof record["sha256"] !== "string" || !HEX64.test(record["sha256"])) {

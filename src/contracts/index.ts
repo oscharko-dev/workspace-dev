@@ -3469,10 +3469,10 @@ export interface Wave1PocAttestationDsseEnvelope {
 }
 
 /**
- * Public-key verification material. The repo ships the in-line
- * `publicKey` form so air-gapped verification can succeed without
- * additional trust roots. Operators wiring a real Sigstore keyless
- * flow may replace this with a certificate-chain bundle.
+ * Public-key verification material. Used by the key-bound Sigstore
+ * signing flow (and by air-gapped verifiers that pin a single signer
+ * key). The PEM-encoded public key MUST be a SubjectPublicKeyInfo over
+ * the prime256v1 (P-256) curve.
  */
 export interface Wave1PocAttestationPublicKeyMaterial {
   /** Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`). */
@@ -3483,6 +3483,52 @@ export interface Wave1PocAttestationPublicKeyMaterial {
   algorithm: "ecdsa-p256-sha256";
 }
 
+/**
+ * X.509 certificate-chain verification material. Used by the Sigstore
+ * keyless signing flow: the leaf certificate carries the OIDC-bound
+ * subject identity and is signed by Fulcio. Verifiers reconstruct the
+ * public key from the leaf certificate, then validate it through the
+ * chain to a trust root the operator pins.
+ *
+ * The repo does not vendor Fulcio root certificates — operators wire
+ * the trust root themselves. The cert-chain shape is provided here as
+ * a load-bearing type so the Sigstore bundle media type can carry
+ * keyless signatures end-to-end without breaking changes.
+ */
+export interface Wave1PocAttestationCertificateChainMaterial {
+  /** Stable, non-secret signer reference (matches `Wave1PocAttestationSignature.keyid`). */
+  hint: string;
+  /**
+   * PEM-encoded certificate chain, leaf first. The leaf certificate's
+   * subject public key is used to verify the DSSE signature. Operators
+   * wiring full Sigstore keyless flow include the Fulcio-issued leaf
+   * (with the OIDC subject as a SAN extension) and any intermediate(s)
+   * up to a trust root.
+   */
+  certificateChainPem: string;
+  /** Signing algorithm used to produce the DSSE signatures. */
+  algorithm: "ecdsa-p256-sha256";
+  /**
+   * Optional Rekor transparency-log inclusion proof reference. When
+   * present, a verifier MAY consult its trusted Rekor instance to
+   * confirm the entry is logged. The repo never fetches Rekor by
+   * default; the field is opaque metadata.
+   */
+  rekorLogIndex?: number;
+}
+
+/**
+ * Sigstore bundle verification material. Discriminated by which form
+ * the operator wires: `publicKey` for key-bound signing (the repo's
+ * default), `x509CertificateChain` for keyless signing (operator-
+ * supplied integration with Fulcio + Rekor).
+ */
+export type Wave1PocAttestationVerificationMaterial =
+  | { publicKey: Wave1PocAttestationPublicKeyMaterial }
+  | {
+      x509CertificateChain: Wave1PocAttestationCertificateChainMaterial;
+    };
+
 /** Sigstore-shaped bundle persisted alongside a signed attestation. */
 export interface Wave1PocAttestationBundle {
   mediaType: typeof WAVE1_POC_ATTESTATION_BUNDLE_MEDIA_TYPE;
@@ -3492,10 +3538,8 @@ export interface Wave1PocAttestationBundle {
    * the bundle is self-contained.
    */
   dsseEnvelope: Wave1PocAttestationDsseEnvelope;
-  /** Verification material — public key form for air-gapped verifiers. */
-  verificationMaterial: {
-    publicKey: Wave1PocAttestationPublicKeyMaterial;
-  };
+  /** Verification material — public key OR x509 certificate chain. */
+  verificationMaterial: Wave1PocAttestationVerificationMaterial;
 }
 
 /**

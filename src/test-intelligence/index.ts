@@ -220,6 +220,7 @@ export {
   buildWave1PocAttestationStatement,
   computeWave1PocAttestationEnvelopeDigest,
   createKeyBoundSigstoreSigner,
+  createKeylessSigstoreSignerScaffold,
   encodeDssePreAuth,
   encodeWave1PocAttestationPayload,
   generateWave1PocAttestationKeyPair,
@@ -231,11 +232,13 @@ export {
   type BuildSignedWave1PocAttestationInput,
   type BuildWave1PocAttestationStatementInput,
   type CreateKeyBoundSigstoreSignerInput,
+  type CreateKeylessSigstoreSignerInput,
   type PersistWave1PocAttestationInput,
   type PersistedWave1PocAttestation,
   type VerifyWave1PocAttestationFromDiskOptions,
   type VerifyWave1PocAttestationInput,
   type Wave1PocAttestationSigner,
+  type Wave1PocKeylessSignerCallback,
 } from "./evidence-attestation.js";
 export {
   runWave1Poc,
