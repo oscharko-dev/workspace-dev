@@ -43,7 +43,15 @@ import type { ValidationPipelineArtifacts } from "./validation-pipeline.js";
 import { canonicalJson } from "./content-hash.js";
 import { detectDuplicateTestCases } from "./test-case-duplicate.js";
 
-/** Default thresholds applied by the Wave 1 POC evaluation gate. */
+/**
+ * Default thresholds applied by the Wave 1 POC evaluation gate.
+ *
+ * The `Issue #1379` fields (`minJobRubricScore`, `requireRubricPass`) are
+ * intentionally OMITTED from the default so the persisted eval report
+ * remains byte-stable for fixtures that do not opt into the rubric pass.
+ * Operators that want to enforce a rubric threshold pass an explicit
+ * thresholds object to `evaluateWave1Poc`.
+ */
 export const WAVE1_POC_DEFAULT_EVAL_THRESHOLDS: Wave1PocEvalThresholds =
   Object.freeze({
     minTraceCoverageFields: 1,
@@ -164,7 +172,15 @@ const computeFixtureMetrics = (
   const visualSidecarBlocked = input.validation.visual?.blocked === true;
   const exportRefused = input.exportArtifacts.refused;
 
-  return {
+  const rubricReport = input.validation.rubric;
+  const jobRubricScore =
+    rubricReport !== undefined && rubricReport.refusal === undefined
+      ? rubricReport.aggregate.jobLevelRubricScore
+      : undefined;
+  const rubricRefused =
+    rubricReport !== undefined ? rubricReport.refusal !== undefined : undefined;
+
+  const metrics: Wave1PocEvalFixtureMetrics = {
     fixtureId: input.fixtureId,
     totalGeneratedCases: input.generatedList.testCases.length,
     approvedCases: approvedCases.length,
@@ -184,6 +200,9 @@ const computeFixtureMetrics = (
     visualSidecarBlocked,
     exportRefused,
   };
+  if (jobRubricScore !== undefined) metrics.jobRubricScore = jobRubricScore;
+  if (rubricRefused !== undefined) metrics.rubricRefused = rubricRefused;
+  return metrics;
 };
 
 const evaluateThresholds = (
@@ -304,6 +323,28 @@ const evaluateThresholds = (
       actual: 1,
       threshold: 0,
       message: "Export pipeline refused to emit non-report artifacts",
+    });
+  }
+
+  if (
+    thresholds.minJobRubricScore !== undefined &&
+    metrics.jobRubricScore !== undefined &&
+    metrics.jobRubricScore < thresholds.minJobRubricScore
+  ) {
+    failures.push({
+      rule: "min_job_rubric_score",
+      actual: metrics.jobRubricScore,
+      threshold: thresholds.minJobRubricScore,
+      message: `Self-verify rubric job-level score ${metrics.jobRubricScore} is below threshold ${thresholds.minJobRubricScore}`,
+    });
+  }
+
+  if (thresholds.requireRubricPass === true && metrics.rubricRefused === true) {
+    failures.push({
+      rule: "rubric_pass_refused",
+      actual: 1,
+      threshold: 0,
+      message: "Self-verify rubric pass attached a refusal to its report",
     });
   }
 
