@@ -3404,7 +3404,10 @@ export type Wave1PocEvidenceArtifactCategory =
   | "attestation"
   | "signature"
   | "lbom"
-  | "self_verify_rubric";
+  | "self_verify_rubric"
+  | "intent_delta"
+  | "dedupe_report"
+  | "traceability_matrix";
 
 /** Single artifact attested by the Wave 1 POC evidence manifest. */
 export interface Wave1PocEvidenceArtifact {
@@ -5131,9 +5134,408 @@ export interface EvidenceVerifyResponse {
   failures: EvidenceVerifyFailure[];
 }
 
+/* ============================================================
+ * Delta + deduplication + traceability matrix (Issue #1373).
+ *
+ * Wave 3 introduces three additive, fail-closed surfaces:
+ *
+ *   1. Intent delta — pure compare of two `BusinessTestIntentIr`
+ *      artifacts producing an `IntentDeltaReport` covering screens,
+ *      fields, actions, validations, navigation, and the visual
+ *      addendum (visual fixture hash, `VisualScreenDescription`
+ *      hash, confidence/ambiguity drift).
+ *   2. Dedupe report — the existing lexical fingerprint path
+ *      (`detectDuplicateTestCases`) extended with a pluggable
+ *      `EmbeddingProvider` (caller-supplied; default `null` =
+ *      lexical-only / air-gapped) and an OPTIONAL injected
+ *      cross-job/QC-folder probe. Both extensions are off by
+ *      default so the air-gapped flow is preserved.
+ *   3. Traceability matrix — joins Figma node → IR element →
+ *      generated test case → QC mapping preview → transferred QC
+ *      id (when transfer-report present) → visual sidecar →
+ *      reconciliation/policy/validation outcomes.
+ *
+ * Every persisted artifact stamps the type-level hard invariants
+ * `rawScreenshotsIncluded: false` and `secretsIncluded: false`
+ * so a downstream consumer can verify they were produced under
+ * the air-gapped/zero-secret-leak contract.
+ * ============================================================ */
+
+/** Schema version for the persisted intent-delta artifact (Issue #1373). */
+export const INTENT_DELTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Schema version for the persisted test-case delta report artifact (Issue #1373). */
+export const TEST_CASE_DELTA_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted intent-delta artifact. */
+export const INTENT_DELTA_REPORT_ARTIFACT_FILENAME =
+  "intent-delta-report.json" as const;
+
+/** Schema version for the persisted dedupe artifact (Issue #1373). */
+export const DEDUPE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted dedupe artifact. */
+export const DEDUPE_REPORT_ARTIFACT_FILENAME = "dedupe-report.json" as const;
+
+/** Schema version for the persisted traceability-matrix artifact (Issue #1373). */
+export const TRACEABILITY_MATRIX_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the persisted traceability-matrix artifact. */
+export const TRACEABILITY_MATRIX_ARTIFACT_FILENAME =
+  "traceability-matrix.json" as const;
+
+/**
+ * Allowed kinds of delta entries inside the intent-delta report.
+ * Sorted, additive — additional kinds may be appended in future
+ * minors.
+ */
+export const ALLOWED_INTENT_DELTA_KINDS = [
+  "screen",
+  "field",
+  "action",
+  "validation",
+  "navigation",
+  "visual_screen",
+] as const;
+export type IntentDeltaKind = (typeof ALLOWED_INTENT_DELTA_KINDS)[number];
+
+/**
+ * Allowed change types on a single delta entry.
+ *
+ * - `added` — present in current, absent in prior.
+ * - `removed` — present in prior, absent in current.
+ * - `changed` — present in both, but the canonical-hash differs.
+ * - `confidence_dropped` — visual confidence (mean) fell more than
+ *   the configured drift threshold.
+ * - `ambiguity_increased` — visual ambiguity / open-question count
+ *   grew between revisions.
+ */
+export const ALLOWED_INTENT_DELTA_CHANGE_TYPES = [
+  "added",
+  "removed",
+  "changed",
+  "confidence_dropped",
+  "ambiguity_increased",
+] as const;
+export type IntentDeltaChangeType =
+  (typeof ALLOWED_INTENT_DELTA_CHANGE_TYPES)[number];
+
+/** Single delta entry inside `IntentDeltaReport.entries`. */
+export interface IntentDeltaEntry {
+  kind: IntentDeltaKind;
+  changeType: IntentDeltaChangeType;
+  /** Stable identifier inside the IR (e.g. `screenId`, `field.id`). */
+  elementId: string;
+  /** Owning screen id, when the entry is screen-scoped. */
+  screenId?: string;
+  /** SHA-256 hex of the prior canonical projection, when present. */
+  priorHash?: string;
+  /** SHA-256 hex of the current canonical projection, when present. */
+  currentHash?: string;
+  /** Optional sanitized human-readable detail (no PII, no tokens). */
+  detail?: string;
+}
+
+/** Hard-invariant intent-delta report artifact (Issue #1373). */
+export interface IntentDeltaReport {
+  schemaVersion: typeof INTENT_DELTA_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** SHA-256 of the canonical prior IR (anchors the comparison). */
+  priorIntentHash: string;
+  /** SHA-256 of the canonical current IR (anchors the comparison). */
+  currentIntentHash: string;
+  /** Sorted-by-(kind,elementId,changeType) deterministic entries. */
+  entries: IntentDeltaEntry[];
+  /** Aggregate counts, computed deterministically from `entries`. */
+  totals: {
+    added: number;
+    removed: number;
+    changed: number;
+    confidenceDropped: number;
+    ambiguityIncreased: number;
+  };
+  /** Hard invariant: image bytes are NEVER embedded into this artifact. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: tokens / credentials are NEVER embedded. */
+  secretsIncluded: false;
+}
+
+/**
+ * Per-test-case verdict produced by the test-case delta classifier.
+ *
+ * - `new` — case id present in current generation, absent from
+ *   prior generation.
+ * - `unchanged` — case id present in both with identical
+ *   fingerprint AND no upstream IR delta touching its trace screens.
+ * - `changed` — case id present in both, fingerprint differs OR
+ *   an IR delta touches one of the case's `figmaTraceRefs`.
+ * - `obsolete` — case id present in prior generation but EVERY
+ *   trace screen is absent from the current IR. Reported only —
+ *   never destructively removed from QC (per Issue #1373 AC3).
+ * - `requires_review` — visual confidence dropped below threshold
+ *   OR a reconciliation conflict surfaced.
+ */
+export const ALLOWED_TEST_CASE_DELTA_VERDICTS = [
+  "new",
+  "unchanged",
+  "changed",
+  "obsolete",
+  "requires_review",
+] as const;
+export type TestCaseDeltaVerdict =
+  (typeof ALLOWED_TEST_CASE_DELTA_VERDICTS)[number];
+
+/**
+ * Allowed reasons attached to a test-case delta verdict. Sorted,
+ * additive. Multiple reasons may apply to the same verdict.
+ */
+export const ALLOWED_TEST_CASE_DELTA_REASONS = [
+  "absent_in_current",
+  "absent_in_prior",
+  "fingerprint_changed",
+  "trace_screen_changed",
+  "trace_screen_removed",
+  "visual_ambiguity_increased",
+  "visual_confidence_dropped",
+  "reconciliation_conflict",
+] as const;
+export type TestCaseDeltaReason =
+  (typeof ALLOWED_TEST_CASE_DELTA_REASONS)[number];
+
+/** Single per-case classification row. */
+export interface TestCaseDeltaRow {
+  testCaseId: string;
+  verdict: TestCaseDeltaVerdict;
+  /** Sorted, deduplicated reasons that fired. */
+  reasons: TestCaseDeltaReason[];
+  /** Sorted figma screen ids implicated by this row. */
+  affectedScreenIds: string[];
+  /** SHA-256 hex of the prior fingerprint when present. */
+  priorFingerprintHash?: string;
+  /** SHA-256 hex of the current fingerprint when present. */
+  currentFingerprintHash?: string;
+}
+
+/** Aggregate test-case delta report (always paired with `IntentDeltaReport`). */
+export interface TestCaseDeltaReport {
+  schemaVersion: typeof TEST_CASE_DELTA_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  rows: TestCaseDeltaRow[];
+  totals: {
+    new: number;
+    unchanged: number;
+    changed: number;
+    obsolete: number;
+    requiresReview: number;
+  };
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+}
+
+/**
+ * Allowed similarity sources for a duplicate finding inside the
+ * dedupe report.
+ *
+ * - `lexical` — Jaccard over the existing lexical fingerprint
+ *   (`buildTestCaseFingerprint`). Always available.
+ * - `embedding` — cosine similarity over a caller-supplied
+ *   embedding vector. Only fires when an `EmbeddingProvider` is
+ *   injected.
+ * - `external_lookup` — duplicate of an existing entity in an
+ *   external QC folder, surfaced via an injected probe. Only
+ *   fires when the optional probe is configured.
+ */
+export const ALLOWED_DEDUPE_SIMILARITY_SOURCES = [
+  "lexical",
+  "embedding",
+  "external_lookup",
+] as const;
+export type DedupeSimilaritySource =
+  (typeof ALLOWED_DEDUPE_SIMILARITY_SOURCES)[number];
+
+/** Single internal duplicate finding (within the current job). */
+export interface DedupeInternalFinding {
+  source: Exclude<DedupeSimilaritySource, "external_lookup">;
+  leftTestCaseId: string;
+  rightTestCaseId: string;
+  /** Similarity in [0, 1], rounded to 6 digits. */
+  similarity: number;
+}
+
+/** Single external duplicate finding (against an external QC folder). */
+export interface DedupeExternalFinding {
+  source: "external_lookup";
+  testCaseId: string;
+  externalIdCandidate: string;
+  /** Resolved folder path of the existing entity in the target system. */
+  matchedFolderPath?: string;
+  /**
+   * Stable opaque identifier of the matched entity in the target
+   * system. Treated as opaque — never logged or persisted alongside
+   * any URL or token.
+   */
+  matchedEntityId?: string;
+}
+
+/**
+ * Allowed informational outcomes of an external dedup probe.
+ *
+ * - `disabled` — caller did not configure an `externalProbe`.
+ * - `unconfigured` — probe was supplied but reported its own
+ *   `unconfigured` verdict (e.g. air-gapped client). Fail-closed.
+ * - `executed` — probe ran and returned per-case verdicts.
+ */
+export const ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES = [
+  "disabled",
+  "unconfigured",
+  "executed",
+] as const;
+export type DedupeExternalProbeState =
+  (typeof ALLOWED_DEDUPE_EXTERNAL_PROBE_STATES)[number];
+
+/** Per-case verdict computed from the dedupe pipeline. */
+export interface DedupeCaseVerdict {
+  testCaseId: string;
+  /**
+   * `true` when the case has at least one internal duplicate
+   * finding above the configured threshold OR an external
+   * lookup match.
+   */
+  isDuplicate: boolean;
+  /** Sorted-and-deduplicated list of similarity sources that fired. */
+  matchedSources: DedupeSimilaritySource[];
+  /** Highest similarity observed for this case across internal sources. */
+  maxInternalSimilarity: number;
+}
+
+/** Aggregate dedupe report artifact (Issue #1373). */
+export interface TestCaseDedupeReport {
+  schemaVersion: typeof DEDUPE_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Threshold above which lexical similarity is reported (0..1). */
+  lexicalThreshold: number;
+  /** Threshold above which embedding similarity is reported (0..1). */
+  embeddingThreshold?: number;
+  /** Whether the embedding path participated in the run. */
+  embeddingProvider: { configured: boolean; identifier?: string };
+  externalProbe: {
+    state: DedupeExternalProbeState;
+    /** Number of test cases probed; zero on `disabled`/`unconfigured`. */
+    cases: number;
+    /** Sanitized informational note when the probe declined to run. */
+    note?: string;
+  };
+  internalFindings: DedupeInternalFinding[];
+  externalFindings: DedupeExternalFinding[];
+  perCase: DedupeCaseVerdict[];
+  totals: {
+    duplicates: number;
+    internalLexical: number;
+    internalEmbedding: number;
+    externalMatches: number;
+  };
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+}
+
+/**
+ * Single row inside the traceability matrix. Joins the lifecycle
+ * of one generated test case across its Figma source, IR
+ * elements, QC mapping, transfer outcome, visual sidecar
+ * observations, and validation/policy outcomes.
+ */
+export interface TraceabilityMatrixRow {
+  testCaseId: string;
+  /** Title at the moment the matrix was built. */
+  title: string;
+  /** Sorted Figma screen ids that motivated the case. */
+  figmaScreenIds: string[];
+  /**
+   * Sorted Figma node ids that motivated the case. Empty when no
+   * trace ref carries a node id.
+   */
+  figmaNodeIds: string[];
+  /** Sorted IR field ids covered by this case. */
+  intentFieldIds: string[];
+  /** Sorted IR action ids covered by this case. */
+  intentActionIds: string[];
+  /** Sorted IR validation ids covered by this case. */
+  intentValidationIds: string[];
+  /** Sorted IR navigation ids covered by this case. */
+  intentNavigationIds: string[];
+  /** Deterministic external-id candidate for the QC mapping. */
+  externalIdCandidate?: string;
+  /** Resolved target QC folder path under the export profile. */
+  qcFolderPath?: string;
+  /** Resolved QC entity id when the case was transferred. */
+  qcEntityId?: string;
+  /** Outcome of the transfer pipeline for this case, when known. */
+  transferOutcome?: TransferEntityOutcome;
+  /** Per-screen visual sidecar observations relevant to this case. */
+  visualObservations: TraceabilityVisualObservation[];
+  /** Reconciliation decisions: one row per IR element with explicit provenance. */
+  reconciliationDecisions: TraceabilityReconciliationDecision[];
+  /** Per-case validation outcome — `error` if any error issue was raised. */
+  validationOutcome: "ok" | "warning" | "error";
+  /** Per-case policy decision (mirrors `TestCasePolicyDecisionRecord.decision`). */
+  policyDecision?: TestCasePolicyDecision;
+  /** Per-case sorted, deduplicated policy outcome codes that fired. */
+  policyOutcomes: TestCasePolicyOutcome[];
+  /** Review-state snapshot at the moment the matrix was built. */
+  reviewState?: ReviewState;
+}
+
+/** Single per-screen visual observation row inside the matrix. */
+export interface TraceabilityVisualObservation {
+  screenId: string;
+  deployment: "llama-4-maverick-vision" | "phi-4-multimodal-poc" | "mock";
+  /** Sorted, deduplicated outcome codes that fired on the screen. */
+  outcomes: VisualSidecarValidationOutcome[];
+  meanConfidence: number;
+}
+
+/** Single reconciliation decision row inside the matrix. */
+export interface TraceabilityReconciliationDecision {
+  screenId: string;
+  elementId: string;
+  /** IR provenance after reconciliation. */
+  provenance: IntentProvenance;
+  confidence: number;
+  /** Sanitized ambiguity reason, when present. */
+  ambiguity?: string;
+}
+
+/** Aggregate traceability-matrix artifact (Issue #1373). */
+export interface TraceabilityMatrix {
+  schemaVersion: typeof TRACEABILITY_MATRIX_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  generatedAt: string;
+  /** Identity of the export profile in play, when one is supplied. */
+  exportProfile?: { id: string; version: string };
+  /** Identity of the policy profile in play, when one is supplied. */
+  policyProfile?: { id: string; version: string };
+  rows: TraceabilityMatrixRow[];
+  totals: {
+    rows: number;
+    transferred: number;
+    failed: number;
+    skippedDuplicate: number;
+    refused: number;
+  };
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.8.0" as const;
+export const CONTRACT_VERSION = "4.9.0" as const;

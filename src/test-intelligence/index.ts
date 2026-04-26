@@ -112,6 +112,51 @@ export {
   jaccardSimilarity,
 } from "./test-case-duplicate.js";
 export {
+  computeIntentDelta,
+  INTENT_DELTA_DEFAULT_CONFIDENCE_DRIFT,
+  writeIntentDeltaReport,
+  type ComputeIntentDeltaInput,
+  type ComputeIntentDeltaOptions,
+  type WriteIntentDeltaReportInput,
+  type WriteIntentDeltaReportResult,
+} from "./intent-delta.js";
+export {
+  classifyTestCaseDelta,
+  TEST_CASE_DELTA_DEFAULT_VISUAL_CONFIDENCE_FLOOR,
+  TEST_CASE_DELTA_REPORT_ARTIFACT_FILENAME,
+  writeTestCaseDeltaReport,
+  type ClassifyTestCaseDeltaInput,
+  type WriteTestCaseDeltaReportInput,
+  type WriteTestCaseDeltaReportResult,
+} from "./test-case-delta.js";
+export {
+  cosineSimilarity,
+  createDisabledExternalDedupeProbe,
+  createUnconfiguredExternalDedupeProbe,
+  detectTestCaseDuplicatesExtended,
+  writeTestCaseDedupeReport,
+  type DetectTestCaseDuplicatesExtendedInput,
+  type EmbeddingProvider,
+  type ExternalDedupeProbe,
+  type ExternalDedupeProbeCaseContext,
+  type ExternalDedupeProbeLookupResult,
+  type WriteTestCaseDedupeReportInput,
+  type WriteTestCaseDedupeReportResult,
+} from "./test-case-dedupe.js";
+export {
+  buildTraceabilityMatrix,
+  writeTraceabilityMatrix,
+  type BuildTraceabilityMatrixInput,
+  type WriteTraceabilityMatrixInput,
+  type WriteTraceabilityMatrixResult,
+} from "./traceability-matrix.js";
+export {
+  persistExportTraceabilityMatrix,
+  persistTransferTraceabilityMatrix,
+  type PersistExportTraceabilityMatrixInput,
+  type PersistTraceabilityMatrixResult,
+} from "./traceability-pipeline.js";
+export {
   computeCoverageReport,
   type ComputeCoverageReportInput,
 } from "./test-case-coverage.js";
