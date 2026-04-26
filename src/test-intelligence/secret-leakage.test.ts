@@ -8,7 +8,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -36,6 +36,7 @@ import {
   describeVisualScreens,
   preflightCaptures,
 } from "./visual-sidecar-client.js";
+import { createJiraGatewayClient } from "./jira-gateway-client.js";
 
 // -----------------------------------------------------------------------
 // Test helpers
@@ -216,6 +217,61 @@ test("redactHighRiskSecrets strips figmaAccessToken from a debug log line", () =
     redacted.includes("[REDACTED]"),
     "Redacted log must contain the [REDACTED] placeholder",
   );
+});
+
+test("Jira gateway persists replay cache without token-shaped raw response strings", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "jira-secret-leakage-"));
+  const sourceId = "jira.src";
+  const token = "Bearer " + "jira-secret-token-value";
+  const client = createJiraGatewayClient(
+    {
+      baseUrl: "https://example.atlassian.net",
+      auth: { kind: "bearer", token: "test-token" },
+      userAgent: "workspace-dev/1.0",
+      allowedHostPatterns: ["example.atlassian.net"],
+    },
+    {
+      fetchImpl: (async (url: string) => {
+        if (url.endsWith("serverInfo")) {
+          return new Response(
+            JSON.stringify({ version: "10.0.0", deploymentType: "Cloud" }),
+            { status: 200 },
+          );
+        }
+        return new Response(
+          JSON.stringify({
+            issues: [
+              {
+                key: "PAY-1",
+                fields: {
+                  issuetype: { name: "Task" },
+                  summary: `accidental ${token}`,
+                  description: "secret scan",
+                  status: { name: "Open" },
+                },
+              },
+            ],
+          }),
+          { status: 200 },
+        );
+      }) as typeof fetch,
+    },
+  );
+
+  const result = await client.fetchIssues({
+    query: { kind: "jql", jql: "project=PAY", maxResults: 1 },
+    runDir: dir,
+    sourceId,
+  });
+
+  assert.equal(result.issues.length, 1);
+  const persisted = await readFile(
+    join(dir, "sources", sourceId, "jira-api-response.json"),
+    "utf8",
+  );
+  assert.equal(persisted.includes(token), false);
+  assert.equal(persisted.includes("jira-secret-token-value"), false);
+  assert.equal(persisted.includes("[redacted-secret]"), true);
 });
 
 // -----------------------------------------------------------------------

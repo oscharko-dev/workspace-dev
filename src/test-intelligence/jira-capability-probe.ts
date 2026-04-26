@@ -29,6 +29,21 @@ const sanitizeError = (err: unknown, fallback: string): string => {
   );
 };
 
+const stripRestApiSuffix = (baseUrl: string): string => {
+  const trimmed = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+  return trimmed.replace(/\/rest\/api\/[23]$/u, "");
+};
+
+export const buildJiraRestUrl = (
+  baseUrl: string,
+  apiVersion: "2" | "3",
+  endpoint: string,
+): string => {
+  const root = stripRestApiSuffix(baseUrl);
+  const suffix = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  return `${root}/rest/api/${apiVersion}${suffix}`;
+};
+
 export const probeJiraCapability = async ({
   config,
   fetchImpl,
@@ -37,18 +52,17 @@ export const probeJiraCapability = async ({
   fetchImpl: typeof fetch;
 }): Promise<JiraCapabilityProbeResult> => {
   const headers = buildJiraAuthHeaders(config);
-  const baseUrl = config.baseUrl.endsWith("/") ? config.baseUrl.slice(0, -1) : config.baseUrl;
 
   let response: Response;
-  let url = `${baseUrl}/rest/api/3/serverInfo`;
+  let url = buildJiraRestUrl(config.baseUrl, "3", "serverInfo");
   let isV3 = true;
 
   try {
-    response = await fetchImpl(url, { headers, method: "GET" });
+    response = await fetchImpl(url, { headers, method: "GET", redirect: "error" });
     if (response.status === 404) {
       isV3 = false;
-      url = `${baseUrl}/rest/api/2/serverInfo`;
-      response = await fetchImpl(url, { headers, method: "GET" });
+      url = buildJiraRestUrl(config.baseUrl, "2", "serverInfo");
+      response = await fetchImpl(url, { headers, method: "GET", redirect: "error" });
     }
   } catch (err) {
     return {
