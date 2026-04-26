@@ -30,6 +30,7 @@ import {
 } from "../contracts/index.js";
 import { validateGeneratedTestCaseList } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
+import { detectSuspiciousContent } from "./semantic-content-sanitization.js";
 
 const TITLE_MAX_LENGTH = 200;
 const OBJECTIVE_MAX_LENGTH = 1000;
@@ -153,8 +154,47 @@ const validateCase = (
   validateQcMapping(testCase, basePath, issues);
   validateQualitySignalsCoverage(testCase, basePath, intentIds, issues);
   validatePiiInTextFields(testCase, basePath, issues);
+  validateSemanticSuspiciousContent(testCase, basePath, issues);
   validateAssumptionsAndQuestions(testCase, basePath, issues);
   validateAmbiguityReviewState(testCase, basePath, issues);
+};
+
+const validateSemanticSuspiciousContent = (
+  testCase: GeneratedTestCase,
+  basePath: string,
+  issues: TestCaseValidationIssue[],
+): void => {
+  const id = testCase.id;
+  const scanString = (value: string | undefined, path: string): void => {
+    if (typeof value !== "string" || value.length === 0) return;
+    const match = detectSuspiciousContent(value);
+    if (match === null) return;
+    pushIssue(issues, {
+      testCaseId: id,
+      path,
+      code: "semantic_suspicious_content",
+      severity: "error",
+      message: `${match.category}: ${match.reason}; matched snippet "${match.matchedSnippet}"`,
+    });
+  };
+  const scanList = (
+    values: readonly string[] | undefined,
+    prefix: string,
+  ): void => {
+    if (values === undefined) return;
+    for (let i = 0; i < values.length; i++) {
+      scanString(values[i], `${prefix}[${i}]`);
+    }
+  };
+  for (let i = 0; i < testCase.steps.length; i++) {
+    const step = testCase.steps[i];
+    if (step === undefined) continue;
+    scanString(step.action, `${basePath}.steps[${i}].action`);
+    scanString(step.expected, `${basePath}.steps[${i}].expected`);
+  }
+  scanList(testCase.expectedResults, `${basePath}.expectedResults`);
+  scanList(testCase.preconditions, `${basePath}.preconditions`);
+  scanList(testCase.testData, `${basePath}.testData`);
 };
 
 const validateStepsSemantics = (

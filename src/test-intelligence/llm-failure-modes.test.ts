@@ -336,16 +336,13 @@ test("llm-failure-modes: incomplete JSON (valid prefix, missing closing brace) i
   }
 });
 
-test("llm-failure-modes: schema-valid but shell-injection-shaped expectedResults passes schema, documented as gap", () => {
-  // A generated test case whose steps contain shell-injection-shaped strings
-  // (e.g. 'rm -rf /') is schema-valid because the schema only validates
-  // structure, not semantics. The pipeline accepts it structurally.
-  //
-  // GAP DOCUMENTED: There is no semantic sanitization check on the content
-  // of `steps[n].action` or `expectedResults` for injection-like patterns.
-  // A downstream operator review (policy gate → needs_review) is the only
-  // safeguard. This test records the gap: the pipeline does NOT block
-  // on injection-shaped content.
+test("llm-failure-modes: shell-injection-shaped step content is flagged as semantic_suspicious_content (gap closed by Issue #1413)", () => {
+  // Issue #1413 closed the gap previously documented here. A generated test
+  // case whose steps carry shell-injection-shape strings (e.g. `rm -rf /`)
+  // or command-substitution shapes (e.g. `$(curl ...)`) is now flagged at
+  // the validation layer as `semantic_suspicious_content` with `error`
+  // severity, so the pipeline blocks it and the policy gate refuses
+  // downstream export until a reviewer records a structured override.
   const injectionCase = buildCase({
     id: "tc-injection",
     steps: [{ index: 1, action: "rm -rf /", expected: "system destroyed" }],
@@ -359,20 +356,42 @@ test("llm-failure-modes: schema-valid but shell-injection-shaped expectedResults
     intent: buildIntent(),
   });
 
-  // The pipeline MUST NOT crash on injection-shaped content.
   assert.ok(result, "pipeline must complete without throwing");
-  // Schema remains valid because the values are valid strings.
   assert.equal(
     result.validation.blocked,
-    false,
-    "schema-valid shell-injection content passes schema validation — semantic check is a documented gap",
+    true,
+    "validation must block on semantically suspicious step content",
   );
-  // The case still needs review because it has no visual sidecar, but
-  // is not blocked at schema level.
+  assert.ok(
+    result.validation.issues.some(
+      (i) =>
+        i.code === "semantic_suspicious_content" &&
+        i.severity === "error" &&
+        i.testCaseId === "tc-injection" &&
+        i.path === "$.testCases[0].steps[0].action",
+    ),
+    "step action with shell-metacharacter shape must produce semantic_suspicious_content",
+  );
+  assert.ok(
+    result.validation.issues.some(
+      (i) =>
+        i.code === "semantic_suspicious_content" &&
+        i.severity === "error" &&
+        i.testCaseId === "tc-injection" &&
+        i.path === "$.testCases[0].expectedResults[0]",
+    ),
+    "expectedResults entry with command-substitution shape must produce semantic_suspicious_content",
+  );
+  assert.ok(
+    result.policy.decisions.some(
+      (d) => d.testCaseId === "tc-injection" && d.decision === "blocked",
+    ),
+    "policy gate must mark the suspicious case blocked",
+  );
   assert.equal(
-    typeof result.blocked,
-    "boolean",
-    "blocked field must be present",
+    result.blocked,
+    true,
+    "pipeline-level blocked must propagate the validation block",
   );
 });
 

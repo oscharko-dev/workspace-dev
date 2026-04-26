@@ -7,6 +7,27 @@ export {
 } from "./intent-derivation.js";
 export { detectPii, redactPii, type PiiMatch } from "./pii-detection.js";
 export {
+  detectSuspiciousContent,
+  effectiveSemanticContentBlock,
+  extractSemanticContentOverrides,
+  listSemanticContentOverrides,
+  recordSemanticContentOverride,
+  SEMANTIC_CONTENT_OVERRIDE_KIND_VALUE,
+  SEMANTIC_CONTENT_OVERRIDE_MAX_JUSTIFICATION_LENGTH,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_CATEGORY_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_JUSTIFICATION_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_KIND_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_METADATA_PATH_KEY,
+  SEMANTIC_CONTENT_OVERRIDE_NOTE_KIND,
+  SEMANTIC_SUSPICION_CATEGORIES,
+  type RecordSemanticContentOverrideRefusalCode,
+  type SemanticContentOverride,
+  type SemanticContentOverrideInput,
+  type SemanticContentOverrideMap,
+  type SemanticSuspicionCategory,
+  type SemanticSuspicionMatch,
+} from "./semantic-content-sanitization.js";
+export {
   reconcileSources,
   type ReconcileSourcesInput,
 } from "./reconciliation.js";
