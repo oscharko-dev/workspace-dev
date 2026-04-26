@@ -271,6 +271,17 @@ export {
   type WriteFinOpsBudgetReportResult,
 } from "./finops-report.js";
 export {
+  buildLbomDocument,
+  isAllowedVisualFallbackReason,
+  lbomDataKindFromBomRef,
+  summarizeLbomArtifact,
+  validateLbomDocument,
+  writeLbomArtifact,
+  type BuildLbomDocumentInput,
+  type WriteLbomArtifactInput,
+  type WriteLbomArtifactResult,
+} from "./lbom-emitter.js";
+export {
   evaluateWave1Poc,
   evaluateWave1PocFixture,
   WAVE1_POC_DEFAULT_EVAL_THRESHOLDS,

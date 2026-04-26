@@ -8,12 +8,17 @@ import {
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
   type FinOpsBudgetReport,
+  LBOM_ARTIFACT_DIRECTORY,
+  LBOM_ARTIFACT_FILENAME,
+  LBOM_ARTIFACT_SCHEMA_VERSION,
+  LBOM_CYCLONEDX_SPEC_VERSION,
   WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
   WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
   WAVE1_POC_ATTESTATIONS_DIRECTORY,
   WAVE1_POC_FIXTURE_IDS,
   WAVE1_POC_SIGNATURES_DIRECTORY,
   type Wave1PocFixtureId,
+  type Wave1PocLbomDocument,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
 import {
@@ -25,6 +30,7 @@ import {
   computeWave1PocEvidenceManifestDigest,
   verifyWave1PocEvidenceFromDisk,
 } from "./evidence-manifest.js";
+import { validateLbomDocument } from "./lbom-emitter.js";
 import {
   BUSINESS_INTENT_IR_ARTIFACT_FILENAME,
   COMPILED_PROMPT_ARTIFACT_FILENAME,
@@ -91,6 +97,42 @@ for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
     assert.match(result.attestation.attestationSha256, /^[0-9a-f]{64}$/);
     assert.equal(result.attestation.bundleFilename, undefined);
     assert.equal(result.attestation.bundleSha256, undefined);
+
+    // Issue #1378 — every completed run emits a per-job CycloneDX 1.6
+    // ML-BOM under `<runDir>/lbom/ai-bom.cdx.json`, and the manifest
+    // attests it via SHA-256 + byte length.
+    assert.equal(result.lbom.bomFormat, "CycloneDX");
+    assert.equal(result.lbom.specVersion, LBOM_CYCLONEDX_SPEC_VERSION);
+    assert.equal(result.lbom.secretsIncluded, false);
+    assert.equal(result.lbom.rawPromptsIncluded, false);
+    assert.equal(result.lbom.rawScreenshotsIncluded, false);
+    assert.equal(
+      result.lbomSummary.schemaVersion,
+      LBOM_ARTIFACT_SCHEMA_VERSION,
+    );
+    assert.equal(result.lbomSummary.componentCounts.models, 3);
+    assert.equal(result.lbomSummary.componentCounts.data, 2);
+    assert.equal(result.lbomSummary.visualFallbackUsed, false);
+    assert.equal(
+      result.lbomSummary.filename,
+      `${LBOM_ARTIFACT_DIRECTORY}/${LBOM_ARTIFACT_FILENAME}`,
+    );
+    assert.ok(filenames.includes(result.lbomSummary.filename));
+    const lbomBytes = await readFile(result.lbomArtifactPath, "utf8");
+    const parsedLbom = JSON.parse(lbomBytes) as Wave1PocLbomDocument;
+    const lbomValidation = validateLbomDocument(parsedLbom);
+    assert.equal(
+      lbomValidation.valid,
+      true,
+      JSON.stringify(lbomValidation.issues, null, 2),
+    );
+    const attestedLbom = result.manifest.artifacts.find(
+      (artifact) => artifact.filename === result.lbomSummary.filename,
+    );
+    assert.ok(attestedLbom, "manifest must attest the LBOM artifact");
+    assert.equal(attestedLbom?.category, "lbom");
+    assert.equal(attestedLbom?.sha256, result.lbomSummary.sha256);
+    assert.equal(attestedLbom?.bytes, result.lbomSummary.bytes);
   });
 
   test(`poc-harness: ${fixtureId} produces deterministic artifacts on replay`, async () => {
@@ -214,8 +256,14 @@ test("poc-harness: seals request audit proof that test generation received no im
   assert.equal(audit.requestCount, 1);
   assert.deepEqual(audit.imageInputCounts, [0]);
   assert.equal(audit.imagePayloadSent, false);
-  assert.equal(audit.promptHash, result.compiledPrompt.request.hashes.promptHash);
-  assert.equal(audit.schemaHash, result.compiledPrompt.request.hashes.schemaHash);
+  assert.equal(
+    audit.promptHash,
+    result.compiledPrompt.request.hashes.promptHash,
+  );
+  assert.equal(
+    audit.schemaHash,
+    result.compiledPrompt.request.hashes.schemaHash,
+  );
   assert.equal(audit.inputHash, result.compiledPrompt.request.hashes.inputHash);
   assert.equal(
     audit.cacheKeyDigest,
@@ -334,7 +382,10 @@ test("poc-harness: default execution does not touch live gateway fetch", async (
     });
 
     assert.equal(result.visualSidecar, undefined);
-    assert.equal(result.manifest.modelDeployments.testGeneration, "gpt-oss-120b-mock");
+    assert.equal(
+      result.manifest.modelDeployments.testGeneration,
+      "gpt-oss-120b-mock",
+    );
     assert.equal(fetchCalls, 0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -511,7 +562,10 @@ test("poc-harness: replay-cache hit skips generation and reports completed_cache
   assert.equal(second.generatedList.testCases[0]?.audit.cacheHit, true);
 
   const rawAudit = JSON.parse(
-    await readFile(join(secondDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME), "utf8"),
+    await readFile(
+      join(secondDir, GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME),
+      "utf8",
+    ),
   ) as { requestCount: number; imageInputCounts: number[] };
   assert.equal(rawAudit.requestCount, 0);
   assert.deepEqual(rawAudit.imageInputCounts, []);
