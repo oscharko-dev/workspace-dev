@@ -74,6 +74,11 @@ import {
   type Wave1PocEvidenceManifest,
 } from "../contracts/index.js";
 import { canonicalJson } from "./content-hash.js";
+import {
+  formatWave1PocEvidenceArtifactPathForDiagnostic,
+  resolveWave1PocEvidenceArtifactPath,
+  validateWave1PocEvidenceArtifactPath,
+} from "./evidence-manifest.js";
 
 const HEX64 = /^[0-9a-f]{64}$/;
 const KEYID_PATTERN = /^[A-Za-z0-9._:\-/]{1,128}$/;
@@ -175,9 +180,14 @@ const validateManifestForAttestation = (
     }
   }
   for (const artifact of manifest.artifacts) {
+    if (!validateWave1PocEvidenceArtifactPath(artifact.filename).ok) {
+      throw new RangeError(
+        `buildWave1PocAttestationStatement: invalid artifact filename ${formatWave1PocEvidenceArtifactPathForDiagnostic(artifact.filename)}`,
+      );
+    }
     if (!HEX64.test(artifact.sha256)) {
       throw new RangeError(
-        `buildWave1PocAttestationStatement: artifact "${artifact.filename}" has an invalid sha256`,
+        `buildWave1PocAttestationStatement: artifact ${formatWave1PocEvidenceArtifactPathForDiagnostic(artifact.filename)} has an invalid sha256`,
       );
     }
   }
@@ -1143,18 +1153,6 @@ export interface VerifyWave1PocAttestationInput {
   requireFullSubjectCoverage?: boolean;
 }
 
-const resolveArtifactPathSafely = (
-  artifactsDir: string,
-  filename: string,
-): string => {
-  const root = resolve(artifactsDir);
-  const target = resolve(root, filename);
-  if (target !== root && !target.startsWith(`${root}/`)) {
-    throw new RangeError(`artifact filename escapes run dir "${filename}"`);
-  }
-  return target;
-};
-
 const verifySubjectsAgainstDisk = async (
   subjects: Wave1PocAttestationSubject[],
   manifest: Wave1PocEvidenceManifest,
@@ -1164,6 +1162,10 @@ const verifySubjectsAgainstDisk = async (
 ): Promise<Wave1PocAttestationVerificationFailure[]> => {
   const failures: Wave1PocAttestationVerificationFailure[] = [];
   const subjectMap = new Map<string, string>();
+  const safeReference = (filename: string): string =>
+    validateWave1PocEvidenceArtifactPath(filename).ok
+      ? filename
+      : formatWave1PocEvidenceArtifactPathForDiagnostic(filename);
   for (const subject of subjects) {
     if (!isRecord(subject)) {
       failures.push({
@@ -1178,6 +1180,18 @@ const verifySubjectsAgainstDisk = async (
         code: "statement_predicate_invalid",
         reference: "subject.name",
         message: "subject.name must be a non-empty string",
+      });
+      continue;
+    }
+    if (
+      subject.name !== WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME &&
+      !validateWave1PocEvidenceArtifactPath(subject.name).ok
+    ) {
+      const reference = safeReference(subject.name);
+      failures.push({
+        code: "statement_predicate_invalid",
+        reference,
+        message: `subject.name must be a safe artifact filename: ${reference}`,
       });
       continue;
     }
@@ -1213,6 +1227,15 @@ const verifySubjectsAgainstDisk = async (
   }
 
   for (const artifact of manifest.artifacts) {
+    if (!validateWave1PocEvidenceArtifactPath(artifact.filename).ok) {
+      const reference = safeReference(artifact.filename);
+      failures.push({
+        code: "statement_predicate_invalid",
+        reference,
+        message: `manifest artifact filename is invalid: ${reference}`,
+      });
+      continue;
+    }
     const subjectDigest = subjectMap.get(artifact.filename);
     if (subjectDigest === undefined) {
       if (requireFullSubjectCoverage) {
@@ -1235,7 +1258,10 @@ const verifySubjectsAgainstDisk = async (
     }
     let path: string;
     try {
-      path = resolveArtifactPathSafely(artifactsDir, artifact.filename);
+      path = resolveWave1PocEvidenceArtifactPath(
+        artifactsDir,
+        artifact.filename,
+      );
     } catch (err) {
       failures.push({
         code: "subject_missing_artifact",
