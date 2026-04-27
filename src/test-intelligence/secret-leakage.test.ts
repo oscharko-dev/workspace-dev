@@ -265,8 +265,16 @@ test("Jira gateway persists replay cache without token-shaped raw response strin
   });
 
   assert.equal(result.issues.length, 1);
+  await assert.rejects(
+    () =>
+      readFile(
+        join(dir, "sources", sourceId, "jira-api-response.json"),
+        "utf8",
+      ),
+    /ENOENT/u,
+  );
   const persisted = await readFile(
-    join(dir, "sources", sourceId, "jira-api-response.json"),
+    join(dir, "sources", sourceId, "jira-issue-ir-list.json"),
     "utf8",
   );
   assert.equal(persisted.includes(token), false);

@@ -61,7 +61,7 @@ or artifact schemas were changed in a breaking way.
 | `MAX_JIRA_PASTE_BYTES_PER_JOB`                      | `524_288` (512 KiB)                                   | 4.D  |
 | `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB`                  | `262_144` (256 KiB)                                   | 4.E  |
 | `MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION` | `"1.0.0"`                                             | 4.F  |
-| `MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME`    | `"multi-source-conflict-report.json"`                 | 4.F  |
+| `MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME`    | `"multi-source-conflicts.json"`                       | 4.F  |
 
 ### 2.2 New types
 
@@ -133,8 +133,7 @@ no existing artifact paths change.
     └── custom-context-structured/
         └── custom-context.json       ← Validated structured attributes
 
-multi-source-conflict-report.json    ← NEW (Wave 4.F, only when conflicts present)
-multi-source-reconciliation-report.json ← NEW (Wave 4.F, multi-source jobs)
+multi-source-conflicts.json          ← NEW (Wave 4.F, multi-source jobs; includes conflicts when present)
 ```
 
 ---

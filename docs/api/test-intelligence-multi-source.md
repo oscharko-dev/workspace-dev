@@ -64,7 +64,7 @@ a primary source.
 
 ### 2.3 Custom input formats (`ALLOWED_TEST_INTENT_CUSTOM_INPUT_FORMATS`)
 
-`"markdown"` | `"structured_json"`
+`"plain_text"` | `"markdown"` | `"structured_json"`
 
 ---
 
@@ -77,7 +77,7 @@ a primary source.
 | Jira paste only                                 | Yes       | Air-gap safe                                                      |
 | Figma + Jira REST                               | Yes       | Reconciliation in Wave 4.F                                        |
 | Figma + Jira paste                              | Yes       | Reconciliation in Wave 4.F                                        |
-| Jira REST + Jira paste                          | Refused   | `duplicate_jira_paste_collision` when `canonicalIssueKey` matches |
+| Jira REST + Jira paste                          | Yes       | Refused with `duplicate_jira_paste_collision` only when `canonicalIssueKey` matches |
 | Any above + `custom_text` / `custom_structured` | Yes       | Custom kinds are supporting evidence only                         |
 | `custom_text` / `custom_structured` only        | Refused   | `primary_source_required`                                         |
 
@@ -301,7 +301,7 @@ Per-job budget: `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB = 256 KiB (262144 B)`.
 ### 7.1 `MultiSourceReconciliationReport`
 
 Schema version: `MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION = "1.0.0"`  
-Artifact: `<artifactRoot>/<jobId>/multi-source-reconciliation-report.json`
+Artifact: `<artifactRoot>/<jobId>/multi-source-conflicts.json`
 
 ```ts
 interface MultiSourceReconciliationReport {
@@ -350,8 +350,8 @@ Conflict artifact filename: `MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME = "m
 ## 8. HTTP routes
 
 All routes are mounted under `/workspace/test-intelligence`. The parent
-test-intelligence and multi-source gates must both be enabled for the two
-new Wave 4 routes to be reachable.
+test-intelligence and multi-source gates must both be enabled for Wave 4 write
+routes to be reachable.
 
 ### 8.1 Existing routes (unchanged)
 
@@ -359,11 +359,20 @@ new Wave 4 routes to be reachable.
 | ------------------------------------------------------------------- | ------ | ------ | -------------------------------- |
 | `/workspace/test-intelligence/jobs`                                 | GET    | none   | List jobs with on-disk artifacts |
 | `/workspace/test-intelligence/jobs/<jobId>`                         | GET    | none   | Composite artifact bundle read   |
+| `/workspace/test-intelligence/jobs/<jobId>/sources`                 | GET    | none   | List source refs for a job       |
 | `/workspace/test-intelligence/review/<jobId>/state`                 | GET    | none   | Review snapshot and event log    |
 | `/workspace/test-intelligence/review/<jobId>/<action>`              | POST   | bearer | Job-level review transition      |
 | `/workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>` | POST   | bearer | Per-case review transition       |
 
 ### 8.2 New Wave 4 routes
+
+| Route                                                                          | Method | Auth   | Purpose                                      |
+| ------------------------------------------------------------------------------ | ------ | ------ | -------------------------------------------- |
+| `/workspace/test-intelligence/jobs/<jobId>/sources/jira-fetch`                 | POST   | bearer | Ingest Jira REST issues via configured gateway |
+| `/workspace/test-intelligence/jobs/<jobId>/sources/<sourceId>`                 | DELETE | bearer | Remove a source from a job                   |
+| `/workspace/test-intelligence/jobs/<jobId>/conflicts/<conflictId>/resolve`     | POST   | bearer | Record reviewer conflict resolution          |
+| `/workspace/test-intelligence/sources/<jobId>/jira-paste`                      | POST   | bearer | Ingest paste-only Jira source                |
+| `/workspace/test-intelligence/sources/<jobId>/custom-context`                  | POST   | bearer | Ingest reviewer custom-context source        |
 
 #### `POST /workspace/test-intelligence/sources/<jobId>/jira-paste`
 
@@ -395,12 +404,35 @@ rejected with `xss_content_detected` before parsing.
 
 ```json
 {
-    "sourceId": "jira-paste-PAY-1434",
-    "sourceKind": "jira_paste",
-    "artifactPath": "<outputRoot>/<jobId>/sources/jira-paste-PAY-1434/jira-issue-ir.json",
-    "provenancePath": "<outputRoot>/<jobId>/sources/jira-paste-PAY-1434/paste-provenance.json"
+    "ok": true,
+    "jobId": "job-001",
+    "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2",
+    "sourceRef": {
+        "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2",
+        "kind": "jira_paste",
+        "canonicalIssueKey": "PAY-1434",
+        "contentHash": "<sha256>"
+    },
+    "sourceEnvelope": {
+        "version": "1.0.0",
+        "sources": [{ "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2", "kind": "jira_paste" }],
+        "aggregateContentHash": "<sha256>",
+        "conflictResolutionPolicy": "reviewer_decides"
+    },
+    "sourceMixHint": {
+        "primarySourceKinds": ["jira_paste"],
+        "supportingSourceKinds": []
+    },
+    "artifacts": {
+        "jiraIssueIr": "sources/jira-paste-1f3870be-a7d3c7f4d9e2/jira-issue-ir.json",
+        "pasteProvenance": "sources/jira-paste-1f3870be-a7d3c7f4d9e2/paste-provenance.json",
+        "rawPastePersisted": false
+    }
 }
 ```
+
+Clients should use `sourceId`, `sourceRef`, and `artifacts.*` from the response
+instead of deriving source directories from the Jira issue key.
 
 **Error responses:** `400` (invalid body/format), `401` (token mismatch),
 `503` (token not configured).
@@ -432,6 +464,8 @@ custom-context evidence.
 
 ```json
 {
+    "ok": true,
+    "jobId": "job-001",
     "sourceRefs": [
         {
             "sourceId": "custom-context-markdown",
@@ -447,10 +481,28 @@ custom-context evidence.
             "contentHash": "<sha256>"
         }
     ],
+    "sourceEnvelope": {
+        "version": "1.0.0",
+        "sources": [
+            { "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2", "kind": "jira_paste" },
+            { "sourceId": "custom-context-markdown", "kind": "custom_text" },
+            { "sourceId": "custom-context-structured", "kind": "custom_structured" }
+        ],
+        "aggregateContentHash": "<sha256>",
+        "conflictResolutionPolicy": "reviewer_decides"
+    },
+    "customContext": {
+        "markdown": { "sourceId": "custom-context-markdown" },
+        "structured": { "sourceId": "custom-context-structured" }
+    },
     "policySignals": ["custom_context_risk_escalation"],
-    "artifactPaths": {
-        "markdown": "<outputRoot>/<jobId>/sources/custom-context-markdown/custom-context.json",
-        "structured": "<outputRoot>/<jobId>/sources/custom-context-structured/custom-context.json"
+    "artifacts": {
+        "customContext": [
+            "sources/custom-context-markdown/custom-context.json",
+            "sources/custom-context-structured/custom-context.json"
+        ],
+        "rawMarkdownPersisted": false,
+        "unsanitizedInputPersisted": false
     }
 }
 ```
@@ -464,33 +516,18 @@ custom-context evidence.
 
 ### 9.1 Jira REST-only job
 
-```ts
-import { createJiraGatewayClient, buildJiraIssueIr } from "workspace-dev";
-
-const client = createJiraGatewayClient({
-    baseUrl: "https://your-org.atlassian.net",
-    auth: {
-        type: "basic",
-        email: process.env.JIRA_EMAIL!,
-        apiToken: process.env.JIRA_TOKEN!,
-    },
-});
-
-const ir = await buildJiraIssueIr({
-    client,
-    issueKey: "PAY-1434",
-    fieldSelectionProfile: {
-        includeDescription: true,
-        includeComments: false,
-        includeAttachments: false,
-        includeLinks: false,
-        customFieldAllowList: [],
-        acceptanceCriterionFieldIds: ["customfield_10001"],
-    },
-    capturedAt: new Date().toISOString(),
-});
-// ir.contentHash, ir.piiIndicators, ir.dataMinimization are all populated
+```bash
+curl -X POST http://127.0.0.1:1983/workspace/test-intelligence/jobs/job-001/sources/jira-fetch \
+  -H "Authorization: Bearer $WORKSPACE_TI_REVIEW_BEARER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"issueKeys": ["PAY-1434"]}'
 ```
+
+The route requires a Jira gateway client to be configured by the hosting
+integration. It persists minimized Jira IR artifacts under
+`<artifactRoot>/<jobId>/sources/<sourceId>/jira-issue-ir-list.json` and, when
+the response contains exactly one issue, `jira-issue-ir.json`. Raw Jira REST
+API response bodies are never persisted.
 
 ### 9.2 Jira paste-only (air-gap)
 
@@ -588,10 +625,13 @@ testIntelligenceMultiSourceEnabled?: boolean;
 
 ---
 
-## 11. Exported functions
+## 11. Implementation helper entrypoints
 
-The following multi-source functions are exported from `workspace-dev` (via
-`src/test-intelligence/index.ts`):
+The following helpers are exported from `src/test-intelligence/index.ts` for
+in-repo harnesses and internal integrations. The published package exposes the
+stable public contract types via `workspace-dev/contracts`; external ingestion
+integrations should use the HTTP routes above unless a future package subpath
+is explicitly published.
 
 | Function                                | Description                                                        |
 | --------------------------------------- | ------------------------------------------------------------------ |
@@ -603,7 +643,7 @@ The following multi-source functions are exported from `workspace-dev` (via
 | `legacySourceFromMultiSourceEnvelope`   | Project the primary Figma source back to the legacy `source` field |
 | `isPrimaryTestIntentSourceKind`         | Type predicate for primary source kinds                            |
 | `isSupportingTestIntentSourceKind`      | Type predicate for supporting source kinds                         |
-| `buildJiraIssueIr`                      | Build a `JiraIssueIr` from a raw Jira input                        |
+| `buildJiraIssueIr`                      | Build a `JiraIssueIr` from a Jira input before persistence         |
 | `writeJiraIssueIr`                      | Persist a `JiraIssueIr` to disk (atomic rename)                    |
 | `isValidJiraIssueKey`                   | Validate a Jira issue key string                                   |
 | `sanitizeJqlFragment`                   | Sanitize a JQL fragment; rejects injection patterns                |

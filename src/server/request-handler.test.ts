@@ -41,6 +41,7 @@ import {
   REVIEW_STATE_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
   TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_ENV,
   TEST_INTELLIGENCE_MULTISOURCE_ENV,
   type JiraGatewayConfig,
@@ -1745,6 +1746,9 @@ test("request handler returns rejected inspector policy diagnostics and logs an 
           },
         });
 
+        if (response.statusCode !== 200) {
+          throw new Error(response.body);
+        }
         assert.equal(response.statusCode, 200);
         const body = response.json<Record<string, unknown>>();
         assert.equal(body.policy, null);
@@ -7493,7 +7497,10 @@ test("test-intelligence: POST jira-fetch source uses configured Jira gateway", a
               { status: 200 },
             );
           }
-          searchBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+          searchBody = JSON.parse(String(init?.body)) as Record<
+            string,
+            unknown
+          >;
           return new Response(
             JSON.stringify({
               issues: [
@@ -7547,7 +7554,10 @@ test("test-intelligence: POST jira-fetch source uses configured Jira gateway", a
         }>();
         assert.equal(body.ok, true);
         assert.equal(body.issueCount, 2);
-        assert.equal(searchBody?.["jql"], 'issueKey IN ("PAY-1437","PAY-1438")');
+        assert.equal(
+          searchBody?.["jql"],
+          'issueKey IN ("PAY-1437","PAY-1438")',
+        );
         assert.equal(
           body.sources.some(
             (source) =>
@@ -7754,7 +7764,9 @@ test("test-intelligence: POST jira-fetch source returns www-authenticate on auth
 test("test-intelligence: DELETE source removes a scoped source directory", async () => {
   await withTestIntelligenceEnv("1", async () => {
     await withTestIntelligenceMultiSourceEnv("1", async () => {
-      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-source-remove-"));
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-source-remove-"),
+      );
       const artifactRoot = path.join(tempRoot, "ti");
       const sourceDir = path.join(
         artifactRoot,
@@ -7763,7 +7775,11 @@ test("test-intelligence: DELETE source removes a scoped source directory", async
         "custom-context-markdown",
       );
       await mkdir(sourceDir, { recursive: true });
-      await writeFile(path.join(sourceDir, "custom-context.json"), "{}", "utf8");
+      await writeFile(
+        path.join(sourceDir, "custom-context.json"),
+        "{}",
+        "utf8",
+      );
       const { app, close } = await createRequestHandlerApp({
         testIntelligenceEnabled: true,
         testIntelligenceMultiSourceEnabled: true,
@@ -7781,7 +7797,9 @@ test("test-intelligence: DELETE source removes a scoped source directory", async
         });
         assert.equal(response.statusCode, 200);
         assert.equal(response.json<{ ok: boolean }>().ok, true);
-        await assert.rejects(readFile(path.join(sourceDir, "custom-context.json")));
+        await assert.rejects(
+          readFile(path.join(sourceDir, "custom-context.json")),
+        );
       } finally {
         await close();
         await rm(tempRoot, { recursive: true, force: true });
@@ -8480,7 +8498,9 @@ test("test-intelligence: GET sources lists attached primary and supporting sourc
 test("test-intelligence: POST conflict resolution appends a decision snapshot", async () => {
   await withTestIntelligenceEnv("1", async () => {
     await withTestIntelligenceMultiSourceEnv("1", async () => {
-      const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-conflict-resolve-"));
+      const tempRoot = await mkdtemp(
+        path.join(os.tmpdir(), "ti-conflict-resolve-"),
+      );
       const artifactRoot = path.join(tempRoot, "ti");
       const jobDir = path.join(artifactRoot, "job-conflict");
       await mkdir(jobDir, { recursive: true });
@@ -8493,7 +8513,10 @@ test("test-intelligence: POST conflict resolution appends a decision snapshot", 
             {
               conflictId: "conflict-1",
               kind: "field_label_mismatch",
-              participatingSourceIds: ["jira-paste-1", "business-intent-primary"],
+              participatingSourceIds: [
+                "jira-paste-1",
+                "business-intent-primary",
+              ],
               normalizedValues: ["IBAN", "Account number"],
               resolution: "deferred_to_reviewer",
             },
@@ -8509,7 +8532,7 @@ test("test-intelligence: POST conflict resolution appends a decision snapshot", 
         path.join(jobDir, TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME),
         JSON.stringify({
           schemaVersion: TEST_CASE_POLICY_REPORT_SCHEMA_VERSION,
-          contractVersion: "1.2.0",
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
           generatedAt: "2026-04-27T10:00:00.000Z",
           jobId: "job-conflict",
           policyProfileId: "eu-banking-default",
@@ -8542,7 +8565,7 @@ test("test-intelligence: POST conflict resolution appends a decision snapshot", 
         path.join(jobDir, REVIEW_STATE_ARTIFACT_FILENAME),
         JSON.stringify({
           schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
-          contractVersion: "1.2.0",
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
           jobId: "job-conflict",
           generatedAt: "2026-04-27T10:00:00.000Z",
           perTestCase: [
@@ -8567,12 +8590,12 @@ test("test-intelligence: POST conflict resolution appends a decision snapshot", 
         path.join(jobDir, REVIEW_EVENTS_ARTIFACT_FILENAME),
         JSON.stringify({
           schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
-          contractVersion: "1.2.0",
+          contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
           jobId: "job-conflict",
           events: [
             {
               schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
-              contractVersion: "1.2.0",
+              contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
               id: "evt-1",
               jobId: "job-conflict",
               testCaseId: "tc-1",
@@ -8607,7 +8630,11 @@ test("test-intelligence: POST conflict resolution appends a decision snapshot", 
         assert.equal(response.statusCode, 200);
         const body = response.json<{
           ok: boolean;
-          snapshot: { conflictId: string; state: string; selectedSourceId?: string };
+          snapshot: {
+            conflictId: string;
+            state: string;
+            selectedSourceId?: string;
+          };
         }>();
         assert.equal(body.ok, true);
         assert.equal(body.snapshot.conflictId, "conflict-1");

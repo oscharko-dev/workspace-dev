@@ -50,8 +50,11 @@ test("jira-token-leakage: Jira response tokens are redacted from every persisted
 
     assert.equal(result.issues.length, 1);
     const sourceDir = join(dir, "sources", sourceId);
+    await assert.rejects(
+      () => readFile(join(sourceDir, "jira-api-response.json"), "utf8"),
+      /ENOENT/u,
+    );
     const persisted = await Promise.all([
-      readFile(join(sourceDir, "jira-api-response.json"), "utf8"),
       readFile(join(sourceDir, "jira-issue-ir-list.json"), "utf8"),
       readFile(join(sourceDir, "jira-issue-ir.json"), "utf8"),
     ]);

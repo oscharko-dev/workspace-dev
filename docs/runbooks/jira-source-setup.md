@@ -68,15 +68,17 @@ export WORKSPACE_TI_JIRA_API_TOKEN="<token>"
 export WORKSPACE_TI_JIRA_EMAIL="your-automation-account@example.com"
 ```
 
-5. Pass to the gateway client at startup:
+5. Pass the same shape to the gateway client in the hosting integration. The
+   helper is currently an internal in-repo integration point; the published npm
+   package exposes stable contracts and HTTP routes, not a public Jira gateway
+   client subpath.
 
 ```ts
-import { createJiraGatewayClient } from "workspace-dev";
-
 const jiraClient = createJiraGatewayClient({
     baseUrl: "https://your-org.atlassian.net",
+    userAgent: "workspace-dev/1.0.0 (contact: ti-ops@example.invalid)",
     auth: {
-        type: "basic",
+        kind: "basic",
         email: process.env.WORKSPACE_TI_JIRA_EMAIL ?? "",
         apiToken: process.env.WORKSPACE_TI_JIRA_API_TOKEN ?? "",
     },
@@ -98,20 +100,24 @@ For user-context access using OAuth 2.0 three-legged authorization:
    access token.
 4. The gateway URL shape for Jira Cloud OAuth 2.0 is:
    `https://api.atlassian.com/ex/jira/<cloudId>` (where `cloudId` is the
-   Atlassian cloud identifier for your instance).
+   Atlassian cloud identifier for your instance). Atlassian's full REST API
+   requests include `/rest/api/3/<resource>` after that prefix; workspace-dev's
+   gateway appends that suffix internally.
 
 ```ts
 const jiraClient = createJiraGatewayClient({
     baseUrl: `https://api.atlassian.com/ex/jira/${process.env.ATLASSIAN_CLOUD_ID}`,
+    userAgent: "workspace-dev/1.0.0 (contact: ti-ops@example.invalid)",
     auth: {
-        type: "oauth2",
+        kind: "oauth2_3lo",
         accessToken: process.env.JIRA_OAUTH_ACCESS_TOKEN ?? "",
     },
 });
 ```
 
-OAuth 2.0 access tokens expire; implement token refresh in the `auth.accessToken`
-provider. The workspace-dev gateway client does not manage token refresh.
+OAuth 2.0 access tokens expire; refresh them before constructing or replacing
+the gateway client. The workspace-dev gateway client does not manage token
+refresh.
 
 ### 3.3 Jira Data Center — Personal Access Token (PAT)
 
@@ -130,10 +136,12 @@ export WORKSPACE_TI_JIRA_PAT="<token>"
 ```ts
 const jiraClient = createJiraGatewayClient({
     baseUrl: "https://jira.your-org.internal",
+    userAgent: "workspace-dev/1.0.0 (contact: ti-ops@example.invalid)",
     auth: {
-        type: "pat",
+        kind: "bearer",
         token: process.env.WORKSPACE_TI_JIRA_PAT ?? "",
     },
+    allowedHostPatterns: ["jira.your-org.internal"],
 });
 ```
 
@@ -157,29 +165,35 @@ Do **not** request:
 
 - `write:jira-work` — workspace-dev never writes to Jira.
 - `manage:jira-project` — not required.
-- `admin:jira` — not required; will be rejected by the SSRF guard
-  if the token inadvertently enables broader access.
+- `admin:jira` — not required. workspace-dev does not introspect Jira token
+  scopes; least-privilege scope assignment is an operator responsibility. The
+  SSRF guard enforces host boundaries, not OAuth scope policy.
 - `read:jira-user` — account IDs are redacted to `@user` stubs before
   IR placement; human-readable user data is not needed.
 
 ### 4.1 Field-selection profile checklist
 
 The `DEFAULT_JIRA_FIELD_SELECTION_PROFILE` excludes comments, attachments,
-linked issues, and unknown custom fields. Override only when required:
+linked issues, and unknown custom fields. In-repo gateway integrations can
+override `JiraFetchRequest.fieldSelection` only when required:
 
 ```ts
-const jiraClient = createJiraGatewayClient({
-    // ...
-    fieldSelectionProfile: {
+await jiraClient.fetchIssues({
+    query: { kind: "issueKeys", issueKeys: ["PAY-42"] },
+    fieldSelection: {
         includeComments: false, // default: false
         includeAttachments: false, // default: false (metadata only if true)
-        includeLinkedIssues: false, // default: false
-        includeCustomFields: [], // default: [] (empty = exclude unknown)
+        includeLinks: false, // default: false
+        customFieldAllowList: [], // default: [] (empty = exclude unknown)
         // To opt in to specific custom fields:
-        // includeCustomFields: ["customfield_10001", "customfield_10002"],
+        // customFieldAllowList: ["customfield_10001", "customfield_10002"],
     },
 });
 ```
+
+The Inspector `jira-fetch` HTTP route currently exposes `issueKey`,
+`issueKeys`, `jql`, `maxResults`, and `replayMode`; custom field-selection is
+an internal gateway request option for hosting integrations.
 
 Every opt-in is recorded in `JiraIssueIr.dataMinimization` so auditors can
 verify what was collected per job.
@@ -275,16 +289,32 @@ Expected response (HTTP 200):
 
 ```json
 {
-    "sourceId": "jira-paste-PAY-42",
-    "sourceKind": "jira_paste",
-    "artifactPath": ".workspace-dev/job-001/sources/jira-paste-PAY-42/jira-issue-ir.json"
+    "ok": true,
+    "jobId": "job-001",
+    "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2",
+    "sourceRef": {
+        "sourceId": "jira-paste-1f3870be-a7d3c7f4d9e2",
+        "kind": "jira_paste",
+        "canonicalIssueKey": "PAY-42",
+        "contentHash": "<sha256>"
+    },
+    "artifacts": {
+        "jiraIssueIr": "sources/jira-paste-1f3870be-a7d3c7f4d9e2/jira-issue-ir.json",
+        "pasteProvenance": "sources/jira-paste-1f3870be-a7d3c7f4d9e2/paste-provenance.json",
+        "rawPastePersisted": false
+    }
 }
 ```
+
+Record `sourceId` and `artifacts.jiraIssueIr` from the response. The
+`sourceId` is generated by the server and must not be derived from the issue
+key.
 
 **Step 3 — Verify the IR artifact:**
 
 ```bash
-cat .workspace-dev/job-001/sources/jira-paste-PAY-42/jira-issue-ir.json | \
+SOURCE_ID="jira-paste-1f3870be-a7d3c7f4d9e2" # from the response
+cat ".workspace-dev/job-001/sources/${SOURCE_ID}/jira-issue-ir.json" | \
   python3 -m json.tool | grep -E '"issueKey"|"summary"|"piiIndicators"'
 ```
 
@@ -309,8 +339,9 @@ When only Jira sources are present (no Figma input):
 
 - Figma artifacts, screenshots, and visual sidecar output are not required.
 - The visual sidecar pipeline is skipped; `visual-sidecar-result.json` is not emitted.
-- The reconciliation step is also skipped; `multi-source-reconciliation-report.json`
-  reflects a single-source pass-through.
+- Source ingestion writes only `sources/<sourceId>/jira-issue-ir.json` and
+  `sources/<sourceId>/paste-provenance.json`; no `multi-source-conflicts.json`
+  is required for a single Jira paste source.
 - The LLM test-case generator (`gpt-oss-120b`) receives the Jira IR as the
   sole structured input alongside the prompt template. The generator never
   receives Jira API credentials or raw Jira content.
@@ -320,11 +351,20 @@ access token or Figma plugin.
 
 ---
 
-## 9. ADF rate-limit handling
+## 9. ADF and rate-limit handling
+
+Jira Cloud REST API v3 returns Atlassian Document Format (ADF) in rich text
+fields such as issue `description`, issue `environment`, comments, worklogs,
+and `textarea` custom fields. workspace-dev parses only the fields selected by
+the gateway request, converts them to bounded plain text in memory, and
+persists only the redacted Jira IR.
 
 Jira Cloud enforces rate limits on its REST API. The gateway client respects
-the `Retry-After` header when present. The per-job API call budget
-(`MAX_JIRA_API_REQUESTS_PER_JOB = 20`) limits blast radius.
+the `Retry-After` header when present and preserves the redacted
+`RateLimit-Reason` diagnostic for operators. Atlassian may also send
+`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and beta
+rate-limit variants; monitor those at the gateway or proxy layer. The per-job
+API call budget (`MAX_JIRA_API_REQUESTS_PER_JOB = 20`) limits blast radius.
 
 When the rate limit is exceeded, the gateway returns `rate_limited` as the
 error class. The LLM circuit-breaker records this as a non-transient failure
