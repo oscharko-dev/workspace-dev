@@ -401,7 +401,7 @@ const validateRoleBudget = (
   }
   // Ingest-only roles do not perform LLM calls — reject LLM-specific limits.
   if (
-    (INGEST_ONLY_ROLES as readonly FinOpsRole[]).includes(role) &&
+    INGEST_ONLY_ROLES.includes(role) &&
     (budget.maxInputTokensPerRequest !== undefined ||
       budget.maxOutputTokensPerRequest !== undefined ||
       budget.maxImageBytesPerRequest !== undefined ||
@@ -414,7 +414,7 @@ const validateRoleBudget = (
   }
   // Jira API roles do not perform LLM calls or byte-level ingest.
   if (
-    (JIRA_API_ROLES as readonly FinOpsRole[]).includes(role) &&
+    JIRA_API_ROLES.includes(role) &&
     (budget.maxInputTokensPerRequest !== undefined ||
       budget.maxOutputTokensPerRequest !== undefined ||
       budget.maxImageBytesPerRequest !== undefined ||

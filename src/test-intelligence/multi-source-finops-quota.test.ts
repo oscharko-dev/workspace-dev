@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  ALLOWED_FINOPS_BUDGET_BREACH_REASONS,
   MAX_CUSTOM_CONTEXT_BYTES_PER_JOB,
   MAX_JIRA_API_REQUESTS_PER_JOB,
   MAX_JIRA_PASTE_BYTES_PER_JOB,
@@ -175,4 +176,88 @@ test("createFinOpsUsageRecorder: accepts recordIngestBytes for ingest roles", ()
   assert.ok(custom !== undefined);
   assert.equal(paste.ingestBytes, 4096);
   assert.equal(custom.ingestBytes, 8192);
+});
+
+test("breach reason exhaustiveness: the 3 new Wave 4.I breach reasons appear in ALLOWED_FINOPS_BUDGET_BREACH_REASONS", () => {
+  const reasons = ALLOWED_FINOPS_BUDGET_BREACH_REASONS as readonly string[];
+  assert.ok(
+    reasons.includes("jira_api_quota_exceeded"),
+    "jira_api_quota_exceeded must be in ALLOWED_FINOPS_BUDGET_BREACH_REASONS",
+  );
+  assert.ok(
+    reasons.includes("jira_paste_quota_exceeded"),
+    "jira_paste_quota_exceeded must be in ALLOWED_FINOPS_BUDGET_BREACH_REASONS",
+  );
+  assert.ok(
+    reasons.includes("custom_context_quota_exceeded"),
+    "custom_context_quota_exceeded must be in ALLOWED_FINOPS_BUDGET_BREACH_REASONS",
+  );
+});
+
+test("breach reason exhaustiveness: checkJiraApiQuota produces a reason that is in the allowed list", () => {
+  const result = checkJiraApiQuota(
+    EU_BANKING_DEFAULT_FINOPS_BUDGET,
+    MAX_JIRA_API_REQUESTS_PER_JOB + 1,
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.breachReason !== undefined);
+  assert.ok(
+    (ALLOWED_FINOPS_BUDGET_BREACH_REASONS as readonly string[]).includes(
+      result.breachReason,
+    ),
+    `breachReason "${result.breachReason}" is not in ALLOWED_FINOPS_BUDGET_BREACH_REASONS`,
+  );
+});
+
+test("breach reason exhaustiveness: checkJiraPasteQuota produces a reason that is in the allowed list", () => {
+  const result = checkJiraPasteQuota(
+    EU_BANKING_DEFAULT_FINOPS_BUDGET,
+    MAX_JIRA_PASTE_BYTES_PER_JOB + 1,
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.breachReason !== undefined);
+  assert.ok(
+    (ALLOWED_FINOPS_BUDGET_BREACH_REASONS as readonly string[]).includes(
+      result.breachReason,
+    ),
+    `breachReason "${result.breachReason}" is not in ALLOWED_FINOPS_BUDGET_BREACH_REASONS`,
+  );
+});
+
+test("breach reason exhaustiveness: checkCustomContextQuota produces a reason that is in the allowed list", () => {
+  const result = checkCustomContextQuota(
+    EU_BANKING_DEFAULT_FINOPS_BUDGET,
+    MAX_CUSTOM_CONTEXT_BYTES_PER_JOB + 1,
+  );
+  assert.equal(result.ok, false);
+  assert.ok(result.breachReason !== undefined);
+  assert.ok(
+    (ALLOWED_FINOPS_BUDGET_BREACH_REASONS as readonly string[]).includes(
+      result.breachReason,
+    ),
+    `breachReason "${result.breachReason}" is not in ALLOWED_FINOPS_BUDGET_BREACH_REASONS`,
+  );
+});
+
+test("checkJiraApiQuota: boundary — exactly at cap passes (not strictly less-than)", () => {
+  const atCap = checkJiraApiQuota(
+    EU_BANKING_DEFAULT_FINOPS_BUDGET,
+    MAX_JIRA_API_REQUESTS_PER_JOB,
+  );
+  assert.equal(atCap.ok, true, "exactly at cap should pass");
+  const overCap = checkJiraApiQuota(
+    EU_BANKING_DEFAULT_FINOPS_BUDGET,
+    MAX_JIRA_API_REQUESTS_PER_JOB + 1,
+  );
+  assert.equal(overCap.ok, false, "one over cap should breach");
+});
+
+test("checkJiraPasteQuota: zero-byte paste always passes", () => {
+  const result = checkJiraPasteQuota(EU_BANKING_DEFAULT_FINOPS_BUDGET, 0);
+  assert.equal(result.ok, true);
+});
+
+test("checkCustomContextQuota: zero-byte input always passes", () => {
+  const result = checkCustomContextQuota(EU_BANKING_DEFAULT_FINOPS_BUDGET, 0);
+  assert.equal(result.ok, true);
 });

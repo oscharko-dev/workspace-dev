@@ -10,10 +10,13 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import test from "node:test";
-import { mkdtemp } from "node:fs/promises";
+import { access, mkdtemp } from "node:fs/promises";
 import { join } from "node:path";
 
-import type { FinOpsBudgetEnvelope } from "../contracts/index.js";
+import type {
+  FinOpsBudgetEnvelope,
+  MultiSourceTestIntentEnvelope,
+} from "../contracts/index.js";
 import { EU_BANKING_DEFAULT_FINOPS_BUDGET } from "./finops-budget.js";
 import { loadWave4ProductionReadinessFixture } from "./multi-source-fixtures.js";
 import { runWave4ProductionReadiness } from "./multi-source-production-readiness.js";
@@ -186,4 +189,104 @@ test("runWave4ProductionReadiness: all-sources-with-conflict fixture returns ok=
     finopsBudget: EU_BANKING_DEFAULT_FINOPS_BUDGET,
   });
   assert.equal(result.ok, true);
+});
+
+test("runWave4ProductionReadiness: concurrent runs to separate runDirs do not interfere", async () => {
+  const fixture = await loadWave4ProductionReadinessFixture(
+    "release-multisource-onboarding",
+  );
+  const [dirA, dirB] = await Promise.all([tmpRunDir(), tmpRunDir()]);
+  const opts = {
+    fixtureId: fixture.fixtureId,
+    mixId: "figma_plus_jira_plus_custom" as const,
+    envelope: fixture.envelope,
+    figmaJson: fixture.figmaJson,
+    visualDescriptions: Array.isArray(fixture.visualJson)
+      ? (fixture.visualJson as unknown[])
+      : undefined,
+    jiraRestResponse: fixture.jiraRestResponse,
+    customContextInput: fixture.customContextJson,
+    finopsBudget: EU_BANKING_DEFAULT_FINOPS_BUDGET,
+  };
+  const [resultA, resultB] = await Promise.all([
+    runWave4ProductionReadiness({ ...opts, runDir: dirA }),
+    runWave4ProductionReadiness({ ...opts, runDir: dirB }),
+  ]);
+  assert.equal(resultA.ok, true, "run A should succeed");
+  assert.equal(resultB.ok, true, "run B should succeed");
+  assert.notEqual(resultA.runDir, resultB.runDir, "run dirs must be distinct");
+  assert.equal(resultA.rawScreenshotsIncluded, false);
+  assert.equal(resultB.rawScreenshotsIncluded, false);
+});
+
+test("runWave4ProductionReadiness: envelope with zero sources returns ok=true with empty summaries", async () => {
+  const emptyEnvelope: MultiSourceTestIntentEnvelope = {
+    version: "1.0.0",
+    sources: [],
+    aggregateContentHash:
+      "0000000000000000000000000000000000000000000000000000000000000000",
+    conflictResolutionPolicy: "reviewer_decides",
+  };
+  const runDir = await tmpRunDir();
+  const result = await runWave4ProductionReadiness({
+    fixtureId: "release-multisource-onboarding",
+    mixId: "figma_only",
+    envelope: emptyEnvelope,
+    runDir,
+  });
+  assert.equal(result.quotasPassed, true, "no sources means no quota breach");
+  assert.equal(result.sourceProvenanceSummaries.length, 0);
+  assert.equal(result.rawJiraResponsePersisted, false);
+  assert.equal(result.rawPasteBytesPersisted, false);
+});
+
+test("runWave4ProductionReadiness: artifact files are written and accessible after run", async () => {
+  const fixture = await loadWave4ProductionReadinessFixture(
+    "release-multisource-jira-rest-only",
+  );
+  const runDir = await tmpRunDir();
+  const result = await runWave4ProductionReadiness({
+    fixtureId: fixture.fixtureId,
+    mixId: "jira_rest_only",
+    envelope: fixture.envelope,
+    jiraRestResponse: fixture.jiraRestResponse,
+    runDir,
+    finopsBudget: EU_BANKING_DEFAULT_FINOPS_BUDGET,
+  });
+  assert.equal(result.ok, true);
+  for (const summary of result.sourceProvenanceSummaries) {
+    await assert.doesNotReject(
+      access(summary.irArtifactPath),
+      `artifact at ${summary.irArtifactPath} must exist`,
+    );
+  }
+});
+
+test("runWave4ProductionReadiness: custom-context-quota breach — zero cap against markdown fixture", async () => {
+  const fixture = await loadWave4ProductionReadinessFixture(
+    "release-multisource-custom-markdown-adversarial",
+  );
+  const runDir = await tmpRunDir();
+  const tightEnvelope: FinOpsBudgetEnvelope = {
+    budgetId: "tight-custom",
+    budgetVersion: "1.0.0",
+    roles: {},
+    sourceQuotas: {
+      maxJiraApiRequestsPerJob: 20,
+      maxJiraPasteBytesPerJob: 524288,
+      maxCustomContextBytesPerJob: 0,
+    },
+  };
+  const result = await runWave4ProductionReadiness({
+    fixtureId: fixture.fixtureId,
+    mixId: "custom_markdown_only",
+    envelope: fixture.envelope,
+    customContextMarkdown: fixture.customContextMarkdown,
+    runDir,
+    finopsBudget: tightEnvelope,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.quotasPassed, false);
+  assert.equal(result.quotaBreachReason, "custom_context_quota_exceeded");
+  assert.equal(result.rawPasteBytesPersisted, false);
 });
