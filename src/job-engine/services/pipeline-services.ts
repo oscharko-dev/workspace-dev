@@ -275,8 +275,10 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.storybookTokens,
           STAGE_ARTIFACT_KEYS.storybookThemes,
           STAGE_ARTIFACT_KEYS.storybookComponents,
+          STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
           STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
           STAGE_ARTIFACT_KEYS.componentMatchReport,
+          STAGE_ARTIFACT_KEYS.figmaScreenshotReferences,
         ],
         writes: [
           STAGE_ARTIFACT_KEYS.validationSummary,

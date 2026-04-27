@@ -139,7 +139,9 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
       STAGE_ARTIFACT_KEYS.storybookThemes,
       STAGE_ARTIFACT_KEYS.storybookComponents,
       STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
-      STAGE_ARTIFACT_KEYS.componentMatchReport
+      STAGE_ARTIFACT_KEYS.componentMatchReport,
+      STAGE_ARTIFACT_KEYS.figmaScreenshotReferences,
+      STAGE_ARTIFACT_KEYS.figmaScreenshotPipelineReport
     ]
   );
   assert.deepEqual(codegenEntry?.artifacts?.writes, [
@@ -159,10 +161,12 @@ test("submission pipeline plan declares diff ownership across codegen, validate,
     STAGE_ARTIFACT_KEYS.storybookCatalog,
     STAGE_ARTIFACT_KEYS.storybookEvidence,
     STAGE_ARTIFACT_KEYS.storybookTokens,
-    STAGE_ARTIFACT_KEYS.storybookThemes,
-    STAGE_ARTIFACT_KEYS.storybookComponents,
-    STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
-    STAGE_ARTIFACT_KEYS.componentMatchReport
+      STAGE_ARTIFACT_KEYS.storybookThemes,
+      STAGE_ARTIFACT_KEYS.storybookComponents,
+      STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
+      STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
+      STAGE_ARTIFACT_KEYS.componentMatchReport,
+      STAGE_ARTIFACT_KEYS.figmaScreenshotReferences
   ]);
   assert.deepEqual(validateEntry?.artifacts?.writes, [
     STAGE_ARTIFACT_KEYS.validationSummary,
