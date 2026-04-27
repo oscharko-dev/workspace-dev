@@ -449,6 +449,65 @@ describe("figma-screenshot-pipeline", () => {
 
       ok(maxConcurrentNodeRequests > 1);
     });
+
+    it("does not retry on 4xx client errors", async () => {
+      let attemptCount = 0;
+      const mockFetch = mock.fn(async () => {
+        attemptCount += 1;
+        return new Response(null, { status: 404 });
+      });
+
+      const screenshots: FigmaMcpScreenshotReference[] = [
+        { nodeId: "1:2", purpose: "quality-gate" },
+      ];
+
+      const result = await fetchFigmaScreenshots({
+        screenshots,
+        config: {
+          fileKey: "test-key",
+          accessToken: "test-token",
+          desiredWidth: 1280,
+          fetchImpl: mockFetch,
+          maxRetries: 3,
+        },
+      });
+
+      strictEqual(attemptCount, 1);
+      strictEqual(result.failedCount, 1);
+    });
+
+    it("fetches screenshots concurrently", async () => {
+      let activeRequests = 0;
+      let maxConcurrent = 0;
+      const mockFetch = mock.fn(async () => {
+        activeRequests += 1;
+        maxConcurrent = Math.max(maxConcurrent, activeRequests);
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        activeRequests -= 1;
+        return new Response(Buffer.from([1, 2, 3, 4]), {
+          headers: { "content-type": "image/png" },
+        });
+      });
+
+      const screenshots: FigmaMcpScreenshotReference[] = [
+        { nodeId: "1:2", purpose: "quality-gate" },
+        { nodeId: "3:4", purpose: "quality-gate" },
+        { nodeId: "5:6", purpose: "quality-gate" },
+      ];
+
+      await fetchFigmaScreenshots({
+        screenshots,
+        config: {
+          fileKey: "test-key",
+          accessToken: "test-token",
+          desiredWidth: 1280,
+          fetchImpl: mockFetch,
+          maxRetries: 1,
+        },
+      });
+
+      ok(maxConcurrent > 1);
+    });
   });
 
   describe("persistFigmaScreenshotReferences", () => {
