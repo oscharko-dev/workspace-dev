@@ -5,18 +5,24 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
   FINOPS_ARTIFACT_DIRECTORY,
   FINOPS_BUDGET_REPORT_ARTIFACT_FILENAME,
+  GENERATED_TEST_CASE_SCHEMA_VERSION,
   type FinOpsBudgetReport,
   LBOM_ARTIFACT_DIRECTORY,
   LBOM_ARTIFACT_FILENAME,
   LBOM_ARTIFACT_SCHEMA_VERSION,
   LBOM_CYCLONEDX_SPEC_VERSION,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
+  TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
   WAVE1_POC_ATTESTATION_ARTIFACT_FILENAME,
   WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
   WAVE1_POC_ATTESTATIONS_DIRECTORY,
   WAVE1_POC_FIXTURE_IDS,
   WAVE1_POC_SIGNATURES_DIRECTORY,
+  VISUAL_SIDECAR_SCHEMA_VERSION,
+  type BusinessTestIntentIr,
   type Wave1PocFixtureId,
   type Wave1PocLbomDocument,
 } from "../contracts/index.js";
@@ -36,6 +42,7 @@ import {
   COMPILED_PROMPT_ARTIFACT_FILENAME,
   GATEWAY_REQUEST_AUDIT_ARTIFACT_FILENAME,
   runWave1Poc,
+  synthesizeGeneratedTestCases,
   Wave1PocFinOpsBudgetExceededError,
 } from "./poc-harness.js";
 import { createMemoryReplayCache } from "./replay-cache.js";
@@ -62,6 +69,162 @@ const lbomPropertyMap = (
   lbom: Wave1PocLbomDocument,
 ): Map<string, string> =>
   new Map(lbom.metadata.properties.map((property) => [property.name, property.value]));
+
+const audit = {
+  jobId: "job-synthetic-coverage",
+  generatedAt: GENERATED_AT,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  schemaVersion: GENERATED_TEST_CASE_SCHEMA_VERSION,
+  promptTemplateVersion: TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION,
+  redactionPolicyVersion: "1.0.0",
+  visualSidecarSchemaVersion: VISUAL_SIDECAR_SCHEMA_VERSION,
+  cacheHit: false,
+  cacheKey: "synthetic",
+  inputHash: "0".repeat(64),
+  promptHash: "0".repeat(64),
+  schemaHash: "0".repeat(64),
+};
+
+test("poc-harness: synthetic test generation covers risk labels, actions, navigation, and trace fallbacks", () => {
+  const intent: BusinessTestIntentIr = {
+    version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
+    source: { kind: "figma_local_json", contentHash: "1".repeat(64) },
+    screens: [
+      { screenId: "checkout", screenName: "Checkout", trace: {} },
+      { screenId: "profile", screenName: "Profile", trace: { nodeId: "screen.profile" } },
+    ],
+    detectedFields: [
+      {
+        id: "field.iban",
+        screenId: "checkout",
+        trace: { nodeId: "node.iban", nodeName: "IBAN" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "IBAN",
+        type: "text",
+      },
+      {
+        id: "field.email",
+        screenId: "profile",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Email",
+        type: "email",
+      },
+      {
+        id: "field.notes",
+        screenId: "profile",
+        trace: { nodeName: "Notes" },
+        provenance: "figma_node",
+        confidence: 0.8,
+        label: "Display notes",
+        type: "textarea",
+      },
+    ],
+    detectedActions: [
+      {
+        id: "action.submit",
+        screenId: "checkout",
+        trace: { nodeId: "node.submit", nodeName: "Submit" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        label: "Submit",
+        intent: "submit",
+      },
+      {
+        id: "action.save",
+        screenId: "profile",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.8,
+        label: "Save",
+        intent: "submit",
+      },
+    ],
+    detectedValidations: [
+      {
+        id: "validation.iban",
+        screenId: "checkout",
+        trace: { nodeId: "node.iban" },
+        provenance: "figma_node",
+        confidence: 0.9,
+        rule: "Required",
+        targetFieldId: "field.iban",
+      },
+      {
+        id: "validation.orphan",
+        screenId: "profile",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.7,
+        rule: "Optional warning",
+      },
+    ],
+    detectedNavigation: [
+      {
+        id: "nav.checkout.profile",
+        screenId: "checkout",
+        targetScreenId: "profile",
+        trigger: "submit",
+        trace: { nodeName: "Submit" },
+        confidence: 0.8,
+      },
+    ],
+    inferredBusinessObjects: [],
+    risks: [],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [],
+    redactions: [],
+  };
+
+  const list = synthesizeGeneratedTestCases({
+    jobId: audit.jobId,
+    generatedAt: GENERATED_AT,
+    intent,
+    audit,
+  });
+  assert.equal(list.schemaVersion, GENERATED_TEST_CASE_SCHEMA_VERSION);
+  assert.equal(list.jobId, audit.jobId);
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.riskCategory === "financial_transaction" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.iban") &&
+        tc.qualitySignals.coveredActionIds.includes("action.submit"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.riskCategory === "regulated_data" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.email"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "navigation" &&
+        tc.qualitySignals.coveredNavigationIds.includes("nav.checkout.profile"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.some(
+      (tc) =>
+        tc.type === "accessibility" &&
+        tc.qualitySignals.coveredFieldIds.includes("field.notes"),
+    ),
+    true,
+  );
+  assert.equal(
+    list.testCases.every((tc) => tc.audit !== audit && tc.audit.jobId === audit.jobId),
+    true,
+  );
+});
 
 for (const fixtureId of WAVE1_POC_FIXTURE_IDS) {
   test(`poc-harness: ${fixtureId} runs end-to-end without external network`, async () => {

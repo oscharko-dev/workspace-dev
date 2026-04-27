@@ -1322,9 +1322,10 @@ export const verifyWave1PocAttestation = async (
     return {
       ok: false,
       signingMode: input.expectedSigningMode,
-      signatureCount: Array.isArray(input.envelope.signatures)
-        ? input.envelope.signatures.length
-        : 0,
+      signatureCount:
+        isRecord(input.envelope) && Array.isArray(input.envelope["signatures"])
+          ? input.envelope["signatures"].length
+          : 0,
       signaturesVerified: false,
       failures,
     };

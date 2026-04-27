@@ -101,6 +101,50 @@ const writeJson = async (path: string, value: unknown): Promise<void> => {
   await writeFile(path, JSON.stringify(value), "utf8");
 };
 
+const validPersistedReviewEvent = () => ({
+  schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  id: "evt-1",
+  jobId: "job-1",
+  testCaseId: "tc-1",
+  kind: "generated",
+  at: GENERATED_AT,
+  sequence: 1,
+  fromState: "generated",
+  toState: "needs_review",
+  metadata: { policyDecision: "needs_review" },
+});
+
+const validPersistedEnvelope = (events: unknown[] = [validPersistedReviewEvent()]) => ({
+  schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  jobId: "job-1",
+  events,
+  nextSequence: events.length + 1,
+});
+
+const validPersistedSnapshot = () => ({
+  schemaVersion: REVIEW_GATE_SCHEMA_VERSION,
+  contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+  jobId: "job-1",
+  generatedAt: GENERATED_AT,
+  approvedCount: 0,
+  needsReviewCount: 1,
+  rejectedCount: 0,
+  pendingSecondaryApprovalCount: 0,
+  perTestCase: [
+    {
+      testCaseId: "tc-1",
+      state: "needs_review",
+      policyDecision: "needs_review",
+      lastEventId: "evt-1",
+      lastEventAt: GENERATED_AT,
+      fourEyesEnforced: false,
+      approvers: [],
+    },
+  ],
+});
+
 const writeConflictArtifacts = async (
   jobDir: string,
   input: { withDecision?: boolean } = {},
@@ -317,6 +361,113 @@ test("review-store: persists artifacts atomically with canonical names", async (
     );
     assert.match(eventsRaw, new RegExp(REVIEW_GATE_SCHEMA_VERSION));
     assert.match(stateRaw, /"state":"needs_review"/);
+  });
+});
+
+test("review-store: rejects tampered persisted event envelopes", async () => {
+  await withTempDir("rev-events-tampered", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    const jobDir = join(dir, "job-1");
+    await mkdir(jobDir, { recursive: true });
+    const eventsPath = join(jobDir, REVIEW_EVENTS_ARTIFACT_FILENAME);
+
+    await writeFile(eventsPath, "{", "utf8");
+    await assert.rejects(
+      () => store.listEvents("job-1"),
+      /review-events\.json for job job-1 is not valid JSON/u,
+    );
+
+    const variants = [
+      { ...validPersistedEnvelope(), jobId: "other-job" },
+      { ...validPersistedEnvelope(), nextSequence: 0 },
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), sequence: 0 },
+      ]),
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), kind: "unknown" },
+      ]),
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), fromState: "unknown" },
+      ]),
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), toState: "unknown" },
+      ]),
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), testCaseId: 42 },
+      ]),
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), actor: 42 },
+      ]),
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), note: 42 },
+      ]),
+      validPersistedEnvelope([
+        { ...validPersistedReviewEvent(), metadata: { nested: { unsafe: true } } },
+      ]),
+    ];
+
+    for (const variant of variants) {
+      await writeJson(eventsPath, variant);
+      await assert.rejects(
+        () => store.listEvents("job-1"),
+        /review-events\.json/u,
+      );
+    }
+  });
+});
+
+test("review-store: rejects tampered persisted snapshots", async () => {
+  await withTempDir("rev-snapshot-tampered", async (dir) => {
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    const jobDir = join(dir, "job-1");
+    await mkdir(jobDir, { recursive: true });
+    const statePath = join(jobDir, REVIEW_STATE_ARTIFACT_FILENAME);
+
+    await writeFile(statePath, "{", "utf8");
+    await assert.rejects(
+      () => store.readSnapshot("job-1"),
+      /review-state\.json for job job-1 is not valid JSON/u,
+    );
+
+    const variants = [
+      { ...validPersistedSnapshot(), pendingSecondaryApprovalCount: 0.5 },
+      { ...validPersistedSnapshot(), fourEyesPolicy: { requiredRiskCategories: ["high"] } },
+      {
+        ...validPersistedSnapshot(),
+        perTestCase: [
+          { ...validPersistedSnapshot().perTestCase[0], state: "unknown" },
+        ],
+      },
+      {
+        ...validPersistedSnapshot(),
+        perTestCase: [
+          {
+            ...validPersistedSnapshot().perTestCase[0],
+            fourEyesReasons: ["unknown_reason"],
+          },
+        ],
+      },
+      {
+        ...validPersistedSnapshot(),
+        perTestCase: [
+          { ...validPersistedSnapshot().perTestCase[0], approvers: ["alice", 42] },
+        ],
+      },
+      {
+        ...validPersistedSnapshot(),
+        perTestCase: [
+          { ...validPersistedSnapshot().perTestCase[0], primaryReviewer: 42 },
+        ],
+      },
+    ];
+
+    for (const variant of variants) {
+      await writeJson(statePath, variant);
+      await assert.rejects(
+        () => store.readSnapshot("job-1"),
+        /review-state\.json for job job-1 is not a valid snapshot/u,
+      );
+    }
   });
 });
 

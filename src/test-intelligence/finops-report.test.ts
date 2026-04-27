@@ -174,6 +174,35 @@ test("recorder: rejects unknown roles", () => {
   }, /unknown role/);
 });
 
+test("recorder: rejects unknown cache and budget breach dimensions", () => {
+  const recorder = createFinOpsUsageRecorder();
+  assert.throws(() => {
+    recorder.recordCacheMiss({
+      // @ts-expect-error — testing the runtime guard
+      role: "unknown",
+    });
+  }, /unknown role/);
+  assert.throws(() => {
+    recorder.recordBudgetBreach({
+      // @ts-expect-error — testing the runtime guard
+      rule: "unknown_rule",
+      observed: 1,
+      threshold: 0,
+      message: "x",
+    });
+  }, /unknown rule/);
+  assert.throws(() => {
+    recorder.recordBudgetBreach({
+      rule: "max_attempts",
+      // @ts-expect-error — testing the runtime guard
+      role: "unknown",
+      observed: 1,
+      threshold: 0,
+      message: "x",
+    });
+  }, /unknown role/);
+});
+
 test("recorder: explicit budget breaches are copied into the report", () => {
   const recorder = createFinOpsUsageRecorder();
   recorder.recordBudgetBreach({
@@ -460,6 +489,49 @@ test("buildFinOpsBudgetReport: detects missing operational rules in deterministi
     ],
   );
   assert.equal(report.outcome, "budget_exceeded");
+});
+
+test("buildFinOpsBudgetReport: sorts equal-rule breaches by role and observed value", () => {
+  const recorder = createFinOpsUsageRecorder();
+  recorder.recordBudgetBreach({
+    rule: "max_attempts",
+    role: "visual_primary",
+    observed: 3,
+    threshold: 1,
+    message: "visual attempts high",
+  });
+  recorder.recordBudgetBreach({
+    rule: "max_attempts",
+    role: "test_generation",
+    observed: 4,
+    threshold: 1,
+    message: "test attempts high",
+  });
+  recorder.recordBudgetBreach({
+    rule: "max_attempts",
+    role: "test_generation",
+    observed: 2,
+    threshold: 1,
+    message: "test attempts lower",
+  });
+  const report = buildFinOpsBudgetReport({
+    jobId: JOB_ID,
+    generatedAt: GENERATED_AT,
+    budget: permissive,
+    recorder,
+  });
+  assert.deepEqual(
+    report.breaches.map((breach) => [
+      breach.rule,
+      breach.role,
+      breach.observed,
+    ]),
+    [
+      ["max_attempts", "test_generation", 2],
+      ["max_attempts", "test_generation", 4],
+      ["max_attempts", "visual_primary", 3],
+    ],
+  );
 });
 
 test("buildFinOpsBudgetReport: outcomeOverride takes precedence over auto-derived outcome", () => {

@@ -1,9 +1,10 @@
 const SHARED_SECRET_PATTERNS = [
+  /(\b(?:access_token|oauth_token|refresh_token|client_secret)\s*=\s*)([^\s]+)/gi,
   /(\b(?:repoToken|figmaAccessToken|token)\s*=\s*)([^\s]+)/gi,
-  /(\bauthorization\s*:\s*bearer\s+)([^\s]+)/gi,
+  /(\bauthorization\s*:\s*(?:bearer|basic|oauth)\s+)([^\s]+)/gi,
   /(\bx-access-token\s*:\s*)([^\s]+)/gi,
   /(\b(?:Bearer|Token|Secret|Api[-_ ]?Key|Password)\b\s*[:=]\s*)([A-Za-z0-9._-]{8,})\b/gi,
-  /(\b(?:Bearer|Token)\s+)([A-Za-z0-9._-]{8,})\b/gi,
+  /(\b(?:Bearer|Token|OAuth)\s+)([A-Za-z0-9._-]{8,})\b/gi,
   /("(?:repoToken|figmaAccessToken|token|secret|api[-_ ]?key|password|authorization|x-figma-token)"\s*:\s*")((?:[^"\\]|\\.)+)/gi,
 ] as const;
 

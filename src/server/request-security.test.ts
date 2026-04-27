@@ -385,3 +385,26 @@ test("request-security: validateImportSessionEventWriteAuth rejects non-bearer c
   assert.equal(result.payload.error, "UNAUTHORIZED");
   assert.match(result.payload.message, /bearer token/i);
 });
+
+test("request-security: array-valued headers and short auth schemes fail closed", () => {
+  const write = validateWriteRequest({
+    request: createRequest({
+      "content-type": ["application/json; charset=utf-8"],
+      origin: ["http://localhost:1983"],
+      "sec-fetch-site": ["same-site"],
+    }),
+    host: "127.0.0.1",
+    port: 1983,
+  });
+  assert.deepEqual(write, { ok: true });
+
+  for (const authorization of ["Bearer", "Basic abc", ["Bearer"]]) {
+    const auth = validateImportSessionEventWriteAuth({
+      request: createRequest({ authorization }),
+      bearerToken: "secret-token",
+      routeLabel: "Import session event",
+    });
+    assert.equal(auth.ok, false);
+    if (!auth.ok) assert.equal(auth.statusCode, 401);
+  }
+});

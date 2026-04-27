@@ -126,6 +126,110 @@ test("ingestJiraPaste: ADF JSON with labelled issue content normalizes through t
   );
 });
 
+test("ingestJiraPaste: direct Jira JSON and REST issue arrays normalize without network access", () => {
+  const direct = ingestJiraPaste({
+    request: {
+      jobId: "job-1",
+      format: "adf_json",
+      body: JSON.stringify({
+        issueKey: "PAY-1438",
+        issueType: "Bug",
+        summary: "Direct JSON issue",
+        status: "Selected",
+        priority: "Highest",
+        description: {
+          type: "doc",
+          version: 1,
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: "ADF description" }],
+            },
+          ],
+        },
+        labels: ["security", 1438],
+        components: ["Gateway"],
+        fixVersions: ["2026.04"],
+      }),
+    },
+    authorHandle: AUTHOR,
+    capturedAt: CAPTURED_AT,
+  });
+  assert.equal(direct.ok, true);
+  if (!direct.ok) return;
+  assert.equal(direct.result.jiraIssueIr.issueKey, "PAY-1438");
+  assert.equal(direct.result.jiraIssueIr.issueType, "bug");
+  assert.equal(direct.result.jiraIssueIr.priority, "Highest");
+  assert.deepEqual(direct.result.jiraIssueIr.labels, ["1438", "security"]);
+
+  const restArray = ingestJiraPaste({
+    request: {
+      jobId: "job-1",
+      format: "adf_json",
+      body: JSON.stringify({
+        issues: [
+          {
+            key: "PAY-1439",
+            fields: {
+              summary: "REST JSON issue",
+              issuetype: { name: "Story" },
+              status: { name: "In Review" },
+              priority: "High",
+              description: "Plain REST description",
+              labels: ["privacy"],
+              components: [{ name: "Compliance" }, "Fallback"],
+              fixVersions: [{ name: "2026.05" }],
+              customfield_10001: { nested: "value" },
+              customfield_10002: "Acceptance criterion",
+            },
+          },
+        ],
+      }),
+    },
+    authorHandle: AUTHOR,
+    capturedAt: CAPTURED_AT,
+  });
+  assert.equal(restArray.ok, true);
+  if (!restArray.ok) return;
+  assert.equal(restArray.result.jiraIssueIr.issueKey, "PAY-1439");
+  assert.equal(restArray.result.jiraIssueIr.issueType, "story");
+  assert.deepEqual(restArray.result.jiraIssueIr.components, [
+    "Compliance",
+    "Fallback",
+  ]);
+  assert.deepEqual(restArray.result.jiraIssueIr.labels, ["privacy"]);
+});
+
+test("ingestJiraPaste: invalid metadata and ambiguous Jira JSON fail closed", () => {
+  const invalidJob = ingestJiraPaste({
+    request: { jobId: ".", format: "plain_text", body: jiraText },
+    authorHandle: AUTHOR,
+    capturedAt: CAPTURED_AT,
+  });
+  assert.equal(invalidJob.ok, false);
+  if (!invalidJob.ok) assert.equal(invalidJob.code, "paste_body_invalid");
+
+  const invalidAuthor = ingestJiraPaste({
+    request: { jobId: "job-1", format: "plain_text", body: jiraText },
+    authorHandle: "bad handle!",
+    capturedAt: CAPTURED_AT,
+  });
+  assert.equal(invalidAuthor.ok, false);
+  if (!invalidAuthor.ok) assert.equal(invalidAuthor.code, "paste_body_invalid");
+
+  const ambiguousJson = ingestJiraPaste({
+    request: {
+      jobId: "job-1",
+      format: "adf_json",
+      body: JSON.stringify({ issues: [{ key: "PAY-1", fields: {} }, { key: "PAY-2", fields: {} }] }),
+    },
+    authorHandle: AUTHOR,
+    capturedAt: CAPTURED_AT,
+  });
+  assert.equal(ambiguousJson.ok, false);
+  if (!ambiguousJson.ok) assert.equal(ambiguousJson.code, "paste_issue_key_missing");
+});
+
 test("ingestJiraPaste: refuses executable HTML and JavaScript before parsing", () => {
   for (const body of [
     `${jiraText}\n<script>alert(1)</script>`,
