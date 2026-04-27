@@ -135,6 +135,9 @@ jobs:
       - name: Enforce zero telemetry policy
         run: pnpm run lint:no-telemetry
 
+      - name: Enforce repository secret policy
+        run: pnpm run lint:secrets:all
+
       - name: Enforce license allowlist
         run: pnpm run verify:licenses
 

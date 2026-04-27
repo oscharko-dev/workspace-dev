@@ -39,6 +39,18 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Enforce workflow --ignore-scripts policy
+        run: pnpm run verify:workflow-install-scripts
+
+      - name: Enforce workflow persist-credentials policy
+        run: pnpm run verify:workflow-persist-credentials
+
+      - name: Enforce pnpm onlyBuiltDependencies allowlist
+        run: pnpm run verify:built-deps-allowlist
+
+      - name: Enforce dependency freshness (minimum-release-age) policy
+        run: pnpm run verify:npmrc-freshness
+
       - name: Install template dependencies
         run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
 
@@ -71,6 +83,8 @@ jobs:
           pnpm run test
           pnpm run template:test
           pnpm run test:golden
+          pnpm run test:ti-eval
+          pnpm run test:ti-multi-source-eval
           pnpm run ui:test:coverage
           pnpm run test:coverage
           pnpm exec playwright install --with-deps chromium
@@ -82,6 +96,7 @@ jobs:
           pnpm run lint:boundaries
           pnpm run lint:ts-style
           pnpm run lint:no-telemetry
+          pnpm run lint:secrets:all
           pnpm run build
           pnpm run lint:publint
           pnpm run lint:types-publish
@@ -94,6 +109,7 @@ jobs:
           pnpm run sbom:cyclonedx:template
           pnpm run sbom:spdx
           pnpm run sbom:spdx:template
+          pnpm run verify:sbom:parity
           pnpm run verify:airgap
 
       - name: Upload runtime load smoke artifacts

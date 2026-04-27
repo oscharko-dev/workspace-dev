@@ -189,7 +189,7 @@ For consumers upgrading from Wave 3 to Wave 4:
 ## 7. See also
 
 - `COMPATIBILITY.md` — multi-source source-mix matrix
-- `CONTRACT_CHANGELOG.md` §4.11.0–4.14.0 — detailed contract changelog
+- `CONTRACT_CHANGELOG.md` §4.11.0–4.16.0 — detailed contract changelog
 - `docs/test-intelligence.md` §14 — Wave 4 multi-source gate
 - `docs/api/test-intelligence-multi-source.md` — public API reference
 - `docs/runbooks/jira-source-setup.md` — Jira setup guide
