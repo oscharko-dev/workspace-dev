@@ -33,6 +33,7 @@ import test from "node:test";
 import {
   SOURCE_MIX_PLAN_ARTIFACT_FILENAME,
   SOURCE_MIX_PLAN_SCHEMA_VERSION,
+  type CompiledPromptCustomContext,
   type MultiSourceTestIntentEnvelope,
   type SourceMixPlan,
   type TestIntentSourceRef,
@@ -276,6 +277,109 @@ test("AC7: prompt-compiler cache key includes sourceMixPlanHash when plan is pre
   assert.match(compiled.cacheKey.sourceMixPlanHash ?? "", /^[0-9a-f]{64}$/);
 });
 
+test("AC7: prompt-compiler auto-plans when intent carries a source envelope", () => {
+  const envelope = buildEnvelope([jiraRestRef("jira.0", "PAY-401")]);
+  const planned = planSourceMix(envelope);
+  assert.equal(planned.ok, true);
+  if (!planned.ok) return;
+
+  const compiled = compilePrompt({
+    jobId: "job-ck-auto-001",
+    intent: {
+      ...stubIntent(),
+      sourceEnvelope: envelope,
+    },
+    modelBinding: stubModelBinding(),
+    policyBundleVersion: "1.0",
+    visualBinding: stubVisualBinding(),
+  });
+
+  assert.equal(
+    compiled.cacheKey.sourceMixPlanHash,
+    planned.plan.sourceMixPlanHash,
+  );
+  assert.ok(compiled.request.userPrompt.includes("Jira-only job"));
+  assert.ok(!compiled.request.userPrompt.includes("FIGMA_INTENT"));
+});
+
+test("AC7: prompt-compiler auto-planning allows Jira duplicate only with paste-collision evidence", () => {
+  const envelope = buildEnvelope([
+    figmaRef("fig.0"),
+    jiraRestRef("jira.rest", "PAY-402"),
+    jiraPasteRef("jira.paste", "PAY-402"),
+  ]);
+  const planned = planSourceMix(envelope, {
+    allowDuplicateJiraIssueKeysForConflictEvidence: true,
+  });
+  assert.equal(planned.ok, true);
+  if (!planned.ok) return;
+
+  assert.throws(
+    () =>
+      compilePrompt({
+        jobId: "job-ck-auto-dup-refused",
+        intent: {
+          ...stubIntent(),
+          sourceEnvelope: envelope,
+        },
+        modelBinding: stubModelBinding(),
+        policyBundleVersion: "1.0",
+        visualBinding: stubVisualBinding(),
+      }),
+    /duplicate_jira_issue_key/,
+  );
+
+  assert.throws(
+    () =>
+      compilePrompt({
+        jobId: "job-ck-auto-dup-mismatched-conflict",
+        intent: {
+          ...stubIntent(),
+          sourceEnvelope: envelope,
+          multiSourceConflicts: [
+            {
+              conflictId: HEX("paste-collision:PAY-402:other"),
+              kind: "paste_collision",
+              participatingSourceIds: ["other.rest", "other.paste"],
+              normalizedValues: ["PAY-402"],
+              resolution: "unresolved",
+            },
+          ],
+        },
+        modelBinding: stubModelBinding(),
+        policyBundleVersion: "1.0",
+        visualBinding: stubVisualBinding(),
+      }),
+    /duplicate_jira_issue_key/,
+  );
+
+  const compiled = compilePrompt({
+    jobId: "job-ck-auto-dup-allowed",
+    intent: {
+      ...stubIntent(),
+      sourceEnvelope: envelope,
+      multiSourceConflicts: [
+        {
+          conflictId: HEX("paste-collision:PAY-402"),
+          kind: "paste_collision",
+          participatingSourceIds: ["jira.rest", "jira.paste"],
+          normalizedValues: ["PAY-402"],
+          resolution: "unresolved",
+        },
+      ],
+    },
+    modelBinding: stubModelBinding(),
+    policyBundleVersion: "1.0",
+    visualBinding: stubVisualBinding(),
+  });
+
+  assert.equal(
+    compiled.cacheKey.sourceMixPlanHash,
+    planned.plan.sourceMixPlanHash,
+  );
+  assert.equal(compiled.artifacts.payload.sourceMixPlan?.kind, "figma_jira_mixed");
+});
+
 test("AC7: identical source mix + content produces identical cache keys", () => {
   const envelope = buildEnvelope([jiraRestRef("jira.0", "PAY-500")]);
   const r1 = planSourceMix(envelope);
@@ -436,6 +540,57 @@ test("AC11: jira_rest + custom_markdown enriches plan with custom_context_markdo
   assert.equal(result.plan.kind, "jira_rest_only");
   assert.ok(result.plan.promptSections.includes("custom_context_markdown"));
   assert.deepEqual(result.plan.supportingSourceIds, ["md.0"]);
+});
+
+test("AC11: Jira REST + custom markdown compiled prompt keeps Jira and custom sections while omitting FIGMA_INTENT", () => {
+  const envelope = buildEnvelope([
+    jiraRestRef("jira.0", "PAY-1101"),
+    customMarkdownRef("md.0"),
+  ]);
+  const result = planSourceMix(envelope);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+
+  const customContext: CompiledPromptCustomContext = {
+    markdownSections: [
+      {
+        sourceId: "md.0",
+        entryId: "note.1",
+        bodyMarkdown: "# Supporting evidence\n\nOnly Jira context.",
+        bodyPlain: "Supporting evidence\nOnly Jira context.",
+        markdownContentHash: HEX("md.0:markdown"),
+        plainContentHash: HEX("md.0:plain"),
+      },
+    ],
+    structuredAttributes: [
+      {
+        sourceId: "md.0",
+        entryId: "attr.1",
+        key: "business_rule",
+        value: "allow",
+        contentHash: HEX("md.0:attr"),
+      },
+    ],
+  };
+
+  const compiled = compilePrompt({
+    jobId: "job-ctx-001",
+    intent: stubIntent(),
+    modelBinding: stubModelBinding(),
+    policyBundleVersion: "1.0",
+    visualBinding: stubVisualBinding(),
+    sourceMixPlan: result.plan,
+    customContext,
+  });
+
+  assert.ok(compiled.request.userPrompt.includes("BUSINESS_TEST_INTENT_IR"));
+  assert.ok(compiled.request.userPrompt.includes("JIRA_REQUIREMENTS"));
+  assert.ok(
+    compiled.request.userPrompt.includes(
+      "CUSTOM_CONTEXT_MARKDOWN_SUPPORTING_EVIDENCE",
+    ),
+  );
+  assert.ok(!compiled.request.userPrompt.includes("FIGMA_INTENT"));
 });
 
 test("AC11: Markdown-only still fails with primary_source_required", () => {

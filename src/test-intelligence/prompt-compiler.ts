@@ -13,6 +13,7 @@ import {
   type CompiledPromptVisualBinding,
   type ReplayCacheKey,
   type SourceMixPlan,
+  type TestIntentSourceRef,
   type VisualScreenDescription,
   type VisualSidecarFallbackReason,
 } from "../contracts/index.js";
@@ -23,6 +24,7 @@ import {
   computeGeneratedTestCaseListSchemaHash,
 } from "./generated-test-case-schema.js";
 import { detectPii } from "./pii-detection.js";
+import { planSourceMix } from "./source-mix-planner.js";
 
 /**
  * Versioned prompt template body. Bump
@@ -86,6 +88,7 @@ export interface CompilePromptResult {
 export const compilePrompt = (
   input: CompilePromptInput,
 ): CompilePromptResult => {
+  const sourceMixPlan = resolveSourceMixPlan(input);
   const visual = redactVisualBatch(input.visual ?? []);
   const customContext = normalizeCustomContext(input.customContext);
   const visualBinding = normalizeVisualBinding(input.visualBinding, visual);
@@ -97,7 +100,7 @@ export const compilePrompt = (
     visual,
     visualBinding,
     customContext,
-    input.sourceMixPlan,
+    sourceMixPlan,
   );
   const promptHash = computePromptHash(
     SYSTEM_PROMPT,
@@ -123,8 +126,8 @@ export const compilePrompt = (
     ...(input.modelBinding.seed !== undefined
       ? { seed: input.modelBinding.seed }
       : {}),
-    ...(input.sourceMixPlan !== undefined
-      ? { sourceMixPlanHash: input.sourceMixPlan.sourceMixPlanHash }
+    ...(sourceMixPlan !== undefined
+      ? { sourceMixPlanHash: sourceMixPlan.sourceMixPlanHash }
       : {}),
   };
 
@@ -134,7 +137,7 @@ export const compilePrompt = (
     visual,
     visualBinding,
     customContext,
-    input.sourceMixPlan,
+    sourceMixPlan,
   );
 
   const hashes: CompiledPromptHashes = {
@@ -174,9 +177,7 @@ export const compilePrompt = (
       intent: input.intent,
       visual,
       ...(customContext !== undefined ? { customContext } : {}),
-      ...(input.sourceMixPlan !== undefined
-        ? { sourceMixPlan: input.sourceMixPlan }
-        : {}),
+      ...(sourceMixPlan !== undefined ? { sourceMixPlan } : {}),
     },
     hashes,
     visualBinding,
@@ -191,6 +192,90 @@ export const compilePrompt = (
 export const COMPILED_SYSTEM_PROMPT: string = SYSTEM_PROMPT;
 /** Stable user-prompt preamble (exported for tests / evidence sealing). */
 export const COMPILED_USER_PROMPT_PREAMBLE: string = USER_PROMPT_PREAMBLE;
+
+const resolveSourceMixPlan = (input: CompilePromptInput): SourceMixPlan | undefined => {
+  if (input.sourceMixPlan !== undefined) {
+    return input.sourceMixPlan;
+  }
+  if (input.intent.sourceEnvelope === undefined) {
+    return undefined;
+  }
+  const result = planSourceMix(input.intent.sourceEnvelope, {
+    allowDuplicateJiraIssueKeysForConflictEvidence:
+      hasPasteCollisionConflictEvidence(input.intent),
+  });
+  if (!result.ok) {
+    throw new Error(
+      `compilePrompt: source mix planning failed: ${result.issues
+        .map((issue) => issue.code)
+        .join(",")}`,
+    );
+  }
+  return result.plan;
+};
+
+const hasPasteCollisionConflictEvidence = (
+  intent: BusinessTestIntentIr,
+): boolean => {
+  if (
+    intent.sourceEnvelope === undefined ||
+    intent.multiSourceConflicts === undefined
+  ) {
+    return false;
+  }
+  const duplicateGroups = collectDuplicateRestPasteJiraGroups(
+    intent.sourceEnvelope.sources,
+  );
+  if (duplicateGroups.length === 0) {
+    return false;
+  }
+  const pasteCollisions = intent.multiSourceConflicts.filter(
+    (conflict) => conflict.kind === "paste_collision",
+  );
+  return duplicateGroups.every((group) =>
+    pasteCollisions.some(
+      (conflict) =>
+        group.sourceIds.every((sourceId) =>
+          conflict.participatingSourceIds.includes(sourceId),
+        ) && conflict.normalizedValues.includes(group.issueKey),
+    ),
+  );
+};
+
+const collectDuplicateRestPasteJiraGroups = (
+  sources: readonly TestIntentSourceRef[],
+): Array<{ issueKey: string; sourceIds: string[] }> => {
+  const grouped = new Map<
+    string,
+    { hasRest: boolean; hasPaste: boolean; sourceIds: string[] }
+  >();
+  for (const source of sources) {
+    if (
+      (source.kind !== "jira_rest" && source.kind !== "jira_paste") ||
+      source.canonicalIssueKey === undefined
+    ) {
+      continue;
+    }
+    const group = grouped.get(source.canonicalIssueKey) ?? {
+      hasRest: false,
+      hasPaste: false,
+      sourceIds: [],
+    };
+    if (source.kind === "jira_rest") {
+      group.hasRest = true;
+    } else {
+      group.hasPaste = true;
+    }
+    group.sourceIds.push(source.sourceId);
+    grouped.set(source.canonicalIssueKey, group);
+  }
+  return [...grouped.entries()]
+    .filter(([, group]) => group.hasRest && group.hasPaste)
+    .map(([issueKey, group]) => ({
+      issueKey,
+      sourceIds: group.sourceIds,
+    }));
+};
 
 /** Compose the user-prompt body. Pure and deterministic. */
 const renderUserPrompt = (

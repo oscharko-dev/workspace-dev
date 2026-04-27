@@ -43,6 +43,7 @@ import {
   type SourceMixPlannerRefusalCode,
   type SourceMixPlannerResult,
   type SourceMixPlanPromptSection,
+  type SourceMixPlanSourceDigest,
   type TestIntentSourceKind,
   type TestIntentSourceMixKind,
   type TestIntentSourceRef,
@@ -50,6 +51,14 @@ import {
 
 export type { SourceMixPlan } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+
+export interface SourceMixPlannerOptions {
+  /**
+   * Permit duplicate Jira REST/paste issue keys only when the caller routes
+   * the duplicate into the paste-collision conflict path.
+   */
+  allowDuplicateJiraIssueKeysForConflictEvidence?: boolean;
+}
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
@@ -74,8 +83,9 @@ const SUPPORTED_MIX_KINDS: ReadonlySet<TestIntentSourceMixKind> = new Set(
  */
 export const planSourceMix = (
   envelope: MultiSourceTestIntentEnvelope,
+  options: SourceMixPlannerOptions = {},
 ): SourceMixPlannerResult => {
-  const issues = collectPlannerIssues(envelope);
+  const issues = collectPlannerIssues(envelope, options);
   if (issues.length > 0) {
     return { ok: false, issues };
   }
@@ -112,6 +122,7 @@ export const computeSourceMixPlanHash = (input: {
   supportingSourceIds: readonly string[];
   visualSidecarRequirement: SourceMixPlan["visualSidecarRequirement"];
   promptSections: readonly SourceMixPlanPromptSection[];
+  sourceDigests?: readonly SourceMixPlanSourceDigest[];
 }): string =>
   sha256Hex({
     schema: SOURCE_MIX_PLAN_SCHEMA_VERSION,
@@ -120,6 +131,10 @@ export const computeSourceMixPlanHash = (input: {
     supportingSourceIds: [...input.supportingSourceIds].sort(),
     visualSidecarRequirement: input.visualSidecarRequirement,
     promptSections: [...input.promptSections],
+    sourceDigests:
+      input.sourceDigests === undefined
+        ? []
+        : normalizeSourceDigestsForHash(input.sourceDigests),
   });
 
 /** Predicate: is this refusal code a known source-mix planner code? */
@@ -149,6 +164,7 @@ const ALLOWED_SOURCE_MIX_PLANNER_REFUSAL_CODES_SET: ReadonlySet<SourceMixPlanner
 
 const collectPlannerIssues = (
   envelope: MultiSourceTestIntentEnvelope,
+  options: SourceMixPlannerOptions,
 ): SourceMixPlannerIssue[] => {
   const issues: SourceMixPlannerIssue[] = [];
 
@@ -197,7 +213,11 @@ const collectPlannerIssues = (
       const pasteCount = envelope.sources.filter(
         (s) => s.kind === "jira_paste" && s.canonicalIssueKey === key,
       ).length;
-      if (restCount > 0 && pasteCount > 0) {
+      if (
+        restCount > 0 &&
+        pasteCount > 0 &&
+        options.allowDuplicateJiraIssueKeysForConflictEvidence !== true
+      ) {
         issues.push({
           code: "duplicate_jira_issue_key",
           path: "sources",
@@ -232,6 +252,7 @@ const buildPlan = (envelope: MultiSourceTestIntentEnvelope): SourceMixPlan => {
     envelope.sources,
   );
   const promptSections = derivePromptSections(envelope.sources);
+  const sourceDigests = deriveSourceDigests(envelope.sources);
 
   const sourceMixPlanHash = computeSourceMixPlanHash({
     kind: mixKind,
@@ -239,6 +260,7 @@ const buildPlan = (envelope: MultiSourceTestIntentEnvelope): SourceMixPlan => {
     supportingSourceIds,
     visualSidecarRequirement,
     promptSections,
+    sourceDigests,
   });
 
   return {
@@ -248,6 +270,7 @@ const buildPlan = (envelope: MultiSourceTestIntentEnvelope): SourceMixPlan => {
     supportingSourceIds,
     visualSidecarRequirement,
     promptSections,
+    sourceDigests,
     sourceMixPlanHash,
     rawJiraResponsePersisted: false,
     rawPasteBytesPersisted: false,
@@ -339,6 +362,63 @@ const isJiraKind = (s: TestIntentSourceRef): boolean =>
 
 const isLegacyCustomKind = (s: TestIntentSourceRef): boolean =>
   s.kind === "custom_text" || s.kind === "custom_structured";
+
+/** Build hash-only source fingerprints for the source-mix plan. */
+const deriveSourceDigests = (
+  sources: readonly TestIntentSourceRef[],
+): SourceMixPlanSourceDigest[] =>
+  sources
+    .map((source) => {
+      const digest: SourceMixPlanSourceDigest = {
+        sourceId: source.sourceId,
+        kind: source.kind,
+        contentHash: source.contentHash,
+      };
+      if (source.canonicalIssueKey !== undefined) {
+        digest.canonicalIssueKey = source.canonicalIssueKey;
+      }
+      if (source.redactedMarkdownHash !== undefined) {
+        digest.redactedMarkdownHash = source.redactedMarkdownHash;
+      }
+      if (source.plainTextDerivativeHash !== undefined) {
+        digest.plainTextDerivativeHash = source.plainTextDerivativeHash;
+      }
+      return digest;
+    })
+    .sort(compareSourceDigests);
+
+const normalizeSourceDigestsForHash = (
+  digests: readonly SourceMixPlanSourceDigest[],
+): SourceMixPlanSourceDigest[] =>
+  digests
+    .map((digest) => {
+      const normalized: SourceMixPlanSourceDigest = {
+        sourceId: digest.sourceId,
+        kind: digest.kind,
+        contentHash: digest.contentHash,
+      };
+      if (digest.canonicalIssueKey !== undefined) {
+        normalized.canonicalIssueKey = digest.canonicalIssueKey;
+      }
+      if (digest.redactedMarkdownHash !== undefined) {
+        normalized.redactedMarkdownHash = digest.redactedMarkdownHash;
+      }
+      if (digest.plainTextDerivativeHash !== undefined) {
+        normalized.plainTextDerivativeHash = digest.plainTextDerivativeHash;
+      }
+      return normalized;
+    })
+    .sort(compareSourceDigests);
+
+const compareSourceDigests = (
+  a: SourceMixPlanSourceDigest,
+  b: SourceMixPlanSourceDigest,
+): number => {
+  if (a.sourceId !== b.sourceId) {
+    return a.sourceId < b.sourceId ? -1 : 1;
+  }
+  return a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0;
+};
 
 /** Collect Jira issue keys grouped by canonical key value. */
 const collectJiraIssueKeys = (

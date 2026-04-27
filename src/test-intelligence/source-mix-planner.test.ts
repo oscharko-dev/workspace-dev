@@ -362,6 +362,20 @@ test("planSourceMix: REST + paste with same issue key raises duplicate_jira_issu
   }
 });
 
+test("planSourceMix: REST + paste duplicate can be routed to conflict evidence", () => {
+  const envelope = buildEnvelope([
+    jiraRestRef("rest.0", "PAY-1234"),
+    jiraPasteRef("paste.0", "PAY-1234"),
+  ]);
+  const result = planSourceMix(envelope, {
+    allowDuplicateJiraIssueKeysForConflictEvidence: true,
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.plan.kind, "jira_mixed");
+  assert.deepEqual(result.plan.primarySourceIds, ["rest.0", "paste.0"]);
+});
+
 test("planSourceMix: two paste sources with same key do not raise duplicate_jira_issue_key", () => {
   const paste1: TestIntentSourceRef = {
     sourceId: "paste.0",
@@ -472,6 +486,50 @@ test("planSourceMix: different mix kind changes plan hash", () => {
   assert.notEqual(r1.plan.sourceMixPlanHash, r2.plan.sourceMixPlanHash);
 });
 
+test("planSourceMix: same source IDs with different content hashes change plan hash", () => {
+  const base = jiraRestRef("jira.0", "PAY-100");
+  const changed = {
+    ...base,
+    contentHash: HEX("jira.0:changed-normalized-ir"),
+  };
+  const r1 = planSourceMix(buildEnvelope([base]));
+  const r2 = planSourceMix(buildEnvelope([changed]));
+  assert.equal(r1.ok, true);
+  assert.equal(r2.ok, true);
+  if (!r1.ok || !r2.ok) return;
+  assert.notEqual(r1.plan.sourceMixPlanHash, r2.plan.sourceMixPlanHash);
+});
+
+test("planSourceMix: custom markdown redacted hashes participate in plan hash", () => {
+  const markdown = customMarkdownRef("md.0");
+  const changedMarkdown = {
+    ...markdown,
+    contentHash: HEX("md.0:changed-redacted-markdown"),
+    redactedMarkdownHash: HEX("md.0:changed:redacted"),
+    plainTextDerivativeHash: HEX("md.0:changed:plain"),
+  };
+  const r1 = planSourceMix(
+    buildEnvelope([jiraRestRef("jira.0", "PAY-100"), markdown]),
+  );
+  const r2 = planSourceMix(
+    buildEnvelope([jiraRestRef("jira.0", "PAY-100"), changedMarkdown]),
+  );
+  assert.equal(r1.ok, true);
+  assert.equal(r2.ok, true);
+  if (!r1.ok || !r2.ok) return;
+  assert.notEqual(r1.plan.sourceMixPlanHash, r2.plan.sourceMixPlanHash);
+  assert.deepEqual(
+    r1.plan.sourceDigests.find((digest) => digest.sourceId === "md.0"),
+    {
+      sourceId: "md.0",
+      kind: "custom_markdown",
+      contentHash: markdown.contentHash,
+      redactedMarkdownHash: markdown.redactedMarkdownHash,
+      plainTextDerivativeHash: markdown.plainTextDerivativeHash,
+    },
+  );
+});
+
 // ---------------------------------------------------------------------------
 // Hard invariants
 // ---------------------------------------------------------------------------
@@ -508,6 +566,13 @@ test("writeSourceMixPlan: writes artifact and content is valid JSON", async () =
     const parsed = JSON.parse(raw) as SourceMixPlan;
     assert.equal(parsed.version, SOURCE_MIX_PLAN_SCHEMA_VERSION);
     assert.equal(parsed.kind, "figma_only");
+    assert.deepEqual(parsed.sourceDigests, [
+      {
+        sourceId: "fig.0",
+        kind: "figma_local_json",
+        contentHash: figmaRef("fig.0").contentHash,
+      },
+    ]);
     assert.equal(parsed.sourceMixPlanHash, result.plan.sourceMixPlanHash);
     assert.equal(parsed.rawJiraResponsePersisted, false);
     assert.equal(parsed.rawPasteBytesPersisted, false);
