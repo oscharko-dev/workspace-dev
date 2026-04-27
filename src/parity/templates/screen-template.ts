@@ -2441,8 +2441,14 @@ export const renderSimpleFlexContainerAsStack = ({
     typeof element.gap === "number" && element.gap > 0
       ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
       : 0;
-  const alignItems = mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode);
-  const justifyContent = mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems);
+  const alignItems =
+    element.counterAxisAlignItems !== undefined
+      ? mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode)
+      : undefined;
+  const justifyContent =
+    element.primaryAxisAlignItems !== undefined
+      ? mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems)
+      : undefined;
   const sx = toSimpleStackContainerSx({
     element,
     parent,

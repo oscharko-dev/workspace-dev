@@ -1599,6 +1599,31 @@ test("renderSimpleFlexContainerAsStack renders dividers and self-closes when chi
   assert.equal(context.muiImports.has("Divider"), true);
 });
 
+test("renderSimpleFlexContainerAsStack does not set alignItems or justifyContent when fields are absent", () => {
+  const context = createRenderContext();
+
+  const element = makeNode({
+    id: "simple-stack",
+    type: "container",
+    layoutMode: "HORIZONTAL",
+    gap: 8,
+    children: [
+      makeNode({ id: "simple-stack-child-1", type: "container", children: [] }),
+      makeNode({ id: "simple-stack-child-2", type: "container", children: [] })
+    ]
+  });
+
+  const rendered = renderSimpleFlexContainerAsStack({
+    element,
+    depth: 1,
+    parent: rootParent,
+    context
+  });
+
+  assert.equal(rendered.includes("alignItems="), false);
+  assert.equal(rendered.includes("justifyContent="), false);
+});
+
 test("renderDialog falls back to container rendering when no title or content exists", () => {
   const context = createRenderContext();
   const rendered = renderDialog(
