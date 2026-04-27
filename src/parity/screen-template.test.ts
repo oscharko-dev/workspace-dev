@@ -1863,6 +1863,9 @@ test("renderStack falls back for empty stacks and renders populated ones", () =>
       type: "stack",
       layoutMode: "HORIZONTAL",
       gap: 8,
+      counterAxisAlignItems: "MAX",
+      primaryAxisAlignItems: "CENTER",
+      width: 180,
       children: [makeText({ id: "stack-item", text: "Ready" })]
     }),
     1,
@@ -1875,6 +1878,15 @@ test("renderStack falls back for empty stacks and renders populated ones", () =>
   assert.match(fallback, /<Box/);
   assert.ok(populated);
   assert.match(populated, /<Stack direction="row" spacing=\{1\}/);
+  assert.match(populated, /alignItems="flex-end"/);
+  assert.match(populated, /justifyContent="center"/);
+  const populatedSxMatch = /sx=\{\{([^}]*)\}\}/.exec(populated);
+  const populatedSx = populatedSxMatch?.[1] ?? "";
+  assert.equal(populatedSx.includes("display:"), false);
+  assert.equal(populatedSx.includes("flexDirection:"), false);
+  assert.equal(populatedSx.includes("alignItems:"), false);
+  assert.equal(populatedSx.includes("justifyContent:"), false);
+  assert.equal(populatedSx.includes("gap:"), false);
 });
 
 test("renderPaper returns self-closing outlined Paper when no children render", () => {
