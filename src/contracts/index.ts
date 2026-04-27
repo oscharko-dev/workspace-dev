@@ -6873,7 +6873,7 @@ export interface JiraFetchRequest {
   runDir?: string;
   /** Source namespace used for replay/cache artifacts when `runDir` is set. */
   sourceId?: string;
-  /** When true, load the cached Jira API response and issue zero outbound fetches. */
+  /** When true, load the persisted redacted Jira IR list and issue zero outbound fetches. */
   replayMode?: boolean;
   /** Deterministic capture timestamp for generated IR; defaults to Unix epoch. */
   capturedAt?: string;

@@ -2756,7 +2756,7 @@ Deterministic capture timestamp for generated IR; defaults to Unix epoch.
 
 > `optional` **replayMode?**: `boolean`
 
-When true, load the cached Jira API response and issue zero outbound fetches.
+When true, load the persisted redacted Jira IR list and issue zero outbound fetches.
 
 ##### runDir?
 

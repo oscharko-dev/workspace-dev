@@ -66,7 +66,8 @@ interface JiraApiCacheEntry {
   version: "1.0.0";
   capability: JiraCapabilityProbe;
   responseHash: string;
-  rawResponse: unknown;
+  responseBytes: number;
+  issues: JiraIssueIr[];
 }
 
 interface AttemptResult extends JiraFetchResult {
@@ -76,7 +77,6 @@ interface AttemptResult extends JiraFetchResult {
 
 const DEFAULT_BACKOFF_MS: ReadonlyArray<number> = [100, 200, 400, 800, 1600];
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-const JIRA_API_RESPONSE_ARTIFACT_FILENAME = "jira-api-response.json";
 const JIRA_ISSUE_IR_LIST_ARTIFACT_FILENAME = "jira-issue-ir-list.json";
 const SOURCE_ID_RE = /^[A-Za-z0-9._-]{1,64}$/u;
 const JIRA_ISSUE_KEY_RE = /^[A-Z][A-Z0-9_]+-[1-9][0-9]*$/u;
@@ -106,7 +106,12 @@ const diagnostic = ({
     retryable,
     ...(status !== undefined ? { status } : {}),
     ...(rateLimitReason !== undefined
-      ? { rateLimitReason: redactHighRiskSecrets(rateLimitReason, "[redacted-secret]") }
+      ? {
+          rateLimitReason: redactHighRiskSecrets(
+            rateLimitReason,
+            "[redacted-secret]",
+          ),
+        }
       : {}),
   };
 };
@@ -220,7 +225,9 @@ const validateNonNegativeSafeInteger = (
   return undefined;
 };
 
-const validateAuth = (config: JiraGatewayConfig): JiraGatewayDiagnostic | undefined => {
+const validateAuth = (
+  config: JiraGatewayConfig,
+): JiraGatewayDiagnostic | undefined => {
   if (config.userAgent.trim().length === 0) {
     return diagnostic({
       code: "jira_config_invalid",
@@ -260,18 +267,22 @@ const validateAuth = (config: JiraGatewayConfig): JiraGatewayDiagnostic | undefi
   return undefined;
 };
 
-const cacheArtifactPath = (request: JiraFetchRequest): string | undefined => {
+const issueListArtifactPath = (
+  request: JiraFetchRequest,
+): string | undefined => {
   if (request.runDir === undefined || request.sourceId === undefined) {
     return undefined;
   }
   if (!SOURCE_ID_RE.test(request.sourceId)) {
-    throw new TypeError("JiraFetchRequest sourceId must match ^[A-Za-z0-9._-]{1,64}$");
+    throw new TypeError(
+      "JiraFetchRequest sourceId must match ^[A-Za-z0-9._-]{1,64}$",
+    );
   }
   return path.join(
     request.runDir,
     "sources",
     request.sourceId,
-    JIRA_API_RESPONSE_ARTIFACT_FILENAME,
+    JIRA_ISSUE_IR_LIST_ARTIFACT_FILENAME,
   );
 };
 
@@ -299,7 +310,8 @@ const sanitizeArtifactValue = (value: unknown): unknown => {
   if (typeof value === "string") {
     return redactHighRiskSecrets(value, "[redacted-secret]");
   }
-  if (Array.isArray(value)) return value.map((item) => sanitizeArtifactValue(item));
+  if (Array.isArray(value))
+    return value.map((item) => sanitizeArtifactValue(item));
   if (typeof value !== "object" || value === null) return value;
 
   const output: Record<string, unknown> = {};
@@ -309,53 +321,95 @@ const sanitizeArtifactValue = (value: unknown): unknown => {
   return output;
 };
 
-const readCacheEntry = async (artifactPath: string): Promise<JiraApiCacheEntry> => {
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((entry) => typeof entry === "string");
+
+const isJiraIssueIr = (value: unknown): value is JiraIssueIr => {
+  if (!isRecord(value)) return false;
+  return (
+    value["version"] === "1.0.0" &&
+    typeof value["issueKey"] === "string" &&
+    typeof value["issueType"] === "string" &&
+    typeof value["summary"] === "string" &&
+    typeof value["descriptionPlain"] === "string" &&
+    Array.isArray(value["acceptanceCriteria"]) &&
+    isStringArray(value["labels"]) &&
+    isStringArray(value["components"]) &&
+    isStringArray(value["fixVersions"]) &&
+    typeof value["status"] === "string" &&
+    (value["priority"] === undefined ||
+      typeof value["priority"] === "string") &&
+    Array.isArray(value["customFields"]) &&
+    Array.isArray(value["comments"]) &&
+    Array.isArray(value["attachments"]) &&
+    Array.isArray(value["links"]) &&
+    Array.isArray(value["piiIndicators"]) &&
+    Array.isArray(value["redactions"]) &&
+    isRecord(value["dataMinimization"]) &&
+    typeof value["capturedAt"] === "string" &&
+    typeof value["contentHash"] === "string"
+  );
+};
+
+const readIssueListEntry = async (
+  artifactPath: string,
+): Promise<JiraApiCacheEntry> => {
   const raw = await readFile(artifactPath, "utf8");
   const parsed = JSON.parse(raw) as unknown;
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-    throw new TypeError("Jira API replay cache entry must be an object");
+    throw new TypeError("Jira IR replay entry must be an object");
   }
   const candidate = parsed as Partial<JiraApiCacheEntry>;
   if (
     candidate.version !== "1.0.0" ||
     typeof candidate.responseHash !== "string" ||
+    typeof candidate.responseBytes !== "number" ||
     typeof candidate.capability !== "object" ||
-    candidate.rawResponse === undefined
+    !Array.isArray(candidate.issues) ||
+    !candidate.issues.every(isJiraIssueIr)
   ) {
-    throw new TypeError("Jira API replay cache entry is malformed");
+    throw new TypeError("Jira IR replay entry is malformed");
   }
   return candidate as JiraApiCacheEntry;
 };
 
-const writeCacheEntry = async ({
-  artifactPath,
-  entry,
-}: {
-  artifactPath: string;
-  entry: JiraApiCacheEntry;
-}): Promise<void> => {
-  await mkdir(path.dirname(artifactPath), { recursive: true });
-  const tempPath = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, canonicalJson(entry), "utf8");
-  await rename(tempPath, artifactPath);
-};
-
 const writeIssueListArtifact = async ({
   request,
+  capability,
+  responseHash,
+  responseBytes,
   issues,
 }: {
   request: JiraFetchRequest;
+  capability: JiraCapabilityProbe;
+  responseHash: string;
+  responseBytes: number;
   issues: readonly JiraIssueIr[];
 }): Promise<void> => {
   if (request.runDir === undefined || request.sourceId === undefined) return;
   if (!SOURCE_ID_RE.test(request.sourceId)) {
-    throw new TypeError("JiraFetchRequest sourceId must match ^[A-Za-z0-9._-]{1,64}$");
+    throw new TypeError(
+      "JiraFetchRequest sourceId must match ^[A-Za-z0-9._-]{1,64}$",
+    );
   }
   const dir = path.join(request.runDir, "sources", request.sourceId);
   await mkdir(dir, { recursive: true });
   const artifactPath = path.join(dir, JIRA_ISSUE_IR_LIST_ARTIFACT_FILENAME);
   const tempPath = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(tempPath, canonicalJson({ issues }), "utf8");
+  await writeFile(
+    tempPath,
+    canonicalJson({
+      version: "1.0.0",
+      capability,
+      responseHash,
+      responseBytes,
+      issues,
+    }),
+    "utf8",
+  );
   await rename(tempPath, artifactPath);
 
   if (issues.length === 1) {
@@ -494,7 +548,9 @@ const parseIssues = ({
     };
   }
 
-  const data = rawResponse as { issues: Array<{ key?: string; fields?: Record<string, unknown> }> };
+  const data = rawResponse as {
+    issues: Array<{ key?: string; fields?: Record<string, unknown> }>;
+  };
   const issues: JiraIssueIr[] = [];
   const capturedAt = request.capturedAt ?? DETERMINISTIC_CAPTURED_AT;
   const responseHash = sha256Hex(canonicalJson(data));
@@ -506,12 +562,20 @@ const parseIssues = ({
     let description: JiraAdfSource = { kind: "absent" };
     if (typeof descriptionField === "string") {
       description = { kind: "plain", text: descriptionField };
-    } else if (descriptionField !== null && typeof descriptionField === "object") {
+    } else if (
+      descriptionField !== null &&
+      typeof descriptionField === "object"
+    ) {
       description = { kind: "adf", json: JSON.stringify(descriptionField) };
     }
 
     const customFields = Object.entries(fields)
-      .filter(([key, value]) => key.startsWith("customfield_") && value !== null && value !== undefined)
+      .filter(
+        ([key, value]) =>
+          key.startsWith("customfield_") &&
+          value !== null &&
+          value !== undefined,
+      )
       .map(([key, value]) => ({
         id: key,
         name: key,
@@ -524,17 +588,31 @@ const parseIssues = ({
 
     const input: BuildJiraIssueIrInput = {
       issueKey: rawIssue.key ?? "UNKNOWN-1",
-      issueType: typeof issuetype?.name === "string" ? issuetype.name.toLowerCase() : "other",
-      summary: typeof fields["summary"] === "string" ? fields["summary"] : "No Summary",
+      issueType:
+        typeof issuetype?.name === "string"
+          ? issuetype.name.toLowerCase()
+          : "other",
+      summary:
+        typeof fields["summary"] === "string"
+          ? fields["summary"]
+          : "No Summary",
       description,
       status: typeof status?.name === "string" ? status.name : "Open",
-      ...(typeof priority?.name === "string" ? { priority: priority.name } : {}),
-      labels: Array.isArray(fields["labels"]) ? fields["labels"].map((label) => String(label)) : [],
+      ...(typeof priority?.name === "string"
+        ? { priority: priority.name }
+        : {}),
+      labels: Array.isArray(fields["labels"])
+        ? fields["labels"].map((label) => String(label))
+        : [],
       components: Array.isArray(fields["components"])
-        ? fields["components"].map((component) => String((component as { name?: string }).name))
+        ? fields["components"].map((component) =>
+            String((component as { name?: string }).name),
+          )
         : [],
       fixVersions: Array.isArray(fields["fixVersions"])
-        ? fields["fixVersions"].map((version) => String((version as { name?: string }).name))
+        ? fields["fixVersions"].map((version) =>
+            String((version as { name?: string }).name),
+          )
         : [],
       customFields,
       capturedAt,
@@ -585,7 +663,9 @@ export const createJiraGatewayClient = (
     throw new Error(configError.message);
   }
   if (!isSsrfSafeConfig(config)) {
-    throw new Error("JiraGatewayConfig baseUrl is not SSRF safe or invalid for auth kind");
+    throw new Error(
+      "JiraGatewayConfig baseUrl is not SSRF safe or invalid for auth kind",
+    );
   }
 
   const fetchImpl = runtime.fetchImpl ?? globalThis.fetch.bind(globalThis);
@@ -602,7 +682,9 @@ export const createJiraGatewayClient = (
     | Awaited<ReturnType<JiraGatewayClient["probeCapability"]>>
     | undefined;
 
-  const getOrProbeCapability = async (): ReturnType<JiraGatewayClient["probeCapability"]> => {
+  const getOrProbeCapability = async (): ReturnType<
+    JiraGatewayClient["probeCapability"]
+  > => {
     if (cachedCapabilityResult !== undefined) return cachedCapabilityResult;
     const result = await probeJiraCapability({ config, fetchImpl });
     if (result.ok || !result.retryable) cachedCapabilityResult = result;
@@ -622,7 +704,11 @@ export const createJiraGatewayClient = (
     if (isJiraGatewayDiagnostic(searchBody)) {
       return {
         issues: [],
-        capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+        capability: {
+          version: "unknown",
+          deploymentType: "unknown",
+          adfSupported: false,
+        },
         responseHash: "",
         retryable: false,
         attempts: attempt,
@@ -635,7 +721,11 @@ export const createJiraGatewayClient = (
     if (!capabilityResult.ok) {
       return {
         issues: [],
-        capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+        capability: {
+          version: "unknown",
+          deploymentType: "unknown",
+          adfSupported: false,
+        },
         responseHash: "",
         retryable: capabilityResult.retryable,
         attempts: attempt,
@@ -648,7 +738,8 @@ export const createJiraGatewayClient = (
       };
     }
 
-    const maxWallClockMs = request.maxWallClockMs ?? config.maxWallClockMs ?? 30000;
+    const maxWallClockMs =
+      request.maxWallClockMs ?? config.maxWallClockMs ?? 30000;
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), maxWallClockMs);
     const url = buildJiraRestUrl(
@@ -661,7 +752,10 @@ export const createJiraGatewayClient = (
     try {
       response = await fetchImpl(url, {
         method: "POST",
-        headers: { ...buildJiraAuthHeaders(config), "Content-Type": "application/json" },
+        headers: {
+          ...buildJiraAuthHeaders(config),
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(searchBody),
         redirect: "error",
         signal: controller.signal,
@@ -678,7 +772,10 @@ export const createJiraGatewayClient = (
         responseBytes: 0,
         diagnostic: diagnostic({
           code: isAbort ? "jira_timeout" : "jira_transport_error",
-          message: sanitizeError(err, isAbort ? "Jira request timed out" : "Jira transport error"),
+          message: sanitizeError(
+            err,
+            isAbort ? "Jira request timed out" : "Jira transport error",
+          ),
           retryable: !isAbort,
         }),
       };
@@ -695,7 +792,8 @@ export const createJiraGatewayClient = (
         attempts: attempt,
         responseBytes: 0,
         diagnostic: diagnostic({
-          code: response.status === 401 ? "jira_unauthorized" : "jira_forbidden",
+          code:
+            response.status === 401 ? "jira_unauthorized" : "jira_forbidden",
           message: `Jira request failed with ${response.status}`,
           retryable: false,
           status: response.status,
@@ -711,7 +809,8 @@ export const createJiraGatewayClient = (
           ? Number.parseInt(retryAfter, 10) * 1000
           : undefined;
       const elapsed = clock.now() - startedAt;
-      const remaining = (request.maxWallClockMs ?? config.maxWallClockMs ?? 30000) - elapsed;
+      const remaining =
+        (request.maxWallClockMs ?? config.maxWallClockMs ?? 30000) - elapsed;
       return {
         issues: [],
         capability: capabilityResult.capability,
@@ -786,7 +885,9 @@ export const createJiraGatewayClient = (
     }
 
     const responseBytes = Buffer.byteLength(text, "utf8");
-    if (responseBytes > (config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES)) {
+    if (
+      responseBytes > (config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES)
+    ) {
       return {
         issues: [],
         capability: capabilityResult.capability,
@@ -829,24 +930,22 @@ export const createJiraGatewayClient = (
     parsed.attempts = attempt;
     parsed.responseBytes = responseBytes;
 
-    const artifactPath = cacheArtifactPath(request);
-    if (artifactPath !== undefined && parsed.diagnostic === undefined) {
-      await writeCacheEntry({
-        artifactPath,
-        entry: {
-          version: "1.0.0",
-          capability: capabilityResult.capability,
-          responseHash: parsed.responseHash,
-          rawResponse,
-        },
+    if (parsed.diagnostic === undefined) {
+      await writeIssueListArtifact({
+        request,
+        capability: capabilityResult.capability,
+        responseHash: parsed.responseHash,
+        responseBytes,
+        issues: parsed.issues,
       });
-      await writeIssueListArtifact({ request, issues: parsed.issues });
     }
 
     return parsed;
   };
 
-  const fetchIssues = async (request: JiraFetchRequest): Promise<JiraFetchResult> => {
+  const fetchIssues = async (
+    request: JiraFetchRequest,
+  ): Promise<JiraFetchResult> => {
     const requestError =
       validatePositiveSafeInteger(request.maxWallClockMs, "maxWallClockMs") ??
       validateNonNegativeSafeInteger(request.maxRetries, "maxRetries") ??
@@ -854,7 +953,11 @@ export const createJiraGatewayClient = (
     if (requestError !== undefined) {
       const result: JiraFetchResult = {
         issues: [],
-        capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+        capability: {
+          version: "unknown",
+          deploymentType: "unknown",
+          adfSupported: false,
+        },
         responseHash: "",
         retryable: false,
         attempts: 0,
@@ -862,7 +965,9 @@ export const createJiraGatewayClient = (
         diagnostic: requestError,
       };
       runtime.onUsageEvent?.({
-        ...(request.sourceId !== undefined ? { sourceId: request.sourceId } : {}),
+        ...(request.sourceId !== undefined
+          ? { sourceId: request.sourceId }
+          : {}),
         requestKind: request.query.kind,
         attempts: 0,
         cacheHit: false,
@@ -873,12 +978,16 @@ export const createJiraGatewayClient = (
       return result;
     }
 
-    const artifactPath = cacheArtifactPath(request);
+    const artifactPath = issueListArtifactPath(request);
     if (request.replayMode === true) {
       if (artifactPath === undefined) {
         return {
           issues: [],
-          capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+          capability: {
+            version: "unknown",
+            deploymentType: "unknown",
+            adfSupported: false,
+          },
           responseHash: "",
           retryable: false,
           attempts: 0,
@@ -891,36 +1000,9 @@ export const createJiraGatewayClient = (
         };
       }
       try {
-        const entry = await readCacheEntry(artifactPath);
-        const parsed = parseIssues({
-          rawResponse: entry.rawResponse,
-          capability: entry.capability,
-          request,
-        });
-        if (parsed.diagnostic !== undefined) {
-          const result: JiraFetchResult = {
-            issues: [],
-            capability: entry.capability,
-            responseHash: entry.responseHash,
-            retryable: false,
-            attempts: 0,
-            cacheHit: false,
-            diagnostic: parsed.diagnostic,
-          };
-          runtime.onUsageEvent?.({
-            ...(request.sourceId !== undefined ? { sourceId: request.sourceId } : {}),
-            requestKind: request.query.kind,
-            attempts: 0,
-            cacheHit: false,
-            responseBytes: parsed.responseBytes,
-            responseHash: entry.responseHash,
-            diagnosticCode: parsed.diagnostic.code,
-          });
-          return result;
-        }
-        await writeIssueListArtifact({ request, issues: parsed.issues });
+        const entry = await readIssueListEntry(artifactPath);
         const result: JiraFetchResult = {
-          issues: parsed.issues,
+          issues: entry.issues,
           capability: entry.capability,
           responseHash: entry.responseHash,
           retryable: false,
@@ -928,18 +1010,24 @@ export const createJiraGatewayClient = (
           cacheHit: true,
         };
         runtime.onUsageEvent?.({
-          ...(request.sourceId !== undefined ? { sourceId: request.sourceId } : {}),
+          ...(request.sourceId !== undefined
+            ? { sourceId: request.sourceId }
+            : {}),
           requestKind: request.query.kind,
           attempts: 0,
           cacheHit: true,
-          responseBytes: parsed.responseBytes,
+          responseBytes: entry.responseBytes,
           responseHash: entry.responseHash,
         });
         return result;
       } catch (err) {
         const result: JiraFetchResult = {
           issues: [],
-          capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+          capability: {
+            version: "unknown",
+            deploymentType: "unknown",
+            adfSupported: false,
+          },
           responseHash: "",
           retryable: false,
           attempts: 0,
@@ -951,7 +1039,9 @@ export const createJiraGatewayClient = (
           }),
         };
         runtime.onUsageEvent?.({
-          ...(request.sourceId !== undefined ? { sourceId: request.sourceId } : {}),
+          ...(request.sourceId !== undefined
+            ? { sourceId: request.sourceId }
+            : {}),
           requestKind: request.query.kind,
           attempts: 0,
           cacheHit: false,
@@ -978,7 +1068,11 @@ export const createJiraGatewayClient = (
       if (!decision.allowRequest) {
         lastResult = {
           issues: [],
-          capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+          capability: {
+            version: "unknown",
+            deploymentType: "unknown",
+            adfSupported: false,
+          },
           responseHash: "",
           retryable: false,
           attempts: attempt,
@@ -1004,8 +1098,12 @@ export const createJiraGatewayClient = (
       breaker.recordTransientFailure();
       if (attempt >= maxAttempts) break;
 
-      const waitMs = result.retryDelayMs ?? backoff[Math.min(attempt - 1, backoff.length - 1)] ?? 0;
-      const maxWallClockMs = request.maxWallClockMs ?? config.maxWallClockMs ?? 30000;
+      const waitMs =
+        result.retryDelayMs ??
+        backoff[Math.min(attempt - 1, backoff.length - 1)] ??
+        0;
+      const maxWallClockMs =
+        request.maxWallClockMs ?? config.maxWallClockMs ?? 30000;
       if (clock.now() - startedAt + waitMs >= maxWallClockMs) {
         result.retryable = false;
         result.diagnostic = diagnostic({
@@ -1020,7 +1118,11 @@ export const createJiraGatewayClient = (
 
     const result = lastResult ?? {
       issues: [],
-      capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+      capability: {
+        version: "unknown",
+        deploymentType: "unknown",
+        adfSupported: false,
+      },
       responseHash: "",
       retryable: false,
       attempts: 0,
@@ -1052,7 +1154,9 @@ export const createJiraGatewayClient = (
       responseHash: result.responseHash,
       retryable: result.retryable,
       attempts: result.attempts,
-      ...(result.diagnostic !== undefined ? { diagnostic: result.diagnostic } : {}),
+      ...(result.diagnostic !== undefined
+        ? { diagnostic: result.diagnostic }
+        : {}),
       cacheHit: false,
     };
   };

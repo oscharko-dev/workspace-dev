@@ -55,7 +55,9 @@ test("jira-field-overcollection: default profile neither requests nor persists e
       };
 
       const filteredFields = Object.fromEntries(
-        Object.entries(fullFields).filter(([key]) => requestedFields.includes(key)),
+        Object.entries(fullFields).filter(([key]) =>
+          requestedFields.includes(key),
+        ),
       );
 
       return new Response(
@@ -90,8 +92,16 @@ test("jira-field-overcollection: default profile neither requests nor persists e
     "summary",
   ]);
 
-  const cacheArtifact = await readFile(
-    join(runDir, "sources", sourceId, "jira-api-response.json"),
+  await assert.rejects(
+    () =>
+      readFile(
+        join(runDir, "sources", sourceId, "jira-api-response.json"),
+        "utf8",
+      ),
+    /ENOENT/u,
+  );
+  const listArtifact = await readFile(
+    join(runDir, "sources", sourceId, "jira-issue-ir-list.json"),
     "utf8",
   );
   const irArtifact = await readFile(
@@ -109,7 +119,7 @@ test("jira-field-overcollection: default profile neither requests nor persists e
     "rest/api/3/issue/PAY-1",
     "not allow-listed",
   ]) {
-    assert.equal(cacheArtifact.includes(leaked), false, leaked);
+    assert.equal(listArtifact.includes(leaked), false, leaked);
     assert.equal(irArtifact.includes(leaked), false, leaked);
   }
 });

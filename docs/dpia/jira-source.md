@@ -42,7 +42,8 @@ Jira Cloud / Data Center REST API
   jira-issue-ir.ts                ← PII redaction, field selection
             │  JiraIssueIr
             ▼
-  <runDir>/sources/<sourceId>/jira-issue-ir.json   ← persisted artifact
+  <runDir>/sources/<sourceId>/jira-issue-ir-list.json ← persisted REST replay artifact
+  <runDir>/sources/<sourceId>/jira-issue-ir.json      ← persisted when exactly one issue
 ```
 
 For paste-only mode (Wave 4.D):
@@ -90,6 +91,11 @@ Artifact directory: `<artifactRoot>/<jobId>/sources/<sourceId>/`
 | `dataMinimization`     | Audit metadata for every opt-in                                        | Captures which fields were included and why                                                                                |
 | `contentHash`          | SHA-256 of canonical IR JSON                                           | Non-personal; deterministic                                                                                                |
 | `capturedAt`           | Server-side UTC timestamp                                              | Server-generated; no client-supplied values trusted                                                                        |
+
+Jira REST ingestion also writes `jira-issue-ir-list.json`, a minimized replay
+artifact containing only redacted `JiraIssueIr[]`, capability metadata,
+`responseHash`, and `responseBytes`. It intentionally does not contain raw Jira
+REST response bodies.
 
 **Not persisted:**
 

@@ -147,16 +147,15 @@ Figma and Jira sources. The reconciliation outcome:
 - `conflict_present` with `reviewer_decides` policy — the four-eyes review
   trigger fires, requiring a second reviewer.
 
-The conflict-resolution report is persisted as
-`multi-source-conflict-report.json` and the reconciliation report as
-`multi-source-reconciliation-report.json` under the job's artifact directory.
-These records are part of the DORA Art. 9 testing evidence.
+The reconciliation/conflict-resolution report is persisted as
+`multi-source-conflicts.json` under the job's artifact directory. This record
+is part of the DORA Art. 9 testing evidence.
 
 ---
 
 ## 7. Supply-chain integrity for the multi-source surface
 
-| Control                    | Implementation                                                                                                    |
+| Control                    | Implementation                                                                                                    | Evidence                                   |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | Zero runtime dependencies  | Wave 4 modules add no new npm runtime dependencies; all validators are hand-rolled                                | `lint:boundaries` CI gate                  |
 | SBOM coverage              | The `sbom:*` scripts cover the full published package; no new external packages                                   | `artifacts/sbom/workspace-dev.cdx.json`    |

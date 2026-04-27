@@ -88,7 +88,7 @@ system when source confidence is insufficient).
 ### 3.3 Conflict-resolution policy gate (Art. 14(4)(a)(b)(c))
 
 The Wave 4 conflict-resolution gate surfaces conflicts as structured evidence
-in the `multi-source-conflict-report.json` artifact. Each conflict record
+in the `multi-source-conflicts.json` artifact. Each conflict record
 includes:
 
 - The conflicting sources (e.g. Figma-derived intent vs. Jira acceptance
@@ -140,8 +140,7 @@ The following per-job artifacts provide evidence of human oversight controls:
 | Artifact                                  | Art. 14 evidence                                                                                       |
 | ----------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `review-events.json`                      | Complete audit log of reviewer handles, actions, and timestamps for every approved/rejected/noted case |
-| `multi-source-conflict-report.json`       | Documents every source conflict and the applied resolution policy                                      |
-| `multi-source-reconciliation-report.json` | Documents the final reconciled intent used for AI generation                                           |
+| `multi-source-conflicts.json`             | Documents source conflicts, the applied resolution policy, and the final reconciled intent used for AI generation |
 | `policy-report.json`                      | Per-case policy decisions, including four-eyes flags and conflict-triggered escalations                |
 | `wave1-poc-evidence-manifest.json`        | SHA-256 hashes for every artifact plus model deployment names and prompt template version              |
 | `validation-report.json`                  | Per-case AI output validation, including semantic-suspicious-content findings                          |

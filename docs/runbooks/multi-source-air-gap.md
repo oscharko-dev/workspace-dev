@@ -140,7 +140,8 @@ Check the paste-provenance artifact to confirm the paste was accepted and
 associated with the correct reviewer:
 
 ```bash
-cat .workspace-dev/<jobId>/sources/jira-paste-PAY-1434/paste-provenance.json
+SOURCE_ID="<sourceId-from-jira-paste-response>"
+cat ".workspace-dev/<jobId>/sources/${SOURCE_ID}/paste-provenance.json"
 ```
 
 Expected fields:
@@ -203,9 +204,12 @@ ls .workspace-dev/<jobId>/sources/
 2. The first paste was already accepted. Inspect the existing
    `jira-issue-ir.json` to verify it is correct.
 3. If the second paste is the correct one (e.g., the first was an error):
-    - Delete or archive the first source directory.
-    - Resubmit the correct paste under a different `sourceId` by appending
-      a suffix: `jira-paste-PAY-1434-v2`.
+    - Remove the incorrect source with
+      `DELETE /workspace/test-intelligence/jobs/<jobId>/sources/<sourceId>`.
+    - Resubmit the correct paste.
+    - Use the new server-returned `sourceId` and artifact paths from the
+      response. Paste requests do not accept client-supplied `sourceId`
+      values.
 4. Do not modify `jira-issue-ir.json` files directly; the `contentHash` would
    become invalid and verification would fail.
 
@@ -213,13 +217,9 @@ ls .workspace-dev/<jobId>/sources/
 
 ## 5. Evidence-export-only workflow
 
-After test-case generation and review approval, run the export:
-
-```bash
-curl -s -X POST \
-  http://127.0.0.1:1983/workspace/test-intelligence/review/<jobId>/export \
-  -H "Authorization: Bearer <your-internal-token>"
-```
+After test-case generation and review approval, run the deployment's configured
+export pipeline. The Inspector review HTTP route records review transitions;
+it does not perform evidence export itself.
 
 The export pipeline produces:
 
@@ -227,10 +227,10 @@ The export pipeline produces:
 - `export-report.json` — export evidence with `rawScreenshotsIncluded: false`
 - `qc-mapping-preview.json` — QC mapping preview
 
-All artifacts are written locally under `.workspace-dev/<jobId>/`. No
-outbound API transfer is performed in paste-only deployments unless the
-admin gate (`allowApiTransfer`) is explicitly enabled, which requires a
-configured Jira/ALM connection.
+All artifacts are written locally under `.workspace-dev/<jobId>/`. Keep
+`allowApiTransfer` disabled for air-gapped paste-only deployments. No outbound
+API transfer is performed unless the admin gate is explicitly enabled and the
+deployment has a configured Jira/ALM connection.
 
 ---
 
@@ -275,13 +275,13 @@ When using the custom-context Markdown editor in air-gapped environments:
 
 **Troubleshooting rejected Markdown:**
 
-| Error                   | Cause                                            | Resolution                                      |
-| ----------------------- | ------------------------------------------------ | ----------------------------------------------- |
-| `html_not_allowed`      | Raw HTML (`<div>`, `<b>`, etc.) in the body      | Use Markdown equivalents (`**bold**`, headings) |
-| `disallowed_url_scheme` | `javascript:` or `data:` in a link href          | Remove the link or use a plain-text reference   |
-| `private_host_url`      | Link href points to a private/link-local address | Remove the link                                 |
-| `input_too_large`       | Raw Markdown exceeds 32 KiB                      | Split into multiple custom-context submissions  |
-| `canonical_too_large`   | Canonical form exceeds 16 KiB                    | Shorten the content; remove redundant sections  |
+| Error                          | Cause                                            | Resolution                                      |
+| ------------------------------ | ------------------------------------------------ | ----------------------------------------------- |
+| `markdown_html_refused`        | Raw HTML (`<div>`, `<b>`, etc.) in the body      | Use Markdown equivalents (`**bold**`, headings) |
+| `markdown_unsafe_url_refused`  | `javascript:` or `data:` in a link href          | Remove the link or use a plain-text reference   |
+| `markdown_unsafe_url_refused`  | Link href points to a private/link-local address | Remove the link                                 |
+| `markdown_raw_too_large`       | Raw Markdown exceeds 32 KiB                      | Split into multiple custom-context submissions  |
+| `markdown_canonical_too_large` | Canonical form exceeds 16 KiB                    | Shorten the content; remove redundant sections  |
 
 ---
 
