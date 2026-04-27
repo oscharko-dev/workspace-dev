@@ -313,7 +313,7 @@ test("evidence-attestation [signing]: sigstore mode rejects non-EC private key s
       createKeyBoundSigstoreSigner({
         signerReference: "rsa-impostor",
         privateKeyPem:
-          "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n",
+          "-----BEGIN RSA PRIVATE KEY-----\nfake\n-----END RSA PRIVATE KEY-----\n", // pragma: allowlist secret
       }),
     /must be PEM-encoded ECDSA/,
   );

@@ -148,7 +148,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### hashes
 
@@ -1060,7 +1060,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### credentialsIncluded
 
@@ -1409,7 +1409,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### exportedTestCaseCount
 
@@ -1641,7 +1641,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### currencyLabel?
 
@@ -2071,7 +2071,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### expectedResults
 
@@ -2173,7 +2173,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### generatedAt
 
@@ -2464,7 +2464,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### currentIntentHash
 
@@ -2717,6 +2717,52 @@ ISO-8601 UTC timestamp of the original Jira comment.
 > **id**: `string`
 
 Stable per-issue id, e.g. `"comment.0"`.
+
+***
+
+### JiraCreatedSubtasksArtifact
+
+Aggregate `jira-created-subtasks.json` artifact (Issue #1482).
+
+#### Properties
+
+##### contractVersion
+
+> **contractVersion**: `"1.5.0"`
+
+##### credentialsIncluded
+
+> **credentialsIncluded**: `false`
+
+Hard invariant: credentials are never embedded in Jira write payloads.
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### parentIssueKey
+
+> **parentIssueKey**: `string`
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant: raw screenshots are never embedded in Jira write payloads.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### subtasks
+
+> **subtasks**: [`JiraSubTaskRecord`](#jirasubtaskrecord)[]
+
+Sorted by `testCaseId` for deterministic emission.
 
 ***
 
@@ -3212,6 +3258,183 @@ Normalized link relationship label (e.g. `"blocks"`, `"relates_to"`).
 > **targetIssueKey**: `string`
 
 Validated Jira issue key of the linked issue.
+
+***
+
+### JiraSubTaskRecord
+
+Per-test-case sub-task record persisted in `jira-created-subtasks.json`
+and embedded in the audit-shaped `jira-write-report.json`.
+
+#### Properties
+
+##### externalId
+
+> **externalId**: `string`
+
+Stable idempotency key SHA-256(`jobId|testCaseId|parentIssueKey`).
+
+##### failureClass?
+
+> `optional` **failureClass?**: `"rate_limited"` \| `"provider_not_implemented"` \| `"transport_error"` \| `"auth_failed"` \| `"permission_denied"` \| `"validation_rejected"` \| `"server_error"` \| `"unknown"`
+
+Failure classification when `outcome === "failed"`.
+
+##### failureDetail?
+
+> `optional` **failureDetail?**: `string`
+
+Sanitised, length-bounded failure detail; never carries URLs/tokens.
+
+##### jiraIssueKey?
+
+> `optional` **jiraIssueKey?**: `string`
+
+Resolved Jira issue key for the created or pre-existing sub-task.
+
+##### outcome
+
+> **outcome**: `"dry_run"` \| `"failed"` \| `"created"` \| `"skipped_duplicate"`
+
+##### retryable?
+
+> `optional` **retryable?**: `boolean`
+
+Whether the failed sub-task attempt is safe to retry later. Present only
+for failed outcomes so persisted status can distinguish transient
+transport/rate-limit/server failures from permanent validation/auth faults.
+
+##### testCaseId
+
+> **testCaseId**: `string`
+
+Generated test case identifier this sub-task corresponds to.
+
+***
+
+### JiraWriteAuditMetadata
+
+Audit metadata persisted alongside the Jira write report.
+
+#### Properties
+
+##### adminEnabled
+
+> **adminEnabled**: `boolean`
+
+Whether the admin gate (`allowJiraWrite`) was enabled.
+
+##### bearerConfigured
+
+> **bearerConfigured**: `boolean`
+
+Whether a bearer token was configured for the run.
+
+##### dryRun
+
+> **dryRun**: `boolean`
+
+Whether the run was a dry-run (no live Jira calls).
+
+##### mode
+
+> **mode**: `"jira_subtasks"`
+
+Mode used by this run; only `jira_subtasks` is shipped in Wave 5.
+
+##### principalId
+
+> **principalId**: `string`
+
+Stable opaque principal id; never an email or token.
+
+***
+
+### JiraWriteReportArtifact
+
+Aggregate `jira-write-report.json` artifact (Issue #1482).
+
+#### Properties
+
+##### audit
+
+> **audit**: [`JiraWriteAuditMetadata`](#jirawriteauditmetadata)
+
+Audit metadata for the run.
+
+##### contractVersion
+
+> **contractVersion**: `"1.5.0"`
+
+##### createdCount
+
+> **createdCount**: `number`
+
+Number of records whose outcome is `created`.
+
+##### credentialsIncluded
+
+> **credentialsIncluded**: `false`
+
+Hard invariant: credentials are never embedded in Jira write payloads.
+
+##### dryRunCount
+
+> **dryRunCount**: `number`
+
+Number of records whose outcome is `dry_run`.
+
+##### failedCount
+
+> **failedCount**: `number`
+
+Number of records whose outcome is `failed`.
+
+##### generatedAt
+
+> **generatedAt**: `string`
+
+##### jobId
+
+> **jobId**: `string`
+
+##### parentIssueKey
+
+> **parentIssueKey**: `string`
+
+##### rawScreenshotsIncluded
+
+> **rawScreenshotsIncluded**: `false`
+
+Hard invariant: raw screenshots are never embedded in Jira write payloads.
+
+##### refusalCodes
+
+> **refusalCodes**: (`"no_approved_test_cases"` \| `"policy_blocked_cases_present"` \| `"schema_invalid_cases_present"` \| `"visual_sidecar_blocked"` \| `"admin_gate_disabled"` \| `"bearer_token_missing"` \| `"feature_gate_disabled"` \| `"invalid_parent_issue_key"`)[]
+
+Sorted, deduplicated refusal codes that fired.
+
+##### refused
+
+> **refused**: `boolean`
+
+True iff the pipeline refused to perform any write.
+
+##### schemaVersion
+
+> **schemaVersion**: `"1.0.0"`
+
+##### skippedDuplicateCount
+
+> **skippedDuplicateCount**: `number`
+
+Number of records whose outcome is `skipped_duplicate`.
+
+##### totalCases
+
+> **totalCases**: `number`
+
+Total number of approved test cases supplied to the pipeline.
 
 ***
 
@@ -4439,7 +4662,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### entities
 
@@ -4529,7 +4752,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### entries
 
@@ -5004,7 +5227,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### fromState?
 
@@ -5072,7 +5295,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### fourEyesPolicy?
 
@@ -5446,7 +5669,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### gatewayRelease
 
@@ -5771,7 +5994,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### duplicatePairs
 
@@ -5865,7 +6088,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### embeddingProvider
 
@@ -5975,7 +6198,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### generatedAt
 
@@ -6231,7 +6454,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### decisions
 
@@ -6370,7 +6593,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### errorCount
 
@@ -6549,7 +6772,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### exportProfile?
 
@@ -7043,7 +7266,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### createdCount
 
@@ -7376,7 +7599,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### generatedAt
 
@@ -7516,7 +7739,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.4.0"`
+> **contractVersion**: `"1.5.0"`
 
 ##### generatedAt
 
@@ -7786,7 +8009,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.4.0"`
+> **testIntelligenceContractVersion**: `"1.5.0"`
 
 ##### visualSidecar?
 
@@ -8215,7 +8438,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.4.0"`
+> **testIntelligenceContractVersion**: `"1.5.0"`
 
 ##### thresholds
 
@@ -8507,7 +8730,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.4.0"`
+> **testIntelligenceContractVersion**: `"1.5.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -9556,7 +9779,7 @@ Submit response for accepted jobs.
 
 ###### Inherited from
 
-[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-37)
+[`WorkspaceSubmitAccepted`](#workspacesubmitaccepted).[`jobId`](#jobid-39)
 
 ##### pasteDeltaSummary?
 
@@ -11685,6 +11908,17 @@ report, four-eyes, policy) must still pass before any write
 leaves the process. Operators may flip this off to halt transfer
 without redeploying.
 
+###### allowJiraWrite?
+
+> `optional` **allowJiraWrite?**: `boolean`
+
+Whether the Jira sub-task write pipeline (#1482) is allowed at
+runtime. Defaults to `false` (fail-closed). Even when `true`,
+every other gate (feature flag, bearer token, parent issue key,
+approved cases, policy/visual sidecar clear) must still pass
+before any write leaves the process. Operators may flip this off
+to halt Jira writes without redeploying.
+
 ###### artifactRoot?
 
 > `optional` **artifactRoot?**: `string`
@@ -11721,6 +11955,15 @@ Visual-sidecar validation outcomes that trigger four-eyes review
 for any case whose Figma trace references a screen carrying the
 outcome (#1376, 2026-04-24 multimodal addendum). Defaults to
 `DEFAULT_FOUR_EYES_VISUAL_SIDECAR_TRIGGERS`.
+
+###### jiraWriteBearerToken?
+
+> `optional` **jiraWriteBearerToken?**: `string`
+
+Bearer token used by the Jira sub-task write pipeline (#1482).
+Fail-closed when omitted: every Jira write attempt refuses with
+`bearer_token_missing`. The token is supplied to the configured
+`JiraWriteClient` and is never persisted into emitted artifacts.
 
 ###### multiSourceEnabled?
 
@@ -12784,6 +13027,30 @@ Discriminated alias for [ALLOWED\_JIRA\_ISSUE\_TYPES](#allowed_jira_issue_types)
 
 ***
 
+### JiraWriteEntityOutcome
+
+> **JiraWriteEntityOutcome** = *typeof* [`ALLOWED_JIRA_WRITE_ENTITY_OUTCOMES`](#allowed_jira_write_entity_outcomes)\[`number`\]
+
+***
+
+### JiraWriteFailureClass
+
+> **JiraWriteFailureClass** = *typeof* [`ALLOWED_JIRA_WRITE_FAILURE_CLASSES`](#allowed_jira_write_failure_classes)\[`number`\]
+
+***
+
+### JiraWriteMode
+
+> **JiraWriteMode** = *typeof* [`ALLOWED_JIRA_WRITE_MODE_VALUES`](#allowed_jira_write_mode_values)\[`number`\]
+
+***
+
+### JiraWriteRefusalCode
+
+> **JiraWriteRefusalCode** = *typeof* [`ALLOWED_JIRA_WRITE_REFUSAL_CODES`](#allowed_jira_write_refusal_codes)\[`number`\]
+
+***
+
 ### LbomDataKind
 
 > **LbomDataKind** = `"few_shot_bundle"` \| `"policy_profile"`
@@ -13776,6 +14043,52 @@ free-form issue-type string into the prompt or downstream prompts.
 
 ***
 
+### ALLOWED\_JIRA\_WRITE\_ENTITY\_OUTCOMES
+
+> `const` **ALLOWED\_JIRA\_WRITE\_ENTITY\_OUTCOMES**: readonly \[`"created"`, `"skipped_duplicate"`, `"failed"`, `"dry_run"`\]
+
+Per-case outcome of a Jira sub-task write attempt.
+
+- `created` — sub-task did not exist; Jira create call succeeded.
+- `skipped_duplicate` — sub-task already exists for this `externalId`
+  on the parent; no write performed.
+- `failed` — adapter or transport error; pipeline continued with
+  subsequent cases (per-case failure isolation).
+- `dry_run` — pipeline was invoked with `dryRun=true`; no Jira call
+  was attempted.
+
+***
+
+### ALLOWED\_JIRA\_WRITE\_FAILURE\_CLASSES
+
+> `const` **ALLOWED\_JIRA\_WRITE\_FAILURE\_CLASSES**: readonly \[`"transport_error"`, `"auth_failed"`, `"permission_denied"`, `"validation_rejected"`, `"rate_limited"`, `"server_error"`, `"provider_not_implemented"`, `"unknown"`\]
+
+Allowed failure classes for a per-case Jira write failure. Mirrors the
+Jira gateway taxonomy so transport faults stay distinguishable from
+server-side validation faults.
+
+***
+
+### ALLOWED\_JIRA\_WRITE\_MODE\_VALUES
+
+> `const` **ALLOWED\_JIRA\_WRITE\_MODE\_VALUES**: readonly \[`"jira_subtasks"`\]
+
+Allowed Jira write modes. Only `jira_subtasks` is shipped in Wave 5;
+the array is the source of truth so future modes plug in without
+changing call sites.
+
+***
+
+### ALLOWED\_JIRA\_WRITE\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_JIRA\_WRITE\_REFUSAL\_CODES**: readonly \[`"feature_gate_disabled"`, `"admin_gate_disabled"`, `"bearer_token_missing"`, `"invalid_parent_issue_key"`, `"no_approved_test_cases"`, `"policy_blocked_cases_present"`, `"schema_invalid_cases_present"`, `"visual_sidecar_blocked"`\]
+
+Allowed reasons the Jira write pipeline may refuse to perform any
+sub-task creation. Evaluated in fail-closed order; every fired refusal
+is recorded so operators can address them all in one cycle.
+
+***
+
 ### ALLOWED\_LBOM\_MODEL\_ROLES
 
 > `const` **ALLOWED\_LBOM\_MODEL\_ROLES**: readonly \[`"test_generation"`, `"visual_primary"`, `"visual_fallback"`\]
@@ -14228,7 +14541,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.15.0"`
+> `const` **CONTRACT\_VERSION**: `"4.16.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -14472,6 +14785,22 @@ Schema version for the persisted intent-delta artifact (Issue #1373).
 
 ***
 
+### JIRA\_CREATED\_SUBTASKS\_ARTIFACT\_FILENAME
+
+> `const` **JIRA\_CREATED\_SUBTASKS\_ARTIFACT\_FILENAME**: `"jira-created-subtasks.json"`
+
+Canonical filename for the Jira created sub-tasks artifact.
+
+***
+
+### JIRA\_CREATED\_SUBTASKS\_SCHEMA\_VERSION
+
+> `const` **JIRA\_CREATED\_SUBTASKS\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted Jira created sub-tasks artifact (Issue #1482).
+
+***
+
 ### JIRA\_ISSUE\_IR\_ARTIFACT\_DIRECTORY
 
 > `const` **JIRA\_ISSUE\_IR\_ARTIFACT\_DIRECTORY**: `"sources"`
@@ -14496,6 +14825,30 @@ Canonical filename for the persisted Jira IR artifact.
 > `const` **JIRA\_ISSUE\_IR\_SCHEMA\_VERSION**: `"1.0.0"`
 
 Schema version stamp for the [JiraIssueIr](#jiraissueir) artifact.
+
+***
+
+### JIRA\_WRITE\_REPORT\_ARTIFACT\_DIRECTORY
+
+> `const` **JIRA\_WRITE\_REPORT\_ARTIFACT\_DIRECTORY**: `"jira-write"`
+
+Sub-directory under the run dir where Jira write artifacts are persisted.
+
+***
+
+### JIRA\_WRITE\_REPORT\_ARTIFACT\_FILENAME
+
+> `const` **JIRA\_WRITE\_REPORT\_ARTIFACT\_FILENAME**: `"jira-write-report.json"`
+
+Canonical filename for the Jira write report artifact.
+
+***
+
+### JIRA\_WRITE\_REPORT\_SCHEMA\_VERSION
+
+> `const` **JIRA\_WRITE\_REPORT\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for the persisted Jira write report artifact (Issue #1482).
 
 ***
 
@@ -14938,7 +15291,7 @@ Bumped when `TestCaseValidationReport` changes shape.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.4.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.5.0"`
 
 Contract version for the opt-in test-intelligence surface.
 

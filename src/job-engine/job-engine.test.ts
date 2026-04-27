@@ -1067,7 +1067,7 @@ test("createJobEngine redacts hybrid loader tokens before truncating persisted e
     ),
   );
   const payload = createLocalFigmaPayload();
-  const token = "figd_fragment_boundary_secret_987654321";
+  const token = "figd_fragment_boundary_secret_987654321"; // pragma: allowlist secret
   const tokenFragment = token.slice(0, 18);
   const prefix = "x".repeat(230);
 
@@ -3804,13 +3804,12 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
     status.artifacts.jobDir,
     "stage-timings.json",
   );
-  const raw = await readFile(rawPath, "utf8");
+  await assert.rejects(readFile(rawPath, "utf8"), /ENOENT/);
   const cleaned = await readFile(cleanedPath, "utf8");
   const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
     diagnostics?: Array<{ code?: string }>;
   };
 
-  assert.equal(raw.length > cleaned.length, true);
   assert.equal(cleaned.includes('"visible": false'), false);
   assert.equal(
     stageTimings.diagnostics?.some(

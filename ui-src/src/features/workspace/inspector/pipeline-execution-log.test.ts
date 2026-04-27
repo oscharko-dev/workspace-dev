@@ -62,10 +62,10 @@ describe("createPipelineExecutionLog", () => {
       stage: "resolving",
       success: false,
       errorCode: "AUTH_REQUIRED",
-      errorMessage: "Token figd_AbCdEfGhIjKlMnOpQrStUvWxYz01234 was rejected",
+      errorMessage: "Token figd_AbCdEfGhIjKlMnOpQrStUvWxYz01234 was rejected", // pragma: allowlist secret
     });
     const json = log.exportJson();
-    expect(json).not.toContain("figd_AbCdEfGhIjKlMnOpQrStUvWxYz01234");
+    expect(json).not.toContain("figd_AbCdEfGhIjKlMnOpQrStUvWxYz01234"); // pragma: allowlist secret
     expect(json).toContain("[REDACTED]");
   });
 

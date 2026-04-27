@@ -42,8 +42,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Enforce workflow --ignore-scripts policy
+        run: pnpm run verify:workflow-install-scripts
+
       - name: Enforce workflow persist-credentials policy
         run: pnpm run verify:workflow-persist-credentials
+
+      - name: Enforce pnpm onlyBuiltDependencies allowlist
+        run: pnpm run verify:built-deps-allowlist
+
+      - name: Enforce dependency freshness (minimum-release-age) policy
+        run: pnpm run verify:npmrc-freshness
 
       - name: Install template dependencies
         run: pnpm --dir template/react-mui-app install --frozen-lockfile --ignore-scripts
@@ -108,6 +117,12 @@ jobs:
       - name: Golden parity fixtures
         run: pnpm run test:golden
 
+      - name: Test-intelligence Wave 1 POC evaluation gate
+        run: pnpm run test:ti-eval
+
+      - name: Run Wave 4.I multi-source eval gate
+        run: pnpm run test:ti-multi-source-eval
+
       - name: Coverage thresholds
         run: pnpm run test:coverage
 
@@ -159,6 +174,9 @@ jobs:
 
       - name: Enforce zero telemetry policy
         run: pnpm run lint:no-telemetry
+
+      - name: Enforce repository secret policy
+        run: pnpm run lint:secrets:all
 
       - name: Enforce license allowlist
         run: pnpm run verify:licenses

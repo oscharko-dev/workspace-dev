@@ -207,6 +207,12 @@ test("scanContent: respects per-line pragma allowlist", () => {
   assert.deepStrictEqual(scanContent(line), []);
 });
 
+test("scanContent: ignores public Figma presigned thumbnail credential scope", () => {
+  const line =
+    '"thumbnailUrl": "https://s3-alpha.figma.com/thumbnails/example?X-Amz-Credential=AKIAQ4GOSFWCYKED6IIG%2F20260412%2Fus-west-2%2Fs3%2Faws4_request"';
+  assert.deepStrictEqual(scanContent(line), []);
+});
+
 test("scanContent: reports 1-indexed line numbers relative to startLine", () => {
   const content = "ok\nok\nAKIAIOSFODNN7EXAMPLE"; // pragma: allowlist secret
   const findings = scanContent(content, { filename: "x", startLine: 10 });
@@ -228,6 +234,58 @@ test("SECRET_PATTERNS: every entry has id, description, pattern", () => {
     );
     assert.ok(entry.pattern instanceof RegExp);
   }
+});
+
+test("runGuard: --all scans tracked file content", () => {
+  const stderr = [];
+  const exitCode = runGuard({
+    all: true,
+    cwd: "/repo",
+    env: {},
+    execFile(command, args) {
+      assert.strictEqual(command, "git");
+      assert.deepStrictEqual(args, ["ls-files", "-z"]);
+      return "src/clean.ts\0src/leak.ts\0";
+    },
+    readTextFile(filePath) {
+      if (filePath.endsWith("src/clean.ts")) {
+        return "export const ok = true;\n";
+      }
+      if (filePath.endsWith("src/leak.ts")) {
+        return "export const token = 'AKIAIOSFODNN7EXAMPLE';\n"; // pragma: allowlist secret
+      }
+      throw new Error(`unexpected read: ${filePath}`);
+    },
+    stdout() {},
+    stderr(message) {
+      stderr.push(message);
+    },
+  });
+
+  assert.strictEqual(exitCode, 1);
+  assert.ok(stderr.some((line) => line.includes("src/leak.ts:1")));
+});
+
+test("runGuard: --all reports blocked tracked paths", () => {
+  const stderr = [];
+  const exitCode = runGuard({
+    all: true,
+    cwd: "/repo",
+    env: {},
+    execFile() {
+      return ".env\0src/index.ts\0";
+    },
+    readTextFile() {
+      return "export const ok = true;\n";
+    },
+    stdout() {},
+    stderr(message) {
+      stderr.push(message);
+    },
+  });
+
+  assert.strictEqual(exitCode, 1);
+  assert.ok(stderr.some((line) => line.includes(".env")));
 });
 
 // ── parseStagedDiff ─────────────────────────────────────────────────────────

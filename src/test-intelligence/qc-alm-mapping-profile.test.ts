@@ -131,7 +131,7 @@ test("qc-mapping-profile: credential-like requiredFields are rejected", () => {
 
 test("qc-mapping-profile: credential-like baseUrlAlias rejected", () => {
   const profile = cloneOpenTextAlmDefaultMappingProfile();
-  profile.baseUrlAlias = "https://user:secret@host";
+  profile.baseUrlAlias = "https://user:secret@host"; // pragma: allowlist secret
   const result = validateQcMappingProfile({ profile });
   const codes = codesOf(result);
   assert.ok(codes.includes("invalid_base_url_alias"));

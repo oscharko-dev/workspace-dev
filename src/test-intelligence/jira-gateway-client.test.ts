@@ -656,7 +656,7 @@ test("JiraGatewayClient rejects SSRF vectors", () => {
     "https://10.0.0.1",
     "https://192.168.1.1",
     "https://localhost",
-    "https://user:pass@example.com",
+    "https://user:pass@example.com", // pragma: allowlist secret
     "https://example.com.local",
     "https://xn--atlassan-9ib.net",
   ];
