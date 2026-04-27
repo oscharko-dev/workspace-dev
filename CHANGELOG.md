@@ -11,6 +11,57 @@ Contract-level surface changes remain tracked in `CONTRACT_CHANGELOG.md`.
 
 ### Added
 
+- Wave 4 multi-source test-intent ingestion — Jira REST, paste-only Jira,
+  and reviewer Markdown/structured-attribute custom context (#1431–#1439):
+    - Three new primary-and-supporting source paths: `jira_rest` (Jira Cloud
+      / Data Center / OAuth 2.0), `jira_paste` (air-gap safe; no outbound
+      API calls), and `custom_text` / `custom_structured` (reviewer-authored
+      supporting evidence).
+    - Dual-gate: `FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE=1` plus
+      `testIntelligence.multiSourceEnabled: true`; fails closed before any
+      source artifact is persisted.
+    - Jira IR (`jira-issue-ir.json`) is canonical, PII-redacted, and
+      deterministically hashed; ADF documents are parsed in memory and
+      discarded. Byte caps: description 32 KiB, comment body 4 KiB, ADF
+      input 1 MiB, REST calls 20 per job, paste budget 512 KiB per job.
+    - Custom context Markdown is parsed with a strict allow-list subset
+      (headings, lists, tables, blockquotes, inline code, fenced code blocks,
+      emphasis, links with redacted hrefs); raw HTML, `javascript:`, and
+      private-host URLs are rejected fail-closed.
+    - Source reconciliation (Wave 4.F): conflict-resolution policy
+      (`priority` / `reviewer_decides` / `keep_both`); conflicts persisted
+      as `multi-source-conflicts.json`; four-eyes review triggered on
+      `multi_source_conflict_present`.
+    - Wave 4 production-readiness gate: `runWave4ProductionReadiness` +
+      `evaluateWave4ProductionReadiness` wired into `pnpm run test:ti-eval`.
+    - Single-source Figma-only jobs unchanged; backward-compatible in all
+      Wave 1–3 artifact paths.
+- Compliance and operations documentation for Wave 4 multi-source (#1440):
+    - GDPR DPIA addenda: `docs/dpia/jira-source.md` and
+      `docs/dpia/custom-context-source.md` — per-artifact data category
+      and redaction tables, legal basis, retention, and DPO escalation.
+    - Operator runbooks: `docs/runbooks/jira-source-setup.md` (Jira Cloud /
+      Data Center / OAuth 2.0 setup, least-privilege scopes, token rotation,
+      SSRF allow-list, end-to-end verification) and
+      `docs/runbooks/multi-source-air-gap.md` (paste-only deployment,
+      reviewer onboarding, Markdown editor guidance, paste-collision
+      resolution, evidence-export-only workflow).
+    - DORA mapping: `docs/dora/multi-source.md` — Art. 6/8/9/28 mapping,
+      register-of-information template entry for Jira Cloud as ICT
+      third-party, supply-chain integrity notes.
+    - EU AI Act: `docs/eu-ai-act/human-oversight.md` — how the conflict-
+      resolution gate and four-eyes trigger on `multi_source_conflict_present`
+      discharge Art. 14 human oversight requirements.
+    - Public API reference: `docs/api/test-intelligence-multi-source.md` —
+      feature-flag matrix, source-mix decision table, envelope/Jira IR/
+      reconciliation contract shapes, full HTTP route reference, worked
+      request/response examples for Jira REST-only, paste-only, Figma+Jira,
+      primary+custom, and Markdown+Jira-only jobs.
+    - Migration note: `docs/migration/wave-4-additive.md` — additive contract
+      diff, artifact tree additions, fallback rules, migration checklist.
+    - Architecture diagram: `docs/architecture/multi-source-flow.mmd` —
+      Mermaid source for the source-merge flow.
+
 - Wave 1 Figma-to-Test end-to-end POC harness, evidence manifest, and CI evaluation gate (#1366):
     - Two public synthetic fixtures under `src/test-intelligence/fixtures/` — `poc-onboarding` (sign-up + identity verification) and `poc-payment-auth` (SEPA payment + 3-D Secure authorisation) — each shipped with a companion visual sidecar fixture.
     - `runWave1Poc(input)` composes the full chain (Figma → IR → redacted prompt → mock LLM → validation → review gate → export-only QC artifacts) into a deterministic run directory; replay produces byte-identical artifact hashes for the same fixture.
