@@ -338,7 +338,7 @@ test("URL stripper redacts http/https URLs from failure detail", async () => {
     });
     assert.ok(result.errorsPath !== null);
     const errors = await readFile(result.errorsPath, "utf8");
-    assert.ok(errors.indexOf("leaky.example.com") === -1);
+    assert.doesNotMatch(errors, /leaky\.example\.com/u);
     assert.match(errors, /\[redacted-url\]/);
   });
 });
