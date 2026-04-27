@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<workspace-alm-export xmlns="https://workspace-dev.local/schema/alm-export/v1" schemaVersion="1.0.0" contractVersion="1.4.0" jobId="job-1365-golden" generatedAt="2026-04-25T10:00:00.000Z" profileId="opentext-alm-default" profileVersion="1.0.0">
+<workspace-alm-export xmlns="https://workspace-dev.local/schema/alm-export/v1" schemaVersion="1.0.0" contractVersion="1.5.0" jobId="job-1365-golden" generatedAt="2026-04-25T10:00:00.000Z" profileId="opentext-alm-default" profileVersion="1.0.0">
   <testCases>
     <testCase id="tc-approved-1" externalId="092bd48eb24b096d" priority="p1" riskCategory="regulated_data" subject="/Subject/Payment-Details/regulated_data" type="MANUAL" exportable="true">
       <name>Pay with valid IBAN</name>

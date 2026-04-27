@@ -17,7 +17,7 @@
 <!-- prettier-ignore -->
 | Area | workspace-dev |
 | --- | --- |
-| Contract version | `4.15.0` |
+| Contract version | `4.16.0` |
 | `figmaSourceMode=rest` | Supported |
 | `figmaSourceMode=local_json` | Supported |
 | `figmaSourceMode=figma_paste` | Supported |
@@ -54,6 +54,22 @@ PII-redacted canonical Markdown and validated structured attributes, and
 requires an existing primary Figma or Jira source before writing artifacts.
 Structured attributes are normalized, sorted, and PII-redacted in both the HTTP
 validator and persistence layer so replay hashes do not depend on caller order.
+
+## Jira Write Workflow Matrix (Issue #1482)
+
+The table below documents the gate matrix for `runJiraSubtaskWrite`.
+All gates are fail-closed; a violation in any gate prevents any write.
+
+| Gate                 | Condition for pass                                                                |
+| -------------------- | --------------------------------------------------------------------------------- |
+| Feature gate         | `featureEnabled === true`                                                         |
+| Admin gate           | `adminEnabled === true` (`WorkspaceStartOptions.testIntelligence.allowJiraWrite`) |
+| Bearer token         | `bearerToken` non-empty string                                                    |
+| Parent issue key     | Valid Jira issue key (`isValidJiraIssueKey`)                                      |
+| Approved cases       | At least one approved test case                                                   |
+| Policy clear         | No `policy_blocked` decisions                                                     |
+| Schema clear         | No `schema_invalid` cases                                                         |
+| Visual sidecar clear | No visual-sidecar-blocked cases                                                   |
 
 ## Notes
 

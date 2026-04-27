@@ -145,7 +145,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.4.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.5.0" as const;
 
 /** Schema version for generated test case payloads. */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
@@ -1378,6 +1378,22 @@ export interface WorkspaceStartOptions {
      * audit lineage on top of the bearer-token check.
      */
     transferPrincipals?: TestIntelligenceTransferPrincipal[];
+    /**
+     * Whether the Jira sub-task write pipeline (#1482) is allowed at
+     * runtime. Defaults to `false` (fail-closed). Even when `true`,
+     * every other gate (feature flag, bearer token, parent issue key,
+     * approved cases, policy/visual sidecar clear) must still pass
+     * before any write leaves the process. Operators may flip this off
+     * to halt Jira writes without redeploying.
+     */
+    allowJiraWrite?: boolean;
+    /**
+     * Bearer token used by the Jira sub-task write pipeline (#1482).
+     * Fail-closed when omitted: every Jira write attempt refuses with
+     * `bearer_token_missing`. The token is supplied to the configured
+     * `JiraWriteClient` and is never persisted into emitted artifacts.
+     */
+    jiraWriteBearerToken?: string;
   };
 }
 
@@ -5712,6 +5728,186 @@ export interface TransferReportArtifact {
 }
 
 /**
+ * Jira Write Workflow contract surface (Issue #1482, Wave 5).
+ *
+ * Approved test cases may be written back to Jira as sub-tasks of a
+ * specified parent issue. The pipeline is opt-in and fail-closed across
+ * eight stacked gates (feature flag, admin gate, bearer token, valid
+ * `parentIssueKey`, at least one approved case, no policy-blocked
+ * cases, no schema-invalid cases, no visual-sidecar-blocked cases). All
+ * gate violations are collected and reported in
+ * `jira-write-report.json` so an operator can address them in one cycle.
+ *
+ * Idempotency is enforced via a stable `externalId` derived from the
+ * `(jobId, testCaseId, parentIssueKey)` triple; lookups against the
+ * tenant short-circuit duplicates to `skipped_duplicate`.
+ *
+ * Hard invariants stamped at the type level on every emitted artifact:
+ *   - `rawScreenshotsIncluded: false`
+ *   - `credentialsIncluded: false`
+ *
+ * Markdown artifacts are written separately (per test case) and never
+ * embed bearer tokens, raw screenshots, or base64 image data.
+ */
+
+/** Schema version for the persisted Jira write report artifact (Issue #1482). */
+export const JIRA_WRITE_REPORT_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the Jira write report artifact. */
+export const JIRA_WRITE_REPORT_ARTIFACT_FILENAME =
+  "jira-write-report.json" as const;
+
+/** Sub-directory under the run dir where Jira write artifacts are persisted. */
+export const JIRA_WRITE_REPORT_ARTIFACT_DIRECTORY = "jira-write" as const;
+
+/** Schema version for the persisted Jira created sub-tasks artifact (Issue #1482). */
+export const JIRA_CREATED_SUBTASKS_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the Jira created sub-tasks artifact. */
+export const JIRA_CREATED_SUBTASKS_ARTIFACT_FILENAME =
+  "jira-created-subtasks.json" as const;
+
+/**
+ * Allowed Jira write modes. Only `jira_subtasks` is shipped in Wave 5;
+ * the array is the source of truth so future modes plug in without
+ * changing call sites.
+ */
+export const ALLOWED_JIRA_WRITE_MODE_VALUES = ["jira_subtasks"] as const;
+export type JiraWriteMode = (typeof ALLOWED_JIRA_WRITE_MODE_VALUES)[number];
+
+/**
+ * Allowed reasons the Jira write pipeline may refuse to perform any
+ * sub-task creation. Evaluated in fail-closed order; every fired refusal
+ * is recorded so operators can address them all in one cycle.
+ */
+export const ALLOWED_JIRA_WRITE_REFUSAL_CODES = [
+  "feature_gate_disabled",
+  "admin_gate_disabled",
+  "bearer_token_missing",
+  "invalid_parent_issue_key",
+  "no_approved_test_cases",
+  "policy_blocked_cases_present",
+  "schema_invalid_cases_present",
+  "visual_sidecar_blocked",
+] as const;
+export type JiraWriteRefusalCode =
+  (typeof ALLOWED_JIRA_WRITE_REFUSAL_CODES)[number];
+
+/**
+ * Per-case outcome of a Jira sub-task write attempt.
+ *
+ * - `created` — sub-task did not exist; Jira create call succeeded.
+ * - `skipped_duplicate` — sub-task already exists for this `externalId`
+ *   on the parent; no write performed.
+ * - `failed` — adapter or transport error; pipeline continued with
+ *   subsequent cases (per-case failure isolation).
+ * - `dry_run` — pipeline was invoked with `dryRun=true`; no Jira call
+ *   was attempted.
+ */
+export const ALLOWED_JIRA_WRITE_ENTITY_OUTCOMES = [
+  "created",
+  "skipped_duplicate",
+  "failed",
+  "dry_run",
+] as const;
+export type JiraWriteEntityOutcome =
+  (typeof ALLOWED_JIRA_WRITE_ENTITY_OUTCOMES)[number];
+
+/**
+ * Allowed failure classes for a per-case Jira write failure. Mirrors the
+ * Jira gateway taxonomy so transport faults stay distinguishable from
+ * server-side validation faults.
+ */
+export const ALLOWED_JIRA_WRITE_FAILURE_CLASSES = [
+  "transport_error",
+  "auth_failed",
+  "permission_denied",
+  "validation_rejected",
+  "rate_limited",
+  "server_error",
+  "provider_not_implemented",
+  "unknown",
+] as const;
+export type JiraWriteFailureClass =
+  (typeof ALLOWED_JIRA_WRITE_FAILURE_CLASSES)[number];
+
+/**
+ * Per-test-case sub-task record persisted in `jira-created-subtasks.json`
+ * and embedded in the audit-shaped `jira-write-report.json`.
+ */
+export interface JiraSubTaskRecord {
+  /** Generated test case identifier this sub-task corresponds to. */
+  testCaseId: string;
+  /** Stable idempotency key SHA-256(`jobId|testCaseId|parentIssueKey`). */
+  externalId: string;
+  outcome: JiraWriteEntityOutcome;
+  /** Resolved Jira issue key for the created or pre-existing sub-task. */
+  jiraIssueKey?: string;
+  /** Failure classification when `outcome === "failed"`. */
+  failureClass?: JiraWriteFailureClass;
+  /** Sanitised, length-bounded failure detail; never carries URLs/tokens. */
+  failureDetail?: string;
+}
+
+/** Aggregate `jira-created-subtasks.json` artifact (Issue #1482). */
+export interface JiraCreatedSubtasksArtifact {
+  schemaVersion: typeof JIRA_CREATED_SUBTASKS_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  parentIssueKey: string;
+  generatedAt: string;
+  /** Sorted by `testCaseId` for deterministic emission. */
+  subtasks: JiraSubTaskRecord[];
+  /** Hard invariant: raw screenshots are never embedded in Jira write payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded in Jira write payloads. */
+  credentialsIncluded: false;
+}
+
+/** Audit metadata persisted alongside the Jira write report. */
+export interface JiraWriteAuditMetadata {
+  /** Stable opaque principal id; never an email or token. */
+  principalId: string;
+  /** Whether a bearer token was configured for the run. */
+  bearerConfigured: boolean;
+  /** Whether the admin gate (`allowJiraWrite`) was enabled. */
+  adminEnabled: boolean;
+  /** Whether the run was a dry-run (no live Jira calls). */
+  dryRun: boolean;
+  /** Mode used by this run; only `jira_subtasks` is shipped in Wave 5. */
+  mode: JiraWriteMode;
+}
+
+/** Aggregate `jira-write-report.json` artifact (Issue #1482). */
+export interface JiraWriteReportArtifact {
+  schemaVersion: typeof JIRA_WRITE_REPORT_SCHEMA_VERSION;
+  contractVersion: typeof TEST_INTELLIGENCE_CONTRACT_VERSION;
+  jobId: string;
+  parentIssueKey: string;
+  generatedAt: string;
+  /** True iff the pipeline refused to perform any write. */
+  refused: boolean;
+  /** Sorted, deduplicated refusal codes that fired. */
+  refusalCodes: JiraWriteRefusalCode[];
+  /** Total number of approved test cases supplied to the pipeline. */
+  totalCases: number;
+  /** Number of records whose outcome is `created`. */
+  createdCount: number;
+  /** Number of records whose outcome is `skipped_duplicate`. */
+  skippedDuplicateCount: number;
+  /** Number of records whose outcome is `failed`. */
+  failedCount: number;
+  /** Number of records whose outcome is `dry_run`. */
+  dryRunCount: number;
+  /** Audit metadata for the run. */
+  audit: JiraWriteAuditMetadata;
+  /** Hard invariant: raw screenshots are never embedded in Jira write payloads. */
+  rawScreenshotsIncluded: false;
+  /** Hard invariant: credentials are never embedded in Jira write payloads. */
+  credentialsIncluded: false;
+}
+
+/**
  * FinOps budget + operational controls for test-intelligence LLM jobs (Issue #1371).
  *
  * The FinOps surface lets an operator bound an LLM job's input/output token
@@ -7178,4 +7374,4 @@ export type SourceMixPlannerResult =
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.15.0" as const;
+export const CONTRACT_VERSION = "4.16.0" as const;
