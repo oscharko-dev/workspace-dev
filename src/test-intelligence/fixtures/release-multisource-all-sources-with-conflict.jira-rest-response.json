@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "key": "BEN-8001",
+      "fields": {
+        "issuetype": { "name": "Story" },
+        "summary": "Add Beneficiary",
+        "description": "Add a new beneficiary, capturing Beneficiary Name and BIC. Acceptance: 1) Both fields are required. 2) BIC must match the SWIFT format. 3) The list of beneficiaries refreshes within 1 second of confirmation.",
+        "status": { "name": "Open" }
+      }
+    }
+  ]
+}

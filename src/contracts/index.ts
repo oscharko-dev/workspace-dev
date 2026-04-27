@@ -145,7 +145,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.2.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.3.0" as const;
 
 /** Schema version for generated test case payloads. */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
@@ -4479,7 +4479,11 @@ export type Wave1PocEvidenceArtifactCategory =
   | "intent_delta"
   | "dedupe_report"
   | "traceability_matrix"
-  | "multi_source_reconciliation";
+  | "multi_source_reconciliation"
+  | "source_ir"
+  | "source_provenance"
+  | "multi_source_conflicts"
+  | "production_readiness_eval";
 
 /** Single artifact attested by the Wave 1 POC evidence manifest. */
 export interface Wave1PocEvidenceArtifact {
@@ -4610,6 +4614,16 @@ export interface Wave1PocEvidenceManifest {
   manifestIntegrity?: Wave1PocEvidenceManifestIntegrity;
   /** Sorted-by-filename, de-duplicated artifact list. */
   artifacts: Wave1PocEvidenceArtifact[];
+  /**
+   * Per-source provenance records added when the multi-source pipeline ran.
+   * Present only when `multiSourceEnabled` is `true`. Each entry records the
+   * SHA-256 + bytes of the per-source IR artifact under
+   * `<runDir>/sources/<sourceId>/`. Never includes raw Jira API responses,
+   * raw paste bytes, or PII.
+   */
+  sourceProvenanceRecords?: MultiSourceSourceProvenanceRecord[];
+  /** `true` when the Wave 4 multi-source pipeline produced this manifest. */
+  multiSourceEnabled?: boolean;
   /** Hard invariant: no raw screenshot bytes leak into export artifacts. */
   rawScreenshotsIncluded: false;
   /**
@@ -4617,6 +4631,10 @@ export interface Wave1PocEvidenceManifest {
    * received an image payload during the run.
    */
   imagePayloadSentToTestGeneration: false;
+  /** Hard invariant on multi-source manifests: raw Jira responses not persisted. */
+  rawJiraResponsePersisted?: false;
+  /** Hard invariant on multi-source manifests: raw paste bytes not persisted. */
+  rawPasteBytesPersisted?: false;
 }
 
 /**
@@ -5722,6 +5740,9 @@ export const ALLOWED_FINOPS_ROLES = [
   "test_generation",
   "visual_primary",
   "visual_fallback",
+  "jira_api_requests",
+  "jira_paste_ingest",
+  "custom_context_ingest",
 ] as const;
 
 /** Discriminant of an allowed FinOps role. */
@@ -5742,6 +5763,9 @@ export const ALLOWED_FINOPS_BUDGET_BREACH_REASONS = [
   "max_fallback_attempts",
   "max_live_smoke_calls",
   "max_estimated_cost",
+  "jira_api_quota_exceeded",
+  "jira_paste_quota_exceeded",
+  "custom_context_quota_exceeded",
 ] as const;
 
 /** Discriminant of a FinOps budget breach reason. */
@@ -5802,6 +5826,11 @@ export interface FinOpsRoleBudget {
    * treated as not-configured.
    */
   maxLiveSmokeCalls?: number;
+  /**
+   * Aggregate byte-ingest cap per job for non-LLM source-ingestion roles
+   * (`jira_paste_ingest`, `custom_context_ingest`). Ignored for LLM roles.
+   */
+  maxIngestBytesPerJob?: number;
 }
 
 /**
@@ -5832,6 +5861,22 @@ export interface FinOpsBudgetEnvelope {
     test_generation?: FinOpsRoleBudget;
     visual_primary?: FinOpsRoleBudget;
     visual_fallback?: FinOpsRoleBudget;
+    jira_api_requests?: FinOpsRoleBudget;
+    jira_paste_ingest?: FinOpsRoleBudget;
+    custom_context_ingest?: FinOpsRoleBudget;
+  };
+  /**
+   * Per-source quota caps for non-LLM ingestion roles. Checked before any
+   * ingestion begins; breach emits the source-specific breach reason and
+   * fails fast without writing any artifact.
+   */
+  sourceQuotas?: {
+    /** Maximum Jira REST API calls per job. Default: `MAX_JIRA_API_REQUESTS_PER_JOB`. */
+    maxJiraApiRequestsPerJob?: number;
+    /** Maximum raw paste bytes per job. Default: `MAX_JIRA_PASTE_BYTES_PER_JOB`. */
+    maxJiraPasteBytesPerJob?: number;
+    /** Maximum custom-context input bytes per job. Default: `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB`. */
+    maxCustomContextBytesPerJob?: number;
   };
 }
 
@@ -5859,6 +5904,9 @@ export interface FinOpsCostRateMap {
     test_generation?: FinOpsCostRate;
     visual_primary?: FinOpsCostRate;
     visual_fallback?: FinOpsCostRate;
+    jira_api_requests?: FinOpsCostRate;
+    jira_paste_ingest?: FinOpsCostRate;
+    custom_context_ingest?: FinOpsCostRate;
   };
 }
 
@@ -5899,6 +5947,11 @@ export interface FinOpsRoleUsage {
   lastErrorClass?: LlmGatewayErrorClass | "schema_invalid_response";
   /** Estimated cost contribution from this role (currency-agnostic). */
   estimatedCost: number;
+  /**
+   * Total bytes ingested by non-LLM ingest roles (`jira_paste_ingest`,
+   * `custom_context_ingest`). Always `0` for LLM and visual roles.
+   */
+  ingestBytes: number;
 }
 
 /**
@@ -6848,9 +6901,117 @@ export interface JiraFetchResult {
   cacheHit?: boolean;
 }
 
+// ── Wave 4.I Production-Readiness Constants ──────────────────────────────────
+
+/**
+ * Maximum Jira REST API calls allowed per production-readiness job.
+ * Enforced before any outbound fetch; breach emits `jira_api_quota_exceeded`.
+ */
+export const MAX_JIRA_API_REQUESTS_PER_JOB = 20 as const;
+
+/**
+ * Maximum raw paste bytes allowed per production-readiness job.
+ * Enforced before Jira paste ingest begins; breach emits `jira_paste_quota_exceeded`.
+ */
+export const MAX_JIRA_PASTE_BYTES_PER_JOB = 524288 as const;
+
+/**
+ * Maximum custom-context input bytes allowed per production-readiness job.
+ * Enforced before custom-context ingest begins; breach emits
+ * `custom_context_quota_exceeded`.
+ */
+export const MAX_CUSTOM_CONTEXT_BYTES_PER_JOB = 262144 as const;
+
+/** Schema version for `Wave4ProductionReadinessEvalReport`. */
+export const WAVE4_PRODUCTION_READINESS_EVAL_REPORT_SCHEMA_VERSION =
+  "1.0.0" as const;
+
+/** On-disk filename for `Wave4ProductionReadinessEvalReport`. */
+export const WAVE4_PRODUCTION_READINESS_EVAL_REPORT_ARTIFACT_FILENAME =
+  "wave4-production-readiness-eval-report.json" as const;
+
+/** Source-mix identifier. Each distinct combination of source kinds is one mix. */
+export type Wave4SourceMixId =
+  | "figma_only"
+  | "jira_rest_only"
+  | "jira_paste_only"
+  | "figma_plus_jira_rest"
+  | "figma_plus_jira_paste"
+  | "jira_rest_plus_custom"
+  | "figma_plus_jira_plus_custom"
+  | "all_sources_with_conflict"
+  | "custom_markdown_only"
+  | "figma_plus_jira_plus_custom_markdown"
+  | "custom_markdown_adversarial";
+
+/** Pass/fail thresholds for the Wave 4 production-readiness eval gate. */
+export interface Wave4ProductionReadinessEvalThresholds {
+  /** Required provenance-field coverage across all sources (0–1). Default 1.0. */
+  minSourceProvenance: number;
+  /** Required source-attribution coverage on every test case (0–1). Default 1.0. */
+  minTestCaseSourceAttribution: number;
+  /** Minimum conflict-detection recall on the payment-with-conflict fixture (0–1). Default 0.95. */
+  minConflictDetectionRecall: number;
+  /** Maximum allowed outbound fetch calls in the air-gap fixture. Default 0. */
+  maxAirgapFetchCalls: number;
+}
+
+/** Per-source-mix coverage entry emitted by the eval gate. */
+export interface Wave4SourceMixCoverageEntry {
+  mixId: Wave4SourceMixId;
+  fixtureId: string;
+  pass: boolean;
+  /** Provenance coverage ratio (0–1). */
+  sourceProvenanceCoverage: number;
+  /** Source-attribution coverage ratio across test cases (0–1). */
+  testCaseAttributionCoverage: number;
+  conflictDetectionRecall?: number;
+  airgapFetchCalls?: number;
+  failureReasons: string[];
+}
+
+/**
+ * Per-source provenance record in the evidence manifest.
+ * One entry per source-IR artifact emitted under `<runDir>/sources/<sourceId>/`.
+ */
+export interface MultiSourceSourceProvenanceRecord {
+  sourceId: string;
+  kind: TestIntentSourceKind;
+  contentHash: string;
+  bytes: number;
+  /** Author handle (reviewer-supplied for paste/custom sources). */
+  authorHandle?: string;
+  /** ISO-8601 capture timestamp. */
+  capturedAt?: string;
+}
+
+/**
+ * Evaluation report produced by the Wave 4 production-readiness gate.
+ * Written to `<runDir>/wave4-production-readiness-eval-report.json`.
+ */
+export interface Wave4ProductionReadinessEvalReport {
+  version: typeof WAVE4_PRODUCTION_READINESS_EVAL_REPORT_SCHEMA_VERSION;
+  generatedAt: string;
+  thresholds: Wave4ProductionReadinessEvalThresholds;
+  passed: boolean;
+  overallSourceProvenanceCoverage: number;
+  overallTestCaseAttributionCoverage: number;
+  sourceMixCoverage: Wave4SourceMixCoverageEntry[];
+  markdownCustomContextCoverage: {
+    totalMarkdownSources: number;
+    sourcesWithProvenance: number;
+    coverageRatio: number;
+  };
+  failureReasons: string[];
+  rawScreenshotsIncluded: false;
+  secretsIncluded: false;
+  rawJiraResponsePersisted: false;
+  rawPasteBytesPersisted: false;
+}
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.13.0" as const;
+export const CONTRACT_VERSION = "4.14.0" as const;

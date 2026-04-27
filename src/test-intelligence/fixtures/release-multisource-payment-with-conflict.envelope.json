@@ -1,0 +1,29 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "figma-payment",
+      "kind": "figma_local_json",
+      "contentHash": "e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6",
+      "capturedAt": "2026-04-27T10:01:00.000Z"
+    },
+    {
+      "sourceId": "jira-paste-pay-2001",
+      "kind": "jira_paste",
+      "contentHash": "f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1",
+      "capturedAt": "2026-04-27T10:01:01.000Z",
+      "authorHandle": "qa-reviewer",
+      "canonicalIssueKey": "PAY-2001"
+    },
+    {
+      "sourceId": "custom-payment-attrs",
+      "kind": "custom_structured",
+      "contentHash": "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b",
+      "capturedAt": "2026-04-27T10:01:02.000Z",
+      "authorHandle": "qa-reviewer",
+      "inputFormat": "structured_json"
+    }
+  ],
+  "aggregateContentHash": "2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

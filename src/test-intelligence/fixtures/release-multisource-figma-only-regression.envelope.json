@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "figma-onboarding-regression",
+      "kind": "figma_local_json",
+      "contentHash": "6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a",
+      "capturedAt": "2026-04-27T10:03:00.000Z"
+    }
+  ],
+  "aggregateContentHash": "1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

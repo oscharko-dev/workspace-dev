@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "key": "MDK-9001",
+      "fields": {
+        "issuetype": { "name": "Story" },
+        "summary": "Enforce API rate limits on payments gateway",
+        "description": "The payments gateway must enforce per-tenant rate limits and return 429 responses when limits are exceeded. Acceptance: 1) Rate limits are configurable per tenant. 2) Excess requests return 429 with a Retry-After header. 3) Limits are enforced consistently at peak load.",
+        "status": { "name": "Open" }
+      }
+    }
+  ]
+}

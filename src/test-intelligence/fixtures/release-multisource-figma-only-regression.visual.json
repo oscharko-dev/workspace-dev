@@ -1,0 +1,83 @@
+[
+  {
+    "screenId": "s-onboarding-account",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Open Account",
+    "regions": [
+      {
+        "regionId": "n-given-name",
+        "confidence": 0.93,
+        "label": "Given Name",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-family-name",
+        "confidence": 0.93,
+        "label": "Family Name",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-email",
+        "confidence": 0.95,
+        "label": "Email",
+        "controlType": "text_input",
+        "validationHints": ["Email format"]
+      },
+      {
+        "regionId": "n-phone",
+        "confidence": 0.92,
+        "label": "Mobile Phone",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-tax-id",
+        "confidence": 0.91,
+        "label": "Tax ID",
+        "controlType": "text_input",
+        "validationHints": ["Tax ID checksum"]
+      },
+      {
+        "regionId": "n-postcode",
+        "confidence": 0.94,
+        "label": "Postcode",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-continue",
+        "confidence": 0.97,
+        "label": "Continue",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.91,
+      "max": 0.97,
+      "mean": 0.94
+    }
+  },
+  {
+    "screenId": "s-onboarding-verify",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Verify Identity",
+    "regions": [
+      {
+        "regionId": "n-otp",
+        "confidence": 0.96,
+        "label": "One-time code",
+        "controlType": "text_input",
+        "validationHints": ["6 digits"]
+      },
+      {
+        "regionId": "n-confirm",
+        "confidence": 0.97,
+        "label": "Confirm",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.96,
+      "max": 0.97,
+      "mean": 0.965
+    }
+  }
+]

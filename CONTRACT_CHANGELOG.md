@@ -31,6 +31,46 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.14.0] - 2026-04-27
+
+### Added (Issue #1439, Wave 4.I)
+
+Multi-source production-readiness fixtures, CI eval gate, FinOps source
+quotas, and extended evidence manifest. Purely additive — all existing
+consumers are unaffected.
+
+**New constants:**
+
+- `MAX_JIRA_API_REQUESTS_PER_JOB` — hard cap on Jira REST calls per job (20).
+- `MAX_JIRA_PASTE_BYTES_PER_JOB` — hard cap on paste ingest size (524 288 B).
+- `MAX_CUSTOM_CONTEXT_BYTES_PER_JOB` — hard cap on custom-context size (262 144 B).
+- `WAVE4_PRODUCTION_READINESS_EVAL_REPORT_ARTIFACT_FILENAME` — artifact filename for the Wave 4.I CI eval report.
+- `WAVE4_PRODUCTION_READINESS_EVAL_REPORT_SCHEMA_VERSION` — schema version "1.0.0" for the eval report.
+
+**New types:**
+
+- `Wave4SourceMixId` — discriminated union of all supported source-mix identifiers.
+- `Wave4ProductionReadinessEvalThresholds` — pass/fail threshold configuration for the CI eval gate.
+- `Wave4SourceMixCoverageEntry` — per-fixture coverage record within the eval report.
+- `MultiSourceSourceProvenanceRecord` — per-source provenance record for the evidence manifest.
+- `Wave4ProductionReadinessEvalReport` — top-level eval report artifact type.
+
+**Extended types (additive fields only):**
+
+- `FinOpsBudgetEnvelope` — added `sourceQuotas?` block (`maxJiraApiRequestsPerJob`, `maxJiraPasteBytesPerJob`, `maxCustomContextBytesPerJob`).
+- `FinOpsRoleBudget` — added `maxIngestBytesPerJob?: number`.
+- `FinOpsRoleUsage` — added `ingestBytes: number`.
+- `Wave1PocEvidenceManifest` — added `sourceProvenanceRecords?`, `multiSourceEnabled?`, `rawJiraResponsePersisted?`, `rawPasteBytesPersisted?`.
+- `Wave1PocEvidenceArtifactCategory` — added `"jira_issue_ir"`, `"jira_paste_provenance"`, `"custom_context_ir"`, `"multi_source_reconciliation"`.
+
+**New `ALLOWED_FINOPS_ROLES` members:** `"jira_api_requests"`, `"jira_paste_ingest"`, `"custom_context_ingest"`.
+
+**New `ALLOWED_FINOPS_BUDGET_BREACH_REASONS` members:** `"jira_api_request_quota_exceeded"`, `"jira_paste_quota_exceeded"`, `"custom_context_quota_exceeded"`.
+
+**`TEST_INTELLIGENCE_CONTRACT_VERSION` bumped:** `1.2.0` → `1.3.0`.
+
+---
+
 ## [4.13.0] - 2026-04-26
 
 ### Added (Issue #1432, Wave 4.B)

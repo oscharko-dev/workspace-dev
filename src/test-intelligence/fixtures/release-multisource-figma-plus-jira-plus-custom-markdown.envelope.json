@@ -1,0 +1,30 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "figma-consent",
+      "kind": "figma_local_json",
+      "contentHash": "60013c3d4e5f60013c3d4e5f60013c3d4e5f60013c3d4e5f60013c3d4e5f6001",
+      "capturedAt": "2026-04-27T10:10:00.000Z"
+    },
+    {
+      "sourceId": "jira-rest-con-10001",
+      "kind": "jira_rest",
+      "contentHash": "7113c3d4e5f67113c3d4e5f67113c3d4e5f67113c3d4e5f67113c3d4e5f67113",
+      "capturedAt": "2026-04-27T10:10:01.000Z",
+      "canonicalIssueKey": "CON-10001"
+    },
+    {
+      "sourceId": "custom-consent-md",
+      "kind": "custom_text",
+      "contentHash": "82243d4e5f6782243d4e5f6782243d4e5f6782243d4e5f6782243d4e5f678224",
+      "capturedAt": "2026-04-27T10:10:02.000Z",
+      "authorHandle": "qa-reviewer",
+      "inputFormat": "markdown",
+      "redactedMarkdownHash": "9335cf6782249335cf6782249335cf6782249335cf6782249335cf6782249335",
+      "plainTextDerivativeHash": "a4467822499a4467822499a4467822499a4467822499a4467822499a4467822"
+    }
+  ],
+  "aggregateContentHash": "b5577822499ab5577822499ab5577822499ab5577822499ab5577822499ab557",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

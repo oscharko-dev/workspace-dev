@@ -1,0 +1,39 @@
+{
+  "source": {
+    "kind": "figma_local_json"
+  },
+  "screens": [
+    {
+      "screenId": "s-beneficiary-add",
+      "screenName": "Add Beneficiary",
+      "nodes": [
+        {
+          "nodeId": "n-beneficiary-name",
+          "nodeName": "Beneficiary Name",
+          "nodeType": "TEXT_INPUT",
+          "text": "Beneficiary Name",
+          "defaultValue": "Erika Beispiel",
+          "validations": ["Required"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-bic",
+          "nodeName": "BIC",
+          "nodeType": "TEXT_INPUT",
+          "text": "BIC",
+          "defaultValue": "DEUTDEFF",
+          "validations": ["Required", "BIC format"],
+          "childNodeIds": []
+        },
+        {
+          "nodeId": "n-add-beneficiary",
+          "nodeName": "Add Beneficiary",
+          "nodeType": "BUTTON",
+          "text": "Add Beneficiary",
+          "navigationTarget": "s-beneficiary-list",
+          "childNodeIds": []
+        }
+      ]
+    }
+  ]
+}

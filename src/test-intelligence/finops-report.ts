@@ -119,6 +119,7 @@ interface RoleAccumulator {
   fallbackAttempts: number;
   liveSmokeCalls: number;
   durationMs: number;
+  ingestBytes: number;
   lastFinishReason?: LlmFinishReason;
   lastErrorClass?: LlmGatewayErrorClass | "schema_invalid_response";
 }
@@ -137,6 +138,7 @@ const createRoleAccumulator = (role: FinOpsRole): RoleAccumulator => ({
   fallbackAttempts: 0,
   liveSmokeCalls: 0,
   durationMs: 0,
+  ingestBytes: 0,
 });
 
 /**
@@ -148,6 +150,11 @@ export interface FinOpsUsageRecorder {
   recordCacheHit(observation: FinOpsCacheHitObservation): void;
   recordCacheMiss(observation: FinOpsCacheMissObservation): void;
   recordBudgetBreach(breach: FinOpsBudgetBreach): void;
+  /**
+   * Record bytes ingested by a non-LLM source-ingest role
+   * (`jira_paste_ingest`, `custom_context_ingest`). Ignored for LLM roles.
+   */
+  recordIngestBytes(role: FinOpsRole, bytes: number): void;
   /** Snapshot of every role accumulator (immutable copies). */
   snapshot(): FinOpsRoleUsage[];
   /** Explicit fail-closed budget breaches observed outside aggregate counters. */
@@ -179,6 +186,9 @@ export const createFinOpsUsageRecorder = (
     test_generation: createRoleAccumulator("test_generation"),
     visual_primary: createRoleAccumulator("visual_primary"),
     visual_fallback: createRoleAccumulator("visual_fallback"),
+    jira_api_requests: createRoleAccumulator("jira_api_requests"),
+    jira_paste_ingest: createRoleAccumulator("jira_paste_ingest"),
+    custom_context_ingest: createRoleAccumulator("custom_context_ingest"),
   };
 
   const recordAttempt = (observation: FinOpsAttemptObservation): void => {
@@ -241,17 +251,13 @@ export const createFinOpsUsageRecorder = (
 
   const recordBudgetBreach = (breach: FinOpsBudgetBreach): void => {
     if (!ALLOWED_FINOPS_BUDGET_BREACH_REASONS.includes(breach.rule)) {
-      throw new RangeError(
-        `recordBudgetBreach: unknown rule "${breach.rule}"`,
-      );
+      throw new RangeError(`recordBudgetBreach: unknown rule "${breach.rule}"`);
     }
     if (
       breach.role !== undefined &&
       !ALLOWED_FINOPS_ROLES.includes(breach.role)
     ) {
-      throw new RangeError(
-        `recordBudgetBreach: unknown role "${breach.role}"`,
-      );
+      throw new RangeError(`recordBudgetBreach: unknown role "${breach.role}"`);
     }
     explicitBreaches.push({
       rule: breach.rule,
@@ -267,6 +273,13 @@ export const createFinOpsUsageRecorder = (
       finalizeAccumulator(accumulators[role], costRates?.rates[role]),
     );
 
+  const recordIngestBytes = (role: FinOpsRole, bytes: number): void => {
+    if (!ALLOWED_FINOPS_ROLES.includes(role)) {
+      throw new RangeError(`recordIngestBytes: unknown role "${role}"`);
+    }
+    accumulators[role].ingestBytes += safeIntPositiveOrZero(bytes);
+  };
+
   const budgetBreaches = (): FinOpsBudgetBreach[] =>
     explicitBreaches.map((breach) => ({ ...breach }));
 
@@ -275,6 +288,7 @@ export const createFinOpsUsageRecorder = (
     recordCacheHit,
     recordCacheMiss,
     recordBudgetBreach,
+    recordIngestBytes,
     snapshot,
     budgetBreaches,
   };
@@ -299,6 +313,7 @@ const finalizeAccumulator = (
     fallbackAttempts: acc.fallbackAttempts,
     liveSmokeCalls: acc.liveSmokeCalls,
     durationMs: acc.durationMs,
+    ingestBytes: acc.ingestBytes,
     estimatedCost,
   };
   if (acc.lastFinishReason !== undefined) {

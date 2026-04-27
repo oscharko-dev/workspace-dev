@@ -111,6 +111,9 @@ jobs:
       - name: Test-intelligence Wave 1 POC evaluation gate
         run: pnpm run test:ti-eval
 
+      - name: Run Wave 4.I multi-source eval gate
+        run: pnpm run test:ti-multi-source-eval
+
       - name: Coverage thresholds
         run: pnpm run test:coverage
 

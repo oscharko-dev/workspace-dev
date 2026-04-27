@@ -1,0 +1,36 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "figma-ben-8001",
+      "kind": "figma_local_json",
+      "contentHash": "cf6a8b9cadbecf6a8b9cadbecf6a8b9cadbecf6a8b9cadbecf6a8b9cadbecf6a",
+      "capturedAt": "2026-04-27T10:08:00.000Z"
+    },
+    {
+      "sourceId": "jira-rest-ben-8001",
+      "kind": "jira_rest",
+      "contentHash": "d07b9cadbecfd07b9cadbecfd07b9cadbecfd07b9cadbecfd07b9cadbecfd07b",
+      "capturedAt": "2026-04-27T10:08:01.000Z",
+      "canonicalIssueKey": "BEN-8001"
+    },
+    {
+      "sourceId": "jira-paste-ben-8001",
+      "kind": "jira_paste",
+      "contentHash": "e18cadbecfd0e18cadbecfd0e18cadbecfd0e18cadbecfd0e18cadbecfd0e18c",
+      "capturedAt": "2026-04-27T10:08:02.000Z",
+      "authorHandle": "qa-reviewer",
+      "canonicalIssueKey": "BEN-8001"
+    },
+    {
+      "sourceId": "custom-ben-attrs",
+      "kind": "custom_text",
+      "contentHash": "f29dbecfd0e1f29dbecfd0e1f29dbecfd0e1f29dbecfd0e1f29dbecfd0e1f29d",
+      "capturedAt": "2026-04-27T10:08:03.000Z",
+      "authorHandle": "qa-reviewer",
+      "inputFormat": "plain_text"
+    }
+  ],
+  "aggregateContentHash": "0aecfd0e1f20aecfd0e1f20aecfd0e1f20aecfd0e1f20aecfd0e1f20aecfd0e1",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

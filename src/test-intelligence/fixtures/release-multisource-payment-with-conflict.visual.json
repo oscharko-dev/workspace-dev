@@ -1,0 +1,34 @@
+[
+  {
+    "screenId": "s-payment-form",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Initiate Payment",
+    "regions": [
+      {
+        "regionId": "n-amount",
+        "confidence": 0.94,
+        "label": "Transfer Amount",
+        "controlType": "text_input",
+        "validationHints": ["Decimal 2"]
+      },
+      {
+        "regionId": "n-recipient-iban",
+        "confidence": 0.93,
+        "label": "Recipient IBAN",
+        "controlType": "text_input",
+        "validationHints": ["IBAN checksum"]
+      },
+      {
+        "regionId": "n-submit-payment",
+        "confidence": 0.97,
+        "label": "Submit Payment",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.93,
+      "max": 0.97,
+      "mean": 0.946
+    }
+  }
+]
