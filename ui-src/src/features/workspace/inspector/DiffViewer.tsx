@@ -21,11 +21,19 @@ import {
   useState,
   useSyncExternalStore,
   type JSX,
-  type KeyboardEvent as ReactKeyboardEvent
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
-import { computeUnifiedDiff, type DiffLine, type DiffResult } from "../../../lib/diff";
-import { getPreferredTheme, type HighlightTheme } from "../../../lib/shiki-shared";
+import {
+  computeUnifiedDiff,
+  type DiffLine,
+  type DiffResult,
+} from "../../../lib/diff";
+import {
+  getPreferredTheme,
+  type HighlightTheme,
+} from "../../../lib/shiki-shared";
 import type { ManifestRange, ScopedCodeMode } from "./scoped-code-ranges";
+import "./inspector.css";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,7 +88,7 @@ export function DiffViewer({
   scopedMode,
   isNodeScoped,
   nodeDiffFallbackReason,
-  themeMode = "system"
+  themeMode = "system",
 }: DiffViewerProps): JSX.Element {
   const [wordWrap, setWordWrap] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -89,7 +97,10 @@ export function DiffViewer({
   const [searchFocused, setSearchFocused] = useState(false);
   const systemTheme = useSyncExternalStore(
     (onChange) => {
-      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+      ) {
         return () => {};
       }
 
@@ -119,7 +130,7 @@ export function DiffViewer({
   // Compute diff
   const diffResult: DiffResult = useMemo(
     () => computeUnifiedDiff(oldCode, newCode, 3),
-    [oldCode, newCode]
+    [oldCode, newCode],
   );
 
   // Search
@@ -143,7 +154,7 @@ export function DiffViewer({
 
   const searchMatchedLineSet = useMemo(
     () => new Set(searchMatches.map((m) => m.lineIndex)),
-    [searchMatches]
+    [searchMatches],
   );
 
   const effectiveActiveMatchIndex = useMemo(() => {
@@ -157,7 +168,10 @@ export function DiffViewer({
   }, [activeMatchIndex, searchMatches.length, searchQuery.length]);
 
   const activeMatch = useMemo(() => {
-    if (effectiveActiveMatchIndex < 0 || effectiveActiveMatchIndex >= searchMatches.length) {
+    if (
+      effectiveActiveMatchIndex < 0 ||
+      effectiveActiveMatchIndex >= searchMatches.length
+    ) {
       return null;
     }
     return searchMatches[effectiveActiveMatchIndex] ?? null;
@@ -167,33 +181,42 @@ export function DiffViewer({
   useEffect(() => {
     if (!activeMatch) return;
     const el = lineRefs.current.get(activeMatch.lineIndex);
-    if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "center", behavior: "smooth" });
+    if (el && typeof el.scrollIntoView === "function")
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
   }, [activeMatch]);
 
   // Cmd+F handler — only intercepts when the DiffViewer contains the active element
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent): void => {
-      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f") return;
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "f")
+        return;
       if (!containerRef.current) return;
-      if (!containerRef.current.contains(document.activeElement) && document.activeElement !== document.body) return;
+      if (
+        !containerRef.current.contains(document.activeElement) &&
+        document.activeElement !== document.body
+      )
+        return;
       event.preventDefault();
       findInputRef.current?.focus();
       findInputRef.current?.select();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => { window.removeEventListener("keydown", onKeyDown); };
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
   }, []);
 
   const handleNavigateMatches = useCallback(
     (direction: 1 | -1) => {
       if (searchMatches.length === 0) return;
       setActiveMatchIndex((current) => {
-        const base = current < 0 || current >= searchMatches.length ? 0 : current;
+        const base =
+          current < 0 || current >= searchMatches.length ? 0 : current;
         return (base + direction + searchMatches.length) % searchMatches.length;
       });
     },
-    [searchMatches.length]
+    [searchMatches.length],
   );
 
   const handleSearchInputKeyDown = useCallback(
@@ -202,7 +225,7 @@ export function DiffViewer({
       event.preventDefault();
       handleNavigateMatches(event.shiftKey ? -1 : 1);
     },
-    [handleNavigateMatches]
+    [handleNavigateMatches],
   );
 
   const findCountText = useMemo(() => {
@@ -244,65 +267,94 @@ export function DiffViewer({
     ? "Files are identical"
     : `+${String(diffResult.addedCount)} added, -${String(diffResult.removedCount)} removed`;
 
-  // Colors per line kind
-  const lineColors = useMemo(() => ({
-    added: {
-      bg: isDark ? "rgba(46, 160, 67, 0.15)" : "rgba(16, 185, 129, 0.12)",
-      border: isDark ? "#2ea043" : "#10b981",
-      gutter: isDark ? "rgba(46, 160, 67, 0.30)" : "rgba(16, 185, 129, 0.20)"
-    },
-    removed: {
-      bg: isDark ? "rgba(248, 81, 73, 0.15)" : "rgba(239, 68, 68, 0.10)",
-      border: isDark ? "#f85149" : "#ef4444",
-      gutter: isDark ? "rgba(248, 81, 73, 0.30)" : "rgba(239, 68, 68, 0.18)"
-    },
-    context: {
-      bg: undefined,
-      border: undefined,
-      gutter: undefined
-    }
-  }), [isDark]);
+  // Line highlight colors — runtime values that depend on isDark, cannot be static CSS
+  const lineColors = useMemo(
+    () => ({
+      added: {
+        bg: isDark ? "rgba(46, 160, 67, 0.15)" : "rgba(16, 185, 129, 0.12)",
+        border: isDark ? "#2ea043" : "#10b981",
+        gutter: isDark ? "rgba(46, 160, 67, 0.30)" : "rgba(16, 185, 129, 0.20)",
+      },
+      removed: {
+        bg: isDark ? "rgba(248, 81, 73, 0.15)" : "rgba(239, 68, 68, 0.10)",
+        border: isDark ? "#f85149" : "#ef4444",
+        gutter: isDark ? "rgba(248, 81, 73, 0.30)" : "rgba(239, 68, 68, 0.18)",
+      },
+      context: {
+        bg: undefined,
+        border: undefined,
+        gutter: undefined,
+      },
+    }),
+    [isDark],
+  );
 
-  const searchBg = isDark ? "rgba(251, 191, 36, 0.12)" : "rgba(245, 158, 11, 0.14)";
-  const activeBg = isDark ? "rgba(251, 191, 36, 0.28)" : "rgba(245, 158, 11, 0.24)";
-  const focusBg = isDark ? "rgba(56, 139, 253, 0.10)" : "rgba(16, 185, 129, 0.07)";
+  const searchBg = isDark
+    ? "rgba(251, 191, 36, 0.12)"
+    : "rgba(245, 158, 11, 0.14)";
+  const activeBg = isDark
+    ? "rgba(251, 191, 36, 0.28)"
+    : "rgba(245, 158, 11, 0.24)";
+  const focusBg = isDark
+    ? "rgba(56, 139, 253, 0.10)"
+    : "rgba(16, 185, 129, 0.07)";
+
+  // Diff prefix colors — runtime values
+  const prefixColorAdded = isDark ? "#7ee787" : "#1a7f37";
+  const prefixColorRemoved = isDark ? "#f85149" : "#cf222e";
+  const prefixColorContext = isDark ? "#484f58" : "#8c959f";
+  const lineContentColor = isDark ? "#c9d1d9" : "#24292f";
 
   /** Check if a diff line falls within a scoped focus range. */
-  const isInFocusRange = useCallback((diffLine: DiffLine): boolean => {
-    if (!scopedMode || scopedMode === "full") return false;
-    if (diffLine.kind === "removed" && oldFocusRange) {
-      const lineNum = diffLine.oldLineNumber;
-      return lineNum != null && lineNum >= oldFocusRange.startLine && lineNum <= oldFocusRange.endLine;
-    }
-    if (diffLine.kind === "added" && newFocusRange) {
-      const lineNum = diffLine.newLineNumber;
-      return lineNum != null && lineNum >= newFocusRange.startLine && lineNum <= newFocusRange.endLine;
-    }
-    if (diffLine.kind === "context") {
-      const inOld = oldFocusRange && diffLine.oldLineNumber != null
-        && diffLine.oldLineNumber >= oldFocusRange.startLine && diffLine.oldLineNumber <= oldFocusRange.endLine;
-      const inNew = newFocusRange && diffLine.newLineNumber != null
-        && diffLine.newLineNumber >= newFocusRange.startLine && diffLine.newLineNumber <= newFocusRange.endLine;
-      return Boolean(inOld) || Boolean(inNew);
-    }
-    return false;
-  }, [oldFocusRange, newFocusRange, scopedMode]);
+  const isInFocusRange = useCallback(
+    (diffLine: DiffLine): boolean => {
+      if (!scopedMode || scopedMode === "full") return false;
+      if (diffLine.kind === "removed" && oldFocusRange) {
+        const lineNum = diffLine.oldLineNumber;
+        return (
+          lineNum != null &&
+          lineNum >= oldFocusRange.startLine &&
+          lineNum <= oldFocusRange.endLine
+        );
+      }
+      if (diffLine.kind === "added" && newFocusRange) {
+        const lineNum = diffLine.newLineNumber;
+        return (
+          lineNum != null &&
+          lineNum >= newFocusRange.startLine &&
+          lineNum <= newFocusRange.endLine
+        );
+      }
+      if (diffLine.kind === "context") {
+        const inOld =
+          oldFocusRange &&
+          diffLine.oldLineNumber != null &&
+          diffLine.oldLineNumber >= oldFocusRange.startLine &&
+          diffLine.oldLineNumber <= oldFocusRange.endLine;
+        const inNew =
+          newFocusRange &&
+          diffLine.newLineNumber != null &&
+          diffLine.newLineNumber >= newFocusRange.startLine &&
+          diffLine.newLineNumber <= newFocusRange.endLine;
+        return Boolean(inOld) || Boolean(inNew);
+      }
+      return false;
+    },
+    [oldFocusRange, newFocusRange, scopedMode],
+  );
 
   return (
     <div
       ref={containerRef}
-      className="flex h-full min-h-0 flex-col"
+      className="dv-viewer flex h-full min-h-0 flex-col"
+      data-theme={isDark ? "dark" : undefined}
       data-testid="diff-viewer"
     >
       {/* Toolbar */}
-      <div
-        className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
-        className="removed-style-1"
-      >
+      <div className="cv-toolbar flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
         <span
-          className="min-w-0 flex-1 truncate text-xs font-mono"
+          className="cv-filepath min-w-0 flex-1 truncate text-xs font-mono"
           data-testid="diff-viewer-filepath"
-          className="removed-style-2"
         >
           {filePath}
           <span className="ml-2 text-[10px] opacity-60">
@@ -311,8 +363,7 @@ export function DiffViewer({
           {isNodeScoped ? (
             <span
               data-testid="diff-viewer-node-scoped-badge"
-              className="ml-2 rounded-full border px-1.5 py-0 text-[9px] font-bold tracking-wide"
-              className="removed-style-3"
+              className="dv-node-badge ml-2 rounded-full border px-1.5 py-0 text-[9px] font-bold tracking-wide"
             >
               NODE
             </span>
@@ -325,24 +376,31 @@ export function DiffViewer({
             ref={findInputRef}
             type="text"
             value={searchInput}
-            onChange={(e) => { setSearchInput(e.target.value); setActiveMatchIndex(-1); }}
-            onFocus={() => { setSearchFocused(true); }}
-            onBlur={() => { setSearchFocused(false); }}
+            onChange={(e) => {
+              setSearchInput(e.target.value);
+              setActiveMatchIndex(-1);
+            }}
+            onFocus={() => {
+              setSearchFocused(true);
+            }}
+            onBlur={() => {
+              setSearchFocused(false);
+            }}
             onKeyDown={handleSearchInputKeyDown}
             placeholder="Find in diff"
             aria-label="Find in diff"
             data-testid="diff-viewer-find-input"
-            className="h-6 w-36 rounded border bg-transparent px-2 text-[10px] font-mono"
-            className="removed-style-4"
+            className={`cv-find-input h-6 w-36 rounded border bg-transparent px-2 text-[10px] font-mono${searchFocused ? " cv-find-input--focused" : ""}`}
           />
           <button
             type="button"
             aria-label="Previous search match"
             data-testid="diff-viewer-find-prev"
-            onClick={() => { handleNavigateMatches(-1); }}
+            onClick={() => {
+              handleNavigateMatches(-1);
+            }}
             disabled={searchMatches.length === 0}
-            className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            className="removed-style-5"
+            className="cv-toolbar-btn h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
           >
             Prev
           </button>
@@ -350,18 +408,18 @@ export function DiffViewer({
             type="button"
             aria-label="Next search match"
             data-testid="diff-viewer-find-next"
-            onClick={() => { handleNavigateMatches(1); }}
+            onClick={() => {
+              handleNavigateMatches(1);
+            }}
             disabled={searchMatches.length === 0}
-            className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            className="removed-style-6"
+            className="cv-toolbar-btn h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
           >
             Next
           </button>
           <span
             aria-live="polite"
             data-testid="diff-viewer-find-count"
-            className="w-16 text-right text-[10px] font-semibold"
-            className="removed-style-7"
+            className="cv-find-count w-16 text-right text-[10px] font-semibold"
           >
             {findCountText}
           </span>
@@ -371,9 +429,10 @@ export function DiffViewer({
           type="button"
           data-testid="diff-viewer-wrap-toggle"
           aria-pressed={wordWrap}
-          onClick={() => { setWordWrap((w) => !w); }}
-          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-8"
+          onClick={() => {
+            setWordWrap((w) => !w);
+          }}
+          className={`cv-toolbar-btn shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition${wordWrap ? " cv-toolbar-btn--wrap-active" : ""}`}
         >
           {wordWrap ? "Wrap: On" : "Wrap: Off"}
         </button>
@@ -381,9 +440,10 @@ export function DiffViewer({
         <button
           type="button"
           data-testid="diff-viewer-copy-button"
-          onClick={() => { void handleCopy(); }}
-          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-9"
+          onClick={() => {
+            void handleCopy();
+          }}
+          className="cv-toolbar-btn shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
         >
           {copied ? "Copied!" : "Copy"}
         </button>
@@ -393,8 +453,7 @@ export function DiffViewer({
       {nodeDiffFallbackReason ? (
         <div
           data-testid="inspector-node-diff-fallback"
-          className="shrink-0 border-b px-3 py-1.5 text-[11px]"
-          className="removed-style-10"
+          className="dv-fallback-banner shrink-0 border-b px-3 py-1.5 text-[11px]"
         >
           {nodeDiffFallbackReason}
         </div>
@@ -402,18 +461,16 @@ export function DiffViewer({
 
       {/* Summary bar */}
       <div
-        className="shrink-0 border-b px-3 py-1 text-[11px] font-semibold"
+        className={`dv-summary shrink-0 border-b px-3 py-1 text-[11px] font-semibold${diffResult.isIdentical ? " dv-summary--identical" : ""}`}
         data-testid="diff-viewer-summary"
-        className="removed-style-11"
       >
         {summaryText}
       </div>
 
       {/* Diff content */}
       <div
-        className="min-h-0 flex-1 overflow-auto p-0"
+        className="dv-content min-h-0 flex-1 overflow-auto p-0"
         data-testid="diff-content"
-        className="removed-style-12"
       >
         <div className="min-w-0">
           {diffResult.lines.map((diffLine: DiffLine, i: number) => {
@@ -427,7 +484,18 @@ export function DiffViewer({
             if (hasSearchMatch) lineBg = searchBg;
             if (isActiveMatchLine) lineBg = activeBg;
 
-            const prefix = diffLine.kind === "added" ? "+" : diffLine.kind === "removed" ? "-" : " ";
+            const prefix =
+              diffLine.kind === "added"
+                ? "+"
+                : diffLine.kind === "removed"
+                  ? "-"
+                  : " ";
+            const prefixColor =
+              diffLine.kind === "added"
+                ? prefixColorAdded
+                : diffLine.kind === "removed"
+                  ? prefixColorRemoved
+                  : prefixColorContext;
 
             return (
               <div
@@ -439,13 +507,18 @@ export function DiffViewer({
                 data-testid={`diff-line-${diffLine.kind}`}
                 data-in-focus={inFocus ? "true" : undefined}
                 className="flex text-xs leading-relaxed"
-                className="removed-style-13"
+                style={{
+                  backgroundColor: lineBg,
+                  borderLeft: colors.border
+                    ? `3px solid ${colors.border}`
+                    : undefined,
+                }}
               >
                 {/* Old line number gutter */}
                 <span
                   data-testid="diff-old-line-number"
-                  className="inline-block w-10 shrink-0 pr-1 text-right select-none font-mono"
-                  className="removed-style-14"
+                  className="dv-line-number inline-block w-10 shrink-0 pr-1 text-right select-none font-mono"
+                  style={{ backgroundColor: colors.gutter }}
                 >
                   {diffLine.oldLineNumber ?? ""}
                 </span>
@@ -453,8 +526,8 @@ export function DiffViewer({
                 {/* New line number gutter */}
                 <span
                   data-testid="diff-new-line-number"
-                  className="inline-block w-10 shrink-0 pr-2 text-right select-none font-mono"
-                  className="removed-style-15"
+                  className="dv-line-number inline-block w-10 shrink-0 pr-2 text-right select-none font-mono"
+                  style={{ backgroundColor: colors.gutter }}
                 >
                   {diffLine.newLineNumber ?? ""}
                 </span>
@@ -462,7 +535,7 @@ export function DiffViewer({
                 {/* Diff prefix (+/-/space) */}
                 <span
                   className="inline-block w-4 shrink-0 select-none text-center font-mono"
-                  className="removed-style-16"
+                  style={{ color: prefixColor }}
                 >
                   {prefix}
                 </span>
@@ -470,7 +543,7 @@ export function DiffViewer({
                 {/* Line content */}
                 <pre
                   className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                  className="removed-style-17"
+                  style={{ color: lineContentColor }}
                 >
                   {diffLine.content}
                 </pre>

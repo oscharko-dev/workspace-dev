@@ -23,6 +23,7 @@ import type {
 } from "./token-suggestion-model";
 import { resolveTokenDecisions } from "./token-suggestion-model";
 import type { A11yNudge, A11yNudgeResult } from "./a11y-nudge";
+import "./inspector.css";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -51,23 +52,23 @@ const BAND_LABELS: Record<QualityScoreBand, string> = {
   poor: "Poor",
 };
 
-const BAND_STYLE: Record<
-  QualityScoreBand,
-  { bg: string; border: string; text: string }
-> = {
-  excellent: { bg: "#ecfdf5", border: "#10b981", text: "#065f46" },
-  good: { bg: "#eff6ff", border: "#3b82f6", text: "#1e40af" },
-  fair: { bg: "#fffbeb", border: "#d97706", text: "#78350f" },
-  poor: { bg: "#fef2f2", border: "#dc2626", text: "#991b1b" },
+const BAND_CLASS: Record<QualityScoreBand, string> = {
+  excellent: "sp-quality-band sp-quality-band--excellent",
+  good: "sp-quality-band sp-quality-band--good",
+  fair: "sp-quality-band sp-quality-band--fair",
+  poor: "sp-quality-band sp-quality-band--poor",
 };
 
-const SEVERITY_BADGE: Record<
-  "high" | "medium" | "low",
-  { bg: string; text: string; label: string }
-> = {
-  high: { bg: "#fee2e2", text: "#991b1b", label: "High" },
-  medium: { bg: "#fef9c3", text: "#854d0e", label: "Medium" },
-  low: { bg: "#dbeafe", text: "#1e3a8a", label: "Low" },
+const SEVERITY_CLASS: Record<"high" | "medium" | "low", string> = {
+  high: "sp-severity-badge sp-severity-badge--high",
+  medium: "sp-severity-badge sp-severity-badge--medium",
+  low: "sp-severity-badge sp-severity-badge--low",
+};
+
+const SEVERITY_LABEL: Record<"high" | "medium" | "low", string> = {
+  high: "High",
+  medium: "Medium",
+  low: "Low",
 };
 
 // ---------------------------------------------------------------------------
@@ -98,7 +99,7 @@ export function SuggestionsPanel({
     <section
       aria-label="Import quality suggestions"
       data-testid="inspector-suggestions-panel"
-      className="removed-style-1"
+      className="sp-panel"
     >
       <QualityScoreSection qualityScore={qualityScore} />
       {tokenModel.available ? (
@@ -127,18 +128,13 @@ function QualityScoreSection({
 }: {
   qualityScore: QualityScoreResult;
 }): JSX.Element {
-  const bandStyle = BAND_STYLE[qualityScore.band];
+  const bandClass = BAND_CLASS[qualityScore.band];
   const bandLabel = BAND_LABELS[qualityScore.band];
   return (
     <div data-testid="suggestions-quality-score">
-      <header
-        className="removed-style-2"
-      >
-        <span className="removed-style-3">Pre-flight quality score</span>
-        <span
-          data-testid="suggestions-quality-band"
-          className="removed-style-4"
-        >
+      <header className="sp-section-header">
+        <span className="sp-section-title">Pre-flight quality score</span>
+        <span data-testid="suggestions-quality-band" className={bandClass}>
           {bandLabel} · {qualityScore.score}
         </span>
       </header>
@@ -162,32 +158,24 @@ function BreakdownBar({
     ["Codegen", breakdown.codegen],
   ];
   return (
-    <div className="removed-style-5">
+    <div className="sp-breakdown-container">
       {rows.map(([label, value]) => (
-        <div
-          key={label}
-          className="removed-style-6"
-        >
-          <span
-            className="removed-style-7"
-          >
-            {label}
-          </span>
+        <div key={label} className="sp-breakdown-row">
+          <span className="sp-breakdown-label">{label}</span>
           <div
             aria-label={`${label} score ${String(value)} out of 100`}
             role="progressbar"
             aria-valuenow={value}
             aria-valuemin={0}
             aria-valuemax={100}
-            className="removed-style-8"
+            className="sp-breakdown-bar"
           >
             <span
-              className="removed-style-9"
+              className={`sp-breakdown-fill ${value >= 80 ? "sp-breakdown-fill--high" : value >= 60 ? "sp-breakdown-fill--medium" : "sp-breakdown-fill--low"}`}
+              style={{ width: `${String(value)}%` }}
             />
           </div>
-          <span className="removed-style-10">
-            {value}
-          </span>
+          <span className="sp-breakdown-value">{value}</span>
         </div>
       ))}
     </div>
@@ -201,10 +189,7 @@ function Summary({
 }): JSX.Element {
   const { summary } = qualityScore;
   return (
-    <p
-      data-testid="suggestions-quality-summary"
-      className="removed-style-11"
-    >
+    <p data-testid="suggestions-quality-summary" className="sp-summary">
       {summary.totalNodes} nodes · depth {summary.maxDepth} ·{" "}
       {summary.unmappedNodes} unmapped · {summary.interactiveWithoutSemantics}{" "}
       interactive w/o semantics · {summary.diagnosticsBySeverity.error} errors,{" "}
@@ -215,34 +200,22 @@ function Summary({
 
 function RiskTagList({ risks }: { risks: QualityRiskTag[] }): JSX.Element {
   return (
-    <ul
-      data-testid="suggestions-risk-list"
-      className="removed-style-12"
-    >
-      {risks.slice(0, 8).map((risk) => {
-        const sev = SEVERITY_BADGE[risk.severity];
-        return (
-          <li
-            key={risk.id}
-            data-testid={`suggestions-risk-${risk.severity}`}
-            className="removed-style-13"
-          >
-            <span
-              className="removed-style-14"
-            >
-              {sev.label}
-            </span>
-            <div className="removed-style-15">
-              <div className="removed-style-16">{risk.label}</div>
-              <p
-                className="removed-style-17"
-              >
-                {risk.detail}
-              </p>
-            </div>
-          </li>
-        );
-      })}
+    <ul data-testid="suggestions-risk-list" className="sp-risk-list">
+      {risks.slice(0, 8).map((risk) => (
+        <li
+          key={risk.id}
+          data-testid={`suggestions-risk-${risk.severity}`}
+          className="sp-risk-item"
+        >
+          <span className={SEVERITY_CLASS[risk.severity]}>
+            {SEVERITY_LABEL[risk.severity]}
+          </span>
+          <div className="sp-item-body">
+            <div className="sp-item-title">{risk.label}</div>
+            <p className="sp-item-detail">{risk.detail}</p>
+          </div>
+        </li>
+      ))}
     </ul>
   );
 }
@@ -305,22 +278,20 @@ function TokenSuggestionsSection({
 
   return (
     <div data-testid="suggestions-token-section">
-      <header
-        className="removed-style-18"
-      >
-        <span className="removed-style-19">Token mapping intelligence</span>
-        <span className="removed-style-20">
+      <header className="sp-section-header">
+        <span className="sp-section-title">Token mapping intelligence</span>
+        <span className="sp-section-meta">
           {model.summary.conflicts} conflicts · {model.summary.unmapped}{" "}
           unmapped · {model.summary.autoAccepted} auto-accepted
         </span>
       </header>
-      <div className="removed-style-21">
+      <div className="sp-token-controls">
         <button
           type="button"
           onClick={acceptAll}
           disabled={disabled}
           data-testid="suggestions-token-accept-all"
-          style={secondaryButton(disabled)}
+          className="sp-btn-secondary"
         >
           Accept all
         </button>
@@ -329,7 +300,7 @@ function TokenSuggestionsSection({
           onClick={rejectAll}
           disabled={disabled}
           data-testid="suggestions-token-reject-all"
-          style={secondaryButton(disabled)}
+          className="sp-btn-secondary"
         >
           Reject all
         </button>
@@ -338,12 +309,12 @@ function TokenSuggestionsSection({
           onClick={apply}
           disabled={disabled || !onApply}
           data-testid="suggestions-token-apply"
-          style={primaryButton(disabled || !onApply)}
+          className="sp-btn-primary"
         >
           Apply decisions
         </button>
       </div>
-      <ul className="removed-style-22">
+      <ul className="sp-token-list">
         {model.suggestions.map((suggestion) => (
           <TokenSuggestionRow
             key={suggestion.id}
@@ -378,7 +349,7 @@ function TokenSuggestionRow({
   return (
     <li
       data-testid={`suggestions-token-${suggestion.kind}`}
-      className="removed-style-23"
+      className={`sp-token-item ${accepted ? "sp-token-item--accepted" : "sp-token-item--pending"}`}
     >
       <input
         type="checkbox"
@@ -388,31 +359,19 @@ function TokenSuggestionRow({
           onToggle(suggestion.id);
         }}
         aria-label={`Accept token mapping for ${suggestion.tokenName}`}
-        className="removed-style-24"
+        className="sp-token-checkbox"
       />
-      <div className="removed-style-25">
-        <div
-          className="removed-style-26"
-        >
-          <code
-            className="removed-style-27"
-          >
-            {suggestion.tokenName}
-          </code>
-          <span
-            className="removed-style-28"
-          >
-            {recommendationLabel}
-          </span>
+      <div className="sp-item-body">
+        <div className="sp-token-meta">
+          <code className="sp-token-name">{suggestion.tokenName}</code>
+          <span className="sp-token-recommendation">{recommendationLabel}</span>
           {suggestion.kind === "conflict" ? (
-            <span className="removed-style-29">
+            <span className="sp-token-conflict-detail">
               {suggestion.figmaValue} → {suggestion.existingValue}
             </span>
           ) : null}
         </div>
-        <p className="removed-style-30">
-          {suggestion.detail}
-        </p>
+        <p className="sp-token-detail">{suggestion.detail}</p>
       </div>
     </li>
   );
@@ -431,16 +390,14 @@ function A11yNudgeSection({
 }): JSX.Element {
   return (
     <div data-testid="suggestions-a11y-section">
-      <header
-        className="removed-style-31"
-      >
-        <span className="removed-style-32">Post-generation review nudges</span>
-        <span className="removed-style-33">
+      <header className="sp-section-header">
+        <span className="sp-section-title">Post-generation review nudges</span>
+        <span className="sp-section-meta">
           {result.summary.total} nudge{result.summary.total === 1 ? "" : "s"} ·{" "}
           {result.summary.byFile} file{result.summary.byFile === 1 ? "" : "s"}
         </span>
       </header>
-      <ul className="removed-style-34">
+      <ul className="sp-token-list">
         {result.nudges.slice(0, 10).map((nudge) => (
           <A11yNudgeRow
             key={`${nudge.ruleId}:${nudge.filePath}:${String(nudge.line ?? 0)}`}
@@ -460,24 +417,19 @@ function A11yNudgeRow({
   nudge: A11yNudge;
   onFocusFile?: (path: string, line?: number) => void;
 }): JSX.Element {
-  const sev = SEVERITY_BADGE[nudge.severity];
   return (
     <li
       data-testid={`suggestions-a11y-${nudge.severity}`}
-      className="removed-style-35"
+      className="sp-a11y-item"
     >
-      <span
-        className="removed-style-36"
-      >
-        {sev.label}
+      <span className={SEVERITY_CLASS[nudge.severity]}>
+        {SEVERITY_LABEL[nudge.severity]}
       </span>
-      <div className="removed-style-37">
-        <div
-          className="removed-style-38"
-        >
-          <span className="removed-style-39">{nudge.label}</span>
+      <div className="sp-item-body">
+        <div className="sp-a11y-label-row">
+          <span className="sp-a11y-label">{nudge.label}</span>
           {nudge.wcag ? (
-            <span className="removed-style-40">{nudge.wcag}</span>
+            <span className="sp-a11y-wcag">{nudge.wcag}</span>
           ) : null}
           {onFocusFile ? (
             <button
@@ -486,53 +438,20 @@ function A11yNudgeRow({
                 onFocusFile(nudge.filePath, nudge.line);
               }}
               data-testid={`suggestions-a11y-focus-${nudge.ruleId}`}
-              className="removed-style-41"
+              className="sp-a11y-file-btn"
             >
               {nudge.filePath}
               {nudge.line ? `:${String(nudge.line)}` : ""}
             </button>
           ) : (
-            <span className="removed-style-42">
+            <span className="sp-a11y-file-label">
               {nudge.filePath}
               {nudge.line ? `:${String(nudge.line)}` : ""}
             </span>
           )}
         </div>
-        <p
-          className="removed-style-43"
-        >
-          {nudge.detail}
-        </p>
+        <p className="sp-item-detail">{nudge.detail}</p>
       </div>
     </li>
   );
-}
-
-// ---------------------------------------------------------------------------
-// Button helpers
-// ---------------------------------------------------------------------------
-
-function secondaryButton(disabled: boolean): React.CSSProperties {
-  return {
-    padding: "3px 10px",
-    borderRadius: 4,
-    border: "1px solid #d1d5db",
-    background: "#f9fafb",
-    cursor: disabled ? "not-allowed" : "pointer",
-    fontSize: 11,
-    color: "#1f2937",
-  };
-}
-
-function primaryButton(disabled: boolean): React.CSSProperties {
-  return {
-    padding: "3px 10px",
-    borderRadius: 4,
-    border: "1px solid #1d4ed8",
-    background: disabled ? "#93c5fd" : "#2563eb",
-    color: "#fff",
-    cursor: disabled ? "not-allowed" : "pointer",
-    fontSize: 11,
-    fontWeight: 600,
-  };
 }

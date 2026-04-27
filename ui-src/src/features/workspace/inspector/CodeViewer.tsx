@@ -21,7 +21,7 @@ import {
   useState,
   useSyncExternalStore,
   type JSX,
-  type KeyboardEvent as ReactKeyboardEvent
+  type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -30,21 +30,25 @@ import {
   exceedsMaxSize,
   getPreferredTheme,
   type HighlightTheme,
-  type HighlightResult
+  type HighlightResult,
 } from "../../../lib/shiki-shared";
-import { highlightCodeWithWorker, isAbortError } from "../../../lib/shiki-worker-client";
+import {
+  highlightCodeWithWorker,
+  isAbortError,
+} from "../../../lib/shiki-worker-client";
 import {
   buildCodeBoundaryLayout,
   type CodeBoundaryEntry,
-  type CodeBoundaryWithLane
+  type CodeBoundaryWithLane,
 } from "./code-boundaries";
 import {
   formatCodeForViewer,
   FORMAT_ERROR_TIMEOUT_MS,
   FORMAT_SUCCESS_TIMEOUT_MS,
   type FormatStatus,
-  type ViewerLanguage
+  type ViewerLanguage,
 } from "./code-formatting";
+import "./inspector.css";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -105,11 +109,26 @@ interface RainbowDecoration {
 // Constants
 // ---------------------------------------------------------------------------
 
-const IR_START_PATTERN = /\{\/\* @ir:start (\S+) (.+?) (\S+?)(?: extracted)? \*\/\}/;
+const IR_START_PATTERN =
+  /\{\/\* @ir:start (\S+) (.+?) (\S+?)(?: extracted)? \*\/\}/;
 const IR_END_PATTERN = /\{\/\* @ir:end (\S+) \*\/\}/;
 const RAINBOW_BRACKET_ATTRIBUTE = "data-rainbow-bracket";
-const LIGHT_RAINBOW_COLORS = ["#d1242f", "#8250df", "#0969da", "#0a7f50", "#9a6700", "#bc4c00"] as const;
-const DARK_RAINBOW_COLORS = ["#ff7b72", "#d2a8ff", "#79c0ff", "#7ee787", "#f2cc60", "#ffa657"] as const;
+const LIGHT_RAINBOW_COLORS = [
+  "#d1242f",
+  "#8250df",
+  "#0969da",
+  "#0a7f50",
+  "#9a6700",
+  "#bc4c00",
+] as const;
+const DARK_RAINBOW_COLORS = [
+  "#ff7b72",
+  "#d2a8ff",
+  "#79c0ff",
+  "#7ee787",
+  "#f2cc60",
+  "#ffa657",
+] as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -133,9 +152,13 @@ function parseShikiLines(html: string): string[] | null {
       return null;
     }
 
-    const lineElements = Array.from(codeElement.children).filter((child): child is HTMLSpanElement => {
-      return child instanceof HTMLSpanElement && child.classList.contains("line");
-    });
+    const lineElements = Array.from(codeElement.children).filter(
+      (child): child is HTMLSpanElement => {
+        return (
+          child instanceof HTMLSpanElement && child.classList.contains("line")
+        );
+      },
+    );
 
     if (lineElements.length === 0) {
       return null;
@@ -157,7 +180,7 @@ function extractBgColor(html: string): string | null {
 
 function clampLineNumber({
   line,
-  maxLines
+  maxLines,
 }: {
   line: number;
   maxLines: number;
@@ -193,7 +216,7 @@ function parseSearchInput(value: string): SearchMode {
 
 function findOccurrences({
   lines,
-  query
+  query,
 }: {
   lines: string[];
   query: string;
@@ -218,7 +241,7 @@ function findOccurrences({
 
       matches.push({
         line: lineIndex + 1,
-        column: foundIndex + 1
+        column: foundIndex + 1,
       });
       startIndex = foundIndex + 1;
     }
@@ -234,7 +257,10 @@ function resolveViewerTheme(themeMode: "system" | "dark"): ViewerTheme {
   return getPreferredTheme();
 }
 
-function compareBoundaries(left: CodeBoundaryEntry, right: CodeBoundaryEntry): number {
+function compareBoundaries(
+  left: CodeBoundaryEntry,
+  right: CodeBoundaryEntry,
+): number {
   if (left.startLine !== right.startLine) {
     return left.startLine - right.startLine;
   }
@@ -245,7 +271,7 @@ function compareBoundaries(left: CodeBoundaryEntry, right: CodeBoundaryEntry): n
 }
 
 function parseIrMarkersFromDisplayedCode({
-  code
+  code,
 }: {
   code: string;
 }): CodeBoundaryEntry[] {
@@ -266,7 +292,7 @@ function parseIrMarkersFromDisplayedCode({
         irNodeId: startMatch[1]!,
         irNodeName: startMatch[2]!,
         irNodeType: startMatch[3]!,
-        startLine: index + 1
+        startLine: index + 1,
       });
       continue;
     }
@@ -277,7 +303,11 @@ function parseIrMarkersFromDisplayedCode({
     }
 
     const targetNodeId = endMatch[1]!;
-    for (let stackIndex = openStack.length - 1; stackIndex >= 0; stackIndex -= 1) {
+    for (
+      let stackIndex = openStack.length - 1;
+      stackIndex >= 0;
+      stackIndex -= 1
+    ) {
       const candidate = openStack[stackIndex];
       if (!candidate || candidate.irNodeId !== targetNodeId) {
         continue;
@@ -288,7 +318,7 @@ function parseIrMarkersFromDisplayedCode({
         irNodeName: candidate.irNodeName,
         irNodeType: candidate.irNodeType,
         startLine: candidate.startLine,
-        endLine: index + 1
+        endLine: index + 1,
       });
       break;
     }
@@ -297,14 +327,14 @@ function parseIrMarkersFromDisplayedCode({
   return entries.sort(compareBoundaries).map((entry) => ({
     ...entry,
     irNodeName: entry.irNodeName,
-    irNodeType: entry.irNodeType
+    irNodeType: entry.irNodeType,
   }));
 }
 
 function projectBoundariesToDisplay({
   boundaries,
   lineOffset,
-  totalLines
+  totalLines,
 }: {
   boundaries: CodeBoundaryEntry[];
   lineOffset: number;
@@ -326,7 +356,7 @@ function projectBoundariesToDisplay({
     projected.push({
       ...entry,
       startLine: Math.max(1, lower),
-      endLine: Math.min(totalLines, upper)
+      endLine: Math.min(totalLines, upper),
     });
   }
 
@@ -338,7 +368,7 @@ function escapeHtml(value: string): string {
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
-    .replaceAll("\"", "&quot;")
+    .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
 
@@ -346,7 +376,10 @@ function normalizeRenderableLineHtml(lineHtml: string): string {
   return lineHtml.length > 0 ? lineHtml : "&nbsp;";
 }
 
-function isJsxLikeLanguage(language: ViewerLanguage, filePath: string): boolean {
+function isJsxLikeLanguage(
+  language: ViewerLanguage,
+  filePath: string,
+): boolean {
   return language === "tsx" || filePath.endsWith(".jsx");
 }
 
@@ -379,7 +412,7 @@ function shouldTreatAsJsxTagStart(line: string, index: number): boolean {
 function buildRainbowDecorations({
   lines,
   palette,
-  allowAngleBrackets
+  allowAngleBrackets,
 }: {
   lines: string[];
   palette: readonly string[];
@@ -391,7 +424,7 @@ function buildRainbowDecorations({
   const openers = new Map<string, string>([
     ["(", ")"],
     ["[", "]"],
-    ["{", "}"]
+    ["{", "}"],
   ]);
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
@@ -405,26 +438,30 @@ function buildRainbowDecorations({
         const depth = stack.length;
         const decoration = {
           color: palette[depth % palette.length]!,
-          depth
+          depth,
         };
         lineDecorations.set(charIndex, decoration);
         stack.push({
           closer: openers.get(char)!,
-          decoration
+          decoration,
         });
         continue;
       }
 
-      if (allowAngleBrackets && char === "<" && shouldTreatAsJsxTagStart(line, charIndex)) {
+      if (
+        allowAngleBrackets &&
+        char === "<" &&
+        shouldTreatAsJsxTagStart(line, charIndex)
+      ) {
         const depth = stack.length;
         const decoration = {
           color: palette[depth % palette.length]!,
-          depth
+          depth,
         };
         lineDecorations.set(charIndex, decoration);
         stack.push({
           closer: ">",
-          decoration
+          decoration,
         });
         continue;
       }
@@ -445,7 +482,7 @@ function buildRainbowDecorations({
 
 function applyRainbowDecorationsToLineHtml({
   lineHtml,
-  decorations
+  decorations,
 }: {
   lineHtml: string;
   decorations: Map<number, RainbowDecoration>;
@@ -500,7 +537,9 @@ function applyRainbowDecorationsToLineHtml({
       }
 
       if (index > segmentStart) {
-        fragment.append(document.createTextNode(value.slice(segmentStart, index)));
+        fragment.append(
+          document.createTextNode(value.slice(segmentStart, index)),
+        );
       }
 
       const bracket = document.createElement("span");
@@ -544,7 +583,7 @@ export function CodeViewer({
   themeMode = "system",
   allowExternalFindShortcut = false,
   onFormat,
-  formatStatus: externalFormatStatus
+  formatStatus: externalFormatStatus,
 }: CodeViewerProps): JSX.Element {
   const [highlightState, setHighlightState] = useState<{
     result: HighlightResult | null;
@@ -559,24 +598,33 @@ export function CodeViewer({
   const [activeMatchIndex, setActiveMatchIndex] = useState(-1);
   const [jumpTargetLine, setJumpTargetLine] = useState<number | null>(null);
   const [searchFocused, setSearchFocused] = useState(false);
-  const [internalBoundariesEnabled, setInternalBoundariesEnabled] = useState(false);
+  const [internalBoundariesEnabled, setInternalBoundariesEnabled] =
+    useState(false);
   const [hoveredBoundary, setHoveredBoundary] = useState<{
     boundary: CodeBoundaryWithLane;
     x: number;
     y: number;
   } | null>(null);
   const [formattedCode, setFormattedCode] = useState<string | null>(null);
-  const [formatStatus, setFormatStatus] = useState<FormatStatus>({ kind: "idle", message: null });
+  const [formatStatus, setFormatStatus] = useState<FormatStatus>({
+    kind: "idle",
+    message: null,
+  });
   const [rainbowBracketsEnabled, setRainbowBracketsEnabled] = useState(false);
   const codeViewerRef = useRef<HTMLDivElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const lineRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const copyTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const systemTheme = useSyncExternalStore(
     (onChange) => {
-      if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      if (
+        typeof window === "undefined" ||
+        typeof window.matchMedia !== "function"
+      ) {
         return () => {};
       }
 
@@ -595,13 +643,20 @@ export function CodeViewer({
     }
     return resolveViewerTheme(themeMode);
   }, [systemTheme, themeMode]);
-  const usesExternalFormatting = onFormat !== undefined || externalFormatStatus !== undefined;
+  const usesExternalFormatting =
+    onFormat !== undefined || externalFormatStatus !== undefined;
   const effectiveFormatStatus = externalFormatStatus ?? formatStatus;
   const displayCode = usesExternalFormatting ? code : (formattedCode ?? code);
-  const detectedLanguage = useMemo<ViewerLanguage>(() => detectLanguage(filePath), [filePath]);
+  const detectedLanguage = useMemo<ViewerLanguage>(
+    () => detectLanguage(filePath),
+    [filePath],
+  );
   const isOversize = exceedsMaxSize(displayCode);
   const rawLines = useMemo(() => displayCode.split("\n"), [displayCode]);
-  const searchMode = useMemo<SearchMode>(() => parseSearchInput(searchInput), [searchInput]);
+  const searchMode = useMemo<SearchMode>(
+    () => parseSearchInput(searchInput),
+    [searchInput],
+  );
   const searchMatches = useMemo(() => {
     if (searchMode.kind !== "find") {
       return [];
@@ -625,18 +680,21 @@ export function CodeViewer({
     }
   }, []);
 
-  const scheduleFormatStatusReset = useCallback((delayMs: number) => {
-    clearFormatFeedbackTimeout();
-    formatFeedbackTimeoutRef.current = setTimeout(() => {
-      setFormatStatus({ kind: "idle", message: null });
-      formatFeedbackTimeoutRef.current = null;
-    }, delayMs);
-  }, [clearFormatFeedbackTimeout]);
+  const scheduleFormatStatusReset = useCallback(
+    (delayMs: number) => {
+      clearFormatFeedbackTimeout();
+      formatFeedbackTimeoutRef.current = setTimeout(() => {
+        setFormatStatus({ kind: "idle", message: null });
+        formatFeedbackTimeoutRef.current = null;
+      }, delayMs);
+    },
+    [clearFormatFeedbackTimeout],
+  );
 
   const scrollToLine = useCallback(
     ({
       lineNumber,
-      behavior
+      behavior,
     }: {
       lineNumber: number;
       behavior: ScrollBehavior;
@@ -647,7 +705,7 @@ export function CodeViewer({
       }
       target.scrollIntoView({ block: "center", behavior });
     },
-    []
+    [],
   );
 
   const focusFindInput = useCallback(() => {
@@ -690,7 +748,7 @@ export function CodeViewer({
       code: displayCode,
       filePath,
       theme: currentTheme,
-      signal: abortController.signal
+      signal: abortController.signal,
     })
       .then((result) => {
         if (abortController.signal.aborted) {
@@ -700,7 +758,7 @@ export function CodeViewer({
           result,
           forCode: displayCode,
           forFilePath: filePath,
-          forTheme: currentTheme
+          forTheme: currentTheme,
         });
       })
       .catch((error: unknown) => {
@@ -711,7 +769,7 @@ export function CodeViewer({
           result: null,
           forCode: displayCode,
           forFilePath: filePath,
-          forTheme: currentTheme
+          forTheme: currentTheme,
         });
       });
 
@@ -746,16 +804,18 @@ export function CodeViewer({
   }, [activeMatch, scrollToLine, searchMode.kind]);
 
   // Determine if the current highlight state matches the current inputs
-  const isFresh = highlightState !== null
-    && highlightState.forCode === displayCode
-    && highlightState.forFilePath === filePath
-    && highlightState.forTheme === currentTheme;
+  const isFresh =
+    highlightState !== null &&
+    highlightState.forCode === displayCode &&
+    highlightState.forFilePath === filePath &&
+    highlightState.forTheme === currentTheme;
   const isHighlighting = !isOversize && !isFresh;
-  const effectiveHighlightResult = isOversize || !isFresh ? null : highlightState.result;
+  const effectiveHighlightResult =
+    isOversize || !isFresh ? null : highlightState.result;
 
   const parsedDisplayBoundaries = useMemo(() => {
     return parseIrMarkersFromDisplayedCode({
-      code: displayCode
+      code: displayCode,
     });
   }, [displayCode]);
 
@@ -763,26 +823,32 @@ export function CodeViewer({
     return projectBoundariesToDisplay({
       boundaries,
       lineOffset,
-      totalLines: rawLines.length
+      totalLines: rawLines.length,
     });
   }, [boundaries, lineOffset, rawLines.length]);
 
   const effectiveViewerBoundaries = useMemo(() => {
-    return parsedDisplayBoundaries.length > 0 ? parsedDisplayBoundaries : projectedBoundaries;
+    return parsedDisplayBoundaries.length > 0
+      ? parsedDisplayBoundaries
+      : projectedBoundaries;
   }, [parsedDisplayBoundaries, projectedBoundaries]);
 
   const selectedBoundary = useMemo(() => {
     if (!selectedIrNodeId) {
       return null;
     }
-    return effectiveViewerBoundaries.find((entry) => entry.irNodeId === selectedIrNodeId) ?? null;
+    return (
+      effectiveViewerBoundaries.find(
+        (entry) => entry.irNodeId === selectedIrNodeId,
+      ) ?? null
+    );
   }, [effectiveViewerBoundaries, selectedIrNodeId]);
 
   const effectiveHighlightRange = useMemo<HighlightRange | null>(() => {
     if (selectedBoundary) {
       return {
         startLine: selectedBoundary.startLine,
-        endLine: selectedBoundary.endLine
+        endLine: selectedBoundary.endLine,
       };
     }
     return highlightRange ?? null;
@@ -793,7 +859,7 @@ export function CodeViewer({
     if (isFresh && effectiveHighlightRange) {
       scrollToLine({
         lineNumber: effectiveHighlightRange.startLine,
-        behavior: "smooth"
+        behavior: "smooth",
       });
     }
   }, [effectiveHighlightRange, isFresh, scrollToLine]);
@@ -812,17 +878,22 @@ export function CodeViewer({
       }
       if (element instanceof HTMLInputElement) {
         const inputType = element.type.toLowerCase();
-        return inputType !== "button"
-          && inputType !== "checkbox"
-          && inputType !== "file"
-          && inputType !== "hidden"
-          && inputType !== "image"
-          && inputType !== "radio"
-          && inputType !== "range"
-          && inputType !== "reset"
-          && inputType !== "submit";
+        return (
+          inputType !== "button" &&
+          inputType !== "checkbox" &&
+          inputType !== "file" &&
+          inputType !== "hidden" &&
+          inputType !== "image" &&
+          inputType !== "radio" &&
+          inputType !== "range" &&
+          inputType !== "reset" &&
+          inputType !== "submit"
+        );
       }
-      return element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement;
+      return (
+        element instanceof HTMLTextAreaElement ||
+        element instanceof HTMLSelectElement
+      );
     };
 
     const onKeyDown = (event: KeyboardEvent): void => {
@@ -838,7 +909,10 @@ export function CodeViewer({
       const activeElement = document.activeElement;
       const viewerHasFocus = codeViewerRef.current.contains(activeElement);
       if (!viewerHasFocus && activeElement !== document.body) {
-        if (!allowExternalFindShortcut || isTextEditableElement(activeElement)) {
+        if (
+          !allowExternalFindShortcut ||
+          isTextEditableElement(activeElement)
+        ) {
           return;
         }
       }
@@ -872,7 +946,8 @@ export function CodeViewer({
   }, [effectiveHighlightResult]);
 
   const isDark = currentTheme === "github-dark";
-  const effectiveBoundariesEnabled = boundariesEnabled ?? internalBoundariesEnabled;
+  const effectiveBoundariesEnabled =
+    boundariesEnabled ?? internalBoundariesEnabled;
   const rainbowPalette = isDark ? DARK_RAINBOW_COLORS : LIGHT_RAINBOW_COLORS;
   const baseLineHtmls = useMemo(() => {
     if (highlightedLines) {
@@ -889,30 +964,48 @@ export function CodeViewer({
     const decorations = buildRainbowDecorations({
       lines: rawLines,
       palette: rainbowPalette,
-      allowAngleBrackets: isJsxLikeLanguage(detectedLanguage, filePath)
+      allowAngleBrackets: isJsxLikeLanguage(detectedLanguage, filePath),
     });
 
     return baseLineHtmls.map((lineHtml, index) => {
       return applyRainbowDecorationsToLineHtml({
         lineHtml,
-        decorations: decorations[index] ?? new Map<number, RainbowDecoration>()
+        decorations: decorations[index] ?? new Map<number, RainbowDecoration>(),
       });
     });
-  }, [baseLineHtmls, detectedLanguage, filePath, isOversize, rainbowBracketsEnabled, rainbowPalette, rawLines]);
+  }, [
+    baseLineHtmls,
+    detectedLanguage,
+    filePath,
+    isOversize,
+    rainbowBracketsEnabled,
+    rainbowPalette,
+    rawLines,
+  ]);
 
-  const boundaryLayout = useMemo<ReturnType<typeof buildCodeBoundaryLayout>>(() => {
+  const boundaryLayout = useMemo<
+    ReturnType<typeof buildCodeBoundaryLayout>
+  >(() => {
     if (!effectiveBoundariesEnabled || effectiveViewerBoundaries.length === 0) {
       return {
         boundaries: [],
-        byLine: new Map<number, { visible: CodeBoundaryWithLane[]; overflowCount: number }>()
+        byLine: new Map<
+          number,
+          { visible: CodeBoundaryWithLane[]; overflowCount: number }
+        >(),
       };
     }
     return buildCodeBoundaryLayout({
       entries: effectiveViewerBoundaries,
       totalLines: rawLines.length,
-      isDark
+      isDark,
     });
-  }, [effectiveBoundariesEnabled, effectiveViewerBoundaries, isDark, rawLines.length]);
+  }, [
+    effectiveBoundariesEnabled,
+    effectiveViewerBoundaries,
+    isDark,
+    rawLines.length,
+  ]);
 
   const findCountText = useMemo(() => {
     if (searchMode.kind !== "find") {
@@ -933,11 +1026,12 @@ export function CodeViewer({
       setJumpTargetLine(null);
       setActiveMatchIndex((current) => {
         const baseIndex = current < 0 ? (direction === 1 ? -1 : 0) : current;
-        const next = (baseIndex + direction + searchMatches.length) % searchMatches.length;
+        const next =
+          (baseIndex + direction + searchMatches.length) % searchMatches.length;
         return next;
       });
     },
-    [searchMatches.length, searchMode.kind]
+    [searchMatches.length, searchMode.kind],
   );
 
   const handleApplyLineJump = useCallback(() => {
@@ -946,7 +1040,7 @@ export function CodeViewer({
     }
     const clamped = clampLineNumber({
       line: searchMode.requestedLine,
-      maxLines: rawLines.length
+      maxLines: rawLines.length,
     });
     setJumpTargetLine(clamped);
     setActiveMatchIndex(-1);
@@ -968,7 +1062,7 @@ export function CodeViewer({
         handleNavigateMatches(event.shiftKey ? -1 : 1);
       }
     },
-    [handleApplyLineJump, handleNavigateMatches, searchMode.kind]
+    [handleApplyLineJump, handleNavigateMatches, searchMode.kind],
   );
 
   const handleBoundariesToggle = useCallback(() => {
@@ -984,7 +1078,12 @@ export function CodeViewer({
     let textToCopy = displayCode;
     if (effectiveHighlightRange) {
       const lines = displayCode.split("\n");
-      textToCopy = lines.slice(effectiveHighlightRange.startLine - 1, effectiveHighlightRange.endLine).join("\n");
+      textToCopy = lines
+        .slice(
+          effectiveHighlightRange.startLine - 1,
+          effectiveHighlightRange.endLine,
+        )
+        .join("\n");
     }
     try {
       await navigator.clipboard.writeText(textToCopy);
@@ -1014,19 +1113,27 @@ export function CodeViewer({
       const formatted = await formatCodeForViewer({
         code: displayCode,
         filePath,
-        language: detectedLanguage
+        language: detectedLanguage,
       });
       setFormattedCode(formatted);
       setFormatStatus({ kind: "success", message: null });
       scheduleFormatStatusReset(FORMAT_SUCCESS_TIMEOUT_MS);
     } catch (error) {
-      const message = error instanceof Error && error.message.length > 0
-        ? error.message
-        : "Formatting failed.";
+      const message =
+        error instanceof Error && error.message.length > 0
+          ? error.message
+          : "Formatting failed.";
       setFormatStatus({ kind: "error", message });
       scheduleFormatStatusReset(FORMAT_ERROR_TIMEOUT_MS);
     }
-  }, [clearFormatFeedbackTimeout, detectedLanguage, displayCode, filePath, onFormat, scheduleFormatStatusReset]);
+  }, [
+    clearFormatFeedbackTimeout,
+    detectedLanguage,
+    displayCode,
+    filePath,
+    onFormat,
+    scheduleFormatStatusReset,
+  ]);
 
   useEffect(() => {
     if (!effectiveBoundariesEnabled || effectiveViewerBoundaries.length === 0) {
@@ -1044,22 +1151,40 @@ export function CodeViewer({
     return "Format";
   }, [effectiveFormatStatus.kind]);
 
+  // Line highlight colors — runtime values that depend on isDark, cannot be static CSS
+  const rangeBg = isDark
+    ? "rgba(56, 139, 253, 0.15)"
+    : "rgba(16, 185, 129, 0.1)";
+  const searchBg = isDark
+    ? "rgba(251, 191, 36, 0.12)"
+    : "rgba(245, 158, 11, 0.14)";
+  const stackedBg = isDark
+    ? "rgba(147, 197, 253, 0.23)"
+    : "rgba(16, 185, 129, 0.16)";
+  const activeBg = isDark
+    ? "rgba(251, 191, 36, 0.28)"
+    : "rgba(245, 158, 11, 0.24)";
+  const jumpBg = isDark
+    ? "rgba(96, 165, 250, 0.22)"
+    : "rgba(59, 130, 246, 0.2)";
+  const emphasisBorder = isDark ? "#f59e0b" : "#b45309";
+
+  // Plain-text fallback color — only applied when Shiki hasn't produced output
+  const plainTextColor = isDark ? "#c9d1d9" : "#24292f";
+
   return (
     <div
       ref={codeViewerRef}
-      className="flex h-full min-h-0 flex-col"
+      className="cv-viewer flex h-full min-h-0 flex-col"
+      data-theme={isDark ? "dark" : undefined}
       data-testid="code-viewer"
     >
       {/* Toolbar */}
-      <div
-        className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
-        className="removed-style-1"
-      >
+      <div className="cv-toolbar flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
         {/* File path */}
         <span
-          className="min-w-0 flex-1 truncate text-xs font-mono"
+          className="cv-filepath min-w-0 flex-1 truncate text-xs font-mono"
           data-testid="code-viewer-filepath"
-          className="removed-style-2"
         >
           {filePath}
         </span>
@@ -1083,8 +1208,7 @@ export function CodeViewer({
             onKeyDown={handleSearchInputKeyDown}
             placeholder="Find or :line"
             data-testid="code-viewer-find-input"
-            className="h-6 w-40 rounded border bg-transparent px-2 text-[10px] font-mono"
-            className="removed-style-3"
+            className={`cv-find-input h-6 w-40 rounded border bg-transparent px-2 text-[10px] font-mono${searchFocused ? " cv-find-input--focused" : ""}`}
           />
           <button
             type="button"
@@ -1093,8 +1217,7 @@ export function CodeViewer({
               handleNavigateMatches(-1);
             }}
             disabled={searchMode.kind !== "find" || searchMatches.length === 0}
-            className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            className="removed-style-4"
+            className="cv-toolbar-btn h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
           >
             Prev
           </button>
@@ -1105,15 +1228,13 @@ export function CodeViewer({
               handleNavigateMatches(1);
             }}
             disabled={searchMode.kind !== "find" || searchMatches.length === 0}
-            className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            className="removed-style-5"
+            className="cv-toolbar-btn h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
           >
             Next
           </button>
           <span
             data-testid="code-viewer-find-count"
-            className="w-16 text-right text-[10px] font-semibold"
-            className="removed-style-6"
+            className="cv-find-count w-16 text-right text-[10px] font-semibold"
           >
             {findCountText}
           </span>
@@ -1122,9 +1243,10 @@ export function CodeViewer({
         <button
           type="button"
           data-testid="code-viewer-wrap-toggle"
-          onClick={() => { setWordWrap((w) => !w); }}
-          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-7"
+          onClick={() => {
+            setWordWrap((w) => !w);
+          }}
+          className={`cv-toolbar-btn shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition${wordWrap ? " cv-toolbar-btn--wrap-active" : ""}`}
         >
           {wordWrap ? "Wrap: On" : "Wrap: Off"}
         </button>
@@ -1132,9 +1254,10 @@ export function CodeViewer({
         <button
           type="button"
           data-testid="code-viewer-rainbow-toggle"
-          onClick={() => { setRainbowBracketsEnabled((enabled) => !enabled); }}
-          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-8"
+          onClick={() => {
+            setRainbowBracketsEnabled((enabled) => !enabled);
+          }}
+          className={`cv-toolbar-btn shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition${rainbowBracketsEnabled ? " cv-toolbar-btn--rainbow-active" : ""}`}
         >
           {rainbowBracketsEnabled ? "Rainbow: On" : "Rainbow: Off"}
         </button>
@@ -1143,8 +1266,7 @@ export function CodeViewer({
           type="button"
           data-testid="code-viewer-boundaries-toggle"
           onClick={handleBoundariesToggle}
-          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-9"
+          className={`cv-toolbar-btn shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition${effectiveBoundariesEnabled ? " cv-toolbar-btn--boundaries-active" : ""}`}
         >
           {effectiveBoundariesEnabled ? "Boundaries: On" : "Boundaries: Off"}
         </button>
@@ -1152,10 +1274,11 @@ export function CodeViewer({
         <button
           type="button"
           data-testid="code-viewer-format-button"
-          onClick={() => { void handleFormat(); }}
+          onClick={() => {
+            void handleFormat();
+          }}
           disabled={effectiveFormatStatus.kind === "formatting"}
-          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-70"
-          className="removed-style-10"
+          className={`cv-toolbar-btn shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-70${effectiveFormatStatus.kind === "success" ? " cv-toolbar-btn--format-success" : ""}`}
         >
           {formatButtonLabel}
         </button>
@@ -1163,8 +1286,7 @@ export function CodeViewer({
         {effectiveFormatStatus.kind === "error" ? (
           <span
             data-testid="code-viewer-format-status"
-            className="shrink-0 text-[10px] font-semibold"
-            className="removed-style-11"
+            className="cv-format-error shrink-0 text-[10px] font-semibold"
           >
             {effectiveFormatStatus.message}
           </span>
@@ -1173,9 +1295,10 @@ export function CodeViewer({
         <button
           type="button"
           data-testid="inspector-copy-button"
-          onClick={() => { void handleCopy(); }}
-          className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          className="removed-style-12"
+          onClick={() => {
+            void handleCopy();
+          }}
+          className="cv-toolbar-btn shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
         >
           {copied ? "Copied!" : effectiveHighlightRange ? "Copy Range" : "Copy"}
         </button>
@@ -1183,9 +1306,8 @@ export function CodeViewer({
 
       {isOversize ? (
         <div
-          className="shrink-0 border-b px-3 py-1.5 text-xs font-medium"
+          className="cv-oversize-warning shrink-0 border-b px-3 py-1.5 text-xs font-medium"
           data-testid="code-viewer-oversize-warning"
-          className="removed-style-13"
         >
           File exceeds 500 KB — syntax highlighting disabled for performance.
         </div>
@@ -1193,15 +1315,12 @@ export function CodeViewer({
 
       <div
         ref={scrollContainerRef}
-        className="min-h-0 flex-1 overflow-auto p-0"
+        className="cv-content min-h-0 flex-1 overflow-auto p-0"
         data-testid="code-content"
-        className="removed-style-14"
+        style={bgColor ? { backgroundColor: bgColor } : undefined}
       >
         {isHighlighting ? (
-          <p
-            className="m-0 p-3 text-xs"
-            className="removed-style-15"
-          >
+          <p className="cv-highlighting-indicator m-0 p-3 text-xs">
             Highlighting…
           </p>
         ) : (
@@ -1219,14 +1338,8 @@ export function CodeViewer({
               const lineBoundaryDisplay = boundaryLayout.byLine.get(lineNum);
               const visibleBoundaries = lineBoundaryDisplay?.visible ?? [];
               const overflowCount = lineBoundaryDisplay?.overflowCount ?? 0;
-              const hasBoundaryMarkers = visibleBoundaries.length > 0 || overflowCount > 0;
-
-              const rangeBg = isDark ? "rgba(56, 139, 253, 0.15)" : "rgba(16, 185, 129, 0.1)";
-              const searchBg = isDark ? "rgba(251, 191, 36, 0.12)" : "rgba(245, 158, 11, 0.14)";
-              const stackedBg = isDark ? "rgba(147, 197, 253, 0.23)" : "rgba(16, 185, 129, 0.16)";
-              const activeBg = isDark ? "rgba(251, 191, 36, 0.28)" : "rgba(245, 158, 11, 0.24)";
-              const jumpBg = isDark ? "rgba(96, 165, 250, 0.22)" : "rgba(59, 130, 246, 0.2)";
-              const emphasisBorder = isDark ? "#f59e0b" : "#b45309";
+              const hasBoundaryMarkers =
+                visibleBoundaries.length > 0 || overflowCount > 0;
 
               let lineBackground: string | undefined;
               if (isInRange) {
@@ -1254,23 +1367,34 @@ export function CodeViewer({
                   }}
                   data-testid={isInRange ? "highlighted-line" : undefined}
                   className="flex text-xs leading-relaxed"
-                  className="removed-style-16"
+                  style={{
+                    backgroundColor: lineBackground,
+                    borderLeft:
+                      isActiveMatchLine || isJumpTargetLine
+                        ? `2px solid ${emphasisBorder}`
+                        : undefined,
+                  }}
                 >
                   {isActiveMatchLine ? (
-                    <span data-testid="code-viewer-active-match-line" className="sr-only">
+                    <span
+                      data-testid="code-viewer-active-match-line"
+                      className="sr-only"
+                    >
                       Active match line {lineNum}
                     </span>
                   ) : null}
                   {isJumpTargetLine ? (
-                    <span data-testid="code-viewer-jump-target-line" className="sr-only">
+                    <span
+                      data-testid="code-viewer-jump-target-line"
+                      className="sr-only"
+                    >
                       Jump target line {lineNum}
                     </span>
                   ) : null}
 
                   <span
                     data-testid="line-number"
-                    className="relative inline-flex w-14 shrink-0 pr-2 text-right select-none font-mono"
-                    className="removed-style-17"
+                    className="cv-line-number relative inline-flex w-14 shrink-0 pr-2 text-right select-none font-mono"
                   >
                     {effectiveBoundariesEnabled && hasBoundaryMarkers ? (
                       <span
@@ -1288,34 +1412,50 @@ export function CodeViewer({
                               data-boundary-node-id={boundary.entry.irNodeId}
                               aria-label={`Select ${boundary.entry.irNodeName}`}
                               className="h-full w-1 cursor-pointer border-0 p-0"
-                              className="removed-style-18"
+                              style={{
+                                backgroundColor: boundary.color,
+                                borderTopLeftRadius: isStart ? 2 : 0,
+                                borderTopRightRadius: isStart ? 2 : 0,
+                                borderBottomLeftRadius: isEnd ? 2 : 0,
+                                borderBottomRightRadius: isEnd ? 2 : 0,
+                              }}
                               onMouseEnter={(event) => {
-                                const rect = event.currentTarget.getBoundingClientRect();
+                                const rect =
+                                  event.currentTarget.getBoundingClientRect();
                                 setHoveredBoundary({
                                   boundary,
                                   x: rect.left,
-                                  y: rect.top
+                                  y: rect.top,
                                 });
                               }}
                               onMouseLeave={() => {
                                 setHoveredBoundary((current) => {
-                                  if (!current || current.boundary.entry.irNodeId !== boundary.entry.irNodeId) {
+                                  if (
+                                    !current ||
+                                    current.boundary.entry.irNodeId !==
+                                      boundary.entry.irNodeId
+                                  ) {
                                     return current;
                                   }
                                   return null;
                                 });
                               }}
                               onFocus={(event) => {
-                                const rect = event.currentTarget.getBoundingClientRect();
+                                const rect =
+                                  event.currentTarget.getBoundingClientRect();
                                 setHoveredBoundary({
                                   boundary,
                                   x: rect.left,
-                                  y: rect.top
+                                  y: rect.top,
                                 });
                               }}
                               onBlur={() => {
                                 setHoveredBoundary((current) => {
-                                  if (!current || current.boundary.entry.irNodeId !== boundary.entry.irNodeId) {
+                                  if (
+                                    !current ||
+                                    current.boundary.entry.irNodeId !==
+                                      boundary.entry.irNodeId
+                                  ) {
                                     return current;
                                   }
                                   return null;
@@ -1331,8 +1471,7 @@ export function CodeViewer({
                         {overflowCount > 0 ? (
                           <span
                             data-testid={`code-boundary-overflow-indicator-${String(lineNum)}`}
-                            className="inline-flex items-center px-0.5 text-[8px] font-bold leading-none"
-                            className="removed-style-19"
+                            className="cv-overflow-indicator inline-flex items-center px-0.5 text-[8px] font-bold leading-none"
                             title={`${String(overflowCount)} more overlapping boundaries`}
                           >
                             +{String(overflowCount)}
@@ -1340,12 +1479,16 @@ export function CodeViewer({
                         ) : null}
                       </span>
                     ) : null}
-                    <span className="inline-block w-full text-right">{displayLineNum}</span>
+                    <span className="inline-block w-full text-right">
+                      {displayLineNum}
+                    </span>
                   </span>
 
                   <span
                     className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                    className="removed-style-20"
+                    style={
+                      highlightedLines ? undefined : { color: plainTextColor }
+                    }
                     dangerouslySetInnerHTML={{ __html: lineHtml }}
                   />
                 </div>
@@ -1358,23 +1501,39 @@ export function CodeViewer({
         <div
           role="tooltip"
           data-testid="code-boundary-tooltip"
-          className="pointer-events-none fixed z-30 min-w-40 rounded border px-2 py-1 text-[10px] shadow-lg"
-          className="removed-style-21"
+          className="cv-boundary-tooltip pointer-events-none fixed z-30 min-w-40 rounded border px-2 py-1 text-[10px] shadow-lg"
+          style={{
+            left: Math.max(
+              8,
+              Math.min(
+                (typeof window === "undefined" ? 1024 : window.innerWidth) -
+                  260,
+                hoveredBoundary.x + 10,
+              ),
+            ),
+            top: Math.max(8, hoveredBoundary.y - 36),
+          }}
         >
           <div className="flex items-center gap-1.5">
             <span
               data-testid="code-boundary-tooltip-type"
-              className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase"
-              className="removed-style-22"
+              className="cv-boundary-tooltip-type inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase"
             >
               {hoveredBoundary.boundary.entry.irNodeType}
             </span>
-            <span data-testid="code-boundary-tooltip-name" className="truncate font-semibold">
+            <span
+              data-testid="code-boundary-tooltip-name"
+              className="truncate font-semibold"
+            >
               {hoveredBoundary.boundary.entry.irNodeName}
             </span>
           </div>
-          <div data-testid="code-boundary-tooltip-range" className="mt-0.5 text-[9px]">
-            Lines {String(hoveredBoundary.boundary.startLine + lineOffset - 1)}-{String(hoveredBoundary.boundary.endLine + lineOffset - 1)}
+          <div
+            data-testid="code-boundary-tooltip-range"
+            className="mt-0.5 text-[9px]"
+          >
+            Lines {String(hoveredBoundary.boundary.startLine + lineOffset - 1)}-
+            {String(hoveredBoundary.boundary.endLine + lineOffset - 1)}
           </div>
         </div>
       ) : null}
