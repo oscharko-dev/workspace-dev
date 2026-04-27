@@ -621,3 +621,102 @@
   border-color: var(--sh-panel-border);
   color: var(--sh-text-secondary);
 }
+
+/* ============================================================================
+   Additional Component Styles (RemapReviewPanel, StaleDraftWarning, etc.)
+   These use CSS Custom Properties for dynamic values where needed
+   =========================================================================== */
+
+/* RemapReviewPanel confidence badge colors */
+.remap-badge-high {
+  background-color: #dcfce7;
+  color: #166534;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.remap-badge-medium {
+  background-color: #fef9c3;
+  color: #854d0e;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.remap-badge-low {
+  background-color: #fee2e2;
+  color: #991b1b;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+/* StaleDraftWarning already defined above - no additional styles needed */
+
+/* InspectorPanel - pane container styles */
+.inspector-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+.inspector-pane-tree {
+  /* Width/height set via inline style due to dynamic pane ratios */
+}
+
+.inspector-pane-preview {
+  /* Width/height set via inline style due to dynamic pane ratios */
+}
+
+.inspector-pane-code {
+  /* Width/height set via inline style due to dynamic pane ratios */
+}
+
+/* CodePane - minimal additional styling */
+.code-pane-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* InspectOverlay - overlay positioning */
+.inspect-overlay {
+  position: fixed;
+  pointer-events: none;
+  z-index: 10000;
+}
+
+.inspect-overlay-highlight {
+  border: 2px solid #0ea5e9;
+  background: rgba(14, 165, 233, 0.1);
+}
+
+/* ScreenshotPreview - preview container */
+.screenshot-preview {
+  max-width: 100%;
+  height: auto;
+}
+
+/* component-tree - tree structure */
+.component-tree {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.component-tree-node {
+  padding: 4px 8px;
+  border-left: 2px solid transparent;
+}
+
+.component-tree-node-selected {
+  background-color: #f0f0f0;
+  border-left-color: #0ea5e9;
+}
+
+/* PreviewPane - preview container */
+.preview-pane {
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
