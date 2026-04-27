@@ -50,6 +50,31 @@ const TERMINAL_STATUS_CAPTURE_PATTERN = /Submit:\s*([A-Z_]+)(?=\s|$)/i;
 const JOB_COMPLETED_PATTERN = /completed successfully/i;
 const JOB_FAILED_PATTERN = /\bfailed\b/i;
 const JOB_CANCELED_PATTERN = /\bcanceled\b/i;
+
+export interface LiveJobPayload {
+  status?: string;
+  error?: {
+    code?: string;
+    message?: string;
+    stage?: string;
+  };
+}
+
+export function parseLiveJobPayload(raw: string | null | undefined): LiveJobPayload | null {
+  if (!raw) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as LiveJobPayload;
+  } catch {
+    return null;
+  }
+}
+
 const SUBMIT_ENDPOINT_SUFFIX = "/workspace/submit";
 const SUBMISSION_LOCK_PATH = path.join(os.tmpdir(), "workspace-dev-playwright-submit.lock");
 const SUBMISSION_TIMESTAMP_PATH = path.join(
@@ -334,6 +359,26 @@ export async function waitForSubmitTerminalStatus(
       return "FAILED";
     }
     if (JOB_CANCELED_PATTERN.test(jobStatusText)) {
+      return "CANCELED";
+    }
+
+    // Fall back to inspecting the job-payload element directly so that failures
+    // that surface an error object (e.g. E_FIGMA_LOW_FIDELITY_SOURCE) or a
+    // terminal status without updating the UI text are detected immediately
+    // instead of looping until the Playwright timeout is reached.
+    const jobPayloadText = await page
+      .getByTestId("job-payload")
+      .textContent({ timeout: 0 })
+      .catch(() => null);
+    const jobPayload = parseLiveJobPayload(jobPayloadText);
+    const payloadStatus = jobPayload?.status?.toLowerCase();
+    if (payloadStatus === "completed") {
+      return "COMPLETED";
+    }
+    if (payloadStatus === "failed" || jobPayload?.error !== undefined) {
+      return "FAILED";
+    }
+    if (payloadStatus === "canceled") {
       return "CANCELED";
     }
 

@@ -4,7 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   openWorkspaceUi,
+  parseLiveJobPayload,
   resetBrowserStorage,
+  type LiveJobPayload,
   waitForSubmitTerminalStatus
 } from "./helpers";
 
@@ -26,12 +28,6 @@ const maxDiffPixelRatio =
 
 interface SubmitAcceptedPayload {
   jobId?: string;
-}
-
-interface LiveJobPayload {
-  error?: {
-    code?: string;
-  };
 }
 
 interface VisualParityReport {
@@ -61,18 +57,6 @@ const resolveVisualBaselinePath = async (): Promise<string | undefined> => {
     return DEFAULT_VISUAL_BASELINE_PATH;
   }
   return undefined;
-};
-
-const parseLiveJobPayload = (payload: string): LiveJobPayload | null => {
-  try {
-    const parsed = JSON.parse(payload) as unknown;
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    return parsed as LiveJobPayload;
-  } catch {
-    return null;
-  }
 };
 
 const runLiveGenerationWithRetry = async (page: Page): Promise<string | undefined> => {
