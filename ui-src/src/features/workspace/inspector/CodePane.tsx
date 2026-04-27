@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type JSX,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { CodeViewer, type HighlightRange } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
 import { Breadcrumb } from "./Breadcrumb";
@@ -12,13 +21,13 @@ import {
   findManifestRangeByIrNodeId,
   fallbackMode,
   type ManifestRange,
-  type ScopedCodeMode
+  type ScopedCodeMode,
 } from "./scoped-code-ranges";
 import {
   formatCodeForViewer,
   FORMAT_ERROR_TIMEOUT_MS,
   FORMAT_SUCCESS_TIMEOUT_MS,
-  type FormatStatus
+  type FormatStatus,
 } from "./code-formatting";
 import { detectLanguage } from "../../../lib/shiki-shared";
 
@@ -103,7 +112,12 @@ function activeFileLabel(filePath: string | null): string {
 
 function CodeFileIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-3.5"
+    >
       <path d="M3.5 2A1.5 1.5 0 0 0 2 3.5v9A1.5 1.5 0 0 0 3.5 14h9a1.5 1.5 0 0 0 1.5-1.5V6.414a1.5 1.5 0 0 0-.44-1.06l-2.914-2.915A1.5 1.5 0 0 0 9.586 2H3.5Zm6 1.25v2a.75.75 0 0 0 .75.75h2V12.5a.25.25 0 0 1-.25.25h-8.5a.25.25 0 0 1-.25-.25v-9a.25.25 0 0 1 .25-.25h6Z" />
     </svg>
   );
@@ -111,7 +125,12 @@ function CodeFileIcon(): JSX.Element {
 
 function SplitViewIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-3.5"
+    >
       <path d="M2.5 2A1.5 1.5 0 0 0 1 3.5v9A1.5 1.5 0 0 0 2.5 14h11a1.5 1.5 0 0 0 1.5-1.5v-9A1.5 1.5 0 0 0 13.5 2h-11Zm0 1.5h4.75v9H2.5v-9Zm6.25 0h4.75v9H8.75v-9Z" />
     </svg>
   );
@@ -119,7 +138,12 @@ function SplitViewIcon(): JSX.Element {
 
 function DiffIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-3.5"
+    >
       <path d="M6.5 3a.75.75 0 0 1 .75.75V5h2.5a.75.75 0 0 1 0 1.5h-2.5v1.25a.75.75 0 0 1-1.5 0V6.5h-1.25a.75.75 0 0 1 0-1.5h1.25V3.75A.75.75 0 0 1 6.5 3Zm4 5a.75.75 0 0 1 .75.75V10h1.25a.75.75 0 0 1 0 1.5h-1.25v1.25a.75.75 0 0 1-1.5 0V11.5H8.5a.75.75 0 0 1 0-1.5h1.25V8.75A.75.75 0 0 1 10.5 8Z" />
     </svg>
   );
@@ -127,7 +151,12 @@ function DiffIcon(): JSX.Element {
 
 function JsonIcon(): JSX.Element {
   return (
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="size-3.5">
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 16 16"
+      fill="currentColor"
+      className="size-3.5"
+    >
       <path d="M5.25 3a.75.75 0 0 1 0 1.5h-.5a.75.75 0 0 0-.75.75v1.5c0 .56-.24 1.06-.62 1.41.38.35.62.85.62 1.41v1.5c0 .41.34.75.75.75h.5a.75.75 0 0 1 0 1.5h-.5A2.25 2.25 0 0 1 2.5 12.75v-1.5c0-.41-.34-.75-.75-.75a.75.75 0 0 1 0-1.5c.41 0 .75-.34.75-.75v-1.5A2.25 2.25 0 0 1 4.75 3h.5Zm5.5 0a2.25 2.25 0 0 1 2.25 2.25v1.5c0 .41.34.75.75.75a.75.75 0 0 1 0 1.5c-.41 0-.75.34-.75.75v1.5A2.25 2.25 0 0 1 10.75 15h-.5a.75.75 0 0 1 0-1.5h.5c.41 0 .75-.34.75-.75v-1.5c0-.56.24-1.06.62-1.41a2.1 2.1 0 0 1-.62-1.41v-1.5a.75.75 0 0 0-.75-.75h-.5a.75.75 0 0 1 0-1.5h.5Z" />
     </svg>
   );
@@ -168,7 +197,7 @@ export function CodePane({
   nodeDiffFallbackReason,
   parentFile,
   onReturnToParentFile,
-  selectedIrNodeId = null
+  selectedIrNodeId = null,
 }: CodePaneProps): JSX.Element {
   const [jsonVisible, setJsonVisible] = useState(false);
   const [diffEnabled, setDiffEnabled] = useState(false);
@@ -186,17 +215,22 @@ export function CodePane({
   } | null>(null);
   const [scopedModes, setScopedModes] = useState(() => ({
     mapped: defaultMappedMode(),
-    unmapped: fallbackMode()
+    unmapped: fallbackMode(),
   }));
-  const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const formatFeedbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
   const scopedMode = isNodeMapped ? scopedModes.mapped : scopedModes.unmapped;
-  const handleScopedModeChange = useCallback((nextMode: ScopedCodeMode) => {
-    setScopedModes((currentModes) => {
-      return isNodeMapped
-        ? { ...currentModes, mapped: nextMode }
-        : { ...currentModes, unmapped: nextMode };
-    });
-  }, [isNodeMapped]);
+  const handleScopedModeChange = useCallback(
+    (nextMode: ScopedCodeMode) => {
+      setScopedModes((currentModes) => {
+        return isNodeMapped
+          ? { ...currentModes, mapped: nextMode }
+          : { ...currentModes, unmapped: nextMode };
+      });
+    },
+    [isNodeMapped],
+  );
 
   const effectiveActiveManifestRange = useMemo<ManifestRange | null>(() => {
     if (!activeManifestRange || !selectedFile) {
@@ -209,7 +243,7 @@ export function CodePane({
 
     return {
       startLine: activeManifestRange.startLine,
-      endLine: activeManifestRange.endLine
+      endLine: activeManifestRange.endLine,
     };
   }, [activeManifestRange, selectedFile]);
 
@@ -220,13 +254,16 @@ export function CodePane({
     }
   }, []);
 
-  const scheduleFormatStatusReset = useCallback((delayMs: number) => {
-    clearFormatFeedbackTimeout();
-    formatFeedbackTimeoutRef.current = setTimeout(() => {
-      setFormatFeedbackState(null);
-      formatFeedbackTimeoutRef.current = null;
-    }, delayMs);
-  }, [clearFormatFeedbackTimeout]);
+  const scheduleFormatStatusReset = useCallback(
+    (delayMs: number) => {
+      clearFormatFeedbackTimeout();
+      formatFeedbackTimeoutRef.current = setTimeout(() => {
+        setFormatFeedbackState(null);
+        formatFeedbackTimeoutRef.current = null;
+      }, delayMs);
+    },
+    [clearFormatFeedbackTimeout],
+  );
 
   useEffect(() => {
     return () => {
@@ -267,7 +304,10 @@ export function CodePane({
     if (!formattedFileContent || !selectedIrNodeId) {
       return effectiveActiveManifestRange;
     }
-    return findManifestRangeByIrNodeId(formattedFileContent, selectedIrNodeId) ?? effectiveActiveManifestRange;
+    return (
+      findManifestRangeByIrNodeId(formattedFileContent, selectedIrNodeId) ??
+      effectiveActiveManifestRange
+    );
   }, [effectiveActiveManifestRange, formattedFileContent, selectedIrNodeId]);
 
   const displayFileContent = formattedFileContent ?? fileContent;
@@ -275,7 +315,11 @@ export function CodePane({
   // Derive scoped code for the current file
   const scopedCode = useMemo(() => {
     if (displayFileContent === null) return null;
-    return deriveScopedCode(displayFileContent, scopedMode, effectiveScopedManifestRange);
+    return deriveScopedCode(
+      displayFileContent,
+      scopedMode,
+      effectiveScopedManifestRange,
+    );
   }, [displayFileContent, effectiveScopedManifestRange, scopedMode]);
 
   // Derive scoped diff ranges (independent old/new offsets)
@@ -283,12 +327,14 @@ export function CodePane({
     return deriveScopedDiffRanges(
       scopedMode,
       effectiveActiveManifestRange,
-      previousManifestRange ?? null
+      previousManifestRange ?? null,
     );
   }, [scopedMode, effectiveActiveManifestRange, previousManifestRange]);
 
   const splitContainerRef = useRef<HTMLDivElement>(null);
-  const dragStartRef = useRef<{ startX: number; startRatio: number } | null>(null);
+  const dragStartRef = useRef<{ startX: number; startRatio: number } | null>(
+    null,
+  );
 
   const handleFormatSelectedFile = useCallback(async () => {
     if (!selectedFile || fileContent === null) {
@@ -299,7 +345,7 @@ export function CodePane({
     setFormatFeedbackState({
       filePath: selectedFile,
       sourceContent: fileContent,
-      status: { kind: "formatting", message: null }
+      status: { kind: "formatting", message: null },
     });
     clearFormatFeedbackTimeout();
 
@@ -307,27 +353,28 @@ export function CodePane({
       const formatted = await formatCodeForViewer({
         code: formatSource,
         filePath: selectedFile,
-        language: detectedLanguage
+        language: detectedLanguage,
       });
       setFormattedFileState({
         filePath: selectedFile,
         sourceContent: fileContent,
-        formattedContent: formatted
+        formattedContent: formatted,
       });
       setFormatFeedbackState({
         filePath: selectedFile,
         sourceContent: fileContent,
-        status: { kind: "success", message: null }
+        status: { kind: "success", message: null },
       });
       scheduleFormatStatusReset(FORMAT_SUCCESS_TIMEOUT_MS);
     } catch (error) {
-      const message = error instanceof Error && error.message.length > 0
-        ? error.message
-        : "Formatting failed.";
+      const message =
+        error instanceof Error && error.message.length > 0
+          ? error.message
+          : "Formatting failed.";
       setFormatFeedbackState({
         filePath: selectedFile,
         sourceContent: fileContent,
-        status: { kind: "error", message }
+        status: { kind: "error", message },
       });
       scheduleFormatStatusReset(FORMAT_ERROR_TIMEOUT_MS);
     }
@@ -337,23 +384,32 @@ export function CodePane({
     fileContent,
     formattedFileContent,
     scheduleFormatStatusReset,
-    selectedFile
+    selectedFile,
   ]);
 
   const codeFiles = files.filter(
-    (f) => f.path.endsWith(".tsx") || f.path.endsWith(".ts") || (jsonVisible && f.path.endsWith(".json"))
+    (f) =>
+      f.path.endsWith(".tsx") ||
+      f.path.endsWith(".ts") ||
+      (jsonVisible && f.path.endsWith(".json")),
   );
 
   const jsonFiles = files.filter((f) => f.path.endsWith(".json"));
   const hasJsonFiles = jsonFiles.length > 0;
   const hasCodeFiles = codeFiles.length > 0;
-  const isFileSelectorDisabled = filesState === "loading" || filesState === "error" || !hasCodeFiles;
+  const isFileSelectorDisabled =
+    filesState === "loading" || filesState === "error" || !hasCodeFiles;
 
-  const canDiff = Boolean(previousJobId) && fileContent !== null && previousFileContent !== null && !previousFileContentLoading;
+  const canDiff =
+    Boolean(previousJobId) &&
+    fileContent !== null &&
+    previousFileContent !== null &&
+    !previousFileContentLoading;
   const isDiffActive = diffEnabled && canDiff;
 
   // Split requires at least 2 files and wide enough viewport
-  const isNarrow = typeof window !== "undefined" && window.innerWidth < NARROW_VIEWPORT_PX;
+  const isNarrow =
+    typeof window !== "undefined" && window.innerWidth < NARROW_VIEWPORT_PX;
   const canSplit = codeFiles.length >= 2 && !isNarrow;
   const isSplitActive = splitEnabled && canSplit && !isDiffActive;
 
@@ -372,52 +428,64 @@ export function CodePane({
     splitRatioRef.current = splitRatio;
   });
 
-  const handleSplitPointerDown = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    const container = splitContainerRef.current;
-    if (!container) return;
-
-    dragStartRef.current = { startX: event.clientX, startRatio: splitRatioRef.current };
-
-    const onPointerMove = (moveEvent: PointerEvent): void => {
-      const state = dragStartRef.current;
-      if (!state) return;
-      const containerWidth = container.getBoundingClientRect().width;
-      if (containerWidth <= 0) return;
-      const deltaPx = moveEvent.clientX - state.startX;
-      const deltaPct = (deltaPx / containerWidth) * 100;
-      const next = Math.max(MIN_SPLIT_PANE_PCT, Math.min(100 - MIN_SPLIT_PANE_PCT, state.startRatio + deltaPct));
-      setSplitRatio(next);
-    };
-
-    const onPointerUp = (): void => {
-      dragStartRef.current = null;
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-      window.removeEventListener("pointercancel", onPointerUp);
-    };
-
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-  }, []);
-
-  const handleSplitDividerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
-    const step = event.shiftKey ? 10 : 2;
-    if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+  const handleSplitPointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
       event.preventDefault();
-      setSplitRatio((r) => Math.max(MIN_SPLIT_PANE_PCT, r - step));
-    } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
-      event.preventDefault();
-      setSplitRatio((r) => Math.min(100 - MIN_SPLIT_PANE_PCT, r + step));
-    } else if (event.key === "Home") {
-      event.preventDefault();
-      setSplitRatio(MIN_SPLIT_PANE_PCT);
-    } else if (event.key === "End") {
-      event.preventDefault();
-      setSplitRatio(100 - MIN_SPLIT_PANE_PCT);
-    }
-  }, []);
+      const container = splitContainerRef.current;
+      if (!container) return;
+
+      dragStartRef.current = {
+        startX: event.clientX,
+        startRatio: splitRatioRef.current,
+      };
+
+      const onPointerMove = (moveEvent: PointerEvent): void => {
+        const state = dragStartRef.current;
+        if (!state) return;
+        const containerWidth = container.getBoundingClientRect().width;
+        if (containerWidth <= 0) return;
+        const deltaPx = moveEvent.clientX - state.startX;
+        const deltaPct = (deltaPx / containerWidth) * 100;
+        const next = Math.max(
+          MIN_SPLIT_PANE_PCT,
+          Math.min(100 - MIN_SPLIT_PANE_PCT, state.startRatio + deltaPct),
+        );
+        setSplitRatio(next);
+      };
+
+      const onPointerUp = (): void => {
+        dragStartRef.current = null;
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerUp);
+      };
+
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerUp);
+    },
+    [],
+  );
+
+  const handleSplitDividerKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      const step = event.shiftKey ? 10 : 2;
+      if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+        event.preventDefault();
+        setSplitRatio((r) => Math.max(MIN_SPLIT_PANE_PCT, r - step));
+      } else if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+        event.preventDefault();
+        setSplitRatio((r) => Math.min(100 - MIN_SPLIT_PANE_PCT, r + step));
+      } else if (event.key === "Home") {
+        event.preventDefault();
+        setSplitRatio(MIN_SPLIT_PANE_PCT);
+      } else if (event.key === "End") {
+        event.preventDefault();
+        setSplitRatio(100 - MIN_SPLIT_PANE_PCT);
+      }
+    },
+    [],
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-[#333333] text-white">
@@ -432,7 +500,9 @@ export function CodePane({
             <button
               type="button"
               data-testid="inspector-json-toggle"
-              onClick={() => { setJsonVisible((v) => !v); }}
+              onClick={() => {
+                setJsonVisible((v) => !v);
+              }}
               className={`inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition ${
                 jsonVisible
                   ? "border-[#4eba87] bg-[#4eba87]/15 text-[#4eba87]"
@@ -447,10 +517,24 @@ export function CodePane({
             type="button"
             data-testid="inspector-split-toggle"
             disabled={!canSplit || isDiffActive}
-            title={isDiffActive ? "Disable diff to use split view" : !canSplit ? "Need at least 2 files" : undefined}
-            onClick={() => { setSplitEnabled((v) => !v); }}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40"
-            className="removed-style-1"
+            title={
+              isDiffActive
+                ? "Disable diff to use split view"
+                : !canSplit
+                  ? "Need at least 2 files"
+                  : undefined
+            }
+            onClick={() => {
+              setSplitEnabled((v) => !v);
+            }}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40 code-pane-toggle-btn"
+            style={{
+              borderColor: isSplitActive ? "#4eba87" : "#333333",
+              backgroundColor: isSplitActive
+                ? "rgba(78, 186, 135, 0.15)"
+                : "transparent",
+              color: isSplitActive ? "#4eba87" : "rgba(255,255,255,0.7)",
+            }}
           >
             <SplitViewIcon />
             {isSplitActive ? "Split: On" : "Split"}
@@ -460,9 +544,17 @@ export function CodePane({
             data-testid="inspector-diff-toggle"
             disabled={!canDiff && !diffEnabled}
             title={diffTooltip}
-            onClick={() => { setDiffEnabled((v) => !v); }}
-            className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40"
-            className="removed-style-2"
+            onClick={() => {
+              setDiffEnabled((v) => !v);
+            }}
+            className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40 code-pane-toggle-btn"
+            style={{
+              borderColor: isDiffActive ? "#4eba87" : "#333333",
+              backgroundColor: isDiffActive
+                ? "rgba(78, 186, 135, 0.15)"
+                : "transparent",
+              color: isDiffActive ? "#4eba87" : "rgba(255,255,255,0.7)",
+            }}
           >
             <DiffIcon />
             {isDiffActive ? "Diff: On" : "Diff"}
@@ -492,24 +584,30 @@ export function CodePane({
             <option value="">No source files available</option>
           )}
         </select>
-          {selectedFile && fileContent !== null ? (
-            <ScopedCodeModeSelector
-              activeMode={scopedMode}
-              onModeChange={handleScopedModeChange}
-              isMapped={isNodeMapped}
-            />
-          ) : null}
+        {selectedFile && fileContent !== null ? (
+          <ScopedCodeModeSelector
+            activeMode={scopedMode}
+            onModeChange={handleScopedModeChange}
+            isMapped={isNodeMapped}
+          />
+        ) : null}
       </div>
 
       {/* Status messages */}
       <div className="shrink-0 border-b border-[#000000] bg-[#262626] px-3 py-2">
         {filesState === "loading" ? (
-          <p data-testid="inspector-state-files-loading" className="m-0 text-xs text-white/55">
+          <p
+            data-testid="inspector-state-files-loading"
+            className="m-0 text-xs text-white/55"
+          >
             Loading generated files…
           </p>
         ) : null}
         {filesState === "empty" ? (
-          <p data-testid="inspector-state-files-empty" className="m-0 text-xs text-amber-300">
+          <p
+            data-testid="inspector-state-files-empty"
+            className="m-0 text-xs text-amber-300"
+          >
             No generated source files are available for this job.
           </p>
         ) : null}
@@ -519,7 +617,8 @@ export function CodePane({
             className="flex flex-wrap items-center gap-2 rounded border border-rose-500/30 bg-rose-950/30 px-2 py-1.5 text-xs text-rose-200"
           >
             <span>
-              {filesError.message} ({filesError.code}, HTTP {String(filesError.status)})
+              {filesError.message} ({filesError.code}, HTTP{" "}
+              {String(filesError.status)})
             </span>
             <button
               type="button"
@@ -549,7 +648,10 @@ export function CodePane({
       {/* Code viewer / diff viewer / split view */}
       <div className="min-h-0 flex-1 bg-[#333333]">
         {fileContentState === "loading" ? (
-          <p data-testid="inspector-state-file-content-loading" className="m-0 p-3 text-xs text-white/55">
+          <p
+            data-testid="inspector-state-file-content-loading"
+            className="m-0 p-3 text-xs text-white/55"
+          >
             Loading file…
           </p>
         ) : fileContentState === "error" && fileContentError ? (
@@ -558,7 +660,8 @@ export function CodePane({
             className="m-3 flex flex-wrap items-center gap-2 rounded border border-rose-500/30 bg-rose-950/30 px-2 py-1.5 text-xs text-rose-200"
           >
             <span>
-              {fileContentError.message} ({fileContentError.code}, HTTP {String(fileContentError.status)})
+              {fileContentError.message} ({fileContentError.code}, HTTP{" "}
+              {String(fileContentError.status)})
             </span>
             <button
               type="button"
@@ -570,7 +673,9 @@ export function CodePane({
             </button>
           </div>
         ) : fileContent !== null && selectedFile ? (
-          isDiffActive && typeof previousFileContent === "string" && typeof previousJobId === "string" ? (
+          isDiffActive &&
+          typeof previousFileContent === "string" &&
+          typeof previousJobId === "string" ? (
             <DiffViewer
               themeMode="dark"
               oldCode={previousFileContent}
@@ -592,8 +697,8 @@ export function CodePane({
               {/* Left pane */}
               <div
                 data-testid="inspector-split-left"
-                className="min-w-0 overflow-hidden"
-                className="removed-style-3"
+                className="code-pane-split-pane min-w-0 overflow-hidden"
+                style={{ flexBasis: `${splitRatio.toFixed(2)}%` }}
               >
                 <CodeViewer
                   themeMode="dark"
@@ -622,8 +727,7 @@ export function CodePane({
                 aria-valuemin={MIN_SPLIT_PANE_PCT}
                 aria-valuemax={100 - MIN_SPLIT_PANE_PCT}
                 data-testid="inspector-split-divider"
-                className="w-1 shrink-0 cursor-col-resize bg-[#000000] transition-colors hover:bg-[#4eba87] focus:bg-[#4eba87] focus:outline-none"
-                className="removed-style-4"
+                className="code-pane-split-divider w-1 shrink-0 cursor-col-resize bg-[#000000] transition-colors hover:bg-[#4eba87] focus:bg-[#4eba87] focus:outline-none"
                 onPointerDown={handleSplitPointerDown}
                 onKeyDown={handleSplitDividerKeyDown}
               />
@@ -656,22 +760,31 @@ export function CodePane({
                 {/* Right pane content */}
                 <div className="min-h-0 flex-1">
                   {splitFileContentLoading ? (
-                    <p data-testid="inspector-split-loading" className="m-0 p-3 text-xs text-white/55">
+                    <p
+                      data-testid="inspector-split-loading"
+                      className="m-0 p-3 text-xs text-white/55"
+                    >
                       Loading file…
                     </p>
-                  ) : typeof splitFileContent === "string" && typeof splitFile === "string" ? (
+                  ) : typeof splitFileContent === "string" &&
+                    typeof splitFile === "string" ? (
                     <CodeViewer
                       themeMode="dark"
                       code={splitFileContent}
                       filePath={splitFile}
-                      selectedIrNodeId={splitFile === selectedFile ? selectedIrNodeId : null}
+                      selectedIrNodeId={
+                        splitFile === selectedFile ? selectedIrNodeId : null
+                      }
                       boundariesEnabled={boundariesEnabled}
                       onBoundariesEnabledChange={onBoundariesEnabledChange}
                       boundaries={splitFileBoundaries}
                       onBoundarySelect={onBoundarySelect}
                     />
                   ) : (
-                    <p data-testid="inspector-split-empty" className="m-0 p-3 text-xs text-white/55">
+                    <p
+                      data-testid="inspector-split-empty"
+                      className="m-0 p-3 text-xs text-white/55"
+                    >
                       Select a file for the right pane.
                     </p>
                   )}
@@ -704,7 +817,8 @@ export function CodePane({
               This component has no file mapping
             </p>
             <p className="m-0 text-[11px] text-white/55">
-              The selected node is not mapped to a specific location in the generated source. The current file is displayed as context.
+              The selected node is not mapped to a specific location in the
+              generated source. The current file is displayed as context.
             </p>
             {parentFile && onReturnToParentFile ? (
               <button
@@ -718,11 +832,17 @@ export function CodePane({
             ) : null}
           </div>
         ) : filesState === "empty" ? (
-          <p data-testid="inspector-state-file-content-empty" className="m-0 p-3 text-xs text-white/55">
+          <p
+            data-testid="inspector-state-file-content-empty"
+            className="m-0 p-3 text-xs text-white/55"
+          >
             No source file content is available yet.
           </p>
         ) : (
-          <p data-testid="inspector-state-file-content-no-selection" className="m-0 p-3 text-xs text-white/55">
+          <p
+            data-testid="inspector-state-file-content-no-selection"
+            className="m-0 p-3 text-xs text-white/55"
+          >
             Select a file to view its source.
           </p>
         )}
