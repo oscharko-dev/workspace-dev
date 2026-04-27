@@ -207,6 +207,41 @@ captures and performs no outbound network calls.
 The full operator guide is in [docs/test-intelligence.md](docs/test-intelligence.md).
 For compliance positioning (DORA, GDPR, EU AI Act), see [COMPLIANCE.md](COMPLIANCE.md).
 
+### Multi-Source test intent (Wave 4, opt-in)
+
+Wave 4 extends the test-intelligence subsurface with additional source kinds
+beyond Figma: Jira REST API, paste-only Jira ingestion (air-gap safe), and
+reviewer-supplied Markdown/structured-attribute custom context. The source-mix
+is governed by a second, nested feature gate:
+
+```bash
+export FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE=1
+export FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE_MULTISOURCE=1
+```
+
+```ts
+testIntelligence: { enabled: true, multiSourceEnabled: true }
+```
+
+At least one primary source (`figma_*` or `jira_*`) is always required; the
+gate fails closed before any source artifact is persisted if the predicate is
+not satisfied.
+
+| Source kind                                          | Description                                             |
+| ---------------------------------------------------- | ------------------------------------------------------- |
+| `figma_local_json` \| `figma_plugin` \| `figma_rest` | Figma design sources (Wave 1 baseline)                  |
+| `jira_rest`                                          | Jira Cloud / Data Center / OAuth 2.0 REST API           |
+| `jira_paste`                                         | Paste-only Jira input — no outbound API calls required  |
+| `custom_text` \| `custom_structured`                 | Reviewer Markdown / key-value context (supporting only) |
+
+- Public API reference: [docs/api/test-intelligence-multi-source.md](docs/api/test-intelligence-multi-source.md)
+- Jira setup runbook: [docs/runbooks/jira-source-setup.md](docs/runbooks/jira-source-setup.md)
+- Air-gap deployment: [docs/runbooks/multi-source-air-gap.md](docs/runbooks/multi-source-air-gap.md)
+- Migration from single-source: [docs/migration/wave-4-additive.md](docs/migration/wave-4-additive.md)
+- DORA mapping: [docs/dora/multi-source.md](docs/dora/multi-source.md)
+- EU AI Act human oversight: [docs/eu-ai-act/human-oversight.md](docs/eu-ai-act/human-oversight.md)
+- GDPR DPIA addenda: [docs/dpia/jira-source.md](docs/dpia/jira-source.md), [docs/dpia/custom-context-source.md](docs/dpia/custom-context-source.md)
+
 ## Repository layout
 
 The published package is intentionally small; this repository is broader because

@@ -39,11 +39,11 @@ alongside a primary source.
 | Source mix | Validated | Notes |
 | --- | --- | --- |
 | Figma-only (any of `figma_local_json`, `figma_plugin`, `figma_rest`) | Accepted | Wave 1 baseline preserved bit-identically when the multi-source gate is off. |
-| Jira REST only | Accepted | Wave 4.C populates the actual REST adapter. |
-| Jira paste only | Accepted | Wave 4.D populates the paste-collision routing. |
-| Figma + Jira REST | Accepted | Reconciliation lives in Wave 4.F. |
-| Figma + Jira paste | Accepted | Reconciliation lives in Wave 4.F. |
-| Jira REST + Jira paste | Accepted | Duplicate `canonicalIssueKey` between Jira sources is reported as `duplicate_jira_paste_collision`. |
+| Jira REST only (`jira_rest`) | Accepted | Wave 4.C populates the actual REST adapter. |
+| Jira paste only (`jira_paste`) | Accepted | Wave 4.D populates the paste-collision routing. |
+| Figma + Jira REST (`jira_rest`) | Accepted | Reconciliation lives in Wave 4.F. |
+| Figma + Jira paste (`jira_paste`) | Accepted | Reconciliation lives in Wave 4.F. |
+| Jira REST (`jira_rest`) + Jira paste (`jira_paste`) | Accepted | Duplicate `canonicalIssueKey` between Jira sources is reported as `duplicate_jira_paste_collision`. |
 | Any of the above + `custom_text` and/or `custom_structured` | Accepted | Custom kinds are supporting evidence. Markdown metadata only valid when `inputFormat="markdown"`. |
 | Custom-only (any combination of `custom_text` / `custom_structured`) | **Refused** with `primary_source_required` | Enforced before any artifact is persisted. |
 

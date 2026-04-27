@@ -1,0 +1,78 @@
+flowchart TD
+    subgraph Sources["Source Ingestion (Wave 4)"]
+        FigmaLocal["figma_local_json\n(Figma local JSON)"]
+        FigmaPlugin["figma_plugin\n(Figma plugin clipboard)"]
+        FigmaRest["figma_rest\n(Figma REST API)"]
+        JiraRest["jira_rest\n(Jira REST API — Wave 4.C)"]
+        JiraPaste["jira_paste\n(Paste-only — Wave 4.D)"]
+        CustomText["custom_text\n(Markdown — Wave 4.E)"]
+        CustomStructured["custom_structured\n(Attributes — Wave 4.E)"]
+    end
+
+    subgraph Gate["Multi-Source Mode Gate (Wave 4.A)"]
+        ModeGate["enforceMultiSourceModeGate\n• parent TI gate\n• multi-source env\n• startup option\n• llmCodegenMode=deterministic"]
+    end
+
+    subgraph Envelope["Envelope Validation (Wave 4.A)"]
+        EnvelopeValidator["validateMultiSourceTestIntentEnvelope\n• at least one primary source\n• no custom-only\n• source ID uniqueness\n• content-hash integrity\n• aggregateContentHash"]
+    end
+
+    subgraph IRBuilders["IR Construction (Wave 4.B)"]
+        FigmaIR["Figma IR\n(intent-derivation.ts)"]
+        JiraIR["Jira IR\n(jira-issue-ir.ts)\n• ADF parse\n• PII redaction\n• field selection"]
+        CustomContextIR["Custom Context IR\n(custom-context-store.ts)\n• Markdown parse\n• PII redaction\n• attribute normalize"]
+    end
+
+    subgraph Reconciliation["Reconciliation (Wave 4.F)"]
+        Reconcile["reconcileMultiSourceIntent\n• priority / reviewer_decides / keep_both\n• conflict detection\n• multi-source-conflict-report.json\n• multi-source-reconciliation-report.json"]
+    end
+
+    subgraph Existing["Existing Pipeline (Waves 1–3)"]
+        PIIRedact["PII Redaction\n(pii-redaction.ts)"]
+        PromptCompiler["Prompt Compiler\n(prompt-compiler.ts)"]
+        LLMGateway["LLM Gateway\n(gpt-oss-120b)\nnever receives image payloads"]
+        Validation["Validation Pipeline\n(validation-pipeline.ts)"]
+        PolicyGate["Policy Gate\n(policy-gate.ts)\n• eu-banking-default\n• four-eyes trigger\n• multi_source_conflict_present"]
+        ReviewGate["Reviewer-Driven Review Gate\n(review-state-machine.ts)\n• approve / reject / note\n• four-eyes enforcement\n• bearer auth"]
+        ExportPipeline["Export Pipeline\n(export-pipeline.ts)\n• export_only\n• testcases.json/csv/alm.xml\n• export-report.json"]
+        EvidenceManifest["Evidence Manifest\n(evidence-manifest.ts)\n• SHA-256 per artifact\n• rawScreenshotsIncluded: false"]
+    end
+
+    subgraph VisualSidecar["Visual Sidecar (Wave 1.4/1.386 — optional)"]
+        VisualClient["visual-sidecar-client.ts\n(llama-4-maverick-vision\n→ phi-4-multimodal-poc fallback)"]
+    end
+
+    FigmaLocal & FigmaPlugin & FigmaRest --> Gate
+    JiraRest & JiraPaste --> Gate
+    CustomText & CustomStructured --> Gate
+
+    Gate -->|"gate passes"| Envelope
+    Gate -->|"gate fails"| GateFail["MultiSourceModeGateError\n(fail-closed, no artifacts)"]
+
+    Envelope -->|"ok: true"| IRBuilders
+    Envelope -->|"ok: false"| EnvFail["ValidationIssue[]\n(fail-closed, no artifacts)"]
+
+    FigmaLocal & FigmaPlugin & FigmaRest --> FigmaIR
+    JiraRest & JiraPaste --> JiraIR
+    CustomText & CustomStructured --> CustomContextIR
+
+    FigmaIR & JiraIR & CustomContextIR --> Reconciliation
+
+    Reconciliation --> PIIRedact
+    PIIRedact --> PromptCompiler
+    PromptCompiler --> LLMGateway
+    LLMGateway --> Validation
+    Validation --> PolicyGate
+    PolicyGate --> ReviewGate
+    ReviewGate -->|"all approved"| ExportPipeline
+    ExportPipeline --> EvidenceManifest
+
+    FigmaRest -.->|"optional"| VisualClient
+    VisualClient -.->|"sidecar result"| PolicyGate
+
+    style GateFail fill:#f88,color:#000
+    style EnvFail fill:#f88,color:#000
+    style Gate fill:#ffe,color:#000
+    style Envelope fill:#ffe,color:#000
+    style Reconciliation fill:#eef,color:#000
+    style VisualClient fill:#efe,color:#000

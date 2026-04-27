@@ -5,6 +5,23 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   CONTRACT_VERSION,
+  CUSTOM_CONTEXT_ARTIFACT_FILENAME,
+  CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+  CUSTOM_CONTEXT_SCHEMA_VERSION,
+  CUSTOM_CONTEXT_STRUCTURED_SOURCE_ID,
+  JIRA_ISSUE_IR_ARTIFACT_FILENAME,
+  JIRA_ISSUE_IR_SCHEMA_VERSION,
+  MAX_CUSTOM_CONTEXT_BYTES_PER_JOB,
+  MAX_JIRA_API_REQUESTS_PER_JOB,
+  MAX_JIRA_ADF_INPUT_BYTES,
+  MAX_JIRA_COMMENT_BODY_BYTES,
+  MAX_JIRA_COMMENT_COUNT,
+  MAX_JIRA_DESCRIPTION_PLAIN_BYTES,
+  MAX_JIRA_PASTE_BYTES_PER_JOB,
+  MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME,
+  MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
+  MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
   TEST_INTELLIGENCE_MULTISOURCE_ENV,
 } from "./contracts/index.js";
 import * as publicApi from "./index.js";
@@ -877,4 +894,263 @@ test("docs: security governance docs stay aligned with GHSA workflow", async () 
     pullRequestTemplate,
     /If the fix is not yet public, do not disclose details in this template; follow `SECURITY\.md`\./,
   );
+});
+
+test("docs: Wave 4 multi-source API reference documents key exported contracts", async () => {
+  const apiRef = await readRepoFile(
+    "docs/api/test-intelligence-multi-source.md",
+  );
+  const migrationDoc = await readRepoFile("docs/migration/wave-4-additive.md");
+  const dpiaJira = await readRepoFile("docs/dpia/jira-source.md");
+  const dpiaCustom = await readRepoFile("docs/dpia/custom-context-source.md");
+  const doraDoc = await readRepoFile("docs/dora/multi-source.md");
+  const euAiActDoc = await readRepoFile("docs/eu-ai-act/human-oversight.md");
+  const runbookJira = await readRepoFile("docs/runbooks/jira-source-setup.md");
+  const runbookAirGap = await readRepoFile(
+    "docs/runbooks/multi-source-air-gap.md",
+  );
+  const readmeDoc = await readRepoFile("README.md");
+  const complianceDoc = await readRepoFile("COMPLIANCE.md");
+  const changelogDoc = await readRepoFile("CHANGELOG.md");
+  const compatibilityDoc = await readRepoFile("COMPATIBILITY.md");
+
+  // API reference must document the schema version constants
+  assert.match(
+    apiRef,
+    new RegExp(
+      escapeRegExp(
+        `MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION = "${MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION}"`,
+      ),
+    ),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(
+      escapeRegExp(
+        `JIRA_ISSUE_IR_SCHEMA_VERSION = "${JIRA_ISSUE_IR_SCHEMA_VERSION}"`,
+      ),
+    ),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(
+      escapeRegExp(
+        `CUSTOM_CONTEXT_SCHEMA_VERSION = "${CUSTOM_CONTEXT_SCHEMA_VERSION}"`,
+      ),
+    ),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(
+      escapeRegExp(
+        `MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION = "${MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION}"`,
+      ),
+    ),
+  );
+
+  // API reference must document the artifact filenames (in path or inline references)
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(JIRA_ISSUE_IR_ARTIFACT_FILENAME)),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(CUSTOM_CONTEXT_ARTIFACT_FILENAME)),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME)),
+  );
+
+  // API reference must document the source IDs
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID)),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(CUSTOM_CONTEXT_STRUCTURED_SOURCE_ID)),
+  );
+
+  // API reference must document byte caps (as runtime-accurate values)
+  assert.match(apiRef, new RegExp(escapeRegExp(`MAX_JIRA_ADF_INPUT_BYTES`)));
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(`MAX_JIRA_DESCRIPTION_PLAIN_BYTES`)),
+  );
+  assert.match(apiRef, new RegExp(escapeRegExp(`MAX_JIRA_COMMENT_BODY_BYTES`)));
+  assert.match(apiRef, new RegExp(escapeRegExp(`MAX_JIRA_COMMENT_COUNT`)));
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(`MAX_JIRA_API_REQUESTS_PER_JOB`)),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(`MAX_JIRA_PASTE_BYTES_PER_JOB`)),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(`MAX_CUSTOM_CONTEXT_BYTES_PER_JOB`)),
+  );
+
+  // API reference must document the numeric values in sync with runtime constants
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(String(MAX_JIRA_ADF_INPUT_BYTES))),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(String(MAX_JIRA_DESCRIPTION_PLAIN_BYTES))),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(String(MAX_JIRA_COMMENT_BODY_BYTES))),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(String(MAX_JIRA_COMMENT_COUNT))),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(String(MAX_JIRA_API_REQUESTS_PER_JOB))),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(String(MAX_JIRA_PASTE_BYTES_PER_JOB))),
+  );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(String(MAX_CUSTOM_CONTEXT_BYTES_PER_JOB))),
+  );
+
+  // API reference must document the TI contract version
+  assert.match(
+    apiRef,
+    new RegExp(
+      escapeRegExp(
+        `TEST_INTELLIGENCE_CONTRACT_VERSION = "${TEST_INTELLIGENCE_CONTRACT_VERSION}"`,
+      ),
+    ),
+  );
+
+  // API reference must list the HTTP routes
+  assert.match(
+    apiRef,
+    /`POST \/workspace\/test-intelligence\/sources\/<jobId>\/jira-paste`/,
+  );
+  assert.match(
+    apiRef,
+    /`POST \/workspace\/test-intelligence\/sources\/<jobId>\/custom-context`/,
+  );
+
+  // API reference must document the feature-flag env var
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(`\`${TEST_INTELLIGENCE_MULTISOURCE_ENV}\``)),
+  );
+
+  // API reference must list exported functions for multi-source
+  assert.match(apiRef, /`validateMultiSourceTestIntentEnvelope`/);
+  assert.match(apiRef, /`buildMultiSourceTestIntentEnvelope`/);
+  assert.match(apiRef, /`computeAggregateContentHash`/);
+  assert.match(apiRef, /`enforceMultiSourceModeGate`/);
+  assert.match(apiRef, /`buildJiraIssueIr`/);
+  assert.match(apiRef, /`buildJiraPasteOnlyEnvelope`/);
+  assert.match(apiRef, /`canonicalizeCustomContextMarkdown`/);
+  assert.match(apiRef, /`reconcileMultiSourceIntent`/);
+  assert.match(apiRef, /`runWave4ProductionReadiness`/);
+
+  // Migration doc must document the additive-only contract diff
+  assert.match(
+    migrationDoc,
+    new RegExp(
+      escapeRegExp(`\`${MULTI_SOURCE_TEST_INTENT_ENVELOPE_SCHEMA_VERSION}\``),
+    ),
+  );
+  assert.match(
+    migrationDoc,
+    new RegExp(escapeRegExp(`\`${JIRA_ISSUE_IR_SCHEMA_VERSION}\``)),
+  );
+  assert.match(
+    migrationDoc,
+    new RegExp(escapeRegExp(`\`${CUSTOM_CONTEXT_SCHEMA_VERSION}\``)),
+  );
+  assert.match(migrationDoc, /Single-source jobs require no changes/i);
+  assert.match(migrationDoc, /Additive-only contract diff/i);
+
+  // DPIA docs must reference artifact filenames
+  assert.match(
+    dpiaJira,
+    new RegExp(escapeRegExp(`\`${JIRA_ISSUE_IR_ARTIFACT_FILENAME}\``)),
+  );
+  assert.match(
+    dpiaJira,
+    new RegExp(
+      escapeRegExp(`MAX_JIRA_ADF_INPUT_BYTES = ${MAX_JIRA_ADF_INPUT_BYTES}`),
+    ),
+  );
+  assert.match(
+    dpiaCustom,
+    new RegExp(escapeRegExp(`\`${CUSTOM_CONTEXT_ARTIFACT_FILENAME}\``)),
+  );
+
+  // DORA doc must reference real article numbers
+  assert.match(doraDoc, /Article 6/);
+  assert.match(doraDoc, /Article 8/);
+  assert.match(doraDoc, /Article 9/);
+  assert.match(doraDoc, /Article 28/);
+  assert.match(doraDoc, /register.of.information/i);
+
+  // EU AI Act doc must reference Art. 14
+  assert.match(euAiActDoc, /Article 14/);
+  assert.match(euAiActDoc, /multi_source_conflict_present/);
+  assert.match(euAiActDoc, /four.eyes/i);
+
+  // Runbooks must document setup steps
+  assert.match(
+    runbookJira,
+    new RegExp(escapeRegExp(TEST_INTELLIGENCE_MULTISOURCE_ENV)),
+  );
+  assert.match(runbookJira, /least.privilege/i);
+  assert.match(runbookJira, /token rotation/i);
+  assert.match(runbookJira, /host allow.list/i);
+
+  assert.match(runbookAirGap, /paste.only/i);
+  assert.match(
+    runbookAirGap,
+    new RegExp(escapeRegExp(TEST_INTELLIGENCE_MULTISOURCE_ENV)),
+  );
+  assert.match(runbookAirGap, /paste.collision/i);
+
+  // README must link to the new multi-source docs
+  assert.match(
+    readmeDoc,
+    /\[docs\/api\/test-intelligence-multi-source\.md\]\(docs\/api\/test-intelligence-multi-source\.md\)/,
+  );
+  assert.match(
+    readmeDoc,
+    /\[docs\/runbooks\/jira-source-setup\.md\]\(docs\/runbooks\/jira-source-setup\.md\)/,
+  );
+  assert.match(
+    readmeDoc,
+    /\[docs\/runbooks\/multi-source-air-gap\.md\]\(docs\/runbooks\/multi-source-air-gap\.md\)/,
+  );
+
+  // COMPLIANCE.md must reference the new DPIA docs
+  assert.match(complianceDoc, /docs\/dpia\/jira-source\.md/);
+  assert.match(complianceDoc, /docs\/dpia\/custom-context-source\.md/);
+  assert.match(complianceDoc, /docs\/eu-ai-act\/human-oversight\.md/);
+
+  // CHANGELOG.md must have Wave 4 entries
+  assert.match(changelogDoc, /Wave 4 multi-source/i);
+  assert.match(
+    changelogDoc,
+    new RegExp(escapeRegExp(TEST_INTELLIGENCE_MULTISOURCE_ENV)),
+  );
+
+  // COMPATIBILITY.md must have multi-source source-mix matrix
+  assert.match(compatibilityDoc, /Multi-Source Test Intent Source Mix Matrix/);
+  assert.match(compatibilityDoc, /primary_source_required/);
+  assert.match(compatibilityDoc, /jira_rest/);
+  assert.match(compatibilityDoc, /jira_paste/);
 });
