@@ -9,6 +9,7 @@ import {
   jobLifecycleScenarioNames,
 } from "./bdd/job-lifecycle.js";
 import { readFeatureScenarioNames } from "./bdd/harness.js";
+import { securityContractScenarioNames } from "./bdd/security-contract.js";
 import { validateModeLock } from "./mode-lock.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -28,6 +29,10 @@ const featureExpectations = [
   {
     featurePath: path.resolve(__dirname, "../features/workspace-advanced-flows.feature"),
     requiredScenarios: [...advancedFlowScenarioNames],
+  },
+  {
+    featurePath: path.resolve(__dirname, "../features/workspace-security-contract.feature"),
+    requiredScenarios: [...securityContractScenarioNames],
   },
 ] as const;
 
