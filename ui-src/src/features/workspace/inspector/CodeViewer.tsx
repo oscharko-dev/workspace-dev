@@ -1053,16 +1053,13 @@ export function CodeViewer({
       {/* Toolbar */}
       <div
         className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5"
-        style={{
-          backgroundColor: isDark ? "#161b22" : undefined,
-          borderColor: isDark ? "#30363d" : undefined
-        }}
+        className="removed-style-1"
       >
         {/* File path */}
         <span
           className="min-w-0 flex-1 truncate text-xs font-mono"
           data-testid="code-viewer-filepath"
-          style={{ color: isDark ? "#8b949e" : "#57606a" }}
+          className="removed-style-2"
         >
           {filePath}
         </span>
@@ -1087,12 +1084,7 @@ export function CodeViewer({
             placeholder="Find or :line"
             data-testid="code-viewer-find-input"
             className="h-6 w-40 rounded border bg-transparent px-2 text-[10px] font-mono"
-            style={{
-              borderColor: searchFocused
-                ? (isDark ? "#1f6feb" : "#0969da")
-                : (isDark ? "#30363d" : "#d0d7de"),
-              color: isDark ? "#c9d1d9" : "#24292f"
-            }}
+            className="removed-style-3"
           />
           <button
             type="button"
@@ -1102,11 +1094,7 @@ export function CodeViewer({
             }}
             disabled={searchMode.kind !== "find" || searchMatches.length === 0}
             className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            style={{
-              borderColor: isDark ? "#30363d" : "#d0d7de",
-              backgroundColor: isDark ? "#21262d" : "#ffffff",
-              color: isDark ? "#c9d1d9" : "#24292f"
-            }}
+            className="removed-style-4"
           >
             Prev
           </button>
@@ -1118,18 +1106,14 @@ export function CodeViewer({
             }}
             disabled={searchMode.kind !== "find" || searchMatches.length === 0}
             className="h-6 shrink-0 cursor-pointer rounded border px-2 py-0 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-50"
-            style={{
-              borderColor: isDark ? "#30363d" : "#d0d7de",
-              backgroundColor: isDark ? "#21262d" : "#ffffff",
-              color: isDark ? "#c9d1d9" : "#24292f"
-            }}
+            className="removed-style-5"
           >
             Next
           </button>
           <span
             data-testid="code-viewer-find-count"
             className="w-16 text-right text-[10px] font-semibold"
-            style={{ color: isDark ? "#8b949e" : "#57606a" }}
+            className="removed-style-6"
           >
             {findCountText}
           </span>
@@ -1140,11 +1124,7 @@ export function CodeViewer({
           data-testid="code-viewer-wrap-toggle"
           onClick={() => { setWordWrap((w) => !w); }}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          style={{
-            borderColor: isDark ? "#30363d" : "#d0d7de",
-            backgroundColor: wordWrap ? (isDark ? "#1f6feb33" : "#ddf4ff") : (isDark ? "#21262d" : "#ffffff"),
-            color: isDark ? "#c9d1d9" : "#24292f"
-          }}
+          className="removed-style-7"
         >
           {wordWrap ? "Wrap: On" : "Wrap: Off"}
         </button>
@@ -1154,11 +1134,7 @@ export function CodeViewer({
           data-testid="code-viewer-rainbow-toggle"
           onClick={() => { setRainbowBracketsEnabled((enabled) => !enabled); }}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          style={{
-            borderColor: isDark ? "#30363d" : "#d0d7de",
-            backgroundColor: rainbowBracketsEnabled ? (isDark ? "#312e81" : "#ede9fe") : (isDark ? "#21262d" : "#ffffff"),
-            color: rainbowBracketsEnabled ? (isDark ? "#c4b5fd" : "#6d28d9") : (isDark ? "#c9d1d9" : "#24292f")
-          }}
+          className="removed-style-8"
         >
           {rainbowBracketsEnabled ? "Rainbow: On" : "Rainbow: Off"}
         </button>
@@ -1168,11 +1144,7 @@ export function CodeViewer({
           data-testid="code-viewer-boundaries-toggle"
           onClick={handleBoundariesToggle}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          style={{
-            borderColor: isDark ? "#30363d" : "#d0d7de",
-            backgroundColor: effectiveBoundariesEnabled ? (isDark ? "#164e63" : "#cffafe") : (isDark ? "#21262d" : "#ffffff"),
-            color: effectiveBoundariesEnabled ? (isDark ? "#a5f3fc" : "#0e7490") : (isDark ? "#c9d1d9" : "#24292f")
-          }}
+          className="removed-style-9"
         >
           {effectiveBoundariesEnabled ? "Boundaries: On" : "Boundaries: Off"}
         </button>
@@ -1183,15 +1155,7 @@ export function CodeViewer({
           onClick={() => { void handleFormat(); }}
           disabled={effectiveFormatStatus.kind === "formatting"}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition disabled:cursor-default disabled:opacity-70"
-          style={{
-            borderColor: isDark ? "#30363d" : "#d0d7de",
-            backgroundColor: effectiveFormatStatus.kind === "success"
-              ? (isDark ? "#14532d" : "#dcfce7")
-              : (isDark ? "#21262d" : "#ffffff"),
-            color: effectiveFormatStatus.kind === "success"
-              ? (isDark ? "#86efac" : "#166534")
-              : (isDark ? "#c9d1d9" : "#24292f")
-          }}
+          className="removed-style-10"
         >
           {formatButtonLabel}
         </button>
@@ -1200,7 +1164,7 @@ export function CodeViewer({
           <span
             data-testid="code-viewer-format-status"
             className="shrink-0 text-[10px] font-semibold"
-            style={{ color: isDark ? "#fda4af" : "#be123c" }}
+            className="removed-style-11"
           >
             {effectiveFormatStatus.message}
           </span>
@@ -1211,11 +1175,7 @@ export function CodeViewer({
           data-testid="inspector-copy-button"
           onClick={() => { void handleCopy(); }}
           className="shrink-0 cursor-pointer rounded border px-2 py-0.5 text-[10px] font-semibold transition"
-          style={{
-            borderColor: isDark ? "#30363d" : "#d0d7de",
-            backgroundColor: isDark ? "#21262d" : "#ffffff",
-            color: isDark ? "#c9d1d9" : "#24292f"
-          }}
+          className="removed-style-12"
         >
           {copied ? "Copied!" : effectiveHighlightRange ? "Copy Range" : "Copy"}
         </button>
@@ -1225,11 +1185,7 @@ export function CodeViewer({
         <div
           className="shrink-0 border-b px-3 py-1.5 text-xs font-medium"
           data-testid="code-viewer-oversize-warning"
-          style={{
-            backgroundColor: isDark ? "#3d1d00" : "#fff8c5",
-            borderColor: isDark ? "#5a3600" : "#d4a72c",
-            color: isDark ? "#e3b341" : "#6a5300"
-          }}
+          className="removed-style-13"
         >
           File exceeds 500 KB — syntax highlighting disabled for performance.
         </div>
@@ -1239,12 +1195,12 @@ export function CodeViewer({
         ref={scrollContainerRef}
         className="min-h-0 flex-1 overflow-auto p-0"
         data-testid="code-content"
-        style={{ backgroundColor: bgColor ?? (isDark ? "#0d1117" : "#ffffff") }}
+        className="removed-style-14"
       >
         {isHighlighting ? (
           <p
             className="m-0 p-3 text-xs"
-            style={{ color: isDark ? "#8b949e" : "#57606a" }}
+            className="removed-style-15"
           >
             Highlighting…
           </p>
@@ -1298,12 +1254,7 @@ export function CodeViewer({
                   }}
                   data-testid={isInRange ? "highlighted-line" : undefined}
                   className="flex text-xs leading-relaxed"
-                  style={{
-                    backgroundColor: lineBackground,
-                    borderLeft: isActiveMatchLine || isJumpTargetLine
-                      ? `2px solid ${emphasisBorder}`
-                      : undefined
-                  }}
+                  className="removed-style-16"
                 >
                   {isActiveMatchLine ? (
                     <span data-testid="code-viewer-active-match-line" className="sr-only">
@@ -1319,7 +1270,7 @@ export function CodeViewer({
                   <span
                     data-testid="line-number"
                     className="relative inline-flex w-14 shrink-0 pr-2 text-right select-none font-mono"
-                    style={{ color: isDark ? "#484f58" : "#8c959f" }}
+                    className="removed-style-17"
                   >
                     {effectiveBoundariesEnabled && hasBoundaryMarkers ? (
                       <span
@@ -1337,13 +1288,7 @@ export function CodeViewer({
                               data-boundary-node-id={boundary.entry.irNodeId}
                               aria-label={`Select ${boundary.entry.irNodeName}`}
                               className="h-full w-1 cursor-pointer border-0 p-0"
-                              style={{
-                                backgroundColor: boundary.color,
-                                borderTopLeftRadius: isStart ? 2 : 0,
-                                borderTopRightRadius: isStart ? 2 : 0,
-                                borderBottomLeftRadius: isEnd ? 2 : 0,
-                                borderBottomRightRadius: isEnd ? 2 : 0
-                              }}
+                              className="removed-style-18"
                               onMouseEnter={(event) => {
                                 const rect = event.currentTarget.getBoundingClientRect();
                                 setHoveredBoundary({
@@ -1387,7 +1332,7 @@ export function CodeViewer({
                           <span
                             data-testid={`code-boundary-overflow-indicator-${String(lineNum)}`}
                             className="inline-flex items-center px-0.5 text-[8px] font-bold leading-none"
-                            style={{ color: isDark ? "#9ca3af" : "#475569" }}
+                            className="removed-style-19"
                             title={`${String(overflowCount)} more overlapping boundaries`}
                           >
                             +{String(overflowCount)}
@@ -1400,7 +1345,7 @@ export function CodeViewer({
 
                   <span
                     className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                    style={{ color: highlightedLines ? undefined : (isDark ? "#c9d1d9" : "#24292f") }}
+                    className="removed-style-20"
                     dangerouslySetInnerHTML={{ __html: lineHtml }}
                   />
                 </div>
@@ -1414,28 +1359,13 @@ export function CodeViewer({
           role="tooltip"
           data-testid="code-boundary-tooltip"
           className="pointer-events-none fixed z-30 min-w-40 rounded border px-2 py-1 text-[10px] shadow-lg"
-          style={{
-            left: Math.max(
-              8,
-              Math.min(
-                (typeof window === "undefined" ? 1024 : window.innerWidth) - 260,
-                hoveredBoundary.x + 10
-              )
-            ),
-            top: Math.max(8, hoveredBoundary.y - 36),
-            borderColor: isDark ? "#1e293b" : "#cbd5e1",
-            backgroundColor: isDark ? "#0f172a" : "#f8fafc",
-            color: isDark ? "#e2e8f0" : "#0f172a"
-          }}
+          className="removed-style-21"
         >
           <div className="flex items-center gap-1.5">
             <span
               data-testid="code-boundary-tooltip-type"
               className="inline-flex items-center rounded px-1 py-0.5 text-[9px] font-semibold uppercase"
-              style={{
-                backgroundColor: isDark ? "#1e293b" : "#e2e8f0",
-                color: isDark ? "#93c5fd" : "#1d4ed8"
-              }}
+              className="removed-style-22"
             >
               {hoveredBoundary.boundary.entry.irNodeType}
             </span>

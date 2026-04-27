@@ -450,11 +450,7 @@ export function CodePane({
             title={isDiffActive ? "Disable diff to use split view" : !canSplit ? "Need at least 2 files" : undefined}
             onClick={() => { setSplitEnabled((v) => !v); }}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40"
-            style={{
-              borderColor: isSplitActive ? "#4eba87" : "#333333",
-              backgroundColor: isSplitActive ? "rgba(78, 186, 135, 0.15)" : "transparent",
-              color: isSplitActive ? "#4eba87" : "rgba(255,255,255,0.7)"
-            }}
+            className="removed-style-1"
           >
             <SplitViewIcon />
             {isSplitActive ? "Split: On" : "Split"}
@@ -466,11 +462,7 @@ export function CodePane({
             title={diffTooltip}
             onClick={() => { setDiffEnabled((v) => !v); }}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40"
-            style={{
-              borderColor: isDiffActive ? "#4eba87" : "#333333",
-              backgroundColor: isDiffActive ? "rgba(78, 186, 135, 0.15)" : "transparent",
-              color: isDiffActive ? "#4eba87" : "rgba(255,255,255,0.7)"
-            }}
+            className="removed-style-2"
           >
             <DiffIcon />
             {isDiffActive ? "Diff: On" : "Diff"}
@@ -601,7 +593,7 @@ export function CodePane({
               <div
                 data-testid="inspector-split-left"
                 className="min-w-0 overflow-hidden"
-                style={{ flexBasis: `${splitRatio.toFixed(2)}%`, flexGrow: 0, flexShrink: 0 }}
+                className="removed-style-3"
               >
                 <CodeViewer
                   themeMode="dark"
@@ -631,7 +623,7 @@ export function CodePane({
                 aria-valuemax={100 - MIN_SPLIT_PANE_PCT}
                 data-testid="inspector-split-divider"
                 className="w-1 shrink-0 cursor-col-resize bg-[#000000] transition-colors hover:bg-[#4eba87] focus:bg-[#4eba87] focus:outline-none"
-                style={{ touchAction: "none" }}
+                className="removed-style-4"
                 onPointerDown={handleSplitPointerDown}
                 onKeyDown={handleSplitDividerKeyDown}
               />
