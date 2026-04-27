@@ -20,10 +20,6 @@ import type { FigmaFileResponse } from "../types.js";
 import type { FigmaMcpEnrichment } from "../../parity/types.js";
 import type { StageService } from "../pipeline/stage-service.js";
 import { STAGE_ARTIFACT_KEYS } from "../pipeline/artifact-keys.js";
-import {
-  isFigmaFileResponseShape,
-  validatedJsonParse,
-} from "../pipeline/pipeline-schemas.js";
 import { hasSymlinkInPath, isWithinRoot } from "../preview.js";
 import {
   createPasteFingerprintStore,
@@ -264,6 +260,7 @@ const resolveChangedRootNodeIds = ({
 export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
   stageName: "figma.source",
   execute: async (input, context) => {
+    const shouldPersistRaw = context.resolvedFigmaSourceMode === "local_json";
     if (
       context.mode === "regeneration" ||
       (context.mode === "retry" && context.retryStage !== "figma.source")
@@ -271,9 +268,12 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       return;
     }
 
+    let sourceRawFileForEnrichment: FigmaFileResponse;
+
     const writeAndClean = async ({
       sourceFile,
       diagnostics,
+      persistRaw,
     }: {
       sourceFile: FigmaFileResponse;
       diagnostics: {
@@ -284,11 +284,14 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         lowFidelityReasons?: string[];
         authoritativeSubtreeCount?: number;
       };
+      persistRaw: boolean;
     }) => {
-      await writePrettyJsonFile({
-        filePath: context.paths.figmaRawJsonFile,
-        value: sourceFile,
-      });
+      if (persistRaw) {
+        await writePrettyJsonFile({
+          filePath: context.paths.figmaRawJsonFile,
+          value: sourceFile,
+        });
+      }
       const cleaning = cleanFigmaForCodegen({ file: sourceFile });
       await writePrettyJsonFile({
         filePath: context.paths.figmaJsonFile,
@@ -436,12 +439,14 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
 
       figmaFetch = await writeAndClean({
         sourceFile: parsedLocalPayload.data,
+        persistRaw: shouldPersistRaw,
         diagnostics: {
           sourceMode: "local-json",
           fetchedNodes: 0,
           degradedGeometryNodes: [],
         },
       });
+      sourceRawFileForEnrichment = parsedLocalPayload.data;
     } else {
       const fileKey = input.figmaFileKey?.trim();
       const accessToken = input.figmaAccessToken?.trim();
@@ -489,9 +494,13 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       });
       figmaFetch = await writeAndClean({
         sourceFile: result.file,
+        persistRaw: shouldPersistRaw,
         diagnostics: result.diagnostics,
       });
+      sourceRawFileForEnrichment = result.file;
     }
+
+    const rawSourcePayload = sourceRawFileForEnrichment;
 
     const hybridMcpEnrichment =
       context.resolvedFigmaSourceMode !== "hybrid"
@@ -547,12 +556,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
               const loaded = await context.runtime.figmaMcpEnrichmentLoader({
                 figmaFileKey: fileKey,
                 cleanedFile: figmaFetch.file,
-                rawFile: validatedJsonParse({
-                  raw: await readFile(context.paths.figmaRawJsonFile, "utf8"),
-                  guard: isFigmaFileResponseShape,
-                  schema: "FigmaFileResponse",
-                  filePath: context.paths.figmaRawJsonFile,
-                }),
+                rawFile: rawSourcePayload,
                 jobDir: context.paths.jobDir,
                 workspaceRoot: context.resolvedWorkspaceRoot,
                 fetchImpl: context.fetchWithCancellation,
@@ -604,22 +608,18 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
     const authoritativeSubtrees =
       hybridMcpEnrichment?.authoritativeSubtrees ?? [];
     if (authoritativeSubtrees.length > 0) {
-      const rawFile = validatedJsonParse({
-        raw: await readFile(context.paths.figmaRawJsonFile, "utf8"),
-        guard: isFigmaFileResponseShape,
-        schema: "FigmaFileResponse",
-        filePath: context.paths.figmaRawJsonFile,
-      });
       const mergedSource = applyAuthoritativeFigmaSubtrees({
-        file: rawFile,
+        file: rawSourcePayload,
         subtrees: authoritativeSubtrees,
       });
       if (mergedSource.appliedNodeIds.length > 0) {
         const cleaning = cleanFigmaForCodegen({ file: mergedSource.file });
-        await writePrettyJsonFile({
-          filePath: context.paths.figmaRawJsonFile,
-          value: mergedSource.file,
-        });
+        if (shouldPersistRaw) {
+          await writePrettyJsonFile({
+            filePath: context.paths.figmaRawJsonFile,
+            value: mergedSource.file,
+          });
+        }
         await writePrettyJsonFile({
           filePath: context.paths.figmaJsonFile,
           value: cleaning.cleanedFile,
@@ -831,11 +831,13 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       }
     }
 
-    await context.artifactStore.setPath({
-      key: STAGE_ARTIFACT_KEYS.figmaRaw,
-      stage: "figma.source",
-      absolutePath: context.paths.figmaRawJsonFile,
-    });
+    if (shouldPersistRaw) {
+      await context.artifactStore.setPath({
+        key: STAGE_ARTIFACT_KEYS.figmaRaw,
+        stage: "figma.source",
+        absolutePath: context.paths.figmaRawJsonFile,
+      });
+    }
     await context.artifactStore.setPath({
       key: STAGE_ARTIFACT_KEYS.figmaCleaned,
       stage: "figma.source",
