@@ -98,6 +98,11 @@ test.describe("inspector resize deterministic flow", () => {
   let inspectorUrl = "";
 
   test.beforeAll(async ({ browser }) => {
+    // Under full-suite load the deterministic submit job can take up to
+    // deterministicSubmitTimeoutMs.  Add headroom so the beforeAll hook
+    // does not time out before the job completes (default hook timeout is
+    // the global 30 s from playwright.config.ts, which is too tight here).
+    test.setTimeout(deterministicSubmitTimeoutMs + 60_000);
     const page = await browser.newPage({ viewport: desktopViewport });
 
     try {
