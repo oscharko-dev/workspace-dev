@@ -30,6 +30,7 @@ import {
   type FormatStatus,
 } from "./code-formatting";
 import { detectLanguage } from "../../../lib/shiki-shared";
+import "./inspector.css";
 
 export type { HighlightRange } from "./CodeViewer";
 
@@ -528,13 +529,17 @@ export function CodePane({
               setSplitEnabled((v) => !v);
             }}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40 code-pane-toggle-btn"
-            style={{
-              borderColor: isSplitActive ? "#4eba87" : "#333333",
-              backgroundColor: isSplitActive
-                ? "rgba(78, 186, 135, 0.15)"
-                : "transparent",
-              color: isSplitActive ? "#4eba87" : "rgba(255,255,255,0.7)",
-            }}
+            style={
+              {
+                "--toggle-border": isSplitActive ? "#4eba87" : "#333333",
+                "--toggle-bg": isSplitActive
+                  ? "rgba(78, 186, 135, 0.15)"
+                  : "transparent",
+                "--toggle-color": isSplitActive
+                  ? "#4eba87"
+                  : "rgba(255,255,255,0.7)",
+              } as React.CSSProperties
+            }
           >
             <SplitViewIcon />
             {isSplitActive ? "Split: On" : "Split"}
@@ -548,13 +553,17 @@ export function CodePane({
               setDiffEnabled((v) => !v);
             }}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40 code-pane-toggle-btn"
-            style={{
-              borderColor: isDiffActive ? "#4eba87" : "#333333",
-              backgroundColor: isDiffActive
-                ? "rgba(78, 186, 135, 0.15)"
-                : "transparent",
-              color: isDiffActive ? "#4eba87" : "rgba(255,255,255,0.7)",
-            }}
+            style={
+              {
+                "--toggle-border": isDiffActive ? "#4eba87" : "#333333",
+                "--toggle-bg": isDiffActive
+                  ? "rgba(78, 186, 135, 0.15)"
+                  : "transparent",
+                "--toggle-color": isDiffActive
+                  ? "#4eba87"
+                  : "rgba(255,255,255,0.7)",
+              } as React.CSSProperties
+            }
           >
             <DiffIcon />
             {isDiffActive ? "Diff: On" : "Diff"}
@@ -698,7 +707,11 @@ export function CodePane({
               <div
                 data-testid="inspector-split-left"
                 className="code-pane-split-pane min-w-0 overflow-hidden"
-                style={{ flexBasis: `${splitRatio.toFixed(2)}%` }}
+                style={
+                  {
+                    "--split-flex-basis": `${splitRatio.toFixed(2)}%`,
+                  } as React.CSSProperties
+                }
               >
                 <CodeViewer
                   themeMode="dark"

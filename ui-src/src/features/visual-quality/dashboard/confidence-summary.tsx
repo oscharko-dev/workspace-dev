@@ -1,5 +1,6 @@
 import { type JSX } from "react";
 import { type JobConfidence, type ConfidenceLevel } from "../data/types";
+import "../visual-quality.css";
 
 const LEVEL_COLORS: Record<ConfidenceLevel, string> = {
   high: "#22c55e",
@@ -32,14 +33,11 @@ export function ConfidenceSummary({
   return (
     <section
       data-testid="confidence-summary"
-      className="rounded-md border bg-[#171717] p-3"
-      style={{ borderColor: color }}
+      className="vq-confidence-card rounded-md border bg-[#171717] p-3"
+      style={{ "--vq-confidence-color": color } as React.CSSProperties}
     >
       <div className="mb-2 flex items-center gap-2">
-        <span
-          className="inline-block h-3 w-3 shrink-0 rounded-full"
-          style={{ backgroundColor: color }}
-        />
+        <span className="vq-confidence-dot inline-block h-3 w-3 shrink-0 rounded-full" />
         <strong className="text-[11px] font-semibold uppercase tracking-wider text-white/80">
           {label}
         </strong>

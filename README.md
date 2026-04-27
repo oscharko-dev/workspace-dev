@@ -269,7 +269,7 @@ The workspace UI is implemented as a Vite + React + TypeScript + Tailwind app:
 - Vite 8 build output is emitted into `dist/ui`
 - Runtime serves `index.html` and hashed bundles under `/workspace/ui/assets/*`
 - API contracts are versioned (`/workspace`, `/healthz`, `/readyz`, `/workspace/submit`, `/workspace/jobs/*`)
-- UI HTML responses enforce a strict CSP; `style-src 'unsafe-inline'` remains temporarily required because the inspector still renders inline React `style={{...}}` attributes
+- UI HTML responses enforce a strict CSP (`style-src 'self'`); dynamic colors are applied via CSS custom properties set through the React DOM API, so no `unsafe-inline` exception is required
 
 Useful scripts:
 

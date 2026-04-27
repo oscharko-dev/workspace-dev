@@ -4,6 +4,7 @@ import {
   CONFIDENCE_OVERLAY_BORDERS,
   CONFIDENCE_OVERLAY_COLORS,
 } from "./overlay-confidence";
+import "../visual-quality.css";
 
 interface OverlayConfidenceViewProps {
   screen: MergedScreen;
@@ -29,7 +30,10 @@ export function OverlayConfidenceView({
   }
 
   return (
-    <div data-testid="overlay-confidence" className="grid gap-3 lg:grid-cols-[minmax(0,_1.2fr)_minmax(16rem,_0.8fr)]">
+    <div
+      data-testid="overlay-confidence"
+      className="grid gap-3 lg:grid-cols-[minmax(0,_1.2fr)_minmax(16rem,_0.8fr)]"
+    >
       <div className="min-w-0">
         {previewUrl ? (
           <button
@@ -45,11 +49,14 @@ export function OverlayConfidenceView({
             />
             {confidence ? (
               <div
-                className="pointer-events-none absolute inset-0"
-                style={{
-                  backgroundColor: CONFIDENCE_OVERLAY_COLORS[confidence.level],
-                  boxShadow: `inset 0 0 0 2px ${CONFIDENCE_OVERLAY_BORDERS[confidence.level]}`,
-                }}
+                className="vq-conf-overlay pointer-events-none absolute inset-0"
+                style={
+                  {
+                    "--vq-conf-overlay-bg":
+                      CONFIDENCE_OVERLAY_COLORS[confidence.level],
+                    "--vq-conf-overlay-shadow": `inset 0 0 0 2px ${CONFIDENCE_OVERLAY_BORDERS[confidence.level]}`,
+                  } as React.CSSProperties
+                }
               />
             ) : null}
           </button>
@@ -68,10 +75,13 @@ export function OverlayConfidenceView({
           <>
             <div className="mb-2 flex items-center gap-2">
               <span
-                className="inline-block h-2.5 w-2.5 rounded-full"
-                style={{
-                  backgroundColor: CONFIDENCE_OVERLAY_BORDERS[confidence.level],
-                }}
+                className="vq-conf-dot inline-block h-2.5 w-2.5 rounded-full"
+                style={
+                  {
+                    "--vq-conf-dot-bg":
+                      CONFIDENCE_OVERLAY_BORDERS[confidence.level],
+                  } as React.CSSProperties
+                }
               />
               <span className="text-xs font-medium capitalize text-white/85">
                 {confidence.level.replace("_", " ")}

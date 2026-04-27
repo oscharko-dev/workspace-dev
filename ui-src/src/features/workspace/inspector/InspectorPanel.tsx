@@ -200,6 +200,7 @@ import {
   createDraftSnapshotStore,
   type DraftSnapshotStore,
 } from "./inspector-draft-snapshot";
+import "./inspector.css";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -6262,7 +6263,7 @@ export function InspectorPanel({
               treePaneStyle
                 ? ({
                     "--pane-flex-grow": treePaneStyle.flexGrow,
-                  } as any)
+                  } as React.CSSProperties)
                 : undefined
             }
           >
@@ -6362,8 +6363,7 @@ export function InspectorPanel({
             aria-valuemax={100}
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
-            className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
-            style={{ touchAction: "none" }}
+            className="inspector-pane-splitter group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
             onPointerDown={handleSplitterPointerDown("tree-preview")}
             onPointerMove={handleSplitterPointerMove}
             onPointerUp={handleSplitterPointerUp}
@@ -6386,9 +6386,8 @@ export function InspectorPanel({
             previewPaneStyle
               ? ({
                   "--pane-flex-grow": previewPaneStyle.flexGrow,
-                  flex: 1,
-                } as any)
-              : ({ flex: 1 } as any)
+                } as React.CSSProperties)
+              : undefined
           }
         >
           {previewRecoveryMessage ? (
@@ -6428,8 +6427,7 @@ export function InspectorPanel({
           aria-valuemax={100}
           aria-valuenow={previewSeparatorNow}
           data-testid="inspector-splitter-preview-code"
-          className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
-          style={{ touchAction: "none" }}
+          className="inspector-pane-splitter group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
           onPointerDown={handleSplitterPointerDown("preview-code")}
           onPointerMove={handleSplitterPointerMove}
           onPointerUp={handleSplitterPointerUp}
@@ -6451,9 +6449,8 @@ export function InspectorPanel({
             codePaneStyle
               ? ({
                   "--pane-flex-grow": codePaneStyle.flexGrow,
-                  flex: 1,
-                } as any)
-              : ({ flex: 1 } as any)
+                } as React.CSSProperties)
+              : undefined
           }
         >
           {(activePipeline.stage === "ready" ||

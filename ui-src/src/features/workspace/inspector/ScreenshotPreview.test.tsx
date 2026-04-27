@@ -148,8 +148,10 @@ describe("ScreenshotPreview — zoom controls", () => {
       screen.getByTestId("screenshot-preview-zoom-percent"),
     ).toHaveTextContent("100%");
     expect(
-      screen.getByRole("img", { name: "Figma design preview" }),
-    ).toHaveStyle("transform: translate(0px, 0px) scale(1)");
+      screen
+        .getByRole("img", { name: "Figma design preview" })
+        .style.getPropertyValue("--transform-translate-scale"),
+    ).toBe("translate(0px, 0px) scale(1)");
   });
 });
 
@@ -236,7 +238,9 @@ describe("ScreenshotPreview — pointer drag pan", () => {
     });
     fireEvent.pointerUp(container!, { pointerId: 1 });
 
-    expect(img).toHaveStyle("transform: translate(50px, 20px) scale(1)");
+    expect(img.style.getPropertyValue("--transform-translate-scale")).toBe(
+      "translate(50px, 20px) scale(1)",
+    );
   });
 });
 
@@ -259,8 +263,10 @@ describe("ScreenshotPreview — URL change reset", () => {
       screen.getByTestId("screenshot-preview-zoom-percent"),
     ).toHaveTextContent("100%");
     expect(
-      screen.getByRole("img", { name: "Figma design preview" }),
-    ).toHaveStyle("transform: translate(0px, 0px) scale(1)");
+      screen
+        .getByRole("img", { name: "Figma design preview" })
+        .style.getPropertyValue("--transform-translate-scale"),
+    ).toBe("translate(0px, 0px) scale(1)");
   });
 });
 

@@ -15,6 +15,7 @@ import { OverlayOnionSkin } from "./overlay-onion-skin";
 import { OverlayHeatmap } from "./overlay-heatmap";
 import { OverlayConfidenceView } from "./overlay-confidence-view";
 import { type OverlayMode } from "./overlay-mode";
+import "../visual-quality.css";
 
 interface ZoomModalProps {
   screen: MergedScreen;
@@ -64,8 +65,12 @@ export function ZoomModal({
       return [];
     }
 
-    return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
-      (element) => !element.hasAttribute("disabled") && element.getAttribute("aria-hidden") !== "true",
+    return Array.from(
+      dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+    ).filter(
+      (element) =>
+        !element.hasAttribute("disabled") &&
+        element.getAttribute("aria-hidden") !== "true",
     );
   }, []);
 
@@ -114,14 +119,20 @@ export function ZoomModal({
       const activeElement = document.activeElement;
 
       if (event.shiftKey) {
-        if (activeElement === firstFocusable || activeElement === dialogRef.current) {
+        if (
+          activeElement === firstFocusable ||
+          activeElement === dialogRef.current
+        ) {
           event.preventDefault();
           lastFocusable.focus();
         }
         return;
       }
 
-      if (activeElement === lastFocusable || activeElement === dialogRef.current) {
+      if (
+        activeElement === lastFocusable ||
+        activeElement === dialogRef.current
+      ) {
         event.preventDefault();
         firstFocusable.focus();
       }
@@ -247,13 +258,14 @@ export function ZoomModal({
           }`}
         >
           <div
-            className="h-full w-full"
-            style={{
-              transform: `translate(${offset.x.toFixed(0)}px, ${offset.y.toFixed(0)}px) scale(${zoom.toFixed(2)})`,
-              transformOrigin: "center center",
-              transition:
-                panState !== null ? "none" : "transform 80ms ease-out",
-            }}
+            className="vq-zoom-canvas h-full w-full"
+            style={
+              {
+                "--vq-zoom-transform": `translate(${offset.x.toFixed(0)}px, ${offset.y.toFixed(0)}px) scale(${zoom.toFixed(2)})`,
+                "--vq-zoom-transition":
+                  panState !== null ? "none" : "transform 80ms ease-out",
+              } as React.CSSProperties
+            }
           >
             {mode === "side-by-side" ? (
               <OverlaySideBySide screen={screen} onZoom={handleReset} />
@@ -265,10 +277,7 @@ export function ZoomModal({
               <OverlayHeatmap screen={screen} onZoom={handleReset} />
             ) : null}
             {mode === "confidence" ? (
-              <OverlayConfidenceView
-                screen={screen}
-                onZoom={handleReset}
-              />
+              <OverlayConfidenceView screen={screen} onZoom={handleReset} />
             ) : null}
           </div>
         </div>
