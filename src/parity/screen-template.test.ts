@@ -302,6 +302,49 @@ test("renderText uses text override expressions when they are provided by the re
   assert.match(rendered, /\{textOverrides\?\.\["mode-text"\] \?\? "Netto"\}/);
 });
 
+test("renderText inlines specialized typography text overrides without introducing temporary variables", () => {
+  const context = createRenderContext({
+    specializedComponentMappings: {
+      Typography: makeSpecializedMapping({
+        componentKey: "Typography",
+        modulePath: "@customer/typography",
+        importedName: "CustomerTypography"
+      })
+    },
+    storybookTypographyVariants: {
+      displayLg: {
+        fontFamily: "Storybook Sans",
+        fontSizePx: 32,
+        fontWeight: 700,
+        lineHeightPx: 40,
+        letterSpacing: "0em"
+      }
+    }
+  });
+  context.textOverrideExpressionByNodeId = new Map([
+    ["mode-text", 'textOverrides?.["mode-text"] ?? "Netto"']
+  ]);
+
+  const rendered = renderText(
+    makeText({
+      id: "mode-text",
+      text: "Netto",
+      semanticType: "Typography",
+      fontFamily: "Storybook Sans",
+      fontSize: 32,
+      fontWeight: 700,
+      lineHeight: 40
+    }),
+    1,
+    rootParent,
+    context
+  );
+
+  assert.match(rendered, /<CustomerTypography/);
+  assert.match(rendered, /\{textOverrides\?\.\["mode-text"\] \?\? "Netto"\}/);
+  assert.equal(rendered.includes("typographyText"), false);
+});
+
 test("renderText prefers mapped customer typography for semantic Typography nodes when a Storybook variant matches confidently", () => {
   const context = createRenderContext({
     specializedComponentMappings: {
