@@ -254,7 +254,7 @@ function PreviewOverlayLayout({
         src={previewUrl}
         title="Live preview"
         className="absolute inset-0 h-full w-full border-0 bg-white"
-        style={{ opacity: opacity / 100 }}
+        className="removed-style-1"
         onLoad={onIframeLoad}
         sandbox="allow-scripts allow-same-origin"
       />

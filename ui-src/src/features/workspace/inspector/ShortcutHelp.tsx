@@ -200,7 +200,7 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
     <div
       data-testid="shortcut-help-overlay"
       className="absolute inset-0 z-50 flex items-center justify-center"
-      style={{ backgroundColor: bgOverlay }}
+      className="removed-style-1"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       onKeyDown={handleKeyDown}
       ref={overlayRef}
@@ -211,22 +211,16 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
       <div
         data-testid="shortcut-help-panel"
         className="relative max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border shadow-2xl"
-        style={{
-          backgroundColor: panelBg,
-          borderColor: panelBorder
-        }}
+        className="removed-style-2"
       >
         {/* Header */}
         <div
           className="sticky top-0 z-10 flex items-center justify-between border-b px-5 py-3"
-          style={{
-            backgroundColor: panelBg,
-            borderColor: panelBorder
-          }}
+          className="removed-style-3"
         >
           <h3
             className="m-0 text-base font-bold"
-            style={{ color: textPrimary }}
+            className="removed-style-4"
           >
             Keyboard Shortcuts
           </h3>
@@ -236,7 +230,7 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
             data-testid="shortcut-help-close"
             onClick={onClose}
             className="cursor-pointer rounded p-1 text-lg leading-none transition hover:opacity-70"
-            style={{ color: textSecondary }}
+            className="removed-style-5"
             aria-label="Close keyboard shortcuts"
           >
             ✕
@@ -250,10 +244,7 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
               <h4
                 data-testid={`shortcut-category-${category.title.toLowerCase().replace(/\s+/g, "-")}`}
                 className="m-0 mb-2 rounded px-2 py-1 text-[11px] font-bold uppercase tracking-wider"
-                style={{
-                  backgroundColor: categoryBg,
-                  color: textSecondary
-                }}
+                className="removed-style-6"
               >
                 {category.title}
               </h4>
@@ -265,7 +256,7 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
                   >
                     <span
                       className="text-xs"
-                      style={{ color: textPrimary }}
+                      className="removed-style-7"
                     >
                       {entry.description}
                     </span>
@@ -274,14 +265,7 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
                         <kbd
                           key={ki}
                           className="inline-flex min-w-[1.5rem] items-center justify-center rounded border px-1.5 py-0.5 text-[11px] font-mono font-semibold leading-none"
-                          style={{
-                            backgroundColor: kbdBg,
-                            borderColor: kbdBorder,
-                            color: kbdText,
-                            boxShadow: isDark
-                              ? "0 1px 0 rgba(255,255,255,0.04)"
-                              : "0 1px 0 rgba(0,0,0,0.08)"
-                          }}
+                          className="removed-style-8"
                         >
                           {key}
                         </kbd>
@@ -297,25 +281,14 @@ export function ShortcutHelp({ open, onClose }: ShortcutHelpProps): JSX.Element 
         {/* Footer hint */}
         <div
           className="border-t px-5 py-2 text-center text-[10px]"
-          style={{
-            borderColor: panelBorder,
-            color: textSecondary
-          }}
+          className="removed-style-9"
         >
           Press <kbd
             className="mx-0.5 inline-flex items-center rounded border px-1 py-0 text-[10px] font-mono font-semibold"
-            style={{
-              backgroundColor: kbdBg,
-              borderColor: kbdBorder,
-              color: kbdText
-            }}
+            className="removed-style-10"
           >?</kbd> or <kbd
             className="mx-0.5 inline-flex items-center rounded border px-1 py-0 text-[10px] font-mono font-semibold"
-            style={{
-              backgroundColor: kbdBg,
-              borderColor: kbdBorder,
-              color: kbdText
-            }}
+            className="removed-style-11"
           >Esc</kbd> to close
         </div>
       </div>
