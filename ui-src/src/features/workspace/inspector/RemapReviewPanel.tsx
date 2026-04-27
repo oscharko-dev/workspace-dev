@@ -5,7 +5,11 @@ import { useCallback, useState, type JSX } from "react";
 // ---------------------------------------------------------------------------
 
 export type RemapConfidence = "high" | "medium" | "low";
-export type RemapRule = "exact-id" | "name-and-type" | "name-fuzzy-and-type" | "ancestry-and-type";
+export type RemapRule =
+  | "exact-id"
+  | "name-and-type"
+  | "name-fuzzy-and-type"
+  | "ancestry-and-type";
 
 export interface RemapSuggestion {
   sourceNodeId: string;
@@ -44,10 +48,13 @@ export interface RemapDecisionEntry {
 // Confidence badge styling
 // ---------------------------------------------------------------------------
 
-const CONFIDENCE_STYLES: Record<RemapConfidence, { bg: string; text: string; label: string }> = {
+const CONFIDENCE_STYLES: Record<
+  RemapConfidence,
+  { bg: string; text: string; label: string }
+> = {
   high: { bg: "#dcfce7", text: "#166534", label: "High" },
   medium: { bg: "#fef9c3", text: "#854d0e", label: "Medium" },
-  low: { bg: "#fee2e2", text: "#991b1b", label: "Low" }
+  low: { bg: "#fee2e2", text: "#991b1b", label: "Low" },
 };
 
 // ---------------------------------------------------------------------------
@@ -65,7 +72,7 @@ export function RemapReviewPanel({
   result,
   onApply,
   onCancel,
-  disabled = false
+  disabled = false,
 }: RemapReviewPanelProps): JSX.Element {
   const [decisions, setDecisions] = useState<Map<string, boolean>>(() => {
     const initial = new Map<string, boolean>();
@@ -98,7 +105,7 @@ export function RemapReviewPanel({
     const entries: RemapDecisionEntry[] = result.suggestions.map((s) => ({
       sourceNodeId: s.sourceNodeId,
       targetNodeId: s.targetNodeId,
-      accepted: decisions.get(s.sourceNodeId) ?? false
+      accepted: decisions.get(s.sourceNodeId) ?? false,
     }));
     onApply(entries);
   }, [decisions, onApply, result.suggestions]);
@@ -107,32 +114,21 @@ export function RemapReviewPanel({
   const totalSuggestions = result.suggestions.length;
 
   return (
-    <div
-      className="remap-review-panel"
-      className="removed-style-1"
-    >
-      <p
-        className="removed-style-2"
-      >
-        Remap suggestions
-      </p>
-      <p className="removed-style-3">
-        {result.message}
-      </p>
+    <div className="remap-review-panel">
+      <p className="remap-review-panel-title">Remap suggestions</p>
+      <p className="remap-review-panel-message">{result.message}</p>
 
       {result.suggestions.length > 0 && (
-        <div className="removed-style-4">
-          <div
-            className="removed-style-5"
-          >
-            <span className="removed-style-6">
+        <div className="remap-review-suggestions">
+          <div className="remap-suggestions-header">
+            <span className="remap-suggestions-count">
               {`${String(acceptedCount)} of ${String(totalSuggestions)} accepted`}
             </span>
             <button
               type="button"
               disabled={disabled}
               onClick={acceptAll}
-              className="removed-style-7"
+              className="remap-accept-all-btn"
             >
               Accept all
             </button>
@@ -144,44 +140,56 @@ export function RemapReviewPanel({
             return (
               <div
                 key={suggestion.sourceNodeId}
-                className="removed-style-8"
+                className="remap-suggestion-item"
+                style={
+                  {
+                    "--remap-item-border": accepted
+                      ? "1px solid var(--color-primary-border, #93c5fd)"
+                      : "1px solid var(--color-border, #e5e7eb)",
+                    "--remap-item-bg": accepted
+                      ? "var(--color-primary-bg-subtle, #f0f9ff)"
+                      : "var(--color-bg, #fff)",
+                  } as React.CSSProperties
+                }
               >
                 <input
                   type="checkbox"
                   checked={accepted}
                   disabled={disabled}
-                  onChange={() => { toggleDecision(suggestion.sourceNodeId); }}
-                  className="removed-style-9"
+                  onChange={() => {
+                    toggleDecision(suggestion.sourceNodeId);
+                  }}
+                  className="remap-suggestion-item-checkbox"
                   aria-label={`Accept remap for ${suggestion.sourceNodeName}`}
                 />
-                <div className="removed-style-10">
-                  <div className="removed-style-11">
+                <div className="remap-suggestion-content">
+                  <div className="remap-suggestion-header">
                     <span
-                      className="removed-style-12"
+                      className="remap-suggestion-source-name"
                       title={`Source: ${suggestion.sourceNodeId}`}
                     >
                       {suggestion.sourceNodeName}
                     </span>
-                    <span className="removed-style-13">
-                      {"\u2192"}
-                    </span>
+                    <span className="remap-suggestion-arrow">{"\u2192"}</span>
                     <span
-                      className="removed-style-14"
+                      className="remap-suggestion-target-name"
                       title={`Target: ${suggestion.targetNodeId}`}
                     >
                       {suggestion.targetNodeName}
                     </span>
                     <span
-                      className="removed-style-15"
+                      className="remap-confidence-badge"
+                      style={
+                        {
+                          "--remap-badge-bg": style.bg,
+                          "--remap-badge-color": style.text,
+                        } as React.CSSProperties
+                      }
                     >
                       {style.label}
                     </span>
                   </div>
-                  <p
-                    className="removed-style-16"
-                  >
-                    {suggestion.reason}
-                  </p>
+                  <p className="remap-suggestion-reason">{suggestion.reason}</p>
                 </div>
               </div>
             );
@@ -190,37 +198,30 @@ export function RemapReviewPanel({
       )}
 
       {result.rejections.length > 0 && (
-        <div className="removed-style-17">
-          <p
-            className="removed-style-18"
-          >
+        <div className="remap-rejections">
+          <p className="remap-rejections-title">
             {`Unsupported mappings (${String(result.rejections.length)})`}
           </p>
           {result.rejections.map((rejection) => (
-            <div
-              key={rejection.sourceNodeId}
-              className="removed-style-19"
-            >
-              <span className="removed-style-20">{rejection.sourceNodeName}</span>
-              <span className="removed-style-21">
+            <div key={rejection.sourceNodeId} className="remap-rejection-item">
+              <span className="remap-rejection-name">
+                {rejection.sourceNodeName}
+              </span>
+              <span className="remap-rejection-type">
                 {` (${rejection.sourceNodeType})`}
               </span>
-              <p
-                className="removed-style-22"
-              >
-                {rejection.reason}
-              </p>
+              <p className="remap-rejection-reason">{rejection.reason}</p>
             </div>
           ))}
         </div>
       )}
 
-      <div className="removed-style-23">
+      <div className="remap-review-actions">
         <button
           type="button"
           disabled={disabled || acceptedCount === 0}
           onClick={handleApply}
-          className="removed-style-24"
+          className="remap-apply-btn"
           title="Apply accepted remaps and carry forward draft"
         >
           {`Apply ${String(acceptedCount)} remap(s)`}
@@ -229,7 +230,7 @@ export function RemapReviewPanel({
           type="button"
           disabled={disabled}
           onClick={onCancel}
-          className="removed-style-25"
+          className="remap-cancel-btn"
           title="Cancel remap and return to stale draft options"
         >
           Cancel
