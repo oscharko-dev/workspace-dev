@@ -11,6 +11,10 @@ import type { ComponentManifest } from "../../parity/component-manifest.js";
 import { resolveEmittedScreenTargets } from "../../parity/emitted-screen-targets.js";
 import { generateArtifactsStreaming } from "../../parity/generator-core.js";
 import type { StreamingArtifactEvent } from "../../parity/generator-core.js";
+import {
+  isWorkflowError,
+  PARITY_WORKFLOW_ERROR_CODES,
+} from "../../parity/workflow-error.js";
 import type { FigmaAnalysis } from "../../parity/figma-analysis.js";
 import type { ComponentMappingWarning } from "../../parity/types-mapping.js";
 import type { DesignIR } from "../../parity/types-ir.js";
@@ -77,6 +81,16 @@ interface CodegenGenerateServiceDeps {
   buildComponentManifestFn: typeof buildComponentManifest;
   resolveStorybookThemeFn: typeof resolveStorybookTheme;
 }
+
+const isGeneratedSourceValidationWorkflowError = (
+  error: unknown,
+): boolean => {
+  return (
+    isWorkflowError(error) &&
+    (error.code === PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedJsxFragment ||
+      error.code === PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile)
+  );
+};
 
 const collectScreenNodeIds = (screen: Pick<DesignIR["screens"][number], "id" | "children">): ReadonlySet<string> => {
   const nodeIds = new Set<string>([screen.id]);
@@ -1211,12 +1225,17 @@ export const createCodegenGenerateService = ({
           stage: "codegen.generate",
           value: generationSummary
         });
+        const preserveGeneratedSourceError =
+          isGeneratedSourceValidationWorkflowError(error);
         throw createPipelineError({
-          code: "E_CODEGEN_PARTIAL",
+          code: preserveGeneratedSourceError
+            ? (error as { code: string }).code
+            : "E_CODEGEN_PARTIAL",
           stage: "codegen.generate",
-          message:
-            `Code generation produced ${generatedPaths.length} file(s) but left ` +
-            `${failedTargets.length} generated target(s) incomplete.`,
+          message: preserveGeneratedSourceError
+            ? getErrorMessage(error)
+            : `Code generation produced ${generatedPaths.length} file(s) but left ` +
+              `${failedTargets.length} generated target(s) incomplete.`,
           cause: error,
           retryable: true,
           retryTargets: failedTargets,
