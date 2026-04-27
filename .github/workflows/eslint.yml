@@ -1,55 +1,49 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-# ESLint is a tool for identifying and reporting on patterns
-# found in ECMAScript/JavaScript code.
-# More details at https://github.com/eslint/eslint
-# and https://eslint.org
-
 name: ESLint
 
 on:
   push:
-    branches: [ "dev", "dev-gate", "main" ]
+    branches: [dev, dev-gate, main]
   pull_request:
-    # The branches below must be a subset of the branches above
-    branches: [ "dev" ]
+    branches: [dev, dev-gate, main]
   schedule:
-    - cron: '29 1 * * 1'
+    - cron: "29 1 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   eslint:
-    name: Run eslint scanning
+    name: Run ESLint gates
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
-      actions: read # only required for a private repository by github/codeql-action/upload-sarif to get the Action run status
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
           persist-credentials: false
 
-      - name: Install ESLint
-        run: |
-          npm install eslint@8.10.0 --legacy-peer-deps --ignore-scripts
-          npm install @microsoft/eslint-formatter-sarif@3.1.0 --legacy-peer-deps --ignore-scripts
-
-      - name: Run ESLint
-        env:
-          SARIF_ESLINT_IGNORE_SUPPRESSED: "true"
-        run: npx eslint .
-          --config .eslintrc.js
-          --ext .js,.jsx,.ts,.tsx
-          --format @microsoft/eslint-formatter-sarif
-          --output-file eslint-results.sarif
-        continue-on-error: true
-
-      - name: Upload analysis results to GitHub
-        uses: github/codeql-action/upload-sarif@95e58e9a2cdfd71adc6e0353d5c52f41a045d225  # v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@903f9c1a6ebcba6cf41d87230be49611ac97822e  # v6
         with:
-          sarif_file: eslint-results.sarif
-          wait-for-processing: true
-        continue-on-error: true
+          version: 10.33.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e  # v6
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Enforce workflow install policy
+        run: pnpm run verify:workflow-install-scripts
+
+      - name: Enforce workflow credential policy
+        run: pnpm run verify:workflow-persist-credentials
+
+      - name: Enforce TypeScript style
+        run: pnpm run lint:ts-style
+
+      - name: Enforce UI lint rules
+        run: pnpm run ui:lint

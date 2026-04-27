@@ -62,9 +62,9 @@ const toSemverMajor = (
 const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
   {
     "package.json":
-      "83bddf0bfa3525df5b5ab36f774dd4b60393bdc590301119723107519c44c2a6",
+      "dc00289522f7b7f67ae54d326350e3ca4fa429cb23b85e506e52d42611155845",
     "pnpm-lock.yaml":
-      "b8f75531d1e6bc9945d65e553479de18c84e5ed5e53767b3485a967c366d510a",
+      "b08b99bf509f286dc1e55a11deadfd2191b771e92b7873551044a87e0ecc19fe",
     "vite.config.ts":
       "7afffdfa2dc74d6306cd107d1f1410621755f50702b4c9374ed0a40c80241d05",
     "tsconfig.json":
@@ -88,7 +88,7 @@ const TEMPLATE_HASH_SNAPSHOT: Record<(typeof TEMPLATE_FILES)[number], string> =
     "src/performance/resource-hints.ts":
       "d955f9f50c78b51cb4914dccb54260df51b36587de43a7d6bc72add613555986",
     "src/performance/runtime-errors.ts":
-      "11d976b471a714fb20562372de868be9dc65a17a818639bfcf484c68db81012b",
+      "4c25809e85fb2682d5accbc67c26b8d481b34f1869a1048e634981ea03166d24",
     "src/vite-env.d.ts":
       "dff9f1cbbb0559e21d251fbab9fbebcbfac51f241cf508b1bc2d04bc7c20ed80",
     "src/routes/CheckoutRoute.tsx":

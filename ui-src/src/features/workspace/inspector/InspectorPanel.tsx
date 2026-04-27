@@ -5,6 +5,7 @@ import {
   useReducer,
   useRef,
   useState,
+  type CSSProperties,
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -215,6 +216,14 @@ interface FilesPayload {
   jobId: string;
   files: FileEntry[];
 }
+
+type InspectorPaneStyle = CSSProperties & {
+  "--pane-flex-grow"?: number;
+};
+
+const DEFAULT_FILL_PANE_STYLE = {
+  flex: 1,
+} satisfies CSSProperties;
 
 interface ComponentManifestEntry {
   irNodeId: string;
@@ -4883,12 +4892,13 @@ export function InspectorPanel({
   const treeSeparatorNow = Math.round(paneRatios.tree * 100);
   const previewSeparatorNow = Math.round(collapsedPreviewShare * 100);
 
-  const treePaneStyle = useMemo(() => {
+  const treePaneStyle = useMemo<InspectorPaneStyle | undefined>(() => {
     if (!isDesktopLayout || !hasExpandedTree) {
       return undefined;
     }
 
     return {
+      "--pane-flex-grow": paneRatios.tree,
       flexBasis: "0%",
       flexGrow: paneRatios.tree,
       flexShrink: 1,
@@ -4896,13 +4906,14 @@ export function InspectorPanel({
     };
   }, [hasExpandedTree, isDesktopLayout, paneRatios.tree]);
 
-  const previewPaneStyle = useMemo(() => {
+  const previewPaneStyle = useMemo<InspectorPaneStyle | undefined>(() => {
     if (!isDesktopLayout) {
       return undefined;
     }
 
     if (hasExpandedTree) {
       return {
+        "--pane-flex-grow": paneRatios.preview,
         flexBasis: "0%",
         flexGrow: paneRatios.preview,
         flexShrink: 1,
@@ -4911,6 +4922,7 @@ export function InspectorPanel({
     }
 
     return {
+      "--pane-flex-grow": collapsedPreviewShare,
       flexBasis: "0%",
       flexGrow: collapsedPreviewShare,
       flexShrink: 1,
@@ -4923,13 +4935,14 @@ export function InspectorPanel({
     paneRatios.preview,
   ]);
 
-  const codePaneStyle = useMemo(() => {
+  const codePaneStyle = useMemo<InspectorPaneStyle | undefined>(() => {
     if (!isDesktopLayout) {
       return undefined;
     }
 
     if (hasExpandedTree) {
       return {
+        "--pane-flex-grow": paneRatios.code,
         flexBasis: "0%",
         flexGrow: paneRatios.code,
         flexShrink: 1,
@@ -4938,6 +4951,7 @@ export function InspectorPanel({
     }
 
     return {
+      "--pane-flex-grow": 1 - collapsedPreviewShare,
       flexBasis: "0%",
       flexGrow: 1 - collapsedPreviewShare,
       flexShrink: 1,
@@ -6259,13 +6273,7 @@ export function InspectorPanel({
           <div
             data-testid="inspector-pane-tree"
             className="inspector-pane inspector-pane-tree min-h-[120px] shrink-0 border-r border-[#000000]"
-            style={
-              treePaneStyle
-                ? ({
-                    "--pane-flex-grow": treePaneStyle.flexGrow,
-                  } as React.CSSProperties)
-                : undefined
-            }
+            style={treePaneStyle}
           >
             {treeRecoveryError ? (
               <div
@@ -6382,13 +6390,7 @@ export function InspectorPanel({
         <div
           data-testid="inspector-pane-preview"
           className="inspector-pane inspector-pane-preview relative min-h-[200px] border-r border-[#000000] lg:min-h-0"
-          style={
-            previewPaneStyle
-              ? ({
-                  "--pane-flex-grow": previewPaneStyle.flexGrow,
-                } as React.CSSProperties)
-              : undefined
-          }
+          style={previewPaneStyle ?? DEFAULT_FILL_PANE_STYLE}
         >
           {previewRecoveryMessage ? (
             <div
@@ -6445,13 +6447,7 @@ export function InspectorPanel({
         <div
           data-testid="inspector-pane-code"
           className="inspector-pane inspector-pane-code min-h-[200px] lg:min-h-0"
-          style={
-            codePaneStyle
-              ? ({
-                  "--pane-flex-grow": codePaneStyle.flexGrow,
-                } as React.CSSProperties)
-              : undefined
-          }
+          style={codePaneStyle ?? DEFAULT_FILL_PANE_STYLE}
         >
           {(activePipeline.stage === "ready" ||
             activePipeline.stage === "partial") &&

@@ -1067,7 +1067,7 @@ test("createJobEngine redacts hybrid loader tokens before truncating persisted e
     ),
   );
   const payload = createLocalFigmaPayload();
-  const token = "figd_fragment_boundary_secret_987654321";
+  const token = "figd_fragment_boundary_secret_987654321"; // pragma: allowlist secret
   const tokenFragment = token.slice(0, 18);
   const prefix = "x".repeat(230);
 

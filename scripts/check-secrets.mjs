@@ -24,6 +24,7 @@
  */
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -192,6 +193,16 @@ const PRAGMA_ALLOW_LINE =
 export const isPragmaAllowlisted = (line) =>
   typeof line === "string" && PRAGMA_ALLOW_LINE.test(line);
 
+const FIGMA_PRESIGNED_THUMBNAIL_URL =
+  /https:\/\/s3-alpha\.figma\.com\/[^\s"]*\bX-Amz-Credential=/;
+
+const isDocumentedPublicCredentialContext = ({ patternId, line }) => {
+  return (
+    patternId === "aws-access-key-id" &&
+    FIGMA_PRESIGNED_THUMBNAIL_URL.test(line)
+  );
+};
+
 // ── path classification ─────────────────────────────────────────────────────
 
 export const classifyPath = (relativePath) => {
@@ -256,6 +267,9 @@ export const scanContent = (content, { filename = "", startLine = 1 } = {}) => {
       continue;
     }
     for (const { id, pattern, description } of SECRET_PATTERNS) {
+      if (isDocumentedPublicCredentialContext({ patternId: id, line })) {
+        continue;
+      }
       if (pattern.test(line)) {
         findings.push({
           file: filename,
@@ -366,18 +380,111 @@ const getStagedDiff = ({ cwd, env, execFile }) => {
   });
 };
 
+const listTrackedFiles = ({ cwd, env, execFile }) => {
+  const output = execFile("git", ["ls-files", "-z"], {
+    cwd,
+    env,
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  if (typeof output !== "string" || output.length === 0) {
+    return [];
+  }
+  return output.split("\0").filter(Boolean);
+};
+
+const scanTrackedContent = ({ cwd, files, readTextFile }) => {
+  const findings = [];
+  for (const file of files) {
+    const absolutePath = path.resolve(cwd, file);
+    const content = readTextFile(absolutePath, "utf8");
+    findings.push(...scanContent(content, { filename: file, startLine: 1 }));
+  }
+  return findings;
+};
+
 // ── main guard ──────────────────────────────────────────────────────────────
 
 export const runGuard = ({
   cwd = resolvePackageRoot(),
   env = process.env,
   execFile = execFileSync,
+  readTextFile = readFileSync,
+  all = false,
   stdout = console.log,
   stderr = console.error,
 } = {}) => {
   if (env.WORKSPACE_DEV_SKIP_SECRET_SCAN === "true") {
     stdout("[check-secrets] Skipped via WORKSPACE_DEV_SKIP_SECRET_SCAN=true.");
     return 0;
+  }
+
+  if (all) {
+    let trackedFiles;
+    try {
+      trackedFiles = listTrackedFiles({ cwd, env, execFile });
+    } catch (error) {
+      stderr(
+        `[check-secrets] Unable to list tracked files: ${formatError(error)}`,
+      );
+      return 1;
+    }
+
+    const pathViolations = [];
+    const contentCandidates = [];
+    for (const file of trackedFiles) {
+      const classification = classifyPath(file);
+      if (classification) {
+        pathViolations.push({ file, reason: classification.reason });
+        continue;
+      }
+      const basename = file.includes("/")
+        ? file.slice(file.lastIndexOf("/") + 1)
+        : file;
+      if (ENV_FILENAME_ALLOW.has(basename)) {
+        continue;
+      }
+      contentCandidates.push(file);
+    }
+
+    let contentFindings = [];
+    try {
+      contentFindings = scanTrackedContent({
+        cwd,
+        files: contentCandidates,
+        readTextFile,
+      });
+    } catch (error) {
+      stderr(
+        `[check-secrets] Unable to read tracked file content: ${formatError(error)}`,
+      );
+      return 1;
+    }
+
+    if (pathViolations.length === 0 && contentFindings.length === 0) {
+      stdout(
+        `[check-secrets] Passed. Scanned ${trackedFiles.length} tracked file(s), ${contentCandidates.length} content file(s).`,
+      );
+      return 0;
+    }
+
+    if (pathViolations.length > 0) {
+      stderr("[check-secrets] Blocked tracked path(s):");
+      for (const v of pathViolations) {
+        stderr(` - ${v.file}  [${v.reason}]`);
+      }
+    }
+    if (contentFindings.length > 0) {
+      stderr("[check-secrets] Secret pattern matches in tracked files:");
+      for (const f of contentFindings) {
+        stderr(` - ${f.file}:${f.line}  [${f.patternId}] ${f.description}`);
+        stderr(`     ${f.excerpt}`);
+      }
+      stderr(
+        "[check-secrets] If this is a documented example, append a per-line pragma (e.g. `// pragma: allowlist secret`). Otherwise rotate the exposed credential and remove it from the repository.",
+      );
+    }
+    return 1;
   }
 
   let stagedFiles;
@@ -435,6 +542,9 @@ export const runGuard = ({
       continue;
     }
     for (const { id, pattern, description } of SECRET_PATTERNS) {
+      if (isDocumentedPublicCredentialContext({ patternId: id, line: content })) {
+        continue;
+      }
       if (pattern.test(content)) {
         contentFindings.push({
           file,
@@ -485,6 +595,6 @@ const isCliEntry = () => {
 };
 
 if (isCliEntry()) {
-  const exitCode = runGuard();
+  const exitCode = runGuard({ all: process.argv.includes("--all") });
   process.exit(exitCode);
 }

@@ -689,7 +689,7 @@ test("runSelfVerifyRubricPass redacts secret-like substrings from refusal messag
   const list = buildList([buildCase({ id: "tc-1" })]);
   const intent = buildIntent();
   const leakyToken =
-    "sk-ant-api01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+    "sk-ant-api01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; // pragma: allowlist secret
   const client = createMockLlmGatewayClient({
     role: "test_generation",
     deployment: "gpt-oss-120b-mock",
@@ -861,7 +861,7 @@ test("rubric user prompt embeds the test case ids", () => {
 });
 
 test("rubric user prompt redacts secret-like strings before the gateway call", () => {
-  const secret = "sk-ant-api01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+  const secret = "sk-ant-api01-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"; // pragma: allowlist secret
   const list = buildList([
     buildCase({
       id: "tc-secret",
