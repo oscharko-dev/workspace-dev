@@ -23,6 +23,7 @@ const successResult = {
   failedCount: 0,
   dryRun: true,
   dryRunCount: 3,
+  markdownOutputPath: "/tmp/jira-write-out",
 } as const;
 
 beforeEach(() => {
@@ -43,15 +44,19 @@ afterEach(() => {
 });
 
 describe("JiraWritePanel", () => {
-  it("renders write mode toggle and parent issue key input", () => {
+  it("renders mode selector and parent issue key input", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    expect(screen.getByTestId("ti-jira-write-enabled")).toBeInTheDocument();
+    expect(screen.getByTestId("ti-jira-write-mode-read")).toBeChecked();
+    expect(
+      screen.getByTestId("ti-jira-write-mode-dry-run"),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId("ti-jira-write-mode-write")).toBeInTheDocument();
     expect(screen.getByTestId("ti-jira-write-parent-key")).toBeInTheDocument();
   });
 
   it("disables run when parentIssueKey is empty", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     expect(screen.getByTestId("ti-jira-write-run")).toBeDisabled();
     expect(
       screen.getByTestId("ti-jira-write-parent-key-error"),
@@ -60,7 +65,7 @@ describe("JiraWritePanel", () => {
 
   it("disables run when parentIssueKey format is invalid and shows validation message", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "not-a-key" },
     });
@@ -70,9 +75,9 @@ describe("JiraWritePanel", () => {
     ).toHaveTextContent(/canonical Jira key shape/i);
   });
 
-  it("enables run when writeEnabled and parentIssueKey valid", () => {
+  it("enables run when dry-run mode and parentIssueKey are valid", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "PROJ-123" },
     });
@@ -81,11 +86,10 @@ describe("JiraWritePanel", () => {
 
   it("misconfigured path shows validation error and prevents run", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "PROJ-123" },
     });
-    // turn off use-default → custom path is now required
     fireEvent.click(screen.getByTestId("ti-jira-write-use-default-path"));
     expect(
       screen.getByTestId("ti-jira-write-output-path-error"),
@@ -93,12 +97,13 @@ describe("JiraWritePanel", () => {
     expect(screen.getByTestId("ti-jira-write-run")).toBeDisabled();
   });
 
-  it("dry-run defaults to true (safe default)", () => {
+  it("defaults to read-only mode", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    const dryRun = screen.getByTestId(
-      "ti-jira-write-dry-run",
-    ) as HTMLInputElement;
-    expect(dryRun.checked).toBe(true);
+    expect(screen.getByTestId("ti-jira-write-mode-read")).toBeChecked();
+    fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
+      target: { value: "PROJ-123" },
+    });
+    expect(screen.getByTestId("ti-jira-write-run")).toBeDisabled();
   });
 
   it("successful dry-run shows result summary and dry-run count", async () => {
@@ -107,7 +112,7 @@ describe("JiraWritePanel", () => {
       value: { ...successResult },
     });
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "PROJ-123" },
     });
@@ -120,11 +125,14 @@ describe("JiraWritePanel", () => {
     expect(
       screen.getByTestId("ti-jira-write-result-summary"),
     ).toHaveTextContent(/Total cases/i);
+    expect(
+      screen.getByTestId("ti-jira-write-output-path-result"),
+    ).toHaveTextContent("/tmp/jira-write-out");
   });
 
   it("write-mode config persists to localStorage", async () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "PROJ-123" },
     });
@@ -135,13 +143,79 @@ describe("JiraWritePanel", () => {
     const stored = window.localStorage.getItem(JIRA_WRITE_CONFIG_STORAGE_KEY);
     expect(stored).not.toBeNull();
     const parsed = JSON.parse(stored ?? "{}") as Record<string, unknown>;
-    expect(parsed["writeEnabled"]).toBe(true);
+    expect(parsed["writeMode"]).toBe("dry-run");
     expect(parsed["parentIssueKey"]).toBe("PROJ-123");
+  });
+
+  it("sends trimmed custom output path on config save and run", async () => {
+    vi.spyOn(api, "startJiraWrite").mockResolvedValue({
+      ok: true,
+      value: { ...successResult },
+    });
+    render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
+      target: { value: "PROJ-123" },
+    });
+    fireEvent.click(screen.getByTestId("ti-jira-write-use-default-path"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-output-path"), {
+      target: { value: "  /tmp/jira-write-out  " },
+    });
+
+    fireEvent.click(screen.getByTestId("ti-jira-write-save-config"));
+    await waitFor(() => {
+      expect(api.saveJiraWriteConfig).toHaveBeenCalledWith(
+        {
+          outputPathMarkdown: "/tmp/jira-write-out",
+          useDefaultOutputPath: false,
+        },
+        "token",
+      );
+    });
+
+    fireEvent.click(screen.getByTestId("ti-jira-write-run"));
+    await waitFor(() => {
+      expect(api.startJiraWrite).toHaveBeenCalledWith(
+        {
+          jobId: "job-1",
+          parentIssueKey: "PROJ-123",
+          dryRun: true,
+          outputPathMarkdown: "/tmp/jira-write-out",
+          useDefaultOutputPath: false,
+        },
+        "token",
+      );
+    });
+  });
+
+  it("sends dryRun false only from explicit write mode", async () => {
+    vi.spyOn(api, "startJiraWrite").mockResolvedValue({
+      ok: true,
+      value: { ...successResult, dryRun: false, dryRunCount: 0 },
+    });
+    render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-write"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
+      target: { value: "PROJ-123" },
+    });
+
+    fireEvent.click(screen.getByTestId("ti-jira-write-run"));
+    await waitFor(() => {
+      expect(api.startJiraWrite).toHaveBeenCalledWith(
+        expect.objectContaining({
+          jobId: "job-1",
+          parentIssueKey: "PROJ-123",
+          dryRun: false,
+          useDefaultOutputPath: true,
+        }),
+        "token",
+      );
+    });
   });
 
   it("restores persisted config across remount", async () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.click(screen.getByTestId("ti-jira-write-use-default-path"));
     fireEvent.change(screen.getByTestId("ti-jira-write-output-path"), {
       target: { value: "/tmp/jira-write-out" },
@@ -151,7 +225,7 @@ describe("JiraWritePanel", () => {
       const stored = JSON.parse(
         window.localStorage.getItem(JIRA_WRITE_CONFIG_STORAGE_KEY) ?? "{}",
       ) as Record<string, unknown>;
-      expect(stored["writeEnabled"]).toBe(true);
+      expect(stored["writeMode"]).toBe("dry-run");
       expect(stored["useDefaultOutputPath"]).toBe(false);
       expect(stored["outputPathMarkdown"]).toBe("/tmp/jira-write-out");
     });
@@ -160,13 +234,37 @@ describe("JiraWritePanel", () => {
 
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
     await waitFor(() => {
-      expect(screen.getByTestId("ti-jira-write-enabled")).toBeChecked();
+      expect(screen.getByTestId("ti-jira-write-mode-dry-run")).toBeChecked();
       expect(
         screen.getByTestId("ti-jira-write-use-default-path"),
       ).not.toBeChecked();
       expect(screen.getByTestId("ti-jira-write-output-path")).toHaveValue(
         "/tmp/jira-write-out",
       );
+    });
+  });
+
+  it("migrates legacy writeEnabled plus dryRun storage to explicit mode", async () => {
+    window.localStorage.setItem(
+      JIRA_WRITE_CONFIG_STORAGE_KEY,
+      JSON.stringify({
+        writeEnabled: true,
+        parentIssueKey: "PROJ-123",
+        dryRun: false,
+        outputPathMarkdown: "/tmp/jira-write-out",
+        useDefaultOutputPath: false,
+      }),
+    );
+
+    render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-jira-write-mode-write")).toBeChecked();
+      expect(screen.getByTestId("ti-jira-write-parent-key")).toHaveValue(
+        "PROJ-123",
+      );
+      expect(
+        screen.getByTestId("ti-jira-write-use-default-path"),
+      ).not.toBeChecked();
     });
   });
 
@@ -186,7 +284,7 @@ describe("JiraWritePanel", () => {
       },
     });
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "PROJ-123" },
     });
@@ -203,7 +301,7 @@ describe("JiraWritePanel", () => {
 
   it("path with traversal segment shows error and blocks run", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "PROJ-123" },
     });
@@ -213,13 +311,13 @@ describe("JiraWritePanel", () => {
     });
     expect(
       screen.getByTestId("ti-jira-write-output-path-error"),
-    ).toHaveTextContent(/path traversal/i);
+    ).toHaveTextContent(/path segments/i);
     expect(screen.getByTestId("ti-jira-write-run")).toBeDisabled();
   });
 
   it("path with null byte shows error and blocks run", () => {
     render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
-    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-mode-dry-run"));
     fireEvent.change(screen.getByTestId("ti-jira-write-parent-key"), {
       target: { value: "PROJ-456" },
     });
@@ -245,7 +343,15 @@ describe("validateOutputPathFormat", () => {
     const result = validateOutputPathFormat("/tmp/../etc/passwd");
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.message).toMatch(/path traversal/i);
+      expect(result.message).toMatch(/path segments/i);
+    }
+  });
+
+  it("rejects relative paths", () => {
+    const result = validateOutputPathFormat("jira-write-out");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.message).toMatch(/absolute/i);
     }
   });
 
@@ -258,7 +364,7 @@ describe("validateOutputPathFormat", () => {
   });
 
   it("accepts a path whose directory segment contains 'dots' but no traversal", () => {
-    expect(validateOutputPathFormat("/tmp/jira.write.out")).toEqual({
+    expect(validateOutputPathFormat("/tmp/jira..write.out")).toEqual({
       ok: true,
     });
   });

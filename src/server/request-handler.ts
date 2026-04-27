@@ -562,10 +562,22 @@ const validateJiraWriteMarkdownPath = (
   value: string,
 ): { ok: true; value: string } | { ok: false; message: string } => {
   const trimmed = value.trim();
-  if (trimmed.includes("..") || trimmed.includes("\0")) {
+  if (trimmed.includes("\0")) {
     return {
       ok: false,
-      message: "outputPathMarkdown must not contain '..' or null bytes.",
+      message: "outputPathMarkdown must not contain null bytes.",
+    };
+  }
+  if (!path.isAbsolute(trimmed)) {
+    return {
+      ok: false,
+      message: "outputPathMarkdown must be an absolute path.",
+    };
+  }
+  if (trimmed.split(/[\\/]+/u).includes("..")) {
+    return {
+      ok: false,
+      message: "outputPathMarkdown must not contain '..' path segments.",
     };
   }
   return { ok: true, value: trimmed };
@@ -2693,9 +2705,7 @@ export function createWorkspaceRequestHandler({
               ? record.parentIssueKey.trim()
               : "";
           const dryRun =
-            record !== undefined && typeof record.dryRun === "boolean"
-              ? record.dryRun
-              : false;
+            record !== undefined && record.dryRun === false ? false : true;
           const outputPathMarkdown =
             record !== undefined &&
             typeof record.outputPathMarkdown === "string"
@@ -2858,6 +2868,7 @@ export function createWorkspaceRequestHandler({
               skippedDuplicateCount: result.skippedDuplicateCount,
               failedCount: result.failedCount,
               dryRunCount: result.dryRunCount,
+              markdownOutputPath: result.markdownOutputPath,
               subtaskOutcomes: result.subtaskOutcomes,
             },
           });
