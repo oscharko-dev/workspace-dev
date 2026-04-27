@@ -49,6 +49,7 @@ import {
   type ViewerLanguage,
 } from "./code-formatting";
 import "./inspector.css";
+import type { InspectorCSSProperties } from "./types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1317,11 +1318,7 @@ export function CodeViewer({
         ref={scrollContainerRef}
         className="cv-content min-h-0 flex-1 overflow-auto p-0"
         data-testid="code-content"
-        style={
-          bgColor
-            ? ({ "--cv-content-override-bg": bgColor } as React.CSSProperties)
-            : undefined
-        }
+        style={bgColor ? { backgroundColor: bgColor } : undefined}
       >
         {isHighlighting ? (
           <p className="cv-highlighting-indicator m-0 p-3 text-xs">
@@ -1370,18 +1367,15 @@ export function CodeViewer({
                     }
                   }}
                   data-testid={isInRange ? "highlighted-line" : undefined}
-                  className="cv-line-row flex text-xs leading-relaxed"
+                  className="cv-highlighted-line flex text-xs leading-relaxed"
                   style={
                     {
-                      ...(lineBackground !== undefined
-                        ? { "--cv-line-bg": lineBackground }
-                        : undefined),
-                      ...(isActiveMatchLine || isJumpTargetLine
-                        ? {
-                            "--cv-line-border-left": `2px solid ${emphasisBorder}`,
-                          }
-                        : undefined),
-                    } as React.CSSProperties
+                      "--cv-highlighted-bg": lineBackground,
+                      "--cv-highlighted-border-left":
+                        isActiveMatchLine || isJumpTargetLine
+                          ? `2px solid ${emphasisBorder}`
+                          : "none",
+                    } as InspectorCSSProperties
                   }
                 >
                   {isActiveMatchLine ? (
@@ -1423,12 +1417,20 @@ export function CodeViewer({
                               className="cv-boundary-marker h-full w-1 cursor-pointer border-0 p-0"
                               style={
                                 {
-                                  "--cv-marker-color": boundary.color,
-                                  "--cv-marker-btlr": isStart ? "2px" : "0",
-                                  "--cv-marker-btrr": isStart ? "2px" : "0",
-                                  "--cv-marker-bblr": isEnd ? "2px" : "0",
-                                  "--cv-marker-bbrr": isEnd ? "2px" : "0",
-                                } as React.CSSProperties
+                                  "--cv-boundary-color": boundary.color,
+                                  "--cv-boundary-border-tl": isStart
+                                    ? "2px"
+                                    : "0",
+                                  "--cv-boundary-border-tr": isStart
+                                    ? "2px"
+                                    : "0",
+                                  "--cv-boundary-border-bl": isEnd
+                                    ? "2px"
+                                    : "0",
+                                  "--cv-boundary-border-br": isEnd
+                                    ? "2px"
+                                    : "0",
+                                } as InspectorCSSProperties
                               }
                               onMouseEnter={(event) => {
                                 const rect =
@@ -1496,13 +1498,13 @@ export function CodeViewer({
                   </span>
 
                   <span
-                    className={`cv-line-plain-text m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+                    className={`cv-plain-text m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
                     style={
                       highlightedLines
                         ? undefined
                         : ({
                             "--cv-plain-text-color": plainTextColor,
-                          } as React.CSSProperties)
+                          } as InspectorCSSProperties)
                     }
                     dangerouslySetInnerHTML={{ __html: lineHtml }}
                   />
@@ -1517,21 +1519,17 @@ export function CodeViewer({
           role="tooltip"
           data-testid="code-boundary-tooltip"
           className="cv-boundary-tooltip pointer-events-none fixed z-30 min-w-40 rounded border px-2 py-1 text-[10px] shadow-lg"
-          style={
-            {
-              "--cv-tooltip-left": `${String(
-                Math.max(
-                  8,
-                  Math.min(
-                    (typeof window === "undefined" ? 1024 : window.innerWidth) -
-                      260,
-                    hoveredBoundary.x + 10,
-                  ),
-                ),
-              )}px`,
-              "--cv-tooltip-top": `${String(Math.max(8, hoveredBoundary.y - 36))}px`,
-            } as React.CSSProperties
-          }
+          style={{
+            left: Math.max(
+              8,
+              Math.min(
+                (typeof window === "undefined" ? 1024 : window.innerWidth) -
+                  260,
+                hoveredBoundary.x + 10,
+              ),
+            ),
+            top: Math.max(8, hoveredBoundary.y - 36),
+          }}
         >
           <div className="flex items-center gap-1.5">
             <span
