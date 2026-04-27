@@ -1686,6 +1686,97 @@ test("createJobEngine fails low-fidelity rest jobs without authoritative recover
   );
 });
 
+test("createJobEngine recovers low-fidelity rest jobs with MCP-backed authoritative subtrees", async () => {
+  const tempRoot = await mkdtemp(
+    path.join(os.tmpdir(), "workspace-dev-engine-low-fidelity-rest-recovery-"),
+  );
+  const payload = createLowFidelityFigmaPayload();
+
+  const engine = createJobEngine({
+    resolveBaseUrl: () => "http://127.0.0.1:1983",
+    paths: {
+      outputRoot: tempRoot,
+      jobsRoot: path.join(tempRoot, "jobs"),
+      reprosRoot: path.join(tempRoot, "repros"),
+    },
+    runtime: resolveRuntimeSettings({
+      enablePreview: false,
+      figmaMaxRetries: 1,
+      figmaRequestTimeoutMs: 1_000,
+      figmaMcpEnrichmentLoader: async () => ({
+        sourceMode: "hybrid",
+        toolNames: ["figma-rest-authoritative-subtrees"],
+        nodeHints: [],
+        authoritativeSubtrees: [
+          {
+            nodeId: "screen-recovery",
+            document: {
+              id: "screen-recovery",
+              type: "FRAME",
+              name: "Sparkasse Recovery",
+              absoluteBoundingBox: { x: 0, y: 0, width: 1440, height: 1200 },
+              children: [
+                {
+                  id: "restored-title",
+                  type: "TEXT",
+                  name: "Heading",
+                  characters: "Finanzierungsplaner",
+                  absoluteBoundingBox: { x: 24, y: 96, width: 240, height: 24 },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+      fetchImpl: async () =>
+        new Response(JSON.stringify(payload), {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+        }),
+    }),
+  });
+
+  const accepted = engine.submitJob({
+    figmaSourceMode: "rest",
+    figmaFileKey: "abc",
+    figmaAccessToken: "token",
+  });
+
+  const status = await waitForTerminalStatus({
+    getStatus: engine.getJob,
+    jobId: accepted.jobId,
+    timeoutMs: HEAVY_JOB_TIMEOUT_MS,
+  });
+  assert.equal(status.status, "completed");
+
+  assert.equal(
+    status.logs.some((entry) =>
+      entry.message.includes("authoritative subtree snapshot"),
+    ),
+    true,
+  );
+
+  const designIr = JSON.parse(
+    await readFile(String(status.artifacts.designIrFile), "utf8"),
+  ) as {
+    screens: Array<{
+      id: string;
+      children: Array<{ id: string; text?: string }>;
+    }>;
+    metrics?: {
+      mcpCoverage?: unknown;
+    };
+  };
+
+  const recoveredTitle = designIr.screens
+    .flatMap((screen) => screen.children)
+    .find((child) => child.id === "restored-title");
+  assert.equal(recoveredTitle?.text, "Finanzierungsplaner");
+  assert.equal(designIr.metrics?.mcpCoverage, undefined);
+});
+
 test("createJobEngine falls back deterministically when hybrid mode has no MCP enrichment loader", async () => {
   const tempRoot = await mkdtemp(
     path.join(os.tmpdir(), "workspace-dev-engine-hybrid-fallback-"),

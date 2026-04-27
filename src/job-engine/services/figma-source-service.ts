@@ -502,108 +502,137 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
 
     const rawSourcePayload = sourceRawFileForEnrichment;
 
+    const requiresLowFidelityRecovery =
+      context.resolvedFigmaSourceMode === "rest" &&
+      figmaFetch.diagnostics.lowFidelityDetected === true &&
+      (figmaFetch.diagnostics.authoritativeSubtreeCount ?? 0) === 0;
+
+    const loadHybridEnrichment = async (options: {
+      sourceMode: "hybrid" | "rest-low-fidelity-recovery";
+    }): Promise<FigmaMcpEnrichment> => {
+      const fileKey = input.figmaFileKey?.trim();
+      const accessToken = input.figmaAccessToken?.trim();
+      if (!fileKey || !accessToken) {
+        return createHybridFallbackEnrichment({
+          code: "W_MCP_ENRICHMENT_SKIPPED",
+          message:
+            options.sourceMode === "hybrid"
+              ? "Hybrid mode fell back to REST-only derivation because Figma REST credentials were incomplete."
+              : "REST low-fidelity recovery skipped because Figma credentials were incomplete.",
+        });
+      }
+      if (!context.runtime.figmaMcpEnrichmentLoader) {
+        context.log({
+          level: "warn",
+          stage: "ir.derive",
+          message:
+            options.sourceMode === "hybrid"
+              ? "Hybrid mode selected, but no figmaMcpEnrichmentLoader is configured. Falling back to REST-only derivation."
+              : "Low-fidelity recovery requested for REST mode, but no figmaMcpEnrichmentLoader is configured. Falling back to REST-only derivation.",
+        });
+        context.appendDiagnostics({
+          stage: "ir.derive",
+          diagnostics: [
+            {
+              code: "W_MCP_ENRICHMENT_SKIPPED",
+              message:
+                options.sourceMode === "hybrid"
+                  ? "Hybrid mode fell back to REST-only derivation because no MCP enrichment loader is configured."
+                  : "REST low-fidelity recovery fell back to REST-only derivation because no MCP enrichment loader is configured.",
+              suggestion:
+                "Configure a figmaMcpEnrichmentLoader to supply authoritative subtrees, variables, style catalog, metadata hints, or Code Connect mappings.",
+              stage: "ir.derive",
+              severity: "warning",
+              details: {
+                figmaSourceMode: context.resolvedFigmaSourceMode,
+              },
+            },
+          ],
+        });
+        return createHybridFallbackEnrichment({
+          code: "W_MCP_ENRICHMENT_SKIPPED",
+          message: "No MCP enrichment loader configured.",
+        });
+      }
+
+      try {
+        const figmaRestFetch = createAuthenticatedFigmaRestFetch({
+          fetchImpl: context.fetchWithCancellation,
+          accessToken,
+        });
+        const figmaMcpFetch = createAuthenticatedFigmaMcpFetch({
+          fetchImpl: context.fetchWithCancellation,
+          accessToken,
+        });
+        const loaded = await context.runtime.figmaMcpEnrichmentLoader({
+          figmaFileKey: fileKey,
+          cleanedFile: figmaFetch.file,
+          rawFile: rawSourcePayload,
+          jobDir: context.paths.jobDir,
+          workspaceRoot: context.resolvedWorkspaceRoot,
+          fetchImpl: context.fetchWithCancellation,
+          figmaRestFetch,
+          figmaMcpFetch,
+        });
+        if (!loaded) {
+          return createHybridFallbackEnrichment({
+            code: "W_MCP_ENRICHMENT_SKIPPED",
+            message:
+              options.sourceMode === "hybrid"
+                ? "Hybrid mode loader returned no enrichment; REST-only derivation was used."
+                : "REST low-fidelity recovery loader returned no enrichment; REST-only derivation was used.",
+          });
+        }
+        return loaded;
+      } catch (error) {
+        const message = sanitizeHybridLoaderErrorMessage({
+          error,
+          secret: accessToken,
+        });
+        context.log({
+          level: "warn",
+          stage: "ir.derive",
+          message:
+            options.sourceMode === "hybrid"
+              ? `Hybrid MCP enrichment failed; falling back to REST-only derivation. ${message}`
+              : `REST low-fidelity recovery MCP enrichment failed; falling back to REST-only derivation. ${message}`,
+        });
+        context.appendDiagnostics({
+          stage: "ir.derive",
+          diagnostics: [
+            {
+              code: "W_MCP_ENRICHMENT_SKIPPED",
+              message:
+                options.sourceMode === "hybrid"
+                  ? "Hybrid mode fell back to REST-only derivation because MCP enrichment loading failed."
+                  : "REST low-fidelity recovery fell back to REST-only derivation because MCP enrichment loading failed.",
+              suggestion:
+                "Check the MCP enrichment loader and retry. REST derivation completed without authoritative MCP data.",
+              stage: "ir.derive",
+              severity: "warning",
+              details: {
+                error: message,
+              },
+            },
+          ],
+        });
+        return createHybridFallbackEnrichment({
+          code: "W_MCP_ENRICHMENT_SKIPPED",
+          message: `MCP enrichment loader failed: ${message}`,
+        });
+      }
+    };
+
     const hybridMcpEnrichment =
-      context.resolvedFigmaSourceMode !== "hybrid"
-        ? undefined
-        : await (async (): Promise<FigmaMcpEnrichment> => {
-            const fileKey = input.figmaFileKey?.trim();
-            const accessToken = input.figmaAccessToken?.trim();
-            if (!fileKey || !accessToken) {
-              return createHybridFallbackEnrichment({
-                code: "W_MCP_ENRICHMENT_SKIPPED",
-                message:
-                  "Hybrid mode fell back to REST-only derivation because Figma REST credentials were incomplete.",
-              });
-            }
-            if (!context.runtime.figmaMcpEnrichmentLoader) {
-              context.log({
-                level: "warn",
-                stage: "ir.derive",
-                message:
-                  "Hybrid mode selected, but no figmaMcpEnrichmentLoader is configured. Falling back to REST-only derivation.",
-              });
-              context.appendDiagnostics({
-                stage: "ir.derive",
-                diagnostics: [
-                  {
-                    code: "W_MCP_ENRICHMENT_SKIPPED",
-                    message:
-                      "Hybrid mode fell back to REST-only derivation because no MCP enrichment loader is configured.",
-                    suggestion:
-                      "Configure a figmaMcpEnrichmentLoader to supply variables, style catalog, metadata hints, or Code Connect mappings.",
-                    stage: "ir.derive",
-                    severity: "warning",
-                    details: {
-                      figmaSourceMode: context.resolvedFigmaSourceMode,
-                    },
-                  },
-                ],
-              });
-              return createHybridFallbackEnrichment({
-                code: "W_MCP_ENRICHMENT_SKIPPED",
-                message: "No MCP enrichment loader configured.",
-              });
-            }
-            try {
-              const figmaRestFetch = createAuthenticatedFigmaRestFetch({
-                fetchImpl: context.fetchWithCancellation,
-                accessToken,
-              });
-              const figmaMcpFetch = createAuthenticatedFigmaMcpFetch({
-                fetchImpl: context.fetchWithCancellation,
-                accessToken,
-              });
-              const loaded = await context.runtime.figmaMcpEnrichmentLoader({
-                figmaFileKey: fileKey,
-                cleanedFile: figmaFetch.file,
-                rawFile: rawSourcePayload,
-                jobDir: context.paths.jobDir,
-                workspaceRoot: context.resolvedWorkspaceRoot,
-                fetchImpl: context.fetchWithCancellation,
-                figmaRestFetch,
-                figmaMcpFetch,
-              });
-              if (!loaded) {
-                return createHybridFallbackEnrichment({
-                  code: "W_MCP_ENRICHMENT_SKIPPED",
-                  message:
-                    "Hybrid mode loader returned no enrichment; REST-only derivation was used.",
-                });
-              }
-              return loaded;
-            } catch (error) {
-              const message = sanitizeHybridLoaderErrorMessage({
-                error,
-                secret: accessToken,
-              });
-              context.log({
-                level: "warn",
-                stage: "ir.derive",
-                message: `Hybrid MCP enrichment failed; falling back to REST-only derivation. ${message}`,
-              });
-              context.appendDiagnostics({
-                stage: "ir.derive",
-                diagnostics: [
-                  {
-                    code: "W_MCP_ENRICHMENT_SKIPPED",
-                    message:
-                      "Hybrid mode fell back to REST-only derivation because MCP enrichment loading failed.",
-                    suggestion:
-                      "Check the MCP enrichment loader and retry. REST derivation completed without authoritative MCP data.",
-                    stage: "ir.derive",
-                    severity: "warning",
-                    details: {
-                      error: message,
-                    },
-                  },
-                ],
-              });
-              return createHybridFallbackEnrichment({
-                code: "W_MCP_ENRICHMENT_SKIPPED",
-                message: `MCP enrichment loader failed: ${message}`,
-              });
-            }
-          })();
+      context.resolvedFigmaSourceMode === "hybrid" ||
+      requiresLowFidelityRecovery
+        ? await loadHybridEnrichment({
+            sourceMode:
+              context.resolvedFigmaSourceMode === "hybrid"
+                ? "hybrid"
+                : "rest-low-fidelity-recovery",
+          })
+        : undefined;
 
     const authoritativeSubtrees =
       hybridMcpEnrichment?.authoritativeSubtrees ?? [];
@@ -636,7 +665,10 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         context.log({
           level: "info",
           stage: "ir.derive",
-          message: `Applied ${mergedSource.appliedNodeIds.length} authoritative subtree snapshot(s) from hybrid enrichment before IR derivation.`,
+          message:
+            context.resolvedFigmaSourceMode === "hybrid"
+              ? `Applied ${mergedSource.appliedNodeIds.length} authoritative subtree snapshot(s) from hybrid enrichment before IR derivation.`
+              : `Applied ${mergedSource.appliedNodeIds.length} authoritative subtree snapshot(s) from REST low-fidelity recovery before IR derivation.`,
         });
       }
     }
@@ -863,7 +895,10 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         value: pasteDeltaExecution,
       });
     }
-    if (hybridMcpEnrichment) {
+    if (
+      hybridMcpEnrichment &&
+      context.resolvedFigmaSourceMode === "hybrid"
+    ) {
       await context.artifactStore.setValue({
         key: STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
         stage: "figma.source",
