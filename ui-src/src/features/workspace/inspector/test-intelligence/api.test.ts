@@ -4,6 +4,7 @@ import {
   deleteInspectorSource,
   postCustomContextSource,
   postJiraFetchSource,
+  startJiraWrite,
 } from "./api";
 
 afterEach(() => {
@@ -100,5 +101,56 @@ describe("test-intelligence API client", () => {
       "[REDACTED:EMAIL]\n",
     );
     expect(result.ok && result.value.redactionCount).toBe(1);
+  });
+
+  it("preserves markdown output path from Jira write responses", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          refused: false,
+          totalCases: 1,
+          createdCount: 0,
+          skippedDuplicateCount: 0,
+          failedCount: 0,
+          dryRun: true,
+          dryRunCount: 1,
+          markdownOutputPath: "/tmp/jira-write-out",
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await startJiraWrite(
+      {
+        jobId: "job-1",
+        parentIssueKey: "PROJ-123",
+        dryRun: true,
+        outputPathMarkdown: "/tmp/jira-write-out",
+        useDefaultOutputPath: false,
+      },
+      "review-token",
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.value.markdownOutputPath).toBe(
+      "/tmp/jira-write-out",
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/workspace/test-intelligence/write/job-1/jira-subtasks",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          parentIssueKey: "PROJ-123",
+          dryRun: true,
+          outputPathMarkdown: "/tmp/jira-write-out",
+          useDefaultOutputPath: false,
+        }),
+      }),
+    );
   });
 });

@@ -435,6 +435,7 @@ export interface JiraWriteStartResult {
   failedCount: number;
   dryRun: boolean;
   dryRunCount?: number;
+  markdownOutputPath?: string;
   subtaskOutcomes?: JiraSubTaskOutcome[];
 }
 
@@ -476,6 +477,8 @@ const isJiraWriteStartResult = (
   typeof value["skippedDuplicateCount"] === "number" &&
   typeof value["failedCount"] === "number" &&
   typeof value["dryRun"] === "boolean" &&
+  (value["markdownOutputPath"] === undefined ||
+    typeof value["markdownOutputPath"] === "string") &&
   (value["subtaskOutcomes"] === undefined ||
     (Array.isArray(value["subtaskOutcomes"]) &&
       value["subtaskOutcomes"].every(isJiraSubTaskOutcome)));

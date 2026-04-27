@@ -2,9 +2,8 @@
 // Jira Write panel (Issue #1482 — Wave 5)
 //
 // Configures the Jira sub-task write pipeline. Surfaces:
-//   - write-mode toggle (default off — opt-in)
+//   - explicit read-only / dry-run / write mode (default read-only)
 //   - parent issue key input with format validation
-//   - dry-run toggle (default true — safe default)
 //   - configurable markdown output directory + default-path fallback
 //   - localStorage-backed config persistence + server-side config save
 //
@@ -36,7 +35,16 @@ export interface JiraWritePanelProps {
   onWriteComplete?: (result: JiraWriteStartResult) => void;
 }
 
-interface PersistedConfig {
+type JiraWriteUiMode = "read" | "dry-run" | "write";
+
+interface CurrentPersistedConfig {
+  writeMode: JiraWriteUiMode;
+  parentIssueKey: string;
+  outputPathMarkdown: string;
+  useDefaultOutputPath: boolean;
+}
+
+interface LegacyPersistedConfig {
   writeEnabled: boolean;
   parentIssueKey: string;
   dryRun: boolean;
@@ -44,15 +52,34 @@ interface PersistedConfig {
   useDefaultOutputPath: boolean;
 }
 
+type PersistedConfig = CurrentPersistedConfig;
+
 const DEFAULT_CONFIG: PersistedConfig = {
-  writeEnabled: false,
+  writeMode: "read",
   parentIssueKey: "",
-  dryRun: true,
   outputPathMarkdown: "",
   useDefaultOutputPath: true,
 };
 
-const isPersistedConfig = (value: unknown): value is PersistedConfig =>
+const isJiraWriteUiMode = (value: unknown): value is JiraWriteUiMode =>
+  value === "read" || value === "dry-run" || value === "write";
+
+const isCurrentPersistedConfig = (
+  value: unknown,
+): value is CurrentPersistedConfig =>
+  value !== null &&
+  typeof value === "object" &&
+  !Array.isArray(value) &&
+  isJiraWriteUiMode((value as Record<string, unknown>)["writeMode"]) &&
+  typeof (value as Record<string, unknown>)["parentIssueKey"] === "string" &&
+  typeof (value as Record<string, unknown>)["outputPathMarkdown"] ===
+    "string" &&
+  typeof (value as Record<string, unknown>)["useDefaultOutputPath"] ===
+    "boolean";
+
+const isLegacyPersistedConfig = (
+  value: unknown,
+): value is LegacyPersistedConfig =>
   value !== null &&
   typeof value === "object" &&
   !Array.isArray(value) &&
@@ -64,14 +91,24 @@ const isPersistedConfig = (value: unknown): value is PersistedConfig =>
   typeof (value as Record<string, unknown>)["useDefaultOutputPath"] ===
     "boolean";
 
+const migrateLegacyConfig = (
+  value: LegacyPersistedConfig,
+): PersistedConfig => ({
+  writeMode: !value.writeEnabled ? "read" : value.dryRun ? "dry-run" : "write",
+  parentIssueKey: value.parentIssueKey,
+  outputPathMarkdown: value.outputPathMarkdown,
+  useDefaultOutputPath: value.useDefaultOutputPath,
+});
+
 const readPersistedConfig = (): PersistedConfig => {
   const raw = safeReadStorage(JIRA_WRITE_CONFIG_STORAGE_KEY);
   if (raw.length === 0) return DEFAULT_CONFIG;
   try {
     const parsed: unknown = JSON.parse(raw);
-    if (isPersistedConfig(parsed)) {
+    if (isCurrentPersistedConfig(parsed)) {
       return parsed;
     }
+    if (isLegacyPersistedConfig(parsed)) return migrateLegacyConfig(parsed);
   } catch {
     // ignore corrupt config — fall back to defaults
   }
@@ -145,14 +182,14 @@ export function JiraWritePanel({
         : null;
 
   const runDisabled = useMemo(() => {
-    if (!config.writeEnabled) return true;
+    if (config.writeMode === "read") return true;
     if (status === "running") return true;
     if (!parentIssueKeyValid) return true;
     if (!outputPathValid) return true;
     if (bearerToken.length === 0) return true;
     return false;
   }, [
-    config.writeEnabled,
+    config.writeMode,
     status,
     parentIssueKeyValid,
     outputPathValid,
@@ -188,7 +225,7 @@ export function JiraWritePanel({
       {
         jobId,
         parentIssueKey: config.parentIssueKey,
-        dryRun: config.dryRun,
+        dryRun: config.writeMode === "dry-run",
         ...(config.useDefaultOutputPath
           ? {}
           : { outputPathMarkdown: config.outputPathMarkdown.trim() }),
@@ -234,8 +271,7 @@ export function JiraWritePanel({
         <div className="flex flex-col gap-1">
           <h2 className="m-0 text-sm font-semibold text-white">Jira write</h2>
           <p className="m-0 text-[11px] text-white/55">
-            Idempotent sub-task creation for approved test cases. Dry-run is the
-            default; toggle it off only after reviewing the markdown artifacts.
+            Idempotent sub-task creation for approved test cases.
           </p>
         </div>
         <span className="text-[10px] uppercase tracking-wide text-white/45">
@@ -243,17 +279,40 @@ export function JiraWritePanel({
         </span>
       </header>
 
-      <label className="flex items-center gap-2 text-[12px] text-white/80">
-        <input
-          data-testid="ti-jira-write-enabled"
-          type="checkbox"
-          checked={config.writeEnabled}
-          onChange={(event) => {
-            setConfig({ ...config, writeEnabled: event.target.checked });
-          }}
-        />
-        Enable Jira write mode
-      </label>
+      <fieldset className="flex flex-col gap-2 rounded border border-white/10 bg-[#0f0f0f] px-3 py-2">
+        <legend className="px-1 text-[11px] text-white/65">Mode</legend>
+        <div className="grid grid-cols-3 gap-1 rounded bg-[#0a0a0a] p-1">
+          {(
+            [
+              { value: "read", label: "Read-only" },
+              { value: "dry-run", label: "Dry-run" },
+              { value: "write", label: "Write" },
+            ] satisfies Array<{ value: JiraWriteUiMode; label: string }>
+          ).map((option) => (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer items-center justify-center rounded px-2 py-1 text-[11px] font-medium ${
+                config.writeMode === option.value
+                  ? "bg-[#4eba87] text-[#07120c]"
+                  : "text-white/70 hover:text-white"
+              }`}
+            >
+              <input
+                data-testid={`ti-jira-write-mode-${option.value}`}
+                type="radio"
+                name={`ti-jira-write-mode-${jobId}`}
+                value={option.value}
+                checked={config.writeMode === option.value}
+                onChange={() => {
+                  setConfig({ ...config, writeMode: option.value });
+                }}
+                className="sr-only"
+              />
+              {option.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="flex flex-col gap-1">
         <label
@@ -288,18 +347,6 @@ export function JiraWritePanel({
           </p>
         ) : null}
       </div>
-
-      <label className="flex items-center gap-2 text-[12px] text-white/80">
-        <input
-          data-testid="ti-jira-write-dry-run"
-          type="checkbox"
-          checked={config.dryRun}
-          onChange={(event) => {
-            setConfig({ ...config, dryRun: event.target.checked });
-          }}
-        />
-        Dry-run (no Jira sub-tasks created)
-      </label>
 
       <fieldset className="flex flex-col gap-2 rounded border border-white/10 bg-[#0f0f0f] px-3 py-2">
         <legend className="px-1 text-[11px] text-white/65">
@@ -385,6 +432,18 @@ export function JiraWritePanel({
         >
           {statusMessage}
         </p>
+      ) : null}
+
+      {lastResult?.markdownOutputPath ? (
+        <div
+          data-testid="ti-jira-write-output-path-result"
+          className="break-words rounded border border-white/10 bg-[#0f0f0f] px-2 py-1 text-[11px] text-white/70"
+        >
+          <span className="text-white/55">Markdown output: </span>
+          <span className="font-mono text-white/85">
+            {lastResult.markdownOutputPath}
+          </span>
+        </div>
       ) : null}
 
       {lastResult !== null && lastResult.refused ? (

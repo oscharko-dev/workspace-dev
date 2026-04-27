@@ -1,6 +1,4 @@
-// Mirrors server-side validateJiraWriteMarkdownPath — catches path traversal
-// and null bytes client-side so the user sees validation feedback immediately,
-// before the run request reaches the server.
+// Mirrors server-side validateJiraWriteMarkdownPath for immediate feedback.
 export const validateOutputPathFormat = (
   value: string,
 ): { ok: true } | { ok: false; message: string } => {
@@ -8,10 +6,13 @@ export const validateOutputPathFormat = (
   if (trimmed.includes("\0")) {
     return { ok: false, message: "Path must not contain null bytes." };
   }
-  if (trimmed.includes("..")) {
+  if (!trimmed.startsWith("/")) {
+    return { ok: false, message: "Path must be absolute." };
+  }
+  if (trimmed.split(/[\\/]+/u).includes("..")) {
     return {
       ok: false,
-      message: 'Path must not contain ".." (path traversal).',
+      message: 'Path must not contain ".." path segments.',
     };
   }
   return { ok: true };

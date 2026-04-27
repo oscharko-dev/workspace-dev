@@ -7184,7 +7184,7 @@ test("test-intelligence: PUT/GET Jira write config persists a safe markdown path
   });
 });
 
-test("test-intelligence: PUT Jira write config rejects traversal and NUL paths", async () => {
+test("test-intelligence: PUT Jira write config rejects traversal, relative, and NUL paths", async () => {
   await withTestIntelligenceEnv("1", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-config-"));
     const { app, close } = await createRequestHandlerApp({
@@ -7193,7 +7193,11 @@ test("test-intelligence: PUT Jira write config rejects traversal and NUL paths",
       testIntelligenceJiraWriteBearerToken: "jira-write-token",
     });
     try {
-      for (const outputPathMarkdown of ["../escape", `bad\0path`]) {
+      for (const outputPathMarkdown of [
+        `${tempRoot}/../escape`,
+        "relative/escape",
+        `bad\0path`,
+      ]) {
         const response = await app.inject({
           method: "PUT",
           url: "/workspace/test-intelligence/write/config",
@@ -7244,7 +7248,7 @@ test("test-intelligence: PUT Jira write config fails closed without write bearer
   });
 });
 
-test("test-intelligence: POST Jira write dry-run uses configured admin and bearer gates", async () => {
+test("test-intelligence: POST Jira write defaults to dry-run and uses configured admin and bearer gates", async () => {
   await withTestIntelligenceEnv("1", async () => {
     const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-write-"));
     const artifactRoot = path.join(tempRoot, "ti");
@@ -7266,7 +7270,6 @@ test("test-intelligence: POST Jira write dry-run uses configured admin and beare
         headers: tiAuthHeader("jira-write-token"),
         payload: {
           parentIssueKey: "PROJ-123",
-          dryRun: true,
           outputPathMarkdown: markdownRoot,
           useDefaultOutputPath: false,
         },
@@ -7278,6 +7281,7 @@ test("test-intelligence: POST Jira write dry-run uses configured admin and beare
       assert.deepEqual(body.refusalCodes, []);
       assert.equal(body.dryRun, true);
       assert.equal(body.dryRunCount, 1);
+      assert.equal(body.markdownOutputPath, markdownRoot);
       assert.equal(body.createdCount, 0);
       assert.equal(body.failedCount, 0);
       assert.ok(Array.isArray(body.subtaskOutcomes));
@@ -7292,6 +7296,45 @@ test("test-intelligence: POST Jira write dry-run uses configured admin and beare
       assert.ok(files.some((file) => file.startsWith("testcase-")));
       assert.ok(files.some((file) => file.startsWith("jira-request-")));
       assert.ok(files.some((file) => file.startsWith("jira-response-")));
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST Jira write rejects unwritable markdown output paths", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-write-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    const blockingFile = path.join(tempRoot, "not-a-directory");
+    await mkdir(artifactRoot, { recursive: true });
+    await writeFile(blockingFile, "blocks directory creation\n", "utf8");
+    await seedTiJob(artifactRoot, "job-jira-write", {
+      policyDecision: "approved",
+    });
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceJiraWriteBearerToken: "jira-write-token",
+      testIntelligenceAllowJiraWrite: true,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/write/job-jira-write/jira-subtasks",
+        headers: tiAuthHeader("jira-write-token"),
+        payload: {
+          parentIssueKey: "PROJ-123",
+          dryRun: true,
+          outputPathMarkdown: path.join(blockingFile, "jira-write-markdown"),
+          useDefaultOutputPath: false,
+        },
+      });
+      assert.equal(response.statusCode, 400);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.error, "INVALID_PATH");
+      assert.match(String(body.message), /not writable|not a directory/i);
     } finally {
       await close();
       await rm(tempRoot, { recursive: true, force: true });
