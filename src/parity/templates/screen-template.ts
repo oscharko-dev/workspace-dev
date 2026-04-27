@@ -4013,12 +4013,15 @@ export const renderStack = (element: ScreenElementIR, depth: number, parent: Vir
   }
   registerMuiImports(context, "Stack");
   const indent = "  ".repeat(depth);
-  const direction = element.layoutMode === "HORIZONTAL" ? "row" : "column";
+  const layoutMode = element.layoutMode === "HORIZONTAL" ? "HORIZONTAL" : "VERTICAL";
+  const direction = layoutMode === "HORIZONTAL" ? "row" : "column";
   const spacing =
     typeof element.gap === "number" && element.gap > 0
       ? toSpacingUnitValue({ value: element.gap, spacingBase: context.spacingBase }) ?? 0
       : 0;
-  const sx = toElementSx({
+  const alignItems = mapCounterAxisAlignToAlignItems(element.counterAxisAlignItems, layoutMode);
+  const justifyContent = mapPrimaryAxisAlignToJustifyContent(element.primaryAxisAlignItems);
+  const sx = toSimpleStackContainerSx({
     element,
     parent,
     context
@@ -4036,9 +4039,33 @@ export const renderStack = (element: ScreenElementIR, depth: number, parent: Vir
     context
   });
   if (!renderedChildren.trim()) {
-    return `${indent}<Stack${componentProp} direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaLabelProp}${ariaHiddenProp} sx={{ ${sx} }} />`;
+    const emptyStackProps = [
+      `direction=${literal(direction)}`,
+      `spacing={${spacing}}`,
+      alignItems ? `alignItems=${literal(alignItems)}` : undefined,
+      justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
+      roleProp,
+      ariaLabelProp,
+      ariaHiddenProp,
+      sx ? `sx={{ ${sx} }}` : undefined
+    ]
+      .filter((entry): entry is string => Boolean(entry))
+      .join(" ");
+    return `${indent}<Stack${componentProp} ${emptyStackProps} />`;
   }
-  return `${indent}<Stack${componentProp} direction=${literal(direction)} spacing={${spacing}}${roleProp}${ariaLabelProp}${ariaHiddenProp} sx={{ ${sx} }}>
+  const stackProps = [
+    `direction=${literal(direction)}`,
+    `spacing={${spacing}}`,
+    alignItems ? `alignItems=${literal(alignItems)}` : undefined,
+    justifyContent ? `justifyContent=${literal(justifyContent)}` : undefined,
+    roleProp,
+    ariaLabelProp,
+    ariaHiddenProp,
+    sx ? `sx={{ ${sx} }}` : undefined
+  ]
+    .filter((entry): entry is string => Boolean(entry))
+    .join(" ");
+  return `${indent}<Stack${componentProp} ${stackProps}>
 ${renderedChildren}
 ${indent}</Stack>`;
 };
