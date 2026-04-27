@@ -15,6 +15,7 @@ import fc from "fast-check";
 
 import {
   TEST_CASE_POLICY_REPORT_ARTIFACT_FILENAME,
+  TEST_INTELLIGENCE_CONTRACT_VERSION,
   WAVE1_POC_ATTESTATION_BUNDLE_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
@@ -565,7 +566,7 @@ test("verifyJobEvidence: visual_sidecar_evidence_missing when manifest lacks vis
     const manifest = {
       schemaVersion: "1.0.0",
       contractVersion: "4.1.0",
-      testIntelligenceContractVersion: "1.0.0",
+      testIntelligenceContractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
       fixtureId: "poc-onboarding",
       jobId,
       generatedAt: GENERATED_AT,
