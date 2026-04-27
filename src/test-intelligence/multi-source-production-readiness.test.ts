@@ -10,7 +10,7 @@
 import assert from "node:assert/strict";
 import os from "node:os";
 import test from "node:test";
-import { access, mkdtemp } from "node:fs/promises";
+import { access, mkdtemp, readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
@@ -204,6 +204,11 @@ test("runWave4ProductionReadiness: jira-rest-only fixture runs OK", async () => 
   });
   assert.equal(result.ok, true);
   assert.equal(result.quotasPassed, true);
+  assert.equal(result.sourceMixPlan?.kind, "jira_rest_only");
+  assert.equal(result.sourceMixPlan?.visualSidecarRequirement, "not_applicable");
+  assert.match(result.sourceMixPlan?.sourceMixPlanHash ?? "", /^[0-9a-f]{64}$/);
+  assert.ok(result.sourceMixPlanPath !== undefined);
+  await assert.doesNotReject(access(result.sourceMixPlanPath));
 });
 
 test("runWave4ProductionReadiness: figma-only regression fixture runs OK", async () => {
@@ -276,7 +281,7 @@ test("runWave4ProductionReadiness: concurrent runs to separate runDirs do not in
   assert.equal(resultB.rawScreenshotsIncluded, false);
 });
 
-test("runWave4ProductionReadiness: envelope with zero sources returns ok=true with empty summaries", async () => {
+test("runWave4ProductionReadiness: envelope with zero sources fails closed before source artifacts", async () => {
   const emptyEnvelope: MultiSourceTestIntentEnvelope = {
     version: "1.0.0",
     sources: [],
@@ -291,8 +296,10 @@ test("runWave4ProductionReadiness: envelope with zero sources returns ok=true wi
     envelope: emptyEnvelope,
     runDir,
   });
+  assert.equal(result.ok, false);
   assert.equal(result.quotasPassed, true, "no sources means no quota breach");
   assert.equal(result.sourceProvenanceSummaries.length, 0);
+  assert.equal(result.sourceMixPlanPath, undefined);
   assert.equal(result.rawJiraResponsePersisted, false);
   assert.equal(result.rawPasteBytesPersisted, false);
 });
@@ -311,6 +318,16 @@ test("runWave4ProductionReadiness: artifact files are written and accessible aft
     finopsBudget: EU_BANKING_DEFAULT_FINOPS_BUDGET,
   });
   assert.equal(result.ok, true);
+  assert.ok(result.sourceMixPlanPath !== undefined);
+  const sourceMixPlanRaw = await readFile(result.sourceMixPlanPath, "utf8");
+  const sourceMixPlan = JSON.parse(sourceMixPlanRaw) as {
+    kind?: unknown;
+    sourceMixPlanHash?: unknown;
+    sourceDigests?: unknown;
+  };
+  assert.equal(sourceMixPlan.kind, "jira_rest_only");
+  assert.equal(sourceMixPlan.sourceMixPlanHash, result.sourceMixPlan?.sourceMixPlanHash);
+  assert.ok(Array.isArray(sourceMixPlan.sourceDigests));
   for (const summary of result.sourceProvenanceSummaries) {
     await assert.doesNotReject(
       access(summary.irArtifactPath),

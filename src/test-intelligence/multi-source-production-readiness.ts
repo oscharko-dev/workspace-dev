@@ -35,6 +35,7 @@ import {
   type JiraIssueIr,
   type MultiSourceSourceProvenanceRecord,
   type MultiSourceTestIntentEnvelope,
+  type SourceMixPlan,
   type TestIntentSourceRef,
   type Wave4SourceMixId,
 } from "../contracts/index.js";
@@ -57,6 +58,7 @@ import {
   reconcileMultiSourceIntent,
   writeMultiSourceReconciliationReport,
 } from "./multi-source-reconciliation.js";
+import { planSourceMix, writeSourceMixPlan } from "./source-mix-planner.js";
 import {
   deriveBusinessTestIntentIr,
   type IntentDerivationFigmaInput,
@@ -116,6 +118,10 @@ export interface Wave4ProductionReadinessRunResult {
   reconciliationReportPath?: string;
   /** Path to the conflict report. */
   conflictReportPath?: string;
+  /** Path to the source-mix plan artifact. */
+  sourceMixPlanPath?: string;
+  /** Deterministic source-mix plan emitted for this run. */
+  sourceMixPlan?: SourceMixPlan;
   /** Provenance records for the evidence manifest. */
   provenanceRecords: MultiSourceSourceProvenanceRecord[];
   /** Per-source provenance summaries (with on-disk paths). */
@@ -166,11 +172,30 @@ export const runWave4ProductionReadiness = async (
     });
   }
 
+  const canonicalEnvelope = canonicalizeEnvelope(input.envelope);
+  const sourceMixPlanning = planSourceMix(canonicalEnvelope, {
+    allowDuplicateJiraIssueKeysForConflictEvidence: true,
+  });
+  if (!sourceMixPlanning.ok) {
+    return failure({
+      fixtureId: input.fixtureId,
+      mixId: input.mixId,
+      runDir: input.runDir,
+      quotasPassed: true,
+      expectedSourceCount: input.envelope.sources.length,
+    });
+  }
+  const sourceMixPlan = sourceMixPlanning.plan;
+  const sourceMixPlanWritten = await writeSourceMixPlan(
+    sourceMixPlan,
+    input.runDir,
+  );
+
   const sourceArtifacts: SourceArtifactRecord[] = [];
   let figmaIntent;
 
   // 1. Figma source IR.
-  const figmaSource = input.envelope.sources.find(
+  const figmaSource = canonicalEnvelope.sources.find(
     (ref) => ref.kind === "figma_local_json" || ref.kind === "figma_plugin",
   );
   if (figmaSource !== undefined && input.figmaJson !== undefined) {
@@ -207,7 +232,7 @@ export const runWave4ProductionReadiness = async (
   }
 
   // 2. Jira REST source IR.
-  const jiraRestSource = input.envelope.sources.find(
+  const jiraRestSource = canonicalEnvelope.sources.find(
     (ref) => ref.kind === "jira_rest",
   );
   const jiraIssues: JiraIssueIr[] = [];
@@ -239,7 +264,7 @@ export const runWave4ProductionReadiness = async (
   }
 
   // 3. Jira paste source IR.
-  const jiraPasteSource = input.envelope.sources.find(
+  const jiraPasteSource = canonicalEnvelope.sources.find(
     (ref) => ref.kind === "jira_paste",
   );
   if (jiraPasteSource !== undefined && input.jiraPasteText !== undefined) {
@@ -283,7 +308,7 @@ export const runWave4ProductionReadiness = async (
 
   // 4. Custom context source IR.
   const customSources: CustomContextSource[] = [];
-  const customContextSource = input.envelope.sources.find(
+  const customContextSource = canonicalEnvelope.sources.find(
     (ref) => ref.kind === "custom_text" || ref.kind === "custom_structured",
   );
   if (customContextSource !== undefined) {
@@ -319,7 +344,6 @@ export const runWave4ProductionReadiness = async (
   }
 
   // 5. Reconcile and write the conflict report.
-  const canonicalEnvelope = canonicalizeEnvelope(input.envelope);
   const reconciliationInput: Parameters<typeof reconcileMultiSourceIntent>[0] =
     {
       envelope: canonicalEnvelope,
@@ -348,6 +372,8 @@ export const runWave4ProductionReadiness = async (
     runDir: input.runDir,
     expectedSourceCount: input.envelope.sources.length,
     quotasPassed: true,
+    sourceMixPlanPath: sourceMixPlanWritten.artifactPath,
+    sourceMixPlan,
     reconciliationReportPath: writeResult.artifactPath,
     conflictReportPath: writeResult.artifactPath,
     provenanceRecords,

@@ -148,7 +148,7 @@ Persisted, fully-redacted artifact form of a compiled prompt.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### hashes
 
@@ -175,6 +175,10 @@ Redacted JSON payload that the model will reason over.
 ###### intent
 
 > **intent**: [`BusinessTestIntentIr`](#businesstestintentir)
+
+###### sourceMixPlan?
+
+> `optional` **sourceMixPlan?**: [`SourceMixPlan`](#sourcemixplan-1)
 
 ###### visual
 
@@ -1056,7 +1060,7 @@ Aggregate dry-run report artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### credentialsIncluded
 
@@ -1405,7 +1409,7 @@ Sorted by filename for deterministic emission.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### exportedTestCaseCount
 
@@ -1637,7 +1641,7 @@ Verbatim copy of the budget envelope applied to this job.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### currencyLabel?
 
@@ -2067,7 +2071,7 @@ Single generated test case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### expectedResults
 
@@ -2169,7 +2173,7 @@ Whether the artifact came from a replay-cache hit.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### generatedAt
 
@@ -2460,7 +2464,7 @@ Hard-invariant intent-delta report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### currentIntentHash
 
@@ -4261,7 +4265,7 @@ ISO-8601 capture timestamp.
 
 ##### kind
 
-> **kind**: `"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"`
+> **kind**: `"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"` \| `"custom_markdown"`
 
 ##### sourceId
 
@@ -4305,7 +4309,7 @@ Resolution discriminant for cross-source disagreement.
 
 ##### priorityOrder?
 
-> `optional` **priorityOrder?**: (`"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"`)[]
+> `optional` **priorityOrder?**: (`"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"` \| `"custom_markdown"`)[]
 
 Required when [conflictResolutionPolicy](#conflictresolutionpolicy) is `priority`: an
 ordered, deduplicated list of source kinds covering every kind that
@@ -4435,7 +4439,7 @@ Aggregate `qc-created-entities.json` artifact (Issue #1372).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### entities
 
@@ -4525,7 +4529,7 @@ Aggregate QC mapping preview artifact.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### entries
 
@@ -4962,6 +4966,10 @@ Replay-cache key — the only deterministic-bit-identical replay anchor.
 
 > `optional` **seed?**: `number`
 
+##### sourceMixPlanHash?
+
+> `optional` **sourceMixPlanHash?**: `string`
+
 ##### visualFallbackReason
 
 > **visualFallbackReason**: [`VisualSidecarFallbackReason`](#visualsidecarfallbackreason)
@@ -4996,7 +5004,7 @@ ISO-8601 UTC timestamp at the moment of persistence.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### fromState?
 
@@ -5064,7 +5072,7 @@ Number of cases currently in `approved` (or `exported`/`transferred`) state.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### fourEyesPolicy?
 
@@ -5438,7 +5446,7 @@ Sorted by `testCaseId` for byte stability. Empty when `refusal` is set.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### gatewayRelease
 
@@ -5520,6 +5528,164 @@ Score in `[0, 1]`; rounded to 6 digits in the persisted artifact.
 ##### subscore
 
 > **subscore**: `"visible_control_coverage"` \| `"state_validation_coverage"` \| `"ambiguity_handling"` \| `"unsupported_visual_claims"`
+
+***
+
+### SourceMixPlan
+
+Deterministic plan produced by the source-mix planner (Issue #1441).
+
+The plan captures which source combinations were selected for a job, what
+visual-sidecar requirement applies, and in what order the prompt compiler
+must emit role-tagged source sections. It also carries hash-only source
+fingerprints so the `sourceMixPlanHash` changes when source content changes,
+including redacted Markdown supporting context. The `sourceMixPlanHash`
+participates in the replay-cache key so a different source mix always forces
+a cache miss.
+
+Negative invariants (TYPE-LEVEL `false`):
+- `figmaSourceRequired` is `false` on Jira-only and custom-enriched-Jira plans.
+- `visualSidecarRequired` is `false` whenever `visualSidecarRequirement` is
+  `"not_applicable"`.
+- `rawJiraResponsePersisted` is always `false` — only normalized IRs are stored.
+- `rawPasteBytesPersisted` is always `false` — only normalized hashes are stored.
+
+#### Properties
+
+##### kind
+
+> **kind**: `"figma_only"` \| `"jira_rest_only"` \| `"jira_paste_only"` \| `"figma_jira_rest"` \| `"figma_jira_paste"` \| `"figma_jira_mixed"` \| `"jira_mixed"`
+
+Discriminated mix kind derived from the source envelope.
+
+##### primarySourceIds
+
+> **primarySourceIds**: `string`[]
+
+Ordered source IDs classified as primary sources.
+
+##### promptSections
+
+> **promptSections**: [`SourceMixPlanPromptSection`](#sourcemixplanpromptsection)[]
+
+Ordered list of prompt sections the compiler must emit for this plan.
+The compiler must emit each listed section and MUST NOT emit unlisted sections.
+
+##### rawJiraResponsePersisted
+
+> **rawJiraResponsePersisted**: `false`
+
+Hard invariant: only normalized IRs are stored, never raw Jira API responses.
+
+##### rawPasteBytesPersisted
+
+> **rawPasteBytesPersisted**: `false`
+
+Hard invariant: only redacted hashes are stored, never raw paste bytes.
+
+##### sourceDigests?
+
+> `optional` **sourceDigests?**: [`SourceMixPlanSourceDigest`](#sourcemixplansourcedigest)[]
+
+Hash-only source fingerprints included in `sourceMixPlanHash` when emitted by the planner.
+
+##### sourceMixPlanHash
+
+> **sourceMixPlanHash**: `string`
+
+SHA-256 of the canonical plan payload (computed before this field is set,
+so the hash covers `kind`, `primarySourceIds`, `supportingSourceIds`,
+`visualSidecarRequirement`, `promptSections`, and `sourceDigests`).
+
+##### supportingSourceIds
+
+> **supportingSourceIds**: `string`[]
+
+Ordered source IDs classified as supporting sources.
+
+##### version
+
+> **version**: `"1.0.0"`
+
+Schema version stamp.
+
+##### visualSidecarRequirement
+
+> **visualSidecarRequirement**: `"required"` \| `"optional"` \| `"not_applicable"`
+
+Whether the job requires a visual sidecar pass.
+- `required` — at least one Figma source is present and visual captures are expected.
+- `optional` — Figma is present but no capture set was supplied.
+- `not_applicable` — Jira-only or custom-only; must be `false` at runtime.
+
+***
+
+### SourceMixPlannerIssue
+
+A single validation issue surfaced by the source-mix planner.
+
+#### Properties
+
+##### code
+
+> **code**: `"duplicate_source_id"` \| `"primary_source_required"` \| `"unsupported_source_mix"` \| `"duplicate_jira_issue_key"` \| `"custom_markdown_hash_required"` \| `"custom_markdown_input_format_invalid"` \| `"source_mix_plan_hash_mismatch"` \| `"mode_gate_not_satisfied"`
+
+##### detail?
+
+> `optional` **detail?**: `string`
+
+##### path?
+
+> `optional` **path?**: `string`
+
+***
+
+### SourceMixPlanSourceDigest
+
+Redacted source fingerprint material sealed into a source-mix plan.
+
+The planner records hashes only, never raw Jira responses, paste bytes, or
+Markdown editor input. For Markdown context, the redacted Markdown and
+plain-text derivative hashes are included so `sourceMixPlanHash` changes
+when sanitized supporting evidence changes.
+
+#### Properties
+
+##### canonicalIssueKey?
+
+> `optional` **canonicalIssueKey?**: `string`
+
+Canonical Jira issue key, when the source is Jira-backed.
+
+##### contentHash
+
+> **contentHash**: `string`
+
+Canonical source content hash from the multi-source envelope.
+
+##### kind
+
+> **kind**: `"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"` \| `"custom_markdown"`
+
+Source kind from the multi-source envelope.
+
+##### plainTextDerivativeHash?
+
+> `optional` **plainTextDerivativeHash?**: `string`
+
+Plain-text derivative hash for Markdown supporting context.
+
+##### redactedMarkdownHash?
+
+> `optional` **redactedMarkdownHash?**: `string`
+
+Redacted Markdown hash for Markdown supporting context.
+
+##### sourceId
+
+> **sourceId**: `string`
+
+Source ID from the multi-source envelope.
 
 ***
 
@@ -5605,7 +5771,7 @@ Avg assumptions per case.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### duplicatePairs
 
@@ -5699,7 +5865,7 @@ Aggregate dedupe report artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### embeddingProvider
 
@@ -5809,7 +5975,7 @@ Aggregate test-case delta report (always paired with `IntentDeltaReport`).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### generatedAt
 
@@ -6065,7 +6231,7 @@ Whether ANY case was blocked (downstream export gate).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### decisions
 
@@ -6204,7 +6370,7 @@ Whether the report blocks downstream review/export (any error => true).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### errorCount
 
@@ -6332,7 +6498,7 @@ those kinds, MUST be omitted for primary kinds.
 
 ##### kind
 
-> **kind**: `"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"`
+> **kind**: `"figma_plugin"` \| `"figma_local_json"` \| `"figma_rest"` \| `"jira_rest"` \| `"jira_paste"` \| `"custom_text"` \| `"custom_structured"` \| `"custom_markdown"`
 
 Discriminated source kind.
 
@@ -6383,7 +6549,7 @@ Aggregate traceability-matrix artifact (Issue #1373).
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### exportProfile?
 
@@ -6877,7 +7043,7 @@ Audit metadata for the run.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### createdCount
 
@@ -7210,7 +7376,7 @@ screenshot bytes.
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### generatedAt
 
@@ -7350,7 +7516,7 @@ Whether any record carries a non-`ok`/non-`fallback_used` outcome that blocks ge
 
 ##### contractVersion
 
-> **contractVersion**: `"1.3.0"`
+> **contractVersion**: `"1.4.0"`
 
 ##### generatedAt
 
@@ -7620,7 +7786,7 @@ Active signing mode; mirrored from the run input for auditability.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.3.0"`
+> **testIntelligenceContractVersion**: `"1.4.0"`
 
 ##### visualSidecar?
 
@@ -8049,7 +8215,7 @@ and timestamps are caller-provided.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.3.0"`
+> **testIntelligenceContractVersion**: `"1.4.0"`
 
 ##### thresholds
 
@@ -8341,7 +8507,7 @@ raw paste bytes, or PII.
 
 ##### testIntelligenceContractVersion
 
-> **testIntelligenceContractVersion**: `"1.3.0"`
+> **testIntelligenceContractVersion**: `"1.4.0"`
 
 Test-intelligence subsurface contract version.
 
@@ -12845,6 +13011,38 @@ Single multimodal visual subscore kind.
 
 ***
 
+### SourceMixPlannerRefusalCode
+
+> **SourceMixPlannerRefusalCode** = *typeof* [`ALLOWED_SOURCE_MIX_PLANNER_REFUSAL_CODES`](#allowed_source_mix_planner_refusal_codes)\[`number`\]
+
+Refusal code alias for the source-mix planner.
+
+***
+
+### SourceMixPlannerResult
+
+> **SourceMixPlannerResult** = \{ `ok`: `true`; `plan`: [`SourceMixPlan`](#sourcemixplan-1); \} \| \{ `issues`: [`SourceMixPlannerIssue`](#sourcemixplannerissue)[]; `ok`: `false`; \}
+
+Result of source-mix planning (Issue #1441).
+
+***
+
+### SourceMixPlanPromptSection
+
+> **SourceMixPlanPromptSection** = `"figma_intent"` \| `"jira_requirements"` \| `"custom_context"` \| `"custom_context_markdown"` \| `"reconciliation_report"`
+
+Prompt section tag identifying the role of a compiled source segment in the
+LLM user prompt. The planner populates [SourceMixPlan.promptSections](#promptsections)
+with the ordered list of sections that the prompt compiler must emit.
+
+- `figma_intent` — redacted Figma Business Test Intent IR.
+- `jira_requirements` — one or more normalized Jira Issue IRs.
+- `custom_context` — structured-attribute and/or plain-text custom context.
+- `custom_context_markdown` — Markdown custom context (dedicated kind).
+- `reconciliation_report` — cross-source conflict and field-provenance summary.
+
+***
+
 ### SupportingTestIntentSourceKind
 
 > **SupportingTestIntentSourceKind** = *typeof* [`SUPPORTING_TEST_INTENT_SOURCE_KINDS`](#supporting_test_intent_source_kinds)\[`number`\]
@@ -12944,6 +13142,14 @@ Custom input-format alias.
 > **TestIntentSourceKind** = *typeof* [`ALLOWED_TEST_INTENT_SOURCE_KINDS`](#allowed_test_intent_source_kinds)\[`number`\]
 
 Discriminated source-kind alias derived from [ALLOWED\_TEST\_INTENT\_SOURCE\_KINDS](#allowed_test_intent_source_kinds).
+
+***
+
+### TestIntentSourceMixKind
+
+> **TestIntentSourceMixKind** = *typeof* [`ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS`](#allowed_test_intent_source_mix_kinds)\[`number`\]
+
+Discriminated union of all supported source-mix kinds (Issue #1441).
 
 ***
 
@@ -13781,6 +13987,15 @@ latter is interpreted as `1 - penalty` so all subscores remain in
 
 ***
 
+### ALLOWED\_SOURCE\_MIX\_PLANNER\_REFUSAL\_CODES
+
+> `const` **ALLOWED\_SOURCE\_MIX\_PLANNER\_REFUSAL\_CODES**: readonly \[`"primary_source_required"`, `"unsupported_source_mix"`, `"duplicate_source_id"`, `"duplicate_jira_issue_key"`, `"custom_markdown_hash_required"`, `"custom_markdown_input_format_invalid"`, `"source_mix_plan_hash_mismatch"`, `"mode_gate_not_satisfied"`\]
+
+Refusal codes emitted by the source-mix planner when it rejects an envelope.
+All refusals are fail-closed; no partial artifact is written.
+
+***
+
 ### ALLOWED\_TEST\_CASE\_DELTA\_REASONS
 
 > `const` **ALLOWED\_TEST\_CASE\_DELTA\_REASONS**: readonly \[`"absent_in_current"`, `"absent_in_prior"`, `"fingerprint_changed"`, `"trace_screen_changed"`, `"trace_screen_removed"`, `"visual_ambiguity_increased"`, `"visual_confidence_dropped"`, `"reconciliation_conflict"`\]
@@ -13868,11 +14083,23 @@ to the model or runtime.
 
 ### ALLOWED\_TEST\_INTENT\_SOURCE\_KINDS
 
-> `const` **ALLOWED\_TEST\_INTENT\_SOURCE\_KINDS**: readonly \[`"figma_local_json"`, `"figma_plugin"`, `"figma_rest"`, `"jira_rest"`, `"jira_paste"`, `"custom_text"`, `"custom_structured"`\]
+> `const` **ALLOWED\_TEST\_INTENT\_SOURCE\_KINDS**: readonly \[`"figma_local_json"`, `"figma_plugin"`, `"figma_rest"`, `"jira_rest"`, `"jira_paste"`, `"custom_text"`, `"custom_structured"`, `"custom_markdown"`\]
 
 Source kinds recognised by the multi-source Test Intent ingestion
 pipeline (Issue #1431). The first three are existing Figma kinds; the
-remaining four are introduced by Wave 4 issues 4.B–4.E.
+remaining four are introduced by Wave 4 issues 4.B–4.E. `custom_markdown`
+is added by Issue #1441 as a dedicated Markdown supporting source kind.
+
+***
+
+### ALLOWED\_TEST\_INTENT\_SOURCE\_MIX\_KINDS
+
+> `const` **ALLOWED\_TEST\_INTENT\_SOURCE\_MIX\_KINDS**: readonly \[`"figma_only"`, `"jira_rest_only"`, `"jira_paste_only"`, `"figma_jira_rest"`, `"figma_jira_paste"`, `"figma_jira_mixed"`, `"jira_mixed"`\]
+
+All supported source-mix identifiers. Each value represents a distinct
+combination of primary and supporting source kinds that the planner accepts.
+The planner rejects any combination not listed here with
+`unsupported_source_mix`.
 
 ***
 
@@ -14001,7 +14228,7 @@ Schema version for `BusinessTestIntentIr` artifacts.
 
 ### CONTRACT\_VERSION
 
-> `const` **CONTRACT\_VERSION**: `"4.14.0"`
+> `const` **CONTRACT\_VERSION**: `"4.15.0"`
 
 Current contract version constant.
 Must be bumped according to CONTRACT_CHANGELOG.md rules.
@@ -14250,7 +14477,7 @@ Schema version for the persisted intent-delta artifact (Issue #1373).
 > `const` **JIRA\_ISSUE\_IR\_ARTIFACT\_DIRECTORY**: `"sources"`
 
 Run-dir-relative subdirectory under which per-source Jira IR artifacts
-are persisted, namespaced by [TestIntentSourceRef.sourceId](#sourceid-3).
+are persisted, namespaced by [TestIntentSourceRef.sourceId](#sourceid-4).
 
 Layout: `<runDir>/sources/<sourceId>/jira-issue-ir.json`.
 
@@ -14608,6 +14835,22 @@ Stable JSON schema name attached to the structured rubric response.
 
 ***
 
+### SOURCE\_MIX\_PLAN\_ARTIFACT\_FILENAME
+
+> `const` **SOURCE\_MIX\_PLAN\_ARTIFACT\_FILENAME**: `"source-mix-plan.json"`
+
+Canonical filename for the deterministic source-mix plan artifact.
+
+***
+
+### SOURCE\_MIX\_PLAN\_SCHEMA\_VERSION
+
+> `const` **SOURCE\_MIX\_PLAN\_SCHEMA\_VERSION**: `"1.0.0"`
+
+Schema version for persisted `source-mix-plan.json` artifacts.
+
+***
+
 ### SUGGESTED\_CUSTOM\_CONTEXT\_ATTRIBUTES
 
 > `const` **SUGGESTED\_CUSTOM\_CONTEXT\_ATTRIBUTES**: readonly [`SuggestedCustomContextAttribute`](#suggestedcustomcontextattribute)[]
@@ -14618,10 +14861,13 @@ Curated structured-attribute schema surfaced to API and UI consumers.
 
 ### SUPPORTING\_TEST\_INTENT\_SOURCE\_KINDS
 
-> `const` **SUPPORTING\_TEST\_INTENT\_SOURCE\_KINDS**: readonly \[`"custom_text"`, `"custom_structured"`\]
+> `const` **SUPPORTING\_TEST\_INTENT\_SOURCE\_KINDS**: readonly \[`"custom_text"`, `"custom_structured"`, `"custom_markdown"`\]
 
 Supporting (non-primary) source kinds — may only appear alongside at
-least one primary source.
+least one primary source. `custom_markdown` is a dedicated Markdown
+supporting source kind (Issue #1441); it always carries
+`redactedMarkdownHash` + `plainTextDerivativeHash` and never requires
+`inputFormat` since its format is intrinsically Markdown.
 
 ***
 
@@ -14692,7 +14938,7 @@ Bumped when `TestCaseValidationReport` changes shape.
 
 ### TEST\_INTELLIGENCE\_CONTRACT\_VERSION
 
-> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.3.0"`
+> `const` **TEST\_INTELLIGENCE\_CONTRACT\_VERSION**: `"1.4.0"`
 
 Contract version for the opt-in test-intelligence surface.
 

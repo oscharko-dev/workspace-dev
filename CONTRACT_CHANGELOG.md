@@ -49,10 +49,17 @@ all existing consumers are unaffected.
 
 - `TestIntentSourceMixKind` — discriminated union of 7 source-mix kind strings.
 - `SourceMixPlanPromptSection` — role-tagged prompt section emitted by the planner.
+- `SourceMixPlanSourceDigest` — hash-only source fingerprint material sealed into emitted source-mix plans.
 - `SourceMixPlan` — deterministic plan with `sourceMixPlanHash`, `visualSidecarRequirement`, and hard `false` privacy invariants.
 - `SourceMixPlannerRefusalCode` — union of planner refusal code strings.
 - `SourceMixPlannerIssue` — structured issue record returned on refusal.
 - `SourceMixPlannerResult` — discriminated union `{ ok: true; plan } | { ok: false; issues }`.
+
+**Extended types (additive fields only):**
+
+- `SourceMixPlan` — added optional `sourceDigests` so planner-emitted plans seal source content hashes, canonical Jira issue keys, and redacted Markdown/plain-text derivative hashes into `sourceMixPlanHash` without persisting raw Jira responses, paste bytes, or editor input.
+- `ReplayCacheKey` — added optional `sourceMixPlanHash` to match the runtime replay key emitted for multi-source jobs.
+- `CompiledPromptArtifacts.payload` — added optional `sourceMixPlan` so persisted prompt artifacts can explain which source-mix path compiled the prompt.
 
 **New `ALLOWED_TEST_INTENT_SOURCE_KINDS` member:** `"custom_markdown"` (intrinsically-Markdown supporting source; requires `redactedMarkdownHash` + `plainTextDerivativeHash`; forbids `inputFormat`).
 

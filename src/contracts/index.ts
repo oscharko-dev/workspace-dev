@@ -4002,6 +4002,7 @@ export interface CompiledPromptArtifacts {
     intent: BusinessTestIntentIr;
     visual: VisualScreenDescription[];
     customContext?: CompiledPromptCustomContext;
+    sourceMixPlan?: SourceMixPlan;
   };
   hashes: CompiledPromptHashes;
   visualBinding: CompiledPromptVisualBinding;
@@ -4037,6 +4038,7 @@ export interface ReplayCacheKey {
   fixtureImageHash?: string;
   promptTemplateVersion: typeof TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION;
   seed?: number;
+  sourceMixPlanHash?: string;
 }
 
 /** Stored cache entry. */
@@ -7065,12 +7067,38 @@ export type SourceMixPlanPromptSection =
   | "reconciliation_report";
 
 /**
+ * Redacted source fingerprint material sealed into a source-mix plan.
+ *
+ * The planner records hashes only, never raw Jira responses, paste bytes, or
+ * Markdown editor input. For Markdown context, the redacted Markdown and
+ * plain-text derivative hashes are included so `sourceMixPlanHash` changes
+ * when sanitized supporting evidence changes.
+ */
+export interface SourceMixPlanSourceDigest {
+  /** Source ID from the multi-source envelope. */
+  sourceId: string;
+  /** Source kind from the multi-source envelope. */
+  kind: TestIntentSourceKind;
+  /** Canonical source content hash from the multi-source envelope. */
+  contentHash: string;
+  /** Canonical Jira issue key, when the source is Jira-backed. */
+  canonicalIssueKey?: string;
+  /** Redacted Markdown hash for Markdown supporting context. */
+  redactedMarkdownHash?: string;
+  /** Plain-text derivative hash for Markdown supporting context. */
+  plainTextDerivativeHash?: string;
+}
+
+/**
  * Deterministic plan produced by the source-mix planner (Issue #1441).
  *
  * The plan captures which source combinations were selected for a job, what
  * visual-sidecar requirement applies, and in what order the prompt compiler
- * must emit role-tagged source sections. The `sourceMixPlanHash` participates
- * in the replay-cache key so a different source mix always forces a cache miss.
+ * must emit role-tagged source sections. It also carries hash-only source
+ * fingerprints so the `sourceMixPlanHash` changes when source content changes,
+ * including redacted Markdown supporting context. The `sourceMixPlanHash`
+ * participates in the replay-cache key so a different source mix always forces
+ * a cache miss.
  *
  * Negative invariants (TYPE-LEVEL `false`):
  * - `figmaSourceRequired` is `false` on Jira-only and custom-enriched-Jira plans.
@@ -7100,10 +7128,12 @@ export interface SourceMixPlan {
    * The compiler must emit each listed section and MUST NOT emit unlisted sections.
    */
   promptSections: SourceMixPlanPromptSection[];
+  /** Hash-only source fingerprints included in `sourceMixPlanHash` when emitted by the planner. */
+  sourceDigests?: SourceMixPlanSourceDigest[];
   /**
    * SHA-256 of the canonical plan payload (computed before this field is set,
    * so the hash covers `kind`, `primarySourceIds`, `supportingSourceIds`,
-   * `visualSidecarRequirement`, and `promptSections`).
+   * `visualSidecarRequirement`, `promptSections`, and `sourceDigests`).
    */
   sourceMixPlanHash: string;
   /** Hard invariant: only normalized IRs are stored, never raw Jira API responses. */
