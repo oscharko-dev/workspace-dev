@@ -518,6 +518,528 @@ test("figma-only reconciliation remains conflict-free and uses only Figma proven
   );
 });
 
+test("figma-only reconciliation deep-clones rich optional provenance", () => {
+  const figmaRef = {
+    sourceId: "figma.rich",
+    kind: "figma_plugin" as const,
+    contentHash: sha256Hex("figma-rich-provenance"),
+    capturedAt: ISO,
+  };
+  const intent: BusinessTestIntentIr = {
+    version: "1.0.0",
+    source: { kind: "figma_plugin", contentHash: figmaRef.contentHash },
+    screens: [
+      {
+        screenId: "screen.checkout",
+        screenName: "Checkout",
+        screenPath: "/Checkout/Payment",
+        trace: {
+          nodeId: "node.screen",
+          nodeName: "Checkout screen",
+          nodePath: "Root/Checkout",
+          sourceRefs: [figmaRef],
+        },
+      },
+    ],
+    detectedFields: [
+      {
+        id: "field.card-number",
+        screenId: "screen.checkout",
+        trace: {
+          nodeId: "node.card",
+          nodeName: "Card number",
+          nodePath: "Root/Checkout/Card number",
+          sourceRefs: [figmaRef],
+        },
+        provenance: "figma_node",
+        confidence: 0.91,
+        label: "Card number",
+        type: "text",
+        defaultValue: "411111******1111",
+        ambiguity: { reason: "masked card sample may be placeholder text" },
+        sourceRefs: [figmaRef],
+      },
+    ],
+    detectedActions: [
+      {
+        id: "action.submit",
+        screenId: "screen.checkout",
+        trace: {
+          nodeId: "node.submit",
+          nodeName: "Submit payment",
+          nodePath: "Root/Checkout/Submit",
+          sourceRefs: [figmaRef],
+        },
+        provenance: "figma_node",
+        confidence: 0.88,
+        label: "Submit payment",
+        kind: "primary_button",
+        ambiguity: { reason: "primary submit button inferred from visual emphasis" },
+        sourceRefs: [figmaRef],
+      },
+    ],
+    detectedValidations: [
+      {
+        id: "validation.card-number",
+        screenId: "screen.checkout",
+        trace: {
+          nodeId: "node.card",
+          nodeName: "Card number",
+          nodePath: "Root/Checkout/Card number",
+          sourceRefs: [figmaRef],
+        },
+        provenance: "figma_node",
+        confidence: 0.87,
+        rule: "Card number is required",
+        targetFieldId: "field.card-number",
+        ambiguity: { reason: "required marker inferred from nearby asterisk" },
+        sourceRefs: [figmaRef],
+      },
+    ],
+    detectedNavigation: [
+      {
+        id: "nav.confirmation",
+        screenId: "screen.checkout",
+        trace: {
+          nodeId: "node.submit",
+          nodeName: "Submit payment",
+          nodePath: "Root/Checkout/Submit",
+          sourceRefs: [figmaRef],
+        },
+        provenance: "figma_node",
+        confidence: 0.83,
+        targetScreenId: "screen.confirmation",
+        triggerElementId: "action.submit",
+        ambiguity: { reason: "prototype link inferred from component metadata" },
+        sourceRefs: [figmaRef],
+      },
+    ],
+    inferredBusinessObjects: [
+      {
+        id: "object.payment-card",
+        screenId: "screen.checkout",
+        trace: {
+          nodeId: "node.card",
+          nodeName: "Card number",
+          nodePath: "Root/Checkout/Card number",
+          sourceRefs: [figmaRef],
+        },
+        provenance: "figma_node",
+        confidence: 0.86,
+        name: "Payment card",
+        fieldIds: ["field.card-number"],
+        ambiguity: { reason: "card object inferred from masked PAN-like content" },
+        sourceRefs: [figmaRef],
+      },
+    ],
+    risks: ["financial_transaction"],
+    assumptions: ["Card number is entered by the customer."],
+    openQuestions: ["Should stored cards be supported?"],
+    piiIndicators: [],
+    redactions: [],
+  };
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [figmaRef],
+    conflictResolutionPolicy: "reviewer_decides",
+  });
+
+  const result = reconcileMultiSourceIntent({ envelope, figmaIntent: intent });
+  intent.screens[0]!.trace.sourceRefs![0]!.sourceId = "mutated";
+  intent.detectedFields[0]!.sourceRefs![0]!.sourceId = "mutated";
+  intent.detectedActions[0]!.sourceRefs![0]!.sourceId = "mutated";
+  intent.detectedValidations[0]!.sourceRefs![0]!.sourceId = "mutated";
+  intent.detectedNavigation[0]!.sourceRefs![0]!.sourceId = "mutated";
+  intent.inferredBusinessObjects[0]!.sourceRefs![0]!.sourceId = "mutated";
+
+  assert.equal(result.report.conflicts.length, 0);
+  assert.equal(result.mergedIntent.screens[0]?.screenPath, "/Checkout/Payment");
+  assert.equal(
+    result.mergedIntent.screens[0]?.trace.sourceRefs?.[0]?.sourceId,
+    "figma.rich",
+  );
+  assert.equal(
+    result.mergedIntent.detectedFields[0]?.trace.nodePath,
+    "Root/Checkout/Card number",
+  );
+  assert.equal(
+    result.mergedIntent.detectedFields[0]?.ambiguity?.reason,
+    "masked card sample may be placeholder text",
+  );
+  assert.equal(
+    result.mergedIntent.detectedActions[0]?.sourceRefs?.[0]?.sourceId,
+    "figma.rich",
+  );
+  assert.equal(
+    result.mergedIntent.detectedNavigation[0]?.triggerElementId,
+    "action.submit",
+  );
+  assert.equal(
+    result.mergedIntent.inferredBusinessObjects[0]?.fieldIds[0],
+    "field.card-number",
+  );
+  assert.deepEqual(
+    result.report.unmatchedSources,
+    [],
+  );
+});
+
+test("figma reconciliation handles sparse optional provenance and unmatched custom sources", () => {
+  const figmaRef = {
+    sourceId: "figma.sparse",
+    kind: "figma_local_json" as const,
+    contentHash: sha256Hex("figma-sparse-provenance"),
+    capturedAt: ISO,
+  };
+  const customRef = {
+    sourceId: "custom.missing",
+    kind: "custom_structured" as const,
+    contentHash: sha256Hex("missing-custom-structured-source"),
+    capturedAt: ISO,
+    inputFormat: "structured_json" as const,
+  };
+  const intent: BusinessTestIntentIr = {
+    version: "1.0.0",
+    source: { kind: "figma_local_json", contentHash: figmaRef.contentHash },
+    screens: [{ screenId: "sparse", screenName: "Sparse", trace: {} }],
+    detectedFields: [
+      {
+        id: "!!!",
+        screenId: "sparse",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.7,
+        label: "Reference code",
+        type: "text",
+      },
+    ],
+    detectedActions: [
+      {
+        id: "action.sparse",
+        screenId: "sparse",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.7,
+        label: "Continue",
+        kind: "button",
+      },
+    ],
+    detectedValidations: [
+      {
+        id: "validation.sparse",
+        screenId: "sparse",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.7,
+        rule: "Reference code is required",
+      },
+    ],
+    detectedNavigation: [
+      {
+        id: "nav.sparse",
+        screenId: "sparse",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.7,
+        targetScreenId: "done",
+      },
+    ],
+    inferredBusinessObjects: [
+      {
+        id: "object.sparse",
+        screenId: "sparse",
+        trace: {},
+        provenance: "figma_node",
+        confidence: 0.7,
+        name: "Sparse object",
+        fieldIds: ["!!!"],
+      },
+    ],
+    risks: ["unknown operational note", "payment checkout", "payment checkout"],
+    assumptions: [],
+    openQuestions: [],
+    piiIndicators: [
+      {
+        id: "pii.email",
+        kind: "email",
+        confidence: 0.9,
+        matchLocation: "field_default_value",
+        redacted: "[REDACTED:EMAIL]",
+        screenId: "sparse",
+        elementId: "!!!",
+      },
+    ],
+    redactions: [],
+  };
+  const result = reconcileMultiSourceIntent({
+    envelope: buildMultiSourceTestIntentEnvelope({
+      sources: [figmaRef, customRef],
+      conflictResolutionPolicy: "reviewer_decides",
+    }),
+    figmaIntent: intent,
+  });
+
+  assert.deepEqual(result.report.unmatchedSources, ["custom.missing"]);
+  assert.deepEqual(
+    result.mergedIntent.detectedFields[0]?.sourceRefs?.map((ref) => ref.sourceId),
+    ["figma.sparse"],
+  );
+  assert.equal(result.mergedIntent.risks.includes("financial_transaction"), true);
+  assert.equal(result.mergedIntent.risks.includes("regulated_data"), true);
+  assert.ok(
+    result.report.contributingSourcesPerCase.some(
+      (entry) => entry.testCaseId === "case:sparse:field:value",
+    ),
+  );
+});
+
+test("jira sources with unmatched hashes stay unmatched without synthetic fields", () => {
+  const issue = jiraIssue(
+    "jira-hash-mismatch",
+    'The field "Email" must be required. The field "Email" example is "ada@example.test".',
+  );
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        sourceId: "jira.mismatch",
+        kind: "jira_rest",
+        contentHash: sha256Hex("not-the-issue-content"),
+        capturedAt: ISO,
+        canonicalIssueKey: issue.issueKey,
+      },
+    ],
+    conflictResolutionPolicy: "reviewer_decides",
+  });
+
+  const result = reconcileMultiSourceIntent({
+    envelope,
+    jiraIssues: [issue],
+  });
+
+  assert.deepEqual(result.report.unmatchedSources, ["jira.mismatch"]);
+  assert.equal(result.mergedIntent.detectedFields.length, 0);
+  assert.equal(result.mergedIntent.detectedValidations.length, 0);
+});
+
+test("matching Jira field, validation, and example merge into sparse Figma fields", () => {
+  const intent = figmaIntent();
+  intent.detectedFields[0] = {
+    ...intent.detectedFields[0]!,
+    label: "Email",
+    defaultValue: "ada@example",
+    sourceRefs: undefined,
+  };
+  intent.detectedValidations[0] = {
+    ...intent.detectedValidations[0]!,
+    rule: "must be required",
+    targetFieldId: undefined,
+    sourceRefs: undefined,
+  };
+  const issue = jiraIssue(
+    "jira-merge",
+    'The field "Email" must be required. The field "Email" example is "ada@example.test".',
+  );
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        sourceId: "figma.0",
+        kind: "figma_local_json",
+        contentHash: sha256Hex("figma"),
+        capturedAt: ISO,
+      },
+      {
+        sourceId: "jira.0",
+        kind: "jira_rest",
+        contentHash: issue.contentHash,
+        capturedAt: ISO,
+        canonicalIssueKey: issue.issueKey,
+      },
+    ],
+    conflictResolutionPolicy: "reviewer_decides",
+  });
+
+  const result = reconcileMultiSourceIntent({
+    envelope,
+    figmaIntent: intent,
+    jiraIssues: [issue],
+  });
+
+  assert.deepEqual(
+    result.mergedIntent.detectedFields[0]?.sourceRefs?.map((ref) => ref.sourceId),
+    ["figma.0", "jira.0"],
+  );
+  assert.ok(
+    result.report.transcript.some(
+      (entry) =>
+        entry.action === "merged" &&
+        entry.rationale.includes("matching test-data example"),
+    ),
+  );
+});
+
+test("keep_both retains alternative Jira examples for matching fields", () => {
+  const intent = figmaIntent();
+  intent.detectedFields[0] = {
+    ...intent.detectedFields[0]!,
+    label: "IBAN",
+    defaultValue: "DE00 OLD PLACEHOLDER",
+  };
+  intent.detectedValidations = [];
+  const issue = jiraIssue(
+    "jira-example-keep-both",
+    'The field "IBAN" example is "DE89 3704 0044 0532 0130 00".',
+  );
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        sourceId: "figma.0",
+        kind: "figma_local_json",
+        contentHash: sha256Hex("figma"),
+        capturedAt: ISO,
+      },
+      {
+        sourceId: "jira.0",
+        kind: "jira_paste",
+        contentHash: issue.contentHash,
+        capturedAt: ISO,
+        canonicalIssueKey: issue.issueKey,
+      },
+    ],
+    conflictResolutionPolicy: "keep_both",
+  });
+
+  const result = reconcileMultiSourceIntent({
+    envelope,
+    figmaIntent: intent,
+    jiraIssues: [issue],
+  });
+  const alternative = result.mergedIntent.detectedFields.find(
+    (field) =>
+      field.id.includes("::alternative::jira.0::") &&
+      field.defaultValue === "DE89 3704 0044 0532 0130 00",
+  );
+
+  assert.ok(alternative);
+  assert.equal(
+    result.report.conflicts.some(
+      (conflict) => conflict.kind === "test_data_example_mismatch",
+    ),
+    true,
+  );
+});
+
+test("adversarial edge reconciliation covers sparse priority and source metadata branches", () => {
+  const conflictingIntent = figmaIntent();
+  conflictingIntent.detectedFields[0] = {
+    ...conflictingIntent.detectedFields[0]!,
+    trace: {},
+    label: "IBAN",
+    defaultValue: "FIGMA-ONLY",
+  };
+  conflictingIntent.detectedValidations = [];
+  conflictingIntent.risks = ["regulated customer data", "privileged admin workflow"];
+  const fieldIssue = jiraIssue(
+    "jira-keep-both-no-example",
+    'The field "IBAN field" must be required.',
+  );
+  const keepBoth = reconcileMultiSourceIntent({
+    envelope: buildMultiSourceTestIntentEnvelope({
+      sources: [
+        {
+          sourceId: "figma.0",
+          kind: "figma_local_json",
+          contentHash: sha256Hex("figma"),
+          capturedAt: ISO,
+        },
+        {
+          sourceId: "jira.no-key",
+          kind: "jira_paste",
+          contentHash: fieldIssue.contentHash,
+          capturedAt: ISO,
+        },
+      ],
+      conflictResolutionPolicy: "keep_both",
+    }),
+    figmaIntent: conflictingIntent,
+    jiraIssues: [fieldIssue],
+  });
+  assert.equal(keepBoth.mergedIntent.risks.includes("regulated_data"), true);
+  assert.equal(keepBoth.mergedIntent.risks.includes("high"), true);
+  assert.ok(
+    keepBoth.mergedIntent.detectedFields.some(
+      (field) =>
+        field.id.includes("::alternative::jira.no-key::") &&
+        field.defaultValue === "FIGMA-ONLY",
+    ),
+  );
+
+  const priorityIntent = figmaIntent();
+  priorityIntent.detectedFields[0] = {
+    ...priorityIntent.detectedFields[0]!,
+    label: "IBAN",
+    defaultValue: "DE00 FIGMA VALUE",
+  };
+  priorityIntent.detectedValidations = [];
+  const exampleIssue = jiraIssue(
+    "jira-example-priority",
+    'The field "IBAN" example is "DE89 3704 0044 0532 0130 00".',
+  );
+  const priority = reconcileMultiSourceIntent({
+    envelope: buildMultiSourceTestIntentEnvelope({
+      sources: [
+        {
+          sourceId: "figma.0",
+          kind: "figma_local_json",
+          contentHash: sha256Hex("figma"),
+          capturedAt: ISO,
+        },
+        {
+          sourceId: "jira.0",
+          kind: "jira_rest",
+          contentHash: exampleIssue.contentHash,
+          capturedAt: ISO,
+          canonicalIssueKey: exampleIssue.issueKey,
+        },
+      ],
+      conflictResolutionPolicy: "priority",
+      priorityOrder: ["figma_local_json", "jira_rest"],
+    }),
+    figmaIntent: priorityIntent,
+    jiraIssues: [exampleIssue],
+  });
+  assert.equal(priority.mergedIntent.detectedFields[0]?.defaultValue, "DE00 FIGMA VALUE");
+  assert.equal(
+    priority.report.conflicts.some(
+      (conflict) =>
+        conflict.kind === "test_data_example_mismatch" &&
+        conflict.resolution === "auto_priority",
+    ),
+    true,
+  );
+
+  const mismatchedEnvelope = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        sourceId: "jira.no-figma",
+        kind: "jira_rest",
+        contentHash: fieldIssue.contentHash,
+        capturedAt: ISO,
+        canonicalIssueKey: fieldIssue.issueKey,
+      },
+    ],
+    conflictResolutionPolicy: "reviewer_decides",
+  });
+  const sparse = reconcileMultiSourceIntent({
+    envelope: mismatchedEnvelope,
+    figmaIntent: figmaIntent(),
+    jiraIssues: [fieldIssue],
+  });
+  assert.equal(sparse.mergedIntent.source.kind, "hybrid");
+  assert.equal(
+    sparse.report.conflicts.some((conflict) => conflict.kind === "field_label_mismatch"),
+    true,
+  );
+});
+
 test("jira plus custom reconciliation records custom risk without Figma placeholders", () => {
   const issue = jiraIssue("jira-custom", 'The field "Email" must be required.');
   const custom = customContextSource("PCI-DSS-3");
@@ -554,6 +1076,90 @@ test("jira plus custom reconciliation records custom risk without Figma placehol
     ),
     false,
   );
+});
+
+test("jira-only reconciliation extracts adversarial semantic labels and custom risk signals", () => {
+  const issue = jiraIssue(
+    "jira-semantic-sweep",
+    [
+      'The field "Email field" must be required. The field "Email field" example is "ada@example.test".',
+      'The field "PAN field" should be tokenized. The field "PAN field" example is "4111111111111111".',
+      'The field "Phone field" must be masked.',
+      'The field "Tax field" must be reviewed.',
+      'The field "Name field" should be redacted.',
+      'The field "Address field" must be minimized.',
+      'The field "Password field" must never be exported.',
+      'The field "Amount field" must match regex ^[0-9]+$.',
+    ].join("\n"),
+    {
+      issueKey: "PAY-1438",
+      acceptanceCriteria: [
+        'The field "Email field" must be required. The field "Email field" example is "ada@example.test".',
+        'The field "PAN field" should be tokenized. The field "PAN field" example is "4111111111111111".',
+        'The field "Phone field" must be masked.',
+        'The field "Tax field" must be reviewed.',
+        'The field "Name field" should be redacted.',
+        'The field "Address field" must be minimized.',
+        'The field "Password field" must never be exported.',
+        'The field "Amount field" must match regex ^[0-9]+$.',
+      ],
+    },
+  );
+  const custom = customContextSource("regulated customer data");
+  const envelope = buildMultiSourceTestIntentEnvelope({
+    sources: [
+      {
+        sourceId: "jira.0",
+        kind: "jira_paste",
+        contentHash: issue.contentHash,
+        capturedAt: ISO,
+        canonicalIssueKey: issue.issueKey,
+      },
+      {
+        sourceId: "custom.0",
+        kind: "custom_structured",
+        contentHash: custom.aggregateContentHash,
+        capturedAt: ISO,
+        inputFormat: "structured_json",
+      },
+    ],
+    conflictResolutionPolicy: "reviewer_decides",
+  });
+
+  const result = reconcileMultiSourceIntent({
+    envelope,
+    jiraIssues: [issue],
+    customContextSources: [custom],
+  });
+  const labels = new Set(result.mergedIntent.detectedFields.map((field) => field.label));
+  for (const label of [
+    "Email field",
+    "PAN field",
+    "Phone field",
+    "Tax field",
+    "Name field",
+    "Address field",
+    "Password field",
+    "Amount field",
+  ]) {
+    assert.equal(labels.has(label), true, `${label} should be accepted`);
+  }
+  assert.equal(
+    result.mergedIntent.detectedValidations.some(
+      (validation) =>
+        validation.rule === "must match regex ^[0-9]+$" &&
+        validation.targetFieldId?.includes("amount-field"),
+    ),
+    true,
+  );
+  assert.equal(
+    result.mergedIntent.detectedFields.some(
+      (field) => field.label === "Email field" && field.defaultValue === "ada@example",
+    ),
+    true,
+  );
+  assert.equal(result.mergedIntent.risks.includes("regulated_data"), true);
+  assert.deepEqual(result.report.unmatchedSources, []);
 });
 
 test("present custom text with no deterministic contribution is unmatched but absent families are silent", () => {

@@ -32,6 +32,7 @@ import {
   computeWave1PocAttestationEnvelopeDigest,
   encodeDssePreAuth,
   encodeWave1PocAttestationPayload,
+  verifyWave1PocAttestation,
 } from "./evidence-attestation.js";
 
 const ZERO = "0".repeat(64);
@@ -226,6 +227,11 @@ test("evidence-attestation: rejects unknown signing mode", () => {
 
 test("evidence-attestation: predicate carries visual sidecar identity when present", () => {
   const manifest = fakeManifest({
+    modelDeployments: {
+      testGeneration: "gpt-oss-120b-mock",
+      visualPrimary: "llama-4-maverick-vision",
+      visualFallback: "llama-4-scout-vision",
+    },
     visualSidecar: {
       selectedDeployment: "llama-4-maverick-vision",
       fallbackReason: "none",
@@ -244,6 +250,24 @@ test("evidence-attestation: predicate carries visual sidecar identity when prese
   );
   assert.equal(statement.predicate.visualSidecar?.fallbackReason, "none");
   assert.equal(statement.predicate.visualSidecar?.resultArtifactSha256, ZERO);
+  assert.equal(statement.predicate.visualSidecar?.visualFallback, "llama-4-scout-vision");
+
+  const fallbackOnly = buildWave1PocAttestationStatement({
+    manifest: fakeManifest({
+      modelDeployments: {
+        testGeneration: "gpt-oss-120b-mock",
+      },
+      visualSidecar: {
+        selectedDeployment: "llama-4-scout-vision",
+        fallbackReason: "primary_unavailable",
+        confidenceSummary: { min: 0.7, max: 0.8, mean: 0.75 },
+        resultArtifactSha256: ONE,
+      },
+    }),
+    manifestSha256: ZERO,
+    signingMode: "unsigned",
+  });
+  assert.equal(fallbackOnly.predicate.visualSidecar?.visualPrimary, undefined);
 });
 
 test("evidence-attestation: predicate omits visual sidecar when absent on manifest", () => {
@@ -316,4 +340,473 @@ test("evidence-attestation: envelope digest is byte-stable across runs", () => {
   const digestB = computeWave1PocAttestationEnvelopeDigest(envelope);
   assert.equal(digestA, digestB);
   assert.match(digestA, /^[0-9a-f]{64}$/);
+});
+
+test("evidence-attestation: rejects malformed manifest identity fields", () => {
+  for (const field of ["promptHash", "schemaHash", "inputHash", "cacheKeyDigest"] as const) {
+    const manifest = fakeManifest({ [field]: "not-a-sha256" });
+    assert.throws(
+      () =>
+        buildWave1PocAttestationStatement({
+          manifest,
+          manifestSha256: ZERO,
+          signingMode: "unsigned",
+        }),
+      new RegExp(`manifest.${field} must be a sha256 hex string`),
+    );
+  }
+
+  assert.throws(
+    () =>
+      buildWave1PocAttestationStatement({
+        manifest: fakeManifest({
+          artifacts: [
+            {
+              filename: "../leaked-token.txt",
+              sha256: ZERO,
+              bytes: 1,
+              category: "diagnostic",
+            },
+          ],
+        }),
+        manifestSha256: ZERO,
+        signingMode: "unsigned",
+      }),
+    /invalid artifact filename/,
+  );
+  assert.throws(
+    () =>
+      buildWave1PocAttestationStatement({
+        manifest: fakeManifest({
+          artifacts: [
+            {
+              filename: "safe-artifact.json",
+              sha256: "not-a-sha256",
+              bytes: 1,
+              category: "diagnostic",
+            },
+          ],
+        }),
+        manifestSha256: ZERO,
+        signingMode: "unsigned",
+      }),
+    /has an invalid sha256/,
+  );
+});
+
+test("evidence-attestation: verifier fails closed for malformed envelopes", async () => {
+  const manifest = fakeManifest();
+  const statement = buildWave1PocAttestationStatement({
+    manifest,
+    manifestSha256: ZERO,
+    signingMode: "unsigned",
+  });
+  const payload = (value: unknown): string =>
+    Buffer.from(canonicalJson(value), "utf8").toString("base64");
+  const verify = (envelope: unknown) =>
+    verifyWave1PocAttestation({
+      envelope: envelope as never,
+      manifest,
+      manifestSha256: ZERO,
+      artifactsDir: ".",
+      expectedSigningMode: "unsigned",
+      requireFullSubjectCoverage: false,
+    });
+
+  const cases: Array<{ envelope: unknown; code: string }> = [
+    { envelope: null, code: "envelope_unparseable" },
+    {
+      envelope: { payloadType: "application/x-wrong", payload: "", signatures: [] },
+      code: "envelope_payload_type_mismatch",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: 123,
+        signatures: [],
+      },
+      code: "envelope_payload_decode_failed",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: "not canonical base64",
+        signatures: [],
+      },
+      code: "envelope_payload_decode_failed",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: Buffer.from("{", "utf8").toString("base64"),
+        signatures: [],
+      },
+      code: "statement_unparseable",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload(null),
+        signatures: [],
+      },
+      code: "statement_unparseable",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({ ...statement, _type: "https://example.test/wrong" }),
+        signatures: [],
+      },
+      code: "statement_type_mismatch",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({ ...statement, subject: "not-array" }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, secretsIncluded: true },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, imagePayloadSentToTestGeneration: true },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({ ...statement, subject: "not-array", predicate: null }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, rawScreenshotsIncluded: true },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, manifestSha256: "not-a-sha256" },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, manifestSha256: ONE },
+        }),
+        signatures: [],
+      },
+      code: "manifest_sha256_mismatch",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, jobId: "wrong-job" },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, fixtureId: "wrong-fixture" },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, contractVersion: "0.0.0" },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: {
+            ...statement.predicate,
+            testIntelligenceContractVersion: "0.0.0",
+          },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: "not-array",
+          predicate: { ...statement.predicate, signingMode: "sigstore" },
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+    {
+      envelope: {
+        payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+        payload: payload({
+          ...statement,
+          subject: [
+            null,
+            { name: "", digest: { sha256: ZERO } },
+            { name: "/absolute.json", digest: { sha256: ZERO } },
+            { name: "dir//artifact.json", digest: { sha256: ZERO } },
+            { name: "../secret.txt", digest: { sha256: ZERO } },
+            { name: "safe-artifact.json", digest: { sha256: "not-a-sha256" } },
+          ],
+        }),
+        signatures: [],
+      },
+      code: "statement_predicate_invalid",
+    },
+  ];
+
+  for (const entry of cases) {
+    const result = await verify(entry.envelope);
+    assert.equal(result.ok, false);
+    assert.equal(
+      result.failures.some((failure) => failure.code === entry.code),
+      true,
+      entry.code,
+    );
+  }
+
+  const unsignedWithSignature = await verify({
+    payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+    payload: payload({ ...statement, subject: "not-array" }),
+    signatures: [{ keyid: "offline-key", sig: "AAAA" }],
+  });
+  assert.equal(
+    unsignedWithSignature.failures.some(
+      (failure) => failure.code === "signature_unsigned_envelope_carries_signatures",
+    ),
+    true,
+  );
+
+  const sigstoreMissingBundle = await verifyWave1PocAttestation({
+    envelope: {
+      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payload: payload({ ...statement, subject: "not-array" }),
+      signatures: [],
+    },
+    manifest,
+    manifestSha256: ZERO,
+    artifactsDir: ".",
+    expectedSigningMode: "sigstore",
+  });
+  assert.equal(
+    sigstoreMissingBundle.failures.some(
+      (failure) => failure.code === "signature_required",
+    ),
+    true,
+  );
+  assert.equal(
+    sigstoreMissingBundle.failures.some(
+      (failure) => failure.code === "bundle_missing",
+    ),
+    true,
+  );
+
+  const subjectDigestMismatch = await verifyWave1PocAttestation({
+    envelope: {
+      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payload: payload({
+        ...statement,
+        subject: [
+          {
+            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            digest: { sha256: ONE },
+          },
+        ],
+      }),
+      signatures: [],
+    },
+    manifest,
+    manifestSha256: ZERO,
+    artifactsDir: ".",
+    expectedSigningMode: "unsigned",
+  });
+  assert.equal(
+    subjectDigestMismatch.failures.some(
+      (failure) => failure.code === "subject_digest_mismatch",
+    ),
+    true,
+  );
+  assert.equal(
+    subjectDigestMismatch.failures.some(
+      (failure) => failure.code === "subject_unattested_artifact",
+    ),
+    true,
+  );
+
+  const artifactDigestMismatch = await verifyWave1PocAttestation({
+    envelope: {
+      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payload: payload({
+        ...statement,
+        subject: [
+          {
+            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            digest: { sha256: ZERO },
+          },
+          {
+            name: manifest.artifacts[0]!.filename,
+            digest: { sha256: ONE },
+          },
+        ],
+      }),
+      signatures: [],
+    },
+    manifest,
+    manifestSha256: ZERO,
+    artifactsDir: ".",
+    expectedSigningMode: "unsigned",
+  });
+  assert.equal(
+    artifactDigestMismatch.failures.some(
+      (failure) => failure.code === "subject_digest_mismatch",
+    ),
+    true,
+  );
+
+  const invalidManifestArtifact = await verifyWave1PocAttestation({
+    envelope: {
+      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payload: payload({
+        ...statement,
+        subject: [
+          {
+            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            digest: { sha256: ZERO },
+          },
+        ],
+      }),
+      signatures: [],
+    },
+    manifest: fakeManifest({
+      artifacts: [
+        {
+          filename: "",
+          sha256: ZERO,
+          bytes: 1,
+          category: "intent",
+        },
+        {
+          filename: "/absolute-artifact.json",
+          sha256: ZERO,
+          bytes: 1,
+          category: "intent",
+        },
+        {
+          filename: "dir//unsafe-artifact.json",
+          sha256: ZERO,
+          bytes: 1,
+          category: "intent",
+        },
+        {
+          filename: "../unsafe-artifact.json",
+          sha256: ZERO,
+          bytes: 1,
+          category: "intent",
+        },
+      ],
+    }),
+    manifestSha256: ZERO,
+    artifactsDir: ".",
+    expectedSigningMode: "unsigned",
+  });
+  assert.equal(
+    invalidManifestArtifact.failures.some(
+      (failure) => failure.code === "statement_predicate_invalid",
+    ),
+    true,
+  );
+
+  const missingArtifactOnDisk = await verifyWave1PocAttestation({
+    envelope: {
+      payloadType: WAVE1_POC_ATTESTATION_PAYLOAD_TYPE,
+      payload: payload({
+        ...statement,
+        subject: [
+          {
+            name: WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
+            digest: { sha256: ZERO },
+          },
+          {
+            name: manifest.artifacts[0]!.filename,
+            digest: { sha256: manifest.artifacts[0]!.sha256 },
+          },
+        ],
+      }),
+      signatures: [],
+    },
+    manifest,
+    manifestSha256: ZERO,
+    artifactsDir: ".",
+    expectedSigningMode: "unsigned",
+    requireFullSubjectCoverage: false,
+  });
+  assert.equal(
+    missingArtifactOnDisk.failures.some(
+      (failure) => failure.code === "subject_missing_artifact",
+    ),
+    true,
+  );
 });

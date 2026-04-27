@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -13,6 +13,7 @@ import {
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
 import { persistCustomContext } from "./custom-context-store.js";
+import { ingestAndPersistJiraPaste } from "./jira-paste-ingest.js";
 
 const intent = (): BusinessTestIntentIr => ({
   version: BUSINESS_TEST_INTENT_IR_SCHEMA_VERSION,
@@ -185,6 +186,107 @@ test("persistCustomContext writes redacted Markdown and structured artifacts wit
       reversed.result.sourceRefs[0]?.contentHash,
       ordered.result.sourceRefs[0]?.contentHash,
     );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("persistCustomContext rejects invalid capturedAt before writing artifacts", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "custom-context-store-"));
+  try {
+    await writeFile(
+      path.join(dir, "business-intent-ir.json"),
+      canonicalJson(intent()),
+      "utf8",
+    );
+    const result = await persistCustomContext({
+      runDir: dir,
+      authorHandle: "alice",
+      capturedAt: "2026-04-26 12:00:00",
+      markdown: "# Supporting note",
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.statusCode, 400);
+      assert.equal(result.code, "custom_context_markdown_invalid");
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("persistCustomContext discovers Jira primary sources and tolerates corrupt prior custom artifacts", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "custom-context-store-jira-"));
+  try {
+    const jira = await ingestAndPersistJiraPaste({
+      runDir: dir,
+      request: {
+        jobId: "job-jira-primary",
+        format: "plain_text",
+        body: [
+          "Key: PAY-1438",
+          "Summary: Jira-only primary source",
+          "Status: Open",
+          "Description: Reviewer pasted Jira issue.",
+        ].join("\n"),
+      },
+      authorHandle: "jira_author",
+      capturedAt: "2026-04-26T12:00:00.000Z",
+    });
+    assert.equal(jira.ok, true);
+    if (!jira.ok) return;
+
+    const markdownDir = path.join(
+      dir,
+      "sources",
+      CUSTOM_CONTEXT_MARKDOWN_SOURCE_ID,
+    );
+    await mkdir(markdownDir, { recursive: true });
+    await writeFile(
+      path.join(markdownDir, CUSTOM_CONTEXT_ARTIFACT_FILENAME),
+      "{not-json",
+      "utf8",
+    );
+
+    const result = await persistCustomContext({
+      runDir: dir,
+      authorHandle: "alice",
+      capturedAt: "2026-04-26T12:05:00.000Z",
+      markdown: "# Jira supporting note",
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(
+      result.result.sourceEnvelope.sources.some(
+        (source) =>
+          source.kind === "jira_paste" &&
+          source.canonicalIssueKey === "PAY-1438" &&
+          source.authorHandle === "jira_author",
+      ),
+      true,
+    );
+
+    await unlink(
+      path.join(
+        dir,
+        "sources",
+        jira.result.sourceId,
+        "paste-provenance.json",
+      ),
+    );
+    const fallback = await persistCustomContext({
+      runDir: dir,
+      authorHandle: "alice",
+      capturedAt: "2026-04-26T12:06:00.000Z",
+      attributes: [{ key: "priority_hint", value: "p1" }],
+    });
+    assert.equal(fallback.ok, true);
+    if (!fallback.ok) return;
+    const jiraRef = fallback.result.sourceEnvelope.sources.find(
+      (source) => source.kind === "jira_paste",
+    );
+    assert.equal(jiraRef?.capturedAt, "1970-01-01T00:00:00.000Z");
+    assert.equal(jiraRef?.authorHandle, undefined);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
