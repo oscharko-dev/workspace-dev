@@ -214,7 +214,7 @@ describe("figma-screenshot-pipeline", () => {
         },
       });
 
-      ok(mockFetch.mock.calledWith);
+      strictEqual(mockFetch.mock.callCount(), 1);
     });
 
     it("clamps scale to [0.5, 3]", async () => {
@@ -241,7 +241,7 @@ describe("figma-screenshot-pipeline", () => {
         },
       });
 
-      ok(mockFetch.mock.calledWith);
+      strictEqual(mockFetch.mock.callCount(), 1);
     });
 
     it("does not retry on 4xx client errors", async () => {
