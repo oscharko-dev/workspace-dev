@@ -34,7 +34,7 @@ describe("runtime-errors", () => {
     );
   });
 
-  it("omits the raw Error object from production console logging", () => {
+  it("silences all console output in production mode", () => {
     vi.stubEnv("DEV", false);
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const error = new Error("caught render failure");
@@ -42,16 +42,7 @@ describe("runtime-errors", () => {
 
     handlers.onCaughtError(error, { componentStack: "\n    at RouteShell" });
 
-    expect(consoleSpy).toHaveBeenCalledTimes(1);
-    expect(consoleSpy).toHaveBeenCalledWith(
-      "[runtime-error]",
-      expect.objectContaining({
-        componentStack: "\n    at RouteShell",
-        href: expect.stringContaining("#/checkout"),
-        message: "caught render failure",
-        source: "caught"
-      })
-    );
+    expect(consoleSpy).not.toHaveBeenCalled();
   });
 
   it("reports uncaught non-Error values once", () => {
