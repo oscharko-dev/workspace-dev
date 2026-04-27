@@ -91,6 +91,10 @@ import {
   type PasteDeltaExecutionState,
 } from "../paste-delta-execution.js";
 import { extractDiffablePasteRoots } from "../paste-delta-roots.js";
+import {
+  fetchFigmaScreenshots,
+  persistFigmaScreenshotReferences,
+} from "../figma-screenshot-pipeline.js";
 
 interface RegenerationSourceIrSeed {
   sourceJobId: string;
@@ -853,6 +857,100 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
         STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
       );
 
+    const processScreenshots = async (): Promise<void> => {
+      if (!hybridMcpEnrichment?.screenshots) {
+        return;
+      }
+
+      const qualityGateScreenshots = hybridMcpEnrichment.screenshots.filter(
+        (s) => s.purpose === "quality-gate",
+      );
+
+      if (qualityGateScreenshots.length === 0) {
+        return;
+      }
+
+      const figmaFileKey = input?.figmaFileKey?.trim();
+      const figmaAccessToken = input?.figmaAccessToken?.trim();
+
+      if (!figmaFileKey || !figmaAccessToken) {
+        context.log({
+          level: "info",
+          message:
+            "Skipping Figma screenshot fetch: figmaFileKey or figmaAccessToken not available.",
+        });
+        return;
+      }
+
+      try {
+        const screenshotResult = await fetchFigmaScreenshots({
+          screenshots: qualityGateScreenshots,
+          config: {
+            fileKey: figmaFileKey,
+            accessToken: figmaAccessToken,
+            desiredWidth: 1280,
+            maxRetries: 3,
+            onLog: (message) => {
+              context.log({
+                level: "info",
+                message,
+              });
+            },
+          },
+        });
+
+        const visualReferencesDir = path.join(
+          context.paths.jobDir,
+          "visual-references",
+        );
+        const referenceImagePaths = await persistFigmaScreenshotReferences({
+          referenceImageMap: screenshotResult.referenceImageMap,
+          outputDirectory: visualReferencesDir,
+          onLog: (message) => {
+            context.log({
+              level: "info",
+              message,
+            });
+          },
+        });
+
+        const report = {
+          totalCount: screenshotResult.totalCount,
+          fetchedCount: screenshotResult.fetchedCount,
+          failedCount: screenshotResult.failedCount,
+          failedNodeIds: screenshotResult.failedNodeIds,
+          referenceImagePaths: Array.from(referenceImagePaths.entries()).map(
+            ([nodeId, filePath]) => ({
+              nodeId,
+              filePath,
+            }),
+          ),
+        };
+
+        await context.artifactStore.setValue({
+          key: STAGE_ARTIFACT_KEYS.figmaScreenshotPipelineReport,
+          stage: "ir.derive",
+          value: report,
+        });
+
+        context.log({
+          level: "info",
+          message:
+            `Figma screenshot pipeline: fetched=${screenshotResult.fetchedCount}, ` +
+            `failed=${screenshotResult.failedCount}, total=${screenshotResult.totalCount}.`,
+        });
+      } catch (error) {
+        context.log({
+          level: "warn",
+          message:
+            `Figma screenshot processing failed (non-fatal): ${getErrorMessage(error)}. ` +
+            `Visual quality assessment will proceed without reference images.`,
+        });
+      }
+    };
+
+    await processScreenshots();
+
     let cleanedFile: FigmaFileResponse;
     try {
       cleanedFile = validatedJsonParse({
@@ -1295,9 +1393,9 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
           const changedRootNodeIds = new Set(
             pasteDeltaExecution.changedRootNodeIds,
           );
-          const changedRoots = extractDiffablePasteRoots(figmaFetch.file).filter(
-            (root) => changedRootNodeIds.has(root.id),
-          );
+          const changedRoots = extractDiffablePasteRoots(
+            figmaFetch.file,
+          ).filter((root) => changedRootNodeIds.has(root.id));
           if (
             changedRoots.length > 0 &&
             changedRoots.length === changedRootNodeIds.size
@@ -1309,7 +1407,9 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
               authoritativeSubtrees: buildAuthoritativeSubtreesFromRoots({
                 roots: changedRoots,
               }),
-              ...(hybridMcpEnrichment ? { enrichment: hybridMcpEnrichment } : {}),
+              ...(hybridMcpEnrichment
+                ? { enrichment: hybridMcpEnrichment }
+                : {}),
               sourceName: figmaFetch.file.name ?? "Figma Design Context",
               screenElementBudget: context.runtime.figmaScreenElementBudget,
               screenElementMaxDepth: context.runtime.figmaScreenElementMaxDepth,
@@ -1406,8 +1506,7 @@ export const IrDeriveService: StageService<IrDeriveStageInput | undefined> = {
       } catch (error) {
         context.log({
           level: "warn",
-          message:
-            `Delta IR reuse failed; falling back to full derivation: ${getErrorMessage(error)}`,
+          message: `Delta IR reuse failed; falling back to full derivation: ${getErrorMessage(error)}`,
         });
         await downgradePasteDeltaExecution("ir_merge_failed");
       }
