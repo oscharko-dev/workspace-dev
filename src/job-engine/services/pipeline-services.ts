@@ -24,24 +24,38 @@ const requireSubmissionInput = (
   context: PipelineExecutionContext,
 ): SubmissionJobInput => {
   if (!context.input) {
-    throw new Error("Submission input is missing for pipeline stage resolution.");
+    throw new Error(
+      "Submission input is missing for pipeline stage resolution.",
+    );
   }
   return context.input;
 };
 
-const buildFigmaSourceInput = (context: PipelineExecutionContext): FigmaSourceStageInput => {
+const buildFigmaSourceInput = (
+  context: PipelineExecutionContext,
+): FigmaSourceStageInput => {
   const input = requireSubmissionInput(context);
   return {
-    ...(input.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
-    ...(input.figmaNodeId !== undefined ? { figmaNodeId: input.figmaNodeId } : {}),
-    ...(input.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {}),
-    ...(input.figmaJsonPath !== undefined ? { figmaJsonPath: input.figmaJsonPath } : {}),
-    ...(input.requestSourceMode !== undefined ? { requestSourceMode: input.requestSourceMode } : {})
+    ...(input.figmaFileKey !== undefined
+      ? { figmaFileKey: input.figmaFileKey }
+      : {}),
+    ...(input.figmaNodeId !== undefined
+      ? { figmaNodeId: input.figmaNodeId }
+      : {}),
+    ...(input.figmaAccessToken !== undefined
+      ? { figmaAccessToken: input.figmaAccessToken }
+      : {}),
+    ...(input.figmaJsonPath !== undefined
+      ? { figmaJsonPath: input.figmaJsonPath }
+      : {}),
+    ...(input.requestSourceMode !== undefined
+      ? { requestSourceMode: input.requestSourceMode }
+      : {}),
   };
 };
 
 const resolveComponentMappingsFromContext = (
-  context: PipelineExecutionContext
+  context: PipelineExecutionContext,
 ): WorkspaceComponentMappingRule[] | undefined => {
   if (context.mode === "submission") {
     return context.input?.componentMappings;
@@ -53,7 +67,7 @@ const resolveComponentMappingsFromContext = (
 };
 
 const hasPatternComponentMappings = ({
-  componentMappings
+  componentMappings,
 }: {
   componentMappings: WorkspaceComponentMappingRule[] | undefined;
 }): boolean => {
@@ -62,7 +76,7 @@ const hasPatternComponentMappings = ({
 
 const buildCodegenInput = ({
   boardKeySeed,
-  context
+  context,
 }: {
   boardKeySeed: string;
   context: PipelineExecutionContext;
@@ -77,17 +91,21 @@ const buildCodegenInput = ({
       : sourceRequest?.figmaFileKey !== undefined
         ? { figmaFileKey: sourceRequest.figmaFileKey }
         : {}),
-    ...(input?.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {}),
+    ...(input?.figmaAccessToken !== undefined
+      ? { figmaAccessToken: input.figmaAccessToken }
+      : {}),
     ...(componentMappings !== undefined ? { componentMappings } : {}),
     ...(context.retryInput?.retryStage === "codegen.generate" &&
     context.retryInput.retryTargets &&
     context.retryInput.retryTargets.length > 0
       ? { retryTargets: context.retryInput.retryTargets }
-      : {})
+      : {}),
   };
 };
 
-const resolveFigmaSourceArtifacts = (context: PipelineExecutionContext): StageArtifactContract => {
+const resolveFigmaSourceArtifacts = (
+  context: PipelineExecutionContext,
+): StageArtifactContract => {
   return {
     writes: [
       STAGE_ARTIFACT_KEYS.figmaCleaned,
@@ -100,41 +118,51 @@ const resolveFigmaSourceArtifacts = (context: PipelineExecutionContext): StageAr
   };
 };
 
-const resolveCodegenArtifactContract = (context: PipelineExecutionContext): StageArtifactContract => {
+const resolveCodegenArtifactContract = (
+  context: PipelineExecutionContext,
+): StageArtifactContract => {
   const reads: NonNullable<StageArtifactContract["reads"]> = [];
-  const isStorybookFirst = Boolean(context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir);
+  const isStorybookFirst = Boolean(
+    context.requestedStorybookStaticDir ?? context.resolvedStorybookStaticDir,
+  );
   if (isStorybookFirst) {
     reads.push(
       STAGE_ARTIFACT_KEYS.storybookTokens,
       STAGE_ARTIFACT_KEYS.storybookThemes,
-      STAGE_ARTIFACT_KEYS.componentMatchReport
+      STAGE_ARTIFACT_KEYS.componentMatchReport,
     );
   }
   if (
     hasPatternComponentMappings({
-      componentMappings: resolveComponentMappingsFromContext(context)
+      componentMappings: resolveComponentMappingsFromContext(context),
     })
   ) {
     reads.push(STAGE_ARTIFACT_KEYS.figmaAnalysis);
   }
   return {
     reads,
-    optionalReads: [STAGE_ARTIFACT_KEYS.figmaLibraryResolution]
+    optionalReads: [STAGE_ARTIFACT_KEYS.figmaLibraryResolution],
   };
 };
 
-const buildIrDeriveInput = (context: PipelineExecutionContext): IrDeriveStageInput => {
+const buildIrDeriveInput = (
+  context: PipelineExecutionContext,
+): IrDeriveStageInput => {
   const input = requireSubmissionInput(context);
   return {
-    ...(input.figmaFileKey !== undefined ? { figmaFileKey: input.figmaFileKey } : {}),
-    ...(input.figmaAccessToken !== undefined ? { figmaAccessToken: input.figmaAccessToken } : {})
+    ...(input.figmaFileKey !== undefined
+      ? { figmaFileKey: input.figmaFileKey }
+      : {}),
+    ...(input.figmaAccessToken !== undefined
+      ? { figmaAccessToken: input.figmaAccessToken }
+      : {}),
   };
 };
 
 const buildGitPrSkipStatus = (reason: string): WorkspaceGitPrStatus => {
   return {
     status: "skipped",
-    reason
+    reason,
   };
 };
 
@@ -165,13 +193,13 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
         writes: [
           STAGE_ARTIFACT_KEYS.figmaCleaned,
           STAGE_ARTIFACT_KEYS.figmaCleanedReport,
-          STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics
+          STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
         ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.figmaHybridEnrichment,
-          STAGE_ARTIFACT_KEYS.pasteDeltaExecution
-        ]
-      }
+          STAGE_ARTIFACT_KEYS.pasteDeltaExecution,
+        ],
+      },
     },
     {
       service: IrDeriveService,
@@ -180,13 +208,13 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
         reads: [
           STAGE_ARTIFACT_KEYS.figmaCleaned,
           STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
-          STAGE_ARTIFACT_KEYS.figmaCleanedReport
+          STAGE_ARTIFACT_KEYS.figmaCleanedReport,
         ],
         optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
         writes: [
           STAGE_ARTIFACT_KEYS.designIr,
           STAGE_ARTIFACT_KEYS.figmaAnalysis,
-          STAGE_ARTIFACT_KEYS.businessTestIntentIr
+          STAGE_ARTIFACT_KEYS.businessTestIntentIr,
         ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.llmCapabilitiesEvidence,
@@ -196,16 +224,18 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.storybookThemes,
           STAGE_ARTIFACT_KEYS.storybookComponents,
           STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
-          STAGE_ARTIFACT_KEYS.componentMatchReport
-        ]
-      }
+          STAGE_ARTIFACT_KEYS.componentMatchReport,
+          STAGE_ARTIFACT_KEYS.figmaScreenshotReferences,
+          STAGE_ARTIFACT_KEYS.figmaScreenshotPipelineReport,
+        ],
+      },
     },
     {
       service: TemplatePrepareService,
       artifacts: {
         optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
-        writes: [STAGE_ARTIFACT_KEYS.generatedProject]
-      }
+        writes: [STAGE_ARTIFACT_KEYS.generatedProject],
+      },
     },
     {
       service: CodegenGenerateService,
@@ -213,23 +243,32 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
       resolveInput: (context) =>
         buildCodegenInput({
           context,
-          boardKeySeed: context.input?.figmaFileKey?.trim() || context.input?.figmaJsonPath?.trim() || "local-json"
+          boardKeySeed:
+            context.input?.figmaFileKey?.trim() ||
+            context.input?.figmaJsonPath?.trim() ||
+            "local-json",
         }),
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.designIr],
         optionalReads: [STAGE_ARTIFACT_KEYS.pasteDeltaExecution],
-        writes: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.codegenSummary],
+        writes: [
+          STAGE_ARTIFACT_KEYS.generatedProject,
+          STAGE_ARTIFACT_KEYS.codegenSummary,
+        ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationMetrics,
           STAGE_ARTIFACT_KEYS.componentManifest,
-          STAGE_ARTIFACT_KEYS.generationDiffContext
-        ]
-      }
+          STAGE_ARTIFACT_KEYS.generationDiffContext,
+        ],
+      },
     },
     {
       service: ValidateProjectService,
       artifacts: {
-        reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
+        reads: [
+          STAGE_ARTIFACT_KEYS.generatedProject,
+          STAGE_ARTIFACT_KEYS.generationDiffContext,
+        ],
         optionalReads: [
           STAGE_ARTIFACT_KEYS.storybookCatalog,
           STAGE_ARTIFACT_KEYS.storybookEvidence,
@@ -237,9 +276,12 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.storybookThemes,
           STAGE_ARTIFACT_KEYS.storybookComponents,
           STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
-          STAGE_ARTIFACT_KEYS.componentMatchReport
+          STAGE_ARTIFACT_KEYS.componentMatchReport,
         ],
-        writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
+        writes: [
+          STAGE_ARTIFACT_KEYS.validationSummary,
+          STAGE_ARTIFACT_KEYS.validationSummaryFile,
+        ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationDiff,
           STAGE_ARTIFACT_KEYS.generationDiffFile,
@@ -248,9 +290,9 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
           STAGE_ARTIFACT_KEYS.visualAuditReport,
           STAGE_ARTIFACT_KEYS.visualAuditResult,
-          STAGE_ARTIFACT_KEYS.visualQualityResult
-        ]
-      }
+          STAGE_ARTIFACT_KEYS.visualQualityResult,
+        ],
+      },
     },
     {
       service: ReproExportService,
@@ -262,12 +304,13 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
       },
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject],
-        writes: [STAGE_ARTIFACT_KEYS.reproPath]
-      }
+        writes: [STAGE_ARTIFACT_KEYS.reproPath],
+      },
     },
     {
       service: GitPrService,
-      resolveInput: (context): GitPrStageInput => requireSubmissionInput(context),
+      resolveInput: (context): GitPrStageInput =>
+        requireSubmissionInput(context),
       shouldSkip: (context) => {
         if (context.input?.enableGitPr !== true) {
           return "Git/PR flow disabled by request.";
@@ -278,15 +321,18 @@ export const buildSubmissionPipelinePlan = (): PipelineStagePlanEntry[] => {
         await context.artifactStore.setValue({
           key: STAGE_ARTIFACT_KEYS.gitPrStatus,
           stage: "git.pr",
-          value: buildGitPrSkipStatus(reason)
+          value: buildGitPrSkipStatus(reason),
         });
       },
       artifacts: {
-        reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiff],
+        reads: [
+          STAGE_ARTIFACT_KEYS.generatedProject,
+          STAGE_ARTIFACT_KEYS.generationDiff,
+        ],
         writes: [STAGE_ARTIFACT_KEYS.gitPrStatus],
-        skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus]
-      }
-    }
+        skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus],
+      },
+    },
   ];
 };
 
@@ -294,16 +340,20 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
   return [
     {
       service: FigmaSourceService,
-      shouldSkip: (context) => `Reusing source from job '${context.regenerationInput?.sourceJobId ?? "unknown"}'.`
+      shouldSkip: (context) =>
+        `Reusing source from job '${context.regenerationInput?.sourceJobId ?? "unknown"}'.`,
     },
     {
       service: IrDeriveService,
       artifacts: {
-        reads: [STAGE_ARTIFACT_KEYS.regenerationSourceIr, STAGE_ARTIFACT_KEYS.regenerationOverrides],
+        reads: [
+          STAGE_ARTIFACT_KEYS.regenerationSourceIr,
+          STAGE_ARTIFACT_KEYS.regenerationOverrides,
+        ],
         writes: [
           STAGE_ARTIFACT_KEYS.designIr,
           STAGE_ARTIFACT_KEYS.figmaAnalysis,
-          STAGE_ARTIFACT_KEYS.businessTestIntentIr
+          STAGE_ARTIFACT_KEYS.businessTestIntentIr,
         ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.storybookCatalog,
@@ -312,15 +362,15 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.storybookThemes,
           STAGE_ARTIFACT_KEYS.storybookComponents,
           STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
-          STAGE_ARTIFACT_KEYS.componentMatchReport
-        ]
-      }
+          STAGE_ARTIFACT_KEYS.componentMatchReport,
+        ],
+      },
     },
     {
       service: TemplatePrepareService,
       artifacts: {
-        writes: [STAGE_ARTIFACT_KEYS.generatedProject]
-      }
+        writes: [STAGE_ARTIFACT_KEYS.generatedProject],
+      },
     },
     {
       service: CodegenGenerateService,
@@ -329,22 +379,30 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
         buildCodegenInput({
           context,
           boardKeySeed:
-            context.sourceJob?.request.figmaFileKey?.trim() || context.sourceJob?.request.figmaJsonPath?.trim() || "regeneration"
+            context.sourceJob?.request.figmaFileKey?.trim() ||
+            context.sourceJob?.request.figmaJsonPath?.trim() ||
+            "regeneration",
         }),
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.designIr],
-        writes: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.codegenSummary],
+        writes: [
+          STAGE_ARTIFACT_KEYS.generatedProject,
+          STAGE_ARTIFACT_KEYS.codegenSummary,
+        ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationMetrics,
           STAGE_ARTIFACT_KEYS.componentManifest,
-          STAGE_ARTIFACT_KEYS.generationDiffContext
-        ]
-      }
+          STAGE_ARTIFACT_KEYS.generationDiffContext,
+        ],
+      },
     },
     {
       service: ValidateProjectService,
       artifacts: {
-        reads: [STAGE_ARTIFACT_KEYS.generatedProject, STAGE_ARTIFACT_KEYS.generationDiffContext],
+        reads: [
+          STAGE_ARTIFACT_KEYS.generatedProject,
+          STAGE_ARTIFACT_KEYS.generationDiffContext,
+        ],
         optionalReads: [
           STAGE_ARTIFACT_KEYS.storybookCatalog,
           STAGE_ARTIFACT_KEYS.storybookEvidence,
@@ -352,9 +410,12 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.storybookThemes,
           STAGE_ARTIFACT_KEYS.storybookComponents,
           STAGE_ARTIFACT_KEYS.figmaLibraryResolution,
-          STAGE_ARTIFACT_KEYS.componentMatchReport
+          STAGE_ARTIFACT_KEYS.componentMatchReport,
         ],
-        writes: [STAGE_ARTIFACT_KEYS.validationSummary, STAGE_ARTIFACT_KEYS.validationSummaryFile],
+        writes: [
+          STAGE_ARTIFACT_KEYS.validationSummary,
+          STAGE_ARTIFACT_KEYS.validationSummaryFile,
+        ],
         optionalWrites: [
           STAGE_ARTIFACT_KEYS.generationDiff,
           STAGE_ARTIFACT_KEYS.generationDiffFile,
@@ -363,9 +424,9 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
           STAGE_ARTIFACT_KEYS.visualAuditDiffImage,
           STAGE_ARTIFACT_KEYS.visualAuditReport,
           STAGE_ARTIFACT_KEYS.visualAuditResult,
-          STAGE_ARTIFACT_KEYS.visualQualityResult
-        ]
-      }
+          STAGE_ARTIFACT_KEYS.visualQualityResult,
+        ],
+      },
     },
     {
       service: ReproExportService,
@@ -377,8 +438,8 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
       },
       artifacts: {
         reads: [STAGE_ARTIFACT_KEYS.generatedProject],
-        writes: [STAGE_ARTIFACT_KEYS.reproPath]
-      }
+        writes: [STAGE_ARTIFACT_KEYS.reproPath],
+      },
     },
     {
       service: GitPrService,
@@ -387,14 +448,14 @@ export const buildRegenerationPipelinePlan = (): PipelineStagePlanEntry[] => {
         await context.artifactStore.setValue({
           key: STAGE_ARTIFACT_KEYS.gitPrStatus,
           stage: "git.pr",
-          value: buildGitPrSkipStatus(reason)
+          value: buildGitPrSkipStatus(reason),
         });
       },
       artifacts: {
         writes: [STAGE_ARTIFACT_KEYS.gitPrStatus],
-        skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus]
-      }
-    }
+        skipWrites: [STAGE_ARTIFACT_KEYS.gitPrStatus],
+      },
+    },
   ];
 };
 
