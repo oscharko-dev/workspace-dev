@@ -24,6 +24,7 @@ import type {
 import { resolveTokenDecisions } from "./token-suggestion-model";
 import type { A11yNudge, A11yNudgeResult } from "./a11y-nudge";
 import "./inspector.css";
+import type { InspectorCSSProperties } from "./types";
 
 // ---------------------------------------------------------------------------
 // Props
@@ -172,7 +173,11 @@ function BreakdownBar({
           >
             <span
               className={`sp-breakdown-fill ${value >= 80 ? "sp-breakdown-fill--high" : value >= 60 ? "sp-breakdown-fill--medium" : "sp-breakdown-fill--low"}`}
-              style={{ width: `${String(value)}%` }}
+              style={
+                {
+                  "--sp-breakdown-width": `${String(value)}%`,
+                } as InspectorCSSProperties
+              }
             />
           </div>
           <span className="sp-breakdown-value">{value}</span>

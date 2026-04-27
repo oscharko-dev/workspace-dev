@@ -28,6 +28,7 @@ import {
   type DiffLine,
   type DiffResult,
 } from "../../../lib/diff";
+import type { InspectorCSSProperties } from "./types";
 import {
   getPreferredTheme,
   type HighlightTheme,
@@ -506,18 +507,14 @@ export function DiffViewer({
                 }}
                 data-testid={`diff-line-${diffLine.kind}`}
                 data-in-focus={inFocus ? "true" : undefined}
-                className="dv-line-row flex text-xs leading-relaxed"
+                className="dv-diff-row flex text-xs leading-relaxed"
                 style={
                   {
-                    ...(lineBg !== undefined
-                      ? { "--dv-line-bg": lineBg }
-                      : undefined),
-                    ...(colors.border !== undefined
-                      ? {
-                          "--dv-line-border-left": `3px solid ${colors.border}`,
-                        }
-                      : undefined),
-                  } as React.CSSProperties
+                    "--dv-diff-row-bg": lineBg,
+                    "--dv-diff-row-border-left": colors.border
+                      ? `3px solid ${colors.border}`
+                      : "none",
+                  } as InspectorCSSProperties
                 }
               >
                 {/* Old line number gutter */}
@@ -525,11 +522,9 @@ export function DiffViewer({
                   data-testid="diff-old-line-number"
                   className="dv-line-number inline-block w-10 shrink-0 pr-1 text-right select-none font-mono"
                   style={
-                    colors.gutter !== undefined
-                      ? ({
-                          "--dv-gutter-bg": colors.gutter,
-                        } as React.CSSProperties)
-                      : undefined
+                    {
+                      "--dv-gutter-bg": colors.gutter,
+                    } as InspectorCSSProperties
                   }
                 >
                   {diffLine.oldLineNumber ?? ""}
@@ -540,11 +535,9 @@ export function DiffViewer({
                   data-testid="diff-new-line-number"
                   className="dv-line-number inline-block w-10 shrink-0 pr-2 text-right select-none font-mono"
                   style={
-                    colors.gutter !== undefined
-                      ? ({
-                          "--dv-gutter-bg": colors.gutter,
-                        } as React.CSSProperties)
-                      : undefined
+                    {
+                      "--dv-gutter-bg": colors.gutter,
+                    } as InspectorCSSProperties
                   }
                 >
                   {diffLine.newLineNumber ?? ""}
@@ -552,9 +545,11 @@ export function DiffViewer({
 
                 {/* Diff prefix (+/-/space) */}
                 <span
-                  className="dv-line-prefix inline-block w-4 shrink-0 select-none text-center font-mono"
+                  className="dv-diff-prefix inline-block w-4 shrink-0 select-none text-center font-mono"
                   style={
-                    { "--dv-prefix-color": prefixColor } as React.CSSProperties
+                    {
+                      "--dv-diff-prefix-color": prefixColor,
+                    } as InspectorCSSProperties
                   }
                 >
                   {prefix}
@@ -562,11 +557,11 @@ export function DiffViewer({
 
                 {/* Line content */}
                 <pre
-                  className={`dv-line-content m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+                  className={`dv-diff-content m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
                   style={
                     {
-                      "--dv-content-color": lineContentColor,
-                    } as React.CSSProperties
+                      "--dv-diff-content-color": lineContentColor,
+                    } as InspectorCSSProperties
                   }
                 >
                   {diffLine.content}

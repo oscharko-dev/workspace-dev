@@ -449,6 +449,7 @@ describe("figma-screenshot-pipeline", () => {
 
       ok(maxConcurrentNodeRequests > 1);
     });
+
   });
 
   describe("persistFigmaScreenshotReferences", () => {

@@ -5,7 +5,6 @@ import {
   useReducer,
   useRef,
   useState,
-  type CSSProperties,
   type JSX,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -23,6 +22,7 @@ import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath, useStreamingTreeNodes } from "./component-tree-utils";
+import type { InspectorCSSProperties } from "./types";
 import {
   createInitialPipelineState,
   postTokenDecisions,
@@ -201,7 +201,6 @@ import {
   createDraftSnapshotStore,
   type DraftSnapshotStore,
 } from "./inspector-draft-snapshot";
-import "./inspector.css";
 
 // ---------------------------------------------------------------------------
 // Payload types
@@ -216,14 +215,6 @@ interface FilesPayload {
   jobId: string;
   files: FileEntry[];
 }
-
-type InspectorPaneStyle = CSSProperties & {
-  "--pane-flex-grow"?: number;
-};
-
-const DEFAULT_FILL_PANE_STYLE = {
-  flex: 1,
-} satisfies CSSProperties;
 
 interface ComponentManifestEntry {
   irNodeId: string;
@@ -4892,13 +4883,12 @@ export function InspectorPanel({
   const treeSeparatorNow = Math.round(paneRatios.tree * 100);
   const previewSeparatorNow = Math.round(collapsedPreviewShare * 100);
 
-  const treePaneStyle = useMemo<InspectorPaneStyle | undefined>(() => {
+  const treePaneStyle = useMemo(() => {
     if (!isDesktopLayout || !hasExpandedTree) {
       return undefined;
     }
 
     return {
-      "--pane-flex-grow": paneRatios.tree,
       flexBasis: "0%",
       flexGrow: paneRatios.tree,
       flexShrink: 1,
@@ -4906,14 +4896,13 @@ export function InspectorPanel({
     };
   }, [hasExpandedTree, isDesktopLayout, paneRatios.tree]);
 
-  const previewPaneStyle = useMemo<InspectorPaneStyle | undefined>(() => {
+  const previewPaneStyle = useMemo(() => {
     if (!isDesktopLayout) {
       return undefined;
     }
 
     if (hasExpandedTree) {
       return {
-        "--pane-flex-grow": paneRatios.preview,
         flexBasis: "0%",
         flexGrow: paneRatios.preview,
         flexShrink: 1,
@@ -4922,7 +4911,6 @@ export function InspectorPanel({
     }
 
     return {
-      "--pane-flex-grow": collapsedPreviewShare,
       flexBasis: "0%",
       flexGrow: collapsedPreviewShare,
       flexShrink: 1,
@@ -4935,14 +4923,13 @@ export function InspectorPanel({
     paneRatios.preview,
   ]);
 
-  const codePaneStyle = useMemo<InspectorPaneStyle | undefined>(() => {
+  const codePaneStyle = useMemo(() => {
     if (!isDesktopLayout) {
       return undefined;
     }
 
     if (hasExpandedTree) {
       return {
-        "--pane-flex-grow": paneRatios.code,
         flexBasis: "0%",
         flexGrow: paneRatios.code,
         flexShrink: 1,
@@ -4951,7 +4938,6 @@ export function InspectorPanel({
     }
 
     return {
-      "--pane-flex-grow": 1 - collapsedPreviewShare,
       flexBasis: "0%",
       flexGrow: 1 - collapsedPreviewShare,
       flexShrink: 1,
@@ -6273,7 +6259,13 @@ export function InspectorPanel({
           <div
             data-testid="inspector-pane-tree"
             className="inspector-pane inspector-pane-tree min-h-[120px] shrink-0 border-r border-[#000000]"
-            style={treePaneStyle}
+            style={
+              treePaneStyle
+                ? ({
+                    "--pane-flex-grow": treePaneStyle.flexGrow,
+                  } as InspectorCSSProperties)
+                : undefined
+            }
           >
             {treeRecoveryError ? (
               <div
@@ -6371,7 +6363,7 @@ export function InspectorPanel({
             aria-valuemax={100}
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
-            className="inspector-pane-splitter group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
+            className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center inspector-splitter"
             onPointerDown={handleSplitterPointerDown("tree-preview")}
             onPointerMove={handleSplitterPointerMove}
             onPointerUp={handleSplitterPointerUp}
@@ -6390,7 +6382,14 @@ export function InspectorPanel({
         <div
           data-testid="inspector-pane-preview"
           className="inspector-pane inspector-pane-preview relative min-h-[200px] border-r border-[#000000] lg:min-h-0"
-          style={previewPaneStyle ?? DEFAULT_FILL_PANE_STYLE}
+          style={
+            previewPaneStyle
+              ? ({
+                  "--pane-flex-grow": previewPaneStyle.flexGrow,
+                  flex: 1,
+                } as InspectorCSSProperties)
+              : ({ flex: 1 } as InspectorCSSProperties)
+          }
         >
           {previewRecoveryMessage ? (
             <div
@@ -6429,7 +6428,7 @@ export function InspectorPanel({
           aria-valuemax={100}
           aria-valuenow={previewSeparatorNow}
           data-testid="inspector-splitter-preview-code"
-          className="inspector-pane-splitter group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
+          className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center inspector-splitter"
           onPointerDown={handleSplitterPointerDown("preview-code")}
           onPointerMove={handleSplitterPointerMove}
           onPointerUp={handleSplitterPointerUp}
@@ -6447,7 +6446,14 @@ export function InspectorPanel({
         <div
           data-testid="inspector-pane-code"
           className="inspector-pane inspector-pane-code min-h-[200px] lg:min-h-0"
-          style={codePaneStyle ?? DEFAULT_FILL_PANE_STYLE}
+          style={
+            codePaneStyle
+              ? ({
+                  "--pane-flex-grow": codePaneStyle.flexGrow,
+                  flex: 1,
+                } as InspectorCSSProperties)
+              : ({ flex: 1 } as InspectorCSSProperties)
+          }
         >
           {(activePipeline.stage === "ready" ||
             activePipeline.stage === "partial") &&
