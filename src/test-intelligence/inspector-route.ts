@@ -304,7 +304,7 @@ export const isInspectorTestIntelligenceWriteAction = (
   if (route.kind === "jira_paste_source") return true;
   if (route.kind === "custom_context_source") return true;
   if (route.kind === "jira_write_start") return true;
-  if (route.kind === "jira_write_config") return false;
+  if (route.kind === "jira_write_config") return true;
   if (route.kind !== "review_action") return false;
   return route.action !== "state";
 };

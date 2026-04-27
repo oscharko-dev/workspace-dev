@@ -13,6 +13,7 @@ import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   TEST_INTELLIGENCE_ENV,
+  JIRA_WRITE_REPORT_ARTIFACT_DIRECTORY,
   type JiraFetchRequest,
   type TestIntelligenceReviewPrincipal,
   type WorkspaceFigmaSourceMode,
@@ -557,6 +558,45 @@ const MAX_CUSTOM_CONTEXT_REQUEST_BODY_BYTES =
 const MAX_CONFLICT_RESOLUTION_REQUEST_BODY_BYTES = 16 * 1024;
 const LEGACY_TEST_INTELLIGENCE_REVIEW_PRINCIPAL_ID = "legacy-review-bearer";
 
+const validateJiraWriteMarkdownPath = (
+  value: string,
+): { ok: true; value: string } | { ok: false; message: string } => {
+  const trimmed = value.trim();
+  if (trimmed.includes("..") || trimmed.includes("\0")) {
+    return {
+      ok: false,
+      message: "outputPathMarkdown must not contain '..' or null bytes.",
+    };
+  }
+  return { ok: true, value: trimmed };
+};
+
+const preflightJiraWriteMarkdownDir = async (
+  outputDir: string,
+): Promise<{ ok: true } | { ok: false; message: string }> => {
+  try {
+    await mkdir(outputDir, { recursive: true });
+    const probeBase = path.join(
+      outputDir,
+      `.jira-write-preflight-${process.pid}-${randomUUID()}`,
+    );
+    const tmpPath = `${probeBase}.tmp`;
+    const finalPath = `${probeBase}.ok`;
+    await writeFile(tmpPath, "ok\n", "utf8");
+    await rename(tmpPath, finalPath);
+    await unlink(finalPath);
+    return { ok: true };
+  } catch (error) {
+    return {
+      ok: false,
+      message: sanitizeErrorMessage({
+        error,
+        fallback: "Markdown output path is not writable.",
+      }),
+    };
+  }
+};
+
 interface PersistedTokenDecisions {
   jobId: string;
   updatedAt: string;
@@ -914,6 +954,20 @@ function resolveProtectedWriteRoute(
   if (
     (method === "POST" || method === "DELETE") &&
     /^\/workspace\/test-intelligence\/jobs\/[A-Za-z0-9_.-]{1,128}\/sources\/[A-Za-z0-9_.-]{1,128}$/u.test(
+      pathname,
+    )
+  ) {
+    return {};
+  }
+  if (
+    (method === "PUT" || method === "POST") &&
+    pathname === "/workspace/test-intelligence/write/config"
+  ) {
+    return {};
+  }
+  if (
+    method === "POST" &&
+    /^\/workspace\/test-intelligence\/write\/[A-Za-z0-9_.-]{1,128}\/jira-subtasks$/u.test(
       pathname,
     )
   ) {
@@ -2420,6 +2474,30 @@ export function createWorkspaceRequestHandler({
             return;
           }
 
+          const auth = validateTestIntelligenceSourceAuth({
+            request,
+            ...(runtime.testIntelligenceJiraWriteBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceJiraWriteBearerToken }
+              : {}),
+            routeLabel: "Jira write config",
+          });
+          if (!auth.ok) {
+            if (auth.wwwAuthenticate) {
+              response.setHeader("www-authenticate", auth.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: auth.statusCode,
+              payload: auth.payload,
+              event:
+                auth.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: auth.statusCode === 401 ? "warn" : "error",
+              fallbackMessage: "Jira write config rejected.",
+            });
+            return;
+          }
+
           const bodyResult = await readJsonBody(request, { maxBytes: 4096 });
           if (!bodyResult.ok) {
             sendRequestFailure({
@@ -2448,23 +2526,39 @@ export function createWorkspaceRequestHandler({
           ) {
             const record = body as Record<string, unknown>;
             if (typeof record.outputPathMarkdown === "string") {
-              const trimmed = record.outputPathMarkdown.trim();
-              if (trimmed.includes("..") || trimmed.includes(" ")) {
+              const pathValidation = validateJiraWriteMarkdownPath(
+                record.outputPathMarkdown,
+              );
+              if (!pathValidation.ok) {
                 sendValidationError({
                   payload: {
                     error: "INVALID_PATH",
-                    message:
-                      "outputPathMarkdown must not contain '..' or null bytes.",
+                    message: pathValidation.message,
                   },
                   fallbackMessage: "Invalid Jira write config path.",
                 });
                 return;
               }
-              update.outputPathMarkdown = trimmed;
+              update.outputPathMarkdown = pathValidation.value;
             }
             if (typeof record.useDefaultOutputPath === "boolean") {
               update.useDefaultOutputPath = record.useDefaultOutputPath;
             }
+          }
+          if (
+            update.useDefaultOutputPath === false &&
+            (update.outputPathMarkdown === undefined ||
+              update.outputPathMarkdown.length === 0)
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_PATH",
+                message:
+                  "outputPathMarkdown is required when useDefaultOutputPath is false.",
+              },
+              fallbackMessage: "Invalid Jira write config path.",
+            });
+            return;
           }
 
           try {
@@ -2533,11 +2627,8 @@ export function createWorkspaceRequestHandler({
 
           const auth = validateTestIntelligenceSourceAuth({
             request,
-            ...(runtime.testIntelligenceReviewBearerToken !== undefined
-              ? { bearerToken: runtime.testIntelligenceReviewBearerToken }
-              : {}),
-            ...(runtime.testIntelligenceReviewPrincipals !== undefined
-              ? { reviewPrincipals: runtime.testIntelligenceReviewPrincipals }
+            ...(runtime.testIntelligenceJiraWriteBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceJiraWriteBearerToken }
               : {}),
             routeLabel: "Jira sub-task write",
           });
@@ -2615,6 +2706,37 @@ export function createWorkspaceRequestHandler({
             typeof record.useDefaultOutputPath === "boolean"
               ? record.useDefaultOutputPath
               : undefined;
+          if (
+            useDefaultOutputPath === false &&
+            (outputPathMarkdown === undefined ||
+              outputPathMarkdown.length === 0)
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_PATH",
+                message:
+                  "outputPathMarkdown is required when useDefaultOutputPath is false.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Invalid Jira write output path.",
+            });
+            return;
+          }
+          if (outputPathMarkdown !== undefined) {
+            const pathValidation =
+              validateJiraWriteMarkdownPath(outputPathMarkdown);
+            if (!pathValidation.ok) {
+              sendValidationError({
+                payload: {
+                  error: "INVALID_PATH",
+                  message: pathValidation.message,
+                },
+                jobId: route.jobId,
+                fallbackMessage: "Invalid Jira write output path.",
+              });
+              return;
+            }
+          }
 
           const bundleResult = await readInspectorTestIntelligenceBundle({
             rootDir: testIntelligenceArtifactRoot,
@@ -2659,6 +2781,23 @@ export function createWorkspaceRequestHandler({
             runtime.testIntelligenceJiraWriteClient ??
             createUnconfiguredJiraWriteClient();
           const runDir = path.join(testIntelligenceArtifactRoot, route.jobId);
+          const markdownOutputDir =
+            useDefaultOutputPath === true || outputPathMarkdown === undefined
+              ? path.join(runDir, JIRA_WRITE_REPORT_ARTIFACT_DIRECTORY)
+              : outputPathMarkdown;
+          const outputPreflight =
+            await preflightJiraWriteMarkdownDir(markdownOutputDir);
+          if (!outputPreflight.ok) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_PATH",
+                message: outputPreflight.message,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira write output path is not writable.",
+            });
+            return;
+          }
 
           const result = await runJiraSubtaskWrite(
             {
