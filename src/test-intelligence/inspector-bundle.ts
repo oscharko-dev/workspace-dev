@@ -52,6 +52,8 @@ import {
   VISUAL_SIDECAR_VALIDATION_REPORT_SCHEMA_VERSION,
   type ExportReportArtifact,
   type GeneratedTestCaseList,
+  type MultiSourceReconciliationReport,
+  type MultiSourceTestIntentEnvelope,
   type QcMappingPreviewArtifact,
   type ReviewEvent,
   type ReviewGateSnapshot,
@@ -112,9 +114,9 @@ export interface InspectorTestIntelligenceBundle {
   exportReport?: ExportReportArtifact;
   reviewSnapshot?: ReviewGateSnapshot;
   reviewEvents?: ReviewEvent[];
-  sourceEnvelope?: import("../contracts/index.js").MultiSourceTestIntentEnvelope;
+  sourceEnvelope?: MultiSourceTestIntentEnvelope;
   sourceRefs?: InspectorSourceRecord[];
-  multiSourceReconciliation?: import("../contracts/index.js").MultiSourceReconciliationReport;
+  multiSourceReconciliation?: MultiSourceReconciliationReport;
   conflictDecisions?: Record<string, InspectorConflictDecisionSnapshot>;
   testCaseProvenance?: Record<string, InspectorTestCaseProvenance>;
   /** Per-artifact parse errors. Empty when every present file parsed cleanly. */
@@ -491,7 +493,7 @@ export const readInspectorTestIntelligenceBundle = async (
       join(jobDir, "multi-source-conflicts.json"),
       "multi-source-conflicts.json",
       "multiSourceReconciliation",
-      (value): value is import("../contracts/index.js").MultiSourceReconciliationReport =>
+      (value): value is MultiSourceReconciliationReport =>
         isRecord(value) && Array.isArray(value["conflicts"]),
     ),
   ]);

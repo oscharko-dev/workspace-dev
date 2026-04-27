@@ -145,7 +145,7 @@ const readBusinessIntent = async (
 ): Promise<BusinessTestIntentIr | undefined> => {
   try {
     const raw = await readFile(path.join(runDir, BUSINESS_INTENT_IR_FILENAME), "utf8");
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) return undefined;
     return parsed as unknown as BusinessTestIntentIr;
   } catch {
@@ -305,7 +305,7 @@ export const readInspectorReconciliationReport = async (
       path.join(runDir, MULTI_SOURCE_CONFLICT_REPORT_ARTIFACT_FILENAME),
       "utf8",
     );
-    const parsed = JSON.parse(raw);
+    const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed) || !Array.isArray(parsed["conflicts"])) {
       return undefined;
     }
@@ -401,7 +401,20 @@ const isConflictDecisionEnvelope = (
   value["version"] === "1.0.0" &&
   typeof value["jobId"] === "string" &&
   typeof value["nextSequence"] === "number" &&
-  Array.isArray(value["events"]);
+  Array.isArray(value["events"]) &&
+  value["events"].every(isConflictDecisionEvent);
+
+const isConflictDecisionEvent = (
+  value: unknown,
+): value is InspectorConflictDecisionEvent =>
+  isRecord(value) &&
+  typeof value["id"] === "string" &&
+  typeof value["sequence"] === "number" &&
+  typeof value["jobId"] === "string" &&
+  typeof value["conflictId"] === "string" &&
+  (value["action"] === "approve" || value["action"] === "reject") &&
+  typeof value["at"] === "string" &&
+  typeof value["actor"] === "string";
 
 const readDecisionEnvelope = async (
   runDir: string,
@@ -409,22 +422,8 @@ const readDecisionEnvelope = async (
 ): Promise<ConflictDecisionEnvelope> => {
   try {
     const raw = await readFile(decisionsFilePath(runDir), "utf8");
-    const parsed = JSON.parse(raw);
-    if (
-      isConflictDecisionEnvelope(parsed) &&
-      parsed.jobId === jobId &&
-      parsed.events.every(
-        (event) =>
-          isRecord(event) &&
-          typeof event["id"] === "string" &&
-          typeof event["sequence"] === "number" &&
-          typeof event["jobId"] === "string" &&
-          typeof event["conflictId"] === "string" &&
-          (event["action"] === "approve" || event["action"] === "reject") &&
-          typeof event["at"] === "string" &&
-          typeof event["actor"] === "string",
-      )
-    ) {
+    const parsed: unknown = JSON.parse(raw);
+    if (isConflictDecisionEnvelope(parsed) && parsed.jobId === jobId) {
       return parsed;
     }
   } catch {

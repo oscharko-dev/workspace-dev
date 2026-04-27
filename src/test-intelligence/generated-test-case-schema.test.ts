@@ -115,7 +115,7 @@ test("schema: drift guard — the hash is stable for the current contract", () =
   // shifted. Bump GENERATED_TEST_CASE_SCHEMA_VERSION and update the
   // expected digest in lockstep.
   const expected =
-    "4b48a748b88bfd588563cbd18dc4abca74078bb5e4583d02444f618109907f22";
+    "487a31abb629c93aa8698410ff49baa4bdab912e5391bf11261b70871c0c430e";
   const actual = computeGeneratedTestCaseListSchemaHash();
   if (actual !== expected) {
     assert.fail(

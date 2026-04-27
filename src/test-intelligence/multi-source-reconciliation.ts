@@ -70,6 +70,17 @@ interface CandidateValidation {
   sourceKind: TestIntentSourceRef["kind"];
 }
 
+interface CandidateTestDataExample {
+  sourceId: string;
+  screenId: string;
+  caseId: string;
+  semanticKey: string;
+  fieldLabel: string;
+  example: string;
+  normalizedExample: string;
+  sourceKind: TestIntentSourceRef["kind"];
+}
+
 interface CandidateRisk {
   sourceId: string;
   category: TestCaseRiskCategory;
@@ -315,8 +326,6 @@ const extractValidationRulesFromText = (text: string): string[] => {
     if (should?.[0]) rules.add(should[0].trim());
     const regex = line.match(/\bregex\b[: ]+(.+)$/i);
     if (regex?.[1]) rules.add(`regex ${regex[1].trim()}`);
-    const example = line.match(/\bexample\b[: ]+(.+)$/i);
-    if (example?.[1]) rules.add(`example ${example[1].trim()}`);
   }
   return [...rules].sort();
 };
@@ -358,6 +367,79 @@ const extractJiraValidationCandidates = (
     }
   }
   return dedupeCandidateValidations(out);
+};
+
+const extractExamplesForField = (text: string, label: string): string[] => {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const quotedLabel = String.raw`(?:"${escaped}"|'${escaped}'|${escaped})`;
+  const patterns = [
+    new RegExp(
+      String.raw`${quotedLabel}[^\n.]{0,120}\bexample\b\s*(?:is|=|:)?\s*["']?([^"'.\n]{1,120})["']?`,
+      "giu",
+    ),
+    new RegExp(
+      String.raw`\bexample\b\s*(?:for\s+)?${quotedLabel}\s*(?:is|=|:)?\s*["']?([^"'.\n]{1,120})["']?`,
+      "giu",
+    ),
+  ];
+  const examples = new Set<string>();
+  for (const pattern of patterns) {
+    for (const match of text.matchAll(pattern)) {
+      const value = match[1]?.trim().replace(/[;,]$/u, "");
+      if (value !== undefined && value.length > 0) examples.add(value);
+    }
+  }
+  return [...examples].sort();
+};
+
+const extractJiraTestDataExampleCandidates = (
+  issue: JiraIssueIr,
+  sourceId: string,
+  fieldCandidates: readonly CandidateField[],
+): CandidateTestDataExample[] => {
+  const out: CandidateTestDataExample[] = [];
+  const screenId = `jira:${issue.issueKey}`;
+  const texts = [
+    issue.descriptionPlain,
+    ...issue.acceptanceCriteria.map(extractAcceptanceText),
+  ];
+  for (const field of fieldCandidates) {
+    for (const text of texts) {
+      for (const example of extractExamplesForField(text, field.label)) {
+        out.push({
+          sourceId,
+          screenId,
+          caseId: `case:${screenId}:example:${field.semanticKey}`,
+          semanticKey: field.semanticKey,
+          fieldLabel: field.label,
+          example,
+          normalizedExample: normalizeText(example),
+          sourceKind: "jira_paste",
+        });
+      }
+    }
+  }
+  return dedupeCandidateTestDataExamples(out);
+};
+
+const dedupeCandidateTestDataExamples = (
+  examples: readonly CandidateTestDataExample[],
+): CandidateTestDataExample[] => {
+  const map = new Map<string, CandidateTestDataExample>();
+  for (const value of examples) {
+    const key = JSON.stringify([
+      value.sourceId,
+      value.screenId,
+      value.semanticKey,
+      value.normalizedExample,
+    ]);
+    if (!map.has(key)) map.set(key, value);
+  }
+  return [...map.values()].sort((a, b) =>
+    a.caseId === b.caseId
+      ? a.normalizedExample.localeCompare(b.normalizedExample)
+      : a.caseId.localeCompare(b.caseId),
+  );
 };
 
 const dedupeCandidateValidations = (
@@ -612,6 +694,12 @@ export const reconcileMultiSourceIntent = (
     const fields = jiraFieldCandidates.filter((field) => field.sourceId === ref.sourceId);
     return extractJiraValidationCandidates(issue, ref.sourceId, fields);
   });
+  const jiraExampleCandidates = jiraIssues.flatMap((issue) => {
+    const ref = jiraSourceRefs.find((candidate) => candidate.contentHash === issue.contentHash);
+    if (ref === undefined) return [];
+    const fields = jiraFieldCandidates.filter((field) => field.sourceId === ref.sourceId);
+    return extractJiraTestDataExampleCandidates(issue, ref.sourceId, fields);
+  });
 
   const figmaFieldsBySemantic = new Map<string, DetectedField[]>();
   for (const field of baseIntent.detectedFields) {
@@ -691,6 +779,25 @@ export const reconcileMultiSourceIntent = (
           candidate,
           envelope: input.envelope,
         });
+        const alternative =
+          input.envelope.conflictResolutionPolicy === "keep_both"
+            ? buildAlternativeField({
+                field,
+                candidate,
+                envelope: input.envelope,
+                reason: `Alternative Jira label retained for source ${candidate.sourceId}`,
+              })
+            : undefined;
+        if (
+          alternative !== undefined &&
+          !baseIntent.detectedFields.some((existing) => existing.id === alternative.id)
+        ) {
+          baseIntent.detectedFields.push(alternative);
+          recordContribution(
+            `case:${alternative.screenId}:field:${stableSlug(alternative.id)}`,
+            [candidate.sourceId],
+          );
+        }
         transcript.push(
           buildTranscriptEntry({
             sourceIds: participatingSourceIds,
@@ -699,7 +806,8 @@ export const reconcileMultiSourceIntent = (
                 ? "alternative_emitted"
                 : "conflict_recorded",
             rationale: conflict.detail ?? "field label conflict recorded",
-            affectedElementIds: [field.id],
+            affectedElementIds:
+              alternative !== undefined ? [field.id, alternative.id] : [field.id],
           }),
         );
       } else {
@@ -776,6 +884,25 @@ export const reconcileMultiSourceIntent = (
           candidate,
           envelope: input.envelope,
         });
+        const alternative =
+          input.envelope.conflictResolutionPolicy === "keep_both"
+            ? buildAlternativeValidation({
+                validation,
+                candidate,
+                envelope: input.envelope,
+                reason: `Alternative Jira validation retained for source ${candidate.sourceId}`,
+              })
+            : undefined;
+        if (
+          alternative !== undefined &&
+          !baseIntent.detectedValidations.some((existing) => existing.id === alternative.id)
+        ) {
+          baseIntent.detectedValidations.push(alternative);
+          recordContribution(
+            `case:${alternative.screenId}:validation:${stableSlug(alternative.id)}`,
+            [candidate.sourceId],
+          );
+        }
         transcript.push(
           buildTranscriptEntry({
             sourceIds: participatingSourceIds,
@@ -784,7 +911,10 @@ export const reconcileMultiSourceIntent = (
                 ? "alternative_emitted"
                 : "conflict_recorded",
             rationale: conflict.detail ?? "validation conflict recorded",
-            affectedElementIds: [validation.id],
+            affectedElementIds:
+              alternative !== undefined
+                ? [validation.id, alternative.id]
+                : [validation.id],
           }),
         );
       } else {
@@ -802,6 +932,111 @@ export const reconcileMultiSourceIntent = (
           }),
         );
       }
+    }
+  }
+
+  for (const candidate of jiraExampleCandidates) {
+    usedSourceIds.add(candidate.sourceId);
+    recordContribution(candidate.caseId, [candidate.sourceId]);
+    const fields = baseIntent.detectedFields.filter(
+      (field) => semanticKeyForLabel(field.label) === candidate.semanticKey,
+    );
+    for (const field of fields) {
+      const fieldSourceIds = field.sourceRefs?.map((ref) => ref.sourceId) ?? figmaSourceIds;
+      const participatingSourceIds = [...fieldSourceIds, candidate.sourceId];
+      recordContribution(
+        `case:${field.screenId}:field:${stableSlug(field.id)}`,
+        participatingSourceIds,
+      );
+      if (field.defaultValue === undefined || field.defaultValue.length === 0) {
+        field.defaultValue = candidate.example;
+        const mergedRefs = mergeSourceRefs(field.sourceRefs, [
+          sourceRefForId(input.envelope, candidate.sourceId),
+        ]);
+        field.sourceRefs = mergedRefs;
+        field.trace.sourceRefs = mergedRefs.map((ref) => ({ ...ref }));
+        transcript.push(
+          buildTranscriptEntry({
+            sourceIds: participatingSourceIds,
+            action: "accepted",
+            rationale: `accepted Jira-derived test-data example "${candidate.example}" for field "${field.label}"`,
+            affectedElementIds: [field.id],
+          }),
+        );
+        continue;
+      }
+      if (normalizeText(field.defaultValue) === candidate.normalizedExample) {
+        const mergedRefs = mergeSourceRefs(field.sourceRefs, [
+          sourceRefForId(input.envelope, candidate.sourceId),
+        ]);
+        field.sourceRefs = mergedRefs;
+        field.trace.sourceRefs = mergedRefs.map((ref) => ({ ...ref }));
+        transcript.push(
+          buildTranscriptEntry({
+            sourceIds: participatingSourceIds,
+            action: "merged",
+            rationale: `merged matching test-data example for field "${field.label}"`,
+            affectedElementIds: [field.id],
+          }),
+        );
+        continue;
+      }
+      const conflict = buildConflict({
+        kind: "test_data_example_mismatch",
+        participatingSourceIds,
+        normalizedValues: [field.defaultValue, candidate.example],
+        resolution: resolutionForPolicy(input.envelope.conflictResolutionPolicy),
+        affectedElementIds: [field.id],
+        affectedScreenIds: [field.screenId],
+        detail: `Figma example "${field.defaultValue}" disagrees with Jira example "${candidate.example}" for field "${field.label}"`,
+      });
+      conflicts.push(conflict);
+      applyExampleConflictPolicy({
+        policy: input.envelope.conflictResolutionPolicy,
+        field,
+        candidate,
+        envelope: input.envelope,
+      });
+      const alternative =
+        input.envelope.conflictResolutionPolicy === "keep_both"
+          ? buildAlternativeField({
+              field,
+              candidate: {
+                sourceId: candidate.sourceId,
+                screenId: candidate.screenId,
+                caseId: candidate.caseId,
+                label: candidate.fieldLabel,
+                normalizedLabel: normalizeText(candidate.fieldLabel),
+                semanticKey: candidate.semanticKey,
+                defaultValue: candidate.example,
+                sourceKind: candidate.sourceKind,
+              },
+              envelope: input.envelope,
+              reason: `Alternative Jira test-data example retained for source ${candidate.sourceId}`,
+            })
+          : undefined;
+      if (
+        alternative !== undefined &&
+        !baseIntent.detectedFields.some((existing) => existing.id === alternative.id)
+      ) {
+        baseIntent.detectedFields.push(alternative);
+        recordContribution(
+          `case:${alternative.screenId}:field:${stableSlug(alternative.id)}`,
+          [candidate.sourceId],
+        );
+      }
+      transcript.push(
+        buildTranscriptEntry({
+          sourceIds: participatingSourceIds,
+          action:
+            input.envelope.conflictResolutionPolicy === "keep_both"
+              ? "alternative_emitted"
+              : "conflict_recorded",
+          rationale: conflict.detail ?? "test data example conflict recorded",
+          affectedElementIds:
+            alternative !== undefined ? [field.id, alternative.id] : [field.id],
+        }),
+      );
     }
   }
 
@@ -996,13 +1231,11 @@ const applyFieldConflictPolicy = (input: {
         ? `Alternative field labels retained: "${input.field.label}" and "${input.candidate.label}"`
         : `Reviewer must choose between field labels "${input.field.label}" and "${input.candidate.label}"`,
   };
-  input.field.sourceRefs = mergeSourceRefs(input.field.sourceRefs, [candidateRef]);
-  input.field.trace.sourceRefs = input.field.sourceRefs.map((ref) => ({ ...ref }));
-  if (input.policy === "keep_both") {
-    input.field.defaultValue = appendDisambiguationNote(
-      input.field.defaultValue,
-      `Alternative Jira label: ${input.candidate.label}`,
-    );
+  if (input.policy === "reviewer_decides") {
+    input.field.sourceRefs = mergeSourceRefs(input.field.sourceRefs, [candidateRef]);
+    input.field.trace.sourceRefs = input.field.sourceRefs.map((ref) => ({
+      ...ref,
+    }));
   }
 };
 
@@ -1033,21 +1266,116 @@ const applyValidationConflictPolicy = (input: {
         ? `Alternative validation rules retained: "${input.validation.rule}" and "${input.candidate.rule}"`
         : `Reviewer must choose between validation rules "${input.validation.rule}" and "${input.candidate.rule}"`,
   };
-  input.validation.sourceRefs = mergeSourceRefs(input.validation.sourceRefs, [
-    candidateRef,
-  ]);
-  input.validation.trace.sourceRefs = input.validation.sourceRefs.map((ref) => ({
-    ...ref,
-  }));
+  if (input.policy === "reviewer_decides") {
+    input.validation.sourceRefs = mergeSourceRefs(input.validation.sourceRefs, [
+      candidateRef,
+    ]);
+    input.validation.trace.sourceRefs = input.validation.sourceRefs.map((ref) => ({
+      ...ref,
+    }));
+  }
 };
 
-const appendDisambiguationNote = (
-  value: string | undefined,
-  note: string,
-): string => {
-  if (value === undefined || value.length === 0) return note;
-  if (value.includes(note)) return value;
-  return `${value} | ${note}`;
+const applyExampleConflictPolicy = (input: {
+  policy: MultiSourceTestIntentEnvelope["conflictResolutionPolicy"];
+  field: DetectedField;
+  candidate: CandidateTestDataExample;
+  envelope: MultiSourceTestIntentEnvelope;
+}): void => {
+  const candidateRef = sourceRefForId(input.envelope, input.candidate.sourceId);
+  if (input.policy === "priority") {
+    const winner = winnerSourceId(input.envelope, [
+      ...(input.field.sourceRefs?.map((ref) => ref.sourceId) ?? []),
+      input.candidate.sourceId,
+    ]);
+    if (winner === input.candidate.sourceId) {
+      input.field.defaultValue = input.candidate.example;
+      input.field.sourceRefs = [candidateRef];
+      input.field.trace.sourceRefs = [candidateRef];
+    }
+    input.field.provenance = "reconciled";
+    return;
+  }
+  input.field.provenance = "reconciled";
+  input.field.ambiguity = {
+    reason:
+      input.policy === "keep_both"
+        ? `Alternative test-data examples retained: "${input.field.defaultValue}" and "${input.candidate.example}"`
+        : `Reviewer must choose between test-data examples "${input.field.defaultValue}" and "${input.candidate.example}"`,
+  };
+  if (input.policy === "reviewer_decides") {
+    input.field.sourceRefs = mergeSourceRefs(input.field.sourceRefs, [
+      candidateRef,
+    ]);
+    input.field.trace.sourceRefs = input.field.sourceRefs.map((ref) => ({
+      ...ref,
+    }));
+  }
+};
+
+const buildAlternativeField = (input: {
+  field: DetectedField;
+  candidate: CandidateField;
+  envelope: MultiSourceTestIntentEnvelope;
+  reason: string;
+}): DetectedField => {
+  const candidateRef = sourceRefForId(input.envelope, input.candidate.sourceId);
+  return {
+    id: `${input.field.id}::alternative::${input.candidate.sourceId}::${stableSlug(input.candidate.label)}${input.candidate.defaultValue !== undefined ? `::${stableSlug(input.candidate.defaultValue)}` : ""}`,
+    screenId: input.field.screenId,
+    trace: {
+      ...(input.field.trace.nodeId !== undefined
+        ? { nodeId: input.field.trace.nodeId }
+        : {}),
+      nodeName: input.candidate.label,
+      ...(input.field.trace.nodePath !== undefined
+        ? { nodePath: input.field.trace.nodePath }
+        : {}),
+      sourceRefs: [candidateRef],
+    },
+    provenance: "reconciled",
+    confidence: Math.min(input.field.confidence, 0.7),
+    label: input.candidate.label,
+    type: input.field.type,
+    ...(input.candidate.defaultValue !== undefined
+      ? { defaultValue: input.candidate.defaultValue }
+      : input.field.defaultValue !== undefined
+        ? { defaultValue: input.field.defaultValue }
+        : {}),
+    ambiguity: { reason: input.reason },
+    sourceRefs: [candidateRef],
+  };
+};
+
+const buildAlternativeValidation = (input: {
+  validation: DetectedValidation;
+  candidate: CandidateValidation;
+  envelope: MultiSourceTestIntentEnvelope;
+  reason: string;
+}): DetectedValidation => {
+  const candidateRef = sourceRefForId(input.envelope, input.candidate.sourceId);
+  return {
+    id: `${input.validation.id}::alternative::${input.candidate.sourceId}::${stableSlug(input.candidate.rule)}`,
+    screenId: input.validation.screenId,
+    trace: {
+      ...(input.validation.trace.nodeId !== undefined
+        ? { nodeId: input.validation.trace.nodeId }
+        : {}),
+      nodeName: input.candidate.rule,
+      ...(input.validation.trace.nodePath !== undefined
+        ? { nodePath: input.validation.trace.nodePath }
+        : {}),
+      sourceRefs: [candidateRef],
+    },
+    provenance: "reconciled",
+    confidence: Math.min(input.validation.confidence, 0.7),
+    rule: input.candidate.rule,
+    ...(input.validation.targetFieldId !== undefined
+      ? { targetFieldId: input.validation.targetFieldId }
+      : {}),
+    ambiguity: { reason: input.reason },
+    sourceRefs: [candidateRef],
+  };
 };
 
 const winnerSourceId = (
