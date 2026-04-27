@@ -49,6 +49,7 @@ import {
   type ViewerLanguage,
 } from "./code-formatting";
 import "./inspector.css";
+import type { InspectorCSSProperties } from "./types";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -1366,14 +1367,16 @@ export function CodeViewer({
                     }
                   }}
                   data-testid={isInRange ? "highlighted-line" : undefined}
-                  className="flex text-xs leading-relaxed"
-                  style={{
-                    backgroundColor: lineBackground,
-                    borderLeft:
-                      isActiveMatchLine || isJumpTargetLine
-                        ? `2px solid ${emphasisBorder}`
-                        : undefined,
-                  }}
+                  className="cv-highlighted-line flex text-xs leading-relaxed"
+                  style={
+                    {
+                      "--cv-highlighted-bg": lineBackground,
+                      "--cv-highlighted-border-left":
+                        isActiveMatchLine || isJumpTargetLine
+                          ? `2px solid ${emphasisBorder}`
+                          : "none",
+                    } as InspectorCSSProperties
+                  }
                 >
                   {isActiveMatchLine ? (
                     <span
@@ -1411,14 +1414,24 @@ export function CodeViewer({
                               data-testid={`code-boundary-marker-${boundary.entry.irNodeId}`}
                               data-boundary-node-id={boundary.entry.irNodeId}
                               aria-label={`Select ${boundary.entry.irNodeName}`}
-                              className="h-full w-1 cursor-pointer border-0 p-0"
-                              style={{
-                                backgroundColor: boundary.color,
-                                borderTopLeftRadius: isStart ? 2 : 0,
-                                borderTopRightRadius: isStart ? 2 : 0,
-                                borderBottomLeftRadius: isEnd ? 2 : 0,
-                                borderBottomRightRadius: isEnd ? 2 : 0,
-                              }}
+                              className="cv-boundary-marker h-full w-1 cursor-pointer border-0 p-0"
+                              style={
+                                {
+                                  "--cv-boundary-color": boundary.color,
+                                  "--cv-boundary-border-tl": isStart
+                                    ? "2px"
+                                    : "0",
+                                  "--cv-boundary-border-tr": isStart
+                                    ? "2px"
+                                    : "0",
+                                  "--cv-boundary-border-bl": isEnd
+                                    ? "2px"
+                                    : "0",
+                                  "--cv-boundary-border-br": isEnd
+                                    ? "2px"
+                                    : "0",
+                                } as InspectorCSSProperties
+                              }
                               onMouseEnter={(event) => {
                                 const rect =
                                   event.currentTarget.getBoundingClientRect();
@@ -1485,9 +1498,13 @@ export function CodeViewer({
                   </span>
 
                   <span
-                    className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+                    className={`cv-plain-text m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
                     style={
-                      highlightedLines ? undefined : { color: plainTextColor }
+                      highlightedLines
+                        ? undefined
+                        : ({
+                            "--cv-plain-text-color": plainTextColor,
+                          } as InspectorCSSProperties)
                     }
                     dangerouslySetInnerHTML={{ __html: lineHtml }}
                   />

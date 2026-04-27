@@ -245,6 +245,31 @@
   color: var(--dv-diff-content-color, inherit);
 }
 
+/* ============================================================================
+   CodeViewer — highlighted lines with dynamic background and border
+   =========================================================================== */
+
+.cv-highlighted-line {
+  background-color: var(--cv-highlighted-bg, transparent);
+  border-left: var(--cv-highlighted-border-left, none);
+}
+
+.cv-token-box {
+  background-color: var(--cv-token-box-bg, transparent);
+}
+
+.cv-boundary-marker {
+  background-color: var(--cv-boundary-color, transparent);
+  border-top-left-radius: var(--cv-boundary-border-tl, 0);
+  border-top-right-radius: var(--cv-boundary-border-tr, 0);
+  border-bottom-left-radius: var(--cv-boundary-border-bl, 0);
+  border-bottom-right-radius: var(--cv-boundary-border-br, 0);
+}
+
+.cv-plain-text {
+  color: var(--cv-plain-text-color, inherit);
+}
+
 /* --------------------------------------------------------------------------
    SuggestionsPanel (light-only — no dark-mode toggle in this component)
    -------------------------------------------------------------------------- */
