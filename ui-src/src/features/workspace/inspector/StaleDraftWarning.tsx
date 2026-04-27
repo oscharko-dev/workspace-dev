@@ -21,29 +21,52 @@ export function StaleDraftWarning({
     <div
       role="alert"
       className="stale-draft-warning"
-      className="removed-style-1"
+      style={{
+        padding: "12px 16px",
+        borderRadius: 8,
+        border: "1px solid var(--color-warning-border, #e5a100)",
+        background: "var(--color-warning-bg, #fef9ec)",
+        marginBottom: 12,
+        fontSize: 13,
+        lineHeight: 1.5
+      }}
     >
       <p
-        className="removed-style-2"
+        style={{
+          margin: "0 0 8px",
+          fontWeight: 600,
+          color: "var(--color-warning-text, #92610a)"
+        }}
       >
         Stale draft detected
       </p>
-      <p className="removed-style-3">
+      <p style={{ margin: "0 0 12px", color: "var(--color-text-secondary, #555)" }}>
         {checkResult.message}
       </p>
       {hasUnmapped && (
         <p
-          className="removed-style-4"
+          style={{
+            margin: "0 0 12px",
+            fontSize: 12,
+            color: "var(--color-text-tertiary, #888)"
+          }}
         >
           {`${String(checkResult.unmappedNodeIds.length)} node(s) could not be mapped to the latest output.`}
         </p>
       )}
-      <div className="removed-style-5">
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <button
           type="button"
           disabled={disabled}
           onClick={() => { onDecision("continue"); }}
-          className="removed-style-6"
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1px solid var(--color-border, #ccc)",
+            background: "var(--color-bg-secondary, #f5f5f5)",
+            cursor: disabled ? "not-allowed" : "pointer",
+            fontSize: 12
+          }}
           title="Keep editing against the original source job"
         >
           Continue with original
@@ -52,7 +75,14 @@ export function StaleDraftWarning({
           type="button"
           disabled={disabled}
           onClick={() => { onDecision("discard"); }}
-          className="removed-style-7"
+          style={{
+            padding: "6px 12px",
+            borderRadius: 6,
+            border: "1px solid var(--color-border, #ccc)",
+            background: "var(--color-bg-secondary, #f5f5f5)",
+            cursor: disabled ? "not-allowed" : "pointer",
+            fontSize: 12
+          }}
           title="Discard the draft and start fresh from the latest job"
         >
           Discard draft
@@ -62,7 +92,16 @@ export function StaleDraftWarning({
             type="button"
             disabled={disabled}
             onClick={() => { onDecision("carry-forward"); }}
-            className="removed-style-8"
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: "1px solid var(--color-primary-border, #2563eb)",
+              background: "var(--color-primary-bg, #eff6ff)",
+              color: "var(--color-primary-text, #1d4ed8)",
+              cursor: disabled ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontWeight: 500
+            }}
             title="Apply your edits to the latest job output"
           >
             Carry forward to latest
@@ -73,7 +112,16 @@ export function StaleDraftWarning({
             type="button"
             disabled={disabled || remapPending}
             onClick={() => { onDecision("remap"); }}
-            className="removed-style-9"
+            style={{
+              padding: "6px 12px",
+              borderRadius: 6,
+              border: "1px solid var(--color-info-border, #60a5fa)",
+              background: "var(--color-info-bg, #eff6ff)",
+              color: "var(--color-info-text, #1d4ed8)",
+              cursor: disabled || remapPending ? "not-allowed" : "pointer",
+              fontSize: 12,
+              fontWeight: 500
+            }}
             title="Get guided suggestions for remapping changed nodes"
           >
             {remapPending ? "Loading suggestions\u2026" : "Suggest remaps"}

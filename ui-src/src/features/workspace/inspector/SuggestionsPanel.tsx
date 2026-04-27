@@ -98,7 +98,18 @@ export function SuggestionsPanel({
     <section
       aria-label="Import quality suggestions"
       data-testid="inspector-suggestions-panel"
-      className="removed-style-1"
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        padding: 12,
+        borderRadius: 8,
+        border: "1px solid #e5e7eb",
+        background: "#fafafa",
+        color: "#111827",
+        fontSize: 13,
+        lineHeight: 1.5,
+      }}
     >
       <QualityScoreSection qualityScore={qualityScore} />
       {tokenModel.available ? (
@@ -132,12 +143,25 @@ function QualityScoreSection({
   return (
     <div data-testid="suggestions-quality-score">
       <header
-        className="removed-style-2"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6,
+        }}
       >
-        <span className="removed-style-3">Pre-flight quality score</span>
+        <span style={{ fontWeight: 600 }}>Pre-flight quality score</span>
         <span
           data-testid="suggestions-quality-band"
-          className="removed-style-4"
+          style={{
+            padding: "2px 8px",
+            borderRadius: 999,
+            background: bandStyle.bg,
+            border: `1px solid ${bandStyle.border}`,
+            color: bandStyle.text,
+            fontWeight: 600,
+            fontSize: 12,
+          }}
         >
           {bandLabel} · {qualityScore.score}
         </span>
@@ -162,14 +186,18 @@ function BreakdownBar({
     ["Codegen", breakdown.codegen],
   ];
   return (
-    <div className="removed-style-5">
+    <div style={{ marginTop: 4 }}>
       {rows.map(([label, value]) => (
         <div
           key={label}
-          className="removed-style-6"
+          style={{ display: "flex", alignItems: "center", gap: 8 }}
         >
           <span
-            className="removed-style-7"
+            style={{
+              width: 78,
+              fontSize: 11,
+              color: "#4b5563",
+            }}
           >
             {label}
           </span>
@@ -179,13 +207,26 @@ function BreakdownBar({
             aria-valuenow={value}
             aria-valuemin={0}
             aria-valuemax={100}
-            className="removed-style-8"
+            style={{
+              position: "relative",
+              flex: 1,
+              height: 6,
+              background: "#e5e7eb",
+              borderRadius: 999,
+              overflow: "hidden",
+            }}
           >
             <span
-              className="removed-style-9"
+              style={{
+                position: "absolute",
+                inset: 0,
+                width: `${String(value)}%`,
+                background:
+                  value >= 80 ? "#10b981" : value >= 60 ? "#f59e0b" : "#ef4444",
+              }}
             />
           </div>
-          <span className="removed-style-10">
+          <span style={{ width: 28, textAlign: "right", fontSize: 11 }}>
             {value}
           </span>
         </div>
@@ -203,7 +244,7 @@ function Summary({
   return (
     <p
       data-testid="suggestions-quality-summary"
-      className="removed-style-11"
+      style={{ margin: "6px 0 0", fontSize: 11, color: "#6b7280" }}
     >
       {summary.totalNodes} nodes · depth {summary.maxDepth} ·{" "}
       {summary.unmappedNodes} unmapped · {summary.interactiveWithoutSemantics}{" "}
@@ -217,7 +258,7 @@ function RiskTagList({ risks }: { risks: QualityRiskTag[] }): JSX.Element {
   return (
     <ul
       data-testid="suggestions-risk-list"
-      className="removed-style-12"
+      style={{ margin: "8px 0 0", padding: 0, listStyle: "none" }}
     >
       {risks.slice(0, 8).map((risk) => {
         const sev = SEVERITY_BADGE[risk.severity];
@@ -225,17 +266,40 @@ function RiskTagList({ risks }: { risks: QualityRiskTag[] }): JSX.Element {
           <li
             key={risk.id}
             data-testid={`suggestions-risk-${risk.severity}`}
-            className="removed-style-13"
+            style={{
+              display: "flex",
+              gap: 8,
+              alignItems: "flex-start",
+              padding: "6px 8px",
+              marginBottom: 4,
+              border: "1px solid #e5e7eb",
+              borderRadius: 6,
+              background: "#fff",
+            }}
           >
             <span
-              className="removed-style-14"
+              style={{
+                padding: "0 6px",
+                borderRadius: 4,
+                fontSize: 10,
+                fontWeight: 600,
+                background: sev.bg,
+                color: sev.text,
+                flexShrink: 0,
+                alignSelf: "center",
+              }}
             >
               {sev.label}
             </span>
-            <div className="removed-style-15">
-              <div className="removed-style-16">{risk.label}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 500, fontSize: 12 }}>{risk.label}</div>
               <p
-                className="removed-style-17"
+                style={{
+                  margin: "2px 0 0",
+                  fontSize: 11,
+                  color: "#6b7280",
+                  wordBreak: "break-word",
+                }}
               >
                 {risk.detail}
               </p>
@@ -306,15 +370,20 @@ function TokenSuggestionsSection({
   return (
     <div data-testid="suggestions-token-section">
       <header
-        className="removed-style-18"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6,
+        }}
       >
-        <span className="removed-style-19">Token mapping intelligence</span>
-        <span className="removed-style-20">
+        <span style={{ fontWeight: 600 }}>Token mapping intelligence</span>
+        <span style={{ fontSize: 11, color: "#6b7280" }}>
           {model.summary.conflicts} conflicts · {model.summary.unmapped}{" "}
           unmapped · {model.summary.autoAccepted} auto-accepted
         </span>
       </header>
-      <div className="removed-style-21">
+      <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
         <button
           type="button"
           onClick={acceptAll}
@@ -343,7 +412,7 @@ function TokenSuggestionsSection({
           Apply decisions
         </button>
       </div>
-      <ul className="removed-style-22">
+      <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
         {model.suggestions.map((suggestion) => (
           <TokenSuggestionRow
             key={suggestion.id}
@@ -378,7 +447,16 @@ function TokenSuggestionRow({
   return (
     <li
       data-testid={`suggestions-token-${suggestion.kind}`}
-      className="removed-style-23"
+      style={{
+        display: "flex",
+        gap: 8,
+        alignItems: "flex-start",
+        padding: "6px 8px",
+        borderRadius: 6,
+        border: accepted ? "1px solid #93c5fd" : "1px solid #e5e7eb",
+        background: accepted ? "#f0f9ff" : "#fff",
+        marginBottom: 4,
+      }}
     >
       <input
         type="checkbox"
@@ -388,29 +466,47 @@ function TokenSuggestionRow({
           onToggle(suggestion.id);
         }}
         aria-label={`Accept token mapping for ${suggestion.tokenName}`}
-        className="removed-style-24"
+        style={{ marginTop: 3 }}
       />
-      <div className="removed-style-25">
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div
-          className="removed-style-26"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            flexWrap: "wrap",
+          }}
         >
           <code
-            className="removed-style-27"
+            style={{
+              fontSize: 12,
+              fontWeight: 500,
+              background: "#f3f4f6",
+              padding: "0 4px",
+              borderRadius: 3,
+            }}
           >
             {suggestion.tokenName}
           </code>
           <span
-            className="removed-style-28"
+            style={{
+              fontSize: 10,
+              padding: "0 6px",
+              borderRadius: 4,
+              background: "#e0e7ff",
+              color: "#3730a3",
+              fontWeight: 600,
+            }}
           >
             {recommendationLabel}
           </span>
           {suggestion.kind === "conflict" ? (
-            <span className="removed-style-29">
+            <span style={{ fontSize: 11, color: "#6b7280" }}>
               {suggestion.figmaValue} → {suggestion.existingValue}
             </span>
           ) : null}
         </div>
-        <p className="removed-style-30">
+        <p style={{ margin: "2px 0 0", fontSize: 11, color: "#6b7280" }}>
           {suggestion.detail}
         </p>
       </div>
@@ -432,15 +528,20 @@ function A11yNudgeSection({
   return (
     <div data-testid="suggestions-a11y-section">
       <header
-        className="removed-style-31"
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 6,
+        }}
       >
-        <span className="removed-style-32">Post-generation review nudges</span>
-        <span className="removed-style-33">
+        <span style={{ fontWeight: 600 }}>Post-generation review nudges</span>
+        <span style={{ fontSize: 11, color: "#6b7280" }}>
           {result.summary.total} nudge{result.summary.total === 1 ? "" : "s"} ·{" "}
           {result.summary.byFile} file{result.summary.byFile === 1 ? "" : "s"}
         </span>
       </header>
-      <ul className="removed-style-34">
+      <ul style={{ margin: 0, padding: 0, listStyle: "none" }}>
         {result.nudges.slice(0, 10).map((nudge) => (
           <A11yNudgeRow
             key={`${nudge.ruleId}:${nudge.filePath}:${String(nudge.line ?? 0)}`}
@@ -464,20 +565,43 @@ function A11yNudgeRow({
   return (
     <li
       data-testid={`suggestions-a11y-${nudge.severity}`}
-      className="removed-style-35"
+      style={{
+        display: "flex",
+        gap: 8,
+        alignItems: "flex-start",
+        padding: "6px 8px",
+        marginBottom: 4,
+        border: "1px solid #e5e7eb",
+        borderRadius: 6,
+        background: "#fff",
+      }}
     >
       <span
-        className="removed-style-36"
+        style={{
+          padding: "0 6px",
+          borderRadius: 4,
+          fontSize: 10,
+          fontWeight: 600,
+          background: sev.bg,
+          color: sev.text,
+          flexShrink: 0,
+          alignSelf: "center",
+        }}
       >
         {sev.label}
       </span>
-      <div className="removed-style-37">
+      <div style={{ flex: 1, minWidth: 0 }}>
         <div
-          className="removed-style-38"
+          style={{
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
         >
-          <span className="removed-style-39">{nudge.label}</span>
+          <span style={{ fontWeight: 500, fontSize: 12 }}>{nudge.label}</span>
           {nudge.wcag ? (
-            <span className="removed-style-40">{nudge.wcag}</span>
+            <span style={{ fontSize: 10, color: "#6b7280" }}>{nudge.wcag}</span>
           ) : null}
           {onFocusFile ? (
             <button
@@ -486,20 +610,33 @@ function A11yNudgeRow({
                 onFocusFile(nudge.filePath, nudge.line);
               }}
               data-testid={`suggestions-a11y-focus-${nudge.ruleId}`}
-              className="removed-style-41"
+              style={{
+                background: "transparent",
+                border: "1px solid #d1d5db",
+                padding: "0 6px",
+                borderRadius: 4,
+                fontSize: 10,
+                cursor: "pointer",
+                color: "#1f2937",
+              }}
             >
               {nudge.filePath}
               {nudge.line ? `:${String(nudge.line)}` : ""}
             </button>
           ) : (
-            <span className="removed-style-42">
+            <span style={{ fontSize: 10, color: "#6b7280" }}>
               {nudge.filePath}
               {nudge.line ? `:${String(nudge.line)}` : ""}
             </span>
           )}
         </div>
         <p
-          className="removed-style-43"
+          style={{
+            margin: "2px 0 0",
+            fontSize: 11,
+            color: "#6b7280",
+            wordBreak: "break-word",
+          }}
         >
           {nudge.detail}
         </p>
