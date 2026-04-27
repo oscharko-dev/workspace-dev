@@ -78,11 +78,31 @@ const decisionRank: Record<TestCasePolicyDecision, number> = {
   blocked: 2,
 };
 
+const MULTI_SOURCE_CONFLICT_CASE_REASON_RE =
+  /^multi-source conflict(?:\(s\))? (?<ids>.+) affect this case$/u;
+const MULTI_SOURCE_CONFLICT_JOB_REASON_RE =
+  /^multi-source conflict artifact present: (?<ids>.+)$/u;
+
 const escalate = (
   current: TestCasePolicyDecision,
   candidate: TestCasePolicyDecision,
 ): TestCasePolicyDecision => {
   return decisionRank[candidate] > decisionRank[current] ? candidate : current;
+};
+
+const parseMultiSourceConflictIds = (
+  reason: string,
+): string[] | undefined => {
+  const match =
+    reason.match(MULTI_SOURCE_CONFLICT_CASE_REASON_RE) ??
+    reason.match(MULTI_SOURCE_CONFLICT_JOB_REASON_RE);
+  const ids = match?.groups?.ids;
+  if (ids === undefined) return undefined;
+  const values = ids
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+  return values.length > 0 ? values : undefined;
 };
 
 const sortedUnique = <T extends string>(values: readonly T[]): T[] =>
@@ -713,6 +733,88 @@ export const evaluatePolicyGate = (
     blockedCount: blocked,
     needsReviewCount: needsReview,
     blocked: jobBlocked,
+    decisions,
+    jobLevelViolations,
+  };
+};
+
+export const pruneResolvedMultiSourceConflictViolations = (
+  input: {
+    report: TestCasePolicyReport;
+    isConflictResolved: (conflictId: string) => boolean;
+  },
+): TestCasePolicyReport => {
+  const rewriteViolations = (
+    violations: readonly TestCasePolicyViolation[],
+    kind: "case" | "job",
+  ): TestCasePolicyViolation[] => {
+    const out: TestCasePolicyViolation[] = [];
+    for (const violation of violations) {
+      if (violation.outcome !== "multi_source_conflict_present") {
+        out.push(violation);
+        continue;
+      }
+      const conflictIds = parseMultiSourceConflictIds(violation.reason);
+      if (conflictIds === undefined) {
+        out.push(violation);
+        continue;
+      }
+      const unresolvedConflictIds = conflictIds.filter(
+        (conflictId) => !input.isConflictResolved(conflictId),
+      );
+      if (unresolvedConflictIds.length === 0) {
+        continue;
+      }
+      const rewrittenReason =
+        kind === "case"
+          ? `multi-source conflict(s) ${unresolvedConflictIds.join(", ")} affect this case`
+          : `multi-source conflict artifact present: ${unresolvedConflictIds.join(", ")}`;
+      out.push({
+        ...violation,
+        reason: rewrittenReason,
+      });
+    }
+    return out;
+  };
+
+  const decisions: TestCasePolicyDecisionRecord[] = [];
+  let approvedCount = 0;
+  let blockedCount = 0;
+  let needsReviewCount = 0;
+
+  for (const decision of input.report.decisions) {
+    const violations = rewriteViolations(decision.violations, "case");
+    let nextDecision: TestCasePolicyDecision = "approved";
+    for (const violation of violations) {
+      nextDecision = escalate(
+        nextDecision,
+        violation.severity === "error" ? "blocked" : "needs_review",
+      );
+    }
+    decisions.push({
+      ...decision,
+      decision: nextDecision,
+      violations,
+    });
+    if (nextDecision === "approved") approvedCount += 1;
+    else if (nextDecision === "blocked") blockedCount += 1;
+    else needsReviewCount += 1;
+  }
+
+  const jobLevelViolations = rewriteViolations(
+    input.report.jobLevelViolations,
+    "job",
+  );
+  const blocked =
+    decisions.some((decision) => decision.decision === "blocked") ||
+    jobLevelViolations.some((violation) => violation.severity === "error");
+
+  return {
+    ...input.report,
+    approvedCount,
+    blockedCount,
+    needsReviewCount,
+    blocked,
     decisions,
     jobLevelViolations,
   };

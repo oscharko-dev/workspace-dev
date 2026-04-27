@@ -4,6 +4,8 @@ import type { InspectorSourceRecord } from "./types";
 
 export interface SourceListPanelProps {
   sources: readonly InspectorSourceRecord[];
+  canRemove?: boolean;
+  onRemove?: (sourceId: string) => Promise<void>;
 }
 
 const shortHash = (value: string): string => value.slice(0, 12);
@@ -27,8 +29,15 @@ const formatCapturedAtRelative = (value: string): string => {
   return `${String(deltaDays)}d ago`;
 };
 
-export function SourceListPanel({ sources }: SourceListPanelProps): JSX.Element {
+export function SourceListPanel({
+  sources,
+  canRemove = false,
+  onRemove,
+}: SourceListPanelProps): JSX.Element {
   const [copiedSourceId, setCopiedSourceId] = useState<string | null>(null);
+  const [pendingRemoveSourceId, setPendingRemoveSourceId] = useState<string | null>(
+    null,
+  );
   const orderedSources = useMemo(
     () =>
       [...sources].sort((left, right) =>
@@ -69,23 +78,58 @@ export function SourceListPanel({ sources }: SourceListPanelProps): JSX.Element 
                   </span>
                   <span className="font-medium text-white">{source.label}</span>
                 </div>
-                <button
-                  type="button"
-                  aria-label={`Copy content hash for ${source.label}`}
-                  onClick={() => {
-                    if (typeof navigator?.clipboard?.writeText !== "function") {
-                      return;
-                    }
-                    void navigator.clipboard.writeText(source.contentHash).then(() => {
-                      setCopiedSourceId(source.sourceId);
-                    });
-                  }}
-                  className="cursor-pointer rounded border border-white/10 px-2 py-1 text-[10px] text-white/65 transition hover:border-sky-400/40 hover:text-sky-200"
-                >
-                  {copiedSourceId === source.sourceId
-                    ? "Copied"
-                    : shortHash(source.contentHash)}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    aria-label={`Copy content hash for ${source.label}`}
+                    onClick={() => {
+                      const clipboard = (
+                        navigator as unknown as {
+                          clipboard?: {
+                            writeText?: (text: string) => Promise<void>;
+                          };
+                        }
+                      ).clipboard;
+                      if (
+                        clipboard === undefined ||
+                        typeof clipboard.writeText !== "function"
+                      ) {
+                        return;
+                      }
+                      void clipboard.writeText(source.contentHash).then(() => {
+                        setCopiedSourceId(source.sourceId);
+                      });
+                    }}
+                    className="cursor-pointer rounded border border-white/10 px-2 py-1 text-[10px] text-white/65 transition hover:border-sky-400/40 hover:text-sky-200"
+                  >
+                    {copiedSourceId === source.sourceId
+                      ? "Copied"
+                      : shortHash(source.contentHash)}
+                  </button>
+                  {onRemove !== undefined ? (
+                    <button
+                      type="button"
+                      aria-label={`Remove source ${source.label}`}
+                      disabled={!canRemove || pendingRemoveSourceId !== null}
+                      title={
+                        canRemove
+                          ? undefined
+                          : "Set the bearer token to remove sources."
+                      }
+                      onClick={() => {
+                        setPendingRemoveSourceId(source.sourceId);
+                        void onRemove(source.sourceId).finally(() => {
+                          setPendingRemoveSourceId(null);
+                        });
+                      }}
+                      className="cursor-pointer rounded border border-rose-500/25 px-2 py-1 text-[10px] text-rose-200 transition hover:border-rose-400/50 disabled:cursor-not-allowed disabled:border-white/10 disabled:text-white/35"
+                    >
+                      {pendingRemoveSourceId === source.sourceId
+                        ? "Removing"
+                        : "Remove"}
+                    </button>
+                  ) : null}
+                </div>
               </div>
               <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-white/50">
                 <span>

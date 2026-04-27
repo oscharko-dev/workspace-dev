@@ -11,18 +11,25 @@ import {
   type BusinessTestIntentIr,
   type CustomContextSource,
   type GeneratedTestCaseList,
+  type MultiSourceConflict,
   type MultiSourceReconciliationReport,
   type MultiSourceTestIntentEnvelope,
   type TestIntentSourceKind,
   type TestIntentSourceRef,
 } from "../contracts/index.js";
 import { canonicalJson, sha256Hex } from "./content-hash.js";
+import {
+  buildMultiSourceTestIntentEnvelope,
+  isPrimaryTestIntentSourceKind,
+} from "./multi-source-envelope.js";
 
 const SOURCES_DIR = "sources";
 const BUSINESS_INTENT_IR_FILENAME = "business-intent-ir.json";
 const JIRA_ISSUE_IR_FILENAME = "jira-issue-ir.json";
+const JIRA_ISSUE_IR_LIST_FILENAME = "jira-issue-ir-list.json";
 const JIRA_PASTE_PROVENANCE_FILENAME = "paste-provenance.json";
 const CONFLICT_DECISIONS_FILENAME = "multi-source-conflict-decisions.json";
+const REMOVED_SOURCES_FILENAME = "removed-sources.json";
 const SAFE_ID_RE = /^[A-Za-z0-9_.-]{1,128}$/u;
 
 export interface InspectorSourceRecord {
@@ -68,6 +75,18 @@ export interface InspectorConflictDecisionSnapshot {
   selectedSourceId?: string;
   selectedNormalizedValue?: string;
   note?: string;
+}
+
+export type InspectorConflictEffectiveState = "resolved" | "unresolved";
+
+export interface InspectorConflictProjection extends MultiSourceConflict {
+  effectiveState: InspectorConflictEffectiveState;
+}
+
+export interface InspectorConflictProjectionResult {
+  conflicts: InspectorConflictProjection[];
+  resolvedConflictIds: string[];
+  unresolvedConflictIds: string[];
 }
 
 interface ConflictDecisionEnvelope {
@@ -130,6 +149,107 @@ const sourceDirPath = (runDir: string): string => path.join(runDir, SOURCES_DIR)
 
 const decisionsFilePath = (runDir: string): string =>
   path.join(runDir, CONFLICT_DECISIONS_FILENAME);
+
+interface RemovedSourceRecord {
+  sourceId: string;
+  removedAt: string;
+  removedBy?: string;
+}
+
+interface RemovedSourcesEnvelope {
+  version: "1.0.0";
+  jobId: string;
+  removedSources: RemovedSourceRecord[];
+}
+
+const removedSourcesFilePath = (runDir: string): string =>
+  path.join(runDir, REMOVED_SOURCES_FILENAME);
+
+const isRemovedSourceRecord = (value: unknown): value is RemovedSourceRecord =>
+  isRecord(value) &&
+  typeof value["sourceId"] === "string" &&
+  isSafeId(value["sourceId"]) &&
+  typeof value["removedAt"] === "string" &&
+  (value["removedBy"] === undefined || typeof value["removedBy"] === "string");
+
+const isRemovedSourcesEnvelope = (
+  value: unknown,
+): value is RemovedSourcesEnvelope =>
+  isRecord(value) &&
+  value["version"] === "1.0.0" &&
+  typeof value["jobId"] === "string" &&
+  Array.isArray(value["removedSources"]) &&
+  value["removedSources"].every(isRemovedSourceRecord);
+
+const readRemovedSourcesEnvelope = async (
+  runDir: string,
+): Promise<RemovedSourcesEnvelope> => {
+  try {
+    const raw = await readFile(removedSourcesFilePath(runDir), "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    if (isRemovedSourcesEnvelope(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Missing or malformed removal artifacts are treated as absent.
+  }
+  return {
+    version: "1.0.0",
+    jobId: "",
+    removedSources: [],
+  };
+};
+
+const readRemovedSourceIds = async (
+  runDir: string,
+): Promise<Set<string>> => {
+  const envelope = await readRemovedSourcesEnvelope(runDir);
+  return new Set(envelope.removedSources.map((record) => record.sourceId));
+};
+
+const writeRemovedSourcesEnvelope = async (
+  runDir: string,
+  envelope: RemovedSourcesEnvelope,
+): Promise<void> => {
+  const artifactPath = removedSourcesFilePath(runDir);
+  await mkdir(path.dirname(artifactPath), { recursive: true });
+  const tempPath = `${artifactPath}.${process.pid}.${randomUUID()}.tmp`;
+  const nextEnvelope: RemovedSourcesEnvelope = {
+    ...envelope,
+    removedSources: [...envelope.removedSources].sort((left, right) =>
+      left.sourceId.localeCompare(right.sourceId),
+    ),
+  };
+  await writeFile(tempPath, canonicalJson(nextEnvelope), "utf8");
+  await rename(tempPath, artifactPath);
+};
+
+export const markInspectorSourceRemoved = async (input: {
+  runDir: string;
+  jobId: string;
+  sourceId: string;
+  removedBy?: string;
+  removedAt?: string;
+}): Promise<void> => {
+  const envelope = await readRemovedSourcesEnvelope(input.runDir);
+  const nextEnvelope: RemovedSourcesEnvelope = {
+    ...envelope,
+    jobId: envelope.jobId.length > 0 ? envelope.jobId : input.jobId,
+  };
+  if (
+    nextEnvelope.removedSources.some(
+      (record) => record.sourceId === input.sourceId,
+    )
+  ) {
+    return;
+  }
+  nextEnvelope.removedSources.push({
+    sourceId: input.sourceId,
+    removedAt: input.removedAt ?? new Date().toISOString(),
+    ...(input.removedBy !== undefined ? { removedBy: input.removedBy } : {}),
+  });
+  await writeRemovedSourcesEnvelope(input.runDir, nextEnvelope);
+};
 
 const isExistingDir = async (dirPath: string): Promise<boolean> => {
   try {
@@ -201,6 +321,54 @@ const readSingleIssueSourceRef = async (
   }
 };
 
+const readJiraIssueListSourceRef = async (
+  runDir: string,
+  sourceId: string,
+): Promise<TestIntentSourceRef | undefined> => {
+  try {
+    const raw = await readFile(
+      path.join(runDir, SOURCES_DIR, sourceId, JIRA_ISSUE_IR_LIST_FILENAME),
+      "utf8",
+    );
+    const parsed = JSON.parse(raw) as {
+      issues?: Array<{
+        issueKey?: unknown;
+        contentHash?: unknown;
+        capturedAt?: unknown;
+      }>;
+    };
+    const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
+    const validIssues = issues.filter(
+      (
+        issue,
+      ): issue is {
+        issueKey: string;
+        contentHash: string;
+        capturedAt: string;
+      } =>
+        typeof issue.issueKey === "string" &&
+        typeof issue.contentHash === "string" &&
+        typeof issue.capturedAt === "string",
+    );
+    if (validIssues.length === 0) return undefined;
+    return {
+      sourceId,
+      kind: "jira_rest",
+      contentHash: sha256Hex({
+        kind: "jira_rest_issue_ir_list",
+        sourceId,
+        issueContentHashes: validIssues.map((issue) => issue.contentHash),
+      }),
+      capturedAt: validIssues[0]!.capturedAt,
+      ...(validIssues.length === 1
+        ? { canonicalIssueKey: validIssues[0]!.issueKey }
+        : {}),
+    };
+  } catch {
+    return undefined;
+  }
+};
+
 const readCustomContextSourceRef = async (
   runDir: string,
   sourceId: string,
@@ -248,24 +416,35 @@ export const listInspectorSourceRecords = async (
   runDir: string,
 ): Promise<InspectorSourceRecord[]> => {
   const intent = await readBusinessIntent(runDir);
+  const removedSourceIds = await readRemovedSourceIds(runDir);
   const byId = new Map<string, TestIntentSourceRef>();
 
   for (const ref of intent?.sourceEnvelope?.sources ?? []) {
+    if (removedSourceIds.has(ref.sourceId)) continue;
     byId.set(ref.sourceId, ref);
   }
 
   const sourcesDir = sourceDirPath(runDir);
   if (await isExistingDir(sourcesDir)) {
     for (const sourceId of await readdir(sourcesDir)) {
-      if (!isSafeId(sourceId) || byId.has(sourceId)) continue;
+      if (
+        !isSafeId(sourceId) ||
+        byId.has(sourceId) ||
+        removedSourceIds.has(sourceId)
+      ) {
+        continue;
+      }
       const customRef = await readCustomContextSourceRef(runDir, sourceId);
       if (customRef !== undefined) {
         byId.set(sourceId, customRef);
         continue;
       }
-      const jiraPasteRef = await readSingleIssueSourceRef(runDir, sourceId, "jira_paste");
-      if (jiraPasteRef !== undefined) {
-        byId.set(sourceId, jiraPasteRef);
+      const jiraRef = sourceId.startsWith("jira-rest-")
+        ? (await readSingleIssueSourceRef(runDir, sourceId, "jira_rest")) ??
+          (await readJiraIssueListSourceRef(runDir, sourceId))
+        : await readSingleIssueSourceRef(runDir, sourceId, "jira_paste");
+      if (jiraRef !== undefined) {
+        byId.set(sourceId, jiraRef);
       }
     }
   }
@@ -277,12 +456,14 @@ export const listInspectorSourceRecords = async (
       intent.source.kind === "figma_plugin" ||
       intent.source.kind === "figma_rest")
   ) {
-    byId.set("business-intent-primary", {
-      sourceId: "business-intent-primary",
-      kind: intent.source.kind,
-      contentHash: intent.source.contentHash,
-      capturedAt: "1970-01-01T00:00:00.000Z",
-    });
+    if (!removedSourceIds.has("business-intent-primary")) {
+      byId.set("business-intent-primary", {
+        sourceId: "business-intent-primary",
+        kind: intent.source.kind,
+        contentHash: intent.source.contentHash,
+        capturedAt: "1970-01-01T00:00:00.000Z",
+      });
+    }
   }
 
   return [...byId.values()]
@@ -294,7 +475,29 @@ export const readInspectorSourceEnvelope = async (
   runDir: string,
 ): Promise<MultiSourceTestIntentEnvelope | undefined> => {
   const intent = await readBusinessIntent(runDir);
-  return intent?.sourceEnvelope;
+  if (intent?.sourceEnvelope === undefined) {
+    return undefined;
+  }
+  const removedSourceIds = await readRemovedSourceIds(runDir);
+  const filteredSources = intent.sourceEnvelope.sources.filter(
+    (ref) => !removedSourceIds.has(ref.sourceId),
+  );
+  if (
+    filteredSources.length === 0 ||
+    !filteredSources.some((ref) => isPrimaryTestIntentSourceKind(ref.kind))
+  ) {
+    return undefined;
+  }
+  return buildMultiSourceTestIntentEnvelope({
+    sources: filteredSources,
+    conflictResolutionPolicy: intent.sourceEnvelope.conflictResolutionPolicy,
+    ...(intent.sourceEnvelope.priorityOrder !== undefined
+      ? { priorityOrder: intent.sourceEnvelope.priorityOrder }
+      : {}),
+    ...(intent.sourceEnvelope.sourceMixPlan !== undefined
+      ? { sourceMixPlan: intent.sourceEnvelope.sourceMixPlan }
+      : {}),
+  });
 };
 
 export const readInspectorReconciliationReport = async (
@@ -474,6 +677,38 @@ export const readInspectorConflictDecisions = async (input: {
     };
   }
   return { events: envelope.events, byConflictId };
+};
+
+export const projectInspectorConflictStates = (input: {
+  report?: MultiSourceReconciliationReport;
+  decisions: Record<string, InspectorConflictDecisionSnapshot>;
+}): InspectorConflictProjectionResult => {
+  const reportConflicts = input.report?.conflicts ?? [];
+  const conflicts = reportConflicts.map((conflict) => {
+    const decision = input.decisions[conflict.conflictId];
+    const effectiveState: InspectorConflictEffectiveState =
+      decision !== undefined ||
+      (conflict.resolution !== "unresolved" &&
+        conflict.resolution !== "deferred_to_reviewer")
+        ? "resolved"
+        : "unresolved";
+    return {
+      ...conflict,
+      effectiveState,
+      ...(decision !== undefined
+        ? { resolvedBy: decision.actor, resolvedAt: decision.lastEventAt }
+        : {}),
+    };
+  });
+  return {
+    conflicts,
+    resolvedConflictIds: conflicts
+      .filter((conflict) => conflict.effectiveState === "resolved")
+      .map((conflict) => conflict.conflictId),
+    unresolvedConflictIds: conflicts
+      .filter((conflict) => conflict.effectiveState === "unresolved")
+      .map((conflict) => conflict.conflictId),
+  };
 };
 
 export const resolveInspectorConflict = async (input: {

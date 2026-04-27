@@ -67,10 +67,13 @@ import {
   listInspectorSourceRecords,
   readInspectorConflictDecisions,
   readInspectorSourceEnvelope,
+  projectInspectorConflictStates,
+  type InspectorConflictProjection,
   type InspectorConflictDecisionSnapshot,
   type InspectorSourceRecord,
   type InspectorTestCaseProvenance,
 } from "./inspector-multisource.js";
+import { pruneResolvedMultiSourceConflictViolations } from "./policy-gate.js";
 
 /** Stable identifier of a single artifact slot in the bundle. */
 export type InspectorBundleArtifactKind =
@@ -91,6 +94,11 @@ export interface InspectorBundleParseError {
   filename: string;
   reason: "invalid_json" | "schema_mismatch" | "io_error";
   message: string;
+}
+
+export interface InspectorMultiSourceReconciliationReport
+  extends Omit<MultiSourceReconciliationReport, "conflicts"> {
+  conflicts: InspectorConflictProjection[];
 }
 
 /**
@@ -116,7 +124,7 @@ export interface InspectorTestIntelligenceBundle {
   reviewEvents?: ReviewEvent[];
   sourceEnvelope?: MultiSourceTestIntentEnvelope;
   sourceRefs?: InspectorSourceRecord[];
-  multiSourceReconciliation?: MultiSourceReconciliationReport;
+  multiSourceReconciliation?: InspectorMultiSourceReconciliationReport;
   conflictDecisions?: Record<string, InspectorConflictDecisionSnapshot>;
   testCaseProvenance?: Record<string, InspectorTestCaseProvenance>;
   /** Per-artifact parse errors. Empty when every present file parsed cleanly. */
@@ -530,13 +538,39 @@ export const readInspectorTestIntelligenceBundle = async (
       ),
     ]);
 
+  const projectedMultiSourceReconciliation:
+    | InspectorMultiSourceReconciliationReport
+    | undefined =
+    multiSourceReconciliation.parsed !== undefined
+      ? {
+          ...multiSourceReconciliation.parsed,
+          conflicts: projectInspectorConflictStates({
+            report: multiSourceReconciliation.parsed,
+            decisions: conflictDecisions.byConflictId,
+          }).conflicts,
+        }
+      : undefined;
+  const resolvedConflictIds = new Set(
+    projectedMultiSourceReconciliation?.conflicts
+      .filter((conflict) => conflict.effectiveState === "resolved")
+      .map((conflict) => conflict.conflictId) ?? [],
+  );
+  const projectedPolicy =
+    policy.parsed !== undefined && resolvedConflictIds.size > 0
+      ? pruneResolvedMultiSourceConflictViolations({
+          report: policy.parsed,
+          isConflictResolved: (conflictId) =>
+            resolvedConflictIds.has(conflictId),
+        })
+      : policy.parsed;
+
   const bundle: InspectorTestIntelligenceBundle = {
     jobId: input.jobId,
     assembledAt: input.assembledAt,
     parseErrors,
     ...(testCases.parsed ? { generatedTestCases: testCases.parsed } : {}),
     ...(validation.parsed ? { validationReport: validation.parsed } : {}),
-    ...(policy.parsed ? { policyReport: policy.parsed } : {}),
+    ...(projectedPolicy ? { policyReport: projectedPolicy } : {}),
     ...(coverage.parsed ? { coverageReport: coverage.parsed } : {}),
     ...(visual.parsed ? { visualSidecarReport: visual.parsed } : {}),
     ...(mapping.parsed ? { qcMappingPreview: mapping.parsed } : {}),
@@ -547,8 +581,8 @@ export const readInspectorTestIntelligenceBundle = async (
       : {}),
     ...(sourceEnvelope !== undefined ? { sourceEnvelope } : {}),
     ...(sourceRefs.length > 0 ? { sourceRefs } : {}),
-    ...(multiSourceReconciliation.parsed
-      ? { multiSourceReconciliation: multiSourceReconciliation.parsed }
+    ...(projectedMultiSourceReconciliation !== undefined
+      ? { multiSourceReconciliation: projectedMultiSourceReconciliation }
       : {}),
     ...(Object.keys(conflictDecisions.byConflictId).length > 0
       ? { conflictDecisions: conflictDecisions.byConflictId }

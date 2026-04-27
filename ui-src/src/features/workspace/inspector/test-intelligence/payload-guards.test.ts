@@ -35,7 +35,11 @@ describe("isReviewGateSnapshot", () => {
         approvedCount: 0,
         needsReviewCount: 1,
         rejectedCount: 0,
-        perTestCase: [buildReviewSnapshotEntry()],
+        perTestCase: [
+          buildReviewSnapshotEntry({
+            fourEyesReasons: ["multi_source_conflict_present"],
+          }),
+        ],
       }),
     ).toBe(true);
   });

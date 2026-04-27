@@ -9,7 +9,10 @@ import {
   type GeneratedTestCase,
   type GeneratedTestCaseList,
 } from "../contracts/index.js";
-import { evaluatePolicyGate } from "./policy-gate.js";
+import {
+  evaluatePolicyGate,
+  pruneResolvedMultiSourceConflictViolations,
+} from "./policy-gate.js";
 import { cloneEuBankingDefaultProfile } from "./policy-profile.js";
 import { computeCoverageReport } from "./test-case-coverage.js";
 import { validateGeneratedTestCases } from "./test-case-validation.js";
@@ -193,6 +196,52 @@ test("missing accessibility case for form screens raises a job-level violation",
     ),
   );
   assert.equal(report.blocked, true);
+});
+
+test("resolved multi-source conflicts are pruned before policy blockers are counted", () => {
+  const report = pruneResolvedMultiSourceConflictViolations({
+    report: {
+      schemaVersion: "1.0.0",
+      contractVersion: TEST_INTELLIGENCE_CONTRACT_VERSION,
+      generatedAt: GENERATED_AT,
+      jobId: "job-1",
+      policyProfileId: EU_BANKING_DEFAULT_POLICY_PROFILE_ID,
+      policyProfileVersion: "1.0.0",
+      totalTestCases: 1,
+      approvedCount: 0,
+      blockedCount: 0,
+      needsReviewCount: 1,
+      blocked: false,
+      decisions: [
+        {
+          testCaseId: "tc-1",
+          decision: "needs_review",
+          violations: [
+            {
+              rule: "policy:multi-source-conflict-present",
+              outcome: "multi_source_conflict_present",
+              severity: "warning",
+              reason: "multi-source conflict(s) conflict-1 affect this case",
+            },
+          ],
+        },
+      ],
+      jobLevelViolations: [
+        {
+          rule: "policy:multi-source-conflict-present",
+          outcome: "multi_source_conflict_present",
+          severity: "warning",
+          reason: "multi-source conflict artifact present: conflict-1",
+        },
+      ],
+    },
+    isConflictResolved: (conflictId) => conflictId === "conflict-1",
+  });
+  assert.equal(report.decisions[0]?.decision, "approved");
+  assert.equal(report.decisions[0]?.violations.length, 0);
+  assert.equal(report.jobLevelViolations.length, 0);
+  assert.equal(report.approvedCount, 1);
+  assert.equal(report.needsReviewCount, 0);
 });
 
 test("required field with negative coverage satisfies the rule", () => {

@@ -72,6 +72,7 @@ const FOUR_EYES_REASONS = new Set([
   "visual_possible_pii",
   "visual_prompt_injection",
   "visual_metadata_conflict",
+  "multi_source_conflict_present",
 ]);
 
 const POLICY_DECISIONS = new Set(["approved", "needs_review", "blocked"]);
@@ -248,7 +249,10 @@ const isMultiSourceConflict = (value: unknown): boolean =>
   typeof value["kind"] === "string" &&
   isStringArray(value["participatingSourceIds"]) &&
   isStringArray(value["normalizedValues"]) &&
-  typeof value["resolution"] === "string";
+  typeof value["resolution"] === "string" &&
+  (value["effectiveState"] === undefined ||
+    value["effectiveState"] === "resolved" ||
+    value["effectiveState"] === "unresolved");
 
 const isMultiSourceReconciliationReport = (value: unknown): boolean =>
   isRecord(value) &&

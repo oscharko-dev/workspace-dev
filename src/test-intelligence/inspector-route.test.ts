@@ -81,6 +81,19 @@ describe("parseInspectorTestIntelligenceRoute", () => {
     }
   });
 
+  test("parses /jobs/<jobId>/sources/<sourceId> as remove_source", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/jobs/job-abc-123/sources/jira-paste-1",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "remove_source") {
+      assert.equal(result.route.jobId, "job-abc-123");
+      assert.equal(result.route.sourceId, "jira-paste-1");
+    } else {
+      assert.fail("expected remove_source route");
+    }
+  });
+
   test("parses /jobs/<jobId>/conflicts/<conflictId>/resolve as resolve_conflict", () => {
     const result = parseInspectorTestIntelligenceRoute(
       "/workspace/test-intelligence/jobs/job-abc-123/conflicts/conflict-1/resolve",
@@ -271,11 +284,19 @@ describe("isInspectorTestIntelligenceWriteAction", () => {
     );
   });
 
-  test("returns true for jira_fetch_source and resolve_conflict", () => {
+  test("returns true for jira_fetch_source, remove_source, and resolve_conflict", () => {
     assert.equal(
       isInspectorTestIntelligenceWriteAction({
         kind: "jira_fetch_source",
         jobId: "job-1",
+      }),
+      true,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "remove_source",
+        jobId: "job-1",
+        sourceId: "jira-paste-1",
       }),
       true,
     );

@@ -82,6 +82,8 @@ export function ConflictResolutionPanel({
         <ul className="m-0 flex list-none flex-col gap-3 p-0">
           {filteredConflicts.map((conflict) => {
             const decision = decisions?.[conflict.conflictId];
+            const effectiveState =
+              conflict.effectiveState ?? (decision ? "resolved" : "unresolved");
             return (
               <li
                 key={conflict.conflictId}
@@ -93,6 +95,15 @@ export function ConflictResolutionPanel({
                   </span>
                   <span className="rounded border border-amber-500/25 px-1.5 py-[1px] text-[10px] uppercase text-amber-200">
                     {conflict.kind}
+                  </span>
+                  <span
+                    className={
+                      effectiveState === "resolved"
+                        ? "rounded border border-emerald-500/25 px-1.5 py-[1px] text-[10px] uppercase text-emerald-200"
+                        : "rounded border border-rose-500/25 px-1.5 py-[1px] text-[10px] uppercase text-rose-200"
+                    }
+                  >
+                    {effectiveState}
                   </span>
                   {decision ? (
                     <span className="rounded border border-emerald-500/25 px-1.5 py-[1px] text-[10px] uppercase text-emerald-200">
@@ -109,10 +120,31 @@ export function ConflictResolutionPanel({
                     .map(
                       (sourceId) =>
                         sourceRefs.find((ref) => ref.sourceId === sourceId)?.label ??
-                        sourceId,
+                      sourceId,
                     )
                     .join(", ")}
                 </p>
+                {decision ? (
+                  <p className="m-0 mt-1 text-[10px] text-emerald-200/80">
+                    Decision: {decision.state}
+                    {decision.selectedSourceId ? (
+                      <>
+                        {" "}
+                        · source{" "}
+                        <span className="font-mono">{decision.selectedSourceId}</span>
+                      </>
+                    ) : null}
+                    {decision.selectedNormalizedValue ? (
+                      <>
+                        {" "}
+                        · value{" "}
+                        <span className="font-mono">
+                          {decision.selectedNormalizedValue}
+                        </span>
+                      </>
+                    ) : null}
+                  </p>
+                ) : null}
                 <ul className="m-0 mt-2 flex list-none flex-wrap gap-1 p-0">
                   {conflict.normalizedValues.map((value) => (
                     <li
@@ -124,6 +156,29 @@ export function ConflictResolutionPanel({
                   ))}
                 </ul>
                 <div className="mt-3 flex flex-wrap gap-2">
+                  {conflict.normalizedValues.length > 1 ? (
+                    conflict.normalizedValues.map((value) => (
+                      <button
+                        key={`${conflict.conflictId}-${value}`}
+                        type="button"
+                        aria-label={`Choose ${value} for ${conflict.conflictId}`}
+                        disabled={pendingConflictId === conflict.conflictId}
+                        onClick={() => {
+                          setPendingConflictId(conflict.conflictId);
+                          void onResolve({
+                            conflictId: conflict.conflictId,
+                            action: "approve",
+                            selectedNormalizedValue: value,
+                          }).finally(() => {
+                            setPendingConflictId(null);
+                          });
+                        }}
+                        className="cursor-pointer rounded border border-sky-500/30 bg-sky-950/20 px-2 py-1 text-[10px] text-sky-200"
+                      >
+                        Use {value}
+                      </button>
+                    ))
+                  ) : null}
                   {conflict.participatingSourceIds.map((sourceId) => (
                     <button
                       key={sourceId}

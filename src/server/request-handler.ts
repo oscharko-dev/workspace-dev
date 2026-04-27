@@ -4,6 +4,7 @@ import {
   lstat,
   mkdir,
   readFile,
+  rm,
   unlink,
   writeFile,
 } from "node:fs/promises";
@@ -11,6 +12,7 @@ import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   TEST_INTELLIGENCE_ENV,
+  type JiraFetchRequest,
   type TestIntelligenceReviewPrincipal,
   type WorkspaceFigmaSourceMode,
   type WorkspaceImportSessionEvent,
@@ -119,8 +121,10 @@ import {
 } from "../test-intelligence/inspector-bundle.js";
 import {
   listInspectorSourceRecords,
+  markInspectorSourceRemoved,
   resolveInspectorConflict,
 } from "../test-intelligence/inspector-multisource.js";
+import type { JiraGatewayClient } from "../test-intelligence/jira-gateway-client.js";
 import { parseEvidenceVerifyRoute } from "../test-intelligence/evidence-verify-route.js";
 import { verifyJobEvidence } from "../test-intelligence/evidence-verify.js";
 import {
@@ -463,8 +467,10 @@ type WorkspaceAuditEvent =
   | "workspace.remap_suggest.completed"
   | "workspace.token_decisions.persisted"
   | "workspace.evidence.verify.completed"
+  | "workspace.jira_rest_source.ingested"
   | "workspace.jira_paste_source.ingested"
-  | "workspace.custom_context_source.ingested";
+  | "workspace.custom_context_source.ingested"
+  | "workspace.test_intelligence_source.removed";
 
 const REQUEST_ID_HEADER = "x-request-id";
 const DEFAULT_REQUEST_FAILURE_MESSAGE = "Unexpected request failure.";
@@ -531,6 +537,7 @@ const TOKEN_DECISIONS_FILE_NAME = "token-decisions.json";
 const JIRA_PASTE_REQUEST_ENVELOPE_OVERHEAD_BYTES = 4096;
 const MAX_JIRA_PASTE_REQUEST_BODY_BYTES =
   MAX_JIRA_PASTE_INPUT_BYTES + JIRA_PASTE_REQUEST_ENVELOPE_OVERHEAD_BYTES;
+const MAX_JIRA_FETCH_REQUEST_BODY_BYTES = 16 * 1024;
 const ALLOWED_JIRA_PASTE_REQUEST_FIELDS = new Set([
   "format",
   "body",
@@ -730,6 +737,74 @@ interface JiraPasteRequestBody {
   authorHandle?: unknown;
 }
 
+interface JiraFetchSourceRequestBody {
+  issueKey?: unknown;
+  issueKeys?: unknown;
+  jql?: unknown;
+  maxResults?: unknown;
+  replayMode?: unknown;
+}
+
+type ParsedJiraFetchSourceRequest =
+  | { ok: true; request: JiraFetchRequest }
+  | { ok: false; message: string };
+
+function parseJiraFetchSourceRequest(
+  body: JiraFetchSourceRequestBody,
+): ParsedJiraFetchSourceRequest {
+  const jql = typeof body.jql === "string" ? body.jql.trim() : "";
+  const hasJql = jql.length > 0;
+  const issueKeys =
+    typeof body.issueKey === "string" && body.issueKey.trim().length > 0
+      ? [body.issueKey.trim()]
+      : Array.isArray(body.issueKeys)
+        ? body.issueKeys
+            .filter((entry): entry is string => typeof entry === "string")
+            .map((entry) => entry.trim())
+            .filter((entry) => entry.length > 0)
+        : [];
+  if (hasJql && issueKeys.length > 0) {
+    return {
+      ok: false,
+      message: "Jira REST request must provide either jql or issueKeys, not both.",
+    };
+  }
+  if (!hasJql && issueKeys.length === 0) {
+    return {
+      ok: false,
+      message: "Jira REST request requires jql:string or issueKeys:string[].",
+    };
+  }
+  const replayMode =
+    body.replayMode === undefined ? undefined : body.replayMode === true;
+  const withCommonFields = (
+    request: JiraFetchRequest,
+  ): JiraFetchRequest => ({
+    ...request,
+    expand: ["renderedFields", "names", "schema"],
+    ...(replayMode !== undefined ? { replayMode } : {}),
+  });
+  if (hasJql) {
+    const maxResults =
+      typeof body.maxResults === "number" &&
+      Number.isInteger(body.maxResults) &&
+      body.maxResults >= 1 &&
+      body.maxResults <= 50
+        ? body.maxResults
+        : 10;
+    return {
+      ok: true,
+      request: withCommonFields({ query: { kind: "jql", jql, maxResults } }),
+    };
+  }
+  return {
+    ok: true,
+    request: withCommonFields({
+      query: { kind: "issueKeys", issueKeys: [...new Set(issueKeys)].sort() },
+    }),
+  };
+}
+
 type TestIntelligenceSourceAuthResult =
   | { ok: true; authorHandle: string }
   | {
@@ -830,6 +905,14 @@ function resolveProtectedWriteRoute(
   ) {
     return {};
   }
+  if (
+    (method === "POST" || method === "DELETE") &&
+    /^\/workspace\/test-intelligence\/jobs\/[A-Za-z0-9_.-]{1,128}\/sources\/[A-Za-z0-9_.-]{1,128}$/u.test(
+      pathname,
+    )
+  ) {
+    return {};
+  }
 
   const parsedJobRoute = parseJobRoute(pathname);
   if (parsedJobRoute && PROTECTED_POST_ACTIONS.has(parsedJobRoute.action)) {
@@ -885,6 +968,12 @@ interface CreateWorkspaceRequestHandlerInput {
      * Reads (`GET /workspace/test-intelligence/...`) never require this token.
      */
     testIntelligenceReviewBearerToken?: string;
+    /**
+     * Optional configured Jira REST gateway for Inspector source ingestion.
+     * When omitted, Jira REST writes fail closed and Jira paste remains the
+     * supported air-gapped ingestion path.
+     */
+    testIntelligenceJiraGatewayClient?: JiraGatewayClient;
     /**
      * Principal-bound review credentials. When configured, the matching
      * bearer token determines the persisted review actor.
@@ -1182,6 +1271,8 @@ export function createWorkspaceRequestHandler({
           previewEnabled: runtime.previewEnabled,
           testIntelligenceEnabled,
           testIntelligenceMultiSourceEnabled,
+          testIntelligenceJiraGatewayConfigured:
+            runtime.testIntelligenceJiraGatewayClient !== undefined,
         };
         sendJson({ response, statusCode: 200, payload: status });
         return;
@@ -1246,15 +1337,323 @@ export function createWorkspaceRequestHandler({
             });
             return;
           }
-          sendRequestFailure({
-            statusCode: 503,
-            payload: {
-              error: "JIRA_FETCH_UNAVAILABLE",
-              message:
-                "Jira REST source ingestion is not configured for this workspace. Use Jira paste as the air-gapped path.",
-            },
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              jobId: route.jobId,
+              fallbackMessage: "Jira REST write request rejected.",
+            });
+            return;
+          }
+          const auth = validateTestIntelligenceSourceAuth({
+            request,
+            ...(runtime.testIntelligenceReviewBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceReviewBearerToken }
+              : {}),
+            ...(runtime.testIntelligenceReviewPrincipals !== undefined
+              ? { reviewPrincipals: runtime.testIntelligenceReviewPrincipals }
+              : {}),
+            routeLabel: "Jira REST source ingestion",
+          });
+          if (!auth.ok) {
+            if (auth.wwwAuthenticate) {
+              response.setHeader("www-authenticate", auth.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: auth.statusCode,
+              payload: auth.payload,
+              event:
+                auth.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: auth.statusCode === 401 ? "warn" : "error",
+              jobId: route.jobId,
+              fallbackMessage: "Jira REST source ingestion rejected.",
+            });
+            return;
+          }
+
+          const gateway = runtime.testIntelligenceJiraGatewayClient;
+          if (gateway === undefined) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: "JIRA_FETCH_UNAVAILABLE",
+                message:
+                  "Jira REST source ingestion is not configured for this workspace. Use Jira paste as the air-gapped path.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira REST source ingestion unavailable.",
+            });
+            return;
+          }
+
+          const rateLimitResult =
+            await testIntelligenceSourceWriteRateLimiter.consume(
+              resolveRateLimitClientKey(request),
+              route.jobId,
+            );
+          if (!rateLimitResult.allowed) {
+            sendRateLimitExceeded({
+              retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+              message: `Too many test-intelligence source writes from this client. Retry after ${rateLimitResult.retryAfterSeconds} seconds.`,
+            });
+            return;
+          }
+
+          const bodyResult = await readJsonBody(request, {
+            maxBytes: MAX_JIRA_FETCH_REQUEST_BODY_BYTES,
+          });
+          if (!bodyResult.ok) {
+            sendRequestFailure({
+              statusCode: bodyResult.reason === "OVERSIZE" ? 413 : 400,
+              payload: {
+                error:
+                  bodyResult.reason === "OVERSIZE"
+                    ? "REQUEST_TOO_LARGE"
+                    : "INVALID_BODY",
+                message: bodyResult.error,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Invalid Jira REST request body.",
+            });
+            return;
+          }
+          if (
+            typeof bodyResult.value !== "object" ||
+            bodyResult.value === null ||
+            Array.isArray(bodyResult.value)
+          ) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message: "Jira REST request body must be a JSON object.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira REST request validation failed.",
+            });
+            return;
+          }
+
+          const parsedFetch = parseJiraFetchSourceRequest(
+            bodyResult.value as JiraFetchSourceRequestBody,
+          );
+          if (!parsedFetch.ok) {
+            sendValidationError({
+              payload: {
+                error: "INVALID_BODY",
+                message: parsedFetch.message,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira REST request validation failed.",
+            });
+            return;
+          }
+
+          const sourceId = `jira-rest-${createHash("sha256")
+            .update(JSON.stringify(parsedFetch.request.query))
+            .digest("hex")
+            .slice(0, 16)}`;
+          const runDir = path.join(testIntelligenceArtifactRoot, route.jobId);
+          const result = await gateway.fetchIssues({
+            ...parsedFetch.request,
+            runDir,
+            sourceId,
+            capturedAt: new Date().toISOString(),
+          });
+          if (result.diagnostic !== undefined) {
+            sendRequestFailure({
+              statusCode: result.retryable ? 503 : 502,
+              payload: {
+                error: "JIRA_FETCH_FAILED",
+                message: result.diagnostic.message,
+                diagnostic: result.diagnostic,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Jira REST source ingestion failed.",
+            });
+            return;
+          }
+
+          const sources = await listInspectorSourceRecords(runDir);
+          logAuditEvent({
+            event: "workspace.jira_rest_source.ingested",
+            statusCode: 200,
             jobId: route.jobId,
-            fallbackMessage: "Jira REST source ingestion unavailable.",
+            message: `Jira REST source '${sourceId}' ingested for job '${route.jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              ok: true,
+              jobId: route.jobId,
+              sourceId,
+              issueCount: result.issues.length,
+              responseHash: result.responseHash,
+              cacheHit: result.cacheHit === true,
+              attempts: result.attempts,
+              capability: result.capability,
+              sources,
+              artifacts: {
+                issueIrList: `sources/${sourceId}/jira-issue-ir-list.json`,
+                singleIssueIr:
+                  result.issues.length === 1
+                    ? `sources/${sourceId}/jira-issue-ir.json`
+                    : null,
+              },
+            },
+          });
+          return;
+        }
+
+        if (route.kind === "remove_source") {
+          response.setHeader("allow", "DELETE");
+          if (method !== "DELETE") {
+            sendJson({
+              response,
+              statusCode: 405,
+              payload: {
+                error: "METHOD_NOT_ALLOWED",
+                message: `Use DELETE for source removal on '${pathname}'.`,
+              },
+            });
+            return;
+          }
+          const multiSourceEnabled =
+            resolveTestIntelligenceMultiSourceEnvEnabled() &&
+            runtime.testIntelligenceMultiSourceEnabled === true;
+          if (!multiSourceEnabled) {
+            sendRequestFailure({
+              statusCode: 503,
+              payload: {
+                error: ErrorCode.FEATURE_DISABLED,
+                message:
+                  "Source removal requires the multi-source test-intelligence gate.",
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Source removal disabled.",
+            });
+            return;
+          }
+          const writeRequestValidation = validateWriteRequest({
+            request,
+            host,
+            port: getResolvedPort(),
+          });
+          if (!writeRequestValidation.ok) {
+            sendAuditedError({
+              statusCode: writeRequestValidation.statusCode,
+              payload: writeRequestValidation.payload,
+              event:
+                writeRequestValidation.payload.error ===
+                "UNSUPPORTED_MEDIA_TYPE"
+                  ? "security.request.unsupported_media_type"
+                  : "security.request.rejected_origin",
+              level: "warn",
+              jobId: route.jobId,
+              fallbackMessage: "Source removal write request rejected.",
+            });
+            return;
+          }
+          const auth = validateTestIntelligenceSourceAuth({
+            request,
+            ...(runtime.testIntelligenceReviewBearerToken !== undefined
+              ? { bearerToken: runtime.testIntelligenceReviewBearerToken }
+              : {}),
+            ...(runtime.testIntelligenceReviewPrincipals !== undefined
+              ? { reviewPrincipals: runtime.testIntelligenceReviewPrincipals }
+              : {}),
+            routeLabel: "Source removal",
+          });
+          if (!auth.ok) {
+            if (auth.wwwAuthenticate) {
+              response.setHeader("www-authenticate", auth.wwwAuthenticate);
+            }
+            sendAuditedError({
+              statusCode: auth.statusCode,
+              payload: auth.payload,
+              event:
+                auth.payload.error === "UNAUTHORIZED"
+                  ? "security.request.unauthorized"
+                  : "workspace.request.failed",
+              level: auth.statusCode === 401 ? "warn" : "error",
+              jobId: route.jobId,
+              fallbackMessage: "Source removal rejected.",
+            });
+            return;
+          }
+          const runDir = path.join(testIntelligenceArtifactRoot, route.jobId);
+          const sourceDir = path.join(runDir, "sources", route.sourceId);
+          const sourceRecords = await listInspectorSourceRecords(runDir);
+          const sourceExists = sourceRecords.some(
+            (source) => source.sourceId === route.sourceId,
+          );
+          let sourceDirExists = false;
+          try {
+            const stats = await lstat(sourceDir);
+            sourceDirExists = stats.isDirectory();
+          } catch {
+            sourceDirExists = false;
+          }
+          if (!sourceExists && !sourceDirExists) {
+            sendRequestFailure({
+              statusCode: 404,
+              payload: {
+                error: "SOURCE_NOT_FOUND",
+                message: `Source '${route.sourceId}' does not exist for job '${route.jobId}'.`,
+              },
+              jobId: route.jobId,
+              fallbackMessage: "Source removal target was not found.",
+            });
+            return;
+          }
+          if (sourceDirExists) {
+            try {
+              await rm(sourceDir, { recursive: true, force: false });
+            } catch (err) {
+              const code =
+                err && typeof err === "object" && "code" in err
+                  ? (err as { code?: unknown }).code
+                  : undefined;
+              if (code !== "ENOENT") {
+                throw err;
+              }
+            }
+          }
+          await markInspectorSourceRemoved({
+            runDir,
+            jobId: route.jobId,
+            sourceId: route.sourceId,
+            removedBy: auth.authorHandle,
+            removedAt: new Date().toISOString(),
+          });
+          logAuditEvent({
+            event: "workspace.test_intelligence_source.removed",
+            statusCode: 200,
+            jobId: route.jobId,
+            message: `Source '${route.sourceId}' removed from job '${route.jobId}'.`,
+          });
+          sendJson({
+            response,
+            statusCode: 200,
+            payload: {
+              ok: true,
+              jobId: route.jobId,
+              sourceId: route.sourceId,
+            },
           });
           return;
         }
@@ -1461,6 +1860,18 @@ export function createWorkspaceRequestHandler({
               fallbackMessage: "Conflict resolution failed.",
             });
             return;
+          }
+          const refreshResult = await readInspectorTestIntelligenceBundle({
+            rootDir: testIntelligenceArtifactRoot,
+            jobId: route.jobId,
+            assembledAt: new Date().toISOString(),
+          });
+          if (refreshResult.ok && refreshResult.bundle.policyReport) {
+            await getReviewStore().refreshPolicyDecisions({
+              jobId: route.jobId,
+              policy: refreshResult.bundle.policyReport,
+              at: new Date().toISOString(),
+            });
           }
           sendJson({
             response,

@@ -54,6 +54,14 @@ import {
   evaluateFourEyesEnforcement,
 } from "./four-eyes-policy.js";
 import {
+  pruneResolvedMultiSourceConflictViolations,
+} from "./policy-gate.js";
+import {
+  readInspectorConflictDecisions,
+  readInspectorReconciliationReport,
+  projectInspectorConflictStates,
+} from "./inspector-multisource.js";
+import {
   seedReviewStateFromPolicy,
   transitionReviewState,
   type ReviewTransitionRefusalCode,
@@ -405,6 +413,12 @@ const sortSnapshotEntries = (entries: ReviewSnapshot[]): ReviewSnapshot[] => {
   return [...entries].sort((a, b) => a.testCaseId.localeCompare(b.testCaseId));
 };
 
+const reviewSnapshotsEqual = (
+  left: ReviewSnapshot,
+  right: ReviewSnapshot,
+): boolean =>
+  canonicalJson(left) === canonicalJson(right);
+
 interface JobLock {
   promise: Promise<void>;
   release: () => void;
@@ -436,6 +450,30 @@ class FileSystemReviewStore implements ReviewStore {
 
   private snapshotPath(jobId: string): string {
     return join(this.jobDir(jobId), REVIEW_STATE_ARTIFACT_FILENAME);
+  }
+
+  private async readConflictAwarePolicy(
+    jobId: string,
+    policy: TestCasePolicyReport,
+  ): Promise<TestCasePolicyReport> {
+    const runDir = this.jobDir(jobId);
+    const [report, decisions] = await Promise.all([
+      readInspectorReconciliationReport(runDir),
+      readInspectorConflictDecisions({ runDir, jobId }),
+    ]);
+    if (report === undefined) {
+      return policy;
+    }
+    const effectiveConflicts = projectInspectorConflictStates({
+      report,
+      decisions: decisions.byConflictId,
+    });
+    const resolvedConflictIds = new Set(effectiveConflicts.resolvedConflictIds);
+    return pruneResolvedMultiSourceConflictViolations({
+      report: policy,
+      isConflictResolved: (conflictId) =>
+        resolvedConflictIds.has(conflictId),
+    });
   }
 
   private async withJobLock<T>(
@@ -532,12 +570,17 @@ class FileSystemReviewStore implements ReviewStore {
       const existing = await this.readSnapshotInternal(input.jobId);
       if (existing) return existing;
 
+      const effectivePolicy = await this.readConflictAwarePolicy(
+        input.jobId,
+        input.policy,
+      );
+
       await mkdir(this.jobDir(input.jobId), { recursive: true });
 
       const decisions = new Map<string, TestCasePolicyDecision>();
       const customContextEscalated = new Set<string>();
       const multiSourceConflictEscalated = new Set<string>();
-      for (const decision of input.policy.decisions) {
+      for (const decision of effectivePolicy.decisions) {
         decisions.set(decision.testCaseId, decision.decision);
         if (
           decision.violations.some(
@@ -668,10 +711,15 @@ class FileSystemReviewStore implements ReviewStore {
         return { ok: false, code: "snapshot_missing" };
       }
 
-      if (input.policy.jobId !== input.jobId) {
+      const effectivePolicy = await this.readConflictAwarePolicy(
+        input.jobId,
+        input.policy,
+      );
+
+      if (effectivePolicy.jobId !== input.jobId) {
         return { ok: false, code: "policy_report_job_mismatch" };
       }
-      if (input.policy.totalTestCases !== snapshot.perTestCase.length) {
+      if (effectivePolicy.totalTestCases !== snapshot.perTestCase.length) {
         return { ok: false, code: "policy_report_test_case_mismatch" };
       }
 
@@ -679,7 +727,8 @@ class FileSystemReviewStore implements ReviewStore {
         snapshot.perTestCase.map((entry) => entry.testCaseId),
       );
       const decisions = new Map<string, TestCasePolicyDecision>();
-      for (const decision of input.policy.decisions) {
+      const multiSourceConflictEscalated = new Set<string>();
+      for (const decision of effectivePolicy.decisions) {
         if (
           !knownTestCaseIds.has(decision.testCaseId) ||
           decisions.has(decision.testCaseId)
@@ -687,14 +736,38 @@ class FileSystemReviewStore implements ReviewStore {
           return { ok: false, code: "policy_report_test_case_mismatch" };
         }
         decisions.set(decision.testCaseId, decision.decision);
+        if (
+          decision.violations.some(
+            (violation) =>
+              violation.outcome === "multi_source_conflict_present",
+          )
+        ) {
+          multiSourceConflictEscalated.add(decision.testCaseId);
+        }
       }
 
       const changedEntries: ReviewSnapshot[] = [];
       for (const entry of snapshot.perTestCase) {
         const nextDecision = decisions.get(entry.testCaseId);
         if (nextDecision === undefined) continue;
-        if (entry.policyDecision !== nextDecision) {
-          changedEntries.push({ ...entry, policyDecision: nextDecision });
+        const nextReasons = new Set(entry.fourEyesReasons ?? []);
+        nextReasons.delete("multi_source_conflict_present");
+        if (multiSourceConflictEscalated.has(entry.testCaseId)) {
+          nextReasons.add("multi_source_conflict_present");
+        }
+        const sortedReasons = Array.from(nextReasons).sort();
+        const nextEntry: ReviewSnapshot = {
+          ...entry,
+          policyDecision: nextDecision,
+          fourEyesEnforced: sortedReasons.length > 0,
+        };
+        if (sortedReasons.length > 0) {
+          nextEntry.fourEyesReasons = sortedReasons;
+        } else {
+          delete nextEntry.fourEyesReasons;
+        }
+        if (!reviewSnapshotsEqual(entry, nextEntry)) {
+          changedEntries.push(nextEntry);
         }
       }
       if (changedEntries.length === 0) {
@@ -714,8 +787,8 @@ class FileSystemReviewStore implements ReviewStore {
         metadata: {
           policyDecisionRefresh: "semantic_content_overrides",
           changedCount: changedEntries.length,
-          policyProfileId: input.policy.policyProfileId,
-          policyProfileVersion: input.policy.policyProfileVersion,
+          policyProfileId: effectivePolicy.policyProfileId,
+          policyProfileVersion: effectivePolicy.policyProfileVersion,
         },
       };
       const changedById = new Map(

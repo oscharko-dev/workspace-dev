@@ -1407,6 +1407,12 @@ export interface WorkspaceStatus {
    * Independent of mode-lock isolation, which is enforced per request.
    */
   testIntelligenceMultiSourceEnabled?: boolean;
+  /**
+   * Whether the Inspector can reach a configured Jira REST gateway for
+   * Jira API source ingestion. False means Jira paste remains the available
+   * air-gapped Jira source path.
+   */
+  testIntelligenceJiraGatewayConfigured?: boolean;
 }
 
 /** Submission payload accepted by workspace-dev. */

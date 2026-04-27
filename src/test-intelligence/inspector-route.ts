@@ -32,6 +32,7 @@ export type InspectorTestIntelligenceRoute =
   | { kind: "read_bundle"; jobId: string }
   | { kind: "list_sources"; jobId: string }
   | { kind: "jira_fetch_source"; jobId: string }
+  | { kind: "remove_source"; jobId: string; sourceId: string }
   | { kind: "resolve_conflict"; jobId: string; conflictId: string }
   | { kind: "review_state"; jobId: string }
   | { kind: "jira_paste_source"; jobId: string }
@@ -113,6 +114,16 @@ export const parseInspectorTestIntelligenceRoute = (
       segments[3] === "jira-fetch"
     ) {
       return { ok: true, route: { kind: "jira_fetch_source", jobId } };
+    }
+    if (segments.length === 4 && segments[2] === "sources") {
+      const sourceId = segments[3];
+      if (sourceId === undefined || !isSafeId(sourceId)) {
+        return {
+          ok: false,
+          error: { kind: "parse_error", reason: "unsafe_test_case_id" },
+        };
+      }
+      return { ok: true, route: { kind: "remove_source", jobId, sourceId } };
     }
     if (
       segments.length === 5 &&
@@ -245,6 +256,7 @@ export const isInspectorTestIntelligenceWriteAction = (
   route: InspectorTestIntelligenceRoute,
 ): boolean => {
   if (route.kind === "jira_fetch_source") return true;
+  if (route.kind === "remove_source") return true;
   if (route.kind === "resolve_conflict") return true;
   if (route.kind === "jira_paste_source") return true;
   if (route.kind === "custom_context_source") return true;

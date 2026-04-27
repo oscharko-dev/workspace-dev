@@ -28,7 +28,8 @@ export type FourEyesEnforcementReason =
   | "visual_fallback_used"
   | "visual_possible_pii"
   | "visual_prompt_injection"
-  | "visual_metadata_conflict";
+  | "visual_metadata_conflict"
+  | "multi_source_conflict_present";
 
 export type PolicyDecision = "approved" | "needs_review" | "blocked";
 
@@ -355,6 +356,7 @@ export interface MultiSourceConflict {
   kind: string;
   participatingSourceIds: string[];
   normalizedValues: string[];
+  effectiveState?: "resolved" | "unresolved";
   resolution:
     | "auto_priority"
     | "deferred_to_reviewer"

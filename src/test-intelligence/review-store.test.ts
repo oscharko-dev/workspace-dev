@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
   GENERATED_TEST_CASE_SCHEMA_VERSION,
+  MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
   REVIEW_EVENTS_ARTIFACT_FILENAME,
   REVIEW_GATE_SCHEMA_VERSION,
   REVIEW_STATE_ARTIFACT_FILENAME,
@@ -96,6 +97,53 @@ const policyWith = (
   ...overrides,
 });
 
+const writeJson = async (path: string, value: unknown): Promise<void> => {
+  await writeFile(path, JSON.stringify(value), "utf8");
+};
+
+const writeConflictArtifacts = async (
+  jobDir: string,
+  input: { withDecision?: boolean } = {},
+): Promise<void> => {
+  await writeJson(join(jobDir, "multi-source-conflicts.json"), {
+    version: MULTI_SOURCE_RECONCILIATION_REPORT_SCHEMA_VERSION,
+    envelopeHash: "f".repeat(64),
+    conflicts: [
+      {
+        conflictId: "conflict-1",
+        kind: "field_label_mismatch",
+        participatingSourceIds: ["figma-primary", "jira-primary"],
+        normalizedValues: ["Login", "Sign in"],
+        resolution: "deferred_to_reviewer",
+        affectedScreenIds: ["screen-login"],
+      },
+    ],
+    unmatchedSources: [],
+    contributingSourcesPerCase: [],
+    policyApplied: "reviewer_decides",
+    transcript: [],
+  });
+  if (input.withDecision ?? true) {
+    await writeJson(join(jobDir, "multi-source-conflict-decisions.json"), {
+      version: "1.0.0",
+      jobId: "job-1",
+      nextSequence: 2,
+      events: [
+        {
+          id: "evt-conflict-1",
+          sequence: 1,
+          jobId: "job-1",
+          conflictId: "conflict-1",
+          action: "approve",
+          at: GENERATED_AT,
+          actor: "alice",
+          selectedSourceId: "jira-primary",
+        },
+      ],
+    });
+  }
+};
+
 const withTempDir = async (
   name: string,
   fn: (dir: string) => Promise<void>,
@@ -141,6 +189,87 @@ test("review-store: seed creates one event per test case + snapshot", async () =
     assert.equal(events.length, 2);
     assert.equal(events[0]?.sequence, 1);
     assert.equal(events[1]?.sequence, 2);
+  });
+});
+
+test("review-store: seed ignores resolved multi-source conflicts when seeding review state", async () => {
+  await withTempDir("rev-conflict-prune", async (dir) => {
+    const jobDir = join(dir, "job-1");
+    await mkdir(jobDir, { recursive: true });
+    await writeConflictArtifacts(jobDir);
+
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    const snapshot = await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({ id: "tc-1" })]),
+      policy: policyWith([
+        {
+          testCaseId: "tc-1",
+          decision: "needs_review",
+          violations: [
+            {
+              rule: "policy:multi-source-conflict-present",
+              outcome: "multi_source_conflict_present",
+              severity: "warning",
+              reason: "multi-source conflict(s) conflict-1 affect this case",
+            },
+          ],
+        },
+      ]),
+    });
+
+    assert.equal(snapshot.perTestCase[0]?.state, "approved");
+    assert.equal(snapshot.perTestCase[0]?.policyDecision, "approved");
+    assert.equal(snapshot.approvedCount, 1);
+    assert.equal(snapshot.needsReviewCount, 0);
+  });
+});
+
+test("review-store: refreshPolicyDecisions removes resolved conflict review reasons", async () => {
+  await withTempDir("rev-conflict-refresh-prune", async (dir) => {
+    const jobDir = join(dir, "job-1");
+    await mkdir(jobDir, { recursive: true });
+    await writeConflictArtifacts(jobDir, { withDecision: false });
+
+    const store = createFileSystemReviewStore({ destinationDir: dir });
+    const conflictPolicy = policyWith([
+      {
+        testCaseId: "tc-1",
+        decision: "needs_review",
+        violations: [
+          {
+            rule: "policy:multi-source-conflict-present",
+            outcome: "multi_source_conflict_present",
+            severity: "warning",
+            reason: "multi-source conflict(s) conflict-1 affect this case",
+          },
+        ],
+      },
+    ]);
+    const seeded = await store.seedSnapshot({
+      jobId: "job-1",
+      generatedAt: GENERATED_AT,
+      list: wrap([buildCase({ id: "tc-1" })]),
+      policy: conflictPolicy,
+    });
+    assert.equal(seeded.perTestCase[0]?.policyDecision, "needs_review");
+    assert.deepEqual(seeded.perTestCase[0]?.fourEyesReasons, [
+      "multi_source_conflict_present",
+    ]);
+
+    await writeConflictArtifacts(jobDir, { withDecision: true });
+    const refreshed = await store.refreshPolicyDecisions({
+      jobId: "job-1",
+      at: "2026-04-25T11:00:00.000Z",
+      policy: conflictPolicy,
+    });
+    assert.equal(refreshed.ok, true);
+    if (!refreshed.ok) return;
+    assert.equal(refreshed.changedCount, 1);
+    assert.equal(refreshed.snapshot.perTestCase[0]?.policyDecision, "approved");
+    assert.equal(refreshed.snapshot.perTestCase[0]?.fourEyesReasons, undefined);
+    assert.equal(refreshed.snapshot.perTestCase[0]?.fourEyesEnforced, false);
   });
 });
 

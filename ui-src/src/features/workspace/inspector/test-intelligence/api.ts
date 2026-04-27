@@ -33,6 +33,7 @@ import type {
 } from "./types";
 
 const ROOT = "/workspace/test-intelligence";
+const WORKSPACE_ROOT = "/workspace";
 
 export type FetchOutcome<T> =
   | { ok: true; value: T }
@@ -66,6 +67,9 @@ const invalidResponse = <T>(
   error: "INVALID_RESPONSE",
   message: `Server returned an unexpected payload for ${target}.`,
 });
+
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.length > 0;
 
 export async function fetchTestIntelligenceJobs(): Promise<
   FetchOutcome<TestIntelligenceJobSummary[]>
@@ -261,13 +265,93 @@ export async function postJiraPasteSource(input: {
   return { ok: true, value: { ok: true } };
 }
 
+export async function postWorkspaceSubmit(input: {
+  figmaJsonPayload: string;
+  sourceMode?: "figma_paste" | "figma_plugin" | "figma_url";
+}): Promise<FetchOutcome<{ jobId: string }>> {
+  const response = await fetchJson<{ jobId: string }>({
+    url: `${WORKSPACE_ROOT}/submit`,
+    init: {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        figmaSourceMode: input.sourceMode ?? "figma_paste",
+        figmaJsonPayload: input.figmaJsonPayload,
+        jobType: "figma_to_qc_test_cases",
+        testIntelligenceMode: "dry_run",
+        enableGitPr: false,
+        llmCodegenMode: "deterministic",
+      }),
+    },
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Workspace submit failed.",
+    );
+  }
+  if (!isRecord(response.payload) || !isNonEmptyString(response.payload["jobId"])) {
+    return invalidResponse(response.status, "the workspace submit response");
+  }
+  return { ok: true, value: { jobId: response.payload["jobId"] } };
+}
+
+export async function postJiraFetchSource(input: {
+  jobId: string;
+  bearerToken: string;
+  query:
+    | { kind: "issueKeys"; issueKeys: string[] }
+    | { kind: "jql"; jql: string; maxResults?: number };
+}): Promise<FetchOutcome<{ ok: true }>> {
+  const requestBody =
+    input.query.kind === "jql"
+      ? {
+          jql: input.query.jql,
+          ...(input.query.maxResults !== undefined
+            ? { maxResults: input.query.maxResults }
+            : {}),
+        }
+      : { issueKeys: input.query.issueKeys };
+  const response = await fetchJson<{ ok: true }>({
+    url: `${ROOT}/jobs/${encodeURIComponent(input.jobId)}/sources/jira-fetch`,
+    init: {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${input.bearerToken}`,
+      },
+      body: JSON.stringify(requestBody),
+    },
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Jira REST source ingestion failed.",
+    );
+  }
+  if (!isRecord(response.payload) || response.payload["ok"] !== true) {
+    return invalidResponse(response.status, "the Jira REST response");
+  }
+  return { ok: true, value: { ok: true } };
+}
+
 export async function postCustomContextSource(input: {
   jobId: string;
   bearerToken: string;
   markdown?: string;
   attributes?: Array<{ key: string; value: string }>;
-}): Promise<FetchOutcome<{ ok: true }>> {
-  const response = await fetchJson<{ ok: true }>({
+}): Promise<
+  FetchOutcome<{
+    ok: true;
+    canonicalMarkdown?: string;
+    redactionCount: number;
+  }>
+> {
+  const response = await fetchJson<unknown>({
     url: `${ROOT}/sources/${encodeURIComponent(input.jobId)}/custom-context`,
     init: {
       method: "POST",
@@ -290,6 +374,59 @@ export async function postCustomContextSource(input: {
   }
   if (!isRecord(response.payload) || response.payload["ok"] !== true) {
     return invalidResponse(response.status, "the custom context response");
+  }
+  const customContext = Array.isArray(response.payload["customContext"])
+    ? response.payload["customContext"]
+    : [];
+  let canonicalMarkdown: string | undefined;
+  let redactionCount = 0;
+  for (const source of customContext) {
+    if (!isRecord(source) || !Array.isArray(source["noteEntries"])) continue;
+    for (const entry of source["noteEntries"]) {
+      if (!isRecord(entry)) continue;
+      if (typeof entry["bodyMarkdown"] === "string") {
+        canonicalMarkdown = entry["bodyMarkdown"];
+      }
+      if (Array.isArray(entry["redactions"])) {
+        redactionCount += entry["redactions"].length;
+      }
+    }
+  }
+  return {
+    ok: true,
+    value: {
+      ok: true,
+      ...(canonicalMarkdown !== undefined ? { canonicalMarkdown } : {}),
+      redactionCount,
+    },
+  };
+}
+
+export async function deleteInspectorSource(input: {
+  jobId: string;
+  sourceId: string;
+  bearerToken: string;
+}): Promise<FetchOutcome<{ ok: true }>> {
+  const response = await fetchJson<{ ok: true }>({
+    url: `${ROOT}/jobs/${encodeURIComponent(input.jobId)}/sources/${encodeURIComponent(input.sourceId)}`,
+    init: {
+      method: "DELETE",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${input.bearerToken}`,
+      },
+      body: "{}",
+    },
+  });
+  if (!response.ok) {
+    return errorOutcomeFromPayload(
+      response.status,
+      response.payload,
+      "Source removal failed.",
+    );
+  }
+  if (!isRecord(response.payload) || response.payload["ok"] !== true) {
+    return invalidResponse(response.status, "the source removal response");
   }
   return { ok: true, value: { ok: true } };
 }
