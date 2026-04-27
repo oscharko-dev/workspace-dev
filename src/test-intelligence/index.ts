@@ -584,6 +584,28 @@ export {
   type TransferRollbackHint,
 } from "./qc-alm-api-transfer.js";
 export {
+  computeJiraSubtaskExternalId,
+  createJiraWriteClient,
+  createUnconfiguredJiraWriteClient,
+  NO_JIRA_WRITE_CLIENT_ERROR_DETAIL,
+  runJiraSubtaskWrite,
+  type CreateJiraWriteClientInput,
+  type JiraSubTaskCreateResult,
+  type JiraSubTaskFields,
+  type JiraSubTaskLookupResult,
+  type JiraWriteClient,
+  type JiraWriteClock,
+  type RunJiraSubtaskWriteInput,
+  type RunJiraSubtaskWriteResult,
+} from "./jira-write-adapter.js";
+export {
+  buildJiraWriteMarkdownSafeId,
+  writeJiraSubtaskMarkdownArtifacts,
+  type JiraWriteMarkdownClock,
+  type JiraWriteMarkdownInput,
+  type JiraWriteMarkdownResult,
+} from "./jira-write-markdown.js";
+export {
   createJiraGatewayClient,
   type JiraGatewayClient,
   type JiraGatewayRuntime,

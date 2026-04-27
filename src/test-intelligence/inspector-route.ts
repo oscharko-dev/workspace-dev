@@ -14,6 +14,9 @@
  *   POST /workspace/test-intelligence/review/<jobId>/<action>/<testCaseId>  → per-case write
  *   POST /workspace/test-intelligence/sources/<jobId>/jira-paste            → Jira paste source ingest
  *   POST /workspace/test-intelligence/sources/<jobId>/custom-context        → custom context source ingest
+ *   POST /workspace/test-intelligence/write/<jobId>/jira-subtasks           → start a Jira sub-task write run (#1482)
+ *   GET  /workspace/test-intelligence/write/config                          → read user-scoped Jira write config
+ *   PUT  /workspace/test-intelligence/write/config                          → persist user-scoped Jira write config
  *
  * Reads are unauthenticated (artifact JSON contains no secrets — the
  * test-intelligence pipeline already redacts PII before persistence).
@@ -37,6 +40,8 @@ export type InspectorTestIntelligenceRoute =
   | { kind: "review_state"; jobId: string }
   | { kind: "jira_paste_source"; jobId: string }
   | { kind: "custom_context_source"; jobId: string }
+  | { kind: "jira_write_start"; jobId: string }
+  | { kind: "jira_write_config" }
   | {
       kind: "review_action";
       jobId: string;
@@ -245,6 +250,44 @@ export const parseInspectorTestIntelligenceRoute = (
     }
   }
 
+  if (head === "write") {
+    if (segments.length === 2 && segments[1] === "config") {
+      return { ok: true, route: { kind: "jira_write_config" } };
+    }
+    if (segments.length !== 3) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "segment_count_invalid" },
+      };
+    }
+    const jobId = segments[1];
+    const writeKind = segments[2];
+    if (
+      jobId === undefined ||
+      jobId.length === 0 ||
+      writeKind === undefined ||
+      writeKind.length === 0
+    ) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "empty_segment" },
+      };
+    }
+    if (!isSafeJobId(jobId)) {
+      return {
+        ok: false,
+        error: { kind: "parse_error", reason: "unsafe_job_id" },
+      };
+    }
+    if (writeKind === "jira-subtasks") {
+      return { ok: true, route: { kind: "jira_write_start", jobId } };
+    }
+    return {
+      ok: false,
+      error: { kind: "parse_error", reason: "unknown_subroute" },
+    };
+  }
+
   return {
     ok: false,
     error: { kind: "parse_error", reason: "unknown_subroute" },
@@ -260,6 +303,8 @@ export const isInspectorTestIntelligenceWriteAction = (
   if (route.kind === "resolve_conflict") return true;
   if (route.kind === "jira_paste_source") return true;
   if (route.kind === "custom_context_source") return true;
+  if (route.kind === "jira_write_start") return true;
+  if (route.kind === "jira_write_config") return false;
   if (route.kind !== "review_action") return false;
   return route.action !== "state";
 };

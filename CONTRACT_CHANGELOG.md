@@ -31,6 +31,41 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.16.0] - 2026-04-27
+
+### Added (Issue #1482, Wave 5)
+
+Jira write workflow — approved test cases written back to Jira as sub-tasks. Purely additive.
+
+**New constants:**
+
+- `JIRA_WRITE_REPORT_SCHEMA_VERSION` — schema version "1.0.0" for the Jira write report artifact.
+- `JIRA_WRITE_REPORT_ARTIFACT_FILENAME` — artifact filename "jira-write-report.json".
+- `JIRA_WRITE_REPORT_ARTIFACT_DIRECTORY` — sub-directory "jira-write" under the run dir.
+- `JIRA_CREATED_SUBTASKS_SCHEMA_VERSION` — schema version "1.0.0" for the created-subtasks artifact.
+- `JIRA_CREATED_SUBTASKS_ARTIFACT_FILENAME` — artifact filename "jira-created-subtasks.json".
+- `ALLOWED_JIRA_WRITE_MODE_VALUES` — `["jira_subtasks"]` discriminant array.
+- `ALLOWED_JIRA_WRITE_REFUSAL_CODES` — 8 structured refusal codes for the Jira write pipeline.
+- `ALLOWED_JIRA_WRITE_ENTITY_OUTCOMES` — 4 per-case outcome strings.
+- `ALLOWED_JIRA_WRITE_FAILURE_CLASSES` — 8 failure class strings.
+
+**New types:**
+
+- `JiraWriteMode` — discriminated union of write mode strings.
+- `JiraWriteRefusalCode` — union of refusal code strings.
+- `JiraWriteEntityOutcome` — union of per-case outcome strings.
+- `JiraWriteFailureClass` — union of failure class strings.
+- `JiraSubTaskRecord` — per-case sub-task outcome record.
+- `JiraCreatedSubtasksArtifact` — artifact type for jira-created-subtasks.json.
+- `JiraWriteAuditMetadata` — audit metadata embedded in the write report.
+- `JiraWriteReportArtifact` — artifact type for jira-write-report.json.
+
+**Extended types (additive fields only):**
+
+- `WorkspaceStartOptions.testIntelligence` — optional `allowJiraWrite?: boolean` and `jiraWriteBearerToken?: string`.
+
+**TEST_INTELLIGENCE_CONTRACT_VERSION bump:** `1.4.0` → `1.5.0`
+
 ## [4.15.0] - 2026-04-27
 
 ### Added (Issue #1441, Wave 4.K)
