@@ -1,0 +1,14 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "jira-rest-risk-4001",
+      "kind": "jira_rest",
+      "contentHash": "2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c",
+      "capturedAt": "2026-04-27T10:04:00.000Z",
+      "canonicalIssueKey": "RISK-4001"
+    }
+  ],
+  "aggregateContentHash": "3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d5e6f1a2b3c4d",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

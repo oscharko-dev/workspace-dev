@@ -14,6 +14,10 @@
 
 import {
   ALLOWED_FINOPS_ROLES,
+  MAX_CUSTOM_CONTEXT_BYTES_PER_JOB,
+  MAX_JIRA_API_REQUESTS_PER_JOB,
+  MAX_JIRA_PASTE_BYTES_PER_JOB,
+  type FinOpsBudgetBreachReason,
   type FinOpsBudgetEnvelope,
   type FinOpsRole,
   type FinOpsRoleBudget,
@@ -43,7 +47,8 @@ export const DEFAULT_FINOPS_BUDGET_ENVELOPE: FinOpsBudgetEnvelope =
  * Built-in `eu-banking-default` budget profile. Conservative limits suitable
  * for the EU-banking deployment lane: 8k input tokens / 2k output tokens
  * per request, 60s per-request wall-clock, 3 retries, 2 fallback attempts,
- * 5 MiB image cap, ≤ 50% replay-cache miss rate.
+ * 5 MiB image cap, ≤ 50% replay-cache miss rate. Source ingestion roles
+ * are bounded by the `sourceQuotas` block.
  */
 export const EU_BANKING_DEFAULT_FINOPS_BUDGET: FinOpsBudgetEnvelope =
   Object.freeze({
@@ -79,7 +84,21 @@ export const EU_BANKING_DEFAULT_FINOPS_BUDGET: FinOpsBudgetEnvelope =
         maxImageBytesPerRequest: 5 * 1024 * 1024,
         maxFallbackAttempts: 4,
       }),
+      jira_api_requests: Object.freeze({
+        maxAttempts: MAX_JIRA_API_REQUESTS_PER_JOB,
+      }),
+      jira_paste_ingest: Object.freeze({
+        maxIngestBytesPerJob: MAX_JIRA_PASTE_BYTES_PER_JOB,
+      }),
+      custom_context_ingest: Object.freeze({
+        maxIngestBytesPerJob: MAX_CUSTOM_CONTEXT_BYTES_PER_JOB,
+      }),
     }) as FinOpsBudgetEnvelope["roles"],
+    sourceQuotas: Object.freeze({
+      maxJiraApiRequestsPerJob: MAX_JIRA_API_REQUESTS_PER_JOB,
+      maxJiraPasteBytesPerJob: MAX_JIRA_PASTE_BYTES_PER_JOB,
+      maxCustomContextBytesPerJob: MAX_CUSTOM_CONTEXT_BYTES_PER_JOB,
+    }),
   }) as FinOpsBudgetEnvelope;
 
 /** Deep-clone an envelope (returns a fresh, mutable copy). */
@@ -124,6 +143,7 @@ const cloneRoleBudget = (input: FinOpsRoleBudget): FinOpsRoleBudget => {
     "maxImageBytesPerRequest",
     "maxFallbackAttempts",
     "maxLiveSmokeCalls",
+    "maxIngestBytesPerJob",
   ] as const;
   for (const key of keys) {
     const value = input[key];
@@ -150,7 +170,17 @@ const POSITIVE_INTEGER_FIELDS: ReadonlyArray<keyof FinOpsRoleBudget> = [
   "maxImageBytesPerRequest",
   "maxFallbackAttempts",
   "maxLiveSmokeCalls",
+  "maxIngestBytesPerJob",
 ];
+
+/** Roles that perform non-LLM source ingestion (paste/text). */
+const INGEST_ONLY_ROLES: ReadonlyArray<FinOpsRole> = [
+  "jira_paste_ingest",
+  "custom_context_ingest",
+];
+
+/** Roles that perform Jira REST API calls (no LLM, no image input). */
+const JIRA_API_ROLES: ReadonlyArray<FinOpsRole> = ["jira_api_requests"];
 
 /**
  * Validate an envelope. Numeric fields must be safe integers ≥ 0 (retries
@@ -231,7 +261,90 @@ export const validateFinOpsBudgetEnvelope = (
     }
   }
 
+  // Validate sourceQuotas if supplied.
+  if (envelope.sourceQuotas !== undefined) {
+    const sq = envelope.sourceQuotas;
+    for (const [field, value] of [
+      ["maxJiraApiRequestsPerJob", sq.maxJiraApiRequestsPerJob],
+      ["maxJiraPasteBytesPerJob", sq.maxJiraPasteBytesPerJob],
+      ["maxCustomContextBytesPerJob", sq.maxCustomContextBytesPerJob],
+    ] as [string, number | undefined][]) {
+      if (value !== undefined) {
+        if (!Number.isSafeInteger(value) || value < 0) {
+          errors.push({
+            path: `$.sourceQuotas.${field}`,
+            message: `sourceQuotas.${field} must be a non-negative safe integer`,
+          });
+        }
+      }
+    }
+  }
+
   return { valid: errors.length === 0, errors };
+};
+
+/**
+ * Result of a source-quota pre-flight check against an envelope.
+ */
+export interface SourceQuotaCheckResult {
+  ok: boolean;
+  breachReason?: FinOpsBudgetBreachReason;
+  message?: string;
+}
+
+/**
+ * Check whether the planned Jira API call count fits within the source
+ * quota. Returns `ok: true` when under quota or unconfigured.
+ */
+export const checkJiraApiQuota = (
+  envelope: FinOpsBudgetEnvelope,
+  plannedCalls: number,
+): SourceQuotaCheckResult => {
+  const cap =
+    envelope.sourceQuotas?.maxJiraApiRequestsPerJob ??
+    envelope.roles.jira_api_requests?.maxAttempts;
+  if (cap === undefined || plannedCalls <= cap) return { ok: true };
+  return {
+    ok: false,
+    breachReason: "jira_api_quota_exceeded",
+    message: `planned Jira API calls ${plannedCalls} exceeds maxJiraApiRequestsPerJob ${cap}`,
+  };
+};
+
+/**
+ * Check whether the raw Jira paste size fits within the source quota.
+ */
+export const checkJiraPasteQuota = (
+  envelope: FinOpsBudgetEnvelope,
+  pasteBytes: number,
+): SourceQuotaCheckResult => {
+  const cap =
+    envelope.sourceQuotas?.maxJiraPasteBytesPerJob ??
+    envelope.roles.jira_paste_ingest?.maxIngestBytesPerJob;
+  if (cap === undefined || pasteBytes <= cap) return { ok: true };
+  return {
+    ok: false,
+    breachReason: "jira_paste_quota_exceeded",
+    message: `Jira paste bytes ${pasteBytes} exceeds maxJiraPasteBytesPerJob ${cap}`,
+  };
+};
+
+/**
+ * Check whether the custom-context input size fits within the source quota.
+ */
+export const checkCustomContextQuota = (
+  envelope: FinOpsBudgetEnvelope,
+  inputBytes: number,
+): SourceQuotaCheckResult => {
+  const cap =
+    envelope.sourceQuotas?.maxCustomContextBytesPerJob ??
+    envelope.roles.custom_context_ingest?.maxIngestBytesPerJob;
+  if (cap === undefined || inputBytes <= cap) return { ok: true };
+  return {
+    ok: false,
+    breachReason: "custom_context_quota_exceeded",
+    message: `custom context input bytes ${inputBytes} exceeds maxCustomContextBytesPerJob ${cap}`,
+  };
 };
 
 const validateRoleBudget = (
@@ -284,6 +397,32 @@ const validateRoleBudget = (
       path: `$.roles.visual_primary.maxFallbackAttempts`,
       message:
         "maxFallbackAttempts is only enforced for visual_fallback; move the limit there",
+    });
+  }
+  // Ingest-only roles do not perform LLM calls — reject LLM-specific limits.
+  if (
+    (INGEST_ONLY_ROLES as readonly FinOpsRole[]).includes(role) &&
+    (budget.maxInputTokensPerRequest !== undefined ||
+      budget.maxOutputTokensPerRequest !== undefined ||
+      budget.maxImageBytesPerRequest !== undefined ||
+      budget.maxFallbackAttempts !== undefined)
+  ) {
+    errors.push({
+      path: `$.roles.${role}`,
+      message: `${role} is an ingest role and does not accept LLM or image limits; use maxIngestBytesPerJob / maxAttempts only`,
+    });
+  }
+  // Jira API roles do not perform LLM calls or byte-level ingest.
+  if (
+    (JIRA_API_ROLES as readonly FinOpsRole[]).includes(role) &&
+    (budget.maxInputTokensPerRequest !== undefined ||
+      budget.maxOutputTokensPerRequest !== undefined ||
+      budget.maxImageBytesPerRequest !== undefined ||
+      budget.maxIngestBytesPerJob !== undefined)
+  ) {
+    errors.push({
+      path: `$.roles.${role}`,
+      message: `${role} is a Jira API role; use maxAttempts only`,
     });
   }
 };

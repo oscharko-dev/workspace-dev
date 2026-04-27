@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "key": "BEN-7001",
+      "fields": {
+        "issuetype": { "name": "Story" },
+        "summary": "Add Beneficiary",
+        "description": "As a customer I want to add a new beneficiary so I can later send payments. Acceptance: 1) Beneficiary Name is required. 2) BIC must match the SWIFT format. 3) The new beneficiary appears in the beneficiary list within 1 second of confirmation.",
+        "status": { "name": "Open" }
+      }
+    }
+  ]
+}

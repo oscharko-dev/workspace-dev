@@ -1,0 +1,5 @@
+Key: AIR-3001
+Summary: Account balance query for current accounts
+Type: Story
+Status: Open
+Description: Customers can view the current available balance and the cleared balance for any of their current accounts. Acceptance: 1) Both balances are displayed in the customer's preferred currency. 2) The screen refreshes within 2 seconds.

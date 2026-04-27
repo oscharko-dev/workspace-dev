@@ -599,3 +599,24 @@ export {
   buildJiraAuthHeaders,
   type JiraCapabilityProbeResult,
 } from "./jira-capability-probe.js";
+export {
+  isWave4ProductionReadinessFixtureId,
+  loadWave4ProductionReadinessFixture,
+  WAVE4_PRODUCTION_READINESS_FIXTURE_IDS,
+  type LoadedWave4ProductionReadinessFixture,
+  type Wave4ProductionReadinessFixtureId,
+} from "./multi-source-fixtures.js";
+export {
+  runWave4ProductionReadiness,
+  type RunWave4ProductionReadinessInput,
+  type Wave4ProductionReadinessRunResult,
+  type Wave4ProductionReadinessSourceProvenanceSummary,
+} from "./multi-source-production-readiness.js";
+export {
+  evaluateWave4ProductionReadiness,
+  WAVE4_DEFAULT_EVAL_THRESHOLDS,
+  writeWave4ProductionReadinessEvalReport,
+  type EvaluateWave4ProductionReadinessInput,
+  type Wave4EvalSourceMixResult,
+  type WriteWave4ProductionReadinessEvalReportResult,
+} from "./multi-source-eval.js";

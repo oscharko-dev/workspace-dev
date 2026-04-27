@@ -1,0 +1,13 @@
+{
+  "issues": [
+    {
+      "key": "CON-10001",
+      "fields": {
+        "issuetype": { "name": "Story" },
+        "summary": "Consent Management - GDPR Article 7",
+        "description": "Customers must give explicit consent before any personal data is processed. Withdrawal of consent must be as easy as giving it. Acceptance: 1) The accept button is disabled until the consent checkbox is ticked. 2) Withdrawing consent is one click from the privacy screen. 3) The consent decision is stored with a timestamp.",
+        "status": { "name": "Open" }
+      }
+    }
+  ]
+}

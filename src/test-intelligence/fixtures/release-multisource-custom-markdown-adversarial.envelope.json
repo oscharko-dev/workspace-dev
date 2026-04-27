@@ -1,0 +1,17 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "custom-adversarial-md",
+      "kind": "custom_text",
+      "contentHash": "c668499aab5c668499aab5c668499aab5c668499aab5c668499aab5c668499aa",
+      "capturedAt": "2026-04-27T10:11:00.000Z",
+      "authorHandle": "qa-reviewer",
+      "inputFormat": "markdown",
+      "redactedMarkdownHash": "d77955abbc6dd77955abbc6dd77955abbc6dd77955abbc6dd77955abbc6dd779",
+      "plainTextDerivativeHash": "e88a66bcccd7e88a66bcccd7e88a66bcccd7e88a66bcccd7e88a66bcccd7e88a"
+    }
+  ],
+  "aggregateContentHash": "f99b77cdde8ef99b77cdde8ef99b77cdde8ef99b77cdde8ef99b77cdde8ef99b",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "screenId": "s-consent",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Consent Management",
+    "regions": [
+      {
+        "regionId": "n-consent-checkbox",
+        "confidence": 0.94,
+        "label": "I consent",
+        "controlType": "checkbox"
+      },
+      {
+        "regionId": "n-accept",
+        "confidence": 0.96,
+        "label": "Accept",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.94,
+      "max": 0.96,
+      "mean": 0.95
+    }
+  }
+]

@@ -1,0 +1,28 @@
+{
+  "version": "1.0.0",
+  "sources": [
+    {
+      "sourceId": "figma-acct-open",
+      "kind": "figma_local_json",
+      "contentHash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      "capturedAt": "2026-04-27T10:00:00.000Z"
+    },
+    {
+      "sourceId": "jira-acct-1001",
+      "kind": "jira_rest",
+      "contentHash": "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3",
+      "capturedAt": "2026-04-27T10:00:01.000Z",
+      "canonicalIssueKey": "ACCT-1001"
+    },
+    {
+      "sourceId": "custom-acct-notes",
+      "kind": "custom_text",
+      "contentHash": "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4",
+      "capturedAt": "2026-04-27T10:00:02.000Z",
+      "authorHandle": "qa-reviewer",
+      "inputFormat": "plain_text"
+    }
+  ],
+  "aggregateContentHash": "d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5",
+  "conflictResolutionPolicy": "reviewer_decides"
+}

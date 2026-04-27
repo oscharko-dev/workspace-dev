@@ -1,0 +1,63 @@
+[
+  {
+    "screenId": "s-acct-open",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "Account Opening",
+    "regions": [
+      {
+        "regionId": "n-given-name",
+        "confidence": 0.93,
+        "label": "Given Name",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-family-name",
+        "confidence": 0.93,
+        "label": "Family Name",
+        "controlType": "text_input"
+      },
+      {
+        "regionId": "n-email",
+        "confidence": 0.95,
+        "label": "Email",
+        "controlType": "text_input",
+        "validationHints": ["Email format"]
+      },
+      {
+        "regionId": "n-continue",
+        "confidence": 0.97,
+        "label": "Continue",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.93,
+      "max": 0.97,
+      "mean": 0.945
+    }
+  },
+  {
+    "screenId": "s-kyc-upload",
+    "sidecarDeployment": "llama-4-maverick-vision",
+    "screenName": "KYC Document Upload",
+    "regions": [
+      {
+        "regionId": "n-doc-type",
+        "confidence": 0.92,
+        "label": "Document Type",
+        "controlType": "select"
+      },
+      {
+        "regionId": "n-upload-button",
+        "confidence": 0.96,
+        "label": "Upload Document",
+        "controlType": "button"
+      }
+    ],
+    "confidenceSummary": {
+      "min": 0.92,
+      "max": 0.96,
+      "mean": 0.94
+    }
+  }
+]
