@@ -1,0 +1,72 @@
+/* ==========================================================================
+   Visual Quality CSS — replaces inline style= props for CSP unsafe-inline removal.
+   Issue #601
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   confidence-summary — dynamic confidence-level border/dot color
+   -------------------------------------------------------------------------- */
+
+.vq-confidence-card {
+  border-color: var(--vq-confidence-color);
+}
+
+.vq-confidence-dot {
+  background-color: var(--vq-confidence-color);
+}
+
+/* --------------------------------------------------------------------------
+   dimension-breakdown — dynamic bar fill width
+   -------------------------------------------------------------------------- */
+
+.vq-dim-bar-fill {
+  width: var(--vq-dim-bar-width, 0%);
+}
+
+/* --------------------------------------------------------------------------
+   overlay-heatmap — absolutely-positioned hotspot boxes and legend dots
+   -------------------------------------------------------------------------- */
+
+.vq-hotspot-box {
+  left: var(--vq-hs-left, 0);
+  top: var(--vq-hs-top, 0);
+  width: var(--vq-hs-width, 0);
+  height: var(--vq-hs-height, 0);
+  background-color: var(--vq-hs-bg);
+  border-color: var(--vq-hs-border);
+}
+
+.vq-hotspot-legend-dot {
+  background-color: var(--vq-hs-legend-bg);
+}
+
+/* --------------------------------------------------------------------------
+   overlay-onion-skin — dynamic image opacity
+   -------------------------------------------------------------------------- */
+
+.vq-onion-actual {
+  opacity: var(--vq-onion-opacity, 1);
+}
+
+/* --------------------------------------------------------------------------
+   zoom-modal — animated pan/zoom transform
+   -------------------------------------------------------------------------- */
+
+.vq-zoom-canvas {
+  transform: var(--vq-zoom-transform, none);
+  transform-origin: center center;
+  transition: var(--vq-zoom-transition, none);
+}
+
+/* --------------------------------------------------------------------------
+   overlay-confidence-view — confidence overlay and dot
+   -------------------------------------------------------------------------- */
+
+.vq-conf-overlay {
+  background-color: var(--vq-conf-overlay-bg);
+  box-shadow: var(--vq-conf-overlay-shadow);
+}
+
+.vq-conf-dot {
+  background-color: var(--vq-conf-dot-bg);
+}

@@ -162,7 +162,7 @@
 }
 
 .cv-content {
-  background-color: var(--cv-content-bg);
+  background-color: var(--cv-content-override-bg, var(--cv-content-bg));
 }
 
 .cv-highlighting-indicator {
@@ -182,7 +182,26 @@
 }
 
 /* Boundary tooltip */
+.cv-line-row {
+  background-color: var(--cv-line-bg);
+  border-left: var(--cv-line-border-left);
+}
+
+.cv-boundary-marker {
+  background-color: var(--cv-marker-color);
+  border-top-left-radius: var(--cv-marker-btlr, 0);
+  border-top-right-radius: var(--cv-marker-btrr, 0);
+  border-bottom-left-radius: var(--cv-marker-bblr, 0);
+  border-bottom-right-radius: var(--cv-marker-bbrr, 0);
+}
+
+.cv-line-plain-text {
+  color: var(--cv-plain-text-color);
+}
+
 .cv-boundary-tooltip {
+  left: var(--cv-tooltip-left, 0);
+  top: var(--cv-tooltip-top, 0);
   border-color: var(--cv-tooltip-border);
   background-color: var(--cv-tooltip-bg);
   color: var(--cv-tooltip-color);
@@ -223,8 +242,22 @@
   background-color: var(--dv-content-bg);
 }
 
+.dv-line-row {
+  background-color: var(--dv-line-bg);
+  border-left: var(--dv-line-border-left);
+}
+
 .dv-line-number {
   color: var(--dv-line-number-color);
+  background-color: var(--dv-gutter-bg);
+}
+
+.dv-line-prefix {
+  color: var(--dv-prefix-color);
+}
+
+.dv-line-content {
+  color: var(--dv-content-color);
 }
 
 /* --------------------------------------------------------------------------
@@ -870,17 +903,19 @@
    =========================================================================== */
 
 .code-pane-toggle-btn {
-  /* borderColor, backgroundColor, color set via CSS Custom Properties for active state */
+  border-color: var(--toggle-border, #333333);
+  background-color: var(--toggle-bg, transparent);
+  color: var(--toggle-color, rgba(255, 255, 255, 0.7));
 }
 
 .code-pane-split-pane {
-  /* flexBasis set via CSS Custom Property for dynamic width */
+  flex-basis: var(--split-flex-basis, 50%);
   flex-grow: 0;
   flex-shrink: 0;
 }
 
-.code-pane-split-divider {
-  /* touchAction is static */
+.code-pane-split-divider,
+.inspector-pane-splitter {
   touch-action: none;
 }
 

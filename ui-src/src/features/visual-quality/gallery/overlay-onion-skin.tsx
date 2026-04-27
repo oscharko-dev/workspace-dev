@@ -1,5 +1,6 @@
 import { useCallback, useState, type JSX, type KeyboardEvent } from "react";
 import { type MergedScreen } from "../data/types";
+import "../visual-quality.css";
 
 interface OverlayOnionSkinProps {
   screen: MergedScreen;
@@ -92,8 +93,10 @@ export function OverlayOnionSkin({
           <img
             src={actual}
             alt="Actual"
-            className="pointer-events-none absolute inset-0 block h-full w-full object-cover"
-            style={{ opacity: opacity / 100 }}
+            className="vq-onion-actual pointer-events-none absolute inset-0 block h-full w-full object-cover"
+            style={
+              { "--vq-onion-opacity": opacity / 100 } as React.CSSProperties
+            }
           />
         ) : null}
       </button>

@@ -1,5 +1,6 @@
 import { useMemo, type JSX } from "react";
 import { type MergedReport } from "../data/types";
+import "../visual-quality.css";
 
 interface DimensionBreakdownProps {
   report: MergedReport;
@@ -110,10 +111,12 @@ export function DimensionBreakdown({
             </div>
             <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/5">
               <div
-                className={`h-full ${barColor(dim.score)}`}
-                style={{
-                  width: `${String(Math.max(0, Math.min(100, dim.score)))}%`,
-                }}
+                className={`vq-dim-bar-fill h-full ${barColor(dim.score)}`}
+                style={
+                  {
+                    "--vq-dim-bar-width": `${String(Math.max(0, Math.min(100, dim.score)))}%`,
+                  } as React.CSSProperties
+                }
               />
             </div>
             <div className="mt-0.5 text-[9px] text-white/35">

@@ -4,7 +4,13 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/444
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, cleanup, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  cleanup,
+  waitFor,
+} from "@testing-library/react";
 import { createElement } from "react";
 import { CodePane } from "./CodePane";
 import * as shikiSharedLib from "../../../lib/shiki-shared";
@@ -18,33 +24,44 @@ vi.mock("../../../lib/shiki-shared", () => ({
   detectLanguage: vi.fn((filePath: string) => {
     if (filePath.endsWith(".json")) return "json";
     if (filePath.endsWith(".tsx") || filePath.endsWith(".jsx")) return "tsx";
-    if (filePath.endsWith(".ts") || filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "typescript";
+    if (
+      filePath.endsWith(".ts") ||
+      filePath.endsWith(".js") ||
+      filePath.endsWith(".mjs")
+    )
+      return "typescript";
     return null;
   }),
   exceedsMaxSize: vi.fn().mockReturnValue(false),
-  getPreferredTheme: vi.fn().mockReturnValue("github-light")
+  getPreferredTheme: vi.fn().mockReturnValue("github-light"),
 }));
 vi.mock("../../../lib/shiki-worker-client", () => ({
   highlightCodeWithWorker: vi.fn(),
-  isAbortError: (error: unknown) => error instanceof DOMException && error.name === "AbortError"
+  isAbortError: (error: unknown) =>
+    error instanceof DOMException && error.name === "AbortError",
 }));
 
-const mockHighlightCodeWithWorker = vi.mocked(workerClientLib.highlightCodeWithWorker);
+const mockHighlightCodeWithWorker = vi.mocked(
+  workerClientLib.highlightCodeWithWorker,
+);
 const mockExceedsMaxSize = vi.mocked(shikiSharedLib.exceedsMaxSize);
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-const sampleCode = Array.from({ length: 20 }, (_, i) => `line ${String(i + 1)}`).join("\n");
+const sampleCode = Array.from(
+  { length: 20 },
+  (_, i) => `line ${String(i + 1)}`,
+).join("\n");
 const jsxSampleCode = [
   "export function EmptyState() {",
   "  return (",
-  "    <section className=\"hero\">",
+  '    <section className="hero">',
   "      <h1>Title</h1>",
   "    </section>",
   "  );",
-  "}"
+  "}",
 ].join("\n");
 const scopedFormattingCode = [
   "export function EmptyState() {",
@@ -56,7 +73,7 @@ const scopedFormattingCode = [
   "      </Stack>",
   "      {/* @ir:end parent */}",
   "      {/* @ir:start node-a Primary Button paper */}",
-  "      <Paper data-ir-id=\"node-a\" data-ir-name=\"Primary Button\" data-super-long-first-prop=\"aaaaaaaaaaaaaaaaaaaa\" data-super-long-second-prop=\"bbbbbbbbbbbbbbbbbbbb\" data-super-long-third-prop=\"cccccccccccccccccccc\" data-super-long-fourth-prop=\"dddddddddddddddddddd\"><Stack direction=\"row\" spacing={0.4}><Typography>Primary action</Typography></Stack></Paper>",
+  '      <Paper data-ir-id="node-a" data-ir-name="Primary Button" data-super-long-first-prop="aaaaaaaaaaaaaaaaaaaa" data-super-long-second-prop="bbbbbbbbbbbbbbbbbbbb" data-super-long-third-prop="cccccccccccccccccccc" data-super-long-fourth-prop="dddddddddddddddddddd"><Stack direction="row" spacing={0.4}><Typography>Primary action</Typography></Stack></Paper>',
   "      {/* @ir:end node-a */}",
   "      {/* @ir:start between Between FRAME */}",
   "      <Stack>",
@@ -64,20 +81,20 @@ const scopedFormattingCode = [
   "      </Stack>",
   "      {/* @ir:end between */}",
   "      {/* @ir:start node-b Secondary Button paper */}",
-  "      <Paper data-ir-id=\"node-b\" data-ir-name=\"Secondary Button\" data-super-long-fifth-prop=\"eeeeeeeeeeeeeeeeeeee\" data-super-long-sixth-prop=\"ffffffffffffffffffff\" data-super-long-seventh-prop=\"gggggggggggggggggggg\" data-super-long-eighth-prop=\"hhhhhhhhhhhhhhhhhhhh\"><Stack direction=\"row\" spacing={0.4}><Typography>Secondary action</Typography></Stack></Paper>",
+  '      <Paper data-ir-id="node-b" data-ir-name="Secondary Button" data-super-long-fifth-prop="eeeeeeeeeeeeeeeeeeee" data-super-long-sixth-prop="ffffffffffffffffffff" data-super-long-seventh-prop="gggggggggggggggggggg" data-super-long-eighth-prop="hhhhhhhhhhhhhhhhhhhh"><Stack direction="row" spacing={0.4}><Typography>Secondary action</Typography></Stack></Paper>',
   "      {/* @ir:end node-b */}",
   "    </Box>",
   "  );",
-  "}"
+  "}",
 ].join("\n");
 const alternateFormattingCode = [
   "export function AboutRoute() {",
-  "  return <section data-testid=\"about-route\">About route</section>;",
-  "}"
+  '  return <section data-testid="about-route">About route</section>;',
+  "}",
 ].join("\n");
 const sampleFiles = [
   { path: "src/screens/Home.tsx", sizeBytes: 500 },
-  { path: "src/screens/About.tsx", sizeBytes: 300 }
+  { path: "src/screens/About.tsx", sizeBytes: 300 },
 ];
 const noopFn = (): void => {};
 
@@ -94,8 +111,8 @@ function renderCodePane(overrides: Record<string, unknown> = {}): void {
       fileContentState: "ready",
       fileContentError: null,
       onRetryFileContent: noopFn,
-      ...overrides
-    })
+      ...overrides,
+    }),
   );
 }
 
@@ -123,8 +140,8 @@ beforeEach(() => {
       removeListener: vi.fn(),
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn()
-    }))
+      dispatchEvent: vi.fn(),
+    })),
   });
 });
 
@@ -152,8 +169,12 @@ describe("CodePane scoped code modes", () => {
 
   it("disables snippet and focused modes when node is unmapped", () => {
     renderCodePane({ isNodeMapped: false });
-    const snippet = screen.getByTestId("scoped-mode-snippet") as HTMLButtonElement;
-    const focused = screen.getByTestId("scoped-mode-focused") as HTMLButtonElement;
+    const snippet = screen.getByTestId(
+      "scoped-mode-snippet",
+    ) as HTMLButtonElement;
+    const focused = screen.getByTestId(
+      "scoped-mode-focused",
+    ) as HTMLButtonElement;
     const full = screen.getByTestId("scoped-mode-full") as HTMLButtonElement;
 
     expect(snippet.disabled).toBe(true);
@@ -169,7 +190,7 @@ describe("CodePane scoped code modes", () => {
   it("does not show unmapped hint when node is mapped", () => {
     renderCodePane({
       isNodeMapped: true,
-      activeManifestRange: { startLine: 5, endLine: 10 }
+      activeManifestRange: { startLine: 5, endLine: 10 },
     });
     expect(screen.queryByTestId("scoped-mode-unmapped-hint")).toBeNull();
   });
@@ -177,7 +198,7 @@ describe("CodePane scoped code modes", () => {
   it("defaults to snippet mode when node is mapped", () => {
     renderCodePane({
       isNodeMapped: true,
-      activeManifestRange: { startLine: 5, endLine: 10 }
+      activeManifestRange: { startLine: 5, endLine: 10 },
     });
     const snippet = screen.getByTestId("scoped-mode-snippet");
     expect(snippet.getAttribute("aria-checked")).toBe("true");
@@ -192,38 +213,56 @@ describe("CodePane scoped code modes", () => {
   it("clicking a mode button switches the active mode", () => {
     renderCodePane({
       isNodeMapped: true,
-      activeManifestRange: { startLine: 5, endLine: 10 }
+      activeManifestRange: { startLine: 5, endLine: 10 },
     });
 
     // Initially snippet is active
-    expect(screen.getByTestId("scoped-mode-snippet").getAttribute("aria-checked")).toBe("true");
+    expect(
+      screen.getByTestId("scoped-mode-snippet").getAttribute("aria-checked"),
+    ).toBe("true");
 
     // Click focused
     fireEvent.click(screen.getByTestId("scoped-mode-focused"));
-    expect(screen.getByTestId("scoped-mode-focused").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByTestId("scoped-mode-snippet").getAttribute("aria-checked")).toBe("false");
+    expect(
+      screen.getByTestId("scoped-mode-focused").getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      screen.getByTestId("scoped-mode-snippet").getAttribute("aria-checked"),
+    ).toBe("false");
 
     // Click full
     fireEvent.click(screen.getByTestId("scoped-mode-full"));
-    expect(screen.getByTestId("scoped-mode-full").getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByTestId("scoped-mode-focused").getAttribute("aria-checked")).toBe("false");
+    expect(
+      screen.getByTestId("scoped-mode-full").getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(
+      screen.getByTestId("scoped-mode-focused").getAttribute("aria-checked"),
+    ).toBe("false");
   });
 
   it("renders complete JSX tokens for a mapped snippet when Shiki returns nested spans", async () => {
     mockHighlightCodeWithWorker.mockResolvedValue({
       html: '<pre class="shiki github-light"><code><span class="line"><span style="color:#24292f">  return (</span></span>\n<span class="line"><span style="color:#24292f">    &#x3C;</span><span style="color:#0550AE">section</span><span style="color:#8250df"> className</span><span style="color:#cf222e">=</span><span style="color:#0a3069">"hero"</span><span style="color:#24292f">></span></span>\n<span class="line"><span style="color:#24292f">      &#x3C;</span><span style="color:#0550AE">h1</span><span style="color:#24292f">>Title&#x3C;/</span><span style="color:#0550AE">h1</span><span style="color:#24292f">></span></span>\n<span class="line"><span style="color:#24292f">    &#x3C;/</span><span style="color:#0550AE">section</span><span style="color:#24292f">></span></span>\n<span class="line"><span style="color:#24292f">  );</span></span></code></pre>',
-      theme: "github-light"
+      theme: "github-light",
     });
 
     renderCodePane({
       fileContent: jsxSampleCode,
       isNodeMapped: true,
-      activeManifestRange: { file: "src/screens/Home.tsx", startLine: 3, endLine: 5 }
+      activeManifestRange: {
+        file: "src/screens/Home.tsx",
+        startLine: 3,
+        endLine: 5,
+      },
     });
 
     await waitFor(() => {
-      expect(screen.getByTestId("code-content")).toHaveTextContent('<section className="hero">');
-      expect(screen.getByTestId("code-content")).toHaveTextContent("<h1>Title</h1>");
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        '<section className="hero">',
+      );
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        "<h1>Title</h1>",
+      );
     });
   });
 
@@ -231,7 +270,11 @@ describe("CodePane scoped code modes", () => {
     renderCodePane({
       fileContent: sampleCode,
       isNodeMapped: true,
-      activeManifestRange: { file: "src/screens/About.tsx", startLine: 10, endLine: 12 }
+      activeManifestRange: {
+        file: "src/screens/About.tsx",
+        startLine: 10,
+        endLine: 12,
+      },
     });
 
     await waitFor(() => {
@@ -247,23 +290,31 @@ describe("CodePane scoped code modes", () => {
         "  return (",
         "    <>",
         "      {/* @ir:start node-a Header FRAME */}",
-        "      <Box data-super-long-first-prop=\"aaaaaaaaaaaaaaaaaaaa\" data-super-long-second-prop=\"bbbbbbbbbbbbbbbbbbbb\" data-super-long-third-prop=\"cccccccccccccccccccc\" data-super-long-fourth-prop=\"dddddddddddddddddddd\"><Text>Title</Text></Box>",
+        '      <Box data-super-long-first-prop="aaaaaaaaaaaaaaaaaaaa" data-super-long-second-prop="bbbbbbbbbbbbbbbbbbbb" data-super-long-third-prop="cccccccccccccccccccc" data-super-long-fourth-prop="dddddddddddddddddddd"><Text>Title</Text></Box>',
         "      {/* @ir:end node-a */}",
         "    </>",
         "  );",
-        "}"
+        "}",
       ].join("\n"),
       isNodeMapped: true,
       selectedIrNodeId: "node-a",
       boundariesEnabled: true,
-      activeManifestRange: { file: "src/screens/Home.tsx", startLine: 4, endLine: 6 }
+      activeManifestRange: {
+        file: "src/screens/Home.tsx",
+        startLine: 4,
+        endLine: 6,
+      },
     });
 
     fireEvent.click(screen.getByTestId("code-viewer-format-button"));
 
     await waitFor(() => {
-      expect(screen.getAllByTestId("highlighted-line").length).toBeGreaterThan(3);
-      expect(screen.getAllByTestId("code-boundary-marker-node-a").length).toBeGreaterThan(0);
+      expect(screen.getAllByTestId("highlighted-line").length).toBeGreaterThan(
+        3,
+      );
+      expect(
+        screen.getAllByTestId("code-boundary-marker-node-a").length,
+      ).toBeGreaterThan(0);
     });
   });
 
@@ -282,21 +333,31 @@ describe("CodePane scoped code modes", () => {
         onRetryFileContent: noopFn,
         isNodeMapped: true,
         selectedIrNodeId: "node-a",
-        activeManifestRange: { file: "src/screens/Home.tsx", startLine: 9, endLine: 11 }
-      })
+        activeManifestRange: {
+          file: "src/screens/Home.tsx",
+          startLine: 9,
+          endLine: 11,
+        },
+      }),
     );
 
     await waitFor(() => {
       expect(screen.getByTestId("code-content")).toHaveTextContent("</Stack>");
-      expect(screen.getByTestId("code-content")).toHaveTextContent("Primary action");
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        "Primary action",
+      );
     });
 
     fireEvent.click(screen.getByTestId("code-viewer-format-button"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent(
+        "Formatted!",
+      );
       expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
-      expect(screen.getByTestId("code-content")).toHaveTextContent("Primary action");
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        "Primary action",
+      );
     });
 
     rerender(
@@ -313,24 +374,36 @@ describe("CodePane scoped code modes", () => {
         onRetryFileContent: noopFn,
         isNodeMapped: true,
         selectedIrNodeId: "node-b",
-        activeManifestRange: { file: "src/screens/Home.tsx", startLine: 17, endLine: 19 }
-      })
+        activeManifestRange: {
+          file: "src/screens/Home.tsx",
+          startLine: 17,
+          endLine: 19,
+        },
+      }),
     );
 
-    expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+    expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent(
+      "Formatted!",
+    );
 
     await waitFor(() => {
       expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
-      expect(screen.getByTestId("code-content")).toHaveTextContent("Secondary action");
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        "Secondary action",
+      );
       expect(screen.getByTestId("code-content")).toHaveTextContent("</Stack>");
     });
 
     fireEvent.click(screen.getByTestId("code-viewer-format-button"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
+      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent(
+        "Formatted!",
+      );
       expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
-      expect(screen.getByTestId("code-content")).toHaveTextContent("Secondary action");
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        "Secondary action",
+      );
     });
   });
 
@@ -349,15 +422,23 @@ describe("CodePane scoped code modes", () => {
         onRetryFileContent: noopFn,
         isNodeMapped: true,
         selectedIrNodeId: "node-a",
-        activeManifestRange: { file: "src/screens/Home.tsx", startLine: 9, endLine: 11 }
-      })
+        activeManifestRange: {
+          file: "src/screens/Home.tsx",
+          startLine: 9,
+          endLine: 11,
+        },
+      }),
     );
 
     fireEvent.click(screen.getByTestId("code-viewer-format-button"));
 
     await waitFor(() => {
-      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent("Formatted!");
-      expect(screen.getByTestId("code-content")).toHaveTextContent("Primary action");
+      expect(screen.getByTestId("code-viewer-format-button")).toHaveTextContent(
+        "Formatted!",
+      );
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        "Primary action",
+      );
     });
 
     rerender(
@@ -371,13 +452,17 @@ describe("CodePane scoped code modes", () => {
         fileContent: alternateFormattingCode,
         fileContentState: "ready",
         fileContentError: null,
-        onRetryFileContent: noopFn
-      })
+        onRetryFileContent: noopFn,
+      }),
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId("code-content")).toHaveTextContent("About route");
-      expect(screen.getByTestId("code-viewer-format-button")).not.toHaveTextContent("Formatted!");
+      expect(screen.getByTestId("code-content")).toHaveTextContent(
+        "About route",
+      );
+      expect(
+        screen.getByTestId("code-viewer-format-button"),
+      ).not.toHaveTextContent("Formatted!");
       expect(screen.queryByTestId("code-viewer-format-status")).toBeNull();
     });
   });
@@ -395,11 +480,13 @@ describe("CodePane scoped code modes", () => {
         fileContent: null,
         fileContentState: "empty",
         fileContentError: null,
-        onRetryFileContent: noopFn
-      })
+        onRetryFileContent: noopFn,
+      }),
     );
 
-    expect(screen.getByTestId("inspector-state-files-loading")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("inspector-state-files-loading"),
+    ).toBeInTheDocument();
 
     rerender(
       createElement(CodePane, {
@@ -412,24 +499,30 @@ describe("CodePane scoped code modes", () => {
         fileContent: null,
         fileContentState: "empty",
         fileContentError: null,
-        onRetryFileContent: noopFn
-      })
+        onRetryFileContent: noopFn,
+      }),
     );
-    expect(screen.getByTestId("inspector-state-files-empty")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("inspector-state-files-empty"),
+    ).toBeInTheDocument();
 
     rerender(
       createElement(CodePane, {
         files: [],
         filesState: "error",
-        filesError: { status: 503, code: "FILES_UNAVAILABLE", message: "Files unavailable." },
+        filesError: {
+          status: 503,
+          code: "FILES_UNAVAILABLE",
+          message: "Files unavailable.",
+        },
         onRetryFiles,
         selectedFile: null,
         onSelectFile: noopFn,
         fileContent: null,
         fileContentState: "empty",
         fileContentError: null,
-        onRetryFileContent: noopFn
-      })
+        onRetryFileContent: noopFn,
+      }),
     );
 
     fireEvent.click(screen.getByTestId("inspector-retry-files"));
@@ -438,34 +531,39 @@ describe("CodePane scoped code modes", () => {
 
   it("shows json entries only after the JSON toggle is enabled", () => {
     renderCodePane({
-      files: [
-        ...sampleFiles,
-        { path: "src/design-ir.json", sizeBytes: 100 }
-      ]
+      files: [...sampleFiles, { path: "src/design-ir.json", sizeBytes: 100 }],
     });
 
-    expect(screen.queryByRole("option", { name: "src/design-ir.json" })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "src/design-ir.json" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inspector-json-toggle"));
-    expect(screen.getByRole("option", { name: "src/design-ir.json" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: "src/design-ir.json" }),
+    ).toBeInTheDocument();
   });
 
   it("renders diff mode with node-scoped fallback details when previous content is available", async () => {
     renderCodePane({
       previousJobId: "prev-job-id",
       previousFileContent: "line 1\nline 2\nline 3",
-      activeManifestRange: { file: "src/screens/Home.tsx", startLine: 2, endLine: 2 },
+      activeManifestRange: {
+        file: "src/screens/Home.tsx",
+        startLine: 2,
+        endLine: 2,
+      },
       previousManifestRange: { startLine: 2, endLine: 2 },
       isNodeMapped: true,
-      nodeDiffFallbackReason: "Previous file does not contain this node."
+      nodeDiffFallbackReason: "Previous file does not contain this node.",
     });
 
     fireEvent.click(screen.getByTestId("inspector-diff-toggle"));
 
     await waitFor(() => {
       expect(screen.getByTestId("diff-viewer")).toBeInTheDocument();
-      expect(screen.getByTestId("inspector-node-diff-fallback")).toHaveTextContent(
-        "Previous file does not contain this node."
-      );
+      expect(
+        screen.getByTestId("inspector-node-diff-fallback"),
+      ).toHaveTextContent("Previous file does not contain this node.");
     });
   });
 
@@ -474,7 +572,7 @@ describe("CodePane scoped code modes", () => {
     renderCodePane({
       splitFile: "src/screens/About.tsx",
       splitFileContent: "export function About() { return null; }",
-      onSelectSplitFile
+      onSelectSplitFile,
     });
 
     fireEvent.click(screen.getByTestId("inspector-split-toggle"));
@@ -482,7 +580,16 @@ describe("CodePane scoped code modes", () => {
     const splitView = await screen.findByTestId("inspector-split-view");
     Object.defineProperty(splitView, "getBoundingClientRect", {
       configurable: true,
-      value: () => ({ width: 1_000, height: 600, top: 0, left: 0, right: 1_000, bottom: 600, x: 0, y: 0 })
+      value: () => ({
+        width: 1_000,
+        height: 600,
+        top: 0,
+        left: 0,
+        right: 1_000,
+        bottom: 600,
+        x: 0,
+        y: 0,
+      }),
     });
 
     const divider = screen.getByTestId("inspector-split-divider");
@@ -490,10 +597,12 @@ describe("CodePane scoped code modes", () => {
     fireEvent.pointerMove(window, { clientX: 650 });
     fireEvent.pointerUp(window);
 
-    expect(screen.getByTestId("inspector-split-left").getAttribute("style")).toContain("65%");
+    expect(
+      screen.getByTestId("inspector-split-left").getAttribute("style"),
+    ).toContain("65.00%");
 
     fireEvent.change(screen.getByTestId("inspector-split-file-selector"), {
-      target: { value: "src/screens/Home.tsx" }
+      target: { value: "src/screens/Home.tsx" },
     });
     expect(onSelectSplitFile).toHaveBeenCalledWith("src/screens/Home.tsx");
   });
@@ -501,7 +610,7 @@ describe("CodePane scoped code modes", () => {
   it("supports keyboard resizing for split view divider", async () => {
     renderCodePane({
       splitFile: "src/screens/About.tsx",
-      splitFileContent: "export function About() { return null; }"
+      splitFileContent: "export function About() { return null; }",
     });
 
     fireEvent.click(screen.getByTestId("inspector-split-toggle"));
@@ -510,16 +619,16 @@ describe("CodePane scoped code modes", () => {
     const leftPane = screen.getByTestId("inspector-split-left");
 
     fireEvent.keyDown(divider, { key: "ArrowLeft", shiftKey: true });
-    expect(leftPane.getAttribute("style")).toContain("40%");
+    expect(leftPane.getAttribute("style")).toContain("40.00%");
 
     fireEvent.keyDown(divider, { key: "ArrowRight" });
-    expect(leftPane.getAttribute("style")).toContain("42%");
+    expect(leftPane.getAttribute("style")).toContain("42.00%");
 
     fireEvent.keyDown(divider, { key: "Home" });
-    expect(leftPane.getAttribute("style")).toContain("25%");
+    expect(leftPane.getAttribute("style")).toContain("25.00%");
 
     fireEvent.keyDown(divider, { key: "End" });
-    expect(leftPane.getAttribute("style")).toContain("75%");
+    expect(leftPane.getAttribute("style")).toContain("75.00%");
   });
 
   it("renders split loading placeholder deterministically", async () => {
@@ -537,12 +646,14 @@ describe("CodePane scoped code modes", () => {
         onRetryFileContent: noopFn,
         splitFile: "src/screens/About.tsx",
         splitFileContent: null,
-        splitFileContentLoading: true
-      })
+        splitFileContentLoading: true,
+      }),
     );
 
     fireEvent.click(screen.getByTestId("inspector-split-toggle"));
-    expect(await screen.findByTestId("inspector-split-loading")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("inspector-split-loading"),
+    ).toBeInTheDocument();
   });
 
   it("renders split empty placeholder when the right pane has no file selected", async () => {
@@ -560,11 +671,13 @@ describe("CodePane scoped code modes", () => {
         onRetryFileContent: noopFn,
         splitFile: null,
         splitFileContent: null,
-        splitFileContentLoading: false
-      })
+        splitFileContentLoading: false,
+      }),
     );
     fireEvent.click(screen.getByTestId("inspector-split-toggle"));
-    expect(await screen.findByTestId("inspector-split-empty")).toBeInTheDocument();
+    expect(
+      await screen.findByTestId("inspector-split-empty"),
+    ).toBeInTheDocument();
   });
 
   it("renders file-content loading, retryable error, unmapped fallback, and parent return action", () => {
@@ -581,11 +694,13 @@ describe("CodePane scoped code modes", () => {
         fileContent: null,
         fileContentState: "loading",
         fileContentError: null,
-        onRetryFileContent
-      })
+        onRetryFileContent,
+      }),
     );
 
-    expect(screen.getByTestId("inspector-state-file-content-loading")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("inspector-state-file-content-loading"),
+    ).toBeInTheDocument();
 
     rerender(
       createElement(CodePane, {
@@ -597,9 +712,13 @@ describe("CodePane scoped code modes", () => {
         onSelectFile: noopFn,
         fileContent: null,
         fileContentState: "error",
-        fileContentError: { status: 404, code: "FILE_NOT_FOUND", message: "Missing file." },
-        onRetryFileContent
-      })
+        fileContentError: {
+          status: 404,
+          code: "FILE_NOT_FOUND",
+          message: "Missing file.",
+        },
+        onRetryFileContent,
+      }),
     );
 
     fireEvent.click(screen.getByTestId("inspector-retry-file-content"));
@@ -619,11 +738,13 @@ describe("CodePane scoped code modes", () => {
         onRetryFileContent,
         isNodeMapped: false,
         parentFile: "src/screens/AppShell.tsx",
-        onReturnToParentFile
-      })
+        onReturnToParentFile,
+      }),
     );
 
-    expect(screen.getByTestId("inspector-unmapped-fallback")).toBeInTheDocument();
+    expect(
+      screen.getByTestId("inspector-unmapped-fallback"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByTestId("inspector-unmapped-return-parent"));
     expect(onReturnToParentFile).toHaveBeenCalledTimes(1);
   });

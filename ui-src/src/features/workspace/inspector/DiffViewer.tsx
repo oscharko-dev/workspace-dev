@@ -506,19 +506,31 @@ export function DiffViewer({
                 }}
                 data-testid={`diff-line-${diffLine.kind}`}
                 data-in-focus={inFocus ? "true" : undefined}
-                className="flex text-xs leading-relaxed"
-                style={{
-                  backgroundColor: lineBg,
-                  borderLeft: colors.border
-                    ? `3px solid ${colors.border}`
-                    : undefined,
-                }}
+                className="dv-line-row flex text-xs leading-relaxed"
+                style={
+                  {
+                    ...(lineBg !== undefined
+                      ? { "--dv-line-bg": lineBg }
+                      : undefined),
+                    ...(colors.border !== undefined
+                      ? {
+                          "--dv-line-border-left": `3px solid ${colors.border}`,
+                        }
+                      : undefined),
+                  } as React.CSSProperties
+                }
               >
                 {/* Old line number gutter */}
                 <span
                   data-testid="diff-old-line-number"
                   className="dv-line-number inline-block w-10 shrink-0 pr-1 text-right select-none font-mono"
-                  style={{ backgroundColor: colors.gutter }}
+                  style={
+                    colors.gutter !== undefined
+                      ? ({
+                          "--dv-gutter-bg": colors.gutter,
+                        } as React.CSSProperties)
+                      : undefined
+                  }
                 >
                   {diffLine.oldLineNumber ?? ""}
                 </span>
@@ -527,23 +539,35 @@ export function DiffViewer({
                 <span
                   data-testid="diff-new-line-number"
                   className="dv-line-number inline-block w-10 shrink-0 pr-2 text-right select-none font-mono"
-                  style={{ backgroundColor: colors.gutter }}
+                  style={
+                    colors.gutter !== undefined
+                      ? ({
+                          "--dv-gutter-bg": colors.gutter,
+                        } as React.CSSProperties)
+                      : undefined
+                  }
                 >
                   {diffLine.newLineNumber ?? ""}
                 </span>
 
                 {/* Diff prefix (+/-/space) */}
                 <span
-                  className="inline-block w-4 shrink-0 select-none text-center font-mono"
-                  style={{ color: prefixColor }}
+                  className="dv-line-prefix inline-block w-4 shrink-0 select-none text-center font-mono"
+                  style={
+                    { "--dv-prefix-color": prefixColor } as React.CSSProperties
+                  }
                 >
                   {prefix}
                 </span>
 
                 {/* Line content */}
                 <pre
-                  className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                  style={{ color: lineContentColor }}
+                  className={`dv-line-content m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+                  style={
+                    {
+                      "--dv-content-color": lineContentColor,
+                    } as React.CSSProperties
+                  }
                 >
                   {diffLine.content}
                 </pre>
