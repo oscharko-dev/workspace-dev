@@ -41,6 +41,7 @@ import {
 } from "../contracts/index.js";
 import {
   computeJiraSubtaskExternalId,
+  createJiraWriteClient,
   createUnconfiguredJiraWriteClient,
   runJiraSubtaskWrite,
   type JiraSubTaskCreateResult,
@@ -53,6 +54,13 @@ import {
 const JOB_ID = "job-1482";
 const PARENT_KEY = "PROJ-101";
 const GENERATED_AT = "2026-04-27T10:00:00.000Z";
+
+const TEST_JIRA_CONFIG = {
+  baseUrl: "https://example.atlassian.net",
+  auth: { kind: "bearer", token: "test-token" },
+  userAgent: "workspace-dev-test/1.0",
+  maxRetries: 0,
+} as const;
 
 const fixedClock = { now: () => GENERATED_AT };
 
@@ -612,6 +620,7 @@ test("per-case failure does not abort subsequent cases", async () => {
     assert.ok(failed);
     assert.equal(failed.outcome, "failed");
     assert.equal(failed.failureClass, "transport_error");
+    assert.equal(failed.retryable, true);
   });
 });
 
@@ -635,6 +644,140 @@ test("thrown exception on createSubTask is caught as transport_error", async () 
       (r: JiraSubTaskRecord) => r.testCaseId === "tc-b",
     );
     assert.equal(failed?.failureClass, "transport_error");
+    assert.equal(failed?.retryable, true);
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/*  Live HTTP client retry strategy                                      */
+/* ------------------------------------------------------------------ */
+
+test("live client retries retryable lookup responses before creating", async () => {
+  await withTempDir(async (runDir) => {
+    const calls: Array<{ url: string; method: string | undefined }> = [];
+    const sleepDelays: number[] = [];
+    const responses = [
+      new Response("rate limited", {
+        status: 429,
+        headers: { "retry-after": "0" },
+      }),
+      new Response(JSON.stringify({ issues: [] }), { status: 200 }),
+      new Response(JSON.stringify({ key: "PROJ-700" }), { status: 200 }),
+    ];
+    const fetchImpl: typeof fetch = async (url, init) => {
+      calls.push({ url: String(url), method: init?.method });
+      const next = responses.shift();
+      assert.ok(next, "unexpected fetch call");
+      return next;
+    };
+    const client = createJiraWriteClient({
+      config: { ...TEST_JIRA_CONFIG, maxRetries: 1 },
+      fetchImpl,
+      sleep: async (delayMs) => {
+        sleepDelays.push(delayMs);
+      },
+    });
+    const result = await runJiraSubtaskWrite(
+      buildInput(runDir, { cases: [buildTestCase({ id: "tc-a" })] }),
+      client,
+    );
+    assert.equal(result.createdCount, 1);
+    assert.equal(result.failedCount, 0);
+    assert.equal(result.subtaskOutcomes[0]?.jiraIssueKey, "PROJ-700");
+    assert.deepEqual(
+      calls.map((call) => call.method),
+      ["GET", "GET", "POST"],
+    );
+    assert.deepEqual(sleepDelays, [0]);
+  });
+});
+
+test("live client does not retry ambiguous create responses directly", async () => {
+  await withTempDir(async (runDir) => {
+    const calls: Array<{ method: string | undefined }> = [];
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      calls.push({ method: init?.method });
+      if (init?.method === "GET") {
+        return new Response(JSON.stringify({ issues: [] }), { status: 200 });
+      }
+      return new Response("unavailable", { status: 503 });
+    };
+    const client = createJiraWriteClient({
+      config: { ...TEST_JIRA_CONFIG, maxRetries: 3 },
+      fetchImpl,
+      sleep: async () => undefined,
+    });
+    const result = await runJiraSubtaskWrite(
+      buildInput(runDir, { cases: [buildTestCase({ id: "tc-a" })] }),
+      client,
+    );
+    const failed = result.subtaskOutcomes[0];
+    assert.equal(result.failedCount, 1);
+    assert.equal(failed?.outcome, "failed");
+    assert.equal(failed?.failureClass, "server_error");
+    assert.equal(failed?.retryable, true);
+    assert.deepEqual(
+      calls.map((call) => call.method),
+      ["GET", "POST"],
+    );
+  });
+});
+
+test("live client does not retry non-retryable create responses", async () => {
+  await withTempDir(async (runDir) => {
+    const calls: Array<{ method: string | undefined }> = [];
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      calls.push({ method: init?.method });
+      if (init?.method === "GET") {
+        return new Response(JSON.stringify({ issues: [] }), { status: 200 });
+      }
+      return new Response("bad request", { status: 400 });
+    };
+    const client = createJiraWriteClient({
+      config: { ...TEST_JIRA_CONFIG, maxRetries: 3 },
+      fetchImpl,
+      sleep: async () => undefined,
+    });
+    const result = await runJiraSubtaskWrite(
+      buildInput(runDir, { cases: [buildTestCase({ id: "tc-a" })] }),
+      client,
+    );
+    const failed = result.subtaskOutcomes[0];
+    assert.equal(result.failedCount, 1);
+    assert.equal(failed?.outcome, "failed");
+    assert.equal(failed?.failureClass, "validation_rejected");
+    assert.equal(failed?.retryable, false);
+    assert.deepEqual(
+      calls.map((call) => call.method),
+      ["GET", "POST"],
+    );
+  });
+});
+
+test("lookup retry exhaustion fails the case without attempting create", async () => {
+  await withTempDir(async (runDir) => {
+    const calls: Array<{ method: string | undefined }> = [];
+    const fetchImpl: typeof fetch = async (_url, init) => {
+      calls.push({ method: init?.method });
+      return new Response("unavailable", { status: 503 });
+    };
+    const client = createJiraWriteClient({
+      config: { ...TEST_JIRA_CONFIG, maxRetries: 0 },
+      fetchImpl,
+    });
+    const result = await runJiraSubtaskWrite(
+      buildInput(runDir, { cases: [buildTestCase({ id: "tc-a" })] }),
+      client,
+    );
+    const failed = result.subtaskOutcomes[0];
+    assert.equal(result.failedCount, 1);
+    assert.equal(failed?.outcome, "failed");
+    assert.equal(failed?.failureClass, "server_error");
+    assert.equal(failed?.retryable, true);
+    assert.deepEqual(
+      calls.map((call) => call.method),
+      ["GET"],
+    );
   });
 });
 
@@ -797,5 +940,6 @@ test("createUnconfiguredJiraWriteClient returns provider_not_implemented on crea
     assert.ok(record);
     assert.equal(record.outcome, "failed");
     assert.equal(record.failureClass, "provider_not_implemented");
+    assert.equal(record.retryable, false);
   });
 });

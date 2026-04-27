@@ -101,11 +101,13 @@ const goodRecord = (id: string, issueKey: string): JiraSubTaskRecord => ({
 const failedRecord = (
   id: string,
   detail: string = "transport blew up",
+  retryable: boolean = true,
 ): JiraSubTaskRecord => ({
   testCaseId: id,
   externalId: "1".repeat(64),
   outcome: "failed",
   failureClass: "transport_error",
+  retryable,
   failureDetail: detail,
 });
 
@@ -243,6 +245,11 @@ test("errors.md present when at least one case failed", async () => {
     const errors = await readFile(errorsPath, "utf8");
     assert.match(errors, /tc-b/);
     assert.match(errors, /transport_error/);
+    assert.match(errors, /Retryable: true/);
+    const responsePath = result.responsePaths["tc-b"];
+    assert.ok(responsePath);
+    const response = await readFile(responsePath, "utf8");
+    assert.match(response, /Retryable: true/);
   });
 });
 

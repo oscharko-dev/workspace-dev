@@ -7280,6 +7280,12 @@ test("test-intelligence: POST Jira write dry-run uses configured admin and beare
       assert.equal(body.dryRunCount, 1);
       assert.equal(body.createdCount, 0);
       assert.equal(body.failedCount, 0);
+      assert.ok(Array.isArray(body.subtaskOutcomes));
+      assert.equal(body.subtaskOutcomes.length, 1);
+      assert.equal(
+        (body.subtaskOutcomes[0] as Record<string, unknown>).outcome,
+        "dry_run",
+      );
       const files = await readdir(markdownRoot);
       assert.ok(files.includes("manifest.md"));
       assert.ok(files.includes("summary.md"));

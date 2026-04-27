@@ -2858,6 +2858,7 @@ export function createWorkspaceRequestHandler({
               skippedDuplicateCount: result.skippedDuplicateCount,
               failedCount: result.failedCount,
               dryRunCount: result.dryRunCount,
+              subtaskOutcomes: result.subtaskOutcomes,
             },
           });
           return;

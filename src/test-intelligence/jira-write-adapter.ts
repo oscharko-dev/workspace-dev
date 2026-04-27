@@ -122,7 +122,11 @@ export interface JiraSubTaskFields {
 /** Outcome of an idempotency lookup against the tenant. */
 export type JiraSubTaskLookupResult =
   | { found: true; issueKey: string }
-  | { found: false };
+  | {
+      found: false;
+      errorClass?: JiraWriteFailureClass;
+      detail?: string;
+    };
 
 /** Outcome of a single sub-task create call. */
 export type JiraSubTaskCreateResult =
@@ -175,6 +179,7 @@ export const createUnconfiguredJiraWriteClient = (): JiraWriteClient => ({
 export interface CreateJiraWriteClientInput {
   config: JiraGatewayConfig;
   fetchImpl?: typeof fetch;
+  sleep?: (delayMs: number) => Promise<void>;
 }
 
 const labelForExternalId = (externalId: string): string =>
@@ -189,6 +194,47 @@ const classifyHttpStatus = (status: number): JiraWriteFailureClass => {
   if (status === 429) return "rate_limited";
   if (status >= 500) return "server_error";
   return "unknown";
+};
+
+const isRetryableFailureClass = (
+  failureClass: JiraWriteFailureClass,
+): boolean =>
+  failureClass === "transport_error" ||
+  failureClass === "rate_limited" ||
+  failureClass === "server_error";
+
+const isRetryableHttpStatus = (status: number): boolean =>
+  status === 429 || status >= 500;
+
+const resolveMaxRetries = (config: JiraGatewayConfig): number => {
+  const raw = config.maxRetries ?? 3;
+  if (!Number.isFinite(raw)) return 0;
+  return Math.max(0, Math.trunc(raw));
+};
+
+const DEFAULT_RETRY_DELAYS_MS = [250, 750, 1_500] as const;
+
+const delayForAttempt = (
+  response: Response | undefined,
+  retryIndex: number,
+): number => {
+  const retryAfter = response?.headers.get("retry-after");
+  if (retryAfter !== undefined && retryAfter !== null) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      return Math.min(seconds * 1_000, 30_000);
+    }
+    const retryAt = Date.parse(retryAfter);
+    if (Number.isFinite(retryAt)) {
+      return Math.min(Math.max(0, retryAt - Date.now()), 30_000);
+    }
+  }
+  const fallback = 1_500;
+  return (
+    DEFAULT_RETRY_DELAYS_MS[
+      Math.min(retryIndex, DEFAULT_RETRY_DELAYS_MS.length - 1)
+    ] ?? fallback
+  );
 };
 
 const sanitizeFailureDetail = (raw: unknown): string => {
@@ -233,10 +279,57 @@ export const createJiraWriteClient = (
   input: CreateJiraWriteClientInput,
 ): JiraWriteClient => {
   const fetchImpl = input.fetchImpl ?? fetch;
+  const sleep =
+    input.sleep ??
+    ((delayMs: number) =>
+      new Promise<void>((resolve) => setTimeout(resolve, delayMs)));
+  const maxRetries = resolveMaxRetries(input.config);
   const headers = buildJiraAuthHeaders(input.config);
   const sendHeaders: Record<string, string> = {
     ...headers,
     "Content-Type": "application/json",
+  };
+
+  const sendJiraRequest = async (
+    url: string,
+    init: RequestInit,
+    options: { retry: boolean },
+  ): Promise<
+    | { ok: true; response: Response }
+    | { ok: false; errorClass: JiraWriteFailureClass; detail: string }
+  > => {
+    const maxAttempts = options.retry ? maxRetries + 1 : 1;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      let response: Response;
+      try {
+        response = await fetchImpl(url, init);
+      } catch (error) {
+        if (attempt < maxAttempts) {
+          await sleep(delayForAttempt(undefined, attempt - 1));
+          continue;
+        }
+        return {
+          ok: false,
+          errorClass: "transport_error",
+          detail: sanitizeFailureDetail(error),
+        };
+      }
+      if (response.ok) return { ok: true, response };
+      if (isRetryableHttpStatus(response.status) && attempt < maxAttempts) {
+        await sleep(delayForAttempt(response, attempt - 1));
+        continue;
+      }
+      return {
+        ok: false,
+        errorClass: classifyHttpStatus(response.status),
+        detail: `jira_status_${response.status}`,
+      };
+    }
+    return {
+      ok: false,
+      errorClass: "transport_error",
+      detail: "jira_retry_exhausted",
+    };
   };
 
   const lookupSubtaskByExternalId = async (params: {
@@ -258,41 +351,67 @@ export const createJiraWriteClient = (
     }
     const jql = `parent=${sanitizedParent.sanitized} AND labels="${sanitizedLabel.sanitized}"`;
     const url = `${buildJiraRestUrl(input.config.baseUrl, "3", "search")}?jql=${encodeURIComponent(jql)}&maxResults=1&fields=key`;
-    let response: Response;
-    try {
-      response = await fetchImpl(url, {
+    const result = await sendJiraRequest(
+      url,
+      {
         method: "GET",
         headers: sendHeaders,
         redirect: "error",
-      });
-    } catch {
-      return { found: false };
+      },
+      {
+        retry: true,
+      },
+    );
+    if (!result.ok) {
+      return {
+        found: false,
+        errorClass: result.errorClass,
+        detail: result.detail,
+      };
     }
-    if (!response.ok) return { found: false };
     let body: unknown;
     try {
-      body = await response.json();
+      body = await result.response.json();
     } catch {
-      return { found: false };
+      return {
+        found: false,
+        errorClass: "validation_rejected",
+        detail: "invalid_lookup_response",
+      };
     }
     if (
       typeof body !== "object" ||
       body === null ||
       !Array.isArray((body as { issues?: unknown }).issues)
     ) {
-      return { found: false };
+      return {
+        found: false,
+        errorClass: "validation_rejected",
+        detail: "invalid_lookup_response",
+      };
     }
     const issues = (body as { issues: unknown[] }).issues;
+    if (issues.length === 0) return { found: false };
     const first = issues[0];
     if (
       typeof first !== "object" ||
       first === null ||
       typeof (first as { key?: unknown }).key !== "string"
     ) {
-      return { found: false };
+      return {
+        found: false,
+        errorClass: "validation_rejected",
+        detail: "invalid_lookup_issue_key",
+      };
     }
     const issueKey = (first as { key: string }).key;
-    if (!isValidJiraIssueKey(issueKey)) return { found: false };
+    if (!isValidJiraIssueKey(issueKey)) {
+      return {
+        found: false,
+        errorClass: "validation_rejected",
+        detail: "invalid_lookup_issue_key",
+      };
+    }
     return { found: true, issueKey };
   };
 
@@ -322,31 +441,28 @@ export const createJiraWriteClient = (
         ],
       },
     };
-    let response: Response;
-    try {
-      response = await fetchImpl(url, {
+    const result = await sendJiraRequest(
+      url,
+      {
         method: "POST",
         headers: sendHeaders,
         body: JSON.stringify(requestBody),
         redirect: "error",
-      });
-    } catch (error) {
+      },
+      {
+        retry: false,
+      },
+    );
+    if (!result.ok) {
       return {
         ok: false,
-        errorClass: "transport_error",
-        detail: sanitizeFailureDetail(error),
-      };
-    }
-    if (!response.ok) {
-      return {
-        ok: false,
-        errorClass: classifyHttpStatus(response.status),
-        detail: `jira_status_${response.status}`,
+        errorClass: result.errorClass,
+        detail: result.detail,
       };
     }
     let body: unknown;
     try {
-      body = await response.json();
+      body = await result.response.json();
     } catch (error) {
       return {
         ok: false,
@@ -683,13 +799,17 @@ const buildRecordFailed = (
   externalId: string,
   errorClass: JiraWriteFailureClass,
   detail: string,
-): JiraSubTaskRecord => ({
-  testCaseId,
-  externalId,
-  outcome: "failed",
-  failureClass: sanitizeFailureClass(errorClass),
-  failureDetail: sanitizeFailureDetail(detail),
-});
+): JiraSubTaskRecord => {
+  const failureClass = sanitizeFailureClass(errorClass);
+  return {
+    testCaseId,
+    externalId,
+    outcome: "failed",
+    failureClass,
+    retryable: isRetryableFailureClass(failureClass),
+    failureDetail: sanitizeFailureDetail(detail),
+  };
+};
 
 const buildRecordDryRun = (
   testCaseId: string,
@@ -728,6 +848,14 @@ const attemptWrite = async (
   }
   if (lookup.found) {
     return buildRecordSkipped(testCase.id, externalId, lookup.issueKey);
+  }
+  if (lookup.errorClass !== undefined) {
+    return buildRecordFailed(
+      testCase.id,
+      externalId,
+      lookup.errorClass,
+      lookup.detail ?? "lookup_failed",
+    );
   }
   const fields = buildSubtaskFields(testCase, externalId, jobId);
   let createResult: JiraSubTaskCreateResult;

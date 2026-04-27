@@ -415,6 +415,16 @@ export interface JiraWriteStartInput {
   useDefaultOutputPath?: boolean;
 }
 
+export interface JiraSubTaskOutcome {
+  testCaseId: string;
+  externalId: string;
+  outcome: "created" | "skipped_duplicate" | "failed" | "dry_run";
+  jiraIssueKey?: string;
+  failureClass?: string;
+  retryable?: boolean;
+  failureDetail?: string;
+}
+
 export interface JiraWriteStartResult {
   ok: boolean;
   refused: boolean;
@@ -425,7 +435,30 @@ export interface JiraWriteStartResult {
   failedCount: number;
   dryRun: boolean;
   dryRunCount?: number;
+  subtaskOutcomes?: JiraSubTaskOutcome[];
 }
+
+const JIRA_SUBTASK_OUTCOMES = new Set([
+  "created",
+  "skipped_duplicate",
+  "failed",
+  "dry_run",
+]);
+
+const isJiraSubTaskOutcome = (value: unknown): value is JiraSubTaskOutcome =>
+  isRecord(value) &&
+  typeof value["testCaseId"] === "string" &&
+  typeof value["externalId"] === "string" &&
+  typeof value["outcome"] === "string" &&
+  JIRA_SUBTASK_OUTCOMES.has(value["outcome"]) &&
+  (value["jiraIssueKey"] === undefined ||
+    typeof value["jiraIssueKey"] === "string") &&
+  (value["failureClass"] === undefined ||
+    typeof value["failureClass"] === "string") &&
+  (value["retryable"] === undefined ||
+    typeof value["retryable"] === "boolean") &&
+  (value["failureDetail"] === undefined ||
+    typeof value["failureDetail"] === "string");
 
 export interface JiraWriteConfig {
   outputPathMarkdown?: string;
@@ -442,7 +475,10 @@ const isJiraWriteStartResult = (
   typeof value["createdCount"] === "number" &&
   typeof value["skippedDuplicateCount"] === "number" &&
   typeof value["failedCount"] === "number" &&
-  typeof value["dryRun"] === "boolean";
+  typeof value["dryRun"] === "boolean" &&
+  (value["subtaskOutcomes"] === undefined ||
+    (Array.isArray(value["subtaskOutcomes"]) &&
+      value["subtaskOutcomes"].every(isJiraSubTaskOutcome)));
 
 export async function startJiraWrite(
   input: JiraWriteStartInput,
