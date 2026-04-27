@@ -218,7 +218,7 @@ test("JiraGatewayClient rejects invalid issue-key batches before search fetch", 
 
   assert.equal(result.retryable, false);
   assert.equal(result.diagnostic?.code, "jira_issue_key_invalid");
-  assert.equal(calls, 1, "only capability probe should run");
+  assert.equal(calls, 0, "validation must fail closed before capability probing");
 });
 
 test("JiraGatewayClient rejects invalid request budgets before network", async () => {

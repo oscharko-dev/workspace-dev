@@ -15,6 +15,7 @@ import {
 } from "./jira-capability-probe.js";
 import {
   buildJiraIssueIr,
+  sanitizeJqlFragment,
   writeJiraIssueIr,
   type BuildJiraIssueIrInput,
   type JiraAdfSource,
@@ -374,12 +375,20 @@ const buildSearchBody = (
 ): Record<string, unknown> | JiraGatewayDiagnostic => {
   const searchBody: Record<string, unknown> = {};
   if (request.query.kind === "jql") {
+    const sanitizedJql = sanitizeJqlFragment(request.query.jql);
+    if (!sanitizedJql.ok) {
+      return diagnostic({
+        code: "jira_request_invalid",
+        message: `invalid JQL fragment (${sanitizedJql.code})`,
+        retryable: false,
+      });
+    }
     const maxResultsError = validatePositiveSafeInteger(
       request.query.maxResults,
       "query.maxResults",
     );
     if (maxResultsError !== undefined) return maxResultsError;
-    searchBody.jql = request.query.jql;
+    searchBody.jql = sanitizedJql.sanitized;
     searchBody.maxResults = request.query.maxResults;
   } else {
     if (request.query.issueKeys.length === 0) {
@@ -609,6 +618,19 @@ export const createJiraGatewayClient = (
     attempt: number;
     startedAt: number;
   }): Promise<AttemptResult> => {
+    const searchBody = buildSearchBody(request);
+    if (isJiraGatewayDiagnostic(searchBody)) {
+      return {
+        issues: [],
+        capability: { version: "unknown", deploymentType: "unknown", adfSupported: false },
+        responseHash: "",
+        retryable: false,
+        attempts: attempt,
+        responseBytes: 0,
+        diagnostic: searchBody,
+      };
+    }
+
     const capabilityResult = await getOrProbeCapability();
     if (!capabilityResult.ok) {
       return {
@@ -623,19 +645,6 @@ export const createJiraGatewayClient = (
           message: capabilityResult.message,
           retryable: capabilityResult.retryable,
         }),
-      };
-    }
-
-    const searchBody = buildSearchBody(request);
-    if (isJiraGatewayDiagnostic(searchBody)) {
-      return {
-        issues: [],
-        capability: capabilityResult.capability,
-        responseHash: "",
-        retryable: false,
-        attempts: attempt,
-        responseBytes: 0,
-        diagnostic: searchBody,
       };
     }
 

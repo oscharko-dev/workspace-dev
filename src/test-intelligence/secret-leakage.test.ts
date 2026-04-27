@@ -465,6 +465,6 @@ test("property: redactHighRiskSecrets strips any Bearer <token> where token matc
       // The original token must not appear verbatim in the output.
       return !redacted.includes(token);
     }),
-    { seed: 20260425, numRuns: 200 },
+    { seed: 20260425, numRuns: 256 },
   );
 });
