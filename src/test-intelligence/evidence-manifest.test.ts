@@ -11,6 +11,7 @@ import {
   WAVE1_POC_EVIDENCE_MANIFEST_ARTIFACT_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_DIGEST_FILENAME,
   WAVE1_POC_EVIDENCE_MANIFEST_SCHEMA_VERSION,
+  type Wave1PocEvidenceManifest,
 } from "../contracts/index.js";
 import {
   buildWave1PocEvidenceManifest,
@@ -565,6 +566,101 @@ test("evidence-manifest: direct verifier detects valid-looking metadata rewrite 
   assert.notEqual(
     result.manifestIntegrity?.actualHash,
     manifest.manifestIntegrity?.hash,
+  );
+});
+
+test("evidence-manifest: source provenance records are self-attested", async () => {
+  const sourceIr = utf8('{"issueKey":"PAY-1442","summary":"Original"}');
+  const sourceHash = createHash("sha256").update(sourceIr).digest("hex");
+  const manifest = buildWave1PocEvidenceManifest({
+    ...baseInput([
+      {
+        filename: "sources/jira-1/jira-issue-ir.json",
+        bytes: sourceIr,
+        category: "source_ir",
+      },
+    ]),
+    multiSource: {
+      sourceProvenanceRecords: [
+        {
+          sourceId: "jira-1",
+          kind: "jira_rest",
+          contentHash: sourceHash,
+          bytes: sourceIr.byteLength,
+          authorHandle: "qa-reviewer",
+          capturedAt: "2026-04-27T10:00:00.000Z",
+        },
+      ],
+    },
+  });
+  assert.equal(manifest.multiSourceEnabled, true);
+  assert.equal(manifest.rawJiraResponsePersisted, false);
+  assert.equal(manifest.rawPasteBytesPersisted, false);
+  assert.deepEqual(manifest.sourceProvenanceRecords, [
+    {
+      sourceId: "jira-1",
+      kind: "jira_rest",
+      contentHash: sourceHash,
+      bytes: sourceIr.byteLength,
+      authorHandle: "qa-reviewer",
+      capturedAt: "2026-04-27T10:00:00.000Z",
+    },
+  ]);
+
+  const tamperedManifest = {
+    ...manifest,
+    sourceProvenanceRecords: [
+      {
+        ...(manifest.sourceProvenanceRecords?.[0] ?? {
+          sourceId: "jira-1",
+          kind: "jira_rest",
+          contentHash: sourceHash,
+          bytes: sourceIr.byteLength,
+        }),
+        bytes: sourceIr.byteLength + 1,
+      },
+    ],
+  } as Wave1PocEvidenceManifest;
+
+  const dir = await mkdtemp(join(tmpdir(), "ti-poc-evidence-"));
+  try {
+    await mkdir(join(dir, "sources", "jira-1"), { recursive: true });
+    await writeFile(join(dir, "sources", "jira-1", "jira-issue-ir.json"), sourceIr);
+    const result = await verifyWave1PocEvidenceManifest({
+      manifest: tamperedManifest,
+      artifactsDir: dir,
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.manifestIntegrity?.ok, false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("evidence-manifest: source provenance must match an attested source_ir artifact", () => {
+  const sourceIr = utf8('{"issueKey":"PAY-1442","summary":"Original"}');
+  assert.throws(
+    () =>
+      buildWave1PocEvidenceManifest({
+        ...baseInput([
+          {
+            filename: "sources/jira-1/jira-issue-ir.json",
+            bytes: sourceIr,
+            category: "validation",
+          },
+        ]),
+        multiSource: {
+          sourceProvenanceRecords: [
+            {
+              sourceId: "jira-1",
+              kind: "jira_rest",
+              contentHash: createHash("sha256").update(sourceIr).digest("hex"),
+              bytes: sourceIr.byteLength,
+            },
+          ],
+        },
+      }),
+    /matching source_ir artifact/,
   );
 });
 

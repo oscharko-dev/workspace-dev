@@ -125,6 +125,9 @@ export const cloneFinOpsBudgetEnvelope = (
       ? { maxEstimatedCost: envelope.maxEstimatedCost }
       : {}),
     roles,
+    ...(envelope.sourceQuotas !== undefined
+      ? { sourceQuotas: { ...envelope.sourceQuotas } }
+      : {}),
   };
   return cloned;
 };

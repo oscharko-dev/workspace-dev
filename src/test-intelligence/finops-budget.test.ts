@@ -76,10 +76,17 @@ const baseRequest = (
 // Constant snapshots
 // ---------------------------------------------------------------------------
 
-test("ALLOWED_FINOPS_ROLES enumerates the three known roles", () => {
+test("ALLOWED_FINOPS_ROLES enumerates the known roles", () => {
   assert.deepEqual(
     [...ALLOWED_FINOPS_ROLES].sort(),
-    ["test_generation", "visual_fallback", "visual_primary"].sort(),
+    [
+      "custom_context_ingest",
+      "jira_api_requests",
+      "jira_paste_ingest",
+      "test_generation",
+      "visual_fallback",
+      "visual_primary",
+    ].sort(),
   );
 });
 
@@ -118,10 +125,22 @@ test("cloneEuBankingDefaultFinOpsBudget returns a deep clone", () => {
   if (a.roles.test_generation !== undefined) {
     a.roles.test_generation.maxInputTokensPerRequest = 999;
   }
+  if (a.sourceQuotas !== undefined) {
+    a.sourceQuotas.maxJiraApiRequestsPerJob = 999;
+  }
   assert.equal(
     EU_BANKING_DEFAULT_FINOPS_BUDGET.roles.test_generation
       ?.maxInputTokensPerRequest,
     8192,
+  );
+  assert.notEqual(
+    EU_BANKING_DEFAULT_FINOPS_BUDGET.sourceQuotas,
+    a.sourceQuotas,
+  );
+  assert.equal(
+    EU_BANKING_DEFAULT_FINOPS_BUDGET.sourceQuotas
+      ?.maxJiraApiRequestsPerJob,
+    20,
   );
 });
 

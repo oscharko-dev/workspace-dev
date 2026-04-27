@@ -106,6 +106,8 @@ export interface Wave4ProductionReadinessRunResult {
   fixtureId: string;
   mixId: Wave4SourceMixId;
   runDir: string;
+  /** Number of sources declared by the input envelope. */
+  expectedSourceCount: number;
   /** Whether source-quota pre-flight check passed. */
   quotasPassed: boolean;
   /** Breach reason if quotas failed. */
@@ -160,6 +162,7 @@ export const runWave4ProductionReadiness = async (
       ...(quotaCheck.finopsBreach !== undefined
         ? { finopsBreach: quotaCheck.finopsBreach }
         : {}),
+      expectedSourceCount: input.envelope.sources.length,
     });
   }
 
@@ -343,6 +346,7 @@ export const runWave4ProductionReadiness = async (
     fixtureId: input.fixtureId,
     mixId: input.mixId,
     runDir: input.runDir,
+    expectedSourceCount: input.envelope.sources.length,
     quotasPassed: true,
     reconciliationReportPath: writeResult.artifactPath,
     conflictReportPath: writeResult.artifactPath,
@@ -768,6 +772,7 @@ interface FailureInput {
   fixtureId: string;
   mixId: Wave4SourceMixId;
   runDir: string;
+  expectedSourceCount: number;
   quotasPassed: boolean;
   quotaBreachReason?: string;
   finopsBreach?: string;
@@ -778,6 +783,7 @@ const failure = (input: FailureInput): Wave4ProductionReadinessRunResult => {
     fixtureId: input.fixtureId,
     mixId: input.mixId,
     runDir: input.runDir,
+    expectedSourceCount: input.expectedSourceCount,
     quotasPassed: input.quotasPassed,
     provenanceRecords: [],
     sourceProvenanceSummaries: [],

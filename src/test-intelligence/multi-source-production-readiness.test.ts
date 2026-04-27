@@ -44,6 +44,7 @@ test("runWave4ProductionReadiness: onboarding fixture runs OK and emits provenan
   });
   assert.equal(result.ok, true);
   assert.equal(result.quotasPassed, true);
+  assert.equal(result.expectedSourceCount, fixture.envelope.sources.length);
   assert.ok(result.sourceProvenanceSummaries.length > 0);
 });
 
@@ -114,6 +115,62 @@ test("runWave4ProductionReadiness: fails fast when the paste-quota cap is zero",
   assert.equal(result.ok, false);
   assert.equal(result.quotasPassed, false);
   assert.equal(result.quotaBreachReason, "jira_paste_quota_exceeded");
+});
+
+test("runWave4ProductionReadiness: fails fast when the Jira API quota cap is zero", async () => {
+  const fixture = await loadWave4ProductionReadinessFixture(
+    "release-multisource-jira-rest-only",
+  );
+  const runDir = await tmpRunDir();
+  const tightEnvelope: FinOpsBudgetEnvelope = {
+    budgetId: "tight-jira-api",
+    budgetVersion: "1.0.0",
+    roles: {},
+    sourceQuotas: {
+      maxJiraApiRequestsPerJob: 0,
+      maxJiraPasteBytesPerJob: 524288,
+      maxCustomContextBytesPerJob: 262144,
+    },
+  };
+  const result = await runWave4ProductionReadiness({
+    fixtureId: fixture.fixtureId,
+    mixId: "jira_rest_only",
+    envelope: fixture.envelope,
+    jiraRestResponse: fixture.jiraRestResponse,
+    runDir,
+    finopsBudget: tightEnvelope,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.quotasPassed, false);
+  assert.equal(result.quotaBreachReason, "jira_api_quota_exceeded");
+  assert.equal(result.expectedSourceCount, fixture.envelope.sources.length);
+});
+
+test("runWave4ProductionReadiness: air-gap paste fixture makes no fetch calls", async () => {
+  const fixture = await loadWave4ProductionReadinessFixture(
+    "release-multisource-jira-paste-only-airgap",
+  );
+  const runDir = await tmpRunDir();
+  const previousFetch = globalThis.fetch;
+  let fetchCalls = 0;
+  globalThis.fetch = (() => {
+    fetchCalls += 1;
+    throw new Error("air-gap test forbids fetch");
+  }) as typeof fetch;
+  try {
+    const result = await runWave4ProductionReadiness({
+      fixtureId: fixture.fixtureId,
+      mixId: "jira_paste_only",
+      envelope: fixture.envelope,
+      jiraPasteText: fixture.jiraPasteText,
+      runDir,
+      finopsBudget: EU_BANKING_DEFAULT_FINOPS_BUDGET,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(fetchCalls, 0);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
 });
 
 test("runWave4ProductionReadiness: throws TypeError when runDir is missing/empty", async () => {
