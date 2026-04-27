@@ -30,6 +30,8 @@ export const STAGE_ARTIFACT_KEYS = {
   visualAuditDiffImage: "visual.audit.diff_image",
   visualAuditReport: "visual.audit.report",
   visualAuditResult: "visual.audit.result",
+  figmaScreenshotReferences: "figma.screenshot.references",
+  figmaScreenshotPipelineReport: "figma.screenshot.pipeline.report",
   visualQualityReport: "visual.quality.report",
   visualQualityResult: "visual.quality.result",
   compositeQualityReport: "composite.quality.report",
