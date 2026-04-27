@@ -7,7 +7,7 @@ import type { GeneratedFile } from "../types.js";
 export const makeErrorBoundaryFile = (): GeneratedFile => {
   return {
     path: "src/components/ErrorBoundary.tsx",
-    content: `import { Component, type ReactNode } from "react";
+    content: `import { Component, type ErrorInfo, type ReactNode } from "react";
 import { Alert, Box, Button, Stack, Typography } from "@mui/material";
 
 export interface ErrorBoundaryProps {
@@ -24,6 +24,12 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   static getDerivedStateFromError(): ErrorBoundaryState {
     return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    if (import.meta.env.DEV) {
+      console.error("ErrorBoundary caught:", error, info);
+    }
   }
 
   private handleRetry = (): void => {
