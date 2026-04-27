@@ -684,24 +684,30 @@ describe("PreviewPane — overlay view", () => {
     expect(slider.value).toBe("50");
 
     const iframe = screen.getByTitle("Live preview") as HTMLIFrameElement;
-    expect(iframe.style.opacity).toBe("0.5");
+    expect(iframe.style.getPropertyValue("--preview-opacity")).toBe("0.5");
 
     // 0%
     fireEvent.change(slider, { target: { value: "0" } });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("0");
 
     // 100%
     fireEvent.change(slider, { target: { value: "100" } });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("1");
 
     // 25%
     fireEvent.change(slider, { target: { value: "25" } });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("0.25");
   });
 
@@ -716,14 +722,18 @@ describe("PreviewPane — overlay view", () => {
     // Below min — opacity clamps to 0.
     fireEvent.change(slider, { target: { value: "-10" } });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("0");
     expect(slider.getAttribute("aria-valuenow")).toBe("0");
 
     // Above max — opacity clamps to 1.
     fireEvent.change(slider, { target: { value: "999" } });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("1");
     expect(slider.getAttribute("aria-valuenow")).toBe("100");
   });
@@ -762,7 +772,9 @@ describe("PreviewPane — overlay view", () => {
 
     fireEvent.keyDown(root, { key: "0" });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("0");
     expect(
       screen.getByTestId("preview-overlay-opacity-slider"),
@@ -770,7 +782,9 @@ describe("PreviewPane — overlay view", () => {
 
     fireEvent.keyDown(root, { key: "5" });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("0.5");
     expect(
       screen.getByTestId("preview-overlay-opacity-slider"),
@@ -778,7 +792,9 @@ describe("PreviewPane — overlay view", () => {
 
     fireEvent.keyDown(root, { key: "1" });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("1");
     expect(
       screen.getByTestId("preview-overlay-opacity-slider"),
@@ -795,7 +811,7 @@ describe("PreviewPane — overlay view", () => {
     ) as HTMLInputElement;
 
     fireEvent.click(screen.getByTestId("preview-overlay-quickset-0"));
-    expect(iframe.style.opacity).toBe("0");
+    expect(iframe.style.getPropertyValue("--preview-opacity")).toBe("0");
     expect(slider).toHaveAttribute("aria-valuenow", "0");
     expect(screen.getByTestId("preview-overlay-quickset-0")).toHaveAttribute(
       "aria-pressed",
@@ -803,14 +819,15 @@ describe("PreviewPane — overlay view", () => {
     );
 
     fireEvent.click(screen.getByTestId("preview-overlay-quickset-100"));
-    expect(iframe.style.opacity).toBe("1");
+    expect(iframe.style.getPropertyValue("--preview-opacity")).toBe("1");
     expect(slider).toHaveAttribute("aria-valuenow", "100");
-    expect(
-      screen.getByTestId("preview-overlay-quickset-100"),
-    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByTestId("preview-overlay-quickset-100")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
     fireEvent.click(screen.getByTestId("preview-overlay-quickset-50"));
-    expect(iframe.style.opacity).toBe("0.5");
+    expect(iframe.style.getPropertyValue("--preview-opacity")).toBe("0.5");
     expect(slider).toHaveAttribute("aria-valuenow", "50");
     expect(screen.getByTestId("preview-overlay-quickset-50")).toHaveAttribute(
       "aria-pressed",
@@ -847,12 +864,16 @@ describe("PreviewPane — overlay view", () => {
     // Slider starts at 50%. A ctrl+0 press should NOT snap it to 0%.
     fireEvent.keyDown(root, { key: "0", ctrlKey: true });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("0.5");
 
     fireEvent.keyDown(root, { key: "1", metaKey: true });
     expect(
-      (screen.getByTitle("Live preview") as HTMLIFrameElement).style.opacity,
+      (
+        screen.getByTitle("Live preview") as HTMLIFrameElement
+      ).style.getPropertyValue("--preview-opacity"),
     ).toBe("0.5");
   });
 
