@@ -952,6 +952,16 @@ export const runJiraSubtaskWrite = async (
     });
     await writeAtomicJson(reportPath, report);
     await writeAtomicJson(createdPath, created);
+    const markdownArtifacts = await writeJiraSubtaskMarkdownArtifacts({
+      jobId: input.jobId,
+      parentIssueKey: input.parentIssueKey,
+      subtaskOutcomes: [],
+      dryRun: input.dryRun,
+      outputDir: markdownDir,
+      testCases: [],
+      refusalCodes,
+      ...(input.clock ? { clock: input.clock } : {}),
+    });
     return {
       refusalCodes,
       refused: true,
@@ -965,6 +975,7 @@ export const runJiraSubtaskWrite = async (
       reportArtifactPath: reportPath,
       createdSubtasksArtifactPath: createdPath,
       markdownOutputPath: markdownDir,
+      markdownArtifacts,
       rawScreenshotsIncluded: false,
       credentialsIncluded: false,
     };

@@ -6,7 +6,7 @@
  *
  *   manifest.md                    — run header + counts.
  *   summary.md                     — concise pass/partial/fail outcome.
- *   errors.md                      — only when failures exist; redacted.
+ *   errors.md                      — run failure list; empty when none; redacted.
  *   jira-request-<safeId>.md       — per case: payload that was/would-be sent.
  *   jira-response-<safeId>.md      — per case: outcome + Jira issue key.
  *   testcase-<safeId>.md           — per case: title, steps, expected.
@@ -22,12 +22,13 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, rename, writeFile } from "node:fs/promises";
+import { mkdir, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import type {
   GeneratedTestCase,
   JiraSubTaskRecord,
+  JiraWriteRefusalCode,
 } from "../contracts/index.js";
 import { redactHighRiskSecrets } from "../secret-redaction.js";
 
@@ -46,14 +47,15 @@ export interface JiraWriteMarkdownInput {
   outputDir: string;
   /** Sorted by id; aligns one-to-one with `subtaskOutcomes` by `testCaseId`. */
   testCases: GeneratedTestCase[];
+  /** Sorted run-level gate refusals when the Jira write never attempted cases. */
+  refusalCodes?: JiraWriteRefusalCode[];
   clock?: JiraWriteMarkdownClock;
 }
 
 export interface JiraWriteMarkdownResult {
   manifestPath: string;
   summaryPath: string;
-  /** `null` when there were no failed cases. */
-  errorsPath: string | null;
+  errorsPath: string;
   /** testCaseId -> path */
   requestPaths: Record<string, string>;
   /** testCaseId -> path */
@@ -81,6 +83,23 @@ const writeAtomicText = async (path: string, value: string): Promise<void> => {
   const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`;
   await writeFile(tmp, value, "utf8");
   await rename(tmp, path);
+};
+
+const MANAGED_MARKDOWN_ARTIFACT_PATTERN =
+  /^(?:manifest|summary|errors|jira-subtasks|subtasks|all-subtasks)\.md$|^(?:jira-request|jira-response|testcase)-[a-f0-9]{16}\.md$/u;
+
+const removeManagedMarkdownArtifacts = async (
+  outputDir: string,
+): Promise<void> => {
+  const entries = await readdir(outputDir, { withFileTypes: true });
+  await Promise.all(
+    entries
+      .filter(
+        (entry) =>
+          entry.isFile() && MANAGED_MARKDOWN_ARTIFACT_PATTERN.test(entry.name),
+      )
+      .map((entry) => rm(join(outputDir, entry.name), { force: true })),
+  );
 };
 
 const sanitizeMarkdown = (raw: string): string =>
@@ -139,6 +158,7 @@ const summarizeOutcome = (
 
 const buildManifest = (input: JiraWriteMarkdownInput, generatedAt: string) => {
   const records = input.subtaskOutcomes;
+  const refusalCodes = input.refusalCodes ?? [];
   const total = records.length;
   const created = records.filter((r) => r.outcome === "created").length;
   const skipped = records.filter(
@@ -158,6 +178,9 @@ const buildManifest = (input: JiraWriteMarkdownInput, generatedAt: string) => {
     `- Skipped Duplicate: ${skipped}`,
     `- Failed: ${failed}`,
     `- Dry-Run Outcomes: ${dryRun}`,
+    ...(refusalCodes.length > 0
+      ? [`- Refusal Codes: ${refusalCodes.map((c) => `\`${c}\``).join(", ")}`]
+      : []),
     "",
     "Per-test-case markdown artifacts live alongside this manifest as",
     "`testcase-<safeId>.md`, `jira-request-<safeId>.md`, and",
@@ -168,7 +191,14 @@ const buildManifest = (input: JiraWriteMarkdownInput, generatedAt: string) => {
 };
 
 const buildSummary = (input: JiraWriteMarkdownInput, generatedAt: string) => {
-  const summary = summarizeOutcome(input.subtaskOutcomes);
+  const refusalCodes = input.refusalCodes ?? [];
+  const summary =
+    refusalCodes.length > 0
+      ? {
+          kind: "fail" as const,
+          line: `Refused before Jira write execution: ${refusalCodes.join(", ")}.`,
+        }
+      : summarizeOutcome(input.subtaskOutcomes);
   const lines = [
     "# Jira Sub-Task Write Summary",
     "",
@@ -193,14 +223,27 @@ const buildSummary = (input: JiraWriteMarkdownInput, generatedAt: string) => {
 
 const buildErrors = (input: JiraWriteMarkdownInput, generatedAt: string) => {
   const failed = input.subtaskOutcomes.filter((r) => r.outcome === "failed");
+  const refusalCodes = input.refusalCodes ?? [];
   const lines = [
     "# Jira Sub-Task Write Errors",
     "",
     `- Job ID: \`${input.jobId}\``,
     `- Generated At: ${generatedAt}`,
+    ...(refusalCodes.length > 0
+      ? [`- Refusal Codes: ${refusalCodes.map((c) => `\`${c}\``).join(", ")}`]
+      : []),
     `- Failed Cases: ${failed.length}`,
     "",
   ];
+  if (failed.length === 0) {
+    lines.push(
+      refusalCodes.length > 0
+        ? "No per-test-case errors were recorded because the run was refused before Jira write execution."
+        : "No per-test-case errors were recorded for this run.",
+      "",
+    );
+    return lines.join("\n");
+  }
   for (const record of failed) {
     lines.push(`## Test Case \`${record.testCaseId}\``);
     lines.push("");
@@ -343,6 +386,7 @@ export const writeJiraSubtaskMarkdownArtifacts = async (
     input.clock ?? { now: () => new Date().toISOString() }
   ).now();
   await mkdir(input.outputDir, { recursive: true });
+  await removeManagedMarkdownArtifacts(input.outputDir);
 
   const manifestPath = join(input.outputDir, "manifest.md");
   const summaryPath = join(input.outputDir, "summary.md");
@@ -356,18 +400,10 @@ export const writeJiraSubtaskMarkdownArtifacts = async (
   const responsePaths: Record<string, string> = {};
   const testcasePaths: Record<string, string> = {};
 
-  const failedCount = input.subtaskOutcomes.filter(
-    (r) => r.outcome === "failed",
-  ).length;
-
   await writeAtomicText(manifestPath, buildManifest(input, generatedAt));
   await writeAtomicText(summaryPath, buildSummary(input, generatedAt));
 
-  let errorsPathOut: string | null = null;
-  if (failedCount > 0) {
-    await writeAtomicText(errorsPath, buildErrors(input, generatedAt));
-    errorsPathOut = errorsPath;
-  }
+  await writeAtomicText(errorsPath, buildErrors(input, generatedAt));
 
   for (const record of input.subtaskOutcomes) {
     const testCase = testCaseById.get(record.testCaseId);
@@ -390,7 +426,7 @@ export const writeJiraSubtaskMarkdownArtifacts = async (
   return {
     manifestPath,
     summaryPath,
-    errorsPath: errorsPathOut,
+    errorsPath,
     requestPaths,
     responsePaths,
     testcasePaths,

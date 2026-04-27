@@ -352,6 +352,14 @@ test("feature_gate_disabled refuses without invoking the client", async () => {
     assert.equal(report.refused, true);
     assert.equal(report.schemaVersion, JIRA_WRITE_REPORT_SCHEMA_VERSION);
     assert.equal(report.contractVersion, TEST_INTELLIGENCE_CONTRACT_VERSION);
+    assert.ok(result.markdownArtifacts);
+    assert.match(result.markdownArtifacts.manifestPath, /manifest\.md$/u);
+    assert.match(result.markdownArtifacts.summaryPath, /summary\.md$/u);
+    assert.match(result.markdownArtifacts.errorsPath, /errors\.md$/u);
+    const errors = await readFile(result.markdownArtifacts.errorsPath, "utf8");
+    assert.match(errors, /Job ID:.*job-1482/u);
+    assert.match(errors, /feature_gate_disabled/u);
+    assert.match(errors, /Failed Cases: 0/u);
   });
 });
 

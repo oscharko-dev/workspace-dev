@@ -2,12 +2,12 @@
  * Tests for the Jira sub-task markdown artifact writer (Issue #1482).
  *
  * Verifies the per-test-case file set, dry-run surfacing in
- * `manifest.md`, errors.md presence/absence semantics, safeId
+ * `manifest.md`, per-run errors.md semantics, safeId
  * determinism, and the no-secrets invariant.
  */
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -140,10 +140,11 @@ test("happy path produces manifest, summary, request/response/testcase per case"
       testCases: cases,
       clock: fixedClock,
     });
-    assert.equal(result.errorsPath, null);
     assert.ok(result.manifestPath.endsWith("manifest.md"));
     assert.ok(result.summaryPath.endsWith("summary.md"));
+    assert.ok(result.errorsPath.endsWith("errors.md"));
     const files = await readdir(outputDir);
+    assert.ok(files.includes("errors.md"));
     for (const id of ["tc-a", "tc-b"]) {
       const safeId = buildJiraWriteMarkdownSafeId(id);
       assert.ok(files.includes(`jira-request-${safeId}.md`));
@@ -151,6 +152,105 @@ test("happy path produces manifest, summary, request/response/testcase per case"
       assert.ok(files.includes(`testcase-${safeId}.md`));
     }
     assert.equal(Object.keys(result.requestPaths).length, 2);
+  });
+});
+
+test("complete run emits a deterministic separate markdown file list without aggregate sub-task markdown", async () => {
+  await withTempDir(async (outputDir) => {
+    const cases = [
+      buildTestCase({ id: "tc-b" }),
+      buildTestCase({ id: "tc-a" }),
+    ];
+    const records = [
+      goodRecord("tc-b", "PROJ-201"),
+      goodRecord("tc-a", "PROJ-200"),
+    ];
+    await writeJiraSubtaskMarkdownArtifacts({
+      jobId: JOB_ID,
+      parentIssueKey: PARENT_KEY,
+      subtaskOutcomes: records,
+      dryRun: false,
+      outputDir,
+      testCases: cases,
+      clock: fixedClock,
+    });
+    const files = (await readdir(outputDir)).sort();
+    const expectedFiles = [
+      "errors.md",
+      `jira-request-${buildJiraWriteMarkdownSafeId("tc-a")}.md`,
+      `jira-request-${buildJiraWriteMarkdownSafeId("tc-b")}.md`,
+      `jira-response-${buildJiraWriteMarkdownSafeId("tc-a")}.md`,
+      `jira-response-${buildJiraWriteMarkdownSafeId("tc-b")}.md`,
+      "manifest.md",
+      "summary.md",
+      `testcase-${buildJiraWriteMarkdownSafeId("tc-a")}.md`,
+      `testcase-${buildJiraWriteMarkdownSafeId("tc-b")}.md`,
+    ].sort();
+    assert.deepEqual(files, expectedFiles);
+    assert.ok(
+      files.every((file) => /^[a-z0-9.-]+$/u.test(file)),
+      `Unexpected unsafe markdown filename in ${files.join(", ")}`,
+    );
+    assert.ok(!files.includes("jira-subtasks.md"));
+    assert.ok(!files.includes("subtasks.md"));
+    assert.ok(!files.includes("all-subtasks.md"));
+  });
+});
+
+test("rerun in same directory removes stale managed markdown files only", async () => {
+  await withTempDir(async (outputDir) => {
+    const firstCases = [
+      buildTestCase({ id: "tc-a" }),
+      buildTestCase({ id: "tc-b" }),
+    ];
+    await writeJiraSubtaskMarkdownArtifacts({
+      jobId: JOB_ID,
+      parentIssueKey: PARENT_KEY,
+      subtaskOutcomes: [
+        failedRecord("tc-a", "network failed"),
+        failedRecord("tc-b", "validation failed", false),
+      ],
+      dryRun: false,
+      outputDir,
+      testCases: firstCases,
+      clock: fixedClock,
+    });
+    await writeFile(join(outputDir, "operator-note.md"), "keep me", "utf8");
+    await writeFile(join(outputDir, "jira-subtasks.md"), "stale", "utf8");
+    await writeFile(join(outputDir, "subtasks.md"), "stale", "utf8");
+    await writeFile(join(outputDir, "all-subtasks.md"), "stale", "utf8");
+    await writeJiraSubtaskMarkdownArtifacts({
+      jobId: JOB_ID,
+      parentIssueKey: PARENT_KEY,
+      subtaskOutcomes: [goodRecord("tc-a", "PROJ-200")],
+      dryRun: false,
+      outputDir,
+      testCases: [buildTestCase({ id: "tc-a" })],
+      clock: fixedClock,
+    });
+    const files = (await readdir(outputDir)).sort();
+    assert.deepEqual(
+      files,
+      [
+        "errors.md",
+        `jira-request-${buildJiraWriteMarkdownSafeId("tc-a")}.md`,
+        `jira-response-${buildJiraWriteMarkdownSafeId("tc-a")}.md`,
+        "manifest.md",
+        "operator-note.md",
+        "summary.md",
+        `testcase-${buildJiraWriteMarkdownSafeId("tc-a")}.md`,
+      ].sort(),
+    );
+    assert.equal(
+      await readFile(join(outputDir, "operator-note.md"), "utf8"),
+      "keep me",
+    );
+    const errors = await readFile(join(outputDir, "errors.md"), "utf8");
+    assert.match(errors, /Failed Cases: 0/);
+    assert.doesNotMatch(errors, /tc-b/);
+    assert.ok(!files.includes("jira-subtasks.md"));
+    assert.ok(!files.includes("subtasks.md"));
+    assert.ok(!files.includes("all-subtasks.md"));
   });
 });
 
@@ -198,10 +298,10 @@ test("dryRun=false surfaces in manifest.md content", async () => {
 });
 
 /* ------------------------------------------------------------------ */
-/*  errors.md absence semantics                                           */
+/*  errors.md per-run semantics                                           */
 /* ------------------------------------------------------------------ */
 
-test("errors.md absent when no failures occurred", async () => {
+test("errors.md is emitted for successful runs with an empty failure list", async () => {
   await withTempDir(async (outputDir) => {
     const cases = [buildTestCase({ id: "tc-a" })];
     const records = [goodRecord("tc-a", "PROJ-400")];
@@ -214,9 +314,11 @@ test("errors.md absent when no failures occurred", async () => {
       testCases: cases,
       clock: fixedClock,
     });
-    assert.equal(result.errorsPath, null);
     const files = await readdir(outputDir);
-    assert.ok(!files.includes("errors.md"));
+    assert.ok(files.includes("errors.md"));
+    const errors = await readFile(result.errorsPath, "utf8");
+    assert.match(errors, /Failed Cases: 0/);
+    assert.match(errors, /No per-test-case errors were recorded/);
   });
 });
 
@@ -239,10 +341,7 @@ test("errors.md present when at least one case failed", async () => {
       testCases: cases,
       clock: fixedClock,
     });
-    assert.notEqual(result.errorsPath, null);
-    const errorsPath = result.errorsPath;
-    assert.ok(errorsPath !== null);
-    const errors = await readFile(errorsPath, "utf8");
+    const errors = await readFile(result.errorsPath, "utf8");
     assert.match(errors, /tc-b/);
     assert.match(errors, /transport_error/);
     assert.match(errors, /Retryable: true/);
@@ -251,6 +350,36 @@ test("errors.md present when at least one case failed", async () => {
     assert.ok(responsePath);
     const response = await readFile(responsePath, "utf8");
     assert.match(response, /Retryable: true/);
+  });
+});
+
+test("errors.md includes every partial failure for the run", async () => {
+  await withTempDir(async (outputDir) => {
+    const cases = [
+      buildTestCase({ id: "tc-a" }),
+      buildTestCase({ id: "tc-b" }),
+      buildTestCase({ id: "tc-c" }),
+    ];
+    const result = await writeJiraSubtaskMarkdownArtifacts({
+      jobId: JOB_ID,
+      parentIssueKey: PARENT_KEY,
+      subtaskOutcomes: [
+        failedRecord("tc-a", "network reset"),
+        goodRecord("tc-b", "PROJ-501"),
+        failedRecord("tc-c", "validation rejected", false),
+      ],
+      dryRun: false,
+      outputDir,
+      testCases: cases,
+      clock: fixedClock,
+    });
+    const errors = await readFile(result.errorsPath, "utf8");
+    assert.match(errors, /Failed Cases: 2/);
+    assert.match(errors, /Test Case `tc-a`/);
+    assert.match(errors, /Failure Detail: network reset/);
+    assert.match(errors, /Test Case `tc-c`/);
+    assert.match(errors, /Failure Detail: validation rejected/);
+    assert.doesNotMatch(errors, /Test Case `tc-b`/);
   });
 });
 
@@ -344,7 +473,6 @@ test("URL stripper redacts http/https URLs from failure detail", async () => {
       testCases: cases,
       clock: fixedClock,
     });
-    assert.ok(result.errorsPath !== null);
     const errors = await readFile(result.errorsPath, "utf8");
     assert.doesNotMatch(errors, /leaky\.example\.com/u);
     assert.match(errors, /\[redacted-url\]/);
@@ -364,8 +492,7 @@ test("errors.md includes run correlation jobId as header (Issue #1484 AC)", asyn
       testCases: cases,
       clock: fixedClock,
     });
-    assert.ok(result.errorsPath !== null);
-    const errors = await readFile(result.errorsPath!, "utf8");
+    const errors = await readFile(result.errorsPath, "utf8");
     assert.match(errors, /Job ID:.*job-1482/);
     assert.match(errors, /Failed Cases: 1/);
     assert.match(errors, /tc-corr/);
