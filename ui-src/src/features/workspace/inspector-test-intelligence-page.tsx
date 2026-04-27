@@ -24,6 +24,7 @@ import {
 } from "./inspector/test-intelligence/TestCaseListPanel";
 import { VisualSidecarPanel } from "./inspector/test-intelligence/VisualSidecarPanel";
 import { ConflictResolutionPanel } from "./inspector/test-intelligence/conflict-resolution-panel";
+import { JiraWritePanel } from "./inspector/test-intelligence/jira-write-panel";
 import { MultiSourceIngestionPanel } from "./inspector/test-intelligence/multi-source-ingestion-panel";
 import { SourceListPanel } from "./inspector/test-intelligence/source-list-panel";
 import { fetchTestIntelligenceJobs } from "./inspector/test-intelligence/api";
@@ -326,9 +327,8 @@ function TestIntelligenceInner({
               sources={job.bundle?.sourceRefs ?? []}
               canRemove={bearerToken.length > 0}
               onRemove={async (sourceId) => {
-                const { deleteInspectorSource } = await import(
-                  "./inspector/test-intelligence/api"
-                );
+                const { deleteInspectorSource } =
+                  await import("./inspector/test-intelligence/api");
                 const result = await deleteInspectorSource({
                   jobId,
                   sourceId,
@@ -345,9 +345,8 @@ function TestIntelligenceInner({
             sourceRefs={job.bundle?.sourceRefs ?? []}
             decisions={job.bundle?.conflictDecisions}
             onResolve={async (input) => {
-              const { postConflictResolution } = await import(
-                "./inspector/test-intelligence/api"
-              );
+              const { postConflictResolution } =
+                await import("./inspector/test-intelligence/api");
               const result = await postConflictResolution({
                 jobId,
                 conflictId: input.conflictId,
@@ -451,10 +450,14 @@ function TestIntelligenceInner({
                   {...(job.bundle?.sourceRefs
                     ? { sourceRefs: job.bundle.sourceRefs }
                     : {})}
-                  {...(job.bundle?.testCaseProvenance?.[selectedEntry.testCase.id]
+                  {...(job.bundle?.testCaseProvenance?.[
+                    selectedEntry.testCase.id
+                  ]
                     ? {
                         provenance:
-                          job.bundle.testCaseProvenance[selectedEntry.testCase.id],
+                          job.bundle.testCaseProvenance[
+                            selectedEntry.testCase.id
+                          ],
                       }
                     : {})}
                   onAction={handleAction}
@@ -483,6 +486,14 @@ function TestIntelligenceInner({
               <ExportDiagnosticsPanel
                 mapping={job.bundle?.qcMappingPreview}
                 exportReport={job.bundle?.exportReport}
+              />
+              <JiraWritePanel
+                key={jobId}
+                jobId={jobId}
+                bearerToken={bearerToken}
+                onWriteComplete={() => {
+                  void job.refresh();
+                }}
               />
             </div>
           </div>
