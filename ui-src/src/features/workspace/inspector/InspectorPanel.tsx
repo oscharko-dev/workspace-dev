@@ -6257,7 +6257,6 @@ export function InspectorPanel({
           <div
             data-testid="inspector-pane-tree"
             className="min-h-[120px] shrink-0 border-r border-[#000000]"
-            style={treePaneStyle}
           >
             {treeRecoveryError ? (
               <div
@@ -6375,7 +6374,6 @@ export function InspectorPanel({
         <div
           data-testid="inspector-pane-preview"
           className="relative min-h-[200px] flex-1 border-r border-[#000000] lg:min-h-0"
-          style={previewPaneStyle}
         >
           {previewRecoveryMessage ? (
             <div
@@ -6433,7 +6431,6 @@ export function InspectorPanel({
         <div
           data-testid="inspector-pane-code"
           className="min-h-[200px] flex-1 lg:min-h-0"
-          style={codePaneStyle}
         >
           {(activePipeline.stage === "ready" ||
             activePipeline.stage === "partial") &&
