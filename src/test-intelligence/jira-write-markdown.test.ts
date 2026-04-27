@@ -246,6 +246,7 @@ test("errors.md present when at least one case failed", async () => {
     assert.match(errors, /tc-b/);
     assert.match(errors, /transport_error/);
     assert.match(errors, /Retryable: true/);
+    assert.match(errors, /job-1482/);
     const responsePath = result.responsePaths["tc-b"];
     assert.ok(responsePath);
     const response = await readFile(responsePath, "utf8");
@@ -347,5 +348,26 @@ test("URL stripper redacts http/https URLs from failure detail", async () => {
     const errors = await readFile(result.errorsPath, "utf8");
     assert.doesNotMatch(errors, /leaky\.example\.com/u);
     assert.match(errors, /\[redacted-url\]/);
+  });
+});
+
+test("errors.md includes run correlation jobId as header (Issue #1484 AC)", async () => {
+  await withTempDir(async (outputDir) => {
+    const cases = [buildTestCase({ id: "tc-corr" })];
+    const records = [failedRecord("tc-corr", "network error")];
+    const result = await writeJiraSubtaskMarkdownArtifacts({
+      jobId: JOB_ID,
+      parentIssueKey: PARENT_KEY,
+      subtaskOutcomes: records,
+      dryRun: false,
+      outputDir,
+      testCases: cases,
+      clock: fixedClock,
+    });
+    assert.ok(result.errorsPath !== null);
+    const errors = await readFile(result.errorsPath!, "utf8");
+    assert.match(errors, /Job ID:.*job-1482/);
+    assert.match(errors, /Failed Cases: 1/);
+    assert.match(errors, /tc-corr/);
   });
 });

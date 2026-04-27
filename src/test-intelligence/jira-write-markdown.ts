@@ -191,9 +191,16 @@ const buildSummary = (input: JiraWriteMarkdownInput, generatedAt: string) => {
   return lines.join("\n");
 };
 
-const buildErrors = (input: JiraWriteMarkdownInput) => {
+const buildErrors = (input: JiraWriteMarkdownInput, generatedAt: string) => {
   const failed = input.subtaskOutcomes.filter((r) => r.outcome === "failed");
-  const lines = ["# Jira Sub-Task Write Errors", ""];
+  const lines = [
+    "# Jira Sub-Task Write Errors",
+    "",
+    `- Job ID: \`${input.jobId}\``,
+    `- Generated At: ${generatedAt}`,
+    `- Failed Cases: ${failed.length}`,
+    "",
+  ];
   for (const record of failed) {
     lines.push(`## Test Case \`${record.testCaseId}\``);
     lines.push("");
@@ -358,7 +365,7 @@ export const writeJiraSubtaskMarkdownArtifacts = async (
 
   let errorsPathOut: string | null = null;
   if (failedCount > 0) {
-    await writeAtomicText(errorsPath, buildErrors(input));
+    await writeAtomicText(errorsPath, buildErrors(input, generatedAt));
     errorsPathOut = errorsPath;
   }
 
