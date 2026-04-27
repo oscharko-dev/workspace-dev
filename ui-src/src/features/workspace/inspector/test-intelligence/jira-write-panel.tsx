@@ -23,6 +23,7 @@ import {
   type JiraWriteStartResult,
 } from "./api";
 import { safeReadStorage, safeWriteStorage } from "./safe-storage";
+import { validateOutputPathFormat } from "./output-path-validation";
 
 export const JIRA_WRITE_CONFIG_STORAGE_KEY =
   "workspace-dev:ti-jira-write-config:v1";
@@ -129,13 +130,19 @@ export function JiraWritePanel({
         ? "Use the canonical Jira key shape, e.g. PROJ-123."
         : null;
 
+  const outputPathFormatResult = config.useDefaultOutputPath
+    ? ({ ok: true } as const)
+    : validateOutputPathFormat(config.outputPathMarkdown);
   const outputPathValid =
-    config.useDefaultOutputPath || config.outputPathMarkdown.trim().length > 0;
-  const outputPathValidationMessage =
-    !config.useDefaultOutputPath &&
-    config.outputPathMarkdown.trim().length === 0
+    config.useDefaultOutputPath ||
+    (config.outputPathMarkdown.trim().length > 0 && outputPathFormatResult.ok);
+  const outputPathValidationMessage: string | null = config.useDefaultOutputPath
+    ? null
+    : config.outputPathMarkdown.trim().length === 0
       ? "Provide a markdown output directory or enable the default path."
-      : null;
+      : !outputPathFormatResult.ok
+        ? outputPathFormatResult.message
+        : null;
 
   const runDisabled = useMemo(() => {
     if (!config.writeEnabled) return true;
