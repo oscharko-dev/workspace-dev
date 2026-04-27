@@ -98,7 +98,10 @@ test("custom context markdown: refuses unsafe URL host variants and accepts safe
   );
   assert.equal(safe.ok, true);
   if (!safe.ok) return;
-  assert.equal(safe.value.bodyMarkdown.includes("docs.example.com"), false);
+  const remainingHttpUrls = [...safe.value.bodyMarkdown.matchAll(/https?:\/\/[^\s)<>]+/gu)]
+    .map((match) => match[0])
+    .filter((value): value is string => value !== undefined);
+  assert.deepEqual(remainingHttpUrls, []);
   assert.equal(safe.value.bodyMarkdown.includes("about:blank#redacted-link"), true);
   assert.equal(safe.value.bodyMarkdown.includes("reviewer@example.com"), false);
   assert.equal(safe.value.bodyMarkdown.includes("[REDACTED:EMAIL]"), true);
