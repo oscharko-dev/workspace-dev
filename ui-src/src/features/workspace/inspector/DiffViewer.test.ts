@@ -4,13 +4,19 @@
  * @see https://github.com/oscharko-dev/workspace-dev/issues/434
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  cleanup,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { createElement } from "react";
 import { DiffViewer } from "./DiffViewer";
 import * as shikiSharedLib from "../../../lib/shiki-shared";
 
 vi.mock("../../../lib/shiki-shared", () => ({
-  getPreferredTheme: vi.fn().mockReturnValue("github-light")
+  getPreferredTheme: vi.fn().mockReturnValue("github-light"),
 }));
 
 const mockGetPreferredTheme = vi.mocked(shikiSharedLib.getPreferredTheme);
@@ -27,7 +33,7 @@ beforeEach(() => {
   Object.defineProperty(navigator, "clipboard", {
     value: { writeText },
     configurable: true,
-    writable: true
+    writable: true,
   });
 
   // jsdom does not implement matchMedia
@@ -41,13 +47,13 @@ beforeEach(() => {
       removeListener: vi.fn(),
       addEventListener: vi.fn(),
       removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn()
-    }))
+      dispatchEvent: vi.fn(),
+    })),
   });
 
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
     configurable: true,
-    value: vi.fn()
+    value: vi.fn(),
   });
 });
 
@@ -55,7 +61,7 @@ const defaultProps = {
   oldCode: "line 1\nline 2\nline 3",
   newCode: "line 1\nchanged line 2\nline 3",
   filePath: "src/App.tsx",
-  previousJobId: "prev-job-id-123"
+  previousJobId: "prev-job-id-123",
 };
 
 describe("DiffViewer", () => {
@@ -66,12 +72,16 @@ describe("DiffViewer", () => {
 
   it("displays the file path", () => {
     render(createElement(DiffViewer, defaultProps));
-    expect(screen.getByTestId("diff-viewer-filepath").textContent).toContain("src/App.tsx");
+    expect(screen.getByTestId("diff-viewer-filepath").textContent).toContain(
+      "src/App.tsx",
+    );
   });
 
   it("shows previous job ID reference", () => {
     render(createElement(DiffViewer, defaultProps));
-    expect(screen.getByTestId("diff-viewer-filepath").textContent).toContain("prev-job");
+    expect(screen.getByTestId("diff-viewer-filepath").textContent).toContain(
+      "prev-job",
+    );
   });
 
   it("renders diff summary with add/remove counts", () => {
@@ -109,11 +119,13 @@ describe("DiffViewer", () => {
 
   it("shows identical message when files are the same", () => {
     const sameText = "line 1\nline 2";
-    render(createElement(DiffViewer, {
-      ...defaultProps,
-      oldCode: sameText,
-      newCode: sameText
-    }));
+    render(
+      createElement(DiffViewer, {
+        ...defaultProps,
+        oldCode: sameText,
+        newCode: sameText,
+      }),
+    );
 
     const summary = screen.getByTestId("diff-viewer-summary");
     expect(summary.textContent).toContain("identical");
@@ -161,18 +173,24 @@ describe("DiffViewer", () => {
 
   it("disables navigation buttons when no search query", () => {
     render(createElement(DiffViewer, defaultProps));
-    const prev = screen.getByTestId("diff-viewer-find-prev") as HTMLButtonElement;
-    const next = screen.getByTestId("diff-viewer-find-next") as HTMLButtonElement;
+    const prev = screen.getByTestId(
+      "diff-viewer-find-prev",
+    ) as HTMLButtonElement;
+    const next = screen.getByTestId(
+      "diff-viewer-find-next",
+    ) as HTMLButtonElement;
     expect(prev.disabled).toBe(true);
     expect(next.disabled).toBe(true);
   });
 
   it("supports keyboard find navigation and scrolls the active match into view", async () => {
-    render(createElement(DiffViewer, {
-      ...defaultProps,
-      oldCode: "alpha\nbeta\nalpha\nbeta",
-      newCode: "alpha\nbeta\nalpha\nbeta"
-    }));
+    render(
+      createElement(DiffViewer, {
+        ...defaultProps,
+        oldCode: "alpha\nbeta\nalpha\nbeta",
+        newCode: "alpha\nbeta\nalpha\nbeta",
+      }),
+    );
 
     const input = screen.getByTestId("diff-viewer-find-input");
     fireEvent.keyDown(window, { key: "f", ctrlKey: true });
@@ -180,17 +198,23 @@ describe("DiffViewer", () => {
 
     fireEvent.change(input, { target: { value: "alpha" } });
     await waitFor(() => {
-      expect(screen.getByTestId("diff-viewer-find-count")).toHaveTextContent("1 of 2");
+      expect(screen.getByTestId("diff-viewer-find-count")).toHaveTextContent(
+        "1 of 2",
+      );
     });
 
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => {
-      expect(screen.getByTestId("diff-viewer-find-count")).toHaveTextContent("2 of 2");
+      expect(screen.getByTestId("diff-viewer-find-count")).toHaveTextContent(
+        "2 of 2",
+      );
     });
 
     fireEvent.keyDown(input, { key: "Enter", shiftKey: true });
     await waitFor(() => {
-      expect(screen.getByTestId("diff-viewer-find-count")).toHaveTextContent("1 of 2");
+      expect(screen.getByTestId("diff-viewer-find-count")).toHaveTextContent(
+        "1 of 2",
+      );
     });
 
     expect(HTMLElement.prototype.scrollIntoView).toHaveBeenCalled();
@@ -201,38 +225,57 @@ describe("DiffViewer", () => {
 
     fireEvent.click(screen.getByTestId("diff-viewer-copy-button"));
     await waitFor(() => {
-      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(defaultProps.newCode);
-      expect(screen.getByTestId("diff-viewer-copy-button")).toHaveTextContent("Copied!");
+      expect(navigator.clipboard.writeText).toHaveBeenCalledWith(
+        defaultProps.newCode,
+      );
+      expect(screen.getByTestId("diff-viewer-copy-button")).toHaveTextContent(
+        "Copied!",
+      );
     });
 
     await new Promise((resolve) => setTimeout(resolve, 1_600));
     await waitFor(() => {
-      expect(screen.getByTestId("diff-viewer-copy-button")).toHaveTextContent("Copy");
+      expect(screen.getByTestId("diff-viewer-copy-button")).toHaveTextContent(
+        "Copy",
+      );
     });
   });
 
   it("renders node-scoped focus states, fallback banner, and dark theme styling", () => {
     mockGetPreferredTheme.mockReturnValue("github-dark");
 
-    const { unmount } = render(createElement(DiffViewer, {
-      ...defaultProps,
-      oldCode: "one\ntwo\nthree",
-      newCode: "one\nupdated two\nthree",
-      oldFocusRange: { startLine: 2, endLine: 2 },
-      newFocusRange: { startLine: 2, endLine: 2 },
-      scopedMode: "focused",
-      isNodeScoped: true,
-      nodeDiffFallbackReason: "Node-scoped diff fell back to full file.",
-      themeMode: "dark"
-    }));
-
-    expect(screen.getByTestId("diff-viewer-node-scoped-badge")).toBeInTheDocument();
-    expect(screen.getByTestId("inspector-node-diff-fallback")).toHaveTextContent(
-      "Node-scoped diff fell back to full file."
+    const { unmount } = render(
+      createElement(DiffViewer, {
+        ...defaultProps,
+        oldCode: "one\ntwo\nthree",
+        newCode: "one\nupdated two\nthree",
+        oldFocusRange: { startLine: 2, endLine: 2 },
+        newFocusRange: { startLine: 2, endLine: 2 },
+        scopedMode: "focused",
+        isNodeScoped: true,
+        nodeDiffFallbackReason: "Node-scoped diff fell back to full file.",
+        themeMode: "dark",
+      }),
     );
-    expect(screen.getByTestId("diff-viewer-summary").getAttribute("style")).toContain("rgb(13, 17, 23)");
-    expect(screen.getByTestId("diff-line-removed")).toHaveAttribute("data-in-focus", "true");
-    expect(screen.getByTestId("diff-line-added")).toHaveAttribute("data-in-focus", "true");
+
+    expect(
+      screen.getByTestId("diff-viewer-node-scoped-badge"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId("inspector-node-diff-fallback"),
+    ).toHaveTextContent("Node-scoped diff fell back to full file.");
+    // Dark theme is now applied via data-theme attribute + CSS custom properties instead of inline styles
+    expect(screen.getByTestId("diff-viewer").getAttribute("data-theme")).toBe(
+      "dark",
+    );
+    expect(screen.getByTestId("diff-line-removed")).toHaveAttribute(
+      "data-in-focus",
+      "true",
+    );
+    expect(screen.getByTestId("diff-line-added")).toHaveAttribute(
+      "data-in-focus",
+      "true",
+    );
 
     unmount();
   });

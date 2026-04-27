@@ -117,22 +117,17 @@ export function ScreenshotPreview({
       onPointerUp={handlePointerUp}
       onPointerCancel={handlePointerUp}
     >
-      <div
-        className="absolute inset-0 flex items-center justify-center"
-        style={{ pointerEvents: "none" }}
-      >
+      <div className="screenshot-preview-container absolute inset-0 flex items-center justify-center">
         <img
           src={screenshotUrl}
           alt="Figma design preview"
           draggable={false}
-          style={{
-            transform: `translate(${translate.x}px, ${translate.y + (externalOffsetY ?? 0)}px) scale(${scale})`,
-            transformOrigin: "center center",
-            maxWidth: "100%",
-            maxHeight: "100%",
-            objectFit: "contain",
-            userSelect: "none",
-          }}
+          className="screenshot-preview-image"
+          style={
+            {
+              "--transform-translate-scale": `translate(${translate.x}px, ${translate.y + (externalOffsetY ?? 0)}px) scale(${scale})`,
+            } as React.CSSProperties
+          }
         />
       </div>
 

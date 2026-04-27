@@ -5,7 +5,11 @@ import { useCallback, useState, type JSX } from "react";
 // ---------------------------------------------------------------------------
 
 export type RemapConfidence = "high" | "medium" | "low";
-export type RemapRule = "exact-id" | "name-and-type" | "name-fuzzy-and-type" | "ancestry-and-type";
+export type RemapRule =
+  | "exact-id"
+  | "name-and-type"
+  | "name-fuzzy-and-type"
+  | "ancestry-and-type";
 
 export interface RemapSuggestion {
   sourceNodeId: string;
@@ -44,10 +48,13 @@ export interface RemapDecisionEntry {
 // Confidence badge styling
 // ---------------------------------------------------------------------------
 
-const CONFIDENCE_STYLES: Record<RemapConfidence, { bg: string; text: string; label: string }> = {
+const CONFIDENCE_STYLES: Record<
+  RemapConfidence,
+  { bg: string; text: string; label: string }
+> = {
   high: { bg: "#dcfce7", text: "#166534", label: "High" },
   medium: { bg: "#fef9c3", text: "#854d0e", label: "Medium" },
-  low: { bg: "#fee2e2", text: "#991b1b", label: "Low" }
+  low: { bg: "#fee2e2", text: "#991b1b", label: "Low" },
 };
 
 // ---------------------------------------------------------------------------
@@ -65,7 +72,7 @@ export function RemapReviewPanel({
   result,
   onApply,
   onCancel,
-  disabled = false
+  disabled = false,
 }: RemapReviewPanelProps): JSX.Element {
   const [decisions, setDecisions] = useState<Map<string, boolean>>(() => {
     const initial = new Map<string, boolean>();
@@ -98,7 +105,7 @@ export function RemapReviewPanel({
     const entries: RemapDecisionEntry[] = result.suggestions.map((s) => ({
       sourceNodeId: s.sourceNodeId,
       targetNodeId: s.targetNodeId,
-      accepted: decisions.get(s.sourceNodeId) ?? false
+      accepted: decisions.get(s.sourceNodeId) ?? false,
     }));
     onApply(entries);
   }, [decisions, onApply, result.suggestions]);
@@ -107,56 +114,21 @@ export function RemapReviewPanel({
   const totalSuggestions = result.suggestions.length;
 
   return (
-    <div
-      className="remap-review-panel"
-      style={{
-        padding: "12px 16px",
-        borderRadius: 8,
-        border: "1px solid var(--color-info-border, #93c5fd)",
-        background: "var(--color-info-bg, #eff6ff)",
-        marginBottom: 12,
-        fontSize: 13,
-        lineHeight: 1.5
-      }}
-    >
-      <p
-        style={{
-          margin: "0 0 8px",
-          fontWeight: 600,
-          color: "var(--color-info-text, #1e40af)"
-        }}
-      >
-        Remap suggestions
-      </p>
-      <p style={{ margin: "0 0 12px", color: "var(--color-text-secondary, #555)" }}>
-        {result.message}
-      </p>
+    <div className="remap-review-panel">
+      <p className="remap-review-panel-title">Remap suggestions</p>
+      <p className="remap-review-panel-message">{result.message}</p>
 
       {result.suggestions.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 8
-            }}
-          >
-            <span style={{ fontSize: 12, fontWeight: 500, color: "var(--color-text-secondary, #555)" }}>
+        <div className="remap-review-suggestions">
+          <div className="remap-suggestions-header">
+            <span className="remap-suggestions-count">
               {`${String(acceptedCount)} of ${String(totalSuggestions)} accepted`}
             </span>
             <button
               type="button"
               disabled={disabled}
               onClick={acceptAll}
-              style={{
-                padding: "2px 8px",
-                borderRadius: 4,
-                border: "1px solid var(--color-border, #ccc)",
-                background: "var(--color-bg-secondary, #f5f5f5)",
-                cursor: disabled ? "not-allowed" : "pointer",
-                fontSize: 11
-              }}
+              className="remap-accept-all-btn"
             >
               Accept all
             </button>
@@ -168,67 +140,56 @@ export function RemapReviewPanel({
             return (
               <div
                 key={suggestion.sourceNodeId}
-                style={{
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 8,
-                  padding: "6px 8px",
-                  borderRadius: 6,
-                  border: `1px solid ${accepted ? "var(--color-primary-border, #93c5fd)" : "var(--color-border, #e5e7eb)"}`,
-                  background: accepted
-                    ? "var(--color-primary-bg-subtle, #f0f9ff)"
-                    : "var(--color-bg, #fff)",
-                  marginBottom: 4
-                }}
+                className="remap-suggestion-item"
+                style={
+                  {
+                    "--remap-item-border": accepted
+                      ? "1px solid var(--color-primary-border, #93c5fd)"
+                      : "1px solid var(--color-border, #e5e7eb)",
+                    "--remap-item-bg": accepted
+                      ? "var(--color-primary-bg-subtle, #f0f9ff)"
+                      : "var(--color-bg, #fff)",
+                  } as React.CSSProperties
+                }
               >
                 <input
                   type="checkbox"
                   checked={accepted}
                   disabled={disabled}
-                  onChange={() => { toggleDecision(suggestion.sourceNodeId); }}
-                  style={{ marginTop: 3 }}
+                  onChange={() => {
+                    toggleDecision(suggestion.sourceNodeId);
+                  }}
+                  className="remap-suggestion-item-checkbox"
                   aria-label={`Accept remap for ${suggestion.sourceNodeName}`}
                 />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <div className="remap-suggestion-content">
+                  <div className="remap-suggestion-header">
                     <span
-                      style={{ fontWeight: 500, fontSize: 12 }}
+                      className="remap-suggestion-source-name"
                       title={`Source: ${suggestion.sourceNodeId}`}
                     >
                       {suggestion.sourceNodeName}
                     </span>
-                    <span style={{ color: "var(--color-text-tertiary, #999)", fontSize: 11 }}>
-                      {"\u2192"}
-                    </span>
+                    <span className="remap-suggestion-arrow">{"\u2192"}</span>
                     <span
-                      style={{ fontWeight: 500, fontSize: 12 }}
+                      className="remap-suggestion-target-name"
                       title={`Target: ${suggestion.targetNodeId}`}
                     >
                       {suggestion.targetNodeName}
                     </span>
                     <span
-                      style={{
-                        display: "inline-block",
-                        padding: "0 6px",
-                        borderRadius: 4,
-                        fontSize: 10,
-                        fontWeight: 600,
-                        background: style.bg,
-                        color: style.text
-                      }}
+                      className="remap-confidence-badge"
+                      style={
+                        {
+                          "--remap-badge-bg": style.bg,
+                          "--remap-badge-color": style.text,
+                        } as React.CSSProperties
+                      }
                     >
                       {style.label}
                     </span>
                   </div>
-                  <p
-                    style={{
-                      margin: "2px 0 0",
-                      fontSize: 11,
-                      color: "var(--color-text-tertiary, #888)"
-                    }}
-                  >
-                    {suggestion.reason}
-                  </p>
+                  <p className="remap-suggestion-reason">{suggestion.reason}</p>
                 </div>
               </div>
             );
@@ -237,62 +198,30 @@ export function RemapReviewPanel({
       )}
 
       {result.rejections.length > 0 && (
-        <div style={{ marginBottom: 12 }}>
-          <p
-            style={{
-              margin: "0 0 6px",
-              fontSize: 12,
-              fontWeight: 500,
-              color: "var(--color-text-secondary, #555)"
-            }}
-          >
+        <div className="remap-rejections">
+          <p className="remap-rejections-title">
             {`Unsupported mappings (${String(result.rejections.length)})`}
           </p>
           {result.rejections.map((rejection) => (
-            <div
-              key={rejection.sourceNodeId}
-              style={{
-                padding: "4px 8px",
-                borderRadius: 6,
-                border: "1px solid var(--color-warning-border, #fbbf24)",
-                background: "var(--color-warning-bg-subtle, #fffbeb)",
-                marginBottom: 4,
-                fontSize: 12
-              }}
-            >
-              <span style={{ fontWeight: 500 }}>{rejection.sourceNodeName}</span>
-              <span style={{ color: "var(--color-text-tertiary, #888)" }}>
+            <div key={rejection.sourceNodeId} className="remap-rejection-item">
+              <span className="remap-rejection-name">
+                {rejection.sourceNodeName}
+              </span>
+              <span className="remap-rejection-type">
                 {` (${rejection.sourceNodeType})`}
               </span>
-              <p
-                style={{
-                  margin: "2px 0 0",
-                  fontSize: 11,
-                  color: "var(--color-text-tertiary, #888)"
-                }}
-              >
-                {rejection.reason}
-              </p>
+              <p className="remap-rejection-reason">{rejection.reason}</p>
             </div>
           ))}
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+      <div className="remap-review-actions">
         <button
           type="button"
           disabled={disabled || acceptedCount === 0}
           onClick={handleApply}
-          style={{
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid var(--color-primary-border, #2563eb)",
-            background: "var(--color-primary-bg, #eff6ff)",
-            color: "var(--color-primary-text, #1d4ed8)",
-            cursor: disabled || acceptedCount === 0 ? "not-allowed" : "pointer",
-            fontSize: 12,
-            fontWeight: 500
-          }}
+          className="remap-apply-btn"
           title="Apply accepted remaps and carry forward draft"
         >
           {`Apply ${String(acceptedCount)} remap(s)`}
@@ -301,14 +230,7 @@ export function RemapReviewPanel({
           type="button"
           disabled={disabled}
           onClick={onCancel}
-          style={{
-            padding: "6px 12px",
-            borderRadius: 6,
-            border: "1px solid var(--color-border, #ccc)",
-            background: "var(--color-bg-secondary, #f5f5f5)",
-            cursor: disabled ? "not-allowed" : "pointer",
-            fontSize: 12
-          }}
+          className="remap-cancel-btn"
           title="Cancel remap and return to stale draft options"
         >
           Cancel

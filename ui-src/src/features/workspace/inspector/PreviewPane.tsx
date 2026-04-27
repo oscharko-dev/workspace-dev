@@ -253,8 +253,8 @@ function PreviewOverlayLayout({
         ref={iframeRef}
         src={previewUrl}
         title="Live preview"
-        className="absolute inset-0 h-full w-full border-0 bg-white"
-        style={{ opacity: opacity / 100 }}
+        className="preview-pane-iframe absolute inset-0 h-full w-full border-0 bg-white"
+        style={{ "--preview-opacity": opacity / 100 } as React.CSSProperties}
         onLoad={onIframeLoad}
         sandbox="allow-scripts allow-same-origin"
       />

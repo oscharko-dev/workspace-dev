@@ -791,7 +791,14 @@ export function ComponentTree({
           </p>
         ) : (
           <div data-testid="component-tree-virtual-window">
-            <div style={{ height: topSpacerHeight }} />
+            <div
+              className="component-tree-spacer"
+              style={
+                {
+                  "--spacer-height": `${topSpacerHeight}px`,
+                } as React.CSSProperties
+              }
+            />
             {virtualRows.map((row) => (
               <TreeRow
                 key={row.node.id}
@@ -809,7 +816,14 @@ export function ComponentTree({
                 diffStatus={diffStatusByNodeId?.get(row.node.id)}
               />
             ))}
-            <div style={{ height: bottomSpacerHeight }} />
+            <div
+              className="component-tree-spacer"
+              style={
+                {
+                  "--spacer-height": `${bottomSpacerHeight}px`,
+                } as React.CSSProperties
+              }
+            />
             <span data-testid="component-tree-total-count" className="sr-only">
               {String(totalRowCount)}
             </span>

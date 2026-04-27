@@ -1,0 +1,984 @@
+/* ==========================================================================
+   Inspector CSS — replaces inline style= props for CSP unsafe-inline removal.
+   Issue #1493
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Viewer theme tokens
+   Light values are defaults; data-theme="dark" overrides to github-dark colours.
+   -------------------------------------------------------------------------- */
+.cv-viewer,
+.dv-viewer {
+  --cv-toolbar-bg: transparent;
+  --cv-toolbar-border: #d0d7de;
+  --cv-filepath-color: #57606a;
+  --cv-input-border: #d0d7de;
+  --cv-input-border-focus: #0969da;
+  --cv-input-color: #24292f;
+  --cv-btn-border: #d0d7de;
+  --cv-btn-bg: #ffffff;
+  --cv-btn-color: #24292f;
+  --cv-btn-wrap-active-bg: #ddf4ff;
+  --cv-btn-rainbow-active-bg: #ede9fe;
+  --cv-btn-rainbow-active-color: #6d28d9;
+  --cv-btn-boundaries-active-bg: #cffafe;
+  --cv-btn-boundaries-active-color: #0e7490;
+  --cv-btn-format-success-bg: #dcfce7;
+  --cv-btn-format-success-color: #166534;
+  --cv-format-error-color: #be123c;
+  --cv-oversize-bg: #fff8c5;
+  --cv-oversize-border: #d4a72c;
+  --cv-oversize-color: #6a5300;
+  --cv-content-bg: #ffffff;
+  --cv-highlighting-color: #57606a;
+  --cv-line-number-color: #8c959f;
+  --cv-overflow-indicator-color: #475569;
+  --cv-tooltip-border: #cbd5e1;
+  --cv-tooltip-bg: #f8fafc;
+  --cv-tooltip-color: #0f172a;
+  --cv-tooltip-type-bg: #e2e8f0;
+  --cv-tooltip-type-color: #1d4ed8;
+  /* DiffViewer-specific */
+  --dv-summary-bg: #f6f8fa;
+  --dv-summary-border: #d0d7de;
+  --dv-summary-color: #24292f;
+  --dv-summary-identical-color: #1a7f37;
+  --dv-node-badge-border: #0969da;
+  --dv-node-badge-bg: rgba(9, 105, 218, 0.08);
+  --dv-node-badge-color: #0969da;
+  --dv-fallback-bg: #fffbeb;
+  --dv-fallback-border: #fbbf24;
+  --dv-fallback-color: #92400e;
+  --dv-content-bg: #ffffff;
+  --dv-line-number-color: #8c959f;
+}
+
+.cv-viewer[data-theme="dark"],
+.dv-viewer[data-theme="dark"] {
+  --cv-toolbar-bg: #161b22;
+  --cv-toolbar-border: #30363d;
+  --cv-filepath-color: #8b949e;
+  --cv-input-border: #30363d;
+  --cv-input-border-focus: #1f6feb;
+  --cv-input-color: #c9d1d9;
+  --cv-btn-border: #30363d;
+  --cv-btn-bg: #21262d;
+  --cv-btn-color: #c9d1d9;
+  --cv-btn-wrap-active-bg: #1f6feb33;
+  --cv-btn-rainbow-active-bg: #312e81;
+  --cv-btn-rainbow-active-color: #c4b5fd;
+  --cv-btn-boundaries-active-bg: #164e63;
+  --cv-btn-boundaries-active-color: #a5f3fc;
+  --cv-btn-format-success-bg: #14532d;
+  --cv-btn-format-success-color: #86efac;
+  --cv-format-error-color: #fda4af;
+  --cv-oversize-bg: #3d1d00;
+  --cv-oversize-border: #5a3600;
+  --cv-oversize-color: #e3b341;
+  --cv-content-bg: #0d1117;
+  --cv-highlighting-color: #8b949e;
+  --cv-line-number-color: #484f58;
+  --cv-overflow-indicator-color: #9ca3af;
+  --cv-tooltip-border: #1e293b;
+  --cv-tooltip-bg: #0f172a;
+  --cv-tooltip-color: #e2e8f0;
+  --cv-tooltip-type-bg: #1e293b;
+  --cv-tooltip-type-color: #93c5fd;
+  /* DiffViewer-specific */
+  --dv-summary-bg: #0d1117;
+  --dv-summary-border: #30363d;
+  --dv-summary-color: #c9d1d9;
+  --dv-summary-identical-color: #7ee787;
+  --dv-node-badge-border: #388bfd;
+  --dv-node-badge-bg: rgba(56, 139, 253, 0.15);
+  --dv-node-badge-color: #58a6ff;
+  --dv-fallback-bg: rgba(187, 128, 9, 0.15);
+  --dv-fallback-border: #bb8009;
+  --dv-fallback-color: #e3b341;
+  --dv-content-bg: #0d1117;
+  --dv-line-number-color: #484f58;
+}
+
+/* --------------------------------------------------------------------------
+   CodeViewer / DiffViewer shared structural classes
+   -------------------------------------------------------------------------- */
+
+.cv-toolbar {
+  background-color: var(--cv-toolbar-bg);
+  border-color: var(--cv-toolbar-border);
+}
+
+.cv-filepath {
+  color: var(--cv-filepath-color);
+}
+
+.cv-find-input {
+  border-color: var(--cv-input-border);
+  color: var(--cv-input-color);
+}
+
+.cv-find-input:focus {
+  border-color: var(--cv-input-border-focus);
+}
+
+/* focused via state class (JS toggles .cv-find-input--focused) */
+.cv-find-input--focused {
+  border-color: var(--cv-input-border-focus);
+}
+
+.cv-toolbar-btn {
+  border-color: var(--cv-btn-border);
+  background-color: var(--cv-btn-bg);
+  color: var(--cv-btn-color);
+}
+
+.cv-toolbar-btn--wrap-active {
+  background-color: var(--cv-btn-wrap-active-bg);
+}
+
+.cv-toolbar-btn--rainbow-active {
+  background-color: var(--cv-btn-rainbow-active-bg);
+  color: var(--cv-btn-rainbow-active-color);
+}
+
+.cv-toolbar-btn--boundaries-active {
+  background-color: var(--cv-btn-boundaries-active-bg);
+  color: var(--cv-btn-boundaries-active-color);
+}
+
+.cv-toolbar-btn--format-success {
+  background-color: var(--cv-btn-format-success-bg);
+  color: var(--cv-btn-format-success-color);
+}
+
+.cv-format-error {
+  color: var(--cv-format-error-color);
+}
+
+.cv-oversize-warning {
+  background-color: var(--cv-oversize-bg);
+  border-color: var(--cv-oversize-border);
+  color: var(--cv-oversize-color);
+}
+
+.cv-content {
+  background-color: var(--cv-content-bg);
+}
+
+.cv-highlighting-indicator {
+  color: var(--cv-highlighting-color);
+}
+
+.cv-line-number {
+  color: var(--cv-line-number-color);
+}
+
+.cv-overflow-indicator {
+  color: var(--cv-overflow-indicator-color);
+}
+
+.cv-find-count {
+  color: var(--cv-filepath-color);
+}
+
+/* Boundary tooltip */
+.cv-boundary-tooltip {
+  border-color: var(--cv-tooltip-border);
+  background-color: var(--cv-tooltip-bg);
+  color: var(--cv-tooltip-color);
+}
+
+.cv-boundary-tooltip-type {
+  background-color: var(--cv-tooltip-type-bg);
+  color: var(--cv-tooltip-type-color);
+}
+
+/* --------------------------------------------------------------------------
+   DiffViewer-specific classes
+   -------------------------------------------------------------------------- */
+
+.dv-summary {
+  background-color: var(--dv-summary-bg);
+  border-color: var(--dv-summary-border);
+  color: var(--dv-summary-color);
+}
+
+.dv-summary--identical {
+  color: var(--dv-summary-identical-color);
+}
+
+.dv-node-badge {
+  border-color: var(--dv-node-badge-border);
+  background-color: var(--dv-node-badge-bg);
+  color: var(--dv-node-badge-color);
+}
+
+.dv-fallback-banner {
+  background-color: var(--dv-fallback-bg);
+  border-color: var(--dv-fallback-border);
+  color: var(--dv-fallback-color);
+}
+
+.dv-content {
+  background-color: var(--dv-content-bg);
+}
+
+.dv-line-number {
+  color: var(--dv-line-number-color);
+}
+
+/* --------------------------------------------------------------------------
+   SuggestionsPanel (light-only — no dark-mode toggle in this component)
+   -------------------------------------------------------------------------- */
+
+.sp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: #fafafa;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sp-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.sp-section-title {
+  font-weight: 600;
+}
+
+.sp-section-meta {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.sp-quality-band {
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.sp-quality-band--excellent {
+  background: #ecfdf5;
+  border: 1px solid #10b981;
+  color: #065f46;
+}
+
+.sp-quality-band--good {
+  background: #eff6ff;
+  border: 1px solid #3b82f6;
+  color: #1e40af;
+}
+
+.sp-quality-band--fair {
+  background: #fffbeb;
+  border: 1px solid #d97706;
+  color: #78350f;
+}
+
+.sp-quality-band--poor {
+  background: #fef2f2;
+  border: 1px solid #dc2626;
+  color: #991b1b;
+}
+
+.sp-breakdown-container {
+  margin-top: 4px;
+}
+
+.sp-breakdown-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sp-breakdown-label {
+  width: 78px;
+  font-size: 11px;
+  color: #4b5563;
+}
+
+.sp-breakdown-bar {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  background: #e5e7eb;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.sp-breakdown-fill {
+  position: absolute;
+  inset: 0;
+}
+
+.sp-breakdown-fill--high {
+  background: #10b981;
+}
+
+.sp-breakdown-fill--medium {
+  background: #f59e0b;
+}
+
+.sp-breakdown-fill--low {
+  background: #ef4444;
+}
+
+.sp-breakdown-value {
+  width: 28px;
+  text-align: right;
+  font-size: 11px;
+}
+
+.sp-summary {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.sp-risk-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sp-risk-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.sp-severity-badge {
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.sp-severity-badge--high {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.sp-severity-badge--medium {
+  background: #fef9c3;
+  color: #854d0e;
+}
+
+.sp-severity-badge--low {
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.sp-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-item-title {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.sp-item-detail {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+  word-break: break-word;
+}
+
+/* Token suggestions */
+.sp-token-controls {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.sp-token-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sp-token-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+.sp-token-item--accepted {
+  border: 1px solid #93c5fd;
+  background: #f0f9ff;
+}
+
+.sp-token-item--pending {
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.sp-token-checkbox {
+  margin-top: 3px;
+}
+
+.sp-token-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sp-token-name {
+  font-size: 12px;
+  font-weight: 500;
+  background: #f3f4f6;
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+.sp-token-recommendation {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+
+.sp-token-conflict-detail {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.sp-token-detail {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+/* A11y nudges */
+.sp-a11y-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.sp-a11y-label-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.sp-a11y-label {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.sp-a11y-wcag {
+  font-size: 10px;
+  color: #6b7280;
+}
+
+.sp-a11y-file-btn {
+  background: transparent;
+  border: 1px solid #d1d5db;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  cursor: pointer;
+  color: #1f2937;
+}
+
+.sp-a11y-file-label {
+  font-size: 10px;
+  color: #6b7280;
+}
+
+/* Buttons */
+.sp-btn-secondary {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #d1d5db;
+  background: #f9fafb;
+  font-size: 11px;
+  color: #1f2937;
+  cursor: pointer;
+}
+
+.sp-btn-secondary:disabled {
+  cursor: not-allowed;
+}
+
+.sp-btn-primary {
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid #1d4ed8;
+  background: #2563eb;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sp-btn-primary:disabled {
+  background: #93c5fd;
+  cursor: not-allowed;
+}
+
+/* --------------------------------------------------------------------------
+   ShortcutHelp — theme tokens on .sh-overlay
+   -------------------------------------------------------------------------- */
+
+.sh-overlay {
+  --sh-overlay-bg: rgba(0, 0, 0, 0.35);
+  --sh-panel-bg: #ffffff;
+  --sh-panel-border: #d0d7de;
+  --sh-text-primary: #24292f;
+  --sh-text-secondary: #57606a;
+  --sh-category-bg: #f6f8fa;
+  --sh-kbd-bg: #f0f0f0;
+  --sh-kbd-border: #d0d7de;
+  --sh-kbd-color: #24292f;
+  --sh-kbd-shadow: 0 1px 0 rgba(0, 0, 0, 0.08);
+}
+
+.sh-overlay[data-theme="dark"] {
+  --sh-overlay-bg: rgba(0, 0, 0, 0.6);
+  --sh-panel-bg: #161b22;
+  --sh-panel-border: #30363d;
+  --sh-text-primary: #c9d1d9;
+  --sh-text-secondary: #8b949e;
+  --sh-category-bg: #0d1117;
+  --sh-kbd-bg: #21262d;
+  --sh-kbd-border: #30363d;
+  --sh-kbd-color: #e6edf3;
+  --sh-kbd-shadow: 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.sh-overlay-backdrop {
+  background-color: var(--sh-overlay-bg);
+}
+
+.sh-panel {
+  background-color: var(--sh-panel-bg);
+  border-color: var(--sh-panel-border);
+}
+
+.sh-header {
+  background-color: var(--sh-panel-bg);
+  border-color: var(--sh-panel-border);
+}
+
+.sh-title {
+  color: var(--sh-text-primary);
+}
+
+.sh-close-btn {
+  color: var(--sh-text-secondary);
+}
+
+.sh-category-heading {
+  background-color: var(--sh-category-bg);
+  color: var(--sh-text-secondary);
+}
+
+.sh-entry-description {
+  color: var(--sh-text-primary);
+}
+
+.sh-kbd {
+  background-color: var(--sh-kbd-bg);
+  border-color: var(--sh-kbd-border);
+  color: var(--sh-kbd-color);
+  box-shadow: var(--sh-kbd-shadow);
+}
+
+.sh-footer {
+  border-color: var(--sh-panel-border);
+  color: var(--sh-text-secondary);
+}
+
+/* ============================================================================
+   RemapReviewPanel — extracted inline styles
+   =========================================================================== */
+
+.remap-review-panel {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--color-info-border, #93c5fd);
+  background: var(--color-info-bg, #eff6ff);
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.remap-review-panel-title {
+  margin: 0 0 8px;
+  font-weight: 600;
+  color: var(--color-info-text, #1e40af);
+}
+
+.remap-review-panel-message {
+  margin: 0 0 12px;
+  color: var(--color-text-secondary, #555);
+}
+
+.remap-review-suggestions {
+  margin-bottom: 12px;
+}
+
+.remap-suggestions-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.remap-suggestions-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #555);
+}
+
+.remap-accept-all-btn {
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--color-border, #ccc);
+  background: var(--color-bg-secondary, #f5f5f5);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.remap-accept-all-btn:disabled {
+  cursor: not-allowed;
+}
+
+.remap-suggestion-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  margin-bottom: 4px;
+  border: var(--remap-item-border, 1px solid var(--color-border, #e5e7eb));
+  background: var(--remap-item-bg, var(--color-bg, #fff));
+}
+
+.remap-suggestion-item-checkbox {
+  margin-top: 3px;
+}
+
+.remap-suggestion-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.remap-suggestion-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.remap-suggestion-source-name {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.remap-suggestion-arrow {
+  color: var(--color-text-tertiary, #999);
+  font-size: 11px;
+}
+
+.remap-suggestion-target-name {
+  font-weight: 500;
+  font-size: 12px;
+}
+
+.remap-confidence-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--remap-badge-bg);
+  color: var(--remap-badge-color);
+}
+
+.remap-suggestion-reason {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #888);
+}
+
+.remap-rejections {
+  margin-bottom: 12px;
+}
+
+.remap-rejections-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-secondary, #555);
+}
+
+.remap-rejection-item {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-warning-border, #fbbf24);
+  background: var(--color-warning-bg-subtle, #fffbeb);
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.remap-rejection-name {
+  font-weight: 500;
+}
+
+.remap-rejection-type {
+  color: var(--color-text-tertiary, #888);
+}
+
+.remap-rejection-reason {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--color-text-tertiary, #888);
+}
+
+.remap-review-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.remap-apply-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-primary-border, #2563eb);
+  background: var(--color-primary-bg, #eff6ff);
+  color: var(--color-primary-text, #1d4ed8);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.remap-apply-btn:disabled {
+  cursor: not-allowed;
+}
+
+.remap-cancel-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #ccc);
+  background: var(--color-bg-secondary, #f5f5f5);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.remap-cancel-btn:disabled {
+  cursor: not-allowed;
+}
+
+/* ============================================================================
+   StaleDraftWarning — extracted inline styles
+   =========================================================================== */
+
+.stale-draft-warning {
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--color-warning-border, #fbbf24);
+  background: var(--color-warning-bg, #fffbeb);
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.stale-draft-warning-title {
+  margin: 0 0 8px;
+  font-weight: 600;
+  color: var(--color-warning-text, #92610a);
+}
+
+.stale-draft-warning-message {
+  margin: 0 0 12px;
+  color: var(--color-text-secondary, #555);
+}
+
+.stale-draft-warning-detail {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--color-text-tertiary, #888);
+}
+
+.stale-draft-warning-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stale-draft-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #ccc);
+  background: var(--color-bg-secondary, #f5f5f5);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.stale-draft-btn:disabled {
+  cursor: not-allowed;
+}
+
+.stale-draft-btn--primary {
+  border: 1px solid var(--color-primary-border, #2563eb);
+  background: var(--color-primary-bg, #eff6ff);
+  color: var(--color-primary-text, #1d4ed8);
+}
+
+.stale-draft-btn--info {
+  border: 1px solid var(--color-info-border, #93c5fd);
+  background: var(--color-info-bg, #eff6ff);
+  color: var(--color-info-text, #1e40af);
+}
+
+/* ============================================================================
+   CodePane — button toggle states with dynamic colors
+   =========================================================================== */
+
+.code-pane-toggle-btn {
+  /* borderColor, backgroundColor, color set via CSS Custom Properties for active state */
+}
+
+.code-pane-split-pane {
+  /* flexBasis set via CSS Custom Property for dynamic width */
+  flex-grow: 0;
+  flex-shrink: 0;
+}
+
+.code-pane-split-divider {
+  /* touchAction is static */
+  touch-action: none;
+}
+
+/* ============================================================================
+   InspectOverlay — positioned overlay with dynamic position/size
+   =========================================================================== */
+
+.inspect-overlay {
+  position: absolute;
+  left: var(--overlay-left, 0);
+  top: var(--overlay-top, 0);
+  width: var(--overlay-width, 0);
+  height: var(--overlay-height, 0);
+  border: 2px solid rgba(59, 130, 246, 0.8);
+  background: rgba(59, 130, 246, 0.15);
+  transition: all 80ms ease;
+  pointer-events: none;
+}
+
+.inspect-overlay-tooltip {
+  position: absolute;
+  left: var(--tooltip-left, 0);
+  top: var(--tooltip-top, 0);
+  padding: 4px 8px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  z-index: 10001;
+  pointer-events: none;
+}
+
+/* ============================================================================
+   ScreenshotPreview — preview image container
+   =========================================================================== */
+
+.screenshot-preview-container {
+  pointer-events: none;
+}
+
+.screenshot-preview-image {
+  transform: var(--transform-translate-scale, translate(0px, 0px) scale(1));
+  transform-origin: center center;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+/* ============================================================================
+   component-tree — spacer elements with dynamic heights
+   =========================================================================== */
+
+.component-tree-spacer {
+  height: var(--spacer-height, 0);
+}
+
+/* ============================================================================
+   PreviewPane — preview with dynamic opacity
+   =========================================================================== */
+
+.preview-pane-iframe {
+  opacity: var(--preview-opacity, 1);
+}
+
+/* ============================================================================
+   InspectorPanel — pane containers with dynamic dimensions
+   =========================================================================== */
+
+.inspector-edit-studio-panel {
+  max-height: 30vh;
+}
+
+.inspector-panes-container {
+  display: flex;
+  flex-direction: row;
+  height: 100%;
+}
+
+.inspector-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex-basis: 0%;
+  flex-grow: var(--pane-flex-grow, 1);
+  flex-shrink: 1;
+}
+
+.inspector-pane-tree {
+  min-width: 150px;
+}
+
+.inspector-pane-preview {
+  min-width: 200px;
+}
+
+.inspector-pane-code {
+  min-width: 300px;
+}

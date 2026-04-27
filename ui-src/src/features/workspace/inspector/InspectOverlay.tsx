@@ -53,7 +53,9 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isHoverRect(value: unknown): value is { x: number; y: number; width: number; height: number } {
+function isHoverRect(
+  value: unknown,
+): value is { x: number; y: number; width: number; height: number } {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return false;
   }
@@ -72,7 +74,7 @@ export function InspectOverlay({
   onToggleInspect,
   onSelectNode,
   iframeRef,
-  iframeLoadVersion
+  iframeLoadVersion,
 }: InspectOverlayProps): JSX.Element {
   const [overlayRect, setOverlayRect] = useState<OverlayRect | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -104,7 +106,7 @@ export function InspectOverlay({
       }
       targetWindow.postMessage(message, previewOrigin);
     },
-    [iframeRef, resolvePreviewOrigin]
+    [iframeRef, resolvePreviewOrigin],
   );
 
   // Send enable/disable messages to the iframe (also re-send on iframe load)
@@ -114,7 +116,7 @@ export function InspectOverlay({
       if (activeSessionToken) {
         postInspectControlMessage({
           type: "inspect:disable",
-          sessionToken: activeSessionToken
+          sessionToken: activeSessionToken,
         });
       }
       sessionTokenRef.current = null;
@@ -130,7 +132,7 @@ export function InspectOverlay({
     }
     postInspectControlMessage({
       type: "inspect:enable",
-      sessionToken: sessionTokenRef.current
+      sessionToken: sessionTokenRef.current,
     });
   }, [inspectEnabled, iframeLoadVersion, postInspectControlMessage]);
 
@@ -147,15 +149,20 @@ export function InspectOverlay({
       postInspectControlMessage({
         type: "inspect:scope:set",
         sessionToken: activeSessionToken,
-        irNodeId: activeScopeNodeId
+        irNodeId: activeScopeNodeId,
       });
       return;
     }
     postInspectControlMessage({
       type: "inspect:scope:clear",
-      sessionToken: activeSessionToken
+      sessionToken: activeSessionToken,
     });
-  }, [activeScopeNodeId, inspectEnabled, iframeLoadVersion, postInspectControlMessage]);
+  }, [
+    activeScopeNodeId,
+    inspectEnabled,
+    iframeLoadVersion,
+    postInspectControlMessage,
+  ]);
 
   // Listen for postMessage from the iframe — compute overlay rect in the event callback
   useEffect(() => {
@@ -183,7 +190,8 @@ export function InspectOverlay({
         return;
       }
 
-      const previewOrigin = expectedPreviewOriginRef.current ?? resolvePreviewOrigin();
+      const previewOrigin =
+        expectedPreviewOriginRef.current ?? resolvePreviewOrigin();
       if (!previewOrigin || event.origin !== previewOrigin) {
         return;
       }
@@ -214,7 +222,8 @@ export function InspectOverlay({
           top: iframeRect.top - containerRect.top + data.rect.y,
           width: data.rect.width,
           height: data.rect.height,
-          irNodeName: typeof data.irNodeName === "string" ? data.irNodeName : ""
+          irNodeName:
+            typeof data.irNodeName === "string" ? data.irNodeName : "",
         });
       }
 
@@ -235,7 +244,11 @@ export function InspectOverlay({
   const effectiveOverlayRect = inspectEnabled ? overlayRect : null;
 
   return (
-    <div ref={overlayRef} className="pointer-events-none absolute inset-0" data-testid="inspect-overlay-container">
+    <div
+      ref={overlayRef}
+      className="pointer-events-none absolute inset-0"
+      data-testid="inspect-overlay-container"
+    >
       {/* Toggle button — always pointer-events-auto */}
       <div className="pointer-events-auto absolute right-3 top-3 z-20">
         <button
@@ -248,7 +261,9 @@ export function InspectOverlay({
               : "border-[#333333] bg-[#000000]/85 text-white/70 hover:border-[#4eba87]/40 hover:text-[#4eba87]"
           }`}
           aria-pressed={inspectEnabled}
-          title={inspectEnabled ? "Disable inspect mode" : "Enable inspect mode"}
+          title={
+            inspectEnabled ? "Disable inspect mode" : "Enable inspect mode"
+          }
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
@@ -272,33 +287,26 @@ export function InspectOverlay({
         <>
           <div
             data-testid="inspect-highlight"
-            style={{
-              position: "absolute",
-              left: effectiveOverlayRect.left,
-              top: effectiveOverlayRect.top,
-              width: effectiveOverlayRect.width,
-              height: effectiveOverlayRect.height,
-              border: "2px solid rgba(59, 130, 246, 0.8)",
-              background: "rgba(59, 130, 246, 0.15)",
-              transition: "all 80ms ease",
-              pointerEvents: "none"
-            }}
+            className="inspect-overlay"
+            style={
+              {
+                "--overlay-left": `${effectiveOverlayRect.left}px`,
+                "--overlay-top": `${effectiveOverlayRect.top}px`,
+                "--overlay-width": `${effectiveOverlayRect.width}px`,
+                "--overlay-height": `${effectiveOverlayRect.height}px`,
+              } as React.CSSProperties
+            }
           />
           {effectiveOverlayRect.irNodeName ? (
             <div
               data-testid="inspect-tooltip"
-              style={{
-                position: "absolute",
-                left: effectiveOverlayRect.left,
-                top: Math.max(0, effectiveOverlayRect.top - 22),
-                background: "#1e293b",
-                color: "#f8fafc",
-                font: "11px/1.3 system-ui, sans-serif",
-                padding: "2px 6px",
-                borderRadius: 3,
-                whiteSpace: "nowrap",
-                pointerEvents: "none"
-              }}
+              className="inspect-overlay-tooltip"
+              style={
+                {
+                  "--tooltip-left": `${effectiveOverlayRect.left}px`,
+                  "--tooltip-top": `${Math.max(0, effectiveOverlayRect.top - 28)}px`,
+                } as React.CSSProperties
+              }
             >
               {effectiveOverlayRect.irNodeName}
             </div>
