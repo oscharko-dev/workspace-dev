@@ -225,6 +225,24 @@
 
 .dv-line-number {
   color: var(--dv-line-number-color);
+  background-color: var(--dv-gutter-bg, transparent);
+}
+
+.dv-diff-row {
+  background-color: var(--dv-diff-row-bg, transparent);
+  border-left: var(--dv-diff-row-border-left, none);
+}
+
+.dv-gutter-bg {
+  background-color: var(--dv-gutter-bg, transparent);
+}
+
+.dv-diff-prefix {
+  color: var(--dv-diff-prefix-color, inherit);
+}
+
+.dv-diff-content {
+  color: var(--dv-diff-content-color, inherit);
 }
 
 /* --------------------------------------------------------------------------
@@ -870,7 +888,9 @@
    =========================================================================== */
 
 .code-pane-toggle-btn {
-  /* borderColor, backgroundColor, color set via CSS Custom Properties for active state */
+  border-color: var(--code-pane-toggle-border, #333333);
+  background-color: var(--code-pane-toggle-bg, transparent);
+  color: var(--code-pane-toggle-color, rgba(255, 255, 255, 0.7));
 }
 
 .code-pane-split-pane {

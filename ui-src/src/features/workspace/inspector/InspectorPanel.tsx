@@ -22,6 +22,7 @@ import { PreviewPane } from "./PreviewPane";
 import { CodePane, type HighlightRange } from "./CodePane";
 import { ComponentTree, type TreeNode } from "./component-tree";
 import { findNodePath, useStreamingTreeNodes } from "./component-tree-utils";
+import type { InspectorCSSProperties } from "./types";
 import {
   createInitialPipelineState,
   postTokenDecisions,
@@ -6262,7 +6263,7 @@ export function InspectorPanel({
               treePaneStyle
                 ? ({
                     "--pane-flex-grow": treePaneStyle.flexGrow,
-                  } as any)
+                  } as InspectorCSSProperties)
                 : undefined
             }
           >
@@ -6387,8 +6388,8 @@ export function InspectorPanel({
               ? ({
                   "--pane-flex-grow": previewPaneStyle.flexGrow,
                   flex: 1,
-                } as any)
-              : ({ flex: 1 } as any)
+                } as InspectorCSSProperties)
+              : ({ flex: 1 } as InspectorCSSProperties)
           }
         >
           {previewRecoveryMessage ? (
@@ -6452,8 +6453,8 @@ export function InspectorPanel({
               ? ({
                   "--pane-flex-grow": codePaneStyle.flexGrow,
                   flex: 1,
-                } as any)
-              : ({ flex: 1 } as any)
+                } as InspectorCSSProperties)
+              : ({ flex: 1 } as InspectorCSSProperties)
           }
         >
           {(activePipeline.stage === "ready" ||

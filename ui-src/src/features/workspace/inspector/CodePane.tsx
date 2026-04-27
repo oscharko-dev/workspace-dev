@@ -11,6 +11,7 @@ import {
 import { CodeViewer, type HighlightRange } from "./CodeViewer";
 import { DiffViewer } from "./DiffViewer";
 import { Breadcrumb } from "./Breadcrumb";
+import type { InspectorCSSProperties } from "./types";
 import { ScopedCodeModeSelector } from "./ScopedCodeModeSelector";
 import type { BreadcrumbSegment } from "./component-tree-utils";
 import type { CodeBoundaryEntry } from "./code-boundaries";
@@ -528,13 +529,19 @@ export function CodePane({
               setSplitEnabled((v) => !v);
             }}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40 code-pane-toggle-btn"
-            style={{
-              borderColor: isSplitActive ? "#4eba87" : "#333333",
-              backgroundColor: isSplitActive
-                ? "rgba(78, 186, 135, 0.15)"
-                : "transparent",
-              color: isSplitActive ? "#4eba87" : "rgba(255,255,255,0.7)",
-            }}
+            style={
+              {
+                "--code-pane-toggle-border": isSplitActive
+                  ? "#4eba87"
+                  : "#333333",
+                "--code-pane-toggle-bg": isSplitActive
+                  ? "rgba(78, 186, 135, 0.15)"
+                  : "transparent",
+                "--code-pane-toggle-color": isSplitActive
+                  ? "#4eba87"
+                  : "rgba(255,255,255,0.7)",
+              } as InspectorCSSProperties
+            }
           >
             <SplitViewIcon />
             {isSplitActive ? "Split: On" : "Split"}
@@ -548,13 +555,19 @@ export function CodePane({
               setDiffEnabled((v) => !v);
             }}
             className="inline-flex cursor-pointer items-center gap-1.5 rounded border px-2 py-1 transition disabled:cursor-default disabled:opacity-40 code-pane-toggle-btn"
-            style={{
-              borderColor: isDiffActive ? "#4eba87" : "#333333",
-              backgroundColor: isDiffActive
-                ? "rgba(78, 186, 135, 0.15)"
-                : "transparent",
-              color: isDiffActive ? "#4eba87" : "rgba(255,255,255,0.7)",
-            }}
+            style={
+              {
+                "--code-pane-toggle-border": isDiffActive
+                  ? "#4eba87"
+                  : "#333333",
+                "--code-pane-toggle-bg": isDiffActive
+                  ? "rgba(78, 186, 135, 0.15)"
+                  : "transparent",
+                "--code-pane-toggle-color": isDiffActive
+                  ? "#4eba87"
+                  : "rgba(255,255,255,0.7)",
+              } as InspectorCSSProperties
+            }
           >
             <DiffIcon />
             {isDiffActive ? "Diff: On" : "Diff"}

@@ -28,6 +28,7 @@ import {
   type DiffLine,
   type DiffResult,
 } from "../../../lib/diff";
+import type { InspectorCSSProperties } from "./types";
 import {
   getPreferredTheme,
   type HighlightTheme,
@@ -506,19 +507,25 @@ export function DiffViewer({
                 }}
                 data-testid={`diff-line-${diffLine.kind}`}
                 data-in-focus={inFocus ? "true" : undefined}
-                className="flex text-xs leading-relaxed"
-                style={{
-                  backgroundColor: lineBg,
-                  borderLeft: colors.border
-                    ? `3px solid ${colors.border}`
-                    : undefined,
-                }}
+                className="dv-diff-row flex text-xs leading-relaxed"
+                style={
+                  {
+                    "--dv-diff-row-bg": lineBg,
+                    "--dv-diff-row-border-left": colors.border
+                      ? `3px solid ${colors.border}`
+                      : "none",
+                  } as InspectorCSSProperties
+                }
               >
                 {/* Old line number gutter */}
                 <span
                   data-testid="diff-old-line-number"
                   className="dv-line-number inline-block w-10 shrink-0 pr-1 text-right select-none font-mono"
-                  style={{ backgroundColor: colors.gutter }}
+                  style={
+                    {
+                      "--dv-gutter-bg": colors.gutter,
+                    } as InspectorCSSProperties
+                  }
                 >
                   {diffLine.oldLineNumber ?? ""}
                 </span>
@@ -527,23 +534,35 @@ export function DiffViewer({
                 <span
                   data-testid="diff-new-line-number"
                   className="dv-line-number inline-block w-10 shrink-0 pr-2 text-right select-none font-mono"
-                  style={{ backgroundColor: colors.gutter }}
+                  style={
+                    {
+                      "--dv-gutter-bg": colors.gutter,
+                    } as InspectorCSSProperties
+                  }
                 >
                   {diffLine.newLineNumber ?? ""}
                 </span>
 
                 {/* Diff prefix (+/-/space) */}
                 <span
-                  className="inline-block w-4 shrink-0 select-none text-center font-mono"
-                  style={{ color: prefixColor }}
+                  className="dv-diff-prefix inline-block w-4 shrink-0 select-none text-center font-mono"
+                  style={
+                    {
+                      "--dv-diff-prefix-color": prefixColor,
+                    } as InspectorCSSProperties
+                  }
                 >
                   {prefix}
                 </span>
 
                 {/* Line content */}
                 <pre
-                  className={`m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
-                  style={{ color: lineContentColor }}
+                  className={`dv-diff-content m-0 min-w-0 flex-1 font-mono ${wordWrap ? "whitespace-pre-wrap break-all" : "whitespace-pre"}`}
+                  style={
+                    {
+                      "--dv-diff-content-color": lineContentColor,
+                    } as InspectorCSSProperties
+                  }
                 >
                   {diffLine.content}
                 </pre>
