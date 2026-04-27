@@ -434,50 +434,17 @@ const validateSourceRef = (
   if (kindOk) {
     const kind = ref.kind as TestIntentSourceKind;
     const isCustom = SUPPORTING_KINDS.has(kind);
+    const isCustomMarkdown = kind === "custom_markdown";
     if (isCustom) {
-      if (ref.inputFormat === undefined) {
-        result.push({
-          code: "custom_input_format_required",
-          path: `sources[${index}].inputFormat`,
-        });
-      } else if (
-        typeof ref.inputFormat !== "string" ||
-        !ALL_FORMATS.has(ref.inputFormat as TestIntentCustomInputFormat)
-      ) {
-        result.push({
-          code: "custom_input_format_invalid",
-          path: `sources[${index}].inputFormat`,
-        });
-      }
-      const isMarkdown = ref.inputFormat === "markdown";
-      if (!isMarkdown) {
-        if (ref.markdownSectionPath !== undefined) {
+      if (isCustomMarkdown) {
+        // custom_markdown is intrinsically Markdown; inputFormat must be absent.
+        if (ref.inputFormat !== undefined) {
           result.push({
-            code: "markdown_metadata_only_for_custom",
-            path: `sources[${index}].markdownSectionPath`,
-            detail: "markdown_format_required",
+            code: "custom_input_format_invalid",
+            path: `sources[${index}].inputFormat`,
+            detail: "custom_markdown_kind_does_not_use_inputFormat",
           });
         }
-        if (ref.noteEntryId !== undefined) {
-          result.push({
-            code: "markdown_metadata_only_for_custom",
-            path: `sources[${index}].noteEntryId`,
-            detail: "markdown_format_required",
-          });
-        }
-        if (ref.redactedMarkdownHash !== undefined) {
-          result.push({
-            code: "markdown_hash_only_for_markdown",
-            path: `sources[${index}].redactedMarkdownHash`,
-          });
-        }
-        if (ref.plainTextDerivativeHash !== undefined) {
-          result.push({
-            code: "markdown_hash_only_for_markdown",
-            path: `sources[${index}].plainTextDerivativeHash`,
-          });
-        }
-      } else {
         if (
           typeof ref.redactedMarkdownHash !== "string" ||
           !HEX64.test(ref.redactedMarkdownHash)
@@ -495,6 +462,69 @@ const validateSourceRef = (
             code: "markdown_hash_required",
             path: `sources[${index}].plainTextDerivativeHash`,
           });
+        }
+      } else {
+        if (ref.inputFormat === undefined) {
+          result.push({
+            code: "custom_input_format_required",
+            path: `sources[${index}].inputFormat`,
+          });
+        } else if (
+          typeof ref.inputFormat !== "string" ||
+          !ALL_FORMATS.has(ref.inputFormat as TestIntentCustomInputFormat)
+        ) {
+          result.push({
+            code: "custom_input_format_invalid",
+            path: `sources[${index}].inputFormat`,
+          });
+        }
+        const isMarkdown = ref.inputFormat === "markdown";
+        if (!isMarkdown) {
+          if (ref.markdownSectionPath !== undefined) {
+            result.push({
+              code: "markdown_metadata_only_for_custom",
+              path: `sources[${index}].markdownSectionPath`,
+              detail: "markdown_format_required",
+            });
+          }
+          if (ref.noteEntryId !== undefined) {
+            result.push({
+              code: "markdown_metadata_only_for_custom",
+              path: `sources[${index}].noteEntryId`,
+              detail: "markdown_format_required",
+            });
+          }
+          if (ref.redactedMarkdownHash !== undefined) {
+            result.push({
+              code: "markdown_hash_only_for_markdown",
+              path: `sources[${index}].redactedMarkdownHash`,
+            });
+          }
+          if (ref.plainTextDerivativeHash !== undefined) {
+            result.push({
+              code: "markdown_hash_only_for_markdown",
+              path: `sources[${index}].plainTextDerivativeHash`,
+            });
+          }
+        } else {
+          if (
+            typeof ref.redactedMarkdownHash !== "string" ||
+            !HEX64.test(ref.redactedMarkdownHash)
+          ) {
+            result.push({
+              code: "markdown_hash_required",
+              path: `sources[${index}].redactedMarkdownHash`,
+            });
+          }
+          if (
+            typeof ref.plainTextDerivativeHash !== "string" ||
+            !HEX64.test(ref.plainTextDerivativeHash)
+          ) {
+            result.push({
+              code: "markdown_hash_required",
+              path: `sources[${index}].plainTextDerivativeHash`,
+            });
+          }
         }
       }
     } else {

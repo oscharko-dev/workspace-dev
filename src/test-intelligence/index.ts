@@ -620,3 +620,10 @@ export {
   type Wave4EvalSourceMixResult,
   type WriteWave4ProductionReadinessEvalReportResult,
 } from "./multi-source-eval.js";
+export {
+  computeSourceMixPlanHash,
+  isSourceMixPlannerRefusalCode,
+  planSourceMix,
+  writeSourceMixPlan,
+  type SourceMixPlan,
+} from "./source-mix-planner.js";

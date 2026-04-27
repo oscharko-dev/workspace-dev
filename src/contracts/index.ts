@@ -145,7 +145,7 @@ export interface TestIntelligenceTransferPrincipal {
 }
 
 /** Contract version for the opt-in test-intelligence surface. */
-export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.3.0" as const;
+export const TEST_INTELLIGENCE_CONTRACT_VERSION = "1.4.0" as const;
 
 /** Schema version for generated test case payloads. */
 export const GENERATED_TEST_CASE_SCHEMA_VERSION = "1.0.0" as const;
@@ -2695,7 +2695,8 @@ export interface BusinessTestIntentIr {
 /**
  * Source kinds recognised by the multi-source Test Intent ingestion
  * pipeline (Issue #1431). The first three are existing Figma kinds; the
- * remaining four are introduced by Wave 4 issues 4.B–4.E.
+ * remaining four are introduced by Wave 4 issues 4.B–4.E. `custom_markdown`
+ * is added by Issue #1441 as a dedicated Markdown supporting source kind.
  */
 export const ALLOWED_TEST_INTENT_SOURCE_KINDS = [
   "figma_local_json",
@@ -2705,6 +2706,7 @@ export const ALLOWED_TEST_INTENT_SOURCE_KINDS = [
   "jira_paste",
   "custom_text",
   "custom_structured",
+  "custom_markdown",
 ] as const;
 
 /** Discriminated source-kind alias derived from {@link ALLOWED_TEST_INTENT_SOURCE_KINDS}. */
@@ -2730,11 +2732,15 @@ export type PrimaryTestIntentSourceKind =
 
 /**
  * Supporting (non-primary) source kinds — may only appear alongside at
- * least one primary source.
+ * least one primary source. `custom_markdown` is a dedicated Markdown
+ * supporting source kind (Issue #1441); it always carries
+ * `redactedMarkdownHash` + `plainTextDerivativeHash` and never requires
+ * `inputFormat` since its format is intrinsically Markdown.
  */
 export const SUPPORTING_TEST_INTENT_SOURCE_KINDS = [
   "custom_text",
   "custom_structured",
+  "custom_markdown",
 ] as const;
 
 /** Subset alias for supporting source kinds. */
@@ -7009,9 +7015,137 @@ export interface Wave4ProductionReadinessEvalReport {
   rawPasteBytesPersisted: false;
 }
 
+// ---------------------------------------------------------------------------
+// Source-mix planner contracts (Issue #1441, Wave 4.K)
+// ---------------------------------------------------------------------------
+
+/** Schema version for persisted `source-mix-plan.json` artifacts. */
+export const SOURCE_MIX_PLAN_SCHEMA_VERSION = "1.0.0" as const;
+
+/** Canonical filename for the deterministic source-mix plan artifact. */
+export const SOURCE_MIX_PLAN_ARTIFACT_FILENAME =
+  "source-mix-plan.json" as const;
+
+/**
+ * All supported source-mix identifiers. Each value represents a distinct
+ * combination of primary and supporting source kinds that the planner accepts.
+ * The planner rejects any combination not listed here with
+ * `unsupported_source_mix`.
+ */
+export const ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS = [
+  "figma_only",
+  "jira_rest_only",
+  "jira_paste_only",
+  "figma_jira_rest",
+  "figma_jira_paste",
+  "figma_jira_mixed",
+  "jira_mixed",
+] as const;
+
+/** Discriminated union of all supported source-mix kinds (Issue #1441). */
+export type TestIntentSourceMixKind =
+  (typeof ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS)[number];
+
+/**
+ * Prompt section tag identifying the role of a compiled source segment in the
+ * LLM user prompt. The planner populates {@link SourceMixPlan.promptSections}
+ * with the ordered list of sections that the prompt compiler must emit.
+ *
+ * - `figma_intent` — redacted Figma Business Test Intent IR.
+ * - `jira_requirements` — one or more normalized Jira Issue IRs.
+ * - `custom_context` — structured-attribute and/or plain-text custom context.
+ * - `custom_context_markdown` — Markdown custom context (dedicated kind).
+ * - `reconciliation_report` — cross-source conflict and field-provenance summary.
+ */
+export type SourceMixPlanPromptSection =
+  | "figma_intent"
+  | "jira_requirements"
+  | "custom_context"
+  | "custom_context_markdown"
+  | "reconciliation_report";
+
+/**
+ * Deterministic plan produced by the source-mix planner (Issue #1441).
+ *
+ * The plan captures which source combinations were selected for a job, what
+ * visual-sidecar requirement applies, and in what order the prompt compiler
+ * must emit role-tagged source sections. The `sourceMixPlanHash` participates
+ * in the replay-cache key so a different source mix always forces a cache miss.
+ *
+ * Negative invariants (TYPE-LEVEL `false`):
+ * - `figmaSourceRequired` is `false` on Jira-only and custom-enriched-Jira plans.
+ * - `visualSidecarRequired` is `false` whenever `visualSidecarRequirement` is
+ *   `"not_applicable"`.
+ * - `rawJiraResponsePersisted` is always `false` — only normalized IRs are stored.
+ * - `rawPasteBytesPersisted` is always `false` — only normalized hashes are stored.
+ */
+export interface SourceMixPlan {
+  /** Schema version stamp. */
+  version: typeof SOURCE_MIX_PLAN_SCHEMA_VERSION;
+  /** Discriminated mix kind derived from the source envelope. */
+  kind: TestIntentSourceMixKind;
+  /** Ordered source IDs classified as primary sources. */
+  primarySourceIds: string[];
+  /** Ordered source IDs classified as supporting sources. */
+  supportingSourceIds: string[];
+  /**
+   * Whether the job requires a visual sidecar pass.
+   * - `required` — at least one Figma source is present and visual captures are expected.
+   * - `optional` — Figma is present but no capture set was supplied.
+   * - `not_applicable` — Jira-only or custom-only; must be `false` at runtime.
+   */
+  visualSidecarRequirement: "required" | "optional" | "not_applicable";
+  /**
+   * Ordered list of prompt sections the compiler must emit for this plan.
+   * The compiler must emit each listed section and MUST NOT emit unlisted sections.
+   */
+  promptSections: SourceMixPlanPromptSection[];
+  /**
+   * SHA-256 of the canonical plan payload (computed before this field is set,
+   * so the hash covers `kind`, `primarySourceIds`, `supportingSourceIds`,
+   * `visualSidecarRequirement`, and `promptSections`).
+   */
+  sourceMixPlanHash: string;
+  /** Hard invariant: only normalized IRs are stored, never raw Jira API responses. */
+  rawJiraResponsePersisted: false;
+  /** Hard invariant: only redacted hashes are stored, never raw paste bytes. */
+  rawPasteBytesPersisted: false;
+}
+
+/**
+ * Refusal codes emitted by the source-mix planner when it rejects an envelope.
+ * All refusals are fail-closed; no partial artifact is written.
+ */
+export const ALLOWED_SOURCE_MIX_PLANNER_REFUSAL_CODES = [
+  "primary_source_required",
+  "unsupported_source_mix",
+  "duplicate_source_id",
+  "duplicate_jira_issue_key",
+  "custom_markdown_hash_required",
+  "custom_markdown_input_format_invalid",
+  "source_mix_plan_hash_mismatch",
+  "mode_gate_not_satisfied",
+] as const;
+
+/** Refusal code alias for the source-mix planner. */
+export type SourceMixPlannerRefusalCode =
+  (typeof ALLOWED_SOURCE_MIX_PLANNER_REFUSAL_CODES)[number];
+
+/** A single validation issue surfaced by the source-mix planner. */
+export interface SourceMixPlannerIssue {
+  code: SourceMixPlannerRefusalCode;
+  path?: string;
+  detail?: string;
+}
+
+/** Result of source-mix planning (Issue #1441). */
+export type SourceMixPlannerResult =
+  | { ok: true; plan: SourceMixPlan }
+  | { ok: false; issues: SourceMixPlannerIssue[] };
+
 /**
  * Current contract version constant.
  * Must be bumped according to CONTRACT_CHANGELOG.md rules.
  * Package version alignment is documented in VERSIONING.md.
  */
-export const CONTRACT_VERSION = "4.14.0" as const;
+export const CONTRACT_VERSION = "4.15.0" as const;

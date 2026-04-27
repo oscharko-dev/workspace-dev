@@ -31,6 +31,37 @@ All changes to the public contract surface of `workspace-dev` are documented her
 
 ---
 
+## [4.15.0] - 2026-04-27
+
+### Added (Issue #1441, Wave 4.K)
+
+Source-mix orchestration and Jira-only generation path. Purely additive —
+all existing consumers are unaffected.
+
+**New constants:**
+
+- `SOURCE_MIX_PLAN_SCHEMA_VERSION` — schema version "1.0.0" for the source-mix plan artifact.
+- `SOURCE_MIX_PLAN_ARTIFACT_FILENAME` — artifact filename "source-mix-plan.json".
+- `ALLOWED_TEST_INTENT_SOURCE_MIX_KINDS` — 7 supported source-mix kind identifiers.
+- `ALLOWED_SOURCE_MIX_PLANNER_REFUSAL_CODES` — 8 structured refusal codes for the source-mix planner.
+
+**New types:**
+
+- `TestIntentSourceMixKind` — discriminated union of 7 source-mix kind strings.
+- `SourceMixPlanPromptSection` — role-tagged prompt section emitted by the planner.
+- `SourceMixPlan` — deterministic plan with `sourceMixPlanHash`, `visualSidecarRequirement`, and hard `false` privacy invariants.
+- `SourceMixPlannerRefusalCode` — union of planner refusal code strings.
+- `SourceMixPlannerIssue` — structured issue record returned on refusal.
+- `SourceMixPlannerResult` — discriminated union `{ ok: true; plan } | { ok: false; issues }`.
+
+**New `ALLOWED_TEST_INTENT_SOURCE_KINDS` member:** `"custom_markdown"` (intrinsically-Markdown supporting source; requires `redactedMarkdownHash` + `plainTextDerivativeHash`; forbids `inputFormat`).
+
+**New `SUPPORTING_TEST_INTENT_SOURCE_KINDS` member:** `"custom_markdown"`.
+
+**`TEST_INTELLIGENCE_CONTRACT_VERSION` bumped:** `1.3.0` → `1.4.0`.
+
+---
+
 ## [4.14.0] - 2026-04-27
 
 ### Added (Issue #1439, Wave 4.I)
