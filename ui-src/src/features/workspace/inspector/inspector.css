@@ -337,6 +337,7 @@
 .sp-breakdown-fill {
   position: absolute;
   inset: 0;
+  width: var(--sp-breakdown-width, 0%);
 }
 
 .sp-breakdown-fill--high {
@@ -894,13 +895,16 @@
 }
 
 .code-pane-split-pane {
-  /* flexBasis set via CSS Custom Property for dynamic width */
   flex-grow: 0;
   flex-shrink: 0;
+  flex-basis: var(--code-pane-flex-basis, 50%);
 }
 
 .code-pane-split-divider {
-  /* touchAction is static */
+  touch-action: none;
+}
+
+.inspector-splitter {
   touch-action: none;
 }
 

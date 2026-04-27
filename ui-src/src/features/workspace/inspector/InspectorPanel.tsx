@@ -6363,8 +6363,7 @@ export function InspectorPanel({
             aria-valuemax={100}
             aria-valuenow={treeSeparatorNow}
             data-testid="inspector-splitter-tree-preview"
-            className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
-            style={{ touchAction: "none" }}
+            className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center inspector-splitter"
             onPointerDown={handleSplitterPointerDown("tree-preview")}
             onPointerMove={handleSplitterPointerMove}
             onPointerUp={handleSplitterPointerUp}
@@ -6429,8 +6428,7 @@ export function InspectorPanel({
           aria-valuemax={100}
           aria-valuenow={previewSeparatorNow}
           data-testid="inspector-splitter-preview-code"
-          className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center"
-          style={{ touchAction: "none" }}
+          className="group hidden shrink-0 cursor-col-resize select-none focus:outline-none xl:flex xl:w-3 xl:items-stretch xl:justify-center inspector-splitter"
           onPointerDown={handleSplitterPointerDown("preview-code")}
           onPointerMove={handleSplitterPointerMove}
           onPointerUp={handleSplitterPointerUp}

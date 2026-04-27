@@ -711,7 +711,11 @@ export function CodePane({
               <div
                 data-testid="inspector-split-left"
                 className="code-pane-split-pane min-w-0 overflow-hidden"
-                style={{ flexBasis: `${splitRatio.toFixed(2)}%` }}
+                style={
+                  {
+                    "--code-pane-flex-basis": `${splitRatio.toFixed(2)}%`,
+                  } as InspectorCSSProperties
+                }
               >
                 <CodeViewer
                   themeMode="dark"
