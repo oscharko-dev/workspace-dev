@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 
 import {
@@ -118,6 +125,8 @@ const sourceKindLabel = (kind: TestIntentSourceKind): string => {
       return "Custom text";
     case "custom_structured":
       return "Custom attributes";
+    case "custom_markdown":
+      return "Custom Markdown";
   }
 };
 
@@ -145,7 +154,8 @@ const toSourceRecord = (ref: TestIntentSourceRef): InspectorSourceRecord => ({
     : {}),
 });
 
-const sourceDirPath = (runDir: string): string => path.join(runDir, SOURCES_DIR);
+const sourceDirPath = (runDir: string): string =>
+  path.join(runDir, SOURCES_DIR);
 
 const decisionsFilePath = (runDir: string): string =>
   path.join(runDir, CONFLICT_DECISIONS_FILENAME);
@@ -200,9 +210,7 @@ const readRemovedSourcesEnvelope = async (
   };
 };
 
-const readRemovedSourceIds = async (
-  runDir: string,
-): Promise<Set<string>> => {
+const readRemovedSourceIds = async (runDir: string): Promise<Set<string>> => {
   const envelope = await readRemovedSourcesEnvelope(runDir);
   return new Set(envelope.removedSources.map((record) => record.sourceId));
 };
@@ -264,7 +272,10 @@ const readBusinessIntent = async (
   runDir: string,
 ): Promise<BusinessTestIntentIr | undefined> => {
   try {
-    const raw = await readFile(path.join(runDir, BUSINESS_INTENT_IR_FILENAME), "utf8");
+    const raw = await readFile(
+      path.join(runDir, BUSINESS_INTENT_IR_FILENAME),
+      "utf8",
+    );
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) return undefined;
     return parsed as unknown as BusinessTestIntentIr;
@@ -280,9 +291,17 @@ const readSingleIssueSourceRef = async (
 ): Promise<TestIntentSourceRef | undefined> => {
   try {
     const [issueRaw, provenanceRaw] = await Promise.all([
-      readFile(path.join(runDir, SOURCES_DIR, sourceId, JIRA_ISSUE_IR_FILENAME), "utf8"),
       readFile(
-        path.join(runDir, SOURCES_DIR, sourceId, JIRA_PASTE_PROVENANCE_FILENAME),
+        path.join(runDir, SOURCES_DIR, sourceId, JIRA_ISSUE_IR_FILENAME),
+        "utf8",
+      ),
+      readFile(
+        path.join(
+          runDir,
+          SOURCES_DIR,
+          sourceId,
+          JIRA_PASTE_PROVENANCE_FILENAME,
+        ),
         "utf8",
       ).catch(() => undefined),
     ]);
@@ -375,7 +394,12 @@ const readCustomContextSourceRef = async (
 ): Promise<TestIntentSourceRef | undefined> => {
   try {
     const raw = await readFile(
-      path.join(runDir, SOURCES_DIR, sourceId, CUSTOM_CONTEXT_ARTIFACT_FILENAME),
+      path.join(
+        runDir,
+        SOURCES_DIR,
+        sourceId,
+        CUSTOM_CONTEXT_ARTIFACT_FILENAME,
+      ),
       "utf8",
     );
     const parsed = JSON.parse(raw) as Partial<CustomContextSource>;
@@ -440,8 +464,8 @@ export const listInspectorSourceRecords = async (
         continue;
       }
       const jiraRef = sourceId.startsWith("jira-rest-")
-        ? (await readSingleIssueSourceRef(runDir, sourceId, "jira_rest")) ??
-          (await readJiraIssueListSourceRef(runDir, sourceId))
+        ? ((await readSingleIssueSourceRef(runDir, sourceId, "jira_rest")) ??
+          (await readJiraIssueListSourceRef(runDir, sourceId)))
         : await readSingleIssueSourceRef(runDir, sourceId, "jira_paste");
       if (jiraRef !== undefined) {
         byId.set(sourceId, jiraRef);
@@ -730,7 +754,9 @@ export const resolveInspectorConflict = async (input: {
   | { ok: false; code: "conflict_not_found" | "conflict_resolution_invalid" }
 > => {
   const report = await readInspectorReconciliationReport(input.runDir);
-  const conflict = report?.conflicts.find((candidate) => candidate.conflictId === input.conflictId);
+  const conflict = report?.conflicts.find(
+    (candidate) => candidate.conflictId === input.conflictId,
+  );
   if (conflict === undefined) {
     return { ok: false, code: "conflict_not_found" };
   }

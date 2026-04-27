@@ -71,8 +71,9 @@ const customTextRef = (id: string, seed = id): TestIntentSourceRef => ({
   inputFormat: "plain_text",
 });
 
-test("ALLOWED_TEST_INTENT_SOURCE_KINDS covers all seven Wave 4 kinds", () => {
+test("ALLOWED_TEST_INTENT_SOURCE_KINDS covers all eight Wave 4.K kinds", () => {
   assert.deepEqual([...ALLOWED_TEST_INTENT_SOURCE_KINDS].sort(), [
+    "custom_markdown",
     "custom_structured",
     "custom_text",
     "figma_local_json",
