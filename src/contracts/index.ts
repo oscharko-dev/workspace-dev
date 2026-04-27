@@ -5845,6 +5845,12 @@ export interface JiraSubTaskRecord {
   jiraIssueKey?: string;
   /** Failure classification when `outcome === "failed"`. */
   failureClass?: JiraWriteFailureClass;
+  /**
+   * Whether the failed sub-task attempt is safe to retry later. Present only
+   * for failed outcomes so persisted status can distinguish transient
+   * transport/rate-limit/server failures from permanent validation/auth faults.
+   */
+  retryable?: boolean;
   /** Sanitised, length-bounded failure detail; never carries URLs/tokens. */
   failureDetail?: string;
 }

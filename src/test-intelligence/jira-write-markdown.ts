@@ -199,6 +199,9 @@ const buildErrors = (input: JiraWriteMarkdownInput) => {
     lines.push("");
     lines.push(`- External ID: \`${record.externalId}\``);
     lines.push(`- Failure Class: \`${record.failureClass ?? "unknown"}\``);
+    if (record.retryable !== undefined) {
+      lines.push(`- Retryable: ${record.retryable ? "true" : "false"}`);
+    }
     if (record.failureDetail !== undefined) {
       lines.push(`- Failure Detail: ${sanitizeMarkdown(record.failureDetail)}`);
     }
@@ -268,6 +271,9 @@ const buildResponse = (record: JiraSubTaskRecord) => {
   }
   if (record.failureClass !== undefined) {
     lines.push(`- Failure Class: \`${record.failureClass}\``);
+  }
+  if (record.retryable !== undefined) {
+    lines.push(`- Retryable: ${record.retryable ? "true" : "false"}`);
   }
   if (record.failureDetail !== undefined) {
     lines.push(`- Failure Detail: ${sanitizeMarkdown(record.failureDetail)}`);
