@@ -22,6 +22,7 @@ import {
   createJiraGatewayClient,
   type JiraGatewayClient,
 } from "../test-intelligence/jira-gateway-client.js";
+import type { JiraWriteClient } from "../test-intelligence/jira-write-adapter.js";
 import { DEFAULT_FIGMA_PASTE_MAX_SELECTION_COUNT } from "../clipboard-envelope.js";
 import { DEFAULT_FIGMA_PASTE_MAX_ROOT_COUNT } from "../figma-payload-validation.js";
 import { LocalSyncError } from "../job-engine/local-sync.js";
@@ -214,6 +215,9 @@ async function createRequestHandlerApp({
   testIntelligenceReviewBearerToken,
   testIntelligenceReviewPrincipals,
   testIntelligenceJiraGatewayClient,
+  testIntelligenceJiraWriteBearerToken,
+  testIntelligenceAllowJiraWrite,
+  testIntelligenceJiraWriteClient,
   testIntelligenceArtifactRoot,
   workspaceRoot,
   outputRoot,
@@ -229,6 +233,9 @@ async function createRequestHandlerApp({
   testIntelligenceReviewBearerToken?: string;
   testIntelligenceReviewPrincipals?: readonly TestIntelligenceReviewPrincipal[];
   testIntelligenceJiraGatewayClient?: JiraGatewayClient;
+  testIntelligenceJiraWriteBearerToken?: string;
+  testIntelligenceAllowJiraWrite?: boolean;
+  testIntelligenceJiraWriteClient?: JiraWriteClient;
   testIntelligenceArtifactRoot?: string;
   workspaceRoot?: string;
   outputRoot?: string;
@@ -272,6 +279,15 @@ async function createRequestHandlerApp({
       ...(testIntelligenceJiraGatewayClient === undefined
         ? {}
         : { testIntelligenceJiraGatewayClient }),
+      ...(testIntelligenceJiraWriteBearerToken === undefined
+        ? {}
+        : { testIntelligenceJiraWriteBearerToken }),
+      ...(testIntelligenceAllowJiraWrite === undefined
+        ? {}
+        : { testIntelligenceAllowJiraWrite }),
+      ...(testIntelligenceJiraWriteClient === undefined
+        ? {}
+        : { testIntelligenceJiraWriteClient }),
       ...(testIntelligenceArtifactRoot === undefined
         ? {}
         : { testIntelligenceArtifactRoot }),
@@ -7124,6 +7140,158 @@ async function seedTiJob(
   const store = createFileSystemReviewStore({ destinationDir: artifactRoot });
   await store.seedSnapshot({ jobId, generatedAt, list, policy });
 }
+
+test("test-intelligence: PUT/GET Jira write config persists a safe markdown path", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-config-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    const markdownRoot = path.join(tempRoot, "jira-write-markdown");
+    await mkdir(artifactRoot, { recursive: true });
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceJiraWriteBearerToken: "jira-write-token",
+    });
+    try {
+      const putResponse = await app.inject({
+        method: "PUT",
+        url: "/workspace/test-intelligence/write/config",
+        headers: tiAuthHeader("jira-write-token"),
+        payload: {
+          outputPathMarkdown: `  ${markdownRoot}  `,
+          useDefaultOutputPath: false,
+        },
+      });
+      assert.equal(putResponse.statusCode, 200);
+      assert.deepEqual(putResponse.json<Record<string, unknown>>().config, {
+        outputPathMarkdown: markdownRoot,
+        useDefaultOutputPath: false,
+      });
+
+      const getResponse = await app.inject({
+        method: "GET",
+        url: "/workspace/test-intelligence/write/config",
+      });
+      assert.equal(getResponse.statusCode, 200);
+      assert.deepEqual(getResponse.json<Record<string, unknown>>().config, {
+        outputPathMarkdown: markdownRoot,
+        useDefaultOutputPath: false,
+      });
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: PUT Jira write config rejects traversal and NUL paths", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-config-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: tempRoot,
+      testIntelligenceJiraWriteBearerToken: "jira-write-token",
+    });
+    try {
+      for (const outputPathMarkdown of ["../escape", `bad\0path`]) {
+        const response = await app.inject({
+          method: "PUT",
+          url: "/workspace/test-intelligence/write/config",
+          headers: tiAuthHeader("jira-write-token"),
+          payload: {
+            outputPathMarkdown,
+            useDefaultOutputPath: false,
+          },
+        });
+        assert.equal(response.statusCode, 400);
+        assert.equal(
+          response.json<Record<string, unknown>>().error,
+          "INVALID_PATH",
+        );
+      }
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: PUT Jira write config fails closed without write bearer", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-config-"));
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: tempRoot,
+    });
+    try {
+      const response = await app.inject({
+        method: "PUT",
+        url: "/workspace/test-intelligence/write/config",
+        payload: {
+          outputPathMarkdown: path.join(tempRoot, "jira-write-markdown"),
+          useDefaultOutputPath: false,
+        },
+      });
+      assert.equal(response.statusCode, 503);
+      assert.equal(
+        response.json<Record<string, unknown>>().error,
+        "AUTHENTICATION_UNAVAILABLE",
+      );
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
+
+test("test-intelligence: POST Jira write dry-run uses configured admin and bearer gates", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const tempRoot = await mkdtemp(path.join(os.tmpdir(), "ti-jira-write-"));
+    const artifactRoot = path.join(tempRoot, "ti");
+    const markdownRoot = path.join(tempRoot, "jira-write-markdown");
+    await mkdir(artifactRoot, { recursive: true });
+    await seedTiJob(artifactRoot, "job-jira-write", {
+      policyDecision: "approved",
+    });
+    const { app, close } = await createRequestHandlerApp({
+      testIntelligenceEnabled: true,
+      testIntelligenceArtifactRoot: artifactRoot,
+      testIntelligenceJiraWriteBearerToken: "jira-write-token",
+      testIntelligenceAllowJiraWrite: true,
+    });
+    try {
+      const response = await app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/write/job-jira-write/jira-subtasks",
+        headers: tiAuthHeader("jira-write-token"),
+        payload: {
+          parentIssueKey: "PROJ-123",
+          dryRun: true,
+          outputPathMarkdown: markdownRoot,
+          useDefaultOutputPath: false,
+        },
+      });
+      assert.equal(response.statusCode, 200);
+      const body = response.json<Record<string, unknown>>();
+      assert.equal(body.ok, true);
+      assert.equal(body.refused, false);
+      assert.deepEqual(body.refusalCodes, []);
+      assert.equal(body.dryRun, true);
+      assert.equal(body.dryRunCount, 1);
+      assert.equal(body.createdCount, 0);
+      assert.equal(body.failedCount, 0);
+      const files = await readdir(markdownRoot);
+      assert.ok(files.includes("manifest.md"));
+      assert.ok(files.includes("summary.md"));
+      assert.ok(files.some((file) => file.startsWith("testcase-")));
+      assert.ok(files.some((file) => file.startsWith("jira-request-")));
+      assert.ok(files.some((file) => file.startsWith("jira-response-")));
+    } finally {
+      await close();
+      await rm(tempRoot, { recursive: true, force: true });
+    }
+  });
+});
 
 test("test-intelligence: 503 when feature gates are off", async () => {
   await withTestIntelligenceEnv(undefined, async () => {

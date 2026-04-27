@@ -245,6 +245,8 @@ interface BuildInputArgs {
   featureEnabled?: boolean;
   adminEnabled?: boolean;
   dryRun?: boolean;
+  outputPathMarkdown?: string;
+  useDefaultOutputPath?: boolean;
   policyOverrides?: Partial<TestCasePolicyReport>;
   validationOverrides?: Partial<TestCaseValidationReport>;
   visualOverrides?: Partial<VisualSidecarValidationReport>;
@@ -271,6 +273,12 @@ const buildInput = (
     parentIssueKey: args.parentIssueKey ?? PARENT_KEY,
     mode: "jira_subtasks",
     dryRun: args.dryRun ?? false,
+    ...(args.outputPathMarkdown !== undefined
+      ? { outputPathMarkdown: args.outputPathMarkdown }
+      : {}),
+    ...(args.useDefaultOutputPath !== undefined
+      ? { useDefaultOutputPath: args.useDefaultOutputPath }
+      : {}),
     approvedTestCases: buildList(cases),
     policyReport: buildPolicy(args.policyOverrides),
     validationReport: buildValidation(args.validationOverrides),
@@ -479,6 +487,24 @@ test("happy path creates one sub-task per approved test case", async () => {
     assert.equal(result.failedCount, 0);
     assert.equal(client.lookupCalls.length, 3);
     assert.equal(client.createCalls.length, 3);
+    const firstCreate = client.createCalls[0];
+    assert.ok(firstCreate);
+    assert.equal(firstCreate.parentIssueKey, PARENT_KEY);
+    assert.equal(firstCreate.fields.summary, "[tc-a] Case A");
+    assert.equal(firstCreate.fields.testCaseId, "tc-a");
+    assert.equal(firstCreate.fields.jobId, JOB_ID);
+    assert.equal(
+      firstCreate.fields.externalId,
+      computeJiraSubtaskExternalId({
+        jobId: JOB_ID,
+        testCaseId: "tc-a",
+        parentIssueKey: PARENT_KEY,
+      }),
+    );
+    assert.match(firstCreate.fields.description, /Objective:/u);
+    assert.match(firstCreate.fields.description, /Ensure a valid IBAN/u);
+    assert.match(firstCreate.fields.description, /Steps:/u);
+    assert.match(firstCreate.fields.description, /Expected Results:/u);
     const created = await readCreated(runDir);
     assert.equal(created.subtasks.length, 3);
     assert.equal(created.schemaVersion, JIRA_CREATED_SUBTASKS_SCHEMA_VERSION);
@@ -690,6 +716,38 @@ test("artifacts are written atomically under the run dir", async () => {
     const created = await readCreated(runDir);
     assert.equal(created.rawScreenshotsIncluded, false);
     assert.equal(created.credentialsIncluded, false);
+  });
+});
+
+test("markdown output path trims custom input and falls back to the default path", async () => {
+  await withTempDir(async (runDir) => {
+    const client = createMockClient();
+    const cases = [buildTestCase({ id: "tc-a" })];
+    const customOutputPath = join(runDir, "custom-jira-markdown");
+    const customResult = await runJiraSubtaskWrite(
+      buildInput(runDir, {
+        dryRun: true,
+        cases,
+        outputPathMarkdown: `   ${customOutputPath}   `,
+        useDefaultOutputPath: false,
+      }),
+      client,
+    );
+    assert.equal(customResult.markdownOutputPath, customOutputPath);
+
+    const defaultResult = await runJiraSubtaskWrite(
+      buildInput(runDir, {
+        dryRun: true,
+        cases,
+        outputPathMarkdown: "   /tmp/ignored-by-default   ",
+        useDefaultOutputPath: true,
+      }),
+      client,
+    );
+    assert.equal(
+      defaultResult.markdownOutputPath,
+      join(runDir, JIRA_WRITE_REPORT_ARTIFACT_DIRECTORY),
+    );
   });
 });
 

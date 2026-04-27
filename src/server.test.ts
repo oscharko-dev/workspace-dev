@@ -21,6 +21,7 @@ import {
   WORKSPACE_UI_CONTENT_SECURITY_POLICY,
 } from "./server/constants.js";
 import { createWorkspaceServer } from "./server.js";
+import { TEST_INTELLIGENCE_ENV } from "./contracts/index.js";
 
 const MODULE_DIR =
   typeof __dirname === "string"
@@ -32,6 +33,27 @@ const TEMPLATE_NODE_MODULES_ROOT = path.resolve(
 );
 const HEAVY_SERVER_JOB_TIMEOUT_MS = 60_000;
 const allocateTestPort = (): number => 0;
+
+async function withTestIntelligenceEnv<T>(
+  value: string | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  const previous = process.env[TEST_INTELLIGENCE_ENV];
+  if (value === undefined) {
+    delete process.env[TEST_INTELLIGENCE_ENV];
+  } else {
+    process.env[TEST_INTELLIGENCE_ENV] = value;
+  }
+  try {
+    return await run();
+  } finally {
+    if (previous === undefined) {
+      delete process.env[TEST_INTELLIGENCE_ENV];
+    } else {
+      process.env[TEST_INTELLIGENCE_ENV] = previous;
+    }
+  }
+}
 
 const createTempWorkspaceLayout = async (): Promise<{
   root: string;
@@ -600,12 +622,61 @@ test("workspace server starts and responds on /workspace", async () => {
     assert.equal(body.previewEnabled, true);
   } finally {
     await server.app.close().catch((error) => {
-      if (error instanceof Error && error.message !== "Server is already stopped.") {
+      if (
+        error instanceof Error &&
+        error.message !== "Server is already stopped."
+      ) {
         throw error;
       }
     });
     await rm(outputRoot, { recursive: true, force: true });
   }
+});
+
+test("workspace server wires Jira write bearer from public start options", async () => {
+  await withTestIntelligenceEnv("1", async () => {
+    const outputRoot = await createTempOutputRoot();
+    const port = allocateTestPort();
+    const server = await createWorkspaceServer({
+      port,
+      host: "127.0.0.1",
+      outputRoot,
+      fetchImpl: createFakeFigmaFetch(),
+      testIntelligence: {
+        enabled: true,
+        allowJiraWrite: true,
+        jiraWriteBearerToken: "jira-write-token",
+      },
+    });
+
+    try {
+      const response = await server.app.inject({
+        method: "POST",
+        url: "/workspace/test-intelligence/write/missing-job/jira-subtasks",
+        headers: { authorization: "Bearer jira-write-token" },
+        payload: {
+          parentIssueKey: "PROJ-123",
+          dryRun: true,
+          useDefaultOutputPath: true,
+        },
+      });
+      assert.equal(response.statusCode, 404);
+      assert.equal(
+        response.json<Record<string, unknown>>().error,
+        "JOB_NOT_FOUND",
+      );
+    } finally {
+      await server.app.close().catch((error) => {
+        if (
+          error instanceof Error &&
+          error.message !== "Server is already stopped."
+        ) {
+          throw error;
+        }
+      });
+      await rm(outputRoot, { recursive: true, force: true });
+    }
+  });
 });
 
 test("workspace server healthz endpoint", async () => {
@@ -635,7 +706,10 @@ test("workspace server healthz endpoint", async () => {
     assert.deepEqual(readyResponse.json(), { status: "ok", uptime: 0 });
   } finally {
     await server.app.close().catch((error) => {
-      if (error instanceof Error && error.message !== "Server is already stopped.") {
+      if (
+        error instanceof Error &&
+        error.message !== "Server is already stopped."
+      ) {
         throw error;
       }
     });
@@ -699,33 +773,48 @@ test("workspace server exposes draining readiness and rejects new mutating reque
       uptime: 0,
     });
 
-    const drainingSubmitResponse = await fetch(`${server.url}/workspace/submit`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
+    const drainingSubmitResponse = await fetch(
+      `${server.url}/workspace/submit`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: "{}",
+        signal: AbortSignal.timeout(1_000),
       },
-      body: "{}",
-      signal: AbortSignal.timeout(1_000),
-    });
+    );
     assert.equal(drainingSubmitResponse.status, 503);
-    const drainingSubmitBody = (await drainingSubmitResponse.json()) as Record<string, unknown>;
+    const drainingSubmitBody = (await drainingSubmitResponse.json()) as Record<
+      string,
+      unknown
+    >;
     assert.equal(drainingSubmitBody.error, "SERVER_DRAINING");
 
     finishInFlightRequest?.();
     const inFlightResponse = await inFlightResponsePromise;
     assert.equal(inFlightResponse.statusCode, 400);
-    const inFlightBody = JSON.parse(inFlightResponse.body) as Record<string, unknown>;
+    const inFlightBody = JSON.parse(inFlightResponse.body) as Record<
+      string,
+      unknown
+    >;
     assert.equal(inFlightBody.error, "VALIDATION_ERROR");
 
     await closePromise;
 
     await assert.rejects(
-      () => fetch(`${server.url}/workspace`, { signal: AbortSignal.timeout(1_000) }),
+      () =>
+        fetch(`${server.url}/workspace`, {
+          signal: AbortSignal.timeout(1_000),
+        }),
       /fetch failed|ECONNREFUSED/i,
     );
   } finally {
     await server.app.close().catch((error) => {
-      if (error instanceof Error && error.message !== "Server is already stopped.") {
+      if (
+        error instanceof Error &&
+        error.message !== "Server is already stopped."
+      ) {
         throw error;
       }
     });
@@ -767,13 +856,19 @@ test("workspace server terminates stalled requests after the shutdown timeout", 
     const shutdownStartedAt = Date.now();
     await server.app.close();
     const shutdownElapsedMs = Date.now() - shutdownStartedAt;
-    assert.ok(shutdownElapsedMs < 1_000, `Expected forced shutdown within 1s, got ${shutdownElapsedMs}ms`);
+    assert.ok(
+      shutdownElapsedMs < 1_000,
+      `Expected forced shutdown within 1s, got ${shutdownElapsedMs}ms`,
+    );
 
     const stalledRequestError = await stalledRequestPromise;
     assert.ok(stalledRequestError instanceof Error);
   } finally {
     await server.app.close().catch((error) => {
-      if (error instanceof Error && error.message !== "Server is already stopped.") {
+      if (
+        error instanceof Error &&
+        error.message !== "Server is already stopped."
+      ) {
         throw error;
       }
     });

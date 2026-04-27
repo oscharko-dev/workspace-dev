@@ -201,6 +201,38 @@ describe("parseInspectorTestIntelligenceRoute", () => {
     }
   });
 
+  test("parses /write/config as jira_write_config", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/write/config",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok) {
+      assert.equal(result.route.kind, "jira_write_config");
+    }
+  });
+
+  test("parses /write/<jobId>/jira-subtasks as jira_write_start", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/write/job-1/jira-subtasks",
+    );
+    assert.equal(result.ok, true);
+    if (result.ok && result.route.kind === "jira_write_start") {
+      assert.equal(result.route.jobId, "job-1");
+    } else {
+      assert.fail("expected jira_write_start");
+    }
+  });
+
+  test("rejects unknown write subroutes", () => {
+    const result = parseInspectorTestIntelligenceRoute(
+      "/workspace/test-intelligence/write/job-1/unknown",
+    );
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.reason, "unknown_subroute");
+    }
+  });
+
   test("rejects path traversal inside testCaseId", () => {
     const result = parseInspectorTestIntelligenceRoute(
       "/workspace/test-intelligence/review/job-1/approve/..",
@@ -314,6 +346,20 @@ describe("isInspectorTestIntelligenceWriteAction", () => {
     assert.equal(
       isInspectorTestIntelligenceWriteAction({
         kind: "custom_context_source",
+        jobId: "job-1",
+      }),
+      true,
+    );
+  });
+
+  test("returns true for Jira write config and start routes", () => {
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({ kind: "jira_write_config" }),
+      true,
+    );
+    assert.equal(
+      isInspectorTestIntelligenceWriteAction({
+        kind: "jira_write_start",
         jobId: "job-1",
       }),
       true,

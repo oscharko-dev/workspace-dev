@@ -222,6 +222,11 @@ export const createWorkspaceServer = async (
     options.testIntelligence.reviewBearerToken.trim().length > 0
       ? options.testIntelligence.reviewBearerToken.trim()
       : undefined;
+  const testIntelligenceJiraWriteBearerToken =
+    typeof options.testIntelligence?.jiraWriteBearerToken === "string" &&
+    options.testIntelligence.jiraWriteBearerToken.trim().length > 0
+      ? options.testIntelligence.jiraWriteBearerToken.trim()
+      : undefined;
   const testIntelligenceReviewPrincipals =
     resolveTestIntelligenceReviewPrincipals(
       options.testIntelligence?.reviewPrincipals,
@@ -505,6 +510,11 @@ export const createWorkspaceServer = async (
       ...(testIntelligenceReviewPrincipals !== undefined
         ? { testIntelligenceReviewPrincipals }
         : {}),
+      ...(testIntelligenceJiraWriteBearerToken !== undefined
+        ? { testIntelligenceJiraWriteBearerToken }
+        : {}),
+      testIntelligenceAllowJiraWrite:
+        options.testIntelligence?.allowJiraWrite === true,
       testIntelligenceArtifactRoot,
       logger: runtime.logger,
     },

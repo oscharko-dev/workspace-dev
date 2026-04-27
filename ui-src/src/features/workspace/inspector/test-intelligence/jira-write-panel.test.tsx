@@ -138,6 +138,37 @@ describe("JiraWritePanel", () => {
     expect(parsed["parentIssueKey"]).toBe("PROJ-123");
   });
 
+  it("restores persisted config across remount", async () => {
+    render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
+    fireEvent.click(screen.getByTestId("ti-jira-write-enabled"));
+    fireEvent.click(screen.getByTestId("ti-jira-write-use-default-path"));
+    fireEvent.change(screen.getByTestId("ti-jira-write-output-path"), {
+      target: { value: "/tmp/jira-write-out" },
+    });
+
+    await waitFor(() => {
+      const stored = JSON.parse(
+        window.localStorage.getItem(JIRA_WRITE_CONFIG_STORAGE_KEY) ?? "{}",
+      ) as Record<string, unknown>;
+      expect(stored["writeEnabled"]).toBe(true);
+      expect(stored["useDefaultOutputPath"]).toBe(false);
+      expect(stored["outputPathMarkdown"]).toBe("/tmp/jira-write-out");
+    });
+
+    cleanup();
+
+    render(<JiraWritePanel jobId="job-1" bearerToken="token" />);
+    await waitFor(() => {
+      expect(screen.getByTestId("ti-jira-write-enabled")).toBeChecked();
+      expect(
+        screen.getByTestId("ti-jira-write-use-default-path"),
+      ).not.toBeChecked();
+      expect(screen.getByTestId("ti-jira-write-output-path")).toHaveValue(
+        "/tmp/jira-write-out",
+      );
+    });
+  });
+
   it("refused response surfaces refusal codes", async () => {
     vi.spyOn(api, "startJiraWrite").mockResolvedValue({
       ok: true,
