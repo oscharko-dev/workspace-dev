@@ -3553,7 +3553,8 @@ test("generateArtifacts writes deterministic output and mapping diagnostics", as
   assert.ok(errorBoundaryContent.includes("static getDerivedStateFromError"));
   assert.ok(errorBoundaryContent.includes("handleRetry"));
   assert.ok(errorBoundaryContent.includes("Try again"));
-  assert.equal(errorBoundaryContent.includes("console.error"), false);
+  assert.ok(errorBoundaryContent.includes("import.meta.env.DEV"));
+  assert.ok(errorBoundaryContent.includes('console.error("ErrorBoundary caught:"'));
 
   const screenSkeletonContent = await readFile(
     path.join(projectDir, "src", "components", "ScreenSkeleton.tsx"),

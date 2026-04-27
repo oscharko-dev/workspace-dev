@@ -19,6 +19,10 @@ import { resolveBoardKey } from "../../parity/board-key.js";
 import { toDeterministicScreenPath } from "../../parity/generator-artifacts.js";
 import { buildTypographyScaleFromAliases } from "../../parity/typography-tokens.js";
 import type { DesignIR } from "../../parity/types-ir.js";
+import {
+  PARITY_WORKFLOW_ERROR_CODES,
+  WorkflowError,
+} from "../../parity/workflow-error.js";
 import { STORYBOOK_PUBLIC_EXTENSION_KEY } from "../../storybook/types.js";
 import { createStageRuntimeContext, type PipelineExecutionContext, type StageRuntimeContext } from "../pipeline/context.js";
 import { syncPublicJobProjection } from "../pipeline/public-job-projection.js";
@@ -5572,6 +5576,88 @@ test("CodegenGenerateService maps invalid design.ir JSON to E_IR_EMPTY", async (
     },
     (error: unknown) => error instanceof Error && "code" in error && (error as { code: string }).code === "E_IR_EMPTY"
   );
+});
+
+test("CodegenGenerateService preserves generated-source parity errors after partial output", async () => {
+  const { executionContext, stageContextFor } = await createExecutionContext({});
+  await writeFile(
+    executionContext.paths.designIrFile,
+    `${JSON.stringify(createMinimalIr(), null, 2)}\n`,
+    "utf8"
+  );
+  await executionContext.artifactStore.setPath({
+    key: STAGE_ARTIFACT_KEYS.designIr,
+    stage: "ir.derive",
+    absolutePath: executionContext.paths.designIrFile
+  });
+
+  const service = createCodegenGenerateService({
+    exportImageAssetsFromFigmaFn: async () => ({ imageAssetMap: {} }),
+    generateArtifactsStreamingFn: async function* (input) {
+      await mkdir(path.join(input.projectDir, "src"), { recursive: true });
+      await writeFile(
+        path.join(input.projectDir, "src", "Broken.tsx"),
+        "export default function Broken() { return <Box>; }\n",
+        "utf8"
+      );
+      yield {
+        type: "theme",
+        files: [
+          {
+            path: "src/Broken.tsx",
+            content: "export default function Broken() { return <Box>; }\n"
+          }
+        ]
+      } as const;
+      throw new WorkflowError({
+        code: PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile,
+        stage: "codegen.generate",
+        message:
+          "Invalid generated source file 'src/Broken.tsx': JSX element 'Box' has no corresponding closing tag."
+      });
+    },
+    buildComponentManifestFn: async () =>
+      ({
+        screens: [],
+        generatedAt: new Date().toISOString()
+      }) as Awaited<ReturnType<typeof import("../../parity/component-manifest.js").buildComponentManifest>>
+  });
+
+  await assert.rejects(
+    () =>
+      service.execute(
+        {
+          boardKeySeed: "demo-board"
+        },
+        stageContextFor("codegen.generate")
+      ),
+    (error: unknown) => {
+      assert.equal(error instanceof Error, true);
+      const typed = error as Error & {
+        code?: string;
+        stage?: string;
+        retryable?: boolean;
+        retryTargets?: Array<{ targetId?: string; filePath?: string }>;
+      };
+      assert.equal(
+        typed.code,
+        PARITY_WORKFLOW_ERROR_CODES.invalidGeneratedSourceFile
+      );
+      assert.equal(typed.stage, "codegen.generate");
+      assert.equal(typed.retryable, true);
+      assert.match(typed.message, /Invalid generated source file 'src\/Broken\.tsx'/);
+      assert.equal(typed.retryTargets?.[0]?.targetId, "screen-1");
+      assert.equal(typed.retryTargets?.[0]?.filePath, "src/screens/Screen_1.tsx");
+      return true;
+    }
+  );
+
+  const summary = await executionContext.artifactStore.getValue<{
+    generatedPaths?: string[];
+    failedTargets?: Array<{ targetId?: string }>;
+  }>(STAGE_ARTIFACT_KEYS.codegenSummary);
+  assert.deepEqual(summary?.generatedPaths, ["src/Broken.tsx"]);
+  assert.equal(summary?.failedTargets?.[0]?.targetId, "screen-1");
 });
 
 test("CodegenGenerateService excludes incompatible storybook-first mappings from component.match_report", async () => {
