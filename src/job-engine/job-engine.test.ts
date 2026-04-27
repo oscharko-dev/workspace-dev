@@ -3804,13 +3804,12 @@ test("createJobEngine fails fast when cleaning removes all screen candidates", a
     status.artifacts.jobDir,
     "stage-timings.json",
   );
-  const raw = await readFile(rawPath, "utf8");
+  await assert.rejects(readFile(rawPath, "utf8"), /ENOENT/);
   const cleaned = await readFile(cleanedPath, "utf8");
   const stageTimings = JSON.parse(await readFile(stageTimingsPath, "utf8")) as {
     diagnostics?: Array<{ code?: string }>;
   };
 
-  assert.equal(raw.length > cleaned.length, true);
   assert.equal(cleaned.includes('"visible": false'), false);
   assert.equal(
     stageTimings.diagnostics?.some(
