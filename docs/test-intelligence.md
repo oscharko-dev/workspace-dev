@@ -208,7 +208,7 @@ operators can plan integration without depending on the runner being wired:
 | `WorkspaceJobInput.jobType`                 | `"figma_to_code"` (default) \| `"figma_to_qc_test_cases"` (reserved) |
 | `WorkspaceJobInput.testIntelligenceMode`    | `"deterministic_llm"` \| `"offline_eval"` \| `"dry_run"`             |
 | `ALLOWED_TEST_INTELLIGENCE_MODES`           | `["deterministic_llm", "offline_eval", "dry_run"]`                   |
-| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.0.0"`                                                            |
+| `TEST_INTELLIGENCE_CONTRACT_VERSION`        | `"1.5.0"`                                                            |
 | `TEST_INTELLIGENCE_PROMPT_TEMPLATE_VERSION` | `"1.0.0"`                                                            |
 | `TEST_INTELLIGENCE_ENV`                     | `"FIGMAPIPE_WORKSPACE_TEST_INTELLIGENCE"`                            |
 
@@ -381,7 +381,10 @@ matrix, six others (`opentext_octane`, `opentext_valueedge`, `xray`,
 `testrail`, `azure_devops_test_plans`, `qtest`) advertise validate + dry-run
 only and refuse writes through the `provider_not_implemented` refusal code,
 and the reserved `custom` slot publishes every capability flag `false` until
-a caller registers a concrete adapter:
+a caller registers a concrete adapter. These helper APIs are internal
+implementation entrypoints today; external consumers use the HTTP routes and
+the published `workspace-dev/contracts` types unless a future package subpath
+is explicitly exported.
 
 ```ts
 import {
@@ -389,7 +392,7 @@ import {
     createQcProviderRegistry,
     registerQcProviderAdapter,
     resolveQcProviderAdapter,
-} from "workspace-dev/test-intelligence";
+} from "../src/test-intelligence/index.js";
 import type { QcProviderDescriptor } from "workspace-dev/contracts";
 
 const customAdapter = createDryRunStubAdapter({
@@ -630,9 +633,11 @@ deterministic budget report under `<runDir>/finops/budget-report.json`.
 | `roles.<role>.maxLiveSmokeCalls`         | Role     | Maximum live-smoke (non-mock) calls.                                                             |
 
 A built-in `EU_BANKING_DEFAULT_FINOPS_BUDGET` profile is provided alongside a
-permissive `DEFAULT_FINOPS_BUDGET_ENVELOPE` baseline. Both are exported through
-`src/test-intelligence/index.ts` and through the public root for callers that
-embed the harness in their own pipelines.
+permissive `DEFAULT_FINOPS_BUDGET_ENVELOPE` baseline. Both are internal
+`src/test-intelligence/index.ts` entrypoints for in-repo harnesses. Installed
+package consumers should use the published `workspace-dev/contracts` types and
+the HTTP routes unless a future package subpath explicitly exposes these
+helpers.
 
 ### Fail-closed semantics
 
@@ -702,13 +707,14 @@ before serialization.
 
 ### Wiring it into a run
 
-`runWave1Poc` accepts optional `finopsBudget` and `finopsCostRates` inputs:
+`runWave1Poc` accepts optional `finopsBudget` and `finopsCostRates` inputs for
+in-repo evaluation harnesses:
 
 ```ts
 import {
     cloneEuBankingDefaultFinOpsBudget,
     runWave1Poc,
-} from "@oscharko-dev/workspace-dev/test-intelligence";
+} from "../src/test-intelligence/index.js";
 
 const result = await runWave1Poc({
     fixtureId: "poc-onboarding",

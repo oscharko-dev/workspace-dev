@@ -910,8 +910,10 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
     "docs/runbooks/multi-source-air-gap.md",
   );
   const packageManifest = JSON.parse(await readRepoFile("package.json")) as {
+    exports?: Record<string, unknown>;
     files?: string[];
   };
+  const testIntelligenceDoc = await readRepoFile("docs/test-intelligence.md");
   const readmeDoc = await readRepoFile("README.md");
   const complianceDoc = await readRepoFile("COMPLIANCE.md");
   const changelogDoc = await readRepoFile("CHANGELOG.md");
@@ -1041,7 +1043,15 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
     new RegExp(escapeRegExp(String(MAX_CUSTOM_CONTEXT_BYTES_PER_JOB))),
   );
 
-  // API reference must document the TI contract version
+  // Manual docs must document the TI contract version
+  assert.match(
+    testIntelligenceDoc,
+    new RegExp(
+      escapeRegExp(
+        `| \`TEST_INTELLIGENCE_CONTRACT_VERSION\`        | \`"${TEST_INTELLIGENCE_CONTRACT_VERSION}"\``,
+      ),
+    ),
+  );
   assert.match(
     apiRef,
     new RegExp(
@@ -1050,6 +1060,17 @@ test("docs: Wave 4 multi-source API reference documents key exported contracts",
       ),
     ),
   );
+  assert.match(
+    apiRef,
+    new RegExp(escapeRegExp(`CONTRACT_VERSION = "${CONTRACT_VERSION}"`)),
+  );
+
+  if (!Object.hasOwn(packageManifest.exports ?? {}, "./test-intelligence")) {
+    assert.doesNotMatch(
+      testIntelligenceDoc,
+      /from\s+["'](?:@oscharko-dev\/)?workspace-dev\/test-intelligence["']/,
+    );
+  }
 
   // API reference must list the HTTP routes
   assert.match(
