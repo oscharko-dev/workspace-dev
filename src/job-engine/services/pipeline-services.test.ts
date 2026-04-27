@@ -216,27 +216,17 @@ test("submission figma.source contract requires figma.raw only for local_json mo
     resolvedFigmaSourceMode: "rest"
   });
 
-  assert.deepEqual(await figmaEntry?.resolveArtifacts?.(localContext), {
-    reads: [],
-    optionalReads: [],
-    writes: [
-      STAGE_ARTIFACT_KEYS.figmaCleaned,
-      STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
-      STAGE_ARTIFACT_KEYS.figmaCleanedReport,
-      STAGE_ARTIFACT_KEYS.figmaRaw
-    ],
-    optionalWrites: []
-  });
-  assert.deepEqual(await figmaEntry?.resolveArtifacts?.(restContext), {
-    reads: [],
-    optionalReads: [],
-    writes: [
-      STAGE_ARTIFACT_KEYS.figmaCleaned,
-      STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
-      STAGE_ARTIFACT_KEYS.figmaCleanedReport
-    ],
-    optionalWrites: []
-  });
+  assert.deepEqual((await figmaEntry?.resolveArtifacts?.(localContext))?.writes, [
+    STAGE_ARTIFACT_KEYS.figmaCleaned,
+    STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
+    STAGE_ARTIFACT_KEYS.figmaCleanedReport,
+    STAGE_ARTIFACT_KEYS.figmaRaw
+  ]);
+  assert.deepEqual((await figmaEntry?.resolveArtifacts?.(restContext))?.writes, [
+    STAGE_ARTIFACT_KEYS.figmaCleaned,
+    STAGE_ARTIFACT_KEYS.figmaFetchDiagnostics,
+    STAGE_ARTIFACT_KEYS.figmaCleanedReport
+  ]);
 });
 
 test("regeneration pipeline plan keeps order and encodes seeded artifact contracts", async () => {

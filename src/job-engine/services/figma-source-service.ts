@@ -268,7 +268,7 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
       return;
     }
 
-    let sourceRawFileForEnrichment: FigmaFileResponse | undefined;
+    let sourceRawFileForEnrichment: FigmaFileResponse;
 
     const writeAndClean = async ({
       sourceFile,
@@ -498,15 +498,6 @@ export const FigmaSourceService: StageService<FigmaSourceStageInput> = {
         diagnostics: result.diagnostics,
       });
       sourceRawFileForEnrichment = result.file;
-    }
-
-    if (sourceRawFileForEnrichment === undefined) {
-      throw createPipelineError({
-        code: "E_FIGMA_PARSE",
-        stage: "figma.source",
-        message: "Figma source payload was not available for enrichment and downstream processing.",
-        limits: context.runtime.pipelineDiagnosticLimits,
-      });
     }
 
     const rawSourcePayload = sourceRawFileForEnrichment;

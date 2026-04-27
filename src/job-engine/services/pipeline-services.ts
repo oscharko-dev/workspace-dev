@@ -87,11 +87,7 @@ const buildCodegenInput = ({
   };
 };
 
-const resolveFigmaSourceArtifacts = ({
-  context,
-}: {
-  context: PipelineExecutionContext;
-}): StageArtifactContract => {
+const resolveFigmaSourceArtifacts = (context: PipelineExecutionContext): StageArtifactContract => {
   return {
     writes: [
       STAGE_ARTIFACT_KEYS.figmaCleaned,
